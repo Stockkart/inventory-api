@@ -4,7 +4,8 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication(scanBasePackages = {
-		"com.stockhub.controller"
+		"com.stockhub.app",
+		"com.product"
 })
 public class AppApplication {
 
