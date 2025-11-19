@@ -5,19 +5,24 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>com.inventory</groupId>
-        <artifactId>core</artifactId>
-        <version>1.0-SNAPSHOT</version>
+        <artifactId>inventory-backend</artifactId>
+        <version>1.0.0</version>
     </parent>
+    <packaging>jar</packaging>
+
+    <artifactId>pluginengine</artifactId>
 
     <dependencies>
         <dependency>
-            <groupId>com.inventory</groupId>
-            <artifactId>pluginengine</artifactId>
-            <version>1.0-SNAPSHOT</version>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
         </dependency>
     </dependencies>
-
-    <artifactId>product</artifactId>
 
     <properties>
         <maven.compiler.source>21</maven.compiler.source>

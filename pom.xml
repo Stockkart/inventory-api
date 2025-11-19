@@ -12,6 +12,7 @@
         <module>app</module>
         <module>core</module>
         <module>plugins</module>
+        <module>pluginengine</module>
     </modules>
 
     <dependencyManagement>

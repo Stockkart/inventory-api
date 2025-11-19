@@ -1,7 +1,7 @@
-package com.product.rest.controller;
+package com.inventory.product.rest.controller;
 
-import com.product.rest.dto.ProductListDto;
-import com.product.service.ProductService;
+import com.inventory.product.rest.dto.ProductListDto;
+import com.inventory.product.service.ProductService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -14,6 +14,11 @@ public class ProductController {
 
     @Autowired
     private ProductService productService;
+
+    @GetMapping("/get-plugin")
+    public ResponseEntity<ProductListDto> getCurrentPlugin(){
+        return ResponseEntity.ok(productService.getProducts());
+    }
 
     @GetMapping("/")
     public ResponseEntity<ProductListDto> getProducts(){
