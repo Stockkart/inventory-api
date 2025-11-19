@@ -1,11 +1,10 @@
-package com.stockhub.app;
+package com.inventory.app;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication(scanBasePackages = {
-		"com.stockhub.app",
-		"com.product"
+		"com.inventory.*"
 })
 public class AppApplication {
 

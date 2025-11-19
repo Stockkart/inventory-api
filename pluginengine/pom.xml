@@ -5,16 +5,14 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>com.inventory</groupId>
-        <artifactId>plugins</artifactId>
+        <artifactId>inventory-backend</artifactId>
         <version>1.0.0</version>
     </parent>
+    <packaging>jar</packaging>
+
+    <artifactId>pluginengine</artifactId>
 
     <dependencies>
-        <dependency>
-            <groupId>com.inventory</groupId>
-            <artifactId>pluginengine</artifactId>
-            <version>1.0.0</version>
-        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
@@ -25,8 +23,6 @@
             <optional>true</optional>
         </dependency>
     </dependencies>
-
-    <artifactId>medical</artifactId>
 
     <properties>
         <maven.compiler.source>21</maven.compiler.source>
