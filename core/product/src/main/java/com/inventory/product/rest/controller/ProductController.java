@@ -16,8 +16,8 @@ public class ProductController {
     private ProductService productService;
 
     @GetMapping("/get-plugin")
-    public ResponseEntity<ProductListDto> getCurrentPlugin(){
-        return ResponseEntity.ok(productService.getProducts());
+    public ResponseEntity<String> getCurrentPlugin(){
+        return ResponseEntity.ok(productService.getCurrentPlugin());
     }
 
     @GetMapping("/")

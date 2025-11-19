@@ -16,6 +16,6 @@ public class ProductService {
     }
 
     public String getCurrentPlugin(){
-        return "";
+        return pluginManager.getCurrentPlugin();
     }
 }
