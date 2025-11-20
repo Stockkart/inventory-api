@@ -10,7 +10,7 @@ import com.inventory.product.rest.dto.inventory.InventoryReceiptResponse;
 import com.inventory.product.rest.dto.inventory.InventorySummaryDto;
 import com.inventory.product.rest.dto.inventory.ReceiveInventoryRequest;
 import com.inventory.product.rest.mapper.InventoryMapper;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -20,12 +20,16 @@ import java.util.Map;
 import java.util.UUID;
 
 @Service
-@RequiredArgsConstructor
 public class InventoryService {
 
-    private final ProductRepository productRepository;
-    private final InventoryRepository inventoryRepository;
-    private final InventoryMapper inventoryMapper;
+    @Autowired
+    private ProductRepository productRepository;
+
+    @Autowired
+    private InventoryRepository inventoryRepository;
+
+    @Autowired
+    private InventoryMapper inventoryMapper;
 
     public InventoryReceiptResponse receive(ReceiveInventoryRequest request) {
         Product product = productRepository.findById(request.getBarcode())

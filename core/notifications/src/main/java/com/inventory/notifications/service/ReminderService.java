@@ -6,18 +6,20 @@ import com.inventory.notifications.rest.dto.ReminderListResponse;
 import com.inventory.notifications.rest.dto.ReminderResponse;
 import com.inventory.notifications.rest.dto.SnoozeReminderRequest;
 import com.inventory.notifications.rest.mapper.ReminderMapper;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.List;
 
 @Service
-@RequiredArgsConstructor
 public class ReminderService {
 
-    private final ReminderRepository reminderRepository;
-    private final ReminderMapper reminderMapper;
+    @Autowired
+    private ReminderRepository reminderRepository;
+
+    @Autowired
+    private ReminderMapper reminderMapper;
 
     public ReminderListResponse list(String shopId) {
         List<ReminderResponse> reminders = reminderRepository.findByShopId(shopId).stream()

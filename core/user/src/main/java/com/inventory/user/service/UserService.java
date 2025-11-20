@@ -12,7 +12,7 @@ import com.inventory.user.rest.dto.user.UpdateUserRequest;
 import com.inventory.user.rest.dto.user.UserDto;
 import com.inventory.user.rest.dto.user.UserListResponse;
 import com.inventory.user.rest.mapper.UserMapper;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -20,12 +20,16 @@ import java.util.List;
 import java.util.UUID;
 
 @Service
-@RequiredArgsConstructor
 public class UserService {
 
-    private final UserAccountRepository userAccountRepository;
-    private final UserInviteRepository userInviteRepository;
-    private final UserMapper userMapper;
+    @Autowired
+    private UserAccountRepository userAccountRepository;
+
+    @Autowired
+    private UserInviteRepository userInviteRepository;
+
+    @Autowired
+    private UserMapper userMapper;
 
     public UserListResponse listUsers(String shopId) {
         List<UserDto> users = userAccountRepository.findByShopId(shopId).stream()

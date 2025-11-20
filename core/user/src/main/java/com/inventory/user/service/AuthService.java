@@ -9,18 +9,22 @@ import com.inventory.user.rest.dto.auth.AcceptInviteResponse;
 import com.inventory.user.rest.dto.auth.LoginRequest;
 import com.inventory.user.rest.dto.auth.LoginResponse;
 import com.inventory.user.rest.mapper.UserMapper;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.UUID;
 
 @Service
-@RequiredArgsConstructor
 public class AuthService {
 
-    private final UserAccountRepository userAccountRepository;
-    private final UserInviteRepository userInviteRepository;
-    private final UserMapper userMapper;
+    @Autowired
+    private UserAccountRepository userAccountRepository;
+
+    @Autowired
+    private UserInviteRepository userInviteRepository;
+
+    @Autowired
+    private UserMapper userMapper;
 
     public LoginResponse login(LoginRequest request) {
         UserAccount account = userAccountRepository.findByEmail(request.getEmail())

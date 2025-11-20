@@ -7,18 +7,20 @@ import com.inventory.product.rest.dto.shop.ShopApprovalRequest;
 import com.inventory.product.rest.dto.shop.ShopApprovalResponse;
 import com.inventory.product.rest.dto.shop.ShopRegistrationResponse;
 import com.inventory.product.rest.mapper.ShopMapper;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.UUID;
 
 @Service
-@RequiredArgsConstructor
 public class ShopService {
 
-    private final ShopRepository shopRepository;
-    private final ShopMapper shopMapper;
+    @Autowired
+    private ShopRepository shopRepository;
+
+    @Autowired
+    private ShopMapper shopMapper;
 
     public ShopRegistrationResponse register(RegisterShopRequest request) {
         Shop shop = Shop.builder()

@@ -8,7 +8,7 @@ import com.inventory.user.rest.dto.user.UpdateUserRequest;
 import com.inventory.user.rest.dto.user.UserDto;
 import com.inventory.user.rest.dto.user.UserListResponse;
 import com.inventory.user.service.UserService;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,10 +21,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping
-@RequiredArgsConstructor
 public class ShopUserController {
 
-    private final UserService userService;
+    @Autowired
+    private UserService userService;
 
     @GetMapping("/api/v1/shops/{shopId}/users")
     public ResponseEntity<UserListResponse> listUsers(@PathVariable String shopId) {

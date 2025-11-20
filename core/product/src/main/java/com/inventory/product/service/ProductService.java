@@ -7,18 +7,22 @@ import com.inventory.product.rest.dto.ProductListDto;
 import com.inventory.product.rest.dto.product.ProductListResponse;
 import com.inventory.product.rest.dto.product.ProductResponse;
 import com.inventory.product.rest.mapper.ProductMapper;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 
 @Service
-@RequiredArgsConstructor
 public class ProductService {
 
-    private final PluginManager pluginManager;
-    private final ProductRepository productRepository;
-    private final ProductMapper productMapper;
+    @Autowired
+    private PluginManager pluginManager;
+
+    @Autowired
+    private ProductRepository productRepository;
+
+    @Autowired
+    private ProductMapper productMapper;
 
     public ProductListDto getProducts(){
         return new ProductListDto();

@@ -5,7 +5,7 @@ import com.inventory.product.rest.dto.inventory.InventoryListResponse;
 import com.inventory.product.rest.dto.inventory.InventoryReceiptResponse;
 import com.inventory.product.rest.dto.inventory.ReceiveInventoryRequest;
 import com.inventory.product.service.InventoryService;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -17,10 +17,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1")
-@RequiredArgsConstructor
 public class InventoryController {
 
-    private final InventoryService inventoryService;
+    @Autowired
+    private InventoryService inventoryService;
 
     @PostMapping("/inventory/receive")
     public ResponseEntity<InventoryReceiptResponse> receive(@RequestBody ReceiveInventoryRequest request) {

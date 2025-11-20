@@ -5,7 +5,7 @@ import com.inventory.product.rest.dto.sale.CheckoutResponse;
 import com.inventory.product.rest.dto.sale.InvalidateSaleRequest;
 import com.inventory.product.rest.dto.sale.SaleStatusResponse;
 import com.inventory.product.service.CheckoutService;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -15,10 +15,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1")
-@RequiredArgsConstructor
 public class CheckoutController {
 
-    private final CheckoutService checkoutService;
+    @Autowired
+    private CheckoutService checkoutService;
 
     @PostMapping("/checkout")
     public ResponseEntity<CheckoutResponse> checkout(@RequestBody CheckoutRequest request) {

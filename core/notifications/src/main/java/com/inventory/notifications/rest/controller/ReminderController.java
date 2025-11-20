@@ -4,7 +4,7 @@ import com.inventory.notifications.rest.dto.ReminderListResponse;
 import com.inventory.notifications.rest.dto.ReminderResponse;
 import com.inventory.notifications.rest.dto.SnoozeReminderRequest;
 import com.inventory.notifications.service.ReminderService;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -16,10 +16,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/reminders")
-@RequiredArgsConstructor
 public class ReminderController {
 
-    private final ReminderService reminderService;
+    @Autowired
+    private ReminderService reminderService;
 
     @GetMapping
     public ResponseEntity<ReminderListResponse> list(@RequestParam String shopId) {

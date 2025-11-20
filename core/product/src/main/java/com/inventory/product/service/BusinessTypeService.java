@@ -5,15 +5,17 @@ import com.inventory.product.domain.repository.BusinessTypeRepository;
 import com.inventory.product.rest.dto.business.BusinessTypeResponse;
 import com.inventory.product.rest.dto.business.CreateBusinessTypeRequest;
 import com.inventory.product.rest.mapper.BusinessTypeMapper;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
-@RequiredArgsConstructor
 public class BusinessTypeService {
 
-    private final BusinessTypeRepository repository;
-    private final BusinessTypeMapper mapper;
+    @Autowired
+    private BusinessTypeRepository repository;
+
+    @Autowired
+    private BusinessTypeMapper mapper;
 
     public BusinessTypeResponse create(CreateBusinessTypeRequest request) {
         BusinessType entity = mapper.toEntity(request);

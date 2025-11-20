@@ -10,7 +10,7 @@ import com.inventory.product.rest.dto.sale.CheckoutResponse;
 import com.inventory.product.rest.dto.sale.InvalidateSaleRequest;
 import com.inventory.product.rest.dto.sale.SaleStatusResponse;
 import com.inventory.product.rest.mapper.SaleMapper;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -20,12 +20,16 @@ import java.util.List;
 import java.util.UUID;
 
 @Service
-@RequiredArgsConstructor
 public class CheckoutService {
 
-    private final ProductRepository productRepository;
-    private final SaleRepository saleRepository;
-    private final SaleMapper saleMapper;
+    @Autowired
+    private ProductRepository productRepository;
+
+    @Autowired
+    private SaleRepository saleRepository;
+
+    @Autowired
+    private SaleMapper saleMapper;
 
     public CheckoutResponse checkout(CheckoutRequest request) {
         List<SaleItem> saleItems = request.getItems().stream().map(item -> {

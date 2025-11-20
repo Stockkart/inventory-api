@@ -5,7 +5,7 @@ import com.inventory.product.rest.dto.shop.ShopApprovalRequest;
 import com.inventory.product.rest.dto.shop.ShopApprovalResponse;
 import com.inventory.product.rest.dto.shop.ShopRegistrationResponse;
 import com.inventory.product.service.ShopService;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -15,10 +15,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping
-@RequiredArgsConstructor
 public class ShopController {
 
-    private final ShopService shopService;
+    @Autowired
+    private ShopService shopService;
 
     @PostMapping("/api/v1/shops/register")
     public ResponseEntity<ShopRegistrationResponse> register(@RequestBody RegisterShopRequest request) {
