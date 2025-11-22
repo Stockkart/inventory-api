@@ -11,15 +11,15 @@ import java.util.stream.StreamSupport;
 @Component
 public class PluginManager {
 
-    private final List<ProductPlugin> productPlugins;
+  private final List<ProductPlugin> productPlugins;
 
-    public PluginManager(Map<String, ProductPlugin> productPlugins) {
-        ServiceLoader<ProductPlugin> loader = ServiceLoader.load(ProductPlugin.class);
-        this.productPlugins = StreamSupport.stream(loader.spliterator(), false)
-                .collect(Collectors.toList());
-    }
+  public PluginManager(Map<String, ProductPlugin> productPlugins) {
+    ServiceLoader<ProductPlugin> loader = ServiceLoader.load(ProductPlugin.class);
+    this.productPlugins = StreamSupport.stream(loader.spliterator(), false)
+            .collect(Collectors.toList());
+  }
 
-    public String getCurrentPlugin(){
-        return productPlugins.getFirst().getPluginId();
-    }
+  public String getCurrentPlugin() {
+    return productPlugins.getFirst().getPluginId();
+  }
 }

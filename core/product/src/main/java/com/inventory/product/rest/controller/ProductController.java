@@ -12,17 +12,17 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/product")
 public class ProductController {
 
-    @Autowired
-    private ProductService productService;
+  @Autowired
+  private ProductService productService;
 
-    @GetMapping("/get-plugin")
-    public ResponseEntity<String> getCurrentPlugin(){
-        return ResponseEntity.ok(productService.getCurrentPlugin());
-    }
+  @GetMapping("/get-plugin")
+  public ResponseEntity<String> getCurrentPlugin() {
+    return ResponseEntity.ok(productService.getCurrentPlugin());
+  }
 
-    @GetMapping("/")
-    public ResponseEntity<ProductListDto> getProducts(){
-        return ResponseEntity.ok(productService.getProducts());
-    }
+  @GetMapping("/")
+  public ResponseEntity<ProductListDto> getProducts() {
+    return ResponseEntity.ok(productService.getProducts());
+  }
 
 }
