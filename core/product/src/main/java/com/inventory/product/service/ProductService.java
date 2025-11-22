@@ -95,7 +95,9 @@ public class ProductService {
                     })
                     .toList();
                     
-            return ProductListResponse.builder().data(responses).build();
+            return ProductListResponse.builder()
+                    .data(responses)
+                    .build();
             
         } catch (DataAccessException e) {
             log.error("Database error while searching products with query '{}': {}", query, e.getMessage(), e);

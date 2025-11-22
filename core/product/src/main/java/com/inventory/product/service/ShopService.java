@@ -71,20 +71,14 @@ public class ShopService {
             
             log.info("Registering new shop: {}", request.getName());
             
-            Shop shop = Shop.builder()
-                    .shopId("shop-" + UUID.randomUUID())
-                    .name(request.getName().trim())
-                    .location(request.getLocation().trim())
-                    .businessId(request.getBusinessId() != null ? request.getBusinessId().trim() : null)
-                    .contactEmail(request.getContactEmail() != null ? request.getContactEmail().trim().toLowerCase() : null)
-                    .status("PENDING")
-                    .active(false)
-                    .userLimit(0) // Will be set during approval
-                    .userCount(0)
-                    .initialAdminName(request.getInitialAdmin().getName().trim())
-                    .initialAdminEmail(request.getInitialAdmin().getEmail().trim().toLowerCase())
-                    .createdAt(Instant.now())
-                    .build();
+            // Map request to entity using MapStruct
+            Shop shop = shopMapper.toEntity(request);
+            shop.setShopId("shop-" + UUID.randomUUID());
+            shop.setStatus("PENDING");
+            shop.setActive(false);
+            shop.setUserLimit(0); // Will be set during approval
+            shop.setUserCount(0);
+            shop.setCreatedAt(Instant.now());
                     
             shop = shopRepository.save(shop);
             log.info("Successfully registered shop with ID: {}", shop.getShopId());

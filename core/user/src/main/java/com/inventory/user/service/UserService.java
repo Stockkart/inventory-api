@@ -188,18 +188,11 @@ public class UserService {
             
             log.info("Creating user account for accepted invite: {}", inviteId);
             
-            // Create the user account
-            UserAccount account = UserAccount.builder()
-                    .userId("user-" + UUID.randomUUID())
-                    .name(invite.getName())
-                    .role(invite.getRole())
-                    .shopId(invite.getShopId())
-                    .email(invite.getEmail().toLowerCase().trim())
-                    .password(request.getPassword()) // Note: In a real app, this should be hashed
-                    .active(true)
-                    .inviteAccepted(true)
-                    .build();
-                    
+            // Create the user account using mapper
+            UserAccount account = userMapper.toUserAccount(invite, request.getPassword());
+            account.setUserId("user-" + UUID.randomUUID());
+            account.setEmail(invite.getEmail().toLowerCase().trim());
+            
             userAccountRepository.save(account);
             
             log.info("User account created with ID: {} from invite: {}", account.getUserId(), inviteId);

@@ -139,32 +139,8 @@ public class CheckoutService {
                             product.getBarcode(), availableStock, item.getQty());
                 }
                 
-                // Calculate item totals
-                BigDecimal qty = BigDecimal.valueOf(item.getQty());
-                BigDecimal discount = item.getDiscount() != null ? 
-                        BigDecimal.valueOf(item.getDiscount()).setScale(2, RoundingMode.HALF_UP) : 
-                        BigDecimal.ZERO;
-                
-                // Ensure discount is not negative and not greater than item price
-                if (discount.compareTo(BigDecimal.ZERO) < 0) {
-                    discount = BigDecimal.ZERO;
-                }
-                
-                BigDecimal maxDiscount = product.getPrice().multiply(qty);
-                if (discount.compareTo(maxDiscount) > 0) {
-                    discount = maxDiscount;
-                }
-                
-                BigDecimal total = product.getPrice().multiply(qty).subtract(discount);
-                
-                return SaleItem.builder()
-                        .productId(product.getBarcode())
-                        .productName(product.getName())
-                        .quantity(item.getQty())
-                        .salePrice(product.getPrice())
-                        .discount(discount)
-                        .total(total)
-                        .build();
+                // Use mapper to create SaleItem
+                return saleMapper.toSaleItem(item, product);
             })
             .collect(Collectors.toList());
     }
@@ -192,22 +168,11 @@ public class CheckoutService {
     private Sale createAndSaveSale(CheckoutRequest request, List<SaleItem> saleItems, 
                                  BigDecimal subTotal, BigDecimal taxTotal, 
                                  BigDecimal discountTotal, BigDecimal grandTotal) {
-        Sale sale = Sale.builder()
-                .id("sale-" + UUID.randomUUID())
-                .invoiceId(UUID.randomUUID().toString())
-                .invoiceNo(generateInvoiceNo())
-                .shopId(request.getShopId())
-                .userId(request.getUserId())
-                .items(saleItems)
-                .subTotal(subTotal)
-                .taxTotal(taxTotal)
-                .discountTotal(discountTotal)
-                .grandTotal(grandTotal)
-                .soldAt(Instant.now())
-                .valid(true)
-                .paymentMethod(request.getPaymentMethod())
-                .build();
-                
+        // Use mapper to create Sale
+        Sale sale = saleMapper.toSale(request, saleItems, subTotal, taxTotal, discountTotal, grandTotal);
+        // Set the invoice number using the mapper's helper method
+        sale.setInvoiceNo(saleMapper.generateInvoiceNo());
+        
         return saleRepository.save(sale);
     }
     
@@ -261,10 +226,7 @@ public class CheckoutService {
     }
     
     private SaleStatusResponse createSaleStatusResponse(Sale sale) {
-        return SaleStatusResponse.builder()
-                .saleId(sale.getId())
-                .valid(sale.isValid())
-                .build();
+        return saleMapper.toStatusResponse(sale);
     }
 }
 

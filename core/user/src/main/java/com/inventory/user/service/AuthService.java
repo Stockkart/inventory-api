@@ -76,6 +76,7 @@ public class AuthService {
             
             log.info("User logged in successfully: {}", account.getUserId());
             
+            // Create login response using builder pattern
             return LoginResponse.builder()
                     .accessToken(UUID.randomUUID().toString())
                     .refreshToken(UUID.randomUUID().toString())
@@ -135,14 +136,12 @@ public class AuthService {
             
             // Check if user already exists
             UserAccount account = userAccountRepository.findByEmail(invite.getEmail())
-                    .orElseGet(() -> UserAccount.builder()
-                            .userId("user-" + UUID.randomUUID())
-                            .email(invite.getEmail())
-                            .shopId(invite.getShopId())
-                            .role(invite.getRole())
-                            .active(true)
-                            .inviteAccepted(true)
-                            .build());
+                    .orElseGet(() -> {
+                        // Create new user account from invite
+                        UserAccount newAccount = userMapper.toUserAccount(invite, passwordEncoder.encode(request.getPassword()));
+                        newAccount.setUserId("user-" + UUID.randomUUID());
+                        return newAccount;
+                    });
             
             // Update account details
             account.setName(invite.getName());
@@ -155,12 +154,8 @@ public class AuthService {
             
             log.info("Admin invite accepted successfully for user: {}", account.getUserId());
             
-            return AcceptInviteResponse.builder()
-                    .userId(account.getUserId())
-                    .role(account.getRole())
-                    .shopId(account.getShopId())
-                    .active(account.isActive())
-                    .build();
+            // Map to response using mapper
+            return userMapper.toAcceptInviteResponse(account);
                     
         } catch (ValidationException | ResourceNotFoundException e) {
             log.warn("Failed to accept admin invite: {}", e.getMessage());
