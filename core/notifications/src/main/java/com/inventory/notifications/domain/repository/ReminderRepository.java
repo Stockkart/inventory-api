@@ -9,6 +9,6 @@ import java.util.List;
 @Repository
 public interface ReminderRepository extends MongoRepository<Reminder, String> {
 
-    List<Reminder> findByShopId(String shopId);
+  List<Reminder> findByShopId(String shopId);
 }
 

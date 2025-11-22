@@ -4,8 +4,8 @@ import lombok.Data;
 
 @Data
 public class UpdateUserRequest {
-    private String name;
-    private String role;
-    private Boolean active;
+  private String name;
+  private String role;
+  private Boolean active;
 }
 

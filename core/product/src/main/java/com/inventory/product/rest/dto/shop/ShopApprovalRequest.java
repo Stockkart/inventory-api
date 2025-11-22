@@ -4,7 +4,7 @@ import lombok.Data;
 
 @Data
 public class ShopApprovalRequest {
-    private boolean approve;
-    private Integer userLimit;
+  private boolean approve;
+  private Integer userLimit;
 }
 

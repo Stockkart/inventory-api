@@ -14,14 +14,14 @@ import java.time.Instant;
 @Document(collection = "user_invites")
 public class UserInvite {
 
-    @Id
-    private String inviteId;
-    private String shopId;
-    private String name;
-    private String email;
-    private String role;
-    private String token;
-    private Instant expiresAt;
-    private boolean accepted;
+  @Id
+  private String inviteId;
+  private String shopId;
+  private String name;
+  private String email;
+  private String role;
+  private String token;
+  private Instant expiresAt;
+  private boolean accepted;
 }
 

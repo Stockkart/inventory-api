@@ -17,19 +17,19 @@ import java.time.Instant;
 @Document(collection = "products")
 public class Product {
 
-    @Id
-    private String barcode;
-    private String prefix;
-    private String companyCode;
-    private String productTypeCode;
-    private String name;
-    private String model;
-    private BigDecimal price;
-    private String businessId;
-    private String shopId;
-    private String userId;
-    private String businessType;
-    private Instant createdAt;
-    private Instant updatedAt;
+  @Id
+  private String barcode;
+  private String prefix;
+  private String companyCode;
+  private String productTypeCode;
+  private String name;
+  private String model;
+  private BigDecimal price;
+  private String businessId;
+  private String shopId;
+  private String userId;
+  private String businessType;
+  private Instant createdAt;
+  private Instant updatedAt;
 }
 

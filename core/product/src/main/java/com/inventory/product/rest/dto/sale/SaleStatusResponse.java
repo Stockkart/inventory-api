@@ -6,7 +6,7 @@ import lombok.Value;
 @Value
 @Builder
 public class SaleStatusResponse {
-    String saleId;
-    boolean valid;
+  String saleId;
+  boolean valid;
 }
 

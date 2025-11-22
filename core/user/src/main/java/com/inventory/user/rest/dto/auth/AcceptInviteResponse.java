@@ -4,9 +4,9 @@ import lombok.Data;
 
 @Data
 public class AcceptInviteResponse {
-    String userId;
-    String role;
-    String shopId;
-    boolean active;
+  String userId;
+  String role;
+  String shopId;
+  boolean active;
 }
 

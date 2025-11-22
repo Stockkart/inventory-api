@@ -18,20 +18,20 @@ import java.util.List;
 @Document(collection = "sales")
 public class Sale {
 
-    @Id
-    private String id;
-    private String invoiceId;
-    private String invoiceNo;
-    private String productName;
-    private String userId;
-    private String shopId;
-    private List<SaleItem> items;
-    private BigDecimal subTotal;
-    private BigDecimal taxTotal;
-    private BigDecimal discountTotal;
-    private BigDecimal grandTotal;
-    private Instant soldAt;
-    private boolean valid;
-    private String paymentMethod;
+  @Id
+  private String id;
+  private String invoiceId;
+  private String invoiceNo;
+  private String productName;
+  private String userId;
+  private String shopId;
+  private List<SaleItem> items;
+  private BigDecimal subTotal;
+  private BigDecimal taxTotal;
+  private BigDecimal discountTotal;
+  private BigDecimal grandTotal;
+  private Instant soldAt;
+  private boolean valid;
+  private String paymentMethod;
 }
 

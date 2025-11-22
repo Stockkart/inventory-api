@@ -4,9 +4,9 @@ import lombok.Data;
 
 @Data
 public class UserDto {
-    String userId;
-    String name;
-    String role;
-    boolean active;
+  String userId;
+  String name;
+  String role;
+  boolean active;
 }
 

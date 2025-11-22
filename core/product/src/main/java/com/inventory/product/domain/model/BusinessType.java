@@ -17,13 +17,13 @@ import java.util.Map;
 @Document(collection = "business_types")
 public class BusinessType {
 
-    @Id
-    private String id;
-    private String code;
-    private String name;
-    private boolean enabled;
-    private Map<String, Object> registeredAttributes;
-    private Map<String, Object> registeredTaxRules;
-    private Instant registeredAt;
+  @Id
+  private String id;
+  private String code;
+  private String name;
+  private boolean enabled;
+  private Map<String, Object> registeredAttributes;
+  private Map<String, Object> registeredTaxRules;
+  private Instant registeredAt;
 }
 

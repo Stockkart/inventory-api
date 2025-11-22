@@ -4,7 +4,7 @@ import lombok.Data;
 
 @Data
 public class DeactivateUserResponse {
-    String userId;
-    boolean active;
+  String userId;
+  boolean active;
 }
 

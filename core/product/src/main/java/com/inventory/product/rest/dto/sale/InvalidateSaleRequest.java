@@ -4,6 +4,6 @@ import lombok.Data;
 
 @Data
 public class InvalidateSaleRequest {
-    private String reason;
+  private String reason;
 }
 

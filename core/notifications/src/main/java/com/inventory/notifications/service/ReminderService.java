@@ -18,30 +18,30 @@ import java.time.Instant;
 @Transactional
 public class ReminderService {
 
-    @Autowired
-    private final ReminderRepository reminderRepository;
+  @Autowired
+  private final ReminderRepository reminderRepository;
 
-    @Autowired
-    private final ReminderMapper reminderMapper;
+  @Autowired
+  private final ReminderMapper reminderMapper;
 
-    public ReminderListResponse list(String shopId) {
-        return reminderMapper.toReminderListResponse(reminderRepository.findByShopId(shopId));
-    }
+  public ReminderListResponse list(String shopId) {
+    return reminderMapper.toReminderListResponse(reminderRepository.findByShopId(shopId));
+  }
 
-    public boolean createReminder(String shopId, String inventoryId, Instant reminderAt, Instant expiryDate) {
-        Reminder reminder = reminderMapper.toReminder(shopId, inventoryId, reminderAt, expiryDate);
-        reminderRepository.save(reminder);
-        return true;
-    }
+  public boolean createReminder(String shopId, String inventoryId, Instant reminderAt, Instant expiryDate) {
+    Reminder reminder = reminderMapper.toReminder(shopId, inventoryId, reminderAt, expiryDate);
+    reminderRepository.save(reminder);
+    return true;
+  }
 
-    public ReminderResponse snooze(String id, SnoozeReminderRequest request) {
-        Reminder reminder = reminderRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Reminder not found"));
-        
-        Reminder updatedReminder = reminderMapper.updateReminder(reminder, id, request);
-        reminderRepository.save(updatedReminder);
-        
-        return reminderMapper.toResponse(updatedReminder);
-    }
+  public ReminderResponse snooze(String id, SnoozeReminderRequest request) {
+    Reminder reminder = reminderRepository.findById(id)
+            .orElseThrow(() -> new IllegalArgumentException("Reminder not found"));
+
+    Reminder updatedReminder = reminderMapper.updateReminder(reminder, id, request);
+    reminderRepository.save(updatedReminder);
+
+    return reminderMapper.toResponse(updatedReminder);
+  }
 }
 

@@ -14,12 +14,12 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/business-types")
 public class BusinessTypeController {
 
-    @Autowired
-    private BusinessTypeService businessTypeService;
+  @Autowired
+  private BusinessTypeService businessTypeService;
 
-    @PostMapping
-    public ResponseEntity<BusinessTypeResponse> create(@RequestBody CreateBusinessTypeRequest request) {
-        return ResponseEntity.ok(businessTypeService.create(request));
-    }
+  @PostMapping
+  public ResponseEntity<BusinessTypeResponse> create(@RequestBody CreateBusinessTypeRequest request) {
+    return ResponseEntity.ok(businessTypeService.create(request));
+  }
 }
 

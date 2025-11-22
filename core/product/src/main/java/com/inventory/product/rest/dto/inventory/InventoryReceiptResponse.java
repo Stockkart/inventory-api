@@ -6,8 +6,8 @@ import lombok.Value;
 @Value
 @Builder
 public class InventoryReceiptResponse {
-    String lotId;
-    String productId;
-    boolean reminderCreated;
+  String lotId;
+  String productId;
+  boolean reminderCreated;
 }
 

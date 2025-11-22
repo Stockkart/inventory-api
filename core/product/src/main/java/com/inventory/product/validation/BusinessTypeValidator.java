@@ -7,16 +7,16 @@ import org.springframework.util.StringUtils;
 
 @Component
 public class BusinessTypeValidator {
-    
-    public void validateCreateRequest(CreateBusinessTypeRequest request) {
-        if (request == null) {
-            throw new ValidationException("Request cannot be null");
-        }
-        if (!StringUtils.hasText(request.getCode())) {
-            throw new ValidationException("Business type code is required");
-        }
-        if (!StringUtils.hasText(request.getName())) {
-            throw new ValidationException("Business type name is required");
-        }
+
+  public void validateCreateRequest(CreateBusinessTypeRequest request) {
+    if (request == null) {
+      throw new ValidationException("Request cannot be null");
     }
+    if (!StringUtils.hasText(request.getCode())) {
+      throw new ValidationException("Business type code is required");
+    }
+    if (!StringUtils.hasText(request.getName())) {
+      throw new ValidationException("Business type name is required");
+    }
+  }
 }

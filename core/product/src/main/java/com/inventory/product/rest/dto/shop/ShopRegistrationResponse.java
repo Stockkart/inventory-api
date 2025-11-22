@@ -6,7 +6,7 @@ import lombok.Value;
 @Value
 @Builder
 public class ShopRegistrationResponse {
-    String shopId;
-    String status;
+  String shopId;
+  String status;
 }
 

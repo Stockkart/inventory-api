@@ -8,13 +8,13 @@ import java.time.Instant;
 @Value
 @Builder
 public class InventoryDetailResponse {
-    String lotId;
-    String productId;
-    Integer receivedCount;
-    Integer soldCount;
-    Integer currentCount;
-    String location;
-    Instant expiryDate;
-    String shopId;
+  String lotId;
+  String productId;
+  Integer receivedCount;
+  Integer soldCount;
+  Integer currentCount;
+  String location;
+  Instant expiryDate;
+  String shopId;
 }
 

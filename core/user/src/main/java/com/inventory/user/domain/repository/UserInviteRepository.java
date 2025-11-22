@@ -9,6 +9,6 @@ import java.util.Optional;
 @Repository
 public interface UserInviteRepository extends MongoRepository<UserInvite, String> {
 
-    Optional<UserInvite> findByToken(String token);
+  Optional<UserInvite> findByToken(String token);
 }
 

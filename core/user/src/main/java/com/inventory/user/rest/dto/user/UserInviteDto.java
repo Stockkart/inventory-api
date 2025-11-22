@@ -12,11 +12,11 @@ import java.time.Instant;
 @NoArgsConstructor
 @AllArgsConstructor
 public class UserInviteDto {
-    private String inviteId;
-    private String email;
-    private String name;
-    private String role;
-    private String shopId;
-    private Instant expiresAt;
-    private boolean accepted;
+  private String inviteId;
+  private String email;
+  private String name;
+  private String role;
+  private String shopId;
+  private Instant expiresAt;
+  private boolean accepted;
 }

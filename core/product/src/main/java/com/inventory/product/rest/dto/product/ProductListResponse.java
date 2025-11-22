@@ -9,7 +9,7 @@ import java.util.List;
 @Value
 @Builder
 public class ProductListResponse {
-    @Singular("product")
-    List<ProductResponse> data;
+  @Singular("product")
+  List<ProductResponse> data;
 }
 

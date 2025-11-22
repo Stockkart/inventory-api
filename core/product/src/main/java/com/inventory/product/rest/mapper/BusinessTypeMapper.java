@@ -9,11 +9,11 @@ import org.mapstruct.Mapping;
 @Mapper(componentModel = "spring")
 public interface BusinessTypeMapper {
 
-    @Mapping(target = "id", source = "code")
-    @Mapping(target = "enabled", constant = "true")
-    @Mapping(target = "registeredAt", expression = "java(java.time.Instant.now())")
-    BusinessType toEntity(CreateBusinessTypeRequest request);
+  @Mapping(target = "id", source = "code")
+  @Mapping(target = "enabled", constant = "true")
+  @Mapping(target = "registeredAt", expression = "java(java.time.Instant.now())")
+  BusinessType toEntity(CreateBusinessTypeRequest request);
 
-    BusinessTypeResponse toResponse(BusinessType entity);
+  BusinessTypeResponse toResponse(BusinessType entity);
 }
 

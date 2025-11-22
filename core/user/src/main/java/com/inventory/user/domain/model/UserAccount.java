@@ -14,15 +14,15 @@ import java.time.Instant;
 @Document(collection = "users")
 public class UserAccount {
 
-    @Id
-    private String userId;
-    private String name;
-    private String role;
-    private String shopId;
-    private String email;
-    private String password;
-    private boolean active;
-    private boolean inviteAccepted;
-    private Instant updatedAt;
+  @Id
+  private String userId;
+  private String name;
+  private String role;
+  private String shopId;
+  private String email;
+  private String password;
+  private boolean active;
+  private boolean inviteAccepted;
+  private Instant updatedAt;
 }
 

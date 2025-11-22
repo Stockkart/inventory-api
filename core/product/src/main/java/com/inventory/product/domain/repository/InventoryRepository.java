@@ -9,8 +9,8 @@ import java.util.List;
 @Repository
 public interface InventoryRepository extends MongoRepository<Inventory, String> {
 
-    List<Inventory> findByShopId(String shopId);
-    
-    List<Inventory> findByShopIdAndProductId(String shopId, String productId);
+  List<Inventory> findByShopId(String shopId);
+
+  List<Inventory> findByShopIdAndProductId(String shopId, String productId);
 }
 

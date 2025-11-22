@@ -10,8 +10,8 @@ import java.util.Map;
 @Value
 @Builder
 public class InventoryListResponse {
-    @Singular("item")
-    List<InventorySummaryDto> data;
-    Map<String, Object> meta;
+  @Singular("item")
+  List<InventorySummaryDto> data;
+  Map<String, Object> meta;
 }
 

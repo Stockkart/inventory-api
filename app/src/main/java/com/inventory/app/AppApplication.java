@@ -5,17 +5,17 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.data.mongodb.repository.config.EnableMongoRepositories;
 
 @SpringBootApplication(scanBasePackages = {
-		"com.inventory.*"
+        "com.inventory.*"
 })
 @EnableMongoRepositories(basePackages = {
-		"com.inventory.product.domain.repository",
-		"com.inventory.user.domain.repository",
-		"com.inventory.notifications.domain.repository"
+        "com.inventory.product.domain.repository",
+        "com.inventory.user.domain.repository",
+        "com.inventory.notifications.domain.repository"
 })
 public class AppApplication {
 
-	public static void main(String[] args) {
-		SpringApplication.run(AppApplication.class, args);
-	}
+  public static void main(String[] args) {
+    SpringApplication.run(AppApplication.class, args);
+  }
 
 }

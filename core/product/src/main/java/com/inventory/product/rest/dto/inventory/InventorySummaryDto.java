@@ -8,12 +8,12 @@ import java.time.Instant;
 @Value
 @Builder
 public class InventorySummaryDto {
-    String lotId;
-    String productId;
-    Integer receivedCount;
-    Integer soldCount;
-    Integer currentCount;
-    Instant expiryDate;
-    String shopId;
+  String lotId;
+  String productId;
+  Integer receivedCount;
+  Integer soldCount;
+  Integer currentCount;
+  Instant expiryDate;
+  String shopId;
 }
 

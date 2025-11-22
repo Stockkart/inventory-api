@@ -6,9 +6,9 @@ import lombok.Value;
 @Value
 @Builder
 public class ShopApprovalResponse {
-    String shopId;
-    boolean active;
-    Integer userLimit;
-    Integer userCount;
+  String shopId;
+  boolean active;
+  Integer userLimit;
+  Integer userCount;
 }
 

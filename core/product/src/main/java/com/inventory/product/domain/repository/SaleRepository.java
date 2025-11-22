@@ -9,6 +9,6 @@ import java.util.Optional;
 @Repository
 public interface SaleRepository extends MongoRepository<Sale, String> {
 
-    Optional<Sale> findByInvoiceNo(String invoiceNo);
+  Optional<Sale> findByInvoiceNo(String invoiceNo);
 }
 

@@ -7,14 +7,14 @@ import com.inventory.common.constants.ErrorCode;
  */
 public class ResourceExistsException extends BaseException {
 
-    public ResourceExistsException(String message) {
-        super(ErrorCode.DUPLICATE_RESOURCE, message);
-    }
+  public ResourceExistsException(String message) {
+    super(ErrorCode.DUPLICATE_RESOURCE, message);
+  }
 
-    public ResourceExistsException(String resourceName, String fieldName, Object fieldValue) {
-        super(
+  public ResourceExistsException(String resourceName, String fieldName, Object fieldValue) {
+    super(
             ErrorCode.DUPLICATE_RESOURCE,
             String.format("%s already exists with %s: %s", resourceName, fieldName, fieldValue)
-        );
-    }
+    );
+  }
 }

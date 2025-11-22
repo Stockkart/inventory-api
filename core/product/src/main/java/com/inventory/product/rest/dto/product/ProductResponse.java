@@ -8,10 +8,10 @@ import java.math.BigDecimal;
 @Value
 @Builder
 public class ProductResponse {
-    String id;
-    String name;
-    BigDecimal price;
-    String companyCode;
-    String productTypeCode;
+  String id;
+  String name;
+  BigDecimal price;
+  String companyCode;
+  String productTypeCode;
 }
 

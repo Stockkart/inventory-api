@@ -17,10 +17,10 @@ import java.util.Map;
 @Document(collection = "companies")
 public class Company {
 
-    @Id
-    private String companyCode;
-    private String name;
-    private Map<String, Object> metadata;
-    private Instant createdAt;
+  @Id
+  private String companyCode;
+  private String name;
+  private Map<String, Object> metadata;
+  private Instant createdAt;
 }
 

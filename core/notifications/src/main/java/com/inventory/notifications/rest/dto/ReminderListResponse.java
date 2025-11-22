@@ -8,6 +8,6 @@ import java.util.List;
 @Data
 @NoArgsConstructor
 public class ReminderListResponse {
-    private List<ReminderResponse> data;
+  private List<ReminderResponse> data;
 }
 

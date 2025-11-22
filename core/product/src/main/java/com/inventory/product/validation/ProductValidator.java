@@ -6,10 +6,10 @@ import org.springframework.util.StringUtils;
 
 @Component
 public class ProductValidator {
-    
-    public void validateBarcode(String barcode) {
-        if (!StringUtils.hasText(barcode)) {
-            throw new ValidationException("Product barcode is required");
-        }
+
+  public void validateBarcode(String barcode) {
+    if (!StringUtils.hasText(barcode)) {
+      throw new ValidationException("Product barcode is required");
     }
+  }
 }

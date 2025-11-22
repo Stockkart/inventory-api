@@ -4,7 +4,7 @@ import lombok.Data;
 
 @Data
 public class AcceptUserInviteRequest {
-    private String inviteId;
-    private String password;
+  private String inviteId;
+  private String password;
 }
 

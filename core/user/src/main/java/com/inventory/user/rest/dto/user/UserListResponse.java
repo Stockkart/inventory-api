@@ -7,7 +7,7 @@ import java.util.List;
 
 @Data
 public class UserListResponse {
-    @Singular("user")
-    List<UserDto> data;
+  @Singular("user")
+  List<UserDto> data;
 }
 

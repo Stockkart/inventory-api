@@ -6,7 +6,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class MedicalPlugin implements ProductPlugin {
 
-    public String getPluginId() {
-        return "MEDICAL-PLUGIN";
-    }
+  public String getPluginId() {
+    return "MEDICAL-PLUGIN";
+  }
 }

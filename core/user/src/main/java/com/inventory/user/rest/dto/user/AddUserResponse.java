@@ -4,7 +4,7 @@ import lombok.Data;
 
 @Data
 public class AddUserResponse {
-    String inviteId;
-    String message;
+  String inviteId;
+  String message;
 }
 

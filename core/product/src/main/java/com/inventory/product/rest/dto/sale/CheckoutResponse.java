@@ -10,18 +10,18 @@ import java.util.List;
 @Value
 @Builder
 public class CheckoutResponse {
-    String saleId;
-    String invoiceNo;
-    BigDecimal grandTotal;
-    @Singular("item")
-    List<SaleItemResponse> items;
+  String saleId;
+  String invoiceNo;
+  BigDecimal grandTotal;
+  @Singular("item")
+  List<SaleItemResponse> items;
 
-    @Value
-    @Builder
-    public static class SaleItemResponse {
-        String barcode;
-        Integer qty;
-        BigDecimal price;
-    }
+  @Value
+  @Builder
+  public static class SaleItemResponse {
+    String barcode;
+    Integer qty;
+    BigDecimal price;
+  }
 }
 
