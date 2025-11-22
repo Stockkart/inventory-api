@@ -1,10 +1,8 @@
 package com.inventory.user.rest.dto.auth;
 
-import lombok.Builder;
-import lombok.Value;
+import lombok.Data;
 
-@Value
-@Builder
+@Data
 public class AcceptInviteResponse {
     String userId;
     String role;

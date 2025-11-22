@@ -1,17 +1,14 @@
 package com.inventory.user.rest.dto.auth;
 
-import lombok.Builder;
-import lombok.Value;
+import lombok.Data;
 
-@Value
-@Builder
+@Data
 public class LoginResponse {
     String accessToken;
     String refreshToken;
     UserSummary user;
 
-    @Value
-    @Builder
+    @Data
     public static class UserSummary {
         String userId;
         String role;

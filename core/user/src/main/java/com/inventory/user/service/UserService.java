@@ -55,9 +55,9 @@ public class UserService {
                     .toList();
                     
             log.debug("Found {} users for shop: {}", users.size(), shopId);
-            return UserListResponse.builder()
-                    .data(users)
-                    .build();
+            UserListResponse response = new UserListResponse();
+            response.setData(users);
+            return response;
                     
         } catch (ValidationException e) {
             log.warn("Validation error in listUsers: {}", e.getMessage());
@@ -111,26 +111,25 @@ public class UserService {
             
             log.debug("Creating user invite for email: {} in shop: {}", request.getEmail(), shopId);
             
-            UserInvite invite = UserInvite.builder()
-                    .inviteId("invite-" + UUID.randomUUID())
-                    .shopId(shopId)
-                    .name(request.getName().trim())
-                    .email(request.getEmail().toLowerCase().trim())
-                    .role(request.getRole())
-                    .token(UUID.randomUUID().toString())
-                    .expiresAt(Instant.now().plusSeconds(7 * 24 * 3600)) // 7 days expiry
-                    .accepted(false)
-                    .build();
+            UserInvite invite = new UserInvite();
+            invite.setInviteId("invite-" + UUID.randomUUID());
+            invite.setShopId(shopId);
+            invite.setName(request.getName().trim());
+            invite.setEmail(request.getEmail().toLowerCase().trim());
+            invite.setRole(request.getRole());
+            invite.setToken(UUID.randomUUID().toString());
+            invite.setExpiresAt(Instant.now().plusSeconds(7 * 24 * 3600)); // 7 days expiry
+            invite.setAccepted(false);
                     
             userInviteRepository.save(invite);
             
             log.info("Created user invite with ID: {} for email: {} in shop: {}", 
                     invite.getInviteId(), request.getEmail(), shopId);
                     
-            return AddUserResponse.builder()
-                    .inviteId(invite.getInviteId())
-                    .message("Invite sent successfully")
-                    .build();
+            AddUserResponse response = new AddUserResponse();
+            response.setInviteId(invite.getInviteId());
+            response.setMessage("Invite sent successfully");
+            return response;
                     
         } catch (ValidationException | ResourceExistsException e) {
             log.warn("Failed to add user: {}", e.getMessage());
@@ -303,10 +302,10 @@ public class UserService {
                 log.debug("User with ID: {} is already deactivated", userId);
             }
             
-            return DeactivateUserResponse.builder()
-                    .userId(account.getUserId())
-                    .active(account.isActive())
-                    .build();
+            DeactivateUserResponse response = new DeactivateUserResponse();
+            response.setUserId(account.getUserId());
+            response.setActive(account.isActive());
+            return response;
                     
         } catch (ValidationException | ResourceNotFoundException e) {
             log.warn("Failed to deactivate user: {}", e.getMessage());

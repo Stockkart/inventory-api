@@ -1,10 +1,8 @@
 package com.inventory.user.rest.dto.user;
 
-import lombok.Builder;
-import lombok.Value;
+import lombok.Data;
 
-@Value
-@Builder
+@Data
 public class UserDto {
     String userId;
     String name;

@@ -10,12 +10,15 @@ import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.Named;
 import org.mapstruct.ReportingPolicy;
+import org.mapstruct.factory.Mappers;
 
 import java.time.Instant;
 
 @Mapper(componentModel = "spring", 
         unmappedTargetPolicy = ReportingPolicy.IGNORE)
 public interface UserMapper {
+
+    UserMapper INSTANCE = Mappers.getMapper(UserMapper.class);
 
     // UserAccount to DTO mappings
     UserDto toDto(UserAccount account);
@@ -32,46 +35,33 @@ public interface UserMapper {
     AcceptInviteResponse toAcceptInviteResponse(UserAccount account);
     
     // UserInvite to DTO mappings
-    default UserInviteDto toUserInviteDto(UserInvite invite) {
-        if (invite == null) {
-            return null;
-        }
-        return UserInviteDto.builder()
-                .inviteId(invite.getInviteId())
-                .email(invite.getEmail())
-                .name(invite.getName())
-                .role(invite.getRole())
-                .shopId(invite.getShopId())
-                .expiresAt(invite.getExpiresAt())
-                .accepted(invite.isAccepted())
-                .build();
-    }
+    @Mapping(target = "inviteId", source = "inviteId")
+    @Mapping(target = "email", source = "email")
+    @Mapping(target = "name", source = "name")
+    @Mapping(target = "role", source = "role")
+    @Mapping(target = "shopId", source = "shopId")
+    @Mapping(target = "expiresAt", source = "expiresAt")
+    @Mapping(target = "accepted", source = "accepted")
+    UserInviteDto toUserInviteDto(UserInvite invite);
     
     // DTO to Entity mappings with manual implementation for complex mappings
-    default UserAccount toUserAccount(UserInvite invite, String password) {
-        if (invite == null) {
-            return null;
-        }
-        
-        return UserAccount.builder()
-                .email(invite.getEmail())
-                .name(invite.getName())
-                .role(invite.getRole())
-                .shopId(invite.getShopId())
-                .password(password)
-                .active(true)
-                .inviteAccepted(true)
-                .build();
-    }
+    @Mapping(target = "email", source = "invite.email")
+    @Mapping(target = "name", source = "invite.name")
+    @Mapping(target = "role", source = "invite.role")
+    @Mapping(target = "shopId", source = "invite.shopId")
+    @Mapping(target = "password", source = "password")
+    @Mapping(target = "active", constant = "true")
+    @Mapping(target = "inviteAccepted", constant = "true")
+    @Mapping(target = "userId", ignore = true)
+    UserAccount toUserAccount(UserInvite invite, String password);
     
-    default UserInvite toUserInvite(String email, String name, String role, String shopId) {
-        return UserInvite.builder()
-                .email(email)
-                .name(name)
-                .role(role)
-                .shopId(shopId)
-                .accepted(false)
-                .build();
-    }
+    @Mapping(target = "email", source = "email")
+    @Mapping(target = "name", source = "name")
+    @Mapping(target = "role", source = "role")
+    @Mapping(target = "shopId", source = "shopId")
+    @Mapping(target = "accepted", constant = "false")
+    @Mapping(target = "inviteId", ignore = true)
+    @Mapping(target = "expiresAt", ignore = true)
+    UserInvite toUserInvite(String email, String name, String role, String shopId);
 }
 

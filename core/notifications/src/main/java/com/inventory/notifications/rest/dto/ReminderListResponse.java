@@ -1,15 +1,13 @@
 package com.inventory.notifications.rest.dto;
 
-import lombok.Builder;
-import lombok.Singular;
-import lombok.Value;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.util.List;
 
-@Value
-@Builder
+@Data
+@NoArgsConstructor
 public class ReminderListResponse {
-    @Singular("reminder")
-    List<ReminderResponse> data;
+    private List<ReminderResponse> data;
 }
 

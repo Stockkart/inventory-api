@@ -76,12 +76,12 @@ public class AuthService {
             
             log.info("User logged in successfully: {}", account.getUserId());
             
-            // Create login response using builder pattern
-            return LoginResponse.builder()
-                    .accessToken(UUID.randomUUID().toString())
-                    .refreshToken(UUID.randomUUID().toString())
-                    .user(userMapper.toUserSummary(account))
-                    .build();
+            // Create login response using mapper
+            LoginResponse response = new LoginResponse();
+            response.setAccessToken(UUID.randomUUID().toString());
+            response.setRefreshToken(UUID.randomUUID().toString());
+            response.setUser(userMapper.toUserSummary(account));
+            return response;
                     
         } catch (ValidationException | AuthenticationException e) {
             log.warn("Login failed: {}", e.getMessage());
