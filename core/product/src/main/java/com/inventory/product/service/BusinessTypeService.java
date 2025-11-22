@@ -5,6 +5,7 @@ import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceExistsException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.product.validation.BusinessTypeValidator;
 import com.inventory.product.domain.model.BusinessType;
 import com.inventory.product.domain.repository.BusinessTypeRepository;
 import com.inventory.product.rest.dto.business.BusinessTypeResponse;
@@ -27,12 +28,15 @@ public class BusinessTypeService {
 
     @Autowired
     private BusinessTypeMapper mapper;
+    
+    @Autowired
+    private BusinessTypeValidator businessTypeValidator;
 
     @Transactional
     public BusinessTypeResponse create(CreateBusinessTypeRequest request) {
         try {
-            // Input validation
-            validateCreateRequest(request);
+            // Input validation using BusinessTypeValidator
+            businessTypeValidator.validateCreateRequest(request);
             
             log.info("Creating new business type with code: {}", request.getCode());
             
@@ -127,31 +131,4 @@ public class BusinessTypeService {
             throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
         }
     }
-    
-    /**
-     * Validates the create business type request.
-     *
-     * @param request the create request to validate
-     * @throws ValidationException if the request is invalid
-     */
-    private void validateCreateRequest(CreateBusinessTypeRequest request) {
-        if (request == null) {
-            throw new ValidationException("Request cannot be null");
-        }
-        if (!StringUtils.hasText(request.getCode())) {
-            throw new ValidationException("Business type code is required");
-        }
-        if (!request.getCode().matches("^[A-Z0-9_]+$")) {
-            throw new ValidationException(
-                "Business type code can only contain uppercase letters, numbers, and underscores"
-            );
-        }
-        if (!StringUtils.hasText(request.getName())) {
-            throw new ValidationException("Business type name is required");
-        }
-        if (request.getName().length() > 100) {
-            throw new ValidationException("Business type name cannot exceed 100 characters");
-        }
-    }
 }
-

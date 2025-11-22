@@ -5,6 +5,7 @@ import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceExistsException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.product.validation.ShopValidator;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.rest.dto.shop.RegisterShopRequest;
@@ -32,29 +33,15 @@ public class ShopService {
 
     @Autowired
     private ShopMapper shopMapper;
+    
+    @Autowired
+    private ShopValidator shopValidator;
 
     @Transactional
     public ShopRegistrationResponse register(RegisterShopRequest request) {
         try {
-            // Input validation
-            if (request == null) {
-                throw new ValidationException("Shop registration request cannot be null");
-            }
-            if (!StringUtils.hasText(request.getName())) {
-                throw new ValidationException("Shop name is required");
-            }
-            if (!StringUtils.hasText(request.getLocation())) {
-                throw new ValidationException("Shop location is required");
-            }
-            if (request.getInitialAdmin() == null) {
-                throw new ValidationException("Initial admin details are required");
-            }
-            if (!StringUtils.hasText(request.getInitialAdmin().getEmail())) {
-                throw new ValidationException("Initial admin email is required");
-            }
-            if (!StringUtils.hasText(request.getInitialAdmin().getName())) {
-                throw new ValidationException("Initial admin name is required");
-            }
+            // Input validation using ShopValidator
+            shopValidator.validateRegisterRequest(request);
             
             // Check for existing shop with the same business ID or name
             if (StringUtils.hasText(request.getBusinessId())) {
@@ -100,13 +87,8 @@ public class ShopService {
     @Transactional
     public ShopApprovalResponse approve(String shopId, ShopApprovalRequest request) {
         try {
-            // Input validation
-            if (request == null) {
-                throw new ValidationException("Approval request cannot be null");
-            }
-            if (!StringUtils.hasText(shopId)) {
-                throw new ValidationException("Shop ID is required");
-            }
+            // Input validation using ShopValidator
+            shopValidator.validateApprovalRequest(shopId, request);
             
             log.debug("Processing shop approval for shop ID: {}", shopId);
             

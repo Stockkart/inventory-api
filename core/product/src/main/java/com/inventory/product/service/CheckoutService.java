@@ -22,12 +22,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.inventory.product.validation.CheckoutValidator;
 import org.springframework.util.CollectionUtils;
-import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import org.springframework.util.StringUtils;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -51,14 +54,16 @@ public class CheckoutService {
     @Autowired
     private SaleMapper saleMapper;
     
-    private static final int MAX_QUANTITY = 1000; // Maximum allowed quantity per item
-    private static final int MAX_ITEMS_PER_SALE = 100; // Maximum allowed items per sale
+    @Autowired
+    private CheckoutValidator checkoutValidator;
+    
+    // Moved to CheckoutValidator
 
     @Transactional
     public CheckoutResponse checkout(CheckoutRequest request) {
         try {
-            // Input validation
-            validateCheckoutRequest(request);
+            // Input validation using CheckoutValidator
+            checkoutValidator.validateCheckoutRequest(request);
             
             log.info("Processing checkout for shop: {}, user: {}", request.getShopId(), request.getUserId());
             
@@ -90,59 +95,39 @@ public class CheckoutService {
         }
     }
 
-    private void validateCheckoutRequest(CheckoutRequest request) {
-        if (request == null) {
-            throw new ValidationException("Checkout request cannot be null");
-        }
-        if (!StringUtils.hasText(request.getShopId())) {
-            throw new ValidationException("Shop ID is required");
-        }
-        if (!StringUtils.hasText(request.getUserId())) {
-            throw new ValidationException("User ID is required");
-        }
-        if (CollectionUtils.isEmpty(request.getItems())) {
-            throw new ValidationException("At least one item is required for checkout");
-        }
-        if (request.getItems().size() > MAX_ITEMS_PER_SALE) {
-            throw new ValidationException("Exceeded maximum number of items per sale (" + MAX_ITEMS_PER_SALE + ")");
-        }
-    }
+    // Validation moved to CheckoutValidator
     
     private List<SaleItem> processSaleItems(CheckoutRequest request, List<CheckoutRequest.CheckoutItem> items) {
-        return items.stream()
-            .map(item -> {
-                // Validate item
-                if (item.getQty() == null || item.getQty() <= 0) {
-                    throw new ValidationException("Invalid quantity for item: " + item.getBarcode());
-                }
-                if (item.getQty() > MAX_QUANTITY) {
-                    throw new ValidationException("Maximum quantity per item is " + MAX_QUANTITY);
-                }
-                
-                // Get product and validate stock
-                Product product = productRepository.findById(item.getBarcode())
-                        .orElseThrow(() -> new ResourceNotFoundException("Product", "barcode", item.getBarcode()));
-                
-                // Check stock availability from inventory
-                String shopId = request.getShopId();
-                if (shopId == null) {
-                    throw new ValidationException("Shop ID is required for stock validation");
-                }
-                
-                List<Inventory> inventories = inventoryRepository.findByShopIdAndProductId(shopId, product.getBarcode());
-                int availableStock = inventories.stream()
-                        .mapToInt(inv -> inv.getCurrentCount() != null ? inv.getCurrentCount() : 0)
-                        .sum();
-                
-                if (availableStock < item.getQty()) {
-                    throw new InsufficientStockException("Insufficient stock for product: " + product.getName(), 
-                            product.getBarcode(), availableStock, item.getQty());
-                }
-                
-                // Use mapper to create SaleItem
-                return saleMapper.toSaleItem(item, product);
-            })
-            .collect(Collectors.toList());
+        List<SaleItem> saleItems = new ArrayList<>();
+        for (CheckoutRequest.CheckoutItem item : items) {
+            // Validate item using CheckoutValidator
+            checkoutValidator.validateCheckoutItem(item);
+            
+            // Get product and validate stock
+            Product product = productRepository.findById(item.getBarcode())
+                    .orElseThrow(() -> new ResourceNotFoundException("Product", "barcode", item.getBarcode()));
+            
+            // Check stock availability from inventory
+            String shopId = request.getShopId();
+            if (shopId == null) {
+                throw new ValidationException("Shop ID is required for stock validation");
+            }
+            
+            List<Inventory> inventories = inventoryRepository.findByShopIdAndProductId(shopId, product.getBarcode());
+            int availableStock = inventories.stream()
+                    .mapToInt(inv -> inv.getCurrentCount() != null ? inv.getCurrentCount() : 0)
+                    .sum();
+            
+            if (availableStock < item.getQty()) {
+                throw new InsufficientStockException("Insufficient stock for product: " + product.getName(), 
+                        product.getBarcode(), availableStock, item.getQty());
+            }
+            
+            // Use mapper to create SaleItem
+            SaleItem saleItem = saleMapper.toSaleItem(item, product);
+            saleItems.add(saleItem);
+        }
+        return saleItems;
     }
     
     private BigDecimal calculateSubtotal(List<SaleItem> items) {

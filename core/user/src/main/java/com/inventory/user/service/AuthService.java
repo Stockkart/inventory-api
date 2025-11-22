@@ -14,6 +14,7 @@ import com.inventory.user.rest.dto.auth.AcceptInviteResponse;
 import com.inventory.user.rest.dto.auth.LoginRequest;
 import com.inventory.user.rest.dto.auth.LoginResponse;
 import com.inventory.user.rest.mapper.UserMapper;
+import com.inventory.user.validation.AuthValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
@@ -37,26 +38,21 @@ public class AuthService {
 
     @Autowired
     private UserMapper userMapper;
-    
+
     @Autowired
     private PasswordEncoder passwordEncoder;
+
+    @Autowired
+    private AuthValidator authValidator;
 
     @Transactional(readOnly = true)
     public LoginResponse login(LoginRequest request) {
         try {
-            // Input validation
-            if (request == null) {
-                throw new ValidationException("Login request cannot be null");
-            }
-            if (!StringUtils.hasText(request.getEmail())) {
-                throw new ValidationException("Email is required");
-            }
-            if (!StringUtils.hasText(request.getPassword())) {
-                throw new ValidationException("Password is required");
-            }
-            
+            // Validate login request
+            authValidator.validateLoginRequest(request);
+
             log.debug("Attempting login for email: {}", request.getEmail());
-            
+
             // Find user by email and verify password
             UserAccount account = userAccountRepository.findByEmail(request.getEmail())
                     .filter(user -> {
@@ -67,22 +63,22 @@ public class AuthService {
                         return passwordEncoder.matches(request.getPassword(), user.getPassword());
                     })
                     .orElseThrow(() -> new AuthenticationException(ErrorCode.INVALID_CREDENTIALS, "Invalid email or password"));
-            
+
             // Check if account is active
             if (!account.isActive()) {
                 log.warn("Login attempt for deactivated account: {}", request.getEmail());
                 throw new AuthenticationException(ErrorCode.ACCOUNT_DISABLED, "Account is deactivated");
             }
-            
+
             log.info("User logged in successfully: {}", account.getUserId());
-            
+
             // Create login response using mapper
             LoginResponse response = new LoginResponse();
             response.setAccessToken(UUID.randomUUID().toString());
             response.setRefreshToken(UUID.randomUUID().toString());
             response.setUser(userMapper.toUserSummary(account));
             return response;
-                    
+
         } catch (ValidationException | AuthenticationException e) {
             log.warn("Login failed: {}", e.getMessage());
             throw e;
@@ -98,37 +94,30 @@ public class AuthService {
     @Transactional
     public AcceptInviteResponse acceptAdminInvite(AcceptInviteRequest request) {
         try {
-            // Input validation
-            if (request == null) {
-                throw new ValidationException("Request cannot be null");
-            }
-            if (!StringUtils.hasText(request.getInviteToken())) {
-                throw new ValidationException("Invite token is required");
-            }
-            if (!StringUtils.hasText(request.getPassword())) {
-                throw new ValidationException("Password is required");
-            }
-            if (request.getPassword().length() < 8) {
-                throw new ValidationException("Password must be at least 8 characters long");
-            }
-            
+            // Validate request
+            authValidator.validateAcceptInviteRequest(request);
+
             log.debug("Processing admin invite acceptance for token: {}", request.getInviteToken());
-            
+
             // Find and validate invite
             UserInvite invite = userInviteRepository.findByToken(request.getInviteToken())
                     .orElseThrow(() -> new ResourceNotFoundException("Invite", "token", request.getInviteToken()));
-                    
+
+            // Validate invite
+            authValidator.validateInvite(invite);
+
             // Check if invite is already accepted
             if (invite.isAccepted()) {
                 log.warn("Attempted to use already accepted invite token: {}", request.getInviteToken());
                 throw new ValidationException("This invite has already been used");
             }
-            
+
             // Check if invite is expired
             if (invite.getExpiresAt() != null && invite.getExpiresAt().isBefore(Instant.now())) {
                 log.warn("Attempted to use expired invite token: {}", request.getInviteToken());
                 throw new ValidationException("This invite has expired");
             }
+
             
             // Mark invite as accepted
             invite.setAccepted(true);

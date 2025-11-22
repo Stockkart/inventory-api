@@ -4,6 +4,7 @@ import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.product.validation.InventoryValidator;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Product;
 import com.inventory.product.domain.repository.InventoryRepository;
@@ -39,22 +40,14 @@ public class InventoryService {
 
     @Autowired
     private InventoryMapper inventoryMapper;
+    
+    @Autowired
+    private InventoryValidator inventoryValidator;
 
     public InventoryReceiptResponse receive(ReceiveInventoryRequest request) {
         try {
-            // Input validation
-            if (request.getBarcode() == null || request.getBarcode().trim().isEmpty()) {
-                throw new ValidationException("Product barcode is required");
-            }
-            if (request.getCount() <= 0) {
-                throw new ValidationException("Count must be greater than zero");
-            }
-            if (request.getShopId() == null || request.getShopId().trim().isEmpty()) {
-                throw new ValidationException("Shop ID is required");
-            }
-            if (request.getUserId() == null || request.getUserId().trim().isEmpty()) {
-                throw new ValidationException("User ID is required");
-            }
+            // Input validation using InventoryValidator
+            inventoryValidator.validateReceiveRequest(request);
 
             // Find or create product
             Product product = productRepository.findById(request.getBarcode())
@@ -127,9 +120,8 @@ public class InventoryService {
 
     public InventoryListResponse list(String shopId) {
         try {
-            if (shopId == null || shopId.trim().isEmpty()) {
-                throw new ValidationException("Shop ID is required");
-            }
+            // Validate shopId using InventoryValidator
+            inventoryValidator.validateShopId(shopId);
             
             List<Inventory> inventories = inventoryRepository.findByShopId(shopId);
             
@@ -158,9 +150,8 @@ public class InventoryService {
 
     public InventoryDetailResponse getLot(String lotId) {
         try {
-            if (lotId == null || lotId.trim().isEmpty()) {
-                throw new ValidationException("Lot ID is required");
-            }
+            // Validate lotId using InventoryValidator
+            inventoryValidator.validateLotId(lotId);
             
             // Find inventory by ID (using lotId as the ID since it's the @Id field)
             Inventory inventory = inventoryRepository.findById(lotId)

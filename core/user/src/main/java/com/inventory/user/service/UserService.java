@@ -10,6 +10,8 @@ import com.inventory.user.domain.model.UserInvite;
 import com.inventory.user.domain.repository.UserAccountRepository;
 import com.inventory.user.domain.repository.UserInviteRepository;
 import com.inventory.user.rest.dto.user.AcceptUserInviteRequest;
+import com.inventory.user.rest.dto.auth.AcceptInviteRequest;
+import com.inventory.user.validation.AuthValidator;
 import com.inventory.user.rest.dto.user.AddUserRequest;
 import com.inventory.user.rest.dto.user.AddUserResponse;
 import com.inventory.user.rest.dto.user.DeactivateUserResponse;
@@ -17,6 +19,7 @@ import com.inventory.user.rest.dto.user.UpdateUserRequest;
 import com.inventory.user.rest.dto.user.UserDto;
 import com.inventory.user.rest.dto.user.UserListResponse;
 import com.inventory.user.rest.mapper.UserMapper;
+import com.inventory.user.validation.UserValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
@@ -43,11 +46,15 @@ public class UserService {
     @Autowired
     private UserMapper userMapper;
 
+    @Autowired
+    private UserValidator userValidator;
+    
+    @Autowired
+    private AuthValidator authValidator;
+
     public UserListResponse listUsers(String shopId) {
         try {
-            if (!StringUtils.hasText(shopId)) {
-                throw new ValidationException("Shop ID is required");
-            }
+            userValidator.validateDeactivateRequest(shopId, ""); // Only validate shopId
             
             log.debug("Retrieving users for shop: {}", shopId);
             List<UserDto> users = userAccountRepository.findByShopId(shopId).stream()
@@ -73,22 +80,7 @@ public class UserService {
 
     public AddUserResponse addUser(String shopId, AddUserRequest request) {
         try {
-            // Input validation
-            if (!StringUtils.hasText(shopId)) {
-                throw new ValidationException("Shop ID is required");
-            }
-            if (request == null) {
-                throw new ValidationException("Request body is required");
-            }
-            if (!StringUtils.hasText(request.getEmail())) {
-                throw new ValidationException("Email is required");
-            }
-            if (!StringUtils.hasText(request.getName())) {
-                throw new ValidationException("Name is required");
-            }
-            if (request.getRole() == null) {
-                throw new ValidationException("Role is required");
-            }
+            userValidator.validateAddUserRequest(shopId, request);
             
             // Check if user with this email already exists in the shop
             boolean userExists = userAccountRepository.findByEmail(request.getEmail())
@@ -148,32 +140,17 @@ public class UserService {
 
     public UserDto acceptInvite(String inviteId, AcceptUserInviteRequest request) {
         try {
-            if (!StringUtils.hasText(inviteId)) {
-                throw new ValidationException("Invite ID is required");
-            }
-            if (request == null) {
-                throw new ValidationException("Request body is required");
-            }
-            if (!StringUtils.hasText(request.getPassword())) {
-                throw new ValidationException("Password is required");
-            }
-            if (request.getPassword().length() < 8) {
-                throw new ValidationException("Password must be at least 8 characters long");
-            }
-            
             log.debug("Processing invite acceptance for invite ID: {}", inviteId);
+            
+            // Validate request using UserValidator
+            userValidator.validateAcceptInviteRequest(inviteId, request);
             
             // Find and validate the invite
             UserInvite invite = userInviteRepository.findById(inviteId)
                     .orElseThrow(() -> new ResourceNotFoundException("Invite", "id", inviteId));
-                    
-            if (invite.isAccepted()) {
-                throw new ValidationException("This invite has already been accepted");
-            }
             
-            if (invite.getExpiresAt() != null && invite.getExpiresAt().isBefore(Instant.now())) {
-                throw new ValidationException("This invite has expired");
-            }
+            // Validate invite using AuthValidator
+            authValidator.validateInvite(invite);
             
             // Check if user already exists with this email
             userAccountRepository.findByEmail(invite.getEmail())
@@ -212,15 +189,7 @@ public class UserService {
 
     public UserDto updateUser(String shopId, String userId, UpdateUserRequest request) {
         try {
-            if (!StringUtils.hasText(shopId)) {
-                throw new ValidationException("Shop ID is required");
-            }
-            if (!StringUtils.hasText(userId)) {
-                throw new ValidationException("User ID is required");
-            }
-            if (request == null) {
-                throw new ValidationException("Request body is required");
-            }
+            userValidator.validateUpdateUserRequest(shopId, userId, request);
             
             log.debug("Updating user with ID: {} in shop: {}", userId, shopId);
             
@@ -268,30 +237,23 @@ public class UserService {
 
     public DeactivateUserResponse deactivate(String shopId, String userId) {
         try {
-            if (!StringUtils.hasText(shopId)) {
-                throw new ValidationException("Shop ID is required");
-            }
-            if (!StringUtils.hasText(userId)) {
-                throw new ValidationException("User ID is required");
-            }
+            userValidator.validateDeactivateRequest(shopId, userId);
             
             log.debug("Deactivating user with ID: {} in shop: {}", userId, shopId);
             
-            // Find the user and verify they belong to the specified shop
+            // Find the user
             UserAccount account = userAccountRepository.findById(userId)
-                    .filter(user -> shopId.equals(user.getShopId()))
                     .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId));
             
-            // Prevent deactivating the last admin
+            // Verify user belongs to the specified shop and check admin status
+            userValidator.validateUserBelongsToShop(account, shopId, userId);
+            
+            // Check if this is the last admin
             if (account.isActive() && "ADMIN".equals(account.getRole())) {
-                // Simplified check - in a real app, you'd want to implement a more efficient count query
                 long adminCount = userAccountRepository.findByShopId(shopId).stream()
                         .filter(u -> "ADMIN".equals(u.getRole()) && u.isActive())
                         .count();
-                
-                if (adminCount <= 1) {
-                    throw new ValidationException("Cannot deactivate the last admin user in the shop");
-                }
+                userValidator.validateLastAdminDeactivation(account, adminCount);
             }
             
             if (account.isActive()) {

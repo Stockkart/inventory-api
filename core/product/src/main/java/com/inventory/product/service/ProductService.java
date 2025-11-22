@@ -4,6 +4,7 @@ import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.product.validation.ProductValidator;
 import com.inventory.pluginengine.PluginManager;
 import com.inventory.product.domain.model.Product;
 import com.inventory.product.domain.repository.ProductRepository;
@@ -29,6 +30,9 @@ public class ProductService {
 
     @Autowired
     private ProductRepository productRepository;
+    
+    @Autowired
+    private ProductValidator productValidator;
 
     @Autowired
     private ProductMapper productMapper;
@@ -55,9 +59,8 @@ public class ProductService {
 
     public ProductResponse getProduct(String barcode) {
         try {
-            if (barcode == null || barcode.trim().isEmpty()) {
-                throw new ValidationException("Product barcode is required");
-            }
+            // Validate barcode using ProductValidator
+            productValidator.validateBarcode(barcode);
             
             log.debug("Retrieving product with barcode: {}", barcode);
             Product product = productRepository.findById(barcode)
