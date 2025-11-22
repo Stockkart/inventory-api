@@ -4,6 +4,8 @@ import com.inventory.user.rest.dto.auth.AcceptInviteRequest;
 import com.inventory.user.rest.dto.auth.AcceptInviteResponse;
 import com.inventory.user.rest.dto.auth.LoginRequest;
 import com.inventory.user.rest.dto.auth.LoginResponse;
+import com.inventory.user.rest.dto.auth.SignupRequest;
+import com.inventory.user.rest.dto.auth.SignupResponse;
 import com.inventory.user.service.AuthService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -22,6 +24,11 @@ public class AuthController {
   @PostMapping("/login")
   public ResponseEntity<LoginResponse> login(@RequestBody LoginRequest request) {
     return ResponseEntity.ok(authService.login(request));
+  }
+
+  @PostMapping("/signup")
+  public ResponseEntity<SignupResponse> signup(@RequestBody SignupRequest request) {
+    return ResponseEntity.ok(authService.signup(request));
   }
 
   @PostMapping("/accept-invite")

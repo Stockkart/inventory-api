@@ -17,6 +17,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,6 +44,9 @@ public class UserService {
 
   @Autowired
   private AuthValidator authValidator;
+
+  @Autowired
+  private PasswordEncoder passwordEncoder;
 
   public UserListResponse listUsers(String shopId) {
     try {
@@ -156,9 +160,8 @@ public class UserService {
 
       log.info("Creating user account for accepted invite: {}", inviteId);
 
-      // Create the user account using mapper
-      UserAccount account = userMapper.toUserAccount(invite, request.getPassword());
-      account.setUserId("user-" + UUID.randomUUID());
+      // Create the user account using mapper (userId set automatically via @AfterMapping)
+      UserAccount account = userMapper.toUserAccount(invite, passwordEncoder, request.getPassword());
       account.setEmail(invite.getEmail().toLowerCase().trim());
 
       userAccountRepository.save(account);

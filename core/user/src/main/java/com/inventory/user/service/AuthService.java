@@ -13,6 +13,8 @@ import com.inventory.user.rest.dto.auth.AcceptInviteRequest;
 import com.inventory.user.rest.dto.auth.AcceptInviteResponse;
 import com.inventory.user.rest.dto.auth.LoginRequest;
 import com.inventory.user.rest.dto.auth.LoginResponse;
+import com.inventory.user.rest.dto.auth.SignupRequest;
+import com.inventory.user.rest.dto.auth.SignupResponse;
 import com.inventory.user.rest.mapper.UserMapper;
 import com.inventory.user.validation.AuthValidator;
 import lombok.extern.slf4j.Slf4j;
@@ -23,7 +25,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.util.UUID;
 
 @Service
 @Slf4j
@@ -71,11 +72,12 @@ public class AuthService {
 
       log.info("User logged in successfully: {}", account.getUserId());
 
-      // Create login response using mapper
-      LoginResponse response = new LoginResponse();
-      response.setAccessToken(UUID.randomUUID().toString());
-      response.setRefreshToken(UUID.randomUUID().toString());
-      response.setUser(userMapper.toUserSummary(account));
+      // Create login response using mapper (tokens set automatically via @AfterMapping and saved to account)
+      LoginResponse response = userMapper.toLoginResponse(account, request.getDeviceId());
+      
+      // Save account with new token
+      userAccountRepository.save(account);
+      
       return response;
 
     } catch (ValidationException | AuthenticationException e) {
@@ -125,18 +127,12 @@ public class AuthService {
       // Check if user already exists
       UserAccount account = userAccountRepository.findByEmail(invite.getEmail())
               .orElseGet(() -> {
-                // Create new user account from invite
-                UserAccount newAccount = userMapper.toUserAccount(invite, passwordEncoder.encode(request.getPassword()));
-                newAccount.setUserId("user-" + UUID.randomUUID());
-                return newAccount;
+                // Create new user account from invite using mapper
+                return userMapper.toUserAccount(invite, passwordEncoder, request.getPassword());
               });
 
-      // Update account details
-      account.setName(invite.getName());
-      account.setPassword(passwordEncoder.encode(request.getPassword()));
-      account.setActive(true);
-      account.setInviteAccepted(true);
-      account.setUpdatedAt(Instant.now());
+      // Update account details using mapper
+      userMapper.updateUserAccountFromInvite(account, invite, passwordEncoder, request.getPassword());
 
       userAccountRepository.save(account);
 
@@ -153,6 +149,47 @@ public class AuthService {
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Error processing invite acceptance");
     } catch (Exception e) {
       log.error("Unexpected error while accepting admin invite: {}", e.getMessage(), e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
+    }
+  }
+
+  @Transactional
+  public SignupResponse signup(SignupRequest request) {
+    try {
+      // Validate signup request
+      authValidator.validateSignupRequest(request);
+
+      log.debug("Attempting signup for email: {}", request.getEmail());
+
+      // Check if user already exists
+      if (userAccountRepository.findByEmail(request.getEmail()).isPresent()) {
+        log.warn("Signup attempt with existing email: {}", request.getEmail());
+        throw new ValidationException("User with this email already exists");
+      }
+
+      // Map SignupRequest to UserAccount using mapper (with password encoder context)
+      UserAccount account = userMapper.toUserAccount(request, passwordEncoder);
+
+      userAccountRepository.save(account);
+
+      log.info("User signed up successfully: {}", account.getUserId());
+
+      // Create signup response using mapper (tokens set automatically via @AfterMapping and saved to account)
+      SignupResponse response = userMapper.toSignupResponse(account, request.getDeviceId());
+      
+      // Save account with new token
+      userAccountRepository.save(account);
+      
+      return response;
+
+    } catch (ValidationException e) {
+      log.warn("Signup failed: {}", e.getMessage());
+      throw e;
+    } catch (DataAccessException e) {
+      log.error("Database error during signup for email {}: {}", request != null ? request.getEmail() : "null", e.getMessage(), e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Error during signup");
+    } catch (Exception e) {
+      log.error("Unexpected error during signup: {}", e.getMessage(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
     }
   }

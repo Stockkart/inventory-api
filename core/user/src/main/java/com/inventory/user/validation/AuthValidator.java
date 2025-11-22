@@ -4,6 +4,7 @@ import com.inventory.common.exception.ValidationException;
 import com.inventory.user.domain.model.UserInvite;
 import com.inventory.user.rest.dto.auth.AcceptInviteRequest;
 import com.inventory.user.rest.dto.auth.LoginRequest;
+import com.inventory.user.rest.dto.auth.SignupRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -45,6 +46,24 @@ public class AuthValidator {
     }
     if (request.getPassword().length() < 8) {
       throw new ValidationException("Password must be at least 8 characters long");
+    }
+  }
+
+  public void validateSignupRequest(SignupRequest request) {
+    if (request == null) {
+      throw new ValidationException("Signup request cannot be null");
+    }
+    if (!StringUtils.hasText(request.getEmail())) {
+      throw new ValidationException("Email is required");
+    }
+    if (!StringUtils.hasText(request.getPassword())) {
+      throw new ValidationException("Password is required");
+    }
+    if (request.getPassword().length() < 8) {
+      throw new ValidationException("Password must be at least 8 characters long");
+    }
+    if (!StringUtils.hasText(request.getName())) {
+      throw new ValidationException("Name is required");
     }
   }
 }
