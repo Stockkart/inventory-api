@@ -10,5 +10,7 @@ import java.util.List;
 public interface InventoryRepository extends MongoRepository<Inventory, String> {
 
     List<Inventory> findByShopId(String shopId);
+    
+    List<Inventory> findByShopIdAndProductId(String shopId, String productId);
 }
 

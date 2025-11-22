@@ -9,6 +9,7 @@
         <module>analytics</module>
         <module>user</module>
         <module>notifications</module>
+        <module>common</module>
     </modules>
 
     <properties>
