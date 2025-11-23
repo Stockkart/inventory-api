@@ -1,6 +1,20 @@
-version: '3.8'
-
 services:
+  app:
+    build:
+      context: .           # folder where your Dockerfile is
+      dockerfile: Dockerfile
+    image: 007sawansloka/inventory-backend:latest
+    container_name: inventory-backend
+    restart: unless-stopped
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      SPRING_DATA_MONGODB_URI: mongodb://admin:admin123@mongodb:27017/inventory?authSource=admin
+      CROSS_ORIGIN_URL: http://localhost:3000
+    ports:
+      - "8080:8080"
+
   mongodb:
     image: mongo:7.0
     container_name: inventory-mongodb
@@ -26,4 +40,3 @@ volumes:
     driver: local
   mongodb_config:
     driver: local
-
