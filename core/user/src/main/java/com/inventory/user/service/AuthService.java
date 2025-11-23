@@ -13,9 +13,12 @@ import com.inventory.user.rest.dto.auth.AcceptInviteRequest;
 import com.inventory.user.rest.dto.auth.AcceptInviteResponse;
 import com.inventory.user.rest.dto.auth.LoginRequest;
 import com.inventory.user.rest.dto.auth.LoginResponse;
+import com.inventory.user.rest.dto.auth.LogoutResponse;
 import com.inventory.user.rest.dto.auth.SignupRequest;
 import com.inventory.user.rest.dto.auth.SignupResponse;
+import com.inventory.user.rest.dto.auth.UserResponse;
 import com.inventory.user.rest.mapper.UserMapper;
+import com.inventory.user.service.TokenValidationService;
 import com.inventory.user.validation.AuthValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -190,6 +193,79 @@ public class AuthService {
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Error during signup");
     } catch (Exception e) {
       log.error("Unexpected error during signup: {}", e.getMessage(), e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
+    }
+  }
+
+  @Transactional
+  public LogoutResponse logout(String userId, String accessToken) {
+    try {
+      // Validate inputs
+      if (userId == null || userId.trim().isEmpty()) {
+        throw new ValidationException("User ID is required");
+      }
+      if (accessToken == null || accessToken.trim().isEmpty()) {
+        throw new ValidationException("Access token is required");
+      }
+
+      log.debug("Processing logout for user: {}", userId);
+
+      // Find user account
+      UserAccount account = userAccountRepository.findById(userId)
+              .orElseThrow(() -> new ResourceNotFoundException("User", "userId", userId));
+
+      // Remove the token using UserAccount method (using accessToken to find and remove)
+      String removedDeviceId = account.removeToken(null, accessToken);
+
+      if (removedDeviceId == null) {
+        log.warn("No matching token found for logout - userId: {}", userId);
+        throw new ValidationException("No matching token found to logout");
+      }
+
+      // Save account with updated tokens
+      userAccountRepository.save(account);
+
+      log.info("User logged out successfully: {}, deviceId: {}", account.getUserId(), removedDeviceId);
+
+      // Create logout response using mapper
+      return userMapper.toLogoutResponse(removedDeviceId);
+
+    } catch (ValidationException | ResourceNotFoundException e) {
+      log.warn("Logout failed: {}", e.getMessage());
+      throw e;
+    } catch (DataAccessException e) {
+      log.error("Database error during logout for userId {}: {}", userId, e.getMessage(), e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Error during logout");
+    } catch (Exception e) {
+      log.error("Unexpected error during logout: {}", e.getMessage(), e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
+    }
+  }
+
+  @Autowired
+  private TokenValidationService tokenValidationService;
+
+  @Transactional(readOnly = true)
+  public UserResponse getCurrentUser(String accessToken) {
+    try {
+      log.debug("Getting current user for token");
+
+      // Validate token and get user account
+      UserAccount account = tokenValidationService.validateToken(accessToken);
+
+      log.info("Retrieved current user: {}", account.getUserId());
+
+      // Map to response using mapper
+      return userMapper.toUserResponse(account);
+
+    } catch (AuthenticationException e) {
+      log.warn("Failed to get current user: {}", e.getMessage());
+      throw e;
+    } catch (DataAccessException e) {
+      log.error("Database error while getting current user: {}", e.getMessage(), e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Error retrieving user information");
+    } catch (Exception e) {
+      log.error("Unexpected error while getting current user: {}", e.getMessage(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
     }
   }

@@ -1,5 +1,6 @@
 package com.inventory.product.rest.controller;
 
+import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.product.rest.dto.inventory.InventoryDetailResponse;
 import com.inventory.product.rest.dto.inventory.InventoryListResponse;
 import com.inventory.product.rest.dto.inventory.InventoryReceiptResponse;
@@ -17,18 +18,18 @@ public class InventoryController {
   private InventoryService inventoryService;
 
   @PostMapping("/inventory/receive")
-  public ResponseEntity<InventoryReceiptResponse> receive(@RequestBody ReceiveInventoryRequest request) {
-    return ResponseEntity.ok(inventoryService.receive(request));
+  public ResponseEntity<ApiResponse<InventoryReceiptResponse>> receive(@RequestBody ReceiveInventoryRequest request) {
+    return ResponseEntity.ok(ApiResponse.success(inventoryService.receive(request)));
   }
 
   @GetMapping("/inventory")
-  public ResponseEntity<InventoryListResponse> list(@RequestParam String shopId) {
-    return ResponseEntity.ok(inventoryService.list(shopId));
+  public ResponseEntity<ApiResponse<InventoryListResponse>> list(@RequestParam String shopId) {
+    return ResponseEntity.ok(ApiResponse.success(inventoryService.list(shopId)));
   }
 
   @GetMapping("/inventory/{lotId}")
-  public ResponseEntity<InventoryDetailResponse> getLot(@PathVariable String lotId) {
-    return ResponseEntity.ok(inventoryService.getLot(lotId));
+  public ResponseEntity<ApiResponse<InventoryDetailResponse>> getLot(@PathVariable String lotId) {
+    return ResponseEntity.ok(ApiResponse.success(inventoryService.getLot(lotId)));
   }
 }
 

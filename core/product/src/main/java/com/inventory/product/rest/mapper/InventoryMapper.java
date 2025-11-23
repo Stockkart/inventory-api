@@ -8,10 +8,11 @@ import com.inventory.product.rest.dto.inventory.InventorySummaryDto;
 import com.inventory.product.rest.dto.inventory.ReceiveInventoryRequest;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
+import org.mapstruct.ReportingPolicy;
 
 import java.time.Instant;
 
-@Mapper(componentModel = "spring")
+@Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.IGNORE)
 public interface InventoryMapper {
 
   @Mapping(target = "lotId", expression = "java(\"lot-\" + java.util.UUID.randomUUID().toString())")

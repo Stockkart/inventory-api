@@ -5,8 +5,9 @@ import com.inventory.product.rest.dto.business.BusinessTypeResponse;
 import com.inventory.product.rest.dto.business.CreateBusinessTypeRequest;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
+import org.mapstruct.ReportingPolicy;
 
-@Mapper(componentModel = "spring")
+@Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.IGNORE)
 public interface BusinessTypeMapper {
 
   @Mapping(target = "id", source = "code")

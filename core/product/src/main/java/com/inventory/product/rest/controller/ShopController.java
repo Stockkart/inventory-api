@@ -1,10 +1,12 @@
 package com.inventory.product.rest.controller;
 
+import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.product.rest.dto.shop.RegisterShopRequest;
 import com.inventory.product.rest.dto.shop.ShopApprovalRequest;
 import com.inventory.product.rest.dto.shop.ShopApprovalResponse;
 import com.inventory.product.rest.dto.shop.ShopRegistrationResponse;
 import com.inventory.product.service.ShopService;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -17,14 +19,16 @@ public class ShopController {
   private ShopService shopService;
 
   @PostMapping("/api/v1/shops/register")
-  public ResponseEntity<ShopRegistrationResponse> register(@RequestBody RegisterShopRequest request) {
-    return ResponseEntity.ok(shopService.register(request));
+  public ResponseEntity<ApiResponse<ShopRegistrationResponse>> register(@RequestBody RegisterShopRequest request,
+                                                                        HttpServletRequest httpRequest) {
+    String userId = (String) httpRequest.getAttribute("userId");
+    return ResponseEntity.ok(ApiResponse.success(shopService.register(request, userId)));
   }
 
   @PostMapping("/admin/shops/{shopId}/approve")
-  public ResponseEntity<ShopApprovalResponse> approve(@PathVariable String shopId,
+  public ResponseEntity<ApiResponse<ShopApprovalResponse>> approve(@PathVariable String shopId,
                                                       @RequestBody ShopApprovalRequest request) {
-    return ResponseEntity.ok(shopService.approve(shopId, request));
+    return ResponseEntity.ok(ApiResponse.success(shopService.approve(shopId, request)));
   }
 }
 

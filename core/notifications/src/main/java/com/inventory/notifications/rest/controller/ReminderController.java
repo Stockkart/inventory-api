@@ -1,5 +1,6 @@
 package com.inventory.notifications.rest.controller;
 
+import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.notifications.rest.dto.ReminderListResponse;
 import com.inventory.notifications.rest.dto.ReminderResponse;
 import com.inventory.notifications.rest.dto.SnoozeReminderRequest;
@@ -16,14 +17,14 @@ public class ReminderController {
   private ReminderService reminderService;
 
   @GetMapping
-  public ResponseEntity<ReminderListResponse> list(@RequestParam String shopId) {
-    return ResponseEntity.ok(reminderService.list(shopId));
+  public ResponseEntity<ApiResponse<ReminderListResponse>> list(@RequestParam String shopId) {
+    return ResponseEntity.ok(ApiResponse.success(reminderService.list(shopId)));
   }
 
   @PostMapping("/{id}/snooze")
-  public ResponseEntity<ReminderResponse> snooze(@PathVariable String id,
+  public ResponseEntity<ApiResponse<ReminderResponse>> snooze(@PathVariable String id,
                                                  @RequestBody SnoozeReminderRequest request) {
-    return ResponseEntity.ok(reminderService.snooze(id, request));
+    return ResponseEntity.ok(ApiResponse.success(reminderService.snooze(id, request)));
   }
 }
 

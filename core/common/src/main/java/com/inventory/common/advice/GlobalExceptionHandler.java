@@ -1,7 +1,8 @@
 package com.inventory.common.advice;
 
 import com.inventory.common.constants.ErrorCode;
-import com.inventory.common.dto.response.ErrorResponse;
+import com.inventory.common.dto.response.ApiError;
+import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ValidationException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -22,7 +23,9 @@ import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -33,122 +36,109 @@ import java.util.stream.Collectors;
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
   @ExceptionHandler(BaseException.class)
-  public ResponseEntity<ErrorResponse> handleBaseException(BaseException ex, HttpServletRequest request) {
+  public ResponseEntity<ApiResponse<ApiError>> handleBaseException(BaseException ex, HttpServletRequest request) {
     log.error("Business exception: {}", ex.getMessage(), ex);
     ErrorCode errorCode = ex.getErrorCode();
-    ErrorResponse response = new ErrorResponse(
-            LocalDateTime.now(),
-            errorCode.getHttpStatus().value(),
-            errorCode.getHttpStatus().getReasonPhrase(),
-            errorCode.getCode(),
-            ex.getMessage(),
-            request.getRequestURI(),
-            null
-    );
+    ApiError apiError = ApiError.builder()
+        .message(ex.getMessage())
+        .status(errorCode.getHttpStatus().value())
+        .build();
+    ApiResponse<ApiError> response = ApiResponse.error(ex.getMessage());
+    response.setData(apiError);
     return new ResponseEntity<>(response, errorCode.getHttpStatus());
   }
 
   @ExceptionHandler(ValidationException.class)
-  public ResponseEntity<ErrorResponse> handleValidationException(ValidationException ex, HttpServletRequest request) {
+  public ResponseEntity<ApiResponse<ApiError>> handleValidationException(ValidationException ex, HttpServletRequest request) {
     log.error("Validation exception: {}", ex.getMessage(), ex);
-    List<ErrorResponse.FieldError> fieldErrors = ex.getValidationErrors().stream()
-            .map(error -> new ErrorResponse.FieldError("", error, null))
-            .collect(Collectors.toList());
+    Map<String, String[]> errors = new HashMap<>();
+    String[] errorMessages = ex.getValidationErrors().toArray(new String[0]);
+    errors.put("general", errorMessages);
 
-    ErrorResponse response = new ErrorResponse(
-            LocalDateTime.now(),
-            HttpStatus.BAD_REQUEST.value(),
-            HttpStatus.BAD_REQUEST.getReasonPhrase(),
-            ErrorCode.VALIDATION_ERROR.getCode(),
-            "Validation failed",
-            request.getRequestURI(),
-            fieldErrors
-    );
+    ApiError apiError = ApiError.builder()
+        .message("Validation failed")
+        .status(HttpStatus.BAD_REQUEST.value())
+        .errors(errors)
+        .build();
+    ApiResponse<ApiError> response = ApiResponse.error("Validation failed");
+    response.setData(apiError);
     return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
   }
 
   @ExceptionHandler(AuthenticationException.class)
-  public ResponseEntity<ErrorResponse> handleAuthenticationException(AuthenticationException ex, HttpServletRequest request) {
+  public ResponseEntity<ApiResponse<ApiError>> handleAuthenticationException(AuthenticationException ex, HttpServletRequest request) {
     log.error("Authentication exception: {}", ex.getMessage(), ex);
-    ErrorResponse response = new ErrorResponse(
-            LocalDateTime.now(),
-            HttpStatus.UNAUTHORIZED.value(),
-            HttpStatus.UNAUTHORIZED.getReasonPhrase(),
-            ErrorCode.UNAUTHORIZED.getCode(),
-            ex.getMessage(),
-            request.getRequestURI(),
-            null
-    );
+    ApiError apiError = ApiError.builder()
+        .message(ex.getMessage())
+        .status(HttpStatus.UNAUTHORIZED.value())
+        .build();
+    ApiResponse<ApiError> response = ApiResponse.error(ex.getMessage());
+    response.setData(apiError);
     return new ResponseEntity<>(response, HttpStatus.UNAUTHORIZED);
   }
 
   @ExceptionHandler(BadCredentialsException.class)
-  public ResponseEntity<ErrorResponse> handleBadCredentialsException(BadCredentialsException ex, HttpServletRequest request) {
+  public ResponseEntity<ApiResponse<ApiError>> handleBadCredentialsException(BadCredentialsException ex, HttpServletRequest request) {
     log.error("Bad credentials: {}", ex.getMessage(), ex);
-    ErrorResponse response = new ErrorResponse(
-            LocalDateTime.now(),
-            HttpStatus.UNAUTHORIZED.value(),
-            HttpStatus.UNAUTHORIZED.getReasonPhrase(),
-            ErrorCode.INVALID_CREDENTIALS.getCode(),
-            "Invalid username or password",
-            request.getRequestURI(),
-            null
-    );
+    ApiError apiError = ApiError.builder()
+        .message("Invalid username or password")
+        .status(HttpStatus.UNAUTHORIZED.value())
+        .build();
+    ApiResponse<ApiError> response = ApiResponse.error("Invalid username or password");
+    response.setData(apiError);
     return new ResponseEntity<>(response, HttpStatus.UNAUTHORIZED);
   }
 
   @ExceptionHandler(AccessDeniedException.class)
-  public ResponseEntity<ErrorResponse> handleAccessDeniedException(AccessDeniedException ex, HttpServletRequest request) {
+  public ResponseEntity<ApiResponse<ApiError>> handleAccessDeniedException(AccessDeniedException ex, HttpServletRequest request) {
     log.error("Access denied: {}", ex.getMessage(), ex);
-    ErrorResponse response = new ErrorResponse(
-            LocalDateTime.now(),
-            HttpStatus.FORBIDDEN.value(),
-            HttpStatus.FORBIDDEN.getReasonPhrase(),
-            ErrorCode.ACCESS_DENIED.getCode(),
-            "You don't have permission to access this resource",
-            request.getRequestURI(),
-            null
-    );
+    ApiError apiError = ApiError.builder()
+        .message("You don't have permission to access this resource")
+        .status(HttpStatus.FORBIDDEN.value())
+        .build();
+    ApiResponse<ApiError> response = ApiResponse.error("You don't have permission to access this resource");
+    response.setData(apiError);
     return new ResponseEntity<>(response, HttpStatus.FORBIDDEN);
   }
 
   @ExceptionHandler(ConstraintViolationException.class)
-  public ResponseEntity<ErrorResponse> handleConstraintViolationException(ConstraintViolationException ex, HttpServletRequest request) {
+  public ResponseEntity<ApiResponse<ApiError>> handleConstraintViolationException(ConstraintViolationException ex, HttpServletRequest request) {
     log.error("Constraint violation: {}", ex.getMessage(), ex);
 
-    List<ErrorResponse.FieldError> fieldErrors = ex.getConstraintViolations().stream()
-            .map(violation -> new ErrorResponse.FieldError(
-                    violation.getPropertyPath().toString(),
-                    violation.getMessage(),
-                    null
-            ))
-            .collect(Collectors.toList());
+    Map<String, List<String>> errorsMap = ex.getConstraintViolations().stream()
+            .collect(Collectors.groupingBy(
+                    violation -> violation.getPropertyPath().toString(),
+                    Collectors.mapping(
+                            violation -> violation.getMessage(),
+                            Collectors.toList()
+                    )
+            ));
 
-    ErrorResponse response = new ErrorResponse(
-            LocalDateTime.now(),
-            HttpStatus.BAD_REQUEST.value(),
-            HttpStatus.BAD_REQUEST.getReasonPhrase(),
-            ErrorCode.VALIDATION_ERROR.getCode(),
-            "Validation failed",
-            request.getRequestURI(),
-            fieldErrors
-    );
+    Map<String, String[]> errors = errorsMap.entrySet().stream()
+            .collect(Collectors.toMap(
+                    Map.Entry::getKey,
+                    entry -> entry.getValue().toArray(new String[0])
+            ));
 
+    ApiError apiError = ApiError.builder()
+        .message("Validation failed")
+        .status(HttpStatus.BAD_REQUEST.value())
+        .errors(errors)
+        .build();
+    ApiResponse<ApiError> response = ApiResponse.error("Validation failed");
+    response.setData(apiError);
     return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
   }
 
   @ExceptionHandler(Exception.class)
-  public ResponseEntity<ErrorResponse> handleAllUncaughtException(Exception ex, HttpServletRequest request) {
+  public ResponseEntity<ApiResponse<ApiError>> handleAllUncaughtException(Exception ex, HttpServletRequest request) {
     log.error("Unhandled exception: {}", ex.getMessage(), ex);
-    ErrorResponse response = new ErrorResponse(
-            LocalDateTime.now(),
-            HttpStatus.INTERNAL_SERVER_ERROR.value(),
-            HttpStatus.INTERNAL_SERVER_ERROR.getReasonPhrase(),
-            ErrorCode.INTERNAL_SERVER_ERROR.getCode(),
-            "An unexpected error occurred",
-            request.getRequestURI(),
-            null
-    );
+    ApiError apiError = ApiError.builder()
+        .message("An unexpected error occurred")
+        .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
+        .build();
+    ApiResponse<ApiError> response = ApiResponse.error("An unexpected error occurred");
+    response.setData(apiError);
     return new ResponseEntity<>(response, HttpStatus.INTERNAL_SERVER_ERROR);
   }
 
@@ -161,26 +151,30 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     log.error("Method argument not valid: {}", ex.getMessage(), ex);
 
-    List<ErrorResponse.FieldError> fieldErrors = ex.getBindingResult()
+    Map<String, List<String>> errorsMap = ex.getBindingResult()
             .getFieldErrors()
             .stream()
-            .map(fieldError -> new ErrorResponse.FieldError(
-                    fieldError.getField(),
-                    fieldError.getDefaultMessage() != null ? fieldError.getDefaultMessage() : "",
-                    fieldError.getRejectedValue()
-            ))
-            .collect(Collectors.toList());
+            .collect(Collectors.groupingBy(
+                    org.springframework.validation.FieldError::getField,
+                    Collectors.mapping(
+                            fieldError -> fieldError.getDefaultMessage() != null ? fieldError.getDefaultMessage() : "",
+                            Collectors.toList()
+                    )
+            ));
 
-    ErrorResponse response = new ErrorResponse(
-            LocalDateTime.now(),
-            HttpStatus.BAD_REQUEST.value(),
-            HttpStatus.BAD_REQUEST.getReasonPhrase(),
-            ErrorCode.VALIDATION_ERROR.getCode(),
-            "Validation failed",
-            ((org.springframework.http.server.ServletServerHttpRequest) request).getServletRequest().getRequestURI(),
-            fieldErrors
-    );
+    Map<String, String[]> errors = errorsMap.entrySet().stream()
+            .collect(Collectors.toMap(
+                    Map.Entry::getKey,
+                    entry -> entry.getValue().toArray(new String[0])
+            ));
 
+    ApiError apiError = ApiError.builder()
+        .message("Validation failed")
+        .status(HttpStatus.BAD_REQUEST.value())
+        .errors(errors)
+        .build();
+    ApiResponse<ApiError> response = ApiResponse.error("Validation failed");
+    response.setData(apiError);
     return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
   }
 
@@ -192,15 +186,12 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
           WebRequest request) {
 
     log.error("Message not readable: {}", ex.getMessage(), ex);
-    ErrorResponse response = new ErrorResponse(
-            LocalDateTime.now(),
-            HttpStatus.BAD_REQUEST.value(),
-            HttpStatus.BAD_REQUEST.getReasonPhrase(),
-            ErrorCode.INVALID_INPUT.getCode(),
-            "Malformed JSON request",
-            ((org.springframework.http.server.ServletServerHttpRequest) request).getServletRequest().getRequestURI(),
-            null
-    );
+    ApiError apiError = ApiError.builder()
+        .message("Malformed JSON request")
+        .status(HttpStatus.BAD_REQUEST.value())
+        .build();
+    ApiResponse<ApiError> response = ApiResponse.error("Malformed JSON request");
+    response.setData(apiError);
     return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
   }
 }

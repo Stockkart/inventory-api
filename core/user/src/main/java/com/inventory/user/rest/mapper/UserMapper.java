@@ -5,8 +5,10 @@ import com.inventory.user.domain.model.UserInvite;
 import com.inventory.user.domain.model.UserToken;
 import com.inventory.user.rest.dto.auth.AcceptInviteResponse;
 import com.inventory.user.rest.dto.auth.LoginResponse;
+import com.inventory.user.rest.dto.auth.LogoutResponse;
 import com.inventory.user.rest.dto.auth.SignupRequest;
 import com.inventory.user.rest.dto.auth.SignupResponse;
+import com.inventory.user.rest.dto.auth.UserResponse;
 import com.inventory.user.rest.dto.user.UserDto;
 import com.inventory.user.rest.dto.user.UserInviteDto;
 import org.mapstruct.AfterMapping;
@@ -179,5 +181,35 @@ public interface UserMapper {
     token.setExpiresAt(Instant.now().plusSeconds(7 * 24 * 60 * 60)); // 7 days
     
     account.getTokens().add(token);
+  }
+
+  // LogoutResponse mapping
+  @Mapping(target = "message", ignore = true)
+  @Mapping(target = "success", ignore = true)
+  @Mapping(target = "deviceId", source = "deviceId")
+  LogoutResponse toLogoutResponse(String deviceId);
+
+  @AfterMapping
+  default void setLogoutResponseFields(@MappingTarget LogoutResponse response, String deviceId) {
+    response.setMessage("Logged out successfully");
+    response.setSuccess(true);
+  }
+
+  // UserResponse mapping
+  @Mapping(target = "userId", source = "userId")
+  @Mapping(target = "role", source = "role")
+  @Mapping(target = "shopId", source = "shopId")
+  @Mapping(target = "email", source = "email")
+  @Mapping(target = "name", source = "name")
+  @Mapping(target = "active", source = "active")
+  @Mapping(target = "createdAt", ignore = true)
+  UserResponse toUserResponse(UserAccount account);
+
+  @AfterMapping
+  default void setUserResponseCreatedAt(@MappingTarget UserResponse response, UserAccount account) {
+    // Use updatedAt as createdAt if createdAt doesn't exist, or format it as ISO string
+    if (account.getUpdatedAt() != null) {
+      response.setCreatedAt(account.getUpdatedAt().toString());
+    }
   }
 }

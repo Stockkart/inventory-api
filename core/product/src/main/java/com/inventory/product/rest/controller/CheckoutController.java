@@ -1,5 +1,6 @@
 package com.inventory.product.rest.controller;
 
+import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.product.rest.dto.sale.CheckoutRequest;
 import com.inventory.product.rest.dto.sale.CheckoutResponse;
 import com.inventory.product.rest.dto.sale.InvalidateSaleRequest;
@@ -17,14 +18,14 @@ public class CheckoutController {
   private CheckoutService checkoutService;
 
   @PostMapping("/checkout")
-  public ResponseEntity<CheckoutResponse> checkout(@RequestBody CheckoutRequest request) {
-    return ResponseEntity.ok(checkoutService.checkout(request));
+  public ResponseEntity<ApiResponse<CheckoutResponse>> checkout(@RequestBody CheckoutRequest request) {
+    return ResponseEntity.ok(ApiResponse.success(checkoutService.checkout(request)));
   }
 
   @PostMapping("/sales/{saleId}/invalidate")
-  public ResponseEntity<SaleStatusResponse> invalidate(@PathVariable String saleId,
+  public ResponseEntity<ApiResponse<SaleStatusResponse>> invalidate(@PathVariable String saleId,
                                                        @RequestBody InvalidateSaleRequest request) {
-    return ResponseEntity.ok(checkoutService.invalidate(saleId, request));
+    return ResponseEntity.ok(ApiResponse.success(checkoutService.invalidate(saleId, request)));
   }
 }
 
