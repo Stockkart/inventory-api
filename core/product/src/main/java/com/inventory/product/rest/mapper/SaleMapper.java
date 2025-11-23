@@ -8,13 +8,14 @@ import com.inventory.product.rest.dto.sale.CheckoutResponse;
 import com.inventory.product.rest.dto.sale.SaleStatusResponse;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
+import org.mapstruct.ReportingPolicy;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-@Mapper(componentModel = "spring", imports = {UUID.class, Instant.class})
+@Mapper(componentModel = "spring", imports = {UUID.class, Instant.class}, unmappedTargetPolicy = ReportingPolicy.IGNORE)
 public interface SaleMapper {
 
   @Mapping(target = "saleId", source = "id")

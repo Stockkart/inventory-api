@@ -1,5 +1,6 @@
 package com.inventory.product.rest.controller;
 
+import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.product.rest.dto.business.BusinessTypeResponse;
 import com.inventory.product.rest.dto.business.CreateBusinessTypeRequest;
 import com.inventory.product.service.BusinessTypeService;
@@ -18,8 +19,8 @@ public class BusinessTypeController {
   private BusinessTypeService businessTypeService;
 
   @PostMapping
-  public ResponseEntity<BusinessTypeResponse> create(@RequestBody CreateBusinessTypeRequest request) {
-    return ResponseEntity.ok(businessTypeService.create(request));
+  public ResponseEntity<ApiResponse<BusinessTypeResponse>> create(@RequestBody CreateBusinessTypeRequest request) {
+    return ResponseEntity.ok(ApiResponse.success(businessTypeService.create(request)));
   }
 }
 

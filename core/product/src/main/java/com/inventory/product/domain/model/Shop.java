@@ -19,9 +19,10 @@ public class Shop {
   @Id
   private String shopId;
   private String name;
-  private String location;
+  private Location location;
   private String businessId;
   private String contactEmail;
+  private String contactPhone;
   private String status;
   private boolean active;
   private Integer userLimit;

@@ -2,6 +2,7 @@ package com.inventory.user.domain.repository;
 
 import com.inventory.user.domain.model.UserAccount;
 import org.springframework.data.mongodb.repository.MongoRepository;
+import org.springframework.data.mongodb.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -13,5 +14,9 @@ public interface UserAccountRepository extends MongoRepository<UserAccount, Stri
   Optional<UserAccount> findByEmail(String email);
 
   List<UserAccount> findByShopId(String shopId);
+
+  // Find user by access token in tokens list
+  @Query("{ 'tokens.accessToken': ?0 }")
+  Optional<UserAccount> findByAccessToken(String accessToken);
 }
 

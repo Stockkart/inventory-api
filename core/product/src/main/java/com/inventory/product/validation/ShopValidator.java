@@ -16,17 +16,29 @@ public class ShopValidator {
     if (!StringUtils.hasText(request.getName())) {
       throw new ValidationException("Shop name is required");
     }
-    if (request.getInitialAdmin() == null) {
-      throw new ValidationException("Initial admin information is required");
+    if (!StringUtils.hasText(request.getBusinessId())) {
+      throw new ValidationException("Business ID is required");
     }
-    if (!StringUtils.hasText(request.getInitialAdmin().getName())) {
-      throw new ValidationException("Admin name is required");
+    if (request.getLocation() == null) {
+      throw new ValidationException("Location is required");
     }
-    if (!StringUtils.hasText(request.getInitialAdmin().getEmail())) {
-      throw new ValidationException("Admin email is required");
+    if (!StringUtils.hasText(request.getLocation().getPrimaryAddress())) {
+      throw new ValidationException("Primary address is required");
+    }
+    if (!StringUtils.hasText(request.getLocation().getState())) {
+      throw new ValidationException("State is required");
+    }
+    if (!StringUtils.hasText(request.getLocation().getCity())) {
+      throw new ValidationException("City is required");
+    }
+    if (!StringUtils.hasText(request.getLocation().getPin())) {
+      throw new ValidationException("PIN code is required");
     }
     if (!StringUtils.hasText(request.getContactEmail())) {
       throw new ValidationException("Contact email is required");
+    }
+    if (!StringUtils.hasText(request.getContactPhone())) {
+      throw new ValidationException("Contact phone is required");
     }
   }
 

@@ -6,15 +6,9 @@ import lombok.Data;
 public class RegisterShopRequest {
 
   private String name;
-  private String location;
   private String businessId;
+  private LocationDto location;
   private String contactEmail;
-  private InitialAdmin initialAdmin;
-
-  @Data
-  public static class InitialAdmin {
-    private String name;
-    private String email;
-  }
+  private String contactPhone;
 }
 

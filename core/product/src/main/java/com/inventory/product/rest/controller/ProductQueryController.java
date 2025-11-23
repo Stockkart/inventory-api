@@ -1,5 +1,6 @@
 package com.inventory.product.rest.controller;
 
+import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.product.rest.dto.product.ProductListResponse;
 import com.inventory.product.rest.dto.product.ProductResponse;
 import com.inventory.product.service.ProductService;
@@ -15,13 +16,13 @@ public class ProductQueryController {
   private ProductService productService;
 
   @GetMapping("/{barcode}")
-  public ResponseEntity<ProductResponse> getProduct(@PathVariable String barcode) {
-    return ResponseEntity.ok(productService.getProduct(barcode));
+  public ResponseEntity<ApiResponse<ProductResponse>> getProduct(@PathVariable String barcode) {
+    return ResponseEntity.ok(ApiResponse.success(productService.getProduct(barcode)));
   }
 
   @GetMapping
-  public ResponseEntity<ProductListResponse> list(@RequestParam(required = false, name = "q") String query) {
-    return ResponseEntity.ok(productService.searchProducts(query));
+  public ResponseEntity<ApiResponse<ProductListResponse>> list(@RequestParam(required = false, name = "q") String query) {
+    return ResponseEntity.ok(ApiResponse.success(productService.searchProducts(query)));
   }
 }
 

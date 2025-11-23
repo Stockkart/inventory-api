@@ -13,12 +13,12 @@ import com.inventory.product.rest.dto.shop.ShopApprovalResponse;
 import com.inventory.product.rest.dto.shop.ShopRegistrationResponse;
 import com.inventory.product.rest.mapper.ShopMapper;
 import com.inventory.product.validation.ShopValidator;
+import com.inventory.user.domain.repository.UserAccountRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -37,38 +37,58 @@ public class ShopService {
   @Autowired
   private ShopValidator shopValidator;
 
+  @Autowired
+  private UserAccountRepository userAccountRepository;
+
   @Transactional
-  public ShopRegistrationResponse register(RegisterShopRequest request) {
+  public ShopRegistrationResponse register(RegisterShopRequest request, String userId) {
     try {
       // Input validation using ShopValidator
       shopValidator.validateRegisterRequest(request);
 
-      // Check for existing shop with the same business ID or name
-      if (StringUtils.hasText(request.getBusinessId())) {
-        shopRepository.findByBusinessId(request.getBusinessId()).ifPresent(shop -> {
-          throw new ResourceExistsException("Shop", "businessId", request.getBusinessId());
-        });
+      if (userId == null || userId.trim().isEmpty()) {
+        throw new ValidationException("User ID is required");
       }
 
-      // Check for existing shop with the same admin email
-      shopRepository.findByInitialAdminEmail(request.getInitialAdmin().getEmail())
+      // Check for existing shop with the same business ID
+//      if (StringUtils.hasText(request.getBusinessId())) {
+//        shopRepository.findByBusinessId(request.getBusinessId()).ifPresent(shop -> {
+//          throw new ResourceExistsException("Shop", "businessId", request.getBusinessId());
+//        });
+//      }
+
+      // Check for existing shop with the same contact email
+      shopRepository.findByContactEmail(request.getContactEmail())
               .ifPresent(shop -> {
-                throw new ResourceExistsException("A shop with this admin email already exists");
+                throw new ResourceExistsException("A shop with this contact email already exists");
               });
 
-      log.info("Registering new shop: {}", request.getName());
+      // Check if user already has a shop
+      com.inventory.user.domain.model.UserAccount userAccount = userAccountRepository.findById(userId)
+              .orElseThrow(() -> new ResourceNotFoundException("User", "userId", userId));
+      
+      if (userAccount.getShopId() != null && !userAccount.getShopId().trim().isEmpty()) {
+        throw new ResourceExistsException("User already has a shop associated");
+      }
 
-      // Map request to entity using MapStruct
+      log.info("Registering new shop: {} for user: {}", request.getName(), userId);
+
+      // Generate shopId first
+      String shopId = "shop-" + UUID.randomUUID();
+
+      // Map request to entity using MapStruct (sets defaults: APPROVED, active=true)
       Shop shop = shopMapper.toEntity(request);
-      shop.setShopId("shop-" + UUID.randomUUID());
-      shop.setStatus("PENDING");
-      shop.setActive(false);
-      shop.setUserLimit(0); // Will be set during approval
-      shop.setUserCount(0);
-      shop.setCreatedAt(Instant.now());
+      shop.setShopId(shopId);
+      shop.setUserLimit(0); // Can be set later if needed
 
+      // Save shop first
       shop = shopRepository.save(shop);
-      log.info("Successfully registered shop with ID: {}", shop.getShopId());
+      
+      // Update user account with shopId (using mapper method)
+      shopMapper.updateUserAccountWithShopId(userAccount, shopId);
+      userAccountRepository.save(userAccount);
+      
+      log.info("Successfully registered shop with ID: {} and updated user account: {}", shop.getShopId(), userId);
 
       return shopMapper.toRegistrationResponse(shop);
 

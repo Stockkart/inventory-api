@@ -26,6 +26,14 @@ public interface ShopRepository extends MongoRepository<Shop, String> {
   Optional<Shop> findByInitialAdminEmail(String email);
 
   /**
+   * Find a shop by its contact email.
+   *
+   * @param email the contact email to search for
+   * @return an Optional containing the shop if found, empty otherwise
+   */
+  Optional<Shop> findByContactEmail(String email);
+
+  /**
    * Check if a shop with the given business ID exists.
    *
    * @param businessId the business ID to check
