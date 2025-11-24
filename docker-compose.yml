@@ -1,9 +1,9 @@
 services:
   app:
     build:
-      context: .           # folder where your Dockerfile is
+      context: .
       dockerfile: Dockerfile
-    image: ${DOCKER_USERNAME}/inventory-backend:latest
+    image: inventory-backend:local
     container_name: inventory-backend
     restart: unless-stopped
     depends_on:
@@ -14,7 +14,6 @@ services:
       CROSS_ORIGIN_URL: http://localhost:3000
     ports:
       - "8080:8080"
-
   mongodb:
     image: mongo:7.0
     container_name: inventory-mongodb
