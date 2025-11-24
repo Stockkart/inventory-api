@@ -1,4 +1,4 @@
-name: CD for inventory-backend
+name: Dockerhub image push for inventory-backend
 
 on:
   push:
