@@ -3,14 +3,14 @@ services:
     build:
       context: .           # folder where your Dockerfile is
       dockerfile: Dockerfile
-    image: 007sawansloka/inventory-backend:latest
+    image: ${DOCKER_USERNAME}/inventory-backend:latest
     container_name: inventory-backend
     restart: unless-stopped
     depends_on:
       mongodb:
         condition: service_healthy
     environment:
-      SPRING_DATA_MONGODB_URI: mongodb://admin:admin123@mongodb:27017/inventory?authSource=admin
+      SPRING_DATA_MONGODB_URI: ${DB_URI}
       CROSS_ORIGIN_URL: http://localhost:3000
     ports:
       - "8080:8080"
@@ -23,8 +23,8 @@ services:
       - "27017:27017"
     environment:
       MONGO_INITDB_DATABASE: inventory
-      MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD: admin123
+      MONGO_INITDB_ROOT_USERNAME: ${DB_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${DB_PASSWORD}
     volumes:
       - mongodb_data:/data/db
       - mongodb_config:/data/configdb

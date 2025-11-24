@@ -1,17 +1,61 @@
-name: Build and push inventory-backend image
+name: CI/CD for inventory-backend
 
 on:
   push:
     branches:
-      - main        # runs when you push/merge to main
-  workflow_dispatch: # allows manual trigger from Actions tab
+      - main          # build + push on main
+  pull_request:
+    branches:
+      - main          # build/test on PRs targeting main
+  workflow_dispatch:   # allow manual trigger
 
 jobs:
-  build-and-push:
+  # ---------- Job 1: PR validation (no push) ----------
+  pr-check:
     runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
 
     steps:
-      - name: Checkout code
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Cache Maven repo
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-m2-
+
+      - name: Maven test (multi-module)
+        run: mvn -pl app -am clean test
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: |
+            pr-check/inventory-backend:latest
+
+  # ---------- Job 2: Build & push on main ----------
+  build-and-push:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: []
+
+    steps:
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
@@ -30,5 +74,5 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: |
-            007sawansloka/inventory-backend:latest
-            007sawansloka/inventory-backend:${{ github.sha }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/inventory-backend:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/inventory-backend:${{ github.sha }}
