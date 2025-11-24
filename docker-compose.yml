@@ -1,6 +1,19 @@
-version: '3.8'
-
 services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: inventory-backend:local
+    container_name: inventory-backend
+    restart: unless-stopped
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      SPRING_DATA_MONGODB_URI: ${DB_URI}
+      CROSS_ORIGIN_URL: http://localhost:3000
+    ports:
+      - "8080:8080"
   mongodb:
     image: mongo:7.0
     container_name: inventory-mongodb
@@ -9,8 +22,8 @@ services:
       - "27017:27017"
     environment:
       MONGO_INITDB_DATABASE: inventory
-      MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD: admin123
+      MONGO_INITDB_ROOT_USERNAME: ${DB_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${DB_PASSWORD}
     volumes:
       - mongodb_data:/data/db
       - mongodb_config:/data/configdb
@@ -26,4 +39,3 @@ volumes:
     driver: local
   mongodb_config:
     driver: local
-

@@ -1,0 +1,35 @@
+name: Build Checker for inventory-backend
+
+on:
+  pull_request:
+    branches:
+      - main          # run checks on PRs targeting main
+  workflow_dispatch:   # allow manual trigger from Actions tab
+
+jobs:
+  pr-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Cache Maven repo
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-m2-
+
+      - name: Maven test (multi-module)
+        run: mvn -pl app -am clean test
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
