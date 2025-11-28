@@ -34,6 +34,32 @@ services:
       retries: 5
       start_period: 10s
 
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: inventory-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    ports:
+      - "9090:9090"
+    depends_on:
+      - app
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: inventory-grafana
+    restart: unless-stopped
+    ports:
+      - "3001:3000"   # browser: http://localhost:3001
+    depends_on:
+      - prometheus
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+
 volumes:
   mongodb_data:
     driver: local
