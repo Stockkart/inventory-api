@@ -15,17 +15,17 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Document(collection = "sales")
-public class Sale {
+@Document(collection = "purchases")
+public class Purchase {
 
   @Id
   private String id;
   private String invoiceId;
   private String invoiceNo;
-  private String productName;
+  private String businessType;
   private String userId;
   private String shopId;
-  private List<SaleItem> items;
+  private List<PurchaseItem> items;
   private BigDecimal subTotal;
   private BigDecimal taxTotal;
   private BigDecimal discountTotal;
@@ -33,5 +33,6 @@ public class Sale {
   private Instant soldAt;
   private boolean valid;
   private String paymentMethod;
+  private PurchaseStatus status;
 }
 

@@ -6,6 +6,7 @@ import com.inventory.product.rest.dto.sale.CheckoutResponse;
 import com.inventory.product.rest.dto.sale.InvalidateSaleRequest;
 import com.inventory.product.rest.dto.sale.SaleStatusResponse;
 import com.inventory.product.service.CheckoutService;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -18,8 +19,9 @@ public class CheckoutController {
   private CheckoutService checkoutService;
 
   @PostMapping("/checkout")
-  public ResponseEntity<ApiResponse<CheckoutResponse>> checkout(@RequestBody CheckoutRequest request) {
-    return ResponseEntity.ok(ApiResponse.success(checkoutService.checkout(request)));
+  public ResponseEntity<ApiResponse<CheckoutResponse>> checkout(@RequestBody CheckoutRequest request,
+                                                                 HttpServletRequest httpRequest) {
+    return ResponseEntity.ok(ApiResponse.success(checkoutService.checkout(request, httpRequest)));
   }
 
   @PostMapping("/sales/{saleId}/invalidate")

@@ -1,14 +1,14 @@
 package com.inventory.product.domain.repository;
 
-import com.inventory.product.domain.model.Sale;
+import com.inventory.product.domain.model.Purchase;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
 
 @Repository
-public interface SaleRepository extends MongoRepository<Sale, String> {
+public interface PurchaseRepository extends MongoRepository<Purchase, String> {
 
-  Optional<Sale> findByInvoiceNo(String invoiceNo);
+  Optional<Purchase> findByInvoiceNo(String invoiceNo);
 }
 

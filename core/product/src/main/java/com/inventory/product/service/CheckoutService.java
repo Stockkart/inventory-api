@@ -6,16 +6,18 @@ import com.inventory.common.exception.InsufficientStockException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.product.domain.model.Inventory;
-import com.inventory.product.domain.model.Sale;
-import com.inventory.product.domain.model.SaleItem;
+import com.inventory.product.domain.model.Purchase;
+import com.inventory.product.domain.model.PurchaseItem;
+import com.inventory.product.domain.model.PurchaseStatus;
 import com.inventory.product.domain.repository.InventoryRepository;
-import com.inventory.product.domain.repository.SaleRepository;
+import com.inventory.product.domain.repository.PurchaseRepository;
 import com.inventory.product.rest.dto.sale.CheckoutRequest;
 import com.inventory.product.rest.dto.sale.CheckoutResponse;
 import com.inventory.product.rest.dto.sale.InvalidateSaleRequest;
 import com.inventory.product.rest.dto.sale.SaleStatusResponse;
-import com.inventory.product.rest.mapper.SaleMapper;
+import com.inventory.product.rest.mapper.PurchaseMapper;
 import com.inventory.product.validation.CheckoutValidator;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
@@ -25,8 +27,6 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -36,98 +36,126 @@ import java.util.List;
 public class CheckoutService {
 
   @Autowired
-  private SaleRepository saleRepository;
+  private PurchaseRepository purchaseRepository;
 
   @Autowired
   private InventoryRepository inventoryRepository;
 
   @Autowired
-  private SaleMapper saleMapper;
+  private PurchaseMapper purchaseMapper;
 
   @Autowired
   private CheckoutValidator checkoutValidator;
 
-  // Moved to CheckoutValidator
-
   @Transactional
-  public CheckoutResponse checkout(CheckoutRequest request) {
+  public CheckoutResponse checkout(CheckoutRequest request, HttpServletRequest httpRequest) {
+    // Get shopId and userId from request attributes (set by AuthenticationInterceptor)
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    String userId = (String) httpRequest.getAttribute("userId");
+    
+    if (shopId == null || userId == null) {
+      throw new ValidationException("Shop ID and User ID are required. Please ensure you are authenticated.");
+    }
+
+    // Set default payment method to "CASH" if not provided
+    if (!StringUtils.hasText(request.getPaymentMethod())) {
+      request.setPaymentMethod("CASH");
+    }
+
+    // Input validation using CheckoutValidator
+    checkoutValidator.validateCheckoutRequest(request);
+
+    log.info("Processing checkout for shop: {}, user: {}", shopId, userId);
+
     try {
-      // Input validation using CheckoutValidator
-      checkoutValidator.validateCheckoutRequest(request);
-
-      log.info("Processing checkout for shop: {}, user: {}", request.getShopId(), request.getUserId());
-
-      // Process sale items
-      List<SaleItem> saleItems = processSaleItems(request, request.getItems());
+      // Process purchase items - throws immediately if any item fails
+      List<PurchaseItem> purchaseItems = processPurchaseItems(request, request.getItems(), shopId);
 
       // Calculate totals
-      BigDecimal subTotal = calculateSubtotal(saleItems);
+      BigDecimal subTotal = calculateSubtotal(purchaseItems);
       BigDecimal taxTotal = calculateTax(subTotal);
-      BigDecimal discountTotal = calculateTotalDiscount(saleItems);
+      BigDecimal discountTotal = calculateTotalDiscount(purchaseItems);
       BigDecimal grandTotal = subTotal.add(taxTotal).subtract(discountTotal);
 
-      // Create and save the sale
-      Sale sale = createAndSaveSale(request, saleItems, subTotal, taxTotal, discountTotal, grandTotal);
+      // Create and save the purchase
+      Purchase purchase = createAndSavePurchase(request, purchaseItems, subTotal, taxTotal, discountTotal, grandTotal, shopId, userId);
 
-      log.info("Successfully processed sale with ID: {}", sale.getId());
+      log.info("Successfully processed purchase with ID: {}", purchase.getId());
 
-      return saleMapper.toCheckoutResponse(sale);
+      // Build response with inventory lookups for barcode
+      return buildCheckoutResponse(purchase);
 
-    } catch (ValidationException | InsufficientStockException e) {
-      log.warn("Checkout validation failed: {}", e.getMessage());
+    } catch (ValidationException | InsufficientStockException | ResourceNotFoundException e) {
+      // Re-throw known business exceptions directly with their original messages
+      log.warn("Checkout failed: {}", e.getMessage());
       throw e;
     } catch (DataAccessException e) {
-      log.error("Database error during checkout: {}", e.getMessage(), e);
-      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Error processing checkout");
+      // Database errors - log full details but provide user-friendly message
+      log.error("Database error during checkout for shop: {}, user: {}", shopId, userId, e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, 
+          "Error processing checkout: " + e.getMessage(), e);
     } catch (Exception e) {
-      log.error("Unexpected error during checkout: {}", e.getMessage(), e);
-      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "An unexpected error occurred during checkout");
+      // Unexpected errors - log full stack trace and include original message
+      log.error("Unexpected error during checkout for shop: {}, user: {}", shopId, userId, e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, 
+          "An unexpected error occurred during checkout: " + e.getMessage(), e);
     }
   }
 
-  // Validation moved to CheckoutValidator
-
-  private List<SaleItem> processSaleItems(CheckoutRequest request, List<CheckoutRequest.CheckoutItem> items) {
-    List<SaleItem> saleItems = new ArrayList<>();
+  private List<PurchaseItem> processPurchaseItems(CheckoutRequest request, List<CheckoutRequest.CheckoutItem> items, String shopId) {
+    List<PurchaseItem> purchaseItems = new ArrayList<>();
+    
     for (CheckoutRequest.CheckoutItem item : items) {
-      // Validate item using CheckoutValidator
-      checkoutValidator.validateCheckoutItem(item);
+      try {
+        // Validate item using CheckoutValidator - throws ValidationException immediately if invalid
+        checkoutValidator.validateCheckoutItem(item);
 
-      // Check stock availability from inventory
-      String shopId = request.getShopId();
-      if (shopId == null) {
-        throw new ValidationException("Shop ID is required for stock validation");
+        // Get inventory by lotId - throws ResourceNotFoundException immediately if not found
+        Inventory inventory = inventoryRepository.findById(item.getLotId())
+                .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", item.getLotId()));
+
+        // Verify the inventory belongs to the shop - throws ValidationException immediately if mismatch
+        if (!shopId.equals(inventory.getShopId())) {
+          throw new ValidationException("Inventory lot " + item.getLotId() + " does not belong to shop " + shopId);
+        }
+
+        // Check stock availability - throws InsufficientStockException immediately if insufficient
+        int availableStock = inventory.getCurrentCount() != null ? inventory.getCurrentCount() : 0;
+        if (availableStock < item.getQuantity()) {
+          throw new InsufficientStockException("Insufficient stock for product: " + inventory.getName(),
+                  inventory.getBarcode(), availableStock, item.getQuantity());
+        }
+
+        // Use mapper to create PurchaseItem with sellingPrice from request
+        PurchaseItem purchaseItem = purchaseMapper.toPurchaseItem(item, inventory);
+        purchaseItems.add(purchaseItem);
+        
+      } catch (ValidationException | InsufficientStockException | ResourceNotFoundException e) {
+        // Re-throw immediately - don't continue processing other items
+        log.warn("Item validation failed for lotId: {} - {}", item.getLotId(), e.getMessage());
+        throw e;
+      } catch (Exception e) {
+        // Catch any unexpected errors during item processing
+        log.error("Unexpected error processing item with lotId: {}", item.getLotId(), e);
+        throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, 
+            "Error processing item with lotId " + item.getLotId() + ": " + e.getMessage(), e);
       }
-
-      // Get inventory items for this barcode
-      List<Inventory> inventories = inventoryRepository.findByShopIdAndBarcode(shopId, item.getBarcode());
-      if (inventories.isEmpty()) {
-        throw new ResourceNotFoundException("Inventory", "barcode", item.getBarcode());
-      }
-
-      // Get first inventory item for product info (name, sellingPrice)
-      Inventory inventory = inventories.get(0);
-      
-      // Calculate available stock
-      int availableStock = inventories.stream()
-              .mapToInt(inv -> inv.getCurrentCount() != null ? inv.getCurrentCount() : 0)
-              .sum();
-
-      if (availableStock < item.getQty()) {
-        throw new InsufficientStockException("Insufficient stock for product: " + inventory.getName(),
-                inventory.getBarcode(), availableStock, item.getQty());
-      }
-
-      // Use mapper to create SaleItem (passing inventory instead of product)
-      SaleItem saleItem = saleMapper.toSaleItem(item, inventory);
-      saleItems.add(saleItem);
     }
-    return saleItems;
+    
+    return purchaseItems;
   }
 
-  private BigDecimal calculateSubtotal(List<SaleItem> items) {
+  private BigDecimal calculateSubtotal(List<PurchaseItem> items) {
+    if (items == null || items.isEmpty()) {
+      return BigDecimal.ZERO;
+    }
     return items.stream()
-            .map(SaleItem::getTotal)
+            .map(item -> {
+              // Calculate total: maximumRetailPrice * quantity
+              BigDecimal mrp = item.getMaximumRetailPrice() != null ? item.getMaximumRetailPrice() : BigDecimal.ZERO;
+              Integer qty = item.getQuantity() != null ? item.getQuantity() : 0;
+              return mrp.multiply(BigDecimal.valueOf(qty));
+            })
             .reduce(BigDecimal.ZERO, BigDecimal::add)
             .setScale(2, RoundingMode.HALF_UP);
   }
@@ -138,75 +166,131 @@ public class CheckoutService {
     return subtotal.multiply(TAX_RATE).setScale(2, RoundingMode.HALF_UP);
   }
 
-  private BigDecimal calculateTotalDiscount(List<SaleItem> items) {
+  private BigDecimal calculateTotalDiscount(List<PurchaseItem> items) {
+    if (items == null || items.isEmpty()) {
+      return BigDecimal.ZERO;
+    }
     return items.stream()
-            .map(SaleItem::getDiscount)
+            .map(item -> {
+              BigDecimal mrp = item.getMaximumRetailPrice() != null ? item.getMaximumRetailPrice() : BigDecimal.ZERO;
+              BigDecimal sellingPrice = item.getSellingPrice() != null ? item.getSellingPrice() : BigDecimal.ZERO;
+              return mrp.subtract(sellingPrice).multiply(BigDecimal.valueOf(item.getQuantity()));
+            })
             .reduce(BigDecimal.ZERO, BigDecimal::add)
             .setScale(2, RoundingMode.HALF_UP);
   }
 
-  private Sale createAndSaveSale(CheckoutRequest request, List<SaleItem> saleItems,
-                                 BigDecimal subTotal, BigDecimal taxTotal,
-                                 BigDecimal discountTotal, BigDecimal grandTotal) {
-    // Use mapper to create Sale
-    Sale sale = saleMapper.toSale(request, saleItems, subTotal, taxTotal, discountTotal, grandTotal);
-    // Set the invoice number using the mapper's helper method
-    sale.setInvoiceNo(saleMapper.generateInvoiceNo());
+  private Purchase createAndSavePurchase(CheckoutRequest request, List<PurchaseItem> purchaseItems,
+                                         BigDecimal subTotal, BigDecimal taxTotal,
+                                         BigDecimal discountTotal, BigDecimal grandTotal,
+                                         String shopId, String userId) {
+    try {
+      // Use mapper to create Purchase
+      Purchase purchase = purchaseMapper.toPurchase(request, purchaseItems, subTotal, taxTotal, discountTotal, grandTotal);
+      
+      // Set businessType from request
+      purchase.setBusinessType(request.getBusinessType());
+      
+      // Set shopId and userId
+      purchase.setShopId(shopId);
+      purchase.setUserId(userId);
+      
+      // Set payment method (defaults to "CASH" if not provided, already set in checkout method)
+      purchase.setPaymentMethod(request.getPaymentMethod());
+      
+      // Set the invoice number using the mapper's helper method
+      purchase.setInvoiceNo(purchaseMapper.generateInvoiceNo());
+      
+      // Set status to PENDING by default for new purchases
+      purchase.setStatus(PurchaseStatus.PENDING);
 
-    return saleRepository.save(sale);
-  }
-
-  private String generateInvoiceNo() {
-    String timestamp = DateTimeFormatter.ofPattern("yyyyMMddHHmmss").format(LocalDateTime.now());
-    String random = String.format("%04d", (int) (Math.random() * 10_000));
-    return "INV-" + timestamp + "-" + random;
+      return purchaseRepository.save(purchase);
+    } catch (DataAccessException e) {
+      log.error("Database error while saving purchase for shop: {}, user: {}", shopId, userId, e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, 
+          "Error saving purchase: " + e.getMessage(), e);
+    } catch (Exception e) {
+      log.error("Unexpected error while creating purchase for shop: {}, user: {}", shopId, userId, e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, 
+          "Error creating purchase: " + e.getMessage(), e);
+    }
   }
 
   @Transactional
-  public SaleStatusResponse invalidate(String saleId, InvalidateSaleRequest request) {
+  public SaleStatusResponse invalidate(String purchaseId, InvalidateSaleRequest request) {
     try {
       // Input validation
-      if (!StringUtils.hasText(saleId)) {
-        throw new ValidationException("Sale ID is required");
+      if (!StringUtils.hasText(purchaseId)) {
+        throw new ValidationException("Purchase ID is required");
       }
       if (request == null) {
         throw new ValidationException("Invalidate request cannot be null");
       }
 
-      log.info("Invalidating sale with ID: {}", saleId);
+      log.info("Invalidating purchase with ID: {}", purchaseId);
 
-      // Find the sale
-      Sale sale = saleRepository.findById(saleId)
-              .orElseThrow(() -> new ResourceNotFoundException("Sale", "id", saleId));
+      // Find the purchase
+      Purchase purchase = purchaseRepository.findById(purchaseId)
+              .orElseThrow(() -> new ResourceNotFoundException("Purchase", "id", purchaseId));
 
       // Check if already invalidated
-      if (!sale.isValid()) {
-        log.warn("Sale {} is already invalid", saleId);
-        return createSaleStatusResponse(sale);
+      if (!purchase.isValid()) {
+        log.warn("Purchase {} is already invalid", purchaseId);
+        return createPurchaseStatusResponse(purchase);
       }
 
-      // Invalidate the sale
-      sale.setValid(false);
-      sale = saleRepository.save(sale);
+      // Invalidate the purchase
+      purchase.setValid(false);
+      purchase = purchaseRepository.save(purchase);
 
-      log.info("Successfully invalidated sale with ID: {}", saleId);
+      log.info("Successfully invalidated purchase with ID: {}", purchaseId);
 
-      return createSaleStatusResponse(sale);
+      return createPurchaseStatusResponse(purchase);
 
     } catch (ValidationException | ResourceNotFoundException e) {
-      log.warn("Sale invalidation failed: {}", e.getMessage());
+      log.warn("Purchase invalidation failed: {}", e.getMessage());
       throw e;
     } catch (DataAccessException e) {
-      log.error("Database error while invalidating sale: {}", e.getMessage(), e);
-      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Error invalidating sale");
+      log.error("Database error while invalidating purchase: {}", e.getMessage(), e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Error invalidating purchase");
     } catch (Exception e) {
-      log.error("Unexpected error while invalidating sale: {}", e.getMessage(), e);
+      log.error("Unexpected error while invalidating purchase: {}", e.getMessage(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
     }
   }
 
-  private SaleStatusResponse createSaleStatusResponse(Sale sale) {
-    return saleMapper.toStatusResponse(sale);
+  private SaleStatusResponse createPurchaseStatusResponse(Purchase purchase) {
+    return purchaseMapper.toStatusResponse(purchase);
+  }
+
+  private CheckoutResponse buildCheckoutResponse(Purchase purchase) {
+    try {
+      if (purchase == null) {
+        throw new ValidationException("Purchase cannot be null when building response");
+      }
+
+      return CheckoutResponse.builder()
+              .invoiceId(purchase.getInvoiceId())
+              .invoiceNo(purchase.getInvoiceNo())
+              .businessType(purchase.getBusinessType())
+              .userId(purchase.getUserId())
+              .shopId(purchase.getShopId())
+              .items(purchase.getItems() != null ? purchase.getItems() : List.of())
+              .subTotal(purchase.getSubTotal())
+              .taxTotal(purchase.getTaxTotal())
+              .discountTotal(purchase.getDiscountTotal())
+              .grandTotal(purchase.getGrandTotal())
+              .paymentMethod(purchase.getPaymentMethod())
+              .status(purchase.getStatus())
+              .build();
+    } catch (BaseException e) {
+      // Re-throw BaseException and its subclasses (ValidationException, etc.)
+      throw e;
+    } catch (Exception e) {
+      String purchaseId = purchase != null ? purchase.getId() : "unknown";
+      log.error("Unexpected error building checkout response for purchase: {}", purchaseId, e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, 
+          "Error building checkout response: " + e.getMessage(), e);
+    }
   }
 }
-

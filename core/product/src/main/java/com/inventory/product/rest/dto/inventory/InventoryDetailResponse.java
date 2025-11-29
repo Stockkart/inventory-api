@@ -3,6 +3,7 @@ package com.inventory.product.rest.dto.inventory;
 import lombok.Builder;
 import lombok.Value;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 
 @Value
@@ -13,6 +14,9 @@ public class InventoryDetailResponse {
   String name;
   String description;
   String companyName;
+  BigDecimal maximumRetailPrice;
+  BigDecimal costPrice;
+  BigDecimal sellingPrice;
   Integer receivedCount;
   Integer soldCount;
   Integer currentCount;

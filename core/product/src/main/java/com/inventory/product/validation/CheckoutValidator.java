@@ -6,6 +6,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
+import java.math.BigDecimal;
+
 @Component
 public class CheckoutValidator {
 
@@ -16,11 +18,8 @@ public class CheckoutValidator {
     if (request == null) {
       throw new ValidationException("Checkout request cannot be null");
     }
-    if (!StringUtils.hasText(request.getShopId())) {
-      throw new ValidationException("Shop ID is required");
-    }
-    if (!StringUtils.hasText(request.getUserId())) {
-      throw new ValidationException("User ID is required");
+    if (!StringUtils.hasText(request.getBusinessType())) {
+      throw new ValidationException("Business type is required");
     }
     if (CollectionUtils.isEmpty(request.getItems())) {
       throw new ValidationException("At least one item is required for checkout");
@@ -31,11 +30,17 @@ public class CheckoutValidator {
   }
 
   public void validateCheckoutItem(CheckoutRequest.CheckoutItem item) {
-    if (item.getQty() == null || item.getQty() <= 0) {
-      throw new ValidationException("Invalid quantity for item: " + item.getBarcode());
+    if (!StringUtils.hasText(item.getLotId())) {
+      throw new ValidationException("Lot ID is required for item");
     }
-    if (item.getQty() > MAX_QUANTITY) {
+    if (item.getQuantity() == null || item.getQuantity() <= 0) {
+      throw new ValidationException("Invalid quantity for item: " + item.getLotId());
+    }
+    if (item.getQuantity() > MAX_QUANTITY) {
       throw new ValidationException("Maximum quantity per item is " + MAX_QUANTITY);
+    }
+    if (item.getSellingPrice() == null || item.getSellingPrice().compareTo(BigDecimal.ZERO) <= 0) {
+      throw new ValidationException("Selling price must be greater than zero for item: " + item.getLotId());
     }
   }
 }
