@@ -6,11 +6,9 @@ import com.inventory.common.exception.InsufficientStockException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.product.domain.model.Inventory;
-import com.inventory.product.domain.model.Product;
 import com.inventory.product.domain.model.Sale;
 import com.inventory.product.domain.model.SaleItem;
 import com.inventory.product.domain.repository.InventoryRepository;
-import com.inventory.product.domain.repository.ProductRepository;
 import com.inventory.product.domain.repository.SaleRepository;
 import com.inventory.product.rest.dto.sale.CheckoutRequest;
 import com.inventory.product.rest.dto.sale.CheckoutResponse;
@@ -36,9 +34,6 @@ import java.util.List;
 @Slf4j
 @Transactional(readOnly = true)
 public class CheckoutService {
-
-  @Autowired
-  private ProductRepository productRepository;
 
   @Autowired
   private SaleRepository saleRepository;
@@ -98,28 +93,33 @@ public class CheckoutService {
       // Validate item using CheckoutValidator
       checkoutValidator.validateCheckoutItem(item);
 
-      // Get product and validate stock
-      Product product = productRepository.findById(item.getBarcode())
-              .orElseThrow(() -> new ResourceNotFoundException("Product", "barcode", item.getBarcode()));
-
       // Check stock availability from inventory
       String shopId = request.getShopId();
       if (shopId == null) {
         throw new ValidationException("Shop ID is required for stock validation");
       }
 
-      List<Inventory> inventories = inventoryRepository.findByShopIdAndProductId(shopId, product.getBarcode());
+      // Get inventory items for this barcode
+      List<Inventory> inventories = inventoryRepository.findByShopIdAndBarcode(shopId, item.getBarcode());
+      if (inventories.isEmpty()) {
+        throw new ResourceNotFoundException("Inventory", "barcode", item.getBarcode());
+      }
+
+      // Get first inventory item for product info (name, sellingPrice)
+      Inventory inventory = inventories.get(0);
+      
+      // Calculate available stock
       int availableStock = inventories.stream()
               .mapToInt(inv -> inv.getCurrentCount() != null ? inv.getCurrentCount() : 0)
               .sum();
 
       if (availableStock < item.getQty()) {
-        throw new InsufficientStockException("Insufficient stock for product: " + product.getName(),
-                product.getBarcode(), availableStock, item.getQty());
+        throw new InsufficientStockException("Insufficient stock for product: " + inventory.getName(),
+                inventory.getBarcode(), availableStock, item.getQty());
       }
 
-      // Use mapper to create SaleItem
-      SaleItem saleItem = saleMapper.toSaleItem(item, product);
+      // Use mapper to create SaleItem (passing inventory instead of product)
+      SaleItem saleItem = saleMapper.toSaleItem(item, inventory);
       saleItems.add(saleItem);
     }
     return saleItems;

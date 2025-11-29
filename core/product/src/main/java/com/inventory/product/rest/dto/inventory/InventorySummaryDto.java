@@ -9,7 +9,10 @@ import java.time.Instant;
 @Builder
 public class InventorySummaryDto {
   String lotId;
-  String productId;
+  String barcode;
+  String name;
+  String description;
+  String companyName;
   Integer receivedCount;
   Integer soldCount;
   Integer currentCount;

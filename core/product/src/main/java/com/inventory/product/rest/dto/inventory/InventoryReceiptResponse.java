@@ -7,7 +7,7 @@ import lombok.Value;
 @Builder
 public class InventoryReceiptResponse {
   String lotId;
-  String productId;
+  String barcode;
   boolean reminderCreated;
 }
 

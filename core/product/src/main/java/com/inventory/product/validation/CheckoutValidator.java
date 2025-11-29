@@ -1,9 +1,7 @@
 package com.inventory.product.validation;
 
 import com.inventory.common.exception.ValidationException;
-import com.inventory.product.domain.repository.ProductRepository;
 import com.inventory.product.rest.dto.sale.CheckoutRequest;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
@@ -13,9 +11,6 @@ public class CheckoutValidator {
 
   private static final int MAX_QUANTITY = 1000;
   private static final int MAX_ITEMS_PER_SALE = 100;
-
-  @Autowired
-  private ProductRepository productRepository;
 
   public void validateCheckoutRequest(CheckoutRequest request) {
     if (request == null) {

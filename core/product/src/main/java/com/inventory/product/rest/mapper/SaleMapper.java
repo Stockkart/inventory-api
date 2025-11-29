@@ -1,6 +1,6 @@
 package com.inventory.product.rest.mapper;
 
-import com.inventory.product.domain.model.Product;
+import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Sale;
 import com.inventory.product.domain.model.SaleItem;
 import com.inventory.product.rest.dto.sale.CheckoutRequest;
@@ -48,13 +48,27 @@ public interface SaleMapper {
               BigDecimal subTotal, BigDecimal taxTotal,
               BigDecimal discountTotal, BigDecimal grandTotal);
 
-  @Mapping(target = "productId", source = "product.barcode")
-  @Mapping(target = "productName", source = "product.name")
-  @Mapping(target = "salePrice", source = "product.price")
+  @Mapping(target = "productId", source = "inventory.barcode")
+  @Mapping(target = "productName", source = "inventory.name")
+  @Mapping(target = "salePrice", expression = "java(getSalePrice(inventory))")
   @Mapping(target = "quantity", source = "item.qty")
-  @Mapping(target = "total", expression = "java(calculateItemTotal(product.getPrice(), item))")
-  @Mapping(target = "discount", expression = "java(calculateDiscount(item.getDiscount(), product.getPrice(), item.getQty()))")
-  SaleItem toSaleItem(CheckoutRequest.CheckoutItem item, Product product);
+  @Mapping(target = "total", expression = "java(calculateItemTotal(getSalePrice(inventory), item))")
+  @Mapping(target = "discount", expression = "java(calculateDiscount(item.getDiscount(), getSalePrice(inventory), item.getQty()))")
+  SaleItem toSaleItem(CheckoutRequest.CheckoutItem item, Inventory inventory);
+
+  default BigDecimal getSalePrice(Inventory inventory) {
+    if (inventory == null) {
+      return BigDecimal.ZERO;
+    }
+    // Use sellingPrice, fallback to maximumRetailPrice, then costPrice
+    if (inventory.getSellingPrice() != null) {
+      return inventory.getSellingPrice();
+    }
+    if (inventory.getMaximumRetailPrice() != null) {
+      return inventory.getMaximumRetailPrice();
+    }
+    return inventory.getCostPrice() != null ? inventory.getCostPrice() : BigDecimal.ZERO;
+  }
 
   // Helper methods for mapping expressions
   default BigDecimal calculateItemTotal(BigDecimal price, CheckoutRequest.CheckoutItem item) {

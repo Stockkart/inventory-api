@@ -3,6 +3,7 @@ package com.inventory.app;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.data.mongodb.repository.config.EnableMongoRepositories;
+import org.springframework.scheduling.annotation.EnableAsync;
 
 @SpringBootApplication(scanBasePackages = {
         "com.inventory.*"
@@ -12,6 +13,7 @@ import org.springframework.data.mongodb.repository.config.EnableMongoRepositorie
         "com.inventory.user.domain.repository",
         "com.inventory.notifications.domain.repository"
 })
+@EnableAsync
 public class AppApplication {
 
   public static void main(String[] args) {
