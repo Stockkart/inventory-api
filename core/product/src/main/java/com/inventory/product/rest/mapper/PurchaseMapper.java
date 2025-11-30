@@ -3,6 +3,7 @@ package com.inventory.product.rest.mapper;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
+import com.inventory.product.rest.dto.sale.AddToCartRequest;
 import com.inventory.product.rest.dto.sale.CheckoutRequest;
 import com.inventory.product.rest.dto.sale.SaleStatusResponse;
 import org.mapstruct.Mapper;
@@ -50,6 +51,14 @@ public interface PurchaseMapper {
   @Mapping(target = "sellingPrice", source = "item.sellingPrice")
   @Mapping(target = "discount", expression = "java(calculateDiscount(inventory.getMaximumRetailPrice(), item.getSellingPrice()))")
   PurchaseItem toPurchaseItem(CheckoutRequest.CheckoutItem item, Inventory inventory);
+
+  @Mapping(target = "inventoryId", source = "item.lotId")
+  @Mapping(target = "name", source = "inventory.name")
+  @Mapping(target = "quantity", source = "item.quantity")
+  @Mapping(target = "maximumRetailPrice", source = "inventory.maximumRetailPrice")
+  @Mapping(target = "sellingPrice", source = "item.sellingPrice")
+  @Mapping(target = "discount", expression = "java(calculateDiscount(inventory.getMaximumRetailPrice(), item.getSellingPrice()))")
+  PurchaseItem toPurchaseItemFromCartItem(AddToCartRequest.CartItem item, Inventory inventory);
 
   // Helper method to calculate discount: maximumRetailPrice - sellingPrice
   default BigDecimal calculateDiscount(BigDecimal maximumRetailPrice, BigDecimal sellingPrice) {
