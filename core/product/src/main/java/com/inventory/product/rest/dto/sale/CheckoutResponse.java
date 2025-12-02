@@ -11,6 +11,7 @@ import java.util.List;
 @Value
 @Builder
 public class CheckoutResponse {
+  String purchaseId;
   String invoiceId;
   String invoiceNo;
   String businessType;
@@ -23,5 +24,8 @@ public class CheckoutResponse {
   BigDecimal grandTotal;
   String paymentMethod;
   PurchaseStatus status;
+  String customerName;
+  String customerAddress;
+  String customerPhone;
 }
 

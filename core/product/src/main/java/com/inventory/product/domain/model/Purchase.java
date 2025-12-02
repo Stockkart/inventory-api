@@ -34,5 +34,8 @@ public class Purchase {
   private boolean valid;
   private String paymentMethod;
   private PurchaseStatus status;
+  private String customerName;
+  private String customerAddress;
+  private String customerPhone;
 }
 

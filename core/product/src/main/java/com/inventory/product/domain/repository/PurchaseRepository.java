@@ -11,8 +11,6 @@ import java.util.Optional;
 @Repository
 public interface PurchaseRepository extends MongoRepository<Purchase, String> {
 
-  Optional<Purchase> findByInvoiceNo(String invoiceNo);
-  
   Optional<Purchase> findByUserIdAndShopIdAndStatus(String userId, String shopId, PurchaseStatus status);
   
   Optional<Purchase> findByUserIdAndShopIdAndStatusIn(String userId, String shopId, List<PurchaseStatus> statuses);

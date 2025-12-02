@@ -15,21 +15,6 @@ public class CheckoutValidator {
   private static final int MAX_QUANTITY = 1000;
   private static final int MAX_ITEMS_PER_SALE = 100;
 
-  public void validateCheckoutRequest(CheckoutRequest request) {
-    if (request == null) {
-      throw new ValidationException("Checkout request cannot be null");
-    }
-    if (!StringUtils.hasText(request.getBusinessType())) {
-      throw new ValidationException("Business type is required");
-    }
-    if (CollectionUtils.isEmpty(request.getItems())) {
-      throw new ValidationException("At least one item is required for checkout");
-    }
-    if (request.getItems().size() > MAX_ITEMS_PER_SALE) {
-      throw new ValidationException("Exceeded maximum number of items per sale (" + MAX_ITEMS_PER_SALE + ")");
-    }
-  }
-
   public void validateCheckoutItem(CheckoutRequest.CheckoutItem item) {
     if (!StringUtils.hasText(item.getLotId())) {
       throw new ValidationException("Lot ID is required for item");
@@ -57,9 +42,6 @@ public class CheckoutValidator {
     }
     if (!StringUtils.hasText(request.getBusinessType())) {
       throw new ValidationException("Business type is required");
-    }
-    if (CollectionUtils.isEmpty(request.getItems())) {
-      throw new ValidationException("At least one item is required");
     }
     if (request.getItems().size() > MAX_ITEMS_PER_SALE) {
       throw new ValidationException("Exceeded maximum number of items per sale (" + MAX_ITEMS_PER_SALE + ")");

@@ -10,6 +10,9 @@ public class AddToCartRequest {
 
   private String businessType;
   private List<CartItem> items;
+  private String customerName;      // Optional
+  private String customerAddress;   // Optional
+  private String customerPhone;     // Optional
 
   @Data
   public static class CartItem {

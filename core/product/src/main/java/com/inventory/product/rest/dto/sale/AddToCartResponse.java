@@ -23,5 +23,9 @@ public class AddToCartResponse {
   BigDecimal discountTotal;
   BigDecimal grandTotal;
   PurchaseStatus status;
+  String customerName;
+  String customerAddress;
+  String customerPhone;
+  String paymentMethod;
 }
 

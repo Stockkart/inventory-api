@@ -81,7 +81,8 @@ public class CheckoutService {
         
         // Update existing cart - merge items
         log.info("Updating existing cart with ID: {}", existingCart.getId());
-        purchase = updateCart(existingCart, newItems, request.getBusinessType());
+        purchase = updateCart(existingCart, newItems, request.getBusinessType(), 
+                request.getCustomerName(), request.getCustomerAddress(), request.getCustomerPhone());
       } else {
         // Create new cart (stock validation already done in processCartItems for positive quantities)
         log.info("Creating new cart");
@@ -120,11 +121,11 @@ public class CheckoutService {
     if (request == null) {
       throw new ValidationException("Update purchase status request cannot be null");
     }
+    if (request.getPurchaseId() == null || !StringUtils.hasText(request.getPurchaseId())) {
+      throw new ValidationException("Purchase ID is required");
+    }
     if (request.getStatus() == null) {
       throw new ValidationException("Status is required");
-    }
-    if (request.getStatus() != PurchaseStatus.PENDING && request.getStatus() != PurchaseStatus.COMPLETED) {
-      throw new ValidationException("Status must be either PENDING or COMPLETED");
     }
 
     // Set default payment method to "CASH" if not provided
@@ -132,21 +133,33 @@ public class CheckoutService {
       request.setPaymentMethod("CASH");
     }
 
-    log.info("Updating purchase status to {} for shop: {}, user: {}", request.getStatus(), shopId, userId);
+    log.info("Updating purchase status to {} for purchase ID: {}, shop: {}, user: {}", 
+            request.getStatus(), request.getPurchaseId(), shopId, userId);
 
     try {
-      // Find existing cart (CREATED or PENDING status)
-      List<PurchaseStatus> statuses = List.of(PurchaseStatus.CREATED, PurchaseStatus.PENDING);
-      Purchase purchase = purchaseRepository.findByUserIdAndShopIdAndStatusIn(userId, shopId, statuses)
-              .orElseThrow(() -> new ResourceNotFoundException("Cart", "userId and shopId", 
-                  "No active cart found for user " + userId + " and shop " + shopId));
+      // Find purchase by ID
+      Purchase purchase = purchaseRepository.findById(request.getPurchaseId())
+              .orElseThrow(() -> new ResourceNotFoundException("Purchase", "id",
+                  "No purchase found with ID " + request.getPurchaseId()));
+
+      // Verify purchase belongs to the user's shop
+      if (!shopId.equals(purchase.getShopId()) || !userId.equals(purchase.getUserId())) {
+        throw new ValidationException("Purchase does not belong to the authenticated user's shop");
+      }
+
+      // Validate status transition
+      PurchaseStatus currentStatus = purchase.getStatus();
+      PurchaseStatus requestedStatus = request.getStatus();
+      
+      validateStatusTransition(currentStatus, requestedStatus);
 
       // Update status and payment method
-      purchase.setStatus(request.getStatus());
+      purchase.setStatus(requestedStatus);
       purchase.setPaymentMethod(request.getPaymentMethod());
       purchase = purchaseRepository.save(purchase);
 
-      log.info("Successfully updated purchase status to {} for purchase ID: {}", request.getStatus(), purchase.getId());
+      log.info("Successfully updated purchase status from {} to {} for purchase ID: {}", 
+              currentStatus, requestedStatus, purchase.getId());
 
       // Build response
       return buildCheckoutResponse(purchase);
@@ -332,6 +345,9 @@ public class CheckoutService {
               .soldAt(java.time.Instant.now())
               .valid(true)
               .status(PurchaseStatus.CREATED)
+              .customerName(request.getCustomerName())
+              .customerAddress(request.getCustomerAddress())
+              .customerPhone(request.getCustomerPhone())
               .build();
 
       return purchaseRepository.save(purchase);
@@ -346,7 +362,8 @@ public class CheckoutService {
     }
   }
 
-  private Purchase updateCart(Purchase existingCart, List<PurchaseItem> newItems, String businessType) {
+  private Purchase updateCart(Purchase existingCart, List<PurchaseItem> newItems, String businessType,
+                              String customerName, String customerAddress, String customerPhone) {
     try {
       // Merge items - if same inventoryId exists, update quantity; otherwise add new
       List<PurchaseItem> mergedItems = new ArrayList<>(existingCart.getItems() != null ? existingCart.getItems() : new ArrayList<>());
@@ -400,6 +417,17 @@ public class CheckoutService {
         existingCart.setBusinessType(businessType);
       }
 
+      // Update customer information if provided
+      if (StringUtils.hasText(customerName)) {
+        existingCart.setCustomerName(customerName);
+      }
+      if (StringUtils.hasText(customerAddress)) {
+        existingCart.setCustomerAddress(customerAddress);
+      }
+      if (StringUtils.hasText(customerPhone)) {
+        existingCart.setCustomerPhone(customerPhone);
+      }
+
       // Recalculate totals
       existingCart.setItems(mergedItems);
       existingCart.setSubTotal(calculateSubtotal(mergedItems));
@@ -423,6 +451,36 @@ public class CheckoutService {
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, 
           "Error updating cart: " + e.getMessage(), e);
     }
+  }
+
+  private void validateStatusTransition(PurchaseStatus currentStatus, PurchaseStatus requestedStatus) {
+    // If status is not changing, allow it
+    if (currentStatus == requestedStatus) {
+      return;
+    }
+
+    // COMPLETED -> any status: Not allowed
+    if (currentStatus == PurchaseStatus.COMPLETED) {
+      throw new ValidationException("Cannot change status from COMPLETED. Purchase is already completed.");
+    }
+
+    // CREATED -> PENDING:
+    if (currentStatus == PurchaseStatus.CREATED && requestedStatus == PurchaseStatus.PENDING) {
+      return;
+    }
+
+    // PENDING or CREATED / COMPLETED: Allowed
+    if (currentStatus == PurchaseStatus.PENDING) {
+      if (requestedStatus == PurchaseStatus.CREATED || requestedStatus == PurchaseStatus.COMPLETED) {
+        return;
+      }
+    }
+
+    // Any other transition: Not allowed
+    throw new ValidationException(
+            String.format("Invalid status transition from %s to %s. " +
+                    "Allowed transitions: CREATED->PENDING, PENDING->CREATED, PENDING->COMPLETED",
+                    currentStatus, requestedStatus));
   }
 
   private void validateStockAvailabilityForCartUpdate(Purchase existingCart, List<PurchaseItem> newItems, String shopId) {
@@ -468,8 +526,8 @@ public class CheckoutService {
   private Purchase updateCartForCheckout(Purchase existingCart, List<PurchaseItem> newItems, 
                                          String businessType, String paymentMethod) {
     try {
-      // Update cart with new items
-      Purchase updatedCart = updateCart(existingCart, newItems, businessType);
+      // Update cart with new items (customer fields not updated during checkout)
+      Purchase updatedCart = updateCart(existingCart, newItems, businessType, null, null, null);
       
       // Change status to PENDING
       updatedCart.setStatus(PurchaseStatus.PENDING);
@@ -620,6 +678,10 @@ public class CheckoutService {
               .discountTotal(purchase.getDiscountTotal())
               .grandTotal(purchase.getGrandTotal())
               .status(purchase.getStatus())
+              .customerName(purchase.getCustomerName())
+              .customerAddress(purchase.getCustomerAddress())
+              .customerPhone(purchase.getCustomerPhone())
+              .paymentMethod(purchase.getPaymentMethod())
               .build();
     } catch (BaseException e) {
       throw e;
@@ -650,6 +712,9 @@ public class CheckoutService {
               .grandTotal(purchase.getGrandTotal())
               .paymentMethod(purchase.getPaymentMethod())
               .status(purchase.getStatus())
+              .customerName(purchase.getCustomerName())
+              .customerAddress(purchase.getCustomerAddress())
+              .customerPhone(purchase.getCustomerPhone())
               .build();
     } catch (BaseException e) {
       // Re-throw BaseException and its subclasses (ValidationException, etc.)
