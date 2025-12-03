@@ -10,8 +10,6 @@ services:
       mongodb:
         condition: service_healthy
     environment:
-      # Runtime environment variables (can override build-time values)
-      # Use 'mongodb' as hostname when running in Docker (service name)
       DB_URI: ${DB_URI}
       CLIENT_URL: ${CLIENT_URL}
     ports:
