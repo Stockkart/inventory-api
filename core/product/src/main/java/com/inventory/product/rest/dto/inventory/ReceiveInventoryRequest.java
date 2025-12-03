@@ -15,5 +15,9 @@ public class ReceiveInventoryRequest {
   private String userId;
   private String name;
   private BigDecimal price;
+  private Instant reminderAt;
+  private Instant newReminderAt;
+  private Instant reminderEndDate;
+  private String reminderNotes;
 }
 

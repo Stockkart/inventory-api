@@ -37,6 +37,11 @@
             <version>1.5.5.Final</version>
             <scope>provided</scope>
         </dependency>
+        <dependency>
+            <groupId>com.inventory</groupId>
+            <artifactId>notifications</artifactId>
+            <version>${project.version}</version>
+        </dependency>
     </dependencies>
 
     <artifactId>product</artifactId>

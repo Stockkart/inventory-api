@@ -21,10 +21,10 @@ public class ReminderController {
     return ResponseEntity.ok(ApiResponse.success(reminderService.list(shopId)));
   }
 
-  @PostMapping("/{id}/snooze")
-  public ResponseEntity<ApiResponse<ReminderResponse>> snooze(@PathVariable String id,
-                                                 @RequestBody SnoozeReminderRequest request) {
-    return ResponseEntity.ok(ApiResponse.success(reminderService.snooze(id, request)));
-  }
+//  @PostMapping("/{id}/snooze")
+//  public ResponseEntity<ApiResponse<ReminderResponse>> snooze(@PathVariable String id,
+//                                                 @RequestBody SnoozeReminderRequest request) {
+//    return ResponseEntity.ok(ApiResponse.success(reminderService.snooze(id, request)));
+//  }
 }
 

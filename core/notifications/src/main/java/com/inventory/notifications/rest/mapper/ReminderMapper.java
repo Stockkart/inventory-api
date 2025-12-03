@@ -6,7 +6,7 @@ import com.inventory.notifications.rest.dto.ReminderResponse;
 import com.inventory.notifications.rest.dto.SnoozeReminderRequest;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
-
+import org.mapstruct.MappingTarget;
 import java.time.Instant;
 import java.util.List;
 
@@ -28,13 +28,16 @@ public interface ReminderMapper {
   }
 
   @Mapping(target = "id", ignore = true)
-  @Mapping(target = "snoozeUntil", ignore = true)
+  @Mapping(target = "snoozeDays", ignore = true)
   @Mapping(target = "status", constant = "PENDING")
+  @Mapping(target = "endDate", source = "expiryDate")
+  @Mapping(target = "notes", ignore = true)
+  @Mapping(target = "createdAt", expression = "java(java.time.Instant.now())")
+  @Mapping(target = "updatedAt", expression = "java(java.time.Instant.now())")
   Reminder toReminder(String shopId, String inventoryId, Instant reminderAt, Instant expiryDate);
 
-  @Mapping(target = "id", source = "id")
-  @Mapping(target = "snoozeUntil", source = "request.snoozeUntil")
-  @Mapping(target = "status", constant = "SNOOZED")
-  Reminder updateReminder(Reminder reminder, String id, SnoozeReminderRequest request);
+//  @Mapping(target = "snoozeDays", source = "request.snoozeDays")
+//  @Mapping(target = "status", constant = "SNOOZED")
+//  @Mapping(target = "updatedAt", expression = "java(java.time.Instant.now())")
+//  Reminder updateReminder(Reminder reminder, SnoozeReminderRequest request);
 }
-

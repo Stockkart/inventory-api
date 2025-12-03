@@ -18,6 +18,7 @@ import java.util.Map;
 public class Inventory {
 
   @Id
+  private String id;
   private String lotId;
   private String productId;
   private String location;

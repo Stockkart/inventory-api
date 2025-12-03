@@ -6,6 +6,8 @@ import java.time.Instant;
 
 @Data
 public class SnoozeReminderRequest {
-  private Instant snoozeUntil;
+  private Integer snoozeDays;
+
+  private String notes;
 }
 

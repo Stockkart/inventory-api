@@ -6,6 +6,7 @@ import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Product;
+import com.inventory.notifications.rest.dto.*;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.ProductRepository;
 import com.inventory.product.rest.dto.inventory.*;
@@ -38,6 +39,9 @@ public class InventoryService {
   @Autowired
   private InventoryValidator inventoryValidator;
 
+  @Autowired
+  private com.inventory.notifications.service.ReminderService reminderService;
+
   public InventoryReceiptResponse receive(ReceiveInventoryRequest request) {
     try {
       // Input validation using InventoryValidator
@@ -69,7 +73,42 @@ public class InventoryService {
       inventory = inventoryRepository.save(inventory);
       log.info("Received inventory for product: {} in shop: {}", product.getBarcode(), request.getShopId());
 
-      // Map to response
+      if (request.getReminderAt() != null) {
+        try {
+          CreateReminderRequest standardReq = new CreateReminderRequest();
+          standardReq.setInventoryId(inventory.getId());
+          standardReq.setReminderAt(request.getReminderAt());
+          standardReq.setEndDate(request.getExpiryDate());
+          standardReq.setNotes("Expiring Soon: " + request.getName());
+
+          reminderService.createReminder(standardReq, request.getShopId(), request.getUserId());
+          log.info("Standard expiry reminder created for Inventory: {}", inventory.getId());
+        } catch (Exception e) {
+          log.error("Failed to create standard reminder: {}", e.getMessage());
+        }
+      }
+
+      if (request.getNewReminderAt() != null) {
+        try {
+          CreateReminderRequest customReq = new CreateReminderRequest();
+          customReq.setInventoryId(inventory.getId());
+          customReq.setReminderAt(request.getNewReminderAt());
+
+          if (request.getReminderEndDate() != null) {
+            customReq.setEndDate(request.getReminderEndDate());
+          } else {
+            customReq.setEndDate(request.getExpiryDate());
+          }
+
+          customReq.setNotes(request.getReminderNotes());
+
+          reminderService.createReminder(customReq, request.getShopId(), request.getUserId());
+          log.info("Custom reminder created for Inventory: {}", inventory.getId());
+        } catch (Exception e) {
+          log.error("Failed to create custom reminder: {}", e.getMessage());
+        }
+      }
+
       return inventoryMapper.toReceiptResponse(inventory);
 
     } catch (ValidationException e) {
