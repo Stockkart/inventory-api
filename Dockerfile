@@ -14,8 +14,14 @@ RUN mvn -pl app -am clean package -DskipTests
 FROM eclipse-temurin:21-jre
 WORKDIR /app
 
+# Convert build arguments to environment variables
+ENV DB_URI=${DB_URI}
+ENV CLIENT_URL=${CLIENT_URL}
+
 # copy the built jar from the app module
 COPY --from=build /build/app/target/*.jar app.jar
 
 EXPOSE 8080
+
+# Use exec form to ensure environment variables are passed correctly
 ENTRYPOINT ["java", "-jar", "app.jar"]
