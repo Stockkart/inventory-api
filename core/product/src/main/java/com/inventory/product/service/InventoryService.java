@@ -4,10 +4,9 @@ import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.notifications.service.ReminderService;
 import com.inventory.product.domain.model.Inventory;
-import com.inventory.product.domain.model.Product;
 import com.inventory.product.domain.repository.InventoryRepository;
-import com.inventory.product.domain.repository.ProductRepository;
 import com.inventory.product.rest.dto.inventory.*;
 import com.inventory.product.rest.mapper.InventoryMapper;
 import com.inventory.product.validation.InventoryValidator;
@@ -17,17 +16,12 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
-import java.time.Instant;
 import java.util.List;
 
 @Slf4j
 @Service
 @Transactional
 public class InventoryService {
-
-  @Autowired
-  private ProductRepository productRepository;
 
   @Autowired
   private InventoryRepository inventoryRepository;
@@ -38,92 +32,63 @@ public class InventoryService {
   @Autowired
   private InventoryValidator inventoryValidator;
 
-  public InventoryReceiptResponse receive(ReceiveInventoryRequest request) {
+  @Autowired
+  private ReminderService reminderService;
+
+  public InventoryReceiptResponse create(CreateInventoryRequest request, String userId, String shopId) {
     try {
-      // Input validation using InventoryValidator
-      inventoryValidator.validateReceiveRequest(request);
+      // Input validation
+      inventoryValidator.validateCreateRequest(request);
 
-      // Find or create product
-      Product product = productRepository.findById(request.getBarcode())
-              .orElseGet(() -> inventoryMapper.createProductFromRequest(request));
-
-      // Update product details if needed
-      if (request.getPrice() != null && !request.getPrice().equals(product.getPrice())) {
-        product.setPrice(request.getPrice());
-      }
-      if (request.getName() != null && !request.getName().trim().equals(product.getName())) {
-        product.setName(request.getName().trim());
-      }
-
-      // Save product if it has a barcode
-      if (product.getBarcode() != null) {
-        product = productRepository.save(product);
-      }
+      log.debug("Creating inventory for barcode: {} in shop: {}", request.getBarcode(), shopId);
 
       // Map and save inventory
       Inventory inventory = inventoryMapper.toEntity(request);
+      inventory.setShopId(shopId);
+      inventory.setUserId(userId);
       inventory.setExpiryDate(request.getExpiryDate());
-      inventory.setShopId(request.getShopId());
-      inventory.setUserId(request.getUserId());
 
       inventory = inventoryRepository.save(inventory);
-      log.info("Received inventory for product: {} in shop: {}", product.getBarcode(), request.getShopId());
+      log.info("Successfully created inventory lot: {} for product: {} in shop: {}", 
+               inventory.getLotId(), inventory.getBarcode(), shopId);
+
+      // Create reminder for expiry date asynchronously (handled by ReminderService)
+      // Fire and forget - don't wait for completion
+      reminderService.createReminderForExpiry(shopId, inventory.getLotId(), inventory.getExpiryDate());
 
       // Map to response
-      return inventoryMapper.toReceiptResponse(inventory);
+      InventoryReceiptResponse response = inventoryMapper.toReceiptResponse(inventory);
+      // Set reminderCreated to true if expiry date exists (optimistic - actual creation happens async)
+      boolean reminderCreated = inventory.getExpiryDate() != null;
+      return InventoryReceiptResponse.builder()
+          .lotId(response.getLotId())
+          .barcode(response.getBarcode())
+          .reminderCreated(reminderCreated)
+          .build();
 
     } catch (ValidationException e) {
-      log.warn("Validation error in receive inventory: {}", e.getMessage());
+      log.warn("Validation error in create inventory: {}", e.getMessage());
       throw e;
     } catch (DataAccessException e) {
-      log.error("Database error while receiving inventory: {}", e.getMessage(), e);
+      log.error("Database error while creating inventory: {}", e.getMessage(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Error processing inventory");
     } catch (Exception e) {
-      log.error("Unexpected error while receiving inventory: {}", e.getMessage(), e);
+      log.error("Unexpected error while creating inventory: {}", e.getMessage(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Failed to process inventory");
-    }
-  }
-
-  private Product createProductFromRequest(ReceiveInventoryRequest request) {
-    try {
-      if (request.getBarcode() == null || request.getBarcode().trim().isEmpty()) {
-        throw new ValidationException("Barcode is required");
-      }
-      if (request.getName() == null || request.getName().trim().isEmpty()) {
-        throw new ValidationException("Product name is required");
-      }
-
-      Product product = new Product();
-      product.setBarcode(request.getBarcode().trim());
-      product.setName(request.getName().trim());
-      product.setPrice(request.getPrice() != null ? request.getPrice() : BigDecimal.ZERO);
-      product.setCompanyCode("");
-      product.setProductTypeCode("");
-      product.setCreatedAt(Instant.now());
-      product.setUpdatedAt(Instant.now());
-      return product;
-
-    } catch (ValidationException e) {
-      log.warn("Validation error in createProductFromRequest: {}", e.getMessage());
-      throw e;
-    } catch (Exception e) {
-      log.error("Error creating product from request: {}", e.getMessage(), e);
-      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Failed to create product");
     }
   }
 
   public InventoryListResponse list(String shopId) {
     try {
-      // Validate shopId using InventoryValidator
+      // Validate shopId
       inventoryValidator.validateShopId(shopId);
+
+      log.debug("Listing inventory for shop: {}", shopId);
 
       List<Inventory> inventories = inventoryRepository.findByShopId(shopId);
 
       List<InventorySummaryDto> summaries = inventories.stream()
-              .map(inventory -> {
-                // Map inventory to summary DTO
-                return inventoryMapper.toSummary(inventory);
-              })
+              .map(inventoryMapper::toSummary)
               .toList();
 
       return InventoryListResponse.builder()
@@ -142,12 +107,46 @@ public class InventoryService {
     }
   }
 
+  public InventoryListResponse search(String shopId, String query) {
+    try {
+      // Validate inputs
+      inventoryValidator.validateShopId(shopId);
+      if (query == null || query.trim().isEmpty()) {
+        throw new ValidationException("Search query is required");
+      }
+
+      log.debug("Searching inventory for shop: {} with query: {}", shopId, query);
+
+      List<Inventory> inventories = inventoryRepository.searchByShopIdAndQuery(shopId, query.trim());
+
+      List<InventorySummaryDto> summaries = inventories.stream()
+              .map(inventoryMapper::toSummary)
+              .toList();
+
+      return InventoryListResponse.builder()
+              .data(summaries)
+              .build();
+
+    } catch (ValidationException e) {
+      log.warn("Validation error in search inventory: {}", e.getMessage());
+      throw e;
+    } catch (DataAccessException e) {
+      log.error("Database error while searching inventory: {}", e.getMessage(), e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Error searching inventory");
+    } catch (Exception e) {
+      log.error("Unexpected error while searching inventory: {}", e.getMessage(), e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Failed to search inventory");
+    }
+  }
+
   public InventoryDetailResponse getLot(String lotId) {
     try {
-      // Validate lotId using InventoryValidator
+      // Validate lotId
       inventoryValidator.validateLotId(lotId);
 
-      // Find inventory by ID (using lotId as the ID since it's the @Id field)
+      log.debug("Getting inventory lot: {}", lotId);
+
+      // Find inventory by ID
       Inventory inventory = inventoryRepository.findById(lotId)
               .orElseThrow(() -> new ResourceNotFoundException("Inventory lot", "lotId", lotId));
 

@@ -6,14 +6,16 @@ import java.math.BigDecimal;
 import java.util.List;
 
 @Data
-public class CheckoutRequest {
+public class AddToCartRequest {
 
   private String businessType;
-  private List<CheckoutItem> items;
-  private String paymentMethod; // Defaults to "CASH" if not provided
+  private List<CartItem> items;
+  private String customerName;      // Optional
+  private String customerAddress;   // Optional
+  private String customerPhone;     // Optional
 
   @Data
-  public static class CheckoutItem {
+  public static class CartItem {
     private String lotId;
     private Integer quantity;
     private BigDecimal sellingPrice;

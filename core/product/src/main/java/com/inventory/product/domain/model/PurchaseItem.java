@@ -11,13 +11,13 @@ import java.math.BigDecimal;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class SaleItem {
+public class PurchaseItem {
 
-  private String productId;
-  private String productName;
+  private String inventoryId;
+  private String name;
   private Integer quantity;
-  private BigDecimal salePrice;
+  private BigDecimal maximumRetailPrice;
+  private BigDecimal sellingPrice;
   private BigDecimal discount;
-  private BigDecimal total;
 }
 

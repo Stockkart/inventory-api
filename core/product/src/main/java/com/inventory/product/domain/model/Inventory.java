@@ -7,8 +7,8 @@ import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
+import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.Map;
 
 @Data
 @Builder
@@ -19,17 +19,23 @@ public class Inventory {
 
   @Id
   private String lotId;
-  private String productId;
+  private String barcode;
+  private String name;
+  private String description;
+  private String companyName;
+  private String businessType;
   private String location;
   private Integer receivedCount;
   private Integer soldCount;
   private Integer currentCount;
   private Instant receivedDate;
   private Instant expiryDate;
-  private Map<String, Object> reminderConfig;
-  private Instant createdAt;
-  private Instant updatedAt;
   private String shopId;
   private String userId;
+  private BigDecimal maximumRetailPrice;
+  private BigDecimal costPrice;
+  private BigDecimal sellingPrice;
+  private Instant createdAt;
+  private Instant updatedAt;
 }
 

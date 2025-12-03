@@ -10,7 +10,7 @@ import java.util.List;
 
 @Value
 @Builder
-public class CheckoutResponse {
+public class AddToCartResponse {
   String purchaseId;
   String invoiceId;
   String invoiceNo;
@@ -22,10 +22,10 @@ public class CheckoutResponse {
   BigDecimal taxTotal;
   BigDecimal discountTotal;
   BigDecimal grandTotal;
-  String paymentMethod;
   PurchaseStatus status;
   String customerName;
   String customerAddress;
   String customerPhone;
+  String paymentMethod;
 }
 
