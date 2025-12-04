@@ -18,6 +18,7 @@ import java.time.Instant;
 public class Inventory {
 
   @Id
+  private String id;
   private String lotId;
   private String barcode;
   private String name;

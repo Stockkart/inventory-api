@@ -54,14 +54,27 @@ public class InventoryService {
 
       // Create reminder for expiry date asynchronously (handled by ReminderService)
       // Fire and forget - don't wait for completion
-      reminderService.createReminderForExpiry(shopId, inventory.getLotId(), inventory.getExpiryDate());
-
+        try {
+            reminderService.createReminderForInventoryCreate(
+                    shopId,
+                    inventory.getId(),                 // or getLotId() if that's your PK
+                    request.getExpiryDate(),           // expiryDate from inventory
+                    request.getReminderAt(),           // optional explicit reminderAt
+                    request.getNewReminderAt(),
+                    request.getReminderEndDate(),      // optional explicit endDate
+                    request.getReminderNotes()         // optional notes
+            );
+        } catch (Exception ex) {
+            // inventory creation must NOT fail because of reminder
+            log.error("Failed to create reminder for inventory lot {}: {}",
+                    inventory.getLotId(), ex.getMessage(), ex);
+        }
       // Map to response
       InventoryReceiptResponse response = inventoryMapper.toReceiptResponse(inventory);
       // Set reminderCreated to true if expiry date exists (optimistic - actual creation happens async)
       boolean reminderCreated = inventory.getExpiryDate() != null;
       return InventoryReceiptResponse.builder()
-          .lotId(response.getLotId())
+          .id(response.getId())
           .barcode(response.getBarcode())
           .reminderCreated(reminderCreated)
           .build();

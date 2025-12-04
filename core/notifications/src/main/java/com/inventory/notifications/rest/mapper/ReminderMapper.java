@@ -14,6 +14,7 @@ import java.util.List;
 public interface ReminderMapper {
 
   @Mapping(target = "reminderId", source = "id")
+  @Mapping(target = "expiryDate", source = "endDate")
   ReminderResponse toResponse(Reminder reminder);
 
   default ReminderListResponse toReminderListResponse(List<Reminder> reminders) {
@@ -27,14 +28,23 @@ public interface ReminderMapper {
     return response;
   }
 
-  @Mapping(target = "id", ignore = true)
-  @Mapping(target = "snoozeUntil", ignore = true)
-  @Mapping(target = "status", constant = "PENDING")
-  Reminder toReminder(String shopId, String inventoryId, Instant reminderAt, Instant expiryDate);
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "snoozeDays", ignore = true)
+    @Mapping(target = "status", constant = "PENDING")
+    @Mapping(target = "createdAt", expression = "java(java.time.Instant.now())")
+    @Mapping(target = "updatedAt", expression = "java(java.time.Instant.now())")
+    Reminder toReminder(
+            String shopId,
+            String inventoryId,
+            Instant reminderAt,
+            Instant endDate,
+            String notes
+    );
 
-  @Mapping(target = "id", source = "id")
-  @Mapping(target = "snoozeUntil", source = "request.snoozeUntil")
-  @Mapping(target = "status", constant = "SNOOZED")
-  Reminder updateReminder(Reminder reminder, String id, SnoozeReminderRequest request);
+    @Mapping(target = "id", source = "id")
+    @Mapping(target = "snoozeDays", ignore = true)
+    @Mapping(target = "status", constant = "SNOOZED")
+    @Mapping(target = "updatedAt", expression = "java(java.time.Instant.now())")
+    Reminder updateReminder(Reminder reminder, String id, SnoozeReminderRequest request);
 }
 

@@ -18,5 +18,9 @@ public class CreateInventoryRequest {
   private String location;
   private Integer count;
   private Instant expiryDate;
+  private Instant reminderAt;
+  private Instant newReminderAt;
+  private Instant reminderEndDate;
+  private String reminderNotes;
 }
 
