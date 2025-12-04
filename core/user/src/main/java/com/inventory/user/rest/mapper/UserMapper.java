@@ -35,6 +35,10 @@ public interface UserMapper {
   @Mapping(target = "userId", source = "userId")
   @Mapping(target = "role", source = "role")
   @Mapping(target = "shopId", source = "shopId")
+  @Mapping(target = "email", source = "email")
+  @Mapping(target = "name", source = "name")
+  @Mapping(target = "active", source = "active")
+  @Mapping(target = "createdAt", source = "updatedAt")
   LoginResponse.UserSummary toUserSummary(UserAccount user);
 
   @Mapping(target = "accessToken", ignore = true)
@@ -56,6 +60,10 @@ public interface UserMapper {
   @Mapping(target = "userId", source = "userId")
   @Mapping(target = "role", source = "role")
   @Mapping(target = "shopId", source = "shopId")
+  @Mapping(target = "email", source = "email")
+  @Mapping(target = "name", source = "name")
+  @Mapping(target = "active", source = "active")
+  @Mapping(target = "createdAt", source = "updatedAt")
   SignupResponse.UserSummary toSignupUserSummary(UserAccount user);
 
   @Mapping(target = "accessToken", ignore = true)
