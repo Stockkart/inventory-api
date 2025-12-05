@@ -74,7 +74,7 @@ public class InventoryService {
       // Set reminderCreated to true if expiry date exists (optimistic - actual creation happens async)
       boolean reminderCreated = inventory.getExpiryDate() != null;
       return InventoryReceiptResponse.builder()
-          .id(response.getId())
+          .lotId(response.getLotId())
           .barcode(response.getBarcode())
           .reminderCreated(reminderCreated)
           .build();

@@ -5,6 +5,7 @@ import java.time.Instant;
 
 @Data
 public class CreateReminderRequest {
+    private String shopId;
     private String inventoryId;;
     private Instant reminderAt;
     private Instant endDate;

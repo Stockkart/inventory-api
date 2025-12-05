@@ -1,21 +1,18 @@
 package com.inventory.notifications.service;
 
 import com.inventory.notifications.domain.model.Reminder;
+import com.inventory.notifications.domain.model.ReminderStatus;
 import com.inventory.notifications.domain.repository.ReminderRepository;
-import com.inventory.notifications.rest.dto.ReminderListResponse;
-import com.inventory.notifications.rest.dto.ReminderResponse;
-import com.inventory.notifications.rest.dto.SnoozeReminderRequest;
+import com.inventory.notifications.rest.dto.*;
 import com.inventory.notifications.rest.mapper.ReminderMapper;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 
 @Slf4j
 @Service
@@ -23,13 +20,10 @@ import java.time.temporal.ChronoUnit;
 @Transactional
 public class ReminderService {
 
-    @Autowired
     private final ReminderRepository reminderRepository;
-
-    @Autowired
     private final ReminderMapper reminderMapper;
 
-    private static final long REMINDER_DAYS_BEFORE_EXPIRY = 7; // Remind 7 days before expiry
+    private static final long REMINDER_DAYS_BEFORE = 15L;
 
     public ReminderListResponse list(String shopId) {
         return reminderMapper.toReminderListResponse(reminderRepository.findByShopId(shopId));
@@ -58,7 +52,7 @@ public class ReminderService {
             String inventoryId,
             Instant expiryDate,
             Instant reminderAt,    // For standard expiry reminder
-            Instant requestNewReminderAt, // For custom reminder start
+            Instant newReminderAt, // For custom reminder start
             Instant reminderEndDate,       // For custom reminder end
             String notes                  // For custom reminder notes
     ) {
@@ -70,71 +64,49 @@ public class ReminderService {
 
         try {
             Instant now = Instant.now();
-            // 15 days before (for both normal and custom)
-            final long REMINDER_DAYS_BEFORE = 15L;
 
             // ---------- 1) NORMAL EXPIRY REMINDER ----------
-            // Rule: only when expiryDate is present
             if (expiryDate != null) {
-                // endDate for expiry reminder = expiryDate
                 Instant expiryEndDate = expiryDate;
 
-                // Decide reminderAt for expiry reminder
-                Instant expiryReminderAt = reminderAt;
-                if (expiryReminderAt == null) {
-                    // default: 15 days before expiry
-                    expiryReminderAt = expiryDate.minus(Duration.ofDays(REMINDER_DAYS_BEFORE));
-                }
+                Instant expiryReminderAt = computeReminderTime(
+                        reminderAt,          // explicit reminderAt
+                        expiryDate,          // base = expiryDate
+                        now,
+                        "EXPIRY",
+                        inventoryId
+                );
 
-                if (expiryReminderAt != null && expiryReminderAt.isAfter(now)) {
-                    Reminder expiryReminder = reminderMapper.toReminder(
-                            shopId,
-                            inventoryId,
-                            expiryReminderAt,
-                            expiryEndDate,
-                            null   // no notes for the normal expiry reminder
-                    );
-
-                    reminderRepository.save(expiryReminder);
-
-                    log.info("Created EXPIRY reminder for inventoryId={} with reminderAt={} and endDate={}",
-                            inventoryId, expiryReminderAt, expiryEndDate);
-                } else {
-                    log.warn("Skipping EXPIRY reminder for inventoryId={} because reminderAt {} is null or in the past",
-                            inventoryId, expiryReminderAt);
-                }
+                createAndSaveReminderIfValid(
+                        shopId,
+                        inventoryId,
+                        expiryReminderAt,
+                        expiryEndDate,
+                        null,                // no notes for normal reminder
+                        "EXPIRY"
+                );
             }
 
             // ---------- 2) CUSTOM REMINDER ----------
-            // Rule: only if reminderEndDate is present
             if (reminderEndDate != null) {
-
                 Instant customEndDate = reminderEndDate;
 
-                // Decide reminderAt for custom reminder
-                Instant customReminderAt = requestNewReminderAt;
-                if (customReminderAt == null) {
-                    // default: 15 days before custom end date
-                    customReminderAt = customEndDate.minus(Duration.ofDays(REMINDER_DAYS_BEFORE));
-                }
+                Instant customReminderAt = computeReminderTime(
+                        newReminderAt,       // explicit custom start
+                        customEndDate,       // base = reminderEndDate
+                        now,
+                        "CUSTOM",
+                        inventoryId
+                );
 
-                if (customReminderAt != null && customReminderAt.isAfter(now)) {
-                    Reminder customReminder = reminderMapper.toReminder(
-                            shopId,
-                            inventoryId,
-                            customReminderAt,
-                            customEndDate,
-                            notes  // notes are optional, can be null
-                    );
-
-                    reminderRepository.save(customReminder);
-
-                    log.info("Created CUSTOM reminder for inventoryId={} with reminderAt={} and endDate={}, notes={}",
-                            inventoryId, customReminderAt, customEndDate, notes);
-                } else {
-                    log.warn("Skipping CUSTOM reminder for inventoryId={} because reminderAt {} is null or in the past",
-                            inventoryId, customReminderAt);
-                }
+                createAndSaveReminderIfValid(
+                        shopId,
+                        inventoryId,
+                        customReminderAt,
+                        customEndDate,
+                        notes,               // notes optional
+                        "CUSTOM"
+                );
             }
 
         } catch (Exception e) {
@@ -143,21 +115,159 @@ public class ReminderService {
         }
     }
 
+    // -------- common helper: compute reminderAt with default 15 days before --------
+    private Instant computeReminderTime(
+            Instant explicitReminderAt,
+            Instant baseDate,        // expiryDate or reminderEndDate
+            Instant now,
+            String type,
+            String inventoryId
+    ) {
+        if (baseDate == null && explicitReminderAt == null) {
+            log.debug("No baseDate or explicitReminderAt for {} reminder on inventoryId={}, skipping", type, inventoryId);
+            return null;
+        }
 
+        Instant result = explicitReminderAt;
+        if (result == null && baseDate != null) {
+            // default: 15 days before base date
+            result = baseDate.minus(Duration.ofDays(REMINDER_DAYS_BEFORE));
+        }
 
-    @Async
-    public void createReminderForExpiry(String shopId, String inventoryId, Instant expiryDate) {
-        createReminderForInventoryCreate(shopId, inventoryId, expiryDate, null, null, null, null);
+        if (result != null && result.isAfter(now)) {
+            return result;
+        }
+
+        log.warn("Computed {} reminderAt {} is null or in the past for inventoryId={}, skipping", type, result, inventoryId);
+        return null;
     }
 
+    // -------- common helper: actually create + save reminder if valid --------
+    private void createAndSaveReminderIfValid(
+            String shopId,
+            String inventoryId,
+            Instant reminderAt,
+            Instant endDate,
+            String notes,
+            String type
+    ) {
+        if (reminderAt == null || endDate == null) {
+            log.debug("Not creating {} reminder for inventoryId={} because reminderAt or endDate is null",
+                    type, inventoryId);
+            return;
+        }
+
+        Reminder reminder = reminderMapper.toReminder(
+                shopId,
+                inventoryId,
+                reminderAt,
+                endDate,
+                notes
+        );
+
+        reminderRepository.save(reminder);
+
+        log.info("Created {} reminder for inventoryId={} with reminderAt={} and endDate={}, notes={}",
+                type, inventoryId, reminderAt, endDate, notes);
+    }
 
     public ReminderResponse snooze(String id, SnoozeReminderRequest request) {
         Reminder reminder = reminderRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Reminder not found"));
 
-        Reminder updatedReminder = reminderMapper.updateReminder(reminder, id, request);
-        reminderRepository.save(updatedReminder);
+        if (request.getSnoozeDays() == null || request.getSnoozeDays() <= 0) {
+            throw new IllegalArgumentException("snoozeDays must be a positive number");
+        }
 
-        return reminderMapper.toResponse(updatedReminder);
+        int daysToSnooze = request.getSnoozeDays();
+
+        // 1) shift reminderAt
+        if (reminder.getReminderAt() != null) {
+            reminder.setReminderAt(
+                    reminder.getReminderAt().plus(Duration.ofDays(daysToSnooze))
+            );
+        }
+
+        // 2) increment snoozeDays
+        reminder.setSnoozeDays(
+                (reminder.getSnoozeDays() == null ? 0 : daysToSnooze)
+        );
+
+        // 3) update status
+        reminder.setStatus(ReminderStatus.SNOOZED);
+
+        // 4) update timestamp
+        reminder.setUpdatedAt(Instant.now());
+
+        reminderRepository.save(reminder);
+        return reminderMapper.toResponse(reminder);
     }
+
+
+    // CREATE (manual, no inventory auto-logic)
+    public ReminderResponse create(CreateReminderRequest request) {
+        // Basic sanity check
+        if (request.getShopId() == null || request.getInventoryId() == null) {
+            throw new IllegalArgumentException("shopId and inventoryId are required");
+        }
+        if (request.getReminderAt() == null) {
+            throw new IllegalArgumentException("reminderAt is required");
+        }
+
+        Reminder reminder = reminderMapper.toReminder(
+                request.getShopId(),
+                request.getInventoryId(),
+                request.getReminderAt(),
+                request.getEndDate(),
+                request.getNotes()
+        );
+
+        reminderRepository.save(reminder);
+        return reminderMapper.toResponse(reminder);
+    }
+
+    // READ (by id)
+    public ReminderResponse get(String id) {
+        Reminder reminder = reminderRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Reminder not found"));
+        return reminderMapper.toResponse(reminder);
+    }
+
+    // UPDATE (manual)
+    public ReminderResponse update(String id, UpdateReminderRequest request) {
+        Reminder reminder = reminderRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Reminder not found"));
+
+        // Update fields only if provided
+        if (request.getReminderAt() != null) {
+            reminder.setReminderAt(request.getReminderAt());
+        }
+        if (request.getEndDate() != null) {
+            reminder.setEndDate(request.getEndDate());
+        }
+        if (request.getNotes() != null) {
+            reminder.setNotes(request.getNotes());
+        }
+        if (request.getStatus() != null) {
+            try {
+                reminder.setStatus(ReminderStatus.valueOf(request.getStatus().toUpperCase()));
+            } catch (IllegalArgumentException ex) {
+                throw new IllegalArgumentException("Invalid status value: " + request.getStatus());
+            }
+        }
+
+        reminder.setUpdatedAt(Instant.now());
+
+        reminderRepository.save(reminder);
+        return reminderMapper.toResponse(reminder);
+    }
+
+    // DELETE
+    public void delete(String id) {
+        if (!reminderRepository.existsById(id)) {
+            throw new IllegalArgumentException("Reminder not found");
+        }
+        reminderRepository.deleteById(id);
+    }
+
 }

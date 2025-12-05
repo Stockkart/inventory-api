@@ -10,7 +10,8 @@ public class ReminderResponse {
   String inventoryId;
   Instant reminderAt;
   Instant expiryDate;
-  Instant snoozeUntil;
+  Integer snoozeDays;
+  String notes;
   String status;
 }
 
