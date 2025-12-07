@@ -156,6 +156,7 @@ public interface PurchaseMapper {
 
   // Method to map Purchase to PurchaseSummaryDto
   @Mapping(target = "purchaseId", source = "id")
+  @Mapping(target = "items", expression = "java(purchase.getItems() != null ? purchase.getItems() : java.util.List.of())")
   PurchaseSummaryDto toPurchaseSummaryDto(Purchase purchase);
 }
 
