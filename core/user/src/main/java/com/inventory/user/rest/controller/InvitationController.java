@@ -72,7 +72,7 @@ public class InvitationController {
 
   /**
    * Get all invitations for the current user.
-   * 
+   *
    * @param httpRequest HTTP request to get userId from interceptor
    * @return List of invitations for the user
    */
@@ -81,11 +81,11 @@ public class InvitationController {
           HttpServletRequest httpRequest) {
     // Get userId from request attributes (set by AuthenticationInterceptor)
     String userId = (String) httpRequest.getAttribute("userId");
-    
+
     if (!StringUtils.hasText(userId)) {
       throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "User not authenticated");
     }
-    
+
     return ResponseEntity.ok(ApiResponse.success(
             invitationService.getInvitationsForUser(userId)));
   }
@@ -103,34 +103,15 @@ public class InvitationController {
           HttpServletRequest httpRequest) {
     // Get shopId from interceptor for validation
     String shopIdFromInterceptor = (String) httpRequest.getAttribute("shopId");
-    
+    String userId = (String) httpRequest.getAttribute("userId");
+
     // Validate that the shopId in path matches the user's shopId from interceptor
     if (!StringUtils.hasText(shopIdFromInterceptor) || !shopId.equals(shopIdFromInterceptor)) {
       throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "User does not belong to this shop");
     }
     
     return ResponseEntity.ok(ApiResponse.success(
-            invitationService.getInvitationsForShop(shopId)));
-  }
-
-  /**
-   * Get all shops for the current user (owned shops and invited shops).
-   * 
-   * @param httpRequest HTTP request to get userId from interceptor
-   * @return List of shops the user is associated with
-   */
-  @GetMapping("/users/shops")
-  public ResponseEntity<ApiResponse<UserShopListResponse>> getShopsForUser(
-          HttpServletRequest httpRequest) {
-    // Get userId from request attributes (set by AuthenticationInterceptor)
-    String userId = (String) httpRequest.getAttribute("userId");
-    
-    if (!StringUtils.hasText(userId)) {
-      throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "User not authenticated");
-    }
-    
-    return ResponseEntity.ok(ApiResponse.success(
-            invitationService.getShopsForUser(userId)));
+            invitationService.getInvitationsForShop(shopId, userId)));
   }
 
   /**

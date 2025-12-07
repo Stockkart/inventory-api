@@ -41,7 +41,7 @@ public interface InvitationRepository extends MongoRepository<Invitation, String
    * @param inviterUserId the user ID of the inviter
    * @return list of invitations sent by the user
    */
-  List<Invitation> findByInviterUserId(String inviterUserId);
+  List<Invitation> findByInviterUserIdAndShopId(String inviterUserId, String shopId);
 
   /**
    * Find pending invitation for a user and shop.

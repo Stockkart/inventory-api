@@ -6,6 +6,7 @@ import com.inventory.common.exception.ResourceExistsException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.user.domain.model.Invitation;
+import com.inventory.user.domain.model.InvitationStatus;
 import com.inventory.user.domain.model.UserAccount;
 import com.inventory.user.domain.repository.InvitationRepository;
 import com.inventory.user.domain.repository.UserAccountRepository;
@@ -60,6 +61,16 @@ public class InvitationService {
         throw new ValidationException("User does not belong to this shop");
       }
 
+      // Verify that the inviter is a shop owner (not an invited user)
+      // Shop owners are users who don't have an accepted invitation for this shop
+      boolean isInvitedUser = invitationRepository
+              .findByInviteeUserIdAndShopIdAndStatus(inviterUserId, shopId, InvitationStatus.ACCEPTED.name())
+              .isPresent();
+      
+      if (isInvitedUser) {
+        throw new ValidationException("Only shop owners can send invitations");
+      }
+
       // Find invitee by email
       String inviteeEmail = request.getInviteeEmail().toLowerCase().trim();
       UserAccount invitee = userAccountRepository.findByEmail(inviteeEmail)
@@ -72,7 +83,7 @@ public class InvitationService {
 
       // Check if there's already a pending invitation for this user and shop
       invitationRepository.findByInviteeUserIdAndShopIdAndStatus(
-              invitee.getUserId(), shopId, "PENDING")
+              invitee.getUserId(), shopId, InvitationStatus.PENDING.name())
               .ifPresent(invitation -> {
                 throw new ResourceExistsException("A pending invitation already exists for this user");
               });
@@ -85,8 +96,9 @@ public class InvitationService {
 
       // Create invitation
       Invitation invitation = invitationMapper.toEntity(shopId, inviterUserId, request);
-      invitation.setInviteeUserId(invitee.getUserId());
-      invitation.setShopName(shopName);
+      // Ensure timestamps and ID are set (in case @AfterMapping didn't execute)
+      invitationMapper.setInvitationTimestampsAndId(invitation, request);
+      invitationMapper.setInviteeAndShopName(invitation, invitee.getUserId(), shopName);
       invitation = invitationRepository.save(invitation);
 
       log.info("Created invitation with ID: {} for user: {} to shop: {}", 
@@ -121,13 +133,13 @@ public class InvitationService {
       }
 
       // Verify invitation status
-      if (!"PENDING".equals(invitation.getStatus())) {
+      if (!InvitationStatus.PENDING.name().equals(invitation.getStatus())) {
         throw new ValidationException("Invitation is not in PENDING status");
       }
 
       // Check if invitation has expired
       if (invitation.getExpiresAt() != null && invitation.getExpiresAt().isBefore(Instant.now())) {
-        invitation.setStatus("EXPIRED");
+        invitation.setStatus(InvitationStatus.EXPIRED.name());
         invitationRepository.save(invitation);
         throw new ValidationException("Invitation has expired");
       }
@@ -141,23 +153,12 @@ public class InvitationService {
       UserAccount user = userAccountRepository.findById(userId)
               .orElseThrow(() -> new ResourceNotFoundException("User", "userId", userId));
 
-      // Check if user already belongs to another shop
-      if (user.getShopId() != null && !user.getShopId().trim().isEmpty() && !user.getShopId().equals(invitation.getShopId())) {
-        throw new ResourceExistsException("User already belongs to another shop");
-      }
-
       log.info("Accepting invitation {} for user {} to shop {}", 
                invitationId, userId, invitation.getShopId());
 
-      // Update invitation status
-      invitation.setStatus("ACCEPTED");
-      invitation.setAcceptedAt(Instant.now());
+      // Update invitation status and user's shop and role
+      invitationMapper.updateInvitationAndUser(invitation, user);
       invitationRepository.save(invitation);
-
-      // Update user's shop and role
-      user.setShopId(invitation.getShopId());
-      user.setRole(invitation.getRole());
-      user.setUpdatedAt(Instant.now());
       userAccountRepository.save(user);
 
       log.info("User {} accepted invitation {} and joined shop {}", 
@@ -197,17 +198,11 @@ public class InvitationService {
         
         InvitationDto dto = invitationMapper.toDto(invitation);
         // Use shop name from invitation, or fetch if not available
-        if (invitation.getShopName() != null) {
-          dto.setShopName(invitation.getShopName());
-        } else if (shopServiceAdapter != null) {
-          dto.setShopName(shopServiceAdapter.getShopName(invitation.getShopId()));
+        String shopName = invitation.getShopName();
+        if (shopName == null && shopServiceAdapter != null) {
+          shopName = shopServiceAdapter.getShopName(invitation.getShopId());
         }
-        if (inviter != null) {
-          dto.setInviterName(inviter.getName());
-        }
-        if (invitee != null) {
-          dto.setInviteeName(invitee.getName());
-        }
+        invitationMapper.enrichInvitationDto(dto, invitation, shopName, inviter, invitee);
         dtos.add(dto);
       }
 
@@ -224,11 +219,11 @@ public class InvitationService {
     }
   }
 
-  public InvitationListResponse getInvitationsForShop(String shopId) {
+  public InvitationListResponse getInvitationsForShop(String shopId, String userId) {
     try {
       log.debug("Retrieving invitations for shop: {}", shopId);
 
-      List<Invitation> invitations = invitationRepository.findByShopId(shopId);
+      List<Invitation> invitations = invitationRepository.findByInviterUserIdAndShopId(userId, shopId);
       
       // Enrich with shop and user details
       List<InvitationDto> dtos = new ArrayList<>();
@@ -239,18 +234,7 @@ public class InvitationService {
         UserAccount invitee = userAccountRepository.findById(invitation.getInviteeUserId()).orElse(null);
         
         InvitationDto dto = invitationMapper.toDto(invitation);
-        // Use shop name from invitation, or fetched name, or fallback
-        if (invitation.getShopName() != null) {
-          dto.setShopName(invitation.getShopName());
-        } else if (shopName != null) {
-          dto.setShopName(shopName);
-        }
-        if (inviter != null) {
-          dto.setInviterName(inviter.getName());
-        }
-        if (invitee != null) {
-          dto.setInviteeName(invitee.getName());
-        }
+        invitationMapper.enrichInvitationDto(dto, invitation, shopName, inviter, invitee);
         dtos.add(dto);
       }
 
@@ -264,68 +248,6 @@ public class InvitationService {
     } catch (Exception e) {
       log.error("Unexpected error while retrieving invitations: {}", e.getMessage(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Failed to retrieve invitations");
-    }
-  }
-
-  @Transactional(readOnly = true)
-  public UserShopListResponse getShopsForUser(String userId) {
-    try {
-      log.debug("Retrieving shops for user: {}", userId);
-
-      UserAccount user = userAccountRepository.findById(userId)
-              .orElseThrow(() -> new ResourceNotFoundException("User", "userId", userId));
-
-      List<UserShopDto> shops = new ArrayList<>();
-
-      // Get owned shop (if user has shopId set)
-      if (user.getShopId() != null && !user.getShopId().trim().isEmpty()) {
-        String shopName = shopServiceAdapter != null ? shopServiceAdapter.getShopName(user.getShopId()) : null;
-        if (shopName != null || shopServiceAdapter == null) {
-          // Create a simple DTO with shop info
-          UserShopDto dto = UserShopDto.builder()
-                  .shopId(user.getShopId())
-                  .shopName(shopName)
-                  .role(user.getRole())
-                  .relationship("OWNER")
-                  .joinedAt(user.getUpdatedAt())
-                  .build();
-          shops.add(dto);
-        }
-      }
-
-      // Get invited shops (accepted invitations)
-      List<Invitation> acceptedInvitations = invitationRepository.findAcceptedInvitationsByUserId(userId);
-      for (Invitation invitation : acceptedInvitations) {
-        // Skip if this is the owned shop (already added)
-        if (!invitation.getShopId().equals(user.getShopId())) {
-          String shopName = invitation.getShopName();
-          if (shopName == null && shopServiceAdapter != null) {
-            shopName = shopServiceAdapter.getShopName(invitation.getShopId());
-          }
-          UserShopDto dto = UserShopDto.builder()
-                  .shopId(invitation.getShopId())
-                  .shopName(shopName)
-                  .role(invitation.getRole())
-                  .relationship("INVITED")
-                  .joinedAt(invitation.getAcceptedAt())
-                  .build();
-          shops.add(dto);
-        }
-      }
-
-      return UserShopListResponse.builder()
-              .data(shops)
-              .build();
-
-    } catch (ResourceNotFoundException e) {
-      log.warn("Failed to get shops for user: {}", e.getMessage());
-      throw e;
-    } catch (DataAccessException e) {
-      log.error("Database error while retrieving shops for user: {}", e.getMessage(), e);
-      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Error retrieving shops");
-    } catch (Exception e) {
-      log.error("Unexpected error while retrieving shops for user: {}", e.getMessage(), e);
-      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Failed to retrieve shops");
     }
   }
 
@@ -352,7 +274,7 @@ public class InvitationService {
         Instant joinedAt = user.getUpdatedAt();
         if (!isOwner) {
           Invitation invitation = invitationRepository
-                  .findByInviteeUserIdAndShopIdAndStatus(user.getUserId(), shopId, "ACCEPTED")
+                  .findByInviteeUserIdAndShopIdAndStatus(user.getUserId(), shopId, InvitationStatus.ACCEPTED.name())
                   .orElse(null);
           if (invitation != null && invitation.getAcceptedAt() != null) {
             joinedAt = invitation.getAcceptedAt();
