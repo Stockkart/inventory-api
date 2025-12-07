@@ -49,13 +49,6 @@ public class ShopService {
         throw new ValidationException("User ID is required");
       }
 
-      // Check for existing shop with the same business ID
-//      if (StringUtils.hasText(request.getBusinessId())) {
-//        shopRepository.findByBusinessId(request.getBusinessId()).ifPresent(shop -> {
-//          throw new ResourceExistsException("Shop", "businessId", request.getBusinessId());
-//        });
-//      }
-
       // Check for existing shop with the same contact email
       shopRepository.findByContactEmail(request.getContactEmail())
               .ifPresent(shop -> {

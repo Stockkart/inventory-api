@@ -36,11 +36,5 @@ public class CheckoutController {
                                                                            HttpServletRequest httpRequest) {
     return ResponseEntity.ok(ApiResponse.success(checkoutService.updatePurchaseStatus(request, httpRequest)));
   }
-
-  @PostMapping("/sales/{saleId}/invalidate")
-  public ResponseEntity<ApiResponse<SaleStatusResponse>> invalidate(@PathVariable String saleId,
-                                                       @RequestBody InvalidateSaleRequest request) {
-    return ResponseEntity.ok(ApiResponse.success(checkoutService.invalidate(saleId, request)));
-  }
 }
 

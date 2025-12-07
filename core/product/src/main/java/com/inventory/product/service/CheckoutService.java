@@ -92,7 +92,7 @@ public class CheckoutService {
       log.info("Successfully updated cart with ID: {}", purchase.getId());
 
       // Build response
-      return buildAddToCartResponse(purchase);
+      return purchaseMapper.toAddToCartResponse(purchase);
 
     } catch (ValidationException | InsufficientStockException | ResourceNotFoundException e) {
       log.warn("Add to cart failed: {}", e.getMessage());
@@ -162,7 +162,7 @@ public class CheckoutService {
               currentStatus, requestedStatus, purchase.getId());
 
       // Build response
-      return buildCheckoutResponse(purchase);
+      return purchaseMapper.toCheckoutResponse(purchase);
 
     } catch (ValidationException | ResourceNotFoundException e) {
       log.warn("Update purchase status failed: {}", e.getMessage());
@@ -175,6 +175,42 @@ public class CheckoutService {
       log.error("Unexpected error during update purchase status for shop: {}, user: {}", shopId, userId, e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, 
           "An unexpected error occurred during update purchase status: " + e.getMessage(), e);
+    }
+  }
+
+  @Transactional(readOnly = true)
+  public AddToCartResponse getCart(HttpServletRequest httpRequest) {
+    // Get shopId and userId from request attributes (set by AuthenticationInterceptor)
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    String userId = (String) httpRequest.getAttribute("userId");
+
+    // Validate shopId and userId
+    checkoutValidator.validateShopIdAndUserId(shopId, userId);
+
+    log.info("Getting cart for shop: {}, user: {}", shopId, userId);
+
+    try {
+      // Find cart with CREATED or PENDING status
+      List<PurchaseStatus> statuses = List.of(PurchaseStatus.CREATED, PurchaseStatus.PENDING);
+      Purchase cart = purchaseRepository.findByUserIdAndShopIdAndStatusIn(userId, shopId, statuses)
+              .orElseThrow(() -> new ResourceNotFoundException("Cart", "userId and shopId",
+                      "No active cart found for user " + userId + " and shop " + shopId));
+
+      log.info("Found cart with ID: {} and status: {}", cart.getId(), cart.getStatus());
+
+      return purchaseMapper.toAddToCartResponse(cart);
+
+    } catch (ResourceNotFoundException e) {
+      log.warn("Cart not found for shop: {}, user: {}", shopId, userId);
+      throw e;
+    } catch (DataAccessException e) {
+      log.error("Database error while getting cart for shop: {}, user: {}", shopId, userId, e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
+              "Error getting cart: " + e.getMessage(), e);
+    } catch (Exception e) {
+      log.error("Unexpected error while getting cart for shop: {}, user: {}", shopId, userId, e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
+              "An unexpected error occurred while getting cart: " + e.getMessage(), e);
     }
   }
 
@@ -234,49 +270,6 @@ public class CheckoutService {
         log.warn("Item validation failed for lotId: {} - {}", item.getLotId(), e.getMessage());
         throw e;
       } catch (Exception e) {
-        log.error("Unexpected error processing item with lotId: {}", item.getLotId(), e);
-        throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, 
-            "Error processing item with lotId " + item.getLotId() + ": " + e.getMessage(), e);
-      }
-    }
-    
-    return purchaseItems;
-  }
-
-  private List<PurchaseItem> processPurchaseItems(CheckoutRequest request, List<CheckoutRequest.CheckoutItem> items, String shopId) {
-    List<PurchaseItem> purchaseItems = new ArrayList<>();
-    
-    for (CheckoutRequest.CheckoutItem item : items) {
-      try {
-        // Validate item using CheckoutValidator - throws ValidationException immediately if invalid
-        checkoutValidator.validateCheckoutItem(item);
-
-        // Get inventory by lotId - throws ResourceNotFoundException immediately if not found
-        Inventory inventory = inventoryRepository.findById(item.getLotId())
-                .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", item.getLotId()));
-
-        // Verify the inventory belongs to the shop - throws ValidationException immediately if mismatch
-        if (!shopId.equals(inventory.getShopId())) {
-          throw new ValidationException("Inventory lot " + item.getLotId() + " does not belong to shop " + shopId);
-        }
-
-        // Check stock availability - throws InsufficientStockException immediately if insufficient
-        int availableStock = inventory.getCurrentCount() != null ? inventory.getCurrentCount() : 0;
-        if (availableStock < item.getQuantity()) {
-          throw new InsufficientStockException("Insufficient stock for product: " + inventory.getName(),
-                  inventory.getBarcode(), availableStock, item.getQuantity());
-        }
-
-        // Use mapper to create PurchaseItem with sellingPrice from request
-        PurchaseItem purchaseItem = purchaseMapper.toPurchaseItem(item, inventory);
-        purchaseItems.add(purchaseItem);
-        
-      } catch (ValidationException | InsufficientStockException | ResourceNotFoundException e) {
-        // Re-throw immediately - don't continue processing other items
-        log.warn("Item validation failed for lotId: {} - {}", item.getLotId(), e.getMessage());
-        throw e;
-      } catch (Exception e) {
-        // Catch any unexpected errors during item processing
         log.error("Unexpected error processing item with lotId: {}", item.getLotId(), e);
         throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, 
             "Error processing item with lotId " + item.getLotId() + ": " + e.getMessage(), e);
@@ -508,174 +501,4 @@ public class CheckoutService {
     }
   }
 
-  private Purchase updateCartForCheckout(Purchase existingCart, List<PurchaseItem> newItems, 
-                                         String businessType, String paymentMethod) {
-    try {
-      // Update cart with new items (customer fields not updated during checkout)
-      Purchase updatedCart = updateCart(existingCart, newItems, businessType, null, null, null);
-      
-      // Change status to PENDING
-      updatedCart.setStatus(PurchaseStatus.PENDING);
-      updatedCart.setPaymentMethod(paymentMethod);
-      
-      return purchaseRepository.save(updatedCart);
-    } catch (Exception e) {
-      log.error("Error updating cart for checkout: {}", existingCart.getId(), e);
-      throw e;
-    }
-  }
-
-  private Purchase createAndSavePurchase(CheckoutRequest request, List<PurchaseItem> purchaseItems,
-                                         BigDecimal subTotal, BigDecimal taxTotal,
-                                         BigDecimal discountTotal, BigDecimal grandTotal,
-                                         String shopId, String userId) {
-    try {
-      // Use mapper to create Purchase
-      Purchase purchase = purchaseMapper.toPurchase(request, purchaseItems, subTotal, taxTotal, discountTotal, grandTotal);
-      
-      // Set businessType from request
-      purchase.setBusinessType(request.getBusinessType());
-      
-      // Set shopId and userId
-      purchase.setShopId(shopId);
-      purchase.setUserId(userId);
-      
-      // Set payment method (defaults to "CASH" if not provided, already set in checkout method)
-      purchase.setPaymentMethod(request.getPaymentMethod());
-      
-      // Set the invoice number using the mapper's helper method
-      purchase.setInvoiceNo(purchaseMapper.generateInvoiceNo());
-      
-      // Set status to PENDING by default for new purchases
-      purchase.setStatus(PurchaseStatus.PENDING);
-
-      return purchaseRepository.save(purchase);
-    } catch (DataAccessException e) {
-      log.error("Database error while saving purchase for shop: {}, user: {}", shopId, userId, e);
-      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, 
-          "Error saving purchase: " + e.getMessage(), e);
-    } catch (Exception e) {
-      log.error("Unexpected error while creating purchase for shop: {}, user: {}", shopId, userId, e);
-      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, 
-          "Error creating purchase: " + e.getMessage(), e);
-    }
-  }
-
-  @Transactional
-  public SaleStatusResponse invalidate(String purchaseId, InvalidateSaleRequest request) {
-    try {
-      // Input validation
-      if (!StringUtils.hasText(purchaseId)) {
-        throw new ValidationException("Purchase ID is required");
-      }
-      if (request == null) {
-        throw new ValidationException("Invalidate request cannot be null");
-      }
-
-      log.info("Invalidating purchase with ID: {}", purchaseId);
-
-      // Find the purchase
-      Purchase purchase = purchaseRepository.findById(purchaseId)
-              .orElseThrow(() -> new ResourceNotFoundException("Purchase", "id", purchaseId));
-
-      // Check if already invalidated
-      if (!purchase.isValid()) {
-        log.warn("Purchase {} is already invalid", purchaseId);
-        return createPurchaseStatusResponse(purchase);
-      }
-
-      // Invalidate the purchase
-      purchase.setValid(false);
-      purchase = purchaseRepository.save(purchase);
-
-      log.info("Successfully invalidated purchase with ID: {}", purchaseId);
-
-      return createPurchaseStatusResponse(purchase);
-
-    } catch (ValidationException | ResourceNotFoundException e) {
-      log.warn("Purchase invalidation failed: {}", e.getMessage());
-      throw e;
-    } catch (DataAccessException e) {
-      log.error("Database error while invalidating purchase: {}", e.getMessage(), e);
-      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Error invalidating purchase");
-    } catch (Exception e) {
-      log.error("Unexpected error while invalidating purchase: {}", e.getMessage(), e);
-      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
-    }
-  }
-
-  private SaleStatusResponse createPurchaseStatusResponse(Purchase purchase) {
-    return purchaseMapper.toStatusResponse(purchase);
-  }
-
-  @Transactional(readOnly = true)
-  public AddToCartResponse getCart(HttpServletRequest httpRequest) {
-    // Get shopId and userId from request attributes (set by AuthenticationInterceptor)
-    String shopId = (String) httpRequest.getAttribute("shopId");
-    String userId = (String) httpRequest.getAttribute("userId");
-    
-    // Validate shopId and userId
-    checkoutValidator.validateShopIdAndUserId(shopId, userId);
-
-    log.info("Getting cart for shop: {}, user: {}", shopId, userId);
-
-    try {
-      // Find cart with CREATED or PENDING status
-      List<PurchaseStatus> statuses = List.of(PurchaseStatus.CREATED, PurchaseStatus.PENDING);
-      Purchase cart = purchaseRepository.findByUserIdAndShopIdAndStatusIn(userId, shopId, statuses)
-              .orElseThrow(() -> new ResourceNotFoundException("Cart", "userId and shopId", 
-                  "No active cart found for user " + userId + " and shop " + shopId));
-
-      log.info("Found cart with ID: {} and status: {}", cart.getId(), cart.getStatus());
-
-      return buildAddToCartResponse(cart);
-
-    } catch (ResourceNotFoundException e) {
-      log.warn("Cart not found for shop: {}, user: {}", shopId, userId);
-      throw e;
-    } catch (DataAccessException e) {
-      log.error("Database error while getting cart for shop: {}, user: {}", shopId, userId, e);
-      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, 
-          "Error getting cart: " + e.getMessage(), e);
-    } catch (Exception e) {
-      log.error("Unexpected error while getting cart for shop: {}, user: {}", shopId, userId, e);
-      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, 
-          "An unexpected error occurred while getting cart: " + e.getMessage(), e);
-    }
-  }
-
-  private AddToCartResponse buildAddToCartResponse(Purchase purchase) {
-    try {
-      if (purchase == null) {
-        throw new ValidationException("Purchase cannot be null when building response");
-      }
-
-      return purchaseMapper.toAddToCartResponse(purchase);
-    } catch (BaseException e) {
-      throw e;
-    } catch (Exception e) {
-      String purchaseId = purchase != null ? purchase.getId() : "unknown";
-      log.error("Unexpected error building add to cart response for purchase: {}", purchaseId, e);
-      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, 
-          "Error building add to cart response: " + e.getMessage(), e);
-    }
-  }
-
-  private CheckoutResponse buildCheckoutResponse(Purchase purchase) {
-    try {
-      if (purchase == null) {
-        throw new ValidationException("Purchase cannot be null when building response");
-      }
-
-      return purchaseMapper.toCheckoutResponse(purchase);
-    } catch (BaseException e) {
-      // Re-throw BaseException and its subclasses (ValidationException, etc.)
-      throw e;
-    } catch (Exception e) {
-      String purchaseId = purchase != null ? purchase.getId() : "unknown";
-      log.error("Unexpected error building checkout response for purchase: {}", purchaseId, e);
-      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, 
-          "Error building checkout response: " + e.getMessage(), e);
-    }
-  }
 }
