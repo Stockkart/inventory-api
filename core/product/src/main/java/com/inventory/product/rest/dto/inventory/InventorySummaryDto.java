@@ -1,13 +1,15 @@
 package com.inventory.product.rest.dto.inventory;
 
-import lombok.Builder;
-import lombok.Value;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 
-@Value
-@Builder
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
 public class InventorySummaryDto {
   String lotId;
   String barcode;

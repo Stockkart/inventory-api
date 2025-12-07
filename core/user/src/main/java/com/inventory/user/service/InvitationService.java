@@ -206,9 +206,7 @@ public class InvitationService {
         dtos.add(dto);
       }
 
-      return InvitationListResponse.builder()
-              .data(dtos)
-              .build();
+      return invitationMapper.toInvitationListResponse(dtos);
 
     } catch (DataAccessException e) {
       log.error("Database error while retrieving invitations: {}", e.getMessage(), e);
@@ -238,9 +236,7 @@ public class InvitationService {
         dtos.add(dto);
       }
 
-      return InvitationListResponse.builder()
-              .data(dtos)
-              .build();
+      return invitationMapper.toInvitationListResponse(dtos);
 
     } catch (DataAccessException e) {
       log.error("Database error while retrieving invitations: {}", e.getMessage(), e);
@@ -302,9 +298,7 @@ public class InvitationService {
         }
       }
 
-      return ShopUserListResponse.builder()
-              .data(users)
-              .build();
+      return invitationMapper.toShopUserListResponse(users);
 
     } catch (ResourceNotFoundException e) {
       log.warn("Failed to get users for shop: {}", e.getMessage());

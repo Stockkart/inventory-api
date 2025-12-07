@@ -56,15 +56,10 @@ public class InventoryService {
       // Fire and forget - don't wait for completion
       reminderService.createReminderForExpiry(shopId, inventory.getLotId(), inventory.getExpiryDate());
 
-      // Map to response
-      InventoryReceiptResponse response = inventoryMapper.toReceiptResponse(inventory);
+      // Map to response with reminderCreated flag
       // Set reminderCreated to true if expiry date exists (optimistic - actual creation happens async)
       boolean reminderCreated = inventory.getExpiryDate() != null;
-      return InventoryReceiptResponse.builder()
-          .lotId(response.getLotId())
-          .barcode(response.getBarcode())
-          .reminderCreated(reminderCreated)
-          .build();
+      return inventoryMapper.toReceiptResponseWithReminder(inventory, reminderCreated);
 
     } catch (ValidationException e) {
       log.warn("Validation error in create inventory: {}", e.getMessage());
@@ -91,9 +86,7 @@ public class InventoryService {
               .map(inventoryMapper::toSummary)
               .toList();
 
-      return InventoryListResponse.builder()
-              .data(summaries)
-              .build();
+      return inventoryMapper.toInventoryListResponse(summaries);
 
     } catch (ValidationException e) {
       log.warn("Validation error in list inventory: {}", e.getMessage());
@@ -123,9 +116,7 @@ public class InventoryService {
               .map(inventoryMapper::toSummary)
               .toList();
 
-      return InventoryListResponse.builder()
-              .data(summaries)
-              .build();
+      return inventoryMapper.toInventoryListResponse(summaries);
 
     } catch (ValidationException e) {
       log.warn("Validation error in search inventory: {}", e.getMessage());

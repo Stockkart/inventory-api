@@ -1,15 +1,15 @@
 package com.inventory.product.rest.dto.product;
 
-import lombok.Builder;
-import lombok.Singular;
-import lombok.Value;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.util.List;
 
-@Value
-@Builder
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
 public class ProductListResponse {
-  @Singular("product")
   List<ProductResponse> data;
 }
 

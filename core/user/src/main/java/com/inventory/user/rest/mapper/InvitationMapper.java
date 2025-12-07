@@ -12,6 +12,7 @@ import org.mapstruct.MappingTarget;
 import org.mapstruct.ReportingPolicy;
 
 import java.time.Instant;
+import java.util.List;
 
 @Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.IGNORE)
 public interface InvitationMapper {
@@ -147,6 +148,19 @@ public interface InvitationMapper {
     if (invitee != null) {
       dto.setInviteeName(invitee.getName());
     }
+  }
+
+  // Methods to create response objects
+  default InvitationListResponse toInvitationListResponse(List<InvitationDto> data) {
+    InvitationListResponse response = new InvitationListResponse();
+    response.setData(data);
+    return response;
+  }
+
+  default ShopUserListResponse toShopUserListResponse(List<ShopUserDto> data) {
+    ShopUserListResponse response = new ShopUserListResponse();
+    response.setData(data);
+    return response;
   }
 }
 

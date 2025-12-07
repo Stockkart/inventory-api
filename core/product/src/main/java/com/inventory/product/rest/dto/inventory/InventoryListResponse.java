@@ -1,16 +1,16 @@
 package com.inventory.product.rest.dto.inventory;
 
-import lombok.Builder;
-import lombok.Singular;
-import lombok.Value;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.util.List;
 import java.util.Map;
 
-@Value
-@Builder
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
 public class InventoryListResponse {
-  @Singular("item")
   List<InventorySummaryDto> data;
   Map<String, Object> meta;
 }

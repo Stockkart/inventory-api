@@ -3,8 +3,11 @@ package com.inventory.product.rest.mapper;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
+import com.inventory.product.domain.model.PurchaseStatus;
 import com.inventory.product.rest.dto.sale.AddToCartRequest;
+import com.inventory.product.rest.dto.sale.AddToCartResponse;
 import com.inventory.product.rest.dto.sale.CheckoutRequest;
+import com.inventory.product.rest.dto.sale.CheckoutResponse;
 import com.inventory.product.rest.dto.sale.SaleStatusResponse;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
@@ -14,7 +17,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 
-@Mapper(componentModel = "spring", imports = {Instant.class, BigDecimal.class}, unmappedTargetPolicy = ReportingPolicy.IGNORE)
+@Mapper(componentModel = "spring", imports = {Instant.class, BigDecimal.class, PurchaseStatus.class}, unmappedTargetPolicy = ReportingPolicy.IGNORE)
 public interface PurchaseMapper {
 
 
@@ -75,5 +78,79 @@ public interface PurchaseMapper {
     String random = String.format("%04d", (int) (Math.random() * 10_000));
     return "INV-" + timestamp + "-" + random;
   }
+
+  // Methods to create PurchaseItem
+  default PurchaseItem createPurchaseItem(String inventoryId, String name, Integer quantity, 
+                                          BigDecimal maximumRetailPrice, BigDecimal sellingPrice, BigDecimal discount) {
+    PurchaseItem item = new PurchaseItem();
+    item.setInventoryId(inventoryId);
+    item.setName(name);
+    item.setQuantity(quantity);
+    item.setMaximumRetailPrice(maximumRetailPrice);
+    item.setSellingPrice(sellingPrice);
+    item.setDiscount(discount);
+    return item;
+  }
+
+  // Method to create Purchase for cart
+  @Mapping(target = "id", ignore = true)
+  @Mapping(target = "invoiceId", expression = "java(java.util.UUID.randomUUID().toString())")
+  @Mapping(target = "invoiceNo", expression = "java(generateInvoiceNo())")
+  @Mapping(target = "businessType", source = "request.businessType")
+  @Mapping(target = "userId", source = "userId")
+  @Mapping(target = "shopId", source = "shopId")
+  @Mapping(target = "items", source = "purchaseItems")
+  @Mapping(target = "subTotal", source = "subTotal")
+  @Mapping(target = "taxTotal", source = "taxTotal")
+  @Mapping(target = "discountTotal", source = "discountTotal")
+  @Mapping(target = "grandTotal", source = "grandTotal")
+  @Mapping(target = "soldAt", expression = "java(Instant.now())")
+  @Mapping(target = "valid", constant = "true")
+  @Mapping(target = "status", expression = "java(PurchaseStatus.CREATED)")
+  @Mapping(target = "paymentMethod", ignore = true)
+  @Mapping(target = "customerName", source = "request.customerName")
+  @Mapping(target = "customerAddress", source = "request.customerAddress")
+  @Mapping(target = "customerPhone", source = "request.customerPhone")
+  Purchase toPurchaseForCart(AddToCartRequest request, List<PurchaseItem> purchaseItems,
+                            BigDecimal subTotal, BigDecimal taxTotal,
+                            BigDecimal discountTotal, BigDecimal grandTotal,
+                            String shopId, String userId);
+
+  // Method to map Purchase to AddToCartResponse
+  @Mapping(target = "purchaseId", source = "id")
+  @Mapping(target = "invoiceId", source = "invoiceId")
+  @Mapping(target = "invoiceNo", source = "invoiceNo")
+  @Mapping(target = "businessType", source = "businessType")
+  @Mapping(target = "userId", source = "userId")
+  @Mapping(target = "shopId", source = "shopId")
+  @Mapping(target = "items", expression = "java(purchase.getItems() != null ? purchase.getItems() : java.util.List.of())")
+  @Mapping(target = "subTotal", source = "subTotal")
+  @Mapping(target = "taxTotal", source = "taxTotal")
+  @Mapping(target = "discountTotal", source = "discountTotal")
+  @Mapping(target = "grandTotal", source = "grandTotal")
+  @Mapping(target = "status", source = "status")
+  @Mapping(target = "customerName", source = "customerName")
+  @Mapping(target = "customerAddress", source = "customerAddress")
+  @Mapping(target = "customerPhone", source = "customerPhone")
+  @Mapping(target = "paymentMethod", source = "paymentMethod")
+  AddToCartResponse toAddToCartResponse(Purchase purchase);
+
+  // Method to map Purchase to CheckoutResponse
+  @Mapping(target = "invoiceId", source = "invoiceId")
+  @Mapping(target = "invoiceNo", source = "invoiceNo")
+  @Mapping(target = "businessType", source = "businessType")
+  @Mapping(target = "userId", source = "userId")
+  @Mapping(target = "shopId", source = "shopId")
+  @Mapping(target = "items", expression = "java(purchase.getItems() != null ? purchase.getItems() : java.util.List.of())")
+  @Mapping(target = "subTotal", source = "subTotal")
+  @Mapping(target = "taxTotal", source = "taxTotal")
+  @Mapping(target = "discountTotal", source = "discountTotal")
+  @Mapping(target = "grandTotal", source = "grandTotal")
+  @Mapping(target = "paymentMethod", source = "paymentMethod")
+  @Mapping(target = "status", source = "status")
+  @Mapping(target = "customerName", source = "customerName")
+  @Mapping(target = "customerAddress", source = "customerAddress")
+  @Mapping(target = "customerPhone", source = "customerPhone")
+  CheckoutResponse toCheckoutResponse(Purchase purchase);
 }
 

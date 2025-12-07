@@ -199,14 +199,14 @@ public class CheckoutService {
           
           // For negative quantities, create a PurchaseItem with negative quantity
           // The updateCart method will handle the logic
-          PurchaseItem purchaseItem = PurchaseItem.builder()
-                  .inventoryId(item.getLotId())
-                  .name(inventory.getName())
-                  .quantity(item.getQuantity()) // Negative quantity
-                  .maximumRetailPrice(inventory.getMaximumRetailPrice())
-                  .sellingPrice(BigDecimal.ZERO) // Not used for negative quantities
-                  .discount(BigDecimal.ZERO)
-                  .build();
+          PurchaseItem purchaseItem = purchaseMapper.createPurchaseItem(
+                  item.getLotId(),
+                  inventory.getName(),
+                  item.getQuantity(), // Negative quantity
+                  inventory.getMaximumRetailPrice(),
+                  BigDecimal.ZERO, // Not used for negative quantities
+                  BigDecimal.ZERO
+          );
           purchaseItems.add(purchaseItem);
         } else {
           // Positive quantity - normal flow with stock validation
@@ -329,26 +329,11 @@ public class CheckoutService {
       BigDecimal discountTotal = calculateTotalDiscount(purchaseItems);
       BigDecimal grandTotal = subTotal.add(taxTotal).subtract(discountTotal);
 
-      // Create purchase with CREATED status
+      // Create purchase with CREATED status using mapper
       // MongoDB will auto-generate the id as ObjectId
-      Purchase purchase = Purchase.builder()
-              .invoiceId(java.util.UUID.randomUUID().toString())
-              .invoiceNo(purchaseMapper.generateInvoiceNo())
-              .businessType(request.getBusinessType())
-              .userId(userId)
-              .shopId(shopId)
-              .items(purchaseItems)
-              .subTotal(subTotal)
-              .taxTotal(taxTotal)
-              .discountTotal(discountTotal)
-              .grandTotal(grandTotal)
-              .soldAt(java.time.Instant.now())
-              .valid(true)
-              .status(PurchaseStatus.CREATED)
-              .customerName(request.getCustomerName())
-              .customerAddress(request.getCustomerAddress())
-              .customerPhone(request.getCustomerPhone())
-              .build();
+      Purchase purchase = purchaseMapper.toPurchaseForCart(
+              request, purchaseItems, subTotal, taxTotal, discountTotal, grandTotal, shopId, userId
+      );
 
       return purchaseRepository.save(purchase);
     } catch (DataAccessException e) {
@@ -389,14 +374,14 @@ public class CheckoutService {
                     .subtract(sellingPrice)
                     .multiply(BigDecimal.valueOf(newQuantity));
             
-            mergedItems.set(i, PurchaseItem.builder()
-                    .inventoryId(existingItem.getInventoryId())
-                    .name(existingItem.getName())
-                    .quantity(newQuantity)
-                    .maximumRetailPrice(existingItem.getMaximumRetailPrice())
-                    .sellingPrice(sellingPrice)
-                    .discount(newDiscount.compareTo(BigDecimal.ZERO) > 0 ? newDiscount : BigDecimal.ZERO)
-                    .build());
+            mergedItems.set(i, purchaseMapper.createPurchaseItem(
+                    existingItem.getInventoryId(),
+                    existingItem.getName(),
+                    newQuantity,
+                    existingItem.getMaximumRetailPrice(),
+                    sellingPrice,
+                    newDiscount.compareTo(BigDecimal.ZERO) > 0 ? newDiscount : BigDecimal.ZERO
+            ));
             found = true;
             break;
           }
@@ -665,24 +650,7 @@ public class CheckoutService {
         throw new ValidationException("Purchase cannot be null when building response");
       }
 
-      return AddToCartResponse.builder()
-              .purchaseId(purchase.getId())
-              .invoiceId(purchase.getInvoiceId())
-              .invoiceNo(purchase.getInvoiceNo())
-              .businessType(purchase.getBusinessType())
-              .userId(purchase.getUserId())
-              .shopId(purchase.getShopId())
-              .items(purchase.getItems() != null ? purchase.getItems() : List.of())
-              .subTotal(purchase.getSubTotal())
-              .taxTotal(purchase.getTaxTotal())
-              .discountTotal(purchase.getDiscountTotal())
-              .grandTotal(purchase.getGrandTotal())
-              .status(purchase.getStatus())
-              .customerName(purchase.getCustomerName())
-              .customerAddress(purchase.getCustomerAddress())
-              .customerPhone(purchase.getCustomerPhone())
-              .paymentMethod(purchase.getPaymentMethod())
-              .build();
+      return purchaseMapper.toAddToCartResponse(purchase);
     } catch (BaseException e) {
       throw e;
     } catch (Exception e) {
@@ -699,23 +667,7 @@ public class CheckoutService {
         throw new ValidationException("Purchase cannot be null when building response");
       }
 
-      return CheckoutResponse.builder()
-              .invoiceId(purchase.getInvoiceId())
-              .invoiceNo(purchase.getInvoiceNo())
-              .businessType(purchase.getBusinessType())
-              .userId(purchase.getUserId())
-              .shopId(purchase.getShopId())
-              .items(purchase.getItems() != null ? purchase.getItems() : List.of())
-              .subTotal(purchase.getSubTotal())
-              .taxTotal(purchase.getTaxTotal())
-              .discountTotal(purchase.getDiscountTotal())
-              .grandTotal(purchase.getGrandTotal())
-              .paymentMethod(purchase.getPaymentMethod())
-              .status(purchase.getStatus())
-              .customerName(purchase.getCustomerName())
-              .customerAddress(purchase.getCustomerAddress())
-              .customerPhone(purchase.getCustomerPhone())
-              .build();
+      return purchaseMapper.toCheckoutResponse(purchase);
     } catch (BaseException e) {
       // Re-throw BaseException and its subclasses (ValidationException, etc.)
       throw e;
