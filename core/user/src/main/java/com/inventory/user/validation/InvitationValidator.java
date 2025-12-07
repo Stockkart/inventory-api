@@ -1,6 +1,7 @@
 package com.inventory.user.validation;
 
 import com.inventory.common.exception.ValidationException;
+import com.inventory.user.domain.model.UserRole;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -21,12 +22,12 @@ public class InvitationValidator {
     // Use reflection to get fields to avoid dependency on specific request class
     try {
       String inviteeEmail = (String) request.getClass().getMethod("getInviteeEmail").invoke(request);
-      String role = (String) request.getClass().getMethod("getRole").invoke(request);
+      UserRole role = (UserRole) request.getClass().getMethod("getRole").invoke(request);
 
       if (!StringUtils.hasText(inviteeEmail)) {
         throw new ValidationException("Invitee email is required");
       }
-      if (!StringUtils.hasText(role)) {
+      if (role == null) {
         throw new ValidationException("Role is required");
       }
       if (!isValidRole(role)) {
@@ -45,8 +46,8 @@ public class InvitationValidator {
     }
   }
 
-  private boolean isValidRole(String role) {
-    return "ADMIN".equals(role) || "MANAGER".equals(role) || "CASHIER".equals(role);
+  private boolean isValidRole(UserRole role) {
+    return role == UserRole.ADMIN || role == UserRole.MANAGER || role == UserRole.CASHIER;
   }
 }
 

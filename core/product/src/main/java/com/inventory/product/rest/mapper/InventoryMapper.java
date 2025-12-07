@@ -3,16 +3,20 @@ package com.inventory.product.rest.mapper;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.rest.dto.inventory.CreateInventoryRequest;
 import com.inventory.product.rest.dto.inventory.InventoryDetailResponse;
+import com.inventory.product.rest.dto.inventory.InventoryListResponse;
 import com.inventory.product.rest.dto.inventory.InventoryReceiptResponse;
 import com.inventory.product.rest.dto.inventory.InventorySummaryDto;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.ReportingPolicy;
 
+import java.util.List;
+
 @Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.IGNORE)
 public interface InventoryMapper {
 
-  @Mapping(target = "lotId", expression = "java(\"lot-\" + java.util.UUID.randomUUID().toString().substring(0, 8))")
+  // MongoDB will auto-generate the lotId as ObjectId
+  @Mapping(target = "lotId", ignore = true)
   @Mapping(target = "receivedCount", source = "count")
   @Mapping(target = "soldCount", constant = "0")
   @Mapping(target = "currentCount", source = "count")
@@ -23,7 +27,23 @@ public interface InventoryMapper {
 
   @Mapping(target = "lotId", source = "lotId")
   @Mapping(target = "barcode", source = "barcode")
+  @Mapping(target = "reminderCreated", ignore = true)
   InventoryReceiptResponse toReceiptResponse(Inventory inventory);
+
+  // Method to create InventoryReceiptResponse with reminderCreated flag
+  default InventoryReceiptResponse toReceiptResponseWithReminder(Inventory inventory, boolean reminderCreated) {
+    InventoryReceiptResponse response = toReceiptResponse(inventory);
+    response.setReminderCreated(reminderCreated);
+    return response;
+  }
+
+  // Method to create InventoryListResponse
+  default InventoryListResponse toInventoryListResponse(List<InventorySummaryDto> data) {
+    InventoryListResponse response = new InventoryListResponse();
+    response.setData(data);
+    response.setMeta(null);
+    return response;
+  }
 
   @Mapping(target = "lotId", source = "lotId")
   @Mapping(target = "barcode", source = "barcode")

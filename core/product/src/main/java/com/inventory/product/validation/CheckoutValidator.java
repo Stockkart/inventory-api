@@ -1,8 +1,10 @@
 package com.inventory.product.validation;
 
 import com.inventory.common.exception.ValidationException;
+import com.inventory.product.domain.model.PurchaseStatus;
 import com.inventory.product.rest.dto.sale.AddToCartRequest;
 import com.inventory.product.rest.dto.sale.CheckoutRequest;
+import com.inventory.product.rest.dto.sale.UpdatePurchaseStatusRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
@@ -65,4 +67,47 @@ public class CheckoutValidator {
       }
     }
   }
+
+  public void validateUpdateStatusRequest(UpdatePurchaseStatusRequest request) {
+    if (request == null) {
+      throw new ValidationException("Update purchase status request cannot be null");
+    }
+    if (request.getPurchaseId() == null || !StringUtils.hasText(request.getPurchaseId())) {
+      throw new ValidationException("Purchase ID is required");
+    }
+    if (request.getStatus() == null) {
+      throw new ValidationException("Status is required");
+    }
+  }
+
+  public void validateStatusTransition(PurchaseStatus currentStatus, PurchaseStatus requestedStatus) {
+    // If status is not changing, allow it
+    if (currentStatus == requestedStatus) {
+      return;
+    }
+
+    // COMPLETED -> any status: Not allowed
+    if (currentStatus == PurchaseStatus.COMPLETED) {
+      throw new ValidationException("Cannot change status from COMPLETED. Purchase is already completed.");
+    }
+
+    // CREATED -> PENDING:
+    if (currentStatus == PurchaseStatus.CREATED && requestedStatus == PurchaseStatus.PENDING) {
+      return;
+    }
+
+    // PENDING or CREATED / COMPLETED: Allowed
+    if (currentStatus == PurchaseStatus.PENDING) {
+      if (requestedStatus == PurchaseStatus.CREATED || requestedStatus == PurchaseStatus.COMPLETED) {
+        return;
+      }
+    }
+
+    // Any other transition: Not allowed
+    throw new ValidationException(
+            String.format("Invalid status transition from %s to %s. " +
+                            "Allowed transitions: CREATED->PENDING, PENDING->CREATED, PENDING->COMPLETED",
+                    currentStatus, requestedStatus));
+  }
+
 }

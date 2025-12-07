@@ -1,10 +1,12 @@
 package com.inventory.product.rest.dto.business;
 
-import lombok.Builder;
-import lombok.Value;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
-@Value
-@Builder
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
 public class BusinessTypeResponse {
   String id;
   String name;

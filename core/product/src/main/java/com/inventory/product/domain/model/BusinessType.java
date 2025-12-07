@@ -1,7 +1,6 @@
 package com.inventory.product.domain.model;
 
 import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
@@ -11,7 +10,6 @@ import java.time.Instant;
 import java.util.Map;
 
 @Data
-@Builder
 @NoArgsConstructor
 @AllArgsConstructor
 @Document(collection = "business_types")

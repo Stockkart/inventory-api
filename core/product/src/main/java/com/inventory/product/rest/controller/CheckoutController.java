@@ -5,6 +5,7 @@ import com.inventory.product.rest.dto.sale.AddToCartRequest;
 import com.inventory.product.rest.dto.sale.AddToCartResponse;
 import com.inventory.product.rest.dto.sale.CheckoutResponse;
 import com.inventory.product.rest.dto.sale.InvalidateSaleRequest;
+import com.inventory.product.rest.dto.sale.PurchaseListResponse;
 import com.inventory.product.rest.dto.sale.SaleStatusResponse;
 import com.inventory.product.rest.dto.sale.UpdatePurchaseStatusRequest;
 import com.inventory.product.service.CheckoutService;
@@ -37,10 +38,13 @@ public class CheckoutController {
     return ResponseEntity.ok(ApiResponse.success(checkoutService.updatePurchaseStatus(request, httpRequest)));
   }
 
-  @PostMapping("/sales/{saleId}/invalidate")
-  public ResponseEntity<ApiResponse<SaleStatusResponse>> invalidate(@PathVariable String saleId,
-                                                       @RequestBody InvalidateSaleRequest request) {
-    return ResponseEntity.ok(ApiResponse.success(checkoutService.invalidate(saleId, request)));
+  @GetMapping("/purchases")
+  public ResponseEntity<ApiResponse<PurchaseListResponse>> getPurchases(
+      @RequestParam(required = false) Integer page,
+      @RequestParam(required = false) Integer limit,
+      @RequestParam(required = false) String order,
+      HttpServletRequest httpRequest) {
+    return ResponseEntity.ok(ApiResponse.success(checkoutService.getPurchases(page, limit, order, httpRequest)));
   }
 }
 
