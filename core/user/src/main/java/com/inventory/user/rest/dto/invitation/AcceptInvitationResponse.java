@@ -1,5 +1,6 @@
 package com.inventory.user.rest.dto.invitation;
 
+import com.inventory.user.domain.model.UserRole;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -16,7 +17,7 @@ public class AcceptInvitationResponse {
   private String shopId;
   private String shopName;
   private String userId;
-  private String role;
+  private UserRole role;
   private Instant acceptedAt;
   private String message;
 }

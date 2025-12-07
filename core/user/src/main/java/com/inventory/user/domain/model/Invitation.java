@@ -23,7 +23,7 @@ public class Invitation {
   private String inviterUserId; // User who sent the invitation
   private String inviteeUserId; // User who is being invited
   private String inviteeEmail; // Email of the user being invited
-  private String role; // Role to be assigned when accepted
+  private UserRole role; // Role to be assigned when accepted
   private String status; // PENDING, ACCEPTED, REJECTED, EXPIRED
   private Instant createdAt;
   private Instant expiresAt;

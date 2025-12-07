@@ -12,9 +12,8 @@ import org.mapstruct.MappingTarget;
 import org.mapstruct.ReportingPolicy;
 
 import java.time.Instant;
-import java.util.UUID;
 
-@Mapper(componentModel = "spring", imports = {UUID.class}, unmappedTargetPolicy = ReportingPolicy.IGNORE)
+@Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.IGNORE)
 public interface InvitationMapper {
 
   @Mapping(target = "invitationId", ignore = true)
@@ -36,14 +35,12 @@ public interface InvitationMapper {
   }
 
   /**
-   * Helper method to set invitation ID, timestamps, and normalize email.
+   * Helper method to set invitation timestamps and normalize email.
+   * MongoDB will auto-generate the invitationId as ObjectId.
    * This can be called explicitly if @AfterMapping doesn't work.
    */
   default void setInvitationTimestampsAndId(Invitation invitation, SendInvitationRequest request) {
-    // Set invitation ID if not already set
-    if (invitation.getInvitationId() == null || invitation.getInvitationId().isEmpty()) {
-      invitation.setInvitationId("invitation-" + UUID.randomUUID());
-    }
+    // MongoDB will auto-generate the invitationId as ObjectId
     
     // Set timestamps
     Instant currentTime = Instant.now();

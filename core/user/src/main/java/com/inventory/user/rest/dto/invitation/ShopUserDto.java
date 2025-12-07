@@ -1,5 +1,6 @@
 package com.inventory.user.rest.dto.invitation;
 
+import com.inventory.user.domain.model.UserRole;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -15,7 +16,7 @@ public class ShopUserDto {
   private String userId;
   private String name;
   private String email;
-  private String role;
+  private UserRole role;
   private String relationship; // OWNER or INVITED
   private boolean active;
   private Instant joinedAt;

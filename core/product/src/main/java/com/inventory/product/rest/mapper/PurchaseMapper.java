@@ -13,9 +13,8 @@ import org.mapstruct.ReportingPolicy;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
-import java.util.UUID;
 
-@Mapper(componentModel = "spring", imports = {UUID.class, Instant.class, BigDecimal.class}, unmappedTargetPolicy = ReportingPolicy.IGNORE)
+@Mapper(componentModel = "spring", imports = {Instant.class, BigDecimal.class}, unmappedTargetPolicy = ReportingPolicy.IGNORE)
 public interface PurchaseMapper {
 
 
@@ -25,8 +24,9 @@ public interface PurchaseMapper {
 
   // New mapping methods for creating Purchase and PurchaseItem
 
-  @Mapping(target = "id", expression = "java(\"purchase-\" + UUID.randomUUID())")
-  @Mapping(target = "invoiceId", expression = "java(UUID.randomUUID().toString())")
+  // MongoDB will auto-generate the id as ObjectId
+  @Mapping(target = "id", ignore = true)
+  @Mapping(target = "invoiceId", expression = "java(java.util.UUID.randomUUID().toString())")
   @Mapping(target = "soldAt", expression = "java(Instant.now())")
   @Mapping(target = "valid", constant = "true")
   @Mapping(target = "items", source = "purchaseItems")

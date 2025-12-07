@@ -1,5 +1,6 @@
 package com.inventory.user.rest.dto.invitation;
 
+import com.inventory.user.domain.model.UserRole;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -20,7 +21,7 @@ public class InvitationDto {
   private String inviteeUserId;
   private String inviteeEmail;
   private String inviteeName;
-  private String role;
+  private UserRole role;
   private String status;
   private Instant createdAt;
   private Instant expiresAt;

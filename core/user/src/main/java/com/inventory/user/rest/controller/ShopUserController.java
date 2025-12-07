@@ -19,18 +19,6 @@ public class ShopUserController {
     return ResponseEntity.ok(ApiResponse.success(userService.listUsers(shopId)));
   }
 
-  @PostMapping("/api/v1/shops/{shopId}/users")
-  public ResponseEntity<ApiResponse<AddUserResponse>> addUser(@PathVariable String shopId,
-                                                 @RequestBody AddUserRequest request) {
-    return ResponseEntity.ok(ApiResponse.success(userService.addUser(shopId, request)));
-  }
-
-  @PostMapping("/api/v1/users/{inviteId}/accept")
-  public ResponseEntity<ApiResponse<UserDto>> acceptInvite(@PathVariable String inviteId,
-                                              @RequestBody AcceptUserInviteRequest request) {
-    return ResponseEntity.ok(ApiResponse.success(userService.acceptInvite(inviteId, request)));
-  }
-
   @PatchMapping("/api/v1/shops/{shopId}/users/{userId}")
   public ResponseEntity<ApiResponse<UserDto>> updateUser(@PathVariable String shopId,
                                             @PathVariable String userId,

@@ -7,6 +7,7 @@ import com.inventory.product.rest.dto.shop.RegisterShopRequest;
 import com.inventory.product.rest.dto.shop.ShopApprovalResponse;
 import com.inventory.product.rest.dto.shop.ShopRegistrationResponse;
 import com.inventory.user.domain.model.UserAccount;
+import com.inventory.user.domain.model.UserRole;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.MappingTarget;
@@ -61,7 +62,7 @@ public interface ShopMapper {
   // Method to update existing UserAccount with shopId
   default void updateUserAccountWithShopId(@MappingTarget UserAccount userAccount, String shopId) {
     userAccount.setShopId(shopId);
-    userAccount.setRole("OWNER"); // Set role to OWNER when registering shop
+    userAccount.setRole(UserRole.OWNER); // Set role to OWNER when registering shop
     userAccount.setUpdatedAt(Instant.now());
   }
 }

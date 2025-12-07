@@ -330,8 +330,8 @@ public class CheckoutService {
       BigDecimal grandTotal = subTotal.add(taxTotal).subtract(discountTotal);
 
       // Create purchase with CREATED status
+      // MongoDB will auto-generate the id as ObjectId
       Purchase purchase = Purchase.builder()
-              .id("purchase-" + java.util.UUID.randomUUID())
               .invoiceId(java.util.UUID.randomUUID().toString())
               .invoiceNo(purchaseMapper.generateInvoiceNo())
               .businessType(request.getBusinessType())

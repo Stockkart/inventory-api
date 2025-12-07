@@ -21,7 +21,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.util.UUID;
 
 @Service
 @Slf4j
@@ -73,19 +72,16 @@ public class ShopService {
 
       log.info("Registering new shop: {} for user: {}", request.getName(), userId);
 
-      // Generate shopId first
-      String shopId = "shop-" + UUID.randomUUID();
-
       // Map request to entity using MapStruct (sets defaults: APPROVED, active=true)
+      // MongoDB will auto-generate the shopId as ObjectId
       Shop shop = shopMapper.toEntity(request);
-      shop.setShopId(shopId);
       shop.setUserLimit(0); // Can be set later if needed
 
       // Save shop first
       shop = shopRepository.save(shop);
       
       // Update user account with shopId (using mapper method)
-      shopMapper.updateUserAccountWithShopId(userAccount, shopId);
+      shopMapper.updateUserAccountWithShopId(userAccount, shop.getShopId());
       userAccountRepository.save(userAccount);
       
       log.info("Successfully registered shop with ID: {} and updated user account: {}", shop.getShopId(), userId);

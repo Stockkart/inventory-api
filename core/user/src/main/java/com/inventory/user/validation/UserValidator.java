@@ -2,6 +2,7 @@ package com.inventory.user.validation;
 
 import com.inventory.common.exception.ValidationException;
 import com.inventory.user.domain.model.UserAccount;
+import com.inventory.user.domain.model.UserRole;
 import com.inventory.user.rest.dto.user.AddUserRequest;
 import com.inventory.user.rest.dto.user.UpdateUserRequest;
 import org.springframework.stereotype.Component;
@@ -23,7 +24,7 @@ public class UserValidator {
     if (!StringUtils.hasText(request.getEmail())) {
       throw new ValidationException("Email is required");
     }
-    if (!StringUtils.hasText(request.getRole())) {
+    if (request.getRole() == null) {
       throw new ValidationException("Role is required");
     }
   }
@@ -87,7 +88,7 @@ public class UserValidator {
   }
 
   public void validateLastAdminDeactivation(UserAccount account, long adminCount) {
-    if (account.isActive() && "ADMIN".equals(account.getRole()) && adminCount <= 1) {
+    if (account.isActive() && UserRole.ADMIN.equals(account.getRole()) && adminCount <= 1) {
       throw new ValidationException("Cannot deactivate the last admin user in the shop");
     }
   }

@@ -12,7 +12,8 @@ import org.mapstruct.ReportingPolicy;
 @Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.IGNORE)
 public interface InventoryMapper {
 
-  @Mapping(target = "lotId", expression = "java(\"lot-\" + java.util.UUID.randomUUID().toString().substring(0, 8))")
+  // MongoDB will auto-generate the lotId as ObjectId
+  @Mapping(target = "lotId", ignore = true)
   @Mapping(target = "receivedCount", source = "count")
   @Mapping(target = "soldCount", constant = "0")
   @Mapping(target = "currentCount", source = "count")
