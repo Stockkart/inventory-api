@@ -16,6 +16,8 @@ import com.inventory.product.rest.dto.sale.AddToCartResponse;
 import com.inventory.product.rest.dto.sale.CheckoutRequest;
 import com.inventory.product.rest.dto.sale.CheckoutResponse;
 import com.inventory.product.rest.dto.sale.InvalidateSaleRequest;
+import com.inventory.product.rest.dto.sale.PurchaseListResponse;
+import com.inventory.product.rest.dto.sale.PurchaseSummaryDto;
 import com.inventory.product.rest.dto.sale.SaleStatusResponse;
 import com.inventory.product.rest.dto.sale.UpdatePurchaseStatusRequest;
 import com.inventory.product.rest.mapper.PurchaseMapper;
@@ -24,6 +26,10 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -118,15 +124,7 @@ public class CheckoutService {
     checkoutValidator.validateShopIdAndUserId(shopId, userId);
 
     // Validate request
-    if (request == null) {
-      throw new ValidationException("Update purchase status request cannot be null");
-    }
-    if (request.getPurchaseId() == null || !StringUtils.hasText(request.getPurchaseId())) {
-      throw new ValidationException("Purchase ID is required");
-    }
-    if (request.getStatus() == null) {
-      throw new ValidationException("Status is required");
-    }
+    checkoutValidator.validateUpdateStatusRequest(request);
 
     // Set default payment method to "CASH" if not provided
     if (!StringUtils.hasText(request.getPaymentMethod())) {
@@ -150,8 +148,14 @@ public class CheckoutService {
       // Validate status transition
       PurchaseStatus currentStatus = purchase.getStatus();
       PurchaseStatus requestedStatus = request.getStatus();
-      
-      validateStatusTransition(currentStatus, requestedStatus);
+
+      checkoutValidator.validateStatusTransition(currentStatus, requestedStatus);
+
+      // If status is being changed to COMPLETED, decrease inventory counts
+      if (requestedStatus == PurchaseStatus.COMPLETED) {
+        log.info("Processing inventory updates for completed purchase ID: {}", purchase.getId());
+        updateInventoryForCompletedPurchase(purchase);
+      }
 
       // Update status and payment method
       purchase.setStatus(requestedStatus);
@@ -212,6 +216,105 @@ public class CheckoutService {
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
               "An unexpected error occurred while getting cart: " + e.getMessage(), e);
     }
+  }
+
+  @Transactional(readOnly = true)
+  public PurchaseListResponse getPurchases(Integer page, Integer limit, String order, HttpServletRequest httpRequest) {
+    // Get shopId and userId from request attributes (set by AuthenticationInterceptor)
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    String userId = (String) httpRequest.getAttribute("userId");
+    
+    // Validate shopId and userId
+    checkoutValidator.validateShopIdAndUserId(shopId, userId);
+
+    log.info("Getting purchases for shop: {}, user: {}, page: {}, limit: {}, order: {}", 
+            shopId, userId, page, limit, order);
+
+    try {
+      // Set defaults
+      int pageNumber = (page != null && page > 0) ? page - 1 : 0; // Spring Data uses 0-based indexing
+      int pageSize = (limit != null && limit > 0) ? limit : 20; // Default limit of 20
+      
+      // Validate page size (max 100 to prevent performance issues)
+      if (pageSize > 100) {
+        pageSize = 100;
+        log.warn("Page size exceeded maximum, setting to 100");
+      }
+
+      // Parse order parameter (default: soldAt desc)
+      Sort sort = parseSortOrder(order);
+
+      // Create Pageable
+      Pageable pageable = PageRequest.of(pageNumber, pageSize, sort);
+
+      // Query purchases by shopId
+      Page<Purchase> purchasePage = purchaseRepository.findByShopId(shopId, pageable);
+
+      // Map to DTOs
+      List<PurchaseSummaryDto> purchaseDtos = purchasePage.getContent().stream()
+              .map(purchaseMapper::toPurchaseSummaryDto)
+              .toList();
+
+      // Build response
+      PurchaseListResponse response = new PurchaseListResponse();
+      response.setPurchases(purchaseDtos);
+      response.setPage(pageNumber + 1); // Convert back to 1-based for API response
+      response.setLimit(pageSize);
+      response.setTotal(purchasePage.getTotalElements());
+      response.setTotalPages(purchasePage.getTotalPages());
+
+      log.info("Retrieved {} purchases (page {} of {}) for shop: {}", 
+              purchaseDtos.size(), pageNumber + 1, purchasePage.getTotalPages(), shopId);
+
+      return response;
+
+    } catch (DataAccessException e) {
+      log.error("Database error while getting purchases for shop: {}, user: {}", shopId, userId, e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
+              "Error getting purchases: " + e.getMessage(), e);
+    } catch (Exception e) {
+      log.error("Unexpected error while getting purchases for shop: {}, user: {}", shopId, userId, e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
+              "An unexpected error occurred while getting purchases: " + e.getMessage(), e);
+    }
+  }
+
+  private Sort parseSortOrder(String order) {
+    if (order == null || order.trim().isEmpty()) {
+      // Default: soldAt desc
+      return Sort.by(Sort.Direction.DESC, "soldAt");
+    }
+
+    // Parse order string: "field:direction" or just "field" (defaults to desc)
+    // Examples: "soldAt:desc", "soldAt:asc", "grandTotal:desc", "soldAt"
+    String[] parts = order.split(":");
+    String field = parts[0].trim();
+    Sort.Direction direction = Sort.Direction.DESC; // Default direction
+
+    if (parts.length > 1) {
+      String dirStr = parts[1].trim().toLowerCase();
+      if ("asc".equals(dirStr)) {
+        direction = Sort.Direction.ASC;
+      } else if ("desc".equals(dirStr)) {
+        direction = Sort.Direction.DESC;
+      }
+    }
+
+    // Validate field name (only allow certain fields for security)
+    // Allowed fields: soldAt, grandTotal, invoiceNo
+    if (!isValidSortField(field)) {
+      log.warn("Invalid sort field: {}, using default (soldAt desc)", field);
+      return Sort.by(Sort.Direction.DESC, "soldAt");
+    }
+
+    return Sort.by(direction, field);
+  }
+
+  private boolean isValidSortField(String field) {
+    // Whitelist of allowed sort fields
+    return "soldAt".equals(field) || 
+           "grandTotal".equals(field) || 
+           "invoiceNo".equals(field);
   }
 
   private List<PurchaseItem> processCartItems(List<AddToCartRequest.CartItem> items, String shopId) {
@@ -431,36 +534,6 @@ public class CheckoutService {
     }
   }
 
-  private void validateStatusTransition(PurchaseStatus currentStatus, PurchaseStatus requestedStatus) {
-    // If status is not changing, allow it
-    if (currentStatus == requestedStatus) {
-      return;
-    }
-
-    // COMPLETED -> any status: Not allowed
-    if (currentStatus == PurchaseStatus.COMPLETED) {
-      throw new ValidationException("Cannot change status from COMPLETED. Purchase is already completed.");
-    }
-
-    // CREATED -> PENDING:
-    if (currentStatus == PurchaseStatus.CREATED && requestedStatus == PurchaseStatus.PENDING) {
-      return;
-    }
-
-    // PENDING or CREATED / COMPLETED: Allowed
-    if (currentStatus == PurchaseStatus.PENDING) {
-      if (requestedStatus == PurchaseStatus.CREATED || requestedStatus == PurchaseStatus.COMPLETED) {
-        return;
-      }
-    }
-
-    // Any other transition: Not allowed
-    throw new ValidationException(
-            String.format("Invalid status transition from %s to %s. " +
-                    "Allowed transitions: CREATED->PENDING, PENDING->CREATED, PENDING->COMPLETED",
-                    currentStatus, requestedStatus));
-  }
-
   private void validateStockAvailabilityForCartUpdate(Purchase existingCart, List<PurchaseItem> newItems, String shopId) {
     // Create a map of existing cart items by inventoryId for quick lookup
     Map<String, PurchaseItem> existingItemsMap = new HashMap<>();
@@ -499,6 +572,63 @@ public class CheckoutService {
         }
       }
     }
+  }
+
+  private void updateInventoryForCompletedPurchase(Purchase purchase) {
+    if (purchase.getItems() == null || purchase.getItems().isEmpty()) {
+      log.warn("Purchase {} has no items to process for inventory update", purchase.getId());
+      return;
+    }
+
+    log.info("Updating inventory for {} items in purchase {}", purchase.getItems().size(), purchase.getId());
+
+    for (PurchaseItem item : purchase.getItems()) {
+      try {
+        // Find inventory by lotId (inventoryId in PurchaseItem)
+        Inventory inventory = inventoryRepository.findById(item.getInventoryId())
+                .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId",
+                    "Inventory not found with lotId: " + item.getInventoryId()));
+
+        // Verify inventory belongs to the same shop
+        if (!purchase.getShopId().equals(inventory.getShopId())) {
+          throw new ValidationException("Inventory lot " + item.getInventoryId() + 
+              " does not belong to shop " + purchase.getShopId());
+        }
+
+        // Get current values (handle nulls)
+        int currentCount = inventory.getCurrentCount() != null ? inventory.getCurrentCount() : 0;
+        int soldCount = inventory.getSoldCount() != null ? inventory.getSoldCount() : 0;
+        int quantity = item.getQuantity() != null ? item.getQuantity() : 0;
+
+        // Validate that we have enough stock
+        if (currentCount < quantity) {
+          throw new InsufficientStockException(
+              "Insufficient stock to complete purchase for product: " + inventory.getName() +
+              ". Available: " + currentCount + ", Required: " + quantity,
+              inventory.getBarcode(), currentCount, quantity);
+        }
+
+        // Update inventory counts
+        inventory.setCurrentCount(currentCount - quantity);
+        inventory.setSoldCount(soldCount + quantity);
+
+        // Save updated inventory
+        inventoryRepository.save(inventory);
+
+        log.info("Updated inventory for lotId: {} - decreased currentCount by {} (new: {}), increased soldCount by {} (new: {})",
+            item.getInventoryId(), quantity, inventory.getCurrentCount(), quantity, inventory.getSoldCount());
+
+      } catch (ResourceNotFoundException | ValidationException | InsufficientStockException e) {
+        log.error("Error updating inventory for lotId: {} - {}", item.getInventoryId(), e.getMessage());
+        throw e;
+      } catch (Exception e) {
+        log.error("Unexpected error updating inventory for lotId: {}", item.getInventoryId(), e);
+        throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
+            "Error updating inventory for lotId " + item.getInventoryId() + ": " + e.getMessage(), e);
+      }
+    }
+
+    log.info("Successfully updated inventory for all items in purchase {}", purchase.getId());
   }
 
 }

@@ -8,6 +8,7 @@ import com.inventory.product.rest.dto.sale.AddToCartRequest;
 import com.inventory.product.rest.dto.sale.AddToCartResponse;
 import com.inventory.product.rest.dto.sale.CheckoutRequest;
 import com.inventory.product.rest.dto.sale.CheckoutResponse;
+import com.inventory.product.rest.dto.sale.PurchaseSummaryDto;
 import com.inventory.product.rest.dto.sale.SaleStatusResponse;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
@@ -152,5 +153,9 @@ public interface PurchaseMapper {
   @Mapping(target = "customerAddress", source = "customerAddress")
   @Mapping(target = "customerPhone", source = "customerPhone")
   CheckoutResponse toCheckoutResponse(Purchase purchase);
+
+  // Method to map Purchase to PurchaseSummaryDto
+  @Mapping(target = "purchaseId", source = "id")
+  PurchaseSummaryDto toPurchaseSummaryDto(Purchase purchase);
 }
 
