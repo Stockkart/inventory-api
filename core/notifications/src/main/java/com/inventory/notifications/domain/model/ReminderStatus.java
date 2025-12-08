@@ -4,5 +4,6 @@ public enum ReminderStatus {
   PENDING,
   SENT,
   CANCELLED,
-  SNOOZED
+  SNOOZED,
+  COMPLETED
 }

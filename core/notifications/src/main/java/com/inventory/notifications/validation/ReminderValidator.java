@@ -17,9 +17,6 @@ public class ReminderValidator {
     if (!StringUtils.hasText(request.getShopId())) {
       throw new ValidationException("shopId is required");
     }
-    if (!StringUtils.hasText(request.getInventoryId())) {
-      throw new ValidationException("inventoryId is required");
-    }
     if (request.getReminderAt() == null) {
       throw new ValidationException("reminderAt is required");
     }

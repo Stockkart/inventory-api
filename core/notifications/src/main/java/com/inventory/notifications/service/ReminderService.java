@@ -70,7 +70,13 @@ public class ReminderService {
 
   private void createExpiryReminder(CreateReminderForInventoryRequest request) {
     Instant expiryReminderAt = computeExpiryReminderTime(request);
-    createAndSaveReminderIfValid(request, expiryReminderAt, request.getExpiryDate(), ReminderType.EXPIRY, null);
+    createAndSaveReminderIfValid(
+        request,
+        expiryReminderAt,
+        request.getExpiryDate(),
+        ReminderType.EXPIRY,
+        "Item Expiring in few days"
+    );
   }
 
   private void createCustomReminders(CreateReminderForInventoryRequest request) {
