@@ -1,5 +1,6 @@
 package com.inventory.product.rest.mapper;
 
+import com.inventory.notifications.rest.dto.CreateReminderForInventoryRequest;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.rest.dto.inventory.CreateInventoryRequest;
 import com.inventory.product.rest.dto.inventory.InventoryDetailResponse;
@@ -76,4 +77,15 @@ public interface InventoryMapper {
   @Mapping(target = "expiryDate", source = "expiryDate")
   @Mapping(target = "shopId", source = "shopId")
   InventoryDetailResponse toDetail(Inventory inventory);
+
+  @Mapping(target = "shopId", source = "shopId")
+  @Mapping(target = "inventoryId", source = "inventoryId")
+  @Mapping(target = "expiryDate", source = "request.expiryDate")
+  @Mapping(target = "reminderAt", source = "request.reminderAt")
+  @Mapping(target = "customReminders", source = "request.customReminders")
+  CreateReminderForInventoryRequest toCreateReminderForInventoryRequest(
+          CreateInventoryRequest request,
+          String shopId,
+          String inventoryId
+  );
 }

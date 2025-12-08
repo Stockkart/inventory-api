@@ -4,6 +4,7 @@ import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.notifications.rest.dto.CreateReminderForInventoryRequest;
 import com.inventory.notifications.service.ReminderService;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.repository.InventoryRepository;
@@ -49,14 +50,16 @@ public class InventoryService {
       inventory.setExpiryDate(request.getExpiryDate());
 
       inventory = inventoryRepository.save(inventory);
-      log.info("Successfully created inventory lot: {} for product: {} in shop: {}", 
-               inventory.getLotId(), inventory.getBarcode(), shopId);
+      log.info("Successfully created inventory lot: {} for product: {} in shop: {}",
+              inventory.getLotId(), inventory.getBarcode(), shopId);
 
       // Create reminder for expiry date asynchronously (handled by ReminderService)
       // Fire and forget - don't wait for completion
-      reminderService.createReminderForExpiry(shopId, inventory.getLotId(), inventory.getExpiryDate());
-
-      // Map to response with reminderCreated flag
+      // Errors are handled inside createReminderForInventoryCreate method
+      CreateReminderForInventoryRequest reminderRequest = inventoryMapper.toCreateReminderForInventoryRequest(
+              request, shopId, inventory.getId());
+      reminderService.createReminderForInventoryCreate(reminderRequest);
+      // Map to response
       // Set reminderCreated to true if expiry date exists (optimistic - actual creation happens async)
       boolean reminderCreated = inventory.getExpiryDate() != null;
       return inventoryMapper.toReceiptResponseWithReminder(inventory, reminderCreated);

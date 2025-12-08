@@ -1,5 +1,6 @@
 package com.inventory.notifications.rest.dto;
 
+import com.inventory.notifications.domain.model.ReminderType;
 import lombok.Data;
 
 import java.time.Instant;
@@ -10,7 +11,9 @@ public class ReminderResponse {
   String inventoryId;
   Instant reminderAt;
   Instant expiryDate;
-  Instant snoozeUntil;
+  Integer snoozeDays;
+  String notes;
   String status;
+  ReminderType type;
 }
 

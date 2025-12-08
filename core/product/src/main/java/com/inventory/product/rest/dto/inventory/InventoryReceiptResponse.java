@@ -8,6 +8,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class InventoryReceiptResponse {
+  String id;
   String lotId;
   String barcode;
   boolean reminderCreated;

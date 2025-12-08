@@ -1,0 +1,53 @@
+package com.inventory.notifications.validation;
+
+import com.inventory.common.exception.ValidationException;
+import com.inventory.notifications.domain.model.ReminderStatus;
+import com.inventory.notifications.rest.dto.CreateReminderRequest;
+import com.inventory.notifications.rest.dto.SnoozeReminderRequest;
+import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
+
+@Component
+public class ReminderValidator {
+
+  public void validateCreateRequest(CreateReminderRequest request) {
+    if (request == null) {
+      throw new ValidationException("Create reminder request cannot be null");
+    }
+    if (!StringUtils.hasText(request.getShopId())) {
+      throw new ValidationException("shopId is required");
+    }
+    if (request.getReminderAt() == null) {
+      throw new ValidationException("reminderAt is required");
+    }
+  }
+
+  public void validateSnoozeRequest(String id, SnoozeReminderRequest request) {
+    if (!StringUtils.hasText(id)) {
+      throw new ValidationException("Reminder ID is required");
+    }
+    if (request == null) {
+      throw new ValidationException("Snooze reminder request cannot be null");
+    }
+    if (request.getSnoozeDays() == null || request.getSnoozeDays() <= 0) {
+      throw new ValidationException("snoozeDays must be a positive number");
+    }
+  }
+
+  public void validateStatus(String id, String status) {
+    if (!StringUtils.hasText(id)) {
+      throw new ValidationException("Reminder ID is required");
+    }
+    if (status != null && !StringUtils.hasText(status)) {
+      return;
+    }
+    if (status != null) {
+      try {
+        ReminderStatus.valueOf(status.toUpperCase());
+      } catch (IllegalArgumentException ex) {
+        throw new ValidationException("Invalid status value: " + status);
+      }
+    }
+  }
+}
+
