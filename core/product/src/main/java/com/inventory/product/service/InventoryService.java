@@ -73,11 +73,7 @@ public class InventoryService {
       InventoryReceiptResponse response = inventoryMapper.toReceiptResponse(inventory);
       // Set reminderCreated to true if expiry date exists (optimistic - actual creation happens async)
       boolean reminderCreated = inventory.getExpiryDate() != null;
-      return InventoryReceiptResponse.builder()
-          .lotId(response.getLotId())
-          .barcode(response.getBarcode())
-          .reminderCreated(reminderCreated)
-          .build();
+      return inventoryMapper.toReceiptResponseWithReminder(inventory, reminderCreated);
 
     } catch (ValidationException e) {
       log.warn("Validation error in create inventory: {}", e.getMessage());
@@ -104,9 +100,7 @@ public class InventoryService {
               .map(inventoryMapper::toSummary)
               .toList();
 
-      return InventoryListResponse.builder()
-              .data(summaries)
-              .build();
+      return inventoryMapper.toInventoryListResponse(summaries);
 
     } catch (ValidationException e) {
       log.warn("Validation error in list inventory: {}", e.getMessage());
@@ -136,9 +130,7 @@ public class InventoryService {
               .map(inventoryMapper::toSummary)
               .toList();
 
-      return InventoryListResponse.builder()
-              .data(summaries)
-              .build();
+      return inventoryMapper.toInventoryListResponse(summaries);
 
     } catch (ValidationException e) {
       log.warn("Validation error in search inventory: {}", e.getMessage());

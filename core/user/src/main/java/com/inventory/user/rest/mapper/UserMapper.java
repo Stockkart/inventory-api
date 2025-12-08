@@ -1,16 +1,14 @@
 package com.inventory.user.rest.mapper;
 
 import com.inventory.user.domain.model.UserAccount;
-import com.inventory.user.domain.model.UserInvite;
+import com.inventory.user.domain.model.UserRole;
 import com.inventory.user.domain.model.UserToken;
-import com.inventory.user.rest.dto.auth.AcceptInviteResponse;
 import com.inventory.user.rest.dto.auth.LoginResponse;
 import com.inventory.user.rest.dto.auth.LogoutResponse;
 import com.inventory.user.rest.dto.auth.SignupRequest;
 import com.inventory.user.rest.dto.auth.SignupResponse;
 import com.inventory.user.rest.dto.auth.UserResponse;
 import com.inventory.user.rest.dto.user.UserDto;
-import com.inventory.user.rest.dto.user.UserInviteDto;
 import org.mapstruct.AfterMapping;
 import org.mapstruct.Context;
 import org.mapstruct.Mapper;
@@ -35,6 +33,10 @@ public interface UserMapper {
   @Mapping(target = "userId", source = "userId")
   @Mapping(target = "role", source = "role")
   @Mapping(target = "shopId", source = "shopId")
+  @Mapping(target = "email", source = "email")
+  @Mapping(target = "name", source = "name")
+  @Mapping(target = "active", source = "active")
+  @Mapping(target = "createdAt", source = "updatedAt")
   LoginResponse.UserSummary toUserSummary(UserAccount user);
 
   @Mapping(target = "accessToken", ignore = true)
@@ -50,12 +52,10 @@ public interface UserMapper {
   @Mapping(target = "userId", source = "userId")
   @Mapping(target = "role", source = "role")
   @Mapping(target = "shopId", source = "shopId")
+  @Mapping(target = "email", source = "email")
+  @Mapping(target = "name", source = "name")
   @Mapping(target = "active", source = "active")
-  AcceptInviteResponse toAcceptInviteResponse(UserAccount account);
-
-  @Mapping(target = "userId", source = "userId")
-  @Mapping(target = "role", source = "role")
-  @Mapping(target = "shopId", source = "shopId")
+  @Mapping(target = "createdAt", source = "updatedAt")
   SignupResponse.UserSummary toSignupUserSummary(UserAccount user);
 
   @Mapping(target = "accessToken", ignore = true)
@@ -68,68 +68,10 @@ public interface UserMapper {
     response.setUser(toSignupUserSummary(account));
   }
 
-  // UserInvite to DTO mappings
-  @Mapping(target = "inviteId", source = "inviteId")
-  @Mapping(target = "email", source = "email")
-  @Mapping(target = "name", source = "name")
-  @Mapping(target = "role", source = "role")
-  @Mapping(target = "shopId", source = "shopId")
-  @Mapping(target = "expiresAt", source = "expiresAt")
-  @Mapping(target = "accepted", source = "accepted")
-  UserInviteDto toUserInviteDto(UserInvite invite);
-
-  // DTO to Entity mappings with manual implementation for complex mappings
-  @Mapping(target = "email", source = "invite.email")
-  @Mapping(target = "name", source = "invite.name")
-  @Mapping(target = "role", source = "invite.role")
-  @Mapping(target = "shopId", source = "invite.shopId")
-  @Mapping(target = "password", ignore = true)
-  @Mapping(target = "active", constant = "true")
-  @Mapping(target = "inviteAccepted", constant = "true")
-  @Mapping(target = "userId", ignore = true)
-  @Mapping(target = "updatedAt", ignore = true)
-  UserAccount toUserAccount(UserInvite invite, @Context PasswordEncoder passwordEncoder, String rawPassword);
-
-  @AfterMapping
-  default void setUserAccountFromInviteFields(@MappingTarget UserAccount account, UserInvite invite, @Context PasswordEncoder passwordEncoder, String rawPassword) {
-    if (account.getUserId() == null) {
-      account.setUserId("user-" + UUID.randomUUID());
-    }
-    account.setPassword(passwordEncoder.encode(rawPassword));
-    account.setUpdatedAt(Instant.now());
-  }
-
-  // Update existing UserAccount from UserInvite
-  @Mapping(target = "name", source = "invite.name")
-  @Mapping(target = "password", ignore = true)
-  @Mapping(target = "active", constant = "true")
-  @Mapping(target = "inviteAccepted", constant = "true")
-  @Mapping(target = "updatedAt", ignore = true)
-  @Mapping(target = "userId", ignore = true)
-  @Mapping(target = "email", ignore = true)
-  @Mapping(target = "role", ignore = true)
-  @Mapping(target = "shopId", ignore = true)
-  void updateUserAccountFromInvite(@MappingTarget UserAccount account, UserInvite invite, @Context PasswordEncoder passwordEncoder, String rawPassword);
-
-  @AfterMapping
-  default void setUpdatedAccountFields(@MappingTarget UserAccount account, UserInvite invite, @Context PasswordEncoder passwordEncoder, String rawPassword) {
-    account.setPassword(passwordEncoder.encode(rawPassword));
-    account.setUpdatedAt(Instant.now());
-  }
-
-  @Mapping(target = "email", source = "email")
-  @Mapping(target = "name", source = "name")
-  @Mapping(target = "role", source = "role")
-  @Mapping(target = "shopId", source = "shopId")
-  @Mapping(target = "accepted", constant = "false")
-  @Mapping(target = "inviteId", ignore = true)
-  @Mapping(target = "expiresAt", ignore = true)
-  UserInvite toUserInvite(String email, String name, String role, String shopId);
-
   // SignupRequest to UserAccount mapping
   @Mapping(target = "name", source = "name")
   @Mapping(target = "email", source = "email")
-  @Mapping(target = "role", source = "role", defaultValue = "CASHIER")
+  @Mapping(target = "role", source = "role")
   @Mapping(target = "shopId", source = "shopId")
   @Mapping(target = "active", constant = "true")
   @Mapping(target = "inviteAccepted", constant = "false")
@@ -140,7 +82,11 @@ public interface UserMapper {
 
   @AfterMapping
   default void setUserAccountGeneratedFields(@MappingTarget UserAccount account, SignupRequest request, @Context PasswordEncoder passwordEncoder) {
-    account.setUserId("user-" + UUID.randomUUID());
+    // MongoDB will auto-generate the userId as ObjectId
+    // Set default role to OWNER if not provided
+    if (account.getRole() == null) {
+      account.setRole(UserRole.OWNER);
+    }
     account.setPassword(passwordEncoder.encode(request.getPassword()));
     account.setUpdatedAt(Instant.now());
   }
