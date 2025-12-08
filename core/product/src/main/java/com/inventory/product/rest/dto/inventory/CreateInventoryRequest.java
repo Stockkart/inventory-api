@@ -1,9 +1,11 @@
 package com.inventory.product.rest.dto.inventory;
 
+import com.inventory.common.dto.CustomReminderRequest;
 import lombok.Data;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 
 @Data
 public class CreateInventoryRequest {
@@ -19,8 +21,6 @@ public class CreateInventoryRequest {
   private Integer count;
   private Instant expiryDate;
   private Instant reminderAt;
-  private Instant newReminderAt;
-  private Instant reminderEndDate;
-  private String reminderNotes;
+  private List<CustomReminderRequest> customReminders;
 }
 

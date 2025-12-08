@@ -4,6 +4,7 @@ import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.notifications.domain.model.Reminder;
 import com.inventory.notifications.domain.model.ReminderType;
 import com.inventory.notifications.domain.repository.ReminderRepository;
+import com.inventory.common.dto.CustomReminderRequest;
 import com.inventory.notifications.rest.dto.*;
 import com.inventory.notifications.rest.mapper.ReminderMapper;
 import com.inventory.notifications.validation.ReminderValidator;
@@ -16,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 
 @Slf4j
 @Service
@@ -40,21 +42,24 @@ public class ReminderService {
 
   @Async
   public void createReminderForInventoryCreate(CreateReminderForInventoryRequest request) {
-    // If neither normal nor custom have the required key dates, skip completely
-    if (request.getExpiryDate() == null && request.getReminderEndDate() == null) {
-      log.debug("No valid expiryDate or reminderEndDate for inventoryId={}, skipping reminder creation", request.getInventoryId());
+    // Check if there's anything to create
+    boolean hasExpiryReminder = request.getExpiryDate() != null;
+    boolean hasCustomReminders = request.getCustomReminders() != null && !request.getCustomReminders().isEmpty();
+    
+    if (!hasExpiryReminder && !hasCustomReminders) {
+      log.debug("No valid expiryDate or customReminders for inventoryId={}, skipping reminder creation", request.getInventoryId());
       return;
     }
 
     try {
-      // Create expiry reminder if expiry date is provided
-      if (request.getExpiryDate() != null) {
+      // Create expiry reminder if expiry date is provided (default reminder)
+      if (hasExpiryReminder) {
         createExpiryReminder(request);
       }
 
-      // Create custom reminder if custom end date is provided
-      if (request.getReminderEndDate() != null) {
-        createCustomReminder(request);
+      // Create multiple custom reminders if provided
+      if (hasCustomReminders) {
+        createCustomReminders(request);
       }
 
     } catch (Exception e) {
@@ -64,31 +69,34 @@ public class ReminderService {
   }
 
   private void createExpiryReminder(CreateReminderForInventoryRequest request) {
-    Instant expiryReminderAt = computeReminderTime(request, ReminderType.EXPIRY);
+    Instant expiryReminderAt = computeExpiryReminderTime(request);
     createAndSaveReminderIfValid(request, expiryReminderAt, request.getExpiryDate(), ReminderType.EXPIRY, null);
   }
 
-  private void createCustomReminder(CreateReminderForInventoryRequest request) {
-    Instant customReminderAt = computeReminderTime(request, ReminderType.CUSTOM);
-    createAndSaveReminderIfValid(request, customReminderAt, request.getReminderEndDate(), ReminderType.CUSTOM, request.getReminderNotes());
-  }
-
-  // -------- common helper: compute reminderAt with default 15 days before --------
-  private Instant computeReminderTime(CreateReminderForInventoryRequest request, ReminderType type) {
-    Instant now = Instant.now();
-    Instant explicitReminderAt;
-    Instant baseDate;
-
-    if (type == ReminderType.EXPIRY) {
-      explicitReminderAt = request.getReminderAt();
-      baseDate = request.getExpiryDate();
-    } else {
-      explicitReminderAt = request.getNewReminderAt();
-      baseDate = request.getReminderEndDate();
+  private void createCustomReminders(CreateReminderForInventoryRequest request) {
+    List<CustomReminderRequest> customReminders = request.getCustomReminders();
+    if (customReminders == null || customReminders.isEmpty()) {
+      return;
     }
 
+    for (CustomReminderRequest customReminder : customReminders) {
+      Instant customReminderAt = computeCustomReminderTime(customReminder);
+      createAndSaveReminderIfValid(
+          request,
+          customReminderAt,
+          customReminder.getEndDate(),
+          ReminderType.CUSTOM,
+          customReminder.getNotes()
+      );
+    }
+  }
+
+  // -------- helper: compute reminderAt with default 15 days before --------
+  private Instant computeReminderTime(Instant explicitReminderAt, Instant baseDate, String contextMessage) {
+    Instant now = Instant.now();
+
     if (baseDate == null && explicitReminderAt == null) {
-      log.debug("No baseDate or explicitReminderAt for {} reminder on inventoryId={}, skipping", type, request.getInventoryId());
+      log.debug("No baseDate or explicitReminderAt for {}. skipping", contextMessage);
       return null;
     }
 
@@ -102,8 +110,26 @@ public class ReminderService {
       return result;
     }
 
-    log.warn("Computed {} reminderAt {} is null or in the past for inventoryId={}, skipping", type, result, request.getInventoryId());
+    log.warn("Computed reminderAt {} is null or in the past for {}, skipping", result, contextMessage);
     return null;
+  }
+
+  // -------- helper: compute expiry reminderAt with default 15 days before --------
+  private Instant computeExpiryReminderTime(CreateReminderForInventoryRequest request) {
+    return computeReminderTime(
+        request.getReminderAt(),
+        request.getExpiryDate(),
+        String.format("expiry reminder on inventoryId=%s", request.getInventoryId())
+    );
+  }
+
+  // -------- helper: compute custom reminderAt with default 15 days before --------
+  private Instant computeCustomReminderTime(CustomReminderRequest customReminder) {
+    return computeReminderTime(
+        customReminder.getReminderAt(),
+        customReminder.getEndDate(),
+        "custom reminder"
+    );
   }
 
   // -------- common helper: actually create + save reminder if valid --------

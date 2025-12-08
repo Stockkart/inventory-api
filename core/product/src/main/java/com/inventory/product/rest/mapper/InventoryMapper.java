@@ -82,9 +82,7 @@ public interface InventoryMapper {
   @Mapping(target = "inventoryId", source = "inventoryId")
   @Mapping(target = "expiryDate", source = "request.expiryDate")
   @Mapping(target = "reminderAt", source = "request.reminderAt")
-  @Mapping(target = "newReminderAt", source = "request.newReminderAt")
-  @Mapping(target = "reminderEndDate", source = "request.reminderEndDate")
-  @Mapping(target = "reminderNotes", source = "request.reminderNotes")
+  @Mapping(target = "customReminders", source = "request.customReminders")
   CreateReminderForInventoryRequest toCreateReminderForInventoryRequest(
           CreateInventoryRequest request,
           String shopId,
