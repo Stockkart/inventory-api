@@ -11,49 +11,48 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/v1/reminders")
 public class ReminderController {
 
-    @Autowired
-    private ReminderService reminderService;
+  @Autowired
+  private ReminderService reminderService;
 
-    // LIST by shop
-    @GetMapping
-    public ResponseEntity<ApiResponse<ReminderListResponse>> list(@RequestParam String shopId) {
-        return ResponseEntity.ok(ApiResponse.success(reminderService.list(shopId)));
-    }
+  // LIST by shop
+  @GetMapping
+  public ResponseEntity<ApiResponse<ReminderListResponse>> list(@RequestParam String shopId) {
+    return ResponseEntity.ok(ApiResponse.success(reminderService.list(shopId)));
+  }
 
-    // GET single reminder
-    @GetMapping("/{id}")
-    public ResponseEntity<ApiResponse<ReminderResponse>> get(@PathVariable String id) {
-        return ResponseEntity.ok(ApiResponse.success(reminderService.get(id)));
-    }
+  // GET single reminder
+  @GetMapping("/{id}")
+  public ResponseEntity<ApiResponse<ReminderResponse>> get(@PathVariable String id) {
+    return ResponseEntity.ok(ApiResponse.success(reminderService.get(id)));
+  }
 
-    // CREATE manual reminder
-    @PostMapping
-    public ResponseEntity<ApiResponse<ReminderResponse>> create(@RequestBody CreateReminderRequest request) {
-        return ResponseEntity.ok(ApiResponse.success(reminderService.create(request)));
-    }
+  // CREATE manual reminder
+  @PostMapping
+  public ResponseEntity<ApiResponse<ReminderResponse>> create(@RequestBody CreateReminderRequest request) {
+    return ResponseEntity.ok(ApiResponse.success(reminderService.create(request)));
+  }
 
-    // UPDATE manual reminder
-    @PutMapping("/{id}")
-    public ResponseEntity<ApiResponse<ReminderResponse>> update(
-            @PathVariable String id,
-            @RequestBody UpdateReminderRequest request
-    ) {
-        return ResponseEntity.ok(ApiResponse.success(reminderService.update(id, request)));
-    }
+  // UPDATE manual reminder
+  @PutMapping("/{id}")
+  public ResponseEntity<ApiResponse<ReminderResponse>> update(
+          @PathVariable String id,
+          @RequestBody UpdateReminderRequest request
+  ) {
+    return ResponseEntity.ok(ApiResponse.success(reminderService.update(id, request)));
+  }
 
-    // DELETE reminder
-    @DeleteMapping("/{id}")
-    public ResponseEntity<ApiResponse<Void>> delete(@PathVariable String id) {
-        reminderService.delete(id);
-        return ResponseEntity.ok(ApiResponse.success(null));
-    }
+  // DELETE reminder
+  @DeleteMapping("/{id}")
+  public ResponseEntity<ApiResponse<Long>> delete(@PathVariable String id) {
+    return ResponseEntity.ok(ApiResponse.success(reminderService.delete(id)));
+  }
 
-    // SNOOZE (already present)
-    @PostMapping("/{id}/snooze")
-    public ResponseEntity<ApiResponse<ReminderResponse>> snooze(
-            @PathVariable String id,
-            @RequestBody SnoozeReminderRequest request
-    ) {
-        return ResponseEntity.ok(ApiResponse.success(reminderService.snooze(id, request)));
-    }
+  // SNOOZE (already present)
+  @PostMapping("/{id}/snooze")
+  public ResponseEntity<ApiResponse<ReminderResponse>> snooze(
+          @PathVariable String id,
+          @RequestBody SnoozeReminderRequest request
+  ) {
+    return ResponseEntity.ok(ApiResponse.success(reminderService.snooze(id, request)));
+  }
 }
