@@ -76,7 +76,7 @@ public class BusinessTypeService {
       log.debug("Fetching business type with ID: {}", id);
 
       BusinessType businessType = repository.findById(id)
-              .orElseThrow(() -> new ResourceNotFoundException("Business type", "id", id));
+          .orElseThrow(() -> new ResourceNotFoundException("Business type", "id", id));
 
       return mapper.toResponse(businessType);
 
@@ -106,7 +106,7 @@ public class BusinessTypeService {
       log.info("Updating status for business type with ID: {} to {}", id, enabled ? "enabled" : "disabled");
 
       BusinessType businessType = repository.findById(id)
-              .orElseThrow(() -> new ResourceNotFoundException("Business type", "id", id));
+          .orElseThrow(() -> new ResourceNotFoundException("Business type", "id", id));
 
       // Only update if status is changing
       if (businessType.isEnabled() != enabled) {

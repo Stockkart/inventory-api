@@ -11,7 +11,6 @@ import com.inventory.user.domain.model.UserAccount;
 import com.inventory.user.domain.model.UserRole;
 import com.inventory.user.domain.repository.JoinRequestRepository;
 import com.inventory.user.domain.repository.UserAccountRepository;
-import com.inventory.user.rest.dto.joinrequest.AcceptJoinRequestResponse;
 import com.inventory.user.rest.dto.joinrequest.AcceptRejectJoinRequestRequest;
 import com.inventory.user.rest.dto.joinrequest.JoinRequestDto;
 import com.inventory.user.rest.dto.joinrequest.JoinRequestListResponse;
@@ -20,14 +19,14 @@ import com.inventory.user.rest.dto.joinrequest.SendJoinRequestRequest;
 import com.inventory.user.rest.dto.joinrequest.SendJoinRequestResponse;
 import com.inventory.user.rest.mapper.JoinRequestMapper;
 import com.inventory.user.validation.JoinRequestValidator;
-
-import java.util.List;
-import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -56,7 +55,7 @@ public class JoinRequestService {
 
       // Verify user exists
       UserAccount user = userAccountRepository.findById(userId)
-              .orElseThrow(() -> new ResourceNotFoundException("User", "userId", userId));
+          .orElseThrow(() -> new ResourceNotFoundException("User", "userId", userId));
 
       // Check if user already has a shop
       if (user.getShopId() != null && !user.getShopId().trim().isEmpty()) {
@@ -66,7 +65,7 @@ public class JoinRequestService {
       // Find owner by email
       String ownerEmail = request.getOwnerEmail().toLowerCase().trim();
       UserAccount owner = userAccountRepository.findByEmail(ownerEmail)
-              .orElseThrow(() -> new ResourceNotFoundException("Owner", "email", ownerEmail));
+          .orElseThrow(() -> new ResourceNotFoundException("Owner", "email", ownerEmail));
 
       // Verify owner has OWNER role
       if (owner.getRole() != UserRole.OWNER) {
@@ -87,7 +86,7 @@ public class JoinRequestService {
 
       // Check if there's already a pending join request for this user and shop
       if (joinRequestRepository.existsByUserIdAndShopIdAndStatus(
-              userId, shopId, JoinRequestStatus.PENDING.name())) {
+          userId, shopId, JoinRequestStatus.PENDING.name())) {
         throw new ResourceExistsException("A pending join request already exists for this shop");
       }
 
@@ -106,7 +105,7 @@ public class JoinRequestService {
       joinRequest = joinRequestRepository.save(joinRequest);
 
       log.info("Created join request with ID: {} for user: {} to shop: {} (owner: {})",
-              joinRequest.getRequestId(), userId, shopId, ownerEmail);
+          joinRequest.getRequestId(), userId, shopId, ownerEmail);
 
       return joinRequestMapper.toResponse(joinRequest);
 
@@ -129,7 +128,7 @@ public class JoinRequestService {
 
       // Find owner
       UserAccount owner = userAccountRepository.findById(ownerUserId)
-              .orElseThrow(() -> new ResourceNotFoundException("User", "userId", ownerUserId));
+          .orElseThrow(() -> new ResourceNotFoundException("User", "userId", ownerUserId));
 
       // Verify owner has OWNER role
       if (owner.getRole() != UserRole.OWNER) {
@@ -148,8 +147,8 @@ public class JoinRequestService {
 
       // Map to DTOs
       List<JoinRequestDto> dtos = joinRequests.stream()
-              .map(joinRequestMapper::toDto)
-              .collect(Collectors.toList());
+          .map(joinRequestMapper::toDto)
+          .collect(Collectors.toList());
 
       log.debug("Found {} join requests for shop: {}", dtos.size(), shopId);
 
@@ -176,7 +175,7 @@ public class JoinRequestService {
 
       // Find owner
       UserAccount owner = userAccountRepository.findById(ownerUserId)
-              .orElseThrow(() -> new ResourceNotFoundException("User", "userId", ownerUserId));
+          .orElseThrow(() -> new ResourceNotFoundException("User", "userId", ownerUserId));
 
       // Verify owner has OWNER role
       if (owner.getRole() != UserRole.OWNER) {
@@ -192,7 +191,7 @@ public class JoinRequestService {
 
       // Find join request
       JoinRequest joinRequest = joinRequestRepository.findById(requestId)
-              .orElseThrow(() -> new ResourceNotFoundException("JoinRequest", "requestId", requestId));
+          .orElseThrow(() -> new ResourceNotFoundException("JoinRequest", "requestId", requestId));
 
       // Verify join request is for this owner's shop
       if (!shopId.equals(joinRequest.getShopId())) {
@@ -225,23 +224,23 @@ public class JoinRequestService {
   private ProcessJoinRequestResponse acceptJoinRequest(JoinRequest joinRequest, String ownerUserId, String shopId) {
     // Find the user who requested to join
     UserAccount user = userAccountRepository.findById(joinRequest.getUserId())
-            .orElseThrow(() -> new ResourceNotFoundException("User", "userId", joinRequest.getUserId()));
+        .orElseThrow(() -> new ResourceNotFoundException("User", "userId", joinRequest.getUserId()));
 
     // Verify user doesn't already belong to a shop
     if (user.getShopId() != null && !user.getShopId().trim().isEmpty()) {
       throw new ResourceExistsException("User already belongs to a shop");
     }
 
-    log.info("Accepting join request {} for user {} to shop {}", 
-             joinRequest.getRequestId(), user.getUserId(), shopId);
+    log.info("Accepting join request {} for user {} to shop {}",
+        joinRequest.getRequestId(), user.getUserId(), shopId);
 
     // Update join request and user
     joinRequestMapper.updateJoinRequestAndUser(joinRequest, user, ownerUserId);
     joinRequestRepository.save(joinRequest);
     userAccountRepository.save(user);
 
-    log.info("Join request {} accepted. User {} added to shop {}", 
-             joinRequest.getRequestId(), user.getUserId(), shopId);
+    log.info("Join request {} accepted. User {} added to shop {}",
+        joinRequest.getRequestId(), user.getUserId(), shopId);
 
     return joinRequestMapper.toProcessResponse(joinRequest, user, JoinRequestStatus.APPROVED.name(), "Join request accepted successfully");
   }
@@ -257,7 +256,7 @@ public class JoinRequestService {
 
     // Get user for response
     UserAccount user = userAccountRepository.findById(joinRequest.getUserId())
-            .orElse(null);
+        .orElse(null);
 
     return joinRequestMapper.toProcessResponse(joinRequest, user, JoinRequestStatus.REJECTED.name(), "Join request rejected");
   }

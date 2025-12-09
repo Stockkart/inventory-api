@@ -1,5 +1,6 @@
 package com.inventory.app.config;
 
+import org.bson.types.Decimal128;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
@@ -10,8 +11,6 @@ import org.springframework.data.mongodb.core.convert.MongoCustomConversions;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
-
-import org.bson.types.Decimal128;
 
 /**
  * MongoDB configuration to properly handle BigDecimal conversion.

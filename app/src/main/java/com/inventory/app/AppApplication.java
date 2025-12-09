@@ -7,12 +7,12 @@ import org.springframework.data.mongodb.repository.config.EnableMongoRepositorie
 import org.springframework.scheduling.annotation.EnableAsync;
 
 @SpringBootApplication(scanBasePackages = {
-        "com.inventory.*"
+    "com.inventory.*"
 })
 @EnableMongoRepositories(basePackages = {
-        "com.inventory.product.domain.repository",
-        "com.inventory.user.domain.repository",
-        "com.inventory.notifications.domain.repository"
+    "com.inventory.product.domain.repository",
+    "com.inventory.user.domain.repository",
+    "com.inventory.notifications.domain.repository"
 })
 @EnableAsync
 public class AppApplication {
@@ -21,10 +21,10 @@ public class AppApplication {
     // Load .env file if it exists
     try {
       Dotenv dotenv = Dotenv.configure()
-              .directory("./")  // Look for .env in project root
-              .ignoreIfMissing()  // Don't fail if .env doesn't exist
-              .load();
-      
+          .directory("./")  // Look for .env in project root
+          .ignoreIfMissing()  // Don't fail if .env doesn't exist
+          .load();
+
       // Set system properties from .env file
       dotenv.entries().forEach(entry -> {
         System.setProperty(entry.getKey(), entry.getValue());
@@ -33,7 +33,7 @@ public class AppApplication {
       // If .env file doesn't exist, continue with default values
       System.out.println("No .env file found, using default/system properties");
     }
-    
+
     SpringApplication.run(AppApplication.class, args);
   }
 

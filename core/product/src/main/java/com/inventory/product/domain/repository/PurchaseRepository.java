@@ -14,11 +14,11 @@ import java.util.Optional;
 public interface PurchaseRepository extends MongoRepository<Purchase, String> {
 
   Optional<Purchase> findByUserIdAndShopIdAndStatus(String userId, String shopId, PurchaseStatus status);
-  
+
   Optional<Purchase> findByUserIdAndShopIdAndStatusIn(String userId, String shopId, List<PurchaseStatus> statuses);
-  
+
   Page<Purchase> findByShopId(String shopId, Pageable pageable);
-  
+
   Page<Purchase> findByShopIdAndUserId(String shopId, String userId, Pageable pageable);
 }
 

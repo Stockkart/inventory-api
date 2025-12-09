@@ -57,6 +57,6 @@ public class InsufficientStockException extends BaseException {
   @Override
   public String getMessage() {
     return String.format("%s (Product ID: %s, Available: %d, Requested: %d)",
-            super.getMessage(), productId, availableQuantity, requestedQuantity);
+        super.getMessage(), productId, availableQuantity, requestedQuantity);
   }
 }

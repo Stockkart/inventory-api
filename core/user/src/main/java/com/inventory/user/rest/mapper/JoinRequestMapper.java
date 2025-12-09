@@ -111,7 +111,7 @@ public interface JoinRequestMapper {
     response.setStatus(status);
     response.setReviewedAt(joinRequest.getReviewedAt());
     response.setMessage(message);
-    
+
     if (user != null) {
       response.setUserId(user.getUserId());
       response.setUserEmail(user.getEmail());
@@ -121,7 +121,7 @@ public interface JoinRequestMapper {
       response.setUserEmail(joinRequest.getUserEmail());
       response.setUserName(joinRequest.getUserName());
     }
-    
+
     return response;
   }
 
@@ -132,7 +132,7 @@ public interface JoinRequestMapper {
     joinRequest.setStatus(JoinRequestStatus.APPROVED);
     joinRequest.setReviewedAt(Instant.now());
     joinRequest.setReviewedBy(reviewerId);
-    
+
     user.setShopId(joinRequest.getShopId());
     // Use the requested role, default to CASHIER if not specified
     if (joinRequest.getRequestedRole() != null) {

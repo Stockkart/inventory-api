@@ -6,7 +6,6 @@ import com.inventory.product.rest.dto.sale.AddToCartRequest;
 import com.inventory.product.rest.dto.sale.CheckoutRequest;
 import com.inventory.product.rest.dto.sale.UpdatePurchaseStatusRequest;
 import org.springframework.stereotype.Component;
-import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
@@ -105,9 +104,9 @@ public class CheckoutValidator {
 
     // Any other transition: Not allowed
     throw new ValidationException(
-            String.format("Invalid status transition from %s to %s. " +
-                            "Allowed transitions: CREATED->PENDING, PENDING->CREATED, PENDING->COMPLETED",
-                    currentStatus, requestedStatus));
+        String.format("Invalid status transition from %s to %s. " +
+                "Allowed transitions: CREATED->PENDING, PENDING->CREATED, PENDING->COMPLETED",
+            currentStatus, requestedStatus));
   }
 
 }

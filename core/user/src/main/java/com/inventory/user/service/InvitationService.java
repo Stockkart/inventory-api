@@ -10,7 +10,13 @@ import com.inventory.user.domain.model.InvitationStatus;
 import com.inventory.user.domain.model.UserAccount;
 import com.inventory.user.domain.repository.InvitationRepository;
 import com.inventory.user.domain.repository.UserAccountRepository;
-import com.inventory.user.rest.dto.invitation.*;
+import com.inventory.user.rest.dto.invitation.AcceptInvitationResponse;
+import com.inventory.user.rest.dto.invitation.InvitationDto;
+import com.inventory.user.rest.dto.invitation.InvitationListResponse;
+import com.inventory.user.rest.dto.invitation.SendInvitationRequest;
+import com.inventory.user.rest.dto.invitation.SendInvitationResponse;
+import com.inventory.user.rest.dto.invitation.ShopUserDto;
+import com.inventory.user.rest.dto.invitation.ShopUserListResponse;
 import com.inventory.user.rest.mapper.InvitationMapper;
 import com.inventory.user.validation.InvitationValidator;
 import lombok.extern.slf4j.Slf4j;
@@ -55,7 +61,7 @@ public class InvitationService {
 
       // Verify inviter exists and belongs to the shop
       UserAccount inviter = userAccountRepository.findById(inviterUserId)
-              .orElseThrow(() -> new ResourceNotFoundException("User", "userId", inviterUserId));
+          .orElseThrow(() -> new ResourceNotFoundException("User", "userId", inviterUserId));
 
       if (!shopId.equals(inviter.getShopId())) {
         throw new ValidationException("User does not belong to this shop");
@@ -64,9 +70,9 @@ public class InvitationService {
       // Verify that the inviter is a shop owner (not an invited user)
       // Shop owners are users who don't have an accepted invitation for this shop
       boolean isInvitedUser = invitationRepository
-              .findByInviteeUserIdAndShopIdAndStatus(inviterUserId, shopId, InvitationStatus.ACCEPTED.name())
-              .isPresent();
-      
+          .findByInviteeUserIdAndShopIdAndStatus(inviterUserId, shopId, InvitationStatus.ACCEPTED.name())
+          .isPresent();
+
       if (isInvitedUser) {
         throw new ValidationException("Only shop owners can send invitations");
       }
@@ -74,7 +80,7 @@ public class InvitationService {
       // Find invitee by email
       String inviteeEmail = request.getInviteeEmail().toLowerCase().trim();
       UserAccount invitee = userAccountRepository.findByEmail(inviteeEmail)
-              .orElseThrow(() -> new ResourceNotFoundException("User", "email", inviteeEmail));
+          .orElseThrow(() -> new ResourceNotFoundException("User", "email", inviteeEmail));
 
       // Check if user is already a member of this shop
       if (shopId.equals(invitee.getShopId())) {
@@ -84,12 +90,12 @@ public class InvitationService {
       // Check if there's already a pending invitation for this user and shop
       invitationRepository.findByInviteeUserIdAndShopIdAndStatus(
               invitee.getUserId(), shopId, InvitationStatus.PENDING.name())
-              .ifPresent(invitation -> {
-                throw new ResourceExistsException("A pending invitation already exists for this user");
-              });
+          .ifPresent(invitation -> {
+            throw new ResourceExistsException("A pending invitation already exists for this user");
+          });
 
-      log.info("Sending invitation from user {} to user {} for shop {}", 
-               inviterUserId, invitee.getUserId(), shopId);
+      log.info("Sending invitation from user {} to user {} for shop {}",
+          inviterUserId, invitee.getUserId(), shopId);
 
       // Get shop name using adapter (if available)
       String shopName = shopServiceAdapter != null ? shopServiceAdapter.getShopName(shopId) : null;
@@ -101,8 +107,8 @@ public class InvitationService {
       invitationMapper.setInviteeAndShopName(invitation, invitee.getUserId(), shopName);
       invitation = invitationRepository.save(invitation);
 
-      log.info("Created invitation with ID: {} for user: {} to shop: {}", 
-               invitation.getInvitationId(), invitee.getUserId(), shopId);
+      log.info("Created invitation with ID: {} for user: {} to shop: {}",
+          invitation.getInvitationId(), invitee.getUserId(), shopId);
 
       return invitationMapper.toSendResponse(invitation);
 
@@ -125,7 +131,7 @@ public class InvitationService {
 
       // Find invitation
       Invitation invitation = invitationRepository.findById(invitationId)
-              .orElseThrow(() -> new ResourceNotFoundException("Invitation", "invitationId", invitationId));
+          .orElseThrow(() -> new ResourceNotFoundException("Invitation", "invitationId", invitationId));
 
       // Verify invitation is for this user
       if (!userId.equals(invitation.getInviteeUserId())) {
@@ -151,18 +157,18 @@ public class InvitationService {
 
       // Find user
       UserAccount user = userAccountRepository.findById(userId)
-              .orElseThrow(() -> new ResourceNotFoundException("User", "userId", userId));
+          .orElseThrow(() -> new ResourceNotFoundException("User", "userId", userId));
 
-      log.info("Accepting invitation {} for user {} to shop {}", 
-               invitationId, userId, invitation.getShopId());
+      log.info("Accepting invitation {} for user {} to shop {}",
+          invitationId, userId, invitation.getShopId());
 
       // Update invitation status and user's shop and role
       invitationMapper.updateInvitationAndUser(invitation, user);
       invitationRepository.save(invitation);
       userAccountRepository.save(user);
 
-      log.info("User {} accepted invitation {} and joined shop {}", 
-               userId, invitationId, invitation.getShopId());
+      log.info("User {} accepted invitation {} and joined shop {}",
+          userId, invitationId, invitation.getShopId());
 
       // Get shop name from invitation (stored when invitation was created)
       String shopName = invitation.getShopName();
@@ -189,13 +195,13 @@ public class InvitationService {
       log.debug("Retrieving invitations for user: {}", userId);
 
       List<Invitation> invitations = invitationRepository.findByInviteeUserId(userId);
-      
+
       // Enrich with shop and user details
       List<InvitationDto> dtos = new ArrayList<>();
       for (Invitation invitation : invitations) {
         UserAccount inviter = userAccountRepository.findById(invitation.getInviterUserId()).orElse(null);
         UserAccount invitee = userAccountRepository.findById(invitation.getInviteeUserId()).orElse(null);
-        
+
         InvitationDto dto = invitationMapper.toDto(invitation);
         // Use shop name from invitation, or fetch if not available
         String shopName = invitation.getShopName();
@@ -222,15 +228,15 @@ public class InvitationService {
       log.debug("Retrieving invitations for shop: {}", shopId);
 
       List<Invitation> invitations = invitationRepository.findByInviterUserIdAndShopId(userId, shopId);
-      
+
       // Enrich with shop and user details
       List<InvitationDto> dtos = new ArrayList<>();
       String shopName = shopServiceAdapter != null ? shopServiceAdapter.getShopName(shopId) : null;
-      
+
       for (Invitation invitation : invitations) {
         UserAccount inviter = userAccountRepository.findById(invitation.getInviterUserId()).orElse(null);
         UserAccount invitee = userAccountRepository.findById(invitation.getInviteeUserId()).orElse(null);
-        
+
         InvitationDto dto = invitationMapper.toDto(invitation);
         invitationMapper.enrichInvitationDto(dto, invitation, shopName, inviter, invitee);
         dtos.add(dto);
@@ -265,13 +271,13 @@ public class InvitationService {
         // Check if this user is the owner (has shopId set) or was invited
         boolean isOwner = shopId.equals(user.getShopId());
         String relationship = isOwner ? "OWNER" : "INVITED";
-        
+
         // Get joined date - for owners, use updatedAt; for invited, get from invitation
         Instant joinedAt = user.getUpdatedAt();
         if (!isOwner) {
           Invitation invitation = invitationRepository
-                  .findByInviteeUserIdAndShopIdAndStatus(user.getUserId(), shopId, InvitationStatus.ACCEPTED.name())
-                  .orElse(null);
+              .findByInviteeUserIdAndShopIdAndStatus(user.getUserId(), shopId, InvitationStatus.ACCEPTED.name())
+              .orElse(null);
           if (invitation != null && invitation.getAcceptedAt() != null) {
             joinedAt = invitation.getAcceptedAt();
           }
@@ -286,13 +292,13 @@ public class InvitationService {
       for (Invitation invitation : acceptedInvitations) {
         // Check if user is already in the list
         boolean alreadyAdded = users.stream()
-                .anyMatch(u -> u.getUserId().equals(invitation.getInviteeUserId()));
-        
+            .anyMatch(u -> u.getUserId().equals(invitation.getInviteeUserId()));
+
         if (!alreadyAdded) {
           UserAccount user = userAccountRepository.findById(invitation.getInviteeUserId()).orElse(null);
           if (user != null) {
             ShopUserDto dto = invitationMapper.toShopUserDto(
-                    user, "INVITED", invitation.getAcceptedAt());
+                user, "INVITED", invitation.getAcceptedAt());
             users.add(dto);
           }
         }

@@ -1,6 +1,8 @@
 package com.inventory.product.rest.controller;
 
+import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.dto.response.ApiResponse;
+import com.inventory.common.exception.AuthenticationException;
 import com.inventory.product.rest.dto.inventory.CreateInventoryRequest;
 import com.inventory.product.rest.dto.inventory.InventoryDetailResponse;
 import com.inventory.product.rest.dto.inventory.InventoryListResponse;
@@ -10,9 +12,13 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
-import org.springframework.web.bind.annotation.*;
-import com.inventory.common.exception.AuthenticationException;
-import com.inventory.common.constants.ErrorCode;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/inventory")
@@ -28,13 +34,13 @@ public class InventoryController {
     // Get userId and shopId from request attributes (set by AuthenticationInterceptor)
     String userId = (String) httpRequest.getAttribute("userId");
     String shopId = (String) httpRequest.getAttribute("shopId");
-    
-    if (StringUtils.isEmpty(userId)|| StringUtils.isEmpty(shopId)) {
+
+    if (StringUtils.isEmpty(userId) || StringUtils.isEmpty(shopId)) {
       throw new AuthenticationException(
           ErrorCode.UNAUTHORIZED,
           "User not authenticated or shop not found");
     }
-    
+
     return ResponseEntity.ok(ApiResponse.success(inventoryService.create(request, userId, shopId)));
   }
 
@@ -43,13 +49,13 @@ public class InventoryController {
       HttpServletRequest httpRequest) {
     // Get shopId from request attributes to ensure user can only access their shop's inventory
     String shopId = (String) httpRequest.getAttribute("shopId");
-    
+
     if (StringUtils.isEmpty(shopId)) {
       throw new AuthenticationException(
           ErrorCode.UNAUTHORIZED,
           "Unauthorized access to shop inventory");
     }
-    
+
     return ResponseEntity.ok(ApiResponse.success(inventoryService.list(shopId)));
   }
 
@@ -59,13 +65,13 @@ public class InventoryController {
       HttpServletRequest httpRequest) {
     // Get shopId from request attributes to ensure user can only search their shop's inventory
     String shopId = (String) httpRequest.getAttribute("shopId");
-    
+
     if (StringUtils.isEmpty(shopId)) {
       throw new AuthenticationException(
           ErrorCode.UNAUTHORIZED,
           "Unauthorized access to shop inventory");
     }
-    
+
     return ResponseEntity.ok(ApiResponse.success(inventoryService.search(shopId, q)));
   }
 

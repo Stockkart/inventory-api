@@ -81,7 +81,7 @@ public interface PurchaseMapper {
   }
 
   // Methods to create PurchaseItem
-  default PurchaseItem createPurchaseItem(String inventoryId, String name, Integer quantity, 
+  default PurchaseItem createPurchaseItem(String inventoryId, String name, Integer quantity,
                                           BigDecimal maximumRetailPrice, BigDecimal sellingPrice, BigDecimal discount) {
     PurchaseItem item = new PurchaseItem();
     item.setInventoryId(inventoryId);
@@ -113,9 +113,9 @@ public interface PurchaseMapper {
   @Mapping(target = "customerAddress", source = "request.customerAddress")
   @Mapping(target = "customerPhone", source = "request.customerPhone")
   Purchase toPurchaseForCart(AddToCartRequest request, List<PurchaseItem> purchaseItems,
-                            BigDecimal subTotal, BigDecimal taxTotal,
-                            BigDecimal discountTotal, BigDecimal grandTotal,
-                            String shopId, String userId);
+                             BigDecimal subTotal, BigDecimal taxTotal,
+                             BigDecimal discountTotal, BigDecimal grandTotal,
+                             String shopId, String userId);
 
   // Method to map Purchase to AddToCartResponse
   @Mapping(target = "purchaseId", source = "id")

@@ -7,7 +7,10 @@ import com.inventory.common.exception.ValidationException;
 import com.inventory.user.domain.model.UserAccount;
 import com.inventory.user.domain.model.UserRole;
 import com.inventory.user.domain.repository.UserAccountRepository;
-import com.inventory.user.rest.dto.user.*;
+import com.inventory.user.rest.dto.user.DeactivateUserResponse;
+import com.inventory.user.rest.dto.user.UpdateUserRequest;
+import com.inventory.user.rest.dto.user.UserDto;
+import com.inventory.user.rest.dto.user.UserListResponse;
 import com.inventory.user.rest.mapper.UserMapper;
 import com.inventory.user.validation.UserValidator;
 import lombok.extern.slf4j.Slf4j;
@@ -39,8 +42,8 @@ public class UserService {
 
       log.debug("Retrieving users for shop: {}", shopId);
       List<UserDto> users = userAccountRepository.findByShopId(shopId).stream()
-              .map(userMapper::toDto)
-              .toList();
+          .map(userMapper::toDto)
+          .toList();
 
       log.debug("Found {} users for shop: {}", users.size(), shopId);
       UserListResponse response = new UserListResponse();
@@ -67,8 +70,8 @@ public class UserService {
 
       // Find the user and verify they belong to the specified shop
       UserAccount account = userAccountRepository.findById(userId)
-              .filter(user -> shopId.equals(user.getShopId()))
-              .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId));
+          .filter(user -> shopId.equals(user.getShopId()))
+          .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId));
 
       boolean isUpdated = false;
 
@@ -115,7 +118,7 @@ public class UserService {
 
       // Find the user
       UserAccount account = userAccountRepository.findById(userId)
-              .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId));
+          .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId));
 
       // Verify user belongs to the specified shop and check admin status
       userValidator.validateUserBelongsToShop(account, shopId, userId);
@@ -123,8 +126,8 @@ public class UserService {
       // Check if this is the last admin
       if (account.isActive() && UserRole.ADMIN.equals(account.getRole())) {
         long adminCount = userAccountRepository.findByShopId(shopId).stream()
-                .filter(u -> UserRole.ADMIN.equals(u.getRole()) && u.isActive())
-                .count();
+            .filter(u -> UserRole.ADMIN.equals(u.getRole()) && u.isActive())
+            .count();
         userValidator.validateLastAdminDeactivation(account, adminCount);
       }
 

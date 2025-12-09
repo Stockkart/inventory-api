@@ -29,8 +29,8 @@ public interface ReminderMapper {
     }
     ReminderListResponse response = new ReminderListResponse();
     response.setData(reminders.stream()
-            .map(this::toResponse)
-            .toList());
+        .map(this::toResponse)
+        .toList());
     return response;
   }
 
@@ -48,12 +48,12 @@ public interface ReminderMapper {
   @Mapping(target = "createdAt", expression = "java(java.time.Instant.now())")
   @Mapping(target = "updatedAt", expression = "java(java.time.Instant.now())")
   Reminder toReminder(
-          String shopId,
-          String inventoryId,
-          Instant reminderAt,
-          Instant endDate,
-          String notes,
-          ReminderType type
+      String shopId,
+      String inventoryId,
+      Instant reminderAt,
+      Instant endDate,
+      String notes,
+      ReminderType type
   );
 
   @Mapping(target = "reminderAt", expression = "java(reminder.getReminderAt() != null ? reminder.getReminderAt().plus(java.time.Duration.ofDays(request.getSnoozeDays())) : null)")

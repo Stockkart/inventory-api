@@ -14,8 +14,8 @@ public class ReminderCustomRepositoryImpl implements ReminderCustomRepository {
   @Override
   public long deleteByIdReturningCount(String id) {
     DeleteResult result = mongoTemplate.remove(
-            Query.query(Criteria.where("_id").is(id)),
-            Reminder.class
+        Query.query(Criteria.where("_id").is(id)),
+        Reminder.class
     );
     return result.getDeletedCount();
   }
