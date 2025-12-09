@@ -9,11 +9,14 @@ import com.inventory.user.rest.dto.auth.SignupResponse;
 import com.inventory.user.rest.dto.auth.UserResponse;
 import com.inventory.user.rest.mapper.UserMapper;
 import com.inventory.user.service.AuthService;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -40,28 +43,28 @@ public class AuthController {
     // Get userId and accessToken from request attributes (set by AuthenticationInterceptor)
     String userId = (String) request.getAttribute("userId");
     String accessToken = (String) request.getAttribute("accessToken");
-    
+
     if (userId == null || accessToken == null) {
       throw new com.inventory.common.exception.AuthenticationException(
-          com.inventory.common.constants.ErrorCode.UNAUTHORIZED, 
+          com.inventory.common.constants.ErrorCode.UNAUTHORIZED,
           "User not authenticated");
     }
-    
+
     return ResponseEntity.ok(ApiResponse.success(authService.logout(userId, accessToken)));
   }
 
   @GetMapping("/me")
   public ResponseEntity<ApiResponse<UserResponse>> getCurrentUser(HttpServletRequest request) {
     // User is already authenticated by interceptor, get from request attributes
-    com.inventory.user.domain.model.UserAccount userAccount = 
+    com.inventory.user.domain.model.UserAccount userAccount =
         (com.inventory.user.domain.model.UserAccount) request.getAttribute("userAccount");
-    
+
     if (userAccount == null) {
       throw new com.inventory.common.exception.AuthenticationException(
-          com.inventory.common.constants.ErrorCode.UNAUTHORIZED, 
+          com.inventory.common.constants.ErrorCode.UNAUTHORIZED,
           "User not authenticated");
     }
-    
+
     // Map to response using mapper
     return ResponseEntity.ok(ApiResponse.success(userMapper.toUserResponse(userAccount)));
   }

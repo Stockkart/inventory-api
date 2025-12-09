@@ -4,7 +4,13 @@ import com.inventory.user.constants.InvitationConstants;
 import com.inventory.user.domain.model.Invitation;
 import com.inventory.user.domain.model.InvitationStatus;
 import com.inventory.user.domain.model.UserAccount;
-import com.inventory.user.rest.dto.invitation.*;
+import com.inventory.user.rest.dto.invitation.AcceptInvitationResponse;
+import com.inventory.user.rest.dto.invitation.InvitationDto;
+import com.inventory.user.rest.dto.invitation.InvitationListResponse;
+import com.inventory.user.rest.dto.invitation.SendInvitationRequest;
+import com.inventory.user.rest.dto.invitation.SendInvitationResponse;
+import com.inventory.user.rest.dto.invitation.ShopUserDto;
+import com.inventory.user.rest.dto.invitation.ShopUserListResponse;
 import org.mapstruct.AfterMapping;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
@@ -42,12 +48,12 @@ public interface InvitationMapper {
    */
   default void setInvitationTimestampsAndId(Invitation invitation, SendInvitationRequest request) {
     // MongoDB will auto-generate the invitationId as ObjectId
-    
+
     // Set timestamps
     Instant currentTime = Instant.now();
     invitation.setCreatedAt(currentTime);
     invitation.setExpiresAt(currentTime.plusSeconds(InvitationConstants.INVITATION_EXPIRY_SECONDS));
-    
+
     // Normalize email (lowercase and trim)
     if (request != null && request.getInviteeEmail() != null) {
       invitation.setInviteeEmail(request.getInviteeEmail().toLowerCase().trim());
@@ -124,7 +130,7 @@ public interface InvitationMapper {
   default void updateInvitationAndUser(Invitation invitation, UserAccount user) {
     invitation.setStatus(InvitationStatus.ACCEPTED.name());
     invitation.setAcceptedAt(Instant.now());
-    
+
     user.setShopId(invitation.getShopId());
     user.setRole(invitation.getRole());
     user.setUpdatedAt(Instant.now());
@@ -133,18 +139,18 @@ public interface InvitationMapper {
   /**
    * Enriches InvitationDto with shopName, inviterName, and inviteeName
    */
-  default void enrichInvitationDto(InvitationDto dto, Invitation invitation, 
+  default void enrichInvitationDto(InvitationDto dto, Invitation invitation,
                                    String shopName, UserAccount inviter, UserAccount invitee) {
     if (invitation.getShopName() != null) {
       dto.setShopName(invitation.getShopName());
     } else if (shopName != null) {
       dto.setShopName(shopName);
     }
-    
+
     if (inviter != null) {
       dto.setInviterName(inviter.getName());
     }
-    
+
     if (invitee != null) {
       dto.setInviteeName(invitee.getName());
     }

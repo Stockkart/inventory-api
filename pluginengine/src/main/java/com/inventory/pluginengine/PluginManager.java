@@ -16,7 +16,7 @@ public class PluginManager {
   public PluginManager(Map<String, ProductPlugin> productPlugins) {
     ServiceLoader<ProductPlugin> loader = ServiceLoader.load(ProductPlugin.class);
     this.productPlugins = StreamSupport.stream(loader.spliterator(), false)
-            .collect(Collectors.toList());
+        .collect(Collectors.toList());
   }
 
   public String getCurrentPlugin() {

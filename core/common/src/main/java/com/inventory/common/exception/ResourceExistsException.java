@@ -13,8 +13,8 @@ public class ResourceExistsException extends BaseException {
 
   public ResourceExistsException(String resourceName, String fieldName, Object fieldValue) {
     super(
-            ErrorCode.DUPLICATE_RESOURCE,
-            String.format("%s already exists with %s: %s", resourceName, fieldName, fieldValue)
+        ErrorCode.DUPLICATE_RESOURCE,
+        String.format("%s already exists with %s: %s", resourceName, fieldName, fieldValue)
     );
   }
 }

@@ -15,8 +15,8 @@ public class ShopServiceAdapterImpl implements ShopServiceAdapter {
   @Override
   public String getShopName(String shopId) {
     return shopRepository.findById(shopId)
-            .map(Shop::getName)
-            .orElse(null);
+        .map(Shop::getName)
+        .orElse(null);
   }
 
   @Override

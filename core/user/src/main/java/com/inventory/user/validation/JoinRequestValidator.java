@@ -3,7 +3,6 @@ package com.inventory.user.validation;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.user.domain.model.UserRole;
 import com.inventory.user.rest.dto.joinrequest.AcceptRejectJoinRequestRequest;
-import com.inventory.user.rest.dto.joinrequest.JoinRequestAction;
 import com.inventory.user.rest.dto.joinrequest.SendJoinRequestRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;

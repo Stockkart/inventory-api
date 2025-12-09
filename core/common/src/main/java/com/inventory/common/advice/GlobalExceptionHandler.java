@@ -6,10 +6,10 @@ import com.inventory.common.dto.response.ApiErrorMapper;
 import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ValidationException;
-import org.springframework.beans.factory.annotation.Autowired;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -94,19 +94,19 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     log.error("Constraint violation: {}", ex.getMessage(), ex);
 
     Map<String, List<String>> errorsMap = ex.getConstraintViolations().stream()
-            .collect(Collectors.groupingBy(
-                    violation -> violation.getPropertyPath().toString(),
-                    Collectors.mapping(
-                            violation -> violation.getMessage(),
-                            Collectors.toList()
-                    )
-            ));
+        .collect(Collectors.groupingBy(
+            violation -> violation.getPropertyPath().toString(),
+            Collectors.mapping(
+                violation -> violation.getMessage(),
+                Collectors.toList()
+            )
+        ));
 
     Map<String, String[]> errors = errorsMap.entrySet().stream()
-            .collect(Collectors.toMap(
-                    Map.Entry::getKey,
-                    entry -> entry.getValue().toArray(new String[0])
-            ));
+        .collect(Collectors.toMap(
+            Map.Entry::getKey,
+            entry -> entry.getValue().toArray(new String[0])
+        ));
 
     ApiError apiError = apiErrorMapper.toApiError("Validation failed", HttpStatus.BAD_REQUEST.value(), errors);
     ApiResponse<ApiError> response = ApiResponse.error("Validation failed");
@@ -125,29 +125,29 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
   @Override
   protected ResponseEntity<Object> handleMethodArgumentNotValid(
-          MethodArgumentNotValidException ex,
-          HttpHeaders headers,
-          HttpStatusCode status,
-          WebRequest request) {
+      MethodArgumentNotValidException ex,
+      HttpHeaders headers,
+      HttpStatusCode status,
+      WebRequest request) {
 
     log.error("Method argument not valid: {}", ex.getMessage(), ex);
 
     Map<String, List<String>> errorsMap = ex.getBindingResult()
-            .getFieldErrors()
-            .stream()
-            .collect(Collectors.groupingBy(
-                    org.springframework.validation.FieldError::getField,
-                    Collectors.mapping(
-                            fieldError -> fieldError.getDefaultMessage() != null ? fieldError.getDefaultMessage() : "",
-                            Collectors.toList()
-                    )
-            ));
+        .getFieldErrors()
+        .stream()
+        .collect(Collectors.groupingBy(
+            org.springframework.validation.FieldError::getField,
+            Collectors.mapping(
+                fieldError -> fieldError.getDefaultMessage() != null ? fieldError.getDefaultMessage() : "",
+                Collectors.toList()
+            )
+        ));
 
     Map<String, String[]> errors = errorsMap.entrySet().stream()
-            .collect(Collectors.toMap(
-                    Map.Entry::getKey,
-                    entry -> entry.getValue().toArray(new String[0])
-            ));
+        .collect(Collectors.toMap(
+            Map.Entry::getKey,
+            entry -> entry.getValue().toArray(new String[0])
+        ));
 
     ApiError apiError = apiErrorMapper.toApiError("Validation failed", HttpStatus.BAD_REQUEST.value(), errors);
     ApiResponse<ApiError> response = ApiResponse.error("Validation failed");
@@ -157,10 +157,10 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
   @Override
   protected ResponseEntity<Object> handleHttpMessageNotReadable(
-          HttpMessageNotReadableException ex,
-          HttpHeaders headers,
-          HttpStatusCode status,
-          WebRequest request) {
+      HttpMessageNotReadableException ex,
+      HttpHeaders headers,
+      HttpStatusCode status,
+      WebRequest request) {
 
     log.error("Message not readable: {}", ex.getMessage(), ex);
     ApiError apiError = apiErrorMapper.toApiError("Malformed JSON request", HttpStatus.BAD_REQUEST.value());

@@ -9,7 +9,11 @@ import com.inventory.product.service.ShopService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping
@@ -27,7 +31,7 @@ public class ShopController {
 
   @PostMapping("/admin/shops/{shopId}/approve")
   public ResponseEntity<ApiResponse<ShopApprovalResponse>> approve(@PathVariable String shopId,
-                                                      @RequestBody ShopApprovalRequest request) {
+                                                                   @RequestBody ShopApprovalRequest request) {
     return ResponseEntity.ok(ApiResponse.success(shopService.approve(shopId, request)));
   }
 }

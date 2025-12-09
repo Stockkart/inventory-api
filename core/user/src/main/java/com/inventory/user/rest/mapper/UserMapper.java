@@ -22,7 +22,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Mapper(componentModel = "spring",
-        unmappedTargetPolicy = ReportingPolicy.IGNORE)
+    unmappedTargetPolicy = ReportingPolicy.IGNORE)
 public interface UserMapper {
 
   UserMapper INSTANCE = Mappers.getMapper(UserMapper.class);
@@ -97,16 +97,16 @@ public interface UserMapper {
     String refreshToken = UUID.randomUUID().toString();
     response.setAccessToken(accessToken);
     response.setRefreshToken(refreshToken);
-    
+
     // Save token to UserAccount for multi-device support
     UserToken token = new UserToken();
     token.setAccessToken(accessToken);
     token.setRefreshToken(refreshToken);
     token.setDeviceId(deviceId != null && !deviceId.trim().isEmpty()
-            ? deviceId : "device-" + java.util.UUID.randomUUID());
+        ? deviceId : "device-" + java.util.UUID.randomUUID());
     token.setCreatedAt(Instant.now());
     token.setExpiresAt(Instant.now().plusSeconds(7 * 24 * 60 * 60)); // 7 days
-    
+
     account.getTokens().add(token);
   }
 
@@ -116,16 +116,16 @@ public interface UserMapper {
     String refreshToken = UUID.randomUUID().toString();
     response.setAccessToken(accessToken);
     response.setRefreshToken(refreshToken);
-    
+
     // Save token to UserAccount for multi-device support
     UserToken token = new UserToken();
     token.setAccessToken(accessToken);
     token.setRefreshToken(refreshToken);
     token.setDeviceId(deviceId != null && !deviceId.trim().isEmpty()
-            ? deviceId : "device-" + java.util.UUID.randomUUID());
+        ? deviceId : "device-" + java.util.UUID.randomUUID());
     token.setCreatedAt(Instant.now());
     token.setExpiresAt(Instant.now().plusSeconds(7 * 24 * 60 * 60)); // 7 days
-    
+
     account.getTokens().add(token);
   }
 

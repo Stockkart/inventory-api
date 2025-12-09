@@ -26,7 +26,7 @@ public class TokenValidationService {
 
     // Find user by access token
     UserAccount account = userAccountRepository.findByAccessToken(accessToken)
-            .orElseThrow(() -> new AuthenticationException(ErrorCode.INVALID_CREDENTIALS, "Invalid or expired token"));
+        .orElseThrow(() -> new AuthenticationException(ErrorCode.INVALID_CREDENTIALS, "Invalid or expired token"));
 
     // Check if account is active
     if (!account.isActive()) {
@@ -36,8 +36,8 @@ public class TokenValidationService {
 
     // Check if token is expired
     boolean tokenValid = account.getTokens().stream()
-            .filter(token -> accessToken.equals(token.getAccessToken()))
-            .anyMatch(token -> token.getExpiresAt() == null || token.getExpiresAt().isAfter(Instant.now()));
+        .filter(token -> accessToken.equals(token.getAccessToken()))
+        .anyMatch(token -> token.getExpiresAt() == null || token.getExpiresAt().isAfter(Instant.now()));
 
     if (!tokenValid) {
       log.warn("Attempted to use expired token for user: {}", account.getUserId());

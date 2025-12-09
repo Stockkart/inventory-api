@@ -43,6 +43,8 @@ public class AuthService {
 
   @Autowired
   private GoogleTokenVerifier googleTokenVerifier;
+  @Autowired
+  private TokenValidationService tokenValidationService;
 
   @Transactional(readOnly = true)
   public LoginResponse login(LoginRequest request) {
@@ -56,17 +58,17 @@ public class AuthService {
       if (request.getIdToken() != null && !request.getIdToken().trim().isEmpty()) {
         // Google authentication
         log.debug("Attempting Google login");
-        
+
         // Verify Google ID token
         var googlePayload = googleTokenVerifier.verifyToken(request.getIdToken());
         String email = googleTokenVerifier.getEmail(googlePayload);
-        
+
         log.debug("Google login for email: {}", email);
 
         // Find user by email
         account = userAccountRepository.findByEmail(email)
-                .orElseThrow(() -> new AuthenticationException(ErrorCode.INVALID_CREDENTIALS, 
-                        "No account found for this Google account. Please sign up first."));
+            .orElseThrow(() -> new AuthenticationException(ErrorCode.INVALID_CREDENTIALS,
+                "No account found for this Google account. Please sign up first."));
 
       } else {
         // Email/password authentication
@@ -74,14 +76,14 @@ public class AuthService {
 
         // Find user by email and verify password
         account = userAccountRepository.findByEmail(request.getEmail())
-                .filter(user -> {
-                  if (user.getPassword() == null) {
-                    log.warn("Login attempt for user with no password set: {}", request.getEmail());
-                    return false;
-                  }
-                  return passwordEncoder.matches(request.getPassword(), user.getPassword());
-                })
-                .orElseThrow(() -> new AuthenticationException(ErrorCode.INVALID_CREDENTIALS, "Invalid email or password"));
+            .filter(user -> {
+              if (user.getPassword() == null) {
+                log.warn("Login attempt for user with no password set: {}", request.getEmail());
+                return false;
+              }
+              return passwordEncoder.matches(request.getPassword(), user.getPassword());
+            })
+            .orElseThrow(() -> new AuthenticationException(ErrorCode.INVALID_CREDENTIALS, "Invalid email or password"));
       }
 
       // Check if account is active
@@ -94,10 +96,10 @@ public class AuthService {
 
       // Create login response using mapper (tokens set automatically via @AfterMapping and saved to account)
       LoginResponse response = userMapper.toLoginResponse(account, request.getDeviceId());
-      
+
       // Save account with new token
       userAccountRepository.save(account);
-      
+
       return response;
 
     } catch (ValidationException | AuthenticationException e) {
@@ -125,12 +127,12 @@ public class AuthService {
       if (request.getIdToken() != null && !request.getIdToken().trim().isEmpty()) {
         // Google signup
         log.debug("Attempting Google signup");
-        
+
         // Verify Google ID token
         var googlePayload = googleTokenVerifier.verifyToken(request.getIdToken());
         email = googleTokenVerifier.getEmail(googlePayload);
         String name = googleTokenVerifier.getName(googlePayload);
-        
+
         log.debug("Google signup for email: {}", email);
 
         // Check if user already exists
@@ -173,10 +175,10 @@ public class AuthService {
 
       // Create signup response using mapper (tokens set automatically via @AfterMapping and saved to account)
       SignupResponse response = userMapper.toSignupResponse(account, request.getDeviceId());
-      
+
       // Save account with new token
       userAccountRepository.save(account);
-      
+
       return response;
 
     } catch (ValidationException e) {
@@ -206,7 +208,7 @@ public class AuthService {
 
       // Find user account
       UserAccount account = userAccountRepository.findById(userId)
-              .orElseThrow(() -> new ResourceNotFoundException("User", "userId", userId));
+          .orElseThrow(() -> new ResourceNotFoundException("User", "userId", userId));
 
       // Remove the token using UserAccount method (using accessToken to find and remove)
       String removedDeviceId = account.removeToken(null, accessToken);
@@ -235,9 +237,6 @@ public class AuthService {
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
     }
   }
-
-  @Autowired
-  private TokenValidationService tokenValidationService;
 
   @Transactional(readOnly = true)
   public UserResponse getCurrentUser(String accessToken) {

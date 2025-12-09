@@ -84,8 +84,8 @@ public interface InventoryMapper {
   @Mapping(target = "reminderAt", source = "request.reminderAt")
   @Mapping(target = "customReminders", source = "request.customReminders")
   CreateReminderForInventoryRequest toCreateReminderForInventoryRequest(
-          CreateInventoryRequest request,
-          String shopId,
-          String inventoryId
+      CreateInventoryRequest request,
+      String shopId,
+      String inventoryId
   );
 }
