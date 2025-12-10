@@ -216,5 +216,4 @@ public class ReminderService {
   public long delete(String id) {
     return reminderRepository.deleteByIdReturningCount(id);
   }
-
 }

@@ -5,11 +5,13 @@ import com.inventory.common.exception.AuthenticationException;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.notifications.rest.dto.*;
 import com.inventory.notifications.service.ReminderService;
+import com.inventory.notifications.service.ReminderEventService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @RestController
 @RequestMapping("/api/v1/reminders")
@@ -18,18 +20,21 @@ public class ReminderController {
   @Autowired
   private ReminderService reminderService;
 
+  @Autowired
+  private ReminderEventService reminderEventService;
+
   // LIST by shop
   @GetMapping
   public ResponseEntity<ApiResponse<ReminderListResponse>> list(HttpServletRequest httpRequest) {
     // Get shopId from request attributes (set by AuthenticationInterceptor)
     String shopId = (String) httpRequest.getAttribute("shopId");
-    
+
     if (!StringUtils.hasText(shopId)) {
       throw new AuthenticationException(
           ErrorCode.UNAUTHORIZED,
           "Unauthorized access to shop reminders");
     }
-    
+
     return ResponseEntity.ok(ApiResponse.success(reminderService.list(shopId)));
   }
 
@@ -46,16 +51,16 @@ public class ReminderController {
       HttpServletRequest httpRequest) {
     // Get shopId from request attributes (set by AuthenticationInterceptor)
     String shopId = (String) httpRequest.getAttribute("shopId");
-    
+
     if (!StringUtils.hasText(shopId)) {
       throw new AuthenticationException(
           ErrorCode.UNAUTHORIZED,
           "Unauthorized access to shop reminders");
     }
-    
+
     // Set shopId from interceptor to ensure user can only create reminders for their shop
     request.setShopId(shopId);
-    
+
     return ResponseEntity.ok(ApiResponse.success(reminderService.create(request)));
   }
 
@@ -81,5 +86,18 @@ public class ReminderController {
           @RequestBody SnoozeReminderRequest request
   ) {
     return ResponseEntity.ok(ApiResponse.success(reminderService.snooze(id, request)));
+  }
+
+  @GetMapping("/stream")
+  public SseEmitter stream(HttpServletRequest httpRequest) {
+    // Get shopId from request attributes (set by AuthenticationInterceptor)
+    String shopId = (String) httpRequest.getAttribute("shopId");
+
+    if (!StringUtils.hasText(shopId)) {
+      throw new AuthenticationException(
+        ErrorCode.UNAUTHORIZED,
+        "Unauthorized access to shop reminders stream");
+    }
+    return reminderEventService.subscribe(shopId);
   }
 }
