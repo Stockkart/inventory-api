@@ -29,5 +29,7 @@ public class Event {
   private boolean delivered;    // true when SSE delivered successfully
   private Instant deliveredAt;
   @Builder.Default
-  private int retryCount = 0;   // for future retries, if needed
+  private int retryCount = 0;
+  private Instant lastAttemptAt;
+  private Instant nextRetryAt;
 }

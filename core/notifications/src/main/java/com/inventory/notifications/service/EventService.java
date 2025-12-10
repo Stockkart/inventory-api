@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -33,6 +34,9 @@ public class EventService {
 
   // shopId -> list of active SSE connections
   private final Map<String, List<SseEmitter>> emittersByShop = new ConcurrentHashMap<>();
+
+  private static final int MAX_RETRIES = 5;
+  private static final long BASE_RETRY_SECONDS = 10L;
 
   public SseEmitter subscribe(String shopId) {
     SseEmitter emitter = new SseEmitter(0L); // no timeout
@@ -151,13 +155,54 @@ public class EventService {
     }
   }
 
-  private void broadcastEvent(Event event, Reminder reminder) {
+  /**
+   * Try to send event to current emitters and update event fields accordingly.
+   * Returns true if delivered to at least one emitter.
+   */
+  private boolean attemptBroadcastAndUpdate(Event event, Reminder reminder) {
+    boolean delivered = broadcastEvent(event, reminder);
+
+    if (delivered) {
+      if (!event.isDelivered()) {
+        event.setDelivered(true);
+        event.setDeliveredAt(Instant.now());
+        eventRepository.save(event);
+      }
+      return true;
+    } else {
+      // mark a failed attempt: increment retryCount, set lastAttemptAt and compute nextRetryAt with backoff
+      try {
+        int nextRetryCount = event.getRetryCount() + 1;
+        event.setRetryCount(nextRetryCount);
+        Instant now = Instant.now();
+        event.setLastAttemptAt(now);
+
+        // exponential backoff: BASE_RETRY_SECONDS * 2^(retryCount-1)
+        long backoffSeconds = (long) (BASE_RETRY_SECONDS * Math.pow(2, Math.max(0, nextRetryCount - 1)));
+        // cap backoff to something reasonable (e.g. 1 day)
+        long maxBackoff = Duration.ofDays(1).getSeconds();
+        if (backoffSeconds > maxBackoff) backoffSeconds = maxBackoff;
+
+        event.setNextRetryAt(now.plusSeconds(backoffSeconds));
+        eventRepository.save(event);
+      } catch (Exception ex) {
+        log.error("Failed to update retry metadata for event {}: {}", event.getId(), ex.getMessage(), ex);
+      }
+      return false;
+    }
+  }
+
+  /**
+   * Broadcasts an event to current emitters without touching DB fields (DB updates are handled by caller).
+   * Returns true if delivered to at least one emitter.
+   */
+  private boolean broadcastEvent(Event event, Reminder reminder) {
     String shopId = event.getShopId();
     List<SseEmitter> emitters = emittersByShop.get(shopId);
 
     if (emitters == null || emitters.isEmpty()) {
-      log.info("No active SSE emitters for shopId={}, leaving event undelivered", shopId);
-      return;
+      log.info("No active SSE emitters for shopId={} (event {})", shopId, event.getId());
+      return false;
     }
 
     ReminderResponse payload = reminderMapper.toResponse(reminder);
@@ -165,25 +210,19 @@ public class EventService {
 
     for (SseEmitter emitter : emitters) {
       try {
-        emitter.send(
-          SseEmitter.event()
-            .name("REMINDER_DUE")
-            .id(event.getId())
-            .data(payload)
-        );
+        emitter.send(SseEmitter.event().name("REMINDER_DUE").id(event.getId()).data(payload));
         deliveredToAtLeastOne = true;
       } catch (IOException ex) {
         log.warn("Failed to send SSE to shopId={} emitter: {}", shopId, ex.getMessage());
+        // emitter seems dead — clean up
         emitter.complete();
         removeEmitter(shopId, emitter);
+      } catch (Exception ex) {
+        log.error("Unexpected error sending SSE event {}: {}", event.getId(), ex.getMessage(), ex);
       }
     }
 
-    if (deliveredToAtLeastOne && !event.isDelivered()) {
-      event.setDelivered(true);
-      event.setDeliveredAt(Instant.now());
-      eventRepository.save(event);
-    }
+    return deliveredToAtLeastOne;
   }
 
   /**
@@ -193,12 +232,17 @@ public class EventService {
   @Scheduled(fixedDelayString = "${reminders.dispatch-interval-ms:30000}")
   public void dispatchDueReminders() {
     Instant now = Instant.now();
+    List<Reminder> dueReminders;
 
-    List<Reminder> dueReminders =
-      reminderRepository.findTop100ByStatusAndReminderAtLessThanEqualOrderByReminderAtAsc(
-        ReminderStatus.PENDING,
-        now
-      );
+    try {
+      dueReminders = reminderRepository
+        .findTop100ByStatusAndReminderAtLessThanEqualOrderByReminderAtAsc(
+          ReminderStatus.PENDING, now
+        );
+    } catch (Exception e) {
+      log.error("Failed fetching due reminders at {}: {}", now, e.getMessage(), e);
+      return;
+    }
 
     if (dueReminders.isEmpty()) {
       return;
@@ -217,6 +261,62 @@ public class EventService {
         recordAndBroadcastReminderDue(reminder);
       } catch (Exception e) {
         log.error("Failed to dispatch reminderId={}: {}", reminder.getId(), e.getMessage(), e);
+      }
+    }
+  }
+
+  // ---------- Scheduled retry job ----------
+  // Runs more frequently than dispatch or configurable separately.
+  @Scheduled(fixedDelayString = "${reminders.retry-interval-ms:15000}")
+  public void retryPendingEvents() {
+    Instant now = Instant.now();
+    List<Event> toRetry;
+    try {
+      toRetry = eventRepository.findByDeliveredFalseAndRetryCountLessThanAndNextRetryAtLessThanEqualOrderByTriggeredAtAsc(
+        MAX_RETRIES, now);
+    } catch (Exception e) {
+      log.error("Failed fetching events for retry at {}: {}", now, e.getMessage(), e);
+      return;
+    }
+
+    if (toRetry.isEmpty()) return;
+
+    log.info("Retrying {} pending events", toRetry.size());
+
+    for (Event event : toRetry) {
+      try {
+        Reminder reminder = reminderRepository.findById(event.getReminderId()).orElse(null);
+        if (reminder == null) {
+          log.warn("Skipping retry for event {} because reminder {} not found", event.getId(), event.getReminderId());
+          // consider marking event as delivered=true or failed permanently if reminder is gone. For now, mark delivered to stop retrying:
+          event.setDelivered(true);
+          event.setDeliveredAt(Instant.now());
+          eventRepository.save(event);
+          continue;
+        }
+
+        boolean delivered = attemptBroadcastAndUpdate(event, reminder);
+
+        if (delivered) {
+          // Mark reminder SENT only when event delivered (business decision). If you prefer marking reminders as SENT separately,
+          // implement that logic here (update reminder.status to SENT).
+          try {
+            reminder.setStatus(ReminderStatus.SENT);
+            reminder.setUpdatedAt(now);
+            reminderRepository.save(reminder);
+          } catch (Exception ex) {
+            log.warn("Failed to mark reminder {} SENT after delivery: {}", reminder.getId(), ex.getMessage());
+          }
+        } else {
+          if (event.getRetryCount() >= MAX_RETRIES) {
+            log.warn("Event {} exhausted retries ({}). Marking as undelivered for manual inspection.", event.getId(), event.getRetryCount());
+            // optional: mark delivered=false but set nextRetryAt far in future or set a flag for manual handling
+            // e.g. event.setNextRetryAt(now.plus(Duration.ofDays(30)));
+            eventRepository.save(event);
+          }
+        }
+      } catch (Exception e) {
+        log.error("Failed retrying event {}: {}", event.getId(), e.getMessage(), e);
       }
     }
   }
