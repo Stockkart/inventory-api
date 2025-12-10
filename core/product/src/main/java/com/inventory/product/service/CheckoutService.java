@@ -13,12 +13,9 @@ import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.PurchaseRepository;
 import com.inventory.product.rest.dto.sale.AddToCartRequest;
 import com.inventory.product.rest.dto.sale.AddToCartResponse;
-import com.inventory.product.rest.dto.sale.CheckoutRequest;
 import com.inventory.product.rest.dto.sale.CheckoutResponse;
-import com.inventory.product.rest.dto.sale.InvalidateSaleRequest;
 import com.inventory.product.rest.dto.sale.PurchaseListResponse;
 import com.inventory.product.rest.dto.sale.PurchaseSummaryDto;
-import com.inventory.product.rest.dto.sale.SaleStatusResponse;
 import com.inventory.product.rest.dto.sale.UpdatePurchaseStatusRequest;
 import com.inventory.product.rest.mapper.PurchaseMapper;
 import com.inventory.product.validation.CheckoutValidator;
@@ -63,7 +60,7 @@ public class CheckoutService {
     // Get shopId and userId from request attributes (set by AuthenticationInterceptor)
     String shopId = (String) httpRequest.getAttribute("shopId");
     String userId = (String) httpRequest.getAttribute("userId");
-    
+
     // Validate shopId and userId
     checkoutValidator.validateShopIdAndUserId(shopId, userId);
 
@@ -75,7 +72,7 @@ public class CheckoutService {
     try {
       // Find existing cart (CREATED status)
       Purchase existingCart = purchaseRepository.findByUserIdAndShopIdAndStatus(userId, shopId, PurchaseStatus.CREATED)
-              .orElse(null);
+          .orElse(null);
 
       // Process new items
       List<PurchaseItem> newItems = processCartItems(request.getItems(), shopId);
@@ -84,11 +81,11 @@ public class CheckoutService {
       if (existingCart != null) {
         // Validate stock availability before updating cart (check final quantities)
         validateStockAvailabilityForCartUpdate(existingCart, newItems, shopId);
-        
+
         // Update existing cart - merge items
         log.info("Updating existing cart with ID: {}", existingCart.getId());
-        purchase = updateCart(existingCart, newItems, request.getBusinessType(), 
-                request.getCustomerName(), request.getCustomerAddress(), request.getCustomerPhone());
+        purchase = updateCart(existingCart, newItems, request.getBusinessType(),
+            request.getCustomerName(), request.getCustomerAddress(), request.getCustomerPhone());
       } else {
         // Create new cart (stock validation already done in processCartItems for positive quantities)
         log.info("Creating new cart");
@@ -105,11 +102,11 @@ public class CheckoutService {
       throw e;
     } catch (DataAccessException e) {
       log.error("Database error during add to cart for shop: {}, user: {}", shopId, userId, e);
-      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, 
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
           "Error adding items to cart: " + e.getMessage(), e);
     } catch (Exception e) {
       log.error("Unexpected error during add to cart for shop: {}, user: {}", shopId, userId, e);
-      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, 
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
           "An unexpected error occurred during add to cart: " + e.getMessage(), e);
     }
   }
@@ -119,7 +116,7 @@ public class CheckoutService {
     // Get shopId and userId from request attributes (set by AuthenticationInterceptor)
     String shopId = (String) httpRequest.getAttribute("shopId");
     String userId = (String) httpRequest.getAttribute("userId");
-    
+
     // Validate shopId and userId
     checkoutValidator.validateShopIdAndUserId(shopId, userId);
 
@@ -131,14 +128,14 @@ public class CheckoutService {
       request.setPaymentMethod("CASH");
     }
 
-    log.info("Updating purchase status to {} for purchase ID: {}, shop: {}, user: {}", 
-            request.getStatus(), request.getPurchaseId(), shopId, userId);
+    log.info("Updating purchase status to {} for purchase ID: {}, shop: {}, user: {}",
+        request.getStatus(), request.getPurchaseId(), shopId, userId);
 
     try {
       // Find purchase by ID
       Purchase purchase = purchaseRepository.findById(request.getPurchaseId())
-              .orElseThrow(() -> new ResourceNotFoundException("Purchase", "id",
-                  "No purchase found with ID " + request.getPurchaseId()));
+          .orElseThrow(() -> new ResourceNotFoundException("Purchase", "id",
+              "No purchase found with ID " + request.getPurchaseId()));
 
       // Verify purchase belongs to the user's shop
       if (!shopId.equals(purchase.getShopId()) || !userId.equals(purchase.getUserId())) {
@@ -162,8 +159,8 @@ public class CheckoutService {
       purchase.setPaymentMethod(request.getPaymentMethod());
       purchase = purchaseRepository.save(purchase);
 
-      log.info("Successfully updated purchase status from {} to {} for purchase ID: {}", 
-              currentStatus, requestedStatus, purchase.getId());
+      log.info("Successfully updated purchase status from {} to {} for purchase ID: {}",
+          currentStatus, requestedStatus, purchase.getId());
 
       // Build response
       return purchaseMapper.toCheckoutResponse(purchase);
@@ -173,11 +170,11 @@ public class CheckoutService {
       throw e;
     } catch (DataAccessException e) {
       log.error("Database error during update purchase status for shop: {}, user: {}", shopId, userId, e);
-      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, 
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
           "Error updating purchase status: " + e.getMessage(), e);
     } catch (Exception e) {
       log.error("Unexpected error during update purchase status for shop: {}, user: {}", shopId, userId, e);
-      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, 
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
           "An unexpected error occurred during update purchase status: " + e.getMessage(), e);
     }
   }
@@ -197,8 +194,8 @@ public class CheckoutService {
       // Find cart with CREATED or PENDING status
       List<PurchaseStatus> statuses = List.of(PurchaseStatus.CREATED, PurchaseStatus.PENDING);
       Purchase cart = purchaseRepository.findByUserIdAndShopIdAndStatusIn(userId, shopId, statuses)
-              .orElseThrow(() -> new ResourceNotFoundException("Cart", "userId and shopId",
-                      "No active cart found for user " + userId + " and shop " + shopId));
+          .orElseThrow(() -> new ResourceNotFoundException("Cart", "userId and shopId",
+              "No active cart found for user " + userId + " and shop " + shopId));
 
       log.info("Found cart with ID: {} and status: {}", cart.getId(), cart.getStatus());
 
@@ -210,11 +207,11 @@ public class CheckoutService {
     } catch (DataAccessException e) {
       log.error("Database error while getting cart for shop: {}, user: {}", shopId, userId, e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
-              "Error getting cart: " + e.getMessage(), e);
+          "Error getting cart: " + e.getMessage(), e);
     } catch (Exception e) {
       log.error("Unexpected error while getting cart for shop: {}, user: {}", shopId, userId, e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
-              "An unexpected error occurred while getting cart: " + e.getMessage(), e);
+          "An unexpected error occurred while getting cart: " + e.getMessage(), e);
     }
   }
 
@@ -223,18 +220,18 @@ public class CheckoutService {
     // Get shopId and userId from request attributes (set by AuthenticationInterceptor)
     String shopId = (String) httpRequest.getAttribute("shopId");
     String userId = (String) httpRequest.getAttribute("userId");
-    
+
     // Validate shopId and userId
     checkoutValidator.validateShopIdAndUserId(shopId, userId);
 
-    log.info("Getting purchases for shop: {}, user: {}, page: {}, limit: {}, order: {}", 
-            shopId, userId, page, limit, order);
+    log.info("Getting purchases for shop: {}, user: {}, page: {}, limit: {}, order: {}",
+        shopId, userId, page, limit, order);
 
     try {
       // Set defaults
       int pageNumber = (page != null && page > 0) ? page - 1 : 0; // Spring Data uses 0-based indexing
       int pageSize = (limit != null && limit > 0) ? limit : 20; // Default limit of 20
-      
+
       // Validate page size (max 100 to prevent performance issues)
       if (pageSize > 100) {
         pageSize = 100;
@@ -252,8 +249,8 @@ public class CheckoutService {
 
       // Map to DTOs
       List<PurchaseSummaryDto> purchaseDtos = purchasePage.getContent().stream()
-              .map(purchaseMapper::toPurchaseSummaryDto)
-              .toList();
+          .map(purchaseMapper::toPurchaseSummaryDto)
+          .toList();
 
       // Build response
       PurchaseListResponse response = new PurchaseListResponse();
@@ -263,19 +260,19 @@ public class CheckoutService {
       response.setTotal(purchasePage.getTotalElements());
       response.setTotalPages(purchasePage.getTotalPages());
 
-      log.info("Retrieved {} purchases (page {} of {}) for shop: {}", 
-              purchaseDtos.size(), pageNumber + 1, purchasePage.getTotalPages(), shopId);
+      log.info("Retrieved {} purchases (page {} of {}) for shop: {}",
+          purchaseDtos.size(), pageNumber + 1, purchasePage.getTotalPages(), shopId);
 
       return response;
 
     } catch (DataAccessException e) {
       log.error("Database error while getting purchases for shop: {}, user: {}", shopId, userId, e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
-              "Error getting purchases: " + e.getMessage(), e);
+          "Error getting purchases: " + e.getMessage(), e);
     } catch (Exception e) {
       log.error("Unexpected error while getting purchases for shop: {}, user: {}", shopId, userId, e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
-              "An unexpected error occurred while getting purchases: " + e.getMessage(), e);
+          "An unexpected error occurred while getting purchases: " + e.getMessage(), e);
     }
   }
 
@@ -312,14 +309,14 @@ public class CheckoutService {
 
   private boolean isValidSortField(String field) {
     // Whitelist of allowed sort fields
-    return "soldAt".equals(field) || 
-           "grandTotal".equals(field) || 
-           "invoiceNo".equals(field);
+    return "soldAt".equals(field) ||
+        "grandTotal".equals(field) ||
+        "invoiceNo".equals(field);
   }
 
   private List<PurchaseItem> processCartItems(List<AddToCartRequest.CartItem> items, String shopId) {
     List<PurchaseItem> purchaseItems = new ArrayList<>();
-    
+
     for (AddToCartRequest.CartItem item : items) {
       try {
         // Validate item using CheckoutValidator
@@ -330,27 +327,27 @@ public class CheckoutService {
         if (item.getQuantity() < 0) {
           // Verify lotId exists and belongs to shop (for negative quantities, we're removing from cart)
           Inventory inventory = inventoryRepository.findById(item.getLotId())
-                  .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", item.getLotId()));
-          
+              .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", item.getLotId()));
+
           if (!shopId.equals(inventory.getShopId())) {
             throw new ValidationException("Inventory lot " + item.getLotId() + " does not belong to shop " + shopId);
           }
-          
+
           // For negative quantities, create a PurchaseItem with negative quantity
           // The updateCart method will handle the logic
           PurchaseItem purchaseItem = purchaseMapper.createPurchaseItem(
-                  item.getLotId(),
-                  inventory.getName(),
-                  item.getQuantity(), // Negative quantity
-                  inventory.getMaximumRetailPrice(),
-                  BigDecimal.ZERO, // Not used for negative quantities
-                  BigDecimal.ZERO
+              item.getLotId(),
+              inventory.getName(),
+              item.getQuantity(), // Negative quantity
+              inventory.getMaximumRetailPrice(),
+              BigDecimal.ZERO, // Not used for negative quantities
+              BigDecimal.ZERO
           );
           purchaseItems.add(purchaseItem);
         } else {
           // Positive quantity - normal flow with stock validation
           Inventory inventory = inventoryRepository.findById(item.getLotId())
-                  .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", item.getLotId()));
+              .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", item.getLotId()));
 
           // Verify the inventory belongs to the shop
           if (!shopId.equals(inventory.getShopId())) {
@@ -361,24 +358,24 @@ public class CheckoutService {
           int availableStock = inventory.getCurrentCount() != null ? inventory.getCurrentCount() : 0;
           if (availableStock < item.getQuantity()) {
             throw new InsufficientStockException("Insufficient stock for product: " + inventory.getName(),
-                    inventory.getBarcode(), availableStock, item.getQuantity());
+                inventory.getBarcode(), availableStock, item.getQuantity());
           }
 
           // Use mapper to create PurchaseItem
           PurchaseItem purchaseItem = purchaseMapper.toPurchaseItemFromCartItem(item, inventory);
           purchaseItems.add(purchaseItem);
         }
-        
+
       } catch (ValidationException | InsufficientStockException | ResourceNotFoundException e) {
         log.warn("Item validation failed for lotId: {} - {}", item.getLotId(), e.getMessage());
         throw e;
       } catch (Exception e) {
         log.error("Unexpected error processing item with lotId: {}", item.getLotId(), e);
-        throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, 
+        throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
             "Error processing item with lotId " + item.getLotId() + ": " + e.getMessage(), e);
       }
     }
-    
+
     return purchaseItems;
   }
 
@@ -387,14 +384,14 @@ public class CheckoutService {
       return BigDecimal.ZERO;
     }
     return items.stream()
-            .map(item -> {
-              // Calculate total: maximumRetailPrice * quantity
-              BigDecimal mrp = item.getMaximumRetailPrice() != null ? item.getMaximumRetailPrice() : BigDecimal.ZERO;
-              Integer qty = item.getQuantity() != null ? item.getQuantity() : 0;
-              return mrp.multiply(BigDecimal.valueOf(qty));
-            })
-            .reduce(BigDecimal.ZERO, BigDecimal::add)
-            .setScale(2, RoundingMode.HALF_UP);
+        .map(item -> {
+          // Calculate total: maximumRetailPrice * quantity
+          BigDecimal mrp = item.getMaximumRetailPrice() != null ? item.getMaximumRetailPrice() : BigDecimal.ZERO;
+          Integer qty = item.getQuantity() != null ? item.getQuantity() : 0;
+          return mrp.multiply(BigDecimal.valueOf(qty));
+        })
+        .reduce(BigDecimal.ZERO, BigDecimal::add)
+        .setScale(2, RoundingMode.HALF_UP);
   }
 
   private BigDecimal calculateTax(BigDecimal subtotal) {
@@ -408,13 +405,13 @@ public class CheckoutService {
       return BigDecimal.ZERO;
     }
     return items.stream()
-            .map(item -> {
-              BigDecimal mrp = item.getMaximumRetailPrice() != null ? item.getMaximumRetailPrice() : BigDecimal.ZERO;
-              BigDecimal sellingPrice = item.getSellingPrice() != null ? item.getSellingPrice() : BigDecimal.ZERO;
-              return mrp.subtract(sellingPrice).multiply(BigDecimal.valueOf(item.getQuantity()));
-            })
-            .reduce(BigDecimal.ZERO, BigDecimal::add)
-            .setScale(2, RoundingMode.HALF_UP);
+        .map(item -> {
+          BigDecimal mrp = item.getMaximumRetailPrice() != null ? item.getMaximumRetailPrice() : BigDecimal.ZERO;
+          BigDecimal sellingPrice = item.getSellingPrice() != null ? item.getSellingPrice() : BigDecimal.ZERO;
+          return mrp.subtract(sellingPrice).multiply(BigDecimal.valueOf(item.getQuantity()));
+        })
+        .reduce(BigDecimal.ZERO, BigDecimal::add)
+        .setScale(2, RoundingMode.HALF_UP);
   }
 
   private Purchase createCart(AddToCartRequest request, List<PurchaseItem> purchaseItems, String shopId, String userId) {
@@ -428,17 +425,17 @@ public class CheckoutService {
       // Create purchase with CREATED status using mapper
       // MongoDB will auto-generate the id as ObjectId
       Purchase purchase = purchaseMapper.toPurchaseForCart(
-              request, purchaseItems, subTotal, taxTotal, discountTotal, grandTotal, shopId, userId
+          request, purchaseItems, subTotal, taxTotal, discountTotal, grandTotal, shopId, userId
       );
 
       return purchaseRepository.save(purchase);
     } catch (DataAccessException e) {
       log.error("Database error while creating cart for shop: {}, user: {}", shopId, userId, e);
-      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, 
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
           "Error creating cart: " + e.getMessage(), e);
     } catch (Exception e) {
       log.error("Unexpected error while creating cart for shop: {}, user: {}", shopId, userId, e);
-      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, 
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
           "Error creating cart: " + e.getMessage(), e);
     }
   }
@@ -448,7 +445,7 @@ public class CheckoutService {
     try {
       // Merge items - if same inventoryId exists, update quantity; otherwise add new
       List<PurchaseItem> mergedItems = new ArrayList<>(existingCart.getItems() != null ? existingCart.getItems() : new ArrayList<>());
-      
+
       for (PurchaseItem newItem : newItems) {
         boolean found = false;
         for (int i = 0; i < mergedItems.size(); i++) {
@@ -456,27 +453,27 @@ public class CheckoutService {
           if (existingItem.getInventoryId().equals(newItem.getInventoryId())) {
             // Handle quantity update based on positive or negative
             int newQuantity = existingItem.getQuantity() + newItem.getQuantity();
-            
+
             // Case 3: If negative value is more negative or equal to current item quantity, remove the item
             if (newQuantity <= 0) {
               mergedItems.remove(i);
               found = true;
               break;
             }
-            
+
             // Case 1 & 2: Update quantity (positive adds, negative decreases)
             BigDecimal sellingPrice = newItem.getQuantity() > 0 ? newItem.getSellingPrice() : existingItem.getSellingPrice();
             BigDecimal newDiscount = existingItem.getMaximumRetailPrice()
-                    .subtract(sellingPrice)
-                    .multiply(BigDecimal.valueOf(newQuantity));
-            
+                .subtract(sellingPrice)
+                .multiply(BigDecimal.valueOf(newQuantity));
+
             mergedItems.set(i, purchaseMapper.createPurchaseItem(
-                    existingItem.getInventoryId(),
-                    existingItem.getName(),
-                    newQuantity,
-                    existingItem.getMaximumRetailPrice(),
-                    sellingPrice,
-                    newDiscount.compareTo(BigDecimal.ZERO) > 0 ? newDiscount : BigDecimal.ZERO
+                existingItem.getInventoryId(),
+                existingItem.getName(),
+                newQuantity,
+                existingItem.getMaximumRetailPrice(),
+                sellingPrice,
+                newDiscount.compareTo(BigDecimal.ZERO) > 0 ? newDiscount : BigDecimal.ZERO
             ));
             found = true;
             break;
@@ -488,8 +485,8 @@ public class CheckoutService {
         }
         // Case 2 & 3: If item not found and quantity is negative, throw error (can't remove what doesn't exist)
         if (!found && newItem.getQuantity() < 0) {
-          throw new ValidationException("Cannot remove item with lotId " + newItem.getInventoryId() + 
-                  " as it does not exist in the cart");
+          throw new ValidationException("Cannot remove item with lotId " + newItem.getInventoryId() +
+              " as it does not exist in the cart");
         }
       }
 
@@ -515,8 +512,8 @@ public class CheckoutService {
       existingCart.setTaxTotal(calculateTax(existingCart.getSubTotal()));
       existingCart.setDiscountTotal(calculateTotalDiscount(mergedItems));
       existingCart.setGrandTotal(existingCart.getSubTotal()
-              .add(existingCart.getTaxTotal())
-              .subtract(existingCart.getDiscountTotal()));
+          .add(existingCart.getTaxTotal())
+          .subtract(existingCart.getDiscountTotal()));
 
       // If cart is empty after updates, we can either delete it or keep it with empty items
       // For now, we'll keep it with empty items (status remains CREATED)
@@ -525,11 +522,11 @@ public class CheckoutService {
       return purchaseRepository.save(existingCart);
     } catch (DataAccessException e) {
       log.error("Database error while updating cart: {}", existingCart.getId(), e);
-      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, 
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
           "Error updating cart: " + e.getMessage(), e);
     } catch (Exception e) {
       log.error("Unexpected error while updating cart: {}", existingCart.getId(), e);
-      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, 
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
           "Error updating cart: " + e.getMessage(), e);
     }
   }
@@ -553,7 +550,7 @@ public class CheckoutService {
 
         // Get inventory to check available stock
         Inventory inventory = inventoryRepository.findById(newItem.getInventoryId())
-                .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", newItem.getInventoryId()));
+            .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", newItem.getInventoryId()));
 
         // Verify inventory belongs to shop
         if (!shopId.equals(inventory.getShopId())) {
@@ -564,11 +561,11 @@ public class CheckoutService {
         int availableStock = inventory.getCurrentCount() != null ? inventory.getCurrentCount() : 0;
         if (finalQuantity > availableStock) {
           throw new InsufficientStockException(
-                  "Insufficient stock for product: " + inventory.getName() +
-                          ". Available: " + availableStock +
-                          ", Requested final quantity in cart: " + finalQuantity +
-                          " (current in cart: " + currentCartQuantity + ", adding: " + newItem.getQuantity() + ")",
-                  inventory.getBarcode(), availableStock, finalQuantity);
+              "Insufficient stock for product: " + inventory.getName() +
+                  ". Available: " + availableStock +
+                  ", Requested final quantity in cart: " + finalQuantity +
+                  " (current in cart: " + currentCartQuantity + ", adding: " + newItem.getQuantity() + ")",
+              inventory.getBarcode(), availableStock, finalQuantity);
         }
       }
     }
@@ -586,12 +583,12 @@ public class CheckoutService {
       try {
         // Find inventory by lotId (inventoryId in PurchaseItem)
         Inventory inventory = inventoryRepository.findById(item.getInventoryId())
-                .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId",
-                    "Inventory not found with lotId: " + item.getInventoryId()));
+            .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId",
+                "Inventory not found with lotId: " + item.getInventoryId()));
 
         // Verify inventory belongs to the same shop
         if (!purchase.getShopId().equals(inventory.getShopId())) {
-          throw new ValidationException("Inventory lot " + item.getInventoryId() + 
+          throw new ValidationException("Inventory lot " + item.getInventoryId() +
               " does not belong to shop " + purchase.getShopId());
         }
 
@@ -604,7 +601,7 @@ public class CheckoutService {
         if (currentCount < quantity) {
           throw new InsufficientStockException(
               "Insufficient stock to complete purchase for product: " + inventory.getName() +
-              ". Available: " + currentCount + ", Required: " + quantity,
+                  ". Available: " + currentCount + ", Required: " + quantity,
               inventory.getBarcode(), currentCount, quantity);
         }
 

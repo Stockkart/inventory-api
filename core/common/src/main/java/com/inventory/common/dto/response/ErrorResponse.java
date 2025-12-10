@@ -35,13 +35,13 @@ public class ErrorResponse {
 
   public static ErrorResponse of(HttpStatus status, ErrorCode errorCode, String message, String path) {
     return new ErrorResponse(
-            LocalDateTime.now(),
-            status.value(),
-            status.getReasonPhrase(),
-            errorCode.getCode(),
-            message,
-            path,
-            null
+        LocalDateTime.now(),
+        status.value(),
+        status.getReasonPhrase(),
+        errorCode.getCode(),
+        message,
+        path,
+        null
     );
   }
 

@@ -13,10 +13,10 @@ public interface InventoryRepository extends MongoRepository<Inventory, String> 
   List<Inventory> findByShopId(String shopId);
 
   @Query("{ 'shopId': ?0, '$or': [ " +
-         "{ 'barcode': { '$regex': ?1, '$options': 'i' } }, " +
-         "{ 'name': { '$regex': ?1, '$options': 'i' } }, " +
-         "{ 'companyName': { '$regex': ?1, '$options': 'i' } } " +
-         "] }")
+      "{ 'barcode': { '$regex': ?1, '$options': 'i' } }, " +
+      "{ 'name': { '$regex': ?1, '$options': 'i' } }, " +
+      "{ 'companyName': { '$regex': ?1, '$options': 'i' } } " +
+      "] }")
   List<Inventory> searchByShopIdAndQuery(String shopId, String query);
 
   List<Inventory> findByShopIdAndBarcode(String shopId, String barcode);

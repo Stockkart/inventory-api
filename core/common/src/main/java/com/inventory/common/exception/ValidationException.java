@@ -25,10 +25,10 @@ public class ValidationException extends BaseException {
 
   public static <T> ValidationException fromViolations(Set<ConstraintViolation<T>> violations) {
     Set<String> errors = violations.stream()
-            .map(violation -> String.format("%s: %s",
-                    violation.getPropertyPath().toString(),
-                    violation.getMessage()))
-            .collect(Collectors.toSet());
+        .map(violation -> String.format("%s: %s",
+            violation.getPropertyPath().toString(),
+            violation.getMessage()))
+        .collect(Collectors.toSet());
     return new ValidationException(errors);
   }
 

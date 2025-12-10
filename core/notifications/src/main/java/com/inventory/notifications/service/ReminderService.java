@@ -1,11 +1,16 @@
 package com.inventory.notifications.service;
 
+import com.inventory.common.dto.CustomReminderRequest;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.notifications.domain.model.Reminder;
 import com.inventory.notifications.domain.model.ReminderType;
 import com.inventory.notifications.domain.repository.ReminderRepository;
-import com.inventory.common.dto.CustomReminderRequest;
-import com.inventory.notifications.rest.dto.*;
+import com.inventory.notifications.rest.dto.CreateReminderForInventoryRequest;
+import com.inventory.notifications.rest.dto.CreateReminderRequest;
+import com.inventory.notifications.rest.dto.ReminderListResponse;
+import com.inventory.notifications.rest.dto.ReminderResponse;
+import com.inventory.notifications.rest.dto.SnoozeReminderRequest;
+import com.inventory.notifications.rest.dto.UpdateReminderRequest;
 import com.inventory.notifications.rest.mapper.ReminderMapper;
 import com.inventory.notifications.validation.ReminderValidator;
 import lombok.AllArgsConstructor;
@@ -45,7 +50,7 @@ public class ReminderService {
     // Check if there's anything to create
     boolean hasExpiryReminder = request.getExpiryDate() != null;
     boolean hasCustomReminders = request.getCustomReminders() != null && !request.getCustomReminders().isEmpty();
-    
+
     if (!hasExpiryReminder && !hasCustomReminders) {
       log.debug("No valid expiryDate or customReminders for inventoryId={}, skipping reminder creation", request.getInventoryId());
       return;
@@ -140,38 +145,38 @@ public class ReminderService {
 
   // -------- common helper: actually create + save reminder if valid --------
   private void createAndSaveReminderIfValid(
-          CreateReminderForInventoryRequest request,
-          Instant reminderAt,
-          Instant endDate,
-          ReminderType type,
-          String notes
+      CreateReminderForInventoryRequest request,
+      Instant reminderAt,
+      Instant endDate,
+      ReminderType type,
+      String notes
   ) {
     if (reminderAt == null || endDate == null) {
       log.debug("Not creating {} reminder for inventoryId={} because reminderAt or endDate is null",
-              type, request.getInventoryId());
+          type, request.getInventoryId());
       return;
     }
 
     Reminder reminder = reminderMapper.toReminder(
-            request.getShopId(),
-            request.getInventoryId(),
-            reminderAt,
-            endDate,
-            notes,
-            type
+        request.getShopId(),
+        request.getInventoryId(),
+        reminderAt,
+        endDate,
+        notes,
+        type
     );
 
     reminderRepository.save(reminder);
 
     log.info("Created {} reminder for inventoryId={} with reminderAt={} and endDate={}, notes={}",
-            type, request.getInventoryId(), reminderAt, endDate, notes);
+        type, request.getInventoryId(), reminderAt, endDate, notes);
   }
 
   public ReminderResponse snooze(String id, SnoozeReminderRequest request) {
     reminderValidator.validateSnoozeRequest(id, request);
 
     Reminder reminder = reminderRepository.findById(id)
-            .orElseThrow(() -> new ResourceNotFoundException("Reminder", "id", null));
+        .orElseThrow(() -> new ResourceNotFoundException("Reminder", "id", null));
 
     reminderMapper.updateReminderForSnooze(reminder, request);
     reminderRepository.save(reminder);
@@ -194,7 +199,7 @@ public class ReminderService {
   public ReminderResponse get(String id) {
 
     Reminder reminder = reminderRepository.findById(id)
-            .orElseThrow(() -> new ResourceNotFoundException("Reminder", "id", null));
+        .orElseThrow(() -> new ResourceNotFoundException("Reminder", "id", null));
 
     return reminderMapper.toResponse(reminder);
   }
@@ -204,7 +209,7 @@ public class ReminderService {
     reminderValidator.validateStatus(id, request.getStatus());
 
     Reminder reminder = reminderRepository.findById(id)
-            .orElseThrow(() -> new ResourceNotFoundException("Reminder", "id", null));
+        .orElseThrow(() -> new ResourceNotFoundException("Reminder", "id", null));
 
     reminderMapper.updateReminder(reminder, request);
     reminderRepository.save(reminder);

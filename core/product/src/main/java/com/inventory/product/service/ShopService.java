@@ -51,14 +51,14 @@ public class ShopService {
 
       // Check for existing shop with the same contact email
       shopRepository.findByContactEmail(request.getContactEmail())
-              .ifPresent(shop -> {
-                throw new ResourceExistsException("A shop with this contact email already exists");
-              });
+          .ifPresent(shop -> {
+            throw new ResourceExistsException("A shop with this contact email already exists");
+          });
 
       // Check if user already has a shop
       com.inventory.user.domain.model.UserAccount userAccount = userAccountRepository.findById(userId)
-              .orElseThrow(() -> new ResourceNotFoundException("User", "userId", userId));
-      
+          .orElseThrow(() -> new ResourceNotFoundException("User", "userId", userId));
+
       if (userAccount.getShopId() != null && !userAccount.getShopId().trim().isEmpty()) {
         throw new ResourceExistsException("User already has a shop associated");
       }
@@ -72,11 +72,11 @@ public class ShopService {
 
       // Save shop first
       shop = shopRepository.save(shop);
-      
+
       // Update user account with shopId (using mapper method)
       shopMapper.updateUserAccountWithShopId(userAccount, shop.getShopId());
       userAccountRepository.save(userAccount);
-      
+
       log.info("Successfully registered shop with ID: {} and updated user account: {}", shop.getShopId(), userId);
 
       return shopMapper.toRegistrationResponse(shop);
@@ -103,7 +103,7 @@ public class ShopService {
 
       // Find the shop
       Shop shop = shopRepository.findById(shopId)
-              .orElseThrow(() -> new ResourceNotFoundException("Shop", "id", shopId));
+          .orElseThrow(() -> new ResourceNotFoundException("Shop", "id", shopId));
 
       // Check if already in the requested state
       if (request.isApprove() && "ACTIVE".equals(shop.getStatus())) {

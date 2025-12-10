@@ -18,9 +18,6 @@ import java.util.List;
 @Slf4j
 public class AuthenticationInterceptor implements HandlerInterceptor {
 
-  @Autowired
-  private TokenValidationService tokenValidationService;
-
   // Public endpoints that don't require authentication
   private static final List<String> PUBLIC_ENDPOINTS = Arrays.asList(
       "/api/v1/auth/login",
@@ -29,6 +26,8 @@ public class AuthenticationInterceptor implements HandlerInterceptor {
       "/api/product/get-plugin",
       "/api/product/"
   );
+  @Autowired
+  private TokenValidationService tokenValidationService;
 
   @Override
   public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
@@ -58,17 +57,17 @@ public class AuthenticationInterceptor implements HandlerInterceptor {
     // Validate token and get user account
     try {
       UserAccount userAccount = tokenValidationService.validateToken(accessToken);
-      
+
       // Store user information in request attributes for use in controllers
       request.setAttribute("userId", userAccount.getUserId());
       request.setAttribute("userRole", userAccount.getRole());
       request.setAttribute("shopId", userAccount.getShopId());
       request.setAttribute("userAccount", userAccount);
       request.setAttribute("accessToken", accessToken);
-      
+
       log.debug("Authentication successful for user: {} on path: {}", userAccount.getUserId(), requestPath);
       return true;
-      
+
     } catch (AuthenticationException e) {
       log.warn("Authentication failed for path {}: {}", requestPath, e.getMessage());
       throw e;

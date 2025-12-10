@@ -4,8 +4,8 @@ import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
 import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.gson.GsonFactory;
-import com.inventory.common.exception.AuthenticationException;
 import com.inventory.common.constants.ErrorCode;
+import com.inventory.common.exception.AuthenticationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -21,7 +21,7 @@ public class GoogleTokenVerifier {
     // Initialize verifier without client ID check (for now)
     // In production, you should verify the audience (client ID) as well
     this.verifier = new GoogleIdTokenVerifier.Builder(new NetHttpTransport(), new GsonFactory())
-            .build();
+        .build();
   }
 
   /**
@@ -37,15 +37,15 @@ public class GoogleTokenVerifier {
 
       // Verify the token
       GoogleIdToken idToken = verifier.verify(idTokenString);
-      
+
       if (idToken == null) {
-        throw new AuthenticationException(ErrorCode.INVALID_CREDENTIALS, 
-                "Google ID token verification failed - token is invalid or expired");
+        throw new AuthenticationException(ErrorCode.INVALID_CREDENTIALS,
+            "Google ID token verification failed - token is invalid or expired");
       }
 
       // Get payload
       GoogleIdToken.Payload payload = idToken.getPayload();
-      
+
       // Convert to Map for easier access
       java.util.HashMap<String, Object> claims = new java.util.HashMap<>();
       if (payload.getEmail() != null) {
@@ -75,8 +75,8 @@ public class GoogleTokenVerifier {
       throw e;
     } catch (Exception e) {
       log.warn("Google ID token verification failed: {}", e.getMessage());
-      throw new AuthenticationException(ErrorCode.INVALID_CREDENTIALS, 
-              "Invalid Google ID token: " + e.getMessage());
+      throw new AuthenticationException(ErrorCode.INVALID_CREDENTIALS,
+          "Invalid Google ID token: " + e.getMessage());
     }
   }
 
@@ -86,8 +86,8 @@ public class GoogleTokenVerifier {
   public String getEmail(Map<String, Object> payload) {
     Object email = payload.get("email");
     if (email == null) {
-      throw new AuthenticationException(ErrorCode.INVALID_CREDENTIALS, 
-              "Email not found in Google ID token");
+      throw new AuthenticationException(ErrorCode.INVALID_CREDENTIALS,
+          "Email not found in Google ID token");
     }
     return email.toString();
   }
@@ -104,8 +104,8 @@ public class GoogleTokenVerifier {
     Object givenName = payload.get("given_name");
     Object familyName = payload.get("family_name");
     if (givenName != null || familyName != null) {
-      return ((givenName != null ? givenName.toString() : "") + " " + 
-              (familyName != null ? familyName.toString() : "")).trim();
+      return ((givenName != null ? givenName.toString() : "") + " " +
+          (familyName != null ? familyName.toString() : "")).trim();
     }
     return null;
   }

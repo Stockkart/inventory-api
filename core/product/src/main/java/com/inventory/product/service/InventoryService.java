@@ -8,7 +8,11 @@ import com.inventory.notifications.rest.dto.CreateReminderForInventoryRequest;
 import com.inventory.notifications.service.ReminderService;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.repository.InventoryRepository;
-import com.inventory.product.rest.dto.inventory.*;
+import com.inventory.product.rest.dto.inventory.CreateInventoryRequest;
+import com.inventory.product.rest.dto.inventory.InventoryDetailResponse;
+import com.inventory.product.rest.dto.inventory.InventoryListResponse;
+import com.inventory.product.rest.dto.inventory.InventoryReceiptResponse;
+import com.inventory.product.rest.dto.inventory.InventorySummaryDto;
 import com.inventory.product.rest.mapper.InventoryMapper;
 import com.inventory.product.validation.InventoryValidator;
 import lombok.extern.slf4j.Slf4j;
@@ -51,13 +55,13 @@ public class InventoryService {
 
       inventory = inventoryRepository.save(inventory);
       log.info("Successfully created inventory lot: {} for product: {} in shop: {}",
-              inventory.getLotId(), inventory.getBarcode(), shopId);
+          inventory.getLotId(), inventory.getBarcode(), shopId);
 
       // Create reminder for expiry date asynchronously (handled by ReminderService)
       // Fire and forget - don't wait for completion
       // Errors are handled inside createReminderForInventoryCreate method
       CreateReminderForInventoryRequest reminderRequest = inventoryMapper.toCreateReminderForInventoryRequest(
-              request, shopId, inventory.getId());
+          request, shopId, inventory.getId());
       reminderService.createReminderForInventoryCreate(reminderRequest);
       // Map to response
       // Set reminderCreated to true if expiry date exists (optimistic - actual creation happens async)
@@ -86,8 +90,8 @@ public class InventoryService {
       List<Inventory> inventories = inventoryRepository.findByShopId(shopId);
 
       List<InventorySummaryDto> summaries = inventories.stream()
-              .map(inventoryMapper::toSummary)
-              .toList();
+          .map(inventoryMapper::toSummary)
+          .toList();
 
       return inventoryMapper.toInventoryListResponse(summaries);
 
@@ -116,8 +120,8 @@ public class InventoryService {
       List<Inventory> inventories = inventoryRepository.searchByShopIdAndQuery(shopId, query.trim());
 
       List<InventorySummaryDto> summaries = inventories.stream()
-              .map(inventoryMapper::toSummary)
-              .toList();
+          .map(inventoryMapper::toSummary)
+          .toList();
 
       return inventoryMapper.toInventoryListResponse(summaries);
 
@@ -142,7 +146,7 @@ public class InventoryService {
 
       // Find inventory by ID
       Inventory inventory = inventoryRepository.findById(lotId)
-              .orElseThrow(() -> new ResourceNotFoundException("Inventory lot", "lotId", lotId));
+          .orElseThrow(() -> new ResourceNotFoundException("Inventory lot", "lotId", lotId));
 
       return inventoryMapper.toDetail(inventory);
 

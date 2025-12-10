@@ -9,10 +9,10 @@ public class SignupRequest {
   private String name;
   private String email;
   private String password;
-  
+
   // For Google signup
   private String idToken;
-  
+
   private String shopId;
   private UserRole role;
   private String deviceId; // Optional: if not provided, will be generated

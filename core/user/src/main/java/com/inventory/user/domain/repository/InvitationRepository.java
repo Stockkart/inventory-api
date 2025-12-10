@@ -47,7 +47,7 @@ public interface InvitationRepository extends MongoRepository<Invitation, String
    * Find pending invitation for a user and shop.
    *
    * @param inviteeUserId the user ID of the invitee
-   * @param shopId the shop ID
+   * @param shopId        the shop ID
    * @return optional invitation if found
    */
   Optional<Invitation> findByInviteeUserIdAndShopIdAndStatus(String inviteeUserId, String shopId, String status);
@@ -56,7 +56,7 @@ public interface InvitationRepository extends MongoRepository<Invitation, String
    * Find pending invitation by email and shop.
    *
    * @param inviteeEmail the email of the invitee
-   * @param shopId the shop ID
+   * @param shopId       the shop ID
    * @return optional invitation if found
    */
   Optional<Invitation> findByInviteeEmailAndShopIdAndStatus(String inviteeEmail, String shopId, String status);
