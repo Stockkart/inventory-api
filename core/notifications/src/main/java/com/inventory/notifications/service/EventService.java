@@ -1,9 +1,11 @@
 package com.inventory.notifications.service;
 
 import com.inventory.notifications.domain.model.Reminder;
-import com.inventory.notifications.domain.model.ReminderEvent;
+import com.inventory.notifications.domain.model.Event;
+import com.inventory.notifications.domain.model.EventType;
+import com.inventory.notifications.domain.model.EventStatus;
 import com.inventory.notifications.domain.model.ReminderStatus;
-import com.inventory.notifications.domain.repository.ReminderEventRepository;
+import com.inventory.notifications.domain.repository.EventRepository;
 import com.inventory.notifications.domain.repository.ReminderRepository;
 import com.inventory.notifications.rest.dto.ReminderResponse;
 import com.inventory.notifications.rest.mapper.ReminderMapper;
@@ -23,16 +25,15 @@ import java.util.concurrent.CopyOnWriteArrayList;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class ReminderEventService {
+public class EventService {
 
-  private final ReminderEventRepository reminderEventRepository;
+  private final EventRepository eventRepository;
   private final ReminderRepository reminderRepository;
   private final ReminderMapper reminderMapper;
 
   // shopId -> list of active SSE connections
   private final Map<String, List<SseEmitter>> emittersByShop = new ConcurrentHashMap<>();
 
-  // ===================== SSE SUBSCRIPTION =====================
   public SseEmitter subscribe(String shopId) {
     SseEmitter emitter = new SseEmitter(0L); // no timeout
 
@@ -47,7 +48,7 @@ public class ReminderEventService {
     log.info("SSE subscribed for shopId={}, totalEmitters={}",
       shopId, emittersByShop.get(shopId).size());
 
-    // 🔹 (optional but nice) send a small "connected" event so client knows SSE is live
+    // (optional but nice) send a small "connected" event so client knows SSE is live
     try {
       emitter.send(
         SseEmitter.event()
@@ -58,15 +59,15 @@ public class ReminderEventService {
       log.warn("Failed to send INIT SSE event for shopId={}: {}", shopId, e.getMessage());
     }
 
-    // 🔹 NEW: send any pending, undelivered events to this emitter
+    // NEW: send any pending, undelivered events to this emitter
     sendPendingEventsToSingleEmitter(shopId, emitter);
 
     return emitter;
   }
 
   private void sendPendingEventsToSingleEmitter(String shopId, SseEmitter emitter) {
-    List<ReminderEvent> pendingEvents =
-      reminderEventRepository.findByShopIdAndDeliveredFalseOrderByTriggeredAtAsc(shopId);
+    List<Event> pendingEvents =
+      eventRepository.findByShopIdAndDeliveredFalseOrderByTriggeredAtAsc(shopId);
 
     if (pendingEvents.isEmpty()) {
       return;
@@ -74,7 +75,7 @@ public class ReminderEventService {
 
     log.info("Replaying {} pending events for shopId={}", pendingEvents.size(), shopId);
 
-    for (ReminderEvent event : pendingEvents) {
+    for (Event event : pendingEvents) {
       try {
         Reminder reminder = reminderRepository.findById(event.getReminderId())
           .orElse(null);
@@ -97,7 +98,7 @@ public class ReminderEventService {
         // Mark this event as delivered
         event.setDelivered(true);
         event.setDeliveredAt(Instant.now());
-        reminderEventRepository.save(event);
+        eventRepository.save(event);
 
       } catch (IOException ex) {
         log.warn("Failed to send pending SSE event {} to shopId={}: {}",
@@ -123,25 +124,24 @@ public class ReminderEventService {
     }
   }
 
-  // ===================== EVENT CREATION + BROADCAST =====================
   /**
-   * Called when a reminder is due. Creates a ReminderEvent row and
+   * Called when a reminder is due. Creates a event row and
    * tries to push it over SSE to all clients of that shop.
    */
   public void recordAndBroadcastReminderDue(Reminder reminder) {
     try {
-      ReminderEvent event = ReminderEvent.builder()
+      Event event = Event.builder()
         .reminderId(reminder.getId())
         .shopId(reminder.getShopId())
-        .type(reminder.getType())
-        .statusAtTrigger(reminder.getStatus())
+        .type(EventType.valueOf(reminder.getType().name()))
+        .statusAtTrigger(EventStatus.valueOf(reminder.getStatus().name()))
         .triggeredAt(Instant.now())
         .notes(reminder.getNotes())
         .delivered(false)
         .retryCount(0)
         .build();
 
-      event = reminderEventRepository.save(event);
+      event = eventRepository.save(event);
 
       broadcastEvent(event, reminder);
 
@@ -151,7 +151,7 @@ public class ReminderEventService {
     }
   }
 
-  private void broadcastEvent(ReminderEvent event, Reminder reminder) {
+  private void broadcastEvent(Event event, Reminder reminder) {
     String shopId = event.getShopId();
     List<SseEmitter> emitters = emittersByShop.get(shopId);
 
@@ -182,11 +182,10 @@ public class ReminderEventService {
     if (deliveredToAtLeastOne && !event.isDelivered()) {
       event.setDelivered(true);
       event.setDeliveredAt(Instant.now());
-      reminderEventRepository.save(event);
+      eventRepository.save(event);
     }
   }
 
-  // ===================== SCHEDULER INSIDE THIS SERVICE =====================
   /**
    * Periodically scans for due reminders and dispatches them as events.
    * Runs every 30s by default (configurable via property).

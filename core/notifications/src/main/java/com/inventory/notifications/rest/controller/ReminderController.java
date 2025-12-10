@@ -9,13 +9,10 @@ import com.inventory.notifications.rest.dto.ReminderResponse;
 import com.inventory.notifications.rest.dto.SnoozeReminderRequest;
 import com.inventory.notifications.rest.dto.UpdateReminderRequest;
 import com.inventory.notifications.service.ReminderService;
-import com.inventory.notifications.service.ReminderEventService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -31,9 +28,6 @@ public class ReminderController {
 
   @Autowired
   private ReminderService reminderService;
-
-  @Autowired
-  private ReminderEventService reminderEventService;
 
   // LIST by shop
   @GetMapping
@@ -98,18 +92,5 @@ public class ReminderController {
       @RequestBody SnoozeReminderRequest request
   ) {
     return ResponseEntity.ok(ApiResponse.success(reminderService.snooze(id, request)));
-  }
-
-  @GetMapping("/stream")
-  public SseEmitter stream(HttpServletRequest httpRequest) {
-    // Get shopId from request attributes (set by AuthenticationInterceptor)
-    String shopId = (String) httpRequest.getAttribute("shopId");
-
-    if (!StringUtils.hasText(shopId)) {
-      throw new AuthenticationException(
-        ErrorCode.UNAUTHORIZED,
-        "Unauthorized access to shop reminders stream");
-    }
-    return reminderEventService.subscribe(shopId);
   }
 }
