@@ -35,17 +35,83 @@ public class ReminderEventService {
   // ===================== SSE SUBSCRIPTION =====================
   public SseEmitter subscribe(String shopId) {
     SseEmitter emitter = new SseEmitter(0L); // no timeout
+
     emittersByShop
       .computeIfAbsent(shopId, k -> new CopyOnWriteArrayList<>())
       .add(emitter);
+
     emitter.onCompletion(() -> removeEmitter(shopId, emitter));
     emitter.onTimeout(() -> removeEmitter(shopId, emitter));
     emitter.onError(e -> removeEmitter(shopId, emitter));
 
     log.info("SSE subscribed for shopId={}, totalEmitters={}",
       shopId, emittersByShop.get(shopId).size());
+
+    // 🔹 (optional but nice) send a small "connected" event so client knows SSE is live
+    try {
+      emitter.send(
+        SseEmitter.event()
+          .name("INIT")
+          .data("connected")
+      );
+    } catch (IOException e) {
+      log.warn("Failed to send INIT SSE event for shopId={}: {}", shopId, e.getMessage());
+    }
+
+    // 🔹 NEW: send any pending, undelivered events to this emitter
+    sendPendingEventsToSingleEmitter(shopId, emitter);
+
     return emitter;
   }
+
+  private void sendPendingEventsToSingleEmitter(String shopId, SseEmitter emitter) {
+    List<ReminderEvent> pendingEvents =
+      reminderEventRepository.findByShopIdAndDeliveredFalseOrderByTriggeredAtAsc(shopId);
+
+    if (pendingEvents.isEmpty()) {
+      return;
+    }
+
+    log.info("Replaying {} pending events for shopId={}", pendingEvents.size(), shopId);
+
+    for (ReminderEvent event : pendingEvents) {
+      try {
+        Reminder reminder = reminderRepository.findById(event.getReminderId())
+          .orElse(null);
+
+        if (reminder == null) {
+          log.warn("Skipping pending event {} because reminder {} not found",
+            event.getId(), event.getReminderId());
+          continue;
+        }
+
+        ReminderResponse payload = reminderMapper.toResponse(reminder);
+
+        emitter.send(
+          SseEmitter.event()
+            .name("REMINDER_DUE")
+            .id(event.getId())
+            .data(payload)
+        );
+
+        // Mark this event as delivered
+        event.setDelivered(true);
+        event.setDeliveredAt(Instant.now());
+        reminderEventRepository.save(event);
+
+      } catch (IOException ex) {
+        log.warn("Failed to send pending SSE event {} to shopId={}: {}",
+          event.getId(), shopId, ex.getMessage());
+        emitter.complete();
+        removeEmitter(shopId, emitter);
+        break; // stop processing more events for this (now dead) emitter
+      } catch (Exception ex) {
+        log.error("Unexpected error while replaying event {}: {}",
+          event.getId(), ex.getMessage(), ex);
+      }
+    }
+  }
+
 
   private void removeEmitter(String shopId, SseEmitter emitter) {
     List<SseEmitter> emitters = emittersByShop.get(shopId);
@@ -95,6 +161,7 @@ public class ReminderEventService {
     }
 
     ReminderResponse payload = reminderMapper.toResponse(reminder);
+    boolean deliveredToAtLeastOne = false;
 
     for (SseEmitter emitter : emitters) {
       try {
@@ -104,17 +171,18 @@ public class ReminderEventService {
             .id(event.getId())
             .data(payload)
         );
-
-        // mark event as delivered (first successful send is enough)
-        event.setDelivered(true);
-        event.setDeliveredAt(Instant.now());
-        reminderEventRepository.save(event);
-
+        deliveredToAtLeastOne = true;
       } catch (IOException ex) {
         log.warn("Failed to send SSE to shopId={} emitter: {}", shopId, ex.getMessage());
         emitter.complete();
         removeEmitter(shopId, emitter);
       }
+    }
+
+    if (deliveredToAtLeastOne && !event.isDelivered()) {
+      event.setDelivered(true);
+      event.setDeliveredAt(Instant.now());
+      reminderEventRepository.save(event);
     }
   }
 
