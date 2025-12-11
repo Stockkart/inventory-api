@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.inventory.notifications.service.EventService;
 
 @RestController
-@RequestMapping("/api/v1/reminders")
+@RequestMapping("/api/v1/events")
 public class EventController {
 
   @Autowired

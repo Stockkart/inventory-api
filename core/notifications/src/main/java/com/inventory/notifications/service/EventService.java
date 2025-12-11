@@ -1,18 +1,22 @@
 package com.inventory.notifications.service;
 
-import com.inventory.notifications.domain.model.Reminder;
 import com.inventory.notifications.domain.model.Event;
 import com.inventory.notifications.domain.model.EventType;
 import com.inventory.notifications.domain.model.EventStatus;
+import com.inventory.notifications.domain.model.Reminder;
 import com.inventory.notifications.domain.model.ReminderStatus;
 import com.inventory.notifications.domain.repository.EventRepository;
 import com.inventory.notifications.domain.repository.ReminderRepository;
 import com.inventory.notifications.rest.dto.ReminderResponse;
 import com.inventory.notifications.rest.mapper.ReminderMapper;
-import lombok.RequiredArgsConstructor;
+import com.inventory.notifications.util.DbSafetyUtils;
+import com.inventory.notifications.util.EventUpdateHelper;
+import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
@@ -20,24 +24,35 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
+@AllArgsConstructor
+@Transactional
 public class EventService {
 
-  private final EventRepository eventRepository;
-  private final ReminderRepository reminderRepository;
-  private final ReminderMapper reminderMapper;
+  @Autowired
+  private EventRepository eventRepository;
 
-  // shopId -> list of active SSE connections
+  @Autowired
+  private ReminderRepository reminderRepository;
+
+  @Autowired
+  private ReminderMapper reminderMapper;
+
+  // support multiple tabs/devices per shop
   private final Map<String, List<SseEmitter>> emittersByShop = new ConcurrentHashMap<>();
 
-  private static final int MAX_RETRIES = 5;
-  private static final long BASE_RETRY_SECONDS = 10L;
+  private static final int MAX_RETRIES = 3;
+  private static final long BASE_RETRY_SECONDS = 10L; // base for exponential backoff
+  private static final long MAX_BACKOFF_SECONDS = Duration.ofDays(1).getSeconds();
 
+  // ---------------------------
+  // Subscription / replay
+  // ---------------------------
   public SseEmitter subscribe(String shopId) {
     SseEmitter emitter = new SseEmitter(0L); // no timeout
 
@@ -52,71 +67,64 @@ public class EventService {
     log.info("SSE subscribed for shopId={}, totalEmitters={}",
       shopId, emittersByShop.get(shopId).size());
 
-    // (optional but nice) send a small "connected" event so client knows SSE is live
+    // send INIT to client (non-fatal)
     try {
-      emitter.send(
-        SseEmitter.event()
-          .name("INIT")
-          .data("connected")
-      );
+      emitter.send(SseEmitter.event().name("INIT").data("connected"));
     } catch (IOException e) {
       log.warn("Failed to send INIT SSE event for shopId={}: {}", shopId, e.getMessage());
     }
 
-    // NEW: send any pending, undelivered events to this emitter
+    // replay any pending undelivered events for this shop
     sendPendingEventsToSingleEmitter(shopId, emitter);
 
     return emitter;
   }
 
   private void sendPendingEventsToSingleEmitter(String shopId, SseEmitter emitter) {
-    List<Event> pendingEvents =
-      eventRepository.findByShopIdAndDeliveredFalseOrderByTriggeredAtAsc(shopId);
+    List<Event> pending = DbSafetyUtils.safeList(
+      () -> eventRepository.findByShopIdAndDeliveredFalseOrderByTriggeredAtAsc(shopId),
+      "Failed loading pending events for shop " + shopId
+    );
 
-    if (pendingEvents.isEmpty()) {
-      return;
-    }
+    if (pending == null || pending.isEmpty()) return;
 
-    log.info("Replaying {} pending events for shopId={}", pendingEvents.size(), shopId);
+    log.info("Replaying {} pending events for shopId={}", pending.size(), shopId);
 
-    for (Event event : pendingEvents) {
+    for (Event event : pending) {
       try {
-        Reminder reminder = reminderRepository.findById(event.getReminderId())
-          .orElse(null);
+        Optional<Reminder> reminderOpt = DbSafetyUtils.safeGet(
+          () -> reminderRepository.findById(event.getReminderId()).orElse(null),
+          "Failed loading reminder " + event.getReminderId()
+        );
 
+        if (reminderOpt == null) { // safeGet returned empty Optional due to DB error
+          continue;
+        }
+
+        Reminder reminder = reminderOpt.orElse(null);
         if (reminder == null) {
-          log.warn("Skipping pending event {} because reminder {} not found",
-            event.getId(), event.getReminderId());
+          log.warn("Skipping pending event {} because reminder {} not found", event.getId(), event.getReminderId());
+          // optionally mark event delivered to stop infinite retry for missing reminder
+          EventUpdateHelper.markDelivered(event, eventRepository);
           continue;
         }
 
         ReminderResponse payload = reminderMapper.toResponse(reminder);
+        emitter.send(SseEmitter.event().name("REMINDER_DUE").id(event.getId()).data(payload));
 
-        emitter.send(
-          SseEmitter.event()
-            .name("REMINDER_DUE")
-            .id(event.getId())
-            .data(payload)
-        );
-
-        // Mark this event as delivered
-        event.setDelivered(true);
-        event.setDeliveredAt(Instant.now());
-        eventRepository.save(event);
+        // mark event delivered
+        EventUpdateHelper.markDelivered(event, eventRepository);
 
       } catch (IOException ex) {
-        log.warn("Failed to send pending SSE event {} to shopId={}: {}",
-          event.getId(), shopId, ex.getMessage());
+        log.warn("Failed sending pending SSE event {} to shopId={}: {}", event.getId(), shopId, ex.getMessage());
         emitter.complete();
         removeEmitter(shopId, emitter);
-        break; // stop processing more events for this (now dead) emitter
+        break; // emitter dead; stop replay for it
       } catch (Exception ex) {
-        log.error("Unexpected error while replaying event {}: {}",
-          event.getId(), ex.getMessage(), ex);
+        log.error("Unexpected error while replaying event {}: {}", event.getId(), ex.getMessage(), ex);
       }
     }
   }
-
 
   private void removeEmitter(String shopId, SseEmitter emitter) {
     List<SseEmitter> emitters = emittersByShop.get(shopId);
@@ -129,34 +137,67 @@ public class EventService {
   }
 
   /**
-   * Called when a reminder is due. Creates a event row and
-   * tries to push it over SSE to all clients of that shop.
+   * Create an event record for a triggered reminder and try delivering it.
+   * This variant MARKS THE REMINDER AS SENT FIRST, then persists an Event record,
+   * and then attempts immediate delivery. If reminder update fails we abort.
+   *
+   * NOTE: marking the reminder before persisting the event means there is a
+   * chance the reminder is marked SENT while event persistence fails — we log that case.
+   * If you want strict atomicity consider MongoDB transactions (requires replica-set).
    */
   public void recordAndBroadcastReminderDue(Reminder reminder) {
-    try {
-      Event event = Event.builder()
-        .reminderId(reminder.getId())
-        .shopId(reminder.getShopId())
-        .type(EventType.valueOf(reminder.getType().name()))
-        .statusAtTrigger(EventStatus.valueOf(reminder.getStatus().name()))
-        .triggeredAt(Instant.now())
-        .notes(reminder.getNotes())
-        .delivered(false)
-        .retryCount(0)
-        .build();
+    if (reminder == null || reminder.getId() == null) {
+      log.warn("recordAndBroadcastReminderDue called with null reminder or id");
+      return;
+    }
 
-      event = eventRepository.save(event);
+    Instant now = Instant.now();
 
-      broadcastEvent(event, reminder);
+    // 1) Mark reminder as SENT first (defensive: log & abort if it fails)
+    Boolean reminderUpdated = DbSafetyUtils.safeRun(() -> {
+      reminder.setStatus(ReminderStatus.SENT);
+      reminder.setUpdatedAt(now);
+      return reminderRepository.save(reminder);
+    }, "Failed marking reminder " + reminder.getId() + " SENT before event creation") != null;
 
-    } catch (Exception e) {
-      log.error("Failed to create/broadcast event for reminderId={}: {}",
-        reminder.getId(), e.getMessage(), e);
+    if (!Boolean.TRUE.equals(reminderUpdated)) {
+      log.error("Aborting event creation for reminder {} because reminder update failed", reminder.getId());
+      return;
+    }
+
+    // 2) Build and persist event (event references the reminder which is now marked SENT)
+    Event event = Event.builder()
+      .reminderId(reminder.getId())
+      .shopId(reminder.getShopId())
+      .type(EventType.valueOf(reminder.getType().name()))
+      .statusAtTrigger(EventStatus.valueOf(reminder.getStatus().name()))
+      .triggeredAt(now)
+      .notes(reminder.getNotes())
+      .delivered(false)
+      .retryCount(0)
+      .build();
+
+    Event saved = DbSafetyUtils.safeGet(() -> eventRepository.save(event), "Failed saving event for reminder " + reminder.getId())
+      .orElse(null);
+
+    if (saved == null) {
+      // couldn't persist event — reminder already marked SENT; log and return
+      log.error("Event persist failed for reminder {} after marking reminder SENT. Manual reconciliation may be required.", reminder.getId());
+      return;
+    }
+
+    // 3) attempt to broadcast and update event metadata (retry count / delivered)
+    boolean delivered = attemptBroadcastAndUpdate(saved, reminder);
+
+    if (delivered) {
+      log.info("Event {} delivered immediately for reminder {}", saved.getId(), reminder.getId());
+    } else {
+      log.info("Event {} for reminder {} not delivered immediately, will be retried", saved.getId(), reminder.getId());
     }
   }
 
   /**
-   * Try to send event to current emitters and update event fields accordingly.
+   * Try to broadcast (without DB changes) then update event metadata.
    * Returns true if delivered to at least one emitter.
    */
   private boolean attemptBroadcastAndUpdate(Event event, Reminder reminder) {
@@ -164,37 +205,32 @@ public class EventService {
 
     if (delivered) {
       if (!event.isDelivered()) {
-        event.setDelivered(true);
-        event.setDeliveredAt(Instant.now());
-        eventRepository.save(event);
+        EventUpdateHelper.markDelivered(event, eventRepository);
       }
       return true;
-    } else {
-      // mark a failed attempt: increment retryCount, set lastAttemptAt and compute nextRetryAt with backoff
-      try {
-        int nextRetryCount = event.getRetryCount() + 1;
-        event.setRetryCount(nextRetryCount);
-        Instant now = Instant.now();
-        event.setLastAttemptAt(now);
-
-        // exponential backoff: BASE_RETRY_SECONDS * 2^(retryCount-1)
-        long backoffSeconds = (long) (BASE_RETRY_SECONDS * Math.pow(2, Math.max(0, nextRetryCount - 1)));
-        // cap backoff to something reasonable (e.g. 1 day)
-        long maxBackoff = Duration.ofDays(1).getSeconds();
-        if (backoffSeconds > maxBackoff) backoffSeconds = maxBackoff;
-
-        event.setNextRetryAt(now.plusSeconds(backoffSeconds));
-        eventRepository.save(event);
-      } catch (Exception ex) {
-        log.error("Failed to update retry metadata for event {}: {}", event.getId(), ex.getMessage(), ex);
-      }
-      return false;
     }
+
+    // failed delivery -> increment retry metadata with exponential backoff
+    try {
+      int nextRetryCount = event.getRetryCount() + 1;
+      long backoffSeconds = (long) (BASE_RETRY_SECONDS * Math.pow(2, Math.max(0, nextRetryCount - 1)));
+      if (backoffSeconds > MAX_BACKOFF_SECONDS) backoffSeconds = MAX_BACKOFF_SECONDS;
+
+      event.setRetryCount(nextRetryCount);
+      event.setLastAttemptAt(Instant.now());
+      event.setNextRetryAt(Instant.now().plusSeconds(backoffSeconds));
+
+      DbSafetyUtils.safeRun(() -> eventRepository.save(event), "Failed updating retry metadata for event " + event.getId());
+    } catch (Exception ex) {
+      log.error("Failed to update retry metadata for event {}: {}", event.getId(), ex.getMessage(), ex);
+    }
+
+    return false;
   }
 
   /**
-   * Broadcasts an event to current emitters without touching DB fields (DB updates are handled by caller).
-   * Returns true if delivered to at least one emitter.
+   * Broadcasts an event to all active emitters for the event's shop.
+   * Returns true if at least one emitter successfully received it.
    */
   private boolean broadcastEvent(Event event, Reminder reminder) {
     String shopId = event.getShopId();
@@ -214,7 +250,7 @@ public class EventService {
         deliveredToAtLeastOne = true;
       } catch (IOException ex) {
         log.warn("Failed to send SSE to shopId={} emitter: {}", shopId, ex.getMessage());
-        // emitter seems dead — clean up
+        // emitter appears dead — clean up
         emitter.complete();
         removeEmitter(shopId, emitter);
       } catch (Exception ex) {
@@ -226,97 +262,76 @@ public class EventService {
   }
 
   /**
-   * Periodically scans for due reminders and dispatches them as events.
-   * Runs every 30s by default (configurable via property).
+   * Single scheduler that:
+   * 1) Finds due reminders (PENDING and reminderAt <= now), creates events and attempts delivery.
+   * 2) Finds existing undelivered events whose nextRetryAt <= now and retryCount < MAX_RETRIES and retries them.
+   * <p>
+   * Runs every 'reminders.dispatch-interval-ms' (configurable).
    */
   @Scheduled(fixedDelayString = "${reminders.dispatch-interval-ms:30000}")
-  public void dispatchDueReminders() {
+  public void processEventsScheduler() {
     Instant now = Instant.now();
-    List<Reminder> dueReminders;
 
-    try {
-      dueReminders = reminderRepository
-        .findTop100ByStatusAndReminderAtLessThanEqualOrderByReminderAtAsc(
-          ReminderStatus.PENDING, now
-        );
-    } catch (Exception e) {
-      log.error("Failed fetching due reminders at {}: {}", now, e.getMessage(), e);
-      return;
-    }
+    // -- A: dispatch newly due reminders --
+    List<Reminder> dueReminders = DbSafetyUtils.safeList(
+      () -> reminderRepository.findTop100ByStatusAndReminderAtLessThanEqualOrderByReminderAtAsc(ReminderStatus.PENDING, now),
+      "Failed fetching due reminders at " + now
+    );
 
-    if (dueReminders.isEmpty()) {
-      return;
-    }
-
-    log.info("Found {} due reminders at {}", dueReminders.size(), now);
-
-    for (Reminder reminder : dueReminders) {
-      try {
-        // mark as SENT so we don't send duplicates
-        reminder.setStatus(ReminderStatus.SENT);
-        reminder.setUpdatedAt(now);
-        reminderRepository.save(reminder);
-
-        // create event row + broadcast over SSE
-        recordAndBroadcastReminderDue(reminder);
-      } catch (Exception e) {
-        log.error("Failed to dispatch reminderId={}: {}", reminder.getId(), e.getMessage(), e);
+    if (dueReminders != null && !dueReminders.isEmpty()) {
+      log.info("Found {} due reminders at {}", dueReminders.size(), now);
+      for (Reminder r : dueReminders) {
+        try {
+          recordAndBroadcastReminderDue(r);
+        } catch (Exception e) {
+          log.error("Failed processing due reminder {}: {}", r.getId(), e.getMessage(), e);
+        }
       }
     }
-  }
 
-  // ---------- Scheduled retry job ----------
-  // Runs more frequently than dispatch or configurable separately.
-  @Scheduled(fixedDelayString = "${reminders.retry-interval-ms:15000}")
-  public void retryPendingEvents() {
-    Instant now = Instant.now();
-    List<Event> toRetry;
-    try {
-      toRetry = eventRepository.findByDeliveredFalseAndRetryCountLessThanAndNextRetryAtLessThanEqualOrderByTriggeredAtAsc(
-        MAX_RETRIES, now);
-    } catch (Exception e) {
-      log.error("Failed fetching events for retry at {}: {}", now, e.getMessage(), e);
-      return;
-    }
+    // -- B: retry pending events whose nextRetryAt <= now --
+    List<Event> toRetry = DbSafetyUtils.safeList(
+      () -> eventRepository.findByDeliveredFalseAndRetryCountLessThanAndNextRetryAtLessThanEqualOrderByTriggeredAtAsc(MAX_RETRIES, now),
+      "Failed fetching events for retry at " + now
+    );
 
-    if (toRetry.isEmpty()) return;
+    if (toRetry == null || toRetry.isEmpty()) return;
 
-    log.info("Retrying {} pending events", toRetry.size());
+    log.info("Retrying {} pending events at {}", toRetry.size(), now);
 
     for (Event event : toRetry) {
       try {
-        Reminder reminder = reminderRepository.findById(event.getReminderId()).orElse(null);
+        Optional<Reminder> reminderOpt = DbSafetyUtils.safeGet(
+          () -> reminderRepository.findById(event.getReminderId()).orElse(null),
+          "DB error loading reminder " + event.getReminderId() + " for retry " + event.getId()
+        );
+        if (reminderOpt == null) continue;
+        Reminder reminder = reminderOpt.orElse(null);
+
         if (reminder == null) {
           log.warn("Skipping retry for event {} because reminder {} not found", event.getId(), event.getReminderId());
-          // consider marking event as delivered=true or failed permanently if reminder is gone. For now, mark delivered to stop retrying:
-          event.setDelivered(true);
-          event.setDeliveredAt(Instant.now());
-          eventRepository.save(event);
+          EventUpdateHelper.markDelivered(event, eventRepository); // stop retrying missing reminder
           continue;
         }
 
         boolean delivered = attemptBroadcastAndUpdate(event, reminder);
-
         if (delivered) {
-          // Mark reminder SENT only when event delivered (business decision). If you prefer marking reminders as SENT separately,
-          // implement that logic here (update reminder.status to SENT).
-          try {
+          DbSafetyUtils.safeRun(() -> {
             reminder.setStatus(ReminderStatus.SENT);
-            reminder.setUpdatedAt(now);
-            reminderRepository.save(reminder);
-          } catch (Exception ex) {
-            log.warn("Failed to mark reminder {} SENT after delivery: {}", reminder.getId(), ex.getMessage());
-          }
+            reminder.setUpdatedAt(Instant.now());
+            return reminderRepository.save(reminder);
+          }, "Failed marking reminder " + reminder.getId() + " SENT after retry-delivery");
         } else {
           if (event.getRetryCount() >= MAX_RETRIES) {
-            log.warn("Event {} exhausted retries ({}). Marking as undelivered for manual inspection.", event.getId(), event.getRetryCount());
-            // optional: mark delivered=false but set nextRetryAt far in future or set a flag for manual handling
-            // e.g. event.setNextRetryAt(now.plus(Duration.ofDays(30)));
-            eventRepository.save(event);
+            log.warn("Event {} exhausted retries ({}). Needs manual handling.", event.getId(), event.getRetryCount());
+            DbSafetyUtils.safeRun(() -> {
+              event.setNextRetryAt(Instant.now().plus(Duration.ofDays(30)));
+              return eventRepository.save(event);
+            }, "Failed updating exhausted event " + event.getId());
           }
         }
-      } catch (Exception e) {
-        log.error("Failed retrying event {}: {}", event.getId(), e.getMessage(), e);
+      } catch (Exception ex) {
+        log.error("Failed retrying event {}: {}", event.getId(), ex.getMessage(), ex);
       }
     }
   }
