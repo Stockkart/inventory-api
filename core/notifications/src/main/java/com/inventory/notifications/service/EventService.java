@@ -9,8 +9,6 @@ import com.inventory.notifications.domain.repository.EventRepository;
 import com.inventory.notifications.domain.repository.ReminderRepository;
 import com.inventory.notifications.rest.dto.ReminderResponse;
 import com.inventory.notifications.rest.mapper.ReminderMapper;
-import com.inventory.notifications.util.DbSafetyUtils;
-import com.inventory.notifications.util.EventUpdateHelper;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,6 +20,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -81,10 +80,13 @@ public class EventService {
   }
 
   private void sendPendingEventsToSingleEmitter(String shopId, SseEmitter emitter) {
-    List<Event> pending = DbSafetyUtils.safeList(
-      () -> eventRepository.findByShopIdAndDeliveredFalseOrderByTriggeredAtAsc(shopId),
-      "Failed loading pending events for shop " + shopId
-    );
+    List<Event> pending;
+    try {
+      pending = eventRepository.findByShopIdAndDeliveredFalseOrderByTriggeredAtAsc(shopId);
+    } catch (Exception e) {
+      log.error("Failed loading pending events for shop {}: {}", shopId, e.getMessage(), e);
+      pending = Collections.emptyList();
+    }
 
     if (pending == null || pending.isEmpty()) return;
 
@@ -92,28 +94,40 @@ public class EventService {
 
     for (Event event : pending) {
       try {
-        Optional<Reminder> reminderOpt = DbSafetyUtils.safeGet(
-          () -> reminderRepository.findById(event.getReminderId()).orElse(null),
-          "Failed loading reminder " + event.getReminderId()
-        );
-
-        if (reminderOpt == null) { // safeGet returned empty Optional due to DB error
+        Optional<Reminder> reminderOpt;
+        try {
+          reminderOpt = reminderRepository.findById(event.getReminderId());
+        } catch (Exception dbEx) {
+          log.error("Failed loading reminder {}: {}", event.getReminderId(), dbEx.getMessage(), dbEx);
+          // DB error — skip this event for now (do not mark delivered)
           continue;
         }
 
-        Reminder reminder = reminderOpt.orElse(null);
-        if (reminder == null) {
+        if (!reminderOpt.isPresent()) {
           log.warn("Skipping pending event {} because reminder {} not found", event.getId(), event.getReminderId());
-          // optionally mark event delivered to stop infinite retry for missing reminder
-          EventUpdateHelper.markDelivered(event, eventRepository);
+          // mark event delivered to stop infinite retry for missing reminder
+          try {
+            event.setDelivered(true);
+            event.setDeliveredAt(Instant.now());
+            eventRepository.save(event);
+          } catch (Exception saveEx) {
+            log.error("Failed marking event {} delivered while skipping missing reminder: {}", event.getId(), saveEx.getMessage(), saveEx);
+          }
           continue;
         }
 
+        Reminder reminder = reminderOpt.get();
         ReminderResponse payload = reminderMapper.toResponse(reminder);
         emitter.send(SseEmitter.event().name("REMINDER_DUE").id(event.getId()).data(payload));
 
         // mark event delivered
-        EventUpdateHelper.markDelivered(event, eventRepository);
+        try {
+          event.setDelivered(true);
+          event.setDeliveredAt(Instant.now());
+          eventRepository.save(event);
+        } catch (Exception saveEx) {
+          log.error("Failed marking pending event {} delivered after replay: {}", event.getId(), saveEx.getMessage(), saveEx);
+        }
 
       } catch (IOException ex) {
         log.warn("Failed sending pending SSE event {} to shopId={}: {}", event.getId(), shopId, ex.getMessage());
@@ -154,13 +168,17 @@ public class EventService {
     Instant now = Instant.now();
 
     // 1) Mark reminder as SENT first (defensive: log & abort if it fails)
-    Boolean reminderUpdated = DbSafetyUtils.safeRun(() -> {
+    boolean reminderUpdated = false;
+    try {
       reminder.setStatus(ReminderStatus.SENT);
       reminder.setUpdatedAt(now);
-      return reminderRepository.save(reminder);
-    }, "Failed marking reminder " + reminder.getId() + " SENT before event creation") != null;
+      reminderRepository.save(reminder);
+      reminderUpdated = true;
+    } catch (Exception e) {
+      log.error("Failed marking reminder {} SENT before event creation: {}", reminder.getId(), e.getMessage(), e);
+    }
 
-    if (!Boolean.TRUE.equals(reminderUpdated)) {
+    if (!reminderUpdated) {
       log.error("Aborting event creation for reminder {} because reminder update failed", reminder.getId());
       return;
     }
@@ -177,8 +195,12 @@ public class EventService {
       .retryCount(0)
       .build();
 
-    Event saved = DbSafetyUtils.safeGet(() -> eventRepository.save(event), "Failed saving event for reminder " + reminder.getId())
-      .orElse(null);
+    Event saved = null;
+    try {
+      saved = eventRepository.save(event);
+    } catch (Exception e) {
+      log.error("Failed saving event for reminder {}: {}", reminder.getId(), e.getMessage(), e);
+    }
 
     if (saved == null) {
       // couldn't persist event — reminder already marked SENT; log and return
@@ -205,7 +227,13 @@ public class EventService {
 
     if (delivered) {
       if (!event.isDelivered()) {
-        EventUpdateHelper.markDelivered(event, eventRepository);
+        try {
+          event.setDelivered(true);
+          event.setDeliveredAt(Instant.now());
+          eventRepository.save(event);
+        } catch (Exception e) {
+          log.error("Failed to mark event {} delivered after successful broadcast: {}", event.getId(), e.getMessage(), e);
+        }
       }
       return true;
     }
@@ -220,9 +248,13 @@ public class EventService {
       event.setLastAttemptAt(Instant.now());
       event.setNextRetryAt(Instant.now().plusSeconds(backoffSeconds));
 
-      DbSafetyUtils.safeRun(() -> eventRepository.save(event), "Failed updating retry metadata for event " + event.getId());
+      try {
+        eventRepository.save(event);
+      } catch (Exception saveEx) {
+        log.error("Failed updating retry metadata for event {}: {}", event.getId(), saveEx.getMessage(), saveEx);
+      }
     } catch (Exception ex) {
-      log.error("Failed to update retry metadata for event {}: {}", event.getId(), ex.getMessage(), ex);
+      log.error("Failed to compute/update retry metadata for event {}: {}", event.getId(), ex.getMessage(), ex);
     }
 
     return false;
@@ -270,30 +302,52 @@ public class EventService {
    */
   @Scheduled(fixedDelayString = "${reminders.dispatch-interval-ms:30000}")
   public void processEventsScheduler() {
+    processDueReminders();
+    retryFailedEvents();
+  }
+
+  /**
+   * A: dispatch newly due reminders
+   */
+  private void processDueReminders() {
     Instant now = Instant.now();
 
-    // -- A: dispatch newly due reminders --
-    List<Reminder> dueReminders = DbSafetyUtils.safeList(
-      () -> reminderRepository.findTop100ByStatusAndReminderAtLessThanEqualOrderByReminderAtAsc(ReminderStatus.PENDING, now),
-      "Failed fetching due reminders at " + now
-    );
-
-    if (dueReminders != null && !dueReminders.isEmpty()) {
-      log.info("Found {} due reminders at {}", dueReminders.size(), now);
-      for (Reminder r : dueReminders) {
-        try {
-          recordAndBroadcastReminderDue(r);
-        } catch (Exception e) {
-          log.error("Failed processing due reminder {}: {}", r.getId(), e.getMessage(), e);
-        }
-      }
+    List<Reminder> dueReminders;
+    try {
+      dueReminders = reminderRepository.findTop100ByStatusAndReminderAtLessThanEqualOrderByReminderAtAsc(
+        ReminderStatus.PENDING, now);
+    } catch (Exception e) {
+      log.error("Failed fetching due reminders at {}: {}", now, e.getMessage(), e);
+      dueReminders = Collections.emptyList();
     }
 
-    // -- B: retry pending events whose nextRetryAt <= now --
-    List<Event> toRetry = DbSafetyUtils.safeList(
-      () -> eventRepository.findByDeliveredFalseAndRetryCountLessThanAndNextRetryAtLessThanEqualOrderByTriggeredAtAsc(MAX_RETRIES, now),
-      "Failed fetching events for retry at " + now
-    );
+    if (dueReminders == null || dueReminders.isEmpty()) return;
+
+    log.info("Found {} due reminders at {}", dueReminders.size(), now);
+
+    for (Reminder r : dueReminders) {
+      try {
+        recordAndBroadcastReminderDue(r);
+      } catch (Exception e) {
+        log.error("Failed processing due reminder {}: {}", r.getId(), e.getMessage(), e);
+      }
+    }
+  }
+
+  /**
+   * B: retry pending events whose nextRetryAt <= now
+   */
+  private void retryFailedEvents() {
+    Instant now = Instant.now();
+
+    List<Event> toRetry;
+    try {
+      toRetry = eventRepository.findByDeliveredFalseAndRetryCountLessThanAndNextRetryAtLessThanEqualOrderByTriggeredAtAsc(
+        MAX_RETRIES, now);
+    } catch (Exception e) {
+      log.error("Failed fetching events for retry at {}: {}", now, e.getMessage(), e);
+      toRetry = Collections.emptyList();
+    }
 
     if (toRetry == null || toRetry.isEmpty()) return;
 
@@ -301,33 +355,48 @@ public class EventService {
 
     for (Event event : toRetry) {
       try {
-        Optional<Reminder> reminderOpt = DbSafetyUtils.safeGet(
-          () -> reminderRepository.findById(event.getReminderId()).orElse(null),
-          "DB error loading reminder " + event.getReminderId() + " for retry " + event.getId()
-        );
-        if (reminderOpt == null) continue;
-        Reminder reminder = reminderOpt.orElse(null);
-
-        if (reminder == null) {
-          log.warn("Skipping retry for event {} because reminder {} not found", event.getId(), event.getReminderId());
-          EventUpdateHelper.markDelivered(event, eventRepository); // stop retrying missing reminder
+        Optional<Reminder> reminderOpt;
+        try {
+          reminderOpt = reminderRepository.findById(event.getReminderId());
+        } catch (Exception dbEx) {
+          log.error("DB error loading reminder {} for retry {}: {}", event.getReminderId(), event.getId(), dbEx.getMessage(), dbEx);
+          // DB error — skip this event for now
           continue;
         }
 
+        if (!reminderOpt.isPresent()) {
+          log.warn("Skipping retry for event {} because reminder {} not found", event.getId(), event.getReminderId());
+          // stop retrying missing reminder by marking delivered
+          try {
+            event.setDelivered(true);
+            event.setDeliveredAt(Instant.now());
+            eventRepository.save(event);
+          } catch (Exception saveEx) {
+            log.error("Failed marking event {} delivered while skipping missing reminder: {}", event.getId(), saveEx.getMessage(), saveEx);
+          }
+          continue;
+        }
+
+        Reminder reminder = reminderOpt.get();
+
         boolean delivered = attemptBroadcastAndUpdate(event, reminder);
         if (delivered) {
-          DbSafetyUtils.safeRun(() -> {
+          try {
             reminder.setStatus(ReminderStatus.SENT);
             reminder.setUpdatedAt(Instant.now());
-            return reminderRepository.save(reminder);
-          }, "Failed marking reminder " + reminder.getId() + " SENT after retry-delivery");
+            reminderRepository.save(reminder);
+          } catch (Exception saveEx) {
+            log.error("Failed marking reminder {} SENT after retry-delivery: {}", reminder.getId(), saveEx.getMessage(), saveEx);
+          }
         } else {
           if (event.getRetryCount() >= MAX_RETRIES) {
             log.warn("Event {} exhausted retries ({}). Needs manual handling.", event.getId(), event.getRetryCount());
-            DbSafetyUtils.safeRun(() -> {
+            try {
               event.setNextRetryAt(Instant.now().plus(Duration.ofDays(30)));
-              return eventRepository.save(event);
-            }, "Failed updating exhausted event " + event.getId());
+              eventRepository.save(event);
+            } catch (Exception saveEx) {
+              log.error("Failed updating exhausted event {}: {}", event.getId(), saveEx.getMessage(), saveEx);
+            }
           }
         }
       } catch (Exception ex) {
@@ -335,4 +404,5 @@ public class EventService {
       }
     }
   }
+
 }
