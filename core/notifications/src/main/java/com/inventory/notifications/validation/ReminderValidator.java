@@ -20,6 +20,9 @@ public class ReminderValidator {
     if (request.getReminderAt() == null) {
       throw new ValidationException("reminderAt is required");
     }
+    if (request.getEndDate() != null && !request.getEndDate().isAfter(request.getReminderAt())) {
+      throw new ValidationException("endDate must be after reminderAt");
+    }
   }
 
   public void validateSnoozeRequest(String id, SnoozeReminderRequest request) {

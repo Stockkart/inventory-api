@@ -33,13 +33,13 @@ public class ReminderService {
   private static final long REMINDER_DAYS_BEFORE = 15L;
 
   @Autowired
-  private final ReminderRepository reminderRepository;
+  private ReminderRepository reminderRepository;
 
   @Autowired
-  private final ReminderMapper reminderMapper;
+  private ReminderMapper reminderMapper;
 
   @Autowired
-  private final ReminderValidator reminderValidator;
+  private ReminderValidator reminderValidator;
 
   public ReminderListResponse list(String shopId) {
     return reminderMapper.toReminderListResponse(reminderRepository.findByShopId(shopId));
@@ -221,5 +221,4 @@ public class ReminderService {
   public long delete(String id) {
     return reminderRepository.deleteByIdReturningCount(id);
   }
-
 }
