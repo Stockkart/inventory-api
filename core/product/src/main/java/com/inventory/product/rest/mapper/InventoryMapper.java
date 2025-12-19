@@ -46,6 +46,7 @@ public interface InventoryMapper {
     return response;
   }
 
+  @Mapping(target = "id", source = "id")
   @Mapping(target = "lotId", source = "lotId")
   @Mapping(target = "barcode", source = "barcode")
   @Mapping(target = "name", source = "name")

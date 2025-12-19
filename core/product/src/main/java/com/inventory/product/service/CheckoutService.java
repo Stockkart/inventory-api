@@ -326,17 +326,17 @@ public class CheckoutService {
         // Stock validation is not needed for removing items
         if (item.getQuantity() < 0) {
           // Verify lotId exists and belongs to shop (for negative quantities, we're removing from cart)
-          Inventory inventory = inventoryRepository.findById(item.getLotId())
-              .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", item.getLotId()));
+          Inventory inventory = inventoryRepository.findById(item.getId())
+              .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", item.getId()));
 
           if (!shopId.equals(inventory.getShopId())) {
-            throw new ValidationException("Inventory lot " + item.getLotId() + " does not belong to shop " + shopId);
+            throw new ValidationException("Inventory lot " + item.getId() + " does not belong to shop " + shopId);
           }
 
           // For negative quantities, create a PurchaseItem with negative quantity
           // The updateCart method will handle the logic
           PurchaseItem purchaseItem = purchaseMapper.createPurchaseItem(
-              item.getLotId(),
+              item.getId(),
               inventory.getName(),
               item.getQuantity(), // Negative quantity
               inventory.getMaximumRetailPrice(),
@@ -346,12 +346,12 @@ public class CheckoutService {
           purchaseItems.add(purchaseItem);
         } else {
           // Positive quantity - normal flow with stock validation
-          Inventory inventory = inventoryRepository.findById(item.getLotId())
-              .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", item.getLotId()));
+          Inventory inventory = inventoryRepository.findById(item.getId())
+              .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", item.getId()));
 
           // Verify the inventory belongs to the shop
           if (!shopId.equals(inventory.getShopId())) {
-            throw new ValidationException("Inventory lot " + item.getLotId() + " does not belong to shop " + shopId);
+            throw new ValidationException("Inventory lot " + item.getId() + " does not belong to shop " + shopId);
           }
 
           // Check stock availability
@@ -367,12 +367,12 @@ public class CheckoutService {
         }
 
       } catch (ValidationException | InsufficientStockException | ResourceNotFoundException e) {
-        log.warn("Item validation failed for lotId: {} - {}", item.getLotId(), e.getMessage());
+        log.warn("Item validation failed for lotId: {} - {}", item.getId(), e.getMessage());
         throw e;
       } catch (Exception e) {
-        log.error("Unexpected error processing item with lotId: {}", item.getLotId(), e);
+        log.error("Unexpected error processing item with lotId: {}", item.getId(), e);
         throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
-            "Error processing item with lotId " + item.getLotId() + ": " + e.getMessage(), e);
+            "Error processing item with lotId " + item.getId() + ": " + e.getMessage(), e);
       }
     }
 
