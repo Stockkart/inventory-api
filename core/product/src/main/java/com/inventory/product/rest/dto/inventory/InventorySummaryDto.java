@@ -11,6 +11,7 @@ import java.time.Instant;
 @NoArgsConstructor
 @AllArgsConstructor
 public class InventorySummaryDto {
+  String id;
   String lotId;
   String barcode;
   String name;

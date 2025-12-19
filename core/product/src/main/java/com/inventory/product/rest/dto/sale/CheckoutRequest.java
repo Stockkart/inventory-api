@@ -14,7 +14,7 @@ public class CheckoutRequest {
 
   @Data
   public static class CheckoutItem {
-    private String lotId;
+    private String id;
     private Integer quantity;
     private BigDecimal sellingPrice;
   }

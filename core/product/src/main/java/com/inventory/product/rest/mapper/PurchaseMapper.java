@@ -48,7 +48,7 @@ public interface PurchaseMapper {
                       BigDecimal subTotal, BigDecimal taxTotal,
                       BigDecimal discountTotal, BigDecimal grandTotal);
 
-  @Mapping(target = "inventoryId", source = "item.lotId")
+  @Mapping(target = "inventoryId", source = "item.id")
   @Mapping(target = "name", source = "inventory.name")
   @Mapping(target = "quantity", source = "item.quantity")
   @Mapping(target = "maximumRetailPrice", source = "inventory.maximumRetailPrice")
@@ -56,7 +56,7 @@ public interface PurchaseMapper {
   @Mapping(target = "discount", expression = "java(calculateDiscount(inventory.getMaximumRetailPrice(), item.getSellingPrice()))")
   PurchaseItem toPurchaseItem(CheckoutRequest.CheckoutItem item, Inventory inventory);
 
-  @Mapping(target = "inventoryId", source = "item.lotId")
+  @Mapping(target = "inventoryId", source = "item.id")
   @Mapping(target = "name", source = "inventory.name")
   @Mapping(target = "quantity", source = "item.quantity")
   @Mapping(target = "maximumRetailPrice", source = "inventory.maximumRetailPrice")

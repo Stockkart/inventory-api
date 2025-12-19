@@ -16,7 +16,7 @@ public class AddToCartRequest {
 
   @Data
   public static class CartItem {
-    private String lotId;
+    private String id;
     private Integer quantity;
     private BigDecimal sellingPrice;
   }

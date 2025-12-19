@@ -17,17 +17,17 @@ public class CheckoutValidator {
   private static final int MAX_ITEMS_PER_SALE = 100;
 
   public void validateCheckoutItem(CheckoutRequest.CheckoutItem item) {
-    if (!StringUtils.hasText(item.getLotId())) {
-      throw new ValidationException("Lot ID is required for item");
+    if (!StringUtils.hasText(item.getId())) {
+      throw new ValidationException("ID is required for item");
     }
     if (item.getQuantity() == null || item.getQuantity() <= 0) {
-      throw new ValidationException("Invalid quantity for item: " + item.getLotId());
+      throw new ValidationException("Invalid quantity for item: " + item.getId());
     }
     if (item.getQuantity() > MAX_QUANTITY) {
       throw new ValidationException("Maximum quantity per item is " + MAX_QUANTITY);
     }
     if (item.getSellingPrice() == null || item.getSellingPrice().compareTo(BigDecimal.ZERO) <= 0) {
-      throw new ValidationException("Selling price must be greater than zero for item: " + item.getLotId());
+      throw new ValidationException("Selling price must be greater than zero for item: " + item.getId());
     }
   }
 
@@ -50,11 +50,11 @@ public class CheckoutValidator {
   }
 
   public void validateCartItem(AddToCartRequest.CartItem item) {
-    if (!StringUtils.hasText(item.getLotId())) {
-      throw new ValidationException("Lot ID is required for item");
+    if (!StringUtils.hasText(item.getId())) {
+      throw new ValidationException("ID is required for item");
     }
     if (item.getQuantity() == null || item.getQuantity() == 0) {
-      throw new ValidationException("Quantity cannot be zero for item: " + item.getLotId());
+      throw new ValidationException("Quantity cannot be zero for item: " + item.getId());
     }
     if (Math.abs(item.getQuantity()) > MAX_QUANTITY) {
       throw new ValidationException("Maximum quantity per item is " + MAX_QUANTITY);
@@ -62,7 +62,7 @@ public class CheckoutValidator {
     // Selling price is only required for positive quantities (adding items)
     if (item.getQuantity() > 0) {
       if (item.getSellingPrice() == null || item.getSellingPrice().compareTo(BigDecimal.ZERO) <= 0) {
-        throw new ValidationException("Selling price must be greater than zero for item: " + item.getLotId());
+        throw new ValidationException("Selling price must be greater than zero for item: " + item.getId());
       }
     }
   }
