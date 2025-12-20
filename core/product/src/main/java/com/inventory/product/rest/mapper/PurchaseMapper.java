@@ -146,12 +146,16 @@ public abstract class PurchaseMapper {
 
   @AfterMapping
   protected void populateCustomerDetails(@MappingTarget AddToCartResponse response, Purchase purchase) {
+    // If customerId exists, fetch customer details
     if (purchase.getCustomerId() != null && !purchase.getCustomerId().trim().isEmpty()) {
       customerService.getCustomerById(purchase.getCustomerId()).ifPresent(customer -> {
         response.setCustomerName(customer.getName());
         response.setCustomerAddress(customer.getAddress());
         response.setCustomerPhone(customer.getPhone());
       });
+    } else if (purchase.getCustomerName() != null && !purchase.getCustomerName().trim().isEmpty()) {
+      // If only customerName is stored (no customerId), use it directly
+      response.setCustomerName(purchase.getCustomerName());
     }
   }
 
@@ -176,12 +180,16 @@ public abstract class PurchaseMapper {
 
   @AfterMapping
   protected void populateCustomerDetails(@MappingTarget CheckoutResponse response, Purchase purchase) {
+    // If customerId exists, fetch customer details
     if (purchase.getCustomerId() != null && !purchase.getCustomerId().trim().isEmpty()) {
       customerService.getCustomerById(purchase.getCustomerId()).ifPresent(customer -> {
         response.setCustomerName(customer.getName());
         response.setCustomerAddress(customer.getAddress());
         response.setCustomerPhone(customer.getPhone());
       });
+    } else if (purchase.getCustomerName() != null && !purchase.getCustomerName().trim().isEmpty()) {
+      // If only customerName is stored (no customerId), use it directly
+      response.setCustomerName(purchase.getCustomerName());
     }
   }
 
@@ -208,12 +216,16 @@ public abstract class PurchaseMapper {
 
   @AfterMapping
   protected void populateCustomerDetails(@MappingTarget PurchaseSummaryDto dto, Purchase purchase) {
+    // If customerId exists, fetch customer details
     if (purchase.getCustomerId() != null && !purchase.getCustomerId().trim().isEmpty()) {
       customerService.getCustomerById(purchase.getCustomerId()).ifPresent(customer -> {
         dto.setCustomerName(customer.getName());
         dto.setCustomerAddress(customer.getAddress());
         dto.setCustomerPhone(customer.getPhone());
       });
+    } else if (purchase.getCustomerName() != null && !purchase.getCustomerName().trim().isEmpty()) {
+      // If only customerName is stored (no customerId), use it directly
+      dto.setCustomerName(purchase.getCustomerName());
     }
   }
 }
