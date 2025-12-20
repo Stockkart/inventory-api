@@ -10,21 +10,28 @@ import com.inventory.product.rest.dto.sale.CheckoutRequest;
 import com.inventory.product.rest.dto.sale.CheckoutResponse;
 import com.inventory.product.rest.dto.sale.PurchaseSummaryDto;
 import com.inventory.product.rest.dto.sale.SaleStatusResponse;
+import com.inventory.user.service.CustomerService;
+import org.mapstruct.AfterMapping;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
+import org.mapstruct.MappingTarget;
 import org.mapstruct.ReportingPolicy;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 
 @Mapper(componentModel = "spring", imports = {Instant.class, BigDecimal.class, PurchaseStatus.class}, unmappedTargetPolicy = ReportingPolicy.IGNORE)
-public interface PurchaseMapper {
+public abstract class PurchaseMapper {
+  
+  @Autowired
+  protected CustomerService customerService;
 
 
   @Mapping(target = "saleId", source = "id")
   @Mapping(target = "valid", source = "valid")
-  SaleStatusResponse toStatusResponse(Purchase purchase);
+  public abstract SaleStatusResponse toStatusResponse(Purchase purchase);
 
   // New mapping methods for creating Purchase and PurchaseItem
 
@@ -44,7 +51,7 @@ public interface PurchaseMapper {
   @Mapping(target = "shopId", ignore = true)
   @Mapping(target = "userId", ignore = true)
   @Mapping(target = "status", ignore = true)
-  Purchase toPurchase(CheckoutRequest request, List<PurchaseItem> purchaseItems,
+  public abstract Purchase toPurchase(CheckoutRequest request, List<PurchaseItem> purchaseItems,
                       BigDecimal subTotal, BigDecimal taxTotal,
                       BigDecimal discountTotal, BigDecimal grandTotal);
 
@@ -54,7 +61,7 @@ public interface PurchaseMapper {
   @Mapping(target = "maximumRetailPrice", source = "inventory.maximumRetailPrice")
   @Mapping(target = "sellingPrice", source = "item.sellingPrice")
   @Mapping(target = "discount", expression = "java(calculateDiscount(inventory.getMaximumRetailPrice(), item.getSellingPrice()))")
-  PurchaseItem toPurchaseItem(CheckoutRequest.CheckoutItem item, Inventory inventory);
+  public abstract PurchaseItem toPurchaseItem(CheckoutRequest.CheckoutItem item, Inventory inventory);
 
   @Mapping(target = "inventoryId", source = "item.id")
   @Mapping(target = "name", source = "inventory.name")
@@ -62,10 +69,10 @@ public interface PurchaseMapper {
   @Mapping(target = "maximumRetailPrice", source = "inventory.maximumRetailPrice")
   @Mapping(target = "sellingPrice", source = "item.sellingPrice")
   @Mapping(target = "discount", expression = "java(calculateDiscount(inventory.getMaximumRetailPrice(), item.getSellingPrice()))")
-  PurchaseItem toPurchaseItemFromCartItem(AddToCartRequest.CartItem item, Inventory inventory);
+  public abstract PurchaseItem toPurchaseItemFromCartItem(AddToCartRequest.CartItem item, Inventory inventory);
 
   // Helper method to calculate discount: maximumRetailPrice - sellingPrice
-  default BigDecimal calculateDiscount(BigDecimal maximumRetailPrice, BigDecimal sellingPrice) {
+  protected BigDecimal calculateDiscount(BigDecimal maximumRetailPrice, BigDecimal sellingPrice) {
     if (maximumRetailPrice == null || sellingPrice == null) {
       return BigDecimal.ZERO;
     }
@@ -74,14 +81,14 @@ public interface PurchaseMapper {
   }
 
   // Helper method to generate invoice number (moved from service)
-  default String generateInvoiceNo() {
+  protected String generateInvoiceNo() {
     String timestamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
     String random = String.format("%04d", (int) (Math.random() * 10_000));
     return "INV-" + timestamp + "-" + random;
   }
 
   // Methods to create PurchaseItem
-  default PurchaseItem createPurchaseItem(String inventoryId, String name, Integer quantity,
+  public PurchaseItem createPurchaseItem(String inventoryId, String name, Integer quantity,
                                           BigDecimal maximumRetailPrice, BigDecimal sellingPrice, BigDecimal discount) {
     PurchaseItem item = new PurchaseItem();
     item.setInventoryId(inventoryId);
@@ -109,13 +116,13 @@ public interface PurchaseMapper {
   @Mapping(target = "valid", constant = "true")
   @Mapping(target = "status", expression = "java(PurchaseStatus.CREATED)")
   @Mapping(target = "paymentMethod", ignore = true)
-  @Mapping(target = "customerName", source = "request.customerName")
-  @Mapping(target = "customerAddress", source = "request.customerAddress")
-  @Mapping(target = "customerPhone", source = "request.customerPhone")
-  Purchase toPurchaseForCart(AddToCartRequest request, List<PurchaseItem> purchaseItems,
+  @Mapping(target = "customerId", source = "customerId")
+  @Mapping(target = "createdAt", expression = "java(Instant.now())")
+  @Mapping(target = "updatedAt", expression = "java(Instant.now())")
+  public abstract Purchase toPurchaseForCart(AddToCartRequest request, List<PurchaseItem> purchaseItems,
                              BigDecimal subTotal, BigDecimal taxTotal,
                              BigDecimal discountTotal, BigDecimal grandTotal,
-                             String shopId, String userId);
+                             String shopId, String userId, String customerId);
 
   // Method to map Purchase to AddToCartResponse
   @Mapping(target = "purchaseId", source = "id")
@@ -130,11 +137,23 @@ public interface PurchaseMapper {
   @Mapping(target = "discountTotal", source = "discountTotal")
   @Mapping(target = "grandTotal", source = "grandTotal")
   @Mapping(target = "status", source = "status")
-  @Mapping(target = "customerName", source = "customerName")
-  @Mapping(target = "customerAddress", source = "customerAddress")
-  @Mapping(target = "customerPhone", source = "customerPhone")
+  @Mapping(target = "customerId", source = "customerId")
+  @Mapping(target = "customerName", ignore = true)
+  @Mapping(target = "customerAddress", ignore = true)
+  @Mapping(target = "customerPhone", ignore = true)
   @Mapping(target = "paymentMethod", source = "paymentMethod")
-  AddToCartResponse toAddToCartResponse(Purchase purchase);
+  public abstract AddToCartResponse toAddToCartResponse(Purchase purchase);
+
+  @AfterMapping
+  protected void populateCustomerDetails(@MappingTarget AddToCartResponse response, Purchase purchase) {
+    if (purchase.getCustomerId() != null && !purchase.getCustomerId().trim().isEmpty()) {
+      customerService.getCustomerById(purchase.getCustomerId()).ifPresent(customer -> {
+        response.setCustomerName(customer.getName());
+        response.setCustomerAddress(customer.getAddress());
+        response.setCustomerPhone(customer.getPhone());
+      });
+    }
+  }
 
   // Method to map Purchase to CheckoutResponse
   @Mapping(target = "invoiceId", source = "invoiceId")
@@ -149,14 +168,53 @@ public interface PurchaseMapper {
   @Mapping(target = "grandTotal", source = "grandTotal")
   @Mapping(target = "paymentMethod", source = "paymentMethod")
   @Mapping(target = "status", source = "status")
-  @Mapping(target = "customerName", source = "customerName")
-  @Mapping(target = "customerAddress", source = "customerAddress")
-  @Mapping(target = "customerPhone", source = "customerPhone")
-  CheckoutResponse toCheckoutResponse(Purchase purchase);
+  @Mapping(target = "customerId", source = "customerId")
+  @Mapping(target = "customerName", ignore = true)
+  @Mapping(target = "customerAddress", ignore = true)
+  @Mapping(target = "customerPhone", ignore = true)
+  public abstract CheckoutResponse toCheckoutResponse(Purchase purchase);
+
+  @AfterMapping
+  protected void populateCustomerDetails(@MappingTarget CheckoutResponse response, Purchase purchase) {
+    if (purchase.getCustomerId() != null && !purchase.getCustomerId().trim().isEmpty()) {
+      customerService.getCustomerById(purchase.getCustomerId()).ifPresent(customer -> {
+        response.setCustomerName(customer.getName());
+        response.setCustomerAddress(customer.getAddress());
+        response.setCustomerPhone(customer.getPhone());
+      });
+    }
+  }
 
   // Method to map Purchase to PurchaseSummaryDto
   @Mapping(target = "purchaseId", source = "id")
+  @Mapping(target = "invoiceId", source = "invoiceId")
+  @Mapping(target = "invoiceNo", source = "invoiceNo")
+  @Mapping(target = "businessType", source = "businessType")
+  @Mapping(target = "userId", source = "userId")
+  @Mapping(target = "shopId", source = "shopId")
   @Mapping(target = "items", expression = "java(purchase.getItems() != null ? purchase.getItems() : java.util.List.of())")
-  PurchaseSummaryDto toPurchaseSummaryDto(Purchase purchase);
+  @Mapping(target = "subTotal", source = "subTotal")
+  @Mapping(target = "taxTotal", source = "taxTotal")
+  @Mapping(target = "discountTotal", source = "discountTotal")
+  @Mapping(target = "grandTotal", source = "grandTotal")
+  @Mapping(target = "soldAt", source = "soldAt")
+  @Mapping(target = "status", source = "status")
+  @Mapping(target = "paymentMethod", source = "paymentMethod")
+  @Mapping(target = "customerId", source = "customerId")
+  @Mapping(target = "customerName", ignore = true)
+  @Mapping(target = "customerAddress", ignore = true)
+  @Mapping(target = "customerPhone", ignore = true)
+  public abstract PurchaseSummaryDto toPurchaseSummaryDto(Purchase purchase);
+
+  @AfterMapping
+  protected void populateCustomerDetails(@MappingTarget PurchaseSummaryDto dto, Purchase purchase) {
+    if (purchase.getCustomerId() != null && !purchase.getCustomerId().trim().isEmpty()) {
+      customerService.getCustomerById(purchase.getCustomerId()).ifPresent(customer -> {
+        dto.setCustomerName(customer.getName());
+        dto.setCustomerAddress(customer.getAddress());
+        dto.setCustomerPhone(customer.getPhone());
+      });
+    }
+  }
 }
 

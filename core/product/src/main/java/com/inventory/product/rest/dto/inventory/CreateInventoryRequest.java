@@ -22,5 +22,9 @@ public class CreateInventoryRequest {
   private Instant expiryDate;
   private Instant reminderAt;
   private List<CustomReminderRequest> customReminders;
+  // Vendor ID (optional - reference to existing vendor)
+  private String vendorId;
+  // Lot ID (optional - if provided, will reuse existing lot; if not, will generate new one)
+  private String lotId;
 }
 

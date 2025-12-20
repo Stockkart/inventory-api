@@ -32,8 +32,8 @@ public class Purchase {
   private boolean valid;
   private String paymentMethod;
   private PurchaseStatus status;
-  private String customerName;
-  private String customerAddress;
-  private String customerPhone;
+  private String customerId;
+  private Instant createdAt;
+  private Instant updatedAt;
 }
 

@@ -150,7 +150,9 @@ public class AuthService {
         account.setShopId(request.getShopId());
         account.setActive(true);
         account.setInviteAccepted(false);
-        account.setUpdatedAt(Instant.now());
+        Instant now = Instant.now();
+        account.setCreatedAt(now);
+        account.setUpdatedAt(now);
         // No password for Google-authenticated users
         account.setPassword(null);
 

@@ -31,6 +31,7 @@ public class Inventory {
   private Instant expiryDate;
   private String shopId;
   private String userId;
+  private String vendorId;
   private BigDecimal maximumRetailPrice;
   private BigDecimal costPrice;
   private BigDecimal sellingPrice;

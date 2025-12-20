@@ -12,6 +12,23 @@ public interface InventoryRepository extends MongoRepository<Inventory, String> 
 
   List<Inventory> findByShopId(String shopId);
 
+  /**
+   * Find all inventories by lotId.
+   *
+   * @param lotId the lot ID
+   * @return list of inventories with the given lotId
+   */
+  List<Inventory> findByLotId(String lotId);
+
+  /**
+   * Find all inventories by shopId and lotId.
+   *
+   * @param shopId the shop ID
+   * @param lotId the lot ID
+   * @return list of inventories with the given shopId and lotId
+   */
+  List<Inventory> findByShopIdAndLotId(String shopId, String lotId);
+
   @Query("{ 'shopId': ?0, '$or': [ " +
       "{ 'barcode': { '$regex': ?1, '$options': 'i' } }, " +
       "{ 'name': { '$regex': ?1, '$options': 'i' } }, " +
