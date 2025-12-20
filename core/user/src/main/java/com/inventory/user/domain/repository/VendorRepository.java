@@ -28,15 +28,17 @@ public interface VendorRepository extends MongoRepository<Vendor, String> {
   Optional<Vendor> findByContactPhone(String contactPhone);
 
   /**
-   * Search vendors by query (name, company name, or contact email).
+   * Search vendors by query (name, company name, contact email, contact phone, or address).
    *
-   * @param query the search query
+   * @param query the search query (regex pattern)
    * @return list of matching vendors
    */
   @Query("{ $or: [ " +
       "{ 'name': { $regex: ?0, $options: 'i' } }, " +
       "{ 'companyName': { $regex: ?0, $options: 'i' } }, " +
-      "{ 'contactEmail': { $regex: ?0, $options: 'i' } } " +
+      "{ 'contactEmail': { $regex: ?0, $options: 'i' } }, " +
+      "{ 'contactPhone': { $regex: ?0, $options: 'i' } }, " +
+      "{ 'address': { $regex: ?0, $options: 'i' } } " +
       "] }")
   List<Vendor> searchByQuery(String query);
 }

@@ -7,6 +7,8 @@ import com.inventory.product.rest.dto.inventory.CreateInventoryRequest;
 import com.inventory.product.rest.dto.inventory.InventoryDetailResponse;
 import com.inventory.product.rest.dto.inventory.InventoryListResponse;
 import com.inventory.product.rest.dto.inventory.InventoryReceiptResponse;
+import com.inventory.product.rest.dto.inventory.LotDetailDto;
+import com.inventory.product.rest.dto.inventory.LotListResponse;
 import com.inventory.product.service.InventoryService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -78,5 +80,52 @@ public class InventoryController {
   @GetMapping("/{lotId}")
   public ResponseEntity<ApiResponse<InventoryDetailResponse>> getLot(@PathVariable String lotId) {
     return ResponseEntity.ok(ApiResponse.success(inventoryService.getLot(lotId)));
+  }
+
+  /**
+   * List all lots for the authenticated shop.
+   * Optionally filter by search query.
+   *
+   * @param search optional search query to filter lots by lotId
+   * @param httpRequest HTTP request containing shopId from authentication
+   * @return list of lot summaries
+   */
+  @GetMapping("/lots")
+  public ResponseEntity<ApiResponse<LotListResponse>> listLots(
+      @RequestParam(required = false) String search,
+      HttpServletRequest httpRequest) {
+    // Get shopId from request attributes to ensure user can only access their shop's lots
+    String shopId = (String) httpRequest.getAttribute("shopId");
+
+    if (StringUtils.isEmpty(shopId)) {
+      throw new AuthenticationException(
+          ErrorCode.UNAUTHORIZED,
+          "Unauthorized access to shop lots");
+    }
+
+    return ResponseEntity.ok(ApiResponse.success(inventoryService.listLots(shopId, search)));
+  }
+
+  /**
+   * Get details of a specific lot including all products in that lot.
+   *
+   * @param lotId the lot ID
+   * @param httpRequest HTTP request containing shopId from authentication
+   * @return lot details with all products
+   */
+  @GetMapping("/lots/{lotId}")
+  public ResponseEntity<ApiResponse<LotDetailDto>> getLotDetails(
+      @PathVariable String lotId,
+      HttpServletRequest httpRequest) {
+    // Get shopId from request attributes to ensure user can only access their shop's lots
+    String shopId = (String) httpRequest.getAttribute("shopId");
+
+    if (StringUtils.isEmpty(shopId)) {
+      throw new AuthenticationException(
+          ErrorCode.UNAUTHORIZED,
+          "Unauthorized access to shop lots");
+    }
+
+    return ResponseEntity.ok(ApiResponse.success(inventoryService.getLotDetails(lotId, shopId)));
   }
 }

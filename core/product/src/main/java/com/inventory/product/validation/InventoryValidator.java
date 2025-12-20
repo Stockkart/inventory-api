@@ -34,4 +34,32 @@ public class InventoryValidator {
       throw new ValidationException("Lot ID is required");
     }
   }
+
+  /**
+   * Validate lotId format.
+   * Allows alphanumeric characters, dashes, and underscores.
+   * Minimum length: 3, Maximum length: 100
+   *
+   * @param lotId the lot ID to validate
+   */
+  public void validateLotIdFormat(String lotId) {
+    if (!StringUtils.hasText(lotId)) {
+      throw new ValidationException("Lot ID is required");
+    }
+
+    String trimmedLotId = lotId.trim();
+    
+    // Length validation
+    if (trimmedLotId.length() < 3) {
+      throw new ValidationException("Lot ID must be at least 3 characters long");
+    }
+    if (trimmedLotId.length() > 100) {
+      throw new ValidationException("Lot ID must not exceed 100 characters");
+    }
+
+    // Format validation: alphanumeric, dashes, underscores only
+    if (!trimmedLotId.matches("^[a-zA-Z0-9_-]+$")) {
+      throw new ValidationException("Lot ID can only contain alphanumeric characters, dashes, and underscores");
+    }
+  }
 }

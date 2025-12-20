@@ -319,14 +319,15 @@ public class VendorService {
   }
 
   /**
-   * Search vendor by phone or email for a shop.
+   * Search vendors by generic query for a shop.
+   * Searches across name, companyName, contactEmail, contactPhone, and address fields using regex.
    *
-   * @param request the search vendor request
+   * @param request the search vendor request containing the query
    * @param shopId the shop ID
-   * @return the vendor DTO
+   * @return list of matching vendor DTOs
    */
   @Transactional(readOnly = true)
-  public VendorDto searchVendor(SearchVendorRequest request, String shopId) {
+  public List<VendorDto> searchVendor(SearchVendorRequest request, String shopId) {
     // Validate shopId
     if (!StringUtils.hasText(shopId)) {
       throw new AuthenticationException(
@@ -337,46 +338,37 @@ public class VendorService {
     // Validate request
     vendorValidator.validateSearchRequest(request);
 
-    log.info("Searching vendor by phone/email for shop: {}", shopId);
+    if (!StringUtils.hasText(request.getQuery())) {
+      throw new ValidationException("Search query is required");
+    }
+
+    log.info("Searching vendors by query '{}' for shop: {}", request.getQuery(), shopId);
 
     try {
-      // Search vendor by phone or email
-      java.util.Optional<Vendor> vendorOpt = searchVendorByPhoneOrEmail(
-          request.getPhone(),
-          request.getEmail()
-      );
+      // Search vendors using generic query (searches name, companyName, email, phone, address)
+      List<Vendor> matchingVendors = searchVendors(shopId, request.getQuery().trim());
 
-      if (vendorOpt.isEmpty()) {
-        throw new ResourceNotFoundException("Vendor", "phone/email",
-            "No vendor found with the provided phone or email");
-      }
+      // Map all matching vendors to DTOs
+      List<VendorDto> vendorDtos = matchingVendors.stream()
+          .map(vendorMapper::toDto)
+          .collect(Collectors.toList());
 
-      Vendor vendor = vendorOpt.get();
+      log.info("Found {} vendor(s) matching query '{}' for shop: {}", vendorDtos.size(), request.getQuery(), shopId);
+      return vendorDtos;
 
-      // Verify vendor is linked to the shop
-      if (!isVendorLinkedToShop(shopId, vendor.getId())) {
-        throw new ValidationException("Vendor is not associated with shop " + shopId);
-      }
-
-      // Map to response
-      VendorDto response = vendorMapper.toDto(vendor);
-
-      log.info("Found vendor with ID: {} for shop: {}", vendor.getId(), shopId);
-      return response;
-
-    } catch (ValidationException | ResourceNotFoundException e) {
+    } catch (ValidationException e) {
       log.warn("Search vendor failed: {}", e.getMessage());
       throw e;
     } catch (DataAccessException e) {
-      log.error("Database error while searching vendor: {}", e.getMessage(), e);
+      log.error("Database error while searching vendors: {}", e.getMessage(), e);
       throw new BaseException(
           ErrorCode.INTERNAL_SERVER_ERROR,
-          "Error searching vendor");
+          "Error searching vendors");
     } catch (Exception e) {
-      log.error("Unexpected error while searching vendor: {}", e.getMessage(), e);
+      log.error("Unexpected error while searching vendors: {}", e.getMessage(), e);
       throw new BaseException(
           ErrorCode.INTERNAL_SERVER_ERROR,
-          "Failed to search vendor");
+          "Failed to search vendors");
     }
   }
 }

@@ -28,11 +28,9 @@ public class VendorValidator {
     if (request == null) {
       throw new ValidationException("Request cannot be null");
     }
-    // Either phone or email must be provided
-    boolean hasPhone = StringUtils.hasText(request.getPhone());
-    boolean hasEmail = StringUtils.hasText(request.getEmail());
-    if (!hasPhone && !hasEmail) {
-      throw new ValidationException("Either phone or email is required for search");
+    // Query must be provided
+    if (!StringUtils.hasText(request.getQuery())) {
+      throw new ValidationException("Search query is required");
     }
   }
 }

@@ -4,7 +4,6 @@ import lombok.Data;
 
 @Data
 public class SearchVendorRequest {
-  private String phone;
-  private String email;
+  private String query;
 }
 

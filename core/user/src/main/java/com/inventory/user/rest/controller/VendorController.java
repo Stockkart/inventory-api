@@ -6,6 +6,8 @@ import com.inventory.user.rest.dto.vendor.CreateVendorResponse;
 import com.inventory.user.rest.dto.vendor.SearchVendorRequest;
 import com.inventory.user.rest.dto.vendor.VendorDto;
 import com.inventory.user.service.VendorService;
+
+import java.util.List;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,19 +39,17 @@ public class VendorController {
   }
 
   @GetMapping("/search")
-  public ResponseEntity<ApiResponse<VendorDto>> search(
-      @RequestParam(required = false) String phone,
-      @RequestParam(required = false) String email,
+  public ResponseEntity<ApiResponse<List<VendorDto>>> search(
+      @RequestParam("q") String query,
       HttpServletRequest httpRequest) {
     // Get shopId from request attributes (set by AuthenticationInterceptor)
     String shopId = (String) httpRequest.getAttribute("shopId");
 
-    // Create SearchVendorRequest from query parameters
+    // Create SearchVendorRequest from query parameter
     SearchVendorRequest request = new SearchVendorRequest();
-    request.setPhone(phone);
-    request.setEmail(email);
+    request.setQuery(query);
 
-    VendorDto response = vendorService.searchVendor(request, shopId);
+    List<VendorDto> response = vendorService.searchVendor(request, shopId);
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 }
