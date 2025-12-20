@@ -26,6 +26,7 @@ public class UserAccount {
   private String password;
   private boolean active;
   private boolean inviteAccepted;
+  private Instant createdAt;
   private Instant updatedAt;
   private List<UserToken> tokens;
 

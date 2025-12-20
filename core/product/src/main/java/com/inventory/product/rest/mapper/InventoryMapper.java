@@ -16,7 +16,7 @@ import java.util.List;
 @Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.IGNORE)
 public interface InventoryMapper {
 
-  // MongoDB will auto-generate the lotId as ObjectId
+  // lotId will be set in service before saving
   @Mapping(target = "lotId", ignore = true)
   @Mapping(target = "receivedCount", source = "count")
   @Mapping(target = "soldCount", constant = "0")

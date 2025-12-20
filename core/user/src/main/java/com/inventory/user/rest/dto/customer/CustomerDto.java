@@ -1,0 +1,21 @@
+package com.inventory.user.rest.dto.customer;
+
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.time.Instant;
+
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class CustomerDto {
+  private String customerId;
+  private String name;
+  private String phone;
+  private String address;
+  private String email;
+  private Instant createdAt;
+  private Instant updatedAt;
+}
+

@@ -80,6 +80,7 @@ public class UserService {
         String newName = request.getName().trim();
         if (!newName.equals(account.getName())) {
           account.setName(newName);
+          account.setUpdatedAt(Instant.now());
           isUpdated = true;
         }
       }

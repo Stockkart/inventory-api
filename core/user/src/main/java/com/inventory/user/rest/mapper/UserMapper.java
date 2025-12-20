@@ -77,6 +77,7 @@ public interface UserMapper {
   @Mapping(target = "inviteAccepted", constant = "false")
   @Mapping(target = "password", ignore = true)
   @Mapping(target = "userId", ignore = true)
+  @Mapping(target = "createdAt", ignore = true)
   @Mapping(target = "updatedAt", ignore = true)
   UserAccount toUserAccount(SignupRequest request, @Context PasswordEncoder passwordEncoder);
 
@@ -88,7 +89,9 @@ public interface UserMapper {
       account.setRole(UserRole.OWNER);
     }
     account.setPassword(passwordEncoder.encode(request.getPassword()));
-    account.setUpdatedAt(Instant.now());
+    Instant now = Instant.now();
+    account.setCreatedAt(now);
+    account.setUpdatedAt(now);
   }
 
   @AfterMapping

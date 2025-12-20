@@ -33,6 +33,7 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -55,6 +56,9 @@ public class CheckoutService {
   @Autowired
   private CheckoutValidator checkoutValidator;
 
+  @Autowired
+  private com.inventory.user.service.CustomerService customerService;
+
   @Transactional
   public AddToCartResponse addToCart(AddToCartRequest request, HttpServletRequest httpRequest) {
     // Get shopId and userId from request attributes (set by AuthenticationInterceptor)
@@ -74,6 +78,14 @@ public class CheckoutService {
       Purchase existingCart = purchaseRepository.findByUserIdAndShopIdAndStatus(userId, shopId, PurchaseStatus.CREATED)
           .orElse(null);
 
+      // Get or create customer and get customerId/customerName
+      String customerId = getOrCreateCustomerId(shopId, request);
+      String customerName = null;
+      // If only customer name provided (no phone), store it directly
+      if (customerId == null && StringUtils.hasText(request.getCustomerName()) && !StringUtils.hasText(request.getCustomerPhone())) {
+        customerName = request.getCustomerName().trim();
+      }
+
       // Process new items
       List<PurchaseItem> newItems = processCartItems(request.getItems(), shopId);
 
@@ -84,12 +96,11 @@ public class CheckoutService {
 
         // Update existing cart - merge items
         log.info("Updating existing cart with ID: {}", existingCart.getId());
-        purchase = updateCart(existingCart, newItems, request.getBusinessType(),
-            request.getCustomerName(), request.getCustomerAddress(), request.getCustomerPhone());
+        purchase = updateCart(existingCart, newItems, request.getBusinessType(), customerId, customerName);
       } else {
         // Create new cart (stock validation already done in processCartItems for positive quantities)
         log.info("Creating new cart");
-        purchase = createCart(request, newItems, shopId, userId);
+        purchase = createCart(request, newItems, shopId, userId, customerId, customerName);
       }
 
       log.info("Successfully updated cart with ID: {}", purchase.getId());
@@ -157,6 +168,7 @@ public class CheckoutService {
       // Update status and payment method
       purchase.setStatus(requestedStatus);
       purchase.setPaymentMethod(request.getPaymentMethod());
+      purchase.setUpdatedAt(Instant.now());
       purchase = purchaseRepository.save(purchase);
 
       log.info("Successfully updated purchase status from {} to {} for purchase ID: {}",
@@ -414,7 +426,7 @@ public class CheckoutService {
         .setScale(2, RoundingMode.HALF_UP);
   }
 
-  private Purchase createCart(AddToCartRequest request, List<PurchaseItem> purchaseItems, String shopId, String userId) {
+  private Purchase createCart(AddToCartRequest request, List<PurchaseItem> purchaseItems, String shopId, String userId, String customerId, String customerName) {
     try {
       // Calculate totals
       BigDecimal subTotal = calculateSubtotal(purchaseItems);
@@ -425,8 +437,13 @@ public class CheckoutService {
       // Create purchase with CREATED status using mapper
       // MongoDB will auto-generate the id as ObjectId
       Purchase purchase = purchaseMapper.toPurchaseForCart(
-          request, purchaseItems, subTotal, taxTotal, discountTotal, grandTotal, shopId, userId
+          request, purchaseItems, subTotal, taxTotal, discountTotal, grandTotal, shopId, userId, customerId
       );
+      
+      // Set customerName if provided (when only name is given without phone)
+      if (StringUtils.hasText(customerName)) {
+        purchase.setCustomerName(customerName);
+      }
 
       return purchaseRepository.save(purchase);
     } catch (DataAccessException e) {
@@ -440,8 +457,51 @@ public class CheckoutService {
     }
   }
 
+  /**
+   * Get or create customer ID from request.
+   * - If only customer name is provided, return null (no customer record created)
+   * - If customer phone is present, search for existing customer or create new one
+   */
+  private String getOrCreateCustomerId(String shopId, AddToCartRequest request) {
+    // If customer phone is present, search for existing customer or create new one
+    if (StringUtils.hasText(request.getCustomerPhone())) {
+      // Search for existing customer by phone
+      java.util.Optional<com.inventory.user.domain.model.Customer> existingCustomerOpt =
+          customerService.searchCustomerByPhone(request.getCustomerPhone().trim(), shopId);
+
+      if (existingCustomerOpt.isPresent()) {
+        // Customer found, use its ID
+        log.debug("Found existing customer with ID: {} for phone: {}", 
+            existingCustomerOpt.get().getId(), request.getCustomerPhone());
+        return existingCustomerOpt.get().getId();
+      } else {
+        // Customer not found, create new customer with given details
+        com.inventory.user.domain.model.Customer customer = customerService.findOrCreateCustomer(
+            shopId,
+            request.getCustomerName(),
+            request.getCustomerPhone(),
+            request.getCustomerAddress(),
+            request.getCustomerEmail()
+        );
+        if (customer != null) {
+          log.debug("Created new customer with ID: {} for phone: {}", 
+              customer.getId(), request.getCustomerPhone());
+          return customer.getId();
+        }
+      }
+    } else if (StringUtils.hasText(request.getCustomerName())) {
+      // Only customer name provided, no phone - don't create customer record
+      // Just return null (customerId will be null in purchase)
+      log.debug("Only customer name provided, not creating customer record");
+      return null;
+    }
+
+    // No customer info provided
+    return null;
+  }
+
   private Purchase updateCart(Purchase existingCart, List<PurchaseItem> newItems, String businessType,
-                              String customerName, String customerAddress, String customerPhone) {
+                              String customerId, String customerName) {
     try {
       // Merge items - if same inventoryId exists, update quantity; otherwise add new
       List<PurchaseItem> mergedItems = new ArrayList<>(existingCart.getItems() != null ? existingCart.getItems() : new ArrayList<>());
@@ -495,16 +555,17 @@ public class CheckoutService {
         existingCart.setBusinessType(businessType);
       }
 
-      // Update customer information if provided
+      // Update customer ID and customerName
+      existingCart.setCustomerId(customerId);
       if (StringUtils.hasText(customerName)) {
         existingCart.setCustomerName(customerName);
+      } else if (customerId == null) {
+        // If customerId is null and no customerName provided, clear customerName
+        existingCart.setCustomerName(null);
       }
-      if (StringUtils.hasText(customerAddress)) {
-        existingCart.setCustomerAddress(customerAddress);
-      }
-      if (StringUtils.hasText(customerPhone)) {
-        existingCart.setCustomerPhone(customerPhone);
-      }
+
+      // Update updatedAt timestamp
+      existingCart.setUpdatedAt(Instant.now());
 
       // Recalculate totals
       existingCart.setItems(mergedItems);

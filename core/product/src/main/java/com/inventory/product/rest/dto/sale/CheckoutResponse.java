@@ -26,6 +26,7 @@ public class CheckoutResponse {
   BigDecimal grandTotal;
   String paymentMethod;
   PurchaseStatus status;
+  String customerId;
   String customerName;
   String customerAddress;
   String customerPhone;
