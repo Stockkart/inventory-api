@@ -17,4 +17,18 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
+    <dependencies>
+        <!-- Internal Dependencies -->
+        <dependency>
+            <groupId>com.inventory</groupId>
+            <artifactId>common</artifactId>
+            <version>1.0.0</version>
+        </dependency>
+        <dependency>
+            <groupId>com.inventory</groupId>
+            <artifactId>product</artifactId>
+            <version>1.0.0</version>
+        </dependency>
+    </dependencies>
+
 </project>
