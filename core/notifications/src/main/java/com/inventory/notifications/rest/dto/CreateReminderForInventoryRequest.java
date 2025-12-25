@@ -1,6 +1,6 @@
 package com.inventory.notifications.rest.dto;
 
-import com.inventory.common.dto.CustomReminderRequest;
+import com.inventory.notifications.rest.dto.CustomReminderRequest;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
