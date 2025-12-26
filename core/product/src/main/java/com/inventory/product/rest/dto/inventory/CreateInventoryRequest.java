@@ -1,6 +1,6 @@
 package com.inventory.product.rest.dto.inventory;
 
-import com.inventory.common.dto.CustomReminderRequest;
+import com.inventory.notifications.rest.dto.CustomReminderRequest;
 import lombok.Data;
 
 import java.math.BigDecimal;

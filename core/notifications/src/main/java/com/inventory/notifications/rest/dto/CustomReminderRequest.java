@@ -1,4 +1,4 @@
-package com.inventory.common.dto;
+package com.inventory.notifications.rest.dto;
 
 import lombok.Data;
 
@@ -10,4 +10,3 @@ public class CustomReminderRequest {
   private Instant endDate;
   private String notes;
 }
-

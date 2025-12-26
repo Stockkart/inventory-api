@@ -3,24 +3,13 @@ package com.inventory.notifications.rest.controller;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.common.exception.AuthenticationException;
-import com.inventory.notifications.rest.dto.CreateReminderRequest;
-import com.inventory.notifications.rest.dto.ReminderListResponse;
-import com.inventory.notifications.rest.dto.ReminderResponse;
-import com.inventory.notifications.rest.dto.SnoozeReminderRequest;
-import com.inventory.notifications.rest.dto.UpdateReminderRequest;
+import com.inventory.notifications.rest.dto.*;
 import com.inventory.notifications.service.ReminderService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/v1/reminders")
@@ -31,18 +20,47 @@ public class ReminderController {
 
   // LIST by shop
   @GetMapping
-  public ResponseEntity<ApiResponse<ReminderListResponse>> list(HttpServletRequest httpRequest) {
+  public ResponseEntity<ApiResponse<ReminderListResponse>> list(
+    HttpServletRequest httpRequest,
+    @RequestParam(defaultValue = "0") int page,
+    @RequestParam(defaultValue = "20") int size
+  ) {
     // Get shopId from request attributes (set by AuthenticationInterceptor)
     String shopId = (String) httpRequest.getAttribute("shopId");
 
     if (!StringUtils.hasText(shopId)) {
       throw new AuthenticationException(
-          ErrorCode.UNAUTHORIZED,
-          "Unauthorized access to shop reminders");
+        ErrorCode.UNAUTHORIZED,
+        "Unauthorized access to shop reminders");
     }
-
-    return ResponseEntity.ok(ApiResponse.success(reminderService.list(shopId)));
+    return ResponseEntity.ok(ApiResponse.success(reminderService.list(shopId, page, size)));
   }
+
+  // Detail LIST by shop
+  @GetMapping("/details")
+  public ResponseEntity<ApiResponse<ReminderDetailListWrapper>> detailList(
+    HttpServletRequest httpRequest,
+    @RequestParam(defaultValue = "0") int page,
+    @RequestParam(defaultValue = "20") int size
+  ) {
+    // Get shopId from request attributes (set by AuthenticationInterceptor)
+    String shopId = (String) httpRequest.getAttribute("shopId");
+
+    if (!StringUtils.hasText(shopId)) {
+      throw new AuthenticationException(
+        ErrorCode.UNAUTHORIZED,
+        "Unauthorized access to shop reminders");
+    }
+    return ResponseEntity.ok(ApiResponse.success(reminderService.detailList(shopId, page, size)));
+  }
+
+  @GetMapping("/{id}/details")
+  public ResponseEntity<ApiResponse<ReminderDetailListResponse>> getDetail(
+    @PathVariable String id
+  ) {
+    return ResponseEntity.ok(ApiResponse.success(reminderService.getDetail(id)));
+  }
+
 
   // GET single reminder
   @GetMapping("/{id}")
@@ -53,15 +71,15 @@ public class ReminderController {
   // CREATE manual reminder
   @PostMapping
   public ResponseEntity<ApiResponse<ReminderResponse>> create(
-      @RequestBody CreateReminderRequest request,
-      HttpServletRequest httpRequest) {
+    @RequestBody CreateReminderRequest request,
+    HttpServletRequest httpRequest) {
     // Get shopId from request attributes (set by AuthenticationInterceptor)
     String shopId = (String) httpRequest.getAttribute("shopId");
 
     if (!StringUtils.hasText(shopId)) {
       throw new AuthenticationException(
-          ErrorCode.UNAUTHORIZED,
-          "Unauthorized access to shop reminders");
+        ErrorCode.UNAUTHORIZED,
+        "Unauthorized access to shop reminders");
     }
 
     // Set shopId from interceptor to ensure user can only create reminders for their shop
@@ -73,8 +91,8 @@ public class ReminderController {
   // UPDATE manual reminder
   @PutMapping("/{id}")
   public ResponseEntity<ApiResponse<ReminderResponse>> update(
-      @PathVariable String id,
-      @RequestBody UpdateReminderRequest request
+    @PathVariable String id,
+    @RequestBody UpdateReminderRequest request
   ) {
     return ResponseEntity.ok(ApiResponse.success(reminderService.update(id, request)));
   }
@@ -88,8 +106,8 @@ public class ReminderController {
   // SNOOZE (already present)
   @PostMapping("/{id}/snooze")
   public ResponseEntity<ApiResponse<ReminderResponse>> snooze(
-      @PathVariable String id,
-      @RequestBody SnoozeReminderRequest request
+    @PathVariable String id,
+    @RequestBody SnoozeReminderRequest request
   ) {
     return ResponseEntity.ok(ApiResponse.success(reminderService.snooze(id, request)));
   }
