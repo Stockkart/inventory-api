@@ -8,5 +8,4 @@ public class ReminderInventorySummary {
   private String name;
   private String companyName;
   private String location;
-  private Integer currentCount;
 }

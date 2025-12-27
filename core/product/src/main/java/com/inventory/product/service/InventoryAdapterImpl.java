@@ -29,7 +29,6 @@ public class InventoryAdapterImpl implements InventoryAdapter {
       dto.setName(inv.getName());
       dto.setCompanyName(inv.getCompanyName());
       dto.setLocation(inv.getLocation());
-      dto.setCurrentCount(inv.getCurrentCount());
       return dto;
     }).orElse(null);
   }
