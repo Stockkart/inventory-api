@@ -9,5 +9,6 @@ import java.util.List;
 @NoArgsConstructor
 public class ReminderListResponse {
   private List<ReminderResponse> data;
+  private PageMeta meta;
 }
 

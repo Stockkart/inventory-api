@@ -1,19 +1,10 @@
 package com.inventory.notifications.service;
 
-import com.inventory.notifications.rest.dto.CustomReminderRequest;
+import com.inventory.notifications.rest.dto.*;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.notifications.domain.model.Reminder;
 import com.inventory.notifications.domain.model.ReminderType;
 import com.inventory.notifications.domain.repository.ReminderRepository;
-import com.inventory.notifications.rest.dto.ReminderDetailListResponse;
-import com.inventory.notifications.rest.dto.ReminderDetailListWrapper;
-import com.inventory.notifications.rest.dto.ReminderInventorySummary;
-import com.inventory.notifications.rest.dto.CreateReminderForInventoryRequest;
-import com.inventory.notifications.rest.dto.CreateReminderRequest;
-import com.inventory.notifications.rest.dto.ReminderResponse;
-import com.inventory.notifications.rest.dto.SnoozeReminderRequest;
-import com.inventory.notifications.rest.dto.UpdateReminderRequest;
-import com.inventory.notifications.rest.dto.ReminderListResponse;
 import com.inventory.notifications.rest.mapper.ReminderMapper;
 import com.inventory.notifications.validation.ReminderValidator;
 import lombok.AllArgsConstructor;
@@ -92,65 +83,21 @@ public class ReminderService {
     Page<Reminder> result =
       reminderRepository.findByShopIdOrderByReminderAtAsc(shopId, pageable);
 
-    return reminderMapper.toReminderListResponse(result.getContent());
+    return reminderMapper.toReminderListResponse(result);
   }
 
   public ReminderDetailListWrapper detailList(String shopId, int page, int size) {
-
     PageRequest pageable = PageRequest.of(page, size);
-    Page<Reminder> result =
-      reminderRepository.findByShopIdOrderByReminderAtAsc(shopId, pageable);
+    Page<Reminder> result = reminderRepository.findByShopIdOrderByReminderAtAsc(shopId, pageable);
 
-    List<ReminderDetailListResponse> data =
-      result.getContent().stream().map(this::mapToDetail).toList();
-
-    ReminderDetailListWrapper wrapper = new ReminderDetailListWrapper();
-    wrapper.setData(data);
-    return wrapper;
+    return reminderMapper.toDetailListWrapper(result);
   }
-
 
   public ReminderDetailListResponse getDetail(String id) {
-
     Reminder reminder = reminderRepository.findById(id)
       .orElseThrow(() -> new ResourceNotFoundException("Reminder", "id", id));
-
-    ReminderInventorySummary inventory = null;
-
-    try {
-      if (reminder.getInventoryId() != null) {
-
-        var dto = inventoryAdapter.getInventorySummary(reminder.getInventoryId());
-
-        if (dto != null) {
-          inventory = new ReminderInventorySummary();
-          inventory.setId(dto.getId());
-          inventory.setName(dto.getName());
-          inventory.setCompanyName(dto.getCompanyName());
-          inventory.setLocation(dto.getLocation());
-          inventory.setCurrentCount(dto.getCurrentCount());
-        } else {
-          log.warn("Inventory {} not found for reminder {}",
-            reminder.getInventoryId(), reminder.getId());
-        }
-      }
-    } catch (Exception ex) {
-      log.error("Failed loading inventory {} for reminder {}",
-        reminder.getInventoryId(), reminder.getId(), ex);
-    }
-
-    ReminderDetailListResponse response = new ReminderDetailListResponse();
-    response.setId(reminder.getId());
-    response.setReminderAt(reminder.getReminderAt());
-    response.setEndDate(reminder.getEndDate());
-    response.setNotes(reminder.getNotes());
-    response.setStatus(reminder.getStatus());
-    response.setType(reminder.getType());
-    response.setInventory(inventory);
-
-    return response;
+    return reminderMapper.toDetailResponse(reminder);
   }
-
 
   @Async
   public void createReminderForInventoryCreate(CreateReminderForInventoryRequest request) {

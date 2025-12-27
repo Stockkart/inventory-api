@@ -2,20 +2,18 @@ package com.inventory.notifications.rest.mapper;
 
 import com.inventory.notifications.domain.model.Reminder;
 import com.inventory.notifications.domain.model.ReminderType;
-import com.inventory.notifications.rest.dto.CreateReminderRequest;
-import com.inventory.notifications.rest.dto.ReminderListResponse;
-import com.inventory.notifications.rest.dto.ReminderResponse;
-import com.inventory.notifications.rest.dto.SnoozeReminderRequest;
-import com.inventory.notifications.rest.dto.UpdateReminderRequest;
+import com.inventory.notifications.rest.dto.*;
+import com.inventory.notifications.service.InventoryAdapter;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.MappingTarget;
 import org.mapstruct.NullValuePropertyMappingStrategy;
+import org.springframework.data.domain.Page;
 
 import java.time.Instant;
 import java.util.List;
 
-@Mapper(componentModel = "spring", nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
+@Mapper(componentModel = "spring", uses = {InventoryAdapter.class}, nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
 public interface ReminderMapper {
 
   @Mapping(target = "reminderId", source = "id")
@@ -27,10 +25,63 @@ public interface ReminderMapper {
     if (reminders == null) {
       return null;
     }
+
     ReminderListResponse response = new ReminderListResponse();
     response.setData(reminders.stream()
+      .map(this::toResponse)
+      .toList());
+
+    return response;
+  }
+
+  @Mapping(target = "inventory", source = "inventoryId")
+  ReminderDetailListResponse toDetailResponse(Reminder reminder);
+
+  default ReminderDetailListWrapper toDetailListWrapper(Page<Reminder> page) {
+    if (page == null) {
+      return null;
+    }
+
+    ReminderDetailListWrapper wrapper = new ReminderDetailListWrapper();
+
+    // Map content
+    wrapper.setData(
+      page.getContent().stream()
+        .map(this::toDetailResponse)
+        .toList()
+    );
+
+    // Map Meta
+    wrapper.setMeta(new PageMeta(
+      page.getNumber(),
+      page.getSize(),
+      page.getTotalElements(),
+      page.getTotalPages()
+    ));
+
+    return wrapper;
+  }
+
+  default ReminderListResponse toReminderListResponse(Page<Reminder> page) {
+    if (page == null) {
+      return null;
+    }
+
+    ReminderListResponse response = new ReminderListResponse();
+
+    response.setData(
+      page.getContent().stream()
         .map(this::toResponse)
-        .toList());
+        .toList()
+    );
+
+    response.setMeta(new PageMeta(
+      page.getNumber(),
+      page.getSize(),
+      page.getTotalElements(),
+      page.getTotalPages()
+    ));
+
     return response;
   }
 
