@@ -37,47 +37,6 @@ public class ReminderService {
   @Autowired
   private ReminderValidator reminderValidator;
 
-  @Autowired
-  private InventoryAdapter inventoryAdapter;
-
-  private ReminderDetailListResponse mapToDetail(Reminder reminder) {
-
-    ReminderInventorySummary inventory = null;
-
-    try {
-      if (reminder.getInventoryId() != null) {
-
-        var dto = inventoryAdapter.getInventorySummary(reminder.getInventoryId());
-
-        if (dto != null) {
-          inventory = new ReminderInventorySummary();
-          inventory.setId(dto.getId());
-          inventory.setName(dto.getName());
-          inventory.setCompanyName(dto.getCompanyName());
-          inventory.setLocation(dto.getLocation());
-          inventory.setCurrentCount(dto.getCurrentCount());
-        } else {
-          log.warn("Inventory {} not found for reminder {}",
-            reminder.getInventoryId(), reminder.getId());
-        }
-      }
-    } catch (Exception ex) {
-      log.error("Failed loading inventory {} for reminder {}",
-        reminder.getInventoryId(), reminder.getId(), ex);
-    }
-
-    ReminderDetailListResponse response = new ReminderDetailListResponse();
-    response.setId(reminder.getId());
-    response.setReminderAt(reminder.getReminderAt());
-    response.setEndDate(reminder.getEndDate());
-    response.setNotes(reminder.getNotes());
-    response.setStatus(reminder.getStatus());
-    response.setType(reminder.getType());
-    response.setInventory(inventory);
-
-    return response;
-  }
-
   public ReminderListResponse list(String shopId, int page, int size) {
     PageRequest pageable = PageRequest.of(page, size);
     Page<Reminder> result =
