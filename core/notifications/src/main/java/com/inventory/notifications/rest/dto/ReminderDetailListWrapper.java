@@ -9,4 +9,5 @@ import java.util.List;
 @NoArgsConstructor
 public class ReminderDetailListWrapper {
   private List<ReminderDetailListResponse> data;
+  private PageMeta meta;
 }
