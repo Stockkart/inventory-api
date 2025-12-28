@@ -7,7 +7,7 @@ import com.inventory.notifications.domain.model.Reminder;
 import com.inventory.notifications.domain.model.ReminderStatus;
 import com.inventory.notifications.domain.repository.EventRepository;
 import com.inventory.notifications.domain.repository.ReminderRepository;
-import com.inventory.notifications.rest.dto.ReminderResponse;
+import com.inventory.notifications.rest.dto.ReminderDetailListResponse;
 import com.inventory.notifications.rest.mapper.ReminderMapper;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -117,7 +117,7 @@ public class EventService {
         }
 
         Reminder reminder = reminderOpt.get();
-        ReminderResponse payload = reminderMapper.toResponse(reminder);
+        ReminderDetailListResponse payload = reminderMapper.toDetailResponse(reminder);
         emitter.send(SseEmitter.event().name("REMINDER_DUE").id(event.getId()).data(payload));
 
         // mark event delivered
@@ -273,7 +273,7 @@ public class EventService {
       return false;
     }
 
-    ReminderResponse payload = reminderMapper.toResponse(reminder);
+    ReminderDetailListResponse payload = reminderMapper.toDetailResponse(reminder);
     boolean deliveredToAtLeastOne = false;
 
     for (SseEmitter emitter : emitters) {
