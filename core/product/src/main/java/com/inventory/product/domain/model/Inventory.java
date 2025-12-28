@@ -27,6 +27,7 @@ public class Inventory {
   private Integer receivedCount;
   private Integer soldCount;
   private Integer currentCount;
+  private Integer thresholdCount;
   private Instant receivedDate;
   private Instant expiryDate;
   private String shopId;

@@ -13,5 +13,6 @@ import java.util.Map;
 public class InventoryListResponse {
   List<InventorySummaryDto> data;
   Map<String, Object> meta;
+  PageMeta page;
 }
 

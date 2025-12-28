@@ -1,6 +1,7 @@
 package com.inventory.product.domain.repository;
 
 import com.inventory.product.domain.model.Inventory;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.Aggregation;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.data.mongodb.repository.Query;
@@ -14,6 +15,10 @@ public interface InventoryRepository extends MongoRepository<Inventory, String> 
 
   List<Inventory> findByIdIn(List<String> ids);
 
+  List<Inventory> findByShopIdAndCurrentCountLessThanEqual(String shopId, Integer threshold);
+
+  List<Inventory> findByShopId(String shopId, Pageable pageable);
+
   List<Inventory> findByShopId(String shopId);
 
   /**
@@ -23,6 +28,21 @@ public interface InventoryRepository extends MongoRepository<Inventory, String> 
    * @return list of inventories with the given lotId
    */
   List<Inventory> findByLotId(String lotId);
+
+  long countByShopId(String shopId);
+
+  @Aggregation(pipeline = {
+    "{ $match: { 'shopId': ?0, 'lotId': { $exists: true, $ne: null } } }",
+    "{ $group: { _id: '$lotId' } }",
+    "{ $count: 'total' }"
+  })
+  List<CountResult> countDistinctLotsByShopId(String shopId);
+
+  public static class CountResult {
+    private long total;
+    public long getTotal() { return total; }
+    public void setTotal(long total) { this.total = total; }
+  }
 
   /**
    * Find all inventories by shopId and lotId.

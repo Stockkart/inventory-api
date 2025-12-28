@@ -4,15 +4,12 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.util.List;
-import java.util.Map;
-
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class LotListResponse {
-  private List<LotSummaryDto> data;
-  private Map<String, Object> meta;
-  private PageMeta page;
+public class PageMeta {
+  private int page;
+  private int size;
+  private long totalItems;
+  private int totalPages;
 }
-

@@ -8,21 +8,15 @@ import com.inventory.notifications.rest.dto.CreateReminderForInventoryRequest;
 import com.inventory.notifications.service.ReminderService;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.repository.InventoryRepository;
+import com.inventory.product.rest.dto.inventory.*;
 import com.inventory.user.domain.repository.ShopVendorRepository;
 import com.inventory.product.domain.repository.InventoryRepository.LotSummaryProjection;
-import com.inventory.product.rest.dto.inventory.CreateInventoryRequest;
-import com.inventory.product.rest.dto.inventory.InventoryDetailResponse;
-import com.inventory.product.rest.dto.inventory.InventoryListResponse;
-import com.inventory.product.rest.dto.inventory.InventoryReceiptResponse;
-import com.inventory.product.rest.dto.inventory.InventorySummaryDto;
-import com.inventory.product.rest.dto.inventory.LotDetailDto;
-import com.inventory.product.rest.dto.inventory.LotListResponse;
-import com.inventory.product.rest.dto.inventory.LotSummaryDto;
 import com.inventory.product.rest.mapper.InventoryMapper;
 import com.inventory.product.validation.InventoryValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -105,20 +99,27 @@ public class InventoryService {
     }
   }
 
-  public InventoryListResponse list(String shopId) {
+  public InventoryListResponse list(String shopId, int page, int size) {
     try {
       // Validate shopId
       inventoryValidator.validateShopId(shopId);
 
       log.debug("Listing inventory for shop: {}", shopId);
+      PageRequest pageable = PageRequest.of(page, size);
 
-      List<Inventory> inventories = inventoryRepository.findByShopId(shopId);
+      List<Inventory> inventories = inventoryRepository.findByShopId(shopId, pageable);
 
       List<InventorySummaryDto> summaries = inventories.stream()
           .map(inventoryMapper::toSummary)
           .toList();
 
-      return inventoryMapper.toInventoryListResponse(summaries);
+      // total count for shop
+      long totalItems = inventoryRepository.countByShopId(shopId);
+      int totalPages = (int) Math.ceil((double) totalItems / size);
+
+      PageMeta pageMeta = new PageMeta(page, size, totalItems, totalPages);
+
+      return inventoryMapper.toInventoryListResponse(summaries, pageMeta);
 
     } catch (ValidationException e) {
       log.warn("Validation error in list inventory: {}", e.getMessage());
@@ -198,15 +199,15 @@ public class InventoryService {
    * @return list of lot summaries
    */
   @Transactional(readOnly = true)
-  public LotListResponse listLots(String shopId, String searchQuery) {
+  public LotListResponse listLots(String shopId, String searchQuery, int page, int size) {
     try {
       // Validate shopId
       inventoryValidator.validateShopId(shopId);
 
       log.debug("Listing lots for shop: {} with search: {}", shopId, searchQuery);
-
+      PageRequest pageable = PageRequest.of(page, size);
       // Get all inventories for the shop
-      List<Inventory> inventories = inventoryRepository.findByShopId(shopId);
+      List<Inventory> inventories = inventoryRepository.findByShopId(shopId, pageable);
 
       // Filter by search query if provided
       if (StringUtils.hasText(searchQuery)) {
@@ -262,9 +263,15 @@ public class InventoryService {
           })
           .toList();
 
+      long totalItems = inventoryRepository.countByShopId(shopId);
+      int totalPages = (int) Math.ceil((double) totalItems / size);
+
+      PageMeta pageMeta = new PageMeta(page, size, totalItems, totalPages);
+
       LotListResponse response = new LotListResponse();
       response.setData(summaries);
       response.setMeta(null);
+      response.setPage(pageMeta);
 
       return response;
 
@@ -361,7 +368,7 @@ public class InventoryService {
    * @return list of matching lot summaries
    */
   @Transactional(readOnly = true)
-  public LotListResponse searchLots(String shopId, String query) {
+  public LotListResponse searchLots(String shopId, String query, int page, int size) {
     try {
       // Validate inputs
       inventoryValidator.validateShopId(shopId);
@@ -371,7 +378,7 @@ public class InventoryService {
 
       log.debug("Searching lots for shop: {} with query: {}", shopId, query);
 
-      return listLots(shopId, query.trim());
+      return listLots(shopId, query.trim(), page, size);
 
     } catch (ValidationException e) {
       log.warn("Validation error in search lots: {}", e.getMessage());
@@ -436,4 +443,36 @@ public class InventoryService {
       throw new ValidationException("Vendor with ID " + vendorId + " is not associated with shop " + shopId);
     }
   }
+
+
+  @Transactional(readOnly = true)
+  public InventoryListResponse getLowStockItems(String shopId, int page, int size) {
+
+    inventoryValidator.validateShopId(shopId);
+
+    PageRequest pageable = PageRequest.of(page, size);
+
+    List<Inventory> inventories = inventoryRepository.findByShopId(shopId, pageable);
+
+    List<InventorySummaryDto> lowStock = inventories.stream()
+      .filter(inv -> {
+        int threshold = inv.getThresholdCount() != null ? inv.getThresholdCount() : 50;
+        int current = inv.getCurrentCount() != null ? inv.getCurrentCount() : 0;
+        return current <= threshold;
+      })
+      .map(inv -> {
+        InventorySummaryDto dto = inventoryMapper.toSummary(inv);
+        dto.setThresholdCount(inv.getThresholdCount() != null ? inv.getThresholdCount() : 50);
+        return dto;
+      })
+      .toList();
+
+    long totalItems = inventoryRepository.countByShopId(shopId);
+    int totalPages = (int) Math.ceil((double) totalItems / size);
+
+    PageMeta pageMeta = new PageMeta(page, size, totalItems, totalPages);
+
+    return inventoryMapper.toInventoryListResponse(lowStock, pageMeta);
+  }
+
 }
