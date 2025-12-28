@@ -21,6 +21,7 @@ public class InventorySummaryDto {
   BigDecimal costPrice;
   BigDecimal sellingPrice;
   Integer receivedCount;
+  Integer thresholdCount;
   Integer soldCount;
   Integer currentCount;
   String location;

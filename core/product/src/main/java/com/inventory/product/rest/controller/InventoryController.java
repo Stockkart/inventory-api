@@ -48,17 +48,20 @@ public class InventoryController {
 
   @GetMapping
   public ResponseEntity<ApiResponse<InventoryListResponse>> list(
-      HttpServletRequest httpRequest) {
+    HttpServletRequest httpRequest,
+    @RequestParam(defaultValue = "0") int page,
+    @RequestParam(defaultValue = "10") int size
+  ) {
     // Get shopId from request attributes to ensure user can only access their shop's inventory
     String shopId = (String) httpRequest.getAttribute("shopId");
 
     if (StringUtils.isEmpty(shopId)) {
       throw new AuthenticationException(
-          ErrorCode.UNAUTHORIZED,
-          "Unauthorized access to shop inventory");
+        ErrorCode.UNAUTHORIZED,
+        "Unauthorized access to shop inventory");
     }
 
-    return ResponseEntity.ok(ApiResponse.success(inventoryService.list(shopId)));
+    return ResponseEntity.ok(ApiResponse.success(inventoryService.list(shopId, page, size)));
   }
 
   @GetMapping("/search")
@@ -77,6 +80,21 @@ public class InventoryController {
     return ResponseEntity.ok(ApiResponse.success(inventoryService.search(shopId, q)));
   }
 
+  @GetMapping("/lots/search")
+  public ResponseEntity<ApiResponse<LotListResponse>> searchLots(
+    @RequestParam("q") String q,
+    @RequestParam(defaultValue = "0") int page,
+    @RequestParam(defaultValue = "10") int size,
+    HttpServletRequest httpRequest
+  ) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+
+    return ResponseEntity.ok(
+      ApiResponse.success(inventoryService.searchLots(shopId, q, page, size))
+    );
+  }
+
+
   @GetMapping("/{lotId}")
   public ResponseEntity<ApiResponse<InventoryDetailResponse>> getLot(@PathVariable String lotId) {
     return ResponseEntity.ok(ApiResponse.success(inventoryService.getLot(lotId)));
@@ -93,7 +111,10 @@ public class InventoryController {
   @GetMapping("/lots")
   public ResponseEntity<ApiResponse<LotListResponse>> listLots(
       @RequestParam(required = false) String search,
-      HttpServletRequest httpRequest) {
+      HttpServletRequest httpRequest,
+      @RequestParam(defaultValue = "0") int page,
+      @RequestParam(defaultValue = "20") int size
+  ) {
     // Get shopId from request attributes to ensure user can only access their shop's lots
     String shopId = (String) httpRequest.getAttribute("shopId");
 
@@ -103,7 +124,7 @@ public class InventoryController {
           "Unauthorized access to shop lots");
     }
 
-    return ResponseEntity.ok(ApiResponse.success(inventoryService.listLots(shopId, search)));
+    return ResponseEntity.ok(ApiResponse.success(inventoryService.listLots(shopId, search, page, size)));
   }
 
   /**
@@ -128,4 +149,18 @@ public class InventoryController {
 
     return ResponseEntity.ok(ApiResponse.success(inventoryService.getLotDetails(lotId, shopId)));
   }
+
+  @GetMapping("/low-stock")
+  public ResponseEntity<ApiResponse<InventoryListResponse>> lowStock(
+    HttpServletRequest httpRequest,
+    @RequestParam(defaultValue = "0") int page,
+    @RequestParam(defaultValue = "20") int size
+  ) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+
+    return ResponseEntity.ok(
+      ApiResponse.success(inventoryService.getLowStockItems(shopId, page, size))
+    );
+  }
+
 }

@@ -19,6 +19,7 @@ public class CreateInventoryRequest {
   private String businessType;
   private String location;
   private Integer count;
+  private Integer thresholdCount;
   private Instant expiryDate;
   private Instant reminderAt;
   private List<CustomReminderRequest> customReminders;

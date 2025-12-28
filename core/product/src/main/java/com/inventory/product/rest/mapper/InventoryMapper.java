@@ -2,11 +2,7 @@ package com.inventory.product.rest.mapper;
 
 import com.inventory.notifications.rest.dto.CreateReminderForInventoryRequest;
 import com.inventory.product.domain.model.Inventory;
-import com.inventory.product.rest.dto.inventory.CreateInventoryRequest;
-import com.inventory.product.rest.dto.inventory.InventoryDetailResponse;
-import com.inventory.product.rest.dto.inventory.InventoryListResponse;
-import com.inventory.product.rest.dto.inventory.InventoryReceiptResponse;
-import com.inventory.product.rest.dto.inventory.InventorySummaryDto;
+import com.inventory.product.rest.dto.inventory.*;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.ReportingPolicy;
@@ -35,6 +31,15 @@ public interface InventoryMapper {
   default InventoryReceiptResponse toReceiptResponseWithReminder(Inventory inventory, boolean reminderCreated) {
     InventoryReceiptResponse response = toReceiptResponse(inventory);
     response.setReminderCreated(reminderCreated);
+    return response;
+  }
+
+  // Method to create InventoryListResponse
+  default InventoryListResponse toInventoryListResponse(List<InventorySummaryDto> data,  PageMeta page) {
+    InventoryListResponse response = new InventoryListResponse();
+    response.setData(data);
+    response.setMeta(null);
+    response.setPage(page);
     return response;
   }
 
