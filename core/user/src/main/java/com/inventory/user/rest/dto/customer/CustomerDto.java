@@ -15,6 +15,9 @@ public class CustomerDto {
   private String phone;
   private String address;
   private String email;
+  private String gstin;
+  private String dlNo;
+  private String pan;
   private Instant createdAt;
   private Instant updatedAt;
 }

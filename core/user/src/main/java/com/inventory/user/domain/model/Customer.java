@@ -20,6 +20,9 @@ public class Customer {
   private String phone;
   private String address;
   private String email;
+  private String gstin; // Optional: GSTIN number
+  private String dlNo; // Optional: D.L No.
+  private String pan; // Optional: PAN number
   private Instant createdAt;
   private Instant updatedAt;
 }

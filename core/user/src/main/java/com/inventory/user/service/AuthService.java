@@ -46,6 +46,9 @@ public class AuthService {
   @Autowired
   private TokenValidationService tokenValidationService;
 
+  @Autowired(required = false)
+  private ShopServiceAdapter shopServiceAdapter;
+
   @Transactional(readOnly = true)
   public LoginResponse login(LoginRequest request) {
     try {
@@ -96,6 +99,17 @@ public class AuthService {
 
       // Create login response using mapper (tokens set automatically via @AfterMapping and saved to account)
       LoginResponse response = userMapper.toLoginResponse(account, request.getDeviceId());
+
+      // Populate shop information if shopId exists and adapter is available
+      if (account.getShopId() != null && !account.getShopId().trim().isEmpty() && shopServiceAdapter != null) {
+        ShopServiceAdapter.ShopTaxInfo taxInfo = shopServiceAdapter.getShopTaxInfo(account.getShopId());
+        if (taxInfo != null) {
+          LoginResponse.ShopInfo shopInfo = new LoginResponse.ShopInfo();
+          shopInfo.setSgst(taxInfo.getSgst());
+          shopInfo.setCgst(taxInfo.getCgst());
+          response.setShop(shopInfo);
+        }
+      }
 
       // Save account with new token
       userAccountRepository.save(account);

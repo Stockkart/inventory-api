@@ -23,5 +23,12 @@ public class ShopServiceAdapterImpl implements ShopServiceAdapter {
   public boolean shopExists(String shopId) {
     return shopRepository.existsById(shopId);
   }
+
+  @Override
+  public ShopTaxInfo getShopTaxInfo(String shopId) {
+    return shopRepository.findById(shopId)
+        .map(shop -> new ShopServiceAdapter.ShopTaxInfo(shop.getSgst(), shop.getCgst()))
+        .orElse(null);
+  }
 }
 

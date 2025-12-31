@@ -134,6 +134,8 @@ public abstract class PurchaseMapper {
   @Mapping(target = "items", expression = "java(purchase.getItems() != null ? purchase.getItems() : java.util.List.of())")
   @Mapping(target = "subTotal", source = "subTotal")
   @Mapping(target = "taxTotal", source = "taxTotal")
+  @Mapping(target = "sgstAmount", source = "sgstAmount")
+  @Mapping(target = "cgstAmount", source = "cgstAmount")
   @Mapping(target = "discountTotal", source = "discountTotal")
   @Mapping(target = "grandTotal", source = "grandTotal")
   @Mapping(target = "status", source = "status")
@@ -152,6 +154,9 @@ public abstract class PurchaseMapper {
         response.setCustomerName(customer.getName());
         response.setCustomerAddress(customer.getAddress());
         response.setCustomerPhone(customer.getPhone());
+        response.setCustomerGstin(customer.getGstin());
+        response.setCustomerDlNo(customer.getDlNo());
+        response.setCustomerPan(customer.getPan());
       });
     } else if (purchase.getCustomerName() != null && !purchase.getCustomerName().trim().isEmpty()) {
       // If only customerName is stored (no customerId), use it directly
@@ -168,6 +173,8 @@ public abstract class PurchaseMapper {
   @Mapping(target = "items", expression = "java(purchase.getItems() != null ? purchase.getItems() : java.util.List.of())")
   @Mapping(target = "subTotal", source = "subTotal")
   @Mapping(target = "taxTotal", source = "taxTotal")
+  @Mapping(target = "sgstAmount", source = "sgstAmount")
+  @Mapping(target = "cgstAmount", source = "cgstAmount")
   @Mapping(target = "discountTotal", source = "discountTotal")
   @Mapping(target = "grandTotal", source = "grandTotal")
   @Mapping(target = "paymentMethod", source = "paymentMethod")
@@ -203,6 +210,8 @@ public abstract class PurchaseMapper {
   @Mapping(target = "items", expression = "java(purchase.getItems() != null ? purchase.getItems() : java.util.List.of())")
   @Mapping(target = "subTotal", source = "subTotal")
   @Mapping(target = "taxTotal", source = "taxTotal")
+  @Mapping(target = "sgstAmount", source = "sgstAmount")
+  @Mapping(target = "cgstAmount", source = "cgstAmount")
   @Mapping(target = "discountTotal", source = "discountTotal")
   @Mapping(target = "grandTotal", source = "grandTotal")
   @Mapping(target = "soldAt", source = "soldAt")

@@ -27,5 +27,13 @@ public class CreateInventoryRequest {
   private String vendorId;
   // Lot ID (optional - if provided, will reuse existing lot; if not, will generate new one)
   private String lotId;
+  // HSN code (optional)
+  private String hsn;
+  // SAC code (optional)
+  private String sac;
+  // Batch number (optional)
+  private String batchNo;
+  // Scheme (optional)
+  private String scheme;
 }
 

@@ -36,6 +36,10 @@ public class Inventory {
   private BigDecimal maximumRetailPrice;
   private BigDecimal costPrice;
   private BigDecimal sellingPrice;
+  private String hsn; // Optional: HSN code
+  private String sac; // Optional: SAC code
+  private String batchNo; // Optional: Batch number
+  private String scheme; // Optional: Scheme
   private Instant createdAt;
   private Instant updatedAt;
 }
