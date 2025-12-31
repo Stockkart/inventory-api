@@ -9,8 +9,10 @@ import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.product.domain.model.PurchaseStatus;
+import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.PurchaseRepository;
+import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.rest.dto.sale.AddToCartRequest;
 import com.inventory.product.rest.dto.sale.AddToCartResponse;
 import com.inventory.product.rest.dto.sale.CheckoutResponse;
@@ -38,6 +40,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @Service
 @Slf4j
@@ -58,6 +61,9 @@ public class CheckoutService {
 
   @Autowired
   private com.inventory.user.service.CustomerService customerService;
+
+  @Autowired
+  private ShopRepository shopRepository;
 
   @Transactional
   public AddToCartResponse addToCart(AddToCartRequest request, HttpServletRequest httpRequest) {
@@ -406,10 +412,75 @@ public class CheckoutService {
         .setScale(2, RoundingMode.HALF_UP);
   }
 
-  private BigDecimal calculateTax(BigDecimal subtotal) {
-    // Simple tax calculation - in a real app, this would be more sophisticated
-    final BigDecimal TAX_RATE = new BigDecimal("0.08"); // 8% tax rate
-    return subtotal.multiply(TAX_RATE).setScale(2, RoundingMode.HALF_UP);
+  /**
+   * Calculate tax based on shop's SGST and CGST rates.
+   * Returns a TaxCalculationResult containing sgstAmount, cgstAmount, and total tax.
+   * 
+   * @param subtotal the subtotal amount
+   * @param shopId the shop ID to fetch tax rates from
+   * @return TaxCalculationResult with sgstAmount, cgstAmount, and taxTotal
+   */
+  private TaxCalculationResult calculateTax(BigDecimal subtotal, String shopId) {
+    BigDecimal sgstAmount = BigDecimal.ZERO;
+    BigDecimal cgstAmount = BigDecimal.ZERO;
+    
+    if (shopId != null && !shopId.trim().isEmpty()) {
+      Optional<Shop> shopOpt = shopRepository.findById(shopId);
+      if (shopOpt.isPresent()) {
+        Shop shop = shopOpt.get();
+        // Parse SGST and CGST from shop (stored as String, e.g., "9" for 9%)
+        String sgstStr = shop.getSgst();
+        String cgstStr = shop.getCgst();
+        
+        if (sgstStr != null && !sgstStr.trim().isEmpty()) {
+          try {
+            BigDecimal sgstRate = new BigDecimal(sgstStr.trim()).divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
+            sgstAmount = subtotal.multiply(sgstRate).setScale(2, RoundingMode.HALF_UP);
+          } catch (NumberFormatException e) {
+            log.warn("Invalid SGST value '{}' for shop {}, using 0", sgstStr, shopId);
+          }
+        }
+        
+        if (cgstStr != null && !cgstStr.trim().isEmpty()) {
+          try {
+            BigDecimal cgstRate = new BigDecimal(cgstStr.trim()).divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
+            cgstAmount = subtotal.multiply(cgstRate).setScale(2, RoundingMode.HALF_UP);
+          } catch (NumberFormatException e) {
+            log.warn("Invalid CGST value '{}' for shop {}, using 0", cgstStr, shopId);
+          }
+        }
+      }
+    }
+    
+    BigDecimal taxTotal = sgstAmount.add(cgstAmount);
+    return new TaxCalculationResult(sgstAmount, cgstAmount, taxTotal);
+  }
+  
+  /**
+   * Inner class to hold tax calculation results.
+   */
+  private static class TaxCalculationResult {
+    private final BigDecimal sgstAmount;
+    private final BigDecimal cgstAmount;
+    private final BigDecimal taxTotal;
+    
+    public TaxCalculationResult(BigDecimal sgstAmount, BigDecimal cgstAmount, BigDecimal taxTotal) {
+      this.sgstAmount = sgstAmount;
+      this.cgstAmount = cgstAmount;
+      this.taxTotal = taxTotal;
+    }
+    
+    public BigDecimal getSgstAmount() {
+      return sgstAmount;
+    }
+    
+    public BigDecimal getCgstAmount() {
+      return cgstAmount;
+    }
+    
+    public BigDecimal getTaxTotal() {
+      return taxTotal;
+    }
   }
 
   private BigDecimal calculateTotalDiscount(List<PurchaseItem> items) {
@@ -430,17 +501,20 @@ public class CheckoutService {
     try {
       // Calculate totals
       BigDecimal subTotal = calculateSubtotal(purchaseItems);
-      BigDecimal taxTotal = calculateTax(subTotal);
+      TaxCalculationResult taxResult = calculateTax(subTotal, shopId);
       BigDecimal discountTotal = calculateTotalDiscount(purchaseItems);
-      BigDecimal grandTotal = subTotal.add(taxTotal).subtract(discountTotal);
+      BigDecimal grandTotal = subTotal.add(taxResult.getTaxTotal()).subtract(discountTotal);
 
       // Create purchase with CREATED status using mapper
       // MongoDB will auto-generate the id as ObjectId
       Purchase purchase = purchaseMapper.toPurchaseForCart(
-          request, purchaseItems, subTotal, taxTotal, discountTotal, grandTotal, shopId, userId, customerId
+          request, purchaseItems, subTotal, taxResult.getTaxTotal(), discountTotal, grandTotal, shopId, userId, customerId
       );
       
-      // Set customerName if provided (when only name is given without phone)
+      // Set tax amounts and customerName
+      purchase.setSgstAmount(taxResult.getSgstAmount());
+      purchase.setCgstAmount(taxResult.getCgstAmount());
+      
       if (StringUtils.hasText(customerName)) {
         purchase.setCustomerName(customerName);
       }
@@ -572,11 +646,17 @@ public class CheckoutService {
 
       // Recalculate totals
       existingCart.setItems(mergedItems);
-      existingCart.setSubTotal(calculateSubtotal(mergedItems));
-      existingCart.setTaxTotal(calculateTax(existingCart.getSubTotal()));
+      BigDecimal newSubTotal = calculateSubtotal(mergedItems);
+      existingCart.setSubTotal(newSubTotal);
+      
+      TaxCalculationResult taxResult = calculateTax(newSubTotal, existingCart.getShopId());
+      existingCart.setTaxTotal(taxResult.getTaxTotal());
+      existingCart.setSgstAmount(taxResult.getSgstAmount());
+      existingCart.setCgstAmount(taxResult.getCgstAmount());
+      
       existingCart.setDiscountTotal(calculateTotalDiscount(mergedItems));
-      existingCart.setGrandTotal(existingCart.getSubTotal()
-          .add(existingCart.getTaxTotal())
+      existingCart.setGrandTotal(newSubTotal
+          .add(taxResult.getTaxTotal())
           .subtract(existingCart.getDiscountTotal()));
 
       // If cart is empty after updates, we can either delete it or keep it with empty items

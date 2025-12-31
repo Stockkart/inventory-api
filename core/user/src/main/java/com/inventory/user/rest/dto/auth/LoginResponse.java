@@ -10,6 +10,7 @@ public class LoginResponse {
   String accessToken;
   String refreshToken;
   UserSummary user;
+  ShopInfo shop;
 
   @Data
   public static class UserSummary {
@@ -20,6 +21,12 @@ public class LoginResponse {
     String name;
     Boolean active;
     Instant createdAt;
+  }
+
+  @Data
+  public static class ShopInfo {
+    String sgst;
+    String cgst;
   }
 }
 

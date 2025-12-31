@@ -22,6 +22,8 @@ public class AddToCartResponse {
   List<PurchaseItem> items;
   BigDecimal subTotal;
   BigDecimal taxTotal;
+  BigDecimal sgstAmount; // Calculated SGST amount
+  BigDecimal cgstAmount; // Calculated CGST amount
   BigDecimal discountTotal;
   BigDecimal grandTotal;
   PurchaseStatus status;

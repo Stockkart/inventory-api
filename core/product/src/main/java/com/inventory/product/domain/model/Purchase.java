@@ -26,6 +26,8 @@ public class Purchase {
   private List<PurchaseItem> items;
   private BigDecimal subTotal;
   private BigDecimal taxTotal;
+  private BigDecimal sgstAmount; // Calculated SGST amount
+  private BigDecimal cgstAmount; // Calculated CGST amount
   private BigDecimal discountTotal;
   private BigDecimal grandTotal;
   private Instant soldAt;
