@@ -152,6 +152,9 @@ public abstract class PurchaseMapper {
         response.setCustomerName(customer.getName());
         response.setCustomerAddress(customer.getAddress());
         response.setCustomerPhone(customer.getPhone());
+        response.setCustomerGstin(customer.getGstin());
+        response.setCustomerDlNo(customer.getDlNo());
+        response.setCustomerPan(customer.getPan());
       });
     } else if (purchase.getCustomerName() != null && !purchase.getCustomerName().trim().isEmpty()) {
       // If only customerName is stored (no customerId), use it directly

@@ -481,7 +481,10 @@ public class CheckoutService {
             request.getCustomerName(),
             request.getCustomerPhone(),
             request.getCustomerAddress(),
-            request.getCustomerEmail()
+            request.getCustomerEmail(),
+            request.getCustomerGstin(),
+            request.getCustomerDlNo(),
+            request.getCustomerPan()
         );
         if (customer != null) {
           log.debug("Created new customer with ID: {} for phone: {}", 

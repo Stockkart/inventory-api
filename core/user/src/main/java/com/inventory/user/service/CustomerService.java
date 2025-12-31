@@ -35,10 +35,14 @@ public class CustomerService {
    * @param customerPhone customer phone (optional)
    * @param customerAddress customer address (optional)
    * @param customerEmail customer email (optional)
+   * @param customerGstin customer GSTIN (optional)
+   * @param customerDlNo customer D.L No. (optional)
+   * @param customerPan customer PAN (optional)
    * @return the customer entity, or null if no customer info provided
    */
   public Customer findOrCreateCustomer(String shopId, String customerName, String customerPhone,
-                                        String customerAddress, String customerEmail) {
+                                        String customerAddress, String customerEmail,
+                                        String customerGstin, String customerDlNo, String customerPan) {
     // If no customer name provided, return null
     if (!StringUtils.hasText(customerName)) {
       return null;
@@ -63,6 +67,9 @@ public class CustomerService {
         customer.setPhone(StringUtils.hasText(customerPhone) ? customerPhone.trim() : null);
         customer.setAddress(StringUtils.hasText(customerAddress) ? customerAddress.trim() : null);
         customer.setEmail(StringUtils.hasText(customerEmail) ? customerEmail.trim() : null);
+        customer.setGstin(StringUtils.hasText(customerGstin) ? customerGstin.trim() : null);
+        customer.setDlNo(StringUtils.hasText(customerDlNo) ? customerDlNo.trim() : null);
+        customer.setPan(StringUtils.hasText(customerPan) ? customerPan.trim() : null);
         customer.setCreatedAt(Instant.now());
         customer.setUpdatedAt(Instant.now());
 
@@ -85,6 +92,18 @@ public class CustomerService {
         }
         if (StringUtils.hasText(customerEmail) && !customerEmail.trim().equals(customer.getEmail())) {
           customer.setEmail(customerEmail.trim());
+          updated = true;
+        }
+        if (StringUtils.hasText(customerGstin) && !customerGstin.trim().equals(customer.getGstin())) {
+          customer.setGstin(customerGstin.trim());
+          updated = true;
+        }
+        if (StringUtils.hasText(customerDlNo) && !customerDlNo.trim().equals(customer.getDlNo())) {
+          customer.setDlNo(customerDlNo.trim());
+          updated = true;
+        }
+        if (StringUtils.hasText(customerPan) && !customerPan.trim().equals(customer.getPan())) {
+          customer.setPan(customerPan.trim());
           updated = true;
         }
 
