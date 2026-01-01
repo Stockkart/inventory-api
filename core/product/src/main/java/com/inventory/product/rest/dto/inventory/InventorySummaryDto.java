@@ -27,6 +27,7 @@ public class InventorySummaryDto {
   String location;
   Instant expiryDate;
   String shopId;
+  String vendorId;
   String hsn;
   String sac;
   String batchNo;

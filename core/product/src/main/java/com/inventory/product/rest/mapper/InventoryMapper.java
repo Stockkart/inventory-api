@@ -66,6 +66,7 @@ public interface InventoryMapper {
   @Mapping(target = "location", source = "location")
   @Mapping(target = "expiryDate", source = "expiryDate")
   @Mapping(target = "shopId", source = "shopId")
+  @Mapping(target = "vendorId", source = "vendorId")
   InventorySummaryDto toSummary(Inventory inventory);
 
   @Mapping(target = "lotId", source = "lotId")

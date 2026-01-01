@@ -13,6 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -50,6 +51,17 @@ public class VendorController {
     request.setQuery(query);
 
     List<VendorDto> response = vendorService.searchVendor(request, shopId);
+    return ResponseEntity.ok(ApiResponse.success(response));
+  }
+
+  @GetMapping("/{vendorId}")
+  public ResponseEntity<ApiResponse<VendorDto>> getVendorById(
+      @PathVariable String vendorId,
+      HttpServletRequest httpRequest) {
+    // Get shopId from request attributes (set by AuthenticationInterceptor)
+    String shopId = (String) httpRequest.getAttribute("shopId");
+
+    VendorDto response = vendorService.getVendorById(vendorId, shopId);
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 }

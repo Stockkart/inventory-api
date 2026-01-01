@@ -371,5 +371,66 @@ public class VendorService {
           "Failed to search vendors");
     }
   }
+
+  /**
+   * Get vendor by ID for a shop.
+   * Validates that the vendor is linked to the shop.
+   *
+   * @param vendorId the vendor ID
+   * @param shopId the shop ID
+   * @return the vendor DTO
+   * @throws ResourceNotFoundException if vendor not found or not linked to shop
+   */
+  @Transactional(readOnly = true)
+  public VendorDto getVendorById(String vendorId, String shopId) {
+    // Validate shopId
+    if (!StringUtils.hasText(shopId)) {
+      throw new AuthenticationException(
+          ErrorCode.UNAUTHORIZED,
+          "User not authenticated or shop not found");
+    }
+
+    // Validate vendorId
+    if (!StringUtils.hasText(vendorId)) {
+      throw new ValidationException("Vendor ID is required");
+    }
+
+    log.info("Getting vendor with ID: {} for shop: {}", vendorId, shopId);
+
+    try {
+      // Find vendor
+      Vendor vendor = vendorRepository.findById(vendorId)
+          .orElseThrow(() -> new ResourceNotFoundException("Vendor", "id", vendorId));
+
+      // Verify vendor is linked to the shop
+      if (!isVendorLinkedToShop(shopId, vendorId)) {
+        throw new ResourceNotFoundException("Vendor", "id", 
+            "Vendor not found or not linked to your shop");
+      }
+
+      // Map to DTO
+      VendorDto vendorDto = vendorMapper.toDto(vendor);
+
+      log.info("Successfully retrieved vendor with ID: {} for shop: {}", vendorId, shopId);
+      return vendorDto;
+
+    } catch (ResourceNotFoundException e) {
+      log.warn("Vendor not found: {} for shop: {}", vendorId, shopId);
+      throw e;
+    } catch (ValidationException e) {
+      log.warn("Validation error in get vendor by ID: {}", e.getMessage());
+      throw e;
+    } catch (DataAccessException e) {
+      log.error("Database error while getting vendor: {}", e.getMessage(), e);
+      throw new BaseException(
+          ErrorCode.INTERNAL_SERVER_ERROR,
+          "Error retrieving vendor");
+    } catch (Exception e) {
+      log.error("Unexpected error while getting vendor: {}", e.getMessage(), e);
+      throw new BaseException(
+          ErrorCode.INTERNAL_SERVER_ERROR,
+          "Failed to retrieve vendor");
+    }
+  }
 }
 

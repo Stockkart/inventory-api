@@ -475,4 +475,60 @@ public class InventoryService {
     return inventoryMapper.toInventoryListResponse(lowStock, pageMeta);
   }
 
+  /**
+   * Update inventory by ID.
+   * 
+   * @param inventoryId the inventory ID (mandatory)
+   * @param request the update request containing optional fields
+   * @param shopId the shop ID for authorization
+   * @return updated inventory detail response
+   */
+  @Transactional
+  public InventoryDetailResponse update(String inventoryId, UpdateInventoryRequest request, String shopId) {
+    try {
+      // Validate inputs
+      inventoryValidator.validateShopId(shopId);
+      if (inventoryId == null || inventoryId.trim().isEmpty()) {
+        throw new ValidationException("Inventory ID is required");
+      }
+
+      log.debug("Updating inventory with ID: {} for shop: {}", inventoryId, shopId);
+
+      // Find inventory
+      Inventory inventory = inventoryRepository.findById(inventoryId)
+          .orElseThrow(() -> new ResourceNotFoundException("Inventory", "id", inventoryId));
+
+      // Verify inventory belongs to the shop
+      if (!shopId.equals(inventory.getShopId())) {
+        throw new ValidationException("Inventory does not belong to the authenticated shop");
+      }
+
+      // Update thresholdCount if provided
+      if (request.getThresholdCount() != null) {
+        inventory.setThresholdCount(request.getThresholdCount());
+        log.debug("Updating thresholdCount to {} for inventory: {}", request.getThresholdCount(), inventoryId);
+      }
+
+      // Update updatedAt timestamp
+      inventory.setUpdatedAt(Instant.now());
+
+      // Save inventory
+      inventory = inventoryRepository.save(inventory);
+      log.info("Successfully updated inventory with ID: {}", inventoryId);
+
+      // Map to response
+      return inventoryMapper.toDetail(inventory);
+
+    } catch (ValidationException | ResourceNotFoundException e) {
+      log.warn("Update inventory validation failed: {}", e.getMessage());
+      throw e;
+    } catch (DataAccessException e) {
+      log.error("Database error while updating inventory: {}", e.getMessage(), e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Error updating inventory");
+    } catch (Exception e) {
+      log.error("Unexpected error while updating inventory: {}", e.getMessage(), e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
+    }
+  }
+
 }
