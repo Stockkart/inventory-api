@@ -26,9 +26,15 @@ public class InventoryAdapterImpl implements InventoryAdapter {
     return inventoryRepository.findById(inventoryId).map(inv -> {
       ReminderInventorySummary dto = new ReminderInventorySummary();
       dto.setId(inv.getId());
+      dto.setLotId(inv.getLotId());
       dto.setName(inv.getName());
       dto.setCompanyName(inv.getCompanyName());
       dto.setLocation(inv.getLocation());
+      dto.setVendorId(inv.getVendorId());
+      dto.setBatchNo(inv.getBatchNo());
+      dto.setMaximumRetailPrice(inv.getMaximumRetailPrice());
+      dto.setCostPrice(inv.getCostPrice());
+      dto.setSellingPrice(inv.getSellingPrice());
       return dto;
     }).orElse(null);
   }

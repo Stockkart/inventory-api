@@ -9,6 +9,7 @@ import com.inventory.product.rest.dto.inventory.InventoryListResponse;
 import com.inventory.product.rest.dto.inventory.InventoryReceiptResponse;
 import com.inventory.product.rest.dto.inventory.LotDetailDto;
 import com.inventory.product.rest.dto.inventory.LotListResponse;
+import com.inventory.product.rest.dto.inventory.UpdateInventoryRequest;
 import com.inventory.product.service.InventoryService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,6 +18,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -161,6 +163,23 @@ public class InventoryController {
     return ResponseEntity.ok(
       ApiResponse.success(inventoryService.getLowStockItems(shopId, page, size))
     );
+  }
+
+  @PutMapping("/{inventoryId}")
+  public ResponseEntity<ApiResponse<InventoryDetailResponse>> update(
+      @PathVariable String inventoryId,
+      @RequestBody UpdateInventoryRequest request,
+      HttpServletRequest httpRequest) {
+    // Get shopId from request attributes (set by AuthenticationInterceptor)
+    String shopId = (String) httpRequest.getAttribute("shopId");
+
+    if (StringUtils.isEmpty(shopId)) {
+      throw new AuthenticationException(
+          ErrorCode.UNAUTHORIZED,
+          "Unauthorized access to shop inventory");
+    }
+
+    return ResponseEntity.ok(ApiResponse.success(inventoryService.update(inventoryId, request, shopId)));
   }
 
 }
