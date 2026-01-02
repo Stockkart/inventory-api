@@ -7,6 +7,7 @@ import com.inventory.notifications.domain.model.Reminder;
 import com.inventory.notifications.domain.model.ReminderStatus;
 import com.inventory.notifications.domain.repository.EventRepository;
 import com.inventory.notifications.domain.repository.ReminderRepository;
+import com.inventory.notifications.rest.dto.InventoryLowEventDto;
 import com.inventory.notifications.rest.dto.ReminderDetailListResponse;
 import com.inventory.notifications.rest.mapper.ReminderMapper;
 import lombok.AllArgsConstructor;
@@ -405,4 +406,60 @@ public class EventService {
     }
   }
 
+  /* =========================================================
+     INVENTORY LOW EVENT
+  ========================================================= */
+  public void recordAndBroadcastInventoryLow(InventoryLowEventDto dto) {
+
+    Event event = Event.builder()
+      .shopId(dto.getShopId())
+      .type(EventType.INVENTORY_LOW)
+      .triggeredAt(Instant.now())
+      .payloadJson(dto)
+      .delivered(false)
+      .retryCount(0)
+      .build();
+
+    Event saved = eventRepository.save(event);
+
+    broadcastInventoryLow(saved, dto);
+  }
+
+  private void broadcastInventoryLow(Event event, InventoryLowEventDto dto) {
+
+    List<SseEmitter> emitters = emittersByShop.get(event.getShopId());
+    if (emitters == null || emitters.isEmpty()) {
+      log.info("No active emitters for shop {}", event.getShopId());
+      return;
+    }
+
+    for (SseEmitter emitter : emitters) {
+      try {
+
+        emitter.send(
+          SseEmitter.event()
+            .name("INVENTORY_LOW")
+            .id(event.getId())
+            .data(dto)
+        );
+
+      } catch (IOException ex) {
+
+        log.warn("Emitter dead for shop {} — removing", event.getShopId());
+        safeComplete(emitter);
+        removeEmitter(event.getShopId(), emitter);
+
+      } catch (Exception ex) {
+
+        log.error("Unexpected SSE error", ex);
+        safeComplete(emitter);
+        removeEmitter(event.getShopId(), emitter);
+      }
+    }
+  }
+  private void safeComplete(SseEmitter emitter) {
+    try {
+      emitter.complete();
+    } catch (IllegalStateException ignore) {}
+  }
 }

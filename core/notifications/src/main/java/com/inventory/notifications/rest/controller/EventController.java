@@ -31,4 +31,5 @@ public class EventController {
     }
     return eventService.subscribe(shopId);
   }
+
 }

@@ -168,4 +168,12 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     response.setData(apiError);
     return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
   }
+
+  @ExceptionHandler({
+    org.springframework.web.context.request.async.AsyncRequestNotUsableException.class,
+    java.io.IOException.class
+  })
+  public void ignoreSseDisconnects() {
+    log.info("Ignoring SSE Disconnect");
+  }
 }
