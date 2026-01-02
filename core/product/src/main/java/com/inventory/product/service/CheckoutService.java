@@ -13,13 +13,14 @@ import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.PurchaseRepository;
 import com.inventory.product.domain.repository.ShopRepository;
-import com.inventory.product.rest.dto.inventory.InventoryLowEventDto;
+import com.inventory.product.rest.dto.inventory.InventoryEventDto;
 import com.inventory.product.rest.dto.sale.AddToCartRequest;
 import com.inventory.product.rest.dto.sale.AddToCartResponse;
 import com.inventory.product.rest.dto.sale.CheckoutResponse;
 import com.inventory.product.rest.dto.sale.PurchaseListResponse;
 import com.inventory.product.rest.dto.sale.PurchaseSummaryDto;
 import com.inventory.product.rest.dto.sale.UpdatePurchaseStatusRequest;
+import com.inventory.product.rest.mapper.InventoryMapper;
 import com.inventory.product.rest.mapper.PurchaseMapper;
 import com.inventory.product.validation.CheckoutValidator;
 import jakarta.servlet.http.HttpServletRequest;
@@ -67,7 +68,11 @@ public class CheckoutService {
   private ShopRepository shopRepository;
 
   @Autowired
-  private NotificationAdapter notificationAdapter;
+  private com.inventory.notifications.service.EventService eventService;
+
+  @Autowired
+  private InventoryMapper inventoryMapper;
+
 
   @Transactional
   public AddToCartResponse addToCart(AddToCartRequest request, HttpServletRequest httpRequest) {
@@ -772,18 +777,13 @@ public class CheckoutService {
 
         if (inventory.getCurrentCount() <= threshold) {
 
-          log.info("THRESHOLD REACHED — sending INVENTORY_LOW event");
+          log.info("THRESHOLD REACHED — triggering INVENTORY_LOW event");
 
-          InventoryLowEventDto dto = new InventoryLowEventDto();
-          dto.setShopId(inventory.getShopId());
-          dto.setInventoryId(inventory.getId());
-          dto.setProductName(inventory.getName());
-          dto.setCurrentCount(inventory.getCurrentCount());
-          dto.setThreshold(threshold);
-
-          notificationAdapter.sendInventoryLowEvent(dto);
+          InventoryEventDto dto =
+            inventoryMapper.toInventoryLowEventDto(inventory, threshold);
+          var eventDto = inventoryMapper.toNotificationEventDto(dto);
+          eventService.recordAndBroadcastInventoryLow(eventDto);
         }
-
 
         log.info("Updated inventory for lotId: {} - decreased currentCount by {} (new: {}), increased soldCount by {} (new: {})",
             item.getInventoryId(), quantity, inventory.getCurrentCount(), quantity, inventory.getSoldCount());

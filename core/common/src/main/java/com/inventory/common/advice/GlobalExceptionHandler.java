@@ -174,6 +174,6 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     java.io.IOException.class
   })
   public void ignoreSseDisconnects() {
-    // Client disconnected — ignore
+    log.info("Ignoring SSE Disconnect");
   }
 }

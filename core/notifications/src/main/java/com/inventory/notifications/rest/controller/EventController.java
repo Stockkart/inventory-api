@@ -34,10 +34,4 @@ public class EventController {
     return eventService.subscribe(shopId);
   }
 
-  @PostMapping("/inventory-low")
-  public ResponseEntity<Void> inventoryLow(@RequestBody InventoryLowEventDto dto) {
-    eventService.recordAndBroadcastInventoryLow(dto);
-    return ResponseEntity.ok().build();
-  }
-
 }

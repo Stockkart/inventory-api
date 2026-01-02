@@ -1,6 +1,8 @@
 package com.inventory.product.rest.mapper;
 
 import com.inventory.notifications.rest.dto.CreateReminderForInventoryRequest;
+import com.inventory.product.rest.dto.inventory.InventoryEventDto;
+import com.inventory.notifications.rest.dto.InventoryLowEventDto;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.rest.dto.inventory.*;
 import org.mapstruct.Mapper;
@@ -94,5 +96,24 @@ public interface InventoryMapper {
       CreateInventoryRequest request,
       String shopId,
       String inventoryId
+  );
+
+  @Mapping(target = "shopId", source = "shopId")
+  @Mapping(target = "inventoryId", source = "inventoryId")
+  @Mapping(target = "productName", source = "productName")
+  @Mapping(target = "currentCount", source = "currentCount")
+  @Mapping(target = "threshold", source = "threshold")
+  InventoryLowEventDto toNotificationEventDto(
+    InventoryEventDto source
+  );
+
+  @Mapping(target = "shopId", source = "inventory.shopId")
+  @Mapping(target = "inventoryId", source = "inventory.id")
+  @Mapping(target = "productName", source = "inventory.name")
+  @Mapping(target = "currentCount", source = "inventory.currentCount")
+  @Mapping(target = "threshold", source = "threshold")
+  InventoryEventDto toInventoryLowEventDto(
+    Inventory inventory,
+    Integer threshold
   );
 }
