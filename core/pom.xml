@@ -10,6 +10,7 @@
         <module>user</module>
         <module>notifications</module>
         <module>common</module>
+        <module>documentservice</module>
     </modules>
 
     <properties>
