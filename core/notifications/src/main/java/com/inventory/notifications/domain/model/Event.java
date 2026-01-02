@@ -21,6 +21,7 @@ public class Event {
   @Id
   private String id;
   private String reminderId;
+  private Object payloadJson;
   private String shopId;
   private EventType type;
   private EventStatus statusAtTrigger;

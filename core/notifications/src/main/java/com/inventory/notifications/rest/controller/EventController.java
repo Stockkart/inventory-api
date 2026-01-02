@@ -2,8 +2,10 @@ package com.inventory.notifications.rest.controller;
 
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.AuthenticationException;
+import com.inventory.notifications.rest.dto.InventoryLowEventDto;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -31,4 +33,11 @@ public class EventController {
     }
     return eventService.subscribe(shopId);
   }
+
+  @PostMapping("/inventory-low")
+  public ResponseEntity<Void> inventoryLow(@RequestBody InventoryLowEventDto dto) {
+    eventService.recordAndBroadcastInventoryLow(dto);
+    return ResponseEntity.ok().build();
+  }
+
 }

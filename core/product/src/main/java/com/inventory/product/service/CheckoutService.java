@@ -13,6 +13,7 @@ import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.PurchaseRepository;
 import com.inventory.product.domain.repository.ShopRepository;
+import com.inventory.product.rest.dto.inventory.InventoryLowEventDto;
 import com.inventory.product.rest.dto.sale.AddToCartRequest;
 import com.inventory.product.rest.dto.sale.AddToCartResponse;
 import com.inventory.product.rest.dto.sale.CheckoutResponse;
@@ -64,6 +65,9 @@ public class CheckoutService {
 
   @Autowired
   private ShopRepository shopRepository;
+
+  @Autowired
+  private NotificationAdapter notificationAdapter;
 
   @Transactional
   public AddToCartResponse addToCart(AddToCartRequest request, HttpServletRequest httpRequest) {
@@ -755,6 +759,31 @@ public class CheckoutService {
 
         // Save updated inventory
         inventoryRepository.save(inventory);
+        Integer threshold = inventory.getThresholdCount() != null
+          ? inventory.getThresholdCount()
+          : 50;
+
+        log.info(
+          "Threshold check -> lotId={}, current={}, threshold={}",
+          inventory.getId(),
+          inventory.getCurrentCount(),
+          threshold
+        );
+
+        if (inventory.getCurrentCount() <= threshold) {
+
+          log.info("THRESHOLD REACHED — sending INVENTORY_LOW event");
+
+          InventoryLowEventDto dto = new InventoryLowEventDto();
+          dto.setShopId(inventory.getShopId());
+          dto.setInventoryId(inventory.getId());
+          dto.setProductName(inventory.getName());
+          dto.setCurrentCount(inventory.getCurrentCount());
+          dto.setThreshold(threshold);
+
+          notificationAdapter.sendInventoryLowEvent(dto);
+        }
+
 
         log.info("Updated inventory for lotId: {} - decreased currentCount by {} (new: {}), increased soldCount by {} (new: {})",
             item.getInventoryId(), quantity, inventory.getCurrentCount(), quantity, inventory.getSoldCount());
