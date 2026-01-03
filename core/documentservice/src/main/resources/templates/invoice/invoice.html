@@ -1,439 +1,445 @@
 <!DOCTYPE html>
 <html xmlns:th="http://www.thymeleaf.org">
 <head>
-    <meta charset="UTF-8"/>
-    <title>Tax Invoice</title>
-    <style>
-        @page {
-            margin: 0;
-            size: A4;
-        }
+  <meta charset="UTF-8"/>
+  <title>Tax Invoice</title>
+  <style>
+    @page {
+        margin: 0;
+        size: A4;
+    }
 
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
 
-        body {
-            font-family: Arial, sans-serif;
-            font-size: 11px;
-            color: #000;
-            background: #ffffff;
-            padding: 15px;
-            line-height: 1.4;
-        }
+    body {
+        font-family: Arial, sans-serif;
+        font-size: 11px;
+        color: #000;
+        background: #ffffff;
+        padding: 15px;
+        line-height: 1.4;
+    }
 
-        .invoice-container {
-            max-width: 100%;
-            margin: 0 auto;
-            border: 1px solid #000;
-            padding: 10px;
-        }
+    .invoice-container {
+        max-width: 100%;
+        margin: 0 auto;
+        border: 1px solid #000;
+        padding: 10px;
+    }
 
-        /* Header Section */
-        .header-section {
-            display: table;
-            width: 100%;
-            margin-bottom: 10px;
-            border-bottom: 1px solid #000;
-            padding-bottom: 8px;
-        }
+    /* Header Section */
+    .header-section {
+        display: table;
+        width: 100%;
+        margin-bottom: 10px;
+        border-bottom: 1px solid #000;
+        padding-bottom: 8px;
+    }
 
-        .seller-info {
-            display: table-cell;
-            vertical-align: top;
-            width: 100%;
-            padding-right: 15px;
-            text-align: center;
-        }
+    .seller-info {
+        display: table-cell;
+        vertical-align: top;
+        width: 100%;
+        padding-right: 15px;
+        text-align: center;
+    }
 
-        .invoice-meta {
-            display: table-cell;
-            vertical-align: top;
-            width: 40%;
-            text-align: right;
-        }
+    .invoice-meta {
+        display: table-cell;
+        vertical-align: top;
+        width: 40%;
+        text-align: right;
+    }
 
-        .company-name {
-            font-size: 16px;
-            font-weight: 700;
-            color: #000;
-            margin-bottom: 5px;
-            text-transform: uppercase;
-        }
+    .company-name {
+        font-size: 16px;
+        font-weight: 700;
+        color: #000;
+        margin-bottom: 5px;
+        text-transform: uppercase;
+    }
 
-        .company-details {
-            font-size: 10px;
-            color: #000;
-            line-height: 1.5;
-        }
+    .company-details {
+        font-size: 10px;
+        color: #000;
+        line-height: 1.5;
+    }
 
-        .company-details div {
-            margin-bottom: 2px;
-        }
+    .company-details div {
+        margin-bottom: 2px;
+    }
 
-        .invoice-meta-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 10px;
-        }
+    .invoice-meta-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 10px;
+    }
 
-        .invoice-meta-table td {
-            padding: 3px 5px;
-            text-align: right;
-        }
+    .invoice-meta-table td {
+        padding: 3px 5px;
+        text-align: right;
+    }
 
-        .invoice-meta-table td:first-child {
-            text-align: left;
-            font-weight: 600;
-            width: 40%;
-        }
+    .invoice-meta-table td:first-child {
+        text-align: left;
+        font-weight: 600;
+        width: 40%;
+    }
 
-        /* Buyer Section */
-        .buyer-section {
-            display: table;
-            width: 100%;
-            margin-bottom: 10px;
-            border: 1px solid #000;
-            padding: 8px;
-        }
+    /* Buyer Section */
+    .buyer-section {
+        display: table;
+        width: 100%;
+        table-layout: fixed;
+        margin-bottom: 10px;
+        padding: 8px;
+        border-collapse: separate;
+        border-spacing: 0;
+    }
 
-        .buyer-info {
-            display: table-cell;
-            vertical-align: top;
-            width: 34%;
-            padding-right: 15px;
-        }
+    .buyer-info {
+        display: table-cell;
+        vertical-align: top;
+        width: 40%;
+        padding-right: 15px;
+    }
 
-        .buyer-label {
-            font-size: 10px;
-            font-weight: 700;
-            margin-bottom: 5px;
-        }
+    .buyer-label {
+        font-size: 10px;
+        font-weight: 700;
+        margin-bottom: 5px;
+    }
 
-        .buyer-details {
-            font-size: 10px;
-            line-height: 1.5;
-        }
+    .buyer-details {
+        font-size: 10px;
+        line-height: 1.5;
+    }
 
-        .notes-section {
-            display: table-cell;
-            vertical-align: top;
-            width: 33%;
-            padding-left: 15px;
-            font-size: 9px;
-        }
+    .notes-section {
+        display: table-cell;
+        vertical-align: top;
+        width: 30%;
+        padding-left: 15px;
+        padding-right: 15px;
+        font-size: 9px;
+    }
 
-        .notes-section div {
-            margin-bottom: 3px;
-        }
+    .notes-section div {
+        margin-bottom: 3px;
+    }
 
-        /* Items Table */
-        .items-section {
-            margin-bottom: 10px;
-        }
+    /* Items Table */
+    .items-section {
+        margin-bottom: 10px;
+    }
 
-        .items-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 9px;
-        }
+    .items-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 9px;
+    }
 
-        .items-table th {
-            border: 1px solid #000;
-            padding: 5px 3px;
-            text-align: center;
-            font-weight: 700;
-            background: #f0f0f0;
-            font-size: 9px;
-        }
+    .items-table th {
+        border: 1px solid #000;
+        padding: 5px 3px;
+        text-align: center;
+        font-weight: 700;
+        background: #f0f0f0;
+        font-size: 9px;
+    }
 
-        .items-table td {
-            border: 1px solid #000;
-            padding: 4px 3px;
-            text-align: center;
-            font-size: 9px;
-        }
+    .items-table td {
+        border: 1px solid #000;
+        padding: 4px 3px;
+        text-align: center;
+        font-size: 9px;
+    }
 
-        .items-table td.text-left {
-            text-align: left;
-        }
+    .items-table td.text-left {
+        text-align: left;
+    }
 
-        .items-table td.text-right {
-            text-align: right;
-        }
+    .items-table td.text-right {
+        text-align: right;
+    }
 
-        .product-name {
-            font-weight: 600;
-        }
+    .product-name {
+        font-weight: 600;
+    }
 
-        /* Summary Section */
-        .summary-section {
-            display: table;
-            width: 100%;
-            margin-bottom: 10px;
-        }
+    /* Summary Section */
+    .summary-section {
+        display: table;
+        width: 100%;
+        margin-bottom: 10px;
+    }
 
-        .summary-left {
-            display: table-cell;
-            vertical-align: top;
-            width: 60%;
-            padding-right: 10px;
-        }
+    .summary-left {
+        display: table-cell;
+        vertical-align: bottom;
+        width: 60%;
+        padding-right: 10px;
+    }
 
-        .summary-right {
-            display: table-cell;
-            vertical-align: top;
-            width: 40%;
-        }
+    .summary-right {
+        display: table-cell;
+        vertical-align: top;
+        width: 40%;
+    }
 
-        .summary-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 10px;
-        }
+    .summary-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 10px;
+    }
 
-        .summary-table td {
-            padding: 4px 8px;
-            border: 1px solid #000;
-        }
+    .summary-table td {
+        padding: 4px 8px;
+        border: 1px solid #000;
+    }
 
-        .summary-table td:first-child {
-            text-align: left;
-            font-weight: 600;
-            width: 60%;
-        }
+    .summary-table td:first-child {
+        text-align: left;
+        font-weight: 600;
+        width: 60%;
+    }
 
-        .summary-table td:last-child {
-            text-align: right;
-            width: 40%;
-        }
+    .summary-table td:last-child {
+        text-align: right;
+        width: 40%;
+    }
 
-        .summary-table tr.net-amount {
-            background: #f0f0f0;
-            font-weight: 700;
-            font-size: 11px;
-        }
+    .summary-table tr.net-amount {
+        background: #f0f0f0;
+        font-weight: 700;
+        font-size: 11px;
+    }
 
-        .amount-in-words {
-            margin-top: 8px;
-            padding: 5px;
-            border: 1px solid #000;
-            font-size: 10px;
-            font-weight: 600;
-        }
+    .amount-in-words {
+        margin-top: 8px;
+        padding: 5px;
+        border: 1px solid #000;
+        font-size: 10px;
+        font-weight: 600;
+    }
 
-        /* Terms Section */
-        .terms-section {
-            margin-bottom: 10px;
-            font-size: 9px;
-            line-height: 1.5;
-        }
+    /* Terms Section */
+    .terms-section {
+        margin-bottom: 10px;
+        font-size: 9px;
+        line-height: 1.5;
+    }
 
-        .terms-section ol {
-            margin-left: 20px;
-            margin-bottom: 5px;
-        }
+    .terms-section ol {
+        margin-left: 20px;
+        margin-bottom: 5px;
+    }
 
-        .terms-section li {
-            margin-bottom: 3px;
-        }
+    .terms-section li {
+        margin-bottom: 3px;
+    }
 
-        /* Footer Section */
-        .footer-section {
-            display: table;
-            width: 100%;
-            margin-top: 15px;
-        }
+    /* Footer Section */
+    .footer-section {
+        display: table;
+        width: 100%;
+        margin-top: 15px;
+    }
 
-        .signature-left {
-            display: table-cell;
-            vertical-align: top;
-            width: 50%;
-            padding-right: 20px;
-        }
+    .signature-left {
+        display: table-cell;
+        vertical-align: top;
+        width: 50%;
+        padding-right: 20px;
+    }
 
-        .signature-right {
-            display: table-cell;
-            vertical-align: top;
-            width: 50%;
-            padding-left: 20px;
-        }
+    .signature-right {
+        display: table-cell;
+        vertical-align: top;
+        width: 50%;
+        padding-left: 20px;
+    }
 
-        .signature-box {
-            border-top: 1px solid #000;
-            padding-top: 5px;
-            margin-top: 40px;
-            text-align: center;
-            font-size: 10px;
-        }
+    .signature-box {
+        border-top: 1px solid #000;
+        padding-top: 5px;
+        margin-top: 40px;
+        text-align: center;
+        font-size: 10px;
+    }
 
-        .signature-label {
-            font-weight: 600;
-            margin-top: 30px;
-        }
+    .signature-label {
+        font-weight: 600;
+        margin-top: 30px;
+    }
 
-        .footer-note {
-            margin-top: 10px;
-            font-size: 8px;
-            text-align: center;
-            color: #666;
-        }
-    </style>
+    .footer-note {
+        margin-top: 10px;
+        font-size: 8px;
+        text-align: center;
+        color: #666;
+    }
+  </style>
 </head>
 <body>
 <div class="invoice-container">
-    <!-- Header: Seller Info and Invoice Meta -->
-    <div class="header-section">
-        <div class="seller-info">
-            <div class="company-name" th:text="${shopName ?: 'KUBER PHARMA'}">KUBER PHARMA</div>
-            <div class="company-details">
-                <div th:text="${shopAddress ?: 'A.N. ROAD, GAYA 823001'}">A.N. ROAD, GAYA 823001</div>
-                <div th:if="${shopDlNo}">D.L.No.: <span th:text="${shopDlNo}"></span></div>
-                <div th:if="${shopFssai}">FSSAI: <span th:text="${shopFssai}"></span></div>
-                <div th:if="${shopGstin}">GST NO.: <span th:text="${shopGstin}"></span></div>
-                <div th:if="${shopPhone}">Phone: <span th:text="${shopPhone}"></span></div>
-                <div th:if="${shopEmail}">E-Mail: <span th:text="${shopEmail}"></span></div>
-            </div>
+  <!-- Header: Seller Info and Invoice Meta -->
+  <div class="header-section">
+    <div class="seller-info">
+      <div class="company-name" th:text="${shopName ?: ''}"></div>
+      <div class="company-details">
+        <div th:text="${shopAddress ?: ''}"></div>
+        <div>
+          <span th:if="${shopDlNo != null && shopDlNo != ''}"><strong>D.L.No.: </strong><span th:text="${shopDlNo}"></span></span>
+          <span th:if="${shopDlNo != null && shopDlNo != '' and shopFssai != null && shopFssai != ''}"><strong> | </strong></span>
+          <span th:if="${shopFssai != null && shopFssai != ''}"><strong>FSSAI: </strong><span th:text="${shopFssai}"></span></span>
         </div>
+        <div th:if="${shopGstin != null && shopGstin != ''}"><strong>GST NO.: </strong><span th:text="${shopGstin}"></span></div>
+        <div>
+          <span th:if="${shopPhone != null && shopPhone != ''}"><strong>Phone: </strong><span th:text="${shopPhone}"></span></span>
+          <span th:if="${shopPhone != null && shopPhone != '' and shopEmail != null && shopEmail != ''}"><strong> | </strong></span>
+          <span th:if="${shopEmail != null && shopEmail != ''}"><strong>E-Mail: </strong><span th:text="${shopEmail}"></span></span>
+        </div>
+      </div>
     </div>
+  </div>
 
-    <!-- Buyer Section -->
-    <div class="buyer-section">
-        <div class="buyer-info">
-            <div class="buyer-label">M/s. <span th:text="${customerName ?: 'SRI CHANDRA MEDICAL HALL'}">SRI CHANDRA MEDICAL HALL</span></div>
-            <div class="buyer-details">
-                <div th:if="${customerAddress}" th:text="${customerAddress}">RAFIGANJ</div>
-                <div th:if="${customerState}">State Code: <span th:text="${customerState}"></span></div>
-            </div>
-        </div>
-        <div class="notes-section">
-            <div><strong>D.L. NO.</strong> 828983739</div>
-            <div><strong>GSTIN NO.</strong> 828983739</div>
-            <div><strong>Date:</strong> 12-12-26</div>
-            <div><strong>Time:</strong> 05:00 A.M.</div>
-        </div>
-        <div class="notes-section">
-            <div><strong>D.L. NO.</strong> 828983739</div>
-            <div><strong>GSTIN NO.</strong> 828983739</div>
-            <div><strong>Date:</strong> 12-12-26</div>
-            <div><strong>Time:</strong> 05:00 A.M.</div>
-        </div>
+  <!-- Buyer Section -->
+  <div class="buyer-section">
+    <div class="buyer-info">
+      <div class="buyer-label"><span th:text="${customerName ?: ''}"></span>
+      </div>
+      <div class="buyer-details">
+        <div th:if="${customerAddress}" th:text="${customerAddress}"></div>
+        <div th:if="${customerState}">State Code: <span th:text="${customerState}"></span></div>
+      </div>
     </div>
+    <div class="notes-section">
+      <div><strong>D.L. NO.</strong> <span th:text="${customerDlNo ?: ''}"></span></div>
+      <div><strong>GSTIN</strong> <span th:text="${customerGstin ?: ''}"></span></div>
+      <div><strong>PAN NO.</strong> <span th:text="${customerPan ?: ''}"></span></div>
+    </div>
+    <div class="notes-section">
+      <div><strong>Invoice NO.</strong> <span th:text="${invoiceNo ?: ''}"></span></div>
+      <div><strong>Date:</strong> <span th:text="${invoiceDate ?: ''}"></span></div>
+      <div><strong>Time:</strong> <span th:text="${invoiceTime ?: ''}"></span></div>
+    </div>
+  </div>
 
-    <!-- Items Table -->
-    <div class="items-section">
-        <table class="items-table">
-            <thead>
-            <tr>
-                <th style="width: 4%;">QTY</th>
-                <th style="width: 6%;">PACK</th>
-                <th style="width: 18%;">PRODUCTS</th>
-                <th style="width: 8%;">HSN/SAC</th>
-                <th style="width: 10%;">MFG/MKD</th>
-                <th style="width: 10%;">Exp.Dt</th>
-                <th style="width: 8%;">BATCH<br/>No.</th>
-                <th style="width: 7%;">M.R.P.</th>
-                <th style="width: 7%;">RATE</th>
-                <th style="width: 15%;">SCHEME</th>
-                <th style="width: 7%;">DIS%</th>
-                <th style="width: 7%;">CGST%</th>
-                <th style="width: 7%;">SGST%</th>
-                <th style="width: 17%;">AMOUNT</th>
-            </tr>
-            </thead>
-            <tbody>
-            <tr th:each="item : ${items}">
-                <td th:text="${item.quantity}">1</td>
-                <td th:text="${item.pack ?: '1X16'}">1X16</td>
-                <td class="text-left product-name" th:text="${item.name}">PIGMENTO TAB 60</td>
-                <td th:text="${item.hsn ?: item.sac ?: '30049011'}">30049011</td>
-                <td th:text="${item.mfgExpDate ?: 'CHARAK P1 8/28'}">CHARAK P1 8/28</td>
-                <td th:text="${item.batchNo ?: 'TP10834'}">TP10834</td>
-                <td class="text-right" th:text="${'₹' + #numbers.formatDecimal(item.maximumRetailPrice ?: item.sellingPrice, 1, 2)}">₹258.00</td>
-                <td class="text-right" th:text="${'₹' + #numbers.formatDecimal(item.sellingPrice, 1, 2)}">₹196.42</td>
-                <td th:text="${item.scheme ?: '5.00'}">5.00%</td>
-                <td class="text-right" th:text="${'₹' + #numbers.formatDecimal(item.sellingPrice * item.quantity, 1, 2)}">₹195.94</td>
-                <td class="text-right" th:text="${'₹' + #numbers.formatDecimal(item.sellingPrice * item.quantity, 1, 2)}">₹195.94</td>
-                <td class="text-right" th:text="${'₹' + #numbers.formatDecimal(item.sellingPrice * item.quantity, 1, 2)}">₹195.94</td>
-                <td class="text-right" th:text="${'₹' + #numbers.formatDecimal(item.sellingPrice * item.quantity, 1, 2)}">₹195.94</td>
-                <td class="text-right" th:text="${'₹' + #numbers.formatDecimal(item.sellingPrice * item.quantity, 1, 2)}">₹195.94</td>
-            </tr>
-            </tbody>
-        </table>
-        <div style="margin-top: 5px; font-size: 9px;">
-            <strong>NO OF ITEMS:</strong> <span th:text="${items != null ? items.size() : 0}">3</span>
-        </div>
+  <!-- Items Table -->
+  <div class="items-section">
+    <table class="items-table">
+      <thead>
+      <tr>
+        <th style="width: 4%;">QTY</th>
+        <th style="width: 16%;">PRODUCTS</th>
+        <th style="width: 7%;">HSN</th>
+        <th style="width: 7%;">SAC</th>
+        <th style="width: 8%;">COMPANY</th>
+        <th style="width: 7%;">Exp.Dt</th>
+        <th style="width: 7%;">BATCH No.</th>
+        <th style="width: 6%;">M.R.P.</th>
+        <th style="width: 6%;">RATE</th>
+        <th style="width: 12%;">SCHEME</th>
+        <th style="width: 5%;">DIS%</th>
+        <th style="width: 5%;">CGST%</th>
+        <th style="width: 5%;">SGST%</th>
+        <th style="width: 14%;">AMOUNT</th>
+      </tr>
+      </thead>
+      <tbody>
+      <tr th:each="item : ${items}">
+        <td th:text="${item.quantity}"></td>
+        <td class="text-left product-name" th:text="${item.name}"></td>
+        <td th:text="${item.hsn ?: ''}"></td>
+        <td th:text="${item.sac ?: ''}"></td>
+        <td th:text="${item.companyName ?: ''}"></td>
+        <td th:text="${item.expiryDate ?: ''}"></td>
+        <td th:text="${item.batchNo ?: ''}"></td>
+        <td class="text-right" th:text="${#numbers.formatDecimal(item.maximumRetailPrice, 1, 2)}"></td>
+        <td class="text-right" th:text="${#numbers.formatDecimal(item.sellingPrice, 1, 2)}"></td>
+        <td th:text="${item.scheme ?: ''}">5.00%</td>
+        <td class="text-right" th:text="${#numbers.formatDecimal(item.discount, 1, 2)}"></td>
+        <td class="text-right" th:text="${#numbers.formatDecimal(sgstPercent, 1, 2)}"></td>
+        <td class="text-right" th:text="${#numbers.formatDecimal(cgstPercent, 1, 2)}"></td>
+        <td class="text-right" th:text="${#numbers.formatDecimal(item.sellingPrice * item.quantity, 1, 2)}"></td>
+      </tr>
+      </tbody>
+    </table>
+    <div style="margin-top: 5px; font-size: 9px;">
+      <strong>NO OF ITEMS:</strong> <span th:text="${items != null ? items.size() : 0}">3</span>
     </div>
+  </div>
 
-    <!-- Summary Section -->
-    <div class="summary-section">
-        <div class="summary-left">
-            <div class="amount-in-words">
-                <strong>Rs. <span th:text="${amountInWords ?: 'One Thousand and Fourteen only'}">One Thousand and Fourteen only</span></strong>
-            </div>
-        </div>
-        <div class="summary-right">
-            <table class="summary-table">
-                <tr>
-                    <td>TOTAL AMOUNT</td>
-                    <td th:text="${'₹' + #numbers.formatDecimal(subTotal, 1, 2)}">₹1012.20</td>
-                </tr>
-                <tr th:if="${discountTotal != null && discountTotal > 0}">
-                    <td>Less Discount</td>
-                    <td th:text="${'₹' + #numbers.formatDecimal(discountTotal, 1, 2)}">₹46.95</td>
-                </tr>
-                <tr th:if="${sgstAmount != null && sgstAmount > 0}">
-                    <td>Add SGST <span th:text="${sgstPercent ?: '2.5'}"></span> %</td>
-                    <td th:text="${'₹' + #numbers.formatDecimal(sgstAmount, 1, 2)}">₹24.14</td>
-                </tr>
-                <tr th:if="${cgstAmount != null && cgstAmount > 0}">
-                    <td>Add CGST <span th:text="${cgstPercent ?: '2.5'}"></span> %</td>
-                    <td th:text="${'₹' + #numbers.formatDecimal(cgstAmount, 1, 2)}">₹24.14</td>
-                </tr>
-                <tr>
-                    <td>Add Roundoff</td>
-                    <td th:text="${'₹' + #numbers.formatDecimal(roundOff ?: 0.47, 1, 2)}">₹0.47</td>
-                </tr>
-                <tr class="net-amount">
-                    <td>NET AMOUNT</td>
-                    <td th:text="${'₹' + #numbers.formatDecimal(grandTotal, 1, 2)}">₹1014.00</td>
-                </tr>
-            </table>
-        </div>
+  <!-- Summary Section -->
+  <div class="summary-section">
+    <div class="summary-left">
+      <div class="amount-in-words">
+        <strong>
+          <span th:text="${amountInWords ?: ''}"></span>
+        </strong>
+      </div>
     </div>
+    <div class="summary-right">
+      <table class="summary-table">
+        <tr>
+          <td>TOTAL AMOUNT</td>
+          <td th:text="${#numbers.formatDecimal(subTotal, 1, 2)}"></td>
+        </tr>
+        <tr th:if="${discountTotal != null && discountTotal > 0}">
+          <td>Discount</td>
+          <td th:text="${#numbers.formatDecimal(discountTotal, 1, 2)}"></td>
+        </tr>
+        <tr th:if="${sgstAmount != null && sgstAmount > 0}">
+          <td>SGST <span th:text="${sgstPercent ?: ''}"></span> %</td>
+          <td th:text="${#numbers.formatDecimal(sgstAmount, 1, 2)}"></td>
+        </tr>
+        <tr th:if="${cgstAmount != null && cgstAmount > 0}">
+          <td>CGST <span th:text="${cgstPercent ?: ''}"></span> %</td>
+          <td th:text="${#numbers.formatDecimal(cgstAmount, 1, 2)}"></td>
+        </tr>
+        <tr class="net-amount">
+          <td>NET AMOUNT</td>
+          <td th:text="${#numbers.formatDecimal(grandTotal, 1, 2)}"></td>
+        </tr>
+      </table>
+    </div>
+  </div>
 
-    <!-- Terms and Conditions -->
-    <div class="terms-section">
-        <ol>
-            <li>On the strength of Warranty obtained by us We hereby give this Warranty that the goods sold by us do not contravene the provisions of the Drugs Act 1940.</li>
-            <li>Price charged excess due to oversight may be reffered to us for rectificaton.</li>
-            <li>All Subject To GAYA Jurisdiction only.</li>
-        </ol>
-        <div style="text-align: right; margin-top: 5px;"><strong>E.&amp; O.E.</strong></div>
-    </div>
+  <!-- Terms and Conditions -->
+  <div class="terms-section">
+    <ol>
+      <li>On the strength of Warranty obtained by us We hereby give this Warranty that the goods sold by us do not
+        contravene the provisions of the Drugs Act 1940.
+      </li>
+      <li>Price charged excess due to oversight may be reffered to us for rectificaton.</li>
+    </ol>
+  </div>
 
-    <!-- Footer: Signatures -->
-    <div class="footer-section">
-        <div class="signature-left">
-            <div class="signature-box">
-                <div style="margin-bottom: 30px;">For, <span th:text="${shopName ?: 'KUBER PHARMA'}">KUBER PHARMA</span></div>
-                <div class="signature-label">Authorised Signatory</div>
-            </div>
-        </div>
-        <div class="signature-right">
-            <div class="signature-box">
-                <div style="margin-bottom: 30px;">Received By</div>
-                <div class="signature-label">Customer Signature</div>
-            </div>
-        </div>
+  <!-- Footer: Signatures -->
+  <div class="footer-section">
+    <div class="signature-left">
+      <div class="signature-box">
+        <div style="margin-bottom: 30px;"><span th:text="${shopName ?: ''}"></span></div>
+        <div class="signature-label">Authorised Signatory</div>
+      </div>
     </div>
+    <div class="signature-right">
+      <div class="signature-box">
+        <div style="margin-bottom: 30px;">Received By</div>
+        <div class="signature-label">Customer Signature</div>
+      </div>
+    </div>
+  </div>
 
-    <!-- Footer Note -->
-    <div class="footer-note" th:if="${footerNote}">
-        <div th:utext="${footerNote}"></div>
-    </div>
+  <!-- Footer Note -->
+  <div class="footer-note" th:if="${footerNote}">
+    <div th:utext="${footerNote}"></div>
+  </div>
 </div>
 </body>
 </html>
