@@ -28,7 +28,6 @@ public class GenerateInvoiceRequest {
   // Customer/Buyer information
   private String customerName;
   private String customerAddress;
-  private String customerState;
   private String customerDlNo;
   private String customerGstin;
   private String customerPan;
