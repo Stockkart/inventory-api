@@ -73,7 +73,6 @@ public class InvoicePdfService {
     // Customer/Buyer details
     context.setVariable("customerName", request.getCustomerName());
     context.setVariable("customerAddress", request.getCustomerAddress());
-    context.setVariable("customerState", request.getCustomerState());
     context.setVariable("customerDlNo", request.getCustomerDlNo());
     context.setVariable("customerGstin", request.getCustomerGstin());
     context.setVariable("customerPan", request.getCustomerPan());
