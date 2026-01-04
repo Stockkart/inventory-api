@@ -2,7 +2,6 @@ package com.inventory.documentservice.rest.controller;
 
 import com.inventory.documentservice.rest.dto.GenerateInvoiceRequest;
 import com.inventory.documentservice.service.DocumentService;
-import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
@@ -28,13 +27,11 @@ public class DocumentController {
    * Generate invoice PDF.
    * 
    * @param request the invoice generation request containing purchase data
-   * @param httpRequest HTTP request
    * @return PDF file as blob
    */
   @PostMapping("/invoice")
   public ResponseEntity<byte[]> generateInvoice(
-      @RequestBody GenerateInvoiceRequest request,
-      HttpServletRequest httpRequest) {
+      @RequestBody GenerateInvoiceRequest request) {
     
     log.info("Generating invoice PDF for invoice: {}", request.getInvoiceNo());
     

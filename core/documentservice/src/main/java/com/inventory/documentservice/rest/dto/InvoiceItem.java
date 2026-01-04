@@ -2,7 +2,6 @@ package com.inventory.documentservice.rest.dto;
 
 import lombok.Data;
 import java.math.BigDecimal;
-import java.time.Instant;
 
 /**
  * Invoice item DTO for invoice generation.
