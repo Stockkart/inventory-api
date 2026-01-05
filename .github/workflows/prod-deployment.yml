@@ -1,10 +1,10 @@
 name: Deploy to DigitalOcean App Platform
 
 on:
-  workflow_run:
-    workflows: ["Dockerhub image push for inventory-backend"]
-    types:
-      - completed
+  push:
+    branches:
+      - main
+      - prod-deployment-setup
 
 jobs:
   deploy:
