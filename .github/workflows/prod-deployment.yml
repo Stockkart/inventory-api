@@ -9,8 +9,6 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' && (github.event.workflow_run.head_branch == 'prod-deployment-setup') }}
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
