@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main          # build + push on main
-  workflow_dispatch:   # allow manual trigger
 
 jobs:
   build-and-push:
@@ -13,6 +12,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Save commit ID
+        run: git rev-parse HEAD > commit.txt
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
