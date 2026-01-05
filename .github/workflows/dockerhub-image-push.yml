@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - main          # build + push on main
-      - prod-deployment-setup
-  workflow_dispatch:   # allow manual trigger
 
 jobs:
   build-and-push:
