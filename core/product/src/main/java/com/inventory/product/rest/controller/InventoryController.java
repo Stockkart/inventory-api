@@ -5,6 +5,8 @@ import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.common.exception.AuthenticationException;
 import com.inventory.ocr.dto.ParsedInventoryItem;
 import com.inventory.ocr.service.InvoiceParserService;
+import com.inventory.product.rest.dto.inventory.BulkCreateInventoryRequest;
+import com.inventory.product.rest.dto.inventory.BulkCreateInventoryResponse;
 import com.inventory.product.rest.dto.inventory.CreateInventoryRequest;
 import com.inventory.product.rest.dto.inventory.InventoryDetailResponse;
 import com.inventory.product.rest.dto.inventory.InventoryListResponse;
@@ -59,6 +61,36 @@ public class InventoryController {
     }
 
     return ResponseEntity.ok(ApiResponse.success(inventoryService.create(request, userId, shopId)));
+  }
+
+  /**
+   * Bulk create inventory items with shared vendorId and lotId.
+   *
+   * @param bulkRequest the bulk creation request containing list of items and shared vendorId/lotId
+   * @param httpRequest HTTP request containing shopId from authentication
+   * @return bulk creation response with created items
+   */
+  @PostMapping(value = "/bulk", produces = MediaType.APPLICATION_JSON_VALUE)
+  public ResponseEntity<ApiResponse<BulkCreateInventoryResponse>> bulkCreate(
+      @RequestBody BulkCreateInventoryRequest bulkRequest,
+      HttpServletRequest httpRequest) {
+    // Get userId and shopId from request attributes (set by AuthenticationInterceptor)
+    String userId = (String) httpRequest.getAttribute("userId");
+    String shopId = (String) httpRequest.getAttribute("shopId");
+
+    if (StringUtils.isEmpty(userId) || StringUtils.isEmpty(shopId)) {
+      throw new AuthenticationException(
+          ErrorCode.UNAUTHORIZED,
+          "User not authenticated or shop not found");
+    }
+
+    // Validate request
+    if (bulkRequest.getItems() == null || bulkRequest.getItems().isEmpty()) {
+      return ResponseEntity.badRequest()
+          .body(ApiResponse.error("Items list cannot be empty"));
+    }
+
+    return ResponseEntity.ok(ApiResponse.success(inventoryService.bulkCreate(bulkRequest, userId, shopId)));
   }
 
   @GetMapping

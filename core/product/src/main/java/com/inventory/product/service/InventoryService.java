@@ -9,6 +9,7 @@ import com.inventory.notifications.service.ReminderService;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.rest.dto.inventory.*;
+import java.util.ArrayList;
 import com.inventory.user.domain.repository.ShopVendorRepository;
 import com.inventory.product.domain.repository.InventoryRepository.LotSummaryProjection;
 import com.inventory.product.rest.mapper.InventoryMapper;
@@ -48,6 +49,92 @@ public class InventoryService {
 
   @Autowired
   private com.inventory.user.domain.repository.ShopVendorRepository shopVendorRepository;
+
+  /**
+   * Bulk create inventory items with shared vendorId and lotId.
+   * 
+   * @param bulkRequest the bulk creation request
+   * @param userId the user ID
+   * @param shopId the shop ID
+   * @return bulk creation response with created items
+   */
+  public BulkCreateInventoryResponse bulkCreate(BulkCreateInventoryRequest bulkRequest, String userId, String shopId) {
+    List<InventoryReceiptResponse> createdItems = new ArrayList<>();
+    int failedCount = 0;
+    
+    // Validate vendorId if provided
+    if (StringUtils.hasText(bulkRequest.getVendorId())) {
+      validateVendorId(bulkRequest.getVendorId(), shopId);
+    }
+    
+    // Determine lotId: use provided lotId or generate new one
+    String lotId = determineLotId(bulkRequest.getLotId(), shopId);
+    
+    log.info("Bulk creating {} inventory items with lotId: {} and vendorId: {}", 
+        bulkRequest.getItems() != null ? bulkRequest.getItems().size() : 0, 
+        lotId, bulkRequest.getVendorId());
+    
+    // Process each item
+    if (bulkRequest.getItems() != null) {
+      for (CreateInventoryItemRequest itemRequest : bulkRequest.getItems()) {
+        try {
+          // Convert CreateInventoryItemRequest to CreateInventoryRequest
+          CreateInventoryRequest fullRequest = convertToCreateInventoryRequest(itemRequest, 
+              bulkRequest.getVendorId(), lotId);
+          
+          // Create inventory using existing create method
+          InventoryReceiptResponse response = create(fullRequest, userId, shopId);
+          createdItems.add(response);
+        } catch (Exception e) {
+          log.error("Failed to create inventory item: {}", e.getMessage(), e);
+          failedCount++;
+        }
+      }
+    }
+    
+    log.info("Bulk creation completed: {} created, {} failed", createdItems.size(), failedCount);
+    
+    BulkCreateInventoryResponse bulkResponse = new BulkCreateInventoryResponse();
+    bulkResponse.setItems(createdItems);
+    bulkResponse.setTotalCreated(createdItems.size());
+    bulkResponse.setTotalFailed(failedCount);
+    
+    return bulkResponse;
+  }
+
+  /**
+   * Convert CreateInventoryItemRequest to CreateInventoryRequest by adding vendorId and lotId.
+   */
+  private CreateInventoryRequest convertToCreateInventoryRequest(CreateInventoryItemRequest itemRequest, 
+                                                                  String vendorId, String lotId) {
+    CreateInventoryRequest fullRequest = new CreateInventoryRequest();
+    
+    // Copy all fields from item request
+    fullRequest.setBarcode(itemRequest.getBarcode());
+    fullRequest.setName(itemRequest.getName());
+    fullRequest.setDescription(itemRequest.getDescription());
+    fullRequest.setCompanyName(itemRequest.getCompanyName());
+    fullRequest.setMaximumRetailPrice(itemRequest.getMaximumRetailPrice());
+    fullRequest.setCostPrice(itemRequest.getCostPrice());
+    fullRequest.setSellingPrice(itemRequest.getSellingPrice());
+    fullRequest.setBusinessType(itemRequest.getBusinessType());
+    fullRequest.setLocation(itemRequest.getLocation());
+    fullRequest.setCount(itemRequest.getCount());
+    fullRequest.setThresholdCount(itemRequest.getThresholdCount());
+    fullRequest.setExpiryDate(itemRequest.getExpiryDate());
+    fullRequest.setReminderAt(itemRequest.getReminderAt());
+    fullRequest.setCustomReminders(itemRequest.getCustomReminders());
+    fullRequest.setHsn(itemRequest.getHsn());
+    fullRequest.setSac(itemRequest.getSac());
+    fullRequest.setBatchNo(itemRequest.getBatchNo());
+    fullRequest.setScheme(itemRequest.getScheme());
+    
+    // Set shared fields
+    fullRequest.setVendorId(vendorId);
+    fullRequest.setLotId(lotId);
+    
+    return fullRequest;
+  }
 
   public InventoryReceiptResponse create(CreateInventoryRequest request, String userId, String shopId) {
     try {
