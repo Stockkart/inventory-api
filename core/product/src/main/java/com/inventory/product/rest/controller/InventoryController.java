@@ -3,16 +3,21 @@ package com.inventory.product.rest.controller;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.common.exception.AuthenticationException;
+import com.inventory.ocr.dto.ParsedInventoryItem;
+import com.inventory.ocr.service.InvoiceParserService;
 import com.inventory.product.rest.dto.inventory.CreateInventoryRequest;
 import com.inventory.product.rest.dto.inventory.InventoryDetailResponse;
 import com.inventory.product.rest.dto.inventory.InventoryListResponse;
 import com.inventory.product.rest.dto.inventory.InventoryReceiptResponse;
 import com.inventory.product.rest.dto.inventory.LotDetailDto;
 import com.inventory.product.rest.dto.inventory.LotListResponse;
+import com.inventory.product.rest.dto.inventory.ParsedInventoryListResponse;
 import com.inventory.product.rest.dto.inventory.UpdateInventoryRequest;
 import com.inventory.product.service.InventoryService;
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,13 +28,21 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/inventory")
+@Slf4j
 public class InventoryController {
 
   @Autowired
   private InventoryService inventoryService;
+
+  @Autowired
+  private InvoiceParserService invoiceParserService;
 
   @PostMapping
   public ResponseEntity<ApiResponse<InventoryReceiptResponse>> create(
@@ -180,6 +193,60 @@ public class InventoryController {
     }
 
     return ResponseEntity.ok(ApiResponse.success(inventoryService.update(inventoryId, request, shopId)));
+  }
+
+  /**
+   * Parse invoice image and extract inventory items using OCR.
+   *
+   * @param image the invoice image file to process
+   * @param httpRequest HTTP request containing shopId from authentication
+   * @return list of parsed inventory items from the invoice
+   */
+  @PostMapping(value = "/parse-invoice", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+  public ResponseEntity<ApiResponse<ParsedInventoryListResponse>> parseInvoice(
+      @RequestParam("image") MultipartFile image,
+      HttpServletRequest httpRequest) {
+    log.info("Received invoice parsing request for image: {}, size: {} bytes",
+        image.getOriginalFilename(), image.getSize());
+
+    // Get shopId from request attributes (optional for parsing, but good to have for logging)
+    String shopId = (String) httpRequest.getAttribute("shopId");
+
+    // Validate file
+    if (image.isEmpty()) {
+      return ResponseEntity.badRequest()
+          .body(ApiResponse.error("Image file is empty"));
+    }
+
+    // Validate content type
+    String contentType = image.getContentType();
+    if (contentType == null ||
+        (!contentType.startsWith("image/") && !contentType.equals("application/octet-stream"))) {
+      return ResponseEntity.badRequest()
+          .body(ApiResponse.error("File must be an image"));
+    }
+
+    try {
+      // Parse invoice image to extract inventory items
+      byte[] imageBytes = image.getBytes();
+      List<ParsedInventoryItem> items = invoiceParserService.parseInvoiceImage(imageBytes);
+
+      ParsedInventoryListResponse response = new ParsedInventoryListResponse();
+      response.setItems(items);
+      response.setTotalItems(items.size());
+
+      log.info("Invoice parsing completed successfully. Extracted {} inventory items", items.size());
+
+      return ResponseEntity.ok(ApiResponse.success(response));
+    } catch (IOException e) {
+      log.error("Error reading image file: {}", e.getMessage(), e);
+      return ResponseEntity.badRequest()
+          .body(ApiResponse.error("Error reading image file: " + e.getMessage()));
+    } catch (Exception e) {
+      log.error("Error parsing invoice image: {}", e.getMessage(), e);
+      return ResponseEntity.internalServerError()
+          .body(ApiResponse.error("Error parsing invoice: " + e.getMessage()));
+    }
   }
 
 }
