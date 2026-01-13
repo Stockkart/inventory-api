@@ -6,9 +6,11 @@ import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.notifications.rest.dto.CreateReminderForInventoryRequest;
 import com.inventory.notifications.service.ReminderService;
+import com.inventory.ocr.service.InvoiceParserService;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.rest.dto.inventory.*;
+import java.util.ArrayList;
 import com.inventory.user.domain.repository.ShopVendorRepository;
 import com.inventory.product.domain.repository.InventoryRepository.LotSummaryProjection;
 import com.inventory.product.rest.mapper.InventoryMapper;
@@ -20,7 +22,9 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -48,6 +52,152 @@ public class InventoryService {
 
   @Autowired
   private com.inventory.user.domain.repository.ShopVendorRepository shopVendorRepository;
+
+  @Autowired
+  private InvoiceParserService invoiceParserService;
+
+  @Autowired
+  private ParsedInventoryMapper parsedInventoryMapper;
+
+  /**
+   * Parse invoice image and extract inventory items using OCR.
+   * Validates the image file and converts parsed items to CreateInventoryItemRequest format.
+   *
+   * @param image the invoice image file to process
+   * @return ParsedInventoryListResponse containing list of CreateInventoryItemRequest items
+   * @throws ValidationException if image file is empty or invalid content type
+   * @throws BaseException if there's an error reading the file or parsing the invoice
+   */
+  @Transactional(readOnly = true)
+  public ParsedInventoryListResponse parseInvoiceImage(MultipartFile image) {
+    log.info("Processing invoice parsing request for image: {}, size: {} bytes",
+        image.getOriginalFilename(), image.getSize());
+
+    // Validate file
+    if (image.isEmpty()) {
+      throw new ValidationException("Image file is empty");
+    }
+
+    // Validate content type
+    String contentType = image.getContentType();
+    if (contentType == null ||
+        (!contentType.startsWith("image/") && !contentType.equals("application/octet-stream"))) {
+      throw new ValidationException("File must be an image");
+    }
+
+    try {
+      // Parse invoice image to extract inventory items
+      byte[] imageBytes = image.getBytes();
+      List<com.inventory.ocr.dto.ParsedInventoryItem> parsedItems = 
+          invoiceParserService.parseInvoiceImage(imageBytes);
+
+      // Convert ParsedInventoryItem to CreateInventoryItemRequest
+      List<CreateInventoryItemRequest> items = 
+          parsedInventoryMapper.toCreateInventoryItemRequestList(parsedItems);
+
+      ParsedInventoryListResponse response = new ParsedInventoryListResponse();
+      response.setItems(items);
+      response.setTotalItems(items.size());
+
+      log.info("Invoice parsing completed successfully. Extracted {} inventory items", items.size());
+
+      return response;
+    } catch (IOException e) {
+      log.error("Error reading image file: {}", e.getMessage(), e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
+          "Error reading image file: " + e.getMessage(), e);
+    } catch (Exception e) {
+      log.error("Error parsing invoice image: {}", e.getMessage(), e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
+          "Error parsing invoice: " + e.getMessage(), e);
+    }
+  }
+
+  /**
+   * Bulk create inventory items with shared vendorId and lotId.
+   * 
+   * @param bulkRequest the bulk creation request
+   * @param userId the user ID
+   * @param shopId the shop ID
+   * @return bulk creation response with created items
+   */
+  public BulkCreateInventoryResponse bulkCreate(BulkCreateInventoryRequest bulkRequest, String userId, String shopId) {
+    List<InventoryReceiptResponse> createdItems = new ArrayList<>();
+    int failedCount = 0;
+    
+    // Validate vendorId if provided
+    if (StringUtils.hasText(bulkRequest.getVendorId())) {
+      validateVendorId(bulkRequest.getVendorId(), shopId);
+    }
+    
+    // Determine lotId: use provided lotId or generate new one
+    String lotId = determineLotId(bulkRequest.getLotId(), shopId);
+    
+    log.info("Bulk creating {} inventory items with lotId: {} and vendorId: {}", 
+        bulkRequest.getItems() != null ? bulkRequest.getItems().size() : 0, 
+        lotId, bulkRequest.getVendorId());
+    
+    // Process each item
+    if (bulkRequest.getItems() != null) {
+      for (CreateInventoryItemRequest itemRequest : bulkRequest.getItems()) {
+        try {
+          // Convert CreateInventoryItemRequest to CreateInventoryRequest
+          CreateInventoryRequest fullRequest = convertToCreateInventoryRequest(itemRequest, 
+              bulkRequest.getVendorId(), lotId);
+          
+          // Create inventory using existing create method
+          InventoryReceiptResponse response = create(fullRequest, userId, shopId);
+          createdItems.add(response);
+        } catch (Exception e) {
+          log.error("Failed to create inventory item: {}", e.getMessage(), e);
+          failedCount++;
+        }
+      }
+    }
+    
+    log.info("Bulk creation completed: {} created, {} failed", createdItems.size(), failedCount);
+    
+    BulkCreateInventoryResponse bulkResponse = new BulkCreateInventoryResponse();
+    bulkResponse.setItems(createdItems);
+    bulkResponse.setTotalCreated(createdItems.size());
+    bulkResponse.setTotalFailed(failedCount);
+    
+    return bulkResponse;
+  }
+
+  /**
+   * Convert CreateInventoryItemRequest to CreateInventoryRequest by adding vendorId and lotId.
+   */
+  private CreateInventoryRequest convertToCreateInventoryRequest(CreateInventoryItemRequest itemRequest, 
+                                                                  String vendorId, String lotId) {
+    CreateInventoryRequest fullRequest = new CreateInventoryRequest();
+    
+    // Copy all fields from item request
+    fullRequest.setBarcode(itemRequest.getBarcode());
+    fullRequest.setName(itemRequest.getName());
+    fullRequest.setDescription(itemRequest.getDescription());
+    fullRequest.setCompanyName(itemRequest.getCompanyName());
+    fullRequest.setMaximumRetailPrice(itemRequest.getMaximumRetailPrice());
+    fullRequest.setCostPrice(itemRequest.getCostPrice());
+    fullRequest.setSellingPrice(itemRequest.getSellingPrice());
+    fullRequest.setBusinessType(itemRequest.getBusinessType());
+    fullRequest.setLocation(itemRequest.getLocation());
+    fullRequest.setCount(itemRequest.getCount());
+    fullRequest.setThresholdCount(itemRequest.getThresholdCount());
+    fullRequest.setExpiryDate(itemRequest.getExpiryDate());
+    fullRequest.setReminderAt(itemRequest.getReminderAt());
+    fullRequest.setCustomReminders(itemRequest.getCustomReminders());
+    fullRequest.setHsn(itemRequest.getHsn());
+    fullRequest.setSac(itemRequest.getSac());
+    fullRequest.setBatchNo(itemRequest.getBatchNo());
+    fullRequest.setScheme(itemRequest.getScheme());
+    
+    // Set shared fields
+    fullRequest.setVendorId(vendorId);
+    fullRequest.setLotId(lotId);
+    
+    return fullRequest;
+  }
 
   public InventoryReceiptResponse create(CreateInventoryRequest request, String userId, String shopId) {
     try {

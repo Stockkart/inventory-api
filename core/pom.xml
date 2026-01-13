@@ -11,6 +11,7 @@
         <module>notifications</module>
         <module>common</module>
         <module>documentservice</module>
+        <module>ocr</module>
     </modules>
 
     <properties>

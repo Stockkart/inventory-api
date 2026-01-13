@@ -65,6 +65,12 @@ public class CheckoutService {
   private com.inventory.user.service.CustomerService customerService;
 
   @Autowired
+  private com.inventory.user.domain.repository.CustomerRepository customerRepository;
+
+  @Autowired
+  private com.inventory.user.domain.repository.ShopCustomerRepository shopCustomerRepository;
+
+  @Autowired
   private ShopRepository shopRepository;
 
   @Autowired
@@ -301,6 +307,202 @@ public class CheckoutService {
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
           "An unexpected error occurred while getting purchases: " + e.getMessage(), e);
     }
+  }
+
+  /**
+   * Search purchases with pagination and customer search support.
+   * Supports searching by invoice number (regex), customer email, phone, and name (regex).
+   *
+   * @param page page number (1-based)
+   * @param limit page size
+   * @param invoiceNo optional invoice number regex pattern to search
+   * @param customerEmail optional customer email to search
+   * @param customerPhone optional customer phone to search
+   * @param customerName optional customer name regex pattern to search
+   * @param httpRequest HTTP request containing shopId
+   * @return PurchaseListResponse with paginated purchases
+   */
+  @Transactional(readOnly = true)
+  public PurchaseListResponse searchPurchases(Integer page, Integer limit, String invoiceNo,
+                                              String customerEmail, String customerPhone, String customerName,
+                                              HttpServletRequest httpRequest) {
+    // Get shopId and userId from request attributes
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    String userId = (String) httpRequest.getAttribute("userId");
+
+    // Validate shopId and userId
+    checkoutValidator.validateShopIdAndUserId(shopId, userId);
+
+    log.info("Searching purchases for shop: {}, user: {}, page: {}, limit: {}, invoiceNo: {}, customerEmail: {}, customerPhone: {}, customerName: {}",
+        shopId, userId, page, limit, invoiceNo, customerEmail, customerPhone, customerName);
+
+    try {
+      // Set defaults
+      int pageNumber = (page != null && page > 0) ? page - 1 : 0; // Spring Data uses 0-based indexing
+      int pageSize = (limit != null && limit > 0) ? limit : 20; // Default limit of 20
+
+      // Validate page size (max 100 to prevent performance issues)
+      if (pageSize > 100) {
+        pageSize = 100;
+        log.warn("Page size exceeded maximum, setting to 100");
+      }
+
+      // Create Pageable with sorting by soldAt descending
+      Pageable pageable = PageRequest.of(pageNumber, pageSize, Sort.by(Sort.Direction.DESC, "soldAt"));
+
+      Page<Purchase> purchasePage;
+      List<String> customerIds = null;
+
+      // If customer search criteria provided, find matching customer IDs first
+      if (StringUtils.hasText(customerEmail) || StringUtils.hasText(customerPhone) || StringUtils.hasText(customerName)) {
+        customerIds = findCustomerIdsBySearchCriteria(shopId, customerEmail, customerPhone, customerName);
+
+        if (customerIds.isEmpty()) {
+          // No matching customers found, return empty result
+          PurchaseListResponse response = new PurchaseListResponse();
+          response.setPurchases(new ArrayList<>());
+          response.setPage(pageNumber + 1);
+          response.setLimit(pageSize);
+          response.setTotal(0);
+          response.setTotalPages(0);
+          return response;
+        }
+      }
+
+      // Create final reference for use in lambda expressions
+      final List<String> finalCustomerIds = customerIds;
+
+      // Search purchases based on criteria
+      if (StringUtils.hasText(invoiceNo) && finalCustomerIds != null && !finalCustomerIds.isEmpty()) {
+        // Search by both invoice number (regex) and customer IDs
+        // Filter purchases by invoiceNo regex first, then by customerIds
+        List<Purchase> purchasesByInvoice = purchaseRepository.findByShopIdAndInvoiceNoRegex(shopId, invoiceNo.trim());
+        // Filter by customerIds
+        List<Purchase> filteredPurchases = purchasesByInvoice.stream()
+            .filter(p -> finalCustomerIds.contains(p.getCustomerId()))
+            .collect(java.util.stream.Collectors.toList());
+        // Sort and paginate
+        filteredPurchases.sort((a, b) -> {
+          if (a.getSoldAt() == null && b.getSoldAt() == null) return 0;
+          if (a.getSoldAt() == null) return 1;
+          if (b.getSoldAt() == null) return -1;
+          return b.getSoldAt().compareTo(a.getSoldAt()); // Descending
+        });
+        int start = (int) pageable.getOffset();
+        int end = Math.min((start + pageable.getPageSize()), filteredPurchases.size());
+        List<Purchase> pagedPurchases = start < filteredPurchases.size() 
+            ? filteredPurchases.subList(start, end) 
+            : new ArrayList<>();
+        purchasePage = new org.springframework.data.domain.PageImpl<>(
+            pagedPurchases, pageable, filteredPurchases.size());
+      } else if (StringUtils.hasText(invoiceNo)) {
+        // Search by invoice number using regex (case-insensitive)
+        List<Purchase> purchases = purchaseRepository.findByShopIdAndInvoiceNoRegex(shopId, invoiceNo.trim());
+        // Sort by soldAt descending
+        purchases.sort((a, b) -> {
+          if (a.getSoldAt() == null && b.getSoldAt() == null) return 0;
+          if (a.getSoldAt() == null) return 1;
+          if (b.getSoldAt() == null) return -1;
+          return b.getSoldAt().compareTo(a.getSoldAt()); // Descending
+        });
+        // Convert to page
+        int start = (int) pageable.getOffset();
+        int end = Math.min((start + pageable.getPageSize()), purchases.size());
+        List<Purchase> pagedPurchases = start < purchases.size() 
+            ? purchases.subList(start, end) 
+            : new ArrayList<>();
+        purchasePage = new org.springframework.data.domain.PageImpl<>(
+            pagedPurchases, pageable, purchases.size());
+      } else if (finalCustomerIds != null && !finalCustomerIds.isEmpty()) {
+        // Search by customer IDs only
+        purchasePage = purchaseRepository.findByShopIdAndCustomerIdIn(shopId, finalCustomerIds, pageable);
+      } else {
+        // No search criteria, get all purchases for the shop
+        purchasePage = purchaseRepository.findByShopId(shopId, pageable);
+      }
+
+      // Map to DTOs
+      List<PurchaseSummaryDto> purchaseDtos = purchasePage.getContent().stream()
+          .map(purchaseMapper::toPurchaseSummaryDto)
+          .toList();
+
+      // Build response
+      PurchaseListResponse response = new PurchaseListResponse();
+      response.setPurchases(purchaseDtos);
+      response.setPage(pageNumber + 1); // Convert back to 1-based for API response
+      response.setLimit(pageSize);
+      response.setTotal(purchasePage.getTotalElements());
+      response.setTotalPages(purchasePage.getTotalPages());
+
+      log.info("Retrieved {} purchases (page {} of {}) for shop: {}",
+          purchaseDtos.size(), pageNumber + 1, purchasePage.getTotalPages(), shopId);
+
+      return response;
+
+    } catch (DataAccessException e) {
+      log.error("Database error while searching purchases for shop: {}, user: {}", shopId, userId, e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
+          "Error searching purchases: " + e.getMessage(), e);
+    } catch (Exception e) {
+      log.error("Unexpected error while searching purchases for shop: {}, user: {}", shopId, userId, e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
+          "An unexpected error occurred while searching purchases: " + e.getMessage(), e);
+    }
+  }
+
+  /**
+   * Find customer IDs by search criteria (email, phone, name regex).
+   *
+   * @param shopId the shop ID
+   * @param customerEmail optional customer email
+   * @param customerPhone optional customer phone
+   * @param customerName optional customer name regex pattern
+   * @return list of customer IDs matching the criteria
+   */
+  private List<String> findCustomerIdsBySearchCriteria(String shopId, String customerEmail,
+                                                       String customerPhone, String customerName) {
+    List<String> customerIds = new ArrayList<>();
+    List<com.inventory.user.domain.model.Customer> customers = new ArrayList<>();
+
+    // Search by email
+    if (StringUtils.hasText(customerEmail)) {
+      customerRepository.findByEmail(customerEmail.trim()).ifPresent(customer -> {
+        if (shopCustomerRepository.existsByShopIdAndCustomerId(shopId, customer.getId())) {
+          customers.add(customer);
+        }
+      });
+    }
+
+    // Search by phone
+    if (StringUtils.hasText(customerPhone)) {
+      customerService.searchCustomerByPhone(customerPhone.trim(), shopId).ifPresent(customer -> {
+        if (!customers.contains(customer)) {
+          customers.add(customer);
+        }
+      });
+    }
+
+    // Search by name (regex)
+    if (StringUtils.hasText(customerName)) {
+      // Use CustomerRepository searchByQuery which supports regex on name
+      List<com.inventory.user.domain.model.Customer> nameMatches = customerRepository.searchByQuery(customerName.trim());
+      // Filter by shop
+      for (com.inventory.user.domain.model.Customer customer : nameMatches) {
+        if (shopCustomerRepository.existsByShopIdAndCustomerId(shopId, customer.getId())) {
+          if (!customers.contains(customer)) {
+            customers.add(customer);
+          }
+        }
+      }
+    }
+
+    // Extract customer IDs
+    customerIds = customers.stream()
+        .map(com.inventory.user.domain.model.Customer::getId)
+        .distinct()
+        .collect(java.util.stream.Collectors.toList());
+
+    return customerIds;
   }
 
   private Sort parseSortOrder(String order) {

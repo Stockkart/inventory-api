@@ -3,16 +3,21 @@ package com.inventory.product.rest.controller;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.common.exception.AuthenticationException;
+import com.inventory.product.rest.dto.inventory.BulkCreateInventoryRequest;
+import com.inventory.product.rest.dto.inventory.BulkCreateInventoryResponse;
 import com.inventory.product.rest.dto.inventory.CreateInventoryRequest;
 import com.inventory.product.rest.dto.inventory.InventoryDetailResponse;
 import com.inventory.product.rest.dto.inventory.InventoryListResponse;
 import com.inventory.product.rest.dto.inventory.InventoryReceiptResponse;
 import com.inventory.product.rest.dto.inventory.LotDetailDto;
 import com.inventory.product.rest.dto.inventory.LotListResponse;
+import com.inventory.product.rest.dto.inventory.ParsedInventoryListResponse;
 import com.inventory.product.rest.dto.inventory.UpdateInventoryRequest;
 import com.inventory.product.service.InventoryService;
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,13 +28,16 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/v1/inventory")
+@Slf4j
 public class InventoryController {
 
   @Autowired
   private InventoryService inventoryService;
+
 
   @PostMapping
   public ResponseEntity<ApiResponse<InventoryReceiptResponse>> create(
@@ -46,6 +54,36 @@ public class InventoryController {
     }
 
     return ResponseEntity.ok(ApiResponse.success(inventoryService.create(request, userId, shopId)));
+  }
+
+  /**
+   * Bulk create inventory items with shared vendorId and lotId.
+   *
+   * @param bulkRequest the bulk creation request containing list of items and shared vendorId/lotId
+   * @param httpRequest HTTP request containing shopId from authentication
+   * @return bulk creation response with created items
+   */
+  @PostMapping(value = "/bulk", produces = MediaType.APPLICATION_JSON_VALUE)
+  public ResponseEntity<ApiResponse<BulkCreateInventoryResponse>> bulkCreate(
+      @RequestBody BulkCreateInventoryRequest bulkRequest,
+      HttpServletRequest httpRequest) {
+    // Get userId and shopId from request attributes (set by AuthenticationInterceptor)
+    String userId = (String) httpRequest.getAttribute("userId");
+    String shopId = (String) httpRequest.getAttribute("shopId");
+
+    if (StringUtils.isEmpty(userId) || StringUtils.isEmpty(shopId)) {
+      throw new AuthenticationException(
+          ErrorCode.UNAUTHORIZED,
+          "User not authenticated or shop not found");
+    }
+
+    // Validate request
+    if (bulkRequest.getItems() == null || bulkRequest.getItems().isEmpty()) {
+      return ResponseEntity.badRequest()
+          .body(ApiResponse.error("Items list cannot be empty"));
+    }
+
+    return ResponseEntity.ok(ApiResponse.success(inventoryService.bulkCreate(bulkRequest, userId, shopId)));
   }
 
   @GetMapping
@@ -180,6 +218,24 @@ public class InventoryController {
     }
 
     return ResponseEntity.ok(ApiResponse.success(inventoryService.update(inventoryId, request, shopId)));
+  }
+
+  /**
+   * Parse invoice image and extract inventory items using OCR.
+   *
+   * @param image the invoice image file to process
+   * @param httpRequest HTTP request containing shopId from authentication
+   * @return list of parsed inventory items from the invoice
+   */
+  @PostMapping(value = "/parse-invoice", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+  public ResponseEntity<ApiResponse<ParsedInventoryListResponse>> parseInvoice(
+      @RequestParam("image") MultipartFile image,
+      HttpServletRequest httpRequest) {
+    log.info("Received invoice parsing request for image: {}, size: {} bytes",
+        image.getOriginalFilename(), image.getSize());
+
+    ParsedInventoryListResponse response = inventoryService.parseInvoiceImage(image);
+    return ResponseEntity.ok(ApiResponse.success(response));
   }
 
 }
