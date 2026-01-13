@@ -50,5 +50,31 @@ public class CheckoutController {
       HttpServletRequest httpRequest) {
     return ResponseEntity.ok(ApiResponse.success(checkoutService.getPurchases(page, limit, order, httpRequest)));
   }
+
+  /**
+   * Search purchases with pagination and customer search support.
+   * Supports searching by invoice number (regex), customer email, phone, and name (regex).
+   *
+   * @param page page number (1-based, optional, default: 1)
+   * @param limit page size (optional, default: 20, max: 100)
+   * @param invoiceNo optional invoice number regex pattern to search
+   * @param customerEmail optional customer email to search
+   * @param customerPhone optional customer phone to search
+   * @param customerName optional customer name regex pattern to search
+   * @param httpRequest HTTP request containing shopId
+   * @return list of purchases with pagination
+   */
+  @GetMapping("/purchases/search")
+  public ResponseEntity<ApiResponse<PurchaseListResponse>> searchPurchases(
+      @RequestParam(required = false) Integer page,
+      @RequestParam(required = false) Integer limit,
+      @RequestParam(required = false) String invoiceNo,
+      @RequestParam(required = false) String customerEmail,
+      @RequestParam(required = false) String customerPhone,
+      @RequestParam(required = false) String customerName,
+      HttpServletRequest httpRequest) {
+    return ResponseEntity.ok(ApiResponse.success(
+        checkoutService.searchPurchases(page, limit, invoiceNo, customerEmail, customerPhone, customerName, httpRequest)));
+  }
 }
 

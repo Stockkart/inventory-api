@@ -3,8 +3,6 @@ package com.inventory.product.rest.controller;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.common.exception.AuthenticationException;
-import com.inventory.ocr.dto.ParsedInventoryItem;
-import com.inventory.ocr.service.InvoiceParserService;
 import com.inventory.product.rest.dto.inventory.BulkCreateInventoryRequest;
 import com.inventory.product.rest.dto.inventory.BulkCreateInventoryResponse;
 import com.inventory.product.rest.dto.inventory.CreateInventoryRequest;
@@ -32,9 +30,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
-import java.util.List;
-
 @RestController
 @RequestMapping("/api/v1/inventory")
 @Slf4j
@@ -43,8 +38,6 @@ public class InventoryController {
   @Autowired
   private InventoryService inventoryService;
 
-  @Autowired
-  private InvoiceParserService invoiceParserService;
 
   @PostMapping
   public ResponseEntity<ApiResponse<InventoryReceiptResponse>> create(
@@ -241,44 +234,8 @@ public class InventoryController {
     log.info("Received invoice parsing request for image: {}, size: {} bytes",
         image.getOriginalFilename(), image.getSize());
 
-    // Get shopId from request attributes (optional for parsing, but good to have for logging)
-    String shopId = (String) httpRequest.getAttribute("shopId");
-
-    // Validate file
-    if (image.isEmpty()) {
-      return ResponseEntity.badRequest()
-          .body(ApiResponse.error("Image file is empty"));
-    }
-
-    // Validate content type
-    String contentType = image.getContentType();
-    if (contentType == null ||
-        (!contentType.startsWith("image/") && !contentType.equals("application/octet-stream"))) {
-      return ResponseEntity.badRequest()
-          .body(ApiResponse.error("File must be an image"));
-    }
-
-    try {
-      // Parse invoice image to extract inventory items
-      byte[] imageBytes = image.getBytes();
-      List<ParsedInventoryItem> items = invoiceParserService.parseInvoiceImage(imageBytes);
-
-      ParsedInventoryListResponse response = new ParsedInventoryListResponse();
-      response.setItems(items);
-      response.setTotalItems(items.size());
-
-      log.info("Invoice parsing completed successfully. Extracted {} inventory items", items.size());
-
-      return ResponseEntity.ok(ApiResponse.success(response));
-    } catch (IOException e) {
-      log.error("Error reading image file: {}", e.getMessage(), e);
-      return ResponseEntity.badRequest()
-          .body(ApiResponse.error("Error reading image file: " + e.getMessage()));
-    } catch (Exception e) {
-      log.error("Error parsing invoice image: {}", e.getMessage(), e);
-      return ResponseEntity.internalServerError()
-          .body(ApiResponse.error("Error parsing invoice: " + e.getMessage()));
-    }
+    ParsedInventoryListResponse response = inventoryService.parseInvoiceImage(image);
+    return ResponseEntity.ok(ApiResponse.success(response));
   }
 
 }

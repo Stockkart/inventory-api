@@ -6,6 +6,7 @@ import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.notifications.rest.dto.CreateReminderForInventoryRequest;
 import com.inventory.notifications.service.ReminderService;
+import com.inventory.ocr.service.InvoiceParserService;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.rest.dto.inventory.*;
@@ -21,7 +22,9 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -49,6 +52,66 @@ public class InventoryService {
 
   @Autowired
   private com.inventory.user.domain.repository.ShopVendorRepository shopVendorRepository;
+
+  @Autowired
+  private InvoiceParserService invoiceParserService;
+
+  @Autowired
+  private ParsedInventoryMapper parsedInventoryMapper;
+
+  /**
+   * Parse invoice image and extract inventory items using OCR.
+   * Validates the image file and converts parsed items to CreateInventoryItemRequest format.
+   *
+   * @param image the invoice image file to process
+   * @return ParsedInventoryListResponse containing list of CreateInventoryItemRequest items
+   * @throws ValidationException if image file is empty or invalid content type
+   * @throws BaseException if there's an error reading the file or parsing the invoice
+   */
+  @Transactional(readOnly = true)
+  public ParsedInventoryListResponse parseInvoiceImage(MultipartFile image) {
+    log.info("Processing invoice parsing request for image: {}, size: {} bytes",
+        image.getOriginalFilename(), image.getSize());
+
+    // Validate file
+    if (image.isEmpty()) {
+      throw new ValidationException("Image file is empty");
+    }
+
+    // Validate content type
+    String contentType = image.getContentType();
+    if (contentType == null ||
+        (!contentType.startsWith("image/") && !contentType.equals("application/octet-stream"))) {
+      throw new ValidationException("File must be an image");
+    }
+
+    try {
+      // Parse invoice image to extract inventory items
+      byte[] imageBytes = image.getBytes();
+      List<com.inventory.ocr.dto.ParsedInventoryItem> parsedItems = 
+          invoiceParserService.parseInvoiceImage(imageBytes);
+
+      // Convert ParsedInventoryItem to CreateInventoryItemRequest
+      List<CreateInventoryItemRequest> items = 
+          parsedInventoryMapper.toCreateInventoryItemRequestList(parsedItems);
+
+      ParsedInventoryListResponse response = new ParsedInventoryListResponse();
+      response.setItems(items);
+      response.setTotalItems(items.size());
+
+      log.info("Invoice parsing completed successfully. Extracted {} inventory items", items.size());
+
+      return response;
+    } catch (IOException e) {
+      log.error("Error reading image file: {}", e.getMessage(), e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
+          "Error reading image file: " + e.getMessage(), e);
+    } catch (Exception e) {
+      log.error("Error parsing invoice image: {}", e.getMessage(), e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
+          "Error parsing invoice: " + e.getMessage(), e);
+    }
+  }
 
   /**
    * Bulk create inventory items with shared vendorId and lotId.
