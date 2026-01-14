@@ -17,5 +17,7 @@ public class PurchaseItem {
   private BigDecimal maximumRetailPrice;
   private BigDecimal sellingPrice;
   private BigDecimal discount;
+  private String sgst; // SGST rate from inventory (e.g., "9" for 9%)
+  private String cgst; // CGST rate from inventory (e.g., "9" for 9%)
 }
 

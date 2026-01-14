@@ -8,7 +8,9 @@ import com.inventory.notifications.rest.dto.CreateReminderForInventoryRequest;
 import com.inventory.notifications.service.ReminderService;
 import com.inventory.ocr.service.InvoiceParserService;
 import com.inventory.product.domain.model.Inventory;
+import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.repository.InventoryRepository;
+import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.rest.dto.inventory.*;
 import java.util.ArrayList;
 import com.inventory.user.domain.repository.ShopVendorRepository;
@@ -28,6 +30,7 @@ import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 @Slf4j
@@ -58,6 +61,9 @@ public class InventoryService {
 
   @Autowired
   private ParsedInventoryMapper parsedInventoryMapper;
+
+  @Autowired
+  private ShopRepository shopRepository;
 
   /**
    * Parse invoice image and extract inventory items using OCR.
@@ -188,9 +194,10 @@ public class InventoryService {
     fullRequest.setReminderAt(itemRequest.getReminderAt());
     fullRequest.setCustomReminders(itemRequest.getCustomReminders());
     fullRequest.setHsn(itemRequest.getHsn());
-    fullRequest.setSac(itemRequest.getSac());
     fullRequest.setBatchNo(itemRequest.getBatchNo());
     fullRequest.setScheme(itemRequest.getScheme());
+    fullRequest.setSgst(itemRequest.getSgst());
+    fullRequest.setCgst(itemRequest.getCgst());
     
     // Set shared fields
     fullRequest.setVendorId(vendorId);
@@ -221,6 +228,33 @@ public class InventoryService {
       inventory.setUserId(userId);
       inventory.setExpiryDate(request.getExpiryDate());
       inventory.setVendorId(request.getVendorId());
+
+      // Set CGST and SGST: use provided values or shop defaults
+      if (!StringUtils.hasText(request.getSgst()) || !StringUtils.hasText(request.getCgst())) {
+        Optional<Shop> shopOpt = shopRepository.findById(shopId);
+        if (shopOpt.isPresent()) {
+          Shop shop = shopOpt.get();
+          // Use shop defaults if not provided in request
+          if (!StringUtils.hasText(request.getSgst())) {
+            inventory.setSgst(shop.getSgst());
+          } else {
+            inventory.setSgst(request.getSgst());
+          }
+          if (!StringUtils.hasText(request.getCgst())) {
+            inventory.setCgst(shop.getCgst());
+          } else {
+            inventory.setCgst(request.getCgst());
+          }
+        } else {
+          // Shop not found, use provided values or null
+          inventory.setSgst(StringUtils.hasText(request.getSgst()) ? request.getSgst() : null);
+          inventory.setCgst(StringUtils.hasText(request.getCgst()) ? request.getCgst() : null);
+        }
+      } else {
+        // Both provided, use as is
+        inventory.setSgst(request.getSgst());
+        inventory.setCgst(request.getCgst());
+      }
 
       inventory = inventoryRepository.save(inventory);
       log.info("Successfully created inventory lot: {} for product: {} in shop: {}",

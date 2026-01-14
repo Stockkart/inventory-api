@@ -69,6 +69,9 @@ public interface InventoryMapper {
   @Mapping(target = "expiryDate", source = "expiryDate")
   @Mapping(target = "shopId", source = "shopId")
   @Mapping(target = "vendorId", source = "vendorId")
+  @Mapping(target = "sgst", source = "sgst")
+  @Mapping(target = "cgst", source = "cgst")
+  @Mapping(target = "createdAt", source = "createdAt")
   InventorySummaryDto toSummary(Inventory inventory);
 
   @Mapping(target = "lotId", source = "lotId")
@@ -85,6 +88,8 @@ public interface InventoryMapper {
   @Mapping(target = "location", source = "location")
   @Mapping(target = "expiryDate", source = "expiryDate")
   @Mapping(target = "shopId", source = "shopId")
+  @Mapping(target = "sgst", source = "sgst")
+  @Mapping(target = "cgst", source = "cgst")
   InventoryDetailResponse toDetail(Inventory inventory);
 
   @Mapping(target = "shopId", source = "shopId")
