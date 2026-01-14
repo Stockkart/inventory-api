@@ -37,9 +37,10 @@ public class Inventory {
   private BigDecimal costPrice;
   private BigDecimal sellingPrice;
   private String hsn; // Optional: HSN code
-  private String sac; // Optional: SAC code
   private String batchNo; // Optional: Batch number
   private String scheme; // Optional: Scheme
+  private String sgst; // Optional: State GST rate (e.g., "9" for 9%). Uses shop default if not provided.
+  private String cgst; // Optional: Central GST rate (e.g., "9" for 9%). Uses shop default if not provided.
   private Instant createdAt;
   private Instant updatedAt;
 }

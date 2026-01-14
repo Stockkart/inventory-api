@@ -157,7 +157,6 @@ public class InvoiceService {
           if (inventoryOpt.isPresent()) {
             Inventory inventory = inventoryOpt.get();
             invoiceItem.setHsn(inventory.getHsn());
-            invoiceItem.setSac(inventory.getSac());
             invoiceItem.setCompanyName(inventory.getCompanyName());
             invoiceItem.setBatchNo(inventory.getBatchNo());
             invoiceItem.setScheme(inventory.getScheme());

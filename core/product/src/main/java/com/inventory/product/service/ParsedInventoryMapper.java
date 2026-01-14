@@ -71,7 +71,6 @@ public class ParsedInventoryMapper {
     request.setBusinessType("PHARMACEUTICAL"); // Default, can be overridden
     request.setLocation(null); // Not available in invoice
     request.setThresholdCount(10); // Default threshold
-    request.setSac(null); // Not available in invoice
     request.setScheme(null); // Not available in invoice
 
     return request;

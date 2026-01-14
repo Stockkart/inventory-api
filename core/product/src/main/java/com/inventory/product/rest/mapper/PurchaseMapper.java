@@ -61,6 +61,8 @@ public abstract class PurchaseMapper {
   @Mapping(target = "maximumRetailPrice", source = "inventory.maximumRetailPrice")
   @Mapping(target = "sellingPrice", source = "item.sellingPrice")
   @Mapping(target = "discount", expression = "java(calculateDiscount(inventory.getMaximumRetailPrice(), item.getSellingPrice()))")
+  @Mapping(target = "sgst", source = "inventory.sgst")
+  @Mapping(target = "cgst", source = "inventory.cgst")
   public abstract PurchaseItem toPurchaseItem(CheckoutRequest.CheckoutItem item, Inventory inventory);
 
   @Mapping(target = "inventoryId", source = "item.id")
@@ -69,6 +71,8 @@ public abstract class PurchaseMapper {
   @Mapping(target = "maximumRetailPrice", source = "inventory.maximumRetailPrice")
   @Mapping(target = "sellingPrice", source = "item.sellingPrice")
   @Mapping(target = "discount", expression = "java(calculateDiscount(inventory.getMaximumRetailPrice(), item.getSellingPrice()))")
+  @Mapping(target = "sgst", source = "inventory.sgst")
+  @Mapping(target = "cgst", source = "inventory.cgst")
   public abstract PurchaseItem toPurchaseItemFromCartItem(AddToCartRequest.CartItem item, Inventory inventory);
 
   // Helper method to calculate discount: maximumRetailPrice - sellingPrice
@@ -97,6 +101,8 @@ public abstract class PurchaseMapper {
     item.setMaximumRetailPrice(maximumRetailPrice);
     item.setSellingPrice(sellingPrice);
     item.setDiscount(discount);
+    // Note: CGST/SGST not set here as this method is used for negative quantities
+    // For normal items, use toPurchaseItemFromCartItem which includes CGST/SGST from inventory
     return item;
   }
 

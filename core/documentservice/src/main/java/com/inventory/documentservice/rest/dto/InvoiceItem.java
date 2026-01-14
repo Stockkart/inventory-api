@@ -11,7 +11,6 @@ public class InvoiceItem {
   private Integer quantity;
   private String name;
   private String hsn;
-  private String sac;
   private String companyName;
   private String expiryDate;
   private String batchNo;

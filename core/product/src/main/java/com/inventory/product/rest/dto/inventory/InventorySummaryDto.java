@@ -29,8 +29,10 @@ public class InventorySummaryDto {
   String shopId;
   String vendorId;
   String hsn;
-  String sac;
   String batchNo;
   String scheme;
+  String sgst; // SGST rate (e.g., "9" for 9%)
+  String cgst; // CGST rate (e.g., "9" for 9%)
+  Instant createdAt;
 }
 

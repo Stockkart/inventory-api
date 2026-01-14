@@ -29,11 +29,13 @@ public class CreateInventoryItemRequest {
   private List<CustomReminderRequest> customReminders;
   // HSN code (optional)
   private String hsn;
-  // SAC code (optional)
-  private String sac;
   // Batch number (optional)
   private String batchNo;
   // Scheme (optional)
   private String scheme;
+  // SGST rate (optional, e.g., "9" for 9%). Uses shop default if not provided.
+  private String sgst;
+  // CGST rate (optional, e.g., "9" for 9%). Uses shop default if not provided.
+  private String cgst;
 }
 
