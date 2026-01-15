@@ -1,8 +1,12 @@
 package com.inventory.app;
 
 import io.github.cdimascio.dotenv.Dotenv;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.annotation.Bean;
 import org.springframework.data.mongodb.repository.config.EnableMongoRepositories;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
@@ -17,6 +21,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 })
 @EnableAsync
 @EnableScheduling
+@Slf4j
 public class AppApplication {
 
   public static void main(String[] args) {
@@ -37,6 +42,15 @@ public class AppApplication {
     }
 
     SpringApplication.run(AppApplication.class, args);
+  }
+
+  @Bean
+  CommandLineRunner logDbUri(@Value("${spring.data.mongodb.uri}") String mongoUri) {
+    return args -> {
+      // Mask password in URI for security
+      String maskedUri = mongoUri.replaceAll("://[^:]+:[^@]+@", "://*****:*****@");
+      log.info("MongoDB URI: {}", maskedUri);
+    };
   }
 
 }
