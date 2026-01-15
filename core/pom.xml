@@ -12,6 +12,7 @@
         <module>common</module>
         <module>documentservice</module>
         <module>ocr</module>
+        <module>tax</module>
     </modules>
 
     <properties>

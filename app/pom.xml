@@ -62,6 +62,11 @@
         </dependency>
         <dependency>
             <groupId>com.inventory</groupId>
+            <artifactId>tax</artifactId>
+            <version>1.0.0</version>
+        </dependency>
+        <dependency>
+            <groupId>com.inventory</groupId>
             <artifactId>pluginengine</artifactId>
             <version>1.0.0</version>
         </dependency>

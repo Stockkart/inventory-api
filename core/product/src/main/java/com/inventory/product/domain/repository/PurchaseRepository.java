@@ -8,6 +8,7 @@ import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.data.mongodb.repository.Query;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -69,5 +70,18 @@ public interface PurchaseRepository extends MongoRepository<Purchase, String> {
    */
   @Query("{ 'shopId': ?0, 'invoiceNo': { '$regex': ?1, '$options': 'i' } }")
   List<Purchase> findByShopIdAndInvoiceNoRegex(String shopId, String invoiceNoPattern);
+
+  /**
+   * Find completed purchases by shop ID within a date range.
+   * Used for GST return generation.
+   */
+  List<Purchase> findByShopIdAndStatusAndSoldAtBetween(
+      String shopId, PurchaseStatus status, Instant startDate, Instant endDate);
+
+  /**
+   * Count purchases by shop ID, status, and date range.
+   */
+  long countByShopIdAndStatusAndSoldAtBetween(
+      String shopId, PurchaseStatus status, Instant startDate, Instant endDate);
 }
 

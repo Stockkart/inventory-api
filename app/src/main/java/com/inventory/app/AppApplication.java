@@ -17,7 +17,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EnableMongoRepositories(basePackages = {
     "com.inventory.product.domain.repository",
     "com.inventory.user.domain.repository",
-    "com.inventory.notifications.domain.repository"
+    "com.inventory.notifications.domain.repository",
+    "com.inventory.tax.domain.repository"
 })
 @EnableAsync
 @EnableScheduling

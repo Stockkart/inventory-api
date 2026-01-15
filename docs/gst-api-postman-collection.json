@@ -1,0 +1,254 @@
+{
+	"info": {
+		"_postman_id": "gst-api-collection",
+		"name": "GST API Collection",
+		"description": "API endpoints for GST return filing support",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:8080",
+			"type": "string"
+		},
+		{
+			"key": "period",
+			"value": "2026-01",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "GST Summary",
+			"item": [
+				{
+					"name": "Get GST Summary",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/gst/summary?period={{period}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "gst", "summary"],
+							"query": [
+								{
+									"key": "period",
+									"value": "{{period}}",
+									"description": "Period in YYYY-MM format (e.g., 2026-01)"
+								}
+							]
+						},
+						"description": "Get GST summary for a given period including total taxable value, CGST, SGST, rate-wise breakdown, and HSN-wise summary."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "GSTR-1 (Outward Supplies)",
+			"item": [
+				{
+					"name": "Get GSTR-1 Report",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/gst/gstr1?period={{period}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "gst", "gstr1"],
+							"query": [
+								{
+									"key": "period",
+									"value": "{{period}}",
+									"description": "Period in YYYY-MM format (e.g., 2026-01)"
+								}
+							]
+						},
+						"description": "Generate GSTR-1 report containing B2B invoices, B2C Large, B2C Small summaries, HSN summary, and document summary."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "GSTR-3B (Summary Return)",
+			"item": [
+				{
+					"name": "Get GSTR-3B Report",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/gst/gstr3b?period={{period}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "gst", "gstr3b"],
+							"query": [
+								{
+									"key": "period",
+									"value": "{{period}}",
+									"description": "Period in YYYY-MM format (e.g., 2026-01)"
+								}
+							]
+						},
+						"description": "Generate GSTR-3B summary return containing outward supplies details, interstate supplies, ITC, exempt supplies, and tax payment summary."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "GST Returns Management",
+			"item": [
+				{
+					"name": "Generate & Save GST Return",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/gst/returns?period={{period}}&returnType=GSTR1",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "gst", "returns"],
+							"query": [
+								{
+									"key": "period",
+									"value": "{{period}}",
+									"description": "Period in YYYY-MM format (e.g., 2026-01)"
+								},
+								{
+									"key": "returnType",
+									"value": "GSTR1",
+									"description": "Return type: GSTR1 or GSTR3B"
+								}
+							]
+						},
+						"description": "Generate and save a GST return record for the specified period and return type."
+					},
+					"response": []
+				},
+				{
+					"name": "Generate & Save GSTR-3B Return",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/gst/returns?period={{period}}&returnType=GSTR3B",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "gst", "returns"],
+							"query": [
+								{
+									"key": "period",
+									"value": "{{period}}",
+									"description": "Period in YYYY-MM format (e.g., 2026-01)"
+								},
+								{
+									"key": "returnType",
+									"value": "GSTR3B",
+									"description": "Return type: GSTR1 or GSTR3B"
+								}
+							]
+						},
+						"description": "Generate and save a GSTR-3B return record for the specified period."
+					},
+					"response": []
+				},
+				{
+					"name": "List All GST Returns",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/gst/returns",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "gst", "returns"]
+						},
+						"description": "List all GST returns for the authenticated shop."
+					},
+					"response": []
+				},
+				{
+					"name": "Get GST Return by ID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/gst/returns/:returnId",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "gst", "returns", ":returnId"],
+							"variable": [
+								{
+									"key": "returnId",
+									"value": "your-return-id-here",
+									"description": "The GST return ID"
+								}
+							]
+						},
+						"description": "Get a specific GST return by its ID."
+					},
+					"response": []
+				},
+				{
+					"name": "Mark Return as Filed",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/gst/returns/:returnId/file",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "gst", "returns", ":returnId", "file"],
+							"variable": [
+								{
+									"key": "returnId",
+									"value": "your-return-id-here",
+									"description": "The GST return ID to mark as filed"
+								}
+							]
+						},
+						"description": "Mark a GST return as filed on the GST portal."
+					},
+					"response": []
+				}
+			]
+		}
+	]
+}
+
