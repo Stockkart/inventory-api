@@ -186,6 +186,7 @@ public class InventoryService {
     fullRequest.setMaximumRetailPrice(itemRequest.getMaximumRetailPrice());
     fullRequest.setCostPrice(itemRequest.getCostPrice());
     fullRequest.setSellingPrice(itemRequest.getSellingPrice());
+    fullRequest.setAdditionalDiscount(itemRequest.getAdditionalDiscount());
     fullRequest.setBusinessType(itemRequest.getBusinessType());
     fullRequest.setLocation(itemRequest.getLocation());
     fullRequest.setCount(itemRequest.getCount());
@@ -691,6 +692,12 @@ public class InventoryService {
       if (request.getThresholdCount() != null) {
         inventory.setThresholdCount(request.getThresholdCount());
         log.debug("Updating thresholdCount to {} for inventory: {}", request.getThresholdCount(), inventoryId);
+      }
+
+      // Update additionalDiscount if provided
+      if (request.getAdditionalDiscount() != null) {
+        inventory.setAdditionalDiscount(request.getAdditionalDiscount());
+        log.debug("Updating additionalDiscount to {} for inventory: {}", request.getAdditionalDiscount(), inventoryId);
       }
 
       // Update updatedAt timestamp

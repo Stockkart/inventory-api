@@ -36,6 +36,7 @@ public class Inventory {
   private BigDecimal maximumRetailPrice;
   private BigDecimal costPrice;
   private BigDecimal sellingPrice;
+  private BigDecimal additionalDiscount; // Optional: Additional discount amount
   private String hsn; // Optional: HSN code
   private String batchNo; // Optional: Batch number
   private String scheme; // Optional: Scheme
