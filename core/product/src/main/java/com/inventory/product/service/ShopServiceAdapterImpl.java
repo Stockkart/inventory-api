@@ -27,7 +27,7 @@ public class ShopServiceAdapterImpl implements ShopServiceAdapter {
   @Override
   public ShopTaxInfo getShopTaxInfo(String shopId) {
     return shopRepository.findById(shopId)
-        .map(shop -> new ShopServiceAdapter.ShopTaxInfo(shop.getSgst(), shop.getCgst()))
+        .map(shop -> new ShopServiceAdapter.ShopTaxInfo(shop.getSgst(), shop.getCgst(), shop.getName()))
         .orElse(null);
   }
 }

@@ -36,12 +36,14 @@ public interface ShopServiceAdapter {
   class ShopTaxInfo {
     private String sgst;
     private String cgst;
+    private String name;
     
     public ShopTaxInfo() {}
     
-    public ShopTaxInfo(String sgst, String cgst) {
+    public ShopTaxInfo(String sgst, String cgst, String name) {
       this.sgst = sgst;
       this.cgst = cgst;
+      this.name= name;
     }
     
     public String getSgst() {
@@ -59,5 +61,9 @@ public interface ShopServiceAdapter {
     public void setCgst(String cgst) {
       this.cgst = cgst;
     }
+
+    public String getName() {return name;}
+
+    public void setName(String name) {this.name = name;}
   }
 }

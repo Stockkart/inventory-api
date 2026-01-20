@@ -27,6 +27,7 @@ public class LoginResponse {
   public static class ShopInfo {
     String sgst;
     String cgst;
+    String name;
   }
 }
 
