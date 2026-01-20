@@ -107,6 +107,7 @@ public class AuthService {
           LoginResponse.ShopInfo shopInfo = new LoginResponse.ShopInfo();
           shopInfo.setSgst(taxInfo.getSgst());
           shopInfo.setCgst(taxInfo.getCgst());
+          shopInfo.setName(taxInfo.getName());
           response.setShop(shopInfo);
         }
       }
