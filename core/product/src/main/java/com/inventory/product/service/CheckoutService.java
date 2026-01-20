@@ -615,7 +615,7 @@ public class CheckoutService {
     return items.stream()
         .map(item -> {
           // Calculate total: maximumRetailPrice * quantity
-          BigDecimal mrp = item.getMaximumRetailPrice() != null ? item.getMaximumRetailPrice() : BigDecimal.ZERO;
+          BigDecimal mrp = item.getSellingPrice() != null ? item.getSellingPrice() : BigDecimal.ZERO;
           Integer qty = item.getQuantity() != null ? item.getQuantity() : 0;
           return mrp.multiply(BigDecimal.valueOf(qty));
         })
@@ -651,9 +651,15 @@ public class CheckoutService {
     // Calculate tax for each item based on its inventory-level CGST/SGST
     for (PurchaseItem item : purchaseItems) {
       // Calculate item subtotal (MRP * quantity)
-      BigDecimal itemSubtotal = BigDecimal.ZERO;
-      if (item.getMaximumRetailPrice() != null && item.getQuantity() != null) {
-        itemSubtotal = item.getMaximumRetailPrice().multiply(BigDecimal.valueOf(item.getQuantity()));
+      BigDecimal itemTotal = BigDecimal.ZERO;
+      if (item.getMaximumRetailPrice() != null && item.getQuantity() != null 
+          && item.getSellingPrice() != null) {
+        itemTotal = item.getSellingPrice().multiply(BigDecimal.valueOf(item.getQuantity()));
+        // Apply additional discount if present
+        if (item.getAdditionalDiscount() != null && item.getAdditionalDiscount().compareTo(BigDecimal.ZERO) > 0) {
+          itemTotal = itemTotal.multiply(new BigDecimal(1).subtract(item.getAdditionalDiscount().divide(new BigDecimal(
+              "100"), 4, RoundingMode.HALF_UP)));
+        }
       }
       
       // Use inventory-level rates if available, otherwise use shop defaults
@@ -664,7 +670,7 @@ public class CheckoutService {
       if (itemSgst != null && !itemSgst.trim().isEmpty()) {
         try {
           BigDecimal sgstRate = new BigDecimal(itemSgst.trim()).divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
-          BigDecimal itemSgstAmount = itemSubtotal.multiply(sgstRate).setScale(2, RoundingMode.HALF_UP);
+          BigDecimal itemSgstAmount = itemTotal.multiply(sgstRate).setScale(2, RoundingMode.HALF_UP);
           totalSgstAmount = totalSgstAmount.add(itemSgstAmount);
         } catch (NumberFormatException e) {
           log.warn("Invalid SGST value '{}' for item {}, using 0", itemSgst, item.getInventoryId());
@@ -675,7 +681,7 @@ public class CheckoutService {
       if (itemCgst != null && !itemCgst.trim().isEmpty()) {
         try {
           BigDecimal cgstRate = new BigDecimal(itemCgst.trim()).divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
-          BigDecimal itemCgstAmount = itemSubtotal.multiply(cgstRate).setScale(2, RoundingMode.HALF_UP);
+          BigDecimal itemCgstAmount = itemTotal.multiply(cgstRate).setScale(2, RoundingMode.HALF_UP);
           totalCgstAmount = totalCgstAmount.add(itemCgstAmount);
         } catch (NumberFormatException e) {
           log.warn("Invalid CGST value '{}' for item {}, using 0", itemCgst, item.getInventoryId());
@@ -728,13 +734,87 @@ public class CheckoutService {
         .setScale(2, RoundingMode.HALF_UP);
   }
 
+  /**
+   * Calculate totalAmount for a single purchase item.
+   * Formula:
+   * 1. Apply additionalDiscount to sellingPrice: sellingPrice * (1 - additionalDiscount/100)
+   * 2. Multiply by quantity
+   * 3. Add CGST and SGST: totalDiscountedAmount * (1 + cgst/100 + sgst/100)
+   */
+  private BigDecimal calculateItemTotalAmount(BigDecimal sellingPrice, BigDecimal additionalDiscount,
+                                               Integer quantity, String cgst, String sgst) {
+    if (sellingPrice == null || quantity == null || quantity <= 0) {
+      return BigDecimal.ZERO;
+    }
+    
+    // Step 1: Calculate discounted selling price per unit
+    BigDecimal discountedPricePerUnit = sellingPrice;
+    if (additionalDiscount != null && additionalDiscount.compareTo(BigDecimal.ZERO) > 0) {
+      BigDecimal discountMultiplier = BigDecimal.ONE.subtract(
+          additionalDiscount.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP)
+      );
+      discountedPricePerUnit = sellingPrice.multiply(discountMultiplier);
+    }
+    
+    // Step 2: Multiply by quantity
+    BigDecimal totalDiscountedAmount = discountedPricePerUnit.multiply(BigDecimal.valueOf(quantity));
+    
+    // Step 3: Add CGST and SGST
+    BigDecimal taxMultiplier = BigDecimal.ONE;
+    if (cgst != null && StringUtils.hasText(cgst)) {
+      try {
+        BigDecimal cgstRate = new BigDecimal(cgst.trim()).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
+        taxMultiplier = taxMultiplier.add(cgstRate);
+      } catch (NumberFormatException e) {
+        // Invalid CGST rate, ignore
+      }
+    }
+    if (sgst != null && StringUtils.hasText(sgst)) {
+      try {
+        BigDecimal sgstRate = new BigDecimal(sgst.trim()).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
+        taxMultiplier = taxMultiplier.add(sgstRate);
+      } catch (NumberFormatException e) {
+        // Invalid SGST rate, ignore
+      }
+    }
+    
+    BigDecimal totalAmount = totalDiscountedAmount.multiply(taxMultiplier);
+    return totalAmount.setScale(2, RoundingMode.HALF_UP);
+  }
+
+  /**
+   * Calculate total additional discount amount.
+   * Additional discount is a percentage applied on selling price.
+   * Formula: (sellingPrice * quantity) * (additionalDiscount / 100)
+   */
+  private BigDecimal calculateAdditionalDiscountTotal(List<PurchaseItem> items) {
+    if (items == null || items.isEmpty()) {
+      return BigDecimal.ZERO;
+    }
+    return items.stream()
+        .map(item -> {
+          BigDecimal sellingPrice = item.getSellingPrice() != null ? item.getSellingPrice() : BigDecimal.ZERO;
+          BigDecimal additionalDiscount = item.getAdditionalDiscount() != null ? item.getAdditionalDiscount() : BigDecimal.ZERO;
+          Integer quantity = item.getQuantity() != null ? item.getQuantity() : 0;
+          
+          // Calculate: (sellingPrice * quantity) * (additionalDiscount / 100)
+          BigDecimal itemTotal = sellingPrice.multiply(BigDecimal.valueOf(quantity));
+          BigDecimal discountAmount = itemTotal.multiply(additionalDiscount.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP));
+          
+          return discountAmount;
+        })
+        .reduce(BigDecimal.ZERO, BigDecimal::add)
+        .setScale(2, RoundingMode.HALF_UP);
+  }
+
   private Purchase createCart(AddToCartRequest request, List<PurchaseItem> purchaseItems, String shopId, String userId, String customerId, String customerName) {
     try {
       // Calculate totals
       BigDecimal subTotal = calculateSubtotal(purchaseItems);
       TaxCalculationResult taxResult = calculateTax(purchaseItems, shopId);
       BigDecimal discountTotal = calculateTotalDiscount(purchaseItems);
-      BigDecimal grandTotal = subTotal.add(taxResult.getTaxTotal()).subtract(discountTotal);
+      BigDecimal additionalDiscountTotal = calculateAdditionalDiscountTotal(purchaseItems);
+      BigDecimal grandTotal = subTotal.add(taxResult.getTaxTotal()).subtract(discountTotal).subtract(additionalDiscountTotal);
 
       // Create purchase with CREATED status using mapper
       // MongoDB will auto-generate the id as ObjectId
@@ -742,9 +822,10 @@ public class CheckoutService {
           request, purchaseItems, subTotal, taxResult.getTaxTotal(), discountTotal, grandTotal, shopId, userId, customerId
       );
       
-      // Set tax amounts and customerName
+      // Set tax amounts, additional discount, and customerName
       purchase.setSgstAmount(taxResult.getSgstAmount());
       purchase.setCgstAmount(taxResult.getCgstAmount());
+      purchase.setAdditionalDiscountTotal(additionalDiscountTotal);
       
       if (StringUtils.hasText(customerName)) {
         purchase.setCustomerName(customerName);
@@ -834,15 +915,27 @@ public class CheckoutService {
             BigDecimal newDiscount = existingItem.getMaximumRetailPrice()
                 .subtract(sellingPrice)
                 .multiply(BigDecimal.valueOf(newQuantity));
+            // Preserve additionalDiscount from new item if adding, otherwise keep existing
+            BigDecimal additionalDiscount = newItem.getQuantity() > 0 && newItem.getAdditionalDiscount() != null 
+                ? newItem.getAdditionalDiscount() 
+                : existingItem.getAdditionalDiscount();
 
-            mergedItems.set(i, purchaseMapper.createPurchaseItem(
+            PurchaseItem updatedItem = purchaseMapper.createPurchaseItem(
                 existingItem.getInventoryId(),
                 existingItem.getName(),
                 newQuantity,
                 existingItem.getMaximumRetailPrice(),
                 sellingPrice,
                 newDiscount.compareTo(BigDecimal.ZERO) > 0 ? newDiscount : BigDecimal.ZERO
-            ));
+            );
+            updatedItem.setAdditionalDiscount(additionalDiscount);
+            updatedItem.setSgst(existingItem.getSgst());
+            updatedItem.setCgst(existingItem.getCgst());
+            // Calculate totalAmount: (sellingPrice after additionalDiscount) * quantity * (1 + cgst/100 + sgst/100)
+            BigDecimal totalAmount = calculateItemTotalAmount(sellingPrice, additionalDiscount, newQuantity, 
+                                                              existingItem.getCgst(), existingItem.getSgst());
+            updatedItem.setTotalAmount(totalAmount);
+            mergedItems.set(i, updatedItem);
             found = true;
             break;
           }
@@ -885,10 +978,13 @@ public class CheckoutService {
       existingCart.setSgstAmount(taxResult.getSgstAmount());
       existingCart.setCgstAmount(taxResult.getCgstAmount());
       
-      existingCart.setDiscountTotal(calculateTotalDiscount(mergedItems));
+      BigDecimal discountTotal = calculateTotalDiscount(mergedItems);
+      BigDecimal additionalDiscountTotal = calculateAdditionalDiscountTotal(mergedItems);
+      existingCart.setDiscountTotal(discountTotal);
+      existingCart.setAdditionalDiscountTotal(additionalDiscountTotal);
       existingCart.setGrandTotal(newSubTotal
           .add(taxResult.getTaxTotal())
-          .subtract(existingCart.getDiscountTotal()));
+          .subtract(additionalDiscountTotal));
 
       // If cart is empty after updates, we can either delete it or keep it with empty items
       // For now, we'll keep it with empty items (status remains CREATED)

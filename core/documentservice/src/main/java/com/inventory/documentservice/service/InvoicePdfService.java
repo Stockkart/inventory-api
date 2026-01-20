@@ -69,6 +69,7 @@ public class InvoicePdfService {
     context.setVariable("shopGstin", request.getShopGstin());
     context.setVariable("shopPhone", request.getShopPhone());
     context.setVariable("shopEmail", request.getShopEmail());
+    context.setVariable("shopTagline", request.getShopTagline());
 
     // Customer/Buyer details
     context.setVariable("customerName", request.getCustomerName());
@@ -85,6 +86,7 @@ public class InvoicePdfService {
     // Totals
     context.setVariable("subTotal", request.getSubTotal() != null ? request.getSubTotal() : BigDecimal.ZERO);
     context.setVariable("discountTotal", request.getDiscountTotal() != null ? request.getDiscountTotal() : BigDecimal.ZERO);
+    context.setVariable("additionalDiscountTotal", request.getAdditionalDiscountTotal() != null ? request.getAdditionalDiscountTotal() : BigDecimal.ZERO);
     context.setVariable("sgstAmount", request.getSgstAmount() != null ? request.getSgstAmount() : BigDecimal.ZERO);
     context.setVariable("cgstAmount", request.getCgstAmount() != null ? request.getCgstAmount() : BigDecimal.ZERO);
     context.setVariable("sgstPercent", request.getSgstPercent() != null ? request.getSgstPercent() : BigDecimal.valueOf(2.5));
@@ -92,6 +94,8 @@ public class InvoicePdfService {
     context.setVariable("taxTotal", request.getTaxTotal() != null ? request.getTaxTotal() : BigDecimal.ZERO);
     context.setVariable("roundOff", request.getRoundOff() != null ? request.getRoundOff() : BigDecimal.ZERO);
     context.setVariable("grandTotal", request.getGrandTotal() != null ? request.getGrandTotal() : BigDecimal.ZERO);
+    context.setVariable("totalMRPAmount", request.getTotalMRPAmount() != null ? request.getTotalMRPAmount() : BigDecimal.ZERO);
+    context.setVariable("totalAmountSaved", request.getTotalAmountSaved() != null ? request.getTotalAmountSaved() : BigDecimal.ZERO);
 
     // Additional fields
     context.setVariable("amountInWords", request.getAmountInWords());

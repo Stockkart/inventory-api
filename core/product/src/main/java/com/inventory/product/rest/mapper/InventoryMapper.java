@@ -22,6 +22,7 @@ public interface InventoryMapper {
   @Mapping(target = "receivedDate", expression = "java(java.time.Instant.now())")
   @Mapping(target = "createdAt", expression = "java(java.time.Instant.now())")
   @Mapping(target = "updatedAt", expression = "java(java.time.Instant.now())")
+  @Mapping(target = "additionalDiscount", source = "additionalDiscount")
   Inventory toEntity(CreateInventoryRequest request);
 
   @Mapping(target = "lotId", source = "lotId")
@@ -62,6 +63,7 @@ public interface InventoryMapper {
   @Mapping(target = "maximumRetailPrice", source = "maximumRetailPrice")
   @Mapping(target = "costPrice", source = "costPrice")
   @Mapping(target = "sellingPrice", source = "sellingPrice")
+  @Mapping(target = "additionalDiscount", source = "additionalDiscount")
   @Mapping(target = "receivedCount", source = "receivedCount")
   @Mapping(target = "soldCount", source = "soldCount")
   @Mapping(target = "currentCount", source = "currentCount")
@@ -82,6 +84,7 @@ public interface InventoryMapper {
   @Mapping(target = "maximumRetailPrice", source = "maximumRetailPrice")
   @Mapping(target = "costPrice", source = "costPrice")
   @Mapping(target = "sellingPrice", source = "sellingPrice")
+  @Mapping(target = "additionalDiscount", source = "additionalDiscount")
   @Mapping(target = "receivedCount", source = "receivedCount")
   @Mapping(target = "soldCount", source = "soldCount")
   @Mapping(target = "currentCount", source = "currentCount")

@@ -24,6 +24,7 @@ public class GenerateInvoiceRequest {
   private String shopGstin;
   private String shopPhone;
   private String shopEmail;
+  private String shopTagline; // Optional: Shop tagline, banner word, or highlight text
   
   // Customer/Buyer information
   private String customerName;
@@ -40,6 +41,7 @@ public class GenerateInvoiceRequest {
   // Totals and calculations
   private BigDecimal subTotal;
   private BigDecimal discountTotal;
+  private BigDecimal additionalDiscountTotal;
   private BigDecimal sgstAmount;
   private BigDecimal cgstAmount;
   private BigDecimal sgstPercent;
@@ -47,6 +49,8 @@ public class GenerateInvoiceRequest {
   private BigDecimal taxTotal;
   private BigDecimal roundOff;
   private BigDecimal grandTotal;
+  private BigDecimal totalMRPAmount; // Sum of all MRPs (maximumRetailPrice * quantity)
+  private BigDecimal totalAmountSaved; // totalMRPAmount - grandTotal
   
   // Additional fields
   private String paymentMethod;

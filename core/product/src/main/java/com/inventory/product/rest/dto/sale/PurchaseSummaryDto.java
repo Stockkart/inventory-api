@@ -26,6 +26,7 @@ public class PurchaseSummaryDto {
   private BigDecimal sgstAmount; // Calculated SGST amount
   private BigDecimal cgstAmount; // Calculated CGST amount
   private BigDecimal discountTotal;
+  private BigDecimal additionalDiscountTotal; // Total additional discount amount
   private BigDecimal grandTotal;
   private Instant soldAt;
   private PurchaseStatus status;

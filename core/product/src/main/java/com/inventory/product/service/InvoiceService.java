@@ -120,6 +120,7 @@ public class InvoiceService {
     request.setShopGstin(shop.getGstinNo());
     request.setShopPhone(shop.getContactPhone());
     request.setShopEmail(shop.getContactEmail());
+    request.setShopTagline(shop.getTagline());
 
     // Customer/Buyer information
     if (purchase.getCustomerId() != null && !purchase.getCustomerId().isEmpty()) {
@@ -149,6 +150,10 @@ public class InvoiceService {
         invoiceItem.setMaximumRetailPrice(purchaseItem.getMaximumRetailPrice());
         invoiceItem.setSellingPrice(purchaseItem.getSellingPrice());
         invoiceItem.setDiscount(purchaseItem.getDiscount());
+        invoiceItem.setAdditionalDiscount(purchaseItem.getAdditionalDiscount());
+        invoiceItem.setTotalAmount(purchaseItem.getTotalAmount());
+        invoiceItem.setCgst(purchaseItem.getCgst());
+        invoiceItem.setSgst(purchaseItem.getSgst());
         invoiceItem.setInventoryId(purchaseItem.getInventoryId());
 
         // Get inventory details
@@ -172,27 +177,51 @@ public class InvoiceService {
     }
     request.setItems(invoiceItems);
 
+    // Calculate total MRP amount (sum of all MRPs)
+    BigDecimal totalMRPAmount = BigDecimal.ZERO;
+    if (invoiceItems != null) {
+      for (InvoiceItem item : invoiceItems) {
+        if (item.getMaximumRetailPrice() != null && item.getQuantity() != null) {
+          BigDecimal itemMRP = item.getMaximumRetailPrice().multiply(BigDecimal.valueOf(item.getQuantity()));
+          totalMRPAmount = totalMRPAmount.add(itemMRP);
+        }
+      }
+    }
+    request.setTotalMRPAmount(totalMRPAmount);
+
     // Totals and calculations
     request.setSubTotal(purchase.getSubTotal() != null ? purchase.getSubTotal() : BigDecimal.ZERO);
     request.setDiscountTotal(purchase.getDiscountTotal() != null ? purchase.getDiscountTotal() : BigDecimal.ZERO);
+    request.setAdditionalDiscountTotal(purchase.getAdditionalDiscountTotal() != null ? purchase.getAdditionalDiscountTotal() : BigDecimal.ZERO);
     request.setSgstAmount(purchase.getSgstAmount() != null ? purchase.getSgstAmount() : BigDecimal.ZERO);
     request.setCgstAmount(purchase.getCgstAmount() != null ? purchase.getCgstAmount() : BigDecimal.ZERO);
     
-    // Calculate tax percentages from amounts
-    BigDecimal subTotal = request.getSubTotal();
-    if (subTotal != null && subTotal.compareTo(BigDecimal.ZERO) > 0) {
-      if (request.getSgstAmount() != null && request.getSgstAmount().compareTo(BigDecimal.ZERO) > 0) {
-        BigDecimal sgstPercent = request.getSgstAmount()
-            .divide(subTotal, 4, RoundingMode.HALF_UP)
-            .multiply(BigDecimal.valueOf(100));
-        request.setSgstPercent(sgstPercent);
+    // Calculate tax percentages from first item's rates (assuming all items have same rates)
+    // If items have different rates, we'll use the first item's rates for display
+    if (invoiceItems != null && !invoiceItems.isEmpty()) {
+      InvoiceItem firstItem = invoiceItems.get(0);
+      if (firstItem.getSgst() != null && !firstItem.getSgst().trim().isEmpty()) {
+        try {
+          request.setSgstPercent(new BigDecimal(firstItem.getSgst().trim()));
+        } catch (NumberFormatException e) {
+          request.setSgstPercent(BigDecimal.valueOf(2.5)); // Default
+        }
+      } else {
+        request.setSgstPercent(BigDecimal.valueOf(2.5)); // Default
       }
-      if (request.getCgstAmount() != null && request.getCgstAmount().compareTo(BigDecimal.ZERO) > 0) {
-        BigDecimal cgstPercent = request.getCgstAmount()
-            .divide(subTotal, 4, RoundingMode.HALF_UP)
-            .multiply(BigDecimal.valueOf(100));
-        request.setCgstPercent(cgstPercent);
+      if (firstItem.getCgst() != null && !firstItem.getCgst().trim().isEmpty()) {
+        try {
+          request.setCgstPercent(new BigDecimal(firstItem.getCgst().trim()));
+        } catch (NumberFormatException e) {
+          request.setCgstPercent(BigDecimal.valueOf(2.5)); // Default
+        }
+      } else {
+        request.setCgstPercent(BigDecimal.valueOf(2.5)); // Default
       }
+    } else {
+      // Fallback to default if no items
+      request.setSgstPercent(BigDecimal.valueOf(2.5));
+      request.setCgstPercent(BigDecimal.valueOf(2.5));
     }
     
     request.setTaxTotal(purchase.getTaxTotal() != null ? purchase.getTaxTotal() : BigDecimal.ZERO);
@@ -205,6 +234,10 @@ public class InvoiceService {
     BigDecimal roundOff = grandTotal.subtract(calculatedTotal);
     request.setRoundOff(roundOff);
     request.setGrandTotal(grandTotal);
+    
+    // Calculate total amount saved: totalMRPAmount - grandTotal
+    BigDecimal totalAmountSaved = totalMRPAmount.subtract(grandTotal);
+    request.setTotalAmountSaved(totalAmountSaved);
 
     // Additional fields
     request.setPaymentMethod(purchase.getPaymentMethod());

@@ -19,6 +19,7 @@ public class InventoryDetailResponse {
   BigDecimal maximumRetailPrice;
   BigDecimal costPrice;
   BigDecimal sellingPrice;
+  BigDecimal additionalDiscount;
   Integer receivedCount;
   Integer soldCount;
   Integer currentCount;

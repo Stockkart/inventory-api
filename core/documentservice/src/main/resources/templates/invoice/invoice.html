@@ -219,6 +219,17 @@
         font-size: 11px;
     }
 
+    .summary-table tr.savings-row {
+        background: #f0f0f0;
+        font-weight: 600;
+        font-size: 10px;
+        border-top: 1px solid #000;
+    }
+
+    .summary-table tr.savings-row td {
+        padding: 6px 8px;
+    }
+
     .amount-in-words {
         margin-top: 8px;
         padding: 5px;
@@ -283,6 +294,18 @@
         text-align: center;
         color: #666;
     }
+
+    /* Tagline Section */
+    .tagline-section {
+        text-align: center;
+        margin: 8px 0;
+        padding: 5px 0;
+        font-size: 11px;
+        font-weight: 600;
+        font-style: normal;
+        color: #000;
+        border-bottom: 1px solid #000;
+    }
   </style>
 </head>
 <body>
@@ -306,6 +329,11 @@
         </div>
       </div>
     </div>
+  </div>
+
+  <!-- Shop Tagline -->
+  <div class="tagline-section" th:if="${shopTagline != null && shopTagline != ''}">
+    <span th:text="${shopTagline}"></span>
   </div>
 
   <!-- Buyer Section -->
@@ -342,8 +370,9 @@
         <th style="width: 7%;">BATCH No.</th>
         <th style="width: 6%;">M.R.P.</th>
         <th style="width: 6%;">RATE</th>
-        <th style="width: 12%;">SCHEME</th>
-        <th style="width: 5%;">DIS%</th>
+        <th style="width: 8%;">SCHEME</th>
+        <th style="width: 5%;">DIS</th>
+        <th style="width: 5%;">ADD DIS%</th>
         <th style="width: 5%;">CGST%</th>
         <th style="width: 5%;">SGST%</th>
         <th style="width: 12%;">AMOUNT</th>
@@ -359,11 +388,12 @@
         <td th:text="${item.batchNo ?: ''}"></td>
         <td class="text-right" th:text="${#numbers.formatDecimal(item.maximumRetailPrice, 1, 2)}"></td>
         <td class="text-right" th:text="${#numbers.formatDecimal(item.sellingPrice, 1, 2)}"></td>
-        <td th:text="${item.scheme ?: ''}">5.00%</td>
+        <td th:text="${item.scheme ?: ''}"></td>
         <td class="text-right" th:text="${#numbers.formatDecimal(item.discount, 1, 2)}"></td>
-        <td class="text-right" th:text="${#numbers.formatDecimal(sgstPercent, 1, 2)}"></td>
-        <td class="text-right" th:text="${#numbers.formatDecimal(cgstPercent, 1, 2)}"></td>
-        <td class="text-right" th:text="${#numbers.formatDecimal(item.sellingPrice * item.quantity, 1, 2)}"></td>
+        <td class="text-right" th:text="${item.additionalDiscount != null ? #numbers.formatDecimal(item.additionalDiscount, 1, 2) : '0.00'}"></td>
+        <td class="text-right" th:text="${item.cgst != null and item.cgst != '' ? item.cgst : #numbers.formatDecimal(cgstPercent, 1, 2)}"></td>
+        <td class="text-right" th:text="${item.sgst != null and item.sgst != '' ? item.sgst : #numbers.formatDecimal(sgstPercent, 1, 2)}"></td>
+        <td class="text-right" th:text="${item.totalAmount != null ? #numbers.formatDecimal(item.totalAmount, 1, 2) : #numbers.formatDecimal(item.sellingPrice * item.quantity, 1, 2)}"></td>
       </tr>
       </tbody>
     </table>
@@ -387,9 +417,9 @@
           <td>TOTAL AMOUNT</td>
           <td th:text="${#numbers.formatDecimal(subTotal, 1, 2)}"></td>
         </tr>
-        <tr th:if="${discountTotal != null && discountTotal > 0}">
-          <td>Discount</td>
-          <td th:text="${#numbers.formatDecimal(discountTotal, 1, 2)}"></td>
+        <tr th:if="${additionalDiscountTotal != null && additionalDiscountTotal > 0}">
+          <td>Additional Discount</td>
+          <td th:text="${#numbers.formatDecimal(additionalDiscountTotal, 1, 2)}"></td>
         </tr>
         <tr th:if="${sgstAmount != null && sgstAmount > 0}">
           <td>SGST <span th:text="${sgstPercent ?: ''}"></span> %</td>
@@ -402,6 +432,10 @@
         <tr class="net-amount">
           <td>NET AMOUNT</td>
           <td th:text="${#numbers.formatDecimal(grandTotal, 1, 2)}"></td>
+        </tr>
+        <tr th:if="${totalAmountSaved != null && totalAmountSaved > 0}" class="savings-row">
+          <td>AMOUNT SAVED</td>
+          <td th:text="${#numbers.formatDecimal(totalAmountSaved, 1, 2)}"></td>
         </tr>
       </table>
     </div>

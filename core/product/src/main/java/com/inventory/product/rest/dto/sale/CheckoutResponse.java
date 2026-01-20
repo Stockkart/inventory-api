@@ -25,6 +25,7 @@ public class CheckoutResponse {
   BigDecimal sgstAmount; // Calculated SGST amount
   BigDecimal cgstAmount; // Calculated CGST amount
   BigDecimal discountTotal;
+  BigDecimal additionalDiscountTotal; // Total additional discount amount
   BigDecimal grandTotal;
   String paymentMethod;
   PurchaseStatus status;

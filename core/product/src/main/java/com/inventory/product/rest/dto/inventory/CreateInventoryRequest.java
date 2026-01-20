@@ -16,6 +16,7 @@ public class CreateInventoryRequest {
   private BigDecimal maximumRetailPrice;
   private BigDecimal costPrice;
   private BigDecimal sellingPrice;
+  private BigDecimal additionalDiscount; // Optional: Additional discount amount
   private String businessType;
   private String location;
   private Integer count;
