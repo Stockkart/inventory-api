@@ -652,10 +652,14 @@ public class CheckoutService {
     for (PurchaseItem item : purchaseItems) {
       // Calculate item subtotal (MRP * quantity)
       BigDecimal itemTotal = BigDecimal.ZERO;
-      if (item.getMaximumRetailPrice() != null && item.getQuantity() != null) {
+      if (item.getMaximumRetailPrice() != null && item.getQuantity() != null 
+          && item.getSellingPrice() != null) {
         itemTotal = item.getSellingPrice().multiply(BigDecimal.valueOf(item.getQuantity()));
-        itemTotal = itemTotal.multiply(new BigDecimal(1).subtract(item.getAdditionalDiscount().divide(new BigDecimal(
-            "100"), 4, RoundingMode.HALF_UP)));
+        // Apply additional discount if present
+        if (item.getAdditionalDiscount() != null && item.getAdditionalDiscount().compareTo(BigDecimal.ZERO) > 0) {
+          itemTotal = itemTotal.multiply(new BigDecimal(1).subtract(item.getAdditionalDiscount().divide(new BigDecimal(
+              "100"), 4, RoundingMode.HALF_UP)));
+        }
       }
       
       // Use inventory-level rates if available, otherwise use shop defaults

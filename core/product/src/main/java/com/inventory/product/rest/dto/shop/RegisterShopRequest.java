@@ -16,5 +16,6 @@ public class RegisterShopRequest {
   private String panNo; // Optional: PAN number
   private String sgst; // Optional: State GST
   private String cgst; // Optional: Central GST
+  private String tagline; // Optional: Shop tagline, banner word, or highlight text
 }
 
