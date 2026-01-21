@@ -8,8 +8,9 @@ public class LoginRequest {
   private String email;
   private String password;
 
-  // For Google authentication
+  // For OAuth authentication (Google/Facebook)
   private String idToken;
+  private String loginType; // "google" or "facebook"
 
   private String deviceId; // Optional: if not provided, will be generated
 }

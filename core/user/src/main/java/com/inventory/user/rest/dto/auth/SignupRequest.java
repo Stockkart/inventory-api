@@ -10,8 +10,9 @@ public class SignupRequest {
   private String email;
   private String password;
 
-  // For Google signup
+  // For OAuth signup (Google/Facebook)
   private String idToken;
+  private String signupType; // "google" or "facebook"
 
   private String shopId;
   private UserRole role;
