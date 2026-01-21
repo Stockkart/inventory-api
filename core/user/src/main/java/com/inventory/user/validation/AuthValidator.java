@@ -15,13 +15,21 @@ public class AuthValidator {
       throw new ValidationException("Login request cannot be null");
     }
 
-    // Either idToken (Google) or email/password must be provided
+    // Either idToken (OAuth) or email/password must be provided
     boolean hasIdToken = StringUtils.hasText(request.getIdToken());
     boolean hasEmail = StringUtils.hasText(request.getEmail());
     boolean hasPassword = StringUtils.hasText(request.getPassword());
+    boolean hasLoginType = StringUtils.hasText(request.getLoginType());
 
     if (hasIdToken) {
-      // Google authentication - only idToken is required
+      // OAuth authentication (Google/Facebook) - idToken and loginType are required
+      if (!hasLoginType) {
+        throw new ValidationException("loginType is required when idToken is provided");
+      }
+      String loginType = request.getLoginType().toLowerCase();
+      if (!loginType.equals("google") && !loginType.equals("facebook")) {
+        throw new ValidationException("loginType must be either 'google' or 'facebook'");
+      }
       return;
     } else {
       // Email/password authentication
@@ -39,14 +47,25 @@ public class AuthValidator {
       throw new ValidationException("Signup request cannot be null");
     }
 
-    // Either idToken (Google) or email/password/name must be provided
+    // Either idToken (OAuth) or email/password/name must be provided
     boolean hasIdToken = StringUtils.hasText(request.getIdToken());
     boolean hasEmail = StringUtils.hasText(request.getEmail());
     boolean hasPassword = StringUtils.hasText(request.getPassword());
     boolean hasName = StringUtils.hasText(request.getName());
+    boolean hasSignupType = StringUtils.hasText(request.getSignupType());
 
     if (hasIdToken) {
-      // Google signup - idToken is required, role is optional (defaults to OWNER)
+      // OAuth signup (Google/Facebook) - idToken, signupType, and role are required
+      if (!hasSignupType) {
+        throw new ValidationException("signupType is required when idToken is provided");
+      }
+      String signupType = request.getSignupType().toLowerCase();
+      if (!signupType.equals("google") && !signupType.equals("facebook")) {
+        throw new ValidationException("signupType must be either 'google' or 'facebook'");
+      }
+      if (request.getRole() == null) {
+        throw new ValidationException("Role is required for OAuth signup");
+      }
       return;
     }
 
@@ -62,6 +81,9 @@ public class AuthValidator {
     }
     if (!hasName) {
       throw new ValidationException("Name is required");
+    }
+    if (request.getRole() == null) {
+      throw new ValidationException("Role is required");
     }
   }
 

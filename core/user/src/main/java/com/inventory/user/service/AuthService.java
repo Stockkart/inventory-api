@@ -24,6 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Map;
 
 @Service
 @Slf4j
@@ -44,6 +45,8 @@ public class AuthService {
   @Autowired
   private GoogleTokenVerifier googleTokenVerifier;
   @Autowired
+  private FacebookTokenVerifier facebookTokenVerifier;
+  @Autowired
   private TokenValidationService tokenValidationService;
 
   @Autowired(required = false)
@@ -57,21 +60,45 @@ public class AuthService {
 
       UserAccount account;
 
-      // Check if Google ID token is provided
+      // Check if OAuth ID token is provided
       if (request.getIdToken() != null && !request.getIdToken().trim().isEmpty()) {
-        // Google authentication
-        log.debug("Attempting Google login");
+        // OAuth authentication (Google/Facebook)
+        String loginType = request.getLoginType() != null ? request.getLoginType().toLowerCase() : null;
+        
+        if (loginType == null) {
+          throw new ValidationException("loginType is required when idToken is provided");
+        }
 
-        // Verify Google ID token
-        var googlePayload = googleTokenVerifier.verifyToken(request.getIdToken());
-        String email = googleTokenVerifier.getEmail(googlePayload);
+        String email;
+        Map<String, Object> payload;
 
-        log.debug("Google login for email: {}", email);
+        if ("google".equals(loginType)) {
+          // Google authentication
+          log.debug("Attempting Google login");
+
+          // Verify Google ID token
+          payload = googleTokenVerifier.verifyToken(request.getIdToken());
+          email = googleTokenVerifier.getEmail(payload);
+
+          log.debug("Google login for email: {}", email);
+        } else if ("facebook".equals(loginType)) {
+          // Facebook authentication
+          log.debug("Attempting Facebook login");
+
+          // Verify Facebook access token
+          payload = facebookTokenVerifier.verifyToken(request.getIdToken());
+          email = facebookTokenVerifier.getEmail(payload);
+
+          log.debug("Facebook login for email: {}", email);
+        } else {
+          throw new ValidationException("Invalid loginType. Must be 'google' or 'facebook'");
+        }
 
         // Find user by email
+        String providerName = loginType.substring(0, 1).toUpperCase() + loginType.substring(1);
         account = userAccountRepository.findByEmail(email)
             .orElseThrow(() -> new AuthenticationException(ErrorCode.INVALID_CREDENTIALS,
-                "No account found for this Google account. Please sign up first."));
+                "No account found for this " + providerName + " account. Please sign up first."));
 
       } else {
         // Email/password authentication
@@ -138,25 +165,50 @@ public class AuthService {
       UserAccount account;
       String email;
 
-      // Check if Google ID token is provided
+      // Check if OAuth ID token is provided
       if (request.getIdToken() != null && !request.getIdToken().trim().isEmpty()) {
-        // Google signup
-        log.debug("Attempting Google signup");
+        // OAuth signup (Google/Facebook)
+        String signupType = request.getSignupType() != null ? request.getSignupType().toLowerCase() : null;
+        
+        if (signupType == null) {
+          throw new ValidationException("signupType is required when idToken is provided");
+        }
 
-        // Verify Google ID token
-        var googlePayload = googleTokenVerifier.verifyToken(request.getIdToken());
-        email = googleTokenVerifier.getEmail(googlePayload);
-        String name = googleTokenVerifier.getName(googlePayload);
+        Map<String, Object> payload;
+        String name;
 
-        log.debug("Google signup for email: {}", email);
+        if ("google".equals(signupType)) {
+          // Google signup
+          log.debug("Attempting Google signup");
+
+          // Verify Google ID token
+          payload = googleTokenVerifier.verifyToken(request.getIdToken());
+          email = googleTokenVerifier.getEmail(payload);
+          name = googleTokenVerifier.getName(payload);
+
+          log.debug("Google signup for email: {}", email);
+        } else if ("facebook".equals(signupType)) {
+          // Facebook signup
+          log.debug("Attempting Facebook signup");
+
+          // Verify Facebook access token
+          payload = facebookTokenVerifier.verifyToken(request.getIdToken());
+          email = facebookTokenVerifier.getEmail(payload);
+          name = facebookTokenVerifier.getName(payload);
+
+          log.debug("Facebook signup for email: {}", email);
+        } else {
+          throw new ValidationException("Invalid signupType. Must be 'google' or 'facebook'");
+        }
 
         // Check if user already exists
         if (userAccountRepository.findByEmail(email).isPresent()) {
-          log.warn("Google signup attempt with existing email: {}", email);
+          String providerName = signupType.substring(0, 1).toUpperCase() + signupType.substring(1);
+          log.warn("{} signup attempt with existing email: {}", providerName, email);
           throw new ValidationException("User with this email already exists. Please login instead.");
         }
 
-        // Create user account from Google data
+        // Create user account from OAuth data
         // MongoDB will auto-generate the userId as ObjectId
         account = new UserAccount();
         account.setEmail(email);
@@ -168,7 +220,7 @@ public class AuthService {
         Instant now = Instant.now();
         account.setCreatedAt(now);
         account.setUpdatedAt(now);
-        // No password for Google-authenticated users
+        // No password for OAuth-authenticated users
         account.setPassword(null);
 
       } else {
