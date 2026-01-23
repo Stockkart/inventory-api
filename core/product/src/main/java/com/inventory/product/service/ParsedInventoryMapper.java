@@ -42,8 +42,8 @@ public class ParsedInventoryMapper {
     
     // Price mappings
     request.setMaximumRetailPrice(parsedItem.getMrp());
-    request.setCostPrice(parsedItem.getRate());
-    request.setSellingPrice(parsedItem.getReducedMrp());
+    request.setSellingPrice(parsedItem.getRate()); // Rate from invoice goes to sellingPrice
+    // costPrice is not set from invoice parsing (can be set manually if needed)
 
     // Parse expiry date
     if (parsedItem.getExpiryDate() != null && !parsedItem.getExpiryDate().trim().isEmpty()) {
@@ -67,7 +67,7 @@ public class ParsedInventoryMapper {
     }
 
     // Set default values for fields not available in parsed item
-    request.setCompanyName(null); // Not available in invoice
+    request.setCompanyName(parsedItem.getCompanyName()); // Not available in invoice
     request.setBusinessType("PHARMACEUTICAL"); // Default, can be overridden
     request.setLocation(null); // Not available in invoice
     request.setThresholdCount(10); // Default threshold

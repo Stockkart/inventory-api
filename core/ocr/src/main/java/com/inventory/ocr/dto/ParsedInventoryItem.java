@@ -21,7 +21,7 @@ public class ParsedInventoryItem {
   private String manufactureDate;   // Manufacture date (as string, e.g., "NOV-24")
   private String expiryDate;        // Expiry date (as string, e.g., "OCT-27")
   private Integer quantity;         // Quantity
-  private BigDecimal rate;          // Rate per unit (cost price)
+  private BigDecimal rate;          // Rate per unit (selling price)
   private BigDecimal mrp;            // Maximum Retail Price
   private BigDecimal reducedMrp;     // Reduced MRP (selling price)
   private String packageDetail;      // Package detail (e.g., "1 X 50")
