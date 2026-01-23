@@ -1,9 +1,11 @@
 package com.inventory.ocr.config;
 
+import com.inventory.ocr.provider.OcrProvider;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import org.springframework.util.StringUtils;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
@@ -11,19 +13,22 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.textract.TextractClient;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
+import com.inventory.ocr.provider.impl.AwsTextractOcrProvider;
 
 /**
- * Configuration class for AWS Textract setup.
- * Handles Textract client initialization and configuration.
- * Supports multiple credential methods:
- * 1. Explicit credentials from application.properties (aws.access-key-id and aws.secret-access-key)
- * 2. Environment variables (AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY)
- * 3. AWS credentials file (~/.aws/credentials)
- * 4. IAM role (when running on EC2/ECS)
+ * Configuration class for OCR provider setup.
+ * Handles OCR provider selection and initialization.
+ * Currently configured to use AWS Textract, but can be easily swapped to other providers.
+ * 
+ * To switch providers, change the ocr.provider property in application.properties
+ * and add the corresponding provider implementation.
  */
 @Configuration
 @Slf4j
-public class TextractConfig {
+public class OcrConfig {
+
+  @Value("${ocr.provider:aws-textract}")
+  private String ocrProvider;
 
   @Value("${aws.region:us-east-1}")
   private String awsRegion;
@@ -35,7 +40,38 @@ public class TextractConfig {
   private String secretAccessKey;
 
   /**
+   * Creates and configures the OCR provider based on configuration.
+   * Currently supports: aws-textract
+   * 
+   * @param textractClient the AWS Textract client (required for aws-textract provider)
+   * @return configured OcrProvider bean
+   */
+  @Bean
+  @Primary
+  public OcrProvider ocrProvider(TextractClient textractClient) {
+    log.info("Configuring OCR provider: {}", ocrProvider);
+    
+    switch (ocrProvider.toLowerCase()) {
+      case "aws-textract":
+      case "textract":
+        log.info("Using AWS Textract as OCR provider");
+        return new AwsTextractOcrProvider(textractClient);
+      
+      // Future providers can be added here:
+      // case "google-vision":
+      //   return new GoogleVisionOcrProvider(...);
+      // case "azure-form-recognizer":
+      //   return new AzureFormRecognizerOcrProvider(...);
+      
+      default:
+        log.warn("Unknown OCR provider '{}', defaulting to AWS Textract", ocrProvider);
+        return new AwsTextractOcrProvider(textractClient);
+    }
+  }
+
+  /**
    * Creates and configures an AWS Textract client.
+   * This bean is only needed when using AWS Textract provider.
    * 
    * @return configured TextractClient bean
    */

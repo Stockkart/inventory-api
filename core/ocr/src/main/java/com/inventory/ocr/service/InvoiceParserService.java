@@ -1,13 +1,12 @@
 package com.inventory.ocr.service;
 
 import com.inventory.ocr.dto.ParsedInventoryItem;
+import com.inventory.ocr.model.OcrCell;
+import com.inventory.ocr.model.OcrResult;
+import com.inventory.ocr.model.OcrTable;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import software.amazon.awssdk.services.textract.model.AnalyzeDocumentResponse;
-import software.amazon.awssdk.services.textract.model.Block;
-import software.amazon.awssdk.services.textract.model.Relationship;
-import software.amazon.awssdk.services.textract.model.RelationshipType;
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -18,7 +17,8 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * Service for parsing invoice data extracted from AWS Textract and extracting inventory items.
+ * Service for parsing invoice data extracted from OCR and extracting inventory items.
+ * This service works with provider-agnostic OCR results, making it independent of the OCR provider used.
  */
 @Service
 @Slf4j
@@ -28,22 +28,22 @@ public class InvoiceParserService {
   private OcrService ocrService;
 
   /**
-   * Extract inventory items from an invoice image using AWS Textract.
+   * Extract inventory items from an invoice image using OCR.
    *
    * @param imageBytes the image file as byte array
    * @return list of parsed inventory items
    */
   public List<ParsedInventoryItem> parseInvoiceImage(byte[] imageBytes) {
-    log.info("Parsing invoice image to extract inventory items using AWS Textract");
+    log.info("Parsing invoice image to extract inventory items");
     
     try {
-      // Analyze document using Textract
-      AnalyzeDocumentResponse response = ocrService.analyzeDocument(imageBytes);
-      log.info("Textract analysis completed. Found {} blocks", 
-          response.blocks() != null ? response.blocks().size() : 0);
+      // Analyze document using OCR provider
+      OcrResult ocrResult = ocrService.analyzeDocument(imageBytes);
+      log.info("OCR analysis completed. Found {} tables", 
+          ocrResult.getTables() != null ? ocrResult.getTables().size() : 0);
       
-      // Parse tables from Textract response
-      return parseTextractTables(response);
+      // Parse tables from OCR result
+      return parseOcrTables(ocrResult);
     } catch (IOException e) {
       log.error("Error parsing invoice image: {}", e.getMessage(), e);
       throw new RuntimeException("Failed to parse invoice image: " + e.getMessage(), e);
@@ -54,38 +54,29 @@ public class InvoiceParserService {
   }
 
   /**
-   * Parse tables from Textract response and extract inventory items.
+   * Parse tables from OCR result and extract inventory items.
+   * This method works with provider-agnostic OcrResult model.
    *
-   * @param response the Textract AnalyzeDocumentResponse
+   * @param ocrResult the OCR analysis result
    * @return list of parsed inventory items
    */
-  private List<ParsedInventoryItem> parseTextractTables(AnalyzeDocumentResponse response) {
+  private List<ParsedInventoryItem> parseOcrTables(OcrResult ocrResult) {
     List<ParsedInventoryItem> items = new ArrayList<>();
     
-    if (response.blocks() == null || response.blocks().isEmpty()) {
-      log.warn("No blocks found in Textract response");
+    if (ocrResult.getTables() == null || ocrResult.getTables().isEmpty()) {
+      log.warn("No tables found in OCR result");
       return items;
     }
 
-    // Create a map of block IDs to blocks for quick lookup
-    Map<String, Block> blockMap = response.blocks().stream()
-        .collect(Collectors.toMap(Block::id, block -> block));
-
-    // Find all table blocks
-    List<Block> tables = response.blocks().stream()
-        .filter(block -> block.blockType() != null && 
-                block.blockType().toString().equals("TABLE"))
-        .collect(Collectors.toList());
-
-    log.info("Found {} tables in the document", tables.size());
+    log.info("Found {} tables in the document", ocrResult.getTables().size());
 
     // Process each table
-    for (Block table : tables) {
-      List<ParsedInventoryItem> tableItems = parseTable(table, blockMap);
+    for (OcrTable table : ocrResult.getTables()) {
+      List<ParsedInventoryItem> tableItems = parseTable(table);
       items.addAll(tableItems);
     }
 
-    log.info("Total inventory items parsed from {} tables: {}", tables.size(), items.size());
+    log.info("Total inventory items parsed from {} tables: {}", ocrResult.getTables().size(), items.size());
     
     // Log summary of extracted items
     if (!items.isEmpty()) {
@@ -101,70 +92,48 @@ public class InvoiceParserService {
   }
 
   /**
-   * Parse a single table block and extract inventory items.
+   * Parse a single table and extract inventory items.
+   * Works with provider-agnostic OcrTable model.
    *
-   * @param table the table block
-   * @param blockMap map of block IDs to blocks
+   * @param table the OCR table
    * @return list of parsed inventory items from the table
    */
-  private List<ParsedInventoryItem> parseTable(Block table, Map<String, Block> blockMap) {
+  private List<ParsedInventoryItem> parseTable(OcrTable table) {
     List<ParsedInventoryItem> items = new ArrayList<>();
     
-    if (table.relationships() == null) {
-      log.debug("Table has no relationships");
+    if (table.getCells() == null || table.getCells().isEmpty()) {
+      log.debug("Table has no cells");
       return items;
     }
 
-    // Find all cells in this table
-    List<Block> cells = new ArrayList<>();
-    for (Relationship relationship : table.relationships()) {
-      if (relationship.type() == RelationshipType.CHILD) {
-        for (String childId : relationship.ids()) {
-          Block child = blockMap.get(childId);
-          if (child != null && child.blockType() != null && 
-              child.blockType().toString().equals("CELL")) {
-            cells.add(child);
-          }
-        }
-      }
-    }
+    log.debug("Processing table with {} rows x {} columns", 
+        table.getRowCount(), table.getColumnCount());
 
-    if (cells.isEmpty()) {
-      log.debug("No cells found in table");
-      return items;
-    }
-
-    log.debug("Found {} cells in table", cells.size());
-
-    // Organize cells by row and column, also track which cells are headers
+    // Convert OcrTable to internal format for processing
     Map<Integer, Map<Integer, CellData>> tableData = new HashMap<>();
     int maxRow = 0;
     int maxCol = 0;
 
-    for (Block cell : cells) {
-      Integer rowIndex = cell.rowIndex();
-      Integer colIndex = cell.columnIndex();
-      
-      if (rowIndex == null || colIndex == null) {
-        continue;
-      }
-
+    for (Map.Entry<Integer, Map<Integer, OcrCell>> rowEntry : table.getCells().entrySet()) {
+      Integer rowIndex = rowEntry.getKey();
       maxRow = Math.max(maxRow, rowIndex);
-      maxCol = Math.max(maxCol, colIndex);
 
-      // Get cell text
-      String cellText = getCellText(cell, blockMap);
-      
-      // Check if this is a header cell using EntityTypes
-      boolean isHeader = cell.entityTypes() != null && 
-          cell.entityTypes().stream()
-              .anyMatch(et -> et != null && et.toString().contains("COLUMN_HEADER"));
-      
-      CellData cellData = new CellData(cellText, isHeader);
-      tableData.computeIfAbsent(rowIndex, k -> new HashMap<>()).put(colIndex, cellData);
+      Map<Integer, CellData> rowData = new HashMap<>();
+      for (Map.Entry<Integer, OcrCell> cellEntry : rowEntry.getValue().entrySet()) {
+        Integer colIndex = cellEntry.getKey();
+        OcrCell ocrCell = cellEntry.getValue();
+        maxCol = Math.max(maxCol, colIndex);
+
+        CellData cellData = new CellData(
+            ocrCell.getText() != null ? ocrCell.getText() : "",
+            ocrCell.getIsHeader() != null && ocrCell.getIsHeader()
+        );
+        rowData.put(colIndex, cellData);
+      }
+      tableData.put(rowIndex, rowData);
     }
 
-    log.debug("Table dimensions: {} rows x {} columns", maxRow + 1, maxCol + 1);
+    log.debug("Table dimensions: {} rows x {} columns", maxRow, maxCol);
 
     // Find header row - prefer rows with COLUMN_HEADER entity types, otherwise use keyword matching
     int headerRow = findHeaderRow(tableData, maxRow, maxCol);
@@ -194,7 +163,7 @@ public class InvoiceParserService {
         continue;
       }
 
-      // Skip rows that are marked as COLUMN_HEADER (sometimes Textract marks multiple rows as headers)
+      // Skip rows that are marked as COLUMN_HEADER
       boolean isHeaderRow = rowCells.values().stream()
           .anyMatch(cell -> cell.isHeader);
       if (isHeaderRow) {
@@ -237,39 +206,6 @@ public class InvoiceParserService {
     }
   }
 
-  /**
-   * Get text content from a cell block by following its relationships.
-   *
-   * @param cell the cell block
-   * @param blockMap map of block IDs to blocks
-   * @return cell text content
-   */
-  private String getCellText(Block cell, Map<String, Block> blockMap) {
-    if (cell.text() != null && !cell.text().trim().isEmpty()) {
-      return cell.text().trim();
-    }
-
-    // If no direct text, check child relationships
-    if (cell.relationships() != null) {
-      StringBuilder text = new StringBuilder();
-      for (Relationship relationship : cell.relationships()) {
-        if (relationship.type() == RelationshipType.CHILD) {
-          for (String childId : relationship.ids()) {
-            Block child = blockMap.get(childId);
-            if (child != null && child.text() != null) {
-              if (text.length() > 0) {
-                text.append(" ");
-              }
-              text.append(child.text().trim());
-            }
-          }
-        }
-      }
-      return text.toString().trim();
-    }
-
-    return "";
-  }
 
   /**
    * Find the header row in the table by looking for COLUMN_HEADER entity types or common header keywords.

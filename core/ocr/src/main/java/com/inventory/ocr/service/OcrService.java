@@ -1,76 +1,53 @@
 package com.inventory.ocr.service;
 
+import com.inventory.ocr.model.OcrResult;
+import com.inventory.ocr.provider.OcrProvider;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import software.amazon.awssdk.core.SdkBytes;
-import software.amazon.awssdk.services.textract.TextractClient;
-import software.amazon.awssdk.services.textract.model.AnalyzeDocumentRequest;
-import software.amazon.awssdk.services.textract.model.AnalyzeDocumentResponse;
-import software.amazon.awssdk.services.textract.model.Block;
-import software.amazon.awssdk.services.textract.model.Document;
-import software.amazon.awssdk.services.textract.model.FeatureType;
-import software.amazon.awssdk.services.textract.model.TextractException;
 
 import java.io.IOException;
-import java.util.List;
 
 /**
- * Service for performing OCR (Optical Character Recognition) on images using AWS Textract.
+ * Service for performing OCR (Optical Character Recognition) on images.
+ * This service uses the OcrProvider interface, allowing easy swapping of OCR implementations.
  */
 @Service
 @Slf4j
 public class OcrService {
 
-  private final TextractClient textractClient;
+  private final OcrProvider ocrProvider;
 
   /**
-   * Constructor that injects the configured Textract client.
+   * Constructor that injects the configured OCR provider.
+   * The provider is selected based on configuration (currently AWS Textract).
    * 
-   * @param textractClient the configured AWS Textract client
+   * @param ocrProvider the configured OCR provider implementation
    */
   @Autowired
-  public OcrService(TextractClient textractClient) {
-    this.textractClient = textractClient;
+  public OcrService(OcrProvider ocrProvider) {
+    this.ocrProvider = ocrProvider;
+    log.info("OcrService initialized with provider: {}", ocrProvider.getProviderName());
   }
 
   /**
    * Analyze document and extract structured data (tables) from an image byte array.
    *
    * @param imageBytes the image file as byte array
-   * @return AnalyzeDocumentResponse containing blocks with table data
-   * @throws IOException if image cannot be read
-   * @throws TextractException if OCR processing fails
+   * @return OcrResult containing extracted tables and text
+   * @throws IOException if image cannot be read or processing fails
    */
-  public AnalyzeDocumentResponse analyzeDocument(byte[] imageBytes) throws IOException, TextractException {
-    log.info("Starting AWS Textract analysis for image of size: {} bytes", imageBytes.length);
+  public OcrResult analyzeDocument(byte[] imageBytes) throws IOException {
+    log.info("Starting OCR analysis using provider: {} for image of size: {} bytes", 
+        ocrProvider.getProviderName(), imageBytes.length);
 
-    try {
-      // Create document from byte array
-      Document document = Document.builder()
-          .bytes(SdkBytes.fromByteArray(imageBytes))
-          .build();
+    OcrResult result = ocrProvider.analyzeDocument(imageBytes);
 
-      // Build request with TABLES feature for invoice table extraction
-      AnalyzeDocumentRequest request = AnalyzeDocumentRequest.builder()
-          .document(document)
-          .featureTypes(FeatureType.TABLES)
-          .build();
+    log.info("OCR analysis completed. Found {} tables, {} pages", 
+        result.getTables() != null ? result.getTables().size() : 0,
+        result.getPageCount());
 
-      // Analyze document
-      AnalyzeDocumentResponse response = textractClient.analyzeDocument(request);
-
-      log.info("Textract analysis completed. Found {} blocks", 
-          response.blocks() != null ? response.blocks().size() : 0);
-
-      return response;
-    } catch (TextractException e) {
-      log.error("AWS Textract processing failed: {}", e.getMessage(), e);
-      throw e;
-    } catch (Exception e) {
-      log.error("Unexpected error during Textract processing: {}", e.getMessage(), e);
-      throw new IOException("Failed to process document with Textract: " + e.getMessage(), e);
-    }
+    return result;
   }
 
   /**
@@ -82,36 +59,15 @@ public class OcrService {
    * @throws IOException if image cannot be read
    */
   public String extractText(byte[] imageBytes) throws IOException {
-    log.info("Extracting text using AWS Textract for image of size: {} bytes", imageBytes.length);
+    log.info("Extracting text using provider: {} for image of size: {} bytes", 
+        ocrProvider.getProviderName(), imageBytes.length);
 
-    try {
-      AnalyzeDocumentResponse response = analyzeDocument(imageBytes);
-      
-      // Extract all text from blocks
-      StringBuilder text = new StringBuilder();
-      if (response.blocks() != null) {
-        for (Block block : response.blocks()) {
-          if (block.blockType() != null && 
-              (block.blockType().toString().equals("LINE") || 
-               block.blockType().toString().equals("WORD"))) {
-            if (block.text() != null) {
-              if (text.length() > 0) {
-                text.append(" ");
-              }
-              text.append(block.text());
-            }
-          }
-        }
-      }
+    OcrResult result = ocrProvider.analyzeDocument(imageBytes);
+    String extractedText = result.getFullText() != null ? result.getFullText() : "";
 
-      String extractedText = text.toString().trim();
-      log.info("Text extraction completed. Extracted text length: {}", extractedText.length());
+    log.info("Text extraction completed. Extracted text length: {}", extractedText.length());
 
-      return extractedText;
-    } catch (TextractException e) {
-      log.error("AWS Textract processing failed: {}", e.getMessage(), e);
-      throw new IOException("Failed to extract text: " + e.getMessage(), e);
-    }
+    return extractedText;
   }
 }
 
