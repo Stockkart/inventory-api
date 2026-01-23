@@ -25,5 +25,6 @@ public class ParsedInventoryItem {
   private BigDecimal mrp;            // Maximum Retail Price
   private BigDecimal reducedMrp;     // Reduced MRP (selling price)
   private String packageDetail;      // Package detail (e.g., "1 X 50")
+  private String companyName;        // Company/Manufacturer name (from MFG/MKD column)
 }
 

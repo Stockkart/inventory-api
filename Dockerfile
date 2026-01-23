@@ -14,24 +14,8 @@ RUN mvn -pl app -am clean package -DskipTests
 FROM eclipse-temurin:21-jre
 WORKDIR /app
 
-# Install Tesseract OCR and its dependencies
-RUN apt-get update && \
-    apt-get install -y tesseract-ocr tesseract-ocr-eng && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
-# Find tessdata directory and verify it exists
-# Common locations: /usr/share/tesseract-ocr/5/tessdata (Tesseract 5.x) or /usr/share/tesseract-ocr/4.00/tessdata (Tesseract 4.x)
-RUN TESSDATA_DIR=$(find /usr/share/tesseract-ocr -type d -name "tessdata" 2>/dev/null | head -1) && \
-    if [ -z "$TESSDATA_DIR" ]; then \
-        TESSDATA_DIR="/usr/share/tesseract-ocr/5/tessdata"; \
-    fi && \
-    echo "TESSDATA_PREFIX=$TESSDATA_DIR" && \
-    ls -la "$TESSDATA_DIR" || echo "Warning: tessdata directory may not exist at $TESSDATA_DIR"
-
-# Set TESSDATA_PREFIX environment variable
-# This will be used by Tesseract to find language data files
-ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata
+# AWS credentials and region will be configured via environment variables or IAM roles
+# No additional system dependencies required for AWS Textract
 
 # Convert build arguments to environment variables
 ENV DB_URI=${DB_URI}

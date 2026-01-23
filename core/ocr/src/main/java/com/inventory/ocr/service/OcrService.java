@@ -1,59 +1,117 @@
 package com.inventory.ocr.service;
 
 import lombok.extern.slf4j.Slf4j;
-import net.sourceforge.tess4j.Tesseract;
-import net.sourceforge.tess4j.TesseractException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import software.amazon.awssdk.core.SdkBytes;
+import software.amazon.awssdk.services.textract.TextractClient;
+import software.amazon.awssdk.services.textract.model.AnalyzeDocumentRequest;
+import software.amazon.awssdk.services.textract.model.AnalyzeDocumentResponse;
+import software.amazon.awssdk.services.textract.model.Block;
+import software.amazon.awssdk.services.textract.model.Document;
+import software.amazon.awssdk.services.textract.model.FeatureType;
+import software.amazon.awssdk.services.textract.model.TextractException;
 
-import javax.imageio.ImageIO;
-import java.awt.image.BufferedImage;
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.util.List;
 
 /**
- * Service for performing OCR (Optical Character Recognition) on images.
+ * Service for performing OCR (Optical Character Recognition) on images using AWS Textract.
  */
 @Service
 @Slf4j
 public class OcrService {
 
-  private final Tesseract tesseract;
+  private final TextractClient textractClient;
 
   /**
-   * Constructor that injects the configured Tesseract bean.
+   * Constructor that injects the configured Textract client.
    * 
-   * @param tesseract the configured Tesseract instance from OcrConfig
+   * @param textractClient the configured AWS Textract client
    */
   @Autowired
-  public OcrService(Tesseract tesseract) {
-    this.tesseract = tesseract;
+  public OcrService(TextractClient textractClient) {
+    this.textractClient = textractClient;
   }
 
   /**
-   * Extract text from an image byte array.
+   * Analyze document and extract structured data (tables) from an image byte array.
+   *
+   * @param imageBytes the image file as byte array
+   * @return AnalyzeDocumentResponse containing blocks with table data
+   * @throws IOException if image cannot be read
+   * @throws TextractException if OCR processing fails
+   */
+  public AnalyzeDocumentResponse analyzeDocument(byte[] imageBytes) throws IOException, TextractException {
+    log.info("Starting AWS Textract analysis for image of size: {} bytes", imageBytes.length);
+
+    try {
+      // Create document from byte array
+      Document document = Document.builder()
+          .bytes(SdkBytes.fromByteArray(imageBytes))
+          .build();
+
+      // Build request with TABLES feature for invoice table extraction
+      AnalyzeDocumentRequest request = AnalyzeDocumentRequest.builder()
+          .document(document)
+          .featureTypes(FeatureType.TABLES)
+          .build();
+
+      // Analyze document
+      AnalyzeDocumentResponse response = textractClient.analyzeDocument(request);
+
+      log.info("Textract analysis completed. Found {} blocks", 
+          response.blocks() != null ? response.blocks().size() : 0);
+
+      return response;
+    } catch (TextractException e) {
+      log.error("AWS Textract processing failed: {}", e.getMessage(), e);
+      throw e;
+    } catch (Exception e) {
+      log.error("Unexpected error during Textract processing: {}", e.getMessage(), e);
+      throw new IOException("Failed to process document with Textract: " + e.getMessage(), e);
+    }
+  }
+
+  /**
+   * Extract text from an image byte array (legacy method for backward compatibility).
+   * This method extracts all text from the document.
    *
    * @param imageBytes the image file as byte array
    * @return extracted text as string
    * @throws IOException if image cannot be read
-   * @throws TesseractException if OCR processing fails
    */
-  public String extractText(byte[] imageBytes) throws IOException, TesseractException {
-    log.info("Starting OCR processing for image of size: {} bytes", imageBytes.length);
+  public String extractText(byte[] imageBytes) throws IOException {
+    log.info("Extracting text using AWS Textract for image of size: {} bytes", imageBytes.length);
 
-    // Convert byte array to BufferedImage
-    BufferedImage image = ImageIO.read(new ByteArrayInputStream(imageBytes));
+    try {
+      AnalyzeDocumentResponse response = analyzeDocument(imageBytes);
+      
+      // Extract all text from blocks
+      StringBuilder text = new StringBuilder();
+      if (response.blocks() != null) {
+        for (Block block : response.blocks()) {
+          if (block.blockType() != null && 
+              (block.blockType().toString().equals("LINE") || 
+               block.blockType().toString().equals("WORD"))) {
+            if (block.text() != null) {
+              if (text.length() > 0) {
+                text.append(" ");
+              }
+              text.append(block.text());
+            }
+          }
+        }
+      }
 
-    if (image == null) {
-      throw new IOException("Unable to read image from provided bytes");
+      String extractedText = text.toString().trim();
+      log.info("Text extraction completed. Extracted text length: {}", extractedText.length());
+
+      return extractedText;
+    } catch (TextractException e) {
+      log.error("AWS Textract processing failed: {}", e.getMessage(), e);
+      throw new IOException("Failed to extract text: " + e.getMessage(), e);
     }
-
-    // Perform OCR
-    String extractedText = tesseract.doOCR(image);
-
-    log.info("OCR processing completed. Extracted text length: {}", extractedText != null ? extractedText.length() : 0);
-
-    return extractedText != null ? extractedText.trim() : "";
   }
 }
 

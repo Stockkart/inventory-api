@@ -4,7 +4,6 @@ import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.product.rest.dto.ocr.OcrResponse;
 import com.inventory.ocr.service.OcrService;
 import lombok.extern.slf4j.Slf4j;
-import net.sourceforge.tess4j.TesseractException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -68,14 +67,10 @@ public class OcrController {
       log.error("Error reading image file: {}", e.getMessage(), e);
       return ResponseEntity.badRequest()
           .body(ApiResponse.error("Error reading image file: " + e.getMessage()));
-    } catch (TesseractException e) {
-      log.error("OCR processing failed: {}", e.getMessage(), e);
-      return ResponseEntity.internalServerError()
-          .body(ApiResponse.error("OCR processing failed: " + e.getMessage()));
     } catch (Exception e) {
       log.error("Unexpected error during OCR processing: {}", e.getMessage(), e);
       return ResponseEntity.internalServerError()
-          .body(ApiResponse.error("Unexpected error: " + e.getMessage()));
+          .body(ApiResponse.error("OCR processing failed: " + e.getMessage()));
     }
   }
 }
