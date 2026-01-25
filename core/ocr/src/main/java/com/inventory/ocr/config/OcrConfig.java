@@ -1,27 +1,24 @@
 package com.inventory.ocr.config;
 
 import com.inventory.ocr.provider.OcrProvider;
+import com.inventory.ocr.provider.impl.AwsTextractOcrProvider;
+import com.inventory.ocr.provider.impl.ChatGptOcrProvider;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Primary;
 import org.springframework.util.StringUtils;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.textract.TextractClient;
-import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
-import com.inventory.ocr.provider.impl.AwsTextractOcrProvider;
 
 /**
- * Configuration class for OCR provider setup.
- * Handles OCR provider selection and initialization.
- * Currently configured to use AWS Textract, but can be easily swapped to other providers.
- * 
- * To switch providers, change the ocr.provider property in application.properties
- * and add the corresponding provider implementation.
+ * OCR provider configuration. Supports aws-textract (default) and chatgpt (gpt-4o-mini).
+ * Set ocr.provider=chatgpt and openai.api-key to use ChatGPT for invoice parsing.
  */
 @Configuration
 @Slf4j
@@ -39,43 +36,32 @@ public class OcrConfig {
   @Value("${aws.secret-access-key:}")
   private String secretAccessKey;
 
-  /**
-   * Creates and configures the OCR provider based on configuration.
-   * Currently supports: aws-textract
-   * 
-   * @param textractClient the AWS Textract client (required for aws-textract provider)
-   * @return configured OcrProvider bean
-   */
+  @Value("${openai.api-key:}")
+  private String openaiApiKey;
+
   @Bean
-  @Primary
-  public OcrProvider ocrProvider(TextractClient textractClient) {
-    log.info("Configuring OCR provider: {}", ocrProvider);
-    
-    switch (ocrProvider.toLowerCase()) {
-      case "aws-textract":
-      case "textract":
-        log.info("Using AWS Textract as OCR provider");
-        return new AwsTextractOcrProvider(textractClient);
-      
-      // Future providers can be added here:
-      // case "google-vision":
-      //   return new GoogleVisionOcrProvider(...);
-      // case "azure-form-recognizer":
-      //   return new AzureFormRecognizerOcrProvider(...);
-      
-      default:
-        log.warn("Unknown OCR provider '{}', defaulting to AWS Textract", ocrProvider);
-        return new AwsTextractOcrProvider(textractClient);
+  @ConditionalOnProperty(name = "ocr.provider", havingValue = "aws-textract", matchIfMissing = true)
+  public OcrProvider awsTextractOcrProvider(TextractClient textractClient) {
+    log.info("Using AWS Textract as OCR provider");
+    return new AwsTextractOcrProvider(textractClient);
+  }
+
+  @Bean
+  @ConditionalOnProperty(name = "ocr.provider", havingValue = "chatgpt")
+  public OcrProvider chatGptOcrProvider() {
+    if (!StringUtils.hasText(openaiApiKey)) {
+      throw new IllegalStateException("openai.api-key is required when ocr.provider=chatgpt. " +
+          "Set openai.api-key or OPENAI_API_KEY.");
     }
+    log.info("Using ChatGPT (gpt-4o-mini) as OCR provider");
+    return new ChatGptOcrProvider(openaiApiKey.trim());
   }
 
   /**
-   * Creates and configures an AWS Textract client.
-   * This bean is only needed when using AWS Textract provider.
-   * 
-   * @return configured TextractClient bean
+   * AWS Textract client. Created only when ocr.provider is aws-textract (default).
    */
   @Bean
+  @ConditionalOnProperty(name = "ocr.provider", havingValue = "aws-textract", matchIfMissing = true)
   public TextractClient textractClient() {
     try {
       // Use explicit credentials if provided, otherwise use default credential chain

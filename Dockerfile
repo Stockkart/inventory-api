@@ -20,6 +20,10 @@ WORKDIR /app
 # Convert build arguments to environment variables
 ENV DB_URI=${DB_URI}
 ENV CLIENT_URL=${CLIENT_URL}
+ENV OPENAI_API_KEY=${OPENAI_API_KEY}
+ENV AWS_ACCESS_KEY=${AWS_ACCESS_KEY}
+ENV AWS_SECRET_ACCESS=${AWS_SECRET_ACCESS}
+ENV AWS_REGION=${AWS_REGION}
 
 # copy the built jar from the app module
 COPY --from=build /build/app/target/*.jar app.jar

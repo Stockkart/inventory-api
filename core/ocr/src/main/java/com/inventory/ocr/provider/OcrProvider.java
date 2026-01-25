@@ -1,28 +1,26 @@
 package com.inventory.ocr.provider;
 
-import com.inventory.ocr.model.OcrResult;
+import com.inventory.ocr.dto.ParsedInventoryItem;
 
 import java.io.IOException;
+import java.util.List;
 
 /**
- * Interface for OCR providers.
- * This abstraction allows easy swapping of OCR implementations (AWS Textract, Google Vision, etc.)
+ * Interface for invoice parsing providers. Each provider returns parsed line items directly.
  */
 public interface OcrProvider {
 
   /**
-   * Analyze a document and extract structured data (tables, text, etc.).
+   * Parse an invoice image and extract inventory line items.
    *
    * @param imageBytes the image file as byte array
-   * @return OcrResult containing extracted tables and text
+   * @return list of parsed inventory items (never null)
    * @throws IOException if image cannot be read or processing fails
    */
-  OcrResult analyzeDocument(byte[] imageBytes) throws IOException;
+  List<ParsedInventoryItem> parseInvoice(byte[] imageBytes) throws IOException;
 
   /**
-   * Get the name/identifier of this OCR provider.
-   *
-   * @return provider name (e.g., "AWS_TEXTTRACT", "GOOGLE_VISION")
+   * Provider identifier (e.g. "AWS_TEXTTRACT", "CHATGPT_4O_MINI").
    */
   String getProviderName();
 }

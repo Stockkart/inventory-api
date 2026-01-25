@@ -1,9 +1,10 @@
 package com.inventory.ocr.provider.impl;
 
+import com.inventory.ocr.dto.ParsedInventoryItem;
 import com.inventory.ocr.model.OcrCell;
-import com.inventory.ocr.model.OcrResult;
 import com.inventory.ocr.model.OcrTable;
 import com.inventory.ocr.provider.OcrProvider;
+import com.inventory.ocr.service.TableToItemsParser;
 import lombok.extern.slf4j.Slf4j;
 import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.services.textract.TextractClient;
@@ -23,52 +24,37 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * AWS Textract implementation of OCR provider.
- * This class converts AWS Textract responses to the provider-agnostic OcrResult model.
+ * AWS Textract implementation. Extracts tables from the document, then parses them
+ * to {@link ParsedInventoryItem} via {@link TableToItemsParser}.
  */
 @Slf4j
 public class AwsTextractOcrProvider implements OcrProvider {
 
   private final TextractClient textractClient;
+  private final TableToItemsParser tableParser;
 
-  /**
-   * Constructor for AWS Textract OCR provider.
-   * 
-   * @param textractClient the configured AWS Textract client
-   */
   public AwsTextractOcrProvider(TextractClient textractClient) {
     this.textractClient = textractClient;
+    this.tableParser = new TableToItemsParser();
   }
 
   @Override
-  public OcrResult analyzeDocument(byte[] imageBytes) throws IOException {
-    log.info("Starting AWS Textract analysis for image of size: {} bytes", imageBytes.length);
+  public List<ParsedInventoryItem> parseInvoice(byte[] imageBytes) throws IOException {
+    log.info("AWS Textract invoice parse, image size: {} bytes", imageBytes.length);
 
-    try {
-      // Create document from byte array
-      Document document = Document.builder()
-          .bytes(SdkBytes.fromByteArray(imageBytes))
-          .build();
+    Document document = Document.builder()
+        .bytes(SdkBytes.fromByteArray(imageBytes))
+        .build();
+    AnalyzeDocumentRequest request = AnalyzeDocumentRequest.builder()
+        .document(document)
+        .featureTypes(FeatureType.TABLES)
+        .build();
 
-      // Build request with TABLES feature for invoice table extraction
-      AnalyzeDocumentRequest request = AnalyzeDocumentRequest.builder()
-          .document(document)
-          .featureTypes(FeatureType.TABLES)
-          .build();
+    AnalyzeDocumentResponse response = textractClient.analyzeDocument(request);
+    log.info("Textract done, {} blocks", response.blocks() != null ? response.blocks().size() : 0);
 
-      // Analyze document
-      AnalyzeDocumentResponse response = textractClient.analyzeDocument(request);
-
-      log.info("Textract analysis completed. Found {} blocks", 
-          response.blocks() != null ? response.blocks().size() : 0);
-
-      // Convert Textract response to provider-agnostic model
-      return convertToOcrResult(response);
-
-    } catch (Exception e) {
-      log.error("AWS Textract processing failed: {}", e.getMessage(), e);
-      throw new IOException("Failed to process document with Textract: " + e.getMessage(), e);
-    }
+    List<OcrTable> tables = extractTables(response);
+    return tableParser.parse(tables);
   }
 
   @Override
@@ -76,122 +62,57 @@ public class AwsTextractOcrProvider implements OcrProvider {
     return "AWS_TEXTTRACT";
   }
 
-  /**
-   * Convert AWS Textract response to provider-agnostic OcrResult model.
-   */
-  private OcrResult convertToOcrResult(AnalyzeDocumentResponse response) {
+  private List<OcrTable> extractTables(AnalyzeDocumentResponse response) {
     if (response.blocks() == null || response.blocks().isEmpty()) {
-      return OcrResult.builder()
-          .tables(new ArrayList<>())
-          .fullText("")
-          .pageCount(response.documentMetadata() != null ? response.documentMetadata().pages() : 1)
-          .build();
+      return List.of();
     }
-
-    // Create block map for quick lookup
     Map<String, Block> blockMap = response.blocks().stream()
-        .collect(Collectors.toMap(Block::id, block -> block));
+        .collect(Collectors.toMap(Block::id, b -> b));
 
-    // Extract tables
-    List<OcrTable> tables = extractTables(response, blockMap);
-
-    // Extract full text
-    String fullText = extractFullText(response);
-
-    return OcrResult.builder()
-        .tables(tables)
-        .fullText(fullText)
-        .pageCount(response.documentMetadata() != null ? response.documentMetadata().pages() : 1)
-        .providerMetadata("AWS Textract Model Version: " + 
-            (response.analyzeDocumentModelVersion() != null ? response.analyzeDocumentModelVersion() : "unknown"))
-        .build();
-  }
-
-  /**
-   * Extract tables from Textract response.
-   */
-  private List<OcrTable> extractTables(AnalyzeDocumentResponse response, Map<String, Block> blockMap) {
     List<OcrTable> tables = new ArrayList<>();
-
-    // Find all table blocks
     List<Block> tableBlocks = response.blocks().stream()
-        .filter(block -> block.blockType() != null && 
-                block.blockType().toString().equals("TABLE"))
+        .filter(b -> b.blockType() != null && "TABLE".equals(b.blockType().toString()))
         .collect(Collectors.toList());
 
-    log.debug("Found {} tables in Textract response", tableBlocks.size());
-
-    for (Block tableBlock : tableBlocks) {
-      OcrTable table = extractTable(tableBlock, blockMap);
-      if (table != null) {
-        tables.add(table);
-      }
+    for (Block tb : tableBlocks) {
+      OcrTable t = buildTable(tb, blockMap);
+      if (t != null) tables.add(t);
     }
-
     return tables;
   }
 
-  /**
-   * Extract a single table from Textract table block.
-   */
-  private OcrTable extractTable(Block tableBlock, Map<String, Block> blockMap) {
-    if (tableBlock.relationships() == null) {
-      return null;
-    }
-
-    // Find all cells in this table
+  private OcrTable buildTable(Block tableBlock, Map<String, Block> blockMap) {
+    if (tableBlock.relationships() == null) return null;
     List<Block> cells = new ArrayList<>();
-    for (Relationship relationship : tableBlock.relationships()) {
-      if (relationship.type() == RelationshipType.CHILD) {
-        for (String childId : relationship.ids()) {
-          Block child = blockMap.get(childId);
-          if (child != null && child.blockType() != null && 
-              child.blockType().toString().equals("CELL")) {
-            cells.add(child);
-          }
-        }
+    for (Relationship rel : tableBlock.relationships()) {
+      if (rel.type() != RelationshipType.CHILD) continue;
+      for (String id : rel.ids()) {
+        Block b = blockMap.get(id);
+        if (b != null && b.blockType() != null && "CELL".equals(b.blockType().toString()))
+          cells.add(b);
       }
     }
+    if (cells.isEmpty()) return null;
 
-    if (cells.isEmpty()) {
-      return null;
-    }
-
-    // Organize cells by row and column
     Map<Integer, Map<Integer, OcrCell>> tableCells = new HashMap<>();
-    int maxRow = 0;
-    int maxCol = 0;
-
+    int maxRow = 0, maxCol = 0;
     for (Block cell : cells) {
-      Integer rowIndex = cell.rowIndex();
-      Integer colIndex = cell.columnIndex();
-
-      if (rowIndex == null || colIndex == null) {
-        continue;
-      }
-
-      maxRow = Math.max(maxRow, rowIndex);
-      maxCol = Math.max(maxCol, colIndex);
-
-      // Get cell text
-      String cellText = getCellText(cell, blockMap);
-
-      // Check if this is a header cell
+      Integer ri = cell.rowIndex(), ci = cell.columnIndex();
+      if (ri == null || ci == null) continue;
+      maxRow = Math.max(maxRow, ri);
+      maxCol = Math.max(maxCol, ci);
+      String text = cellText(cell, blockMap);
       boolean isHeader = cell.entityTypes() != null &&
-          cell.entityTypes().stream()
-              .anyMatch(et -> et != null && et.toString().contains("COLUMN_HEADER"));
-
-      OcrCell ocrCell = OcrCell.builder()
-          .text(cellText)
-          .rowIndex(rowIndex)
-          .columnIndex(colIndex)
+          cell.entityTypes().stream().anyMatch(e -> e != null && e.toString().contains("COLUMN_HEADER"));
+      OcrCell oc = OcrCell.builder()
+          .text(text)
+          .rowIndex(ri)
+          .columnIndex(ci)
           .isHeader(isHeader)
           .confidence(cell.confidence() != null ? cell.confidence().doubleValue() : null)
           .build();
-
-      tableCells.computeIfAbsent(rowIndex, k -> new HashMap<>()).put(colIndex, ocrCell);
+      tableCells.computeIfAbsent(ri, k -> new HashMap<>()).put(ci, oc);
     }
-
     return OcrTable.builder()
         .cells(tableCells)
         .rowCount(maxRow)
@@ -200,55 +121,21 @@ public class AwsTextractOcrProvider implements OcrProvider {
         .build();
   }
 
-  /**
-   * Get text content from a cell block by following its relationships.
-   */
-  private String getCellText(Block cell, Map<String, Block> blockMap) {
-    if (cell.text() != null && !cell.text().trim().isEmpty()) {
+  private String cellText(Block cell, Map<String, Block> blockMap) {
+    if (cell.text() != null && !cell.text().trim().isEmpty())
       return cell.text().trim();
-    }
-
-    // If no direct text, check child relationships
-    if (cell.relationships() != null) {
-      StringBuilder text = new StringBuilder();
-      for (Relationship relationship : cell.relationships()) {
-        if (relationship.type() == RelationshipType.CHILD) {
-          for (String childId : relationship.ids()) {
-            Block child = blockMap.get(childId);
-            if (child != null && child.text() != null) {
-              if (text.length() > 0) {
-                text.append(" ");
-              }
-              text.append(child.text().trim());
-            }
-          }
-        }
-      }
-      return text.toString().trim();
-    }
-
-    return "";
-  }
-
-  /**
-   * Extract all text from the document for backward compatibility.
-   */
-  private String extractFullText(AnalyzeDocumentResponse response) {
-    StringBuilder text = new StringBuilder();
-    if (response.blocks() != null) {
-      for (Block block : response.blocks()) {
-        if (block.blockType() != null &&
-            (block.blockType().toString().equals("LINE") ||
-                block.blockType().toString().equals("WORD"))) {
-          if (block.text() != null) {
-            if (text.length() > 0) {
-              text.append(" ");
-            }
-            text.append(block.text());
-          }
+    if (cell.relationships() == null) return "";
+    StringBuilder sb = new StringBuilder();
+    for (Relationship rel : cell.relationships()) {
+      if (rel.type() != RelationshipType.CHILD) continue;
+      for (String id : rel.ids()) {
+        Block b = blockMap.get(id);
+        if (b != null && b.text() != null) {
+          if (sb.length() > 0) sb.append(" ");
+          sb.append(b.text().trim());
         }
       }
     }
-    return text.toString().trim();
+    return sb.toString().trim();
   }
 }
