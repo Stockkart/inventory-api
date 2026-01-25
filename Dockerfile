@@ -5,6 +5,11 @@ WORKDIR /build
 # copy everything (multi-module project)
 COPY . .
 
+# embed commit ID into app so GET /commit.txt returns deployed commit (CI writes commit.txt before build)
+RUN mkdir -p app/src/main/resources/static && \
+    (test -f commit.txt && cp commit.txt app/src/main/resources/static/commit.txt) || \
+    echo "local-build" > app/src/main/resources/static/commit.txt
+
 # build only the app module and its dependencies
 RUN mvn -pl app -am clean package -DskipTests
 # if your main module isn't "app", replace "app" above and below with that module name.
@@ -25,7 +30,7 @@ ENV AWS_ACCESS_KEY=${AWS_ACCESS_KEY}
 ENV AWS_SECRET_ACCESS=${AWS_SECRET_ACCESS}
 ENV AWS_REGION=${AWS_REGION}
 
-# copy the built jar from the app module
+# copy the built jar from the app module (commit.txt is inside as static resource)
 COPY --from=build /build/app/target/*.jar app.jar
 
 EXPOSE 8080
