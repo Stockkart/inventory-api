@@ -1,59 +1,38 @@
 package com.inventory.ocr.service;
 
+import com.inventory.ocr.dto.ParsedInventoryItem;
+import com.inventory.ocr.provider.OcrProvider;
 import lombok.extern.slf4j.Slf4j;
-import net.sourceforge.tess4j.Tesseract;
-import net.sourceforge.tess4j.TesseractException;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import javax.imageio.ImageIO;
-import java.awt.image.BufferedImage;
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.util.List;
 
 /**
- * Service for performing OCR (Optical Character Recognition) on images.
+ * Delegates invoice parsing to the configured {@link OcrProvider}.
  */
 @Service
 @Slf4j
 public class OcrService {
 
-  private final Tesseract tesseract;
+  private final OcrProvider ocrProvider;
 
-  /**
-   * Constructor that injects the configured Tesseract bean.
-   * 
-   * @param tesseract the configured Tesseract instance from OcrConfig
-   */
-  @Autowired
-  public OcrService(Tesseract tesseract) {
-    this.tesseract = tesseract;
+  public OcrService(OcrProvider ocrProvider) {
+    this.ocrProvider = ocrProvider;
+    log.info("OcrService initialized with provider: {}", ocrProvider.getProviderName());
   }
 
   /**
-   * Extract text from an image byte array.
+   * Parse an invoice image and extract inventory line items.
    *
    * @param imageBytes the image file as byte array
-   * @return extracted text as string
-   * @throws IOException if image cannot be read
-   * @throws TesseractException if OCR processing fails
+   * @return list of parsed inventory items (never null)
+   * @throws IOException if image cannot be read or processing fails
    */
-  public String extractText(byte[] imageBytes) throws IOException, TesseractException {
-    log.info("Starting OCR processing for image of size: {} bytes", imageBytes.length);
-
-    // Convert byte array to BufferedImage
-    BufferedImage image = ImageIO.read(new ByteArrayInputStream(imageBytes));
-
-    if (image == null) {
-      throw new IOException("Unable to read image from provided bytes");
-    }
-
-    // Perform OCR
-    String extractedText = tesseract.doOCR(image);
-
-    log.info("OCR processing completed. Extracted text length: {}", extractedText != null ? extractedText.length() : 0);
-
-    return extractedText != null ? extractedText.trim() : "";
+  public List<ParsedInventoryItem> parseInvoice(byte[] imageBytes) throws IOException {
+    log.info("Parsing invoice using provider: {} ({} bytes)", ocrProvider.getProviderName(), imageBytes.length);
+    List<ParsedInventoryItem> items = ocrProvider.parseInvoice(imageBytes);
+    log.info("Parsed {} items", items != null ? items.size() : 0);
+    return items != null ? items : List.of();
   }
 }
-

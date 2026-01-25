@@ -5,25 +5,46 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
-import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * DTO representing an inventory item parsed from an invoice image.
+ * All date fields are ISO-8601 UTC strings (e.g. 2027-10-01T00:00:00Z) when present.
  */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 public class ParsedInventoryItem {
-  private String code;              // Product code (can be used as barcode)
-  private String hsn;                // HSN code
-  private String name;              // Product name/description
-  private String batchNo;           // Batch number
-  private String manufactureDate;   // Manufacture date (as string, e.g., "NOV-24")
-  private String expiryDate;        // Expiry date (as string, e.g., "OCT-27")
-  private Integer quantity;         // Quantity
-  private BigDecimal rate;          // Rate per unit (cost price)
-  private BigDecimal mrp;            // Maximum Retail Price
-  private BigDecimal reducedMrp;     // Reduced MRP (selling price)
-  private String packageDetail;      // Package detail (e.g., "1 X 50")
-}
+  private String barcode;
+  private String name;
+  private String description;
+  private String companyName;
+  private BigDecimal maximumRetailPrice;
+  private BigDecimal costPrice;
+  private BigDecimal sellingPrice;
+  private BigDecimal additionalDiscount;
+  private String businessType;
+  private String location;
+  private Integer count;
+  private Integer thresholdCount;
+  private String expiryDate;       // ISO-8601 UTC, e.g. 2027-10-01T00:00:00Z
+  private String reminderAt;       // ISO-8601 UTC
+  private List<ParsedReminderDto> customReminders;
+  private String hsn;
+  private String batchNo;
+  private String scheme;
+  private String sgst;
+  private String cgst;
 
+  /**
+   * Ensure customReminders is never null.
+   */
+  public List<ParsedReminderDto> getCustomReminders() {
+    return customReminders != null ? customReminders : new ArrayList<>();
+  }
+
+  public void setCustomReminders(List<ParsedReminderDto> customReminders) {
+    this.customReminders = customReminders != null ? customReminders : new ArrayList<>();
+  }
+}
