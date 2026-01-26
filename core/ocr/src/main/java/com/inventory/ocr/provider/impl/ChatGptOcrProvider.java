@@ -47,14 +47,27 @@ public class ChatGptOcrProvider implements OcrProvider {
   private static final float JPEG_QUALITY = 0.55f;
 
   private static final String PROMPT = """
-      You are an invoice parser. Look at the attached invoice image and extract all product line items.
-      Return ONLY a valid JSON array of objects, no other text or markdown. Each object has (use null when missing):
-      barcode, name, description, companyName, maximumRetailPrice, costPrice, sellingPrice, additionalDiscount,
-      businessType, location, count, thresholdCount, expiryDate, reminderAt, hsn, batchNo, scheme, sgst, cgst.
-      Use numbers for maximumRetailPrice, costPrice, sellingPrice, additionalDiscount, count, thresholdCount.
-      expiryDate and reminderAt: ISO-8601 UTC (e.g. 2027-10-01T00:00:00Z). sgst/cgst: rate only (e.g. "2.5").
-      Skip tax lines (e.g. GST%%), discount summary rows, and promotional text. Only actual product rows.
-      """.replace("%%", "%");
+    Extract ONLY product line items from the invoice image.
+    
+    Return ONLY a JSON array (no markdown/text). Each object MUST have these keys:
+    barcode, name, description, companyName, maximumRetailPrice, costPrice, sellingPrice, additionalDiscount,
+    businessType, location, count, thresholdCount, expiryDate, reminderAt, customReminders, hsn, batchNo, scheme, sgst, cgst.
+    
+    Rules:
+    - Missing fields => null.
+    - barcode must be null unless the invoice explicitly shows Barcode/EAN/UPC.
+    - name MUST include full product name with pack size/strength if present.
+      Do not shorten the name.
+    - Numbers must be numeric (not strings).
+    - count: use QTY/Qty/Quantity/Count/Nos/Units; if missing compute from PKG DETAIL like "3 x 56" => 168.
+    - maximumRetailPrice: use Reduced MRP if present else MRP.
+    - sellingPrice: prefer Selling Price / PTR / Price to Retail
+    - costPrice: UNIT cost only from Rate / PTS / Price to Stockist / Cost Price (never total/taxable/value/net).
+    - hsn must be copied exactly as printed (usually 8 digits).
+    - expiryDate/reminderAt: ISO-8601 UTC; if month-year only use first day of month.
+    - sgst/cgst: rate only like "2.5". Ignore totals/tax summary rows.
+    """;
+  ;
 
   private final RestClient restClient;
   private final ObjectMapper objectMapper;
