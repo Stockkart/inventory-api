@@ -72,6 +72,17 @@ public interface InventoryRepository extends MongoRepository<Inventory, String> 
   List<Inventory> findActiveByShopId(String shopId, Instant now);
 
   /**
+   * Find inventories by shopId and receivedDate range.
+   * @param shopId the shop ID
+   * @param startDate start of date range (inclusive)
+   * @param endDate end of date range (inclusive)
+   * @return list of inventories matching the criteria
+   */
+  @Query("{ 'shopId': ?0, " +
+      "'receivedDate': { $gte: ?1, $lte: ?2 } }")
+  List<Inventory> findByShopIdAndReceivedDateBetween(String shopId, Instant startDate, Instant endDate);
+
+  /**
    * Check if a lotId exists for a given shop.
    *
    * @param shopId the shop ID

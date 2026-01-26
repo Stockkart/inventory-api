@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +38,8 @@ public class InventoryAnalyticsService {
    * Get comprehensive inventory analytics.
    *
    * @param shopId the shop ID
+   * @param startDate start date for filtering by receivedDate (optional)
+   * @param endDate end date for filtering by receivedDate (optional)
    * @param lowStockThreshold threshold for low stock alert (optional, defaults to 20% of received)
    * @param deadStockDays days without sales to consider dead stock (optional, defaults to 90)
    * @param expiringSoonDays days until expiry to alert (optional, defaults to 30)
@@ -45,6 +48,8 @@ public class InventoryAnalyticsService {
    */
   public InventoryAnalyticsResponse getInventoryAnalytics(
       String shopId,
+      Instant startDate,
+      Instant endDate,
       Integer lowStockThreshold,
       Integer deadStockDays,
       Integer expiringSoonDays,
@@ -65,8 +70,16 @@ public class InventoryAnalyticsService {
 
       log.debug("Getting inventory analytics for shop: {}", shopId);
 
-      // Get all inventory for the shop
-      List<Inventory> allInventories = inventoryRepository.findByShopId(shopId);
+      // Get inventory for the shop, optionally filtered by receivedDate range
+      List<Inventory> allInventories;
+      if (startDate != null || endDate != null) {
+        Instant effectiveStartDate = startDate != null ? startDate : Instant.ofEpochMilli(0);
+        Instant effectiveEndDate = endDate != null ? endDate : Instant.now();
+        allInventories = inventoryRepository.findByShopIdAndReceivedDateBetween(shopId, effectiveStartDate, effectiveEndDate);
+        log.debug("Filtered inventory by receivedDate range: {} to {}", effectiveStartDate, effectiveEndDate);
+      } else {
+        allInventories = inventoryRepository.findByShopId(shopId);
+      }
 
       // Calculate analytics for all items
       List<InventoryAnalyticsDto> allAnalytics = analyticsHelper.calculateInventoryAnalytics(
@@ -144,6 +157,8 @@ public class InventoryAnalyticsService {
 
       // Metadata
       Map<String, Object> meta = new HashMap<>();
+      meta.put("startDate", startDate);
+      meta.put("endDate", endDate);
       meta.put("lowStockThreshold", lowStockThreshold);
       meta.put("deadStockDays", deadStockDays);
       meta.put("expiringSoonDays", expiringSoonDays);
