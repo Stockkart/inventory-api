@@ -60,7 +60,16 @@ public interface InventoryRepository extends MongoRepository<Inventory, String> 
       "] }")
   List<Inventory> searchByShopIdAndQuery(String shopId, String query);
 
-  List<Inventory> findByShopIdAndBarcode(String shopId, String barcode);
+  /**
+   * Find active inventories by shopId: not out of stock (currentCount > 0) and not expired.
+   * @param shopId the shop ID
+   * @param now current timestamp for expiry check
+   * @return list of active inventories
+   */
+  @Query("{ 'shopId': ?0, " +
+      "'currentCount': { $gt: 0 }, " +
+      "'$or': [ { 'expiryDate': null }, { 'expiryDate': { $gt: ?1 } } ] }")
+  List<Inventory> findActiveByShopId(String shopId, Instant now);
 
   /**
    * Check if a lotId exists for a given shop.
