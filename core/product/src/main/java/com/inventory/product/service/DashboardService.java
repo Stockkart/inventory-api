@@ -47,9 +47,12 @@ public class DashboardService {
       // Get active inventory (not out of stock and not expired) and purchases for the shop
       Instant now = Instant.now();
       List<Inventory> allInventory = inventoryRepository.findActiveByShopId(shopId, now);
-      List<Purchase> allPurchases = purchaseRepository.findByShopId(shopId,
-          org.springframework.data.domain.PageRequest.of(0, Integer.MAX_VALUE))
-          .getContent();
+      
+      // Get purchases from first day of current month to now
+      LocalDate today = LocalDate.now();
+      LocalDate firstDayOfMonth = today.withDayOfMonth(1);
+      Instant startOfMonth = firstDayOfMonth.atStartOfDay(ZoneId.systemDefault()).toInstant();
+      List<Purchase> allPurchases = purchaseRepository.findByShopIdAndSoldAtBetween(shopId, startOfMonth, now);
 
       // Filter completed purchases
       List<Purchase> completedPurchases = allPurchases.stream()
@@ -110,7 +113,9 @@ public class DashboardService {
 
     // Low Stock Items Count
     long lowStockItemsCount = allInventory.stream()
-        .filter(inv -> inv.getCurrentCount() != null && inv.getCurrentCount() <= inv.getThresholdCount())
+        .filter(inv -> inv.getCurrentCount() != null && inv.getCurrentCount() <= (
+            inv.getThresholdCount() != null ? inv.getThresholdCount() : LOW_STOCK_THRESHOLD
+        ))
         .count();
 
     // Average Order Value
