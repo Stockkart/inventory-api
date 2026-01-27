@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main          # build + push on main
+      - qr-fix
 
 jobs:
   build-and-push:
