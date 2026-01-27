@@ -145,10 +145,6 @@ public class InventoryService {
           items.size(), totalDuration);
 
       return response;
-    } catch (IOException e) {
-      log.error("IOException parsing invoice image: {}", e.getMessage(), e);
-      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
-          "Error reading/parsing invoice image: " + e.getMessage(), e);
     } catch (RuntimeException e) {
       log.error("RuntimeException parsing invoice image: {}", e.getMessage(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
