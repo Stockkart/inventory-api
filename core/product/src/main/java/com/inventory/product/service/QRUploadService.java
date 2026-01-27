@@ -130,6 +130,9 @@ public class QRUploadService {
   /**
    * Upload and process image asynchronously.
    * 
+   * IMPORTANT: MultipartFile uses temporary files that are deleted after the HTTP request completes.
+   * We must read the bytes synchronously before starting async processing to avoid NoSuchFileException.
+   * 
    * @param token the upload token
    * @param image the image file
    */
@@ -140,19 +143,45 @@ public class QRUploadService {
     // Validate image
     uploadTokenValidator.validateImageFile(image);
 
+    // CRITICAL: Read image bytes synchronously before async processing
+    // MultipartFile stores data in temp files that are deleted after request completes.
+    // If we pass MultipartFile to async task, it will fail with NoSuchFileException.
+    byte[] imageBytes;
+    String filename;
+    try {
+      imageBytes = image.getBytes();
+      filename = image.getOriginalFilename();
+      
+      if (imageBytes == null || imageBytes.length == 0) {
+        throw new ValidationException("Image file is empty");
+      }
+      
+      log.info("Read image bytes for token: {}, filename: {}, size: {} bytes", 
+          token, filename, imageBytes.length);
+    } catch (Exception e) {
+      log.error("Error reading image file for token: {}", token, e);
+      markTokenFailed(token, "Error reading image file: " + e.getMessage());
+      throw new ValidationException("Error reading image file: " + e.getMessage());
+    }
+
     // Update status to UPLOADING
     updateTokenStatus(token, UploadToken.UploadStatus.UPLOADING);
 
     // Update status to PROCESSING
     updateTokenStatus(token, UploadToken.UploadStatus.PROCESSING);
 
+    // Store values for async processing (final variables for lambda capture)
+    final byte[] finalImageBytes = imageBytes;
+    final String finalFilename = filename;
+
     // Process image asynchronously
     CompletableFuture.runAsync(() -> {
       try {
-        log.info("Processing uploaded image for token: {}", token);
+        log.info("Processing uploaded image for token: {}, filename: {}, size: {} bytes", 
+            token, finalFilename, finalImageBytes.length);
 
-        // Parse invoice image using existing service
-        ParsedInventoryListResponse parsedResult = inventoryService.parseInvoiceImage(image);
+        // Parse invoice image using bytes directly (not MultipartFile)
+        ParsedInventoryListResponse parsedResult = inventoryService.parseInvoiceImageFromBytes(finalImageBytes);
 
         // Store parsed result using util
         ParsedInventoryResult result = parsedInventoryUtil.createParsedInventoryResult(

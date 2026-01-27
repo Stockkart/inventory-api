@@ -94,6 +94,32 @@ public class InventoryService {
     try {
       // Parse invoice image to extract inventory items
       byte[] imageBytes = image.getBytes();
+      return parseInvoiceImageFromBytes(imageBytes);
+    } catch (IOException e) {
+      log.error("Error reading image file: {}", e.getMessage(), e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
+          "Error reading image file: " + e.getMessage(), e);
+    }
+  }
+
+  /**
+   * Parse invoice image from byte array.
+   * This method is used when bytes are already read (e.g., for async processing).
+   *
+   * @param imageBytes the image bytes
+   * @return ParsedInventoryListResponse containing list of CreateInventoryItemRequest items
+   * @throws BaseException if there's an error parsing the invoice
+   */
+  @Transactional(readOnly = true)
+  public ParsedInventoryListResponse parseInvoiceImageFromBytes(byte[] imageBytes) {
+    log.info("Processing invoice parsing request, size: {} bytes", imageBytes.length);
+
+    if (imageBytes == null || imageBytes.length == 0) {
+      throw new ValidationException("Image bytes are empty");
+    }
+
+    try {
+      // Parse invoice image to extract inventory items
       List<com.inventory.ocr.dto.ParsedInventoryItem> parsedItems = 
           invoiceParserService.parseInvoiceImage(imageBytes);
 
@@ -108,10 +134,6 @@ public class InventoryService {
       log.info("Invoice parsing completed successfully. Extracted {} inventory items", items.size());
 
       return response;
-    } catch (IOException e) {
-      log.error("Error reading image file: {}", e.getMessage(), e);
-      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
-          "Error reading image file: " + e.getMessage(), e);
     } catch (Exception e) {
       log.error("Error parsing invoice image: {}", e.getMessage(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
