@@ -83,8 +83,11 @@ public class ChatGptOcrProvider implements OcrProvider {
   @Override
   public List<ParsedInventoryItem> parseInvoice(byte[] imageBytes) throws IOException {
     log.info("ChatGPT (gpt-4o-mini) invoice parse, image size before: {} bytes", imageBytes.length);
+    log.info("Starting resizeIfNeeded, input size: {} bytes", imageBytes.length);
+    long resizeStartTime = System.currentTimeMillis();
     byte[] toSend = resizeIfNeeded(imageBytes);
-    log.info("Image size after conversion: {} bytes", toSend.length);
+    long resizeDuration = System.currentTimeMillis() - resizeStartTime;
+    log.info("Completed resizeIfNeeded, took {} ms, output size: {} bytes", resizeDuration, toSend.length);
 
     String base64 = Base64.getEncoder().encodeToString(toSend);
     String dataUrl = "data:image/jpeg;base64," + base64;
@@ -126,28 +129,59 @@ public class ChatGptOcrProvider implements OcrProvider {
    * Never returns a larger payload than the original; if compression would increase size, original is returned.
    */
   private byte[] resizeIfNeeded(byte[] imageBytes) {
+    log.info("resizeIfNeeded: Starting image processing, input size: {} bytes", imageBytes.length);
+    
     BufferedImage img;
     try {
+      log.info("resizeIfNeeded: Attempting to read image with ImageIO.read()");
+      long readStartTime = System.currentTimeMillis();
       img = ImageIO.read(new ByteArrayInputStream(imageBytes));
+      long readDuration = System.currentTimeMillis() - readStartTime;
+      log.info("resizeIfNeeded: ImageIO.read() completed in {} ms, result: {}", 
+          readDuration, img != null ? "success" : "null");
     } catch (IOException e) {
-      log.warn("Could not decode image for resize/compress: {}", e.getMessage());
+      log.warn("resizeIfNeeded: Could not decode image for resize/compress: {}", e.getMessage(), e);
+      return imageBytes;
+    } catch (Exception e) {
+      log.error("resizeIfNeeded: Unexpected error reading image: {}", e.getMessage(), e);
       return imageBytes;
     }
-    if (img == null) return imageBytes;
+    
+    if (img == null) {
+      log.info("resizeIfNeeded: Image is null, returning original bytes");
+      return imageBytes;
+    }
 
     int w = img.getWidth();
     int h = img.getHeight();
     int max = Math.max(w, h);
+    log.info("resizeIfNeeded: Image dimensions: {}x{}, max dimension: {}", w, h, max);
+    
     boolean needResize = max > MAX_DIMENSION;
     boolean needCompress = imageBytes.length > MIN_BYTES_TO_COMPRESS;
-    if (!needResize && !needCompress) return imageBytes;
+    log.info("resizeIfNeeded: needResize={} (max={} > {}), needCompress={} (size={} > {})", 
+        needResize, max, MAX_DIMENSION, needCompress, imageBytes.length, MIN_BYTES_TO_COMPRESS);
+    
+    if (!needResize && !needCompress) {
+      log.info("resizeIfNeeded: No resize or compress needed, returning original");
+      return imageBytes;
+    }
 
+    log.info("resizeIfNeeded: Converting to grayscale");
+    long grayStartTime = System.currentTimeMillis();
     BufferedImage gray = toGrayscale(img);
+    long grayDuration = System.currentTimeMillis() - grayStartTime;
+    log.info("resizeIfNeeded: Grayscale conversion completed in {} ms", grayDuration);
+    
     BufferedImage toEncode;
     if (needResize) {
+      log.info("resizeIfNeeded: Resizing image from {}x{}", w, h);
       double scale = (double) MAX_DIMENSION / max;
       int nw = Math.max(1, (int) Math.round(w * scale));
       int nh = Math.max(1, (int) Math.round(h * scale));
+      log.info("resizeIfNeeded: Resizing to {}x{} (scale: {})", nw, nh, scale);
+      
+      long resizeStartTime = System.currentTimeMillis();
       toEncode = new BufferedImage(nw, nh, BufferedImage.TYPE_BYTE_GRAY);
       Graphics2D g = toEncode.createGraphics();
       try {
@@ -158,7 +192,11 @@ public class ChatGptOcrProvider implements OcrProvider {
       } finally {
         g.dispose();
       }
+      long resizeDuration = System.currentTimeMillis() - resizeStartTime;
+      log.info("resizeIfNeeded: Resize operation completed in {} ms", resizeDuration);
     } else {
+      log.info("resizeIfNeeded: No resize needed, creating grayscale copy");
+      long copyStartTime = System.currentTimeMillis();
       toEncode = new BufferedImage(w, h, BufferedImage.TYPE_BYTE_GRAY);
       Graphics2D g = toEncode.createGraphics();
       try {
@@ -168,42 +206,81 @@ public class ChatGptOcrProvider implements OcrProvider {
       } finally {
         g.dispose();
       }
+      long copyDuration = System.currentTimeMillis() - copyStartTime;
+      log.info("resizeIfNeeded: Grayscale copy completed in {} ms", copyDuration);
     }
 
+    log.info("resizeIfNeeded: Encoding to JPEG");
+    long encodeStartTime = System.currentTimeMillis();
     byte[] encoded = encodeJpeg(toEncode);
+    long encodeDuration = System.currentTimeMillis() - encodeStartTime;
+    log.info("resizeIfNeeded: JPEG encoding completed in {} ms, output size: {} bytes", 
+        encodeDuration, encoded != null ? encoded.length : 0);
+    
     if (encoded == null || encoded.length >= imageBytes.length) {
-      log.debug("Compression would not reduce size ({} >= {}), using original", encoded == null ? 0 : encoded.length, imageBytes.length);
+      log.info("resizeIfNeeded: Compression would not reduce size ({} >= {}), using original", 
+          encoded == null ? 0 : encoded.length, imageBytes.length);
       return imageBytes;
     }
+    
+    log.info("resizeIfNeeded: Compression successful, reduced from {} to {} bytes ({}% reduction)", 
+        imageBytes.length, encoded.length, 
+        (int) ((1.0 - (double) encoded.length / imageBytes.length) * 100));
     return encoded;
   }
 
   /** Convert to greyscale via luminance; reduces JPEG size vs RGB. */
   private BufferedImage toGrayscale(BufferedImage src) {
-    ColorConvertOp op = new ColorConvertOp(ColorSpace.getInstance(ColorSpace.CS_GRAY), null);
-    return op.filter(src, null);
+    try {
+      log.debug("toGrayscale: Converting image {}x{} to grayscale", src.getWidth(), src.getHeight());
+      ColorConvertOp op = new ColorConvertOp(ColorSpace.getInstance(ColorSpace.CS_GRAY), null);
+      BufferedImage result = op.filter(src, null);
+      log.debug("toGrayscale: Conversion completed");
+      return result;
+    } catch (Exception e) {
+      log.error("toGrayscale: Error converting to grayscale: {}", e.getMessage(), e);
+      throw e;
+    }
   }
 
   private byte[] encodeJpeg(BufferedImage img) {
+    log.debug("encodeJpeg: Starting JPEG encoding for image {}x{}", img.getWidth(), img.getHeight());
+    
     Iterator<ImageWriter> writers = ImageIO.getImageWritersByFormatName("jpeg");
-    if (!writers.hasNext()) return null;
+    if (!writers.hasNext()) {
+      log.warn("encodeJpeg: No JPEG writers available");
+      return null;
+    }
+    
     ImageWriter writer = writers.next();
+    log.debug("encodeJpeg: Using ImageWriter: {}", writer.getClass().getName());
+    
     ByteArrayOutputStream out = new ByteArrayOutputStream();
     try (ImageOutputStream ios = ImageIO.createImageOutputStream(out)) {
+      log.debug("encodeJpeg: Setting output stream");
       writer.setOutput(ios);
       ImageWriteParam param = writer.getDefaultWriteParam();
       if (param.canWriteCompressed()) {
+        log.debug("encodeJpeg: Setting compression quality to {}", JPEG_QUALITY);
         param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
         param.setCompressionQuality(JPEG_QUALITY);
       }
+      log.debug("encodeJpeg: Writing image");
       writer.write(null, new IIOImage(img, null, null), param);
+      log.debug("encodeJpeg: Image write completed");
     } catch (IOException e) {
-      log.warn("Could not encode image as JPEG: {}", e.getMessage());
+      log.error("encodeJpeg: Could not encode image as JPEG: {}", e.getMessage(), e);
+      return null;
+    } catch (Exception e) {
+      log.error("encodeJpeg: Unexpected error encoding JPEG: {}", e.getMessage(), e);
       return null;
     } finally {
       writer.dispose();
     }
-    return out.toByteArray();
+    
+    byte[] result = out.toByteArray();
+    log.debug("encodeJpeg: JPEG encoding completed, output size: {} bytes", result.length);
+    return result;
   }
 
   private String extractOutputText(String responseBody) {

@@ -175,14 +175,25 @@ public class QRUploadService {
     final String finalFilename = filename;
 
     // Process image asynchronously
+    // Use CompletableFuture with explicit exception handling
     CompletableFuture.runAsync(() -> {
+      String threadName = Thread.currentThread().getName();
+      log.info("[{}] Starting async processing for token: {}, filename: {}, size: {} bytes", 
+          threadName, token, finalFilename, finalImageBytes.length);
+      
       try {
-        log.info("Processing uploaded image for token: {}, filename: {}, size: {} bytes", 
-            token, finalFilename, finalImageBytes.length);
-
+        log.info("[{}] Calling parseInvoiceImageFromBytes for token: {}", threadName, token);
+        long startTime = System.currentTimeMillis();
+        
         // Parse invoice image using bytes directly (not MultipartFile)
         ParsedInventoryListResponse parsedResult = inventoryService.parseInvoiceImageFromBytes(finalImageBytes);
+        
+        long duration = System.currentTimeMillis() - startTime;
+        log.info("[{}] OCR parsing completed for token: {}, extracted {} items, took {} ms", 
+            threadName, token, parsedResult.getTotalItems(), duration);
 
+        log.info("[{}] Creating ParsedInventoryResult for token: {}", threadName, token);
+        
         // Store parsed result using util
         ParsedInventoryResult result = parsedInventoryUtil.createParsedInventoryResult(
             uploadToken.getId(),
@@ -190,17 +201,47 @@ public class QRUploadService {
             uploadToken.getShopId(),
             parsedResult.getItems());
 
+        log.info("[{}] Saving ParsedInventoryResult to database for token: {}", threadName, token);
         result = parsedInventoryResultRepository.save(result);
+        log.info("[{}] Saved ParsedInventoryResult with ID: {} for token: {}", 
+            threadName, result.getId(), token);
 
+        log.info("[{}] Marking token as completed for token: {}", threadName, token);
         // Mark token as completed with parsed result ID
         markTokenCompleted(token, result.getId());
 
-        log.info("Successfully processed image for token: {}, parsed {} items, result ID: {}",
-            token, parsedResult.getTotalItems(), result.getId());
+        log.info("[{}] Successfully processed image for token: {}, parsed {} items, result ID: {}",
+            threadName, token, parsedResult.getTotalItems(), result.getId());
+      } catch (ValidationException e) {
+        log.error("[{}] Validation error processing image for token: {}: {}", 
+            threadName, token, e.getMessage(), e);
+        markTokenFailed(token, "Validation error: " + e.getMessage());
+      } catch (com.inventory.common.exception.BaseException e) {
+        log.error("[{}] Base exception processing image for token: {}: {} (code: {})", 
+            threadName, token, e.getMessage(), e.getErrorCode(), e);
+        markTokenFailed(token, "Processing error: " + e.getMessage());
       } catch (Exception e) {
-        log.error("Error processing image for token: {}", token, e);
-        markTokenFailed(token, e.getMessage());
+        log.error("[{}] Unexpected error processing image for token: {}: {}", 
+            threadName, token, e.getMessage(), e);
+        // Log full stack trace for debugging
+        log.error("[{}] Full stack trace for token: {}", threadName, token, e);
+        markTokenFailed(token, "Unexpected error: " + (e.getMessage() != null ? e.getMessage() : e.getClass().getName()));
+      } catch (Throwable t) {
+        // Catch even Errors (OutOfMemoryError, etc.)
+        log.error("[{}] Fatal error (Throwable) processing image for token: {}: {}", 
+            threadName, token, t.getMessage(), t);
+        markTokenFailed(token, "Fatal error: " + (t.getMessage() != null ? t.getMessage() : t.getClass().getName()));
       }
+    }).exceptionally(throwable -> {
+      // Additional safety net for unhandled exceptions
+      log.error("CompletableFuture exceptionally handler caught error for token: {}: {}", 
+          token, throwable.getMessage(), throwable);
+      try {
+        markTokenFailed(token, "Async processing failed: " + throwable.getMessage());
+      } catch (Exception e) {
+        log.error("Failed to mark token as failed in exceptionally handler: {}", e.getMessage(), e);
+      }
+      return null;
     });
   }
 
