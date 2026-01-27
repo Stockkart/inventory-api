@@ -11,7 +11,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @Configuration
 public class CorsConfig implements WebMvcConfigurer {
 
-  @Value("${cross.origin.url}")
+  @Value("${client.url}")
   private String crossOriginUrl;
 
   @Autowired
@@ -32,6 +32,13 @@ public class CorsConfig implements WebMvcConfigurer {
         .allowedHeaders("*")
         .allowCredentials(true)
         .maxAge(3600);
+
+    // Allow mobile upload endpoints from any origin (for QR code scanning)
+    registry.addMapping("/m/**")
+        .allowedOrigins("*")
+        .allowedMethods("GET", "POST", "OPTIONS")
+        .allowedHeaders("*")
+        .maxAge(3600);
   }
 
   @Override
@@ -43,7 +50,8 @@ public class CorsConfig implements WebMvcConfigurer {
             "/api/v1/auth/signup",
             "/api/v1/auth/accept-invite",
             "/api/product/get-plugin",
-            "/api/product/"
+            "/api/product/",
+            "/m/**" // Exclude mobile upload endpoints from authentication
         );
   }
 }

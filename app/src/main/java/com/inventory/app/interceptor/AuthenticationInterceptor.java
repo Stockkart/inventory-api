@@ -24,7 +24,8 @@ public class AuthenticationInterceptor implements HandlerInterceptor {
       "/api/v1/auth/signup",
       "/api/v1/auth/accept-invite",
       "/api/product/get-plugin",
-      "/api/product/"
+      "/api/product/",
+      "/m/" // Mobile upload endpoints
   );
   @Autowired
   private TokenValidationService tokenValidationService;
