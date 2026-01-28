@@ -94,44 +94,9 @@ public class InventoryService {
     try {
       // Parse invoice image to extract inventory items
       byte[] imageBytes = image.getBytes();
-      return parseInvoiceImageFromBytes(imageBytes);
-    } catch (IOException e) {
-      log.error("Error reading image file: {}", e.getMessage(), e);
-      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
-          "Error reading image file: " + e.getMessage(), e);
-    }
-  }
-
-  /**
-   * Parse invoice image from byte array.
-   * This method is used when bytes are already read (e.g., for async processing).
-   *
-   * @param imageBytes the image bytes
-   * @return ParsedInventoryListResponse containing list of CreateInventoryItemRequest items
-   * @throws BaseException if there's an error parsing the invoice
-   */
-  @Transactional(readOnly = true)
-  public ParsedInventoryListResponse parseInvoiceImageFromBytes(byte[] imageBytes) {
-    log.info("Processing invoice parsing request, size: {} bytes", imageBytes.length);
-    long startTime = System.currentTimeMillis();
-
-    if (imageBytes == null || imageBytes.length == 0) {
-      throw new ValidationException("Image bytes are empty");
-    }
-
-    try {
-      log.info("Calling invoiceParserService.parseInvoiceImage, size: {} bytes", imageBytes.length);
-      long ocrStartTime = System.currentTimeMillis();
-      
-      // Parse invoice image to extract inventory items
       List<com.inventory.ocr.dto.ParsedInventoryItem> parsedItems = 
           invoiceParserService.parseInvoiceImage(imageBytes);
-      
-      long ocrDuration = System.currentTimeMillis() - ocrStartTime;
-      log.info("OCR parsing completed, extracted {} items, took {} ms", 
-          parsedItems != null ? parsedItems.size() : 0, ocrDuration);
 
-      log.info("Converting ParsedInventoryItem to CreateInventoryItemRequest");
       // Convert ParsedInventoryItem to CreateInventoryItemRequest
       List<CreateInventoryItemRequest> items = 
           parsedInventoryMapper.toCreateInventoryItemRequestList(parsedItems);
@@ -140,19 +105,15 @@ public class InventoryService {
       response.setItems(items);
       response.setTotalItems(items.size());
 
-      long totalDuration = System.currentTimeMillis() - startTime;
-      log.info("Invoice parsing completed successfully. Extracted {} inventory items, total time: {} ms", 
-          items.size(), totalDuration);
+      log.info("Invoice parsing completed successfully. Extracted {} inventory items", items.size());
 
       return response;
-    } catch (RuntimeException e) {
-      log.error("RuntimeException parsing invoice image: {}", e.getMessage(), e);
+    } catch (IOException e) {
+      log.error("Error reading image file: {}", e.getMessage(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
-          "Error parsing invoice: " + e.getMessage(), e);
+          "Error reading image file: " + e.getMessage(), e);
     } catch (Exception e) {
-      log.error("Exception parsing invoice image: {} (class: {})", 
-          e.getMessage(), e.getClass().getName(), e);
-      log.error("Full stack trace:", e);
+      log.error("Error parsing invoice image: {}", e.getMessage(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
           "Error parsing invoice: " + e.getMessage(), e);
     }

@@ -130,9 +130,6 @@ public class QRUploadService {
   /**
    * Upload and process image asynchronously.
    * 
-   * IMPORTANT: MultipartFile uses temporary files that are deleted after the HTTP request completes.
-   * We must read the bytes synchronously before starting async processing to avoid NoSuchFileException.
-   * 
    * @param token the upload token
    * @param image the image file
    */
@@ -143,57 +140,20 @@ public class QRUploadService {
     // Validate image
     uploadTokenValidator.validateImageFile(image);
 
-    // CRITICAL: Read image bytes synchronously before async processing
-    // MultipartFile stores data in temp files that are deleted after request completes.
-    // If we pass MultipartFile to async task, it will fail with NoSuchFileException.
-    byte[] imageBytes;
-    String filename;
-    try {
-      imageBytes = image.getBytes();
-      filename = image.getOriginalFilename();
-      
-      if (imageBytes == null || imageBytes.length == 0) {
-        throw new ValidationException("Image file is empty");
-      }
-      
-      log.info("Read image bytes for token: {}, filename: {}, size: {} bytes", 
-          token, filename, imageBytes.length);
-    } catch (Exception e) {
-      log.error("Error reading image file for token: {}", token, e);
-      markTokenFailed(token, "Error reading image file: " + e.getMessage());
-      throw new ValidationException("Error reading image file: " + e.getMessage());
-    }
-
     // Update status to UPLOADING
     updateTokenStatus(token, UploadToken.UploadStatus.UPLOADING);
 
     // Update status to PROCESSING
     updateTokenStatus(token, UploadToken.UploadStatus.PROCESSING);
 
-    // Store values for async processing (final variables for lambda capture)
-    final byte[] finalImageBytes = imageBytes;
-    final String finalFilename = filename;
-
     // Process image asynchronously
-    // Use CompletableFuture with explicit exception handling
     CompletableFuture.runAsync(() -> {
-      String threadName = Thread.currentThread().getName();
-      log.info("[{}] Starting async processing for token: {}, filename: {}, size: {} bytes", 
-          threadName, token, finalFilename, finalImageBytes.length);
-      
       try {
-        log.info("[{}] Calling parseInvoiceImageFromBytes for token: {}", threadName, token);
-        long startTime = System.currentTimeMillis();
-        
-        // Parse invoice image using bytes directly (not MultipartFile)
-        ParsedInventoryListResponse parsedResult = inventoryService.parseInvoiceImageFromBytes(finalImageBytes);
-        
-        long duration = System.currentTimeMillis() - startTime;
-        log.info("[{}] OCR parsing completed for token: {}, extracted {} items, took {} ms", 
-            threadName, token, parsedResult.getTotalItems(), duration);
+        log.info("Processing uploaded image for token: {}", token);
 
-        log.info("[{}] Creating ParsedInventoryResult for token: {}", threadName, token);
-        
+        // Parse invoice image using existing service
+        ParsedInventoryListResponse parsedResult = inventoryService.parseInvoiceImage(image);
+
         // Store parsed result using util
         ParsedInventoryResult result = parsedInventoryUtil.createParsedInventoryResult(
             uploadToken.getId(),
@@ -201,47 +161,17 @@ public class QRUploadService {
             uploadToken.getShopId(),
             parsedResult.getItems());
 
-        log.info("[{}] Saving ParsedInventoryResult to database for token: {}", threadName, token);
         result = parsedInventoryResultRepository.save(result);
-        log.info("[{}] Saved ParsedInventoryResult with ID: {} for token: {}", 
-            threadName, result.getId(), token);
 
-        log.info("[{}] Marking token as completed for token: {}", threadName, token);
         // Mark token as completed with parsed result ID
         markTokenCompleted(token, result.getId());
 
-        log.info("[{}] Successfully processed image for token: {}, parsed {} items, result ID: {}",
-            threadName, token, parsedResult.getTotalItems(), result.getId());
-      } catch (ValidationException e) {
-        log.error("[{}] Validation error processing image for token: {}: {}", 
-            threadName, token, e.getMessage(), e);
-        markTokenFailed(token, "Validation error: " + e.getMessage());
-      } catch (com.inventory.common.exception.BaseException e) {
-        log.error("[{}] Base exception processing image for token: {}: {} (code: {})", 
-            threadName, token, e.getMessage(), e.getErrorCode(), e);
-        markTokenFailed(token, "Processing error: " + e.getMessage());
+        log.info("Successfully processed image for token: {}, parsed {} items, result ID: {}",
+            token, parsedResult.getTotalItems(), result.getId());
       } catch (Exception e) {
-        log.error("[{}] Unexpected error processing image for token: {}: {}", 
-            threadName, token, e.getMessage(), e);
-        // Log full stack trace for debugging
-        log.error("[{}] Full stack trace for token: {}", threadName, token, e);
-        markTokenFailed(token, "Unexpected error: " + (e.getMessage() != null ? e.getMessage() : e.getClass().getName()));
-      } catch (Throwable t) {
-        // Catch even Errors (OutOfMemoryError, etc.)
-        log.error("[{}] Fatal error (Throwable) processing image for token: {}: {}", 
-            threadName, token, t.getMessage(), t);
-        markTokenFailed(token, "Fatal error: " + (t.getMessage() != null ? t.getMessage() : t.getClass().getName()));
+        log.error("Error processing image for token: {}", token, e);
+        markTokenFailed(token, e.getMessage());
       }
-    }).exceptionally(throwable -> {
-      // Additional safety net for unhandled exceptions
-      log.error("CompletableFuture exceptionally handler caught error for token: {}: {}", 
-          token, throwable.getMessage(), throwable);
-      try {
-        markTokenFailed(token, "Async processing failed: " + throwable.getMessage());
-      } catch (Exception e) {
-        log.error("Failed to mark token as failed in exceptionally handler: {}", e.getMessage(), e);
-      }
-      return null;
     });
   }
 
