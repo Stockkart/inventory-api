@@ -140,21 +140,36 @@ public class QRUploadService {
     // Validate image
     uploadTokenValidator.validateImageFile(image);
 
-    // Update status to UPLOADING
-    updateTokenStatus(token, UploadToken.UploadStatus.UPLOADING);
+    // Read image bytes synchronously in the request thread. MultipartFile uses temp files
+    // that are deleted after the request completes; passing MultipartFile to async task
+    // causes "Error reading image file: /tmp/...upload_xxx.tmp" in production.
+    byte[] imageBytes;
+    try {
+      imageBytes = image.getBytes();
+      if (imageBytes == null || imageBytes.length == 0) {
+        markTokenFailed(token, "Image file is empty");
+        throw new ValidationException("Image file is empty");
+      }
+    } catch (Exception e) {
+      log.error("Error reading image file for token: {}", token, e);
+      markTokenFailed(token, "Error reading image file: " + e.getMessage());
+      throw new ValidationException("Error reading image file: " + e.getMessage());
+    }
 
-    // Update status to PROCESSING
+    // Update status to UPLOADING then PROCESSING
+    updateTokenStatus(token, UploadToken.UploadStatus.UPLOADING);
     updateTokenStatus(token, UploadToken.UploadStatus.PROCESSING);
 
-    // Process image asynchronously
+    final byte[] finalImageBytes = imageBytes;
+
+    // Process image asynchronously using bytes only (no MultipartFile)
     CompletableFuture.runAsync(() -> {
       try {
         log.info("Processing uploaded image for token: {}", token);
 
-        // Parse invoice image using existing service
-        ParsedInventoryListResponse parsedResult = inventoryService.parseInvoiceImage(image);
+        ParsedInventoryListResponse parsedResult =
+            inventoryService.parseInvoiceImageFromBytes(finalImageBytes);
 
-        // Store parsed result using util
         ParsedInventoryResult result = parsedInventoryUtil.createParsedInventoryResult(
             uploadToken.getId(),
             uploadToken.getUserId(),
@@ -162,8 +177,6 @@ public class QRUploadService {
             parsedResult.getItems());
 
         result = parsedInventoryResultRepository.save(result);
-
-        // Mark token as completed with parsed result ID
         markTokenCompleted(token, result.getId());
 
         log.info("Successfully processed image for token: {}, parsed {} items, result ID: {}",
