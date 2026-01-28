@@ -13,7 +13,6 @@ import java.util.Map;
 public class InventoryAnalyticsResponse {
   private InventorySummaryDto summary;
   private List<InventoryAnalyticsDto> lowStockItems;
-  private List<InventoryAnalyticsDto> notSellingItems; // Dead stock (no movement for deadStockDays), same as deadStockItems
   private List<InventoryAnalyticsDto> expiringSoonItems;
   private List<InventoryAnalyticsDto> expiredItems;
   private List<InventoryAnalyticsDto> deadStockItems;
