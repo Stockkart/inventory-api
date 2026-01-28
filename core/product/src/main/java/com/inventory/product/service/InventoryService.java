@@ -92,13 +92,35 @@ public class InventoryService {
     }
 
     try {
-      // Parse invoice image to extract inventory items
       byte[] imageBytes = image.getBytes();
-      List<com.inventory.ocr.dto.ParsedInventoryItem> parsedItems = 
+      return parseInvoiceImageFromBytes(imageBytes);
+    } catch (IOException e) {
+      log.error("Error reading image file: {}", e.getMessage(), e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
+          "Error reading image file: " + e.getMessage(), e);
+    }
+  }
+
+  /**
+   * Parse invoice image from raw bytes (e.g. when bytes are read synchronously before async processing).
+   * Use this when processing in a background thread to avoid accessing MultipartFile temp files after request completes.
+   *
+   * @param imageBytes the invoice image bytes
+   * @return ParsedInventoryListResponse containing list of CreateInventoryItemRequest items
+   * @throws ValidationException if image bytes are empty
+   * @throws BaseException if there's an error parsing the invoice
+   */
+  @Transactional(readOnly = true)
+  public ParsedInventoryListResponse parseInvoiceImageFromBytes(byte[] imageBytes) {
+    if (imageBytes == null || imageBytes.length == 0) {
+      throw new ValidationException("Image bytes are empty");
+    }
+
+    try {
+      List<com.inventory.ocr.dto.ParsedInventoryItem> parsedItems =
           invoiceParserService.parseInvoiceImage(imageBytes);
 
-      // Convert ParsedInventoryItem to CreateInventoryItemRequest
-      List<CreateInventoryItemRequest> items = 
+      List<CreateInventoryItemRequest> items =
           parsedInventoryMapper.toCreateInventoryItemRequestList(parsedItems);
 
       ParsedInventoryListResponse response = new ParsedInventoryListResponse();
@@ -108,10 +130,6 @@ public class InventoryService {
       log.info("Invoice parsing completed successfully. Extracted {} inventory items", items.size());
 
       return response;
-    } catch (IOException e) {
-      log.error("Error reading image file: {}", e.getMessage(), e);
-      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
-          "Error reading image file: " + e.getMessage(), e);
     } catch (Exception e) {
       log.error("Error parsing invoice image: {}", e.getMessage(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,

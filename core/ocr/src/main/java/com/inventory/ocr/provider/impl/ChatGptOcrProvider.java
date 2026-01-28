@@ -82,7 +82,9 @@ public class ChatGptOcrProvider implements OcrProvider {
 
   @Override
   public List<ParsedInventoryItem> parseInvoice(byte[] imageBytes) throws IOException {
+    log.info("ChatGPT (gpt-4o-mini) invoice parse, image size before: {} bytes", imageBytes.length);
     byte[] toSend = resizeIfNeeded(imageBytes);
+    log.info("Image size after conversion: {} bytes", toSend.length);
 
     String base64 = Base64.getEncoder().encodeToString(toSend);
     String dataUrl = "data:image/jpeg;base64," + base64;
@@ -170,6 +172,7 @@ public class ChatGptOcrProvider implements OcrProvider {
 
     byte[] encoded = encodeJpeg(toEncode);
     if (encoded == null || encoded.length >= imageBytes.length) {
+      log.debug("Compression would not reduce size ({} >= {}), using original", encoded == null ? 0 : encoded.length, imageBytes.length);
       return imageBytes;
     }
     return encoded;
