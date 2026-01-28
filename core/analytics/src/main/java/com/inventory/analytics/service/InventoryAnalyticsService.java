@@ -94,16 +94,6 @@ public class InventoryAnalyticsService {
           .sorted((a, b) -> a.getCurrentCount().compareTo(b.getCurrentCount())) // Sort by stock level ascending
           .collect(Collectors.toList());
 
-      List<InventoryAnalyticsDto> notSellingItems = allAnalytics.stream()
-          .filter(dto -> (dto.getSoldCount() == null || dto.getSoldCount() == 0) && dto.getCurrentCount() > 0)
-          .sorted((a, b) -> {
-            // Sort by days since received (oldest first)
-            if (a.getDaysSinceReceived() == null) return 1;
-            if (b.getDaysSinceReceived() == null) return -1;
-            return b.getDaysSinceReceived().compareTo(a.getDaysSinceReceived());
-          })
-          .collect(Collectors.toList());
-
       List<InventoryAnalyticsDto> expiringSoonItems = allAnalytics.stream()
           .filter(dto -> dto.getIsExpiringSoon() != null && dto.getIsExpiringSoon())
           .sorted((a, b) -> {
@@ -144,7 +134,6 @@ public class InventoryAnalyticsService {
       InventoryAnalyticsResponse response = new InventoryAnalyticsResponse();
       response.setSummary(summary);
       response.setLowStockItems(lowStockItems);
-      response.setNotSellingItems(notSellingItems);
       response.setExpiringSoonItems(expiringSoonItems);
       response.setExpiredItems(expiredItems);
       response.setDeadStockItems(deadStockItems);
