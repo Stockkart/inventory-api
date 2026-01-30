@@ -19,9 +19,6 @@ RUN mvn -pl app -am clean package -DskipTests
 FROM eclipse-temurin:21-jre
 WORKDIR /app
 
-# AWS credentials and region will be configured via environment variables or IAM roles
-# No additional system dependencies required for AWS Textract
-
 # Convert build arguments to environment variables
 ENV DB_URI=${DB_URI}
 ENV CLIENT_URL=${CLIENT_URL}

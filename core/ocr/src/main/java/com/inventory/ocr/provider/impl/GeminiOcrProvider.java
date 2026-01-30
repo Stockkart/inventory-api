@@ -19,62 +19,47 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Invoice parser using OpenAI Responses API with vision.
+ * Invoice parser using Google Gemini API with vision capabilities.
  * Sends image + prompt, parses JSON response directly to {@link ParsedInventoryItem}.
  */
 @Slf4j
-public class ChatGptOcrProvider implements OcrProvider {
+public class GeminiOcrProvider implements OcrProvider {
 
   private final String model;
-  private final RestClient restClient;
-  private final ObjectMapper objectMapper;
-  private final ImagePreprocessor imagePreprocessor;
+  private final String apiUrl;
 
   private static final String PROMPT = """
       Extract ONLY product line items from the invoice image.
-      
-      Return ONLY JSON object exactly like:
-      {"items":[{...},{...}]}
-      
+
+      Return ONLY a JSON array (no markdown/text). Each object MUST have these keys:
+      barcode, name, description, companyName, maximumRetailPrice, costPrice, sellingPrice, additionalDiscount,
+      businessType, location, count, thresholdCount, expiryDate, reminderAt, customReminders, hsn, batchNo, scheme, sgst, cgst.
+  
       Rules:
       - Missing fields => null.
-      - customReminders MUST ALWAYS be [] (never null).
-      - barcode must be null unless invoice explicitly shows Barcode/EAN/UPC.
-      - name must include full product name with pack size/strength (do not shorten).
-      
-      Quantity (count):
-      - count must come from the quantity field of the product row (Qty/Quantity/Units/Pack/etc).
-      - Do NOT use serial number / line number as count.
-      - If quantity is not given but pack detail like "3 x 56" exists, set count = 3*56.
-      
-      Dates:
-      - expiryDate must come ONLY from expiry/exp field (not mfg date).
-      - Use ISO UTC like 2027-10-01T00:00:00Z. If month-year only, use first day of month.
-      
-      Pricing:
-      - maximumRetailPrice must come from MRP field.
-        If Reduced MRP / discounted MRP exists, use Reduced MRP as maximumRetailPrice.
-      - sellingPrice must come from retail selling price field (PTR / Price to Retail / Selling Price / Retail Price).
-      - costPrice must come from unit purchase price field (Rate / Cost Price / PTS / Price to Stockist).
-      - sellingPrice and costPrice must NEVER be taken from MRP or Reduced MRP.
-      - Do NOT use taxable amount / SGST value / CGST value / totals as costPrice or sellingPrice.
-      - If multiple unit price numbers exist in the same product row, choose:
-        costPrice = lowest unit price,
-        sellingPrice = next higher unit price,
-        maximumRetailPrice = highest unit price (or Reduced MRP if present).
-      
-      Tax:
-      - sgst/cgst must be rate only like "2.5".
-      
-      Other:
-      - Do not guess or calculate values from totals. Copy values only from the same product row.
-      """
-  ;
+      - barcode must be null unless the invoice explicitly shows Barcode/EAN/UPC.
+      - name MUST include full product name with pack size/strength if present.
+        Do not shorten the name.
+      - Numbers must be numeric (not strings).
+      - count: use QTY/Qty/Quantity/Count/Nos/Units; if missing compute from PKG DETAIL like "3 x 56" => 168.
+      - maximumRetailPrice: use Reduced MRP if present else MRP.
+      - sellingPrice: prefer Selling Price / PTR / Price to Retail
+      - costPrice: UNIT cost only from Rate / PTS / Price to Stockist / Cost Price (never total/taxable/value/net).
+      - hsn must be copied exactly as printed (usually 8 digits).
+      - expiryDate/reminderAt: ISO-8601 UTC; if month-year only use first day of month.
+      - sgst/cgst: rate only like "2.5". Ignore totals/tax summary rows.
+  """;
 
-  public ChatGptOcrProvider(String apiKey, String model, ImagePreprocessor imagePreprocessor) {
+  private final RestClient restClient;
+  private final ObjectMapper objectMapper;
+  private final ImagePreprocessor imagePreprocessor;
+  private final String apiKey;
+
+  public GeminiOcrProvider(String apiKey, String model, ImagePreprocessor imagePreprocessor) {
+    this.apiKey = apiKey;
     this.model = model;
+    this.apiUrl = OcrConstants.GEMINI_API_BASE_URL + model + ":generateContent";
     this.restClient = RestClient.builder()
-        .defaultHeader("Authorization", "Bearer " + apiKey)
         .defaultHeader("Content-Type", MediaType.APPLICATION_JSON_VALUE)
         .build();
     this.objectMapper = new ObjectMapper();
@@ -83,34 +68,43 @@ public class ChatGptOcrProvider implements OcrProvider {
 
   @Override
   public List<ParsedInventoryItem> parseInvoice(byte[] imageBytes) throws IOException {
-    log.info("ChatGPT ({}) invoice parse, image size before preprocess: {} bytes", model, imageBytes.length);
+    log.info("Gemini ({}) invoice parse, image size before preprocess: {} bytes", model, imageBytes.length);
     byte[] toSend = imagePreprocessor.preprocess(imageBytes);
     log.info("Image size after preprocess: {} bytes", toSend.length);
 
     String base64 = Base64.getEncoder().encodeToString(toSend);
-    String dataUrl = "data:image/jpeg;base64," + base64;
 
-    List<Map<String, Object>> content = List.of(
-        Map.<String, Object>of("type", "input_text", "text", PROMPT),
-        Map.<String, Object>of("type", "input_image", "image_url", dataUrl)
+    // Build Gemini API request structure
+    Map<String, Object> inlineData = new HashMap<>();
+    inlineData.put("mime_type", "image/jpeg");
+    inlineData.put("data", base64);
+
+    List<Map<String, Object>> parts = List.of(
+        Map.of("inline_data", inlineData),
+        Map.of("text", PROMPT)
     );
-    Map<String, Object> userMessage = Map.of("role", "user", "content", content);
+
+    Map<String, Object> content = Map.of("parts", parts);
+
+    Map<String, Object> generationConfig = new HashMap<>();
+    generationConfig.put("temperature", OcrConstants.DEFAULT_TEMPERATURE);
+    generationConfig.put("maxOutputTokens", OcrConstants.DEFAULT_MAX_OUTPUT_TOKENS_GEMINI);
 
     Map<String, Object> request = new HashMap<>();
-    request.put("model", model);
-    request.put("input", List.of(userMessage));
-    request.put("max_output_tokens", OcrConstants.DEFAULT_MAX_OUTPUT_TOKENS_OPENAI);
-    request.put("temperature", OcrConstants.DEFAULT_TEMPERATURE);
+    request.put("contents", List.of(content));
+    request.put("generationConfig", generationConfig);
 
     String body = restClient.post()
-        .uri(OcrConstants.OPENAI_API_URL)
+        .uri(apiUrl + "?key=" + apiKey)
         .body(request)
         .retrieve()
         .body(String.class);
 
+    log.info("Gemini API response: {}", body);
+
     String text = extractOutputText(body);
     if (text == null || text.isBlank()) {
-      log.warn("No output text from Responses API");
+      log.warn("No output text from Gemini API");
       return List.of();
     }
 
@@ -119,27 +113,41 @@ public class ChatGptOcrProvider implements OcrProvider {
 
   @Override
   public String getProviderName() {
-    return "CHATGPT_" + model.toUpperCase().replace("-", "_").replace(".", "_");
+    return "GEMINI_" + model.toUpperCase().replace("-", "_").replace(".", "_");
   }
 
+  /**
+   * Extracts the text content from Gemini API response.
+   * Response format:
+   * {
+   *   "candidates": [{
+   *     "content": {
+   *       "parts": [{"text": "..."}],
+   *       "role": "model"
+   *     }
+   *   }]
+   * }
+   */
   private String extractOutputText(String responseBody) {
     try {
       JsonNode root = objectMapper.readTree(responseBody);
-      JsonNode output = root.path("output");
-      if (!output.isArray()) return null;
-      for (JsonNode item : output) {
-        if (!"message".equals(item.path("type").asText(null))) continue;
-        JsonNode content = item.path("content");
-        if (!content.isArray()) continue;
-        for (JsonNode part : content) {
-          if ("output_text".equals(part.path("type").asText(null))) {
-            JsonNode t = part.path("text");
-            return t.isTextual() ? t.asText() : null;
-          }
+      JsonNode candidates = root.path("candidates");
+      if (!candidates.isArray() || candidates.isEmpty()) return null;
+
+      JsonNode firstCandidate = candidates.get(0);
+      JsonNode content = firstCandidate.path("content");
+      JsonNode parts = content.path("parts");
+
+      if (!parts.isArray() || parts.isEmpty()) return null;
+
+      for (JsonNode part : parts) {
+        JsonNode textNode = part.path("text");
+        if (textNode.isTextual()) {
+          return textNode.asText();
         }
       }
     } catch (Exception e) {
-      log.warn("Failed to extract output text: {}", e.getMessage());
+      log.warn("Failed to extract output text from Gemini response: {}", e.getMessage());
     }
     return null;
   }
@@ -148,19 +156,32 @@ public class ChatGptOcrProvider implements OcrProvider {
     List<ParsedInventoryItem> items = new ArrayList<>();
     try {
       String json = raw.trim();
+      // Strip markdown code fences if present
       if (json.startsWith("```")) {
         int start = json.indexOf('\n') + 1;
         int end = json.lastIndexOf("```");
         if (end > start) json = json.substring(start, end).trim();
       }
-      JsonNode arr = objectMapper.readTree(json);
-      if (!arr.isArray()) return items;
+
+      JsonNode parsed = objectMapper.readTree(json);
+      JsonNode arr;
+
+      // Handle both {"items":[...]} and direct [...] array formats
+      if (parsed.isArray()) {
+        arr = parsed;
+      } else if (parsed.has("items") && parsed.get("items").isArray()) {
+        arr = parsed.get("items");
+      } else {
+        log.warn("Unexpected JSON structure from Gemini: {}", json.substring(0, Math.min(200, json.length())));
+        return items;
+      }
+
       for (JsonNode n : arr) {
         ParsedInventoryItem item = jsonToItem(n);
         if (item != null) items.add(item);
       }
     } catch (Exception e) {
-      log.warn("Parse ChatGPT JSON failed: {}", e.getMessage());
+      log.warn("Parse Gemini JSON failed: {}", e.getMessage());
     }
     return items;
   }
@@ -204,13 +225,21 @@ public class ChatGptOcrProvider implements OcrProvider {
     JsonNode v = n.path(key);
     if (v.isNull() || v.isMissingNode()) return null;
     if (v.isNumber()) return v.decimalValue();
-    try { return new BigDecimal(v.asText()); } catch (Exception e) { return null; }
+    try {
+      return new BigDecimal(v.asText());
+    } catch (Exception e) {
+      return null;
+    }
   }
 
   private static Integer intNum(JsonNode n, String key) {
     JsonNode v = n.path(key);
     if (v.isNull() || v.isMissingNode()) return null;
     if (v.isInt()) return v.intValue();
-    try { return Integer.parseInt(v.asText()); } catch (Exception e) { return null; }
+    try {
+      return Integer.parseInt(v.asText());
+    } catch (Exception e) {
+      return null;
+    }
   }
 }

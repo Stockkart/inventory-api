@@ -9,19 +9,25 @@ services:
     environment:
       DB_URI: ${DB_URI}
       CLIENT_URL: ${CLIENT_URL}
+      OCR_PROVIDER: ${OCR_PROVIDER}
+      OCR_OPENAI_MODEL: ${OCR_OPENAI_MODEL}
+      OCR_GEMINI_MODEL: ${OCR_GEMINI_MODEL}
+      OCR_PREPROCESS_MODE: ${OCR_PREPROCESS_MODE:-http}
+      OCR_PREPROCESS_URL: ${OCR_PREPROCESS_URL:-http://image-preprocess:8081/preprocess}
+      OCR_PREPROCESS_PYTHON_PATH: ${OCR_PREPROCESS_PYTHON_PATH}
+      OCR_PREPROCESS_WORKING_DIR: ${OCR_PREPROCESS_WORKING_DIR}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
       AWS_ACCESS_KEY: ${AWS_ACCESS_KEY}
       AWS_SECRET_ACCESS: ${AWS_SECRET_ACCESS}
       AWS_REGION: ${AWS_REGION}
       UPLOAD_TOKEN_EXPIRY_MINUTES: ${UPLOAD_TOKEN_EXPIRY_MINUTES}
-      OCR_PREPROCESS_MODE: ${OCR_PREPROCESS_MODE:-http}
-      OCR_PREPROCESS_URL: ${OCR_PREPROCESS_URL:-http://image-preprocess:8081/preprocess}
     ports:
       - "8080:8080"
     depends_on:
       image-preprocess:
         condition: service_healthy
-  # Invoice image preprocessing (OCR). Set ocr.preprocess.mode=http and ocr.preprocess.url=http://image-preprocess:8081/preprocess
+  # Invoice image preprocessing (OCR). ocr.preprocess.mode=http, url=http://image-preprocess:8081/preprocess
   image-preprocess:
     build:
       context: .

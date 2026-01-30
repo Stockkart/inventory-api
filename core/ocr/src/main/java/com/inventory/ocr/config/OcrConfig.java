@@ -7,6 +7,7 @@ import com.inventory.ocr.preprocess.SubprocessImagePreprocessor;
 import com.inventory.ocr.provider.OcrProvider;
 import com.inventory.ocr.provider.impl.AwsTextractOcrProvider;
 import com.inventory.ocr.provider.impl.ChatGptOcrProvider;
+import com.inventory.ocr.provider.impl.GeminiOcrProvider;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -27,8 +28,9 @@ import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.textract.TextractClient;
 
 /**
- * OCR provider configuration. Supports aws-textract (default) and chatgpt (gpt-4o-mini).
+ * OCR provider configuration. Supports aws-textract (default), chatgpt (gpt-4.1), and gemini (gemini-2.5-flash).
  * Set ocr.provider=chatgpt and openai.api-key to use ChatGPT for invoice parsing.
+ * Set ocr.provider=gemini and gemini.api-key to use Google Gemini for invoice parsing.
  */
 @Configuration
 @Slf4j
@@ -48,6 +50,15 @@ public class OcrConfig {
 
   @Value("${openai.api-key:}")
   private String openaiApiKey;
+
+  @Value("${gemini.api-key:}")
+  private String geminiApiKey;
+
+  @Value("${ocr.openai.model:#{T(com.inventory.ocr.constants.OcrConstants).OPENAI_DEFAULT_MODEL}}")
+  private String openaiModel;
+
+  @Value("${ocr.gemini.model:#{T(com.inventory.ocr.constants.OcrConstants).GEMINI_DEFAULT_MODEL}}")
+  private String geminiModel;
 
   @Value("${ocr.preprocess.mode:none}")
   private String preprocessMode;
@@ -108,8 +119,19 @@ public class OcrConfig {
       throw new IllegalStateException("openai.api-key is required when ocr.provider=chatgpt. " +
           "Set openai.api-key or OPENAI_API_KEY.");
     }
-    log.info("Using ChatGPT (gpt-4o-mini) as OCR provider");
-    return new ChatGptOcrProvider(openaiApiKey.trim(), imagePreprocessor);
+    log.info("Using ChatGPT ({}) as OCR provider", openaiModel);
+    return new ChatGptOcrProvider(openaiApiKey.trim(), openaiModel, imagePreprocessor);
+  }
+
+  @Bean
+  @ConditionalOnProperty(name = "ocr.provider", havingValue = "gemini")
+  public OcrProvider geminiOcrProvider(ImagePreprocessor imagePreprocessor) {
+    if (!StringUtils.hasText(geminiApiKey)) {
+      throw new IllegalStateException("gemini.api-key is required when ocr.provider=gemini. " +
+          "Set gemini.api-key or GEMINI_API_KEY.");
+    }
+    log.info("Using Gemini ({}) as OCR provider", geminiModel);
+    return new GeminiOcrProvider(geminiApiKey.trim(), geminiModel, imagePreprocessor);
   }
 
   /**
