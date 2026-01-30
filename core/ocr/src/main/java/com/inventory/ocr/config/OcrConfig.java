@@ -1,5 +1,9 @@
 package com.inventory.ocr.config;
 
+import com.inventory.ocr.preprocess.HttpImagePreprocessor;
+import com.inventory.ocr.preprocess.ImagePreprocessor;
+import com.inventory.ocr.preprocess.NoOpImagePreprocessor;
+import com.inventory.ocr.preprocess.SubprocessImagePreprocessor;
 import com.inventory.ocr.provider.OcrProvider;
 import com.inventory.ocr.provider.impl.AwsTextractOcrProvider;
 import com.inventory.ocr.provider.impl.ChatGptOcrProvider;
@@ -10,6 +14,12 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.util.StringUtils;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+
+import java.nio.file.Path;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+
+import okhttp3.OkHttpClient;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
@@ -39,6 +49,51 @@ public class OcrConfig {
   @Value("${openai.api-key:}")
   private String openaiApiKey;
 
+  @Value("${ocr.preprocess.mode:none}")
+  private String preprocessMode;
+
+  @Value("${ocr.preprocess.python-path:python3}")
+  private String pythonPath;
+
+  @Value("${ocr.preprocess.working-dir:}")
+  private String preprocessWorkingDir;
+
+  @Value("${ocr.preprocess.url:}")
+  private String preprocessUrl;
+
+  @Bean
+  @ConditionalOnProperty(name = "ocr.preprocess.mode", havingValue = "none", matchIfMissing = true)
+  public ImagePreprocessor noOpImagePreprocessor() {
+    log.info("OCR image preprocess: disabled (no-op)");
+    return new NoOpImagePreprocessor();
+  }
+
+  @Bean
+  @ConditionalOnProperty(name = "ocr.preprocess.mode", havingValue = "subprocess")
+  public ImagePreprocessor subprocessImagePreprocessor() {
+    Path workingDir = StringUtils.hasText(preprocessWorkingDir)
+        ? Path.of(preprocessWorkingDir)
+        : null;
+    List<String> command = List.of(pythonPath, "-m", "image_preprocess");
+    log.info("OCR image preprocess: subprocess {} (working-dir={})", command, workingDir);
+    return new SubprocessImagePreprocessor(command, workingDir);
+  }
+
+  @Bean
+  @ConditionalOnProperty(name = "ocr.preprocess.mode", havingValue = "http")
+  public ImagePreprocessor httpImagePreprocessor() {
+    if (!StringUtils.hasText(preprocessUrl)) {
+      throw new IllegalStateException("ocr.preprocess.url is required when ocr.preprocess.mode=http");
+    }
+    OkHttpClient okHttpClient = new OkHttpClient.Builder()
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .writeTimeout(60, TimeUnit.SECONDS)
+        .build();
+    log.info("OCR image preprocess: HTTP {}", preprocessUrl);
+    return new HttpImagePreprocessor(okHttpClient, preprocessUrl.trim());
+  }
+
   @Bean
   @ConditionalOnProperty(name = "ocr.provider", havingValue = "aws-textract", matchIfMissing = true)
   public OcrProvider awsTextractOcrProvider(TextractClient textractClient) {
@@ -48,13 +103,13 @@ public class OcrConfig {
 
   @Bean
   @ConditionalOnProperty(name = "ocr.provider", havingValue = "chatgpt")
-  public OcrProvider chatGptOcrProvider() {
+  public OcrProvider chatGptOcrProvider(ImagePreprocessor imagePreprocessor) {
     if (!StringUtils.hasText(openaiApiKey)) {
       throw new IllegalStateException("openai.api-key is required when ocr.provider=chatgpt. " +
           "Set openai.api-key or OPENAI_API_KEY.");
     }
     log.info("Using ChatGPT (gpt-4o-mini) as OCR provider");
-    return new ChatGptOcrProvider(openaiApiKey.trim());
+    return new ChatGptOcrProvider(openaiApiKey.trim(), imagePreprocessor);
   }
 
   /**

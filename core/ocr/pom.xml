@@ -32,6 +32,13 @@
             <version>2.20.0</version>
         </dependency>
 
+        <!-- OkHttp for multipart/form-data (matches curl contract) -->
+        <dependency>
+            <groupId>com.squareup.okhttp3</groupId>
+            <artifactId>okhttp</artifactId>
+            <version>4.12.0</version>
+        </dependency>
+
         <!-- Lombok -->
         <dependency>
             <groupId>org.projectlombok</groupId>
