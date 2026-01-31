@@ -15,5 +15,6 @@ public class RevenueSummaryDto {
   private BigDecimal averageOrderValue;
   private BigDecimal totalTax;
   private BigDecimal totalDiscount;
+  private BigDecimal additionalTotalDiscount;
 }
 

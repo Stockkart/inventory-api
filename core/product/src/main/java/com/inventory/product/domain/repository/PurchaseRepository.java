@@ -8,6 +8,7 @@ import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.data.mongodb.repository.Query;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -69,5 +70,28 @@ public interface PurchaseRepository extends MongoRepository<Purchase, String> {
    */
   @Query("{ 'shopId': ?0, 'invoiceNo': { '$regex': ?1, '$options': 'i' } }")
   List<Purchase> findByShopIdAndInvoiceNoRegex(String shopId, String invoiceNoPattern);
+
+  /**
+   * Find purchases by shop ID within a date range (soldAt between startDate and endDate).
+   *
+   * @param shopId the shop ID
+   * @param startDate start of date range (inclusive)
+   * @param endDate end of date range (inclusive)
+   * @return list of purchases matching the criteria
+   */
+  @Query("{ 'shopId': ?0, 'soldAt': { $gte: ?1, $lte: ?2 } }")
+  List<Purchase> findByShopIdAndSoldAtBetween(String shopId, Instant startDate, Instant endDate);
+
+  /**
+   * Find completed purchases by shop ID within a date range (status + soldAt in DB).
+   *
+   * @param shopId the shop ID
+   * @param status purchase status (e.g. COMPLETED)
+   * @param startDate start of date range (inclusive)
+   * @param endDate end of date range (inclusive)
+   * @return list of purchases matching the criteria
+   */
+  @Query("{ 'shopId': ?0, 'status': ?1, 'soldAt': { $gte: ?2, $lte: ?3 } }")
+  List<Purchase> findByShopIdAndStatusAndSoldAtBetween(String shopId, PurchaseStatus status, Instant startDate, Instant endDate);
 }
 

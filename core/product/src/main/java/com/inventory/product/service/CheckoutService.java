@@ -647,49 +647,61 @@ public class CheckoutService {
         shopCgst = shop.getCgst();
       }
     }
-    
+    log.debug("A calculateTax shopId={} shopDefault sgst={} cgst={} items={}", shopId, shopSgst, shopCgst, purchaseItems.size());
+
     // Calculate tax for each item based on its inventory-level CGST/SGST
     for (PurchaseItem item : purchaseItems) {
-      // Calculate item subtotal (MRP * quantity)
+      // Calculate item subtotal (sellingPrice * quantity, then apply additional discount)
       BigDecimal itemTotal = BigDecimal.ZERO;
-      if (item.getMaximumRetailPrice() != null && item.getQuantity() != null 
+      if (item.getMaximumRetailPrice() != null && item.getQuantity() != null
           && item.getSellingPrice() != null) {
         itemTotal = item.getSellingPrice().multiply(BigDecimal.valueOf(item.getQuantity()));
+
+        log.debug("AA--- calculateTax item inventoryId={} name={} itemTotal={} (sellingPrice={} qty={} additionalDiscount={})",
+            item.getInventoryId(), item.getName(), itemTotal, item.getSellingPrice(), item.getQuantity(), item.getAdditionalDiscount());
+
         // Apply additional discount if present
         if (item.getAdditionalDiscount() != null && item.getAdditionalDiscount().compareTo(BigDecimal.ZERO) > 0) {
           itemTotal = itemTotal.multiply(new BigDecimal(1).subtract(item.getAdditionalDiscount().divide(new BigDecimal(
               "100"), 4, RoundingMode.HALF_UP)));
         }
       }
-      
+      log.debug("AA calculateTax item inventoryId={} name={} itemTotal={} (sellingPrice={} qty={} additionalDiscount={})",
+          item.getInventoryId(), item.getName(), itemTotal, item.getSellingPrice(), item.getQuantity(), item.getAdditionalDiscount());
+
       // Use inventory-level rates if available, otherwise use shop defaults
       String itemSgst = StringUtils.hasText(item.getSgst()) ? item.getSgst() : shopSgst;
       String itemCgst = StringUtils.hasText(item.getCgst()) ? item.getCgst() : shopCgst;
-      
+
       // Calculate SGST for this item
       if (itemSgst != null && !itemSgst.trim().isEmpty()) {
         try {
           BigDecimal sgstRate = new BigDecimal(itemSgst.trim()).divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
           BigDecimal itemSgstAmount = itemTotal.multiply(sgstRate).setScale(2, RoundingMode.HALF_UP);
           totalSgstAmount = totalSgstAmount.add(itemSgstAmount);
+          log.debug("AAA calculateTax item inventoryId={} SGST rate={}% itemSgstAmount={} totalSgstAmount={}",
+              item.getInventoryId(), itemSgst, itemSgstAmount, totalSgstAmount);
         } catch (NumberFormatException e) {
           log.warn("Invalid SGST value '{}' for item {}, using 0", itemSgst, item.getInventoryId());
         }
       }
-      
+
       // Calculate CGST for this item
       if (itemCgst != null && !itemCgst.trim().isEmpty()) {
         try {
           BigDecimal cgstRate = new BigDecimal(itemCgst.trim()).divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
           BigDecimal itemCgstAmount = itemTotal.multiply(cgstRate).setScale(2, RoundingMode.HALF_UP);
           totalCgstAmount = totalCgstAmount.add(itemCgstAmount);
+          log.debug("AAAA calculateTax item inventoryId={} CGST rate={}% itemCgstAmount={} totalCgstAmount={}",
+              item.getInventoryId(), itemCgst, itemCgstAmount, totalCgstAmount);
         } catch (NumberFormatException e) {
           log.warn("Invalid CGST value '{}' for item {}, using 0", itemCgst, item.getInventoryId());
         }
       }
     }
-    
+
     BigDecimal taxTotal = totalSgstAmount.add(totalCgstAmount);
+    log.info("AAAA calculateTax result totalSgstAmount={} totalCgstAmount={} taxTotal={}", totalSgstAmount, totalCgstAmount, taxTotal);
     return new TaxCalculationResult(totalSgstAmount, totalCgstAmount, taxTotal);
   }
   
@@ -779,7 +791,10 @@ public class CheckoutService {
     }
     
     BigDecimal totalAmount = totalDiscountedAmount.multiply(taxMultiplier);
-    return totalAmount.setScale(2, RoundingMode.HALF_UP);
+    BigDecimal result = totalAmount.setScale(2, RoundingMode.HALF_UP);
+    log.debug("calculateItemTotalAmount sellingPrice={} additionalDiscount={} quantity={} cgst={} sgst={} totalAmount={}",
+        sellingPrice, additionalDiscount, quantity, cgst, sgst, result);
+    return result;
   }
 
   /**
@@ -932,9 +947,12 @@ public class CheckoutService {
             updatedItem.setSgst(existingItem.getSgst());
             updatedItem.setCgst(existingItem.getCgst());
             // Calculate totalAmount: (sellingPrice after additionalDiscount) * quantity * (1 + cgst/100 + sgst/100)
-            BigDecimal totalAmount = calculateItemTotalAmount(sellingPrice, additionalDiscount, newQuantity, 
+            BigDecimal totalAmount = calculateItemTotalAmount(sellingPrice, additionalDiscount, newQuantity,
                                                               existingItem.getCgst(), existingItem.getSgst());
             updatedItem.setTotalAmount(totalAmount);
+            log.info("item total updated inventoryId={} name={} quantity={} sellingPrice={} additionalDiscount={} cgst={} sgst={} totalAmount={}",
+                existingItem.getInventoryId(), existingItem.getName(), newQuantity, sellingPrice, additionalDiscount,
+                existingItem.getCgst(), existingItem.getSgst(), totalAmount);
             mergedItems.set(i, updatedItem);
             found = true;
             break;

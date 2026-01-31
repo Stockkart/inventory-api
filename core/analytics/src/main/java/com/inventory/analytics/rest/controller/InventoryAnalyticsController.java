@@ -10,10 +10,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.time.Instant;
 
 @RestController
 @RequestMapping("/api/v1/analytics/inventory")
@@ -27,6 +30,8 @@ public class InventoryAnalyticsController {
    * Get comprehensive inventory analytics.
    * 
    * Query Parameters:
+   * - startDate: Start date (ISO 8601 format, optional, filters by receivedDate)
+   * - endDate: End date (ISO 8601 format, optional, filters by receivedDate)
    * - lowStockThreshold: Threshold count for low stock alert (optional, defaults to 20% of received)
    * - deadStockDays: Days without sales to consider dead stock (optional, defaults to 90)
    * - expiringSoonDays: Days until expiry to alert (optional, defaults to 30)
@@ -34,6 +39,8 @@ public class InventoryAnalyticsController {
    */
   @GetMapping
   public ResponseEntity<ApiResponse<InventoryAnalyticsResponse>> getInventoryAnalytics(
+      @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant startDate,
+      @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant endDate,
       @RequestParam(required = false) Integer lowStockThreshold,
       @RequestParam(required = false) Integer deadStockDays,
       @RequestParam(required = false) Integer expiringSoonDays,
@@ -49,7 +56,7 @@ public class InventoryAnalyticsController {
     }
 
     InventoryAnalyticsResponse response = inventoryAnalyticsService.getInventoryAnalytics(
-        shopId, lowStockThreshold, deadStockDays, expiringSoonDays, includeAll);
+        shopId, startDate, endDate, lowStockThreshold, deadStockDays, expiringSoonDays, includeAll);
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 }

@@ -44,11 +44,15 @@ public class DashboardService {
     try {
       log.debug("Fetching dashboard data for shop: {}", shopId);
 
-      // Get all inventory and purchases for the shop
-      List<Inventory> allInventory = inventoryRepository.findByShopId(shopId);
-      List<Purchase> allPurchases = purchaseRepository.findByShopId(shopId,
-          org.springframework.data.domain.PageRequest.of(0, Integer.MAX_VALUE))
-          .getContent();
+      // Get active inventory (not out of stock and not expired) and purchases for the shop
+      Instant now = Instant.now();
+      List<Inventory> allInventory = inventoryRepository.findActiveByShopId(shopId, now);
+      
+      // Get purchases from first day of current month to now
+      LocalDate today = LocalDate.now();
+      LocalDate firstDayOfMonth = today.withDayOfMonth(1);
+      Instant startOfMonth = firstDayOfMonth.atStartOfDay(ZoneId.systemDefault()).toInstant();
+      List<Purchase> allPurchases = purchaseRepository.findByShopIdAndSoldAtBetween(shopId, startOfMonth, now);
 
       // Filter completed purchases
       List<Purchase> completedPurchases = allPurchases.stream()
@@ -58,24 +62,16 @@ public class DashboardService {
       // Calculate key metrics
       DashboardResponse.KeyMetrics keyMetrics = calculateKeyMetrics(allInventory, completedPurchases);
 
-      // Get low stock items
-      List<DashboardResponse.LowStockItem> lowStockItems = getLowStockItems(allInventory);
-
       // Calculate revenue breakdown
       DashboardResponse.RevenueBreakdown revenueBreakdown = calculateRevenueBreakdown(completedPurchases);
 
       // Calculate product insights
       DashboardResponse.ProductInsights productInsights = calculateProductInsights(allInventory);
 
-      // Calculate sales trend
-      DashboardResponse.SalesTrend salesTrend = calculateSalesTrend(completedPurchases);
-
       DashboardResponse response = new DashboardResponse();
       response.setKeyMetrics(keyMetrics);
-      response.setLowStockItems(lowStockItems);
       response.setRevenueBreakdown(revenueBreakdown);
       response.setProductInsights(productInsights);
-      response.setSalesTrend(salesTrend);
 
       log.debug("Successfully fetched dashboard data for shop: {}", shopId);
       return response;
@@ -91,12 +87,8 @@ public class DashboardService {
 
   private DashboardResponse.KeyMetrics calculateKeyMetrics(List<Inventory> allInventory, 
                                                            List<Purchase> completedPurchases) {
-    // Total Products: Count distinct products (by lotId)
-    long totalProducts = allInventory.stream()
-        .map(Inventory::getLotId)
-        .filter(lotId -> lotId != null && !lotId.trim().isEmpty())
-        .distinct()
-        .count();
+    // Total Products: Count active products (already filtered by repository: not expired and not out of stock)
+    long totalProducts = allInventory.size();
 
     // Get today's date range
     LocalDate today = LocalDate.now();
@@ -121,7 +113,9 @@ public class DashboardService {
 
     // Low Stock Items Count
     long lowStockItemsCount = allInventory.stream()
-        .filter(inv -> inv.getCurrentCount() != null && inv.getCurrentCount() <= LOW_STOCK_THRESHOLD)
+        .filter(inv -> inv.getCurrentCount() != null && inv.getCurrentCount() <= (
+            inv.getThresholdCount() != null ? inv.getThresholdCount() : LOW_STOCK_THRESHOLD
+        ))
         .count();
 
     // Average Order Value
@@ -130,51 +124,14 @@ public class DashboardService {
       averageOrderValue = totalRevenueToday.divide(BigDecimal.valueOf(ordersToday), 2, RoundingMode.HALF_UP);
     }
 
-    // Total Customers (distinct customer IDs from completed purchases)
-    long totalCustomers = completedPurchases.stream()
-        .map(Purchase::getCustomerId)
-        .filter(customerId -> customerId != null && !customerId.trim().isEmpty())
-        .distinct()
-        .count();
-
-    // Total Revenue All Time
-    BigDecimal totalRevenueAllTime = completedPurchases.stream()
-        .map(Purchase::getGrandTotal)
-        .filter(total -> total != null)
-        .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-    // Total Orders All Time
-    long totalOrdersAllTime = completedPurchases.size();
-
     DashboardResponse.KeyMetrics metrics = new DashboardResponse.KeyMetrics();
     metrics.setTotalProducts(totalProducts);
     metrics.setTotalRevenueToday(totalRevenueToday);
     metrics.setOrdersToday(ordersToday);
     metrics.setLowStockItemsCount(lowStockItemsCount);
     metrics.setAverageOrderValue(averageOrderValue);
-    metrics.setTotalCustomers(totalCustomers);
-    metrics.setTotalRevenueAllTime(totalRevenueAllTime);
-    metrics.setTotalOrdersAllTime(totalOrdersAllTime);
 
     return metrics;
-  }
-
-  private List<DashboardResponse.LowStockItem> getLowStockItems(List<Inventory> allInventory) {
-    return allInventory.stream()
-        .filter(inv -> inv.getCurrentCount() != null && inv.getCurrentCount() <= LOW_STOCK_THRESHOLD)
-        .sorted(Comparator.comparing(Inventory::getCurrentCount))
-        .limit(20) // Return top 20 low stock items
-        .map(inv -> {
-          DashboardResponse.LowStockItem item = new DashboardResponse.LowStockItem();
-          item.setInventoryId(inv.getId());
-          item.setName(inv.getName());
-          item.setCurrentCount(inv.getCurrentCount());
-          item.setThreshold(LOW_STOCK_THRESHOLD);
-          item.setLotId(inv.getLotId());
-          item.setBarcode(inv.getBarcode());
-          return item;
-        })
-        .collect(Collectors.toList());
   }
 
   private DashboardResponse.RevenueBreakdown calculateRevenueBreakdown(List<Purchase> completedPurchases) {
@@ -251,8 +208,6 @@ public class DashboardService {
 
     // Total unique products (by lotId)
     long totalUniqueProducts = allInventory.stream()
-        .map(Inventory::getLotId)
-        .filter(lotId -> lotId != null && !lotId.trim().isEmpty())
         .distinct()
         .count();
 
@@ -286,53 +241,6 @@ public class DashboardService {
     insights.setOutOfStockItems(outOfStockItems);
 
     return insights;
-  }
-
-  private DashboardResponse.SalesTrend calculateSalesTrend(List<Purchase> completedPurchases) {
-    LocalDate today = LocalDate.now();
-    List<DashboardResponse.DailySales> last7Days = new ArrayList<>();
-
-    BigDecimal bestDayRevenue = BigDecimal.ZERO;
-    String bestDayDate = null;
-
-    // Calculate sales for each of the last 7 days
-    for (int i = 6; i >= 0; i--) {
-      LocalDate date = today.minusDays(i);
-      Instant startOfDay = date.atStartOfDay(ZoneId.systemDefault()).toInstant();
-      Instant endOfDay = date.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant();
-
-      List<Purchase> dayPurchases = completedPurchases.stream()
-          .filter(p -> p.getSoldAt() != null && 
-                       p.getSoldAt().isAfter(startOfDay) && 
-                       p.getSoldAt().isBefore(endOfDay))
-          .toList();
-
-      BigDecimal dayRevenue = dayPurchases.stream()
-          .map(Purchase::getGrandTotal)
-          .filter(total -> total != null)
-          .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-      long orderCount = dayPurchases.size();
-
-      DashboardResponse.DailySales dailySales = new DashboardResponse.DailySales();
-      dailySales.setDate(date.format(DateTimeFormatter.ISO_LOCAL_DATE));
-      dailySales.setRevenue(dayRevenue);
-      dailySales.setOrderCount(orderCount);
-      last7Days.add(dailySales);
-
-      // Track best day
-      if (dayRevenue.compareTo(bestDayRevenue) > 0) {
-        bestDayRevenue = dayRevenue;
-        bestDayDate = dailySales.getDate();
-      }
-    }
-
-    DashboardResponse.SalesTrend trend = new DashboardResponse.SalesTrend();
-    trend.setLast7Days(last7Days);
-    trend.setBestDayRevenue(bestDayRevenue);
-    trend.setBestDayDate(bestDayDate);
-
-    return trend;
   }
 }
 

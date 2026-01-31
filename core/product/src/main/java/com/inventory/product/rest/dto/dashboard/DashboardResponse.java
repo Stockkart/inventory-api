@@ -13,10 +13,8 @@ import java.util.List;
 @AllArgsConstructor
 public class DashboardResponse {
   private KeyMetrics keyMetrics;
-  private List<LowStockItem> lowStockItems;
   private RevenueBreakdown revenueBreakdown;
   private ProductInsights productInsights;
-  private SalesTrend salesTrend;
 
   @Data
   @NoArgsConstructor
@@ -27,21 +25,6 @@ public class DashboardResponse {
     private Long ordersToday;
     private Long lowStockItemsCount;
     private BigDecimal averageOrderValue;
-    private Long totalCustomers;
-    private BigDecimal totalRevenueAllTime;
-    private Long totalOrdersAllTime;
-  }
-
-  @Data
-  @NoArgsConstructor
-  @AllArgsConstructor
-  public static class LowStockItem {
-    private String inventoryId;
-    private String name;
-    private Integer currentCount;
-    private Integer threshold;
-    private String lotId;
-    private String barcode;
   }
 
   @Data
@@ -64,24 +47,6 @@ public class DashboardResponse {
     private Long productsAddedThisWeek;
     private Long productsAddedThisMonth;
     private Long outOfStockItems;
-  }
-
-  @Data
-  @NoArgsConstructor
-  @AllArgsConstructor
-  public static class SalesTrend {
-    private List<DailySales> last7Days;
-    private BigDecimal bestDayRevenue;
-    private String bestDayDate;
-  }
-
-  @Data
-  @NoArgsConstructor
-  @AllArgsConstructor
-  public static class DailySales {
-    private String date;
-    private BigDecimal revenue;
-    private Long orderCount;
   }
 }
 

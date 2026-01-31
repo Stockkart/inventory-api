@@ -4,6 +4,7 @@ import com.inventory.analytics.rest.dto.internal.GroupSalesData;
 import com.inventory.analytics.rest.dto.internal.ProductSalesData;
 import com.inventory.analytics.rest.dto.internal.TimeSeriesData;
 import com.inventory.analytics.rest.dto.sales.*;
+import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.product.domain.model.PurchaseStatus;
@@ -11,7 +12,6 @@ import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.PurchaseRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -36,15 +36,11 @@ public class SalesAnalyticsHelper {
 
   /**
    * Get all completed purchases for a shop within date range.
+   * Status and soldAt range are filtered in the DB query.
    */
   public List<Purchase> getCompletedPurchases(String shopId, Instant startDate, Instant endDate) {
-    return purchaseRepository.findByShopId(shopId, Pageable.unpaged())
-        .getContent()
-        .stream()
-        .filter(p -> p.getStatus() == PurchaseStatus.COMPLETED)
-        .filter(p -> p.getSoldAt() != null)
-        .filter(p -> !p.getSoldAt().isBefore(startDate) && !p.getSoldAt().isAfter(endDate))
-        .collect(Collectors.toList());
+    return purchaseRepository.findByShopIdAndStatusAndSoldAtBetween(
+        shopId, PurchaseStatus.COMPLETED, startDate, endDate);
   }
 
   /**
@@ -66,26 +62,39 @@ public class SalesAnalyticsHelper {
         .filter(Objects::nonNull)
         .reduce(BigDecimal.ZERO, BigDecimal::add);
 
+    BigDecimal additionalTotalDiscount = purchases.stream()
+        .map(Purchase::getAdditionalDiscountTotal)
+        .filter(Objects::nonNull)
+        .reduce(BigDecimal.ZERO, BigDecimal::add);
+
     int purchaseCount = purchases.size();
     BigDecimal aov = purchaseCount > 0
         ? totalRevenue.divide(BigDecimal.valueOf(purchaseCount), 2, RoundingMode.HALF_UP)
         : BigDecimal.ZERO;
 
-    return new RevenueSummaryDto(totalRevenue, purchaseCount, aov, totalTax, totalDiscount);
+    return new RevenueSummaryDto(totalRevenue, purchaseCount, aov, totalTax, totalDiscount, additionalTotalDiscount);
   }
 
   /**
-   * Get top products by revenue.
+   * Get top products by revenue. Batches inventory lookup (single DB call) instead of N findById.
    */
   public List<TopProductDto> getTopProducts(List<Purchase> purchases, int limit) {
-    Map<String, ProductSalesData> productMap = new HashMap<>();
+    Set<String> inventoryIds = new HashSet<>();
+    for (Purchase purchase : purchases) {
+      if (purchase.getItems() != null) {
+        for (PurchaseItem item : purchase.getItems()) {
+          inventoryIds.add(item.getInventoryId());
+        }
+      }
+    }
+    Map<String, Inventory> inventoryMap = batchLoadInventory(new ArrayList<>(inventoryIds));
 
+    Map<String, ProductSalesData> productMap = new HashMap<>();
     for (Purchase purchase : purchases) {
       if (purchase.getItems() != null) {
         for (PurchaseItem item : purchase.getItems()) {
           String inventoryId = item.getInventoryId();
           ProductSalesData data = productMap.getOrDefault(inventoryId, new ProductSalesData(inventoryId));
-          
           data.setQuantitySold(data.getQuantitySold() + (item.getQuantity() != null ? item.getQuantity() : 0));
           BigDecimal itemRevenue = item.getSellingPrice() != null && item.getQuantity() != null
               ? item.getSellingPrice().multiply(BigDecimal.valueOf(item.getQuantity()))
@@ -93,21 +102,17 @@ public class SalesAnalyticsHelper {
           data.setTotalRevenue(data.getTotalRevenue().add(itemRevenue));
           data.setNumberOfSales(data.getNumberOfSales() + 1);
           data.setProductName(item.getName());
-
-          // Get inventory details for lotId and companyName
-          if (data.getLotId() == null || data.getCompanyName() == null) {
-            inventoryRepository.findById(inventoryId).ifPresent(inv -> {
-              data.setLotId(inv.getLotId());
-              data.setCompanyName(inv.getCompanyName());
-            });
+          Inventory inv = inventoryMap.get(inventoryId);
+          if (inv != null) {
+            data.setLotId(inv.getLotId());
+            data.setCompanyName(inv.getCompanyName());
           }
-
           productMap.put(inventoryId, data);
         }
       }
     }
 
-    return productMap.values().stream()
+    List<TopProductDto> result = productMap.values().stream()
         .sorted((a, b) -> b.getTotalRevenue().compareTo(a.getTotalRevenue()))
         .limit(limit)
         .map(data -> new TopProductDto(
@@ -120,6 +125,14 @@ public class SalesAnalyticsHelper {
             data.getNumberOfSales()
         ))
         .collect(Collectors.toList());
+    return result;
+  }
+
+  /** Batch load inventory by IDs (single DB call). Returns map id -> Inventory. */
+  private Map<String, Inventory> batchLoadInventory(List<String> ids) {
+    if (ids == null || ids.isEmpty()) return Collections.emptyMap();
+    List<Inventory> list = inventoryRepository.findByIdIn(ids);
+    return list.stream().collect(Collectors.toMap(Inventory::getId, inv -> inv, (a, b) -> a));
   }
 
   /**
@@ -153,13 +166,10 @@ public class SalesAnalyticsHelper {
   }
 
   /**
-   * Get sales grouped by lotId.
+   * Get sales grouped by lotId. Uses single batch inventory lookup instead of N findById.
    */
   public List<SalesByGroupDto> getSalesByLotId(List<Purchase> purchases) {
-    Map<String, GroupSalesData> lotMap = new HashMap<>();
     Set<String> inventoryIds = new HashSet<>();
-
-    // Collect all inventory IDs
     for (Purchase purchase : purchases) {
       if (purchase.getItems() != null) {
         for (PurchaseItem item : purchase.getItems()) {
@@ -167,47 +177,39 @@ public class SalesAnalyticsHelper {
         }
       }
     }
-
-    // Get lotIds from inventory
+    Map<String, Inventory> inventoryMap = batchLoadInventory(new ArrayList<>(inventoryIds));
     Map<String, String> inventoryToLotId = new HashMap<>();
-    for (String inventoryId : inventoryIds) {
-      inventoryRepository.findById(inventoryId)
-          .ifPresent(inv -> inventoryToLotId.put(inventoryId, inv.getLotId()));
-    }
+    inventoryMap.forEach((id, inv) -> inventoryToLotId.put(id, inv.getLotId() != null ? inv.getLotId() : "Unknown"));
 
-    // Aggregate by lotId
+    Map<String, GroupSalesData> lotMap = new HashMap<>();
     for (Purchase purchase : purchases) {
       if (purchase.getItems() != null) {
         for (PurchaseItem item : purchase.getItems()) {
           String lotId = inventoryToLotId.getOrDefault(item.getInventoryId(), "Unknown");
           GroupSalesData data = lotMap.getOrDefault(lotId, new GroupSalesData(lotId));
-          
           data.setQuantitySold(data.getQuantitySold() + (item.getQuantity() != null ? item.getQuantity() : 0));
           BigDecimal itemRevenue = item.getSellingPrice() != null && item.getQuantity() != null
               ? item.getSellingPrice().multiply(BigDecimal.valueOf(item.getQuantity()))
               : BigDecimal.ZERO;
           data.setTotalRevenue(data.getTotalRevenue().add(itemRevenue));
           data.setNumberOfSales(data.getNumberOfSales() + 1);
-
           lotMap.put(lotId, data);
         }
       }
     }
 
-    return lotMap.values().stream()
+    List<SalesByGroupDto> result = lotMap.values().stream()
         .sorted((a, b) -> b.getTotalRevenue().compareTo(a.getTotalRevenue()))
         .map(data -> new SalesByGroupDto(data.getGroupKey(), data.getQuantitySold(), data.getTotalRevenue(), data.getNumberOfSales()))
         .collect(Collectors.toList());
+    return result;
   }
 
   /**
-   * Get sales grouped by company name.
+   * Get sales grouped by company name. Uses single batch inventory lookup instead of N findById.
    */
   public List<SalesByGroupDto> getSalesByCompany(List<Purchase> purchases) {
-    Map<String, GroupSalesData> companyMap = new HashMap<>();
     Set<String> inventoryIds = new HashSet<>();
-
-    // Collect all inventory IDs
     for (Purchase purchase : purchases) {
       if (purchase.getItems() != null) {
         for (PurchaseItem item : purchase.getItems()) {
@@ -215,38 +217,32 @@ public class SalesAnalyticsHelper {
         }
       }
     }
-
-    // Get company names from inventory
+    Map<String, Inventory> inventoryMap = batchLoadInventory(new ArrayList<>(inventoryIds));
     Map<String, String> inventoryToCompany = new HashMap<>();
-    for (String inventoryId : inventoryIds) {
-      inventoryRepository.findById(inventoryId)
-          .ifPresent(inv -> inventoryToCompany.put(inventoryId, 
-              inv.getCompanyName() != null ? inv.getCompanyName() : "Unknown"));
-    }
+    inventoryMap.forEach((id, inv) -> inventoryToCompany.put(id, inv.getCompanyName() != null ? inv.getCompanyName() : "Unknown"));
 
-    // Aggregate by company
+    Map<String, GroupSalesData> companyMap = new HashMap<>();
     for (Purchase purchase : purchases) {
       if (purchase.getItems() != null) {
         for (PurchaseItem item : purchase.getItems()) {
           String companyName = inventoryToCompany.getOrDefault(item.getInventoryId(), "Unknown");
           GroupSalesData data = companyMap.getOrDefault(companyName, new GroupSalesData(companyName));
-          
           data.setQuantitySold(data.getQuantitySold() + (item.getQuantity() != null ? item.getQuantity() : 0));
           BigDecimal itemRevenue = item.getSellingPrice() != null && item.getQuantity() != null
               ? item.getSellingPrice().multiply(BigDecimal.valueOf(item.getQuantity()))
               : BigDecimal.ZERO;
           data.setTotalRevenue(data.getTotalRevenue().add(itemRevenue));
           data.setNumberOfSales(data.getNumberOfSales() + 1);
-
           companyMap.put(companyName, data);
         }
       }
     }
 
-    return companyMap.values().stream()
+    List<SalesByGroupDto> result = companyMap.values().stream()
         .sorted((a, b) -> b.getTotalRevenue().compareTo(a.getTotalRevenue()))
         .map(data -> new SalesByGroupDto(data.getGroupKey(), data.getQuantitySold(), data.getTotalRevenue(), data.getNumberOfSales()))
         .collect(Collectors.toList());
+    return result;
   }
 
   /**
