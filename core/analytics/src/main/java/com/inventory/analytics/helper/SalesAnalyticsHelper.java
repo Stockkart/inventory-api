@@ -62,12 +62,17 @@ public class SalesAnalyticsHelper {
         .filter(Objects::nonNull)
         .reduce(BigDecimal.ZERO, BigDecimal::add);
 
+    BigDecimal additionalTotalDiscount = purchases.stream()
+        .map(Purchase::getAdditionalDiscountTotal)
+        .filter(Objects::nonNull)
+        .reduce(BigDecimal.ZERO, BigDecimal::add);
+
     int purchaseCount = purchases.size();
     BigDecimal aov = purchaseCount > 0
         ? totalRevenue.divide(BigDecimal.valueOf(purchaseCount), 2, RoundingMode.HALF_UP)
         : BigDecimal.ZERO;
 
-    return new RevenueSummaryDto(totalRevenue, purchaseCount, aov, totalTax, totalDiscount);
+    return new RevenueSummaryDto(totalRevenue, purchaseCount, aov, totalTax, totalDiscount, additionalTotalDiscount);
   }
 
   /**
