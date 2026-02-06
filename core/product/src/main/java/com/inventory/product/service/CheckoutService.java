@@ -115,13 +115,20 @@ public class CheckoutService {
         // Validate stock availability before updating cart (check final quantities)
         validateStockAvailabilityForCartUpdate(existingCart, newItems, shopId);
 
-        // Update existing cart - merge items
+        // Update existing cart - merge items (including quantity-0 update-only items)
         log.info("Updating existing cart with ID: {}", existingCart.getId());
         purchase = updateCart(existingCart, newItems, request.getBusinessType(), customerId, customerName);
       } else {
-        // Create new cart (stock validation already done in processCartItems for positive quantities)
+        // New cart: only items with quantity > 0 can be added; quantity-0 items are for updating discount on existing cart only
+        List<PurchaseItem> itemsToAdd = newItems.stream()
+            .filter(i -> i.getQuantity() != null && i.getQuantity() > 0)
+            .toList();
+        if (itemsToAdd.isEmpty() && !newItems.isEmpty()) {
+          throw new ValidationException(
+              "Additional discount can only be updated for items already in the cart. Add items to create a cart first.");
+        }
         log.info("Creating new cart");
-        purchase = createCart(request, newItems, shopId, userId, customerId, customerName);
+        purchase = createCart(request, itemsToAdd, shopId, userId, customerId, customerName);
       }
 
       log.info("Successfully updated cart with ID: {}", purchase.getId());
@@ -551,10 +558,30 @@ public class CheckoutService {
         // Validate item using CheckoutValidator
         checkoutValidator.validateCartItem(item);
 
-        // For negative quantities, we only need to verify the lotId exists and belongs to the shop
-        // Stock validation is not needed for removing items
-        if (item.getQuantity() < 0) {
-          // Verify lotId exists and belongs to shop (for negative quantities, we're removing from cart)
+        // Quantity 0 or null with additionalDiscount = update additionalDiscount only (item must already be in cart)
+        boolean updateDiscountOnly = (item.getQuantity() == null || item.getQuantity() == 0)
+            && item.getAdditionalDiscount() != null;
+
+        if (updateDiscountOnly) {
+          // Verify inventory exists and belongs to shop; no stock check needed
+          Inventory inventory = inventoryRepository.findById(item.getId())
+              .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", item.getId()));
+          if (!shopId.equals(inventory.getShopId())) {
+            throw new ValidationException("Inventory lot " + item.getId() + " does not belong to shop " + shopId);
+          }
+          PurchaseItem purchaseItem = purchaseMapper.createPurchaseItem(
+              item.getId(),
+              inventory.getName(),
+              0,
+              inventory.getMaximumRetailPrice(),
+              BigDecimal.ZERO,
+              BigDecimal.ZERO
+          );
+          purchaseItem.setAdditionalDiscount(item.getAdditionalDiscount());
+          purchaseItems.add(purchaseItem);
+        } else if (item.getQuantity() < 0) {
+          // For negative quantities, we only need to verify the lotId exists and belongs to the shop
+          // Stock validation is not needed for removing items
           Inventory inventory = inventoryRepository.findById(item.getId())
               .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", item.getId()));
 
@@ -915,9 +942,9 @@ public class CheckoutService {
             BigDecimal newDiscount = existingItem.getMaximumRetailPrice()
                 .subtract(sellingPrice)
                 .multiply(BigDecimal.valueOf(newQuantity));
-            // Preserve additionalDiscount from new item if adding, otherwise keep existing
-            BigDecimal additionalDiscount = newItem.getQuantity() > 0 && newItem.getAdditionalDiscount() != null 
-                ? newItem.getAdditionalDiscount() 
+            // Use payload additionalDiscount when provided (so changing discount updates the line); otherwise keep existing
+            BigDecimal additionalDiscount = newItem.getAdditionalDiscount() != null
+                ? newItem.getAdditionalDiscount()
                 : existingItem.getAdditionalDiscount();
 
             PurchaseItem updatedItem = purchaseMapper.createPurchaseItem(
@@ -984,6 +1011,7 @@ public class CheckoutService {
       existingCart.setAdditionalDiscountTotal(additionalDiscountTotal);
       existingCart.setGrandTotal(newSubTotal
           .add(taxResult.getTaxTotal())
+          .subtract(discountTotal)
           .subtract(additionalDiscountTotal));
 
       // If cart is empty after updates, we can either delete it or keep it with empty items
