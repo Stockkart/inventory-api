@@ -24,6 +24,8 @@ public class AddToCartRequest {
     private String id;
     private Integer quantity;
     private BigDecimal sellingPrice;
+    /** Optional: additional discount percentage for this item (0–100). Overrides inventory default when provided. */
+    private BigDecimal additionalDiscount;
   }
 }
 

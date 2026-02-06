@@ -53,16 +53,28 @@ public class CheckoutValidator {
     if (!StringUtils.hasText(item.getId())) {
       throw new ValidationException("ID is required for item");
     }
-    if (item.getQuantity() == null || item.getQuantity() == 0) {
-      throw new ValidationException("Quantity cannot be zero for item: " + item.getId());
+    // Quantity may be null or 0 when only updating additionalDiscount (item must already be in cart)
+    boolean updateDiscountOnly = (item.getQuantity() == null || item.getQuantity() == 0)
+        && item.getAdditionalDiscount() != null;
+    if (!updateDiscountOnly) {
+      if (item.getQuantity() == null || item.getQuantity() == 0) {
+        throw new ValidationException("Quantity is required for item: " + item.getId());
+      }
+      if (Math.abs(item.getQuantity()) > MAX_QUANTITY) {
+        throw new ValidationException("Maximum quantity per item is " + MAX_QUANTITY);
+      }
     }
-    if (Math.abs(item.getQuantity()) > MAX_QUANTITY) {
-      throw new ValidationException("Maximum quantity per item is " + MAX_QUANTITY);
-    }
-    // Selling price is only required for positive quantities (adding items)
-    if (item.getQuantity() > 0) {
+    // Selling price is only required when adding items (positive quantity)
+    if (item.getQuantity() != null && item.getQuantity() > 0) {
       if (item.getSellingPrice() == null || item.getSellingPrice().compareTo(BigDecimal.ZERO) <= 0) {
         throw new ValidationException("Selling price must be greater than zero for item: " + item.getId());
+      }
+    }
+    // additionalDiscount is optional; when provided it must be a valid percentage (0–100)
+    if (item.getAdditionalDiscount() != null) {
+      if (item.getAdditionalDiscount().compareTo(BigDecimal.ZERO) < 0
+          || item.getAdditionalDiscount().compareTo(BigDecimal.valueOf(100)) > 0) {
+        throw new ValidationException("Additional discount for item " + item.getId() + " must be between 0 and 100");
       }
     }
   }

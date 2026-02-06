@@ -107,8 +107,8 @@ public abstract class PurchaseMapper {
   @Mapping(target = "maximumRetailPrice", source = "inventory.maximumRetailPrice")
   @Mapping(target = "sellingPrice", source = "item.sellingPrice")
   @Mapping(target = "discount", expression = "java(calculateDiscount(inventory.getMaximumRetailPrice(), item.getSellingPrice()))")
-  @Mapping(target = "additionalDiscount", source = "inventory.additionalDiscount")
-  @Mapping(target = "totalAmount", expression = "java(calculateTotalAmount(item.getSellingPrice(), inventory.getAdditionalDiscount(), item.getQuantity(), inventory.getCgst(), inventory.getSgst(), inventory.getShopId()))")
+  @Mapping(target = "additionalDiscount", expression = "java(getEffectiveAdditionalDiscount(item, inventory))")
+  @Mapping(target = "totalAmount", expression = "java(calculateTotalAmount(item.getSellingPrice(), getEffectiveAdditionalDiscount(item, inventory), item.getQuantity(), inventory.getCgst(), inventory.getSgst(), inventory.getShopId()))")
   @Mapping(target = "sgst", source = "inventory.sgst")
   @Mapping(target = "cgst", source = "inventory.cgst")
   public abstract PurchaseItem toPurchaseItemFromCartItem(AddToCartRequest.CartItem item, Inventory inventory);
@@ -140,6 +140,11 @@ public abstract class PurchaseMapper {
         });
       }
     }
+  }
+
+  /** Cart item's additionalDiscount overrides inventory's when provided. */
+  protected BigDecimal getEffectiveAdditionalDiscount(AddToCartRequest.CartItem item, Inventory inventory) {
+    return item.getAdditionalDiscount() != null ? item.getAdditionalDiscount() : inventory.getAdditionalDiscount();
   }
 
   // Helper method to calculate discount: maximumRetailPrice - sellingPrice
