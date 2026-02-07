@@ -26,6 +26,10 @@ public class AddToCartRequest {
     private BigDecimal sellingPrice;
     /** Optional: additional discount percentage for this item (0–100). Overrides inventory default when provided. */
     private BigDecimal additionalDiscount;
+    /** Optional: scheme "pay for X" (e.g. 10). With schemeFree, means "schemeFree free on schemePayFor". */
+    private Integer schemePayFor;
+    /** Optional: scheme free units per batch (e.g. 2). With schemePayFor=10 = "2 free on 10". */
+    private Integer schemeFree;
   }
 }
 

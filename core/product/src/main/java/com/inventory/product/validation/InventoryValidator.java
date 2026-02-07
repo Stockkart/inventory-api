@@ -21,6 +21,9 @@ public class InventoryValidator {
     if (request.getCount() == null || request.getCount() <= 0) {
       throw new ValidationException("Count must be greater than zero");
     }
+    if (request.getScheme() != null && request.getScheme() < 0) {
+      throw new ValidationException("Scheme (free units) must be zero or greater");
+    }
   }
 
   public void validateShopId(String shopId) {

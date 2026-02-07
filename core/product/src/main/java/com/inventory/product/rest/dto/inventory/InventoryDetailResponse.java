@@ -28,7 +28,7 @@ public class InventoryDetailResponse {
   String shopId;
   String hsn;
   String batchNo;
-  String scheme;
+  Integer scheme;
   String sgst; // SGST rate (e.g., "9" for 9%)
   String cgst; // CGST rate (e.g., "9" for 9%)
 }

@@ -49,6 +49,19 @@ import java.util.Optional;
 @Transactional(readOnly = true)
 public class CheckoutService {
 
+  /**
+   * Paid quantity for scheme "pay for X, get Y free". E.g. payFor=10, free=2: 15 total → 13 paid; 24 total → 20 paid.
+   */
+  private static int getPaidQuantity(int totalQty, Integer schemePayFor, Integer schemeFree) {
+    if (schemePayFor == null || schemePayFor <= 0 || schemeFree == null || schemeFree < 0) {
+      return totalQty;
+    }
+    int batchSize = schemePayFor + schemeFree;
+    int fullBatches = totalQty / batchSize;
+    int remainder = totalQty % batchSize;
+    return fullBatches * schemePayFor + remainder;
+  }
+
   @Autowired
   private PurchaseRepository purchaseRepository;
 
@@ -125,7 +138,7 @@ public class CheckoutService {
             .toList();
         if (itemsToAdd.isEmpty() && !newItems.isEmpty()) {
           throw new ValidationException(
-              "Additional discount can only be updated for items already in the cart. Add items to create a cart first.");
+              "Additional discount, scheme, or selling price can only be updated for items already in the cart. Add items to create a cart first.");
         }
         log.info("Creating new cart");
         purchase = createCart(request, itemsToAdd, shopId, userId, customerId, customerName);
@@ -558,11 +571,12 @@ public class CheckoutService {
         // Validate item using CheckoutValidator
         checkoutValidator.validateCartItem(item);
 
-        // Quantity 0 or null with additionalDiscount = update additionalDiscount only (item must already be in cart)
-        boolean updateDiscountOnly = (item.getQuantity() == null || item.getQuantity() == 0)
-            && item.getAdditionalDiscount() != null;
+        // Quantity 0 or null with additionalDiscount, scheme, or sellingPrice = update only (item must already be in cart)
+        boolean updateOnly = (item.getQuantity() == null || item.getQuantity() == 0)
+            && (item.getAdditionalDiscount() != null || item.getSchemePayFor() != null || item.getSchemeFree() != null
+                || item.getSellingPrice() != null);
 
-        if (updateDiscountOnly) {
+        if (updateOnly) {
           // Verify inventory exists and belongs to shop; no stock check needed
           Inventory inventory = inventoryRepository.findById(item.getId())
               .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", item.getId()));
@@ -574,10 +588,14 @@ public class CheckoutService {
               inventory.getName(),
               0,
               inventory.getMaximumRetailPrice(),
-              BigDecimal.ZERO,
+              item.getSellingPrice() != null ? item.getSellingPrice() : BigDecimal.ZERO,
               BigDecimal.ZERO
           );
-          purchaseItem.setAdditionalDiscount(item.getAdditionalDiscount());
+          if (item.getAdditionalDiscount() != null) {
+            purchaseItem.setAdditionalDiscount(item.getAdditionalDiscount());
+          }
+          if (item.getSchemePayFor() != null) purchaseItem.setSchemePayFor(item.getSchemePayFor());
+          if (item.getSchemeFree() != null) purchaseItem.setSchemeFree(item.getSchemeFree());
           purchaseItems.add(purchaseItem);
         } else if (item.getQuantity() < 0) {
           // For negative quantities, we only need to verify the lotId exists and belongs to the shop
@@ -641,10 +659,11 @@ public class CheckoutService {
     }
     return items.stream()
         .map(item -> {
-          // Calculate total: maximumRetailPrice * quantity
-          BigDecimal mrp = item.getSellingPrice() != null ? item.getSellingPrice() : BigDecimal.ZERO;
+          // Billing uses paid quantity when scheme is set (e.g. "2 free on 10")
+          BigDecimal price = item.getSellingPrice() != null ? item.getSellingPrice() : BigDecimal.ZERO;
           Integer qty = item.getQuantity() != null ? item.getQuantity() : 0;
-          return mrp.multiply(BigDecimal.valueOf(qty));
+          int paidQty = getPaidQuantity(qty, item.getSchemePayFor(), item.getSchemeFree());
+          return price.multiply(BigDecimal.valueOf(paidQty));
         })
         .reduce(BigDecimal.ZERO, BigDecimal::add)
         .setScale(2, RoundingMode.HALF_UP);
@@ -677,11 +696,12 @@ public class CheckoutService {
     
     // Calculate tax for each item based on its inventory-level CGST/SGST
     for (PurchaseItem item : purchaseItems) {
-      // Calculate item subtotal (MRP * quantity)
+      // Item total for tax: use paid quantity when scheme is set (billing basis)
       BigDecimal itemTotal = BigDecimal.ZERO;
       if (item.getMaximumRetailPrice() != null && item.getQuantity() != null 
           && item.getSellingPrice() != null) {
-        itemTotal = item.getSellingPrice().multiply(BigDecimal.valueOf(item.getQuantity()));
+        int paidQty = getPaidQuantity(item.getQuantity(), item.getSchemePayFor(), item.getSchemeFree());
+        itemTotal = item.getSellingPrice().multiply(BigDecimal.valueOf(paidQty));
         // Apply additional discount if present
         if (item.getAdditionalDiscount() != null && item.getAdditionalDiscount().compareTo(BigDecimal.ZERO) > 0) {
           itemTotal = itemTotal.multiply(new BigDecimal(1).subtract(item.getAdditionalDiscount().divide(new BigDecimal(
@@ -755,7 +775,8 @@ public class CheckoutService {
         .map(item -> {
           BigDecimal mrp = item.getMaximumRetailPrice() != null ? item.getMaximumRetailPrice() : BigDecimal.ZERO;
           BigDecimal sellingPrice = item.getSellingPrice() != null ? item.getSellingPrice() : BigDecimal.ZERO;
-          return mrp.subtract(sellingPrice).multiply(BigDecimal.valueOf(item.getQuantity()));
+          int paidQty = getPaidQuantity(item.getQuantity(), item.getSchemePayFor(), item.getSchemeFree());
+          return mrp.subtract(sellingPrice).multiply(BigDecimal.valueOf(paidQty));
         })
         .reduce(BigDecimal.ZERO, BigDecimal::add)
         .setScale(2, RoundingMode.HALF_UP);
@@ -823,11 +844,10 @@ public class CheckoutService {
           BigDecimal sellingPrice = item.getSellingPrice() != null ? item.getSellingPrice() : BigDecimal.ZERO;
           BigDecimal additionalDiscount = item.getAdditionalDiscount() != null ? item.getAdditionalDiscount() : BigDecimal.ZERO;
           Integer quantity = item.getQuantity() != null ? item.getQuantity() : 0;
-          
-          // Calculate: (sellingPrice * quantity) * (additionalDiscount / 100)
-          BigDecimal itemTotal = sellingPrice.multiply(BigDecimal.valueOf(quantity));
+          int paidQty = getPaidQuantity(quantity, item.getSchemePayFor(), item.getSchemeFree());
+          // Calculate: (sellingPrice * paidQuantity) * (additionalDiscount / 100)
+          BigDecimal itemTotal = sellingPrice.multiply(BigDecimal.valueOf(paidQty));
           BigDecimal discountAmount = itemTotal.multiply(additionalDiscount.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP));
-          
           return discountAmount;
         })
         .reduce(BigDecimal.ZERO, BigDecimal::add)
@@ -841,7 +861,7 @@ public class CheckoutService {
       TaxCalculationResult taxResult = calculateTax(purchaseItems, shopId);
       BigDecimal discountTotal = calculateTotalDiscount(purchaseItems);
       BigDecimal additionalDiscountTotal = calculateAdditionalDiscountTotal(purchaseItems);
-      BigDecimal grandTotal = subTotal.add(taxResult.getTaxTotal()).subtract(discountTotal).subtract(additionalDiscountTotal);
+      BigDecimal grandTotal = subTotal.add(taxResult.getTaxTotal()).subtract(additionalDiscountTotal);
 
       // Create purchase with CREATED status using mapper
       // MongoDB will auto-generate the id as ObjectId
@@ -937,8 +957,10 @@ public class CheckoutService {
               break;
             }
 
-            // Case 1 & 2: Update quantity (positive adds, negative decreases)
-            BigDecimal sellingPrice = newItem.getQuantity() > 0 ? newItem.getSellingPrice() : existingItem.getSellingPrice();
+            // Case 1 & 2: Update quantity (positive adds, negative decreases). Use payload sellingPrice when provided (e.g. update-only).
+            BigDecimal sellingPrice = newItem.getSellingPrice() != null
+                ? newItem.getSellingPrice()
+                : existingItem.getSellingPrice();
             BigDecimal newDiscount = existingItem.getMaximumRetailPrice()
                 .subtract(sellingPrice)
                 .multiply(BigDecimal.valueOf(newQuantity));
@@ -946,6 +968,9 @@ public class CheckoutService {
             BigDecimal additionalDiscount = newItem.getAdditionalDiscount() != null
                 ? newItem.getAdditionalDiscount()
                 : existingItem.getAdditionalDiscount();
+            // Use payload scheme when provided; otherwise keep existing
+            Integer schemePayFor = newItem.getSchemePayFor() != null ? newItem.getSchemePayFor() : existingItem.getSchemePayFor();
+            Integer schemeFree = newItem.getSchemeFree() != null ? newItem.getSchemeFree() : existingItem.getSchemeFree();
 
             PurchaseItem updatedItem = purchaseMapper.createPurchaseItem(
                 existingItem.getInventoryId(),
@@ -956,10 +981,13 @@ public class CheckoutService {
                 newDiscount.compareTo(BigDecimal.ZERO) > 0 ? newDiscount : BigDecimal.ZERO
             );
             updatedItem.setAdditionalDiscount(additionalDiscount);
+            updatedItem.setSchemePayFor(schemePayFor);
+            updatedItem.setSchemeFree(schemeFree);
             updatedItem.setSgst(existingItem.getSgst());
             updatedItem.setCgst(existingItem.getCgst());
-            // Calculate totalAmount: (sellingPrice after additionalDiscount) * quantity * (1 + cgst/100 + sgst/100)
-            BigDecimal totalAmount = calculateItemTotalAmount(sellingPrice, additionalDiscount, newQuantity, 
+            // Billing uses paid quantity when scheme is set
+            int paidQty = getPaidQuantity(newQuantity, schemePayFor, schemeFree);
+            BigDecimal totalAmount = calculateItemTotalAmount(sellingPrice, additionalDiscount, paidQty,
                                                               existingItem.getCgst(), existingItem.getSgst());
             updatedItem.setTotalAmount(totalAmount);
             mergedItems.set(i, updatedItem);
@@ -1011,7 +1039,6 @@ public class CheckoutService {
       existingCart.setAdditionalDiscountTotal(additionalDiscountTotal);
       existingCart.setGrandTotal(newSubTotal
           .add(taxResult.getTaxTotal())
-          .subtract(discountTotal)
           .subtract(additionalDiscountTotal));
 
       // If cart is empty after updates, we can either delete it or keep it with empty items

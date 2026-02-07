@@ -19,7 +19,9 @@ public class InvoiceItem {
   private BigDecimal discount;
   private BigDecimal additionalDiscount; // Additional discount percentage
   private BigDecimal totalAmount; // Final amount after additionalDiscount and taxes
-  private String scheme;
+  private Integer scheme; // Inventory scheme (free units in stock) - from inventory
+  private Integer schemePayFor; // Selling scheme: pay for X (e.g. 10)
+  private Integer schemeFree; // Selling scheme: get Y free (e.g. 2) → "2 free on 10"
   private String inventoryId;
   private String cgst; // CGST rate (e.g., "2.5" for 2.5%)
   private String sgst; // SGST rate (e.g., "2.5" for 2.5%)

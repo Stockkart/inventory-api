@@ -108,9 +108,11 @@ public abstract class PurchaseMapper {
   @Mapping(target = "sellingPrice", source = "item.sellingPrice")
   @Mapping(target = "discount", expression = "java(calculateDiscount(inventory.getMaximumRetailPrice(), item.getSellingPrice()))")
   @Mapping(target = "additionalDiscount", expression = "java(getEffectiveAdditionalDiscount(item, inventory))")
-  @Mapping(target = "totalAmount", expression = "java(calculateTotalAmount(item.getSellingPrice(), getEffectiveAdditionalDiscount(item, inventory), item.getQuantity(), inventory.getCgst(), inventory.getSgst(), inventory.getShopId()))")
+  @Mapping(target = "totalAmount", expression = "java(calculateTotalAmount(item.getSellingPrice(), getEffectiveAdditionalDiscount(item, inventory), getPaidQuantityForCartItem(item), inventory.getCgst(), inventory.getSgst(), inventory.getShopId()))")
   @Mapping(target = "sgst", source = "inventory.sgst")
   @Mapping(target = "cgst", source = "inventory.cgst")
+  @Mapping(target = "schemePayFor", source = "item.schemePayFor")
+  @Mapping(target = "schemeFree", source = "item.schemeFree")
   public abstract PurchaseItem toPurchaseItemFromCartItem(AddToCartRequest.CartItem item, Inventory inventory);
   
   @AfterMapping
@@ -126,12 +128,13 @@ public abstract class PurchaseMapper {
           if (purchaseItem.getSgst() == null || purchaseItem.getSgst().trim().isEmpty()) {
             purchaseItem.setSgst(shop.getSgst());
           }
-          // Recalculate totalAmount with shop rates if it was calculated with null rates
+          // Recalculate totalAmount with shop rates if it was calculated with null rates (use paid qty when scheme set)
           if (purchaseItem.getSellingPrice() != null && purchaseItem.getQuantity() != null) {
+            int paidQty = getPaidQuantityFromPurchaseItem(purchaseItem);
             purchaseItem.setTotalAmount(calculateTotalAmount(
                 purchaseItem.getSellingPrice(),
                 purchaseItem.getAdditionalDiscount(),
-                purchaseItem.getQuantity(),
+                paidQty,
                 purchaseItem.getCgst(),
                 purchaseItem.getSgst(),
                 inventory.getShopId()
@@ -142,9 +145,33 @@ public abstract class PurchaseMapper {
     }
   }
 
+  /** Paid quantity from PurchaseItem (for scheme). */
+  protected int getPaidQuantityFromPurchaseItem(PurchaseItem item) {
+    int totalQty = item.getQuantity() != null ? item.getQuantity() : 0;
+    if (item.getSchemePayFor() == null || item.getSchemePayFor() <= 0 || item.getSchemeFree() == null || item.getSchemeFree() < 0) {
+      return totalQty;
+    }
+    int batchSize = item.getSchemePayFor() + item.getSchemeFree();
+    int fullBatches = totalQty / batchSize;
+    int remainder = totalQty % batchSize;
+    return fullBatches * item.getSchemePayFor() + remainder;
+  }
+
   /** Cart item's additionalDiscount overrides inventory's when provided. */
   protected BigDecimal getEffectiveAdditionalDiscount(AddToCartRequest.CartItem item, Inventory inventory) {
     return item.getAdditionalDiscount() != null ? item.getAdditionalDiscount() : inventory.getAdditionalDiscount();
+  }
+
+  /** Paid quantity for scheme "pay for X, get Y free". Used for billing. */
+  protected int getPaidQuantityForCartItem(AddToCartRequest.CartItem item) {
+    int totalQty = item.getQuantity() != null ? item.getQuantity() : 0;
+    if (item.getSchemePayFor() == null || item.getSchemePayFor() <= 0 || item.getSchemeFree() == null || item.getSchemeFree() < 0) {
+      return totalQty;
+    }
+    int batchSize = item.getSchemePayFor() + item.getSchemeFree();
+    int fullBatches = totalQty / batchSize;
+    int remainder = totalQty % batchSize;
+    return fullBatches * item.getSchemePayFor() + remainder;
   }
 
   // Helper method to calculate discount: maximumRetailPrice - sellingPrice

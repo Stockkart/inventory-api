@@ -248,6 +248,13 @@ public class InventoryService {
       inventory.setExpiryDate(request.getExpiryDate());
       inventory.setVendorId(request.getVendorId());
 
+      // Total received = count (bill qty) + scheme (free). Same for initial currentCount.
+      int billQty = request.getCount() != null ? request.getCount() : 0;
+      int schemeFree = request.getScheme() != null ? request.getScheme() : 0;
+      int totalReceived = billQty + schemeFree;
+      inventory.setReceivedCount(totalReceived);
+      inventory.setCurrentCount(totalReceived);
+
       // Set CGST and SGST: use provided values or shop defaults
       if (!StringUtils.hasText(request.getSgst()) || !StringUtils.hasText(request.getCgst())) {
         Optional<Shop> shopOpt = shopRepository.findById(shopId);

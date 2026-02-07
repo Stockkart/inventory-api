@@ -33,7 +33,7 @@ public class ParsedInventoryItem {
   private List<ParsedReminderDto> customReminders;
   private String hsn;
   private String batchNo;
-  private String scheme;
+  private Integer scheme;
   private String sgst;
   private String cgst;
 

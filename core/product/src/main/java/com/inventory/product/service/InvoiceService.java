@@ -155,6 +155,8 @@ public class InvoiceService {
         invoiceItem.setCgst(purchaseItem.getCgst());
         invoiceItem.setSgst(purchaseItem.getSgst());
         invoiceItem.setInventoryId(purchaseItem.getInventoryId());
+        invoiceItem.setSchemePayFor(purchaseItem.getSchemePayFor());
+        invoiceItem.setSchemeFree(purchaseItem.getSchemeFree());
 
         // Get inventory details
         if (purchaseItem.getInventoryId() != null) {

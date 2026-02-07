@@ -53,10 +53,11 @@ public class CheckoutValidator {
     if (!StringUtils.hasText(item.getId())) {
       throw new ValidationException("ID is required for item");
     }
-    // Quantity may be null or 0 when only updating additionalDiscount (item must already be in cart)
-    boolean updateDiscountOnly = (item.getQuantity() == null || item.getQuantity() == 0)
-        && item.getAdditionalDiscount() != null;
-    if (!updateDiscountOnly) {
+    // Quantity may be null or 0 when only updating additionalDiscount, scheme, or sellingPrice (item must already be in cart)
+    boolean updateOnly = (item.getQuantity() == null || item.getQuantity() == 0)
+        && (item.getAdditionalDiscount() != null || item.getSchemePayFor() != null || item.getSchemeFree() != null
+            || item.getSellingPrice() != null);
+    if (!updateOnly) {
       if (item.getQuantity() == null || item.getQuantity() == 0) {
         throw new ValidationException("Quantity is required for item: " + item.getId());
       }
@@ -64,11 +65,12 @@ public class CheckoutValidator {
         throw new ValidationException("Maximum quantity per item is " + MAX_QUANTITY);
       }
     }
-    // Selling price is only required when adding items (positive quantity)
-    if (item.getQuantity() != null && item.getQuantity() > 0) {
-      if (item.getSellingPrice() == null || item.getSellingPrice().compareTo(BigDecimal.ZERO) <= 0) {
-        throw new ValidationException("Selling price must be greater than zero for item: " + item.getId());
-      }
+    // Selling price is required when adding items (positive quantity); when provided (e.g. update-only) must be > 0
+    if (item.getSellingPrice() != null && item.getSellingPrice().compareTo(BigDecimal.ZERO) <= 0) {
+      throw new ValidationException("Selling price must be greater than zero for item: " + item.getId());
+    }
+    if (item.getQuantity() != null && item.getQuantity() > 0 && item.getSellingPrice() == null) {
+      throw new ValidationException("Selling price must be greater than zero for item: " + item.getId());
     }
     // additionalDiscount is optional; when provided it must be a valid percentage (0–100)
     if (item.getAdditionalDiscount() != null) {
@@ -76,6 +78,13 @@ public class CheckoutValidator {
           || item.getAdditionalDiscount().compareTo(BigDecimal.valueOf(100)) > 0) {
         throw new ValidationException("Additional discount for item " + item.getId() + " must be between 0 and 100");
       }
+    }
+    // Scheme: when provided, schemePayFor must be > 0 and schemeFree must be >= 0 (e.g. "2 free on 10" = payFor 10, free 2)
+    if (item.getSchemePayFor() != null && item.getSchemePayFor() <= 0) {
+      throw new ValidationException("Scheme pay-for for item " + item.getId() + " must be greater than zero");
+    }
+    if (item.getSchemeFree() != null && item.getSchemeFree() < 0) {
+      throw new ValidationException("Scheme free units for item " + item.getId() + " must be zero or greater");
     }
   }
 
