@@ -10,5 +10,6 @@ public class CreateVendorRequest {
   private String address;
   private String companyName;
   private String businessType;
+  private String gstinUin; // GSTIN or UIN (Unique Identification Number)
 }
 

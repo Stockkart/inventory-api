@@ -180,6 +180,10 @@ public class VendorService {
         existingVendor.setBusinessType(vendor.getBusinessType().trim());
         updated = true;
       }
+      if (vendor.getGstinUin() != null && !vendor.getGstinUin().equals(existingVendor.getGstinUin())) {
+        existingVendor.setGstinUin(StringUtils.hasText(vendor.getGstinUin()) ? vendor.getGstinUin().trim() : null);
+        updated = true;
+      }
 
       if (updated) {
         existingVendor.setUpdatedAt(Instant.now());
