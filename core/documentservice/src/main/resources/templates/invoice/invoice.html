@@ -363,19 +363,18 @@
       <thead>
       <tr>
         <th style="width: 4%;">QTY</th>
-        <th style="width: 16%;">PRODUCTS</th>
-        <th style="width: 7%;">HSN</th>
+        <th style="width: 22%;">PRODUCTS</th>
+        <th style="width: 8%;">HSN</th>
         <th style="width: 8%;">MFG/MKT</th>
-        <th style="width: 7%;">Exp.Dt</th>
-        <th style="width: 7%;">BATCH No.</th>
-        <th style="width: 6%;">M.R.P.</th>
-        <th style="width: 6%;">RATE</th>
-        <th style="width: 8%;">SCHEME</th>
+        <th style="width: 5%;">Exp.Dt</th>
+        <th style="width: 5%;">BATCH No.</th>
+        <th style="width: 7%;">M.R.P.</th>
+        <th style="width: 7%;">RATE</th>
+        <th style="width: 5%;">SCHEME</th>
         <th style="width: 5%;">DIS</th>
-        <th style="width: 5%;">ADD DIS%</th>
         <th style="width: 5%;">CGST%</th>
         <th style="width: 5%;">SGST%</th>
-        <th style="width: 12%;">AMOUNT</th>
+        <th style="width: 14%;">AMOUNT</th>
       </tr>
       </thead>
       <tbody>
@@ -388,8 +387,7 @@
         <td th:text="${item.batchNo ?: ''}"></td>
         <td class="text-right" th:text="${#numbers.formatDecimal(item.maximumRetailPrice, 1, 2)}"></td>
         <td class="text-right" th:text="${#numbers.formatDecimal(item.sellingPrice, 1, 2)}"></td>
-        <td th:text="${item.scheme ?: ''}"></td>
-        <td class="text-right" th:text="${#numbers.formatDecimal(item.discount, 1, 2)}"></td>
+        <td th:text="${item.schemePayFor != null and item.schemeFree != null ? item.schemePayFor + '+' + item.schemeFree : (item.scheme != null ? item.scheme : '')}"></td>
         <td class="text-right" th:text="${item.additionalDiscount != null ? #numbers.formatDecimal(item.additionalDiscount, 1, 2) : '0.00'}"></td>
         <td class="text-right" th:text="${item.cgst != null and item.cgst != '' ? item.cgst : #numbers.formatDecimal(cgstPercent, 1, 2)}"></td>
         <td class="text-right" th:text="${item.sgst != null and item.sgst != '' ? item.sgst : #numbers.formatDecimal(sgstPercent, 1, 2)}"></td>

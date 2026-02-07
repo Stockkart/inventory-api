@@ -14,11 +14,11 @@ import java.util.List;
 @Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.IGNORE)
 public interface InventoryMapper {
 
-  // lotId will be set in service before saving
+  // lotId, receivedCount, currentCount set in service (receivedCount/currentCount = count + scheme)
   @Mapping(target = "lotId", ignore = true)
-  @Mapping(target = "receivedCount", source = "count")
+  @Mapping(target = "receivedCount", ignore = true)
   @Mapping(target = "soldCount", constant = "0")
-  @Mapping(target = "currentCount", source = "count")
+  @Mapping(target = "currentCount", ignore = true)
   @Mapping(target = "receivedDate", expression = "java(java.time.Instant.now())")
   @Mapping(target = "createdAt", expression = "java(java.time.Instant.now())")
   @Mapping(target = "updatedAt", expression = "java(java.time.Instant.now())")

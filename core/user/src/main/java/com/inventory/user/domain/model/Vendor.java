@@ -22,6 +22,7 @@ public class Vendor {
   private String address;
   private String companyName;
   private String businessType;
+  private String gstinUin; // GSTIN or UIN (Unique Identification Number)
   private Instant createdAt;
   private Instant updatedAt;
 }

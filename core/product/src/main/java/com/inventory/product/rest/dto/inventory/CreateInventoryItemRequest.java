@@ -32,8 +32,8 @@ public class CreateInventoryItemRequest {
   private String hsn;
   // Batch number (optional)
   private String batchNo;
-  // Scheme (optional)
-  private String scheme;
+  // Scheme (optional): free units. Total stock = count + scheme.
+  private Integer scheme;
   // SGST rate (optional, e.g., "9" for 9%). Uses shop default if not provided.
   private String sgst;
   // CGST rate (optional, e.g., "9" for 9%). Uses shop default if not provided.

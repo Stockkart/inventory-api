@@ -207,7 +207,7 @@ public class GeminiOcrProvider implements OcrProvider {
     item.setReminderAt(str(n, "reminderAt"));
     item.setHsn(str(n, "hsn"));
     item.setBatchNo(str(n, "batchNo"));
-    item.setScheme(str(n, "scheme"));
+    item.setScheme(intNum(n, "scheme"));
     item.setSgst(str(n, "sgst"));
     item.setCgst(str(n, "cgst"));
     if (item.getName() == null || item.getName().isBlank()) return null;

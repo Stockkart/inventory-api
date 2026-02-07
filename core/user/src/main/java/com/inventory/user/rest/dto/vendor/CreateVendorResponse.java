@@ -17,6 +17,7 @@ public class CreateVendorResponse {
   private String address;
   private String companyName;
   private String businessType;
+  private String gstinUin;
   private Instant createdAt;
   private Instant updatedAt;
 }

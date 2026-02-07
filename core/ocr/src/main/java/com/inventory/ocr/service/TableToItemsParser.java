@@ -166,7 +166,7 @@ public class TableToItemsParser {
       setInt(row, m.qty, item::setCount);
       setPrices(row, m, item);
       setDecimal(row, m.discount, item::setAdditionalDiscount);
-      setStr(row, m.scheme, item::setScheme);
+      setInt(row, m.scheme, item::setScheme);
       if (m.sgst != null && row.containsKey(m.sgst)) {
         String v = clean(row.get(m.sgst)).replaceAll("[^0-9.]", "");
         if (!v.isEmpty()) item.setSgst(v);
