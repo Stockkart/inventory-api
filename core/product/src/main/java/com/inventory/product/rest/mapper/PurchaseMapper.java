@@ -116,6 +116,52 @@ public abstract class PurchaseMapper {
   public abstract PurchaseItem toPurchaseItemFromCartItem(AddToCartRequest.CartItem item, Inventory inventory);
   
   @AfterMapping
+  protected void setDefaultSchemeFromInventoryWhenFirstAdd(@MappingTarget PurchaseItem purchaseItem,
+                                                           AddToCartRequest.CartItem item, Inventory inventory) {
+    // When cart item doesn't provide scheme, set default from inventory (first-time add). Later merges keep existing.
+    if (item.getSchemePayFor() != null || item.getSchemeFree() != null) {
+      return; // Request provided scheme, use it (already mapped)
+    }
+    if (inventory.getScheme() == null || inventory.getScheme() <= 0
+        || inventory.getReceivedCount() == null || inventory.getReceivedCount() <= 0) {
+      return; // No scheme on inventory
+    }
+    int received = inventory.getReceivedCount();
+    int free = inventory.getScheme();
+    int paid = received - free;
+    if (paid <= 0) {
+      return;
+    }
+    // Reduce to lowest fraction using gcd
+    int g = gcd(paid, free);
+    purchaseItem.setSchemePayFor(paid / g);
+    purchaseItem.setSchemeFree(free / g);
+    // Recalculate totalAmount with the new scheme (paid quantity may change)
+    if (purchaseItem.getSellingPrice() != null && purchaseItem.getQuantity() != null && inventory.getShopId() != null) {
+      int paidQty = getPaidQuantityFromPurchaseItem(purchaseItem);
+      purchaseItem.setTotalAmount(calculateTotalAmount(
+          purchaseItem.getSellingPrice(),
+          purchaseItem.getAdditionalDiscount(),
+          paidQty,
+          purchaseItem.getCgst(),
+          purchaseItem.getSgst(),
+          inventory.getShopId()
+      ));
+    }
+  }
+
+  private static int gcd(int a, int b) {
+    a = Math.abs(a);
+    b = Math.abs(b);
+    while (b != 0) {
+      int t = b;
+      b = a % b;
+      a = t;
+    }
+    return a;
+  }
+
+  @AfterMapping
   protected void setShopTaxRatesIfNull(@MappingTarget PurchaseItem purchaseItem, Inventory inventory) {
     // If CGST/SGST are null, use shop-level rates
     if ((purchaseItem.getCgst() == null || purchaseItem.getCgst().trim().isEmpty()) 
