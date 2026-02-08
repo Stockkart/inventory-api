@@ -583,12 +583,13 @@ public class CheckoutService {
           if (!shopId.equals(inventory.getShopId())) {
             throw new ValidationException("Inventory lot " + item.getId() + " does not belong to shop " + shopId);
           }
+          // Pass null for sellingPrice when not in request so merge keeps existing line's price
           PurchaseItem purchaseItem = purchaseMapper.createPurchaseItem(
               item.getId(),
               inventory.getName(),
               0,
               inventory.getMaximumRetailPrice(),
-              item.getSellingPrice() != null ? item.getSellingPrice() : BigDecimal.ZERO,
+              item.getSellingPrice(),
               BigDecimal.ZERO
           );
           if (item.getAdditionalDiscount() != null) {
