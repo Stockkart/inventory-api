@@ -958,8 +958,8 @@ public class CheckoutService {
               break;
             }
 
-            // Case 1 & 2: Update quantity (positive adds, negative decreases). Use payload sellingPrice when provided (e.g. update-only).
-            BigDecimal sellingPrice = newItem.getSellingPrice() != null
+            // Case 1 & 2: Update quantity (positive adds, negative decreases). Use payload sellingPrice when provided (update-only or add); for negative qty we only remove, keep existing price.
+            BigDecimal sellingPrice = (newItem.getQuantity() >= 0 && newItem.getSellingPrice() != null)
                 ? newItem.getSellingPrice()
                 : existingItem.getSellingPrice();
             BigDecimal newDiscount = existingItem.getMaximumRetailPrice()
