@@ -1,6 +1,8 @@
 package com.inventory.product.rest.dto.inventory;
 
 import com.inventory.notifications.rest.dto.CustomReminderRequest;
+import com.inventory.product.domain.model.DiscountApplicable;
+import com.inventory.product.domain.model.ItemType;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -19,6 +21,12 @@ public class CreateInventoryRequest {
   private BigDecimal additionalDiscount; // Optional: Additional discount amount
   private String businessType;
   private String location;
+  private ItemType itemType;
+  /** When itemType is DEGREE, e.g. 8 for "8 deg", 24 for "24 deg" */
+  private Integer itemTypeDegree;
+  private DiscountApplicable discountApplicable;
+  /** Purchase date (when bought from vendor). Optional; defaults to received date if not set. */
+  private Instant purchaseDate;
   private Integer count;
   private Integer thresholdCount;
   private Instant expiryDate;

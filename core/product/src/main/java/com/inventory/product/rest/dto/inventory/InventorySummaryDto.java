@@ -1,5 +1,7 @@
 package com.inventory.product.rest.dto.inventory;
 
+import com.inventory.product.domain.model.DiscountApplicable;
+import com.inventory.product.domain.model.ItemType;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -29,6 +31,10 @@ public class InventorySummaryDto {
   Instant expiryDate;
   String shopId;
   String vendorId;
+  ItemType itemType;
+  Integer itemTypeDegree;
+  DiscountApplicable discountApplicable;
+  Instant purchaseDate;
   String hsn;
   String batchNo;
   Integer scheme;

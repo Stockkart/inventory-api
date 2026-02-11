@@ -24,6 +24,12 @@ public class Inventory {
   private String companyName;
   private String businessType;
   private String location;
+  private ItemType itemType;
+  /** When itemType is DEGREE, e.g. 8 for "8 deg", 24 for "24 deg" */
+  private Integer itemTypeDegree;
+  private DiscountApplicable discountApplicable;
+  /** Date when this inventory was purchased from vendor */
+  private Instant purchaseDate;
   private Integer receivedCount;
   private Integer soldCount;
   private Integer currentCount;

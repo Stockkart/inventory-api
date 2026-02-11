@@ -217,7 +217,11 @@ public class InventoryService {
     fullRequest.setScheme(itemRequest.getScheme());
     fullRequest.setSgst(itemRequest.getSgst());
     fullRequest.setCgst(itemRequest.getCgst());
-    
+    fullRequest.setItemType(itemRequest.getItemType());
+    fullRequest.setItemTypeDegree(itemRequest.getItemTypeDegree());
+    fullRequest.setDiscountApplicable(itemRequest.getDiscountApplicable());
+    fullRequest.setPurchaseDate(itemRequest.getPurchaseDate());
+
     // Set shared fields
     fullRequest.setVendorId(vendorId);
     fullRequest.setLotId(lotId);
@@ -247,6 +251,11 @@ public class InventoryService {
       inventory.setUserId(userId);
       inventory.setExpiryDate(request.getExpiryDate());
       inventory.setVendorId(request.getVendorId());
+      if (request.getPurchaseDate() != null) {
+        inventory.setPurchaseDate(request.getPurchaseDate());
+      } else {
+        inventory.setPurchaseDate(Instant.now());
+      }
 
       // Total received = count (bill qty) + scheme (free). Same for initial currentCount.
       int billQty = request.getCount() != null ? request.getCount() : 0;
@@ -703,6 +712,7 @@ public class InventoryService {
       }
 
       log.debug("Updating inventory with ID: {} for shop: {}", inventoryId, shopId);
+      inventoryValidator.validateUpdateRequest(request);
 
       // Find inventory
       Inventory inventory = inventoryRepository.findById(inventoryId)
@@ -723,6 +733,17 @@ public class InventoryService {
       if (request.getAdditionalDiscount() != null) {
         inventory.setAdditionalDiscount(request.getAdditionalDiscount());
         log.debug("Updating additionalDiscount to {} for inventory: {}", request.getAdditionalDiscount(), inventoryId);
+      }
+
+      if (request.getItemType() != null) {
+        inventory.setItemType(request.getItemType());
+        inventory.setItemTypeDegree(request.getItemTypeDegree());
+      }
+      if (request.getDiscountApplicable() != null) {
+        inventory.setDiscountApplicable(request.getDiscountApplicable());
+      }
+      if (request.getPurchaseDate() != null) {
+        inventory.setPurchaseDate(request.getPurchaseDate());
       }
 
       // Update updatedAt timestamp
