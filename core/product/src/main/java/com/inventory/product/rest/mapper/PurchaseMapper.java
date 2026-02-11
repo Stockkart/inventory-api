@@ -4,6 +4,7 @@ import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.product.domain.model.PurchaseStatus;
+import com.inventory.product.domain.model.SchemeType;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.rest.dto.sale.AddToCartRequest;
@@ -122,20 +123,32 @@ public abstract class PurchaseMapper {
     if (item.getSchemePayFor() != null || item.getSchemeFree() != null) {
       return; // Request provided scheme, use it (already mapped)
     }
-    if (inventory.getScheme() == null || inventory.getScheme() <= 0
-        || inventory.getReceivedCount() == null || inventory.getReceivedCount() <= 0) {
-      return; // No scheme on inventory
-    }
-    int received = inventory.getReceivedCount();
-    int free = inventory.getScheme();
-    int paid = received - free;
-    if (paid <= 0) {
+    if (inventory.getSchemeType() == SchemeType.PERCENTAGE
+        && inventory.getSchemePercentage() != null && inventory.getSchemePercentage().signum() > 0) {
+      // paid:free = 100 : schemePercentage (e.g. 10% -> pay 10 get 1 free)
+      int pct = inventory.getSchemePercentage().setScale(0, java.math.RoundingMode.HALF_UP).intValue();
+      if (pct <= 0 || pct > 100) {
+        return;
+      }
+      int payFor = 100;
+      int g = gcd(payFor, pct);
+      purchaseItem.setSchemePayFor(payFor / g);
+      purchaseItem.setSchemeFree(pct / g);
+    } else if (inventory.getScheme() != null && inventory.getScheme() > 0
+        && inventory.getReceivedCount() != null && inventory.getReceivedCount() > 0) {
+      // FIXED_UNITS or backward compat: use scheme (free units)
+      int received = inventory.getReceivedCount();
+      int free = inventory.getScheme();
+      int paid = received - free;
+      if (paid <= 0) {
+        return;
+      }
+      int g = gcd(paid, free);
+      purchaseItem.setSchemePayFor(paid / g);
+      purchaseItem.setSchemeFree(free / g);
+    } else {
       return;
     }
-    // Reduce to lowest fraction using gcd
-    int g = gcd(paid, free);
-    purchaseItem.setSchemePayFor(paid / g);
-    purchaseItem.setSchemeFree(free / g);
     // Recalculate totalAmount with the new scheme (paid quantity may change)
     if (purchaseItem.getSellingPrice() != null && purchaseItem.getQuantity() != null && inventory.getShopId() != null) {
       int paidQty = getPaidQuantityFromPurchaseItem(purchaseItem);

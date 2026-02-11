@@ -45,7 +45,9 @@ public class Inventory {
   private BigDecimal additionalDiscount; // Optional: Additional discount amount
   private String hsn; // Optional: HSN code
   private String batchNo; // Optional: Batch number
-  private Integer scheme; // Optional: Free units (e.g. 20 = 20 free). Total received = count + scheme.
+  private SchemeType schemeType; // FIXED_UNITS (default/backward) or PERCENTAGE
+  private Integer scheme; // When schemeType FIXED_UNITS: free units. Total received = count + scheme.
+  private BigDecimal schemePercentage; // When schemeType PERCENTAGE: e.g. 10 = 10% extra free.
   private String sgst; // Optional: State GST rate (e.g., "9" for 9%). Uses shop default if not provided.
   private String cgst; // Optional: Central GST rate (e.g., "9" for 9%). Uses shop default if not provided.
   private Instant createdAt;

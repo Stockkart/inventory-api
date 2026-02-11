@@ -2,11 +2,13 @@ package com.inventory.product.validation;
 
 import com.inventory.common.exception.ValidationException;
 import com.inventory.product.domain.model.ItemType;
+import com.inventory.product.domain.model.SchemeType;
 import com.inventory.product.rest.dto.inventory.CreateInventoryRequest;
 import com.inventory.product.rest.dto.inventory.UpdateInventoryRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 
@@ -26,7 +28,15 @@ public class InventoryValidator {
     if (request.getCount() == null || request.getCount() <= 0) {
       throw new ValidationException("Count must be greater than zero");
     }
-    if (request.getScheme() != null && request.getScheme() < 0) {
+    if (request.getSchemeType() == SchemeType.PERCENTAGE) {
+      if (request.getSchemePercentage() == null) {
+        throw new ValidationException("When schemeType is PERCENTAGE, schemePercentage is required");
+      }
+      if (request.getSchemePercentage().compareTo(BigDecimal.ZERO) <= 0
+          || request.getSchemePercentage().compareTo(BigDecimal.valueOf(100)) > 0) {
+        throw new ValidationException("Scheme percentage must be greater than 0 and not more than 100");
+      }
+    } else if (request.getScheme() != null && request.getScheme() < 0) {
       throw new ValidationException("Scheme (free units) must be zero or greater");
     }
     if (request.getItemType() == ItemType.DEGREE
@@ -48,6 +58,17 @@ public class InventoryValidator {
     }
     if (request.getPurchaseDate() != null) {
       validatePurchaseDate(request.getPurchaseDate());
+    }
+    if (request.getSchemeType() == SchemeType.PERCENTAGE) {
+      if (request.getSchemePercentage() == null) {
+        throw new ValidationException("When schemeType is PERCENTAGE, schemePercentage is required");
+      }
+      if (request.getSchemePercentage().compareTo(BigDecimal.ZERO) <= 0
+          || request.getSchemePercentage().compareTo(BigDecimal.valueOf(100)) > 0) {
+        throw new ValidationException("Scheme percentage must be greater than 0 and not more than 100");
+      }
+    } else if (request.getScheme() != null && request.getScheme() < 0) {
+      throw new ValidationException("Scheme (free units) must be zero or greater");
     }
   }
 

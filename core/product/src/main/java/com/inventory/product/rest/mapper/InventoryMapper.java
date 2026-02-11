@@ -75,6 +75,8 @@ public interface InventoryMapper {
   @Mapping(target = "itemTypeDegree", source = "itemTypeDegree")
   @Mapping(target = "discountApplicable", source = "discountApplicable")
   @Mapping(target = "purchaseDate", source = "purchaseDate")
+  @Mapping(target = "schemeType", source = "schemeType")
+  @Mapping(target = "schemePercentage", source = "schemePercentage")
   @Mapping(target = "sgst", source = "sgst")
   @Mapping(target = "cgst", source = "cgst")
   @Mapping(target = "createdAt", source = "createdAt")
@@ -99,6 +101,8 @@ public interface InventoryMapper {
   @Mapping(target = "itemTypeDegree", source = "itemTypeDegree")
   @Mapping(target = "discountApplicable", source = "discountApplicable")
   @Mapping(target = "purchaseDate", source = "purchaseDate")
+  @Mapping(target = "schemeType", source = "schemeType")
+  @Mapping(target = "schemePercentage", source = "schemePercentage")
   @Mapping(target = "sgst", source = "sgst")
   @Mapping(target = "cgst", source = "cgst")
   InventoryDetailResponse toDetail(Inventory inventory);

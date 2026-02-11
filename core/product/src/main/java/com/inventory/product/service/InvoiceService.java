@@ -8,6 +8,7 @@ import com.inventory.documentservice.service.DocumentService;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
+import com.inventory.product.domain.model.SchemeType;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.PurchaseRepository;
@@ -166,7 +167,17 @@ public class InvoiceService {
             invoiceItem.setHsn(inventory.getHsn());
             invoiceItem.setCompanyName(inventory.getCompanyName());
             invoiceItem.setBatchNo(inventory.getBatchNo());
-            invoiceItem.setScheme(inventory.getScheme());
+            if (inventory.getSchemeType() == SchemeType.PERCENTAGE
+                && inventory.getSchemePercentage() != null
+                && inventory.getReceivedCount() != null
+                && inventory.getSchemePercentage().signum() > 0) {
+              BigDecimal pct = inventory.getSchemePercentage();
+              int effectiveFree = pct.multiply(BigDecimal.valueOf(inventory.getReceivedCount()))
+                  .divide(BigDecimal.valueOf(100).add(pct), 0, RoundingMode.HALF_UP).intValue();
+              invoiceItem.setScheme(effectiveFree);
+            } else {
+              invoiceItem.setScheme(inventory.getScheme());
+            }
             if (inventory.getExpiryDate() != null) {
               LocalDateTime expiryDateTime = LocalDateTime.ofInstant(inventory.getExpiryDate(), ZoneId.systemDefault());
               invoiceItem.setExpiryDate(expiryDateTime.format(DateTimeFormatter.ofPattern("MM/yy")));
