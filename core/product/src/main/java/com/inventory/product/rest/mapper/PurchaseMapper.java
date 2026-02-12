@@ -109,31 +109,28 @@ public abstract class PurchaseMapper {
   @Mapping(target = "sellingPrice", source = "item.sellingPrice")
   @Mapping(target = "discount", expression = "java(calculateDiscount(inventory.getMaximumRetailPrice(), item.getSellingPrice()))")
   @Mapping(target = "additionalDiscount", expression = "java(getEffectiveAdditionalDiscount(item, inventory))")
-  @Mapping(target = "totalAmount", expression = "java(calculateTotalAmount(item.getSellingPrice(), getEffectiveAdditionalDiscount(item, inventory), getPaidQuantityForCartItem(item), inventory.getCgst(), inventory.getSgst(), inventory.getShopId()))")
+  @Mapping(target = "totalAmount", expression = "java(calculateTotalAmount(getEffectiveSellingPriceForCartItem(item), getEffectiveAdditionalDiscount(item, inventory), getBillableQuantityAsDecimalForCartItem(item), inventory.getCgst(), inventory.getSgst(), inventory.getShopId()))")
   @Mapping(target = "sgst", source = "inventory.sgst")
   @Mapping(target = "cgst", source = "inventory.cgst")
+  @Mapping(target = "schemeType", source = "item.schemeType")
   @Mapping(target = "schemePayFor", source = "item.schemePayFor")
   @Mapping(target = "schemeFree", source = "item.schemeFree")
+  @Mapping(target = "schemePercentage", source = "item.schemePercentage")
   public abstract PurchaseItem toPurchaseItemFromCartItem(AddToCartRequest.CartItem item, Inventory inventory);
   
   @AfterMapping
   protected void setDefaultSchemeFromInventoryWhenFirstAdd(@MappingTarget PurchaseItem purchaseItem,
                                                            AddToCartRequest.CartItem item, Inventory inventory) {
     // When cart item doesn't provide scheme, set default from inventory (first-time add). Later merges keep existing.
-    if (item.getSchemePayFor() != null || item.getSchemeFree() != null) {
+    if (item.getSchemePayFor() != null || item.getSchemeFree() != null
+        || item.getSchemeType() != null || item.getSchemePercentage() != null) {
       return; // Request provided scheme, use it (already mapped)
     }
     if (inventory.getSchemeType() == SchemeType.PERCENTAGE
         && inventory.getSchemePercentage() != null && inventory.getSchemePercentage().signum() > 0) {
-      // paid:free = 100 : schemePercentage (e.g. 10% -> pay 10 get 1 free)
-      int pct = inventory.getSchemePercentage().setScale(0, java.math.RoundingMode.HALF_UP).intValue();
-      if (pct <= 0 || pct > 100) {
-        return;
-      }
-      int payFor = 100;
-      int g = gcd(payFor, pct);
-      purchaseItem.setSchemePayFor(payFor / g);
-      purchaseItem.setSchemeFree(pct / g);
+      purchaseItem.setSchemeType(SchemeType.PERCENTAGE);
+      purchaseItem.setSchemePercentage(inventory.getSchemePercentage());
+      // schemePayFor/schemeFree left null; getPaidQuantityFromPurchaseItem uses percentage formula
     } else if (inventory.getScheme() != null && inventory.getScheme() > 0
         && inventory.getReceivedCount() != null && inventory.getReceivedCount() > 0) {
       // FIXED_UNITS or backward compat: use scheme (free units)
@@ -146,16 +143,19 @@ public abstract class PurchaseMapper {
       int g = gcd(paid, free);
       purchaseItem.setSchemePayFor(paid / g);
       purchaseItem.setSchemeFree(free / g);
+      purchaseItem.setSchemeType(SchemeType.FIXED_UNITS);
+      purchaseItem.setSchemePercentage(null);
     } else {
       return;
     }
-    // Recalculate totalAmount with the new scheme (paid quantity may change)
+    // Recalculate totalAmount (PERCENTAGE: scheme on price; FIXED_UNITS: ratio on quantity)
     if (purchaseItem.getSellingPrice() != null && purchaseItem.getQuantity() != null && inventory.getShopId() != null) {
-      int paidQty = getPaidQuantityFromPurchaseItem(purchaseItem);
+      BigDecimal effectivePrice = getEffectiveSellingPriceFromPurchaseItem(purchaseItem);
+      BigDecimal billableQty = getBillableQuantityAsDecimalFromPurchaseItem(purchaseItem);
       purchaseItem.setTotalAmount(calculateTotalAmount(
-          purchaseItem.getSellingPrice(),
+          effectivePrice,
           purchaseItem.getAdditionalDiscount(),
-          paidQty,
+          billableQty,
           purchaseItem.getCgst(),
           purchaseItem.getSgst(),
           inventory.getShopId()
@@ -187,13 +187,14 @@ public abstract class PurchaseMapper {
           if (purchaseItem.getSgst() == null || purchaseItem.getSgst().trim().isEmpty()) {
             purchaseItem.setSgst(shop.getSgst());
           }
-          // Recalculate totalAmount with shop rates if it was calculated with null rates (use paid qty when scheme set)
+          // Recalculate totalAmount with shop rates (FIXED_UNITS: ratio on quantity)
           if (purchaseItem.getSellingPrice() != null && purchaseItem.getQuantity() != null) {
-            int paidQty = getPaidQuantityFromPurchaseItem(purchaseItem);
+            BigDecimal effectivePrice = getEffectiveSellingPriceFromPurchaseItem(purchaseItem);
+            BigDecimal billableQty = getBillableQuantityAsDecimalFromPurchaseItem(purchaseItem);
             purchaseItem.setTotalAmount(calculateTotalAmount(
-                purchaseItem.getSellingPrice(),
+                effectivePrice,
                 purchaseItem.getAdditionalDiscount(),
-                paidQty,
+                billableQty,
                 purchaseItem.getCgst(),
                 purchaseItem.getSgst(),
                 inventory.getShopId()
@@ -204,16 +205,43 @@ public abstract class PurchaseMapper {
     }
   }
 
-  /** Paid quantity from PurchaseItem (for scheme). */
-  protected int getPaidQuantityFromPurchaseItem(PurchaseItem item) {
+  /** Billable quantity as decimal: FIXED_UNITS uses ratio schemePayFor/(schemePayFor+schemeFree) on any qty. */
+  protected BigDecimal getBillableQuantityAsDecimalFromPurchaseItem(PurchaseItem item) {
     int totalQty = item.getQuantity() != null ? item.getQuantity() : 0;
-    if (item.getSchemePayFor() == null || item.getSchemePayFor() <= 0 || item.getSchemeFree() == null || item.getSchemeFree() < 0) {
-      return totalQty;
+    if (totalQty <= 0) return BigDecimal.ZERO;
+    if (item.getSchemeType() == SchemeType.PERCENTAGE) {
+      return BigDecimal.valueOf(totalQty);
     }
-    int batchSize = item.getSchemePayFor() + item.getSchemeFree();
-    int fullBatches = totalQty / batchSize;
-    int remainder = totalQty % batchSize;
-    return fullBatches * item.getSchemePayFor() + remainder;
+    if (item.getSchemeType() == SchemeType.FIXED_UNITS && item.getSchemePayFor() != null && item.getSchemePayFor() > 0
+        && item.getSchemeFree() != null && item.getSchemeFree() >= 0) {
+      BigDecimal payFor = BigDecimal.valueOf(item.getSchemePayFor());
+      BigDecimal free = BigDecimal.valueOf(item.getSchemeFree());
+      BigDecimal sum = payFor.add(free);
+      if (sum.compareTo(BigDecimal.ZERO) <= 0) return BigDecimal.valueOf(totalQty);
+      return BigDecimal.valueOf(totalQty).multiply(payFor).divide(sum, 4, java.math.RoundingMode.HALF_UP);
+    }
+    return BigDecimal.valueOf(totalQty);
+  }
+
+  /** @deprecated Use getBillableQuantityAsDecimalFromPurchaseItem for amount calculations. */
+  protected int getPaidQuantityFromPurchaseItem(PurchaseItem item) {
+    return getBillableQuantityAsDecimalFromPurchaseItem(item).setScale(0, java.math.RoundingMode.HALF_UP).intValue();
+  }
+
+  /** Effective selling price per unit for PurchaseItem. PERCENTAGE: sellingPrice * (1 - schemePercentage/100). */
+  protected BigDecimal getEffectiveSellingPriceFromPurchaseItem(PurchaseItem item) {
+    BigDecimal price = item.getSellingPrice() != null ? item.getSellingPrice() : BigDecimal.ZERO;
+    if (item.getSchemeType() == SchemeType.PERCENTAGE && item.getSchemePercentage() != null
+        && item.getSchemePercentage().signum() > 0) {
+      BigDecimal pct = item.getSchemePercentage();
+      return price.multiply(BigDecimal.ONE.subtract(pct.divide(BigDecimal.valueOf(100), 4, java.math.RoundingMode.HALF_UP)));
+    }
+    return price;
+  }
+
+  /** Billable quantity for PurchaseItem (decimal). */
+  protected BigDecimal getBillableQuantityFromPurchaseItemAsDecimal(PurchaseItem item) {
+    return getBillableQuantityAsDecimalFromPurchaseItem(item);
   }
 
   /** Cart item's additionalDiscount overrides inventory's when provided. */
@@ -221,16 +249,43 @@ public abstract class PurchaseMapper {
     return item.getAdditionalDiscount() != null ? item.getAdditionalDiscount() : inventory.getAdditionalDiscount();
   }
 
-  /** Paid quantity for scheme "pay for X, get Y free". Used for billing. */
-  protected int getPaidQuantityForCartItem(AddToCartRequest.CartItem item) {
+  /** Billable quantity as decimal for cart item. FIXED_UNITS: qty * schemePayFor/(schemePayFor+schemeFree). */
+  protected BigDecimal getBillableQuantityAsDecimalForCartItem(AddToCartRequest.CartItem item) {
     int totalQty = item.getQuantity() != null ? item.getQuantity() : 0;
-    if (item.getSchemePayFor() == null || item.getSchemePayFor() <= 0 || item.getSchemeFree() == null || item.getSchemeFree() < 0) {
-      return totalQty;
+    if (totalQty <= 0) return BigDecimal.ZERO;
+    if (item.getSchemeType() == SchemeType.PERCENTAGE) {
+      return BigDecimal.valueOf(totalQty);
     }
-    int batchSize = item.getSchemePayFor() + item.getSchemeFree();
-    int fullBatches = totalQty / batchSize;
-    int remainder = totalQty % batchSize;
-    return fullBatches * item.getSchemePayFor() + remainder;
+    if (item.getSchemePayFor() != null && item.getSchemePayFor() > 0
+        && item.getSchemeFree() != null && item.getSchemeFree() >= 0) {
+      BigDecimal payFor = BigDecimal.valueOf(item.getSchemePayFor());
+      BigDecimal free = BigDecimal.valueOf(item.getSchemeFree());
+      BigDecimal sum = payFor.add(free);
+      if (sum.compareTo(BigDecimal.ZERO) <= 0) return BigDecimal.valueOf(totalQty);
+      return BigDecimal.valueOf(totalQty).multiply(payFor).divide(sum, 4, java.math.RoundingMode.HALF_UP);
+    }
+    return BigDecimal.valueOf(totalQty);
+  }
+
+  /** @deprecated Use getBillableQuantityAsDecimalForCartItem for amount calculations. */
+  protected int getPaidQuantityForCartItem(AddToCartRequest.CartItem item) {
+    return getBillableQuantityAsDecimalForCartItem(item).setScale(0, java.math.RoundingMode.HALF_UP).intValue();
+  }
+
+  /** Effective selling price for cart item. PERCENTAGE: sellingPrice * (1 - schemePercentage/100). */
+  protected BigDecimal getEffectiveSellingPriceForCartItem(AddToCartRequest.CartItem item) {
+    BigDecimal price = item.getSellingPrice() != null ? item.getSellingPrice() : BigDecimal.ZERO;
+    if (item.getSchemeType() == SchemeType.PERCENTAGE && item.getSchemePercentage() != null
+        && item.getSchemePercentage().signum() > 0) {
+      BigDecimal pct = item.getSchemePercentage();
+      return price.multiply(BigDecimal.ONE.subtract(pct.divide(BigDecimal.valueOf(100), 4, java.math.RoundingMode.HALF_UP)));
+    }
+    return price;
+  }
+
+  /** Billable quantity for cart item (decimal). */
+  protected BigDecimal getBillableQuantityForCartItemAsDecimal(AddToCartRequest.CartItem item) {
+    return getBillableQuantityAsDecimalForCartItem(item);
   }
 
   // Helper method to calculate discount: maximumRetailPrice - sellingPrice
@@ -244,19 +299,13 @@ public abstract class PurchaseMapper {
 
   /**
    * Calculate totalAmount for a purchase item.
-   * Formula:
-   * 1. Apply additionalDiscount to sellingPrice: sellingPrice * (1 - additionalDiscount/100)
-   * 2. Multiply by quantity
-   * 3. Add CGST and SGST: totalDiscountedAmount * (1 + cgst/100 + sgst/100)
-   * 
-   * @param shopId used to fetch shop-level CGST/SGST if inventory rates are null
+   * @param billableQuantity can be fractional (e.g. for FIXED_UNITS scheme applied as ratio).
    */
-  protected BigDecimal calculateTotalAmount(BigDecimal sellingPrice, BigDecimal additionalDiscount, 
-                                            Integer quantity, String cgst, String sgst, String shopId) {
-    if (sellingPrice == null || quantity == null || quantity <= 0) {
+  protected BigDecimal calculateTotalAmount(BigDecimal sellingPrice, BigDecimal additionalDiscount,
+                                            BigDecimal billableQuantity, String cgst, String sgst, String shopId) {
+    if (sellingPrice == null || billableQuantity == null || billableQuantity.compareTo(BigDecimal.ZERO) <= 0) {
       return BigDecimal.ZERO;
     }
-    
     // Step 1: Calculate discounted selling price per unit
     BigDecimal discountedPricePerUnit = sellingPrice;
     if (additionalDiscount != null && additionalDiscount.compareTo(BigDecimal.ZERO) > 0) {
@@ -265,9 +314,8 @@ public abstract class PurchaseMapper {
       );
       discountedPricePerUnit = sellingPrice.multiply(discountMultiplier);
     }
-    
-    // Step 2: Multiply by quantity
-    BigDecimal totalDiscountedAmount = discountedPricePerUnit.multiply(BigDecimal.valueOf(quantity));
+    // Step 2: Multiply by billable quantity (can be fractional)
+    BigDecimal totalDiscountedAmount = discountedPricePerUnit.multiply(billableQuantity);
     
     // Step 3: Add CGST and SGST - use shop-level rates if inventory rates are null
     String finalCgst = cgst;
@@ -308,6 +356,13 @@ public abstract class PurchaseMapper {
     
     BigDecimal totalAmount = totalDiscountedAmount.multiply(taxMultiplier);
     return totalAmount.setScale(2, java.math.RoundingMode.HALF_UP);
+  }
+
+  /** Overload for integer quantity (e.g. CheckoutRequest, createPurchaseItemWithTotal). */
+  protected BigDecimal calculateTotalAmount(BigDecimal sellingPrice, BigDecimal additionalDiscount,
+                                            Integer quantity, String cgst, String sgst, String shopId) {
+    if (quantity == null) return BigDecimal.ZERO;
+    return calculateTotalAmount(sellingPrice, additionalDiscount, BigDecimal.valueOf(quantity), cgst, sgst, shopId);
   }
 
   // Helper method to generate invoice number (moved from service)

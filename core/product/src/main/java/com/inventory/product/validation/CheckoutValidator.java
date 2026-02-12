@@ -2,6 +2,7 @@ package com.inventory.product.validation;
 
 import com.inventory.common.exception.ValidationException;
 import com.inventory.product.domain.model.PurchaseStatus;
+import com.inventory.product.domain.model.SchemeType;
 import com.inventory.product.rest.dto.sale.AddToCartRequest;
 import com.inventory.product.rest.dto.sale.CheckoutRequest;
 import com.inventory.product.rest.dto.sale.UpdatePurchaseStatusRequest;
@@ -54,9 +55,10 @@ public class CheckoutValidator {
       throw new ValidationException("ID is required for item");
     }
     // Quantity may be null or 0 when only updating additionalDiscount, scheme, or sellingPrice (item must already be in cart)
+    boolean hasSchemeChange = item.getSchemePayFor() != null || item.getSchemeFree() != null
+        || item.getSchemeType() != null || item.getSchemePercentage() != null;
     boolean updateOnly = (item.getQuantity() == null || item.getQuantity() == 0)
-        && (item.getAdditionalDiscount() != null || item.getSchemePayFor() != null || item.getSchemeFree() != null
-            || item.getSellingPrice() != null);
+        && (item.getAdditionalDiscount() != null || hasSchemeChange || item.getSellingPrice() != null);
     if (!updateOnly) {
       if (item.getQuantity() == null || item.getQuantity() == 0) {
         throw new ValidationException("Quantity is required for item: " + item.getId());
@@ -79,12 +81,25 @@ public class CheckoutValidator {
         throw new ValidationException("Additional discount for item " + item.getId() + " must be between 0 and 100");
       }
     }
-    // Scheme: when provided, schemePayFor must be > 0 and schemeFree must be >= 0 (e.g. "2 free on 10" = payFor 10, free 2)
-    if (item.getSchemePayFor() != null && item.getSchemePayFor() <= 0) {
-      throw new ValidationException("Scheme pay-for for item " + item.getId() + " must be greater than zero");
-    }
-    if (item.getSchemeFree() != null && item.getSchemeFree() < 0) {
-      throw new ValidationException("Scheme free units for item " + item.getId() + " must be zero or greater");
+    // Scheme validation:
+    // - When schemeType is PERCENTAGE, schemePercentage must be between 0 and 100 (inclusive).
+    // - Otherwise, when schemePayFor / schemeFree are provided, they must be valid.
+    if (item.getSchemeType() == SchemeType.PERCENTAGE) {
+      if (item.getSchemePercentage() == null) {
+        throw new ValidationException("Scheme percentage is required when schemeType is PERCENTAGE for item: " + item.getId());
+      }
+      if (item.getSchemePercentage().compareTo(BigDecimal.ZERO) < 0
+          || item.getSchemePercentage().compareTo(BigDecimal.valueOf(100)) > 0) {
+        throw new ValidationException("Scheme percentage for item " + item.getId() + " must be between 0 and 100 (inclusive)");
+      }
+    } else {
+      // Scheme: when provided, schemePayFor must be > 0 and schemeFree must be >= 0 (e.g. "2 free on 10" = payFor 10, free 2)
+      if (item.getSchemePayFor() != null && item.getSchemePayFor() <= 0) {
+        throw new ValidationException("Scheme pay-for for item " + item.getId() + " must be greater than zero");
+      }
+      if (item.getSchemeFree() != null && item.getSchemeFree() < 0) {
+        throw new ValidationException("Scheme free units for item " + item.getId() + " must be zero or greater");
+      }
     }
   }
 
