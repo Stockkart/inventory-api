@@ -904,6 +904,36 @@ public class CheckoutService {
         .setScale(2, RoundingMode.HALF_UP);
   }
 
+  /**
+   * Set purchase-level margin breakdown: totalCost, revenueBeforeTax, totalProfit, marginPercent.
+   * revenueBeforeTax = subTotal − additionalDiscountTotal; totalProfit = revenueBeforeTax − totalCost.
+   */
+  private void setPurchaseMarginDetails(Purchase purchase) {
+    if (purchase == null || purchase.getItems() == null || purchase.getItems().isEmpty()) {
+      return;
+    }
+    BigDecimal totalCost = purchase.getItems().stream()
+        .map(item -> item.getCostTotal() != null ? item.getCostTotal() : BigDecimal.ZERO)
+        .reduce(BigDecimal.ZERO, BigDecimal::add)
+        .setScale(2, RoundingMode.HALF_UP);
+    purchase.setTotalCost(totalCost);
+    BigDecimal subTotal = purchase.getSubTotal() != null ? purchase.getSubTotal() : BigDecimal.ZERO;
+    BigDecimal additionalDiscountTotal = purchase.getAdditionalDiscountTotal() != null ? purchase.getAdditionalDiscountTotal() : BigDecimal.ZERO;
+    BigDecimal revenueBeforeTax = subTotal.subtract(additionalDiscountTotal).setScale(2, RoundingMode.HALF_UP);
+    purchase.setRevenueBeforeTax(revenueBeforeTax);
+    BigDecimal revenueAfterTax = purchase.getGrandTotal() != null ? purchase.getGrandTotal() : BigDecimal.ZERO;
+    purchase.setRevenueAfterTax(revenueAfterTax.setScale(2, RoundingMode.HALF_UP));
+    BigDecimal totalProfit = revenueBeforeTax.subtract(totalCost).setScale(2, RoundingMode.HALF_UP);
+    purchase.setTotalProfit(totalProfit);
+    if (revenueBeforeTax.compareTo(BigDecimal.ZERO) > 0) {
+      BigDecimal marginPercent = totalProfit.multiply(BigDecimal.valueOf(100))
+          .divide(revenueBeforeTax, 2, RoundingMode.HALF_UP);
+      purchase.setMarginPercent(marginPercent);
+    } else {
+      purchase.setMarginPercent(null);
+    }
+  }
+
   private Purchase createCart(AddToCartRequest request, List<PurchaseItem> purchaseItems, String shopId, String userId, String customerId, String customerName) {
     try {
       // Calculate totals
@@ -923,7 +953,8 @@ public class CheckoutService {
       purchase.setSgstAmount(taxResult.getSgstAmount());
       purchase.setCgstAmount(taxResult.getCgstAmount());
       purchase.setAdditionalDiscountTotal(additionalDiscountTotal);
-      
+      setPurchaseMarginDetails(purchase);
+
       if (StringUtils.hasText(customerName)) {
         purchase.setCustomerName(customerName);
       }
@@ -1046,11 +1077,13 @@ public class CheckoutService {
             }
             updatedItem.setSgst(existingItem.getSgst());
             updatedItem.setCgst(existingItem.getCgst());
+            updatedItem.setCostPrice(existingItem.getCostPrice());
             BigDecimal effectivePrice = getEffectiveSellingPricePerUnit(updatedItem);
             BigDecimal billableQty = getBillableQuantityAsDecimal(updatedItem);
             BigDecimal totalAmount = calculateItemTotalAmount(effectivePrice, additionalDiscount, billableQty,
                                                               existingItem.getCgst(), existingItem.getSgst());
             updatedItem.setTotalAmount(totalAmount);
+            purchaseMapper.enrichPurchaseItemMargin(updatedItem);
             mergedItems.set(i, updatedItem);
             found = true;
             break;
@@ -1101,6 +1134,7 @@ public class CheckoutService {
       existingCart.setGrandTotal(newSubTotal
           .add(taxResult.getTaxTotal())
           .subtract(additionalDiscountTotal));
+      setPurchaseMarginDetails(existingCart);
 
       // If cart is empty after updates, we can either delete it or keep it with empty items
       // For now, we'll keep it with empty items (status remains CREATED)

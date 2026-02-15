@@ -71,8 +71,9 @@ public abstract class PurchaseMapper {
   @Mapping(target = "totalAmount", expression = "java(calculateTotalAmount(item.getSellingPrice(), inventory.getAdditionalDiscount(), item.getQuantity(), inventory.getCgst(), inventory.getSgst(), inventory.getShopId()))")
   @Mapping(target = "sgst", source = "inventory.sgst")
   @Mapping(target = "cgst", source = "inventory.cgst")
+  @Mapping(target = "costPrice", source = "inventory.costPrice")
   public abstract PurchaseItem toPurchaseItem(CheckoutRequest.CheckoutItem item, Inventory inventory);
-  
+
   @AfterMapping
   protected void setShopTaxRatesIfNullForCheckout(@MappingTarget PurchaseItem purchaseItem, Inventory inventory) {
     // If CGST/SGST are null, use shop-level rates
@@ -100,6 +101,7 @@ public abstract class PurchaseMapper {
         });
       }
     }
+    enrichPurchaseItemMargin(purchaseItem);
   }
 
   @Mapping(target = "inventoryId", source = "item.id")
@@ -116,8 +118,9 @@ public abstract class PurchaseMapper {
   @Mapping(target = "schemePayFor", source = "item.schemePayFor")
   @Mapping(target = "schemeFree", source = "item.schemeFree")
   @Mapping(target = "schemePercentage", source = "item.schemePercentage")
+  @Mapping(target = "costPrice", source = "inventory.costPrice")
   public abstract PurchaseItem toPurchaseItemFromCartItem(AddToCartRequest.CartItem item, Inventory inventory);
-  
+
   @AfterMapping
   protected void setDefaultSchemeFromInventoryWhenFirstAdd(@MappingTarget PurchaseItem purchaseItem,
                                                            AddToCartRequest.CartItem item, Inventory inventory) {
@@ -161,6 +164,12 @@ public abstract class PurchaseMapper {
           inventory.getShopId()
       ));
     }
+    enrichPurchaseItemMargin(purchaseItem);
+  }
+
+  @AfterMapping
+  protected void enrichPurchaseItemMarginFromCart(@MappingTarget PurchaseItem purchaseItem, AddToCartRequest.CartItem item, Inventory inventory) {
+    enrichPurchaseItemMargin(purchaseItem);
   }
 
   private static int gcd(int a, int b) {
@@ -242,6 +251,51 @@ public abstract class PurchaseMapper {
   /** Billable quantity for PurchaseItem (decimal). */
   protected BigDecimal getBillableQuantityFromPurchaseItemAsDecimal(PurchaseItem item) {
     return getBillableQuantityAsDecimalFromPurchaseItem(item);
+  }
+
+  /**
+   * Compute and set margin breakdown on a purchase item: costTotal, profit, marginPercent.
+   * Uses costPrice × billableQty for cost; revenue before tax = totalAmount / (1 + tax rates); profit = revenue − cost.
+   */
+  public void enrichPurchaseItemMargin(PurchaseItem item) {
+    if (item == null || item.getCostPrice() == null) {
+      return;
+    }
+    Integer billableQty = item.getQuantity();
+    BigDecimal costTotal = item.getCostPrice().multiply(new BigDecimal(billableQty)).setScale(2, java.math.RoundingMode.HALF_UP);
+    item.setCostTotal(costTotal);
+
+    BigDecimal totalAmount = item.getTotalAmount();
+    if (totalAmount == null || totalAmount.compareTo(BigDecimal.ZERO) <= 0) {
+      item.setProfit(BigDecimal.ZERO);
+      item.setMarginPercent(null);
+      return;
+    }
+    BigDecimal taxMultiplier = BigDecimal.ONE;
+    if (item.getCgst() != null && !item.getCgst().trim().isEmpty()) {
+      try {
+        BigDecimal cgstRate = new BigDecimal(item.getCgst().trim()).divide(BigDecimal.valueOf(100), 4, java.math.RoundingMode.HALF_UP);
+        taxMultiplier = taxMultiplier.add(cgstRate);
+      } catch (NumberFormatException ignored) { }
+    }
+    if (item.getSgst() != null && !item.getSgst().trim().isEmpty()) {
+      try {
+        BigDecimal sgstRate = new BigDecimal(item.getSgst().trim()).divide(BigDecimal.valueOf(100), 4, java.math.RoundingMode.HALF_UP);
+        taxMultiplier = taxMultiplier.add(sgstRate);
+      } catch (NumberFormatException ignored) { }
+    }
+    if (taxMultiplier.compareTo(BigDecimal.ZERO) <= 0) {
+      taxMultiplier = BigDecimal.ONE;
+    }
+    BigDecimal revenueBeforeTax = totalAmount.divide(taxMultiplier, 2, java.math.RoundingMode.HALF_UP);
+    BigDecimal profit = revenueBeforeTax.subtract(costTotal).setScale(2, java.math.RoundingMode.HALF_UP);
+    item.setProfit(profit);
+    if (revenueBeforeTax.compareTo(BigDecimal.ZERO) > 0) {
+      BigDecimal marginPercent = profit.multiply(BigDecimal.valueOf(100)).divide(revenueBeforeTax, 2, java.math.RoundingMode.HALF_UP);
+      item.setMarginPercent(marginPercent);
+    } else {
+      item.setMarginPercent(null);
+    }
   }
 
   /** Cart item's additionalDiscount overrides inventory's when provided. */

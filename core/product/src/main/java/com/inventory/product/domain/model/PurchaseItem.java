@@ -21,6 +21,14 @@ public class PurchaseItem {
   private BigDecimal totalAmount; // Final amount after additionalDiscount and taxes (CGST + SGST)
   private String sgst; // SGST rate from inventory (e.g., "9" for 9%)
   private String cgst; // CGST rate from inventory (e.g., "9" for 9%)
+  /** Cost price per unit (from inventory at time of sale). Used for margin/profit breakdown. */
+  private BigDecimal costPrice;
+  /** Total cost for this line: costPrice × billable quantity. */
+  private BigDecimal costTotal;
+  /** Profit for this line: revenue before tax − costTotal. */
+  private BigDecimal profit;
+  /** Margin percentage on this line: (profit / revenue before tax) × 100. */
+  private BigDecimal marginPercent;
   /**
    * Scheme type for selling:
    * - FIXED_UNITS: use schemePayFor / schemeFree (e.g. "2 free on 10").
