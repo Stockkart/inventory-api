@@ -1,5 +1,8 @@
 package com.inventory.product.rest.dto.inventory;
 
+import com.inventory.product.domain.model.DiscountApplicable;
+import com.inventory.product.domain.model.ItemType;
+import com.inventory.product.domain.model.SchemeType;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -26,9 +29,15 @@ public class InventoryDetailResponse {
   String location;
   Instant expiryDate;
   String shopId;
+  ItemType itemType;
+  Integer itemTypeDegree;
+  DiscountApplicable discountApplicable;
+  Instant purchaseDate;
   String hsn;
   String batchNo;
+  SchemeType schemeType;
   Integer scheme;
+  BigDecimal schemePercentage;
   String sgst; // SGST rate (e.g., "9" for 9%)
   String cgst; // CGST rate (e.g., "9" for 9%)
 }

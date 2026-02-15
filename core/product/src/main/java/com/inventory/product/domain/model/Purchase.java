@@ -18,7 +18,6 @@ public class Purchase {
 
   @Id
   private String id;
-  private String invoiceId;
   private String invoiceNo;
   private String businessType;
   private String userId;
@@ -29,8 +28,18 @@ public class Purchase {
   private BigDecimal sgstAmount; // Calculated SGST amount
   private BigDecimal cgstAmount; // Calculated CGST amount
   private BigDecimal discountTotal;
-  private BigDecimal additionalDiscountTotal; // Total additional discount amount (calculated from percentage on selling price)
+  private BigDecimal additionalDiscountTotal;
   private BigDecimal grandTotal;
+  /** Margin breakdown: total cost (inventory cost price × quantities). */
+  private BigDecimal totalCost;
+  /** Revenue before tax (taxable value): subTotal − additionalDiscountTotal. */
+  private BigDecimal revenueBeforeTax;
+  /** Revenue after tax (total amount received): grandTotal. */
+  private BigDecimal revenueAfterTax;
+  /** Total profit: revenueBeforeTax − totalCost. */
+  private BigDecimal totalProfit;
+  /** Overall margin percentage: (totalProfit / revenueBeforeTax) × 100. */
+  private BigDecimal marginPercent;
   private Instant soldAt;
   private boolean valid;
   private String paymentMethod;
