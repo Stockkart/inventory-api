@@ -14,7 +14,6 @@ import java.util.List;
 @AllArgsConstructor
 public class AddToCartResponse {
   String purchaseId;
-  String invoiceId;
   String invoiceNo;
   String businessType;
   String userId;

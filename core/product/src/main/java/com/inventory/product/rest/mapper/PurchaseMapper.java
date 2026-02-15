@@ -43,7 +43,6 @@ public abstract class PurchaseMapper {
 
   // MongoDB will auto-generate the id as ObjectId
   @Mapping(target = "id", ignore = true)
-  @Mapping(target = "invoiceId", expression = "java(java.util.UUID.randomUUID().toString())")
   @Mapping(target = "soldAt", expression = "java(Instant.now())")
   @Mapping(target = "valid", constant = "true")
   @Mapping(target = "items", source = "purchaseItems")
@@ -419,13 +418,6 @@ public abstract class PurchaseMapper {
     return calculateTotalAmount(sellingPrice, additionalDiscount, BigDecimal.valueOf(quantity), cgst, sgst, shopId);
   }
 
-  // Helper method to generate invoice number (moved from service)
-  protected String generateInvoiceNo() {
-    String timestamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
-    String random = String.format("%04d", (int) (Math.random() * 10_000));
-    return "INV-" + timestamp + "-" + random;
-  }
-
   // Methods to create PurchaseItem
   public PurchaseItem createPurchaseItem(String inventoryId, String name, Integer quantity,
                                           BigDecimal maximumRetailPrice, BigDecimal sellingPrice, BigDecimal discount) {
@@ -466,8 +458,7 @@ public abstract class PurchaseMapper {
 
   // Method to create Purchase for cart
   @Mapping(target = "id", ignore = true)
-  @Mapping(target = "invoiceId", expression = "java(java.util.UUID.randomUUID().toString())")
-  @Mapping(target = "invoiceNo", expression = "java(generateInvoiceNo())")
+  @Mapping(target = "invoiceNo", ignore = true)
   @Mapping(target = "businessType", source = "request.businessType")
   @Mapping(target = "userId", source = "userId")
   @Mapping(target = "shopId", source = "shopId")
@@ -490,7 +481,6 @@ public abstract class PurchaseMapper {
 
   // Method to map Purchase to AddToCartResponse
   @Mapping(target = "purchaseId", source = "id")
-  @Mapping(target = "invoiceId", source = "invoiceId")
   @Mapping(target = "invoiceNo", source = "invoiceNo")
   @Mapping(target = "businessType", source = "businessType")
   @Mapping(target = "userId", source = "userId")
@@ -530,7 +520,6 @@ public abstract class PurchaseMapper {
   }
 
   // Method to map Purchase to CheckoutResponse
-  @Mapping(target = "invoiceId", source = "invoiceId")
   @Mapping(target = "invoiceNo", source = "invoiceNo")
   @Mapping(target = "businessType", source = "businessType")
   @Mapping(target = "userId", source = "userId")
@@ -568,7 +557,6 @@ public abstract class PurchaseMapper {
 
   // Method to map Purchase to PurchaseSummaryDto
   @Mapping(target = "purchaseId", source = "id")
-  @Mapping(target = "invoiceId", source = "invoiceId")
   @Mapping(target = "invoiceNo", source = "invoiceNo")
   @Mapping(target = "businessType", source = "businessType")
   @Mapping(target = "userId", source = "userId")

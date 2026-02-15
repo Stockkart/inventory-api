@@ -18,7 +18,6 @@ public class Purchase {
 
   @Id
   private String id;
-  private String invoiceId;
   private String invoiceNo;
   private String businessType;
   private String userId;

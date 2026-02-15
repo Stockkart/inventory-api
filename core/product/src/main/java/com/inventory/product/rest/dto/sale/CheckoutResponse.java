@@ -14,7 +14,6 @@ import java.util.List;
 @AllArgsConstructor
 public class CheckoutResponse {
   String purchaseId;
-  String invoiceId;
   String invoiceNo;
   String businessType;
   String userId;

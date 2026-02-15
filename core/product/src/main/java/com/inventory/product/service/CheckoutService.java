@@ -131,6 +131,8 @@ public class CheckoutService {
   @Autowired
   private InventoryMapper inventoryMapper;
 
+  @Autowired
+  private InvoiceSequenceService invoiceSequenceService;
 
   @Transactional
   public AddToCartResponse addToCart(AddToCartRequest request, HttpServletRequest httpRequest) {
@@ -948,7 +950,7 @@ public class CheckoutService {
       Purchase purchase = purchaseMapper.toPurchaseForCart(
           request, purchaseItems, subTotal, taxResult.getTaxTotal(), discountTotal, grandTotal, shopId, userId, customerId
       );
-      
+      purchase.setInvoiceNo(invoiceSequenceService.getNextInvoiceNo(shopId));
       // Set tax amounts, additional discount, and customerName
       purchase.setSgstAmount(taxResult.getSgstAmount());
       purchase.setCgstAmount(taxResult.getCgstAmount());

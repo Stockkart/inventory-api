@@ -15,7 +15,6 @@ import java.util.List;
 @AllArgsConstructor
 public class PurchaseSummaryDto {
   private String purchaseId;
-  private String invoiceId;
   private String invoiceNo;
   private String businessType;
   private String userId;
