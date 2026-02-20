@@ -12,9 +12,8 @@ import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.rest.dto.inventory.*;
+import com.inventory.product.service.InventoryPricingAdapter;
 import java.util.ArrayList;
-import com.inventory.user.domain.repository.ShopVendorRepository;
-import com.inventory.product.domain.repository.InventoryRepository.LotSummaryProjection;
 import com.inventory.product.rest.mapper.InventoryMapper;
 import com.inventory.product.validation.InventoryValidator;
 import lombok.extern.slf4j.Slf4j;
@@ -25,6 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
+
 
 import java.io.IOException;
 import java.time.Instant;
@@ -49,6 +49,9 @@ public class InventoryService {
 
   @Autowired
   private ReminderService reminderService;
+
+  @Autowired
+  private InventoryPricingAdapter InventoryPricingAdapter;
 
   @Autowired
   private com.inventory.user.service.VendorService vendorService;
@@ -146,34 +149,48 @@ public class InventoryService {
    * @return bulk creation response with created items
    */
   public BulkCreateInventoryResponse bulkCreate(BulkCreateInventoryRequest bulkRequest, String userId, String shopId) {
+
     List<InventoryReceiptResponse> createdItems = new ArrayList<>();
     int failedCount = 0;
-    
-    // Validate vendorId if provided
+
     if (StringUtils.hasText(bulkRequest.getVendorId())) {
       validateVendorId(bulkRequest.getVendorId(), shopId);
     }
-    
-    // Determine lotId: use provided lotId or generate new one
+
     String lotId = determineLotId(bulkRequest.getLotId(), shopId);
-    
-    log.info("Bulk creating {} inventory items with lotId: {} and vendorId: {}", 
-        bulkRequest.getItems() != null ? bulkRequest.getItems().size() : 0, 
-        lotId, bulkRequest.getVendorId());
-    
-    // Process each item
+
+    log.info("Bulk creating {} inventory items", bulkRequest.getItems() != null ? bulkRequest.getItems().size() : 0);
+
     if (bulkRequest.getItems() != null) {
+
       for (CreateInventoryItemRequest itemRequest : bulkRequest.getItems()) {
+
         try {
-          // Convert CreateInventoryItemRequest to CreateInventoryRequest
-          CreateInventoryRequest fullRequest = convertToCreateInventoryRequest(itemRequest, 
-              bulkRequest.getVendorId(), lotId);
-          
-          // Create inventory using existing create method
-          InventoryReceiptResponse response = create(fullRequest, userId, shopId);
-          createdItems.add(response);
+          CreateInventoryRequest fullRequest = convertToCreateInventoryRequest(itemRequest, bulkRequest.getVendorId(), lotId);
+
+          // Create inventory ONLY
+          InventoryReceiptResponse inventoryResponse = create(fullRequest, userId, shopId);
+
+          // Build pricing request
+          CreateInventoryPricingRequest pricingRequest =
+            inventoryMapper.toCreatePricingRequest(itemRequest);
+
+          // Call pricing module
+          String pricingId = InventoryPricingAdapter.createOrUpdatePricing(pricingRequest);
+
+          // Attach pricingId to inventory
+          Inventory inventory = inventoryRepository.findById(inventoryResponse.getId()).orElseThrow();
+
+          inventory.setPricingId(pricingId);
+          inventory.setUpdatedAt(Instant.now());
+          inventoryRepository.save(inventory);
+
+          createdItems.add(inventoryResponse);
+
         } catch (Exception e) {
-          log.error("Failed to create inventory item: {}", e.getMessage(), e);
+
+          log.error("Failed to create bulk inventory item: {}", e.getMessage(), e);
+
           failedCount++;
         }
       }

@@ -54,6 +54,16 @@ public interface InventoryMapper {
     return response;
   }
 
+  @Mapping(target = "maximumRetailPrice", source = "maximumRetailPrice")
+  @Mapping(target = "costPrice", source = "costPrice")
+  @Mapping(target = "sellingPrice", source = "sellingPrice")
+  @Mapping(target = "rates", source = "rates")
+  @Mapping(
+    target = "defaultPrice",
+    expression = "java(org.springframework.util.StringUtils.hasText(request.getDefaultPrice()) ? request.getDefaultPrice() : \"SELLING_PRICE\")"
+  )
+  CreateInventoryPricingRequest toCreatePricingRequest(CreateInventoryItemRequest request);
+
   @Mapping(target = "id", source = "id")
   @Mapping(target = "lotId", source = "lotId")
   @Mapping(target = "barcode", source = "barcode")

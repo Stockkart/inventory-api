@@ -11,7 +11,7 @@ import java.time.Instant;
 import java.util.List;
 
 @Repository
-public interface InventoryRepository extends MongoRepository<Inventory, String> {
+public interface InventoryRepository extends MongoRepository<Inventory, String>, InventoryPricingRepository   {
 
   List<Inventory> findByIdIn(List<String> ids);
 

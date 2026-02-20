@@ -20,6 +20,7 @@ public class InventorySummaryDto {
   BigDecimal maximumRetailPrice;
   BigDecimal costPrice;
   BigDecimal sellingPrice;
+  String pricingId;
   BigDecimal additionalDiscount;
   Integer receivedCount;
   Integer thresholdCount;
