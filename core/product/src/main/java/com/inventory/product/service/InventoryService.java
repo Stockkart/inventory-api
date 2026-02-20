@@ -8,6 +8,7 @@ import com.inventory.notifications.rest.dto.CreateReminderForInventoryRequest;
 import com.inventory.notifications.service.ReminderService;
 import com.inventory.ocr.service.InvoiceParserService;
 import com.inventory.product.domain.model.Inventory;
+import com.inventory.product.domain.model.SchemeType;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.ShopRepository;
@@ -27,6 +28,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -231,10 +234,16 @@ public class InventoryService {
     fullRequest.setCustomReminders(itemRequest.getCustomReminders());
     fullRequest.setHsn(itemRequest.getHsn());
     fullRequest.setBatchNo(itemRequest.getBatchNo());
+    fullRequest.setSchemeType(itemRequest.getSchemeType());
     fullRequest.setScheme(itemRequest.getScheme());
+    fullRequest.setSchemePercentage(itemRequest.getSchemePercentage());
     fullRequest.setSgst(itemRequest.getSgst());
     fullRequest.setCgst(itemRequest.getCgst());
-    
+    fullRequest.setItemType(itemRequest.getItemType());
+    fullRequest.setItemTypeDegree(itemRequest.getItemTypeDegree());
+    fullRequest.setDiscountApplicable(itemRequest.getDiscountApplicable());
+    fullRequest.setPurchaseDate(itemRequest.getPurchaseDate());
+
     // Set shared fields
     fullRequest.setVendorId(vendorId);
     fullRequest.setLotId(lotId);
@@ -264,11 +273,24 @@ public class InventoryService {
       inventory.setUserId(userId);
       inventory.setExpiryDate(request.getExpiryDate());
       inventory.setVendorId(request.getVendorId());
+      if (request.getPurchaseDate() != null) {
+        inventory.setPurchaseDate(request.getPurchaseDate());
+      } else {
+        inventory.setPurchaseDate(Instant.now());
+      }
 
-      // Total received = count (bill qty) + scheme (free). Same for initial currentCount.
+      // Total received = count (bill qty) + scheme free. For PERCENTAGE: free = count * schemePercentage/100.
       int billQty = request.getCount() != null ? request.getCount() : 0;
-      int schemeFree = request.getScheme() != null ? request.getScheme() : 0;
-      int totalReceived = billQty + schemeFree;
+      int schemeFreeUnits;
+      if (request.getSchemeType() == SchemeType.PERCENTAGE
+          && request.getSchemePercentage() != null && request.getSchemePercentage().signum() > 0) {
+        BigDecimal pct = request.getSchemePercentage();
+        schemeFreeUnits = pct.multiply(BigDecimal.valueOf(billQty))
+            .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP).intValue();
+      } else {
+        schemeFreeUnits = request.getScheme() != null ? request.getScheme() : 0;
+      }
+      int totalReceived = billQty + schemeFreeUnits;
       inventory.setReceivedCount(totalReceived);
       inventory.setCurrentCount(totalReceived);
 
@@ -720,6 +742,7 @@ public class InventoryService {
       }
 
       log.debug("Updating inventory with ID: {} for shop: {}", inventoryId, shopId);
+      inventoryValidator.validateUpdateRequest(request);
 
       // Find inventory
       Inventory inventory = inventoryRepository.findById(inventoryId)
@@ -740,6 +763,22 @@ public class InventoryService {
       if (request.getAdditionalDiscount() != null) {
         inventory.setAdditionalDiscount(request.getAdditionalDiscount());
         log.debug("Updating additionalDiscount to {} for inventory: {}", request.getAdditionalDiscount(), inventoryId);
+      }
+
+      if (request.getItemType() != null) {
+        inventory.setItemType(request.getItemType());
+        inventory.setItemTypeDegree(request.getItemTypeDegree());
+      }
+      if (request.getDiscountApplicable() != null) {
+        inventory.setDiscountApplicable(request.getDiscountApplicable());
+      }
+      if (request.getPurchaseDate() != null) {
+        inventory.setPurchaseDate(request.getPurchaseDate());
+      }
+      if (request.getSchemeType() != null) {
+        inventory.setSchemeType(request.getSchemeType());
+        inventory.setScheme(request.getScheme());
+        inventory.setSchemePercentage(request.getSchemePercentage());
       }
 
       // Update updatedAt timestamp

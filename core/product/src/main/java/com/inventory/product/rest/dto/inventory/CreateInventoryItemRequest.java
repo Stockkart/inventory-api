@@ -2,6 +2,9 @@ package com.inventory.product.rest.dto.inventory;
 
 import com.inventory.notifications.rest.dto.CustomReminderRequest;
 import com.inventory.product.domain.model.Rate;
+import com.inventory.product.domain.model.DiscountApplicable;
+import com.inventory.product.domain.model.ItemType;
+import com.inventory.product.domain.model.SchemeType;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -26,6 +29,10 @@ public class CreateInventoryItemRequest {
   private BigDecimal additionalDiscount; // Optional: Additional discount amount
   private String businessType;
   private String location;
+  private ItemType itemType;
+  private Integer itemTypeDegree;
+  private DiscountApplicable discountApplicable;
+  private Instant purchaseDate;
   private Integer count;
   private Integer thresholdCount;
   private Instant expiryDate;
@@ -35,8 +42,9 @@ public class CreateInventoryItemRequest {
   private String hsn;
   // Batch number (optional)
   private String batchNo;
-  // Scheme (optional): free units. Total stock = count + scheme.
+  private SchemeType schemeType;
   private Integer scheme;
+  private BigDecimal schemePercentage;
   // SGST rate (optional, e.g., "9" for 9%). Uses shop default if not provided.
   private String sgst;
   // CGST rate (optional, e.g., "9" for 9%). Uses shop default if not provided.

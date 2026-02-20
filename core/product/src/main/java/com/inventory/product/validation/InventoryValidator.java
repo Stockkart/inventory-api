@@ -1,9 +1,16 @@
 package com.inventory.product.validation;
 
 import com.inventory.common.exception.ValidationException;
+import com.inventory.product.domain.model.ItemType;
+import com.inventory.product.domain.model.SchemeType;
 import com.inventory.product.rest.dto.inventory.CreateInventoryRequest;
+import com.inventory.product.rest.dto.inventory.UpdateInventoryRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 
 @Component
 public class InventoryValidator {
@@ -21,8 +28,62 @@ public class InventoryValidator {
     if (request.getCount() == null || request.getCount() <= 0) {
       throw new ValidationException("Count must be greater than zero");
     }
-    if (request.getScheme() != null && request.getScheme() < 0) {
+    if (request.getSchemeType() == SchemeType.PERCENTAGE) {
+      if (request.getSchemePercentage() == null) {
+        throw new ValidationException("When schemeType is PERCENTAGE, schemePercentage is required");
+      }
+      if (request.getSchemePercentage().compareTo(BigDecimal.ZERO) < 0
+          || request.getSchemePercentage().compareTo(BigDecimal.valueOf(100)) > 0) {
+        throw new ValidationException("Scheme percentage must be between 0 and 100 (inclusive)");
+      }
+    } else if (request.getScheme() != null && request.getScheme() < 0) {
       throw new ValidationException("Scheme (free units) must be zero or greater");
+    }
+    if (request.getItemType() == ItemType.DEGREE
+        && (request.getItemTypeDegree() == null || request.getItemTypeDegree() <= 0)) {
+      throw new ValidationException("When itemType is DEGREE, itemTypeDegree must be present and greater than zero");
+    }
+    if (request.getPurchaseDate() != null) {
+      validatePurchaseDate(request.getPurchaseDate());
+    }
+  }
+
+  public void validateUpdateRequest(UpdateInventoryRequest request) {
+    if (request == null) {
+      return;
+    }
+    if (request.getItemType() == ItemType.DEGREE
+        && (request.getItemTypeDegree() == null || request.getItemTypeDegree() <= 0)) {
+      throw new ValidationException("When itemType is DEGREE, itemTypeDegree must be present and greater than zero");
+    }
+    if (request.getPurchaseDate() != null) {
+      validatePurchaseDate(request.getPurchaseDate());
+    }
+    if (request.getSchemeType() == SchemeType.PERCENTAGE) {
+      if (request.getSchemePercentage() == null) {
+        throw new ValidationException("When schemeType is PERCENTAGE, schemePercentage is required");
+      }
+      if (request.getSchemePercentage().compareTo(BigDecimal.ZERO) < 0
+          || request.getSchemePercentage().compareTo(BigDecimal.valueOf(100)) > 0) {
+        throw new ValidationException("Scheme percentage must be between 0 and 100 (inclusive)");
+      }
+    } else if (request.getScheme() != null && request.getScheme() < 0) {
+      throw new ValidationException("Scheme (free units) must be zero or greater");
+    }
+  }
+
+  /**
+   * Purchase date must be within 30 days in the past and not more than 30 days in the future.
+   */
+  private void validatePurchaseDate(Instant purchaseDate) {
+    Instant now = Instant.now();
+    Instant minAllowed = now.minus(30, ChronoUnit.DAYS);
+    Instant maxAllowed = now.plus(30, ChronoUnit.DAYS);
+    if (purchaseDate.isBefore(minAllowed)) {
+      throw new ValidationException("Purchase date must not be older than 30 days");
+    }
+    if (purchaseDate.isAfter(maxAllowed)) {
+      throw new ValidationException("Purchase date must not be more than 30 days in the future");
     }
   }
 

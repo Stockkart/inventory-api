@@ -15,7 +15,6 @@ import java.util.List;
 @AllArgsConstructor
 public class PurchaseSummaryDto {
   private String purchaseId;
-  private String invoiceId;
   private String invoiceNo;
   private String businessType;
   private String userId;
@@ -28,6 +27,11 @@ public class PurchaseSummaryDto {
   private BigDecimal discountTotal;
   private BigDecimal additionalDiscountTotal; // Total additional discount amount
   private BigDecimal grandTotal;
+  private BigDecimal totalCost;       // Margin: total cost (inventory cost × quantities)
+  private BigDecimal revenueBeforeTax; // Margin: subTotal − additionalDiscountTotal
+  private BigDecimal revenueAfterTax;  // Margin: grandTotal (total received including tax)
+  private BigDecimal totalProfit;     // Margin: revenueBeforeTax − totalCost
+  private BigDecimal marginPercent;   // Margin: (totalProfit / revenueBeforeTax) × 100
   private Instant soldAt;
   private PurchaseStatus status;
   private String paymentMethod;
