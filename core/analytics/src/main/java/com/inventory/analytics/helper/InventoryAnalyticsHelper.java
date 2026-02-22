@@ -59,9 +59,9 @@ public class InventoryAnalyticsHelper {
           dto.setLocation(inv.getLocation());
 
           // Stock levels
-          Integer received = inv.getReceivedCount() != null ? inv.getReceivedCount() : 0;
-          Integer sold = inv.getSoldCount() != null ? inv.getSoldCount() : 0;
-          Integer current = inv.getCurrentCount() != null ? inv.getCurrentCount() : 0;
+          Integer received = getReceivedBaseCount(inv);
+          Integer sold = getSoldBaseCount(inv);
+          Integer current = getCurrentBaseCount(inv);
 
           dto.setReceivedCount(received);
           dto.setSoldCount(sold);
@@ -235,6 +235,54 @@ public class InventoryAnalyticsHelper {
     }
 
     return turnover;
+  }
+
+  private int getCurrentBaseCount(Inventory inventory) {
+    if (inventory.getCurrentBaseCount() != null) {
+      return inventory.getCurrentBaseCount();
+    }
+    if (inventory.getCurrentCount() != null) {
+      return inventory.getCurrentCount()
+          .multiply(BigDecimal.valueOf(getDisplayToBaseFactor(inventory)))
+          .setScale(0, RoundingMode.HALF_UP)
+          .intValue();
+    }
+    return 0;
+  }
+
+  private int getSoldBaseCount(Inventory inventory) {
+    if (inventory.getSoldBaseCount() != null) {
+      return inventory.getSoldBaseCount();
+    }
+    if (inventory.getSoldCount() != null) {
+      return inventory.getSoldCount()
+          .multiply(BigDecimal.valueOf(getDisplayToBaseFactor(inventory)))
+          .setScale(0, RoundingMode.HALF_UP)
+          .intValue();
+    }
+    return 0;
+  }
+
+  private int getReceivedBaseCount(Inventory inventory) {
+    if (inventory.getReceivedBaseCount() != null) {
+      return inventory.getReceivedBaseCount();
+    }
+    if (inventory.getReceivedCount() != null) {
+      return inventory.getReceivedCount()
+          .multiply(BigDecimal.valueOf(getDisplayToBaseFactor(inventory)))
+          .setScale(0, RoundingMode.HALF_UP)
+          .intValue();
+    }
+    return 0;
+  }
+
+  private int getDisplayToBaseFactor(Inventory inventory) {
+    if (inventory.getUnitConversions() == null
+        || inventory.getUnitConversions().getFactor() == null
+        || inventory.getUnitConversions().getFactor() <= 0) {
+      return 1;
+    }
+    return inventory.getUnitConversions().getFactor();
   }
 
   /**

@@ -8,7 +8,7 @@ import java.math.BigDecimal;
  */
 @Data
 public class InvoiceItem {
-  private Integer quantity;
+  private BigDecimal quantity;
   private String name;
   private String hsn;
   private String companyName;

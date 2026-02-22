@@ -3,12 +3,14 @@ package com.inventory.product.rest.dto.inventory;
 import com.inventory.product.domain.model.DiscountApplicable;
 import com.inventory.product.domain.model.ItemType;
 import com.inventory.product.domain.model.SchemeType;
+import com.inventory.product.domain.model.UnitConversion;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 
 @Data
 @NoArgsConstructor
@@ -23,9 +25,15 @@ public class InventoryDetailResponse {
   BigDecimal costPrice;
   BigDecimal sellingPrice;
   BigDecimal additionalDiscount;
-  Integer receivedCount;
-  Integer soldCount;
-  Integer currentCount;
+  BigDecimal receivedCount;
+  Integer receivedBaseCount;
+  BigDecimal soldCount;
+  Integer soldBaseCount;
+  BigDecimal currentCount;
+  Integer currentBaseCount;
+  String baseUnit;
+  UnitConversion unitConversions;
+  List<AvailableUnitDto> availableUnits;
   String location;
   Instant expiryDate;
   String shopId;

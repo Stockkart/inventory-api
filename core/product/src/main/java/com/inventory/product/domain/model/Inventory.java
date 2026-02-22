@@ -30,9 +30,22 @@ public class Inventory {
   private DiscountApplicable discountApplicable;
   /** Date when this inventory was purchased from vendor */
   private Instant purchaseDate;
-  private Integer receivedCount;
-  private Integer soldCount;
-  private Integer currentCount;
+  /** Display received count (conversion unit if configured, else baseUnit). */
+  private BigDecimal receivedCount;
+  /** Display sold count (conversion unit if configured, else baseUnit). */
+  private BigDecimal soldCount;
+  /** Display current count (conversion unit if configured, else baseUnit). */
+  private BigDecimal currentCount;
+  /** Canonical received quantity stored in baseUnit. */
+  private Integer receivedBaseCount;
+  /** Canonical sold quantity stored in baseUnit. */
+  private Integer soldBaseCount;
+  /** Canonical current quantity stored in baseUnit. */
+  private Integer currentBaseCount;
+  /** Base stock unit (e.g. TAB, ML, BOTTLE). Counts are stored in this unit. */
+  private String baseUnit;
+  /** Optional conversion where factor is base units in 1 sale/display unit. */
+  private UnitConversion unitConversions;
   private Integer thresholdCount;
   private Instant receivedDate;
   private Instant expiryDate;

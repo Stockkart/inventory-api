@@ -54,24 +54,38 @@ public class CheckoutValidator {
     if (!StringUtils.hasText(item.getId())) {
       throw new ValidationException("ID is required for item");
     }
+    if (StringUtils.hasText(item.getUnit()) && !item.getUnit().trim().toUpperCase().matches("^[A-Z0-9_]+$")) {
+      throw new ValidationException("Invalid unit for item: " + item.getId());
+    }
     // Quantity may be null or 0 when only updating additionalDiscount, scheme, or sellingPrice (item must already be in cart)
     boolean hasSchemeChange = item.getSchemePayFor() != null || item.getSchemeFree() != null
         || item.getSchemeType() != null || item.getSchemePercentage() != null;
+    boolean hasBaseQuantity = item.getBaseQuantity() != null && item.getBaseQuantity() != 0;
+    boolean hasQuantity = item.getQuantity() != null && item.getQuantity() != 0;
     boolean updateOnly = (item.getQuantity() == null || item.getQuantity() == 0)
+        && !hasBaseQuantity
         && (item.getAdditionalDiscount() != null || hasSchemeChange || item.getSellingPrice() != null);
     if (!updateOnly) {
-      if (item.getQuantity() == null || item.getQuantity() == 0) {
-        throw new ValidationException("Quantity is required for item: " + item.getId());
+      if (!hasQuantity && !hasBaseQuantity) {
+        throw new ValidationException("Quantity or baseQuantity is required for item: " + item.getId());
       }
-      if (Math.abs(item.getQuantity()) > MAX_QUANTITY) {
+      if (item.getQuantity() != null && Math.abs(item.getQuantity()) > MAX_QUANTITY) {
         throw new ValidationException("Maximum quantity per item is " + MAX_QUANTITY);
       }
+      if (item.getBaseQuantity() != null && item.getBaseQuantity() == 0) {
+        throw new ValidationException("baseQuantity cannot be zero for item: " + item.getId());
+      }
+      if (hasQuantity && hasBaseQuantity) {
+        int quantitySign = Integer.signum(item.getQuantity());
+        int baseQuantitySign = Integer.signum(item.getBaseQuantity());
+        if (quantitySign != baseQuantitySign) {
+          throw new ValidationException("quantity and baseQuantity must have same direction for item: " + item.getId());
+        }
+      }
     }
-    // Selling price is required when adding items (positive quantity); when provided (e.g. update-only) must be > 0
+    // Selling price is optional. When omitted for positive quantity, backend uses inventory default price
+    // for the selected sale unit. When provided, it must be > 0.
     if (item.getSellingPrice() != null && item.getSellingPrice().compareTo(BigDecimal.ZERO) <= 0) {
-      throw new ValidationException("Selling price must be greater than zero for item: " + item.getId());
-    }
-    if (item.getQuantity() != null && item.getQuantity() > 0 && item.getSellingPrice() == null) {
       throw new ValidationException("Selling price must be greater than zero for item: " + item.getId());
     }
     // additionalDiscount is optional; when provided it must be a valid percentage (0–100)
