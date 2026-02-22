@@ -86,9 +86,10 @@ public class SalesAnalyticsHelper {
           String inventoryId = item.getInventoryId();
           ProductSalesData data = productMap.getOrDefault(inventoryId, new ProductSalesData(inventoryId));
           
-          data.setQuantitySold(data.getQuantitySold() + (item.getQuantity() != null ? item.getQuantity() : 0));
-          BigDecimal itemRevenue = item.getSellingPrice() != null && item.getQuantity() != null
-              ? item.getSellingPrice().multiply(BigDecimal.valueOf(item.getQuantity()))
+          data.setQuantitySold(data.getQuantitySold() + getBaseQuantity(item));
+          BigDecimal pricingQuantity = getPricingQuantity(item);
+          BigDecimal itemRevenue = item.getSellingPrice() != null
+              ? item.getSellingPrice().multiply(pricingQuantity)
               : BigDecimal.ZERO;
           data.setTotalRevenue(data.getTotalRevenue().add(itemRevenue));
           data.setNumberOfSales(data.getNumberOfSales() + 1);
@@ -134,9 +135,10 @@ public class SalesAnalyticsHelper {
           String productName = item.getName() != null ? item.getName() : "Unknown";
           GroupSalesData data = productMap.getOrDefault(productName, new GroupSalesData(productName));
           
-          data.setQuantitySold(data.getQuantitySold() + (item.getQuantity() != null ? item.getQuantity() : 0));
-          BigDecimal itemRevenue = item.getSellingPrice() != null && item.getQuantity() != null
-              ? item.getSellingPrice().multiply(BigDecimal.valueOf(item.getQuantity()))
+          data.setQuantitySold(data.getQuantitySold() + getBaseQuantity(item));
+          BigDecimal pricingQuantity = getPricingQuantity(item);
+          BigDecimal itemRevenue = item.getSellingPrice() != null
+              ? item.getSellingPrice().multiply(pricingQuantity)
               : BigDecimal.ZERO;
           data.setTotalRevenue(data.getTotalRevenue().add(itemRevenue));
           data.setNumberOfSales(data.getNumberOfSales() + 1);
@@ -182,9 +184,10 @@ public class SalesAnalyticsHelper {
           String lotId = inventoryToLotId.getOrDefault(item.getInventoryId(), "Unknown");
           GroupSalesData data = lotMap.getOrDefault(lotId, new GroupSalesData(lotId));
           
-          data.setQuantitySold(data.getQuantitySold() + (item.getQuantity() != null ? item.getQuantity() : 0));
-          BigDecimal itemRevenue = item.getSellingPrice() != null && item.getQuantity() != null
-              ? item.getSellingPrice().multiply(BigDecimal.valueOf(item.getQuantity()))
+          data.setQuantitySold(data.getQuantitySold() + getBaseQuantity(item));
+          BigDecimal pricingQuantity = getPricingQuantity(item);
+          BigDecimal itemRevenue = item.getSellingPrice() != null
+              ? item.getSellingPrice().multiply(pricingQuantity)
               : BigDecimal.ZERO;
           data.setTotalRevenue(data.getTotalRevenue().add(itemRevenue));
           data.setNumberOfSales(data.getNumberOfSales() + 1);
@@ -231,9 +234,10 @@ public class SalesAnalyticsHelper {
           String companyName = inventoryToCompany.getOrDefault(item.getInventoryId(), "Unknown");
           GroupSalesData data = companyMap.getOrDefault(companyName, new GroupSalesData(companyName));
           
-          data.setQuantitySold(data.getQuantitySold() + (item.getQuantity() != null ? item.getQuantity() : 0));
-          BigDecimal itemRevenue = item.getSellingPrice() != null && item.getQuantity() != null
-              ? item.getSellingPrice().multiply(BigDecimal.valueOf(item.getQuantity()))
+          data.setQuantitySold(data.getQuantitySold() + getBaseQuantity(item));
+          BigDecimal pricingQuantity = getPricingQuantity(item);
+          BigDecimal itemRevenue = item.getSellingPrice() != null
+              ? item.getSellingPrice().multiply(pricingQuantity)
               : BigDecimal.ZERO;
           data.setTotalRevenue(data.getTotalRevenue().add(itemRevenue));
           data.setNumberOfSales(data.getNumberOfSales() + 1);
@@ -389,6 +393,29 @@ public class SalesAnalyticsHelper {
         aovChange,
         aovChangePercent
     );
+  }
+
+  private int getBaseQuantity(PurchaseItem item) {
+    if (item.getBaseQuantity() != null) {
+      return item.getBaseQuantity();
+    }
+    if (item.getQuantity() == null) {
+      return 0;
+    }
+    int factor = item.getUnitFactor() != null && item.getUnitFactor() > 0 ? item.getUnitFactor() : 1;
+    return item.getQuantity().multiply(BigDecimal.valueOf(factor)).setScale(0, RoundingMode.HALF_UP).intValue();
+  }
+
+  private BigDecimal getPricingQuantity(PurchaseItem item) {
+    if (item.getQuantity() != null) {
+      return item.getQuantity();
+    }
+    if (item.getBaseQuantity() != null) {
+      int factor = item.getUnitFactor() != null && item.getUnitFactor() > 0 ? item.getUnitFactor() : 1;
+      return BigDecimal.valueOf(item.getBaseQuantity())
+          .divide(BigDecimal.valueOf(factor), 4, RoundingMode.HALF_UP);
+    }
+    return BigDecimal.ZERO;
   }
 }
 

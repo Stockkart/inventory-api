@@ -6,11 +6,13 @@ import com.inventory.common.exception.InsufficientStockException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.product.domain.model.Inventory;
+import com.inventory.product.domain.model.AvailableUnit;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.product.domain.model.PurchaseStatus;
 import com.inventory.product.domain.model.SchemeType;
 import com.inventory.product.domain.model.Shop;
+import com.inventory.product.domain.model.UnitConversion;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.PurchaseRepository;
 import com.inventory.product.domain.repository.ShopRepository;
@@ -57,12 +59,12 @@ public class CheckoutService {
    * - No scheme: full quantity.
    */
   private BigDecimal getBillableQuantityAsDecimal(PurchaseItem item) {
-    int totalQty = item.getQuantity() != null ? item.getQuantity() : 0;
-    if (totalQty <= 0) {
+    BigDecimal totalQty = getQuantityAsPricingUnits(item);
+    if (totalQty.compareTo(BigDecimal.ZERO) <= 0) {
       return BigDecimal.ZERO;
     }
     if (item.getSchemeType() == SchemeType.PERCENTAGE) {
-      return BigDecimal.valueOf(totalQty);
+      return totalQty;
     }
     if (item.getSchemeType() == SchemeType.FIXED_UNITS && item.getSchemePayFor() != null && item.getSchemePayFor() > 0
         && item.getSchemeFree() != null && item.getSchemeFree() >= 0) {
@@ -70,11 +72,19 @@ public class CheckoutService {
       BigDecimal free = BigDecimal.valueOf(item.getSchemeFree());
       BigDecimal sum = payFor.add(free);
       if (sum.compareTo(BigDecimal.ZERO) <= 0) {
-        return BigDecimal.valueOf(totalQty);
+        return totalQty;
       }
-      return BigDecimal.valueOf(totalQty).multiply(payFor).divide(sum, 4, RoundingMode.HALF_UP);
+      return totalQty.multiply(payFor).divide(sum, 4, RoundingMode.HALF_UP);
     }
-    return BigDecimal.valueOf(totalQty);
+    return totalQty;
+  }
+
+  private BigDecimal getQuantityAsPricingUnits(PurchaseItem item) {
+    if (item.getBaseQuantity() != null && item.getUnitFactor() != null && item.getUnitFactor() > 0) {
+      return BigDecimal.valueOf(item.getBaseQuantity())
+          .divide(BigDecimal.valueOf(item.getUnitFactor()), 4, RoundingMode.HALF_UP);
+    }
+    return item.getQuantity() != null ? item.getQuantity() : BigDecimal.ZERO;
   }
 
   /**
@@ -175,7 +185,7 @@ public class CheckoutService {
       } else {
         // New cart: only items with quantity > 0 can be added; quantity-0 items are for updating discount on existing cart only
         List<PurchaseItem> itemsToAdd = newItems.stream()
-            .filter(i -> i.getQuantity() != null && i.getQuantity() > 0)
+            .filter(i -> i.getQuantity() != null && i.getQuantity().compareTo(BigDecimal.ZERO) > 0)
             .toList();
         if (itemsToAdd.isEmpty() && !newItems.isEmpty()) {
           throw new ValidationException(
@@ -625,12 +635,19 @@ public class CheckoutService {
           if (!shopId.equals(inventory.getShopId())) {
             throw new ValidationException("Inventory lot " + item.getId() + " does not belong to shop " + shopId);
           }
+          String saleUnit = normalizeSaleUnit(item.getUnit(), inventory);
+          int saleUnitFactor = getConversionFactorToBase(inventory, saleUnit);
+          int pricingFactor = getDisplayToBaseFactor(inventory);
+          int baseQuantity = resolveRequestedBaseQuantity(item, inventory, saleUnit, saleUnitFactor);
+          BigDecimal pricingQuantity = BigDecimal.valueOf(baseQuantity)
+              .divide(BigDecimal.valueOf(pricingFactor), 4, RoundingMode.HALF_UP);
+          BigDecimal maximumRetailPrice = inventory.getMaximumRetailPrice();
           // Pass null for sellingPrice when not in request so merge keeps existing line's price
           PurchaseItem purchaseItem = purchaseMapper.createPurchaseItem(
               item.getId(),
               inventory.getName(),
-              0,
-              inventory.getMaximumRetailPrice(),
+              pricingQuantity,
+              maximumRetailPrice,
               item.getSellingPrice(),
               BigDecimal.ZERO
           );
@@ -652,6 +669,10 @@ public class CheckoutService {
             if (item.getSchemeFree() != null) purchaseItem.setSchemeFree(item.getSchemeFree());
             purchaseItem.setSchemePercentage(null);
           }
+          purchaseItem.setSaleUnit(saleUnit);
+          purchaseItem.setBaseQuantity(baseQuantity);
+          purchaseItem.setUnitFactor(pricingFactor);
+          purchaseItem.setAvailableUnits(mapAvailableUnits(inventory));
           purchaseItems.add(purchaseItem);
         } else if (item.getQuantity() < 0) {
           // For negative quantities, we only need to verify the lotId exists and belongs to the shop
@@ -662,17 +683,29 @@ public class CheckoutService {
           if (!shopId.equals(inventory.getShopId())) {
             throw new ValidationException("Inventory lot " + item.getId() + " does not belong to shop " + shopId);
           }
+          String saleUnit = normalizeSaleUnit(item.getUnit(), inventory);
+          int factor = getConversionFactorToBase(inventory, saleUnit);
+          int pricingFactor = getDisplayToBaseFactor(inventory);
+          int saleQuantity = item.getQuantity();
+          int baseQuantity = toBaseQuantity(saleQuantity, factor);
+          BigDecimal pricingQuantity = BigDecimal.valueOf(baseQuantity)
+              .divide(BigDecimal.valueOf(pricingFactor), 4, RoundingMode.HALF_UP);
+          BigDecimal maximumRetailPrice = inventory.getMaximumRetailPrice();
 
           // For negative quantities, create a PurchaseItem with negative quantity
           // The updateCart method will handle the logic
           PurchaseItem purchaseItem = purchaseMapper.createPurchaseItem(
               item.getId(),
               inventory.getName(),
-              item.getQuantity(), // Negative quantity
-              inventory.getMaximumRetailPrice(),
+              pricingQuantity, // Negative quantity in pricing/display units
+              maximumRetailPrice,
               BigDecimal.ZERO, // Not used for negative quantities
               BigDecimal.ZERO
           );
+          purchaseItem.setSaleUnit(saleUnit);
+          purchaseItem.setBaseQuantity(baseQuantity);
+          purchaseItem.setUnitFactor(pricingFactor);
+          purchaseItem.setAvailableUnits(mapAvailableUnits(inventory));
           purchaseItems.add(purchaseItem);
         } else {
           // Positive quantity - normal flow with stock validation
@@ -683,17 +716,50 @@ public class CheckoutService {
           if (!shopId.equals(inventory.getShopId())) {
             throw new ValidationException("Inventory lot " + item.getId() + " does not belong to shop " + shopId);
           }
+          String saleUnit = normalizeSaleUnit(item.getUnit(), inventory);
+          int factor = getConversionFactorToBase(inventory, saleUnit);
+          int pricingFactor = getDisplayToBaseFactor(inventory);
+          int baseQuantity = resolveRequestedBaseQuantity(item, inventory, saleUnit, factor);
+          BigDecimal pricingQuantity = BigDecimal.valueOf(baseQuantity)
+              .divide(BigDecimal.valueOf(pricingFactor), 4, RoundingMode.HALF_UP);
+          BigDecimal maximumRetailPrice = inventory.getMaximumRetailPrice();
 
           // Check stock availability
-          int availableStock = inventory.getCurrentCount() != null ? inventory.getCurrentCount() : 0;
-          if (availableStock < item.getQuantity()) {
+          int availableStock = getCurrentBaseCount(inventory);
+          if (availableStock < baseQuantity) {
             throw new InsufficientStockException("Insufficient stock for product: " + inventory.getName(),
-                inventory.getBarcode(), availableStock, item.getQuantity());
+                inventory.getBarcode(), availableStock, baseQuantity);
           }
 
           // Use mapper to create PurchaseItem
           PurchaseItem purchaseItem = purchaseMapper.toPurchaseItemFromCartItem(item, inventory);
           normalizeSchemeFields(purchaseItem);
+          BigDecimal defaultSellingPrice = inventory.getSellingPrice();
+          BigDecimal sellingPrice = item.getSellingPrice() != null
+              ? item.getSellingPrice()
+              : defaultSellingPrice;
+          BigDecimal costPrice = inventory.getCostPrice();
+          purchaseItem.setQuantity(pricingQuantity);
+          purchaseItem.setMaximumRetailPrice(maximumRetailPrice);
+          purchaseItem.setSellingPrice(sellingPrice);
+          purchaseItem.setCostPrice(costPrice);
+          purchaseItem.setUnitFactor(pricingFactor);
+          BigDecimal perUnitDiscount = maximumRetailPrice
+              .subtract(sellingPrice != null ? sellingPrice : BigDecimal.ZERO);
+          if (perUnitDiscount.compareTo(BigDecimal.ZERO) > 0) {
+            purchaseItem.setDiscount(perUnitDiscount.multiply(getQuantityAsPricingUnits(purchaseItem)));
+          } else {
+            purchaseItem.setDiscount(BigDecimal.ZERO);
+          }
+          BigDecimal effectivePrice = getEffectiveSellingPricePerUnit(purchaseItem);
+          BigDecimal billableQty = getBillableQuantityAsDecimal(purchaseItem);
+          BigDecimal totalAmount = calculateItemTotalAmount(effectivePrice, purchaseItem.getAdditionalDiscount(), billableQty,
+              purchaseItem.getCgst(), purchaseItem.getSgst());
+          purchaseItem.setTotalAmount(totalAmount);
+          purchaseItem.setSaleUnit(saleUnit);
+          purchaseItem.setBaseQuantity(baseQuantity);
+          purchaseItem.setAvailableUnits(mapAvailableUnits(inventory));
+          purchaseMapper.enrichPurchaseItemMargin(purchaseItem);
           purchaseItems.add(purchaseItem);
         }
 
@@ -1030,23 +1096,105 @@ public class CheckoutService {
         for (int i = 0; i < mergedItems.size(); i++) {
           PurchaseItem existingItem = mergedItems.get(i);
           if (existingItem.getInventoryId().equals(newItem.getInventoryId())) {
+            String existingSaleUnit = existingItem.getSaleUnit() != null ? existingItem.getSaleUnit() : "UNIT";
+            String incomingSaleUnit = newItem.getSaleUnit() != null ? newItem.getSaleUnit() : existingSaleUnit;
+            if (!existingSaleUnit.equals(incomingSaleUnit)) {
+              Inventory inventory = inventoryRepository.findById(existingItem.getInventoryId())
+                  .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", existingItem.getInventoryId()));
+              int existingBaseQuantity = getBaseQuantityOrFallback(existingItem);
+              int incomingBaseQuantity = getBaseQuantityOrFallback(newItem);
+              int switchBaseQuantity = incomingBaseQuantity > 0 ? incomingBaseQuantity : existingBaseQuantity;
+              int targetFactor = getConversionFactorToBase(inventory, incomingSaleUnit);
+              if (targetFactor > 1) {
+                int roundedWholeUnits = switchBaseQuantity / targetFactor;
+                if (roundedWholeUnits <= 0) {
+                  throw new ValidationException("Cannot switch from " + existingSaleUnit + " to " + incomingSaleUnit
+                      + " because quantity is less than one whole " + incomingSaleUnit);
+                }
+                switchBaseQuantity = roundedWholeUnits * targetFactor;
+              }
+              int pricingFactor = getDisplayToBaseFactor(inventory);
+              BigDecimal quantityForPricing = BigDecimal.valueOf(switchBaseQuantity)
+                  .divide(BigDecimal.valueOf(pricingFactor), 4, RoundingMode.HALF_UP);
+              BigDecimal sellingPrice = newItem.getSellingPrice() != null ? newItem.getSellingPrice() : existingItem.getSellingPrice();
+              BigDecimal maximumRetailPrice = inventory.getMaximumRetailPrice();
+              BigDecimal costPrice = inventory.getCostPrice();
+              BigDecimal perUnitDiscount = maximumRetailPrice.subtract(sellingPrice != null ? sellingPrice : BigDecimal.ZERO);
+
+              PurchaseItem switchedItem = purchaseMapper.createPurchaseItem(
+                  existingItem.getInventoryId(),
+                  existingItem.getName(),
+                  quantityForPricing,
+                  maximumRetailPrice,
+                  sellingPrice,
+                  perUnitDiscount.compareTo(BigDecimal.ZERO) > 0
+                      ? perUnitDiscount.multiply(quantityForPricing)
+                      : BigDecimal.ZERO
+              );
+              switchedItem.setAdditionalDiscount(newItem.getAdditionalDiscount() != null
+                  ? newItem.getAdditionalDiscount()
+                  : existingItem.getAdditionalDiscount());
+              SchemeType switchedSchemeType = newItem.getSchemeType() != null ? newItem.getSchemeType() : existingItem.getSchemeType();
+              switchedItem.setSchemeType(switchedSchemeType);
+              switchedItem.setSchemePercentage(newItem.getSchemePercentage() != null
+                  ? newItem.getSchemePercentage()
+                  : existingItem.getSchemePercentage());
+              if (switchedSchemeType == SchemeType.PERCENTAGE) {
+                switchedItem.setSchemePayFor(null);
+                switchedItem.setSchemeFree(null);
+              } else {
+                switchedItem.setSchemePayFor(newItem.getSchemePayFor() != null ? newItem.getSchemePayFor() : existingItem.getSchemePayFor());
+                switchedItem.setSchemeFree(newItem.getSchemeFree() != null ? newItem.getSchemeFree() : existingItem.getSchemeFree());
+                switchedItem.setSchemePercentage(null);
+              }
+              switchedItem.setSgst(existingItem.getSgst());
+              switchedItem.setCgst(existingItem.getCgst());
+              switchedItem.setCostPrice(costPrice);
+              switchedItem.setSaleUnit(incomingSaleUnit);
+              switchedItem.setBaseQuantity(switchBaseQuantity);
+              switchedItem.setUnitFactor(pricingFactor);
+              switchedItem.setAvailableUnits(mapAvailableUnits(inventory));
+              BigDecimal effectivePrice = getEffectiveSellingPricePerUnit(switchedItem);
+              BigDecimal billableQty = getBillableQuantityAsDecimal(switchedItem);
+              BigDecimal totalAmount = calculateItemTotalAmount(
+                  effectivePrice,
+                  switchedItem.getAdditionalDiscount(),
+                  billableQty,
+                  switchedItem.getCgst(),
+                  switchedItem.getSgst()
+              );
+              switchedItem.setTotalAmount(totalAmount);
+              purchaseMapper.enrichPurchaseItemMargin(switchedItem);
+
+              mergedItems.set(i, switchedItem);
+              found = true;
+              break;
+            }
             // Handle quantity update based on positive or negative
-            int newQuantity = existingItem.getQuantity() + newItem.getQuantity();
+            int existingBaseQuantity = getBaseQuantityOrFallback(existingItem);
+            int incomingBaseQuantity = getBaseQuantityOrFallback(newItem);
+            int newBaseQuantity = existingBaseQuantity + incomingBaseQuantity;
 
             // Case 3: If negative value is more negative or equal to current item quantity, remove the item
-            if (newQuantity <= 0) {
+            if (newBaseQuantity <= 0) {
               mergedItems.remove(i);
               found = true;
               break;
             }
 
             // Case 1 & 2: Update quantity (positive adds, negative decreases). Use payload sellingPrice when provided (update-only or add); for negative qty we only remove, keep existing price.
-            BigDecimal sellingPrice = (newItem.getQuantity() >= 0 && newItem.getSellingPrice() != null)
+            Inventory inventory = inventoryRepository.findById(existingItem.getInventoryId())
+                .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", existingItem.getInventoryId()));
+            BigDecimal sellingPrice = ((newItem.getQuantity() == null || newItem.getQuantity().compareTo(BigDecimal.ZERO) >= 0)
+                && newItem.getSellingPrice() != null)
                 ? newItem.getSellingPrice()
                 : existingItem.getSellingPrice();
+            int pricingFactor = existingItem.getUnitFactor() != null ? existingItem.getUnitFactor() : getDefaultFactor(inventory);
+            BigDecimal newQuantity = BigDecimal.valueOf(newBaseQuantity)
+                .divide(BigDecimal.valueOf(pricingFactor), 4, RoundingMode.HALF_UP);
             BigDecimal newDiscount = existingItem.getMaximumRetailPrice()
                 .subtract(sellingPrice)
-                .multiply(BigDecimal.valueOf(newQuantity));
+                .multiply(newQuantity);
             // Use payload additionalDiscount when provided (so changing discount updates the line); otherwise keep existing
             BigDecimal additionalDiscount = newItem.getAdditionalDiscount() != null
                 ? newItem.getAdditionalDiscount()
@@ -1056,12 +1204,14 @@ public class CheckoutService {
             Integer schemeFree = newItem.getSchemeFree() != null ? newItem.getSchemeFree() : existingItem.getSchemeFree();
             SchemeType schemeType = newItem.getSchemeType() != null ? newItem.getSchemeType() : existingItem.getSchemeType();
             BigDecimal schemePercentage = newItem.getSchemePercentage() != null ? newItem.getSchemePercentage() : existingItem.getSchemePercentage();
+            BigDecimal maximumRetailPrice = inventory.getMaximumRetailPrice();
+            BigDecimal costPrice = inventory.getCostPrice();
 
             PurchaseItem updatedItem = purchaseMapper.createPurchaseItem(
                 existingItem.getInventoryId(),
                 existingItem.getName(),
                 newQuantity,
-                existingItem.getMaximumRetailPrice(),
+                maximumRetailPrice,
                 sellingPrice,
                 newDiscount.compareTo(BigDecimal.ZERO) > 0 ? newDiscount : BigDecimal.ZERO
             );
@@ -1079,7 +1229,18 @@ public class CheckoutService {
             }
             updatedItem.setSgst(existingItem.getSgst());
             updatedItem.setCgst(existingItem.getCgst());
-            updatedItem.setCostPrice(existingItem.getCostPrice());
+            updatedItem.setCostPrice(costPrice);
+            updatedItem.setSaleUnit(existingSaleUnit);
+            updatedItem.setBaseQuantity(newBaseQuantity);
+            updatedItem.setUnitFactor(pricingFactor);
+            updatedItem.setAvailableUnits(mapAvailableUnits(inventory));
+            BigDecimal perUnitDiscount = maximumRetailPrice.subtract(
+                sellingPrice != null ? sellingPrice : BigDecimal.ZERO);
+            if (perUnitDiscount.compareTo(BigDecimal.ZERO) > 0) {
+              updatedItem.setDiscount(perUnitDiscount.multiply(getQuantityAsPricingUnits(updatedItem)));
+            } else {
+              updatedItem.setDiscount(BigDecimal.ZERO);
+            }
             BigDecimal effectivePrice = getEffectiveSellingPricePerUnit(updatedItem);
             BigDecimal billableQty = getBillableQuantityAsDecimal(updatedItem);
             BigDecimal totalAmount = calculateItemTotalAmount(effectivePrice, additionalDiscount, billableQty,
@@ -1092,11 +1253,11 @@ public class CheckoutService {
           }
         }
         // Case 1: If item not found and quantity is positive, add new item
-        if (!found && newItem.getQuantity() > 0) {
+        if (!found && getBaseQuantityOrFallback(newItem) > 0) {
           mergedItems.add(newItem);
         }
         // Case 2 & 3: If item not found and quantity is negative, throw error (can't remove what doesn't exist)
-        if (!found && newItem.getQuantity() < 0) {
+        if (!found && getBaseQuantityOrFallback(newItem) < 0) {
           throw new ValidationException("Cannot remove item with lotId " + newItem.getInventoryId() +
               " as it does not exist in the cart");
         }
@@ -1166,11 +1327,10 @@ public class CheckoutService {
     // Validate each new item
     for (PurchaseItem newItem : newItems) {
       // Only validate stock for positive quantities (adding items)
-      if (newItem.getQuantity() > 0) {
+      if (getBaseQuantityOrFallback(newItem) > 0) {
         PurchaseItem existingItem = existingItemsMap.get(newItem.getInventoryId());
-        int currentCartQuantity = existingItem != null ? existingItem.getQuantity() : 0;
-        int finalQuantity = currentCartQuantity + newItem.getQuantity();
-
+        int currentCartBaseQuantity = existingItem != null ? getBaseQuantityOrFallback(existingItem) : 0;
+        int addingBaseQuantity = getBaseQuantityOrFallback(newItem);
         // Get inventory to check available stock
         Inventory inventory = inventoryRepository.findById(newItem.getInventoryId())
             .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", newItem.getInventoryId()));
@@ -1180,18 +1340,244 @@ public class CheckoutService {
           throw new ValidationException("Inventory lot " + newItem.getInventoryId() + " does not belong to shop " + shopId);
         }
 
+        int finalBaseQuantity = currentCartBaseQuantity + addingBaseQuantity;
+        if (existingItem != null) {
+          String existingSaleUnit = existingItem.getSaleUnit() != null ? existingItem.getSaleUnit() : "UNIT";
+          String incomingSaleUnit = newItem.getSaleUnit() != null ? newItem.getSaleUnit() : existingSaleUnit;
+          if (!existingSaleUnit.equals(incomingSaleUnit)) {
+            int targetFactor = getConversionFactorToBase(inventory, incomingSaleUnit);
+            int requestedBase = addingBaseQuantity > 0 ? addingBaseQuantity : currentCartBaseQuantity;
+            if (targetFactor > 1) {
+              requestedBase = (requestedBase / targetFactor) * targetFactor;
+            }
+            finalBaseQuantity = requestedBase;
+          }
+        }
+
         // Check if final quantity exceeds available stock
-        int availableStock = inventory.getCurrentCount() != null ? inventory.getCurrentCount() : 0;
-        if (finalQuantity > availableStock) {
+        int availableStock = getCurrentBaseCount(inventory);
+        if (finalBaseQuantity > availableStock) {
           throw new InsufficientStockException(
               "Insufficient stock for product: " + inventory.getName() +
                   ". Available: " + availableStock +
-                  ", Requested final quantity in cart: " + finalQuantity +
-                  " (current in cart: " + currentCartQuantity + ", adding: " + newItem.getQuantity() + ")",
-              inventory.getBarcode(), availableStock, finalQuantity);
+                  ", Requested final quantity in base units: " + finalBaseQuantity +
+                  " (current in cart base units: " + currentCartBaseQuantity + ", adding base units: " + addingBaseQuantity + ")",
+              inventory.getBarcode(), availableStock, finalBaseQuantity);
         }
       }
     }
+  }
+
+  private String normalizeSaleUnit(String requestedUnit, Inventory inventory) {
+    if (StringUtils.hasText(requestedUnit)) {
+      return requestedUnit.trim().toUpperCase();
+    }
+    UnitConversion conversion = getConfiguredUnitConversion(inventory);
+    if (conversion != null && StringUtils.hasText(conversion.getUnit())) {
+      return conversion.getUnit().trim().toUpperCase();
+    }
+    if (StringUtils.hasText(inventory.getBaseUnit())) {
+      return inventory.getBaseUnit().trim().toUpperCase();
+    }
+    return "UNIT";
+  }
+
+  private int resolveSaleQuantity(Integer requestedQuantity, String requestedUnit, Inventory inventory, String saleUnit) {
+    return requestedQuantity != null ? requestedQuantity : 0;
+  }
+
+  private int resolveRequestedBaseQuantity(AddToCartRequest.CartItem item, Inventory inventory, String saleUnit, int defaultFactor) {
+    if (item.getBaseQuantity() != null && item.getBaseQuantity() > 0) {
+      return item.getBaseQuantity();
+    }
+    if (item.getQuantity() == null) {
+      return 0;
+    }
+    if (!StringUtils.hasText(item.getUnit())) {
+      return toBaseQuantity(item.getQuantity(), defaultFactor);
+    }
+    int factor = getConversionFactorToBase(inventory, saleUnit);
+    return toBaseQuantity(item.getQuantity(), factor);
+  }
+
+  private int getDefaultFactor(Inventory inventory) {
+    UnitConversion conversion = getConfiguredUnitConversion(inventory);
+    if (conversion == null) {
+      return 1;
+    }
+    if (conversion.getFactor() <= 0) {
+      throw new ValidationException("Invalid unit conversion factor configured for product " + inventory.getName());
+    }
+    return conversion.getFactor();
+  }
+
+  private BigDecimal resolveMaximumRetailPriceForSaleUnit(Inventory inventory, String saleUnit) {
+    BigDecimal maximumRetailPrice = inventory.getMaximumRetailPrice() != null
+        ? inventory.getMaximumRetailPrice()
+        : BigDecimal.ZERO;
+    UnitConversion conversion = getConfiguredUnitConversion(inventory);
+    if (conversion == null) {
+      return maximumRetailPrice;
+    }
+    String conversionUnit = conversion.getUnit().trim().toUpperCase();
+    int factor = conversion.getFactor();
+    if (factor <= 0) {
+      throw new ValidationException("Invalid unit conversion factor configured for product " + inventory.getName());
+    }
+    String baseUnit = StringUtils.hasText(inventory.getBaseUnit())
+        ? inventory.getBaseUnit().trim().toUpperCase()
+        : "UNIT";
+    if (saleUnit.equals(conversionUnit)) {
+      return maximumRetailPrice;
+    }
+    if (saleUnit.equals(baseUnit)) {
+      return maximumRetailPrice.divide(BigDecimal.valueOf(factor), 2, RoundingMode.HALF_UP);
+    }
+    throw new ValidationException("Unit " + saleUnit + " is not configured for product " + inventory.getName());
+  }
+
+  private BigDecimal normalizePriceForSaleUnit(BigDecimal price, Inventory inventory, String saleUnit) {
+    if (price == null) {
+      return null;
+    }
+    UnitConversion conversion = getConfiguredUnitConversion(inventory);
+    if (conversion == null) {
+      return price;
+    }
+    int factor = conversion.getFactor();
+    if (factor <= 0) {
+      throw new ValidationException("Invalid unit conversion factor configured for product " + inventory.getName());
+    }
+    String conversionUnit = conversion.getUnit().trim().toUpperCase();
+    String baseUnit = StringUtils.hasText(inventory.getBaseUnit())
+        ? inventory.getBaseUnit().trim().toUpperCase()
+        : "UNIT";
+    if (saleUnit.equals(conversionUnit)) {
+      return price;
+    }
+    if (saleUnit.equals(baseUnit)) {
+      return price.divide(BigDecimal.valueOf(factor), 2, RoundingMode.HALF_UP);
+    }
+    throw new ValidationException("Unit " + saleUnit + " is not configured for product " + inventory.getName());
+  }
+
+  private UnitConversion getConfiguredUnitConversion(Inventory inventory) {
+    UnitConversion conversion = inventory.getUnitConversions();
+    if (conversion == null) {
+      return null;
+    }
+    if (!StringUtils.hasText(conversion.getUnit()) || conversion.getFactor() == null) {
+      return null;
+    }
+    return conversion;
+  }
+
+  private int getConversionFactorToBase(Inventory inventory, String saleUnit) {
+    String baseUnit = StringUtils.hasText(inventory.getBaseUnit())
+        ? inventory.getBaseUnit().trim().toUpperCase()
+        : "UNIT";
+    if (baseUnit.equals(saleUnit)) {
+      return 1;
+    }
+    UnitConversion conversion = getConfiguredUnitConversion(inventory);
+    if (conversion != null
+        && saleUnit.equals(conversion.getUnit().trim().toUpperCase())) {
+      if (conversion.getFactor() <= 0) {
+        throw new ValidationException("Invalid unit conversion factor configured for unit: " + saleUnit);
+      }
+      return conversion.getFactor();
+    }
+    throw new ValidationException("Unit " + saleUnit + " is not configured for product " + inventory.getName());
+  }
+
+  private int toBaseQuantity(Integer quantity, int factor) {
+    try {
+      return Math.multiplyExact(quantity, factor);
+    } catch (ArithmeticException e) {
+      throw new ValidationException("Quantity is too large after unit conversion");
+    }
+  }
+
+  private int getBaseQuantityOrFallback(PurchaseItem item) {
+    if (item.getBaseQuantity() != null) {
+      return item.getBaseQuantity();
+    }
+    return item.getQuantity() != null ? item.getQuantity().setScale(0, RoundingMode.HALF_UP).intValue() : 0;
+  }
+
+  private int getCurrentBaseCount(Inventory inventory) {
+    if (inventory.getCurrentBaseCount() != null) {
+      return inventory.getCurrentBaseCount();
+    }
+    if (inventory.getCurrentCount() == null) {
+      return 0;
+    }
+    int factor = getDisplayToBaseFactor(inventory);
+    return inventory.getCurrentCount()
+        .multiply(BigDecimal.valueOf(factor))
+        .setScale(0, RoundingMode.HALF_UP)
+        .intValue();
+  }
+
+  private int getSoldBaseCount(Inventory inventory) {
+    if (inventory.getSoldBaseCount() != null) {
+      return inventory.getSoldBaseCount();
+    }
+    if (inventory.getSoldCount() == null) {
+      return 0;
+    }
+    int factor = getDisplayToBaseFactor(inventory);
+    return inventory.getSoldCount()
+        .multiply(BigDecimal.valueOf(factor))
+        .setScale(0, RoundingMode.HALF_UP)
+        .intValue();
+  }
+
+  private BigDecimal getCurrentDisplayCount(Inventory inventory) {
+    if (inventory.getCurrentCount() != null) {
+      return inventory.getCurrentCount();
+    }
+    return toDisplayQuantity(getCurrentBaseCount(inventory), inventory);
+  }
+
+  private BigDecimal getSoldDisplayCount(Inventory inventory) {
+    if (inventory.getSoldCount() != null) {
+      return inventory.getSoldCount();
+    }
+    return toDisplayQuantity(getSoldBaseCount(inventory), inventory);
+  }
+
+  private BigDecimal toDisplayQuantity(int baseQuantity, Inventory inventory) {
+    int factor = getDisplayToBaseFactor(inventory);
+    return BigDecimal.valueOf(baseQuantity)
+        .divide(BigDecimal.valueOf(factor), 4, RoundingMode.HALF_UP);
+  }
+
+  private int getDisplayToBaseFactor(Inventory inventory) {
+    UnitConversion conversion = getConfiguredUnitConversion(inventory);
+    if (conversion == null || conversion.getFactor() == null || conversion.getFactor() <= 0) {
+      return 1;
+    }
+    return conversion.getFactor();
+  }
+
+  private List<AvailableUnit> mapAvailableUnits(Inventory inventory) {
+    List<AvailableUnit> units = new ArrayList<>();
+    if (inventory == null) {
+      return units;
+    }
+    if (StringUtils.hasText(inventory.getBaseUnit())) {
+      units.add(new AvailableUnit(inventory.getBaseUnit().trim().toUpperCase(), true));
+    }
+    UnitConversion conversion = getConfiguredUnitConversion(inventory);
+    if (conversion != null && StringUtils.hasText(conversion.getUnit())) {
+      String conversionUnit = conversion.getUnit().trim().toUpperCase();
+      boolean alreadyPresent = units.stream().anyMatch(u -> conversionUnit.equals(u.getUnit()));
+      if (!alreadyPresent) {
+        units.add(new AvailableUnit(conversionUnit, false));
+      }
+    }
+    return units;
   }
 
   private void updateInventoryForCompletedPurchase(Purchase purchase) {
@@ -1216,21 +1602,26 @@ public class CheckoutService {
         }
 
         // Get current values (handle nulls)
-        int currentCount = inventory.getCurrentCount() != null ? inventory.getCurrentCount() : 0;
-        int soldCount = inventory.getSoldCount() != null ? inventory.getSoldCount() : 0;
-        int quantity = item.getQuantity() != null ? item.getQuantity() : 0;
+        int currentCount = getCurrentBaseCount(inventory);
+        int soldCount = getSoldBaseCount(inventory);
+        BigDecimal currentDisplayCount = getCurrentDisplayCount(inventory);
+        BigDecimal soldDisplayCount = getSoldDisplayCount(inventory);
+        int baseQuantity = getBaseQuantityOrFallback(item);
+        BigDecimal displayQuantity = toDisplayQuantity(baseQuantity, inventory);
 
         // Validate that we have enough stock
-        if (currentCount < quantity) {
+        if (currentCount < baseQuantity) {
           throw new InsufficientStockException(
               "Insufficient stock to complete purchase for product: " + inventory.getName() +
-                  ". Available: " + currentCount + ", Required: " + quantity,
-              inventory.getBarcode(), currentCount, quantity);
+                  ". Available: " + currentCount + ", Required in base units: " + baseQuantity,
+              inventory.getBarcode(), currentCount, baseQuantity);
         }
 
         // Update inventory counts
-        inventory.setCurrentCount(currentCount - quantity);
-        inventory.setSoldCount(soldCount + quantity);
+        inventory.setCurrentCount(currentDisplayCount.subtract(displayQuantity).setScale(4, RoundingMode.HALF_UP));
+        inventory.setSoldCount(soldDisplayCount.add(displayQuantity).setScale(4, RoundingMode.HALF_UP));
+        inventory.setCurrentBaseCount(currentCount - baseQuantity);
+        inventory.setSoldBaseCount(soldCount + baseQuantity);
 
         // Save updated inventory
         inventoryRepository.save(inventory);
@@ -1241,11 +1632,11 @@ public class CheckoutService {
         log.info(
           "Threshold check -> lotId={}, current={}, threshold={}",
           inventory.getId(),
-          inventory.getCurrentCount(),
+          inventory.getCurrentBaseCount(),
           threshold
         );
 
-        if (inventory.getCurrentCount() <= threshold) {
+        if (inventory.getCurrentBaseCount() <= threshold) {
 
           log.info("THRESHOLD REACHED — triggering INVENTORY_LOW event");
 
@@ -1256,7 +1647,7 @@ public class CheckoutService {
         }
 
         log.info("Updated inventory for lotId: {} - decreased currentCount by {} (new: {}), increased soldCount by {} (new: {})",
-            item.getInventoryId(), quantity, inventory.getCurrentCount(), quantity, inventory.getSoldCount());
+            item.getInventoryId(), baseQuantity, inventory.getCurrentBaseCount(), baseQuantity, inventory.getSoldBaseCount());
 
       } catch (ResourceNotFoundException | ValidationException | InsufficientStockException e) {
         log.error("Error updating inventory for lotId: {} - {}", item.getInventoryId(), e.getMessage());

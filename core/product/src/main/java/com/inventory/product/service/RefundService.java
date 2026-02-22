@@ -118,13 +118,13 @@ public class RefundService {
       // Validate and process refund items
       List<RefundResponse.RefundedItem> refundedItems = new ArrayList<>();
       BigDecimal totalRefundAmount = BigDecimal.ZERO;
-      Map<String, Integer> purchasedQuantities = new HashMap<>();
+      Map<String, Integer> purchasedBaseQuantities = new HashMap<>();
 
       // Build map of purchased items and quantities
       if (purchase.getItems() != null) {
         for (PurchaseItem purchasedItem : purchase.getItems()) {
-          purchasedQuantities.put(purchasedItem.getInventoryId(),
-              purchasedItem.getQuantity() != null ? purchasedItem.getQuantity() : 0);
+          purchasedBaseQuantities.put(purchasedItem.getInventoryId(),
+              purchasedItem.getBaseQuantity() != null ? purchasedItem.getBaseQuantity() : 0);
         }
       }
 
@@ -138,16 +138,10 @@ public class RefundService {
         }
 
         // Verify item exists in purchase
-        Integer purchasedQty = purchasedQuantities.get(refundItem.getInventoryId());
-        if (purchasedQty == null) {
+        Integer purchasedBaseQty = purchasedBaseQuantities.get(refundItem.getInventoryId());
+        if (purchasedBaseQty == null) {
           throw new ValidationException("Item with inventory ID " + refundItem.getInventoryId() +
               " was not found in purchase " + request.getPurchaseId());
-        }
-
-        // Verify refund quantity doesn't exceed purchased quantity
-        if (refundItem.getQuantity() > purchasedQty) {
-          throw new ValidationException("Refund quantity (" + refundItem.getQuantity() +
-              ") exceeds purchased quantity (" + purchasedQty + ") for inventory ID: " + refundItem.getInventoryId());
         }
 
         // Find the purchase item to get selling price
@@ -162,8 +156,16 @@ public class RefundService {
         BigDecimal itemRefundAmount = sellingPrice.multiply(BigDecimal.valueOf(refundItem.getQuantity()))
             .setScale(2, RoundingMode.HALF_UP);
 
-        // Restore inventory
-        restoreInventoryForRefund(refundItem.getInventoryId(), refundItem.getQuantity(), shopId);
+        int refundBaseQuantity = getRefundBaseQuantity(purchaseItem, refundItem.getQuantity());
+
+        // Verify refund quantity doesn't exceed purchased quantity (in base units)
+        if (refundBaseQuantity > purchasedBaseQty) {
+          throw new ValidationException("Refund quantity (" + refundItem.getQuantity() +
+              ") exceeds purchased quantity for inventory ID: " + refundItem.getInventoryId());
+        }
+
+        // Restore inventory (always in base units)
+        restoreInventoryForRefund(refundItem.getInventoryId(), refundBaseQuantity, shopId);
 
         // Create refunded item response
         RefundResponse.RefundedItem refundedItem = new RefundResponse.RefundedItem();
@@ -243,7 +245,7 @@ public class RefundService {
    * @param quantity the quantity to restore
    * @param shopId the shop ID for validation
    */
-  private void restoreInventoryForRefund(String inventoryId, Integer quantity, String shopId) {
+  private void restoreInventoryForRefund(String inventoryId, Integer baseQuantity, String shopId) {
     // Find inventory by ID
     Inventory inventory = inventoryRepository.findById(inventoryId)
         .orElseThrow(() -> new ResourceNotFoundException("Inventory", "id",
@@ -256,24 +258,101 @@ public class RefundService {
     }
 
     // Get current values (handle nulls)
-    int currentCount = inventory.getCurrentCount() != null ? inventory.getCurrentCount() : 0;
-    int soldCount = inventory.getSoldCount() != null ? inventory.getSoldCount() : 0;
+    int currentCount = getCurrentBaseCount(inventory);
+    int soldCount = getSoldBaseCount(inventory);
+    BigDecimal currentDisplayCount = getCurrentDisplayCount(inventory);
+    BigDecimal soldDisplayCount = getSoldDisplayCount(inventory);
+    BigDecimal displayQuantity = toDisplayQuantity(baseQuantity, inventory);
 
     // Validate soldCount is sufficient
-    if (soldCount < quantity) {
-      throw new ValidationException("Cannot refund quantity " + quantity +
+    if (soldCount < baseQuantity) {
+      throw new ValidationException("Cannot refund quantity " + baseQuantity +
           " for inventory " + inventoryId + ". Only " + soldCount + " items were sold.");
     }
 
     // Restore inventory counts (reverse of purchase completion)
-    inventory.setCurrentCount(currentCount + quantity);
-    inventory.setSoldCount(soldCount - quantity);
+    inventory.setCurrentCount(currentDisplayCount.add(displayQuantity).setScale(4, RoundingMode.HALF_UP));
+    inventory.setSoldCount(soldDisplayCount.subtract(displayQuantity).setScale(4, RoundingMode.HALF_UP));
+    inventory.setCurrentBaseCount(currentCount + baseQuantity);
+    inventory.setSoldBaseCount(soldCount - baseQuantity);
 
     // Save updated inventory
     inventoryRepository.save(inventory);
 
     log.info("Restored inventory for refund: inventoryId={}, quantity={}, newCurrentCount={}, newSoldCount={}",
-        inventoryId, quantity, inventory.getCurrentCount(), inventory.getSoldCount());
+        inventoryId, baseQuantity, inventory.getCurrentBaseCount(), inventory.getSoldBaseCount());
+  }
+
+  private int getCurrentBaseCount(Inventory inventory) {
+    if (inventory.getCurrentBaseCount() != null) {
+      return inventory.getCurrentBaseCount();
+    }
+    if (inventory.getCurrentCount() == null) {
+      return 0;
+    }
+    int factor = getDisplayToBaseFactor(inventory);
+    return inventory.getCurrentCount()
+        .multiply(BigDecimal.valueOf(factor))
+        .setScale(0, RoundingMode.HALF_UP)
+        .intValue();
+  }
+
+  private int getSoldBaseCount(Inventory inventory) {
+    if (inventory.getSoldBaseCount() != null) {
+      return inventory.getSoldBaseCount();
+    }
+    if (inventory.getSoldCount() == null) {
+      return 0;
+    }
+    int factor = getDisplayToBaseFactor(inventory);
+    return inventory.getSoldCount()
+        .multiply(BigDecimal.valueOf(factor))
+        .setScale(0, RoundingMode.HALF_UP)
+        .intValue();
+  }
+
+  private BigDecimal getCurrentDisplayCount(Inventory inventory) {
+    if (inventory.getCurrentCount() != null) {
+      return inventory.getCurrentCount();
+    }
+    return toDisplayQuantity(getCurrentBaseCount(inventory), inventory);
+  }
+
+  private BigDecimal getSoldDisplayCount(Inventory inventory) {
+    if (inventory.getSoldCount() != null) {
+      return inventory.getSoldCount();
+    }
+    return toDisplayQuantity(getSoldBaseCount(inventory), inventory);
+  }
+
+  private BigDecimal toDisplayQuantity(int baseQuantity, Inventory inventory) {
+    int factor = getDisplayToBaseFactor(inventory);
+    return BigDecimal.valueOf(baseQuantity)
+        .divide(BigDecimal.valueOf(factor), 4, RoundingMode.HALF_UP);
+  }
+
+  private int getDisplayToBaseFactor(Inventory inventory) {
+    if (inventory.getUnitConversions() == null
+        || inventory.getUnitConversions().getFactor() == null
+        || inventory.getUnitConversions().getFactor() <= 0) {
+      return 1;
+    }
+    return inventory.getUnitConversions().getFactor();
+  }
+
+  private int getRefundBaseQuantity(PurchaseItem purchaseItem, Integer refundQuantity) {
+    int purchasedBaseQuantity = purchaseItem.getBaseQuantity() != null ? purchaseItem.getBaseQuantity() : 0;
+    BigDecimal purchasedPricingQuantity = purchaseItem.getQuantity() != null
+        ? purchaseItem.getQuantity()
+        : BigDecimal.ZERO;
+    if (purchasedPricingQuantity.compareTo(BigDecimal.ZERO) <= 0 || purchasedBaseQuantity <= 0) {
+      return refundQuantity;
+    }
+    BigDecimal ratio = BigDecimal.valueOf(purchasedBaseQuantity)
+        .divide(purchasedPricingQuantity, 4, RoundingMode.HALF_UP);
+    return ratio.multiply(BigDecimal.valueOf(refundQuantity))
+        .setScale(0, RoundingMode.HALF_UP)
+        .intValue();
   }
 
   /**

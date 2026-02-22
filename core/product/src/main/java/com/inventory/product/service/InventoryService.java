@@ -10,6 +10,7 @@ import com.inventory.ocr.service.InvoiceParserService;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.SchemeType;
 import com.inventory.product.domain.model.Shop;
+import com.inventory.product.domain.model.UnitConversion;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.rest.dto.inventory.*;
@@ -228,6 +229,8 @@ public class InventoryService {
     fullRequest.setBusinessType(itemRequest.getBusinessType());
     fullRequest.setLocation(itemRequest.getLocation());
     fullRequest.setCount(itemRequest.getCount());
+    fullRequest.setBaseUnit(itemRequest.getBaseUnit());
+    fullRequest.setUnitConversions(itemRequest.getUnitConversions());
     fullRequest.setThresholdCount(itemRequest.getThresholdCount());
     fullRequest.setExpiryDate(itemRequest.getExpiryDate());
     fullRequest.setReminderAt(itemRequest.getReminderAt());
@@ -273,6 +276,9 @@ public class InventoryService {
       inventory.setUserId(userId);
       inventory.setExpiryDate(request.getExpiryDate());
       inventory.setVendorId(request.getVendorId());
+      String normalizedBaseUnit = normalizeUnitName(request.getBaseUnit());
+      inventory.setBaseUnit(normalizedBaseUnit);
+      inventory.setUnitConversions(normalizeUnitConversion(request.getUnitConversions(), normalizedBaseUnit));
       if (request.getPurchaseDate() != null) {
         inventory.setPurchaseDate(request.getPurchaseDate());
       } else {
@@ -290,9 +296,15 @@ public class InventoryService {
       } else {
         schemeFreeUnits = request.getScheme() != null ? request.getScheme() : 0;
       }
-      int totalReceived = billQty + schemeFreeUnits;
-      inventory.setReceivedCount(totalReceived);
-      inventory.setCurrentCount(totalReceived);
+      int totalReceivedDisplay = billQty + schemeFreeUnits;
+      int totalReceivedBase = toBaseQuantityFromDisplay(totalReceivedDisplay, inventory);
+      BigDecimal displayTotalReceived = BigDecimal.valueOf(totalReceivedDisplay).setScale(4, RoundingMode.HALF_UP);
+      inventory.setReceivedCount(displayTotalReceived);
+      inventory.setCurrentCount(displayTotalReceived);
+      inventory.setSoldCount(BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP));
+      inventory.setReceivedBaseCount(totalReceivedBase);
+      inventory.setCurrentBaseCount(totalReceivedBase);
+      inventory.setSoldBaseCount(0);
 
       // Set CGST and SGST: use provided values or shop defaults
       if (!StringUtils.hasText(request.getSgst()) || !StringUtils.hasText(request.getCgst())) {
@@ -567,7 +579,7 @@ public class InventoryService {
       // Calculate totals
       Integer totalProductCount = inventories.size();
       Integer totalCurrentCount = inventories.stream()
-          .mapToInt(inv -> inv.getCurrentCount() != null ? inv.getCurrentCount() : 0)
+          .mapToInt(this::getCurrentBaseCount)
           .sum();
 
       // Get timestamps from first inventory
@@ -706,7 +718,7 @@ public class InventoryService {
     List<InventorySummaryDto> lowStock = inventories.stream()
       .filter(inv -> {
         int threshold = inv.getThresholdCount() != null ? inv.getThresholdCount() : 50;
-        int current = inv.getCurrentCount() != null ? inv.getCurrentCount() : 0;
+        int current = getCurrentBaseCount(inv);
         return current <= threshold;
       })
       .map(inv -> {
@@ -780,6 +792,18 @@ public class InventoryService {
         inventory.setScheme(request.getScheme());
         inventory.setSchemePercentage(request.getSchemePercentage());
       }
+      if (request.getBaseUnit() != null) {
+        String normalizedBaseUnit = normalizeUnitName(request.getBaseUnit());
+        inventory.setBaseUnit(normalizedBaseUnit);
+        UnitConversion sourceConversion = request.getUnitConversions() != null
+            ? request.getUnitConversions()
+            : inventory.getUnitConversions();
+        inventory.setUnitConversions(normalizeUnitConversion(sourceConversion, normalizedBaseUnit));
+      } else if (request.getUnitConversions() != null) {
+        inventory.setUnitConversions(normalizeUnitConversion(
+            request.getUnitConversions(),
+            normalizeUnitName(inventory.getBaseUnit())));
+      }
 
       // Update updatedAt timestamp
       inventory.setUpdatedAt(Instant.now());
@@ -801,6 +825,54 @@ public class InventoryService {
       log.error("Unexpected error while updating inventory: {}", e.getMessage(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
     }
+  }
+
+  private String normalizeUnitName(String unit) {
+    if (!StringUtils.hasText(unit)) {
+      return "UNIT";
+    }
+    return unit.trim().toUpperCase();
+  }
+
+  private UnitConversion normalizeUnitConversion(UnitConversion rawConversion, String normalizedBaseUnit) {
+    if (rawConversion == null) {
+      return null;
+    }
+    if (!StringUtils.hasText(rawConversion.getUnit()) || rawConversion.getFactor() == null) {
+      return null;
+    }
+    String normalizedUnit = normalizeUnitName(rawConversion.getUnit());
+    if (normalizedUnit.equals(normalizedBaseUnit)) {
+      return null;
+    }
+    return new UnitConversion(normalizedUnit, rawConversion.getFactor());
+  }
+
+  private int getCurrentBaseCount(Inventory inventory) {
+    if (inventory.getCurrentBaseCount() != null) {
+      return inventory.getCurrentBaseCount();
+    }
+    if (inventory.getCurrentCount() == null) {
+      return 0;
+    }
+    int factor = 1;
+    UnitConversion conversion = inventory.getUnitConversions();
+    if (conversion != null && conversion.getFactor() != null && conversion.getFactor() > 0) {
+      factor = conversion.getFactor();
+    }
+    return inventory.getCurrentCount()
+        .multiply(BigDecimal.valueOf(factor))
+        .setScale(0, RoundingMode.HALF_UP)
+        .intValue();
+  }
+
+  private int toBaseQuantityFromDisplay(int displayQuantity, Inventory inventory) {
+    int factor = 1;
+    UnitConversion conversion = inventory.getUnitConversions();
+    if (conversion != null && conversion.getFactor() != null && conversion.getFactor() > 0) {
+      factor = conversion.getFactor();
+    }
+    return Math.multiplyExact(displayQuantity, factor);
   }
 
 }

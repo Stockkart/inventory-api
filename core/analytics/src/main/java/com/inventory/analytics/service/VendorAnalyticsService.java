@@ -101,7 +101,7 @@ public class VendorAnalyticsService {
       // Calculate overall summary
       BigDecimal totalInventoryValue = allInventories.stream()
           .map(inv -> {
-            Integer current = inv.getCurrentCount() != null ? inv.getCurrentCount() : 0;
+            Integer current = getCurrentBaseCount(inv);
             BigDecimal costPrice = inv.getCostPrice() != null ? inv.getCostPrice() : BigDecimal.ZERO;
             return costPrice.multiply(BigDecimal.valueOf(current));
           })
@@ -114,7 +114,7 @@ public class VendorAnalyticsService {
       BigDecimal totalExpiredStockValue = allInventories.stream()
           .filter(inv -> inv.getExpiryDate() != null && inv.getExpiryDate().isBefore(Instant.now()))
           .map(inv -> {
-            Integer current = inv.getCurrentCount() != null ? inv.getCurrentCount() : 0;
+            Integer current = getCurrentBaseCount(inv);
             BigDecimal costPrice = inv.getCostPrice() != null ? inv.getCostPrice() : BigDecimal.ZERO;
             return costPrice.multiply(BigDecimal.valueOf(current));
           })
@@ -122,7 +122,7 @@ public class VendorAnalyticsService {
 
       BigDecimal totalUnsoldStockValue = allInventories.stream()
           .map(inv -> {
-            Integer current = inv.getCurrentCount() != null ? inv.getCurrentCount() : 0;
+            Integer current = getCurrentBaseCount(inv);
             BigDecimal costPrice = inv.getCostPrice() != null ? inv.getCostPrice() : BigDecimal.ZERO;
             return costPrice.multiply(BigDecimal.valueOf(current));
           })
@@ -184,6 +184,28 @@ public class VendorAnalyticsService {
       log.error("Unexpected error while getting vendor analytics: {}", e.getMessage(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Failed to retrieve vendor analytics");
     }
+  }
+
+  private int getCurrentBaseCount(Inventory inventory) {
+    if (inventory.getCurrentBaseCount() != null) {
+      return inventory.getCurrentBaseCount();
+    }
+    if (inventory.getCurrentCount() != null) {
+      return inventory.getCurrentCount()
+          .multiply(BigDecimal.valueOf(getDisplayToBaseFactor(inventory)))
+          .setScale(0, RoundingMode.HALF_UP)
+          .intValue();
+    }
+    return 0;
+  }
+
+  private int getDisplayToBaseFactor(Inventory inventory) {
+    if (inventory.getUnitConversions() == null
+        || inventory.getUnitConversions().getFactor() == null
+        || inventory.getUnitConversions().getFactor() <= 0) {
+      return 1;
+    }
+    return inventory.getUnitConversions().getFactor();
   }
 }
 
