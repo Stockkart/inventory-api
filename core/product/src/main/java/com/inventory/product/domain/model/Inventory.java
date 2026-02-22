@@ -37,7 +37,7 @@ public class Inventory {
   /** Display current count (conversion unit if configured, else baseUnit). */
   private BigDecimal currentCount;
   /** Canonical received quantity stored in baseUnit. */
-  private Integer receivedBaseCount;
+  private Integer receivedBaseCount ;
   /** Canonical sold quantity stored in baseUnit. */
   private Integer soldBaseCount;
   /** Canonical current quantity stored in baseUnit. */
@@ -52,6 +52,7 @@ public class Inventory {
   private String shopId;
   private String userId;
   private String vendorId;
+  private String pricingId;
   private BigDecimal maximumRetailPrice;
   private BigDecimal costPrice;
   private BigDecimal sellingPrice;

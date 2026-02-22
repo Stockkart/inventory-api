@@ -15,8 +15,6 @@ import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.rest.dto.inventory.*;
 import java.util.ArrayList;
-import com.inventory.user.domain.repository.ShopVendorRepository;
-import com.inventory.product.domain.repository.InventoryRepository.LotSummaryProjection;
 import com.inventory.product.rest.mapper.InventoryMapper;
 import com.inventory.product.validation.InventoryValidator;
 import lombok.extern.slf4j.Slf4j;
@@ -27,6 +25,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
+
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -53,6 +52,9 @@ public class InventoryService {
 
   @Autowired
   private ReminderService reminderService;
+
+  @Autowired
+  private InventoryPricingAdapter InventoryPricingAdapter;
 
   @Autowired
   private com.inventory.user.service.VendorService vendorService;
@@ -150,34 +152,32 @@ public class InventoryService {
    * @return bulk creation response with created items
    */
   public BulkCreateInventoryResponse bulkCreate(BulkCreateInventoryRequest bulkRequest, String userId, String shopId) {
+
     List<InventoryReceiptResponse> createdItems = new ArrayList<>();
     int failedCount = 0;
-    
-    // Validate vendorId if provided
+
     if (StringUtils.hasText(bulkRequest.getVendorId())) {
       validateVendorId(bulkRequest.getVendorId(), shopId);
     }
-    
-    // Determine lotId: use provided lotId or generate new one
+
     String lotId = determineLotId(bulkRequest.getLotId(), shopId);
-    
-    log.info("Bulk creating {} inventory items with lotId: {} and vendorId: {}", 
-        bulkRequest.getItems() != null ? bulkRequest.getItems().size() : 0, 
-        lotId, bulkRequest.getVendorId());
-    
-    // Process each item
+
+    log.info("Bulk creating {} inventory items", bulkRequest.getItems() != null ? bulkRequest.getItems().size() : 0);
+
     if (bulkRequest.getItems() != null) {
+
       for (CreateInventoryItemRequest itemRequest : bulkRequest.getItems()) {
+
         try {
-          // Convert CreateInventoryItemRequest to CreateInventoryRequest
-          CreateInventoryRequest fullRequest = convertToCreateInventoryRequest(itemRequest, 
-              bulkRequest.getVendorId(), lotId);
-          
-          // Create inventory using existing create method
-          InventoryReceiptResponse response = create(fullRequest, userId, shopId);
-          createdItems.add(response);
+          CreateInventoryRequest fullRequest = convertToCreateInventoryRequest(itemRequest, bulkRequest.getVendorId(), lotId);
+          InventoryReceiptResponse inventoryResponse = create(fullRequest, userId, shopId);
+
+          createdItems.add(inventoryResponse);
+
         } catch (Exception e) {
-          log.error("Failed to create inventory item: {}", e.getMessage(), e);
+
+          log.error("Failed to create bulk inventory item: {}", e.getMessage(), e);
+
           failedCount++;
         }
       }
@@ -208,6 +208,8 @@ public class InventoryService {
     fullRequest.setMaximumRetailPrice(itemRequest.getMaximumRetailPrice());
     fullRequest.setCostPrice(itemRequest.getCostPrice());
     fullRequest.setSellingPrice(itemRequest.getSellingPrice());
+    fullRequest.setRates(itemRequest.getRates());
+    fullRequest.setDefaultPrice(itemRequest.getDefaultPrice());
     fullRequest.setAdditionalDiscount(itemRequest.getAdditionalDiscount());
     fullRequest.setBusinessType(itemRequest.getBusinessType());
     fullRequest.setLocation(itemRequest.getLocation());
@@ -252,6 +254,19 @@ public class InventoryService {
       // Determine lotId: use provided lotId or generate new one
       String lotId = determineLotId(request.getLotId(), shopId);
 
+      Optional<Shop> shopOpt = shopRepository.findById(shopId);
+      String effectiveSgst = StringUtils.hasText(request.getSgst())
+          ? request.getSgst()
+          : shopOpt.map(Shop::getSgst).orElse(null);
+      String effectiveCgst = StringUtils.hasText(request.getCgst())
+          ? request.getCgst()
+          : shopOpt.map(Shop::getCgst).orElse(null);
+
+      CreateInventoryPricingRequest pricingRequest = inventoryMapper.toCreatePricingRequest(request);
+      pricingRequest.setSgst(effectiveSgst);
+      pricingRequest.setCgst(effectiveCgst);
+      String pricingId = InventoryPricingAdapter.createOrUpdatePricing(pricingRequest);
+
       // Map and save inventory
       Inventory inventory = inventoryMapper.toEntity(request);
       inventory.setLotId(lotId);
@@ -259,6 +274,7 @@ public class InventoryService {
       inventory.setUserId(userId);
       inventory.setExpiryDate(request.getExpiryDate());
       inventory.setVendorId(request.getVendorId());
+      inventory.setPricingId(pricingId);
       String normalizedBaseUnit = normalizeUnitName(request.getBaseUnit());
       inventory.setBaseUnit(normalizedBaseUnit);
       inventory.setUnitConversions(normalizeUnitConversion(request.getUnitConversions(), normalizedBaseUnit));
@@ -289,34 +305,8 @@ public class InventoryService {
       inventory.setCurrentBaseCount(totalReceivedBase);
       inventory.setSoldBaseCount(0);
 
-      // Set CGST and SGST: use provided values or shop defaults
-      if (!StringUtils.hasText(request.getSgst()) || !StringUtils.hasText(request.getCgst())) {
-        Optional<Shop> shopOpt = shopRepository.findById(shopId);
-        if (shopOpt.isPresent()) {
-          Shop shop = shopOpt.get();
-          // Use shop defaults if not provided in request
-          if (!StringUtils.hasText(request.getSgst())) {
-            inventory.setSgst(shop.getSgst());
-          } else {
-            inventory.setSgst(request.getSgst());
-          }
-          if (!StringUtils.hasText(request.getCgst())) {
-            inventory.setCgst(shop.getCgst());
-          } else {
-            inventory.setCgst(request.getCgst());
-          }
-        } else {
-          // Shop not found, use provided values or null
-          inventory.setSgst(StringUtils.hasText(request.getSgst()) ? request.getSgst() : null);
-          inventory.setCgst(StringUtils.hasText(request.getCgst()) ? request.getCgst() : null);
-        }
-      } else {
-        // Both provided, use as is
-        inventory.setSgst(request.getSgst());
-        inventory.setCgst(request.getCgst());
-      }
-
       inventory = inventoryRepository.save(inventory);
+      enrichPricing(inventory);
       log.info("Successfully created inventory lot: {} for product: {} in shop: {}",
           inventory.getLotId(), inventory.getBarcode(), shopId);
 
@@ -742,6 +732,7 @@ public class InventoryService {
       // Find inventory
       Inventory inventory = inventoryRepository.findById(inventoryId)
           .orElseThrow(() -> new ResourceNotFoundException("Inventory", "id", inventoryId));
+      enrichPricing(inventory);
 
       // Verify inventory belongs to the shop
       if (!shopId.equals(inventory.getShopId())) {
@@ -756,6 +747,24 @@ public class InventoryService {
 
       // Update additionalDiscount if provided
       if (request.getAdditionalDiscount() != null) {
+        InventoryPricingDto currentPricing = null;
+        if (StringUtils.hasText(inventory.getPricingId())) {
+          Map<String, InventoryPricingDto> pricingMap =
+              InventoryPricingAdapter.getPricingBulk(List.of(inventory.getPricingId()));
+          currentPricing = pricingMap.get(inventory.getPricingId());
+        }
+        CreateInventoryPricingRequest pricingRequest = CreateInventoryPricingRequest.builder()
+            .maximumRetailPrice(inventory.getMaximumRetailPrice())
+            .costPrice(inventory.getCostPrice())
+            .sellingPrice(inventory.getSellingPrice())
+            .additionalDiscount(request.getAdditionalDiscount())
+            .sgst(inventory.getSgst())
+            .cgst(inventory.getCgst())
+            .rates(currentPricing != null ? currentPricing.getRates() : null)
+            .defaultPrice(currentPricing != null ? currentPricing.getSetPrice() : "SELLING_PRICE")
+            .build();
+        String pricingId = InventoryPricingAdapter.createOrUpdatePricing(pricingRequest);
+        inventory.setPricingId(pricingId);
         inventory.setAdditionalDiscount(request.getAdditionalDiscount());
         log.debug("Updating additionalDiscount to {} for inventory: {}", request.getAdditionalDiscount(), inventoryId);
       }
@@ -793,6 +802,7 @@ public class InventoryService {
 
       // Save inventory
       inventory = inventoryRepository.save(inventory);
+      enrichPricing(inventory);
       log.info("Successfully updated inventory with ID: {}", inventoryId);
 
       // Map to response
@@ -856,6 +866,24 @@ public class InventoryService {
       factor = conversion.getFactor();
     }
     return Math.multiplyExact(displayQuantity, factor);
+  }
+
+  private void enrichPricing(Inventory inventory) {
+    if (inventory == null || !StringUtils.hasText(inventory.getPricingId())) {
+      return;
+    }
+    Map<String, InventoryPricingDto> pricingMap =
+        InventoryPricingAdapter.getPricingBulk(List.of(inventory.getPricingId()));
+    InventoryPricingDto pricing = pricingMap.get(inventory.getPricingId());
+    if (pricing == null) {
+      return;
+    }
+    inventory.setMaximumRetailPrice(pricing.getMaximumRetailPrice());
+    inventory.setCostPrice(pricing.getCostPrice());
+    inventory.setSellingPrice(pricing.getSellingPrice());
+    inventory.setAdditionalDiscount(pricing.getAdditionalDiscount());
+    inventory.setSgst(pricing.getSgst());
+    inventory.setCgst(pricing.getCgst());
   }
 
 }

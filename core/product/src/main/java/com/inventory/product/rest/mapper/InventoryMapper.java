@@ -59,6 +59,32 @@ public interface InventoryMapper {
     return response;
   }
 
+  @Mapping(target = "maximumRetailPrice", source = "maximumRetailPrice")
+  @Mapping(target = "costPrice", source = "costPrice")
+  @Mapping(target = "sellingPrice", source = "sellingPrice")
+  @Mapping(target = "additionalDiscount", source = "additionalDiscount")
+  @Mapping(target = "sgst", source = "sgst")
+  @Mapping(target = "cgst", source = "cgst")
+  @Mapping(target = "rates", source = "rates")
+  @Mapping(
+    target = "defaultPrice",
+    expression = "java(org.springframework.util.StringUtils.hasText(request.getDefaultPrice()) ? request.getDefaultPrice() : \"SELLING_PRICE\")"
+  )
+  CreateInventoryPricingRequest toCreatePricingRequest(CreateInventoryItemRequest request);
+
+  @Mapping(target = "maximumRetailPrice", source = "maximumRetailPrice")
+  @Mapping(target = "costPrice", source = "costPrice")
+  @Mapping(target = "sellingPrice", source = "sellingPrice")
+  @Mapping(target = "additionalDiscount", source = "additionalDiscount")
+  @Mapping(target = "sgst", source = "sgst")
+  @Mapping(target = "cgst", source = "cgst")
+  @Mapping(target = "rates", source = "rates")
+  @Mapping(
+      target = "defaultPrice",
+      expression = "java(org.springframework.util.StringUtils.hasText(request.getDefaultPrice()) ? request.getDefaultPrice() : \"SELLING_PRICE\")"
+  )
+  CreateInventoryPricingRequest toCreatePricingRequest(CreateInventoryRequest request);
+
   @Mapping(target = "id", source = "id")
   @Mapping(target = "lotId", source = "lotId")
   @Mapping(target = "barcode", source = "barcode")
@@ -68,6 +94,7 @@ public interface InventoryMapper {
   @Mapping(target = "maximumRetailPrice", source = "maximumRetailPrice")
   @Mapping(target = "costPrice", source = "costPrice")
   @Mapping(target = "sellingPrice", source = "sellingPrice")
+  @Mapping(target = "pricingId", source = "pricingId")
   @Mapping(target = "additionalDiscount", source = "additionalDiscount")
   @Mapping(target = "receivedCount", source = "receivedCount")
   @Mapping(target = "receivedBaseCount", expression = "java(resolveReceivedBaseCount(inventory))")
@@ -101,6 +128,7 @@ public interface InventoryMapper {
   @Mapping(target = "maximumRetailPrice", source = "maximumRetailPrice")
   @Mapping(target = "costPrice", source = "costPrice")
   @Mapping(target = "sellingPrice", source = "sellingPrice")
+  @Mapping(target = "pricingId", source = "pricingId")
   @Mapping(target = "additionalDiscount", source = "additionalDiscount")
   @Mapping(target = "receivedCount", source = "receivedCount")
   @Mapping(target = "receivedBaseCount", expression = "java(resolveReceivedBaseCount(inventory))")

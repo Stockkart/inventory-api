@@ -6,6 +6,7 @@
     <packaging>pom</packaging>
     <modules>
         <module>product</module>
+        <module>pricing</module>
         <module>analytics</module>
         <module>user</module>
         <module>notifications</module>
@@ -37,6 +38,10 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-mongodb</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.session</groupId>

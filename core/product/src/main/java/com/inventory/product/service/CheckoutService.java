@@ -17,6 +17,7 @@ import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.PurchaseRepository;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.rest.dto.inventory.InventoryEventDto;
+import com.inventory.product.rest.dto.inventory.InventoryPricingDto;
 import com.inventory.product.rest.dto.sale.AddToCartRequest;
 import com.inventory.product.rest.dto.sale.AddToCartResponse;
 import com.inventory.product.rest.dto.sale.CheckoutResponse;
@@ -137,6 +138,9 @@ public class CheckoutService {
 
   @Autowired
   private com.inventory.notifications.service.EventService eventService;
+
+  @Autowired
+  private InventoryPricingAdapter inventoryPricingAdapter;
 
   @Autowired
   private InventoryMapper inventoryMapper;
@@ -632,6 +636,7 @@ public class CheckoutService {
           // Verify inventory exists and belongs to shop; no stock check needed
           Inventory inventory = inventoryRepository.findById(item.getId())
               .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", item.getId()));
+          enrichPricing(inventory);
           if (!shopId.equals(inventory.getShopId())) {
             throw new ValidationException("Inventory lot " + item.getId() + " does not belong to shop " + shopId);
           }
@@ -679,6 +684,7 @@ public class CheckoutService {
           // Stock validation is not needed for removing items
           Inventory inventory = inventoryRepository.findById(item.getId())
               .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", item.getId()));
+          enrichPricing(inventory);
 
           if (!shopId.equals(inventory.getShopId())) {
             throw new ValidationException("Inventory lot " + item.getId() + " does not belong to shop " + shopId);
@@ -711,6 +717,7 @@ public class CheckoutService {
           // Positive quantity - normal flow with stock validation
           Inventory inventory = inventoryRepository.findById(item.getId())
               .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", item.getId()));
+          enrichPricing(inventory);
 
           // Verify the inventory belongs to the shop
           if (!shopId.equals(inventory.getShopId())) {
@@ -1101,6 +1108,7 @@ public class CheckoutService {
             if (!existingSaleUnit.equals(incomingSaleUnit)) {
               Inventory inventory = inventoryRepository.findById(existingItem.getInventoryId())
                   .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", existingItem.getInventoryId()));
+              enrichPricing(inventory);
               int existingBaseQuantity = getBaseQuantityOrFallback(existingItem);
               int incomingBaseQuantity = getBaseQuantityOrFallback(newItem);
               int switchBaseQuantity = incomingBaseQuantity > 0 ? incomingBaseQuantity : existingBaseQuantity;
@@ -1185,6 +1193,7 @@ public class CheckoutService {
             // Case 1 & 2: Update quantity (positive adds, negative decreases). Use payload sellingPrice when provided (update-only or add); for negative qty we only remove, keep existing price.
             Inventory inventory = inventoryRepository.findById(existingItem.getInventoryId())
                 .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", existingItem.getInventoryId()));
+            enrichPricing(inventory);
             BigDecimal sellingPrice = ((newItem.getQuantity() == null || newItem.getQuantity().compareTo(BigDecimal.ZERO) >= 0)
                 && newItem.getSellingPrice() != null)
                 ? newItem.getSellingPrice()
@@ -1334,6 +1343,7 @@ public class CheckoutService {
         // Get inventory to check available stock
         Inventory inventory = inventoryRepository.findById(newItem.getInventoryId())
             .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", newItem.getInventoryId()));
+        enrichPricing(inventory);
 
         // Verify inventory belongs to shop
         if (!shopId.equals(inventory.getShopId())) {
@@ -1580,6 +1590,24 @@ public class CheckoutService {
     return units;
   }
 
+  private void enrichPricing(Inventory inventory) {
+    if (inventory == null || !StringUtils.hasText(inventory.getPricingId())) {
+      return;
+    }
+    Map<String, InventoryPricingDto> pricingMap =
+        inventoryPricingAdapter.getPricingBulk(List.of(inventory.getPricingId()));
+    InventoryPricingDto pricing = pricingMap.get(inventory.getPricingId());
+    if (pricing == null) {
+      return;
+    }
+    inventory.setMaximumRetailPrice(pricing.getMaximumRetailPrice());
+    inventory.setCostPrice(pricing.getCostPrice());
+    inventory.setSellingPrice(pricing.getSellingPrice());
+    inventory.setAdditionalDiscount(pricing.getAdditionalDiscount());
+    inventory.setSgst(pricing.getSgst());
+    inventory.setCgst(pricing.getCgst());
+  }
+
   private void updateInventoryForCompletedPurchase(Purchase purchase) {
     if (purchase.getItems() == null || purchase.getItems().isEmpty()) {
       log.warn("Purchase {} has no items to process for inventory update", purchase.getId());
@@ -1594,6 +1622,7 @@ public class CheckoutService {
         Inventory inventory = inventoryRepository.findById(item.getInventoryId())
             .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId",
                 "Inventory not found with lotId: " + item.getInventoryId()));
+        enrichPricing(inventory);
 
         // Verify inventory belongs to the same shop
         if (!purchase.getShopId().equals(inventory.getShopId())) {
