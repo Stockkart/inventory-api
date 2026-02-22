@@ -121,7 +121,7 @@ public class DashboardService {
 
     // Low Stock Items Count
     long lowStockItemsCount = allInventory.stream()
-        .filter(inv -> inv.getCurrentCount() != null && inv.getCurrentCount() <= LOW_STOCK_THRESHOLD)
+        .filter(inv -> getCurrentBaseCount(inv) <= LOW_STOCK_THRESHOLD)
         .count();
 
     // Average Order Value
@@ -161,14 +161,14 @@ public class DashboardService {
 
   private List<DashboardResponse.LowStockItem> getLowStockItems(List<Inventory> allInventory) {
     return allInventory.stream()
-        .filter(inv -> inv.getCurrentCount() != null && inv.getCurrentCount() <= LOW_STOCK_THRESHOLD)
-        .sorted(Comparator.comparing(Inventory::getCurrentCount))
+        .filter(inv -> getCurrentBaseCount(inv) <= LOW_STOCK_THRESHOLD)
+        .sorted(Comparator.comparingInt(this::getCurrentBaseCount))
         .limit(20) // Return top 20 low stock items
         .map(inv -> {
           DashboardResponse.LowStockItem item = new DashboardResponse.LowStockItem();
           item.setInventoryId(inv.getId());
           item.setName(inv.getName());
-          item.setCurrentCount(inv.getCurrentCount());
+          item.setCurrentCount(getCurrentBaseCount(inv));
           item.setThreshold(LOW_STOCK_THRESHOLD);
           item.setLotId(inv.getLotId());
           item.setBarcode(inv.getBarcode());
@@ -275,7 +275,7 @@ public class DashboardService {
 
     // Out of stock items
     long outOfStockItems = allInventory.stream()
-        .filter(inv -> inv.getCurrentCount() != null && inv.getCurrentCount() == 0)
+        .filter(inv -> getCurrentBaseCount(inv) == 0)
         .count();
 
     DashboardResponse.ProductInsights insights = new DashboardResponse.ProductInsights();
@@ -333,6 +333,25 @@ public class DashboardService {
     trend.setBestDayDate(bestDayDate);
 
     return trend;
+  }
+
+  private int getCurrentBaseCount(Inventory inventory) {
+    if (inventory.getCurrentBaseCount() != null) {
+      return inventory.getCurrentBaseCount();
+    }
+    if (inventory.getCurrentCount() == null) {
+      return 0;
+    }
+    int factor = 1;
+    if (inventory.getUnitConversions() != null
+        && inventory.getUnitConversions().getFactor() != null
+        && inventory.getUnitConversions().getFactor() > 0) {
+      factor = inventory.getUnitConversions().getFactor();
+    }
+    return inventory.getCurrentCount()
+        .multiply(BigDecimal.valueOf(factor))
+        .setScale(0, RoundingMode.HALF_UP)
+        .intValue();
   }
 }
 

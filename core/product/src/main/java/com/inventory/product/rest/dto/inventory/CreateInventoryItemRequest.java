@@ -4,6 +4,7 @@ import com.inventory.notifications.rest.dto.CustomReminderRequest;
 import com.inventory.product.domain.model.DiscountApplicable;
 import com.inventory.product.domain.model.ItemType;
 import com.inventory.product.domain.model.SchemeType;
+import com.inventory.product.domain.model.UnitConversion;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -31,6 +32,10 @@ public class CreateInventoryItemRequest {
   private DiscountApplicable discountApplicable;
   private Instant purchaseDate;
   private Integer count;
+  /** Base stock unit (e.g. TAB, ML, BOTTLE). Defaults to UNIT when omitted. */
+  private String baseUnit;
+  /** Optional conversion where factor is base units in 1 sale/display unit. */
+  private UnitConversion unitConversions;
   private Integer thresholdCount;
   private Instant expiryDate;
   private Instant reminderAt;

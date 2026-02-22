@@ -3,6 +3,7 @@ package com.inventory.product.rest.dto.inventory;
 import com.inventory.product.domain.model.DiscountApplicable;
 import com.inventory.product.domain.model.ItemType;
 import com.inventory.product.domain.model.SchemeType;
+import com.inventory.product.domain.model.UnitConversion;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -19,5 +20,7 @@ public class UpdateInventoryRequest {
   private SchemeType schemeType;
   private Integer scheme;
   private BigDecimal schemePercentage;
+  private String baseUnit;
+  private UnitConversion unitConversions;
 }
 

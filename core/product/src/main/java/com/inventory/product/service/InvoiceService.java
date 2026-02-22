@@ -172,7 +172,7 @@ public class InvoiceService {
                 && inventory.getReceivedCount() != null
                 && inventory.getSchemePercentage().signum() > 0) {
               BigDecimal pct = inventory.getSchemePercentage();
-              int effectiveFree = pct.multiply(BigDecimal.valueOf(inventory.getReceivedCount()))
+              int effectiveFree = pct.multiply(inventory.getReceivedCount())
                   .divide(BigDecimal.valueOf(100).add(pct), 0, RoundingMode.HALF_UP).intValue();
               invoiceItem.setScheme(effectiveFree);
             } else {
@@ -195,7 +195,7 @@ public class InvoiceService {
     if (invoiceItems != null) {
       for (InvoiceItem item : invoiceItems) {
         if (item.getMaximumRetailPrice() != null && item.getQuantity() != null) {
-          BigDecimal itemMRP = item.getMaximumRetailPrice().multiply(BigDecimal.valueOf(item.getQuantity()));
+          BigDecimal itemMRP = item.getMaximumRetailPrice().multiply(item.getQuantity());
           totalMRPAmount = totalMRPAmount.add(itemMRP);
         }
       }

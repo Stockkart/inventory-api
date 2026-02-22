@@ -3,6 +3,7 @@ package com.inventory.product.validation;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.product.domain.model.ItemType;
 import com.inventory.product.domain.model.SchemeType;
+import com.inventory.product.domain.model.UnitConversion;
 import com.inventory.product.rest.dto.inventory.CreateInventoryRequest;
 import com.inventory.product.rest.dto.inventory.UpdateInventoryRequest;
 import org.springframework.stereotype.Component;
@@ -46,6 +47,7 @@ public class InventoryValidator {
     if (request.getPurchaseDate() != null) {
       validatePurchaseDate(request.getPurchaseDate());
     }
+    validateUnits(request.getBaseUnit(), request.getUnitConversions());
   }
 
   public void validateUpdateRequest(UpdateInventoryRequest request) {
@@ -69,6 +71,34 @@ public class InventoryValidator {
       }
     } else if (request.getScheme() != null && request.getScheme() < 0) {
       throw new ValidationException("Scheme (free units) must be zero or greater");
+    }
+    validateUnits(request.getBaseUnit(), request.getUnitConversions());
+  }
+
+  private void validateUnits(String baseUnit, UnitConversion unitConversions) {
+    String effectiveBaseUnit = org.springframework.util.StringUtils.hasText(baseUnit)
+        ? baseUnit.trim().toUpperCase()
+        : "UNIT";
+    validateUnitName(effectiveBaseUnit, "baseUnit");
+    if (unitConversions == null) {
+      return;
+    }
+    String unit = unitConversions.getUnit() != null ? unitConversions.getUnit().trim().toUpperCase() : null;
+    validateUnitName(unit, "unitConversions.unit");
+    if (effectiveBaseUnit.equals(unit)) {
+      throw new ValidationException("unitConversions cannot include the baseUnit");
+    }
+    if (unitConversions.getFactor() == null || unitConversions.getFactor() <= 0) {
+      throw new ValidationException("unitConversions.factor must be greater than zero for unit: " + unit);
+    }
+  }
+
+  private void validateUnitName(String unit, String fieldName) {
+    if (!StringUtils.hasText(unit)) {
+      throw new ValidationException(fieldName + " is required");
+    }
+    if (!unit.matches("^[A-Z0-9_]+$")) {
+      throw new ValidationException(fieldName + " must contain only letters, digits, and underscore");
     }
   }
 

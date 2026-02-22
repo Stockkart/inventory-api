@@ -66,9 +66,9 @@ public class VendorAnalyticsHelper {
       VendorStockData data = vendorMap.get(inventory.getVendorId());
       if (data == null) continue;
 
-      Integer received = inventory.getReceivedCount() != null ? inventory.getReceivedCount() : 0;
-      Integer sold = inventory.getSoldCount() != null ? inventory.getSoldCount() : 0;
-      Integer current = inventory.getCurrentCount() != null ? inventory.getCurrentCount() : 0;
+      Integer received = getReceivedBaseCount(inventory);
+      Integer sold = getSoldBaseCount(inventory);
+      Integer current = getCurrentBaseCount(inventory);
       BigDecimal costPrice = inventory.getCostPrice() != null ? inventory.getCostPrice() : BigDecimal.ZERO;
 
       data.totalInventoryReceived += received;
@@ -95,8 +95,8 @@ public class VendorAnalyticsHelper {
         for (PurchaseItem item : purchase.getItems()) {
           Inventory inv = inventoryRepository.findById(item.getInventoryId()).orElse(null);
           if (inv != null && inv.getVendorId() != null) {
-            BigDecimal itemRevenue = item.getSellingPrice() != null && item.getQuantity() != null
-                ? item.getSellingPrice().multiply(BigDecimal.valueOf(item.getQuantity()))
+            BigDecimal itemRevenue = item.getSellingPrice() != null
+                ? item.getSellingPrice().multiply(getPricingQuantity(item))
                 : BigDecimal.ZERO;
             vendorRevenueMap.merge(inv.getVendorId(), itemRevenue, BigDecimal::add);
           }
@@ -182,12 +182,13 @@ public class VendorAnalyticsHelper {
           VendorRevenueData data = vendorMap.get(inv.getVendorId());
           if (data == null) continue;
 
-          Integer quantity = item.getQuantity() != null ? item.getQuantity() : 0;
+          Integer quantity = getBaseQuantity(item);
+          BigDecimal pricingQuantity = getPricingQuantity(item);
           BigDecimal sellingPrice = item.getSellingPrice() != null ? item.getSellingPrice() : BigDecimal.ZERO;
           BigDecimal costPrice = inv.getCostPrice() != null ? inv.getCostPrice() : BigDecimal.ZERO;
 
-          BigDecimal itemRevenue = sellingPrice.multiply(BigDecimal.valueOf(quantity));
-          BigDecimal itemCost = costPrice.multiply(BigDecimal.valueOf(quantity));
+          BigDecimal itemRevenue = sellingPrice.multiply(pricingQuantity);
+          BigDecimal itemCost = costPrice.multiply(pricingQuantity);
           BigDecimal itemProfit = itemRevenue.subtract(itemCost);
 
           data.totalRevenue = data.totalRevenue.add(itemRevenue);
@@ -265,9 +266,9 @@ public class VendorAnalyticsHelper {
       VendorPerformanceData data = vendorMap.get(inventory.getVendorId());
       if (data == null) continue;
 
-      Integer received = inventory.getReceivedCount() != null ? inventory.getReceivedCount() : 0;
-      Integer sold = inventory.getSoldCount() != null ? inventory.getSoldCount() : 0;
-      Integer current = inventory.getCurrentCount() != null ? inventory.getCurrentCount() : 0;
+      Integer received = getReceivedBaseCount(inventory);
+      Integer sold = getSoldBaseCount(inventory);
+      Integer current = getCurrentBaseCount(inventory);
       BigDecimal costPrice = inventory.getCostPrice() != null ? inventory.getCostPrice() : BigDecimal.ZERO;
 
       // Calculate days in stock
@@ -405,8 +406,8 @@ public class VendorAnalyticsHelper {
         data.vendorName = vendor.getName();
       }
 
-      Integer received = inventory.getReceivedCount() != null ? inventory.getReceivedCount() : 0;
-      Integer current = inventory.getCurrentCount() != null ? inventory.getCurrentCount() : 0;
+      Integer received = getReceivedBaseCount(inventory);
+      Integer current = getCurrentBaseCount(inventory);
       BigDecimal costPrice = inventory.getCostPrice() != null ? inventory.getCostPrice() : BigDecimal.ZERO;
 
       data.totalReceived += received;
@@ -455,7 +456,7 @@ public class VendorAnalyticsHelper {
     // Calculate total inventory value
     BigDecimal totalInventoryValue = allInventories.stream()
         .map(inv -> {
-          Integer current = inv.getCurrentCount() != null ? inv.getCurrentCount() : 0;
+          Integer current = getCurrentBaseCount(inv);
           BigDecimal costPrice = inv.getCostPrice() != null ? inv.getCostPrice() : BigDecimal.ZERO;
           return costPrice.multiply(BigDecimal.valueOf(current));
         })
@@ -465,7 +466,7 @@ public class VendorAnalyticsHelper {
     Map<String, Integer> vendorProductCount = new HashMap<>();
     for (Inventory inventory : allInventories) {
       if (inventory.getVendorId() != null) {
-        vendorProductCount.merge(inventory.getVendorId(), 1, Integer::sum);
+        vendorProductCount.merge(inventory.getVendorId(), 1, (left, right) -> left + right);
       }
     }
 
@@ -482,7 +483,7 @@ public class VendorAnalyticsHelper {
           BigDecimal inventoryValue = allInventories.stream()
               .filter(inv -> revenue.getVendorId().equals(inv.getVendorId()))
               .map(inv -> {
-                Integer current = inv.getCurrentCount() != null ? inv.getCurrentCount() : 0;
+                Integer current = getCurrentBaseCount(inv);
                 BigDecimal costPrice = inv.getCostPrice() != null ? inv.getCostPrice() : BigDecimal.ZERO;
                 return costPrice.multiply(BigDecimal.valueOf(current));
               })
@@ -587,6 +588,77 @@ public class VendorAnalyticsHelper {
       this.vendorId = vendorId;
       this.businessType = businessType;
     }
+  }
+
+  private int getCurrentBaseCount(Inventory inventory) {
+    if (inventory.getCurrentBaseCount() != null) {
+      return inventory.getCurrentBaseCount();
+    }
+    if (inventory.getCurrentCount() != null) {
+      return inventory.getCurrentCount()
+          .multiply(BigDecimal.valueOf(getDisplayToBaseFactor(inventory)))
+          .setScale(0, RoundingMode.HALF_UP)
+          .intValue();
+    }
+    return 0;
+  }
+
+  private int getSoldBaseCount(Inventory inventory) {
+    if (inventory.getSoldBaseCount() != null) {
+      return inventory.getSoldBaseCount();
+    }
+    if (inventory.getSoldCount() != null) {
+      return inventory.getSoldCount()
+          .multiply(BigDecimal.valueOf(getDisplayToBaseFactor(inventory)))
+          .setScale(0, RoundingMode.HALF_UP)
+          .intValue();
+    }
+    return 0;
+  }
+
+  private int getReceivedBaseCount(Inventory inventory) {
+    if (inventory.getReceivedBaseCount() != null) {
+      return inventory.getReceivedBaseCount();
+    }
+    if (inventory.getReceivedCount() != null) {
+      return inventory.getReceivedCount()
+          .multiply(BigDecimal.valueOf(getDisplayToBaseFactor(inventory)))
+          .setScale(0, RoundingMode.HALF_UP)
+          .intValue();
+    }
+    return 0;
+  }
+
+  private int getBaseQuantity(PurchaseItem item) {
+    if (item.getBaseQuantity() != null) {
+      return item.getBaseQuantity();
+    }
+    if (item.getQuantity() == null) {
+      return 0;
+    }
+    int factor = item.getUnitFactor() != null && item.getUnitFactor() > 0 ? item.getUnitFactor() : 1;
+    return item.getQuantity().multiply(BigDecimal.valueOf(factor)).setScale(0, RoundingMode.HALF_UP).intValue();
+  }
+
+  private BigDecimal getPricingQuantity(PurchaseItem item) {
+    if (item.getQuantity() != null) {
+      return item.getQuantity();
+    }
+    if (item.getBaseQuantity() != null) {
+      int factor = item.getUnitFactor() != null && item.getUnitFactor() > 0 ? item.getUnitFactor() : 1;
+      return BigDecimal.valueOf(item.getBaseQuantity())
+          .divide(BigDecimal.valueOf(factor), 4, RoundingMode.HALF_UP);
+    }
+    return BigDecimal.ZERO;
+  }
+
+  private int getDisplayToBaseFactor(Inventory inventory) {
+    if (inventory.getUnitConversions() == null
+        || inventory.getUnitConversions().getFactor() == null
+        || inventory.getUnitConversions().getFactor() <= 0) {
+      return 1;
+    }
+    return inventory.getUnitConversions().getFactor();
   }
 }
 

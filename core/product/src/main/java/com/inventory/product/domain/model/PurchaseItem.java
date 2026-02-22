@@ -5,6 +5,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 @Data
 @NoArgsConstructor
@@ -13,7 +14,15 @@ public class PurchaseItem {
 
   private String inventoryId;
   private String name;
-  private Integer quantity;
+  private BigDecimal quantity;
+  /** Sale/display unit for quantity (e.g. STRIP, PACK). */
+  private String saleUnit;
+  /** Quantity converted to inventory base unit, used for stock deductions. */
+  private Integer baseQuantity;
+  /** Base units represented by one quantity unit (e.g. 10 for strip of 10 tabs). */
+  private Integer unitFactor;
+  /** Available units for this inventory line (base + conversion), used by FE unit picker. */
+  private List<AvailableUnit> availableUnits;
   private BigDecimal maximumRetailPrice;
   private BigDecimal sellingPrice;
   private BigDecimal discount;

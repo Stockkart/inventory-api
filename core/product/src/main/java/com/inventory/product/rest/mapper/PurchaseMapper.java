@@ -22,6 +22,7 @@ import org.mapstruct.ReportingPolicy;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.List;
 
@@ -62,12 +63,12 @@ public abstract class PurchaseMapper {
 
   @Mapping(target = "inventoryId", source = "item.id")
   @Mapping(target = "name", source = "inventory.name")
-  @Mapping(target = "quantity", source = "item.quantity")
+  @Mapping(target = "quantity", expression = "java(item.getQuantity() != null ? java.math.BigDecimal.valueOf(item.getQuantity()) : java.math.BigDecimal.ZERO)")
   @Mapping(target = "maximumRetailPrice", source = "inventory.maximumRetailPrice")
   @Mapping(target = "sellingPrice", source = "item.sellingPrice")
   @Mapping(target = "discount", expression = "java(calculateDiscount(inventory.getMaximumRetailPrice(), item.getSellingPrice()))")
   @Mapping(target = "additionalDiscount", source = "inventory.additionalDiscount")
-  @Mapping(target = "totalAmount", expression = "java(calculateTotalAmount(item.getSellingPrice(), inventory.getAdditionalDiscount(), item.getQuantity(), inventory.getCgst(), inventory.getSgst(), inventory.getShopId()))")
+  @Mapping(target = "totalAmount", expression = "java(calculateTotalAmount(item.getSellingPrice(), inventory.getAdditionalDiscount(), item.getQuantity() != null ? java.math.BigDecimal.valueOf(item.getQuantity()) : java.math.BigDecimal.ZERO, inventory.getCgst(), inventory.getSgst(), inventory.getShopId()))")
   @Mapping(target = "sgst", source = "inventory.sgst")
   @Mapping(target = "cgst", source = "inventory.cgst")
   @Mapping(target = "costPrice", source = "inventory.costPrice")
@@ -105,7 +106,7 @@ public abstract class PurchaseMapper {
 
   @Mapping(target = "inventoryId", source = "item.id")
   @Mapping(target = "name", source = "inventory.name")
-  @Mapping(target = "quantity", source = "item.quantity")
+  @Mapping(target = "quantity", expression = "java(item.getQuantity() != null ? java.math.BigDecimal.valueOf(item.getQuantity()) : java.math.BigDecimal.ZERO)")
   @Mapping(target = "maximumRetailPrice", source = "inventory.maximumRetailPrice")
   @Mapping(target = "sellingPrice", source = "item.sellingPrice")
   @Mapping(target = "discount", expression = "java(calculateDiscount(inventory.getMaximumRetailPrice(), item.getSellingPrice()))")
@@ -134,9 +135,9 @@ public abstract class PurchaseMapper {
       purchaseItem.setSchemePercentage(inventory.getSchemePercentage());
       // schemePayFor/schemeFree left null; getPaidQuantityFromPurchaseItem uses percentage formula
     } else if (inventory.getScheme() != null && inventory.getScheme() > 0
-        && inventory.getReceivedCount() != null && inventory.getReceivedCount() > 0) {
+        && getReceivedBaseCount(inventory) > 0) {
       // FIXED_UNITS or backward compat: use scheme (free units)
-      int received = inventory.getReceivedCount();
+      int received = getReceivedBaseCount(inventory);
       int free = inventory.getScheme();
       int paid = received - free;
       if (paid <= 0) {
@@ -182,6 +183,25 @@ public abstract class PurchaseMapper {
     return a;
   }
 
+  private int getReceivedBaseCount(Inventory inventory) {
+    if (inventory.getReceivedBaseCount() != null) {
+      return inventory.getReceivedBaseCount();
+    }
+    if (inventory.getReceivedCount() == null) {
+      return 0;
+    }
+    int factor = 1;
+    if (inventory.getUnitConversions() != null
+        && inventory.getUnitConversions().getFactor() != null
+        && inventory.getUnitConversions().getFactor() > 0) {
+      factor = inventory.getUnitConversions().getFactor();
+    }
+    return inventory.getReceivedCount()
+        .multiply(BigDecimal.valueOf(factor))
+        .setScale(0, RoundingMode.HALF_UP)
+        .intValue();
+  }
+
   @AfterMapping
   protected void setShopTaxRatesIfNull(@MappingTarget PurchaseItem purchaseItem, Inventory inventory) {
     // If CGST/SGST are null, use shop-level rates
@@ -215,20 +235,20 @@ public abstract class PurchaseMapper {
 
   /** Billable quantity as decimal: FIXED_UNITS uses ratio schemePayFor/(schemePayFor+schemeFree) on any qty. */
   protected BigDecimal getBillableQuantityAsDecimalFromPurchaseItem(PurchaseItem item) {
-    int totalQty = item.getQuantity() != null ? item.getQuantity() : 0;
-    if (totalQty <= 0) return BigDecimal.ZERO;
+    BigDecimal totalQty = item.getQuantity() != null ? item.getQuantity() : BigDecimal.ZERO;
+    if (totalQty.compareTo(BigDecimal.ZERO) <= 0) return BigDecimal.ZERO;
     if (item.getSchemeType() == SchemeType.PERCENTAGE) {
-      return BigDecimal.valueOf(totalQty);
+      return totalQty;
     }
     if (item.getSchemeType() == SchemeType.FIXED_UNITS && item.getSchemePayFor() != null && item.getSchemePayFor() > 0
         && item.getSchemeFree() != null && item.getSchemeFree() >= 0) {
       BigDecimal payFor = BigDecimal.valueOf(item.getSchemePayFor());
       BigDecimal free = BigDecimal.valueOf(item.getSchemeFree());
       BigDecimal sum = payFor.add(free);
-      if (sum.compareTo(BigDecimal.ZERO) <= 0) return BigDecimal.valueOf(totalQty);
-      return BigDecimal.valueOf(totalQty).multiply(payFor).divide(sum, 4, java.math.RoundingMode.HALF_UP);
+      if (sum.compareTo(BigDecimal.ZERO) <= 0) return totalQty;
+      return totalQty.multiply(payFor).divide(sum, 4, java.math.RoundingMode.HALF_UP);
     }
-    return BigDecimal.valueOf(totalQty);
+    return totalQty;
   }
 
   /** @deprecated Use getBillableQuantityAsDecimalFromPurchaseItem for amount calculations. */
@@ -260,8 +280,8 @@ public abstract class PurchaseMapper {
     if (item == null || item.getCostPrice() == null) {
       return;
     }
-    Integer billableQty = item.getQuantity();
-    BigDecimal costTotal = item.getCostPrice().multiply(new BigDecimal(billableQty)).setScale(2, java.math.RoundingMode.HALF_UP);
+    BigDecimal billableQty = item.getQuantity() != null ? item.getQuantity() : BigDecimal.ZERO;
+    BigDecimal costTotal = item.getCostPrice().multiply(billableQty).setScale(2, java.math.RoundingMode.HALF_UP);
     item.setCostTotal(costTotal);
 
     BigDecimal totalAmount = item.getTotalAmount();
@@ -419,7 +439,7 @@ public abstract class PurchaseMapper {
   }
 
   // Methods to create PurchaseItem
-  public PurchaseItem createPurchaseItem(String inventoryId, String name, Integer quantity,
+  public PurchaseItem createPurchaseItem(String inventoryId, String name, BigDecimal quantity,
                                           BigDecimal maximumRetailPrice, BigDecimal sellingPrice, BigDecimal discount) {
     PurchaseItem item = new PurchaseItem();
     item.setInventoryId(inventoryId);
@@ -438,7 +458,7 @@ public abstract class PurchaseMapper {
   /**
    * Create PurchaseItem with all fields including totalAmount calculation.
    */
-  public PurchaseItem createPurchaseItemWithTotal(String inventoryId, String name, Integer quantity,
+  public PurchaseItem createPurchaseItemWithTotal(String inventoryId, String name, BigDecimal quantity,
                                                    BigDecimal maximumRetailPrice, BigDecimal sellingPrice, 
                                                    BigDecimal discount, BigDecimal additionalDiscount,
                                                    String cgst, String sgst, String shopId) {
