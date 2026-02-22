@@ -88,6 +88,9 @@ public class InventoryPricingAdapterImpl implements InventoryPricingAdapter {
       .maximumRetailPrice(pricing.getMaximumRetailPrice())
       .costPrice(pricing.getCostPrice())
       .sellingPrice(pricing.getSellingPrice())
+      .additionalDiscount(pricing.getAdditionalDiscount())
+      .sgst(pricing.getSgst())
+      .cgst(pricing.getCgst())
       .rates(productRates)   // Now safe (DTO → DTO)
       .setPrice(pricing.getDefaultPrice())
       .build();

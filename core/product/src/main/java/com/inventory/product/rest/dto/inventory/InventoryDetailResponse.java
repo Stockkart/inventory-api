@@ -24,6 +24,7 @@ public class InventoryDetailResponse {
   BigDecimal maximumRetailPrice;
   BigDecimal costPrice;
   BigDecimal sellingPrice;
+  String pricingId;
   BigDecimal additionalDiscount;
   BigDecimal receivedCount;
   Integer receivedBaseCount;

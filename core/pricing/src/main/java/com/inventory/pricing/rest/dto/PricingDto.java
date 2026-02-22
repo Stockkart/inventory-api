@@ -17,6 +17,9 @@ public class PricingDto {
   private BigDecimal maximumRetailPrice;
   private BigDecimal costPrice;
   private BigDecimal sellingPrice;
+  private BigDecimal additionalDiscount;
+  private String sgst;
+  private String cgst;
   private List<Rate> rates;
   private String defaultPrice;
 }

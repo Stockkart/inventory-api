@@ -84,6 +84,9 @@ public class InventoryPricingRepositoryImpl implements InventoryPricingRepositor
           inv.setMaximumRetailPrice(pricing.getMaximumRetailPrice());
           inv.setCostPrice(pricing.getCostPrice());
           inv.setSellingPrice(pricing.getSellingPrice());
+          inv.setAdditionalDiscount(pricing.getAdditionalDiscount());
+          inv.setSgst(pricing.getSgst());
+          inv.setCgst(pricing.getCgst());
         }
       }
     });
