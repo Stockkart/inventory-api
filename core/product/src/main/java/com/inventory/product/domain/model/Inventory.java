@@ -4,7 +4,6 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.annotation.Transient;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.math.BigDecimal;
@@ -54,22 +53,16 @@ public class Inventory {
   private String userId;
   private String vendorId;
   private String pricingId;
-  @Transient
   private BigDecimal maximumRetailPrice;
-  @Transient
   private BigDecimal costPrice;
-  @Transient
   private BigDecimal sellingPrice;
-  @Transient
   private BigDecimal additionalDiscount; // Optional: Additional discount amount
   private String hsn; // Optional: HSN code
   private String batchNo; // Optional: Batch number
   private SchemeType schemeType; // FIXED_UNITS (default/backward) or PERCENTAGE
   private Integer scheme; // When schemeType FIXED_UNITS: free units. Total received = count + scheme.
   private BigDecimal schemePercentage; // When schemeType PERCENTAGE: e.g. 10 = 10% extra free.
-  @Transient
   private String sgst; // Optional: State GST rate (e.g., "9" for 9%). Uses shop default if not provided.
-  @Transient
   private String cgst; // Optional: Central GST rate (e.g., "9" for 9%). Uses shop default if not provided.
   private Instant createdAt;
   private Instant updatedAt;

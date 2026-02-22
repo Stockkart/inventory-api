@@ -407,7 +407,6 @@ public class InventoryService {
       // Find inventory by ID
       Inventory inventory = inventoryRepository.findById(lotId)
           .orElseThrow(() -> new ResourceNotFoundException("Inventory lot", "lotId", lotId));
-      enrichPricing(inventory);
 
       return inventoryMapper.toDetail(inventory);
 
@@ -544,7 +543,6 @@ public class InventoryService {
       if (inventories.isEmpty()) {
         throw new ResourceNotFoundException("Lot", "lotId", lotId);
       }
-      enrichPricing(inventories);
 
       // Map to summary DTOs
       List<InventorySummaryDto> items = inventories.stream()
@@ -886,36 +884,6 @@ public class InventoryService {
     inventory.setAdditionalDiscount(pricing.getAdditionalDiscount());
     inventory.setSgst(pricing.getSgst());
     inventory.setCgst(pricing.getCgst());
-  }
-
-  private void enrichPricing(List<Inventory> inventories) {
-    if (inventories == null || inventories.isEmpty()) {
-      return;
-    }
-    List<String> pricingIds = inventories.stream()
-        .map(Inventory::getPricingId)
-        .filter(StringUtils::hasText)
-        .distinct()
-        .toList();
-    if (pricingIds.isEmpty()) {
-      return;
-    }
-    Map<String, InventoryPricingDto> pricingMap = InventoryPricingAdapter.getPricingBulk(pricingIds);
-    inventories.forEach(inventory -> {
-      if (!StringUtils.hasText(inventory.getPricingId())) {
-        return;
-      }
-      InventoryPricingDto pricing = pricingMap.get(inventory.getPricingId());
-      if (pricing == null) {
-        return;
-      }
-      inventory.setMaximumRetailPrice(pricing.getMaximumRetailPrice());
-      inventory.setCostPrice(pricing.getCostPrice());
-      inventory.setSellingPrice(pricing.getSellingPrice());
-      inventory.setAdditionalDiscount(pricing.getAdditionalDiscount());
-      inventory.setSgst(pricing.getSgst());
-      inventory.setCgst(pricing.getCgst());
-    });
   }
 
 }
