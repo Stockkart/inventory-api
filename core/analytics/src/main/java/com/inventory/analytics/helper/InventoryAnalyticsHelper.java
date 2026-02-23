@@ -97,6 +97,7 @@ public class InventoryAnalyticsHelper {
             long daysUntilExpiry = ChronoUnit.DAYS.between(now, inv.getExpiryDate());
             dto.setDaysUntilExpiry(daysUntilExpiry);
             dto.setIsExpired(daysUntilExpiry < 0);
+            dto.setExpiryDate(inv.getExpiryDate());
             
             // Expiring soon check
             boolean isExpiringSoon = false;

@@ -16,7 +16,8 @@ import java.util.List;
 @Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.IGNORE)
 public interface InventoryMapper {
 
-  // lotId, receivedCount, currentCount set in service (receivedCount/currentCount = count + scheme)
+  // lotId, receivedCount, currentCount set in service
+  // Pricing: @Transient - set from request for create (AOP persistOnSave writes to Pricing); on read AOP enriches
   @Mapping(target = "lotId", ignore = true)
   @Mapping(target = "receivedCount", ignore = true)
   @Mapping(target = "receivedBaseCount", ignore = true)
@@ -27,7 +28,6 @@ public interface InventoryMapper {
   @Mapping(target = "receivedDate", expression = "java(java.time.Instant.now())")
   @Mapping(target = "createdAt", expression = "java(java.time.Instant.now())")
   @Mapping(target = "updatedAt", expression = "java(java.time.Instant.now())")
-  @Mapping(target = "additionalDiscount", source = "additionalDiscount")
   Inventory toEntity(CreateInventoryRequest request);
 
   @Mapping(target = "lotId", source = "lotId")
@@ -68,6 +68,8 @@ public interface InventoryMapper {
   @Mapping(target = "maximumRetailPrice", source = "maximumRetailPrice")
   @Mapping(target = "costPrice", source = "costPrice")
   @Mapping(target = "sellingPrice", source = "sellingPrice")
+  @Mapping(target = "rates", source = "rates")
+  @Mapping(target = "defaultRate", source = "defaultRate")
   @Mapping(target = "additionalDiscount", source = "additionalDiscount")
   @Mapping(target = "receivedCount", source = "receivedCount")
   @Mapping(target = "receivedBaseCount", expression = "java(resolveReceivedBaseCount(inventory))")
@@ -101,6 +103,8 @@ public interface InventoryMapper {
   @Mapping(target = "maximumRetailPrice", source = "maximumRetailPrice")
   @Mapping(target = "costPrice", source = "costPrice")
   @Mapping(target = "sellingPrice", source = "sellingPrice")
+  @Mapping(target = "rates", source = "rates")
+  @Mapping(target = "defaultRate", source = "defaultRate")
   @Mapping(target = "additionalDiscount", source = "additionalDiscount")
   @Mapping(target = "receivedCount", source = "receivedCount")
   @Mapping(target = "receivedBaseCount", expression = "java(resolveReceivedBaseCount(inventory))")
