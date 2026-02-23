@@ -18,6 +18,8 @@ import java.util.List;
 @AllArgsConstructor
 public class InventoryDetailResponse {
   String lotId;
+  /** Pricing document ID. Null for legacy inventories without a pricing record. */
+  String pricingId;
   String barcode;
   String name;
   String description;

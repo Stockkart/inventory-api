@@ -60,6 +60,7 @@ public interface InventoryMapper {
   }
 
   @Mapping(target = "id", source = "id")
+  @Mapping(target = "pricingId", source = "pricingId")
   @Mapping(target = "lotId", source = "lotId")
   @Mapping(target = "barcode", source = "barcode")
   @Mapping(target = "name", source = "name")
@@ -96,6 +97,7 @@ public interface InventoryMapper {
   InventorySummaryDto toSummary(Inventory inventory);
 
   @Mapping(target = "lotId", source = "lotId")
+  @Mapping(target = "pricingId", source = "pricingId")
   @Mapping(target = "barcode", source = "barcode")
   @Mapping(target = "name", source = "name")
   @Mapping(target = "description", source = "description")

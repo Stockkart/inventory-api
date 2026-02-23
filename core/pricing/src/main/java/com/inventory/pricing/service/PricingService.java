@@ -8,6 +8,8 @@ import com.inventory.pricing.domain.model.Pricing;
 import com.inventory.pricing.domain.repository.PricingRepository;
 import com.inventory.pricing.rest.dto.CreatePricingRequest;
 import com.inventory.pricing.rest.dto.PricingResponse;
+import com.inventory.pricing.rest.dto.UpdateDefaultPriceItem;
+import com.inventory.pricing.rest.dto.UpdateDefaultPriceRequest;
 import com.inventory.pricing.rest.dto.UpdatePricingRequest;
 import com.inventory.pricing.rest.mapper.PricingMapper;
 import com.inventory.pricing.validation.PricingValidator;
@@ -72,6 +74,75 @@ public class PricingService {
       }
     }
     return created;
+  }
+
+  /**
+   * Update default/selling price by pricing ID. Allowed fields: maximumRetailPrice, priceToRetail, rates, defaultRate.
+   * Verifies pricing belongs to the given shopId.
+   */
+  public PricingResponse updateDefaultPrice(String pricingId, UpdateDefaultPriceRequest request, String shopId) {
+    try {
+      pricingValidator.validatePricingId(pricingId);
+      pricingValidator.validateUpdateDefaultPriceRequest(request);
+
+      Pricing pricing = pricingRepository.findById(pricingId)
+          .orElseThrow(() -> new ResourceNotFoundException("Pricing", "id", pricingId));
+
+      if (shopId != null && !shopId.equals(pricing.getShopId())) {
+        throw new com.inventory.common.exception.AuthenticationException(
+            ErrorCode.ACCESS_DENIED, "Pricing does not belong to your shop");
+      }
+
+      if (request.getMaximumRetailPrice() != null) {
+        pricing.setMaximumRetailPrice(request.getMaximumRetailPrice());
+      }
+      if (request.getPriceToRetail() != null) {
+        pricing.setPriceToRetail(request.getPriceToRetail());
+      }
+      if (request.getRates() != null) {
+        pricing.setRates(request.getRates());
+      }
+      if (request.getDefaultRate() != null) {
+        pricing.setDefaultRate(request.getDefaultRate());
+      }
+      pricing.setUpdatedAt(java.time.Instant.now());
+      pricing = pricingRepository.save(pricing);
+
+      log.debug("Updated default price for pricing: {}", pricingId);
+      return pricingMapper.toResponse(pricing);
+
+    } catch (ValidationException | ResourceNotFoundException e) {
+      log.warn("Update default price failed: {}", e.getMessage());
+      throw e;
+    } catch (DataAccessException e) {
+      log.error("Database error while updating pricing: {}", e.getMessage(), e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Error updating pricing");
+    }
+  }
+
+  /**
+   * Bulk update default/selling price for multiple pricing records. Verifies each pricing belongs to shopId.
+   */
+  public List<PricingResponse> bulkUpdateDefaultPrice(List<UpdateDefaultPriceItem> updates, String shopId) {
+    if (updates == null || updates.isEmpty()) {
+      return List.of();
+    }
+    List<PricingResponse> results = new ArrayList<>();
+    for (UpdateDefaultPriceItem item : updates) {
+      try {
+        pricingValidator.validateUpdateDefaultPriceItem(item);
+        UpdateDefaultPriceRequest req = new UpdateDefaultPriceRequest();
+        req.setMaximumRetailPrice(item.getMaximumRetailPrice());
+        req.setPriceToRetail(item.getPriceToRetail());
+        req.setRates(item.getRates());
+        req.setDefaultRate(item.getDefaultRate());
+        results.add(updateDefaultPrice(item.getPricingId(), req, shopId));
+      } catch (Exception e) {
+        log.warn("Bulk update failed for pricingId {}: {}", item.getPricingId(), e.getMessage());
+        throw e;
+      }
+    }
+    return results;
   }
 
   /**

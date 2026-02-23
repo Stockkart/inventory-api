@@ -18,6 +18,8 @@ import java.util.List;
 @AllArgsConstructor
 public class InventorySummaryDto {
   String id;
+  /** Pricing document ID. Null for legacy inventories without a pricing record. */
+  String pricingId;
   String lotId;
   String barcode;
   String name;

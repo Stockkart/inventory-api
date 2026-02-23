@@ -3,6 +3,8 @@ package com.inventory.pricing.validation;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.pricing.domain.model.Rate;
 import com.inventory.pricing.rest.dto.CreatePricingRequest;
+import com.inventory.pricing.rest.dto.UpdateDefaultPriceItem;
+import com.inventory.pricing.rest.dto.UpdateDefaultPriceRequest;
 import com.inventory.pricing.rest.dto.UpdatePricingRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -46,6 +48,53 @@ public class PricingValidator {
   public void validatePricingId(String pricingId) {
     if (!StringUtils.hasText(pricingId)) {
       throw new ValidationException("Pricing ID is required");
+    }
+  }
+
+  /**
+   * Validate update default price request. At least one of maximumRetailPrice, priceToRetail,
+   * rates, or defaultRate must be provided. Updates must be within rates array, priceToRetail, or MRP.
+   */
+  public void validateUpdateDefaultPriceRequest(UpdateDefaultPriceRequest request) {
+    if (request == null) {
+      throw new ValidationException("Update request cannot be null");
+    }
+    boolean hasAny = request.getMaximumRetailPrice() != null
+        || request.getPriceToRetail() != null
+        || (request.getRates() != null && !request.getRates().isEmpty())
+        || StringUtils.hasText(request.getDefaultRate());
+    if (!hasAny) {
+      throw new ValidationException("At least one of maximumRetailPrice, priceToRetail, rates, or defaultRate must be provided");
+    }
+    validateRates(request.getRates(), request.getDefaultRate());
+    if (request.getMaximumRetailPrice() != null && request.getMaximumRetailPrice().compareTo(BigDecimal.ZERO) < 0) {
+      throw new ValidationException("Maximum retail price cannot be negative");
+    }
+    if (request.getPriceToRetail() != null && request.getPriceToRetail().compareTo(BigDecimal.ZERO) < 0) {
+      throw new ValidationException("Price to retail cannot be negative");
+    }
+  }
+
+  public void validateUpdateDefaultPriceItem(UpdateDefaultPriceItem item) {
+    if (item == null) {
+      throw new ValidationException("Update item cannot be null");
+    }
+    if (!StringUtils.hasText(item.getPricingId())) {
+      throw new ValidationException("Pricing ID is required for each update item");
+    }
+    boolean hasAny = item.getMaximumRetailPrice() != null
+        || item.getPriceToRetail() != null
+        || (item.getRates() != null && !item.getRates().isEmpty())
+        || StringUtils.hasText(item.getDefaultRate());
+    if (!hasAny) {
+      throw new ValidationException("At least one of maximumRetailPrice, priceToRetail, rates, or defaultRate must be provided");
+    }
+    validateRates(item.getRates(), item.getDefaultRate());
+    if (item.getMaximumRetailPrice() != null && item.getMaximumRetailPrice().compareTo(BigDecimal.ZERO) < 0) {
+      throw new ValidationException("Maximum retail price cannot be negative");
+    }
+    if (item.getPriceToRetail() != null && item.getPriceToRetail().compareTo(BigDecimal.ZERO) < 0) {
+      throw new ValidationException("Price to retail cannot be negative");
     }
   }
 
