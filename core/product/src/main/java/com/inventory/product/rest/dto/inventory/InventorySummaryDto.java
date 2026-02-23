@@ -1,5 +1,6 @@
 package com.inventory.product.rest.dto.inventory;
 
+import com.inventory.pricing.domain.model.Rate;
 import com.inventory.product.domain.model.DiscountApplicable;
 import com.inventory.product.domain.model.ItemType;
 import com.inventory.product.domain.model.SchemeType;
@@ -25,6 +26,8 @@ public class InventorySummaryDto {
   BigDecimal maximumRetailPrice;
   BigDecimal costPrice;
   BigDecimal sellingPrice;
+  List<Rate> rates;
+  String defaultRate;
   BigDecimal additionalDiscount;
   BigDecimal receivedCount;
   Integer receivedBaseCount;

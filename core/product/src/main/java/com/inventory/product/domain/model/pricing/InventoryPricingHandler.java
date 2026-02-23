@@ -113,6 +113,8 @@ public class InventoryPricingHandler {
         req.setMaximumRetailPrice(inventory.getMaximumRetailPrice());
         req.setCostPrice(inventory.getCostPrice());
         req.setSellingPrice(inventory.getSellingPrice());
+        req.setRates(inventory.getRates());
+        req.setDefaultRate(inventory.getDefaultRate());
         req.setAdditionalDiscount(inventory.getAdditionalDiscount());
         req.setSgst(resolveSgst(inventory.getSgst(), inventory.getShopId()));
         req.setCgst(resolveCgst(inventory.getCgst(), inventory.getShopId()));
@@ -137,7 +139,8 @@ public class InventoryPricingHandler {
 
   private boolean hasPricingData(Inventory inv) {
     return inv.getMaximumRetailPrice() != null || inv.getCostPrice() != null
-        || inv.getSellingPrice() != null || inv.getAdditionalDiscount() != null;
+        || inv.getSellingPrice() != null || inv.getAdditionalDiscount() != null
+        || (inv.getRates() != null && !inv.getRates().isEmpty());
   }
 
   // --- Helpers ---
@@ -163,7 +166,7 @@ public class InventoryPricingHandler {
     if (mrp == null && cost == null && selling == null && discount == null && sgst == null && cgst == null) {
       return null;
     }
-    return new PricingData(mrp, cost, selling, discount, sgst, cgst);
+    return new PricingData(mrp, cost, selling, null, null, discount, sgst, cgst);
   }
 
   private static boolean isValidObjectId(String s) {
@@ -198,6 +201,8 @@ public class InventoryPricingHandler {
         p.getMaximumRetailPrice(),
         p.getCostPrice(),
         p.getSellingPrice(),
+        p.getRates(),
+        p.getDefaultRate(),
         p.getAdditionalDiscount(),
         p.getSgst(),
         p.getCgst());
@@ -208,7 +213,11 @@ public class InventoryPricingHandler {
   private void applyPricing(Inventory inv, PricingData p) {
     inv.setMaximumRetailPrice(p.getMaximumRetailPrice());
     inv.setCostPrice(p.getCostPrice());
-    inv.setSellingPrice(p.getSellingPrice());
+    inv.setRates(p.getRates());
+    inv.setDefaultRate(StringUtils.hasText(p.getDefaultRate())
+        ? p.getDefaultRate()
+        : (p.getSellingPrice() != null ? "SellingPrice" : null));
+    inv.setSellingPrice(p.getEffectiveSellingPrice());
     inv.setAdditionalDiscount(p.getAdditionalDiscount());
     String sgst = p.getSgst();
     String cgst = p.getCgst();

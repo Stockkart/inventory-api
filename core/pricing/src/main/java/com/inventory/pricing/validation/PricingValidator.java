@@ -1,12 +1,14 @@
 package com.inventory.pricing.validation;
 
 import com.inventory.common.exception.ValidationException;
+import com.inventory.pricing.domain.model.Rate;
 import com.inventory.pricing.rest.dto.CreatePricingRequest;
 import com.inventory.pricing.rest.dto.UpdatePricingRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 @Component
 public class PricingValidator {
@@ -18,8 +20,13 @@ public class PricingValidator {
     if (!StringUtils.hasText(request.getShopId())) {
       throw new ValidationException("Shop ID is required for pricing");
     }
+    validateRates(request.getRates(), request.getDefaultRate());
+    BigDecimal effectiveSp = resolveEffectiveSellingPrice(request.getSellingPrice(), request.getRates(), request.getDefaultRate());
+    if (effectiveSp == null) {
+      throw new ValidationException("Either sellingPrice or (rates with defaultRate) is required");
+    }
     validatePriceValues(request.getMaximumRetailPrice(), request.getCostPrice(),
-        request.getSellingPrice(), request.getAdditionalDiscount());
+        effectiveSp, request.getAdditionalDiscount());
     validateGstRates(request.getSgst(), request.getCgst());
   }
 
@@ -27,9 +34,13 @@ public class PricingValidator {
     if (request == null) {
       return;
     }
-    validatePriceValues(request.getMaximumRetailPrice(), request.getCostPrice(),
-        request.getSellingPrice(), request.getAdditionalDiscount());
+    validateRates(request.getRates(), request.getDefaultRate());
     validateGstRates(request.getSgst(), request.getCgst());
+    if (request.getMaximumRetailPrice() != null || request.getCostPrice() != null
+        || request.getSellingPrice() != null || request.getAdditionalDiscount() != null) {
+      validatePriceValues(request.getMaximumRetailPrice(), request.getCostPrice(),
+          request.getSellingPrice(), request.getAdditionalDiscount());
+    }
   }
 
   public void validatePricingId(String pricingId) {
@@ -52,6 +63,40 @@ public class PricingValidator {
         (additionalDiscount.compareTo(BigDecimal.ZERO) < 0 || additionalDiscount.compareTo(BigDecimal.valueOf(100)) > 0)) {
       throw new ValidationException("Additional discount must be between 0 and 100");
     }
+  }
+
+  private void validateRates(List<Rate> rates, String defaultRate) {
+    if (rates == null || rates.isEmpty()) {
+      return;
+    }
+    for (Rate r : rates) {
+      if (!StringUtils.hasText(r.getName())) {
+        throw new ValidationException("Rate name cannot be blank");
+      }
+      if (r.getPrice() == null) {
+        throw new ValidationException("Rate price is required: " + r.getName());
+      }
+      if (r.getPrice().compareTo(BigDecimal.ZERO) < 0) {
+        throw new ValidationException("Rate price cannot be negative: " + r.getName());
+      }
+    }
+    if (StringUtils.hasText(defaultRate)) {
+      boolean found = rates.stream().anyMatch(r -> defaultRate.equals(r.getName()));
+      if (!found) {
+        throw new ValidationException("defaultRate '" + defaultRate + "' must match a rate name in rates");
+      }
+    }
+  }
+
+  private static BigDecimal resolveEffectiveSellingPrice(BigDecimal sellingPrice, List<Rate> rates, String defaultRate) {
+    if (StringUtils.hasText(defaultRate) && rates != null && !rates.isEmpty()) {
+      return rates.stream()
+          .filter(r -> defaultRate.equals(r.getName()))
+          .map(Rate::getPrice)
+          .findFirst()
+          .orElse(sellingPrice);
+    }
+    return sellingPrice;
   }
 
   private void validateGstRates(String sgst, String cgst) {

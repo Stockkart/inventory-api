@@ -1,5 +1,6 @@
 package com.inventory.product.domain.model;
 
+import com.inventory.pricing.domain.model.Rate;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -9,6 +10,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 
 @Data
 @NoArgsConstructor
@@ -67,6 +69,10 @@ public class Inventory {
   private BigDecimal costPrice;
   @Transient
   private BigDecimal sellingPrice;
+  @Transient
+  private List<Rate> rates;
+  @Transient
+  private String defaultRate;
   @Transient
   private BigDecimal additionalDiscount;
   @Transient

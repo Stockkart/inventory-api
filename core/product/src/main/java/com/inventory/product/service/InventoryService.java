@@ -202,6 +202,8 @@ public class InventoryService {
     fullRequest.setMaximumRetailPrice(itemRequest.getMaximumRetailPrice());
     fullRequest.setCostPrice(itemRequest.getCostPrice());
     fullRequest.setSellingPrice(itemRequest.getSellingPrice());
+    fullRequest.setRates(itemRequest.getRates());
+    fullRequest.setDefaultRate(itemRequest.getDefaultRate());
     fullRequest.setAdditionalDiscount(itemRequest.getAdditionalDiscount());
     fullRequest.setBusinessType(itemRequest.getBusinessType());
     fullRequest.setLocation(itemRequest.getLocation());
