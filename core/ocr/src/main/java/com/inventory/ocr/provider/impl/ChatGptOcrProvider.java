@@ -54,13 +54,13 @@ public class ChatGptOcrProvider implements OcrProvider {
       Pricing:
       - maximumRetailPrice must come from MRP field.
         If Reduced MRP / discounted MRP exists, use Reduced MRP as maximumRetailPrice.
-      - sellingPrice must come from retail selling price field (PTR / Price to Retail / Selling Price / Retail Price).
+      - priceToRetail must come from retail selling price field (PTR / Price to Retail / Selling Price / Retail Price).
       - costPrice must come from unit purchase price field (Rate / Cost Price / PTS / Price to Stockist).
-      - sellingPrice and costPrice must NEVER be taken from MRP or Reduced MRP.
-      - Do NOT use taxable amount / SGST value / CGST value / totals as costPrice or sellingPrice.
+      - priceToRetail and costPrice must NEVER be taken from MRP or Reduced MRP.
+      - Do NOT use taxable amount / SGST value / CGST value / totals as costPrice or priceToRetail.
       - If multiple unit price numbers exist in the same product row, choose:
         costPrice = lowest unit price,
-        sellingPrice = next higher unit price,
+        priceToRetail = next higher unit price,
         maximumRetailPrice = highest unit price (or Reduced MRP if present).
       
       Tax:
@@ -176,7 +176,7 @@ public class ChatGptOcrProvider implements OcrProvider {
     item.setCompanyName(str(n, "companyName"));
     item.setMaximumRetailPrice(num(n, "maximumRetailPrice"));
     item.setCostPrice(num(n, "costPrice"));
-    item.setSellingPrice(num(n, "sellingPrice"));
+    item.setPriceToRetail(num(n, "priceToRetail"));
     item.setAdditionalDiscount(num(n, "additionalDiscount"));
     item.setBusinessType(str(n, "businessType") != null ? str(n, "businessType") : "PHARMACEUTICAL");
     item.setLocation(str(n, "location"));

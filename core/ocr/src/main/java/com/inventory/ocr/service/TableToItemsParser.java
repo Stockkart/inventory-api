@@ -248,12 +248,12 @@ public class TableToItemsParser {
       BigDecimal r = parseDecimal(clean(row.get(m.rate)));
       if (r != null) {
         item.setCostPrice(r);
-        if (item.getSellingPrice() == null) item.setSellingPrice(r);
+        if (item.getPriceToRetail() == null) item.setPriceToRetail(r);
       }
     }
     if (m.reducedMrp != null && row.containsKey(m.reducedMrp)) {
       BigDecimal r = parseDecimal(clean(row.get(m.reducedMrp)));
-      if (r != null) item.setSellingPrice(r);
+      if (r != null) item.setPriceToRetail(r);
     }
     if (m.mrp != null && row.containsKey(m.mrp)) {
       String raw = row.get(m.mrp);

@@ -51,10 +51,10 @@ public class ProfitAnalyticsHelper {
           // Calculate metrics
           Integer quantity = getBaseQuantity(item);
           BigDecimal pricingQuantity = getPricingQuantity(item);
-          BigDecimal sellingPrice = item.getSellingPrice() != null ? item.getSellingPrice() : BigDecimal.ZERO;
+          BigDecimal priceToRetail = item.getPriceToRetail() != null ? item.getPriceToRetail() : BigDecimal.ZERO;
           BigDecimal costPrice = data.costPrice != null ? data.costPrice : BigDecimal.ZERO;
 
-          BigDecimal itemRevenue = sellingPrice.multiply(pricingQuantity);
+          BigDecimal itemRevenue = priceToRetail.multiply(pricingQuantity);
           BigDecimal itemCost = costPrice.multiply(pricingQuantity);
           BigDecimal itemProfit = itemRevenue.subtract(itemCost);
 
@@ -131,10 +131,10 @@ public class ProfitAnalyticsHelper {
 
           Integer quantity = getBaseQuantity(item);
           BigDecimal pricingQuantity = getPricingQuantity(item);
-          BigDecimal sellingPrice = item.getSellingPrice() != null ? item.getSellingPrice() : BigDecimal.ZERO;
+          BigDecimal priceToRetail = item.getPriceToRetail() != null ? item.getPriceToRetail() : BigDecimal.ZERO;
           BigDecimal costPrice = inventoryToCostPrice.getOrDefault(item.getInventoryId(), BigDecimal.ZERO);
 
-          BigDecimal itemRevenue = sellingPrice.multiply(pricingQuantity);
+          BigDecimal itemRevenue = priceToRetail.multiply(pricingQuantity);
           BigDecimal itemCost = costPrice.multiply(pricingQuantity);
           BigDecimal itemProfit = itemRevenue.subtract(itemCost);
 
@@ -207,10 +207,10 @@ public class ProfitAnalyticsHelper {
 
           Integer quantity = getBaseQuantity(item);
           BigDecimal pricingQuantity = getPricingQuantity(item);
-          BigDecimal sellingPrice = item.getSellingPrice() != null ? item.getSellingPrice() : BigDecimal.ZERO;
+          BigDecimal priceToRetail = item.getPriceToRetail() != null ? item.getPriceToRetail() : BigDecimal.ZERO;
           BigDecimal costPrice = inventoryToCostPrice.getOrDefault(item.getInventoryId(), BigDecimal.ZERO);
 
-          BigDecimal itemRevenue = sellingPrice.multiply(pricingQuantity);
+          BigDecimal itemRevenue = priceToRetail.multiply(pricingQuantity);
           BigDecimal itemCost = costPrice.multiply(pricingQuantity);
           BigDecimal itemProfit = itemRevenue.subtract(itemCost);
 
@@ -283,10 +283,10 @@ public class ProfitAnalyticsHelper {
 
           Integer quantity = getBaseQuantity(item);
           BigDecimal pricingQuantity = getPricingQuantity(item);
-          BigDecimal sellingPrice = item.getSellingPrice() != null ? item.getSellingPrice() : BigDecimal.ZERO;
+          BigDecimal priceToRetail = item.getPriceToRetail() != null ? item.getPriceToRetail() : BigDecimal.ZERO;
           BigDecimal costPrice = inventoryToCostPrice.getOrDefault(item.getInventoryId(), BigDecimal.ZERO);
 
-          BigDecimal itemRevenue = sellingPrice.multiply(pricingQuantity);
+          BigDecimal itemRevenue = priceToRetail.multiply(pricingQuantity);
           BigDecimal itemCost = costPrice.multiply(pricingQuantity);
           BigDecimal itemProfit = itemRevenue.subtract(itemCost);
 
@@ -339,11 +339,11 @@ public class ProfitAnalyticsHelper {
         for (PurchaseItem item : purchase.getItems()) {
           Integer quantity = getBaseQuantity(item);
           BigDecimal pricingQuantity = getPricingQuantity(item);
-          BigDecimal sellingPrice = item.getSellingPrice() != null ? item.getSellingPrice() : BigDecimal.ZERO;
+          BigDecimal priceToRetail = item.getPriceToRetail() != null ? item.getPriceToRetail() : BigDecimal.ZERO;
           BigDecimal discount = item.getDiscount() != null ? item.getDiscount() : BigDecimal.ZERO;
-          BigDecimal mrp = item.getMaximumRetailPrice() != null ? item.getMaximumRetailPrice() : sellingPrice;
+          BigDecimal mrp = item.getMaximumRetailPrice() != null ? item.getMaximumRetailPrice() : priceToRetail;
 
-          BigDecimal itemRevenue = sellingPrice.multiply(pricingQuantity);
+          BigDecimal itemRevenue = priceToRetail.multiply(pricingQuantity);
           BigDecimal itemDiscount = discount.multiply(pricingQuantity);
           BigDecimal itemRevenueWithoutDiscount = mrp.multiply(pricingQuantity);
 
@@ -425,10 +425,10 @@ public class ProfitAnalyticsHelper {
         for (PurchaseItem item : purchase.getItems()) {
           Integer quantity = getBaseQuantity(item);
           BigDecimal pricingQuantity = getPricingQuantity(item);
-          BigDecimal sellingPrice = item.getSellingPrice() != null ? item.getSellingPrice() : BigDecimal.ZERO;
+          BigDecimal priceToRetail = item.getPriceToRetail() != null ? item.getPriceToRetail() : BigDecimal.ZERO;
           BigDecimal costPrice = inventoryToCostPrice.getOrDefault(item.getInventoryId(), BigDecimal.ZERO);
 
-          BigDecimal itemRevenue = sellingPrice.multiply(pricingQuantity);
+          BigDecimal itemRevenue = priceToRetail.multiply(pricingQuantity);
           BigDecimal itemCost = costPrice.multiply(pricingQuantity);
           BigDecimal itemProfit = itemRevenue.subtract(itemCost);
 
@@ -436,7 +436,7 @@ public class ProfitAnalyticsHelper {
           data.totalRevenue = data.totalRevenue.add(itemRevenue);
           data.totalCost = data.totalCost.add(itemCost);
           data.totalProfit = data.totalProfit.add(itemProfit);
-          data.totalSellingPrice = data.totalSellingPrice.add(sellingPrice.multiply(pricingQuantity));
+          data.totalPriceToRetail = data.totalPriceToRetail.add(priceToRetail.multiply(pricingQuantity));
           data.totalCostPrice = data.totalCostPrice.add(costPrice.multiply(pricingQuantity));
           data.totalPricingQuantity = data.totalPricingQuantity.add(pricingQuantity);
         }
@@ -449,19 +449,19 @@ public class ProfitAnalyticsHelper {
         .sorted(Comparator.comparing(CostTrendData::getPeriodKey))
         .map(data -> {
           BigDecimal averageCostPrice = BigDecimal.ZERO;
-          BigDecimal averageSellingPrice = BigDecimal.ZERO;
+          BigDecimal averagePriceToRetail = BigDecimal.ZERO;
           if (data.totalPricingQuantity.compareTo(BigDecimal.ZERO) > 0) {
             averageCostPrice = data.totalCostPrice
                 .divide(data.totalPricingQuantity, 2, RoundingMode.HALF_UP);
-            averageSellingPrice = data.totalSellingPrice
+            averagePriceToRetail = data.totalPriceToRetail
                 .divide(data.totalPricingQuantity, 2, RoundingMode.HALF_UP);
           }
 
-          BigDecimal averageMargin = averageSellingPrice.subtract(averageCostPrice);
+          BigDecimal averageMargin = averagePriceToRetail.subtract(averageCostPrice);
           BigDecimal averageMarginPercent = BigDecimal.ZERO;
-          if (averageSellingPrice.compareTo(BigDecimal.ZERO) > 0) {
+          if (averagePriceToRetail.compareTo(BigDecimal.ZERO) > 0) {
             averageMarginPercent = averageMargin
-                .divide(averageSellingPrice, 4, RoundingMode.HALF_UP)
+                .divide(averagePriceToRetail, 4, RoundingMode.HALF_UP)
                 .multiply(BigDecimal.valueOf(100));
           }
 
@@ -473,7 +473,7 @@ public class ProfitAnalyticsHelper {
               periodStart,
               periodEnd,
               averageCostPrice,
-              averageSellingPrice,
+              averagePriceToRetail,
               averageMargin,
               averageMarginPercent,
               data.totalQuantitySold
@@ -591,7 +591,7 @@ public class ProfitAnalyticsHelper {
     BigDecimal totalRevenue = BigDecimal.ZERO;
     BigDecimal totalCost = BigDecimal.ZERO;
     BigDecimal totalProfit = BigDecimal.ZERO;
-    BigDecimal totalSellingPrice = BigDecimal.ZERO;
+    BigDecimal totalPriceToRetail = BigDecimal.ZERO;
     BigDecimal totalCostPrice = BigDecimal.ZERO;
     BigDecimal totalPricingQuantity = BigDecimal.ZERO;
 

@@ -31,13 +31,13 @@ public class Pricing {
   /** Cost Price (CP) */
   private BigDecimal costPrice;
 
-  /** Selling Price (SP). Used when defaultRate is not set or rates is empty. */
-  private BigDecimal sellingPrice;
+  /** Price to Retail (PTR). Used when defaultRate is not set or rates is empty. */
+  private BigDecimal priceToRetail;
 
   /** Named rates (e.g., Rate-A=100, Rate-B=80). Optional. */
   private List<Rate> rates;
 
-  /** Name of the default rate from rates. When set, effective price = that rate's price; else sellingPrice. */
+  /** Name of the default rate from rates. When set, effective price = that rate's price; else priceToRetail. */
   private String defaultRate;
 
   /** Additional discount percentage (0-100) */

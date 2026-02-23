@@ -145,21 +145,21 @@ public class InventoryAnalyticsHelper {
 
           // Value calculations
           BigDecimal costPrice = inv.getCostPrice() != null ? inv.getCostPrice() : BigDecimal.ZERO;
-          BigDecimal sellingPrice = inv.getSellingPrice() != null ? inv.getSellingPrice() : BigDecimal.ZERO;
+          BigDecimal priceToRetail = inv.getPriceToRetail() != null ? inv.getPriceToRetail() : BigDecimal.ZERO;
 
           BigDecimal costValue = costPrice.multiply(BigDecimal.valueOf(current));
-          BigDecimal sellingValue = sellingPrice.multiply(BigDecimal.valueOf(current));
-          BigDecimal potentialProfit = sellingValue.subtract(costValue);
+          BigDecimal retailValue = priceToRetail.multiply(BigDecimal.valueOf(current));
+          BigDecimal potentialProfit = retailValue.subtract(costValue);
 
           dto.setCostValue(costValue);
-          dto.setSellingValue(sellingValue);
+          dto.setRetailValue(retailValue);
           dto.setPotentialProfit(potentialProfit);
 
           // Margin percent
           BigDecimal marginPercent = BigDecimal.ZERO;
-          if (sellingPrice.compareTo(BigDecimal.ZERO) > 0) {
-            BigDecimal margin = sellingPrice.subtract(costPrice);
-            marginPercent = margin.divide(sellingPrice, 4, RoundingMode.HALF_UP)
+          if (priceToRetail.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal margin = priceToRetail.subtract(costPrice);
+            marginPercent = margin.divide(priceToRetail, 4, RoundingMode.HALF_UP)
                 .multiply(BigDecimal.valueOf(100));
           }
           dto.setMarginPercent(marginPercent);
@@ -315,8 +315,8 @@ public class InventoryAnalyticsHelper {
         .filter(Objects::nonNull)
         .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-    BigDecimal totalSellingValue = analytics.stream()
-        .map(InventoryAnalyticsDto::getSellingValue)
+    BigDecimal totalRetailValue = analytics.stream()
+        .map(InventoryAnalyticsDto::getRetailValue)
         .filter(Objects::nonNull)
         .reduce(BigDecimal.ZERO, BigDecimal::add);
 
@@ -344,7 +344,7 @@ public class InventoryAnalyticsHelper {
         expiringSoonProducts,
         deadStockProducts,
         totalCostValue,
-        totalSellingValue,
+        totalRetailValue,
         totalPotentialProfit,
         avgTurnoverRatio,
         avgStockPercentage

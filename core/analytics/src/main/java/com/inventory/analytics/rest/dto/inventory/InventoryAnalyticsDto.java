@@ -38,8 +38,8 @@ public class InventoryAnalyticsDto {
   
   // Value
   private BigDecimal costValue; // currentCount * costPrice
-  private BigDecimal sellingValue; // currentCount * sellingPrice
-  private BigDecimal potentialProfit; // sellingValue - costValue
+  private BigDecimal retailValue; // currentCount * priceToRetail
+  private BigDecimal potentialProfit; // retailValue - costValue
   private BigDecimal marginPercent;
   
   // Dates

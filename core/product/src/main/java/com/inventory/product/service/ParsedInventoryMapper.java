@@ -33,7 +33,7 @@ public class ParsedInventoryMapper {
     request.setCompanyName(parsedItem.getCompanyName());
     request.setMaximumRetailPrice(parsedItem.getMaximumRetailPrice());
     request.setCostPrice(parsedItem.getCostPrice());
-    request.setSellingPrice(parsedItem.getSellingPrice());
+    request.setPriceToRetail(parsedItem.getPriceToRetail());
     request.setAdditionalDiscount(parsedItem.getAdditionalDiscount());
     request.setBusinessType(parsedItem.getBusinessType() != null ? parsedItem.getBusinessType() : "PHARMACEUTICAL");
     request.setLocation(parsedItem.getLocation());

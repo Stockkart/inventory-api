@@ -25,7 +25,7 @@ public class InventorySummaryDto {
   String companyName;
   BigDecimal maximumRetailPrice;
   BigDecimal costPrice;
-  BigDecimal sellingPrice;
+  BigDecimal priceToRetail;
   List<RateDto> rates;
   String defaultRate;
   BigDecimal additionalDiscount;

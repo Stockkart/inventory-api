@@ -24,7 +24,7 @@ public class CreateInventoryItemRequest {
   private String companyName;
   private BigDecimal maximumRetailPrice;
   private BigDecimal costPrice;
-  private BigDecimal sellingPrice;
+  private BigDecimal priceToRetail;
   private List<RateDto> rates;
   private String defaultRate;
   private BigDecimal additionalDiscount; // Optional: Additional discount amount

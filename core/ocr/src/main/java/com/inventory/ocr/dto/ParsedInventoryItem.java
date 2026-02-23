@@ -22,7 +22,7 @@ public class ParsedInventoryItem {
   private String companyName;
   private BigDecimal maximumRetailPrice;
   private BigDecimal costPrice;
-  private BigDecimal sellingPrice;
+  private BigDecimal priceToRetail;
   private BigDecimal additionalDiscount;
   private String businessType;
   private String location;

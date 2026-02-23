@@ -16,7 +16,7 @@ public class InventorySummaryDto {
   private Integer expiringSoonProducts;
   private Integer deadStockProducts;
   private BigDecimal totalCostValue;
-  private BigDecimal totalSellingValue;
+  private BigDecimal totalRetailValue;
   private BigDecimal totalPotentialProfit;
   private BigDecimal averageTurnoverRatio;
   private BigDecimal averageStockPercentage;

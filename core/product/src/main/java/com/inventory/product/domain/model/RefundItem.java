@@ -32,10 +32,10 @@ public class RefundItem {
   /**
    * Selling price per unit at time of purchase.
    */
-  private BigDecimal sellingPrice;
+  private BigDecimal priceToRetail;
 
   /**
-   * Total refund amount for this item (sellingPrice * quantity).
+   * Total refund amount for this item (priceToRetail * quantity).
    */
   private BigDecimal itemRefundAmount;
 }

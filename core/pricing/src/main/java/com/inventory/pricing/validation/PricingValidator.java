@@ -21,9 +21,9 @@ public class PricingValidator {
       throw new ValidationException("Shop ID is required for pricing");
     }
     validateRates(request.getRates(), request.getDefaultRate());
-    BigDecimal effectiveSp = resolveEffectiveSellingPrice(request.getSellingPrice(), request.getRates(), request.getDefaultRate());
+    BigDecimal effectiveSp = resolveEffectivePrice(request.getPriceToRetail(), request.getRates(), request.getDefaultRate());
     if (effectiveSp == null) {
-      throw new ValidationException("Either sellingPrice or (rates with defaultRate) is required");
+      throw new ValidationException("Either priceToRetail or (rates with defaultRate) is required");
     }
     validatePriceValues(request.getMaximumRetailPrice(), request.getCostPrice(),
         effectiveSp, request.getAdditionalDiscount());
@@ -37,9 +37,9 @@ public class PricingValidator {
     validateRates(request.getRates(), request.getDefaultRate());
     validateGstRates(request.getSgst(), request.getCgst());
     if (request.getMaximumRetailPrice() != null || request.getCostPrice() != null
-        || request.getSellingPrice() != null || request.getAdditionalDiscount() != null) {
+        || request.getPriceToRetail() != null || request.getAdditionalDiscount() != null) {
       validatePriceValues(request.getMaximumRetailPrice(), request.getCostPrice(),
-          request.getSellingPrice(), request.getAdditionalDiscount());
+          request.getPriceToRetail(), request.getAdditionalDiscount());
     }
   }
 
@@ -88,15 +88,15 @@ public class PricingValidator {
     }
   }
 
-  private static BigDecimal resolveEffectiveSellingPrice(BigDecimal sellingPrice, List<Rate> rates, String defaultRate) {
+  private static BigDecimal resolveEffectivePrice(BigDecimal priceToRetail, List<Rate> rates, String defaultRate) {
     if (StringUtils.hasText(defaultRate) && rates != null && !rates.isEmpty()) {
       return rates.stream()
           .filter(r -> defaultRate.equals(r.getName()))
           .map(Rate::getPrice)
           .findFirst()
-          .orElse(sellingPrice);
+          .orElse(priceToRetail);
     }
-    return sellingPrice;
+    return priceToRetail;
   }
 
   private void validateGstRates(String sgst, String cgst) {

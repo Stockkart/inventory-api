@@ -14,7 +14,7 @@ import java.util.List;
 public class PricingReadDto {
   private BigDecimal maximumRetailPrice;
   private BigDecimal costPrice;
-  private BigDecimal sellingPrice;
+  private BigDecimal priceToRetail;
   private List<RateDto> rates;
   private String defaultRate;
   private BigDecimal additionalDiscount;
@@ -22,20 +22,20 @@ public class PricingReadDto {
   private String cgst;
 
   public boolean isEmpty() {
-    return maximumRetailPrice == null && costPrice == null && sellingPrice == null
+    return maximumRetailPrice == null && costPrice == null && priceToRetail == null
         && (rates == null || rates.isEmpty())
         && additionalDiscount == null && sgst == null && cgst == null;
   }
 
-  /** Effective selling price: defaultRate's price when found in rates, else sellingPrice. */
-  public BigDecimal getEffectiveSellingPrice() {
+  /** Effective price: defaultRate's price when found in rates, else priceToRetail. */
+  public BigDecimal getEffectivePrice() {
     if (org.springframework.util.StringUtils.hasText(defaultRate) && rates != null && !rates.isEmpty()) {
       return rates.stream()
           .filter(r -> defaultRate.equals(r.getName()))
           .map(RateDto::getPrice)
           .findFirst()
-          .orElse(sellingPrice);
+          .orElse(priceToRetail);
     }
-    return sellingPrice;
+    return priceToRetail;
   }
 }

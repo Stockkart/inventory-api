@@ -68,7 +68,7 @@ public class Inventory {
   @Transient
   private BigDecimal costPrice;
   @Transient
-  private BigDecimal sellingPrice;
+  private BigDecimal priceToRetail;
   @Transient
   private List<RateDto> rates;
   @Transient

@@ -386,12 +386,12 @@
         <td th:text="${item.expiryDate ?: ''}"></td>
         <td th:text="${item.batchNo ?: ''}"></td>
         <td class="text-right" th:text="${#numbers.formatDecimal(item.maximumRetailPrice, 1, 2)}"></td>
-        <td class="text-right" th:text="${#numbers.formatDecimal(item.sellingPrice, 1, 2)}"></td>
+        <td class="text-right" th:text="${#numbers.formatDecimal(item.priceToRetail, 1, 2)}"></td>
         <td th:text="${item.schemePayFor != null and item.schemeFree != null ? item.schemePayFor + '+' + item.schemeFree : (item.scheme != null ? item.scheme : '')}"></td>
         <td class="text-right" th:text="${item.additionalDiscount != null ? #numbers.formatDecimal(item.additionalDiscount, 1, 2) : '0.00'}"></td>
         <td class="text-right" th:text="${item.cgst != null and item.cgst != '' ? item.cgst : #numbers.formatDecimal(cgstPercent, 1, 2)}"></td>
         <td class="text-right" th:text="${item.sgst != null and item.sgst != '' ? item.sgst : #numbers.formatDecimal(sgstPercent, 1, 2)}"></td>
-        <td class="text-right" th:text="${item.totalAmount != null ? #numbers.formatDecimal(item.totalAmount, 1, 2) : #numbers.formatDecimal(item.sellingPrice * item.quantity, 1, 2)}"></td>
+        <td class="text-right" th:text="${item.totalAmount != null ? #numbers.formatDecimal(item.totalAmount, 1, 2) : #numbers.formatDecimal(item.priceToRetail * item.quantity, 1, 2)}"></td>
       </tr>
       </tbody>
     </table>

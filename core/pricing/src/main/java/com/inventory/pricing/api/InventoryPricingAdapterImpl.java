@@ -45,7 +45,7 @@ public class InventoryPricingAdapterImpl implements InventoryPricingAdapter {
     req.setShopId(command.getShopId());
     req.setMaximumRetailPrice(command.getMaximumRetailPrice());
     req.setCostPrice(command.getCostPrice());
-    req.setSellingPrice(command.getSellingPrice());
+    req.setPriceToRetail(command.getPriceToRetail());
     req.setRates(toRates(command.getRates()));
     req.setDefaultRate(command.getDefaultRate());
     req.setAdditionalDiscount(command.getAdditionalDiscount());
@@ -66,7 +66,7 @@ public class InventoryPricingAdapterImpl implements InventoryPricingAdapter {
     return new PricingReadDto(
         p.getMaximumRetailPrice(),
         p.getCostPrice(),
-        p.getSellingPrice(),
+        p.getPriceToRetail(),
         toRateDtos(p.getRates()),
         p.getDefaultRate(),
         p.getAdditionalDiscount(),
