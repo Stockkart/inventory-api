@@ -16,8 +16,15 @@ import java.util.List;
 @Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.IGNORE)
 public interface InventoryMapper {
 
-  // lotId, receivedCount, currentCount set in service (receivedCount/currentCount = count + scheme)
+  // lotId, receivedCount, currentCount set in service
+  // Pricing: @Transient fields populated by AOP on read; create writes to Pricing module
   @Mapping(target = "lotId", ignore = true)
+  @Mapping(target = "maximumRetailPrice", ignore = true)
+  @Mapping(target = "costPrice", ignore = true)
+  @Mapping(target = "sellingPrice", ignore = true)
+  @Mapping(target = "additionalDiscount", ignore = true)
+  @Mapping(target = "sgst", ignore = true)
+  @Mapping(target = "cgst", ignore = true)
   @Mapping(target = "receivedCount", ignore = true)
   @Mapping(target = "receivedBaseCount", ignore = true)
   @Mapping(target = "soldCount", constant = "0")
@@ -27,7 +34,6 @@ public interface InventoryMapper {
   @Mapping(target = "receivedDate", expression = "java(java.time.Instant.now())")
   @Mapping(target = "createdAt", expression = "java(java.time.Instant.now())")
   @Mapping(target = "updatedAt", expression = "java(java.time.Instant.now())")
-  @Mapping(target = "additionalDiscount", source = "additionalDiscount")
   Inventory toEntity(CreateInventoryRequest request);
 
   @Mapping(target = "lotId", source = "lotId")

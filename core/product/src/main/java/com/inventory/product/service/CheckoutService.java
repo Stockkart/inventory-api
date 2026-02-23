@@ -1190,6 +1190,8 @@ public class CheckoutService {
                 ? newItem.getSellingPrice()
                 : existingItem.getSellingPrice();
             int pricingFactor = existingItem.getUnitFactor() != null ? existingItem.getUnitFactor() : getDefaultFactor(inventory);
+            BigDecimal maximumRetailPrice = inventory.getMaximumRetailPrice();
+            BigDecimal costPrice = inventory.getCostPrice();
             BigDecimal newQuantity = BigDecimal.valueOf(newBaseQuantity)
                 .divide(BigDecimal.valueOf(pricingFactor), 4, RoundingMode.HALF_UP);
             BigDecimal newDiscount = existingItem.getMaximumRetailPrice()
@@ -1204,8 +1206,6 @@ public class CheckoutService {
             Integer schemeFree = newItem.getSchemeFree() != null ? newItem.getSchemeFree() : existingItem.getSchemeFree();
             SchemeType schemeType = newItem.getSchemeType() != null ? newItem.getSchemeType() : existingItem.getSchemeType();
             BigDecimal schemePercentage = newItem.getSchemePercentage() != null ? newItem.getSchemePercentage() : existingItem.getSchemePercentage();
-            BigDecimal maximumRetailPrice = inventory.getMaximumRetailPrice();
-            BigDecimal costPrice = inventory.getCostPrice();
 
             PurchaseItem updatedItem = purchaseMapper.createPurchaseItem(
                 existingItem.getInventoryId(),

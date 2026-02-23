@@ -5,7 +5,6 @@ import com.inventory.notifications.rest.dto.ReminderInventorySummary;
 import com.inventory.notifications.service.InventoryAdapter;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.repository.InventoryRepository;
-import com.inventory.product.service.InventoryAdapterImpl;
 import com.inventory.product.rest.dto.inventory.InventoryReminderSummary;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;

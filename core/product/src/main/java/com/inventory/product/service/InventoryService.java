@@ -9,10 +9,8 @@ import com.inventory.notifications.service.ReminderService;
 import com.inventory.ocr.service.InvoiceParserService;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.SchemeType;
-import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.UnitConversion;
 import com.inventory.product.domain.repository.InventoryRepository;
-import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.rest.dto.inventory.*;
 import java.util.ArrayList;
 import com.inventory.user.domain.repository.ShopVendorRepository;
@@ -65,9 +63,6 @@ public class InventoryService {
 
   @Autowired
   private ParsedInventoryMapper parsedInventoryMapper;
-
-  @Autowired
-  private ShopRepository shopRepository;
 
   /**
    * Parse invoice image and extract inventory items using OCR.
@@ -289,34 +284,8 @@ public class InventoryService {
       inventory.setCurrentBaseCount(totalReceivedBase);
       inventory.setSoldBaseCount(0);
 
-      // Set CGST and SGST: use provided values or shop defaults
-      if (!StringUtils.hasText(request.getSgst()) || !StringUtils.hasText(request.getCgst())) {
-        Optional<Shop> shopOpt = shopRepository.findById(shopId);
-        if (shopOpt.isPresent()) {
-          Shop shop = shopOpt.get();
-          // Use shop defaults if not provided in request
-          if (!StringUtils.hasText(request.getSgst())) {
-            inventory.setSgst(shop.getSgst());
-          } else {
-            inventory.setSgst(request.getSgst());
-          }
-          if (!StringUtils.hasText(request.getCgst())) {
-            inventory.setCgst(shop.getCgst());
-          } else {
-            inventory.setCgst(request.getCgst());
-          }
-        } else {
-          // Shop not found, use provided values or null
-          inventory.setSgst(StringUtils.hasText(request.getSgst()) ? request.getSgst() : null);
-          inventory.setCgst(StringUtils.hasText(request.getCgst()) ? request.getCgst() : null);
-        }
-      } else {
-        // Both provided, use as is
-        inventory.setSgst(request.getSgst());
-        inventory.setCgst(request.getCgst());
-      }
-
       inventory = inventoryRepository.save(inventory);
+
       log.info("Successfully created inventory lot: {} for product: {} in shop: {}",
           inventory.getLotId(), inventory.getBarcode(), shopId);
 
@@ -352,7 +321,6 @@ public class InventoryService {
       PageRequest pageable = PageRequest.of(page, size);
 
       List<Inventory> inventories = inventoryRepository.findByShopId(shopId, pageable);
-
       List<InventorySummaryDto> summaries = inventories.stream()
           .map(inventoryMapper::toSummary)
           .toList();
@@ -388,7 +356,6 @@ public class InventoryService {
       log.debug("Searching inventory for shop: {} with query: {}", shopId, query);
 
       List<Inventory> inventories = inventoryRepository.searchByShopIdAndQuery(shopId, query.trim());
-
       List<InventorySummaryDto> summaries = inventories.stream()
           .map(inventoryMapper::toSummary)
           .toList();
@@ -417,7 +384,6 @@ public class InventoryService {
       // Find inventory by ID
       Inventory inventory = inventoryRepository.findById(lotId)
           .orElseThrow(() -> new ResourceNotFoundException("Inventory lot", "lotId", lotId));
-
       return inventoryMapper.toDetail(inventory);
 
     } catch (ResourceNotFoundException e) {
@@ -554,7 +520,6 @@ public class InventoryService {
         throw new ResourceNotFoundException("Lot", "lotId", lotId);
       }
 
-      // Map to summary DTOs
       List<InventorySummaryDto> items = inventories.stream()
           .map(inventoryMapper::toSummary)
           .toList();
@@ -697,7 +662,6 @@ public class InventoryService {
     PageRequest pageable = PageRequest.of(page, size);
 
     List<Inventory> inventories = inventoryRepository.findByShopId(shopId, pageable);
-
     List<InventorySummaryDto> lowStock = inventories.stream()
       .filter(inv -> {
         int threshold = inv.getThresholdCount() != null ? inv.getThresholdCount() : 50;
@@ -754,12 +718,6 @@ public class InventoryService {
         log.debug("Updating thresholdCount to {} for inventory: {}", request.getThresholdCount(), inventoryId);
       }
 
-      // Update additionalDiscount if provided
-      if (request.getAdditionalDiscount() != null) {
-        inventory.setAdditionalDiscount(request.getAdditionalDiscount());
-        log.debug("Updating additionalDiscount to {} for inventory: {}", request.getAdditionalDiscount(), inventoryId);
-      }
-
       if (request.getItemType() != null) {
         inventory.setItemType(request.getItemType());
         inventory.setItemTypeDegree(request.getItemTypeDegree());
@@ -795,7 +753,6 @@ public class InventoryService {
       inventory = inventoryRepository.save(inventory);
       log.info("Successfully updated inventory with ID: {}", inventoryId);
 
-      // Map to response
       return inventoryMapper.toDetail(inventory);
 
     } catch (ValidationException | ResourceNotFoundException e) {

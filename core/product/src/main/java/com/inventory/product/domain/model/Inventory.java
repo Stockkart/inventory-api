@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Transient;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.math.BigDecimal;
@@ -52,17 +53,26 @@ public class Inventory {
   private String shopId;
   private String userId;
   private String vendorId;
-  private BigDecimal maximumRetailPrice;
-  private BigDecimal costPrice;
-  private BigDecimal sellingPrice;
-  private BigDecimal additionalDiscount; // Optional: Additional discount amount
-  private String hsn; // Optional: HSN code
-  private String batchNo; // Optional: Batch number
+  /** Reference to Pricing document (faster lookup by _id). Null for legacy inventories. */
+  private String pricingId;
+  private String hsn;
+  private String batchNo;
   private SchemeType schemeType; // FIXED_UNITS (default/backward) or PERCENTAGE
   private Integer scheme; // When schemeType FIXED_UNITS: free units. Total received = count + scheme.
   private BigDecimal schemePercentage; // When schemeType PERCENTAGE: e.g. 10 = 10% extra free.
-  private String sgst; // Optional: State GST rate (e.g., "9" for 9%). Uses shop default if not provided.
-  private String cgst; // Optional: Central GST rate (e.g., "9" for 9%). Uses shop default if not provided.
+  /** Transient: populated from Pricing module on read via AOP; not persisted. */
+  @Transient
+  private BigDecimal maximumRetailPrice;
+  @Transient
+  private BigDecimal costPrice;
+  @Transient
+  private BigDecimal sellingPrice;
+  @Transient
+  private BigDecimal additionalDiscount;
+  @Transient
+  private String sgst;
+  @Transient
+  private String cgst;
   private Instant createdAt;
   private Instant updatedAt;
 }
