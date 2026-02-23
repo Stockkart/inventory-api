@@ -1,7 +1,7 @@
 package com.inventory.product.rest.dto.inventory;
 
 import com.inventory.notifications.rest.dto.CustomReminderRequest;
-import com.inventory.pricing.domain.model.Rate;
+import com.inventory.pricing.api.dto.RateDto;
 import com.inventory.product.domain.model.DiscountApplicable;
 import com.inventory.product.domain.model.ItemType;
 import com.inventory.product.domain.model.SchemeType;
@@ -25,7 +25,7 @@ public class CreateInventoryItemRequest {
   private BigDecimal maximumRetailPrice;
   private BigDecimal costPrice;
   private BigDecimal sellingPrice;
-  private List<Rate> rates;
+  private List<RateDto> rates;
   private String defaultRate;
   private BigDecimal additionalDiscount; // Optional: Additional discount amount
   private String businessType;

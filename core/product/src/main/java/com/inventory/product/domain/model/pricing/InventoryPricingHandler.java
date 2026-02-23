@@ -1,11 +1,10 @@
 package com.inventory.product.domain.model.pricing;
 
-import com.inventory.pricing.domain.model.Pricing;
-import com.inventory.pricing.rest.dto.CreatePricingRequest;
-import com.inventory.pricing.rest.dto.UpdatePricingRequest;
-import com.inventory.pricing.service.PricingService;
+import com.inventory.pricing.api.InventoryPricingAdapter;
+import com.inventory.pricing.api.dto.PricingCreateCommand;
+import com.inventory.pricing.api.dto.PricingReadDto;
+import com.inventory.pricing.api.dto.PricingUpdateCommand;
 import com.inventory.product.domain.model.Inventory;
-import com.inventory.product.domain.model.PricingData;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.rest.dto.inventory.UpdateInventoryRequest;
@@ -34,7 +33,7 @@ import java.util.Map;
 public class InventoryPricingHandler {
 
   @Autowired
-  private PricingService pricingService;
+  private InventoryPricingAdapter pricingPort;
 
   @Autowired
   private MongoTemplate mongoTemplate;
@@ -44,19 +43,17 @@ public class InventoryPricingHandler {
 
   // --- Read: resolve pricing ---
 
-  public PricingData resolve(Inventory inventory) {
+  public PricingReadDto resolve(Inventory inventory) {
     if (inventory == null) return null;
     if (StringUtils.hasText(inventory.getPricingId())) {
       log.debug("Resolving pricing from Pricing table for inventory {} (pricingId={})", inventory.getId(), inventory.getPricingId());
-      return pricingService.findById(inventory.getPricingId())
-          .map(this::toPricingData)
-          .orElse(null);
+      return pricingPort.findById(inventory.getPricingId()).orElse(null);
     }
     log.debug("Resolving legacy pricing from inventory document for inventory {}", inventory.getId());
     return readLegacyPricing(inventory.getId());
   }
 
-  public Map<String, PricingData> resolveBatch(List<Inventory> inventories) {
+  public Map<String, PricingReadDto> resolveBatch(List<Inventory> inventories) {
     if (inventories == null || inventories.isEmpty()) return Map.of();
 
     List<String> pricingIds = inventories.stream()
@@ -65,17 +62,17 @@ public class InventoryPricingHandler {
         .distinct()
         .toList();
 
-    Map<String, Pricing> pricingMap = pricingService.findByIdIn(pricingIds);
-    Map<String, PricingData> result = new HashMap<>();
+    Map<String, PricingReadDto> pricingMap = pricingPort.findByIdIn(pricingIds);
+    Map<String, PricingReadDto> result = new HashMap<>();
 
     for (Inventory inv : inventories) {
       String invId = inv.getId();
       if (invId == null) continue;
       if (StringUtils.hasText(inv.getPricingId())) {
-        Pricing p = pricingMap.get(inv.getPricingId());
-        if (p != null) result.put(invId, toPricingData(p));
+        PricingReadDto p = pricingMap.get(inv.getPricingId());
+        if (p != null) result.put(invId, p);
       } else {
-        PricingData legacy = readLegacyPricing(invId);
+        PricingReadDto legacy = readLegacyPricing(invId);
         if (legacy != null) result.put(invId, legacy);
       }
     }
@@ -86,7 +83,7 @@ public class InventoryPricingHandler {
 
   public void enrich(Inventory inventory) {
     if (inventory == null) return;
-    PricingData p = resolve(inventory);
+    PricingReadDto p = resolve(inventory);
     if (p != null) {
       log.debug("enrich inventory {} applying sgst={} cgst={}", inventory.getId(), p.getSgst(), p.getCgst());
       applyPricing(inventory, p);
@@ -95,9 +92,9 @@ public class InventoryPricingHandler {
 
   public void enrich(List<Inventory> inventories) {
     if (inventories == null || inventories.isEmpty()) return;
-    Map<String, PricingData> map = resolveBatch(inventories);
+    Map<String, PricingReadDto> map = resolveBatch(inventories);
     for (Inventory inv : inventories) {
-      PricingData p = map.get(inv.getId());
+      PricingReadDto p = map.get(inv.getId());
       if (p != null) applyPricing(inv, p);
     }
   }
@@ -108,18 +105,19 @@ public class InventoryPricingHandler {
     try {
       // Create: new inventory with pricing data on entity (from mapper)
       if (inventory.getId() == null && hasPricingData(inventory) && StringUtils.hasText(inventory.getShopId())) {
-        CreatePricingRequest req = new CreatePricingRequest();
-        req.setShopId(inventory.getShopId());
-        req.setMaximumRetailPrice(inventory.getMaximumRetailPrice());
-        req.setCostPrice(inventory.getCostPrice());
-        req.setSellingPrice(inventory.getSellingPrice());
-        req.setRates(inventory.getRates());
-        req.setDefaultRate(inventory.getDefaultRate());
-        req.setAdditionalDiscount(inventory.getAdditionalDiscount());
-        req.setSgst(resolveSgst(inventory.getSgst(), inventory.getShopId()));
-        req.setCgst(resolveCgst(inventory.getCgst(), inventory.getShopId()));
-        var pricing = pricingService.createAndReturnEntity(req);
-        inventory.setPricingId(pricing.getId());
+        var cmd = PricingCreateCommand.builder()
+            .shopId(inventory.getShopId())
+            .maximumRetailPrice(inventory.getMaximumRetailPrice())
+            .costPrice(inventory.getCostPrice())
+            .sellingPrice(inventory.getSellingPrice())
+            .rates(inventory.getRates())
+            .defaultRate(inventory.getDefaultRate())
+            .additionalDiscount(inventory.getAdditionalDiscount())
+            .sgst(resolveSgst(inventory.getSgst(), inventory.getShopId()))
+            .cgst(resolveCgst(inventory.getCgst(), inventory.getShopId()))
+            .build();
+        String pricingId = pricingPort.create(cmd);
+        inventory.setPricingId(pricingId);
         return;
       }
       // Update: from context (service update sets it)
@@ -127,9 +125,7 @@ public class InventoryPricingHandler {
       if (ctx != null && ctx.type == InventoryPricingContext.Type.UPDATE && ctx.updateRequest != null) {
         UpdateInventoryRequest req = ctx.updateRequest;
         if (req.getAdditionalDiscount() != null && StringUtils.hasText(inventory.getPricingId())) {
-          UpdatePricingRequest pricingReq = new UpdatePricingRequest();
-          pricingReq.setAdditionalDiscount(req.getAdditionalDiscount());
-          pricingService.update(inventory.getPricingId(), pricingReq);
+          pricingPort.update(inventory.getPricingId(), new PricingUpdateCommand(req.getAdditionalDiscount()));
         }
       }
     } catch (Exception e) {
@@ -145,7 +141,7 @@ public class InventoryPricingHandler {
 
   // --- Helpers ---
 
-  private PricingData readLegacyPricing(String inventoryId) {
+  private PricingReadDto readLegacyPricing(String inventoryId) {
     Object idQuery = isValidObjectId(inventoryId) ? new ObjectId(inventoryId) : inventoryId;
     Document doc = mongoTemplate.findOne(
         Query.query(Criteria.where("_id").is(idQuery)),
@@ -166,7 +162,7 @@ public class InventoryPricingHandler {
     if (mrp == null && cost == null && selling == null && discount == null && sgst == null && cgst == null) {
       return null;
     }
-    return new PricingData(mrp, cost, selling, null, null, discount, sgst, cgst);
+    return new PricingReadDto(mrp, cost, selling, null, null, discount, sgst, cgst);
   }
 
   private static boolean isValidObjectId(String s) {
@@ -196,21 +192,7 @@ public class InventoryPricingHandler {
     return s.isEmpty() ? null : s;
   }
 
-  private PricingData toPricingData(Pricing p) {
-    PricingData data = new PricingData(
-        p.getMaximumRetailPrice(),
-        p.getCostPrice(),
-        p.getSellingPrice(),
-        p.getRates(),
-        p.getDefaultRate(),
-        p.getAdditionalDiscount(),
-        p.getSgst(),
-        p.getCgst());
-    log.debug("toPricingData pricingId={} sgst={} cgst={}", p.getId(), p.getSgst(), p.getCgst());
-    return data;
-  }
-
-  private void applyPricing(Inventory inv, PricingData p) {
+  private void applyPricing(Inventory inv, PricingReadDto p) {
     inv.setMaximumRetailPrice(p.getMaximumRetailPrice());
     inv.setCostPrice(p.getCostPrice());
     inv.setRates(p.getRates());

@@ -1,6 +1,6 @@
 package com.inventory.product.domain.model;
 
-import com.inventory.pricing.domain.model.Rate;
+import com.inventory.pricing.api.dto.RateDto;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -70,7 +70,7 @@ public class Inventory {
   @Transient
   private BigDecimal sellingPrice;
   @Transient
-  private List<Rate> rates;
+  private List<RateDto> rates;
   @Transient
   private String defaultRate;
   @Transient
