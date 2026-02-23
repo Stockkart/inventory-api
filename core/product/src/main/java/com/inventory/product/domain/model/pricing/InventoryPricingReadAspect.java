@@ -21,7 +21,7 @@ import java.util.Optional;
 public class InventoryPricingReadAspect {
 
   @Autowired
-  private InventoryPricingHandler handler;
+  private InventoryPricingReadHandler handler;
 
   @Pointcut("bean(inventoryRepository)")
   void inventoryRepository() {}

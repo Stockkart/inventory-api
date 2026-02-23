@@ -19,7 +19,7 @@ import org.springframework.stereotype.Component;
 public class InventoryPricingWriteAspect {
 
   @Autowired
-  private InventoryPricingHandler handler;
+  private InventoryPricingWriteHandler handler;
 
   @Pointcut("execution(* com.inventory.product.service.InventoryService.update(..))")
   void serviceUpdate() {}

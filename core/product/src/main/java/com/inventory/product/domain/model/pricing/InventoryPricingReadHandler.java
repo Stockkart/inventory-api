@@ -1,13 +1,10 @@
 package com.inventory.product.domain.model.pricing;
 
 import com.inventory.pricing.api.InventoryPricingAdapter;
-import com.inventory.pricing.api.dto.PricingCreateCommand;
 import com.inventory.pricing.api.dto.PricingReadDto;
-import com.inventory.pricing.api.dto.PricingUpdateCommand;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.repository.ShopRepository;
-import com.inventory.product.rest.dto.inventory.UpdateInventoryRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -25,12 +22,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Handles all inventory pricing logic: resolve (read), enrich, and persist (write).
- * Used by InventoryPricingAspect.
+ * Handles inventory pricing read: resolve pricing (from port or legacy) and enrich inventory.
  */
 @Slf4j
 @Component
-public class InventoryPricingHandler {
+public class InventoryPricingReadHandler {
 
   @Autowired
   private InventoryPricingAdapter pricingPort;
@@ -40,8 +36,6 @@ public class InventoryPricingHandler {
 
   @Autowired
   private ShopRepository shopRepository;
-
-  // --- Read: resolve pricing ---
 
   public PricingReadDto resolve(Inventory inventory) {
     if (inventory == null) return null;
@@ -79,8 +73,6 @@ public class InventoryPricingHandler {
     return result;
   }
 
-  // --- Read: enrich inventory with pricing ---
-
   public void enrich(Inventory inventory) {
     if (inventory == null) return;
     PricingReadDto p = resolve(inventory);
@@ -98,48 +90,6 @@ public class InventoryPricingHandler {
       if (p != null) applyPricing(inv, p);
     }
   }
-
-  // --- Write: persist from entity (create) or context (update) ---
-
-  public void persistOnSave(Inventory inventory) {
-    try {
-      // Create: new inventory with pricing data on entity (from mapper)
-      if (inventory.getId() == null && hasPricingData(inventory) && StringUtils.hasText(inventory.getShopId())) {
-        var cmd = PricingCreateCommand.builder()
-            .shopId(inventory.getShopId())
-            .maximumRetailPrice(inventory.getMaximumRetailPrice())
-            .costPrice(inventory.getCostPrice())
-            .sellingPrice(inventory.getSellingPrice())
-            .rates(inventory.getRates())
-            .defaultRate(inventory.getDefaultRate())
-            .additionalDiscount(inventory.getAdditionalDiscount())
-            .sgst(resolveSgst(inventory.getSgst(), inventory.getShopId()))
-            .cgst(resolveCgst(inventory.getCgst(), inventory.getShopId()))
-            .build();
-        String pricingId = pricingPort.create(cmd);
-        inventory.setPricingId(pricingId);
-        return;
-      }
-      // Update: from context (service update sets it)
-      InventoryPricingContext.Context ctx = InventoryPricingContext.get();
-      if (ctx != null && ctx.type == InventoryPricingContext.Type.UPDATE && ctx.updateRequest != null) {
-        UpdateInventoryRequest req = ctx.updateRequest;
-        if (req.getAdditionalDiscount() != null && StringUtils.hasText(inventory.getPricingId())) {
-          pricingPort.update(inventory.getPricingId(), new PricingUpdateCommand(req.getAdditionalDiscount()));
-        }
-      }
-    } catch (Exception e) {
-      log.warn("Failed to persist pricing for inventory {}: {}", inventory.getId(), e.getMessage());
-    }
-  }
-
-  private boolean hasPricingData(Inventory inv) {
-    return inv.getMaximumRetailPrice() != null || inv.getCostPrice() != null
-        || inv.getSellingPrice() != null || inv.getAdditionalDiscount() != null
-        || (inv.getRates() != null && !inv.getRates().isEmpty());
-  }
-
-  // --- Helpers ---
 
   private PricingReadDto readLegacyPricing(String inventoryId) {
     Object idQuery = isValidObjectId(inventoryId) ? new ObjectId(inventoryId) : inventoryId;
@@ -163,6 +113,28 @@ public class InventoryPricingHandler {
       return null;
     }
     return new PricingReadDto(mrp, cost, selling, null, null, discount, sgst, cgst);
+  }
+
+  private void applyPricing(Inventory inv, PricingReadDto p) {
+    inv.setMaximumRetailPrice(p.getMaximumRetailPrice());
+    inv.setCostPrice(p.getCostPrice());
+    inv.setRates(p.getRates());
+    inv.setDefaultRate(StringUtils.hasText(p.getDefaultRate())
+        ? p.getDefaultRate()
+        : (p.getSellingPrice() != null ? "SellingPrice" : null));
+    inv.setSellingPrice(p.getEffectiveSellingPrice());
+    inv.setAdditionalDiscount(p.getAdditionalDiscount());
+    String sgst = p.getSgst();
+    String cgst = p.getCgst();
+    if (!StringUtils.hasText(sgst) || !StringUtils.hasText(cgst)) {
+      var shop = shopRepository.findById(inv.getShopId()).orElse(null);
+      if (shop != null) {
+        if (!StringUtils.hasText(sgst)) sgst = shop.getSgst();
+        if (!StringUtils.hasText(cgst)) cgst = shop.getCgst();
+      }
+    }
+    inv.setSgst(sgst);
+    inv.setCgst(cgst);
   }
 
   private static boolean isValidObjectId(String s) {
@@ -190,39 +162,5 @@ public class InventoryPricingHandler {
     if (v == null) return null;
     String s = v.toString().trim();
     return s.isEmpty() ? null : s;
-  }
-
-  private void applyPricing(Inventory inv, PricingReadDto p) {
-    inv.setMaximumRetailPrice(p.getMaximumRetailPrice());
-    inv.setCostPrice(p.getCostPrice());
-    inv.setRates(p.getRates());
-    inv.setDefaultRate(StringUtils.hasText(p.getDefaultRate())
-        ? p.getDefaultRate()
-        : (p.getSellingPrice() != null ? "SellingPrice" : null));
-    inv.setSellingPrice(p.getEffectiveSellingPrice());
-    inv.setAdditionalDiscount(p.getAdditionalDiscount());
-    String sgst = p.getSgst();
-    String cgst = p.getCgst();
-    if (!StringUtils.hasText(sgst) || !StringUtils.hasText(cgst)) {
-      var shop = shopRepository.findById(inv.getShopId()).orElse(null);
-      if (shop != null) {
-        if (!StringUtils.hasText(sgst)) sgst = shop.getSgst();
-        if (!StringUtils.hasText(cgst)) cgst = shop.getCgst();
-      }
-    }
-    inv.setSgst(sgst);
-    inv.setCgst(cgst);
-  }
-
-  private String resolveSgst(String fromRequest, String shopId) {
-    if (StringUtils.hasText(fromRequest)) return fromRequest;
-    if (!StringUtils.hasText(shopId)) return null;
-    return shopRepository.findById(shopId).map(Shop::getSgst).orElse(null);
-  }
-
-  private String resolveCgst(String fromRequest, String shopId) {
-    if (StringUtils.hasText(fromRequest)) return fromRequest;
-    if (!StringUtils.hasText(shopId)) return null;
-    return shopRepository.findById(shopId).map(Shop::getCgst).orElse(null);
   }
 }
