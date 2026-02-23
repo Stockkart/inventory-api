@@ -8,7 +8,6 @@ import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.PricingData;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.repository.ShopRepository;
-import com.inventory.product.rest.dto.inventory.CreateInventoryRequest;
 import com.inventory.product.rest.dto.inventory.UpdateInventoryRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,6 +17,10 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import org.bson.Document;
+import org.bson.types.ObjectId;
+
+import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -44,10 +47,12 @@ public class InventoryPricingHandler {
   public PricingData resolve(Inventory inventory) {
     if (inventory == null) return null;
     if (StringUtils.hasText(inventory.getPricingId())) {
+      log.debug("Resolving pricing from Pricing table for inventory {} (pricingId={})", inventory.getId(), inventory.getPricingId());
       return pricingService.findById(inventory.getPricingId())
           .map(this::toPricingData)
           .orElse(null);
     }
+    log.debug("Resolving legacy pricing from inventory document for inventory {}", inventory.getId());
     return readLegacyPricing(inventory.getId());
   }
 
@@ -82,7 +87,10 @@ public class InventoryPricingHandler {
   public void enrich(Inventory inventory) {
     if (inventory == null) return;
     PricingData p = resolve(inventory);
-    if (p != null) applyPricing(inventory, p);
+    if (p != null) {
+      log.debug("enrich inventory {} applying sgst={} cgst={}", inventory.getId(), p.getSgst(), p.getCgst());
+      applyPricing(inventory, p);
+    }
   }
 
   public void enrich(List<Inventory> inventories) {
@@ -94,27 +102,27 @@ public class InventoryPricingHandler {
     }
   }
 
-  // --- Write: persist from context ---
+  // --- Write: persist from entity (create) or context (update) ---
 
-  public void persistFromContext(Inventory inventory) {
-    InventoryPricingContext.Context ctx = InventoryPricingContext.get();
-    if (ctx == null) return;
-
+  public void persistOnSave(Inventory inventory) {
     try {
-      if (ctx.type == InventoryPricingContext.Type.CREATE && ctx.createRequest != null) {
-        CreateInventoryRequest req = ctx.createRequest;
-        CreatePricingRequest pricingReq = new CreatePricingRequest();
-        pricingReq.setShopId(ctx.shopId);
-        pricingReq.setMaximumRetailPrice(req.getMaximumRetailPrice());
-        pricingReq.setCostPrice(req.getCostPrice());
-        pricingReq.setSellingPrice(req.getSellingPrice());
-        pricingReq.setAdditionalDiscount(req.getAdditionalDiscount());
-        pricingReq.setSgst(resolveSgst(req.getSgst(), ctx.shopId));
-        pricingReq.setCgst(resolveCgst(req.getCgst(), ctx.shopId));
-
-        var pricing = pricingService.createAndReturnEntity(pricingReq);
+      // Create: new inventory with pricing data on entity (from mapper)
+      if (inventory.getId() == null && hasPricingData(inventory) && StringUtils.hasText(inventory.getShopId())) {
+        CreatePricingRequest req = new CreatePricingRequest();
+        req.setShopId(inventory.getShopId());
+        req.setMaximumRetailPrice(inventory.getMaximumRetailPrice());
+        req.setCostPrice(inventory.getCostPrice());
+        req.setSellingPrice(inventory.getSellingPrice());
+        req.setAdditionalDiscount(inventory.getAdditionalDiscount());
+        req.setSgst(resolveSgst(inventory.getSgst(), inventory.getShopId()));
+        req.setCgst(resolveCgst(inventory.getCgst(), inventory.getShopId()));
+        var pricing = pricingService.createAndReturnEntity(req);
         inventory.setPricingId(pricing.getId());
-      } else if (ctx.type == InventoryPricingContext.Type.UPDATE && ctx.updateRequest != null) {
+        return;
+      }
+      // Update: from context (service update sets it)
+      InventoryPricingContext.Context ctx = InventoryPricingContext.get();
+      if (ctx != null && ctx.type == InventoryPricingContext.Type.UPDATE && ctx.updateRequest != null) {
         UpdateInventoryRequest req = ctx.updateRequest;
         if (req.getAdditionalDiscount() != null && StringUtils.hasText(inventory.getPricingId())) {
           UpdatePricingRequest pricingReq = new UpdatePricingRequest();
@@ -127,24 +135,74 @@ public class InventoryPricingHandler {
     }
   }
 
+  private boolean hasPricingData(Inventory inv) {
+    return inv.getMaximumRetailPrice() != null || inv.getCostPrice() != null
+        || inv.getSellingPrice() != null || inv.getAdditionalDiscount() != null;
+  }
+
   // --- Helpers ---
 
   private PricingData readLegacyPricing(String inventoryId) {
-    PricingData data = mongoTemplate.findOne(
-        Query.query(Criteria.where("_id").is(inventoryId)),
-        PricingData.class,
+    Object idQuery = isValidObjectId(inventoryId) ? new ObjectId(inventoryId) : inventoryId;
+    Document doc = mongoTemplate.findOne(
+        Query.query(Criteria.where("_id").is(idQuery)),
+        Document.class,
         "inventory");
-    return (data == null || data.isEmpty()) ? null : data;
+    if (doc == null) {
+      log.debug("readLegacyPricing: no document found for inventoryId={}", inventoryId);
+      return null;
+    }
+    BigDecimal mrp = getBigDecimal(doc, "maximumRetailPrice");
+    BigDecimal cost = getBigDecimal(doc, "costPrice");
+    BigDecimal selling = getBigDecimal(doc, "sellingPrice");
+    BigDecimal discount = getBigDecimal(doc, "additionalDiscount");
+    String sgst = toStringOrNull(doc.get("sgst"));
+    String cgst = toStringOrNull(doc.get("cgst"));
+    log.debug("readLegacyPricing inventoryId={} docKeys={} sgst={} (raw={}) cgst={} (raw={})",
+        inventoryId, doc.keySet(), sgst, doc.get("sgst"), cgst, doc.get("cgst"));
+    if (mrp == null && cost == null && selling == null && discount == null && sgst == null && cgst == null) {
+      return null;
+    }
+    return new PricingData(mrp, cost, selling, discount, sgst, cgst);
+  }
+
+  private static boolean isValidObjectId(String s) {
+    if (s == null || s.length() != 24) return false;
+    for (int i = 0; i < s.length(); i++) {
+      char c = s.charAt(i);
+      if ((c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F')) return false;
+    }
+    return true;
+  }
+
+  private static BigDecimal getBigDecimal(Document doc, String key) {
+    Object v = doc.get(key);
+    if (v == null) return null;
+    if (v instanceof BigDecimal) return (BigDecimal) v;
+    if (v instanceof Number) return BigDecimal.valueOf(((Number) v).doubleValue());
+    try {
+      return new BigDecimal(v.toString());
+    } catch (Exception e) {
+      return null;
+    }
+  }
+
+  private static String toStringOrNull(Object v) {
+    if (v == null) return null;
+    String s = v.toString().trim();
+    return s.isEmpty() ? null : s;
   }
 
   private PricingData toPricingData(Pricing p) {
-    return new PricingData(
+    PricingData data = new PricingData(
         p.getMaximumRetailPrice(),
         p.getCostPrice(),
         p.getSellingPrice(),
         p.getAdditionalDiscount(),
         p.getSgst(),
         p.getCgst());
+    log.debug("toPricingData pricingId={} sgst={} cgst={}", p.getId(), p.getSgst(), p.getCgst());
+    return data;
   }
 
   private void applyPricing(Inventory inv, PricingData p) {
@@ -152,8 +210,17 @@ public class InventoryPricingHandler {
     inv.setCostPrice(p.getCostPrice());
     inv.setSellingPrice(p.getSellingPrice());
     inv.setAdditionalDiscount(p.getAdditionalDiscount());
-    inv.setSgst(p.getSgst());
-    inv.setCgst(p.getCgst());
+    String sgst = p.getSgst();
+    String cgst = p.getCgst();
+    if (!StringUtils.hasText(sgst) || !StringUtils.hasText(cgst)) {
+      var shop = shopRepository.findById(inv.getShopId()).orElse(null);
+      if (shop != null) {
+        if (!StringUtils.hasText(sgst)) sgst = shop.getSgst();
+        if (!StringUtils.hasText(cgst)) cgst = shop.getCgst();
+      }
+    }
+    inv.setSgst(sgst);
+    inv.setCgst(cgst);
   }
 
   private String resolveSgst(String fromRequest, String shopId) {

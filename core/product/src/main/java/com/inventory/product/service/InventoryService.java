@@ -168,7 +168,6 @@ public class InventoryService {
           CreateInventoryRequest fullRequest = convertToCreateInventoryRequest(itemRequest, 
               bulkRequest.getVendorId(), lotId);
           
-          // Create inventory using existing create method
           InventoryReceiptResponse response = create(fullRequest, userId, shopId);
           createdItems.add(response);
         } catch (Exception e) {
@@ -234,20 +233,13 @@ public class InventoryService {
 
   public InventoryReceiptResponse create(CreateInventoryRequest request, String userId, String shopId) {
     try {
-      // Input validation
       inventoryValidator.validateCreateRequest(request);
-
       log.debug("Creating inventory for barcode: {} in shop: {}", request.getBarcode(), shopId);
-
-      // Validate vendorId if provided
       if (StringUtils.hasText(request.getVendorId())) {
         validateVendorId(request.getVendorId(), shopId);
       }
-
-      // Determine lotId: use provided lotId or generate new one
       String lotId = determineLotId(request.getLotId(), shopId);
 
-      // Map and save inventory
       Inventory inventory = inventoryMapper.toEntity(request);
       inventory.setLotId(lotId);
       inventory.setShopId(shopId);
@@ -257,13 +249,8 @@ public class InventoryService {
       String normalizedBaseUnit = normalizeUnitName(request.getBaseUnit());
       inventory.setBaseUnit(normalizedBaseUnit);
       inventory.setUnitConversions(normalizeUnitConversion(request.getUnitConversions(), normalizedBaseUnit));
-      if (request.getPurchaseDate() != null) {
-        inventory.setPurchaseDate(request.getPurchaseDate());
-      } else {
-        inventory.setPurchaseDate(Instant.now());
-      }
+      inventory.setPurchaseDate(request.getPurchaseDate() != null ? request.getPurchaseDate() : Instant.now());
 
-      // Total received = count (bill qty) + scheme free. For PERCENTAGE: free = count * schemePercentage/100.
       int billQty = request.getCount() != null ? request.getCount() : 0;
       int schemeFreeUnits;
       if (request.getSchemeType() == SchemeType.PERCENTAGE
@@ -289,14 +276,9 @@ public class InventoryService {
       log.info("Successfully created inventory lot: {} for product: {} in shop: {}",
           inventory.getLotId(), inventory.getBarcode(), shopId);
 
-      // Create reminder for expiry date asynchronously (handled by ReminderService)
-      // Fire and forget - don't wait for completion
-      // Errors are handled inside createReminderForInventoryCreate method
-      CreateReminderForInventoryRequest reminderRequest = inventoryMapper.toCreateReminderForInventoryRequest(
-          request, shopId, inventory.getId());
+      CreateReminderForInventoryRequest reminderRequest =
+          inventoryMapper.toCreateReminderForInventoryRequest(request, shopId, inventory.getId());
       reminderService.createReminderForInventoryCreate(reminderRequest);
-      // Map to response
-      // Set reminderCreated to true if expiry date exists (optimistic - actual creation happens async)
       boolean reminderCreated = inventory.getExpiryDate() != null;
       return inventoryMapper.toReceiptResponseWithReminder(inventory, reminderCreated);
 
