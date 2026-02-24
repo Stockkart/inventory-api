@@ -54,7 +54,7 @@ public class CheckoutValidator {
     if (!StringUtils.hasText(item.getId())) {
       throw new ValidationException("ID is required for item");
     }
-    if (StringUtils.hasText(item.getUnit()) && !item.getUnit().trim().toUpperCase().matches("^[A-Z0-9_]+$")) {
+    if (StringUtils.hasText(item.getUnit()) && !item.getUnit().trim().toUpperCase().matches("^[A-Z0-9_ ]+$")) {
       throw new ValidationException("Invalid unit for item: " + item.getId());
     }
     // Quantity may be null or 0 when only updating additionalDiscount, scheme, or priceToRetail (item must already be in cart)

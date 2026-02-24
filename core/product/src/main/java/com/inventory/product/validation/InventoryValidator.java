@@ -97,8 +97,8 @@ public class InventoryValidator {
     if (!StringUtils.hasText(unit)) {
       throw new ValidationException(fieldName + " is required");
     }
-    if (!unit.matches("^[A-Z0-9_]+$")) {
-      throw new ValidationException(fieldName + " must contain only letters, digits, and underscore");
+    if (!unit.matches("^[A-Z0-9_ ]+$")) {
+      throw new ValidationException(fieldName + " must contain only letters, digits, underscore and space");
     }
   }
 
