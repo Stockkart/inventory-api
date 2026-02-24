@@ -251,10 +251,12 @@ public class CheckoutService {
 
       checkoutValidator.validateStatusTransition(currentStatus, requestedStatus);
 
-      // If status is being changed to COMPLETED, decrease inventory counts
+      // If status is being changed to COMPLETED, decrease inventory counts and set sale date
       if (requestedStatus == PurchaseStatus.COMPLETED) {
         log.info("Processing inventory updates for completed purchase ID: {}", purchase.getId());
         updateInventoryForCompletedPurchase(purchase);
+        // Sale date for GSTR and reporting: when the sale was completed (invoice date)
+        purchase.setSoldAt(Instant.now());
       }
 
       // Update status and payment method

@@ -8,6 +8,7 @@ import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.data.mongodb.repository.Query;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -69,5 +70,27 @@ public interface PurchaseRepository extends MongoRepository<Purchase, String> {
    */
   @Query("{ 'shopId': ?0, 'invoiceNo': { '$regex': ?1, '$options': 'i' } }")
   List<Purchase> findByShopIdAndInvoiceNoRegex(String shopId, String invoiceNoPattern);
+
+  /**
+   * Find purchases by shop ID and sold-at date range (inclusive).
+   * Used for GSTR-1 and other period-based reports.
+   */
+  List<Purchase> findByShopIdAndSoldAtBetween(String shopId, Instant start, Instant end);
+
+  /**
+   * Find completed purchases by shop ID and sold-at date range (inclusive).
+   * Used for GSTR-1 so only invoiced sales are included.
+   */
+  List<Purchase> findByShopIdAndStatusAndSoldAtBetween(String shopId, PurchaseStatus status, Instant start, Instant end);
+
+  /**
+   * Find completed purchases in a period: soldAt in range, or updatedAt in range (e.g. completed in period).
+   * Ensures purchases completed in the period are included even if soldAt was never set or is from cart-creation.
+   */
+  @Query("{ 'shopId': ?0, 'status': ?1, '$or': [ "
+      + "{ 'soldAt': { '$gte': ?2, '$lte': ?3 } }, "
+      + "{ 'updatedAt': { '$gte': ?2, '$lte': ?3 } } "
+      + "] }")
+  List<Purchase> findCompletedPurchasesInPeriod(String shopId, PurchaseStatus status, Instant rangeStart, Instant rangeEnd);
 }
 
