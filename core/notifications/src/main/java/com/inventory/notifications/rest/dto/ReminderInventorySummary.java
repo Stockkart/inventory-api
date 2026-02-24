@@ -15,5 +15,5 @@ public class ReminderInventorySummary {
   private String batchNo;
   private BigDecimal maximumRetailPrice;
   private BigDecimal costPrice;
-  private BigDecimal sellingPrice;
+  private BigDecimal priceToRetail;
 }

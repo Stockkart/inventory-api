@@ -95,8 +95,8 @@ public class VendorAnalyticsHelper {
         for (PurchaseItem item : purchase.getItems()) {
           Inventory inv = inventoryRepository.findById(item.getInventoryId()).orElse(null);
           if (inv != null && inv.getVendorId() != null) {
-            BigDecimal itemRevenue = item.getSellingPrice() != null
-                ? item.getSellingPrice().multiply(getPricingQuantity(item))
+            BigDecimal itemRevenue = item.getPriceToRetail() != null
+                ? item.getPriceToRetail().multiply(getPricingQuantity(item))
                 : BigDecimal.ZERO;
             vendorRevenueMap.merge(inv.getVendorId(), itemRevenue, BigDecimal::add);
           }
@@ -184,10 +184,10 @@ public class VendorAnalyticsHelper {
 
           Integer quantity = getBaseQuantity(item);
           BigDecimal pricingQuantity = getPricingQuantity(item);
-          BigDecimal sellingPrice = item.getSellingPrice() != null ? item.getSellingPrice() : BigDecimal.ZERO;
+          BigDecimal priceToRetail = item.getPriceToRetail() != null ? item.getPriceToRetail() : BigDecimal.ZERO;
           BigDecimal costPrice = inv.getCostPrice() != null ? inv.getCostPrice() : BigDecimal.ZERO;
 
-          BigDecimal itemRevenue = sellingPrice.multiply(pricingQuantity);
+          BigDecimal itemRevenue = priceToRetail.multiply(pricingQuantity);
           BigDecimal itemCost = costPrice.multiply(pricingQuantity);
           BigDecimal itemProfit = itemRevenue.subtract(itemCost);
 

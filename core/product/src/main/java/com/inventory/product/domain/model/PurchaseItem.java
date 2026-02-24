@@ -24,7 +24,7 @@ public class PurchaseItem {
   /** Available units for this inventory line (base + conversion), used by FE unit picker. */
   private List<AvailableUnit> availableUnits;
   private BigDecimal maximumRetailPrice;
-  private BigDecimal sellingPrice;
+  private BigDecimal priceToRetail;
   private BigDecimal discount;
   private BigDecimal additionalDiscount; // Additional discount percentage from inventory
   private BigDecimal totalAmount; // Final amount after additionalDiscount and taxes (CGST + SGST)

@@ -33,7 +33,7 @@ public class InventoryAdapterImpl implements InventoryAdapter {
       dto.setBatchNo(inv.getBatchNo());
       dto.setMaximumRetailPrice(inv.getMaximumRetailPrice());
       dto.setCostPrice(inv.getCostPrice());
-      dto.setSellingPrice(inv.getSellingPrice());
+      dto.setPriceToRetail(inv.getPriceToRetail());
       return dto;
     }).orElse(null);
   }

@@ -18,6 +18,8 @@ import java.util.List;
 @AllArgsConstructor
 public class InventorySummaryDto {
   String id;
+  /** Pricing document ID. Null for legacy inventories without a pricing record. */
+  String pricingId;
   String lotId;
   String barcode;
   String name;
@@ -25,6 +27,9 @@ public class InventorySummaryDto {
   String companyName;
   BigDecimal maximumRetailPrice;
   BigDecimal costPrice;
+  /** Original Price to Retail (PTR). */
+  BigDecimal priceToRetail;
+  /** Effective selling price (from defaultRate). */
   BigDecimal sellingPrice;
   List<RateDto> rates;
   String defaultRate;

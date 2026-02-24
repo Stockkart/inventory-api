@@ -88,8 +88,8 @@ public class SalesAnalyticsHelper {
           
           data.setQuantitySold(data.getQuantitySold() + getBaseQuantity(item));
           BigDecimal pricingQuantity = getPricingQuantity(item);
-          BigDecimal itemRevenue = item.getSellingPrice() != null
-              ? item.getSellingPrice().multiply(pricingQuantity)
+          BigDecimal itemRevenue = item.getPriceToRetail() != null
+              ? item.getPriceToRetail().multiply(pricingQuantity)
               : BigDecimal.ZERO;
           data.setTotalRevenue(data.getTotalRevenue().add(itemRevenue));
           data.setNumberOfSales(data.getNumberOfSales() + 1);
@@ -137,8 +137,8 @@ public class SalesAnalyticsHelper {
           
           data.setQuantitySold(data.getQuantitySold() + getBaseQuantity(item));
           BigDecimal pricingQuantity = getPricingQuantity(item);
-          BigDecimal itemRevenue = item.getSellingPrice() != null
-              ? item.getSellingPrice().multiply(pricingQuantity)
+          BigDecimal itemRevenue = item.getPriceToRetail() != null
+              ? item.getPriceToRetail().multiply(pricingQuantity)
               : BigDecimal.ZERO;
           data.setTotalRevenue(data.getTotalRevenue().add(itemRevenue));
           data.setNumberOfSales(data.getNumberOfSales() + 1);
@@ -186,8 +186,8 @@ public class SalesAnalyticsHelper {
           
           data.setQuantitySold(data.getQuantitySold() + getBaseQuantity(item));
           BigDecimal pricingQuantity = getPricingQuantity(item);
-          BigDecimal itemRevenue = item.getSellingPrice() != null
-              ? item.getSellingPrice().multiply(pricingQuantity)
+          BigDecimal itemRevenue = item.getPriceToRetail() != null
+              ? item.getPriceToRetail().multiply(pricingQuantity)
               : BigDecimal.ZERO;
           data.setTotalRevenue(data.getTotalRevenue().add(itemRevenue));
           data.setNumberOfSales(data.getNumberOfSales() + 1);
@@ -236,8 +236,8 @@ public class SalesAnalyticsHelper {
           
           data.setQuantitySold(data.getQuantitySold() + getBaseQuantity(item));
           BigDecimal pricingQuantity = getPricingQuantity(item);
-          BigDecimal itemRevenue = item.getSellingPrice() != null
-              ? item.getSellingPrice().multiply(pricingQuantity)
+          BigDecimal itemRevenue = item.getPriceToRetail() != null
+              ? item.getPriceToRetail().multiply(pricingQuantity)
               : BigDecimal.ZERO;
           data.setTotalRevenue(data.getTotalRevenue().add(itemRevenue));
           data.setNumberOfSales(data.getNumberOfSales() + 1);

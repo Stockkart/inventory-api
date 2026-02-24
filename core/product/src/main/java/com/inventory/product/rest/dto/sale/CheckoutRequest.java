@@ -16,7 +16,7 @@ public class CheckoutRequest {
   public static class CheckoutItem {
     private String id;
     private Integer quantity;
-    private BigDecimal sellingPrice;
+    private BigDecimal priceToRetail;
   }
 }
 

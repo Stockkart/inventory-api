@@ -27,7 +27,7 @@ public class CheckoutValidator {
     if (item.getQuantity() > MAX_QUANTITY) {
       throw new ValidationException("Maximum quantity per item is " + MAX_QUANTITY);
     }
-    if (item.getSellingPrice() == null || item.getSellingPrice().compareTo(BigDecimal.ZERO) <= 0) {
+    if (item.getPriceToRetail() == null || item.getPriceToRetail().compareTo(BigDecimal.ZERO) <= 0) {
       throw new ValidationException("Selling price must be greater than zero for item: " + item.getId());
     }
   }
@@ -57,14 +57,14 @@ public class CheckoutValidator {
     if (StringUtils.hasText(item.getUnit()) && !item.getUnit().trim().toUpperCase().matches("^[A-Z0-9_]+$")) {
       throw new ValidationException("Invalid unit for item: " + item.getId());
     }
-    // Quantity may be null or 0 when only updating additionalDiscount, scheme, or sellingPrice (item must already be in cart)
+    // Quantity may be null or 0 when only updating additionalDiscount, scheme, or priceToRetail (item must already be in cart)
     boolean hasSchemeChange = item.getSchemePayFor() != null || item.getSchemeFree() != null
         || item.getSchemeType() != null || item.getSchemePercentage() != null;
     boolean hasBaseQuantity = item.getBaseQuantity() != null && item.getBaseQuantity() != 0;
     boolean hasQuantity = item.getQuantity() != null && item.getQuantity() != 0;
     boolean updateOnly = (item.getQuantity() == null || item.getQuantity() == 0)
         && !hasBaseQuantity
-        && (item.getAdditionalDiscount() != null || hasSchemeChange || item.getSellingPrice() != null);
+        && (item.getAdditionalDiscount() != null || hasSchemeChange || item.getPriceToRetail() != null);
     if (!updateOnly) {
       if (!hasQuantity && !hasBaseQuantity) {
         throw new ValidationException("Quantity or baseQuantity is required for item: " + item.getId());
@@ -85,7 +85,7 @@ public class CheckoutValidator {
     }
     // Selling price is optional. When omitted for positive quantity, backend uses inventory default price
     // for the selected sale unit. When provided, it must be > 0.
-    if (item.getSellingPrice() != null && item.getSellingPrice().compareTo(BigDecimal.ZERO) <= 0) {
+    if (item.getPriceToRetail() != null && item.getPriceToRetail().compareTo(BigDecimal.ZERO) <= 0) {
       throw new ValidationException("Selling price must be greater than zero for item: " + item.getId());
     }
     // additionalDiscount is optional; when provided it must be a valid percentage (0–100)

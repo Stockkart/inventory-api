@@ -149,7 +149,7 @@ public class InvoiceService {
         invoiceItem.setQuantity(purchaseItem.getQuantity());
         invoiceItem.setName(purchaseItem.getName());
         invoiceItem.setMaximumRetailPrice(purchaseItem.getMaximumRetailPrice());
-        invoiceItem.setSellingPrice(purchaseItem.getSellingPrice());
+        invoiceItem.setPriceToRetail(purchaseItem.getPriceToRetail());
         invoiceItem.setDiscount(purchaseItem.getDiscount());
         invoiceItem.setAdditionalDiscount(purchaseItem.getAdditionalDiscount());
         invoiceItem.setTotalAmount(purchaseItem.getTotalAmount());

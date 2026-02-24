@@ -15,7 +15,7 @@ public class InvoiceItem {
   private String expiryDate;
   private String batchNo;
   private BigDecimal maximumRetailPrice;
-  private BigDecimal sellingPrice;
+  private BigDecimal priceToRetail;
   private BigDecimal discount;
   private BigDecimal additionalDiscount; // Additional discount percentage
   private BigDecimal totalAmount; // Final amount after additionalDiscount and taxes

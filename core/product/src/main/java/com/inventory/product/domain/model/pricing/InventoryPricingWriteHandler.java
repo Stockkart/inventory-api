@@ -32,7 +32,7 @@ public class InventoryPricingWriteHandler {
             .shopId(inventory.getShopId())
             .maximumRetailPrice(inventory.getMaximumRetailPrice())
             .costPrice(inventory.getCostPrice())
-            .sellingPrice(inventory.getSellingPrice())
+            .priceToRetail(inventory.getPriceToRetail())
             .rates(inventory.getRates())
             .defaultRate(inventory.getDefaultRate())
             .additionalDiscount(inventory.getAdditionalDiscount())
@@ -57,7 +57,7 @@ public class InventoryPricingWriteHandler {
 
   private boolean hasPricingData(Inventory inv) {
     return inv.getMaximumRetailPrice() != null || inv.getCostPrice() != null
-        || inv.getSellingPrice() != null || inv.getAdditionalDiscount() != null
+        || inv.getPriceToRetail() != null || inv.getAdditionalDiscount() != null
         || (inv.getRates() != null && !inv.getRates().isEmpty());
   }
 

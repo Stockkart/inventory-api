@@ -15,7 +15,7 @@ public class CreatePricingRequest {
   private String shopId;
   private BigDecimal maximumRetailPrice;
   private BigDecimal costPrice;
-  private BigDecimal sellingPrice;
+  private BigDecimal priceToRetail;
   private List<Rate> rates;
   private String defaultRate;
   private BigDecimal additionalDiscount;

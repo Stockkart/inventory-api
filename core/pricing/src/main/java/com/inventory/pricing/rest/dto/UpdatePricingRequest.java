@@ -14,7 +14,7 @@ import java.util.List;
 public class UpdatePricingRequest {
   private BigDecimal maximumRetailPrice;
   private BigDecimal costPrice;
-  private BigDecimal sellingPrice;
+  private BigDecimal priceToRetail;
   private List<Rate> rates;
   private String defaultRate;
   private BigDecimal additionalDiscount;

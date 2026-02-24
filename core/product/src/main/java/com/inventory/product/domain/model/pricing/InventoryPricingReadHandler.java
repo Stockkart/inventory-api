@@ -103,16 +103,17 @@ public class InventoryPricingReadHandler {
     }
     BigDecimal mrp = getBigDecimal(doc, "maximumRetailPrice");
     BigDecimal cost = getBigDecimal(doc, "costPrice");
-    BigDecimal selling = getBigDecimal(doc, "sellingPrice");
+    BigDecimal ptr = getBigDecimal(doc, "priceToRetail");
+    if (ptr == null) ptr = getBigDecimal(doc, "sellingPrice"); // backward compat
     BigDecimal discount = getBigDecimal(doc, "additionalDiscount");
     String sgst = toStringOrNull(doc.get("sgst"));
     String cgst = toStringOrNull(doc.get("cgst"));
     log.debug("readLegacyPricing inventoryId={} docKeys={} sgst={} (raw={}) cgst={} (raw={})",
         inventoryId, doc.keySet(), sgst, doc.get("sgst"), cgst, doc.get("cgst"));
-    if (mrp == null && cost == null && selling == null && discount == null && sgst == null && cgst == null) {
+    if (mrp == null && cost == null && ptr == null && discount == null && sgst == null && cgst == null) {
       return null;
     }
-    return new PricingReadDto(mrp, cost, selling, null, null, discount, sgst, cgst);
+    return new PricingReadDto(mrp, cost, ptr, null, null, ptr, discount, sgst, cgst);
   }
 
   private void applyPricing(Inventory inv, PricingReadDto p) {
@@ -121,8 +122,9 @@ public class InventoryPricingReadHandler {
     inv.setRates(p.getRates());
     inv.setDefaultRate(StringUtils.hasText(p.getDefaultRate())
         ? p.getDefaultRate()
-        : (p.getSellingPrice() != null ? "SellingPrice" : null));
-    inv.setSellingPrice(p.getEffectiveSellingPrice());
+        : (p.getPriceToRetail() != null ? "priceToRetail" : null));
+    inv.setPriceToRetail(p.getPriceToRetail());
+    inv.setSellingPrice(p.getEffectivePrice());
     inv.setAdditionalDiscount(p.getAdditionalDiscount());
     String sgst = p.getSgst();
     String cgst = p.getCgst();

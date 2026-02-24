@@ -60,6 +60,7 @@ public interface InventoryMapper {
   }
 
   @Mapping(target = "id", source = "id")
+  @Mapping(target = "pricingId", source = "pricingId")
   @Mapping(target = "lotId", source = "lotId")
   @Mapping(target = "barcode", source = "barcode")
   @Mapping(target = "name", source = "name")
@@ -67,6 +68,7 @@ public interface InventoryMapper {
   @Mapping(target = "companyName", source = "companyName")
   @Mapping(target = "maximumRetailPrice", source = "maximumRetailPrice")
   @Mapping(target = "costPrice", source = "costPrice")
+  @Mapping(target = "priceToRetail", source = "priceToRetail")
   @Mapping(target = "sellingPrice", source = "sellingPrice")
   @Mapping(target = "rates", source = "rates")
   @Mapping(target = "defaultRate", source = "defaultRate")
@@ -96,12 +98,14 @@ public interface InventoryMapper {
   InventorySummaryDto toSummary(Inventory inventory);
 
   @Mapping(target = "lotId", source = "lotId")
+  @Mapping(target = "pricingId", source = "pricingId")
   @Mapping(target = "barcode", source = "barcode")
   @Mapping(target = "name", source = "name")
   @Mapping(target = "description", source = "description")
   @Mapping(target = "companyName", source = "companyName")
   @Mapping(target = "maximumRetailPrice", source = "maximumRetailPrice")
   @Mapping(target = "costPrice", source = "costPrice")
+  @Mapping(target = "priceToRetail", source = "priceToRetail")
   @Mapping(target = "sellingPrice", source = "sellingPrice")
   @Mapping(target = "rates", source = "rates")
   @Mapping(target = "defaultRate", source = "defaultRate")

@@ -152,8 +152,8 @@ public class RefundService {
                 "Purchase item not found for inventory ID: " + refundItem.getInventoryId()));
 
         // Calculate refund amount for this item
-        BigDecimal sellingPrice = purchaseItem.getSellingPrice() != null ? purchaseItem.getSellingPrice() : BigDecimal.ZERO;
-        BigDecimal itemRefundAmount = sellingPrice.multiply(BigDecimal.valueOf(refundItem.getQuantity()))
+        BigDecimal priceToRetail = purchaseItem.getPriceToRetail() != null ? purchaseItem.getPriceToRetail() : BigDecimal.ZERO;
+        BigDecimal itemRefundAmount = priceToRetail.multiply(BigDecimal.valueOf(refundItem.getQuantity()))
             .setScale(2, RoundingMode.HALF_UP);
 
         int refundBaseQuantity = getRefundBaseQuantity(purchaseItem, refundItem.getQuantity());
@@ -172,7 +172,7 @@ public class RefundService {
         refundedItem.setInventoryId(refundItem.getInventoryId());
         refundedItem.setName(purchaseItem.getName());
         refundedItem.setQuantity(refundItem.getQuantity());
-        refundedItem.setSellingPrice(sellingPrice);
+        refundedItem.setPriceToRetail(priceToRetail);
         refundedItem.setItemRefundAmount(itemRefundAmount);
 
         refundedItems.add(refundedItem);
@@ -186,7 +186,7 @@ public class RefundService {
             domainItem.setInventoryId(item.getInventoryId());
             domainItem.setName(item.getName());
             domainItem.setQuantity(item.getQuantity());
-            domainItem.setSellingPrice(item.getSellingPrice());
+            domainItem.setPriceToRetail(item.getPriceToRetail());
             domainItem.setItemRefundAmount(item.getItemRefundAmount());
             return domainItem;
           })

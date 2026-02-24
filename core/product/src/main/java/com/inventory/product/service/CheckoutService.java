@@ -89,10 +89,10 @@ public class CheckoutService {
 
   /**
    * Effective selling price per unit. When schemeType is PERCENTAGE, scheme is applied on price:
-   * effectivePrice = sellingPrice * (1 - schemePercentage/100). E.g. 50% scheme on 100 → 50.
+   * effectivePrice = priceToRetail * (1 - schemePercentage/100). E.g. 50% scheme on 100 → 50.
    */
   private BigDecimal getEffectiveSellingPricePerUnit(PurchaseItem item) {
-    BigDecimal price = item.getSellingPrice() != null ? item.getSellingPrice() : BigDecimal.ZERO;
+    BigDecimal price = item.getPriceToRetail() != null ? item.getPriceToRetail() : BigDecimal.ZERO;
     if (item.getSchemeType() == SchemeType.PERCENTAGE && item.getSchemePercentage() != null
         && item.getSchemePercentage().signum() > 0) {
       BigDecimal pct = item.getSchemePercentage();
@@ -626,7 +626,7 @@ public class CheckoutService {
       boolean hasSchemeChange = item.getSchemePayFor() != null || item.getSchemeFree() != null
           || item.getSchemeType() != null || item.getSchemePercentage() != null;
       boolean updateOnly = (item.getQuantity() == null || item.getQuantity() == 0)
-          && (item.getAdditionalDiscount() != null || hasSchemeChange || item.getSellingPrice() != null);
+          && (item.getAdditionalDiscount() != null || hasSchemeChange || item.getPriceToRetail() != null);
 
         if (updateOnly) {
           // Verify inventory exists and belongs to shop; no stock check needed
@@ -642,13 +642,13 @@ public class CheckoutService {
           BigDecimal pricingQuantity = BigDecimal.valueOf(baseQuantity)
               .divide(BigDecimal.valueOf(pricingFactor), 4, RoundingMode.HALF_UP);
           BigDecimal maximumRetailPrice = inventory.getMaximumRetailPrice();
-          // Pass null for sellingPrice when not in request so merge keeps existing line's price
+          // Pass null for priceToRetail when not in request so merge keeps existing line's price
           PurchaseItem purchaseItem = purchaseMapper.createPurchaseItem(
               item.getId(),
               inventory.getName(),
               pricingQuantity,
               maximumRetailPrice,
-              item.getSellingPrice(),
+              item.getPriceToRetail(),
               BigDecimal.ZERO
           );
           if (item.getAdditionalDiscount() != null) {
@@ -734,14 +734,11 @@ public class CheckoutService {
           // Use mapper to create PurchaseItem
           PurchaseItem purchaseItem = purchaseMapper.toPurchaseItemFromCartItem(item, inventory);
           normalizeSchemeFields(purchaseItem);
-          BigDecimal defaultSellingPrice = inventory.getSellingPrice();
-          BigDecimal sellingPrice = item.getSellingPrice() != null
-              ? item.getSellingPrice()
-              : defaultSellingPrice;
+          BigDecimal sellingPrice = inventory.getSellingPrice() != null ? inventory.getSellingPrice() : inventory.getPriceToRetail();
           BigDecimal costPrice = inventory.getCostPrice();
           purchaseItem.setQuantity(pricingQuantity);
           purchaseItem.setMaximumRetailPrice(maximumRetailPrice);
-          purchaseItem.setSellingPrice(sellingPrice);
+          purchaseItem.setPriceToRetail(sellingPrice);
           purchaseItem.setCostPrice(costPrice);
           purchaseItem.setUnitFactor(pricingFactor);
           BigDecimal perUnitDiscount = maximumRetailPrice
@@ -820,7 +817,7 @@ public class CheckoutService {
       // Item total for tax: use paid quantity when scheme is set (billing basis)
       BigDecimal itemTotal = BigDecimal.ZERO;
       if (item.getMaximumRetailPrice() != null && item.getQuantity() != null 
-          && item.getSellingPrice() != null) {
+          && item.getPriceToRetail() != null) {
         BigDecimal effectivePrice = getEffectiveSellingPricePerUnit(item);
         BigDecimal billableQty = getBillableQuantityAsDecimal(item);
         itemTotal = effectivePrice.multiply(billableQty);
@@ -907,22 +904,22 @@ public class CheckoutService {
   /**
    * Calculate totalAmount for a single purchase item.
    * Formula:
-   * 1. Apply additionalDiscount to sellingPrice: sellingPrice * (1 - additionalDiscount/100)
+   * 1. Apply additionalDiscount to priceToRetail: priceToRetail * (1 - additionalDiscount/100)
    * 2. Multiply by quantity
    * 3. Add CGST and SGST: totalDiscountedAmount * (1 + cgst/100 + sgst/100)
    */
-  private BigDecimal calculateItemTotalAmount(BigDecimal sellingPrice, BigDecimal additionalDiscount,
+  private BigDecimal calculateItemTotalAmount(BigDecimal priceToRetail, BigDecimal additionalDiscount,
                                                BigDecimal billableQuantity, String cgst, String sgst) {
-    if (sellingPrice == null || billableQuantity == null || billableQuantity.compareTo(BigDecimal.ZERO) <= 0) {
+    if (priceToRetail == null || billableQuantity == null || billableQuantity.compareTo(BigDecimal.ZERO) <= 0) {
       return BigDecimal.ZERO;
     }
     // Step 1: Calculate discounted selling price per unit
-    BigDecimal discountedPricePerUnit = sellingPrice;
+    BigDecimal discountedPricePerUnit = priceToRetail;
     if (additionalDiscount != null && additionalDiscount.compareTo(BigDecimal.ZERO) > 0) {
       BigDecimal discountMultiplier = BigDecimal.ONE.subtract(
           additionalDiscount.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP)
       );
-      discountedPricePerUnit = sellingPrice.multiply(discountMultiplier);
+      discountedPricePerUnit = priceToRetail.multiply(discountMultiplier);
     }
     // Step 2: Multiply by billable quantity (can be fractional for FIXED_UNITS scheme)
     BigDecimal totalDiscountedAmount = discountedPricePerUnit.multiply(billableQuantity);
@@ -953,7 +950,7 @@ public class CheckoutService {
   /**
    * Calculate total additional discount amount.
    * Additional discount is a percentage applied on selling price.
-   * Formula: (sellingPrice * quantity) * (additionalDiscount / 100)
+   * Formula: (priceToRetail * quantity) * (additionalDiscount / 100)
    */
   private BigDecimal calculateAdditionalDiscountTotal(List<PurchaseItem> items) {
     if (items == null || items.isEmpty()) {
@@ -1116,17 +1113,17 @@ public class CheckoutService {
               int pricingFactor = getDisplayToBaseFactor(inventory);
               BigDecimal quantityForPricing = BigDecimal.valueOf(switchBaseQuantity)
                   .divide(BigDecimal.valueOf(pricingFactor), 4, RoundingMode.HALF_UP);
-              BigDecimal sellingPrice = newItem.getSellingPrice() != null ? newItem.getSellingPrice() : existingItem.getSellingPrice();
+              BigDecimal priceToRetail = newItem.getPriceToRetail() != null ? newItem.getPriceToRetail() : existingItem.getPriceToRetail();
               BigDecimal maximumRetailPrice = inventory.getMaximumRetailPrice();
               BigDecimal costPrice = inventory.getCostPrice();
-              BigDecimal perUnitDiscount = maximumRetailPrice.subtract(sellingPrice != null ? sellingPrice : BigDecimal.ZERO);
+              BigDecimal perUnitDiscount = maximumRetailPrice.subtract(priceToRetail != null ? priceToRetail : BigDecimal.ZERO);
 
               PurchaseItem switchedItem = purchaseMapper.createPurchaseItem(
                   existingItem.getInventoryId(),
                   existingItem.getName(),
                   quantityForPricing,
                   maximumRetailPrice,
-                  sellingPrice,
+                  priceToRetail,
                   perUnitDiscount.compareTo(BigDecimal.ZERO) > 0
                       ? perUnitDiscount.multiply(quantityForPricing)
                       : BigDecimal.ZERO
@@ -1182,20 +1179,20 @@ public class CheckoutService {
               break;
             }
 
-            // Case 1 & 2: Update quantity (positive adds, negative decreases). Use payload sellingPrice when provided (update-only or add); for negative qty we only remove, keep existing price.
+            // Case 1 & 2: Update quantity (positive adds, negative decreases). Use payload priceToRetail when provided (update-only or add); for negative qty we only remove, keep existing price.
             Inventory inventory = inventoryRepository.findById(existingItem.getInventoryId())
                 .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", existingItem.getInventoryId()));
-            BigDecimal sellingPrice = ((newItem.getQuantity() == null || newItem.getQuantity().compareTo(BigDecimal.ZERO) >= 0)
-                && newItem.getSellingPrice() != null)
-                ? newItem.getSellingPrice()
-                : existingItem.getSellingPrice();
+            BigDecimal priceToRetail = ((newItem.getQuantity() == null || newItem.getQuantity().compareTo(BigDecimal.ZERO) >= 0)
+                && newItem.getPriceToRetail() != null)
+                ? newItem.getPriceToRetail()
+                : existingItem.getPriceToRetail();
             int pricingFactor = existingItem.getUnitFactor() != null ? existingItem.getUnitFactor() : getDefaultFactor(inventory);
             BigDecimal maximumRetailPrice = inventory.getMaximumRetailPrice();
             BigDecimal costPrice = inventory.getCostPrice();
             BigDecimal newQuantity = BigDecimal.valueOf(newBaseQuantity)
                 .divide(BigDecimal.valueOf(pricingFactor), 4, RoundingMode.HALF_UP);
             BigDecimal newDiscount = existingItem.getMaximumRetailPrice()
-                .subtract(sellingPrice)
+                .subtract(priceToRetail)
                 .multiply(newQuantity);
             // Use payload additionalDiscount when provided (so changing discount updates the line); otherwise keep existing
             BigDecimal additionalDiscount = newItem.getAdditionalDiscount() != null
@@ -1212,7 +1209,7 @@ public class CheckoutService {
                 existingItem.getName(),
                 newQuantity,
                 maximumRetailPrice,
-                sellingPrice,
+                priceToRetail,
                 newDiscount.compareTo(BigDecimal.ZERO) > 0 ? newDiscount : BigDecimal.ZERO
             );
             updatedItem.setAdditionalDiscount(additionalDiscount);
@@ -1235,7 +1232,7 @@ public class CheckoutService {
             updatedItem.setUnitFactor(pricingFactor);
             updatedItem.setAvailableUnits(mapAvailableUnits(inventory));
             BigDecimal perUnitDiscount = maximumRetailPrice.subtract(
-                sellingPrice != null ? sellingPrice : BigDecimal.ZERO);
+                priceToRetail != null ? priceToRetail : BigDecimal.ZERO);
             if (perUnitDiscount.compareTo(BigDecimal.ZERO) > 0) {
               updatedItem.setDiscount(perUnitDiscount.multiply(getQuantityAsPricingUnits(updatedItem)));
             } else {

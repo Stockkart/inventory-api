@@ -67,6 +67,10 @@ public class Inventory {
   private BigDecimal maximumRetailPrice;
   @Transient
   private BigDecimal costPrice;
+  /** Original Price to Retail (PTR). Immutable base from pricing. */
+  @Transient
+  private BigDecimal priceToRetail;
+  /** Effective selling price (from defaultRate). Used for sales. */
   @Transient
   private BigDecimal sellingPrice;
   @Transient

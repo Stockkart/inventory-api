@@ -32,7 +32,7 @@ public class GeminiOcrProvider implements OcrProvider {
       Extract ONLY product line items from the invoice image.
 
       Return ONLY a JSON array (no markdown/text). Each object MUST have these keys:
-      barcode, name, description, companyName, maximumRetailPrice, costPrice, sellingPrice, additionalDiscount,
+      barcode, name, description, companyName, maximumRetailPrice, costPrice, priceToRetail, additionalDiscount,
       businessType, location, count, thresholdCount, expiryDate, reminderAt, customReminders, hsn, batchNo, scheme, sgst, cgst.
   
       Rules:
@@ -43,7 +43,7 @@ public class GeminiOcrProvider implements OcrProvider {
       - Numbers must be numeric (not strings).
       - count: use QTY/Qty/Quantity/Count/Nos/Units; if missing compute from PKG DETAIL like "3 x 56" => 168.
       - maximumRetailPrice: use Reduced MRP if present else MRP.
-      - sellingPrice: prefer Selling Price / PTR / Price to Retail
+      - priceToRetail: prefer Selling Price / PTR / Price to Retail
       - costPrice: UNIT cost only from Rate / PTS / Price to Stockist / Cost Price (never total/taxable/value/net).
       - hsn must be copied exactly as printed (usually 8 digits).
       - expiryDate/reminderAt: ISO-8601 UTC; if month-year only use first day of month.
@@ -197,7 +197,7 @@ public class GeminiOcrProvider implements OcrProvider {
     item.setCompanyName(str(n, "companyName"));
     item.setMaximumRetailPrice(num(n, "maximumRetailPrice"));
     item.setCostPrice(num(n, "costPrice"));
-    item.setSellingPrice(num(n, "sellingPrice"));
+    item.setPriceToRetail(num(n, "priceToRetail"));
     item.setAdditionalDiscount(num(n, "additionalDiscount"));
     item.setBusinessType(str(n, "businessType") != null ? str(n, "businessType") : "PHARMACEUTICAL");
     item.setLocation(str(n, "location"));

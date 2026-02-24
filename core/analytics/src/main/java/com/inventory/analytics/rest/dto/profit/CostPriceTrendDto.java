@@ -15,7 +15,7 @@ public class CostPriceTrendDto {
   private Instant startTime;
   private Instant endTime;
   private BigDecimal averageCostPrice;
-  private BigDecimal averageSellingPrice;
+  private BigDecimal averagePriceToRetail;
   private BigDecimal averageMargin;
   private BigDecimal averageMarginPercent;
   private Integer totalItemsSold;
