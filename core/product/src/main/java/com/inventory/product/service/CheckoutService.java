@@ -734,18 +734,15 @@ public class CheckoutService {
           // Use mapper to create PurchaseItem
           PurchaseItem purchaseItem = purchaseMapper.toPurchaseItemFromCartItem(item, inventory);
           normalizeSchemeFields(purchaseItem);
-          BigDecimal defaultPriceToRetail = inventory.getPriceToRetail();
-          BigDecimal priceToRetail = item.getPriceToRetail() != null
-              ? item.getPriceToRetail()
-              : defaultPriceToRetail;
+          BigDecimal sellingPrice = inventory.getSellingPrice() != null ? inventory.getSellingPrice() : inventory.getPriceToRetail();
           BigDecimal costPrice = inventory.getCostPrice();
           purchaseItem.setQuantity(pricingQuantity);
           purchaseItem.setMaximumRetailPrice(maximumRetailPrice);
-          purchaseItem.setPriceToRetail(priceToRetail);
+          purchaseItem.setPriceToRetail(sellingPrice);
           purchaseItem.setCostPrice(costPrice);
           purchaseItem.setUnitFactor(pricingFactor);
           BigDecimal perUnitDiscount = maximumRetailPrice
-              .subtract(priceToRetail != null ? priceToRetail : BigDecimal.ZERO);
+              .subtract(sellingPrice != null ? sellingPrice : BigDecimal.ZERO);
           if (perUnitDiscount.compareTo(BigDecimal.ZERO) > 0) {
             purchaseItem.setDiscount(perUnitDiscount.multiply(getQuantityAsPricingUnits(purchaseItem)));
           } else {

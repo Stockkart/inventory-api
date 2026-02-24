@@ -17,12 +17,14 @@ public class PricingBackwardCompatCallback implements AfterConvertCallback<Prici
 
   @Override
   public Pricing onAfterConvert(Pricing entity, Document document, String collection) {
-    if (entity.getPriceToRetail() != null) {
-      return entity;
+    if (entity.getPriceToRetail() == null) {
+      BigDecimal sellingPrice = getBigDecimal(document, "sellingPrice");
+      if (sellingPrice != null) {
+        entity.setPriceToRetail(sellingPrice);
+      }
     }
-    BigDecimal sellingPrice = getBigDecimal(document, "sellingPrice");
-    if (sellingPrice != null) {
-      entity.setPriceToRetail(sellingPrice);
+    if (entity.getSellingPrice() == null && entity.getPriceToRetail() != null) {
+      entity.setSellingPrice(entity.getPriceToRetail());
     }
     return entity;
   }

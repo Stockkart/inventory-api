@@ -20,6 +20,7 @@ public class PricingResponse {
   private BigDecimal priceToRetail;
   private List<Rate> rates;
   private String defaultRate;
+  private BigDecimal sellingPrice;
   private BigDecimal additionalDiscount;
   private String sgst;
   private String cgst;

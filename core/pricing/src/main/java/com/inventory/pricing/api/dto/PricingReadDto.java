@@ -17,6 +17,7 @@ public class PricingReadDto {
   private BigDecimal priceToRetail;
   private List<RateDto> rates;
   private String defaultRate;
+  private BigDecimal sellingPrice;
   private BigDecimal additionalDiscount;
   private String sgst;
   private String cgst;
@@ -27,11 +28,27 @@ public class PricingReadDto {
         && additionalDiscount == null && sgst == null && cgst == null;
   }
 
-  /** Effective price: defaultRate's price when found in rates, else priceToRetail. */
+  /** Effective selling price. Returns sellingPrice when set, else from defaultRate: maximumRetailPrice, priceToRetail, costPrice, or rate name. */
   public BigDecimal getEffectivePrice() {
-    if (org.springframework.util.StringUtils.hasText(defaultRate) && rates != null && !rates.isEmpty()) {
+    if (sellingPrice != null) {
+      return sellingPrice;
+    }
+    if (!org.springframework.util.StringUtils.hasText(defaultRate)) {
+      return priceToRetail;
+    }
+    String dr = defaultRate.trim();
+    if ("maximumRetailPrice".equalsIgnoreCase(dr)) {
+      return maximumRetailPrice != null ? maximumRetailPrice : priceToRetail;
+    }
+    if ("costPrice".equalsIgnoreCase(dr)) {
+      return costPrice != null ? costPrice : priceToRetail;
+    }
+    if ("priceToRetail".equalsIgnoreCase(dr)) {
+      return priceToRetail;
+    }
+    if (rates != null && !rates.isEmpty()) {
       return rates.stream()
-          .filter(r -> defaultRate.equals(r.getName()))
+          .filter(r -> dr.equals(r.getName()))
           .map(RateDto::getPrice)
           .findFirst()
           .orElse(priceToRetail);

@@ -13,6 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -31,8 +32,22 @@ public class PricingController {
   private PricingService pricingService;
 
   /**
+   * Get pricing by ID.
+   */
+  @GetMapping("/{pricingId}")
+  public ResponseEntity<ApiResponse<PricingResponse>> getPricing(
+      @PathVariable String pricingId,
+      HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    if (StringUtils.isEmpty(shopId)) {
+      throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "User not authenticated or shop not found");
+    }
+    return ResponseEntity.ok(ApiResponse.success(pricingService.getById(pricingId, shopId)));
+  }
+
+  /**
    * Update default/selling price for a single pricing record by ID.
-   * Allowed fields: maximumRetailPrice, priceToRetail, rates, defaultRate.
+   * Both rates and defaultRate can be updated. sellingPrice is recomputed after any change.
    */
   @PatchMapping("/{pricingId}")
   public ResponseEntity<ApiResponse<PricingResponse>> updateDefaultPrice(

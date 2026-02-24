@@ -145,7 +145,7 @@ public class InventoryAnalyticsHelper {
 
           // Value calculations
           BigDecimal costPrice = inv.getCostPrice() != null ? inv.getCostPrice() : BigDecimal.ZERO;
-          BigDecimal priceToRetail = inv.getPriceToRetail() != null ? inv.getPriceToRetail() : BigDecimal.ZERO;
+          BigDecimal priceToRetail = inv.getSellingPrice() != null ? inv.getSellingPrice() : (inv.getPriceToRetail() != null ? inv.getPriceToRetail() : BigDecimal.ZERO);
 
           BigDecimal costValue = costPrice.multiply(BigDecimal.valueOf(current));
           BigDecimal retailValue = priceToRetail.multiply(BigDecimal.valueOf(current));

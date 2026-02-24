@@ -69,6 +69,7 @@ public class InventoryPricingAdapterImpl implements InventoryPricingAdapter {
         p.getPriceToRetail(),
         toRateDtos(p.getRates()),
         p.getDefaultRate(),
+        p.getSellingPrice(),
         p.getAdditionalDiscount(),
         p.getSgst(),
         p.getCgst());

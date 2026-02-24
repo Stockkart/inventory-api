@@ -26,7 +26,10 @@ public class InventoryDetailResponse {
   String companyName;
   BigDecimal maximumRetailPrice;
   BigDecimal costPrice;
+  /** Original Price to Retail (PTR). */
   BigDecimal priceToRetail;
+  /** Effective selling price (from defaultRate). */
+  BigDecimal sellingPrice;
   List<RateDto> rates;
   String defaultRate;
   BigDecimal additionalDiscount;

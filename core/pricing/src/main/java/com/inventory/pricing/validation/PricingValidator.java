@@ -23,7 +23,8 @@ public class PricingValidator {
       throw new ValidationException("Shop ID is required for pricing");
     }
     validateRates(request.getRates(), request.getDefaultRate());
-    BigDecimal effectiveSp = resolveEffectivePrice(request.getPriceToRetail(), request.getRates(), request.getDefaultRate());
+    BigDecimal effectiveSp = resolveEffectivePrice(request.getMaximumRetailPrice(), request.getCostPrice(),
+        request.getPriceToRetail(), request.getRates(), request.getDefaultRate());
     if (effectiveSp == null) {
       throw new ValidationException("Either priceToRetail or (rates with defaultRate) is required");
     }
@@ -52,49 +53,40 @@ public class PricingValidator {
   }
 
   /**
-   * Validate update default price request. At least one of maximumRetailPrice, priceToRetail,
-   * rates, or defaultRate must be provided. Updates must be within rates array, priceToRetail, or MRP.
+   * Validate update default price request. At least one of rates or defaultRate must be provided.
    */
-  public void validateUpdateDefaultPriceRequest(UpdateDefaultPriceRequest request) {
+  public void validateUpdateDefaultPriceRequest(UpdateDefaultPriceRequest request, List<Rate> effectiveRates, String effectiveDefaultRate) {
     if (request == null) {
       throw new ValidationException("Update request cannot be null");
     }
-    boolean hasAny = request.getMaximumRetailPrice() != null
-        || request.getPriceToRetail() != null
-        || (request.getRates() != null && !request.getRates().isEmpty())
-        || StringUtils.hasText(request.getDefaultRate());
-    if (!hasAny) {
-      throw new ValidationException("At least one of maximumRetailPrice, priceToRetail, rates, or defaultRate must be provided");
+    boolean hasRates = request.getRates() != null && !request.getRates().isEmpty();
+    boolean hasDefaultRate = StringUtils.hasText(request.getDefaultRate());
+    if (!hasRates && !hasDefaultRate) {
+      throw new ValidationException("At least one of rates or defaultRate must be provided");
     }
-    validateRates(request.getRates(), request.getDefaultRate());
-    if (request.getMaximumRetailPrice() != null && request.getMaximumRetailPrice().compareTo(BigDecimal.ZERO) < 0) {
-      throw new ValidationException("Maximum retail price cannot be negative");
-    }
-    if (request.getPriceToRetail() != null && request.getPriceToRetail().compareTo(BigDecimal.ZERO) < 0) {
-      throw new ValidationException("Price to retail cannot be negative");
+    List<Rate> ratesToValidate = hasRates ? request.getRates() : effectiveRates;
+    String defaultRateToValidate = hasDefaultRate ? request.getDefaultRate() : effectiveDefaultRate;
+    if (ratesToValidate != null) {
+      validateRates(ratesToValidate, defaultRateToValidate);
     }
   }
 
-  public void validateUpdateDefaultPriceItem(UpdateDefaultPriceItem item) {
+  public void validateUpdateDefaultPriceItem(UpdateDefaultPriceItem item, List<Rate> effectiveRates, String effectiveDefaultRate) {
     if (item == null) {
       throw new ValidationException("Update item cannot be null");
     }
     if (!StringUtils.hasText(item.getPricingId())) {
       throw new ValidationException("Pricing ID is required for each update item");
     }
-    boolean hasAny = item.getMaximumRetailPrice() != null
-        || item.getPriceToRetail() != null
-        || (item.getRates() != null && !item.getRates().isEmpty())
-        || StringUtils.hasText(item.getDefaultRate());
-    if (!hasAny) {
-      throw new ValidationException("At least one of maximumRetailPrice, priceToRetail, rates, or defaultRate must be provided");
+    boolean hasRates = item.getRates() != null && !item.getRates().isEmpty();
+    boolean hasDefaultRate = StringUtils.hasText(item.getDefaultRate());
+    if (!hasRates && !hasDefaultRate) {
+      throw new ValidationException("At least one of rates or defaultRate must be provided");
     }
-    validateRates(item.getRates(), item.getDefaultRate());
-    if (item.getMaximumRetailPrice() != null && item.getMaximumRetailPrice().compareTo(BigDecimal.ZERO) < 0) {
-      throw new ValidationException("Maximum retail price cannot be negative");
-    }
-    if (item.getPriceToRetail() != null && item.getPriceToRetail().compareTo(BigDecimal.ZERO) < 0) {
-      throw new ValidationException("Price to retail cannot be negative");
+    List<Rate> ratesToValidate = hasRates ? item.getRates() : effectiveRates;
+    String defaultRateToValidate = hasDefaultRate ? item.getDefaultRate() : effectiveDefaultRate;
+    if (ratesToValidate != null) {
+      validateRates(ratesToValidate, defaultRateToValidate);
     }
   }
 
@@ -129,18 +121,37 @@ public class PricingValidator {
         throw new ValidationException("Rate price cannot be negative: " + r.getName());
       }
     }
-    if (StringUtils.hasText(defaultRate)) {
+    if (StringUtils.hasText(defaultRate)
+        && !"priceToRetail".equalsIgnoreCase(defaultRate)
+        && !"maximumRetailPrice".equalsIgnoreCase(defaultRate)
+        && !"costPrice".equalsIgnoreCase(defaultRate)) {
+      if (rates == null || rates.isEmpty()) {
+        throw new ValidationException("defaultRate '" + defaultRate + "' requires rates, or use 'priceToRetail', 'maximumRetailPrice', or 'costPrice'");
+      }
       boolean found = rates.stream().anyMatch(r -> defaultRate.equals(r.getName()));
       if (!found) {
-        throw new ValidationException("defaultRate '" + defaultRate + "' must match a rate name in rates");
+        throw new ValidationException("defaultRate '" + defaultRate + "' must match a rate name in rates, or use 'priceToRetail', 'maximumRetailPrice', or 'costPrice'");
       }
     }
   }
 
-  private static BigDecimal resolveEffectivePrice(BigDecimal priceToRetail, List<Rate> rates, String defaultRate) {
-    if (StringUtils.hasText(defaultRate) && rates != null && !rates.isEmpty()) {
+  private static BigDecimal resolveEffectivePrice(BigDecimal mrp, BigDecimal costPrice, BigDecimal priceToRetail, List<Rate> rates, String defaultRate) {
+    if (!StringUtils.hasText(defaultRate)) {
+      return priceToRetail;
+    }
+    String dr = defaultRate.trim();
+    if ("maximumRetailPrice".equalsIgnoreCase(dr)) {
+      return mrp != null ? mrp : priceToRetail;
+    }
+    if ("costPrice".equalsIgnoreCase(dr)) {
+      return costPrice != null ? costPrice : priceToRetail;
+    }
+    if ("priceToRetail".equalsIgnoreCase(dr)) {
+      return priceToRetail;
+    }
+    if (rates != null && !rates.isEmpty()) {
       return rates.stream()
-          .filter(r -> defaultRate.equals(r.getName()))
+          .filter(r -> dr.equals(r.getName()))
           .map(Rate::getPrice)
           .findFirst()
           .orElse(priceToRetail);

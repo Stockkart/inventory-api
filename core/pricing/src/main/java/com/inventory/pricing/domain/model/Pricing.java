@@ -31,14 +31,20 @@ public class Pricing {
   /** Cost Price (CP) */
   private BigDecimal costPrice;
 
-  /** Price to Retail (PTR). Used when defaultRate is not set or rates is empty. */
+  /** Price to Retail (PTR). Immutable after creation. Base price when defaultRate is "priceToRetail". */
   private BigDecimal priceToRetail;
 
   /** Named rates (e.g., Rate-A=100, Rate-B=80). Optional. */
   private List<Rate> rates;
 
-  /** Name of the default rate from rates. When set, effective price = that rate's price; else priceToRetail. */
+  /**
+   * Default price source. One of: "maximumRetailPrice", "priceToRetail", "costPrice", or a rate name from rates.
+   * When not provided at creation, defaults to "priceToRetail".
+   */
   private String defaultRate;
+
+  /** Selling price (effective price for sales). Updated when defaultRate changes. Can be set directly. */
+  private BigDecimal sellingPrice;
 
   /** Additional discount percentage (0-100) */
   private BigDecimal additionalDiscount;
