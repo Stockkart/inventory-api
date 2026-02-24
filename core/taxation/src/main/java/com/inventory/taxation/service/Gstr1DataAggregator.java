@@ -266,7 +266,7 @@ public class Gstr1DataAggregator {
   private boolean isRegisteredRecipient(Customer customer) {
     if (customer == null) return false;
     String g = customer.getGstin();
-    return StringUtils.hasText(g) && g.length() == GSTIN_LENGTH;
+    return StringUtils.hasText(g);
   }
 
   private String getApplicableRateFromPurchase(Purchase purchase) {
