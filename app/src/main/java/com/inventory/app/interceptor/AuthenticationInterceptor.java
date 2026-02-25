@@ -22,6 +22,7 @@ public class AuthenticationInterceptor implements HandlerInterceptor {
   private static final List<String> PUBLIC_ENDPOINTS = Arrays.asList(
       "/api/v1/auth/login",
       "/api/v1/auth/signup",
+      "/api/v1/auth/change-password",
       "/api/v1/auth/accept-invite",
       "/api/product/get-plugin",
       "/api/product/",

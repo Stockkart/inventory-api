@@ -8,6 +8,8 @@ import com.inventory.common.exception.ValidationException;
 import com.inventory.user.domain.model.UserAccount;
 import com.inventory.user.domain.model.UserRole;
 import com.inventory.user.domain.repository.UserAccountRepository;
+import com.inventory.user.rest.dto.auth.ChangePasswordRequest;
+import com.inventory.user.rest.dto.auth.ChangePasswordResponse;
 import com.inventory.user.rest.dto.auth.LoginRequest;
 import com.inventory.user.rest.dto.auth.LoginResponse;
 import com.inventory.user.rest.dto.auth.LogoutResponse;
@@ -305,6 +307,26 @@ public class AuthService {
       log.error("Unexpected error during logout: {}", e.getMessage(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
     }
+  }
+
+  @Transactional
+  public ChangePasswordResponse changePassword(ChangePasswordRequest request) {
+    if (request == null || request.getEmail() == null || request.getEmail().trim().isEmpty()) {
+      throw new ValidationException("Email is required");
+    }
+    if (request.getPassword() == null || request.getPassword().trim().isEmpty()) {
+      throw new ValidationException("Password is required");
+    }
+
+    UserAccount account = userAccountRepository.findByEmail(request.getEmail().trim())
+        .orElseThrow(() -> new ResourceNotFoundException("User", "email", request.getEmail()));
+
+    account.setPassword(passwordEncoder.encode(request.getPassword().trim()));
+    account.setUpdatedAt(Instant.now());
+    userAccountRepository.save(account);
+
+    log.info("Password changed successfully for user: {}", account.getUserId());
+    return new ChangePasswordResponse("Password has been changed successfully.");
   }
 
   @Transactional(readOnly = true)

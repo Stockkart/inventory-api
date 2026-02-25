@@ -1,6 +1,8 @@
 package com.inventory.user.rest.controller;
 
 import com.inventory.common.dto.response.ApiResponse;
+import com.inventory.user.rest.dto.auth.ChangePasswordRequest;
+import com.inventory.user.rest.dto.auth.ChangePasswordResponse;
 import com.inventory.user.rest.dto.auth.LoginRequest;
 import com.inventory.user.rest.dto.auth.LoginResponse;
 import com.inventory.user.rest.dto.auth.LogoutResponse;
@@ -36,6 +38,12 @@ public class AuthController {
   @PostMapping("/signup")
   public ResponseEntity<ApiResponse<SignupResponse>> signup(@RequestBody SignupRequest request) {
     return ResponseEntity.ok(ApiResponse.success(authService.signup(request)));
+  }
+
+  @PostMapping("/change-password")
+  public ResponseEntity<ApiResponse<ChangePasswordResponse>> changePassword(
+      @RequestBody ChangePasswordRequest request) {
+    return ResponseEntity.ok(ApiResponse.success(authService.changePassword(request)));
   }
 
   @PostMapping("/logout")
