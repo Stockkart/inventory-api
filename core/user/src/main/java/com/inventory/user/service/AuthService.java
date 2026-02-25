@@ -15,6 +15,7 @@ import com.inventory.user.rest.dto.auth.SignupRequest;
 import com.inventory.user.rest.dto.auth.SignupResponse;
 import com.inventory.user.rest.dto.auth.UserResponse;
 import com.inventory.user.rest.mapper.UserMapper;
+import com.inventory.user.util.AuthNotificationHelper;
 import com.inventory.user.validation.AuthValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -51,6 +52,9 @@ public class AuthService {
 
   @Autowired(required = false)
   private ShopServiceAdapter shopServiceAdapter;
+
+  @Autowired(required = false)
+  private AuthNotificationHelper authNotificationHelper;
 
   @Transactional(readOnly = true)
   public LoginResponse login(LoginRequest request) {
@@ -123,6 +127,10 @@ public class AuthService {
       }
 
       log.info("User logged in successfully: {}", account.getUserId());
+
+      if (authNotificationHelper != null) {
+        authNotificationHelper.sendLoginSuccessEmail(account.getEmail());
+      }
 
       // Create login response using mapper (tokens set automatically via @AfterMapping and saved to account)
       LoginResponse response = userMapper.toLoginResponse(account, request.getDeviceId());
