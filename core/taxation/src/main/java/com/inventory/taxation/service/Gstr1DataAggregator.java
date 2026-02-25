@@ -140,7 +140,7 @@ public class Gstr1DataAggregator {
           .placeOfSupply(placeOfSupply)
           .reverseCharge("N")
           .applicableTaxPct(rateStr)
-          .invoiceType("R") // Regular
+          .invoiceType("Regular B2B") // Regular
           .ecommerceGstin("")
           .rate(rate)
           .taxableValue(taxableVal)
@@ -272,11 +272,9 @@ public class Gstr1DataAggregator {
   private String getApplicableRateFromPurchase(Purchase purchase) {
     if (purchase.getItems() == null || purchase.getItems().isEmpty()) return "0";
     PurchaseItem first = purchase.getItems().get(0);
-    String sgst = first.getSgst();
-    String cgst = first.getCgst();
-    if (StringUtils.hasText(sgst)) return sgst;
-    if (StringUtils.hasText(cgst)) return cgst;
-    return "0";
+    BigDecimal sgstVal = parseRate(first.getSgst());
+    BigDecimal cgstVal = parseRate(first.getCgst());
+    return sgstVal.add(cgstVal).stripTrailingZeros().toPlainString();
   }
 
   private BigDecimal parseRate(String rateStr) {
@@ -309,33 +307,37 @@ public class Gstr1DataAggregator {
     for (PurchaseItem item : purchase.getItems()) {
       Inventory inv = item.getInventoryId() != null ? inventoryMap.get(item.getInventoryId()) : null;
       String hsn = inv != null && StringUtils.hasText(inv.getHsn()) ? inv.getHsn() : "0";
-      String rateStr = item.getSgst() != null ? item.getSgst() : (item.getCgst() != null ? item.getCgst() : "0");
-      BigDecimal rate = parseRate(rateStr);
+      String description = inv != null ? inv.getDescription() : "";
+      BigDecimal sgstVal = parseRate(item.getSgst());
+      BigDecimal cgstVal = parseRate(item.getCgst());
+      BigDecimal rate = sgstVal.add(cgstVal);
       BigDecimal qty = item.getQuantity() != null ? item.getQuantity() : BigDecimal.ONE;
       BigDecimal totalAmount = item.getTotalAmount() != null ? item.getTotalAmount() : BigDecimal.ZERO;
       BigDecimal taxableVal = totalAmount;
       if (rate.compareTo(BigDecimal.ZERO) > 0) {
-        BigDecimal combinedRate = rate.multiply(BigDecimal.valueOf(2)); // CGST+SGST
+        // rate is already sgst+cgst (e.g. 18 for 9%+9%)
         taxableVal = totalAmount.multiply(BigDecimal.valueOf(100))
-            .divide(BigDecimal.valueOf(100).add(combinedRate), 2, RoundingMode.HALF_UP);
+            .divide(BigDecimal.valueOf(100).add(rate), 2, RoundingMode.HALF_UP);
       }
-      BigDecimal taxAmount = totalAmount.subtract(taxableVal);
-      BigDecimal halfTax = taxAmount.divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP);
+      BigDecimal centralTaxAmount = taxableVal.multiply(cgstVal)
+          .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+      BigDecimal stateUtTaxAmount = taxableVal.multiply(sgstVal)
+          .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
 
       String key = hsn + "|" + rate;
       GstHsnLine existing = hsnMap.get(key);
       if (existing == null) {
         existing = GstHsnLine.builder()
             .hsn(hsn)
-            .description("")
-            .uqc(inv != null && StringUtils.hasText(inv.getBaseUnit()) ? inv.getBaseUnit() : "NOS")
+            .description(description)
+            .uqc("OTH-OTHERS")
             .totalQuantity(qty)
             .totalValue(taxableVal)
             .rate(rate)
             .taxableValue(taxableVal)
             .integratedTaxAmount(BigDecimal.ZERO)
-            .centralTaxAmount(halfTax)
-            .stateUtTaxAmount(halfTax)
+            .centralTaxAmount(centralTaxAmount)
+            .stateUtTaxAmount(stateUtTaxAmount)
             .cessAmount(BigDecimal.ZERO)
             .b2b(b2b)
             .build();
@@ -344,8 +346,8 @@ public class Gstr1DataAggregator {
         existing.setTotalQuantity(existing.getTotalQuantity().add(qty));
         existing.setTotalValue(existing.getTotalValue().add(taxableVal));
         existing.setTaxableValue(existing.getTaxableValue().add(taxableVal));
-        existing.setCentralTaxAmount(existing.getCentralTaxAmount().add(halfTax));
-        existing.setStateUtTaxAmount(existing.getStateUtTaxAmount().add(halfTax));
+        existing.setCentralTaxAmount(existing.getCentralTaxAmount().add(centralTaxAmount));
+        existing.setStateUtTaxAmount(existing.getStateUtTaxAmount().add(stateUtTaxAmount));
       }
     }
   }

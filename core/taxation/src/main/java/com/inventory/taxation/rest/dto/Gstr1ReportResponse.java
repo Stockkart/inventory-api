@@ -24,15 +24,16 @@ public class Gstr1ReportResponse {
   private int year;
   private int month;
 
-  /** B2B / SEZ / Deemed export – sheet name: "b2b,sez,de" */
+  /** B2B / SEZ / Deemed export – sheet name: "b2b,sez,de" (slim DTO, no internal fields) */
   @JsonProperty("b2b,sez,de")
-  private List<GstInvoiceLine> b2bSezDe;
+  private List<GstB2bSezDeLineDto> b2bSezDe;
 
   @JsonProperty("b2cl")
   private List<GstInvoiceLine> b2cl;
 
+  /** B2C small – sheet name: "b2cs" (slim DTO) */
   @JsonProperty("b2cs")
-  private List<GstInvoiceLine> b2cs;
+  private List<GstB2csLineDto> b2cs;
 
   @JsonProperty("cdnr")
   private List<GstRefundLine> cdnr;
@@ -68,9 +69,9 @@ public class Gstr1ReportResponse {
     r.setPeriod(ctx.getPeriod());
     r.setYear(ctx.getYear());
     r.setMonth(ctx.getMonth());
-    r.setB2bSezDe(ctx.getB2bLines());
+    r.setB2bSezDe(GstB2bSezDeLineDto.fromList(ctx.getB2bLines()));
     r.setB2cl(ctx.getB2clLines());
-    r.setB2cs(ctx.getB2csLines());
+    r.setB2cs(GstB2csLineDto.fromList(ctx.getB2csLines()));
     r.setCdnr(ctx.getCdnrLines());
     r.setCdnur(ctx.getCdnurLines());
     r.setExp(ctx.getExpLines());
