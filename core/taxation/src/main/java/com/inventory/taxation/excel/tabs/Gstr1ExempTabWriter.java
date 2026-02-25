@@ -24,9 +24,23 @@ public class Gstr1ExempTabWriter implements Gstr1TabWriter {
   public void write(Workbook workbook, Gstr1ReportContext context) {
     Sheet sheet = workbook.createSheet(SHEET_NAME);
     CellStyle headerStyle = PoiHelper.headerStyle(workbook);
-    PoiHelper.createHeaderRow(sheet, HEADERS, headerStyle);
-    int rowNum = 1;
-    for (GstExemptLine line : context.getExempLines()) {
+    java.util.List<GstExemptLine> lines = context.getExempLines();
+    java.math.BigDecimal totalNil = lines.stream().map(GstExemptLine::getNilRatedSupplies).filter(v -> v != null).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+    java.math.BigDecimal totalExempted = lines.stream().map(GstExemptLine::getExemptedOtherThanNilOrNonGst).filter(v -> v != null).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+    java.math.BigDecimal totalNonGst = lines.stream().map(GstExemptLine::getNonGstSupplies).filter(v -> v != null).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+    int rowNum = 0;
+    sheet.createRow(rowNum++).createCell(0).setCellValue("Summary For Nil rated, exempted and non GST outward supplies (8)");
+    Row sh = sheet.createRow(rowNum++);
+    sh.createCell(0).setCellValue("Total Nil Rated Supplies");
+    sh.createCell(2).setCellValue("Total Exempted Supplies");
+    sh.createCell(4).setCellValue("Total Non-GST Supplies");
+    Row sd = sheet.createRow(rowNum++);
+    PoiHelper.setCellValue(sd.createCell(0), totalNil);
+    PoiHelper.setCellValue(sd.createCell(2), totalExempted);
+    PoiHelper.setCellValue(sd.createCell(4), totalNonGst);
+    rowNum++;
+    PoiHelper.createHeaderRow(sheet, HEADERS, headerStyle, rowNum++);
+    for (GstExemptLine line : lines) {
       Row row = sheet.createRow(rowNum++);
       PoiHelper.setCellValue(row.createCell(0), line.getDescription());
       PoiHelper.setCellValue(row.createCell(1), line.getNilRatedSupplies());

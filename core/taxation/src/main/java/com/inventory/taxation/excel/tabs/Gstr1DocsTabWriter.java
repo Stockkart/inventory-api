@@ -24,9 +24,17 @@ public class Gstr1DocsTabWriter implements Gstr1TabWriter {
   public void write(Workbook workbook, Gstr1ReportContext context) {
     Sheet sheet = workbook.createSheet(SHEET_NAME);
     CellStyle headerStyle = PoiHelper.headerStyle(workbook);
-    PoiHelper.createHeaderRow(sheet, HEADERS, headerStyle);
-    int rowNum = 1;
-    for (GstDocumentSummaryLine line : context.getDocLines()) {
+    java.util.List<GstDocumentSummaryLine> lines = context.getDocLines();
+    int totalNumber = lines.stream().mapToInt(l -> l.getTotalNumber() != null ? l.getTotalNumber() : 0).sum();
+    int cancelled = lines.stream().mapToInt(l -> l.getCancelled() != null ? l.getCancelled() : 0).sum();
+    int rowNum = 0;
+    sheet.createRow(rowNum++).createCell(0).setCellValue("Summary of documents issued during the tax period (13)");
+    Row sd = sheet.createRow(rowNum++);
+    PoiHelper.setCellValue(sd.createCell(0), totalNumber);
+    PoiHelper.setCellValue(sd.createCell(1), cancelled);
+    rowNum++;
+    PoiHelper.createHeaderRow(sheet, HEADERS, headerStyle, rowNum++);
+    for (GstDocumentSummaryLine line : lines) {
       Row row = sheet.createRow(rowNum++);
       PoiHelper.setCellValue(row.createCell(0), line.getNatureOfDocument());
       PoiHelper.setCellValue(row.createCell(1), line.getSrNoFrom());

@@ -18,6 +18,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
+import java.time.Month;
+import java.time.YearMonth;
+import java.time.format.TextStyle;
+import java.util.Locale;
 
 @RestController
 @RequestMapping("/api/v1/taxation/gstr1")
@@ -63,7 +67,9 @@ public class Gstr1Controller {
     }
 
     byte[] bytes = gstr1ReportService.generateExcel(shopId, period);
-    String filename = "GSTR1_RETURN_" + period.replace("-", "_") + ".xlsx";
+    YearMonth ym = YearMonth.parse(period);
+    String monthAbbrev = Month.of(ym.getMonthValue()).getDisplayName(TextStyle.SHORT, Locale.ENGLISH);
+    String filename = "GSTR1_RETURN_" + monthAbbrev + "_" + ym.getYear() + ".xlsx";
 
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));

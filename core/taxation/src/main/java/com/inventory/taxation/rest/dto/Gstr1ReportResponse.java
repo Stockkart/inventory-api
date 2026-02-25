@@ -24,43 +24,42 @@ public class Gstr1ReportResponse {
   private int year;
   private int month;
 
-  /** B2B / SEZ / Deemed export – sheet name: "b2b,sez,de" (slim DTO, no internal fields) */
+  /** B2B / SEZ / Deemed export – sheet name: "b2b,sez,de" (summary + lines) */
   @JsonProperty("b2b,sez,de")
-  private List<GstB2bSezDeLineDto> b2bSezDe;
+  private GstB2bSezDeTabDto b2bSezDe;
 
   @JsonProperty("b2cl")
-  private List<GstInvoiceLine> b2cl;
+  private GstB2clTabDto b2cl;
 
-  /** B2C small – sheet name: "b2cs" (slim DTO) */
   @JsonProperty("b2cs")
-  private List<GstB2csLineDto> b2cs;
+  private GstB2csTabDto b2cs;
 
   @JsonProperty("cdnr")
-  private List<GstRefundLine> cdnr;
+  private GstCdnrTabDto cdnr;
 
   @JsonProperty("cdnur")
-  private List<GstRefundLine> cdnur;
+  private GstCdnurTabDto cdnur;
 
   @JsonProperty("exp")
-  private List<GstInvoiceLine> exp;
+  private GstExpTabDto exp;
 
   @JsonProperty("at")
-  private List<GstAdvanceLine> at;
+  private GstAtTabDto at;
 
   @JsonProperty("atadj")
-  private List<GstAdvanceLine> atadj;
+  private GstAtadjTabDto atadj;
 
   @JsonProperty("exemp")
-  private List<GstExemptLine> exemp;
+  private GstExempTabDto exemp;
 
   @JsonProperty("hsn(b2b)")
-  private List<GstHsnLine> hsnB2b;
+  private GstHsnTabDto hsnB2b;
 
   @JsonProperty("hsn(b2c)")
-  private List<GstHsnLine> hsnB2c;
+  private GstHsnTabDto hsnB2c;
 
   @JsonProperty("docs")
-  private List<GstDocumentSummaryLine> docs;
+  private GstDocsTabDto docs;
 
   public static Gstr1ReportResponse fromContext(Gstr1ReportContext ctx) {
     Gstr1ReportResponse r = new Gstr1ReportResponse();
@@ -69,18 +68,18 @@ public class Gstr1ReportResponse {
     r.setPeriod(ctx.getPeriod());
     r.setYear(ctx.getYear());
     r.setMonth(ctx.getMonth());
-    r.setB2bSezDe(GstB2bSezDeLineDto.fromList(ctx.getB2bLines()));
-    r.setB2cl(ctx.getB2clLines());
-    r.setB2cs(GstB2csLineDto.fromList(ctx.getB2csLines()));
-    r.setCdnr(ctx.getCdnrLines());
-    r.setCdnur(ctx.getCdnurLines());
-    r.setExp(ctx.getExpLines());
-    r.setAt(ctx.getAtLines());
-    r.setAtadj(ctx.getAtadjLines());
-    r.setExemp(ctx.getExempLines());
-    r.setHsnB2b(ctx.getHsnB2bLines());
-    r.setHsnB2c(ctx.getHsnB2cLines());
-    r.setDocs(ctx.getDocLines());
+    r.setB2bSezDe(GstB2bSezDeTabDto.fromLines(ctx.getB2bLines()));
+    r.setB2cl(GstB2clTabDto.fromLines(ctx.getB2clLines()));
+    r.setB2cs(GstB2csTabDto.fromLines(ctx.getB2csLines()));
+    r.setCdnr(GstCdnrTabDto.fromLines(ctx.getCdnrLines()));
+    r.setCdnur(GstCdnurTabDto.fromLines(ctx.getCdnurLines()));
+    r.setExp(GstExpTabDto.fromLines(ctx.getExpLines()));
+    r.setAt(GstAtTabDto.fromLines(ctx.getAtLines()));
+    r.setAtadj(GstAtadjTabDto.fromLines(ctx.getAtadjLines()));
+    r.setExemp(GstExempTabDto.fromLines(ctx.getExempLines()));
+    r.setHsnB2b(GstHsnTabDto.fromLines(ctx.getHsnB2bLines()));
+    r.setHsnB2c(GstHsnTabDto.fromLines(ctx.getHsnB2cLines()));
+    r.setDocs(GstDocsTabDto.fromLines(ctx.getDocLines()));
     return r;
   }
 }

@@ -25,9 +25,26 @@ public class Gstr1ExpTabWriter implements Gstr1TabWriter {
   public void write(Workbook workbook, Gstr1ReportContext context) {
     Sheet sheet = workbook.createSheet(SHEET_NAME);
     CellStyle headerStyle = PoiHelper.headerStyle(workbook);
-    PoiHelper.createHeaderRow(sheet, HEADERS, headerStyle);
-    int rowNum = 1;
-    for (GstInvoiceLine line : context.getExpLines()) {
+    java.util.List<GstInvoiceLine> lines = context.getExpLines();
+    int noOfInvoices = lines.size();
+    java.math.BigDecimal totalInvValue = lines.stream().map(GstInvoiceLine::getInvoiceValue).filter(v -> v != null).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+    long noOfShippingBills = lines.stream().map(GstInvoiceLine::getShippingBillNo).filter(s -> s != null && !s.isBlank()).distinct().count();
+    java.math.BigDecimal totalTaxableValue = lines.stream().map(GstInvoiceLine::getTaxableValue).filter(v -> v != null).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+    int rowNum = 0;
+    sheet.createRow(rowNum++).createCell(0).setCellValue("Summary For EXP(6)");
+    Row sh = sheet.createRow(rowNum++);
+    sh.createCell(0).setCellValue("No. of Invoices");
+    sh.createCell(2).setCellValue("Total Invoice Value");
+    sh.createCell(4).setCellValue("No. of Shipping Bill");
+    sh.createCell(6).setCellValue("Total Taxable Value");
+    Row sd = sheet.createRow(rowNum++);
+    PoiHelper.setCellValue(sd.createCell(0), noOfInvoices);
+    PoiHelper.setCellValue(sd.createCell(2), totalInvValue);
+    PoiHelper.setCellValue(sd.createCell(4), (int) noOfShippingBills);
+    PoiHelper.setCellValue(sd.createCell(6), totalTaxableValue);
+    rowNum++;
+    PoiHelper.createHeaderRow(sheet, HEADERS, headerStyle, rowNum++);
+    for (GstInvoiceLine line : lines) {
       Row row = sheet.createRow(rowNum++);
       PoiHelper.setCellValue(row.createCell(0), line.getExportType() != null ? line.getExportType() : "");
       PoiHelper.setCellValue(row.createCell(1), line.getInvoiceNo());

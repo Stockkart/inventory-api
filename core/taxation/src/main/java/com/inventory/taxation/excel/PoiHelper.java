@@ -17,7 +17,11 @@ public final class PoiHelper {
   }
 
   public static Row createHeaderRow(Sheet sheet, List<String> headers, CellStyle headerStyle) {
-    Row row = sheet.createRow(0);
+    return createHeaderRow(sheet, headers, headerStyle, 0);
+  }
+
+  public static Row createHeaderRow(Sheet sheet, List<String> headers, CellStyle headerStyle, int rowIndex) {
+    Row row = sheet.createRow(rowIndex);
     for (int i = 0; i < headers.size(); i++) {
       Cell c = row.createCell(i);
       c.setCellValue(headers.get(i));

@@ -25,9 +25,26 @@ public class Gstr1CdnurTabWriter implements Gstr1TabWriter {
   public void write(Workbook workbook, Gstr1ReportContext context) {
     Sheet sheet = workbook.createSheet(SHEET_NAME);
     CellStyle headerStyle = PoiHelper.headerStyle(workbook);
-    PoiHelper.createHeaderRow(sheet, HEADERS, headerStyle);
-    int rowNum = 1;
-    for (GstRefundLine line : context.getCdnurLines()) {
+    java.util.List<GstRefundLine> lines = context.getCdnurLines();
+    int noOfNotes = lines.size();
+    java.math.BigDecimal totalNoteValue = lines.stream().map(GstRefundLine::getNoteValue).filter(v -> v != null).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+    java.math.BigDecimal totalTaxableValue = lines.stream().map(GstRefundLine::getTaxableValue).filter(v -> v != null).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+    java.math.BigDecimal totalCess = lines.stream().map(GstRefundLine::getCessAmount).filter(v -> v != null).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+    int rowNum = 0;
+    sheet.createRow(rowNum++).createCell(0).setCellValue("Summary For CDNUR(9B)");
+    Row sh = sheet.createRow(rowNum++);
+    sh.createCell(0).setCellValue("No. of Notes/Vouchers");
+    sh.createCell(2).setCellValue("Total Note Value");
+    sh.createCell(4).setCellValue("Total Taxable Value");
+    sh.createCell(6).setCellValue("Total Cess");
+    Row sd = sheet.createRow(rowNum++);
+    PoiHelper.setCellValue(sd.createCell(0), noOfNotes);
+    PoiHelper.setCellValue(sd.createCell(2), totalNoteValue);
+    PoiHelper.setCellValue(sd.createCell(4), totalTaxableValue);
+    PoiHelper.setCellValue(sd.createCell(6), totalCess);
+    rowNum++;
+    PoiHelper.createHeaderRow(sheet, HEADERS, headerStyle, rowNum++);
+    for (GstRefundLine line : lines) {
       Row row = sheet.createRow(rowNum++);
       PoiHelper.setCellValue(row.createCell(0), line.getUrType() != null ? line.getUrType() : "UR");
       PoiHelper.setCellValue(row.createCell(1), line.getNoteNumber());
