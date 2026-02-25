@@ -2,7 +2,7 @@ package com.inventory.product.service;
 
 import com.inventory.ocr.dto.ParsedInventoryItem;
 import com.inventory.ocr.dto.ParsedReminderDto;
-import com.inventory.notifications.rest.dto.CustomReminderRequest;
+import com.inventory.reminders.rest.dto.CustomReminderRequest;
 import com.inventory.product.rest.dto.inventory.CreateInventoryItemRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;

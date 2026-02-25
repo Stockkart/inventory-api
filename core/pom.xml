@@ -9,7 +9,7 @@
         <module>pricing</module>
         <module>analytics</module>
         <module>user</module>
-        <module>notifications</module>
+        <module>reminders</module>
         <module>common</module>
         <module>documentservice</module>
         <module>ocr</module>

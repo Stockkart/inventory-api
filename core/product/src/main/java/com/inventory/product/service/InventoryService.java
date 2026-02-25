@@ -4,8 +4,8 @@ import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
-import com.inventory.notifications.rest.dto.CreateReminderForInventoryRequest;
-import com.inventory.notifications.service.ReminderService;
+import com.inventory.reminders.rest.dto.CreateReminderForInventoryRequest;
+import com.inventory.reminders.service.ReminderService;
 import com.inventory.ocr.service.InvoiceParserService;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.SchemeType;
@@ -13,8 +13,7 @@ import com.inventory.product.domain.model.UnitConversion;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.rest.dto.inventory.*;
 import java.util.ArrayList;
-import com.inventory.user.domain.repository.ShopVendorRepository;
-import com.inventory.product.domain.repository.InventoryRepository.LotSummaryProjection;
+
 import com.inventory.product.rest.mapper.InventoryMapper;
 import com.inventory.product.validation.InventoryValidator;
 import lombok.extern.slf4j.Slf4j;
@@ -32,7 +31,6 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 @Slf4j

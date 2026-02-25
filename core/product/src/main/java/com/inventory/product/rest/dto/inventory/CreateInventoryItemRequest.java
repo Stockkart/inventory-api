@@ -1,6 +1,6 @@
 package com.inventory.product.rest.dto.inventory;
 
-import com.inventory.notifications.rest.dto.CustomReminderRequest;
+import com.inventory.reminders.rest.dto.CustomReminderRequest;
 import com.inventory.pricing.api.dto.RateDto;
 import com.inventory.product.domain.model.DiscountApplicable;
 import com.inventory.product.domain.model.ItemType;

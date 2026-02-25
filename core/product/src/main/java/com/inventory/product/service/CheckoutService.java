@@ -136,7 +136,7 @@ public class CheckoutService {
   private ShopRepository shopRepository;
 
   @Autowired
-  private com.inventory.notifications.service.EventService eventService;
+  private com.inventory.reminders.service.EventService eventService;
 
   @Autowired
   private InventoryMapper inventoryMapper;

@@ -1,11 +1,8 @@
 package com.inventory.product.service;
 
-import com.inventory.common.exception.ResourceNotFoundException;
-import com.inventory.notifications.rest.dto.ReminderInventorySummary;
-import com.inventory.notifications.service.InventoryAdapter;
-import com.inventory.product.domain.model.Inventory;
+import com.inventory.reminders.rest.dto.ReminderInventorySummary;
+import com.inventory.reminders.service.InventoryAdapter;
 import com.inventory.product.domain.repository.InventoryRepository;
-import com.inventory.product.rest.dto.inventory.InventoryReminderSummary;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 

@@ -57,7 +57,7 @@
         </dependency>
         <dependency>
             <groupId>com.inventory</groupId>
-            <artifactId>notifications</artifactId>
+            <artifactId>reminders</artifactId>
             <version>1.0.0</version>
         </dependency>
         <dependency>
