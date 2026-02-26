@@ -6,7 +6,9 @@ import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.user.domain.model.UserAccount;
 import com.inventory.user.domain.model.UserRole;
+import com.inventory.user.domain.model.UserShopMembership;
 import com.inventory.user.domain.repository.UserAccountRepository;
+import com.inventory.user.domain.repository.UserShopMembershipRepository;
 import com.inventory.user.rest.dto.user.DeactivateUserResponse;
 import com.inventory.user.rest.dto.user.UpdateUserRequest;
 import com.inventory.user.rest.dto.user.UserDto;
@@ -20,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 
 @Slf4j
@@ -36,14 +39,36 @@ public class UserService {
   @Autowired
   private UserValidator userValidator;
 
+  @Autowired
+  private UserShopMembershipRepository membershipRepository;
+
+  @Autowired
+  private UserShopMembershipService membershipService;
+
   public UserListResponse listUsers(String shopId) {
     try {
-      userValidator.validateDeactivateRequest(shopId, ""); // Only validate shopId
+      userValidator.validateShopId(shopId);
 
       log.debug("Retrieving users for shop: {}", shopId);
-      List<UserDto> users = userAccountRepository.findByShopId(shopId).stream()
-          .map(userMapper::toDto)
-          .toList();
+      List<UserDto> users = new ArrayList<>();
+
+      // Primary: from memberships (multi-shop)
+      for (UserShopMembership m : membershipRepository.findByShopIdAndActiveTrue(shopId)) {
+        UserAccount account = userAccountRepository.findById(m.getUserId()).orElse(null);
+        if (account != null) {
+          UserDto dto = userMapper.toDto(account);
+          dto.setRole(m.getRole());
+          users.add(dto);
+        }
+      }
+
+      // Backward compat: legacy users (shopId on UserAccount, no membership yet)
+      for (UserAccount account : userAccountRepository.findByShopId(shopId)) {
+        boolean alreadyAdded = users.stream().anyMatch(u -> u.getUserId().equals(account.getUserId()));
+        if (!alreadyAdded) {
+          users.add(userMapper.toDto(account));
+        }
+      }
 
       log.debug("Found {} users for shop: {}", users.size(), shopId);
       UserListResponse response = new UserListResponse();
@@ -68,10 +93,11 @@ public class UserService {
 
       log.debug("Updating user with ID: {} in shop: {}", userId, shopId);
 
-      // Find the user and verify they belong to the specified shop
+      // Find the user and verify they belong to the specified shop (multi-shop: use membership)
       UserAccount account = userAccountRepository.findById(userId)
-          .filter(user -> shopId.equals(user.getShopId()))
           .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId));
+      userValidator.validateUserBelongsToShopByMembership(
+          membershipService.hasAccess(userId, shopId), userId, shopId);
 
       boolean isUpdated = false;
 
@@ -85,15 +111,27 @@ public class UserService {
         }
       }
 
-      // Update role if provided and valid
-      if (request.getRole() != null && !request.getRole().equals(account.getRole())) {
-        // Add any role validation logic here if needed
-        account.setRole(request.getRole());
-        isUpdated = true;
-        account.setUpdatedAt(Instant.now());
-        userAccountRepository.save(account);
-        log.info("Updated user with ID: {} in shop: {}", userId, shopId);
-      } else {
+      // Update role if provided (multi-shop: update membership role; sync account.role if active shop)
+      if (request.getRole() != null) {
+        var membershipOpt = membershipRepository.findByUserIdAndShopIdAndActiveTrue(userId, shopId);
+        if (membershipOpt.isPresent()) {
+          var m = membershipOpt.get();
+          if (!request.getRole().equals(m.getRole())) {
+            m.setRole(request.getRole());
+            membershipRepository.save(m);
+            isUpdated = true;
+          }
+        }
+        if (shopId.equals(account.getShopId())) {
+          account.setRole(request.getRole());
+          account.setUpdatedAt(Instant.now());
+          userAccountRepository.save(account);
+        }
+        if (isUpdated) {
+          log.info("Updated user with ID: {} role in shop: {}", userId, shopId);
+        }
+      }
+      if (!isUpdated) {
         log.debug("No changes detected for user with ID: {}", userId);
       }
 
@@ -121,15 +159,25 @@ public class UserService {
       UserAccount account = userAccountRepository.findById(userId)
           .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId));
 
-      // Verify user belongs to the specified shop and check admin status
-      userValidator.validateUserBelongsToShop(account, shopId, userId);
+      // Verify user belongs to the specified shop (multi-shop: use membership)
+      userValidator.validateUserBelongsToShopByMembership(
+          membershipService.hasAccess(userId, shopId), userId, shopId);
 
-      // Check if this is the last admin
-      if (account.isActive() && UserRole.ADMIN.equals(account.getRole())) {
-        long adminCount = userAccountRepository.findByShopId(shopId).stream()
-            .filter(u -> UserRole.ADMIN.equals(u.getRole()) && u.isActive())
-            .count();
-        userValidator.validateLastAdminDeactivation(account, adminCount);
+      // Check if this is the last admin (use per-shop role from membership)
+      if (account.isActive()) {
+        var membership = membershipRepository.findByUserIdAndShopIdAndActiveTrue(userId, shopId);
+        UserRole roleInShop = membership.map(UserShopMembership::getRole).orElse(account.getRole());
+        if (UserRole.ADMIN.equals(roleInShop)) {
+          long adminCount = membershipRepository.findByShopIdAndActiveTrue(shopId).stream()
+              .filter(m -> UserRole.ADMIN.equals(m.getRole()))
+              .map(UserShopMembership::getUserId)
+              .filter(uid -> {
+                UserAccount u = userAccountRepository.findById(uid).orElse(null);
+                return u != null && u.isActive();
+              })
+              .count();
+          userValidator.validateLastAdminDeactivation(account, adminCount);
+        }
       }
 
       if (account.isActive()) {

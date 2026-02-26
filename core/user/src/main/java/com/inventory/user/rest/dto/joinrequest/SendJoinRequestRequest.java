@@ -6,7 +6,8 @@ import lombok.Data;
 @Data
 public class SendJoinRequestRequest {
   private String ownerEmail;
-  private UserRole role; // Role requested by the user
-  private String message; // Optional message from user
+  private String shopId;   // Required for multi-shop: which shop to request (owner may have multiple)
+  private UserRole role;   // Role requested by the user
+  private String message;  // Optional message from user
 }
 

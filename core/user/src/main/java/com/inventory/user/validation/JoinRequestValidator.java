@@ -20,6 +20,9 @@ public class JoinRequestValidator {
     if (!StringUtils.hasText(request.getOwnerEmail())) {
       throw new ValidationException("Owner email is required");
     }
+    if (!StringUtils.hasText(request.getShopId())) {
+      throw new ValidationException("Shop ID is required");
+    }
     if (request.getRole() == null) {
       throw new ValidationException("Role is required");
     }

@@ -9,6 +9,7 @@ import com.inventory.user.rest.dto.invitation.SendInvitationRequest;
 import com.inventory.user.rest.dto.invitation.SendInvitationResponse;
 import com.inventory.user.rest.dto.invitation.ShopUserListResponse;
 import com.inventory.user.service.InvitationService;
+import com.inventory.user.service.UserShopMembershipService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -27,6 +28,9 @@ public class InvitationController {
   @Autowired
   private InvitationService invitationService;
 
+  @Autowired
+  private UserShopMembershipService membershipService;
+
   /**
    * Send an invitation to a user to join a shop.
    *
@@ -40,17 +44,15 @@ public class InvitationController {
       @PathVariable String shopId,
       @RequestBody SendInvitationRequest request,
       HttpServletRequest httpRequest) {
-    // Get userId and shopId from request attributes (set by AuthenticationInterceptor)
     String inviterUserId = (String) httpRequest.getAttribute("userId");
-    String shopIdFromInterceptor = (String) httpRequest.getAttribute("shopId");
 
     if (!StringUtils.hasText(inviterUserId)) {
       throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "User not authenticated");
     }
 
-    // Validate that the shopId in path matches the user's shopId from interceptor
-    if (!StringUtils.hasText(shopIdFromInterceptor) || !shopId.equals(shopIdFromInterceptor)) {
-      throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "User does not belong to this shop");
+    // Validate user has owner access to this shop (multi-shop: can own multiple shops)
+    if (!membershipService.hasOwnerAccess(inviterUserId, shopId)) {
+      throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "User does not have owner access to this shop");
     }
 
     return ResponseEntity.ok(ApiResponse.success(
@@ -110,13 +112,15 @@ public class InvitationController {
   public ResponseEntity<ApiResponse<InvitationListResponse>> getInvitationsForShop(
       @PathVariable String shopId,
       HttpServletRequest httpRequest) {
-    // Get shopId from interceptor for validation
-    String shopIdFromInterceptor = (String) httpRequest.getAttribute("shopId");
     String userId = (String) httpRequest.getAttribute("userId");
 
-    // Validate that the shopId in path matches the user's shopId from interceptor
-    if (!StringUtils.hasText(shopIdFromInterceptor) || !shopId.equals(shopIdFromInterceptor)) {
-      throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "User does not belong to this shop");
+    if (!StringUtils.hasText(userId)) {
+      throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "User not authenticated");
+    }
+
+    // Validate user has access to this shop (multi-shop compatible)
+    if (!membershipService.hasAccess(userId, shopId)) {
+      throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "User does not have access to this shop");
     }
 
     return ResponseEntity.ok(ApiResponse.success(
@@ -134,12 +138,15 @@ public class InvitationController {
   public ResponseEntity<ApiResponse<ShopUserListResponse>> getUsersForShop(
       @PathVariable String shopId,
       HttpServletRequest httpRequest) {
-    // Get shopId from interceptor for validation
-    String shopIdFromInterceptor = (String) httpRequest.getAttribute("shopId");
+    String userId = (String) httpRequest.getAttribute("userId");
 
-    // Validate that the shopId in path matches the user's shopId from interceptor
-    if (!StringUtils.hasText(shopIdFromInterceptor) || !shopId.equals(shopIdFromInterceptor)) {
-      throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "User does not belong to this shop");
+    if (!StringUtils.hasText(userId)) {
+      throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "User not authenticated");
+    }
+
+    // Validate user has access to this shop (multi-shop compatible)
+    if (!membershipService.hasAccess(userId, shopId)) {
+      throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "User does not have access to this shop");
     }
 
     return ResponseEntity.ok(ApiResponse.success(
