@@ -13,7 +13,9 @@ import com.inventory.product.rest.dto.shop.ShopApprovalResponse;
 import com.inventory.product.rest.dto.shop.ShopRegistrationResponse;
 import com.inventory.product.rest.mapper.ShopMapper;
 import com.inventory.product.validation.ShopValidator;
+import com.inventory.user.domain.model.UserRole;
 import com.inventory.user.domain.repository.UserAccountRepository;
+import com.inventory.user.service.UserShopMembershipService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
@@ -39,6 +41,9 @@ public class ShopService {
   @Autowired
   private UserAccountRepository userAccountRepository;
 
+  @Autowired
+  private UserShopMembershipService membershipService;
+
   @Transactional
   public ShopRegistrationResponse register(RegisterShopRequest request, String userId) {
     try {
@@ -50,18 +55,19 @@ public class ShopService {
       }
 
       // Check for existing shop with the same contact email
+      // Allow duplicate only when the registering user already owns a shop with that email
       shopRepository.findByContactEmail(request.getContactEmail())
-          .ifPresent(shop -> {
-            throw new ResourceExistsException("A shop with this contact email already exists");
+          .ifPresent(existingShop -> {
+            if (!membershipService.hasOwnerAccess(userId, existingShop.getShopId())) {
+              throw new ResourceExistsException("A shop with this contact email already exists");
+            }
+            // Same owner - allow (multi-shop with same contact email)
           });
 
-      // Check if user already has a shop
       com.inventory.user.domain.model.UserAccount userAccount = userAccountRepository.findById(userId)
           .orElseThrow(() -> new ResourceNotFoundException("User", "userId", userId));
 
-      if (userAccount.getShopId() != null && !userAccount.getShopId().trim().isEmpty()) {
-        throw new ResourceExistsException("User already has a shop associated");
-      }
+      // Multi-shop: user can own multiple shops - no "already has shop" check
 
       log.info("Registering new shop: {} for user: {}", request.getName(), userId);
 
@@ -73,8 +79,14 @@ public class ShopService {
       // Save shop first
       shop = shopRepository.save(shop);
 
-      // Update user account with shopId (using mapper method)
+      // Add membership (multi-shop)
+      membershipService.addMembership(userId, shop.getShopId(), UserRole.OWNER,
+          UserShopMembershipService.RELATIONSHIP_OWNER);
+
+      // Update user account with shopId as active shop (backward compatible)
       shopMapper.updateUserAccountWithShopId(userAccount, shop.getShopId());
+      userAccount.setRole(UserRole.OWNER);
+      userAccount.setUpdatedAt(Instant.now());
       userAccountRepository.save(userAccount);
 
       log.info("Successfully registered shop with ID: {} and updated user account: {}", shop.getShopId(), userId);

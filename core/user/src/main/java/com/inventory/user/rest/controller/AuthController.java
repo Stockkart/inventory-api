@@ -11,6 +11,7 @@ import com.inventory.user.rest.dto.auth.SignupResponse;
 import com.inventory.user.rest.dto.auth.UserResponse;
 import com.inventory.user.rest.mapper.UserMapper;
 import com.inventory.user.service.AuthService;
+import com.inventory.user.service.UserShopMembershipService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -29,6 +30,9 @@ public class AuthController {
 
   @Autowired
   private UserMapper userMapper;
+
+  @Autowired(required = false)
+  private UserShopMembershipService membershipService;
 
   @PostMapping("/login")
   public ResponseEntity<ApiResponse<LoginResponse>> login(@RequestBody LoginRequest request) {
@@ -73,8 +77,11 @@ public class AuthController {
           "User not authenticated");
     }
 
-    // Map to response using mapper
-    return ResponseEntity.ok(ApiResponse.success(userMapper.toUserResponse(userAccount)));
+    UserResponse response = userMapper.toUserResponse(userAccount);
+    if (membershipService != null) {
+      response.setShops(membershipService.getShopsForUser(userAccount.getUserId()).getData());
+    }
+    return ResponseEntity.ok(ApiResponse.success(response));
   }
 }
 

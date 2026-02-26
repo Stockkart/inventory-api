@@ -6,6 +6,7 @@ import com.inventory.common.exception.AuthenticationException;
 import com.inventory.user.rest.dto.joinrequest.AcceptRejectJoinRequestRequest;
 import com.inventory.user.rest.dto.joinrequest.JoinRequestListResponse;
 import com.inventory.user.rest.dto.joinrequest.ProcessJoinRequestResponse;
+import com.inventory.user.rest.dto.joinrequest.OwnerShopListResponse;
 import com.inventory.user.rest.dto.joinrequest.SendJoinRequestRequest;
 import com.inventory.user.rest.dto.joinrequest.SendJoinRequestResponse;
 import com.inventory.user.service.JoinRequestService;
@@ -15,8 +16,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -26,6 +29,21 @@ public class JoinRequestController {
 
   @Autowired
   private JoinRequestService joinRequestService;
+
+  /**
+   * Get shops owned by an email (for join-request flow: user enters owner email and selects a shop).
+   */
+  @GetMapping("/shops/by-owner-email")
+  public ResponseEntity<ApiResponse<OwnerShopListResponse>> getShopsByOwnerEmail(
+      @RequestParam String email,
+      HttpServletRequest httpRequest) {
+    String userId = (String) httpRequest.getAttribute("userId");
+    if (!StringUtils.hasText(userId)) {
+      throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "User not authenticated");
+    }
+    return ResponseEntity.ok(ApiResponse.success(
+        joinRequestService.getShopsByOwnerEmail(email)));
+  }
 
   /**
    * Send a request to join a shop.
@@ -50,15 +68,17 @@ public class JoinRequestController {
   }
 
   /**
-   * Get all join requests for the current user's shop (owner only).
+   * Get all join requests for a shop (owner only).
+   * For multi-shop: pass shopId to get requests for that shop; omit to use active shop.
    *
+   * @param shopId      Optional shop ID (required when owner has multiple shops)
    * @param httpRequest HTTP request to get userId from interceptor
    * @return List of join requests for the shop
    */
   @GetMapping("/shops/join-requests")
   public ResponseEntity<ApiResponse<JoinRequestListResponse>> getJoinRequests(
+      @RequestParam(required = false) String shopId,
       HttpServletRequest httpRequest) {
-    // Get userId from request attributes (set by AuthenticationInterceptor)
     String userId = (String) httpRequest.getAttribute("userId");
 
     if (!StringUtils.hasText(userId)) {
@@ -66,7 +86,7 @@ public class JoinRequestController {
     }
 
     return ResponseEntity.ok(ApiResponse.success(
-        joinRequestService.getJoinRequestsForShop(userId)));
+        joinRequestService.getJoinRequestsForShop(userId, shopId)));
   }
 
   /**

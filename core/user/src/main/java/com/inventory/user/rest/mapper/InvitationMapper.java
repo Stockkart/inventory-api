@@ -125,15 +125,12 @@ public interface InvitationMapper {
   }
 
   /**
-   * Updates invitation status to ACCEPTED and updates user's shop and role
+   * Updates invitation status to ACCEPTED. Does NOT update user's shopId/role here -
+   * InvitationService handles membership add and optional active shop update.
    */
-  default void updateInvitationAndUser(Invitation invitation, UserAccount user) {
+  default void updateInvitationStatus(Invitation invitation) {
     invitation.setStatus(InvitationStatus.ACCEPTED.name());
     invitation.setAcceptedAt(Instant.now());
-
-    user.setShopId(invitation.getShopId());
-    user.setRole(invitation.getRole());
-    user.setUpdatedAt(Instant.now());
   }
 
   /**
