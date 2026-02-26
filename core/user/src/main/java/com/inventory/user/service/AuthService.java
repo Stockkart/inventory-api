@@ -131,7 +131,7 @@ public class AuthService {
       log.info("User logged in successfully: {}", account.getUserId());
 
       if (authNotificationHelper != null) {
-        authNotificationHelper.sendLoginSuccessEmail(account.getEmail());
+        authNotificationHelper.sendLoginSuccess(account.getEmail());
       }
 
       // Create login response using mapper (tokens set automatically via @AfterMapping and saved to account)
