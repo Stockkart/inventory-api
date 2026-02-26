@@ -42,15 +42,26 @@ public class UserValidator {
   }
 
   public void validateUserBelongsToShop(UserAccount account, String shopId, String userId) {
-    if (account == null || !shopId.equals(account.getShopId())) {
+    if (account == null) {
+      throw new ValidationException(String.format("User with ID %s not found", userId));
+    }
+    // Shop membership check done by UserService via UserShopMembershipService.hasAccess (multi-shop)
+  }
+
+  public void validateUserBelongsToShopByMembership(boolean hasAccess, String userId, String shopId) {
+    if (!hasAccess) {
       throw new ValidationException(String.format("User with ID %s not found in shop %s", userId, shopId));
     }
   }
 
-  public void validateDeactivateRequest(String shopId, String userId) {
+  public void validateShopId(String shopId) {
     if (!StringUtils.hasText(shopId)) {
       throw new ValidationException("Shop ID is required");
     }
+  }
+
+  public void validateDeactivateRequest(String shopId, String userId) {
+    validateShopId(shopId);
     if (!StringUtils.hasText(userId)) {
       throw new ValidationException("User ID is required");
     }

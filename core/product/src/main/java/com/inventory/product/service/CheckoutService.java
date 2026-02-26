@@ -251,10 +251,12 @@ public class CheckoutService {
 
       checkoutValidator.validateStatusTransition(currentStatus, requestedStatus);
 
-      // If status is being changed to COMPLETED, decrease inventory counts
+      // If status is being changed to COMPLETED, decrease inventory counts and set sale date
       if (requestedStatus == PurchaseStatus.COMPLETED) {
         log.info("Processing inventory updates for completed purchase ID: {}", purchase.getId());
         updateInventoryForCompletedPurchase(purchase);
+        // Sale date for GSTR and reporting: when the sale was completed (invoice date)
+        purchase.setSoldAt(Instant.now());
       }
 
       // Update status and payment method
@@ -623,9 +625,13 @@ public class CheckoutService {
         checkoutValidator.validateCartItem(item);
 
       // Quantity 0 or null with only price/discount/scheme changes = update only (item must already be in cart)
+      // Exclude when baseQuantity is non-zero: that indicates a quantity change (e.g. baseQuantity=-1 to remove 1)
       boolean hasSchemeChange = item.getSchemePayFor() != null || item.getSchemeFree() != null
           || item.getSchemeType() != null || item.getSchemePercentage() != null;
+      boolean hasQuantityChange = (item.getBaseQuantity() != null && item.getBaseQuantity() != 0)
+          || (item.getQuantity() != null && item.getQuantity() != 0);
       boolean updateOnly = (item.getQuantity() == null || item.getQuantity() == 0)
+          && !hasQuantityChange
           && (item.getAdditionalDiscount() != null || hasSchemeChange || item.getPriceToRetail() != null);
 
         if (updateOnly) {
@@ -674,8 +680,9 @@ public class CheckoutService {
           purchaseItem.setUnitFactor(pricingFactor);
           purchaseItem.setAvailableUnits(mapAvailableUnits(inventory));
           purchaseItems.add(purchaseItem);
-        } else if (item.getQuantity() < 0) {
-          // For negative quantities, we only need to verify the lotId exists and belongs to the shop
+        } else if ((item.getQuantity() != null && item.getQuantity() < 0)
+            || (item.getBaseQuantity() != null && item.getBaseQuantity() < 0)) {
+          // For negative quantities (reduce/remove), verify lotId exists and belongs to the shop
           // Stock validation is not needed for removing items
           Inventory inventory = inventoryRepository.findById(item.getId())
               .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", item.getId()));
@@ -686,8 +693,9 @@ public class CheckoutService {
           String saleUnit = normalizeSaleUnit(item.getUnit(), inventory);
           int factor = getConversionFactorToBase(inventory, saleUnit);
           int pricingFactor = getDisplayToBaseFactor(inventory);
-          int saleQuantity = item.getQuantity();
-          int baseQuantity = toBaseQuantity(saleQuantity, factor);
+          int baseQuantity = (item.getBaseQuantity() != null && item.getBaseQuantity() < 0)
+              ? item.getBaseQuantity()
+              : toBaseQuantity(item.getQuantity(), factor);
           BigDecimal pricingQuantity = BigDecimal.valueOf(baseQuantity)
               .divide(BigDecimal.valueOf(pricingFactor), 4, RoundingMode.HALF_UP);
           BigDecimal maximumRetailPrice = inventory.getMaximumRetailPrice();
@@ -1384,7 +1392,7 @@ public class CheckoutService {
   }
 
   private int resolveRequestedBaseQuantity(AddToCartRequest.CartItem item, Inventory inventory, String saleUnit, int defaultFactor) {
-    if (item.getBaseQuantity() != null && item.getBaseQuantity() > 0) {
+    if (item.getBaseQuantity() != null && item.getBaseQuantity() != 0) {
       return item.getBaseQuantity();
     }
     if (item.getQuantity() == null) {

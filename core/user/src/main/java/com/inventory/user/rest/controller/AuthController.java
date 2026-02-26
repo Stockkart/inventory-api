@@ -1,6 +1,8 @@
 package com.inventory.user.rest.controller;
 
 import com.inventory.common.dto.response.ApiResponse;
+import com.inventory.user.rest.dto.auth.ChangePasswordRequest;
+import com.inventory.user.rest.dto.auth.ChangePasswordResponse;
 import com.inventory.user.rest.dto.auth.LoginRequest;
 import com.inventory.user.rest.dto.auth.LoginResponse;
 import com.inventory.user.rest.dto.auth.LogoutResponse;
@@ -9,6 +11,7 @@ import com.inventory.user.rest.dto.auth.SignupResponse;
 import com.inventory.user.rest.dto.auth.UserResponse;
 import com.inventory.user.rest.mapper.UserMapper;
 import com.inventory.user.service.AuthService;
+import com.inventory.user.service.UserShopMembershipService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -28,6 +31,9 @@ public class AuthController {
   @Autowired
   private UserMapper userMapper;
 
+  @Autowired(required = false)
+  private UserShopMembershipService membershipService;
+
   @PostMapping("/login")
   public ResponseEntity<ApiResponse<LoginResponse>> login(@RequestBody LoginRequest request) {
     return ResponseEntity.ok(ApiResponse.success(authService.login(request)));
@@ -36,6 +42,12 @@ public class AuthController {
   @PostMapping("/signup")
   public ResponseEntity<ApiResponse<SignupResponse>> signup(@RequestBody SignupRequest request) {
     return ResponseEntity.ok(ApiResponse.success(authService.signup(request)));
+  }
+
+  @PostMapping("/change-password")
+  public ResponseEntity<ApiResponse<ChangePasswordResponse>> changePassword(
+      @RequestBody ChangePasswordRequest request) {
+    return ResponseEntity.ok(ApiResponse.success(authService.changePassword(request)));
   }
 
   @PostMapping("/logout")
@@ -65,8 +77,11 @@ public class AuthController {
           "User not authenticated");
     }
 
-    // Map to response using mapper
-    return ResponseEntity.ok(ApiResponse.success(userMapper.toUserResponse(userAccount)));
+    UserResponse response = userMapper.toUserResponse(userAccount);
+    if (membershipService != null) {
+      response.setShops(membershipService.getShopsForUser(userAccount.getUserId()).getData());
+    }
+    return ResponseEntity.ok(ApiResponse.success(response));
   }
 }
 

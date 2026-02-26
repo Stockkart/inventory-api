@@ -6,6 +6,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -47,5 +48,11 @@ public interface RefundRepository extends MongoRepository<Refund, String> {
    * @return page of refunds for the purchases
    */
   Page<Refund> findByPurchaseIdIn(List<String> purchaseIds, Pageable pageable);
+
+  /**
+   * Find refunds by shop ID and created-at date range (inclusive).
+   * Used for GSTR-1 CDNR/CDNUR and other period-based reports.
+   */
+  List<Refund> findByShopIdAndCreatedAtBetween(String shopId, Instant start, Instant end);
 }
 

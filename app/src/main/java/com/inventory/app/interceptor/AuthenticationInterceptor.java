@@ -4,11 +4,13 @@ import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.AuthenticationException;
 import com.inventory.user.domain.model.UserAccount;
 import com.inventory.user.service.TokenValidationService;
+import com.inventory.user.service.UserShopMembershipService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 import java.util.Arrays;
@@ -18,10 +20,13 @@ import java.util.List;
 @Slf4j
 public class AuthenticationInterceptor implements HandlerInterceptor {
 
+  public static final String HEADER_X_SHOP_ID = "X-Shop-Id";
+
   // Public endpoints that don't require authentication
   private static final List<String> PUBLIC_ENDPOINTS = Arrays.asList(
       "/api/v1/auth/login",
       "/api/v1/auth/signup",
+      "/api/v1/auth/change-password",
       "/api/v1/auth/accept-invite",
       "/api/product/get-plugin",
       "/api/product/",
@@ -29,6 +34,9 @@ public class AuthenticationInterceptor implements HandlerInterceptor {
   );
   @Autowired
   private TokenValidationService tokenValidationService;
+
+  @Autowired(required = false)
+  private UserShopMembershipService membershipService;
 
   @Override
   public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
@@ -59,10 +67,12 @@ public class AuthenticationInterceptor implements HandlerInterceptor {
     try {
       UserAccount userAccount = tokenValidationService.validateToken(accessToken);
 
-      // Store user information in request attributes for use in controllers
+      // Resolve effective shopId: X-Shop-Id header if valid, else user's active shop (backward compatible)
+      String effectiveShopId = resolveEffectiveShopId(userAccount, request);
+
       request.setAttribute("userId", userAccount.getUserId());
       request.setAttribute("userRole", userAccount.getRole());
-      request.setAttribute("shopId", userAccount.getShopId());
+      request.setAttribute("shopId", effectiveShopId);
       request.setAttribute("userAccount", userAccount);
       request.setAttribute("accessToken", accessToken);
 
@@ -78,6 +88,22 @@ public class AuthenticationInterceptor implements HandlerInterceptor {
   private boolean isPublicEndpoint(String path) {
     return PUBLIC_ENDPOINTS.stream()
         .anyMatch(endpoint -> path.equals(endpoint) || path.startsWith(endpoint));
+  }
+
+  /**
+   * Resolve effective shopId for multi-shop. If X-Shop-Id header is present and user has access,
+   * use it. Otherwise use userAccount.shopId (active shop).
+   */
+  private String resolveEffectiveShopId(UserAccount userAccount, HttpServletRequest request) {
+    String headerShopId = request.getHeader(HEADER_X_SHOP_ID);
+    if (StringUtils.hasText(headerShopId)) {
+      headerShopId = headerShopId.trim();
+      if (membershipService != null && membershipService.hasAccess(userAccount.getUserId(), headerShopId)) {
+        return headerShopId;
+      }
+      log.debug("X-Shop-Id {} not accessible for user {}, using active shop", headerShopId, userAccount.getUserId());
+    }
+    return userAccount.getShopId();
   }
 }
 
