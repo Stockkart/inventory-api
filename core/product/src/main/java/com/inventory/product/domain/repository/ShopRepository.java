@@ -4,6 +4,7 @@ import com.inventory.product.domain.model.Shop;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -32,6 +33,14 @@ public interface ShopRepository extends MongoRepository<Shop, String> {
    * @return an Optional containing the shop if found, empty otherwise
    */
   Optional<Shop> findByContactEmail(String email);
+
+  /**
+   * Find all shops with the given contact email (for multi-shop: same owner can have multiple shops with same email).
+   *
+   * @param email the contact email to search for
+   * @return list of shops with that contact email
+   */
+  List<Shop> findAllByContactEmail(String email);
 
   /**
    * Check if a shop with the given business ID exists.

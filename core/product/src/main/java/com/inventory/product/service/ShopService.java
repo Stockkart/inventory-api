@@ -54,15 +54,13 @@ public class ShopService {
         throw new ValidationException("User ID is required");
       }
 
-      // Check for existing shop with the same contact email
-      // Allow duplicate only when the registering user already owns a shop with that email
-      shopRepository.findByContactEmail(request.getContactEmail())
-          .ifPresent(existingShop -> {
-            if (!membershipService.hasOwnerAccess(userId, existingShop.getShopId())) {
-              throw new ResourceExistsException("A shop with this contact email already exists");
-            }
-            // Same owner - allow (multi-shop with same contact email)
-          });
+      // Check for existing shops with the same contact email
+      // Allow duplicate only when the registering user owns ALL shops with that email (multi-shop)
+      for (Shop existingShop : shopRepository.findAllByContactEmail(request.getContactEmail())) {
+        if (!membershipService.hasOwnerAccess(userId, existingShop.getShopId())) {
+          throw new ResourceExistsException("A shop with this contact email already exists");
+        }
+      }
 
       com.inventory.user.domain.model.UserAccount userAccount = userAccountRepository.findById(userId)
           .orElseThrow(() -> new ResourceNotFoundException("User", "userId", userId));
