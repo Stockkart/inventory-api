@@ -2,6 +2,7 @@ package com.inventory.product.rest.dto.sale;
 
 import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.product.domain.model.PurchaseStatus;
+import com.inventory.product.domain.model.BillingMode;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -17,6 +18,7 @@ public class PurchaseSummaryDto {
   private String purchaseId;
   private String invoiceNo;
   private String businessType;
+  private BillingMode billingMode;
   private String userId;
   private String shopId;
   private List<PurchaseItem> items;

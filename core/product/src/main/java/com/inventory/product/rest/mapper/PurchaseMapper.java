@@ -1,6 +1,7 @@
 package com.inventory.product.rest.mapper;
 
 import com.inventory.product.domain.model.Inventory;
+import com.inventory.product.domain.model.BillingMode;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.product.domain.model.PurchaseStatus;
@@ -480,6 +481,7 @@ public abstract class PurchaseMapper {
   @Mapping(target = "id", ignore = true)
   @Mapping(target = "invoiceNo", ignore = true)
   @Mapping(target = "businessType", source = "request.businessType")
+  @Mapping(target = "billingMode", source = "billingMode")
   @Mapping(target = "userId", source = "userId")
   @Mapping(target = "shopId", source = "shopId")
   @Mapping(target = "items", source = "purchaseItems")
@@ -497,12 +499,13 @@ public abstract class PurchaseMapper {
   public abstract Purchase toPurchaseForCart(AddToCartRequest request, List<PurchaseItem> purchaseItems,
                              BigDecimal subTotal, BigDecimal taxTotal,
                              BigDecimal discountTotal, BigDecimal grandTotal,
-                             String shopId, String userId, String customerId);
+                             String shopId, String userId, String customerId, BillingMode billingMode);
 
   // Method to map Purchase to AddToCartResponse
   @Mapping(target = "purchaseId", source = "id")
   @Mapping(target = "invoiceNo", source = "invoiceNo")
   @Mapping(target = "businessType", source = "businessType")
+  @Mapping(target = "billingMode", source = "billingMode")
   @Mapping(target = "userId", source = "userId")
   @Mapping(target = "shopId", source = "shopId")
   @Mapping(target = "items", expression = "java(purchase.getItems() != null ? purchase.getItems() : java.util.List.of())")
@@ -542,6 +545,7 @@ public abstract class PurchaseMapper {
   // Method to map Purchase to CheckoutResponse
   @Mapping(target = "invoiceNo", source = "invoiceNo")
   @Mapping(target = "businessType", source = "businessType")
+  @Mapping(target = "billingMode", source = "billingMode")
   @Mapping(target = "userId", source = "userId")
   @Mapping(target = "shopId", source = "shopId")
   @Mapping(target = "items", expression = "java(purchase.getItems() != null ? purchase.getItems() : java.util.List.of())")
@@ -579,6 +583,7 @@ public abstract class PurchaseMapper {
   @Mapping(target = "purchaseId", source = "id")
   @Mapping(target = "invoiceNo", source = "invoiceNo")
   @Mapping(target = "businessType", source = "businessType")
+  @Mapping(target = "billingMode", source = "billingMode")
   @Mapping(target = "userId", source = "userId")
   @Mapping(target = "shopId", source = "shopId")
   @Mapping(target = "items", expression = "java(purchase.getItems() != null ? purchase.getItems() : java.util.List.of())")

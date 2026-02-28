@@ -14,6 +14,7 @@ public class PurchaseItem {
 
   private String inventoryId;
   private String name;
+  private BillingMode billingMode;
   private BigDecimal quantity;
   /** Sale/display unit for quantity (e.g. STRIP, PACK). */
   private String saleUnit;

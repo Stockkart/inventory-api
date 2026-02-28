@@ -7,6 +7,7 @@ import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.AvailableUnit;
+import com.inventory.product.domain.model.BillingMode;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.product.domain.model.PurchaseStatus;
@@ -42,10 +43,12 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 @Service
 @Slf4j
@@ -111,6 +114,54 @@ public class CheckoutService {
     }
   }
 
+  private BillingMode normalizeBillingMode(BillingMode billingMode) {
+    return billingMode != null ? billingMode : BillingMode.REGULAR;
+  }
+
+  private BillingMode resolveInventoryBillingMode(Inventory inventory) {
+    return normalizeBillingMode(inventory != null ? inventory.getBillingMode() : null);
+  }
+
+  private boolean isTaxApplicable(BillingMode billingMode) {
+    return normalizeBillingMode(billingMode) == BillingMode.REGULAR;
+  }
+
+  private void applyItemTaxMode(PurchaseItem item, BillingMode billingMode) {
+    item.setBillingMode(normalizeBillingMode(billingMode));
+    if (!isTaxApplicable(billingMode)) {
+      item.setCgst(null);
+      item.setSgst(null);
+    }
+  }
+
+  private BillingMode resolveAndValidateCartBillingMode(Purchase existingCart, List<PurchaseItem> newItems) {
+    Set<BillingMode> observed = new HashSet<>();
+
+    if (existingCart != null) {
+      observed.add(normalizeBillingMode(existingCart.getBillingMode()));
+      if (existingCart.getItems() != null) {
+        for (PurchaseItem item : existingCart.getItems()) {
+          observed.add(normalizeBillingMode(item.getBillingMode()));
+        }
+      }
+    }
+
+    if (newItems != null) {
+      for (PurchaseItem item : newItems) {
+        observed.add(normalizeBillingMode(item.getBillingMode()));
+      }
+    }
+
+    if (observed.size() > 1) {
+      throw new ValidationException("Cannot mix REGULAR and BASIC inventory items in a single cart");
+    }
+
+    if (observed.isEmpty()) {
+      return BillingMode.REGULAR;
+    }
+    return observed.iterator().next();
+  }
+
   @Autowired
   private PurchaseRepository purchaseRepository;
 
@@ -173,6 +224,7 @@ public class CheckoutService {
 
       // Process new items
       List<PurchaseItem> newItems = processCartItems(request.getItems(), shopId);
+      BillingMode cartBillingMode = resolveAndValidateCartBillingMode(existingCart, newItems);
 
       Purchase purchase;
       if (existingCart != null) {
@@ -181,7 +233,7 @@ public class CheckoutService {
 
         // Update existing cart - merge items (including quantity-0 update-only items)
         log.info("Updating existing cart with ID: {}", existingCart.getId());
-        purchase = updateCart(existingCart, newItems, request.getBusinessType(), customerId, customerName);
+        purchase = updateCart(existingCart, newItems, request.getBusinessType(), customerId, customerName, cartBillingMode);
       } else {
         // New cart: only items with quantity > 0 can be added; quantity-0 items are for updating discount on existing cart only
         List<PurchaseItem> itemsToAdd = newItems.stream()
@@ -192,7 +244,7 @@ public class CheckoutService {
               "Additional discount, scheme, or selling price can only be updated for items already in the cart. Add items to create a cart first.");
         }
         log.info("Creating new cart");
-        purchase = createCart(request, itemsToAdd, shopId, userId, customerId, customerName);
+        purchase = createCart(request, itemsToAdd, shopId, userId, customerId, customerName, cartBillingMode);
       }
 
       log.info("Successfully updated cart with ID: {}", purchase.getId());
@@ -679,6 +731,7 @@ public class CheckoutService {
           purchaseItem.setBaseQuantity(baseQuantity);
           purchaseItem.setUnitFactor(pricingFactor);
           purchaseItem.setAvailableUnits(mapAvailableUnits(inventory));
+          applyItemTaxMode(purchaseItem, resolveInventoryBillingMode(inventory));
           purchaseItems.add(purchaseItem);
         } else if ((item.getQuantity() != null && item.getQuantity() < 0)
             || (item.getBaseQuantity() != null && item.getBaseQuantity() < 0)) {
@@ -714,6 +767,7 @@ public class CheckoutService {
           purchaseItem.setBaseQuantity(baseQuantity);
           purchaseItem.setUnitFactor(pricingFactor);
           purchaseItem.setAvailableUnits(mapAvailableUnits(inventory));
+          applyItemTaxMode(purchaseItem, resolveInventoryBillingMode(inventory));
           purchaseItems.add(purchaseItem);
         } else {
           // Positive quantity - normal flow with stock validation
@@ -741,6 +795,8 @@ public class CheckoutService {
 
           // Use mapper to create PurchaseItem
           PurchaseItem purchaseItem = purchaseMapper.toPurchaseItemFromCartItem(item, inventory);
+          BillingMode itemBillingMode = resolveInventoryBillingMode(inventory);
+          applyItemTaxMode(purchaseItem, itemBillingMode);
           normalizeSchemeFields(purchaseItem);
           BigDecimal sellingPrice = inventory.getSellingPrice() != null ? inventory.getSellingPrice() : inventory.getPriceToRetail();
           BigDecimal costPrice = inventory.getCostPrice();
@@ -759,7 +815,7 @@ public class CheckoutService {
           BigDecimal effectivePrice = getEffectiveSellingPricePerUnit(purchaseItem);
           BigDecimal billableQty = getBillableQuantityAsDecimal(purchaseItem);
           BigDecimal totalAmount = calculateItemTotalAmount(effectivePrice, purchaseItem.getAdditionalDiscount(), billableQty,
-              purchaseItem.getCgst(), purchaseItem.getSgst());
+              purchaseItem.getCgst(), purchaseItem.getSgst(), isTaxApplicable(itemBillingMode));
           purchaseItem.setTotalAmount(totalAmount);
           purchaseItem.setSaleUnit(saleUnit);
           purchaseItem.setBaseQuantity(baseQuantity);
@@ -804,7 +860,10 @@ public class CheckoutService {
    * @param shopId the shop ID to fetch default tax rates from if item doesn't have rates
    * @return TaxCalculationResult with sgstAmount, cgstAmount, and taxTotal
    */
-  private TaxCalculationResult calculateTax(List<PurchaseItem> purchaseItems, String shopId) {
+  private TaxCalculationResult calculateTax(List<PurchaseItem> purchaseItems, String shopId, BillingMode billingMode) {
+    if (!isTaxApplicable(billingMode)) {
+      return new TaxCalculationResult(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+    }
     BigDecimal totalSgstAmount = BigDecimal.ZERO;
     BigDecimal totalCgstAmount = BigDecimal.ZERO;
     
@@ -917,7 +976,8 @@ public class CheckoutService {
    * 3. Add CGST and SGST: totalDiscountedAmount * (1 + cgst/100 + sgst/100)
    */
   private BigDecimal calculateItemTotalAmount(BigDecimal priceToRetail, BigDecimal additionalDiscount,
-                                               BigDecimal billableQuantity, String cgst, String sgst) {
+                                               BigDecimal billableQuantity, String cgst, String sgst,
+                                               boolean includeTax) {
     if (priceToRetail == null || billableQuantity == null || billableQuantity.compareTo(BigDecimal.ZERO) <= 0) {
       return BigDecimal.ZERO;
     }
@@ -932,7 +992,10 @@ public class CheckoutService {
     // Step 2: Multiply by billable quantity (can be fractional for FIXED_UNITS scheme)
     BigDecimal totalDiscountedAmount = discountedPricePerUnit.multiply(billableQuantity);
     
-    // Step 3: Add CGST and SGST
+    // Step 3: Add CGST and SGST when billing mode requires tax.
+    if (!includeTax) {
+      return totalDiscountedAmount.setScale(2, RoundingMode.HALF_UP);
+    }
     BigDecimal taxMultiplier = BigDecimal.ONE;
     if (cgst != null && StringUtils.hasText(cgst)) {
       try {
@@ -977,6 +1040,26 @@ public class CheckoutService {
         .setScale(2, RoundingMode.HALF_UP);
   }
 
+  private void recalculateLineTotalsForBillingMode(List<PurchaseItem> items, BillingMode billingMode) {
+    if (items == null || items.isEmpty()) {
+      return;
+    }
+    boolean includeTax = isTaxApplicable(billingMode);
+    for (PurchaseItem item : items) {
+      applyItemTaxMode(item, billingMode);
+      BigDecimal effectivePrice = getEffectiveSellingPricePerUnit(item);
+      BigDecimal billableQty = getBillableQuantityAsDecimal(item);
+      item.setTotalAmount(calculateItemTotalAmount(
+          effectivePrice,
+          item.getAdditionalDiscount(),
+          billableQty,
+          item.getCgst(),
+          item.getSgst(),
+          includeTax));
+      purchaseMapper.enrichPurchaseItemMargin(item);
+    }
+  }
+
   /**
    * Set purchase-level margin breakdown: totalCost, revenueBeforeTax, totalProfit, marginPercent.
    * revenueBeforeTax = subTotal − additionalDiscountTotal; totalProfit = revenueBeforeTax − totalCost.
@@ -1007,11 +1090,13 @@ public class CheckoutService {
     }
   }
 
-  private Purchase createCart(AddToCartRequest request, List<PurchaseItem> purchaseItems, String shopId, String userId, String customerId, String customerName) {
+  private Purchase createCart(AddToCartRequest request, List<PurchaseItem> purchaseItems, String shopId, String userId,
+                              String customerId, String customerName, BillingMode billingMode) {
     try {
+      recalculateLineTotalsForBillingMode(purchaseItems, billingMode);
       // Calculate totals
       BigDecimal subTotal = calculateSubtotal(purchaseItems);
-      TaxCalculationResult taxResult = calculateTax(purchaseItems, shopId);
+      TaxCalculationResult taxResult = calculateTax(purchaseItems, shopId, billingMode);
       BigDecimal discountTotal = calculateTotalDiscount(purchaseItems);
       BigDecimal additionalDiscountTotal = calculateAdditionalDiscountTotal(purchaseItems);
       BigDecimal grandTotal = subTotal.add(taxResult.getTaxTotal()).subtract(additionalDiscountTotal);
@@ -1019,9 +1104,13 @@ public class CheckoutService {
       // Create purchase with CREATED status using mapper
       // MongoDB will auto-generate the id as ObjectId
       Purchase purchase = purchaseMapper.toPurchaseForCart(
-          request, purchaseItems, subTotal, taxResult.getTaxTotal(), discountTotal, grandTotal, shopId, userId, customerId
+          request, purchaseItems, subTotal, taxResult.getTaxTotal(), discountTotal, grandTotal, shopId, userId, customerId, billingMode
       );
-      purchase.setInvoiceNo(invoiceSequenceService.getNextInvoiceNo(shopId));
+      if (billingMode == BillingMode.BASIC) {
+        purchase.setInvoiceNo(invoiceSequenceService.getNextBasicInvoiceNo(shopId));
+      } else {
+        purchase.setInvoiceNo(invoiceSequenceService.getNextInvoiceNo(shopId));
+      }
       // Set tax amounts, additional discount, and customerName
       purchase.setSgstAmount(taxResult.getSgstAmount());
       purchase.setCgstAmount(taxResult.getCgstAmount());
@@ -1091,10 +1180,11 @@ public class CheckoutService {
   }
 
   private Purchase updateCart(Purchase existingCart, List<PurchaseItem> newItems, String businessType,
-                              String customerId, String customerName) {
+                              String customerId, String customerName, BillingMode billingMode) {
     try {
       // Merge items - if same inventoryId exists, update quantity; otherwise add new
       List<PurchaseItem> mergedItems = new ArrayList<>(existingCart.getItems() != null ? existingCart.getItems() : new ArrayList<>());
+      boolean includeTax = isTaxApplicable(billingMode);
 
       for (PurchaseItem newItem : newItems) {
         boolean found = false;
@@ -1159,6 +1249,7 @@ public class CheckoutService {
               switchedItem.setBaseQuantity(switchBaseQuantity);
               switchedItem.setUnitFactor(pricingFactor);
               switchedItem.setAvailableUnits(mapAvailableUnits(inventory));
+              applyItemTaxMode(switchedItem, billingMode);
               BigDecimal effectivePrice = getEffectiveSellingPricePerUnit(switchedItem);
               BigDecimal billableQty = getBillableQuantityAsDecimal(switchedItem);
               BigDecimal totalAmount = calculateItemTotalAmount(
@@ -1166,7 +1257,8 @@ public class CheckoutService {
                   switchedItem.getAdditionalDiscount(),
                   billableQty,
                   switchedItem.getCgst(),
-                  switchedItem.getSgst()
+                  switchedItem.getSgst(),
+                  includeTax
               );
               switchedItem.setTotalAmount(totalAmount);
               purchaseMapper.enrichPurchaseItemMargin(switchedItem);
@@ -1239,6 +1331,7 @@ public class CheckoutService {
             updatedItem.setBaseQuantity(newBaseQuantity);
             updatedItem.setUnitFactor(pricingFactor);
             updatedItem.setAvailableUnits(mapAvailableUnits(inventory));
+            applyItemTaxMode(updatedItem, billingMode);
             BigDecimal perUnitDiscount = maximumRetailPrice.subtract(
                 priceToRetail != null ? priceToRetail : BigDecimal.ZERO);
             if (perUnitDiscount.compareTo(BigDecimal.ZERO) > 0) {
@@ -1249,7 +1342,7 @@ public class CheckoutService {
             BigDecimal effectivePrice = getEffectiveSellingPricePerUnit(updatedItem);
             BigDecimal billableQty = getBillableQuantityAsDecimal(updatedItem);
             BigDecimal totalAmount = calculateItemTotalAmount(effectivePrice, additionalDiscount, billableQty,
-                                                              existingItem.getCgst(), existingItem.getSgst());
+                updatedItem.getCgst(), updatedItem.getSgst(), includeTax);
             updatedItem.setTotalAmount(totalAmount);
             purchaseMapper.enrichPurchaseItemMargin(updatedItem);
             mergedItems.set(i, updatedItem);
@@ -1259,6 +1352,7 @@ public class CheckoutService {
         }
         // Case 1: If item not found and quantity is positive, add new item
         if (!found && getBaseQuantityOrFallback(newItem) > 0) {
+          applyItemTaxMode(newItem, billingMode);
           mergedItems.add(newItem);
         }
         // Case 2 & 3: If item not found and quantity is negative, throw error (can't remove what doesn't exist)
@@ -1272,6 +1366,7 @@ public class CheckoutService {
       if (StringUtils.hasText(businessType)) {
         existingCart.setBusinessType(businessType);
       }
+      existingCart.setBillingMode(billingMode);
 
       // Update customer ID and customerName
       existingCart.setCustomerId(customerId);
@@ -1286,11 +1381,12 @@ public class CheckoutService {
       existingCart.setUpdatedAt(Instant.now());
 
       // Recalculate totals
+      recalculateLineTotalsForBillingMode(mergedItems, billingMode);
       existingCart.setItems(mergedItems);
       BigDecimal newSubTotal = calculateSubtotal(mergedItems);
       existingCart.setSubTotal(newSubTotal);
       
-      TaxCalculationResult taxResult = calculateTax(mergedItems, existingCart.getShopId());
+      TaxCalculationResult taxResult = calculateTax(mergedItems, existingCart.getShopId(), billingMode);
       existingCart.setTaxTotal(taxResult.getTaxTotal());
       existingCart.setSgstAmount(taxResult.getSgstAmount());
       existingCart.setCgstAmount(taxResult.getCgstAmount());

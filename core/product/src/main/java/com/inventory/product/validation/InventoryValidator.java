@@ -1,6 +1,7 @@
 package com.inventory.product.validation;
 
 import com.inventory.common.exception.ValidationException;
+import com.inventory.product.domain.model.BillingMode;
 import com.inventory.product.domain.model.ItemType;
 import com.inventory.product.domain.model.SchemeType;
 import com.inventory.product.domain.model.UnitConversion;
@@ -47,6 +48,7 @@ public class InventoryValidator {
     if (request.getPurchaseDate() != null) {
       validatePurchaseDate(request.getPurchaseDate());
     }
+    validateTaxFieldsByBillingMode(request.getBillingMode(), request.getSgst(), request.getCgst());
     validateUnits(request.getBaseUnit(), request.getUnitConversions());
   }
 
@@ -90,6 +92,16 @@ public class InventoryValidator {
     }
     if (unitConversions.getFactor() == null || unitConversions.getFactor() <= 0) {
       throw new ValidationException("unitConversions.factor must be greater than zero for unit: " + unit);
+    }
+  }
+
+  private void validateTaxFieldsByBillingMode(BillingMode billingMode, String sgst, String cgst) {
+    BillingMode effectiveMode = billingMode != null ? billingMode : BillingMode.REGULAR;
+    if (effectiveMode != BillingMode.BASIC) {
+      return;
+    }
+    if (StringUtils.hasText(sgst) || StringUtils.hasText(cgst)) {
+      throw new ValidationException("SGST/CGST must not be provided when billingMode is BASIC");
     }
   }
 

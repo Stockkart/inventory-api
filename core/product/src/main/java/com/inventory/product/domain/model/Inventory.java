@@ -59,6 +59,7 @@ public class Inventory {
   private String pricingId;
   private String hsn;
   private String batchNo;
+  private BillingMode billingMode;
   private SchemeType schemeType; // FIXED_UNITS (default/backward) or PERCENTAGE
   private Integer scheme; // When schemeType FIXED_UNITS: free units. Total received = count + scheme.
   private BigDecimal schemePercentage; // When schemeType PERCENTAGE: e.g. 10 = 10% extra free.

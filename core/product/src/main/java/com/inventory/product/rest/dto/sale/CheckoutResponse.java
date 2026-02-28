@@ -2,6 +2,7 @@ package com.inventory.product.rest.dto.sale;
 
 import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.product.domain.model.PurchaseStatus;
+import com.inventory.product.domain.model.BillingMode;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -16,6 +17,7 @@ public class CheckoutResponse {
   String purchaseId;
   String invoiceNo;
   String businessType;
+  BillingMode billingMode;
   String userId;
   String shopId;
   List<PurchaseItem> items;

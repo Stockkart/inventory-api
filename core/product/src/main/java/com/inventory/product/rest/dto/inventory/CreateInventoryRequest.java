@@ -3,6 +3,7 @@ package com.inventory.product.rest.dto.inventory;
 import com.inventory.notifications.rest.dto.CustomReminderRequest;
 import com.inventory.pricing.api.dto.RateDto;
 import com.inventory.product.domain.model.DiscountApplicable;
+import com.inventory.product.domain.model.BillingMode;
 import com.inventory.product.domain.model.ItemType;
 import com.inventory.product.domain.model.SchemeType;
 import com.inventory.product.domain.model.UnitConversion;
@@ -49,6 +50,8 @@ public class CreateInventoryRequest {
   private String hsn;
   // Batch number (optional)
   private String batchNo;
+  // Billing mode for downstream sales: REGULAR or BASIC
+  private BillingMode billingMode;
   // Scheme type: FIXED_UNITS (default) or PERCENTAGE
   private SchemeType schemeType;
   // When schemeType FIXED_UNITS: free units. Total stock = count + scheme.
