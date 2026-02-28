@@ -132,6 +132,23 @@
         margin-bottom: 3px;
     }
 
+    .basic-meta-row {
+        display: table;
+        width: 100%;
+        table-layout: fixed;
+    }
+
+    .basic-meta-left, .basic-meta-right {
+        display: table-cell;
+        vertical-align: top;
+        width: 50%;
+    }
+
+    .basic-meta-right {
+        text-align: left;
+        padding-left: 12px;
+    }
+
     /* Items Table */
     .items-section {
         margin-bottom: 10px;
@@ -306,10 +323,21 @@
         color: #000;
         border-bottom: 1px solid #000;
     }
+
+    .estimate-header {
+        text-align: center;
+        font-size: 16px;
+        font-weight: 700;
+        margin-bottom: 8px;
+        text-transform: uppercase;
+        border-bottom: 1px solid #000;
+        padding-bottom: 4px;
+    }
   </style>
 </head>
 <body>
 <div class="invoice-container">
+  <div class="estimate-header" th:if="${billingMode == 'BASIC'}">Estimate</div>
   <!-- Header: Seller Info and Invoice Meta -->
   <div class="header-section" th:if="${showSellerDetails}">
     <div class="seller-info">
@@ -350,10 +378,25 @@
       <div><span th:if="${customerGstin != null && customerGstin != ''}"><strong>GSTIN No.: </strong><span th:text="${customerGstin}"></span></span></div>
       <div><span th:if="${customerPan != null && customerPan != ''}"><strong>PAN No.: </strong><span th:text="${customerPan}"></span></span></div>
     </div>
-    <div class="notes-section">
-      <div><strong>Invoice NO.</strong> <span th:text="${invoiceNo ?: ''}"></span></div>
+    <div class="notes-section" th:if="${billingMode != 'BASIC'}">
+      <div><strong th:text="${billingMode == 'BASIC' ? 'Challan No.' : 'Invoice NO.'}"></strong> <span th:text="${invoiceNo ?: ''}"></span></div>
       <div><strong>Date:</strong> <span th:text="${invoiceDate ?: ''}"></span></div>
       <div><strong>Time:</strong> <span th:text="${invoiceTime ?: ''}"></span></div>
+    </div>
+    <div class="notes-section" th:if="${billingMode == 'BASIC'}">
+      <div class="basic-meta-row">
+        <div class="basic-meta-left">
+          <div><strong>Challan No.</strong> <span th:text="${invoiceNo ?: ''}"></span></div>
+          <div><strong>Date:</strong> <span th:text="${invoiceDate ?: ''}"></span></div>
+          <div><strong>Time:</strong> <span th:text="${invoiceTime ?: ''}"></span></div>
+        </div>
+        <div class="basic-meta-right">
+          <div th:if="${shopName != null and shopName != ''}">
+            <strong th:text="${shopName}"></strong>
+          </div>
+          <div th:if="${shopAddress != null and shopAddress != ''}" th:text="${shopAddress}"></div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -364,13 +407,13 @@
       <tr>
         <th style="width: 4%;">QTY</th>
         <th style="width: 22%;">PRODUCTS</th>
-        <th style="width: 8%;">HSN</th>
-        <th style="width: 8%;">MFG/MKT</th>
-        <th style="width: 5%;">Exp.Dt</th>
+        <th style="width: 8%;" th:if="${billingMode != 'BASIC'}">HSN</th>
+        <th style="width: 8%;" th:if="${billingMode != 'BASIC'}">MFG/MKT</th>
+        <th style="width: 5%;" th:if="${billingMode != 'BASIC'}">Exp.Dt</th>
         <th style="width: 5%;">BATCH No.</th>
         <th style="width: 7%;">M.R.P.</th>
         <th style="width: 7%;">RATE</th>
-        <th style="width: 5%;">SCHEME</th>
+        <th style="width: 5%;" th:if="${billingMode != 'BASIC'}">SCHEME</th>
         <th style="width: 5%;">DIS</th>
         <th style="width: 5%;" th:if="${showTaxDetails}">CGST%</th>
         <th style="width: 5%;" th:if="${showTaxDetails}">SGST%</th>
@@ -381,13 +424,13 @@
       <tr th:each="item : ${items}">
         <td th:text="${item.quantity}"></td>
         <td class="text-left product-name" th:text="${item.name}"></td>
-        <td th:text="${item.hsn ?: ''}"></td>
-        <td th:text="${item.companyName ?: ''}"></td>
-        <td th:text="${item.expiryDate ?: ''}"></td>
+        <td th:if="${billingMode != 'BASIC'}" th:text="${item.hsn ?: ''}"></td>
+        <td th:if="${billingMode != 'BASIC'}" th:text="${item.companyName ?: ''}"></td>
+        <td th:if="${billingMode != 'BASIC'}" th:text="${item.expiryDate ?: ''}"></td>
         <td th:text="${item.batchNo ?: ''}"></td>
         <td class="text-right" th:text="${#numbers.formatDecimal(item.maximumRetailPrice, 1, 2)}"></td>
         <td class="text-right" th:text="${#numbers.formatDecimal(item.priceToRetail, 1, 2)}"></td>
-        <td th:text="${item.schemePayFor != null and item.schemeFree != null ? item.schemePayFor + '+' + item.schemeFree : (item.scheme != null ? item.scheme : '')}"></td>
+        <td th:if="${billingMode != 'BASIC'}" th:text="${item.schemePayFor != null and item.schemeFree != null ? item.schemePayFor + '+' + item.schemeFree : (item.scheme != null ? item.scheme : '')}"></td>
         <td class="text-right" th:text="${item.additionalDiscount != null ? #numbers.formatDecimal(item.additionalDiscount, 1, 2) : '0.00'}"></td>
         <td class="text-right" th:if="${showTaxDetails}" th:text="${item.cgst != null and item.cgst != '' ? item.cgst : #numbers.formatDecimal(cgstPercent, 1, 2)}"></td>
         <td class="text-right" th:if="${showTaxDetails}" th:text="${item.sgst != null and item.sgst != '' ? item.sgst : #numbers.formatDecimal(sgstPercent, 1, 2)}"></td>
@@ -440,7 +483,7 @@
   </div>
 
   <!-- Terms and Conditions -->
-  <div class="terms-section">
+  <div class="terms-section" th:if="${billingMode != 'BASIC'}">
     <ol>
       <li>On the strength of Warranty obtained by us We hereby give this Warranty that the goods sold by us do not
         contravene the provisions of the Drugs Act 1940.
