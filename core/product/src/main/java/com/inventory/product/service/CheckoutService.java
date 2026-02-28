@@ -136,13 +136,16 @@ public class CheckoutService {
 
   private BillingMode resolveAndValidateCartBillingMode(Purchase existingCart, List<PurchaseItem> newItems) {
     Set<BillingMode> observed = new HashSet<>();
+    BillingMode existingCartMode = existingCart != null ? existingCart.getBillingMode() : null;
 
-    if (existingCart != null) {
-      observed.add(normalizeBillingMode(existingCart.getBillingMode()));
-      if (existingCart.getItems() != null) {
-        for (PurchaseItem item : existingCart.getItems()) {
-          observed.add(normalizeBillingMode(item.getBillingMode()));
-        }
+    List<PurchaseItem> existingItems = existingCart != null && existingCart.getItems() != null
+        ? existingCart.getItems()
+        : List.of();
+    boolean hasExistingItems = !existingItems.isEmpty();
+    if (hasExistingItems) {
+      observed.add(normalizeBillingMode(existingCartMode));
+      for (PurchaseItem item : existingItems) {
+        observed.add(normalizeBillingMode(item.getBillingMode()));
       }
     }
 
