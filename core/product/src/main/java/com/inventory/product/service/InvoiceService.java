@@ -105,7 +105,7 @@ public class InvoiceService {
     }
 
     // Shop/Seller information
-    request.setShopName(!isBasic && shop.getName() != null ? shop.getName() : "");
+    request.setShopName(shop.getName() != null ? shop.getName() : "");
     if (shop.getLocation() != null) {
       List<String> addressParts = new ArrayList<>();
       if (shop.getLocation().getPrimaryAddress() != null) {
