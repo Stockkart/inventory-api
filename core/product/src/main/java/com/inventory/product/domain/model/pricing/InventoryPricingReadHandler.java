@@ -2,8 +2,8 @@ package com.inventory.product.domain.model.pricing;
 
 import com.inventory.pricing.api.InventoryPricingAdapter;
 import com.inventory.pricing.api.dto.PricingReadDto;
+import com.inventory.product.domain.model.BillingMode;
 import com.inventory.product.domain.model.Inventory;
-import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.repository.ShopRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -126,6 +126,11 @@ public class InventoryPricingReadHandler {
     inv.setPriceToRetail(p.getPriceToRetail());
     inv.setSellingPrice(p.getEffectivePrice());
     inv.setAdditionalDiscount(p.getAdditionalDiscount());
+    if (inv.getBillingMode() == BillingMode.BASIC) {
+      inv.setSgst(null);
+      inv.setCgst(null);
+      return;
+    }
     String sgst = p.getSgst();
     String cgst = p.getCgst();
     if (!StringUtils.hasText(sgst) || !StringUtils.hasText(cgst)) {

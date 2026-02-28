@@ -8,13 +8,12 @@ import com.inventory.notifications.rest.dto.CreateReminderForInventoryRequest;
 import com.inventory.notifications.service.ReminderService;
 import com.inventory.ocr.service.InvoiceParserService;
 import com.inventory.product.domain.model.Inventory;
+import com.inventory.product.domain.model.BillingMode;
 import com.inventory.product.domain.model.SchemeType;
 import com.inventory.product.domain.model.UnitConversion;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.rest.dto.inventory.*;
 import java.util.ArrayList;
-import com.inventory.user.domain.repository.ShopVendorRepository;
-import com.inventory.product.domain.repository.InventoryRepository.LotSummaryProjection;
 import com.inventory.product.rest.mapper.InventoryMapper;
 import com.inventory.product.validation.InventoryValidator;
 import lombok.extern.slf4j.Slf4j;
@@ -32,7 +31,6 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 @Slf4j
@@ -51,9 +49,6 @@ public class InventoryService {
 
   @Autowired
   private ReminderService reminderService;
-
-  @Autowired
-  private com.inventory.user.service.VendorService vendorService;
 
   @Autowired
   private com.inventory.user.domain.repository.ShopVendorRepository shopVendorRepository;
@@ -216,6 +211,7 @@ public class InventoryService {
     fullRequest.setCustomReminders(itemRequest.getCustomReminders());
     fullRequest.setHsn(itemRequest.getHsn());
     fullRequest.setBatchNo(itemRequest.getBatchNo());
+    fullRequest.setBillingMode(itemRequest.getBillingMode());
     fullRequest.setSchemeType(itemRequest.getSchemeType());
     fullRequest.setScheme(itemRequest.getScheme());
     fullRequest.setSchemePercentage(itemRequest.getSchemePercentage());
@@ -252,6 +248,7 @@ public class InventoryService {
       inventory.setBaseUnit(normalizedBaseUnit);
       inventory.setUnitConversions(normalizeUnitConversion(request.getUnitConversions(), normalizedBaseUnit));
       inventory.setPurchaseDate(request.getPurchaseDate() != null ? request.getPurchaseDate() : Instant.now());
+      inventory.setBillingMode(normalizeBillingMode(request.getBillingMode()));
 
       int billQty = request.getCount() != null ? request.getCount() : 0;
       int schemeFreeUnits;
@@ -797,6 +794,10 @@ public class InventoryService {
       factor = conversion.getFactor();
     }
     return Math.multiplyExact(displayQuantity, factor);
+  }
+
+  private BillingMode normalizeBillingMode(BillingMode billingMode) {
+    return billingMode != null ? billingMode : BillingMode.REGULAR;
   }
 
 }

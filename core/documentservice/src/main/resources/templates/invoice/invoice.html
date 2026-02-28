@@ -2,7 +2,7 @@
 <html xmlns:th="http://www.thymeleaf.org">
 <head>
   <meta charset="UTF-8"/>
-  <title>Tax Invoice</title>
+  <title th:text="${showTaxDetails ? 'Invoice' : 'Bill'}">Invoice</title>
   <style>
     @page {
         margin: 0;
@@ -311,7 +311,7 @@
 <body>
 <div class="invoice-container">
   <!-- Header: Seller Info and Invoice Meta -->
-  <div class="header-section">
+  <div class="header-section" th:if="${showSellerDetails}">
     <div class="seller-info">
       <div class="company-name" th:text="${shopName ?: ''}"></div>
       <div class="company-details">
@@ -332,20 +332,20 @@
   </div>
 
   <!-- Shop Tagline -->
-  <div class="tagline-section" th:if="${shopTagline != null && shopTagline != ''}">
+  <div class="tagline-section" th:if="${showSellerDetails and shopTagline != null && shopTagline != ''}">
     <span th:text="${shopTagline}"></span>
   </div>
 
   <!-- Buyer Section -->
   <div class="buyer-section">
-    <div class="buyer-info">
+    <div class="buyer-info" th:if="${showBuyerDetails}">
       <div class="buyer-label"><span th:text="${customerName ?: ''}"></span>
       </div>
       <div class="buyer-details">
         <div th:if="${customerAddress}" th:text="${customerAddress}"></div>
       </div>
     </div>
-    <div class="notes-section">
+    <div class="notes-section" th:if="${showBuyerDetails}">
       <div><span th:if="${customerDlNo != null && customerDlNo != ''}"><strong>D.L. No.: </strong><span th:text="${customerDlNo}"></span></span></div>
       <div><span th:if="${customerGstin != null && customerGstin != ''}"><strong>GSTIN No.: </strong><span th:text="${customerGstin}"></span></span></div>
       <div><span th:if="${customerPan != null && customerPan != ''}"><strong>PAN No.: </strong><span th:text="${customerPan}"></span></span></div>
@@ -372,8 +372,8 @@
         <th style="width: 7%;">RATE</th>
         <th style="width: 5%;">SCHEME</th>
         <th style="width: 5%;">DIS</th>
-        <th style="width: 5%;">CGST%</th>
-        <th style="width: 5%;">SGST%</th>
+        <th style="width: 5%;" th:if="${showTaxDetails}">CGST%</th>
+        <th style="width: 5%;" th:if="${showTaxDetails}">SGST%</th>
         <th style="width: 14%;">AMOUNT</th>
       </tr>
       </thead>
@@ -389,8 +389,8 @@
         <td class="text-right" th:text="${#numbers.formatDecimal(item.priceToRetail, 1, 2)}"></td>
         <td th:text="${item.schemePayFor != null and item.schemeFree != null ? item.schemePayFor + '+' + item.schemeFree : (item.scheme != null ? item.scheme : '')}"></td>
         <td class="text-right" th:text="${item.additionalDiscount != null ? #numbers.formatDecimal(item.additionalDiscount, 1, 2) : '0.00'}"></td>
-        <td class="text-right" th:text="${item.cgst != null and item.cgst != '' ? item.cgst : #numbers.formatDecimal(cgstPercent, 1, 2)}"></td>
-        <td class="text-right" th:text="${item.sgst != null and item.sgst != '' ? item.sgst : #numbers.formatDecimal(sgstPercent, 1, 2)}"></td>
+        <td class="text-right" th:if="${showTaxDetails}" th:text="${item.cgst != null and item.cgst != '' ? item.cgst : #numbers.formatDecimal(cgstPercent, 1, 2)}"></td>
+        <td class="text-right" th:if="${showTaxDetails}" th:text="${item.sgst != null and item.sgst != '' ? item.sgst : #numbers.formatDecimal(sgstPercent, 1, 2)}"></td>
         <td class="text-right" th:text="${item.totalAmount != null ? #numbers.formatDecimal(item.totalAmount, 1, 2) : #numbers.formatDecimal(item.priceToRetail * item.quantity, 1, 2)}"></td>
       </tr>
       </tbody>
@@ -419,11 +419,11 @@
           <td>Additional Discount</td>
           <td th:text="${#numbers.formatDecimal(additionalDiscountTotal, 1, 2)}"></td>
         </tr>
-        <tr th:if="${sgstAmount != null && sgstAmount > 0}">
+        <tr th:if="${showTaxDetails and sgstAmount != null && sgstAmount > 0}">
           <td>SGST <span th:text="${sgstPercent ?: ''}"></span> %</td>
           <td th:text="${#numbers.formatDecimal(sgstAmount, 1, 2)}"></td>
         </tr>
-        <tr th:if="${cgstAmount != null && cgstAmount > 0}">
+        <tr th:if="${showTaxDetails and cgstAmount != null && cgstAmount > 0}">
           <td>CGST <span th:text="${cgstPercent ?: ''}"></span> %</td>
           <td th:text="${#numbers.formatDecimal(cgstAmount, 1, 2)}"></td>
         </tr>
@@ -451,13 +451,13 @@
 
   <!-- Footer: Signatures -->
   <div class="footer-section">
-    <div class="signature-left">
+    <div class="signature-left" th:if="${showSellerDetails}">
       <div class="signature-box">
         <div style="margin-bottom: 30px;"><span th:text="${shopName ?: ''}"></span></div>
         <div class="signature-label">Authorised Signatory</div>
       </div>
     </div>
-    <div class="signature-right">
+    <div class="signature-right" th:if="${showBuyerDetails}">
       <div class="signature-box">
         <div style="margin-bottom: 30px;">Received By</div>
         <div class="signature-label">Customer Signature</div>

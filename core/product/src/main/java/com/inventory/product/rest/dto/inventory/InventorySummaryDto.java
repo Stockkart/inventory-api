@@ -2,6 +2,7 @@ package com.inventory.product.rest.dto.inventory;
 
 import com.inventory.pricing.api.dto.RateDto;
 import com.inventory.product.domain.model.DiscountApplicable;
+import com.inventory.product.domain.model.BillingMode;
 import com.inventory.product.domain.model.ItemType;
 import com.inventory.product.domain.model.SchemeType;
 import com.inventory.product.domain.model.UnitConversion;
@@ -54,6 +55,7 @@ public class InventorySummaryDto {
   Instant purchaseDate;
   String hsn;
   String batchNo;
+  BillingMode billingMode;
   SchemeType schemeType;
   Integer scheme;
   BigDecimal schemePercentage;

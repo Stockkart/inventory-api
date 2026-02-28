@@ -15,6 +15,10 @@ public class GenerateInvoiceRequest {
   private String invoiceNo;
   private String invoiceDate;
   private String invoiceTime;
+  private String billingMode;
+  private Boolean showSellerDetails;
+  private Boolean showBuyerDetails;
+  private Boolean showTaxDetails;
   
   // Shop/Seller information
   private String shopName;

@@ -20,6 +20,7 @@ public class Purchase {
   private String id;
   private String invoiceNo;
   private String businessType;
+  private BillingMode billingMode;
   private String userId;
   private String shopId;
   private List<PurchaseItem> items;

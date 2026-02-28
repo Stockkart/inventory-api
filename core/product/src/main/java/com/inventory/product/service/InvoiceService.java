@@ -6,6 +6,7 @@ import com.inventory.documentservice.rest.dto.GenerateInvoiceRequest;
 import com.inventory.documentservice.rest.dto.InvoiceItem;
 import com.inventory.documentservice.service.DocumentService;
 import com.inventory.product.domain.model.Inventory;
+import com.inventory.product.domain.model.BillingMode;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.product.domain.model.SchemeType;
@@ -23,7 +24,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -89,6 +89,12 @@ public class InvoiceService {
    */
   private GenerateInvoiceRequest buildGenerateInvoiceRequest(Purchase purchase, Shop shop) {
     GenerateInvoiceRequest request = new GenerateInvoiceRequest();
+    BillingMode billingMode = purchase.getBillingMode() != null ? purchase.getBillingMode() : BillingMode.REGULAR;
+    boolean isBasic = billingMode == BillingMode.BASIC;
+    request.setBillingMode(billingMode.name());
+    request.setShowSellerDetails(!isBasic);
+    request.setShowBuyerDetails(!isBasic);
+    request.setShowTaxDetails(!isBasic);
 
     // Invoice basic info
     request.setInvoiceNo(purchase.getInvoiceNo() != null ? purchase.getInvoiceNo() : "");
@@ -99,7 +105,7 @@ public class InvoiceService {
     }
 
     // Shop/Seller information
-    request.setShopName(shop.getName() != null ? shop.getName() : "");
+    request.setShopName(!isBasic && shop.getName() != null ? shop.getName() : "");
     if (shop.getLocation() != null) {
       List<String> addressParts = new ArrayList<>();
       if (shop.getLocation().getPrimaryAddress() != null) {
@@ -116,15 +122,15 @@ public class InvoiceService {
       }
       request.setShopAddress(String.join(", ", addressParts));
     }
-    request.setShopDlNo(shop.getDlNo());
-    request.setShopFssai(shop.getFssai());
-    request.setShopGstin(shop.getGstinNo());
-    request.setShopPhone(shop.getContactPhone());
-    request.setShopEmail(shop.getContactEmail());
-    request.setShopTagline(shop.getTagline());
+    request.setShopDlNo(isBasic ? null : shop.getDlNo());
+    request.setShopFssai(isBasic ? null : shop.getFssai());
+    request.setShopGstin(isBasic ? null : shop.getGstinNo());
+    request.setShopPhone(isBasic ? null : shop.getContactPhone());
+    request.setShopEmail(isBasic ? null : shop.getContactEmail());
+    request.setShopTagline(isBasic ? null : shop.getTagline());
 
     // Customer/Buyer information
-    if (purchase.getCustomerId() != null && !purchase.getCustomerId().isEmpty()) {
+    if (!isBasic && purchase.getCustomerId() != null && !purchase.getCustomerId().isEmpty()) {
       Optional<Customer> customerOpt = customerService.getCustomerById(purchase.getCustomerId());
       if (customerOpt.isPresent()) {
         Customer customer = customerOpt.get();
@@ -136,7 +142,7 @@ public class InvoiceService {
         request.setCustomerPhone(customer.getPhone());
         request.setCustomerEmail(customer.getEmail());
       }
-    } else if (purchase.getCustomerName() != null && !purchase.getCustomerName().isEmpty()) {
+    } else if (!isBasic && purchase.getCustomerName() != null && !purchase.getCustomerName().isEmpty()) {
       // Use customer name directly if no customer ID
       request.setCustomerName(purchase.getCustomerName());
     }
@@ -153,8 +159,8 @@ public class InvoiceService {
         invoiceItem.setDiscount(purchaseItem.getDiscount());
         invoiceItem.setAdditionalDiscount(purchaseItem.getAdditionalDiscount());
         invoiceItem.setTotalAmount(purchaseItem.getTotalAmount());
-        invoiceItem.setCgst(purchaseItem.getCgst());
-        invoiceItem.setSgst(purchaseItem.getSgst());
+        invoiceItem.setCgst(isBasic ? null : purchaseItem.getCgst());
+        invoiceItem.setSgst(isBasic ? null : purchaseItem.getSgst());
         invoiceItem.setInventoryId(purchaseItem.getInventoryId());
         invoiceItem.setSchemePayFor(purchaseItem.getSchemePayFor());
         invoiceItem.setSchemeFree(purchaseItem.getSchemeFree());
@@ -206,12 +212,12 @@ public class InvoiceService {
     request.setSubTotal(purchase.getSubTotal() != null ? purchase.getSubTotal() : BigDecimal.ZERO);
     request.setDiscountTotal(purchase.getDiscountTotal() != null ? purchase.getDiscountTotal() : BigDecimal.ZERO);
     request.setAdditionalDiscountTotal(purchase.getAdditionalDiscountTotal() != null ? purchase.getAdditionalDiscountTotal() : BigDecimal.ZERO);
-    request.setSgstAmount(purchase.getSgstAmount() != null ? purchase.getSgstAmount() : BigDecimal.ZERO);
-    request.setCgstAmount(purchase.getCgstAmount() != null ? purchase.getCgstAmount() : BigDecimal.ZERO);
+    request.setSgstAmount(!isBasic && purchase.getSgstAmount() != null ? purchase.getSgstAmount() : BigDecimal.ZERO);
+    request.setCgstAmount(!isBasic && purchase.getCgstAmount() != null ? purchase.getCgstAmount() : BigDecimal.ZERO);
     
     // Calculate tax percentages from first item's rates (assuming all items have same rates)
     // If items have different rates, we'll use the first item's rates for display
-    if (invoiceItems != null && !invoiceItems.isEmpty()) {
+    if (!isBasic && invoiceItems != null && !invoiceItems.isEmpty()) {
       InvoiceItem firstItem = invoiceItems.get(0);
       if (firstItem.getSgst() != null && !firstItem.getSgst().trim().isEmpty()) {
         try {
@@ -233,11 +239,11 @@ public class InvoiceService {
       }
     } else {
       // Fallback to default if no items
-      request.setSgstPercent(BigDecimal.valueOf(2.5));
-      request.setCgstPercent(BigDecimal.valueOf(2.5));
+      request.setSgstPercent(isBasic ? BigDecimal.ZERO : BigDecimal.valueOf(2.5));
+      request.setCgstPercent(isBasic ? BigDecimal.ZERO : BigDecimal.valueOf(2.5));
     }
     
-    request.setTaxTotal(purchase.getTaxTotal() != null ? purchase.getTaxTotal() : BigDecimal.ZERO);
+    request.setTaxTotal(!isBasic && purchase.getTaxTotal() != null ? purchase.getTaxTotal() : BigDecimal.ZERO);
     
     // Calculate round off
     BigDecimal grandTotal = purchase.getGrandTotal() != null ? purchase.getGrandTotal() : BigDecimal.ZERO;

@@ -1,6 +1,7 @@
 package com.inventory.taxation.service;
 
 import com.inventory.product.domain.model.Purchase;
+import com.inventory.product.domain.model.BillingMode;
 import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.product.domain.model.PurchaseStatus;
 import com.inventory.product.domain.model.Shop;
@@ -66,6 +67,9 @@ public class Gstr1DataAggregator {
     // Include completed purchases with soldAt in period, or with soldAt null but updatedAt in period (legacy/completion date)
     List<Purchase> purchases = purchaseRepository.findCompletedPurchasesInPeriod(
         shopId, PurchaseStatus.COMPLETED, rangeStart, rangeEnd);
+    purchases = purchases.stream()
+        .filter(this::isRegularBillingMode)
+        .toList();
 
     List<Refund> refunds = refundRepository.findByShopIdAndCreatedAtBetween(shopId, rangeStart, rangeEnd);
 
@@ -178,6 +182,9 @@ public class Gstr1DataAggregator {
 
     for (Refund refund : refunds) {
       Purchase purchase = purchaseRepository.findById(refund.getPurchaseId()).orElse(null);
+      if (purchase != null && !isRegularBillingMode(purchase)) {
+        continue;
+      }
       Customer customer = purchase != null && purchase.getCustomerId() != null
           ? customerMap.get(purchase.getCustomerId()) : null;
       boolean registered = isRegisteredRecipient(customer);
@@ -267,6 +274,13 @@ public class Gstr1DataAggregator {
     if (customer == null) return false;
     String g = customer.getGstin();
     return StringUtils.hasText(g);
+  }
+
+  private boolean isRegularBillingMode(Purchase purchase) {
+    BillingMode mode = purchase != null && purchase.getBillingMode() != null
+        ? purchase.getBillingMode()
+        : BillingMode.REGULAR;
+    return mode == BillingMode.REGULAR;
   }
 
   private String getApplicableRateFromPurchase(Purchase purchase) {

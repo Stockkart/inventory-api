@@ -59,6 +59,10 @@ public class InvoicePdfService {
     context.setVariable("invoiceNo", request.getInvoiceNo() != null ? request.getInvoiceNo() : "");
     context.setVariable("invoiceDate", request.getInvoiceDate() != null ? request.getInvoiceDate() : formatDate(request.getSoldAt()));
     context.setVariable("invoiceTime", request.getInvoiceTime() != null ? request.getInvoiceTime() : formatTime(request.getSoldAt()));
+    context.setVariable("billingMode", request.getBillingMode() != null ? request.getBillingMode() : "REGULAR");
+    context.setVariable("showSellerDetails", request.getShowSellerDetails() == null || request.getShowSellerDetails());
+    context.setVariable("showBuyerDetails", request.getShowBuyerDetails() == null || request.getShowBuyerDetails());
+    context.setVariable("showTaxDetails", request.getShowTaxDetails() == null || request.getShowTaxDetails());
     context.setVariable("paymentMethod", request.getPaymentMethod());
 
     // Shop/Seller details

@@ -3,6 +3,7 @@ package com.inventory.product.domain.model.pricing;
 import com.inventory.pricing.api.InventoryPricingAdapter;
 import com.inventory.pricing.api.dto.PricingCreateCommand;
 import com.inventory.pricing.api.dto.PricingUpdateCommand;
+import com.inventory.product.domain.model.BillingMode;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.repository.ShopRepository;
@@ -62,12 +63,22 @@ public class InventoryPricingWriteHandler {
   }
 
   private String resolveSgst(String fromRequest, String shopId) {
+    InventoryPricingContext.Context ctx = InventoryPricingContext.get();
+    if (ctx != null && ctx.type == InventoryPricingContext.Type.CREATE
+        && ctx.createRequest != null && ctx.createRequest.getBillingMode() == BillingMode.BASIC) {
+      return null;
+    }
     if (StringUtils.hasText(fromRequest)) return fromRequest;
     if (!StringUtils.hasText(shopId)) return null;
     return shopRepository.findById(shopId).map(Shop::getSgst).orElse(null);
   }
 
   private String resolveCgst(String fromRequest, String shopId) {
+    InventoryPricingContext.Context ctx = InventoryPricingContext.get();
+    if (ctx != null && ctx.type == InventoryPricingContext.Type.CREATE
+        && ctx.createRequest != null && ctx.createRequest.getBillingMode() == BillingMode.BASIC) {
+      return null;
+    }
     if (StringUtils.hasText(fromRequest)) return fromRequest;
     if (!StringUtils.hasText(shopId)) return null;
     return shopRepository.findById(shopId).map(Shop::getCgst).orElse(null);
