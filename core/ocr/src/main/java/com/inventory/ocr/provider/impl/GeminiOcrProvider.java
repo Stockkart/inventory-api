@@ -31,7 +31,8 @@ public class GeminiOcrProvider implements OcrProvider {
   private static final String PROMPT = """
       Extract ONLY product line items from the invoice image.
 
-      Return ONLY a JSON array (no markdown/text). Each object MUST have these keys:
+      Return ONLY a valid JSON array. No markdown, no code blocks, no extra text. Raw JSON array like [{"name":"...","count":1,...},...]
+      Each object MUST have these keys:
       barcode, name, description, companyName, maximumRetailPrice, costPrice, priceToRetail, additionalDiscount,
       businessType, location, count, thresholdCount, expiryDate, reminderAt, customReminders, hsn, batchNo, scheme, sgst, cgst.
   
@@ -89,6 +90,7 @@ public class GeminiOcrProvider implements OcrProvider {
     Map<String, Object> generationConfig = new HashMap<>();
     generationConfig.put("temperature", OcrConstants.DEFAULT_TEMPERATURE);
     generationConfig.put("maxOutputTokens", OcrConstants.DEFAULT_MAX_OUTPUT_TOKENS_GEMINI);
+    generationConfig.put("responseMimeType", "application/json");
 
     Map<String, Object> request = new HashMap<>();
     request.put("contents", List.of(content));
@@ -100,7 +102,7 @@ public class GeminiOcrProvider implements OcrProvider {
         .retrieve()
         .body(String.class);
 
-    log.info("Gemini API response: {}", body);
+    log.debug("Gemini API response : {}", body);
 
     String text = extractOutputText(body);
     if (text == null || text.isBlank()) {
@@ -154,35 +156,110 @@ public class GeminiOcrProvider implements OcrProvider {
 
   private List<ParsedInventoryItem> parseJsonToItems(String raw) {
     List<ParsedInventoryItem> items = new ArrayList<>();
+    String json = stripMarkdownAndExtractJson(raw);
+    if (json == null || json.isBlank()) return items;
+
     try {
-      String json = raw.trim();
-      // Strip markdown code fences if present
-      if (json.startsWith("```")) {
-        int start = json.indexOf('\n') + 1;
-        int end = json.lastIndexOf("```");
-        if (end > start) json = json.substring(start, end).trim();
-      }
-
       JsonNode parsed = objectMapper.readTree(json);
-      JsonNode arr;
-
-      // Handle both {"items":[...]} and direct [...] array formats
-      if (parsed.isArray()) {
-        arr = parsed;
-      } else if (parsed.has("items") && parsed.get("items").isArray()) {
-        arr = parsed.get("items");
-      } else {
+      JsonNode arr = extractItemsArray(parsed);
+      if (arr == null) {
         log.warn("Unexpected JSON structure from Gemini: {}", json.substring(0, Math.min(200, json.length())));
         return items;
       }
-
       for (JsonNode n : arr) {
         ParsedInventoryItem item = jsonToItem(n);
         if (item != null) items.add(item);
       }
     } catch (Exception e) {
-      log.warn("Parse Gemini JSON failed: {}", e.getMessage());
+      log.warn("Parse Gemini JSON failed: {}, attempting truncated JSON extraction", e.getMessage());
+      items = extractCompleteObjectsFromTruncatedJson(json);
     }
+    return items;
+  }
+
+  /**
+   * Strips markdown code fences (e.g. ```json ... ```) and extracts JSON from the raw response.
+   * Also finds JSON array/object when wrapped in extra text.
+   */
+  private String stripMarkdownAndExtractJson(String raw) {
+    if (raw == null) return null;
+    String s = raw.trim();
+    // Strip ```json or ``` at start
+    if (s.startsWith("```")) {
+      int start = s.indexOf('\n');
+      s = start >= 0 ? s.substring(start + 1) : s.substring(3);
+      int end = s.lastIndexOf("```");
+      if (end >= 0) s = s.substring(0, end);
+      s = s.trim();
+    }
+    // Find the JSON array [ or object { - handles cases where model adds extra text
+    int arrStart = s.indexOf('[');
+    int objStart = s.indexOf('{');
+    int jsonStart = -1;
+    if (arrStart >= 0 && (objStart < 0 || arrStart <= objStart)) jsonStart = arrStart;
+    else if (objStart >= 0) jsonStart = objStart;
+    if (jsonStart > 0) s = s.substring(jsonStart);
+    return s;
+  }
+
+  private JsonNode extractItemsArray(JsonNode parsed) {
+    if (parsed.isArray()) return parsed;
+    if (parsed.has("items") && parsed.get("items").isArray()) return parsed.get("items");
+    return null;
+  }
+
+  /**
+   * When full JSON parse fails (e.g. truncated response), extract as many complete objects as possible
+   * by brace-matching. Returns partial results instead of failing completely.
+   */
+  private List<ParsedInventoryItem> extractCompleteObjectsFromTruncatedJson(String json) {
+    List<ParsedInventoryItem> items = new ArrayList<>();
+    int i = json.indexOf('[');
+    if (i < 0) i = 0;
+    int len = json.length();
+    while (i < len) {
+      char c = json.charAt(i);
+      if (c == '{') {
+        int depth = 1;
+        int start = i;
+        i++;
+        boolean inString = false;
+        char stringChar = 0;
+        boolean escaped = false;
+        while (i < len && depth > 0) {
+          char ch = json.charAt(i);
+          if (escaped) { escaped = false; i++; continue; }
+          if (ch == '\\' && inString) { escaped = true; i++; continue; }
+          if (!inString) {
+            if (ch == '"' || ch == '\'') { inString = true; stringChar = ch; }
+            else if (ch == '{') depth++;
+            else if (ch == '}') depth--;
+          } else if (ch == stringChar) inString = false;
+          i++;
+        }
+        if (depth == 0) {
+          String objStr = json.substring(start, i);
+          try {
+            JsonNode node = objectMapper.readTree(objStr);
+            JsonNode arr = extractItemsArray(node);
+            if (arr != null) {
+              for (JsonNode n : arr) {
+                ParsedInventoryItem item = jsonToItem(n);
+                if (item != null) items.add(item);
+              }
+            } else {
+              ParsedInventoryItem item = jsonToItem(node);
+              if (item != null) items.add(item);
+            }
+          } catch (Exception ignored) { /* skip malformed object */ }
+        }
+      } else if (c == ']' || c == '}') {
+        break;
+      } else {
+        i++;
+      }
+    }
+    if (!items.isEmpty()) log.info("Recovered {} items from truncated Gemini JSON", items.size());
     return items;
   }
 

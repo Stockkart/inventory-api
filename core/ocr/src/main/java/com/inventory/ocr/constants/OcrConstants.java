@@ -32,6 +32,7 @@ public final class OcrConstants {
   // Default Values
   // ========================
   public static final int DEFAULT_MAX_OUTPUT_TOKENS_OPENAI = 4096;
-  public static final int DEFAULT_MAX_OUTPUT_TOKENS_GEMINI = 8192;
+  /** Gemini supports up to 65536 tokens; use higher limit for large invoices to avoid truncation. */
+  public static final int DEFAULT_MAX_OUTPUT_TOKENS_GEMINI = 65536;
   public static final int DEFAULT_TEMPERATURE = 0;
 }
