@@ -25,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Optional;
 
 import com.inventory.plan.config.PlanDefaults;
 
@@ -170,7 +171,7 @@ public class ShopService {
    * Get shop plan info for plan module. Used by ShopProviderImpl adapter.
    */
   @Transactional(readOnly = true)
-  public java.util.Optional<ShopPlanInfo> getShopPlanInfo(String shopId) {
+  public Optional<ShopPlanInfo> getShopPlanInfo(String shopId) {
     return shopRepository.findById(shopId)
         .map(shop -> new ShopPlanInfo(shop.getShopId(), shop.getPlanId(), shop.getPlanExpiryDate()));
   }

@@ -5,11 +5,12 @@ import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface PlanRepository extends MongoRepository<Plan, String> {
 
   List<Plan> findAllByOrderByPriceAsc();
 
-  java.util.Optional<Plan> findByPlanName(String planName);
+  Optional<Plan> findByPlanName(String planName);
 }
