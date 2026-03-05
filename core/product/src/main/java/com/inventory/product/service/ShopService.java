@@ -26,7 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 
-import com.inventory.plan.config.PlanDataSeeder;
+import com.inventory.plan.config.PlanDefaults;
 
 @Service
 @Slf4j
@@ -79,7 +79,7 @@ public class ShopService {
       Shop shop = shopMapper.toEntity(request);
       shop.setUserLimit(0); // Can be set later if needed
       shop.setPlanId(null); // Trial: no plan purchased yet
-      shop.setExpiryDate(Instant.now().plus(PlanDataSeeder.TRIAL_DAYS, ChronoUnit.DAYS)); // 30-day trial
+      shop.setPlanExpiryDate(Instant.now().plus(PlanDefaults.TRIAL_DAYS, ChronoUnit.DAYS)); // 30-day trial
 
       // Save shop first
       shop = shopRepository.save(shop);
@@ -172,7 +172,7 @@ public class ShopService {
   @Transactional(readOnly = true)
   public java.util.Optional<ShopPlanInfo> getShopPlanInfo(String shopId) {
     return shopRepository.findById(shopId)
-        .map(shop -> new ShopPlanInfo(shop.getShopId(), shop.getPlanId(), shop.getExpiryDate()));
+        .map(shop -> new ShopPlanInfo(shop.getShopId(), shop.getPlanId(), shop.getPlanExpiryDate()));
   }
 
   /**
@@ -183,7 +183,7 @@ public class ShopService {
     Shop shop = shopRepository.findById(shopId)
         .orElseThrow(() -> new ResourceNotFoundException("Shop", "id", shopId));
     shop.setPlanId(planId);
-    shop.setExpiryDate(expiryDate);
+    shop.setPlanExpiryDate(expiryDate);
     shopRepository.save(shop);
   }
 
@@ -215,6 +215,6 @@ public class ShopService {
   }
 
   /** DTO for plan module. */
-  public record ShopPlanInfo(String shopId, String planId, Instant expiryDate) {}
+  public record ShopPlanInfo(String shopId, String planId, Instant planExpiryDate) {}
 }
 

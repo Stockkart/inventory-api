@@ -14,7 +14,7 @@ public class ShopPlanStatusResponse {
   private String shopId;
   private String planId;
   private PlanResponse plan;
-  private Instant expiryDate;
+  private Instant planExpiryDate;
   private boolean trial;
   private boolean trialExpired;
   private UsageResponse currentUsage;

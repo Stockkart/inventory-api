@@ -5,6 +5,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.Field;
 
 import java.time.Instant;
 
@@ -39,6 +40,7 @@ public class Shop {
   /** Plan ID. null = trial. */
   private String planId;
   /** Plan expiry. For trial: trial end date. For paid: subscription end. */
-  private java.time.Instant expiryDate;
+  @Field("expiryDate")
+  private java.time.Instant planExpiryDate;
 }
 

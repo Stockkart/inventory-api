@@ -12,5 +12,5 @@ public interface ShopProvider {
   void updatePlan(String shopId, String planId, java.time.Instant expiryDate);
 
   /** Minimal shop info needed for plan/usage logic. */
-  record ShopInfo(String shopId, String planId, java.time.Instant expiryDate) {}
+  record ShopInfo(String shopId, String planId, java.time.Instant planExpiryDate) {}
 }

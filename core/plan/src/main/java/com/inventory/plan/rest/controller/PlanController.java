@@ -52,21 +52,10 @@ public class PlanController {
   }
 
   /**
-   * Get shop's plan status - requires auth and shopId.
-   */
-  @GetMapping("/shop/{shopId}/status")
-  public ResponseEntity<ApiResponse<ShopPlanStatusResponse>> getShopPlanStatus(
-      @PathVariable String shopId,
-      HttpServletRequest httpRequest) {
-    requireAuth(httpRequest);
-    return ResponseEntity.ok(ApiResponse.success(planService.getShopPlanStatus(shopId)));
-  }
-
-  /**
-   * Get current shop plan status - uses shopId from request.
+   * Get current shop plan status - uses shopId from request attributes.
    */
   @GetMapping("/shop/status")
-  public ResponseEntity<ApiResponse<ShopPlanStatusResponse>> getCurrentShopPlanStatus(HttpServletRequest httpRequest) {
+  public ResponseEntity<ApiResponse<ShopPlanStatusResponse>> getShopPlanStatus(HttpServletRequest httpRequest) {
     String shopId = getShopId(httpRequest);
     return ResponseEntity.ok(ApiResponse.success(planService.getShopPlanStatus(shopId)));
   }

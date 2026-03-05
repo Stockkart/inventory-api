@@ -331,11 +331,7 @@ public class CheckoutService {
 
       // Record billing usage after successful completion
       if (requestedStatus == PurchaseStatus.COMPLETED && usageService != null) {
-        BigDecimal grandTotal = purchase.getGrandTotal() != null ? purchase.getGrandTotal() : BigDecimal.ZERO;
-        RecordUsageRequest usageReq = new RecordUsageRequest();
-        usageReq.setBillingAmount(grandTotal);
-        usageReq.setBillCount(1);
-        usageService.recordUsage(shopId, usageReq);
+        recordBillingUsageForPurchase(shopId, purchase);
       }
 
       log.info("Successfully updated purchase status from {} to {} for purchase ID: {}",
@@ -1700,6 +1696,20 @@ public class CheckoutService {
       }
     }
     return units;
+  }
+
+  /**
+   * Records billing usage for a completed purchase (grand total and bill count).
+   */
+  private void recordBillingUsageForPurchase(String shopId, Purchase purchase) {
+    if (usageService == null) {
+      return;
+    }
+    BigDecimal grandTotal = purchase.getGrandTotal() != null ? purchase.getGrandTotal() : BigDecimal.ZERO;
+    RecordUsageRequest usageReq = new RecordUsageRequest();
+    usageReq.setBillingAmount(grandTotal);
+    usageReq.setBillCount(1);
+    usageService.recordUsage(shopId, usageReq);
   }
 
   private void updateInventoryForCompletedPurchase(Purchase purchase) {

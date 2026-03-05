@@ -1,7 +1,7 @@
 package com.inventory.plan.service;
 
 import com.inventory.common.exception.ResourceNotFoundException;
-import com.inventory.plan.config.PlanDataSeeder;
+import com.inventory.plan.config.PlanDefaults;
 import com.inventory.plan.domain.model.Plan;
 import com.inventory.plan.domain.model.PlanTransaction;
 import com.inventory.plan.domain.model.Usage;
@@ -14,6 +14,7 @@ import com.inventory.plan.rest.dto.plan.PlanTransactionResponse;
 import com.inventory.plan.rest.dto.plan.ShopPlanStatusResponse;
 import com.inventory.plan.rest.dto.plan.UsageResponse;
 import com.inventory.plan.rest.mapper.PlanMapper;
+import com.inventory.plan.rest.mapper.PlanTransactionMapper;
 import com.inventory.plan.service.ShopProvider.ShopInfo;
 import com.inventory.plan.validation.PlanValidator;
 import lombok.extern.slf4j.Slf4j;
@@ -21,7 +22,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -47,6 +47,9 @@ public class PlanService {
 
   @Autowired
   private PlanMapper planMapper;
+
+  @Autowired
+  private PlanTransactionMapper planTransactionMapper;
 
   @Autowired
   private PlanValidator planValidator;
@@ -87,20 +90,10 @@ public class PlanService {
     Plan plan = planRepository.findById(request.getPlanId())
         .orElseThrow(() -> new ResourceNotFoundException("Plan", "id", request.getPlanId()));
 
-    Instant expiryDate = Instant.now().plus(request.getDurationMonths(), ChronoUnit.MONTHS);
+    Instant expiryDate = Instant.now().plus(request.getDurationMonths() != null ? request.getDurationMonths() : 1, ChronoUnit.MONTHS);
     shopProvider.updatePlan(shopId, plan.getId(), expiryDate);
 
-    // Record transaction for payment history
-    BigDecimal amount = plan.getArcPrice() != null ? plan.getArcPrice() : plan.getPrice();
-    int durationMonths = request.getDurationMonths() != null ? request.getDurationMonths() : 1;
-    PlanTransaction tx = new PlanTransaction();
-    tx.setShopId(shopId);
-    tx.setPlanId(plan.getId());
-    tx.setPlanName(plan.getPlanName());
-    tx.setAmount(amount);
-    tx.setDurationMonths(durationMonths);
-    tx.setPaymentMethod(request.getPaymentMethod() != null ? request.getPaymentMethod() : "CARD");
-    tx.setCreatedAt(Instant.now());
+    PlanTransaction tx = planTransactionMapper.toTransaction(shopId, plan, request);
     planTransactionRepository.save(tx);
 
     log.info("Assigned plan {} to shop {} until {} (tx: {})", plan.getPlanName(), shopId, expiryDate, tx.getId());
@@ -142,10 +135,10 @@ public class PlanService {
     if (shopInfo.planId() != null && !shopInfo.planId().isBlank()) {
       plan = planRepository.findById(shopInfo.planId()).orElse(null);
     }
-    boolean trial = (plan == null && shopInfo.expiryDate() != null);
-    boolean trialExpired = trial && shopInfo.expiryDate() != null && shopInfo.expiryDate().isBefore(Instant.now());
+    boolean trial = (plan == null && shopInfo.planExpiryDate() != null);
+    boolean trialExpired = trial && shopInfo.planExpiryDate() != null && shopInfo.planExpiryDate().isBefore(Instant.now());
 
-    Plan effectivePlan = plan != null ? plan : PlanDataSeeder.getBasePlanDefaults();
+    Plan effectivePlan = plan != null ? plan : PlanDefaults.getBasePlanDefaults();
     Usage usage = usageService.getOrCreateCurrentMonthUsage(shopId);
     UsageResponse usageResponse = planMapper.toUsageResponse(usage);
 
@@ -178,7 +171,7 @@ public class PlanService {
         shopId,
         shopInfo.planId(),
         plan != null ? planMapper.toResponse(plan) : null,
-        shopInfo.expiryDate(),
+        shopInfo.planExpiryDate(),
         trial,
         trialExpired,
         usageResponse,

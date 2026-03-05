@@ -19,7 +19,7 @@ public class ShopProviderImpl implements ShopProvider {
   @Override
   public Optional<ShopInfo> getShop(String shopId) {
     return shopService.getShopPlanInfo(shopId)
-        .map(info -> new ShopInfo(info.shopId(), info.planId(), info.expiryDate()));
+        .map(info -> new ShopInfo(info.shopId(), info.planId(), info.planExpiryDate()));
   }
 
   @Override

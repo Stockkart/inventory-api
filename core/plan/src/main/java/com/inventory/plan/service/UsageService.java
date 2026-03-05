@@ -4,7 +4,7 @@ import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.plan.domain.model.Plan;
 import com.inventory.plan.domain.model.Usage;
-import com.inventory.plan.config.PlanDataSeeder;
+import com.inventory.plan.config.PlanDefaults;
 import com.inventory.plan.domain.repository.PlanRepository;
 import com.inventory.plan.domain.repository.UsageRepository;
 import com.inventory.plan.rest.dto.plan.RecordUsageRequest;
@@ -203,8 +203,8 @@ public class UsageService {
   private Plan resolveEffectivePlan(ShopInfo shopInfo) {
     if (shopInfo.planId() != null && !shopInfo.planId().isBlank()) {
       return planRepository.findById(shopInfo.planId())
-          .orElse(PlanDataSeeder.getBasePlanDefaults());
+          .orElse(PlanDefaults.getBasePlanDefaults());
     }
-    return PlanDataSeeder.getBasePlanDefaults();
+    return PlanDefaults.getBasePlanDefaults();
   }
 }
