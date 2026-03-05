@@ -126,6 +126,25 @@ public class CheckoutService {
     return normalizeBillingMode(billingMode) == BillingMode.REGULAR;
   }
 
+  /**
+   * Returns true when the item is selling at MRP (priceToRetail equals maximumRetailPrice).
+   * MRP is inclusive of tax, so no additional CGST/SGST should be calculated.
+   */
+  private boolean isSellingAtMrp(PurchaseItem item) {
+    if (item == null || item.getPriceToRetail() == null || item.getMaximumRetailPrice() == null) {
+      return false;
+    }
+    return item.getPriceToRetail().compareTo(item.getMaximumRetailPrice()) == 0;
+  }
+
+  /**
+   * Tax is applicable only when billing mode is REGULAR and the item is NOT selling at MRP.
+   * When selling at MRP, the price is tax-inclusive, so no additional tax is calculated.
+   */
+  private boolean isTaxApplicableForItem(PurchaseItem item, BillingMode billingMode) {
+    return isTaxApplicable(billingMode) && !isSellingAtMrp(item);
+  }
+
   private void applyItemTaxMode(PurchaseItem item, BillingMode billingMode) {
     item.setBillingMode(normalizeBillingMode(billingMode));
     if (!isTaxApplicable(billingMode)) {
@@ -817,8 +836,9 @@ public class CheckoutService {
           }
           BigDecimal effectivePrice = getEffectiveSellingPricePerUnit(purchaseItem);
           BigDecimal billableQty = getBillableQuantityAsDecimal(purchaseItem);
+          boolean includeTax = isTaxApplicableForItem(purchaseItem, itemBillingMode);
           BigDecimal totalAmount = calculateItemTotalAmount(effectivePrice, purchaseItem.getAdditionalDiscount(), billableQty,
-              purchaseItem.getCgst(), purchaseItem.getSgst(), isTaxApplicable(itemBillingMode));
+              purchaseItem.getCgst(), purchaseItem.getSgst(), includeTax);
           purchaseItem.setTotalAmount(totalAmount);
           purchaseItem.setSaleUnit(saleUnit);
           purchaseItem.setBaseQuantity(baseQuantity);
@@ -883,7 +903,11 @@ public class CheckoutService {
     }
     
     // Calculate tax for each item based on its inventory-level CGST/SGST
+    // Skip tax for items selling at MRP - MRP is inclusive of tax
     for (PurchaseItem item : purchaseItems) {
+      if (isSellingAtMrp(item)) {
+        continue; // MRP is tax-inclusive, no additional CGST/SGST
+      }
       // Item total for tax: use paid quantity when scheme is set (billing basis)
       BigDecimal itemTotal = BigDecimal.ZERO;
       if (item.getMaximumRetailPrice() != null && item.getQuantity() != null 
@@ -1047,9 +1071,9 @@ public class CheckoutService {
     if (items == null || items.isEmpty()) {
       return;
     }
-    boolean includeTax = isTaxApplicable(billingMode);
     for (PurchaseItem item : items) {
       applyItemTaxMode(item, billingMode);
+      boolean includeTax = isTaxApplicableForItem(item, billingMode);
       BigDecimal effectivePrice = getEffectiveSellingPricePerUnit(item);
       BigDecimal billableQty = getBillableQuantityAsDecimal(item);
       item.setTotalAmount(calculateItemTotalAmount(
@@ -1187,7 +1211,6 @@ public class CheckoutService {
     try {
       // Merge items - if same inventoryId exists, update quantity; otherwise add new
       List<PurchaseItem> mergedItems = new ArrayList<>(existingCart.getItems() != null ? existingCart.getItems() : new ArrayList<>());
-      boolean includeTax = isTaxApplicable(billingMode);
 
       for (PurchaseItem newItem : newItems) {
         boolean found = false;
@@ -1255,13 +1278,14 @@ public class CheckoutService {
               applyItemTaxMode(switchedItem, billingMode);
               BigDecimal effectivePrice = getEffectiveSellingPricePerUnit(switchedItem);
               BigDecimal billableQty = getBillableQuantityAsDecimal(switchedItem);
+              boolean includeTaxForItem = isTaxApplicableForItem(switchedItem, billingMode);
               BigDecimal totalAmount = calculateItemTotalAmount(
                   effectivePrice,
                   switchedItem.getAdditionalDiscount(),
                   billableQty,
                   switchedItem.getCgst(),
                   switchedItem.getSgst(),
-                  includeTax
+                  includeTaxForItem
               );
               switchedItem.setTotalAmount(totalAmount);
               purchaseMapper.enrichPurchaseItemMargin(switchedItem);
@@ -1344,8 +1368,9 @@ public class CheckoutService {
             }
             BigDecimal effectivePrice = getEffectiveSellingPricePerUnit(updatedItem);
             BigDecimal billableQty = getBillableQuantityAsDecimal(updatedItem);
+            boolean includeTaxForItem = isTaxApplicableForItem(updatedItem, billingMode);
             BigDecimal totalAmount = calculateItemTotalAmount(effectivePrice, additionalDiscount, billableQty,
-                updatedItem.getCgst(), updatedItem.getSgst(), includeTax);
+                updatedItem.getCgst(), updatedItem.getSgst(), includeTaxForItem);
             updatedItem.setTotalAmount(totalAmount);
             purchaseMapper.enrichPurchaseItemMargin(updatedItem);
             mergedItems.set(i, updatedItem);

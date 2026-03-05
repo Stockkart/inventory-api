@@ -413,7 +413,7 @@
         <th style="width: 5%;">BATCH No.</th>
         <th style="width: 7%;">M.R.P.</th>
         <th style="width: 7%;">RATE</th>
-        <th style="width: 5%;" th:if="${billingMode != 'BASIC'}">SCHEME</th>
+        <th style="width: 5%;" th:if="${billingMode != 'BASIC' and showScheme}">SCHEME</th>
         <th style="width: 5%;">DIS</th>
         <th style="width: 5%;" th:if="${showTaxDetails}">CGST%</th>
         <th style="width: 5%;" th:if="${showTaxDetails}">SGST%</th>
@@ -430,7 +430,7 @@
         <td th:text="${item.batchNo ?: ''}"></td>
         <td class="text-right" th:text="${#numbers.formatDecimal(item.maximumRetailPrice, 1, 2)}"></td>
         <td class="text-right" th:text="${#numbers.formatDecimal(item.priceToRetail, 1, 2)}"></td>
-        <td th:if="${billingMode != 'BASIC'}" th:text="${item.schemePayFor != null and item.schemeFree != null ? item.schemePayFor + '+' + item.schemeFree : (item.scheme != null ? item.scheme : '')}"></td>
+        <td th:if="${billingMode != 'BASIC' and showScheme}" th:text="${item.schemePayFor != null and item.schemeFree != null ? item.schemePayFor + '+' + item.schemeFree : (item.scheme != null ? item.scheme : '')}"></td>
         <td class="text-right" th:text="${item.additionalDiscount != null ? #numbers.formatDecimal(item.additionalDiscount, 1, 2) : '0.00'}"></td>
         <td class="text-right" th:if="${showTaxDetails}" th:text="${item.cgst != null and item.cgst != '' ? item.cgst : #numbers.formatDecimal(cgstPercent, 1, 2)}"></td>
         <td class="text-right" th:if="${showTaxDetails}" th:text="${item.sgst != null and item.sgst != '' ? item.sgst : #numbers.formatDecimal(sgstPercent, 1, 2)}"></td>

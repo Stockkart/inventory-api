@@ -36,5 +36,7 @@ public class Shop {
   private String sgst; // Optional: State GST
   private String cgst; // Optional: Central GST
   private String tagline; // Optional: Shop tagline, banner word, or highlight text
+  /** Shop type: RETAILER, DISTRIBUTOR, or WHOLESALER. Affects default price (MRP for retailer) and tax handling. */
+  private ShopType shopType;
 }
 
