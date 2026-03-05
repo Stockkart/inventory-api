@@ -49,8 +49,18 @@ public class InventoryPricingWriteHandler {
       InventoryPricingContext.Context ctx = InventoryPricingContext.get();
       if (ctx != null && ctx.type == InventoryPricingContext.Type.UPDATE && ctx.updateRequest != null) {
         UpdateInventoryRequest req = ctx.updateRequest;
-        if (req.getAdditionalDiscount() != null && StringUtils.hasText(inventory.getPricingId())) {
-          pricingPort.update(inventory.getPricingId(), new PricingUpdateCommand(req.getAdditionalDiscount()));
+        if (hasAnyPricingUpdate(req) && StringUtils.hasText(inventory.getPricingId())) {
+          var cmd = PricingUpdateCommand.builder()
+              .maximumRetailPrice(req.getMaximumRetailPrice())
+              .costPrice(req.getCostPrice())
+              .priceToRetail(req.getPriceToRetail())
+              .rates(req.getRates())
+              .defaultRate(req.getDefaultRate())
+              .additionalDiscount(req.getAdditionalDiscount())
+              .sgst(req.getSgst())
+              .cgst(req.getCgst())
+              .build();
+          pricingPort.update(inventory.getPricingId(), cmd);
         }
       }
     } catch (Exception e) {
@@ -70,6 +80,14 @@ public class InventoryPricingWriteHandler {
         .filter(s -> s.getShopType() == ShopType.RETAILER)
         .map(s -> "maximumRetailPrice")
         .orElse(null);
+  }
+
+  private boolean hasAnyPricingUpdate(UpdateInventoryRequest req) {
+    return req.getMaximumRetailPrice() != null || req.getCostPrice() != null
+        || req.getPriceToRetail() != null || req.getAdditionalDiscount() != null
+        || (req.getRates() != null && !req.getRates().isEmpty())
+        || StringUtils.hasText(req.getDefaultRate())
+        || StringUtils.hasText(req.getSgst()) || StringUtils.hasText(req.getCgst());
   }
 
   private boolean hasPricingData(Inventory inv) {

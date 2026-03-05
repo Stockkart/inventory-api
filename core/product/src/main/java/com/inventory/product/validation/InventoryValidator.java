@@ -74,7 +74,12 @@ public class InventoryValidator {
     } else if (request.getScheme() != null && request.getScheme() < 0) {
       throw new ValidationException("Scheme (free units) must be zero or greater");
     }
-    validateUnits(request.getBaseUnit(), request.getUnitConversions());
+    if (request.getBillingMode() != null) {
+      validateTaxFieldsByBillingMode(request.getBillingMode(), request.getSgst(), request.getCgst());
+    }
+    if (request.getBaseUnit() != null || request.getUnitConversions() != null) {
+      validateUnits(request.getBaseUnit(), request.getUnitConversions());
+    }
   }
 
   private void validateUnits(String baseUnit, UnitConversion unitConversions) {
