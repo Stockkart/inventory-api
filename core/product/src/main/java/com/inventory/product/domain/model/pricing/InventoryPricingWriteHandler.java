@@ -6,6 +6,7 @@ import com.inventory.pricing.api.dto.PricingUpdateCommand;
 import com.inventory.product.domain.model.BillingMode;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Shop;
+import com.inventory.product.domain.model.ShopType;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.rest.dto.inventory.UpdateInventoryRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -29,13 +30,14 @@ public class InventoryPricingWriteHandler {
   public void persistOnSave(Inventory inventory) {
     try {
       if (inventory.getId() == null && hasPricingData(inventory) && StringUtils.hasText(inventory.getShopId())) {
+        String defaultRate = resolveDefaultRateForCreate(inventory);
         var cmd = PricingCreateCommand.builder()
             .shopId(inventory.getShopId())
             .maximumRetailPrice(inventory.getMaximumRetailPrice())
             .costPrice(inventory.getCostPrice())
             .priceToRetail(inventory.getPriceToRetail())
             .rates(inventory.getRates())
-            .defaultRate(inventory.getDefaultRate())
+            .defaultRate(defaultRate)
             .additionalDiscount(inventory.getAdditionalDiscount())
             .sgst(resolveSgst(inventory.getSgst(), inventory.getShopId()))
             .cgst(resolveCgst(inventory.getCgst(), inventory.getShopId()))
@@ -54,6 +56,20 @@ public class InventoryPricingWriteHandler {
     } catch (Exception e) {
       log.warn("Failed to persist pricing for inventory {}: {}", inventory.getId(), e.getMessage());
     }
+  }
+
+  /** For retailer shops, default price is MRP (tax-inclusive). Otherwise use request/default (PTR). */
+  private String resolveDefaultRateForCreate(Inventory inv) {
+    if (StringUtils.hasText(inv.getDefaultRate())) {
+      return inv.getDefaultRate();
+    }
+    if (!StringUtils.hasText(inv.getShopId())) {
+      return null; // PricingService will use priceToRetail
+    }
+    return shopRepository.findById(inv.getShopId())
+        .filter(s -> s.getShopType() == ShopType.RETAILER)
+        .map(s -> "maximumRetailPrice")
+        .orElse(null);
   }
 
   private boolean hasPricingData(Inventory inv) {

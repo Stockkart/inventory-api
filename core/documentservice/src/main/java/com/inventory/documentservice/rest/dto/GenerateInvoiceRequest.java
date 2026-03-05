@@ -19,6 +19,8 @@ public class GenerateInvoiceRequest {
   private Boolean showSellerDetails;
   private Boolean showBuyerDetails;
   private Boolean showTaxDetails;
+  /** When false, SCHEME column is hidden (e.g. for retailer shops). */
+  private Boolean showScheme;
   
   // Shop/Seller information
   private String shopName;

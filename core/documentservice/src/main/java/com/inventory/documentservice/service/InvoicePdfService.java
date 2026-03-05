@@ -63,6 +63,7 @@ public class InvoicePdfService {
     context.setVariable("showSellerDetails", request.getShowSellerDetails() == null || request.getShowSellerDetails());
     context.setVariable("showBuyerDetails", request.getShowBuyerDetails() == null || request.getShowBuyerDetails());
     context.setVariable("showTaxDetails", request.getShowTaxDetails() == null || request.getShowTaxDetails());
+    context.setVariable("showScheme", request.getShowScheme() == null || request.getShowScheme());
     context.setVariable("paymentMethod", request.getPaymentMethod());
 
     // Shop/Seller details
