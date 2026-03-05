@@ -20,7 +20,9 @@ public class Plan {
   @Id
   private String id;
   private String planName;
+  /** One-time service/support fee (annual amount). Used when customer needs first-time service help. */
   private BigDecimal price;
+  /** Annual subscription price (per year). This is what customers pay for the plan. */
   private BigDecimal arcPrice;
   /** Monthly billing amount cap in rupees. null = unlimited. */
   private BigDecimal billingLimit;

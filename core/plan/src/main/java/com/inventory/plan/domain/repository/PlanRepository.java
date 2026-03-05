@@ -10,4 +10,6 @@ import java.util.List;
 public interface PlanRepository extends MongoRepository<Plan, String> {
 
   List<Plan> findAllByOrderByPriceAsc();
+
+  java.util.Optional<Plan> findByPlanName(String planName);
 }
