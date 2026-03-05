@@ -57,8 +57,16 @@ public class InventoryPricingAdapterImpl implements InventoryPricingAdapter {
 
   @Override
   public void update(String pricingId, PricingUpdateCommand command) {
+    if (command == null) return;
     UpdatePricingRequest req = new UpdatePricingRequest();
+    req.setMaximumRetailPrice(command.getMaximumRetailPrice());
+    req.setCostPrice(command.getCostPrice());
+    req.setPriceToRetail(command.getPriceToRetail());
+    req.setRates(toRates(command.getRates()));
+    req.setDefaultRate(command.getDefaultRate());
     req.setAdditionalDiscount(command.getAdditionalDiscount());
+    req.setSgst(command.getSgst());
+    req.setCgst(command.getCgst());
     pricingService.update(pricingId, req);
   }
 

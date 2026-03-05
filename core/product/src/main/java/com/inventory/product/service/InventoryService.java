@@ -693,27 +693,35 @@ public class InventoryService {
         throw new ValidationException("Inventory does not belong to the authenticated shop");
       }
 
-      // Update thresholdCount if provided
-      if (request.getThresholdCount() != null) {
-        inventory.setThresholdCount(request.getThresholdCount());
-        log.debug("Updating thresholdCount to {} for inventory: {}", request.getThresholdCount(), inventoryId);
-      }
+      // Product details - only update when provided
+      if (request.getBarcode() != null) inventory.setBarcode(request.getBarcode());
+      if (request.getName() != null) inventory.setName(request.getName());
+      if (request.getDescription() != null) inventory.setDescription(request.getDescription());
+      if (request.getCompanyName() != null) inventory.setCompanyName(request.getCompanyName());
+      if (request.getBusinessType() != null) inventory.setBusinessType(request.getBusinessType());
+      if (request.getLocation() != null) inventory.setLocation(request.getLocation());
+
+      // Inventory attributes
+      if (request.getExpiryDate() != null) inventory.setExpiryDate(request.getExpiryDate());
+      if (request.getHsn() != null) inventory.setHsn(request.getHsn());
+      if (request.getBatchNo() != null) inventory.setBatchNo(request.getBatchNo());
+      if (request.getVendorId() != null) inventory.setVendorId(request.getVendorId());
+      if (request.getThresholdCount() != null) inventory.setThresholdCount(request.getThresholdCount());
+      if (request.getBillingMode() != null) inventory.setBillingMode(normalizeBillingMode(request.getBillingMode()));
 
       if (request.getItemType() != null) {
         inventory.setItemType(request.getItemType());
         inventory.setItemTypeDegree(request.getItemTypeDegree());
       }
-      if (request.getDiscountApplicable() != null) {
-        inventory.setDiscountApplicable(request.getDiscountApplicable());
-      }
-      if (request.getPurchaseDate() != null) {
-        inventory.setPurchaseDate(request.getPurchaseDate());
-      }
+      if (request.getDiscountApplicable() != null) inventory.setDiscountApplicable(request.getDiscountApplicable());
+      if (request.getPurchaseDate() != null) inventory.setPurchaseDate(request.getPurchaseDate());
+
       if (request.getSchemeType() != null) {
         inventory.setSchemeType(request.getSchemeType());
         inventory.setScheme(request.getScheme());
         inventory.setSchemePercentage(request.getSchemePercentage());
       }
+
       if (request.getBaseUnit() != null) {
         String normalizedBaseUnit = normalizeUnitName(request.getBaseUnit());
         inventory.setBaseUnit(normalizedBaseUnit);

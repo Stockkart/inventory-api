@@ -42,5 +42,7 @@ public class Shop {
   /** Plan expiry. For trial: trial end date. For paid: subscription end. */
   @Field("expiryDate")
   private java.time.Instant planExpiryDate;
+  /** Shop type: RETAILER, DISTRIBUTOR, or WHOLESALER. Affects default price (MRP for retailer) and tax handling. */
+  private ShopType shopType;
 }
 
