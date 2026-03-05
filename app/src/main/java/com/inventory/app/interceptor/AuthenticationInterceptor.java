@@ -86,8 +86,14 @@ public class AuthenticationInterceptor implements HandlerInterceptor {
   }
 
   private boolean isPublicEndpoint(String path) {
-    return PUBLIC_ENDPOINTS.stream()
-        .anyMatch(endpoint -> path.equals(endpoint) || path.startsWith(endpoint));
+    if (PUBLIC_ENDPOINTS.stream().anyMatch(endpoint -> path.equals(endpoint) || path.startsWith(endpoint))) {
+      return true;
+    }
+    // Plans: list and get-by-id public for pricing page before login
+    if (path.equals("/api/v1/plans") || path.matches("/api/v1/plans/[a-fA-F0-9]{24}")) {
+      return true;
+    }
+    return false;
   }
 
   /**

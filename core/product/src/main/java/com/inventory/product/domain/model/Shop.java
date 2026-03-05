@@ -36,5 +36,9 @@ public class Shop {
   private String sgst; // Optional: State GST
   private String cgst; // Optional: Central GST
   private String tagline; // Optional: Shop tagline, banner word, or highlight text
+  /** Plan ID. null = trial. */
+  private String planId;
+  /** Plan expiry. For trial: trial end date. For paid: subscription end. */
+  private java.time.Instant expiryDate;
 }
 

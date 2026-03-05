@@ -18,11 +18,15 @@ import com.inventory.user.domain.repository.UserAccountRepository;
 import com.inventory.user.service.UserShopMembershipService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+
+import com.inventory.plan.config.PlanDataSeeder;
 
 @Service
 @Slf4j
@@ -42,6 +46,7 @@ public class ShopService {
   private UserAccountRepository userAccountRepository;
 
   @Autowired
+  @Lazy
   private UserShopMembershipService membershipService;
 
   @Transactional
@@ -73,6 +78,8 @@ public class ShopService {
       // MongoDB will auto-generate the shopId as ObjectId
       Shop shop = shopMapper.toEntity(request);
       shop.setUserLimit(0); // Can be set later if needed
+      shop.setPlanId(null); // Trial: no plan purchased yet
+      shop.setExpiryDate(Instant.now().plus(PlanDataSeeder.TRIAL_DAYS, ChronoUnit.DAYS)); // 30-day trial
 
       // Save shop first
       shop = shopRepository.save(shop);
@@ -158,5 +165,56 @@ public class ShopService {
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
     }
   }
+
+  /**
+   * Get shop plan info for plan module. Used by ShopProviderImpl adapter.
+   */
+  @Transactional(readOnly = true)
+  public java.util.Optional<ShopPlanInfo> getShopPlanInfo(String shopId) {
+    return shopRepository.findById(shopId)
+        .map(shop -> new ShopPlanInfo(shop.getShopId(), shop.getPlanId(), shop.getExpiryDate()));
+  }
+
+  /**
+   * Update shop's plan. Used by ShopProviderImpl adapter.
+   */
+  @Transactional
+  public void updatePlan(String shopId, String planId, Instant expiryDate) {
+    Shop shop = shopRepository.findById(shopId)
+        .orElseThrow(() -> new ResourceNotFoundException("Shop", "id", shopId));
+    shop.setPlanId(planId);
+    shop.setExpiryDate(expiryDate);
+    shopRepository.save(shop);
+  }
+
+  /**
+   * Get shop name. Used by ShopServiceAdapterImpl.
+   */
+  @Transactional(readOnly = true)
+  public String getShopName(String shopId) {
+    return shopRepository.findById(shopId).map(Shop::getName).orElse(null);
+  }
+
+  /**
+   * Check if shop exists. Used by ShopServiceAdapterImpl.
+   */
+  @Transactional(readOnly = true)
+  public boolean shopExists(String shopId) {
+    return shopRepository.existsById(shopId);
+  }
+
+  /**
+   * Get shop tax info. Used by ShopServiceAdapterImpl.
+   */
+  @Transactional(readOnly = true)
+  public com.inventory.user.service.ShopServiceAdapter.ShopTaxInfo getShopTaxInfo(String shopId) {
+    return shopRepository.findById(shopId)
+        .map(shop -> new com.inventory.user.service.ShopServiceAdapter.ShopTaxInfo(
+            shop.getSgst(), shop.getCgst(), shop.getName()))
+        .orElse(null);
+  }
+
+  /** DTO for plan module. */
+  public record ShopPlanInfo(String shopId, String planId, Instant expiryDate) {}
 }
 
