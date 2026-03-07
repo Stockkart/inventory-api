@@ -28,6 +28,14 @@ public interface CustomerRepository extends MongoRepository<Customer, String> {
   Optional<Customer> findByEmail(String email);
 
   /**
+   * Find all customers linked to a user account.
+   *
+   * @param userId the user account ID
+   * @return list of customers linked to the user
+   */
+  List<Customer> findByUserId(String userId);
+
+  /**
    * Search customers by query (name, phone, email, or address).
    *
    * @param query the search query

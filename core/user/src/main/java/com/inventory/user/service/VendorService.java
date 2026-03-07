@@ -8,6 +8,7 @@ import com.inventory.common.exception.ValidationException;
 import com.inventory.user.domain.model.ShopVendor;
 import com.inventory.user.domain.model.Vendor;
 import com.inventory.user.domain.repository.ShopVendorRepository;
+import com.inventory.user.domain.repository.UserAccountRepository;
 import com.inventory.user.domain.repository.VendorRepository;
 import com.inventory.user.rest.dto.vendor.CreateVendorRequest;
 import com.inventory.user.rest.dto.vendor.CreateVendorResponse;
@@ -42,6 +43,9 @@ public class VendorService {
 
   @Autowired
   private VendorValidator vendorValidator;
+
+  @Autowired
+  private UserAccountRepository userAccountRepository;
 
   /**
    * Find or create a vendor and link it to a shop.
@@ -184,6 +188,10 @@ public class VendorService {
         existingVendor.setGstinUin(StringUtils.hasText(vendor.getGstinUin()) ? vendor.getGstinUin().trim() : null);
         updated = true;
       }
+      if (vendor.getUserId() != null && !vendor.getUserId().equals(existingVendor.getUserId())) {
+        existingVendor.setUserId(StringUtils.hasText(vendor.getUserId()) ? vendor.getUserId().trim() : null);
+        updated = true;
+      }
 
       if (updated) {
         existingVendor.setUpdatedAt(Instant.now());
@@ -288,6 +296,13 @@ public class VendorService {
 
     // Validate request
     vendorValidator.validateCreateRequest(request);
+
+    // Validate userId if provided (must reference existing user)
+    if (StringUtils.hasText(request.getUserId())) {
+      if (userAccountRepository.findById(request.getUserId().trim()).isEmpty()) {
+        throw new ValidationException("User ID does not exist: " + request.getUserId());
+      }
+    }
 
     log.info("Creating vendor for shop: {}", shopId);
 

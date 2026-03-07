@@ -10,6 +10,7 @@ import com.inventory.user.domain.model.UserShopMembership;
 import com.inventory.user.domain.repository.UserAccountRepository;
 import com.inventory.user.domain.repository.UserShopMembershipRepository;
 import com.inventory.user.rest.dto.user.DeactivateUserResponse;
+import com.inventory.user.rest.dto.user.LinkableUserDto;
 import com.inventory.user.rest.dto.user.UpdateUserRequest;
 import com.inventory.user.rest.dto.user.UserDto;
 import com.inventory.user.rest.dto.user.UserListResponse;
@@ -24,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 @Slf4j
 @Service
@@ -147,6 +149,25 @@ public class UserService {
       log.error("Unexpected error while updating user with ID {}: {}", userId, e.getMessage(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Failed to update user");
     }
+  }
+
+  /**
+   * Search for a user by email to link to vendor/customer.
+   * Returns minimal safe info (userId, email, name) for identity confirmation.
+   *
+   * @param email the user's email (required)
+   * @return Optional containing LinkableUserDto if found, empty otherwise
+   */
+  @Transactional(readOnly = true)
+  public Optional<LinkableUserDto> searchUserByEmailForLinking(String email) {
+    if (email == null || email.trim().isEmpty()) {
+      return Optional.empty();
+    }
+    return userAccountRepository.findByEmail(email.trim())
+        .map(account -> new LinkableUserDto(
+            account.getUserId(),
+            account.getEmail(),
+            account.getName()));
   }
 
   public DeactivateUserResponse deactivate(String shopId, String userId) {
