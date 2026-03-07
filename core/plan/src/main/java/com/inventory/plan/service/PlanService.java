@@ -1,7 +1,6 @@
 package com.inventory.plan.service;
 
 import com.inventory.common.exception.ResourceNotFoundException;
-import com.inventory.plan.config.PlanDefaults;
 import com.inventory.plan.domain.model.Plan;
 import com.inventory.plan.domain.model.PlanTransaction;
 import com.inventory.plan.domain.model.Usage;
@@ -138,7 +137,9 @@ public class PlanService {
     boolean trial = (plan == null && shopInfo.planExpiryDate() != null);
     boolean trialExpired = trial && shopInfo.planExpiryDate() != null && shopInfo.planExpiryDate().isBefore(Instant.now());
 
-    Plan effectivePlan = plan != null ? plan : PlanDefaults.getBasePlanDefaults();
+    Plan effectivePlan = plan != null ? plan
+        : planRepository.findByPlanName("Base")
+            .orElseThrow(() -> new ResourceNotFoundException("Plan", "name", "Base"));
     Usage usage = usageService.getOrCreateCurrentMonthUsage(shopId);
     UsageResponse usageResponse = planMapper.toUsageResponse(usage);
 
@@ -148,26 +149,9 @@ public class PlanService {
     int userLimit = effectivePlan.getUserLimit() != null ? effectivePlan.getUserLimit() : Integer.MAX_VALUE;
     boolean userLimitReached = userCount >= userLimit;
 
-    boolean billingLimitReached = false;
-    boolean billCountLimitReached = false;
-    boolean smsLimitReached = false;
-    boolean whatsappLimitReached = false;
-    if (!effectivePlan.isUnlimited()) {
-      if (effectivePlan.getBillingLimit() != null && usage.getBillingAmountUsed() != null) {
-        billingLimitReached = usage.getBillingAmountUsed().compareTo(effectivePlan.getBillingLimit()) >= 0;
-      }
-      if (effectivePlan.getBillCountLimit() != null && usage.getBillCountUsed() != null) {
-        billCountLimitReached = usage.getBillCountUsed() >= effectivePlan.getBillCountLimit();
-      }
-      if (effectivePlan.getSmsLimit() != null && effectivePlan.getSmsLimit() > 0 && usage.getSmsUsed() != null) {
-        smsLimitReached = usage.getSmsUsed() >= effectivePlan.getSmsLimit();
-      }
-      if (effectivePlan.getWhatsappLimit() != null && effectivePlan.getWhatsappLimit() > 0 && usage.getWhatsappUsed() != null) {
-        whatsappLimitReached = usage.getWhatsappUsed() >= effectivePlan.getWhatsappLimit();
-      }
-    }
+    var limits = planValidator.computeLimitsReached(effectivePlan, usage);
 
-    return new ShopPlanStatusResponse(
+    return planMapper.toShopPlanStatusResponse(
         shopId,
         shopInfo.planId(),
         plan != null ? planMapper.toResponse(plan) : null,
@@ -176,12 +160,8 @@ public class PlanService {
         trialExpired,
         usageResponse,
         suggestedPlan,
-        billingLimitReached,
-        billCountLimitReached,
-        smsLimitReached,
-        whatsappLimitReached,
-        userLimitReached
-    );
+        limits,
+        userLimitReached);
   }
 
   private ShopInfo getShopInfo(String shopId) {

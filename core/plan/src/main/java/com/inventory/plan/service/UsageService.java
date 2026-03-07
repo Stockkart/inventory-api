@@ -4,12 +4,12 @@ import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.plan.domain.model.Plan;
 import com.inventory.plan.domain.model.Usage;
-import com.inventory.plan.config.PlanDefaults;
 import com.inventory.plan.domain.repository.PlanRepository;
 import com.inventory.plan.domain.repository.UsageRepository;
 import com.inventory.plan.rest.dto.plan.RecordUsageRequest;
 import com.inventory.plan.rest.dto.plan.UsageResponse;
 import com.inventory.plan.rest.mapper.PlanMapper;
+import com.inventory.plan.rest.mapper.UsageMapper;
 import com.inventory.plan.validation.PlanValidator;
 import com.inventory.plan.service.ShopProvider.ShopInfo;
 import com.inventory.user.service.UserShopMembershipService;
@@ -47,6 +47,9 @@ public class UsageService {
 
   @Autowired
   private PlanValidator planValidator;
+
+  @Autowired
+  private UsageMapper usageMapper;
 
   public String getCurrentMonthKey() {
     return YearMonth.now().toString();
@@ -124,48 +127,9 @@ public class UsageService {
     Plan plan = resolveEffectivePlan(shopInfo);
     Usage usage = getOrCreateCurrentMonthUsage(shopId);
 
-    if (!plan.isUnlimited()) {
-      if (request.getBillingAmount() != null && request.getBillingAmount().signum() > 0) {
-        BigDecimal newTotal = (usage.getBillingAmountUsed() != null ? usage.getBillingAmountUsed() : BigDecimal.ZERO)
-            .add(request.getBillingAmount());
-        if (plan.getBillingLimit() != null && newTotal.compareTo(plan.getBillingLimit()) > 0) {
-          throw new ValidationException("Billing limit exceeded. Cannot add this amount.");
-        }
-      }
-      if (request.getBillCount() != null && request.getBillCount() > 0) {
-        int newCount = (usage.getBillCountUsed() != null ? usage.getBillCountUsed() : 0) + request.getBillCount();
-        if (plan.getBillCountLimit() != null && newCount > plan.getBillCountLimit()) {
-          throw new ValidationException("Bill count limit exceeded.");
-        }
-      }
-      if (request.getSmsCount() != null && request.getSmsCount() > 0 && plan.getSmsLimit() != null) {
-        int newCount = (usage.getSmsUsed() != null ? usage.getSmsUsed() : 0) + request.getSmsCount();
-        if (newCount > plan.getSmsLimit()) {
-          throw new ValidationException("SMS limit exceeded.");
-        }
-      }
-      if (request.getWhatsappCount() != null && request.getWhatsappCount() > 0 && plan.getWhatsappLimit() != null) {
-        int newCount = (usage.getWhatsappUsed() != null ? usage.getWhatsappUsed() : 0) + request.getWhatsappCount();
-        if (newCount > plan.getWhatsappLimit()) {
-          throw new ValidationException("WhatsApp limit exceeded.");
-        }
-      }
-    }
+    planValidator.validateUsageWithinLimits(plan, usage, request);
 
-    if (request.getBillingAmount() != null && request.getBillingAmount().signum() > 0) {
-      usage.setBillingAmountUsed(
-          (usage.getBillingAmountUsed() != null ? usage.getBillingAmountUsed() : BigDecimal.ZERO)
-              .add(request.getBillingAmount()));
-    }
-    if (request.getBillCount() != null && request.getBillCount() > 0) {
-      usage.setBillCountUsed((usage.getBillCountUsed() != null ? usage.getBillCountUsed() : 0) + request.getBillCount());
-    }
-    if (request.getSmsCount() != null && request.getSmsCount() > 0) {
-      usage.setSmsUsed((usage.getSmsUsed() != null ? usage.getSmsUsed() : 0) + request.getSmsCount());
-    }
-    if (request.getWhatsappCount() != null && request.getWhatsappCount() > 0) {
-      usage.setWhatsappUsed((usage.getWhatsappUsed() != null ? usage.getWhatsappUsed() : 0) + request.getWhatsappCount());
-    }
+    usageMapper.applyRecordUsage(usage, request);
     usage.setUpdatedAt(Instant.now());
     usage = usageRepository.save(usage);
 
@@ -203,8 +167,9 @@ public class UsageService {
   private Plan resolveEffectivePlan(ShopInfo shopInfo) {
     if (shopInfo.planId() != null && !shopInfo.planId().isBlank()) {
       return planRepository.findById(shopInfo.planId())
-          .orElse(PlanDefaults.getBasePlanDefaults());
+          .orElseThrow(() -> new ResourceNotFoundException("Plan", "id", shopInfo.planId()));
     }
-    return PlanDefaults.getBasePlanDefaults();
+    return planRepository.findByPlanName("Base")
+        .orElseThrow(() -> new ResourceNotFoundException("Plan", "name", "Base"));
   }
 }

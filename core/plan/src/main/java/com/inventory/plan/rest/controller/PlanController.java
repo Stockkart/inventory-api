@@ -72,7 +72,9 @@ public class PlanController {
   }
 
   /**
-   * Assign plan to shop (after payment). Requires auth.
+   * Assign plan to shop. Prefer using payment webhook (/webhook/payment-success) which
+   * is triggered automatically when payment gateway confirms success. This endpoint
+   * is kept for testing/admin use.
    */
   @PostMapping("/shop/{shopId}/assign")
   public ResponseEntity<ApiResponse<PlanResponse>> assignPlan(

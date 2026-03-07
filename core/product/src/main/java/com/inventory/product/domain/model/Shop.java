@@ -37,11 +37,9 @@ public class Shop {
   private String sgst; // Optional: State GST
   private String cgst; // Optional: Central GST
   private String tagline; // Optional: Shop tagline, banner word, or highlight text
-  /** Plan ID. null = trial. */
-  private String planId;
-  /** Plan expiry. For trial: trial end date. For paid: subscription end. */
+  private String planId; // Plan ID. null = trial.
   @Field("expiryDate")
-  private java.time.Instant planExpiryDate;
+  private Instant planExpiryDate;
   /** Shop type: RETAILER, DISTRIBUTOR, or WHOLESALER. Affects default price (MRP for retailer) and tax handling. */
   private ShopType shopType;
 }

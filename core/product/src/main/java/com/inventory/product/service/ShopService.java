@@ -27,7 +27,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Optional;
 
-import com.inventory.plan.config.PlanDefaults;
+import org.springframework.beans.factory.annotation.Value;
 
 @Service
 @Slf4j
@@ -49,6 +49,9 @@ public class ShopService {
   @Autowired
   @Lazy
   private UserShopMembershipService membershipService;
+
+  @Value("${plan.trial-days:30}")
+  private int trialDays;
 
   @Transactional
   public ShopRegistrationResponse register(RegisterShopRequest request, String userId) {
@@ -80,7 +83,7 @@ public class ShopService {
       Shop shop = shopMapper.toEntity(request);
       shop.setUserLimit(0); // Can be set later if needed
       shop.setPlanId(null); // Trial: no plan purchased yet
-      shop.setPlanExpiryDate(Instant.now().plus(PlanDefaults.TRIAL_DAYS, ChronoUnit.DAYS)); // 30-day trial
+      shop.setPlanExpiryDate(Instant.now().plus(trialDays, ChronoUnit.DAYS)); // trial from config
 
       // Save shop first
       shop = shopRepository.save(shop);

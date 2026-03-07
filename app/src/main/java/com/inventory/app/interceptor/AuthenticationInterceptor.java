@@ -33,10 +33,11 @@ public class AuthenticationInterceptor implements HandlerInterceptor {
       "/m/" // Mobile upload endpoints
   );
 
-  // Regex patterns for public endpoints (plans list & get-by-id for pricing page before login)
+  // Regex patterns for public endpoints (plans list & get-by-id for pricing; webhook for payment gateway)
   private static final List<String> PUBLIC_ENDPOINT_PATTERNS = Arrays.asList(
       "/api/v1/plans",
-      "/api/v1/plans/[a-fA-F0-9]{24}"
+      "/api/v1/plans/[a-fA-F0-9]{24}",
+      "/api/v1/plans/webhook/payment-success"
   );
   @Autowired
   private TokenValidationService tokenValidationService;
