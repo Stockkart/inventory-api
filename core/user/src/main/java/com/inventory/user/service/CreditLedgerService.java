@@ -14,8 +14,12 @@ import com.inventory.user.domain.repository.CreditLedgerRepository;
 import com.inventory.user.domain.repository.CustomerRepository;
 import com.inventory.user.domain.repository.VendorRepository;
 import com.inventory.user.rest.dto.ledger.BalanceResponse;
+import com.inventory.user.rest.dto.ledger.CustomerReceivableItemDto;
+import com.inventory.user.rest.dto.ledger.CustomerReceivablesResponse;
 import com.inventory.user.rest.dto.ledger.PayableItemDto;
 import com.inventory.user.rest.dto.ledger.PayablesResponse;
+import com.inventory.user.rest.dto.ledger.PayableToShopItemDto;
+import com.inventory.user.rest.dto.ledger.PayablesToShopsResponse;
 import com.inventory.user.rest.dto.ledger.ReceivableItemDto;
 import com.inventory.user.rest.dto.ledger.ReceivablesResponse;
 import com.inventory.user.rest.dto.ledger.CreateLedgerEntryRequest;
@@ -60,6 +64,9 @@ public class CreditLedgerService {
   @Autowired(required = false)
   private VendorService vendorService;
 
+  @Autowired(required = false)
+  private UserShopMembershipService userShopMembershipService;
+
   /**
    * Create a ledger entry (e.g. payment, adjustment).
    */
@@ -82,6 +89,11 @@ public class CreditLedgerService {
     // When recording payment to vendor, set counterpartyShopId so vendor sees it in their ledger
     if (request.getPartyType() == LedgerPartyType.VENDOR && request.getSource() == LedgerSource.PAYMENT) {
       String cpShopId = resolveCounterpartyShopForVendor(shopId, request.getPartyId());
+      entry.setCounterpartyShopId(StringUtils.hasText(cpShopId) ? cpShopId : null);
+    }
+    // When recording payment from customer (we received), set counterpartyShopId so customer sees it in their ledger
+    if (request.getPartyType() == LedgerPartyType.CUSTOMER && request.getSource() == LedgerSource.PAYMENT) {
+      String cpShopId = resolveCounterpartyShopForCustomer(request.getPartyId());
       entry.setCounterpartyShopId(StringUtils.hasText(cpShopId) ? cpShopId : null);
     }
 
@@ -124,6 +136,7 @@ public class CreditLedgerService {
 
   /**
    * Create a ledger entry for customer sale on credit.
+   * When customer is a StockKart user (has shops), sets counterpartyShopId so they see it in Amount to Pay.
    */
   public void createEntryForSale(String shopId, String customerId, BigDecimal amount,
       String purchaseId, String userId) {
@@ -142,8 +155,11 @@ public class CreditLedgerService {
       entry.setReferenceType(com.inventory.user.domain.model.LedgerReferenceType.PURCHASE);
       entry.setCreatedByUserId(userId);
       entry.setCreatedAt(Instant.now());
+      String customerShopId = resolveCounterpartyShopForCustomer(customerId);
+      entry.setCounterpartyShopId(StringUtils.hasText(customerShopId) ? customerShopId : null);
       creditLedgerRepository.save(entry);
-      log.debug("Created customer credit entry shopId={} customerId={} amount={}", shopId, customerId, amount);
+      log.debug("Created customer credit entry shopId={} customerId={} amount={} counterpartyShopId={}",
+          shopId, customerId, amount, customerShopId);
     } catch (Exception e) {
       log.warn("Failed to create ledger entry for sale: {}", e.getMessage());
     }
@@ -270,6 +286,37 @@ public class CreditLedgerService {
     return new ReceivablesResponse(receivables);
   }
 
+  /**
+   * Get amounts to collect from customers (when we sold to them on credit).
+   */
+  @Transactional(readOnly = true)
+  public CustomerReceivablesResponse getCustomerReceivables(String shopId) {
+    if (!StringUtils.hasText(shopId)) {
+      throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "Shop not authenticated");
+    }
+    List<CreditLedger> entries = creditLedgerRepository.findByShopIdAndPartyType(shopId, LedgerPartyType.CUSTOMER);
+    Map<String, BigDecimal> balanceByCustomer = new HashMap<>();
+    for (CreditLedger e : entries) {
+      String customerId = e.getPartyId();
+      BigDecimal delta = e.getType() == LedgerEntryType.CREDIT ? e.getAmount() : e.getAmount().negate();
+      balanceByCustomer.merge(customerId, delta, BigDecimal::add);
+    }
+    List<CustomerReceivableItemDto> receivables = new ArrayList<>();
+    for (Map.Entry<String, BigDecimal> entry : balanceByCustomer.entrySet()) {
+      BigDecimal balance = entry.getValue().setScale(2, RoundingMode.HALF_UP);
+      if (balance.compareTo(BigDecimal.ZERO) <= 0) {
+        continue;
+      }
+      String customerId = entry.getKey();
+      Customer customer = customerRepository.findById(customerId).orElse(null);
+      String customerName = customer != null ? customer.getName() : customerId;
+      String customerPhone = customer != null ? customer.getPhone() : null;
+      receivables.add(new CustomerReceivableItemDto(customerId, customerName, customerPhone, balance));
+    }
+    receivables.sort((a, b) -> a.getCustomerName().compareToIgnoreCase(b.getCustomerName()));
+    return new CustomerReceivablesResponse(receivables);
+  }
+
   private String buildPayerDisplayName(String shopName, String ownerName, String shopId) {
     boolean hasShop = StringUtils.hasText(shopName) && !shopName.equals(shopId);
     boolean hasOwner = StringUtils.hasText(ownerName) && !ownerName.trim().isEmpty();
@@ -280,6 +327,46 @@ public class CreditLedgerService {
       return ownerName;
     }
     return hasShop ? shopName : shopId;
+  }
+
+  /**
+   * Get amounts to pay to other shops (when we bought from them as customer on credit).
+   */
+  @Transactional(readOnly = true)
+  public PayablesToShopsResponse getPayablesToShops(String shopId) {
+    if (!StringUtils.hasText(shopId)) {
+      throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "Shop not authenticated");
+    }
+    List<CreditLedger> entries = creditLedgerRepository.findByCounterpartyShopId(shopId);
+    Map<String, BigDecimal> balanceBySeller = new HashMap<>();
+    Map<String, String> customerIdBySeller = new HashMap<>();
+    for (CreditLedger e : entries) {
+      if (e.getPartyType() != LedgerPartyType.CUSTOMER || !StringUtils.hasText(e.getShopId())) {
+        continue;
+      }
+      String sellerShopId = e.getShopId();
+      BigDecimal delta = e.getType() == LedgerEntryType.CREDIT ? e.getAmount() : e.getAmount().negate();
+      balanceBySeller.merge(sellerShopId, delta, BigDecimal::add);
+      if (StringUtils.hasText(e.getPartyId())) {
+        customerIdBySeller.putIfAbsent(sellerShopId, e.getPartyId());
+      }
+    }
+    List<PayableToShopItemDto> payables = new ArrayList<>();
+    for (Map.Entry<String, BigDecimal> entry : balanceBySeller.entrySet()) {
+      BigDecimal balance = entry.getValue().setScale(2, RoundingMode.HALF_UP);
+      if (balance.compareTo(BigDecimal.ZERO) <= 0) {
+        continue;
+      }
+      String sellerShopId = entry.getKey();
+      String sellerShopName = shopServiceAdapter != null ? shopServiceAdapter.getShopName(sellerShopId) : null;
+      if (sellerShopName == null || sellerShopName.trim().isEmpty()) {
+        sellerShopName = sellerShopId;
+      }
+      String customerId = customerIdBySeller.get(sellerShopId);
+      payables.add(new PayableToShopItemDto(sellerShopId, sellerShopName, customerId, balance));
+    }
+    payables.sort((a, b) -> a.getSellerShopName().compareToIgnoreCase(b.getSellerShopName()));
+    return new PayablesToShopsResponse(payables);
   }
 
   /**
@@ -381,11 +468,21 @@ public class CreditLedgerService {
     String displayPartyName;
     String roleInEntry;
     if (e.getShopId() != null && e.getShopId().equals(currentShopId)) {
-      roleInEntry = "BUYER";
-      displayPartyName = partyName;
+      if (e.getPartyType() == LedgerPartyType.VENDOR) {
+        roleInEntry = "BUYER"; // we owe vendor
+        displayPartyName = partyName;
+      } else {
+        roleInEntry = "SELLER"; // customer owes us
+        displayPartyName = partyName;
+      }
     } else if (StringUtils.hasText(e.getCounterpartyShopId()) && e.getCounterpartyShopId().equals(currentShopId)) {
-      roleInEntry = "VENDOR";
-      displayPartyName = shopServiceAdapter != null ? shopServiceAdapter.getShopName(e.getShopId()) : null;
+      if (e.getPartyType() == LedgerPartyType.VENDOR) {
+        roleInEntry = "VENDOR"; // they owe us (we're the vendor)
+        displayPartyName = shopServiceAdapter != null ? shopServiceAdapter.getShopName(e.getShopId()) : null;
+      } else {
+        roleInEntry = "BUYER"; // we owe shop (we're the customer)
+        displayPartyName = shopServiceAdapter != null ? shopServiceAdapter.getShopName(e.getShopId()) : null;
+      }
       if (displayPartyName == null || displayPartyName.trim().isEmpty()) {
         displayPartyName = e.getShopId();
       }
@@ -461,5 +558,25 @@ public class CreditLedgerService {
       }
     }
     return null;
+  }
+
+  /**
+   * Resolve customer's shop ID when customer is a StockKart user, so they see the payable in their ledger.
+   */
+  private String resolveCounterpartyShopForCustomer(String customerId) {
+    if (!StringUtils.hasText(customerId) || userShopMembershipService == null) {
+      return null;
+    }
+    return customerRepository.findById(customerId)
+        .filter(c -> StringUtils.hasText(c.getUserId()))
+        .map(c -> {
+          var resp = userShopMembershipService.getShopsForUser(c.getUserId());
+          if (resp.getData() != null && !resp.getData().isEmpty()) {
+            String firstShopId = resp.getData().get(0).getShopId();
+            return StringUtils.hasText(firstShopId) ? firstShopId : null;
+          }
+          return null;
+        })
+        .orElse(null);
   }
 }

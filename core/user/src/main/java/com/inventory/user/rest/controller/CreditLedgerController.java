@@ -8,7 +8,9 @@ import com.inventory.user.rest.dto.ledger.BalanceResponse;
 import com.inventory.user.rest.dto.ledger.CreateLedgerEntryRequest;
 import com.inventory.user.rest.dto.ledger.LedgerEntriesResponse;
 import com.inventory.user.rest.dto.ledger.LedgerEntryDto;
+import com.inventory.user.rest.dto.ledger.CustomerReceivablesResponse;
 import com.inventory.user.rest.dto.ledger.PayablesResponse;
+import com.inventory.user.rest.dto.ledger.PayablesToShopsResponse;
 import com.inventory.user.rest.dto.ledger.ReceivablesResponse;
 import com.inventory.user.service.CreditLedgerService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -68,6 +70,17 @@ public class CreditLedgerController {
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 
+  @GetMapping("/customer-receivables")
+  public ResponseEntity<ApiResponse<CustomerReceivablesResponse>> getCustomerReceivables(
+      HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    if (!StringUtils.hasText(shopId)) {
+      throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "User not authenticated");
+    }
+    CustomerReceivablesResponse response = creditLedgerService.getCustomerReceivables(shopId);
+    return ResponseEntity.ok(ApiResponse.success(response));
+  }
+
   @GetMapping("/payables")
   public ResponseEntity<ApiResponse<PayablesResponse>> getPayables(
       HttpServletRequest httpRequest) {
@@ -76,6 +89,17 @@ public class CreditLedgerController {
       throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "User not authenticated");
     }
     PayablesResponse response = creditLedgerService.getPayables(shopId);
+    return ResponseEntity.ok(ApiResponse.success(response));
+  }
+
+  @GetMapping("/payables-to-shops")
+  public ResponseEntity<ApiResponse<PayablesToShopsResponse>> getPayablesToShops(
+      HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    if (!StringUtils.hasText(shopId)) {
+      throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "User not authenticated");
+    }
+    PayablesToShopsResponse response = creditLedgerService.getPayablesToShops(shopId);
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 
