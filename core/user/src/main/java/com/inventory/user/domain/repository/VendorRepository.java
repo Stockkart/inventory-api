@@ -28,6 +28,14 @@ public interface VendorRepository extends MongoRepository<Vendor, String> {
   Optional<Vendor> findByContactPhone(String contactPhone);
 
   /**
+   * Find all vendors linked to a user account.
+   *
+   * @param userId the user account ID
+   * @return list of vendors linked to the user
+   */
+  List<Vendor> findByUserId(String userId);
+
+  /**
    * Search vendors by query (name, company name, contact email, contact phone, or address).
    *
    * @param query the search query (regex pattern)

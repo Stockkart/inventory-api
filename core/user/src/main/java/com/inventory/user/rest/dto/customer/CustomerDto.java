@@ -18,6 +18,8 @@ public class CustomerDto {
   private String gstin;
   private String dlNo;
   private String pan;
+  /** Optional. Set when customer is linked to a registered user. */
+  private String userId;
   private Instant createdAt;
   private Instant updatedAt;
 }

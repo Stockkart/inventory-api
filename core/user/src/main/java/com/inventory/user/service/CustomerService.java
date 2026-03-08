@@ -38,11 +38,13 @@ public class CustomerService {
    * @param customerGstin customer GSTIN (optional)
    * @param customerDlNo customer D.L No. (optional)
    * @param customerPan customer PAN (optional)
+   * @param customerUserId optional link to StockKart user (enables credit sync)
    * @return the customer entity, or null if no customer info provided
    */
   public Customer findOrCreateCustomer(String shopId, String customerName, String customerPhone,
                                         String customerAddress, String customerEmail,
-                                        String customerGstin, String customerDlNo, String customerPan) {
+                                        String customerGstin, String customerDlNo, String customerPan,
+                                        String customerUserId) {
     // If no customer name provided, return null
     if (!StringUtils.hasText(customerName)) {
       return null;
@@ -70,6 +72,9 @@ public class CustomerService {
         customer.setGstin(StringUtils.hasText(customerGstin) ? customerGstin.trim() : null);
         customer.setDlNo(StringUtils.hasText(customerDlNo) ? customerDlNo.trim() : null);
         customer.setPan(StringUtils.hasText(customerPan) ? customerPan.trim() : null);
+        if (StringUtils.hasText(customerUserId)) {
+          customer.setUserId(customerUserId.trim());
+        }
         customer.setCreatedAt(Instant.now());
         customer.setUpdatedAt(Instant.now());
 
@@ -104,6 +109,10 @@ public class CustomerService {
         }
         if (StringUtils.hasText(customerPan) && !customerPan.trim().equals(customer.getPan())) {
           customer.setPan(customerPan.trim());
+          updated = true;
+        }
+        if (StringUtils.hasText(customerUserId) && !customerUserId.trim().equals(customer.getUserId())) {
+          customer.setUserId(customerUserId.trim());
           updated = true;
         }
 
@@ -191,6 +200,35 @@ public class CustomerService {
 
     // Find customer by phone
     java.util.Optional<Customer> customerOpt = customerRepository.findByPhone(phone.trim());
+
+    if (customerOpt.isEmpty()) {
+      return java.util.Optional.empty();
+    }
+
+    Customer customer = customerOpt.get();
+
+    // Verify customer is linked to the shop
+    if (!shopCustomerRepository.existsByShopIdAndCustomerId(shopId, customer.getId())) {
+      return java.util.Optional.empty();
+    }
+
+    return customerOpt;
+  }
+
+  /**
+   * Search customer by email for a shop.
+   *
+   * @param email the email address
+   * @param shopId the shop ID
+   * @return the customer if found and linked to shop, empty otherwise
+   */
+  @Transactional(readOnly = true)
+  public java.util.Optional<Customer> searchCustomerByEmail(String email, String shopId) {
+    if (!StringUtils.hasText(email)) {
+      return java.util.Optional.empty();
+    }
+
+    java.util.Optional<Customer> customerOpt = customerRepository.findByEmail(email.trim());
 
     if (customerOpt.isEmpty()) {
       return java.util.Optional.empty();

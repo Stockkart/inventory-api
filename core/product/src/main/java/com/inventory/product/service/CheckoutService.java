@@ -220,6 +220,9 @@ public class CheckoutService {
   private InvoiceSequenceService invoiceSequenceService;
 
   @Autowired(required = false)
+  private com.inventory.user.service.CreditLedgerService creditLedgerService;
+
+  @Autowired
   private UsageService usageService;
 
   @Transactional
@@ -340,6 +343,8 @@ public class CheckoutService {
         updateInventoryForCompletedPurchase(purchase);
         // Sale date for GSTR and reporting: when the sale was completed (invoice date)
         purchase.setSoldAt(Instant.now());
+        // Record customer credit when sale is on credit
+        recordCustomerCreditIfApplicable(purchase, request.getPaymentMethod(), userId);
       }
 
       // Update status and payment method
@@ -370,6 +375,31 @@ public class CheckoutService {
       log.error("Unexpected error during update purchase status for shop: {}, user: {}", shopId, userId, e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
           "An unexpected error occurred during update purchase status: " + e.getMessage(), e);
+    }
+  }
+
+  private void recordCustomerCreditIfApplicable(Purchase purchase, String paymentMethod, String userId) {
+    if (creditLedgerService == null) {
+      return;
+    }
+    if (!"CREDIT".equalsIgnoreCase(paymentMethod != null ? paymentMethod.trim() : "")) {
+      return;
+    }
+    if (!StringUtils.hasText(purchase.getCustomerId())) {
+      return;
+    }
+    if (purchase.getGrandTotal() == null || purchase.getGrandTotal().compareTo(BigDecimal.ZERO) <= 0) {
+      return;
+    }
+    try {
+      creditLedgerService.createEntryForSale(
+          purchase.getShopId(),
+          purchase.getCustomerId(),
+          purchase.getGrandTotal(),
+          purchase.getId(),
+          userId);
+    } catch (Exception e) {
+      log.warn("Failed to record customer credit for purchase {}: {}", purchase.getId(), e.getMessage());
     }
   }
 
@@ -1176,47 +1206,35 @@ public class CheckoutService {
 
   /**
    * Get or create customer ID from request.
-   * - If only customer name is provided, return null (no customer record created)
-   * - If customer phone is present, search for existing customer or create new one
+   * - If only customer name is provided (no phone/email), return null
+   * - If customer phone or email is present, find or create customer and optionally link to StockKart user
    */
   private String getOrCreateCustomerId(String shopId, AddToCartRequest request) {
-    // If customer phone is present, search for existing customer or create new one
-    if (StringUtils.hasText(request.getCustomerPhone())) {
-      // Search for existing customer by phone
-      java.util.Optional<com.inventory.user.domain.model.Customer> existingCustomerOpt =
-          customerService.searchCustomerByPhone(request.getCustomerPhone().trim(), shopId);
+    // Need at least phone or email plus name to create/link customer
+    boolean hasPhone = StringUtils.hasText(request.getCustomerPhone());
+    boolean hasEmail = StringUtils.hasText(request.getCustomerEmail());
+    boolean hasName = StringUtils.hasText(request.getCustomerName());
 
-      if (existingCustomerOpt.isPresent()) {
-        // Customer found, use its ID
-        log.debug("Found existing customer with ID: {} for phone: {}", 
-            existingCustomerOpt.get().getId(), request.getCustomerPhone());
-        return existingCustomerOpt.get().getId();
-      } else {
-        // Customer not found, create new customer with given details
-        com.inventory.user.domain.model.Customer customer = customerService.findOrCreateCustomer(
-            shopId,
-            request.getCustomerName(),
-            request.getCustomerPhone(),
-            request.getCustomerAddress(),
-            request.getCustomerEmail(),
-            request.getCustomerGstin(),
-            request.getCustomerDlNo(),
-            request.getCustomerPan()
-        );
-        if (customer != null) {
-          log.debug("Created new customer with ID: {} for phone: {}", 
-              customer.getId(), request.getCustomerPhone());
-          return customer.getId();
-        }
+    if ((hasPhone || hasEmail) && hasName) {
+      com.inventory.user.domain.model.Customer customer = customerService.findOrCreateCustomer(
+          shopId,
+          request.getCustomerName(),
+          request.getCustomerPhone(),
+          request.getCustomerAddress(),
+          request.getCustomerEmail(),
+          request.getCustomerGstin(),
+          request.getCustomerDlNo(),
+          request.getCustomerPan(),
+          request.getCustomerUserId()
+      );
+      if (customer != null) {
+        log.debug("Found/created customer with ID: {} for shop: {}", customer.getId(), shopId);
+        return customer.getId();
       }
-    } else if (StringUtils.hasText(request.getCustomerName())) {
-      // Only customer name provided, no phone - don't create customer record
-      // Just return null (customerId will be null in purchase)
-      log.debug("Only customer name provided, not creating customer record");
-      return null;
+    } else if (hasName) {
+      log.debug("Only customer name provided (no phone/email), not creating customer record");
     }
 
-    // No customer info provided
     return null;
   }
 

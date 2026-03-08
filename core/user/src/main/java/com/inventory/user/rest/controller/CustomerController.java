@@ -35,6 +35,7 @@ public class CustomerController {
   @GetMapping("/search")
   public ResponseEntity<ApiResponse<CustomerDto>> search(
       @RequestParam(required = false) String phone,
+      @RequestParam(required = false) String email,
       HttpServletRequest httpRequest) {
     // Get shopId from request attributes (set by AuthenticationInterceptor)
     String shopId = (String) httpRequest.getAttribute("shopId");
@@ -46,20 +47,27 @@ public class CustomerController {
           "User not authenticated or shop not found");
     }
 
-    // Validate phone parameter
-    if (!StringUtils.hasText(phone)) {
-      throw new ValidationException("Phone number is required for search");
+    // Validate: either phone or email must be provided
+    if (!StringUtils.hasText(phone) && !StringUtils.hasText(email)) {
+      throw new ValidationException("Phone or email is required for search");
+    }
+    if (StringUtils.hasText(phone) && StringUtils.hasText(email)) {
+      throw new ValidationException("Provide either phone or email, not both");
     }
 
-    log.info("Searching customer by phone: {} for shop: {}", phone, shopId);
+    boolean searchByPhone = StringUtils.hasText(phone);
+    String searchValue = searchByPhone ? phone : email;
+    log.info("Searching customer by {}: {} for shop: {}",
+        searchByPhone ? "phone" : "email", searchValue, shopId);
 
     try {
-      // Search customer by phone for the shop
-      java.util.Optional<Customer> customerOpt = customerService.searchCustomerByPhone(phone, shopId);
+      java.util.Optional<Customer> customerOpt = searchByPhone
+          ? customerService.searchCustomerByPhone(phone.trim(), shopId)
+          : customerService.searchCustomerByEmail(email.trim(), shopId);
 
       if (customerOpt.isEmpty()) {
-        throw new ResourceNotFoundException("Customer", "phone",
-            "No customer found with phone " + phone + " for shop " + shopId);
+        throw new ResourceNotFoundException("Customer", searchByPhone ? "phone" : "email",
+            "No customer found with " + (searchByPhone ? "phone " : "email ") + searchValue + " for shop " + shopId);
       }
 
       Customer customer = customerOpt.get();
