@@ -165,6 +165,14 @@ public class UserShopMembershipService {
   }
 
   /**
+   * Get the count of active users for a shop. Used by plan module for user limit checks.
+   */
+  @Transactional(readOnly = true)
+  public int getUserCountForShop(String shopId) {
+    return membershipRepository.findByShopIdAndActiveTrue(shopId).size();
+  }
+
+  /**
    * Ensure membership exists for legacy user (shopId set on UserAccount). Used during migration.
    * If user has accepted invitation for this shop, creates INVITED membership; otherwise OWNER.
    */

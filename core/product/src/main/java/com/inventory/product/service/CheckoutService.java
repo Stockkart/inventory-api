@@ -26,6 +26,8 @@ import com.inventory.product.rest.dto.sale.PurchaseSummaryDto;
 import com.inventory.product.rest.dto.sale.UpdatePurchaseStatusRequest;
 import com.inventory.product.rest.mapper.InventoryMapper;
 import com.inventory.product.rest.mapper.PurchaseMapper;
+import com.inventory.plan.rest.dto.plan.RecordUsageRequest;
+import com.inventory.plan.service.UsageService;
 import com.inventory.product.validation.CheckoutValidator;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -217,6 +219,9 @@ public class CheckoutService {
   @Autowired
   private InvoiceSequenceService invoiceSequenceService;
 
+  @Autowired(required = false)
+  private UsageService usageService;
+
   @Transactional
   public AddToCartResponse addToCart(AddToCartRequest request, HttpServletRequest httpRequest) {
     // Get shopId and userId from request attributes (set by AuthenticationInterceptor)
@@ -325,8 +330,12 @@ public class CheckoutService {
 
       checkoutValidator.validateStatusTransition(currentStatus, requestedStatus);
 
-      // If status is being changed to COMPLETED, decrease inventory counts and set sale date
+      // If status is being changed to COMPLETED, check plan limits, decrease inventory
       if (requestedStatus == PurchaseStatus.COMPLETED) {
+        BigDecimal grandTotal = purchase.getGrandTotal() != null ? purchase.getGrandTotal() : BigDecimal.ZERO;
+        if (usageService != null) {
+          usageService.checkCanAddBill(shopId, grandTotal, 1);
+        }
         log.info("Processing inventory updates for completed purchase ID: {}", purchase.getId());
         updateInventoryForCompletedPurchase(purchase);
         // Sale date for GSTR and reporting: when the sale was completed (invoice date)
@@ -338,6 +347,11 @@ public class CheckoutService {
       purchase.setPaymentMethod(request.getPaymentMethod());
       purchase.setUpdatedAt(Instant.now());
       purchase = purchaseRepository.save(purchase);
+
+      // Record billing usage after successful completion
+      if (requestedStatus == PurchaseStatus.COMPLETED && usageService != null) {
+        recordBillingUsageForPurchase(shopId, purchase);
+      }
 
       log.info("Successfully updated purchase status from {} to {} for purchase ID: {}",
           currentStatus, requestedStatus, purchase.getId());
@@ -1707,6 +1721,20 @@ public class CheckoutService {
       }
     }
     return units;
+  }
+
+  /**
+   * Records billing usage for a completed purchase (grand total and bill count).
+   */
+  private void recordBillingUsageForPurchase(String shopId, Purchase purchase) {
+    if (usageService == null) {
+      return;
+    }
+    BigDecimal grandTotal = purchase.getGrandTotal() != null ? purchase.getGrandTotal() : BigDecimal.ZERO;
+    RecordUsageRequest usageReq = new RecordUsageRequest();
+    usageReq.setBillingAmount(grandTotal);
+    usageReq.setBillCount(1);
+    usageService.recordUsage(shopId, usageReq);
   }
 
   private void updateInventoryForCompletedPurchase(Purchase purchase) {

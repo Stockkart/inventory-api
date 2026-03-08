@@ -5,6 +5,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.Field;
 
 import java.time.Instant;
 
@@ -36,6 +37,9 @@ public class Shop {
   private String sgst; // Optional: State GST
   private String cgst; // Optional: Central GST
   private String tagline; // Optional: Shop tagline, banner word, or highlight text
+  private String planId; // Plan ID. null = trial.
+  @Field("expiryDate")
+  private Instant planExpiryDate;
   /** Shop type: RETAILER, DISTRIBUTOR, or WHOLESALER. Affects default price (MRP for retailer) and tax handling. */
   private ShopType shopType;
 }
