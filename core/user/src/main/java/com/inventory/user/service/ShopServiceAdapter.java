@@ -13,6 +13,14 @@ public interface ShopServiceAdapter {
    * @return shop name, or null if shop not found
    */
   String getShopName(String shopId);
+
+  /**
+   * Get shop owner/contact name (e.g. initialAdminName) by shop ID.
+   *
+   * @param shopId the shop ID
+   * @return owner/contact name, or null if not found
+   */
+  String getShopOwnerName(String shopId);
   
   /**
    * Check if a shop exists by shop ID.

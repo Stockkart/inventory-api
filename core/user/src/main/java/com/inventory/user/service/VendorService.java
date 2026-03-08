@@ -47,6 +47,9 @@ public class VendorService {
   @Autowired
   private UserAccountRepository userAccountRepository;
 
+  @Autowired(required = false)
+  private UserShopMembershipService membershipService;
+
   /**
    * Find or create a vendor and link it to a shop.
    * If vendor info is provided, it will find existing vendor by contactEmail,
@@ -450,6 +453,33 @@ public class VendorService {
           ErrorCode.INTERNAL_SERVER_ERROR,
           "Failed to retrieve vendor");
     }
+  }
+
+  /**
+   * Get shops for a vendor when the vendor is a StockKart user (has userId).
+   * Used when buyer assigns credit to vendor's shop - they can pick which shop.
+   *
+   * @param vendorId the vendor ID
+   * @param callerShopId the buyer's shop (vendor must be linked to this shop)
+   * @return list of shops the vendor user has access to, or empty if vendor is not a user
+   */
+  @Transactional(readOnly = true)
+  public com.inventory.user.rest.dto.invitation.UserShopListResponse getShopsForVendor(
+      String vendorId, String callerShopId) {
+    if (!StringUtils.hasText(vendorId) || !StringUtils.hasText(callerShopId)) {
+      return new com.inventory.user.rest.dto.invitation.UserShopListResponse(java.util.Collections.emptyList());
+    }
+    Vendor vendor = vendorRepository.findById(vendorId).orElse(null);
+    if (vendor == null || !StringUtils.hasText(vendor.getUserId())) {
+      return new com.inventory.user.rest.dto.invitation.UserShopListResponse(java.util.Collections.emptyList());
+    }
+    if (!isVendorLinkedToShop(callerShopId, vendorId)) {
+      return new com.inventory.user.rest.dto.invitation.UserShopListResponse(java.util.Collections.emptyList());
+    }
+    if (membershipService == null) {
+      return new com.inventory.user.rest.dto.invitation.UserShopListResponse(java.util.Collections.emptyList());
+    }
+    return membershipService.getShopsForUser(vendor.getUserId());
   }
 }
 

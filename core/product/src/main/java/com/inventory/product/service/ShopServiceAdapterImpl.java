@@ -20,6 +20,13 @@ public class ShopServiceAdapterImpl implements ShopServiceAdapter {
   }
 
   @Override
+  public String getShopOwnerName(String shopId) {
+    return shopRepository.findById(shopId)
+        .map(Shop::getInitialAdminName)
+        .orElse(null);
+  }
+
+  @Override
   public boolean shopExists(String shopId) {
     return shopRepository.existsById(shopId);
   }

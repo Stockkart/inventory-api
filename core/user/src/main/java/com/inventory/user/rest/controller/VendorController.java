@@ -54,6 +54,23 @@ public class VendorController {
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 
+  /**
+   * Get shops for a vendor when the vendor is a StockKart user.
+   * Must be declared before /{vendorId} to avoid path matching conflict.
+   */
+  @GetMapping("/{vendorId}/shops")
+  public ResponseEntity<ApiResponse<com.inventory.user.rest.dto.invitation.UserShopListResponse>> getVendorShops(
+      @PathVariable String vendorId,
+      HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    if (!org.springframework.util.StringUtils.hasText(shopId)) {
+      throw new com.inventory.common.exception.AuthenticationException(
+          com.inventory.common.constants.ErrorCode.UNAUTHORIZED, "User not authenticated");
+    }
+    var response = vendorService.getShopsForVendor(vendorId, shopId);
+    return ResponseEntity.ok(ApiResponse.success(response));
+  }
+
   @GetMapping("/{vendorId}")
   public ResponseEntity<ApiResponse<VendorDto>> getVendorById(
       @PathVariable String vendorId,

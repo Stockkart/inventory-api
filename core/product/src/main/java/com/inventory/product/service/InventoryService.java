@@ -59,6 +59,9 @@ public class InventoryService {
   @Autowired
   private ParsedInventoryMapper parsedInventoryMapper;
 
+  @Autowired(required = false)
+  private com.inventory.user.service.CreditLedgerService creditLedgerService;
+
   /**
    * Parse invoice image and extract inventory items using OCR.
    * Validates the image file and converts parsed items to CreateInventoryItemRequest format.
@@ -161,7 +164,7 @@ public class InventoryService {
         try {
           // Convert CreateInventoryItemRequest to CreateInventoryRequest
           CreateInventoryRequest fullRequest = convertToCreateInventoryRequest(itemRequest, 
-              bulkRequest.getVendorId(), lotId);
+              bulkRequest.getVendorId(), lotId, bulkRequest.getVendorShopId(), bulkRequest.getOnCredit());
           
           InventoryReceiptResponse response = create(fullRequest, userId, shopId);
           createdItems.add(response);
@@ -183,10 +186,10 @@ public class InventoryService {
   }
 
   /**
-   * Convert CreateInventoryItemRequest to CreateInventoryRequest by adding vendorId and lotId.
+   * Convert CreateInventoryItemRequest to CreateInventoryRequest by adding vendorId, lotId, vendorShopId, onCredit.
    */
   private CreateInventoryRequest convertToCreateInventoryRequest(CreateInventoryItemRequest itemRequest, 
-                                                                  String vendorId, String lotId) {
+                                                                  String vendorId, String lotId, String vendorShopId, Boolean onCredit) {
     CreateInventoryRequest fullRequest = new CreateInventoryRequest();
     
     // Copy all fields from item request
@@ -225,7 +228,9 @@ public class InventoryService {
     // Set shared fields
     fullRequest.setVendorId(vendorId);
     fullRequest.setLotId(lotId);
-    
+    fullRequest.setVendorShopId(vendorShopId);
+    fullRequest.setOnCredit(onCredit);
+
     return fullRequest;
   }
 
@@ -271,6 +276,17 @@ public class InventoryService {
       inventory.setSoldBaseCount(0);
 
       inventory = inventoryRepository.save(inventory);
+
+      // Record vendor credit only when explicitly on credit
+      Boolean onCredit = Boolean.TRUE.equals(request.getOnCredit());
+      if (onCredit && creditLedgerService != null && StringUtils.hasText(request.getVendorId())
+          && request.getCostPrice() != null && request.getCostPrice().compareTo(BigDecimal.ZERO) > 0
+          && request.getCount() != null && request.getCount() > 0) {
+        BigDecimal amount = request.getCostPrice().multiply(BigDecimal.valueOf(request.getCount()));
+        creditLedgerService.createEntryForVendorPurchase(
+            shopId, request.getVendorId(), amount, inventory.getId(), userId,
+            request.getVendorShopId());
+      }
 
       log.info("Successfully created inventory lot: {} for product: {} in shop: {}",
           inventory.getLotId(), inventory.getBarcode(), shopId);

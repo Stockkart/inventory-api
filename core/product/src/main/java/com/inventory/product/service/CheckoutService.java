@@ -217,6 +217,9 @@ public class CheckoutService {
   @Autowired
   private InvoiceSequenceService invoiceSequenceService;
 
+  @Autowired(required = false)
+  private com.inventory.user.service.CreditLedgerService creditLedgerService;
+
   @Transactional
   public AddToCartResponse addToCart(AddToCartRequest request, HttpServletRequest httpRequest) {
     // Get shopId and userId from request attributes (set by AuthenticationInterceptor)
@@ -331,6 +334,8 @@ public class CheckoutService {
         updateInventoryForCompletedPurchase(purchase);
         // Sale date for GSTR and reporting: when the sale was completed (invoice date)
         purchase.setSoldAt(Instant.now());
+        // Record customer credit when sale is on credit
+        recordCustomerCreditIfApplicable(purchase, request.getPaymentMethod(), userId);
       }
 
       // Update status and payment method
@@ -356,6 +361,31 @@ public class CheckoutService {
       log.error("Unexpected error during update purchase status for shop: {}, user: {}", shopId, userId, e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
           "An unexpected error occurred during update purchase status: " + e.getMessage(), e);
+    }
+  }
+
+  private void recordCustomerCreditIfApplicable(Purchase purchase, String paymentMethod, String userId) {
+    if (creditLedgerService == null) {
+      return;
+    }
+    if (!"CREDIT".equalsIgnoreCase(paymentMethod != null ? paymentMethod.trim() : "")) {
+      return;
+    }
+    if (!StringUtils.hasText(purchase.getCustomerId())) {
+      return;
+    }
+    if (purchase.getGrandTotal() == null || purchase.getGrandTotal().compareTo(BigDecimal.ZERO) <= 0) {
+      return;
+    }
+    try {
+      creditLedgerService.createEntryForSale(
+          purchase.getShopId(),
+          purchase.getCustomerId(),
+          purchase.getGrandTotal(),
+          purchase.getId(),
+          userId);
+    } catch (Exception e) {
+      log.warn("Failed to record customer credit for purchase {}: {}", purchase.getId(), e.getMessage());
     }
   }
 
