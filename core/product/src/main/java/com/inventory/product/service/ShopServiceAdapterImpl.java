@@ -6,17 +6,22 @@ import com.inventory.user.service.ShopServiceAdapter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+/**
+ * Adapter implementation for user module. Delegates to ShopService (not repository).
+ */
 @Component
 public class ShopServiceAdapterImpl implements ShopServiceAdapter {
 
   @Autowired
+  private ShopService shopService;
+
+  @Autowired
   private ShopRepository shopRepository;
+
 
   @Override
   public String getShopName(String shopId) {
-    return shopRepository.findById(shopId)
-        .map(Shop::getName)
-        .orElse(null);
+    return shopService.getShopName(shopId);
   }
 
   @Override
@@ -28,14 +33,12 @@ public class ShopServiceAdapterImpl implements ShopServiceAdapter {
 
   @Override
   public boolean shopExists(String shopId) {
-    return shopRepository.existsById(shopId);
+    return shopService.shopExists(shopId);
   }
 
   @Override
   public ShopTaxInfo getShopTaxInfo(String shopId) {
-    return shopRepository.findById(shopId)
-        .map(shop -> new ShopServiceAdapter.ShopTaxInfo(shop.getSgst(), shop.getCgst(), shop.getName()))
-        .orElse(null);
+    return shopService.getShopTaxInfo(shopId);
   }
 }
 

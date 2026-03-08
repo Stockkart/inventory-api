@@ -32,6 +32,13 @@ public class AuthenticationInterceptor implements HandlerInterceptor {
       "/api/product/",
       "/m/" // Mobile upload endpoints
   );
+
+  // Regex patterns for public endpoints (plans list & get-by-id for pricing; webhook for payment gateway)
+  private static final List<String> PUBLIC_ENDPOINT_PATTERNS = Arrays.asList(
+      "/api/v1/plans",
+      "/api/v1/plans/[a-fA-F0-9]{24}",
+      "/api/v1/plans/webhook/payment-success"
+  );
   @Autowired
   private TokenValidationService tokenValidationService;
 
@@ -86,8 +93,13 @@ public class AuthenticationInterceptor implements HandlerInterceptor {
   }
 
   private boolean isPublicEndpoint(String path) {
-    return PUBLIC_ENDPOINTS.stream()
-        .anyMatch(endpoint -> path.equals(endpoint) || path.startsWith(endpoint));
+    if (PUBLIC_ENDPOINTS.stream().anyMatch(endpoint -> path.equals(endpoint) || path.startsWith(endpoint))) {
+      return true;
+    }
+    if (PUBLIC_ENDPOINT_PATTERNS.stream().anyMatch(pattern -> path.matches(pattern))) {
+      return true;
+    }
+    return false;
   }
 
   /**

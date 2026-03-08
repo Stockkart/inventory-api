@@ -5,6 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
     <packaging>pom</packaging>
     <modules>
+        <module>plan</module>
         <module>product</module>
         <module>pricing</module>
         <module>analytics</module>
