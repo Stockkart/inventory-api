@@ -3,8 +3,8 @@ package com.inventory.user.validation;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.user.domain.model.UserAccount;
 import com.inventory.user.domain.model.UserRole;
-import com.inventory.user.rest.dto.user.AddUserRequest;
-import com.inventory.user.rest.dto.user.UpdateUserRequest;
+import com.inventory.user.rest.dto.request.AddUserRequest;
+import com.inventory.user.rest.dto.request.UpdateUserRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -101,6 +101,24 @@ public class UserValidator {
   public void validateLastAdminDeactivation(UserAccount account, long adminCount) {
     if (account.isActive() && UserRole.ADMIN.equals(account.getRole()) && adminCount <= 1) {
       throw new ValidationException("Cannot deactivate the last admin user in the shop");
+    }
+  }
+
+  public void validateUserSearchEmail(String email) {
+    if (!StringUtils.hasText(email)) {
+      throw new ValidationException("Email is required for user search");
+    }
+  }
+
+  public void validateSwitchActiveShopRequest(String shopId) {
+    if (!StringUtils.hasText(shopId)) {
+      throw new ValidationException("shopId is required");
+    }
+  }
+
+  public void validateUserHasShopAccess(boolean hasAccess) {
+    if (!hasAccess) {
+      throw new ValidationException("User does not have access to this shop");
     }
   }
 }

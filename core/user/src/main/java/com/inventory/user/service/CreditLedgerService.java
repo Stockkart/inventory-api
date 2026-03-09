@@ -2,8 +2,6 @@ package com.inventory.user.service;
 
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.AuthenticationException;
-import com.inventory.common.exception.BaseException;
-import com.inventory.common.exception.ValidationException;
 import com.inventory.user.domain.model.CreditLedger;
 import com.inventory.user.domain.model.Customer;
 import com.inventory.user.domain.model.LedgerEntryType;
@@ -13,21 +11,22 @@ import com.inventory.user.domain.model.Vendor;
 import com.inventory.user.domain.repository.CreditLedgerRepository;
 import com.inventory.user.domain.repository.CustomerRepository;
 import com.inventory.user.domain.repository.VendorRepository;
-import com.inventory.user.rest.dto.ledger.BalanceResponse;
-import com.inventory.user.rest.dto.ledger.CustomerReceivableItemDto;
-import com.inventory.user.rest.dto.ledger.CustomerReceivablesResponse;
-import com.inventory.user.rest.dto.ledger.PayableItemDto;
-import com.inventory.user.rest.dto.ledger.PayablesResponse;
-import com.inventory.user.rest.dto.ledger.PayableToShopItemDto;
-import com.inventory.user.rest.dto.ledger.PayablesToShopsResponse;
-import com.inventory.user.rest.dto.ledger.ReceivableItemDto;
-import com.inventory.user.rest.dto.ledger.ReceivablesResponse;
-import com.inventory.user.rest.dto.ledger.CreateLedgerEntryRequest;
-import com.inventory.user.rest.dto.ledger.LedgerEntriesResponse;
-import com.inventory.user.rest.dto.ledger.LedgerEntryDto;
+import com.inventory.user.mapper.CreditLedgerMapper;
+import com.inventory.user.rest.dto.request.CreateLedgerEntryRequest;
+import com.inventory.user.rest.dto.response.BalanceResponse;
+import com.inventory.user.rest.dto.response.CustomerReceivableItemDto;
+import com.inventory.user.rest.dto.response.CustomerReceivablesResponse;
+import com.inventory.user.rest.dto.response.LedgerEntriesResponse;
+import com.inventory.user.rest.dto.response.LedgerEntryDto;
+import com.inventory.user.rest.dto.response.PayableItemDto;
+import com.inventory.user.rest.dto.response.PayableToShopItemDto;
+import com.inventory.user.rest.dto.response.PayablesResponse;
+import com.inventory.user.rest.dto.response.PayablesToShopsResponse;
+import com.inventory.user.rest.dto.response.ReceivableItemDto;
+import com.inventory.user.rest.dto.response.ReceivablesResponse;
+import com.inventory.user.validation.CreditLedgerValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.dao.DataAccessException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -37,7 +36,6 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -67,65 +65,45 @@ public class CreditLedgerService {
   @Autowired(required = false)
   private UserShopMembershipService userShopMembershipService;
 
+  @Autowired
+  private CreditLedgerMapper creditLedgerMapper;
+
+  @Autowired
+  private CreditLedgerValidator creditLedgerValidator;
+
   /**
    * Create a ledger entry (e.g. payment, adjustment).
    */
   public LedgerEntryDto createEntry(CreateLedgerEntryRequest request, String shopId, String userId) {
-    validateCreateRequest(request);
+    creditLedgerValidator.validateCreateLedgerEntryRequest(request);
 
-    CreditLedger entry = new CreditLedger();
-    entry.setShopId(shopId);
-    entry.setPartyType(request.getPartyType());
-    entry.setPartyId(request.getPartyId());
-    entry.setAmount(request.getAmount().abs());
-    entry.setType(request.getType());
-    entry.setSource(request.getSource());
-    entry.setReferenceId(request.getReferenceId());
-    entry.setReferenceType(request.getReferenceType());
-    entry.setDescription(request.getDescription());
-    entry.setCreatedByUserId(userId);
-    entry.setCreatedAt(Instant.now());
-
-    // When recording payment to vendor, set counterpartyShopId so vendor sees it in their ledger
+    String counterpartyShopId = null;
     if (request.getPartyType() == LedgerPartyType.VENDOR && request.getSource() == LedgerSource.PAYMENT) {
-      String cpShopId = resolveCounterpartyShopForVendor(shopId, request.getPartyId());
-      entry.setCounterpartyShopId(StringUtils.hasText(cpShopId) ? cpShopId : null);
+      counterpartyShopId = resolveCounterpartyShopForVendor(shopId, request.getPartyId());
+    } else if (request.getPartyType() == LedgerPartyType.CUSTOMER && request.getSource() == LedgerSource.PAYMENT) {
+      counterpartyShopId = resolveCounterpartyShopForCustomer(request.getPartyId());
     }
-    // When recording payment from customer (we received), set counterpartyShopId so customer sees it in their ledger
-    if (request.getPartyType() == LedgerPartyType.CUSTOMER && request.getSource() == LedgerSource.PAYMENT) {
-      String cpShopId = resolveCounterpartyShopForCustomer(request.getPartyId());
-      entry.setCounterpartyShopId(StringUtils.hasText(cpShopId) ? cpShopId : null);
-    }
-
+    CreditLedger entry = creditLedgerMapper.toCreditLedgerFromParams(request, shopId, userId, counterpartyShopId);
     entry = creditLedgerRepository.save(entry);
     log.info("Created ledger entry id={} shopId={} partyType={} partyId={} amount={} type={}",
         entry.getId(), shopId, request.getPartyType(), request.getPartyId(), entry.getAmount(), request.getType());
-    return toDto(entry);
+    return creditLedgerMapper.toLedgerEntryDto(entry);
   }
 
   /**
    * Create a ledger entry from internal flows (inventory creation). Vendor purchase on credit.
+   *
    * @param counterpartyShopId When vendor is a StockKart user (has shops), the vendor's shop
-   *   so they can see this receivable when logged into that shop. Null when vendor is not a user.
+   *                           so they can see this receivable when logged into that shop. Null when vendor is not a user.
    */
   public void createEntryForVendorPurchase(String shopId, String vendorId, BigDecimal amount,
-      String referenceId, String userId, String counterpartyShopId) {
+                                           String referenceId, String userId, String counterpartyShopId) {
     if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
       return;
     }
     try {
-      CreditLedger entry = new CreditLedger();
-      entry.setShopId(shopId);
-      entry.setPartyType(LedgerPartyType.VENDOR);
-      entry.setPartyId(vendorId);
-      entry.setCounterpartyShopId(StringUtils.hasText(counterpartyShopId) ? counterpartyShopId : null);
-      entry.setAmount(amount);
-      entry.setType(LedgerEntryType.DEBIT);
-      entry.setSource(LedgerSource.PURCHASE);
-      entry.setReferenceId(referenceId);
-      entry.setReferenceType(com.inventory.user.domain.model.LedgerReferenceType.INVENTORY);
-      entry.setCreatedByUserId(userId);
-      entry.setCreatedAt(Instant.now());
+      CreditLedger entry = creditLedgerMapper.toCreditLedgerForVendorPurchaseInternal(
+          shopId, vendorId, amount, referenceId, userId, counterpartyShopId);
       creditLedgerRepository.save(entry);
       log.debug("Created vendor credit entry shopId={} vendorId={} amount={} counterpartyShopId={}",
           shopId, vendorId, amount, counterpartyShopId);
@@ -139,24 +117,14 @@ public class CreditLedgerService {
    * When customer is a StockKart user (has shops), sets counterpartyShopId so they see it in Amount to Pay.
    */
   public void createEntryForSale(String shopId, String customerId, BigDecimal amount,
-      String purchaseId, String userId) {
+                                 String purchaseId, String userId) {
     if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
       return;
     }
     try {
-      CreditLedger entry = new CreditLedger();
-      entry.setShopId(shopId);
-      entry.setPartyType(LedgerPartyType.CUSTOMER);
-      entry.setPartyId(customerId);
-      entry.setAmount(amount);
-      entry.setType(LedgerEntryType.CREDIT);
-      entry.setSource(LedgerSource.SALE);
-      entry.setReferenceId(purchaseId);
-      entry.setReferenceType(com.inventory.user.domain.model.LedgerReferenceType.PURCHASE);
-      entry.setCreatedByUserId(userId);
-      entry.setCreatedAt(Instant.now());
       String customerShopId = resolveCounterpartyShopForCustomer(customerId);
-      entry.setCounterpartyShopId(StringUtils.hasText(customerShopId) ? customerShopId : null);
+      CreditLedger entry = creditLedgerMapper.toCreditLedgerForSaleInternal(
+          shopId, customerId, amount, purchaseId, userId, customerShopId);
       creditLedgerRepository.save(entry);
       log.debug("Created customer credit entry shopId={} customerId={} amount={} counterpartyShopId={}",
           shopId, customerId, amount, customerShopId);
@@ -167,9 +135,7 @@ public class CreditLedgerService {
 
   @Transactional(readOnly = true)
   public BalanceResponse getBalance(String shopId, LedgerPartyType partyType, String partyId) {
-    if (!StringUtils.hasText(shopId) || partyType == null || !StringUtils.hasText(partyId)) {
-      throw new ValidationException("shopId, partyType, and partyId are required");
-    }
+    creditLedgerValidator.validateGetBalanceParams(shopId, partyType, partyId);
 
     List<CreditLedger> entries = creditLedgerRepository
         .findByShopIdAndPartyTypeAndPartyId(shopId, partyType, partyId);
@@ -192,7 +158,7 @@ public class CreditLedgerService {
 
   @Transactional(readOnly = true)
   public LedgerEntriesResponse listEntries(String shopId, LedgerPartyType partyType,
-      String partyId, int page, int size) {
+                                           String partyId, int page, int size) {
     if (!StringUtils.hasText(shopId)) {
       throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "Shop not authenticated");
     }
@@ -211,7 +177,7 @@ public class CreditLedgerService {
     }
 
     List<LedgerEntryDto> dtos = pageResult.getContent().stream()
-        .map(e -> toDtoWithNames(e, shopId))
+        .map(e -> toDtoWithNamesViaMapper(e, shopId))
         .collect(Collectors.toList());
 
     return new LedgerEntriesResponse(
@@ -414,49 +380,7 @@ public class CreditLedgerService {
     return new PayablesResponse(payables);
   }
 
-  private void validateCreateRequest(CreateLedgerEntryRequest request) {
-    if (request == null) {
-      throw new ValidationException("Request cannot be null");
-    }
-    if (request.getPartyType() == null) {
-      throw new ValidationException("partyType is required");
-    }
-    if (!StringUtils.hasText(request.getPartyId())) {
-      throw new ValidationException("partyId is required");
-    }
-    if (request.getAmount() == null || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
-      throw new ValidationException("amount must be positive");
-    }
-    if (request.getType() == null) {
-      throw new ValidationException("type is required");
-    }
-    if (request.getSource() == null) {
-      throw new ValidationException("source is required");
-    }
-  }
-
-  private LedgerEntryDto toDto(CreditLedger e) {
-    return new LedgerEntryDto(
-        e.getId(),
-        e.getShopId(),
-        e.getPartyType(),
-        e.getPartyId(),
-        null,
-        null,
-        e.getCounterpartyShopId(),
-        null,
-        null,
-        e.getAmount(),
-        e.getType(),
-        e.getSource(),
-        e.getReferenceId(),
-        e.getReferenceType(),
-        e.getDescription(),
-        e.getCreatedByUserId(),
-        e.getCreatedAt());
-  }
-
-  private LedgerEntryDto toDtoWithNames(CreditLedger e, String currentShopId) {
+  private LedgerEntryDto toDtoWithNamesViaMapper(CreditLedger e, String currentShopId) {
     String partyName = resolvePartyName(e.getPartyType(), e.getPartyId());
     String counterpartyShopName = null;
     if (StringUtils.hasText(e.getCounterpartyShopId()) && shopServiceAdapter != null) {
@@ -490,24 +414,8 @@ public class CreditLedgerService {
       roleInEntry = null;
       displayPartyName = partyName;
     }
-    return new LedgerEntryDto(
-        e.getId(),
-        e.getShopId(),
-        e.getPartyType(),
-        e.getPartyId(),
-        partyName,
-        counterpartyShopName,
-        e.getCounterpartyShopId(),
-        displayPartyName,
-        roleInEntry,
-        e.getAmount(),
-        e.getType(),
-        e.getSource(),
-        e.getReferenceId(),
-        e.getReferenceType(),
-        e.getDescription(),
-        e.getCreatedByUserId(),
-        e.getCreatedAt());
+    return creditLedgerMapper.toLedgerEntryDtoWithNames(
+        e, partyName, counterpartyShopName, displayPartyName, roleInEntry);
   }
 
   private String resolvePartyName(LedgerPartyType partyType, String partyId) {

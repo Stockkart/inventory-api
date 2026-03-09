@@ -7,9 +7,10 @@ import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.user.domain.model.Customer;
-import com.inventory.user.rest.dto.customer.CustomerDto;
-import com.inventory.user.rest.mapper.CustomerMapper;
+import com.inventory.user.rest.dto.response.CustomerDto;
+import com.inventory.user.mapper.CustomerMapper;
 import com.inventory.user.service.CustomerService;
+import com.inventory.user.validation.CustomerValidator;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,6 +33,9 @@ public class CustomerController {
   @Autowired
   private CustomerMapper customerMapper;
 
+  @Autowired
+  private CustomerValidator customerValidator;
+
   @GetMapping("/search")
   public ResponseEntity<ApiResponse<CustomerDto>> search(
       @RequestParam(required = false) String phone,
@@ -47,13 +51,7 @@ public class CustomerController {
           "User not authenticated or shop not found");
     }
 
-    // Validate: either phone or email must be provided
-    if (!StringUtils.hasText(phone) && !StringUtils.hasText(email)) {
-      throw new ValidationException("Phone or email is required for search");
-    }
-    if (StringUtils.hasText(phone) && StringUtils.hasText(email)) {
-      throw new ValidationException("Provide either phone or email, not both");
-    }
+    customerValidator.validateCustomerSearchParams(phone, email);
 
     boolean searchByPhone = StringUtils.hasText(phone);
     String searchValue = searchByPhone ? phone : email;

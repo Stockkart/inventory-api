@@ -11,8 +11,10 @@ import com.inventory.user.domain.model.UserShopMembership;
 import com.inventory.user.domain.repository.InvitationRepository;
 import com.inventory.user.domain.repository.UserAccountRepository;
 import com.inventory.user.domain.repository.UserShopMembershipRepository;
-import com.inventory.user.rest.dto.invitation.UserShopDto;
-import com.inventory.user.rest.dto.invitation.UserShopListResponse;
+import com.inventory.user.rest.dto.response.UserShopDto;
+import com.inventory.user.rest.dto.response.UserShopListResponse;
+import com.inventory.user.mapper.UserShopMembershipMapper;
+import com.inventory.user.validation.UserValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
@@ -42,6 +44,12 @@ public class UserShopMembershipService {
 
   @Autowired(required = false)
   private InvitationRepository invitationRepository;
+
+  @Autowired
+  private UserShopMembershipMapper userShopMembershipMapper;
+
+  @Autowired
+  private UserValidator userValidator;
 
   /**
    * Check if user has access to a shop. Backward compatible: returns true if user has
@@ -92,13 +100,9 @@ public class UserShopMembershipService {
 
       for (UserShopMembership m : memberships) {
         String shopName = shopServiceAdapter != null ? shopServiceAdapter.getShopName(m.getShopId()) : null;
-        shops.add(new UserShopDto(
-            m.getShopId(),
-            shopName != null ? shopName : m.getShopId(),
-            m.getRole().name(),
-            m.getRelationship(),
-            m.getJoinedAt()
-        ));
+        shops.add(userShopMembershipMapper.toUserShopDto(
+            m.getShopId(), shopName, m.getRole() != null ? m.getRole().name() : null,
+            m.getRelationship(), m.getJoinedAt()));
       }
 
       // Backward compatibility: if user has shopId but no membership for it, include it
@@ -110,18 +114,17 @@ public class UserShopMembershipService {
             String shopName = shopServiceAdapter != null
                 ? shopServiceAdapter.getShopName(account.getShopId())
                 : account.getShopId();
-            shops.add(new UserShopDto(
+            shops.add(userShopMembershipMapper.toUserShopDto(
                 account.getShopId(),
                 shopName != null ? shopName : account.getShopId(),
                 account.getRole() != null ? account.getRole().name() : UserRole.OWNER.name(),
                 RELATIONSHIP_OWNER,
-                account.getUpdatedAt() != null ? account.getUpdatedAt() : account.getCreatedAt()
-            ));
+                account.getUpdatedAt() != null ? account.getUpdatedAt() : account.getCreatedAt()));
           }
         }
       });
 
-      return new UserShopListResponse(shops);
+      return userShopMembershipMapper.toUserShopListResponse(shops);
     } catch (DataAccessException e) {
       log.error("Database error while getting shops for user {}: {}", userId, e.getMessage(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Error retrieving user shops");
@@ -136,13 +139,8 @@ public class UserShopMembershipService {
       log.debug("User {} already has active membership for shop {}", userId, shopId);
       return membershipRepository.findByUserIdAndShopIdAndActiveTrue(userId, shopId).orElseThrow();
     }
-    UserShopMembership membership = new UserShopMembership();
-    membership.setUserId(userId);
-    membership.setShopId(shopId);
-    membership.setRole(role != null ? role : UserRole.OWNER);
-    membership.setRelationship(relationship != null ? relationship : RELATIONSHIP_OWNER);
-    membership.setActive(true);
-    membership.setJoinedAt(Instant.now());
+    UserShopMembership membership = userShopMembershipMapper.toUserShopMembership(
+        userId, shopId, role, relationship != null ? relationship : RELATIONSHIP_OWNER);
     return membershipRepository.save(membership);
   }
 
@@ -150,9 +148,7 @@ public class UserShopMembershipService {
    * Switch the user's active shop. Updates UserAccount.shopId. Validates user has access.
    */
   public void switchActiveShop(String userId, String shopId) {
-    if (!hasAccess(userId, shopId)) {
-      throw new ValidationException("User does not have access to this shop");
-    }
+    userValidator.validateUserHasShopAccess(hasAccess(userId, shopId));
     UserAccount account = userAccountRepository.findById(userId)
         .orElseThrow(() -> new ResourceNotFoundException("User", "userId", userId));
     account.setShopId(shopId);

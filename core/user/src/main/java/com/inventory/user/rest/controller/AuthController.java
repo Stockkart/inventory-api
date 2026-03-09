@@ -1,15 +1,15 @@
 package com.inventory.user.rest.controller;
 
 import com.inventory.common.dto.response.ApiResponse;
-import com.inventory.user.rest.dto.auth.ChangePasswordRequest;
-import com.inventory.user.rest.dto.auth.ChangePasswordResponse;
-import com.inventory.user.rest.dto.auth.LoginRequest;
-import com.inventory.user.rest.dto.auth.LoginResponse;
-import com.inventory.user.rest.dto.auth.LogoutResponse;
-import com.inventory.user.rest.dto.auth.SignupRequest;
-import com.inventory.user.rest.dto.auth.SignupResponse;
-import com.inventory.user.rest.dto.auth.UserResponse;
-import com.inventory.user.rest.mapper.UserMapper;
+import com.inventory.user.rest.dto.request.ChangePasswordRequest;
+import com.inventory.user.rest.dto.request.LoginRequest;
+import com.inventory.user.rest.dto.request.SignupRequest;
+import com.inventory.user.rest.dto.response.ChangePasswordResponse;
+import com.inventory.user.rest.dto.response.LoginResponse;
+import com.inventory.user.rest.dto.response.LogoutResponse;
+import com.inventory.user.rest.dto.response.SignupResponse;
+import com.inventory.user.rest.dto.response.UserResponse;
+import com.inventory.user.mapper.UserMapper;
 import com.inventory.user.service.AuthService;
 import com.inventory.user.service.UserShopMembershipService;
 import jakarta.servlet.http.HttpServletRequest;

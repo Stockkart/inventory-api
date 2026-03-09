@@ -1,8 +1,8 @@
 package com.inventory.user.validation;
 
 import com.inventory.common.exception.ValidationException;
-import com.inventory.user.rest.dto.vendor.CreateVendorRequest;
-import com.inventory.user.rest.dto.vendor.SearchVendorRequest;
+import com.inventory.user.rest.dto.request.CreateVendorRequest;
+import com.inventory.user.rest.dto.request.SearchVendorRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -28,9 +28,20 @@ public class VendorValidator {
     if (request == null) {
       throw new ValidationException("Request cannot be null");
     }
-    // Query must be provided
     if (!StringUtils.hasText(request.getQuery())) {
       throw new ValidationException("Search query is required");
+    }
+  }
+
+  public void validateVendorId(String vendorId) {
+    if (!StringUtils.hasText(vendorId)) {
+      throw new ValidationException("Vendor ID is required");
+    }
+  }
+
+  public void validateUserIdExists(boolean exists, String userId) {
+    if (!exists && StringUtils.hasText(userId)) {
+      throw new ValidationException("User ID does not exist: " + userId);
     }
   }
 }

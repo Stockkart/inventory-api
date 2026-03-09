@@ -13,15 +13,15 @@ import com.inventory.user.domain.repository.JoinRequestRepository;
 import com.inventory.user.domain.repository.UserAccountRepository;
 import com.inventory.user.domain.model.UserShopMembership;
 import com.inventory.user.domain.repository.UserShopMembershipRepository;
-import com.inventory.user.rest.dto.joinrequest.AcceptRejectJoinRequestRequest;
-import com.inventory.user.rest.dto.joinrequest.JoinRequestDto;
-import com.inventory.user.rest.dto.joinrequest.OwnerShopDto;
-import com.inventory.user.rest.dto.joinrequest.OwnerShopListResponse;
-import com.inventory.user.rest.dto.joinrequest.JoinRequestListResponse;
-import com.inventory.user.rest.dto.joinrequest.ProcessJoinRequestResponse;
-import com.inventory.user.rest.dto.joinrequest.SendJoinRequestRequest;
-import com.inventory.user.rest.dto.joinrequest.SendJoinRequestResponse;
-import com.inventory.user.rest.mapper.JoinRequestMapper;
+import com.inventory.user.rest.dto.request.AcceptRejectJoinRequestRequest;
+import com.inventory.user.rest.dto.request.SendJoinRequestRequest;
+import com.inventory.user.rest.dto.response.JoinRequestDto;
+import com.inventory.user.rest.dto.response.JoinRequestListResponse;
+import com.inventory.user.rest.dto.response.OwnerShopDto;
+import com.inventory.user.rest.dto.response.OwnerShopListResponse;
+import com.inventory.user.rest.dto.response.ProcessJoinRequestResponse;
+import com.inventory.user.rest.dto.response.SendJoinRequestResponse;
+import com.inventory.user.mapper.JoinRequestMapper;
 import com.inventory.user.validation.JoinRequestValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -65,19 +65,19 @@ public class JoinRequestService {
   public OwnerShopListResponse getShopsByOwnerEmail(String ownerEmail) {
     String email = ownerEmail != null ? ownerEmail.toLowerCase().trim() : null;
     if (email == null || email.isEmpty()) {
-      return new OwnerShopListResponse(List.of());
+      return joinRequestMapper.toOwnerShopListResponse(List.of());
     }
     UserAccount owner = userAccountRepository.findByEmail(email).orElse(null);
     if (owner == null) {
-      return new OwnerShopListResponse(List.of());
+      return joinRequestMapper.toOwnerShopListResponse(List.of());
     }
     if (membershipRepository == null) {
-      // Fallback: owner's active shop only
       if (owner.getShopId() != null && !owner.getShopId().trim().isEmpty()) {
         String shopName = shopServiceAdapter != null ? shopServiceAdapter.getShopName(owner.getShopId()) : owner.getShopId();
-        return new OwnerShopListResponse(List.of(new OwnerShopDto(owner.getShopId(), shopName != null ? shopName : owner.getShopId())));
+        return joinRequestMapper.toOwnerShopListResponse(
+            List.of(joinRequestMapper.toOwnerShopDto(owner.getShopId(), shopName)));
       }
-      return new OwnerShopListResponse(List.of());
+      return joinRequestMapper.toOwnerShopListResponse(List.of());
     }
     List<UserShopMembership> memberships = membershipRepository.findByUserIdAndActiveTrue(owner.getUserId()).stream()
         .filter(m -> UserShopMembershipService.RELATIONSHIP_OWNER.equals(m.getRelationship()))
@@ -85,10 +85,10 @@ public class JoinRequestService {
     List<OwnerShopDto> shops = memberships.stream()
         .map(m -> {
           String shopName = shopServiceAdapter != null ? shopServiceAdapter.getShopName(m.getShopId()) : m.getShopId();
-          return new OwnerShopDto(m.getShopId(), shopName != null ? shopName : m.getShopId());
+          return joinRequestMapper.toOwnerShopDto(m.getShopId(), shopName);
         })
         .toList();
-    return new OwnerShopListResponse(shops);
+    return joinRequestMapper.toOwnerShopListResponse(shops);
   }
 
   public SendJoinRequestResponse sendJoinRequest(String userId, SendJoinRequestRequest request) {
@@ -108,17 +108,10 @@ public class JoinRequestService {
       // Use shopId from request (multi-shop: requester specifies which shop to join)
       String shopId = request.getShopId().trim();
 
-      // Verify owner has owner access to the specified shop (multi-shop)
-      if (membershipService != null) {
-        if (!membershipService.hasOwnerAccess(owner.getUserId(), shopId)) {
-          throw new ValidationException("The owner does not own this shop or the shop does not exist");
-        }
-      } else {
-        // Fallback: owner's active shop must match
-        if (owner.getShopId() == null || !shopId.equals(owner.getShopId())) {
-          throw new ValidationException("The owner does not own this shop");
-        }
-      }
+      boolean ownerHasAccess = membershipService != null
+          ? membershipService.hasOwnerAccess(owner.getUserId(), shopId)
+          : (owner.getShopId() != null && shopId.equals(owner.getShopId()));
+      joinRequestValidator.validateOwnerHasAccessToShop(ownerHasAccess);
 
       // Check if user already has access to this shop (multi-shop)
       if (membershipService != null && membershipService.hasAccess(userId, shopId)) {
@@ -181,15 +174,12 @@ public class JoinRequestService {
       String shopId;
       if (org.springframework.util.StringUtils.hasText(shopIdParam)) {
         shopId = shopIdParam.trim();
-        if (membershipService != null && !membershipService.hasOwnerAccess(ownerUserId, shopId)) {
-          throw new ValidationException("You do not have owner access to this shop");
-        } else if (membershipService == null && !shopId.equals(owner.getShopId())) {
-          throw new ValidationException("You do not have owner access to this shop");
-        }
+        boolean hasAccess = membershipService != null
+            ? membershipService.hasOwnerAccess(ownerUserId, shopId)
+            : shopId.equals(owner.getShopId());
+        joinRequestValidator.validateOwnerHasAccessToShop(hasAccess);
       } else {
-        if (owner.getShopId() == null || owner.getShopId().trim().isEmpty()) {
-          throw new ValidationException("Owner does not have a shop associated. Specify shopId.");
-        }
+        joinRequestValidator.validateOwnerHasShop(owner.getShopId());
         shopId = owner.getShopId();
       }
 
@@ -232,23 +222,13 @@ public class JoinRequestService {
 
       String shopId = joinRequest.getShopId();
 
-      // Verify owner has owner access to the join request's shop (multi-shop)
-      if (membershipService != null) {
-        if (!membershipService.hasOwnerAccess(ownerUserId, shopId)) {
-          throw new ValidationException("This join request does not belong to your shop");
-        }
-      } else {
-        if (!shopId.equals(owner.getShopId())) {
-          throw new ValidationException("This join request does not belong to your shop");
-        }
-      }
+      boolean joinRequestBelongsToOwner = membershipService != null
+          ? membershipService.hasOwnerAccess(ownerUserId, shopId)
+          : shopId.equals(owner.getShopId());
+      joinRequestValidator.validateJoinRequestBelongsToOwner(joinRequestBelongsToOwner);
+      joinRequestValidator.validateJoinRequestPending(joinRequest.getStatus());
 
-      // Verify join request is PENDING
-      if (joinRequest.getStatus() != JoinRequestStatus.PENDING) {
-        throw new ValidationException("Join request is not in PENDING status");
-      }
-
-      if (request.getAction() == com.inventory.user.rest.dto.joinrequest.JoinRequestAction.ACCEPT) {
+      if (request.getAction() == com.inventory.user.rest.dto.response.JoinRequestAction.ACCEPT) {
         return acceptJoinRequest(joinRequest, ownerUserId, shopId);
       } else {
         return rejectJoinRequest(joinRequest, ownerUserId);

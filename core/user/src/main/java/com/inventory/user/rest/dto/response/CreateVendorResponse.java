@@ -1,0 +1,23 @@
+package com.inventory.user.rest.dto.response;
+
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.time.Instant;
+
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class CreateVendorResponse {
+  private String vendorId;
+  private String name;
+  private String contactEmail;
+  private String contactPhone;
+  private String address;
+  private String companyName;
+  private String businessType;
+  private String gstinUin;
+  private Instant createdAt;
+  private Instant updatedAt;
+}

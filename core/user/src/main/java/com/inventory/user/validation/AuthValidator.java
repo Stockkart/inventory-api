@@ -1,9 +1,10 @@
 package com.inventory.user.validation;
 
 import com.inventory.common.exception.ValidationException;
-import com.inventory.user.rest.dto.auth.LoginRequest;
-import com.inventory.user.rest.dto.auth.LogoutRequest;
-import com.inventory.user.rest.dto.auth.SignupRequest;
+import com.inventory.user.rest.dto.request.ChangePasswordRequest;
+import com.inventory.user.rest.dto.request.LoginRequest;
+import com.inventory.user.rest.dto.request.LogoutRequest;
+import com.inventory.user.rest.dto.request.SignupRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -30,7 +31,6 @@ public class AuthValidator {
       if (!loginType.equals("google") && !loginType.equals("facebook")) {
         throw new ValidationException("loginType must be either 'google' or 'facebook'");
       }
-      return;
     } else {
       // Email/password authentication
       if (!hasEmail) {
@@ -97,6 +97,24 @@ public class AuthValidator {
     if ((request.getDeviceId() == null || request.getDeviceId().trim().isEmpty()) &&
         (request.getAccessToken() == null || request.getAccessToken().trim().isEmpty())) {
       throw new ValidationException("Either deviceId or accessToken must be provided");
+    }
+  }
+
+  public void validateLogoutParams(String userId, String accessToken) {
+    if (userId == null || userId.trim().isEmpty()) {
+      throw new ValidationException("User ID is required");
+    }
+    if (accessToken == null || accessToken.trim().isEmpty()) {
+      throw new ValidationException("Access token is required");
+    }
+  }
+
+  public void validateChangePasswordRequest(ChangePasswordRequest request) {
+    if (request == null || request.getEmail() == null || request.getEmail().trim().isEmpty()) {
+      throw new ValidationException("Email is required");
+    }
+    if (request.getPassword() == null || request.getPassword().trim().isEmpty()) {
+      throw new ValidationException("Password is required");
     }
   }
 }

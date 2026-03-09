@@ -4,12 +4,13 @@ import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.common.exception.AuthenticationException;
 import com.inventory.common.exception.ValidationException;
-import com.inventory.user.rest.dto.invitation.UserShopListResponse;
-import com.inventory.user.rest.dto.membership.SwitchActiveShopRequest;
-import com.inventory.user.rest.dto.membership.SwitchActiveShopResponse;
-import com.inventory.user.rest.dto.user.LinkableUserDto;
+import com.inventory.user.rest.dto.request.SwitchActiveShopRequest;
+import com.inventory.user.rest.dto.response.LinkableUserDto;
+import com.inventory.user.rest.dto.response.SwitchActiveShopResponse;
+import com.inventory.user.rest.dto.response.UserShopListResponse;
 import com.inventory.user.service.UserService;
 import com.inventory.user.service.UserShopMembershipService;
+import com.inventory.user.validation.UserValidator;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -33,6 +34,9 @@ public class UserShopController {
   @Autowired
   private UserService userService;
 
+  @Autowired
+  private UserValidator userValidator;
+
   /**
    * Search for a user by email to link to vendor/customer.
    * Returns minimal info (userId, email, name) for identity confirmation.
@@ -46,9 +50,7 @@ public class UserShopController {
     if (!StringUtils.hasText(userId)) {
       throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "User not authenticated");
     }
-    if (!StringUtils.hasText(email)) {
-      throw new ValidationException("Email is required for user search");
-    }
+    userValidator.validateUserSearchEmail(email);
     Optional<LinkableUserDto> result = userService.searchUserByEmailForLinking(email.trim());
     return result
         .map(linkable -> ResponseEntity.ok(ApiResponse.success(linkable)))
@@ -78,9 +80,7 @@ public class UserShopController {
     if (!StringUtils.hasText(userId)) {
       throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "User not authenticated");
     }
-    if (body == null || !StringUtils.hasText(body.getShopId())) {
-      throw new ValidationException("shopId is required");
-    }
+    userValidator.validateSwitchActiveShopRequest(body != null ? body.getShopId() : null);
     membershipService.switchActiveShop(userId, body.getShopId().trim());
     return ResponseEntity.ok(ApiResponse.success(
         new SwitchActiveShopResponse(body.getShopId(), "Active shop switched successfully")));

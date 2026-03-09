@@ -3,6 +3,7 @@ package com.inventory.user.service;
 import com.inventory.user.domain.model.Customer;
 import com.inventory.user.domain.model.ShopCustomer;
 import com.inventory.user.domain.repository.CustomerRepository;
+import com.inventory.user.mapper.CustomerMapper;
 import com.inventory.user.domain.repository.ShopCustomerRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -11,8 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.Instant;
-import java.util.List;
-import java.util.stream.Collectors;
+import java.util.Optional;
 
 @Service
 @Slf4j
@@ -24,6 +24,9 @@ public class CustomerService {
 
   @Autowired
   private ShopCustomerRepository shopCustomerRepository;
+
+  @Autowired
+  private CustomerMapper customerMapper;
 
   /**
    * Find or create a customer and link it to a shop.
@@ -62,22 +65,10 @@ public class CustomerService {
             .orElse(null);
       }
 
-      // If customer not found, create a new one
+      // If customer not found, create a new one via mapper
       if (customer == null) {
-        customer = new Customer();
-        customer.setName(customerName.trim());
-        customer.setPhone(StringUtils.hasText(customerPhone) ? customerPhone.trim() : null);
-        customer.setAddress(StringUtils.hasText(customerAddress) ? customerAddress.trim() : null);
-        customer.setEmail(StringUtils.hasText(customerEmail) ? customerEmail.trim() : null);
-        customer.setGstin(StringUtils.hasText(customerGstin) ? customerGstin.trim() : null);
-        customer.setDlNo(StringUtils.hasText(customerDlNo) ? customerDlNo.trim() : null);
-        customer.setPan(StringUtils.hasText(customerPan) ? customerPan.trim() : null);
-        if (StringUtils.hasText(customerUserId)) {
-          customer.setUserId(customerUserId.trim());
-        }
-        customer.setCreatedAt(Instant.now());
-        customer.setUpdatedAt(Instant.now());
-
+        customer = customerMapper.toCustomer(customerName, customerPhone, customerAddress, customerEmail,
+            customerGstin, customerDlNo, customerPan, customerUserId);
         customer = customerRepository.save(customer);
         log.info("Created new customer with ID: {}", customer.getId());
       } else {
@@ -125,10 +116,7 @@ public class CustomerService {
 
       // Create shop-customer relationship if it doesn't exist
       if (!shopCustomerRepository.existsByShopIdAndCustomerId(shopId, customer.getId())) {
-        ShopCustomer shopCustomer = new ShopCustomer();
-        shopCustomer.setShopId(shopId);
-        shopCustomer.setCustomerId(customer.getId());
-        shopCustomer.setCreatedAt(Instant.now());
+        ShopCustomer shopCustomer = customerMapper.toShopCustomer(shopId, customer.getId());
         shopCustomerRepository.save(shopCustomer);
         log.info("Linked customer {} to shop {}", customer.getId(), shopId);
       }
@@ -148,41 +136,11 @@ public class CustomerService {
    * @return an Optional containing the customer if found, empty otherwise
    */
   @Transactional(readOnly = true)
-  public java.util.Optional<Customer> getCustomerById(String customerId) {
+  public Optional<Customer> getCustomerById(String customerId) {
     if (customerId == null || customerId.trim().isEmpty()) {
-      return java.util.Optional.empty();
+      return Optional.empty();
     }
     return customerRepository.findById(customerId.trim());
-  }
-
-  /**
-   * Search customers for a shop.
-   *
-   * @param shopId the shop ID
-   * @param query the search query
-   * @return list of matching customers for the shop
-   */
-  @Transactional(readOnly = true)
-  public List<Customer> searchCustomers(String shopId, String query) {
-    // Get all customer IDs for this shop
-    List<String> customerIds = shopCustomerRepository.findByShopId(shopId).stream()
-        .map(ShopCustomer::getCustomerId)
-        .collect(Collectors.toList());
-
-    if (customerIds.isEmpty()) {
-      return List.of();
-    }
-
-    // If query provided, search customers and filter by shop's customers
-    if (StringUtils.hasText(query)) {
-      List<Customer> allMatchingCustomers = customerRepository.searchByQuery(query.trim());
-      return allMatchingCustomers.stream()
-          .filter(c -> customerIds.contains(c.getId()))
-          .collect(Collectors.toList());
-    }
-
-    // If no query, return all customers for the shop
-    return customerRepository.findAllById(customerIds);
   }
 
   /**
@@ -193,23 +151,23 @@ public class CustomerService {
    * @return the customer if found and linked to shop, empty otherwise
    */
   @Transactional(readOnly = true)
-  public java.util.Optional<Customer> searchCustomerByPhone(String phone, String shopId) {
+  public Optional<Customer> searchCustomerByPhone(String phone, String shopId) {
     if (!StringUtils.hasText(phone)) {
-      return java.util.Optional.empty();
+      return Optional.empty();
     }
 
     // Find customer by phone
-    java.util.Optional<Customer> customerOpt = customerRepository.findByPhone(phone.trim());
+    Optional<Customer> customerOpt = customerRepository.findByPhone(phone.trim());
 
     if (customerOpt.isEmpty()) {
-      return java.util.Optional.empty();
+      return Optional.empty();
     }
 
     Customer customer = customerOpt.get();
 
     // Verify customer is linked to the shop
     if (!shopCustomerRepository.existsByShopIdAndCustomerId(shopId, customer.getId())) {
-      return java.util.Optional.empty();
+      return Optional.empty();
     }
 
     return customerOpt;
@@ -223,22 +181,22 @@ public class CustomerService {
    * @return the customer if found and linked to shop, empty otherwise
    */
   @Transactional(readOnly = true)
-  public java.util.Optional<Customer> searchCustomerByEmail(String email, String shopId) {
+  public Optional<Customer> searchCustomerByEmail(String email, String shopId) {
     if (!StringUtils.hasText(email)) {
-      return java.util.Optional.empty();
+      return Optional.empty();
     }
 
-    java.util.Optional<Customer> customerOpt = customerRepository.findByEmail(email.trim());
+    Optional<Customer> customerOpt = customerRepository.findByEmail(email.trim());
 
     if (customerOpt.isEmpty()) {
-      return java.util.Optional.empty();
+      return Optional.empty();
     }
 
     Customer customer = customerOpt.get();
 
     // Verify customer is linked to the shop
     if (!shopCustomerRepository.existsByShopIdAndCustomerId(shopId, customer.getId())) {
-      return java.util.Optional.empty();
+      return Optional.empty();
     }
 
     return customerOpt;

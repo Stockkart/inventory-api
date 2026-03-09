@@ -1,0 +1,12 @@
+package com.inventory.user.rest.dto.request;
+
+import com.inventory.user.domain.model.UserRole;
+import lombok.Data;
+
+@Data
+public class SendJoinRequestRequest {
+  private String ownerEmail;
+  private String shopId;   // Required for multi-shop: which shop to request (owner may have multiple)
+  private UserRole role;   // Role requested by the user
+  private String message;  // Optional message from user
+}

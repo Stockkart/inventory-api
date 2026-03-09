@@ -12,14 +12,14 @@ import com.inventory.user.domain.model.UserShopMembership;
 import com.inventory.user.domain.repository.InvitationRepository;
 import com.inventory.user.domain.repository.UserAccountRepository;
 import com.inventory.user.domain.repository.UserShopMembershipRepository;
-import com.inventory.user.rest.dto.invitation.AcceptInvitationResponse;
-import com.inventory.user.rest.dto.invitation.InvitationDto;
-import com.inventory.user.rest.dto.invitation.InvitationListResponse;
-import com.inventory.user.rest.dto.invitation.SendInvitationRequest;
-import com.inventory.user.rest.dto.invitation.SendInvitationResponse;
-import com.inventory.user.rest.dto.invitation.ShopUserDto;
-import com.inventory.user.rest.dto.invitation.ShopUserListResponse;
-import com.inventory.user.rest.mapper.InvitationMapper;
+import com.inventory.user.rest.dto.request.SendInvitationRequest;
+import com.inventory.user.rest.dto.response.AcceptInvitationResponse;
+import com.inventory.user.rest.dto.response.InvitationDto;
+import com.inventory.user.rest.dto.response.InvitationListResponse;
+import com.inventory.user.rest.dto.response.SendInvitationResponse;
+import com.inventory.user.rest.dto.response.ShopUserDto;
+import com.inventory.user.rest.dto.response.ShopUserListResponse;
+import com.inventory.user.mapper.InvitationMapper;
 import com.inventory.user.validation.InvitationValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -133,21 +133,13 @@ public class InvitationService {
       Invitation invitation = invitationRepository.findById(invitationId)
           .orElseThrow(() -> new ResourceNotFoundException("Invitation", "invitationId", invitationId));
 
-      // Verify invitation is for this user
-      if (!userId.equals(invitation.getInviteeUserId())) {
-        throw new ValidationException("This invitation is not for the current user");
-      }
+      invitationValidator.validateInvitationForCurrentUser(invitation, userId);
+      invitationValidator.validateInvitationPending(invitation);
 
-      // Verify invitation status
-      if (!InvitationStatus.PENDING.name().equals(invitation.getStatus())) {
-        throw new ValidationException("Invitation is not in PENDING status");
-      }
-
-      // Check if invitation has expired
       if (invitation.getExpiresAt() != null && invitation.getExpiresAt().isBefore(Instant.now())) {
         invitation.setStatus(InvitationStatus.EXPIRED.name());
         invitationRepository.save(invitation);
-        throw new ValidationException("Invitation has expired");
+        invitationValidator.validateInvitationNotExpired(invitation);
       }
 
       // Verify shop exists using adapter (if available)
