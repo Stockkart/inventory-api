@@ -4,10 +4,13 @@ import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.AuthenticationException;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ValidationException;
-import com.inventory.analytics.helper.ProfitAnalyticsHelper;
-import com.inventory.analytics.helper.SalesAnalyticsHelper;
-import com.inventory.analytics.rest.dto.profit.ProfitAnalyticsResponse;
-import com.inventory.analytics.rest.dto.profit.ProductProfitDto;
+import com.inventory.analytics.mapper.ProfitAnalyticsMapper;
+import com.inventory.analytics.mapper.ProfitAnalyticsResponseParams;
+import com.inventory.analytics.utils.ProfitAnalyticsUtils;
+import com.inventory.analytics.utils.SalesAnalyticsUtils;
+import com.inventory.analytics.rest.dto.response.ProfitAnalyticsResponse;
+import com.inventory.analytics.rest.dto.response.ProductProfitDto;
+import com.inventory.analytics.rest.dto.response.ProfitByGroupDto;
 import com.inventory.product.domain.model.Purchase;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,9 +22,7 @@ import org.springframework.util.StringUtils;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 @Slf4j
 @Service
@@ -29,10 +30,13 @@ import java.util.Map;
 public class ProfitAnalyticsService {
 
   @Autowired
-  private ProfitAnalyticsHelper profitHelper;
+  private ProfitAnalyticsUtils profitUtils;
 
   @Autowired
-  private SalesAnalyticsHelper salesHelper;
+  private SalesAnalyticsUtils salesUtils;
+
+  @Autowired
+  private ProfitAnalyticsMapper profitAnalyticsMapper;
 
   /**
    * Get profit and margin analytics for a date range.
@@ -75,14 +79,10 @@ public class ProfitAnalyticsService {
       log.debug("Getting profit analytics for shop: {} from {} to {}", shopId, startDate, endDate);
 
       // Get all completed purchases in date range
-      List<Purchase> purchases = salesHelper.getCompletedPurchases(shopId, startDate, endDate);
-
-      // Build response
-      ProfitAnalyticsResponse response = new ProfitAnalyticsResponse();
+      List<Purchase> purchases = salesUtils.getCompletedPurchases(shopId, startDate, endDate);
 
       // Calculate product-level profits
-      List<ProductProfitDto> productProfits = profitHelper.calculateProductProfits(purchases);
-      response.setProductProfits(productProfits);
+      List<ProductProfitDto> productProfits = profitUtils.calculateProductProfits(purchases);
 
       // Calculate overall summary
       BigDecimal totalRevenue = productProfits.stream()
@@ -105,55 +105,62 @@ public class ProfitAnalyticsService {
           .mapToInt(ProductProfitDto::getTotalQuantitySold)
           .sum();
 
-      response.setTotalRevenue(totalRevenue);
-      response.setTotalCost(totalCost);
-      response.setTotalGrossProfit(totalGrossProfit);
-      response.setOverallMarginPercent(overallMarginPercent);
-      response.setTotalItemsSold(totalItemsSold);
-      response.setTotalPurchases(purchases.size());
-
       // Sales by group
+      List<ProfitByGroupDto> profitByProduct;
+      List<ProfitByGroupDto> profitByLotId;
+      List<ProfitByGroupDto> profitByBusinessType;
       if (StringUtils.hasText(groupBy)) {
         switch (groupBy.toLowerCase()) {
           case "product":
-            response.setProfitByProduct(profitHelper.calculateProfitByProduct(purchases));
+            profitByProduct = profitUtils.calculateProfitByProduct(purchases);
+            profitByLotId = null;
+            profitByBusinessType = null;
             break;
           case "lotid":
           case "lot":
-            response.setProfitByLotId(profitHelper.calculateProfitByLotId(purchases));
+            profitByProduct = null;
+            profitByLotId = profitUtils.calculateProfitByLotId(purchases);
+            profitByBusinessType = null;
             break;
           case "businesstype":
           case "business":
-            response.setProfitByBusinessType(profitHelper.calculateProfitByBusinessType(purchases));
+            profitByProduct = null;
+            profitByLotId = null;
+            profitByBusinessType = profitUtils.calculateProfitByBusinessType(purchases);
             break;
+          default:
+            profitByProduct = profitUtils.calculateProfitByProduct(purchases);
+            profitByLotId = profitUtils.calculateProfitByLotId(purchases);
+            profitByBusinessType = profitUtils.calculateProfitByBusinessType(purchases);
         }
       } else {
-        // Return all groupings
-        response.setProfitByProduct(profitHelper.calculateProfitByProduct(purchases));
-        response.setProfitByLotId(profitHelper.calculateProfitByLotId(purchases));
-        response.setProfitByBusinessType(profitHelper.calculateProfitByBusinessType(purchases));
+        profitByProduct = profitUtils.calculateProfitByProduct(purchases);
+        profitByLotId = profitUtils.calculateProfitByLotId(purchases);
+        profitByBusinessType = profitUtils.calculateProfitByBusinessType(purchases);
       }
 
-      // Discount impact
-      response.setDiscountImpact(profitHelper.calculateDiscountImpact(purchases));
+      ProfitAnalyticsResponseParams params = ProfitAnalyticsResponseParams.builder()
+          .productProfits(productProfits)
+          .profitByProduct(profitByProduct)
+          .profitByLotId(profitByLotId)
+          .profitByBusinessType(profitByBusinessType)
+          .discountImpact(profitUtils.calculateDiscountImpact(purchases))
+          .costPriceTrends(StringUtils.hasText(timeSeriesGranularity)
+              ? profitUtils.calculateCostPriceTrends(purchases, startDate, endDate, timeSeriesGranularity)
+              : null)
+          .lowMarginProducts(profitUtils.getLowMarginProducts(productProfits, lowMarginThreshold))
+          .totalRevenue(totalRevenue)
+          .totalCost(totalCost)
+          .totalGrossProfit(totalGrossProfit)
+          .overallMarginPercent(overallMarginPercent)
+          .totalItemsSold(totalItemsSold)
+          .totalPurchases(purchases.size())
+          .startDate(startDate)
+          .endDate(endDate)
+          .lowMarginThreshold(lowMarginThreshold)
+          .build();
 
-      // Cost vs selling price trends
-      if (StringUtils.hasText(timeSeriesGranularity)) {
-        response.setCostPriceTrends(profitHelper.calculateCostPriceTrends(purchases, startDate, endDate, timeSeriesGranularity));
-      }
-
-      // Low margin products
-      response.setLowMarginProducts(profitHelper.getLowMarginProducts(productProfits, lowMarginThreshold));
-
-      // Metadata
-      Map<String, Object> meta = new HashMap<>();
-      meta.put("startDate", startDate);
-      meta.put("endDate", endDate);
-      meta.put("totalPurchases", purchases.size());
-      meta.put("lowMarginThreshold", lowMarginThreshold);
-      response.setMeta(meta);
-
-      return response;
+      return profitAnalyticsMapper.toResponse(params);
 
     } catch (ValidationException e) {
       log.warn("Validation error in profit analytics: {}", e.getMessage());

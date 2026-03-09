@@ -3,7 +3,7 @@ package com.inventory.analytics.rest.controller;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.common.exception.AuthenticationException;
-import com.inventory.analytics.rest.dto.sales.SalesAnalyticsResponse;
+import com.inventory.analytics.rest.dto.response.SalesAnalyticsResponse;
 import com.inventory.analytics.service.SalesAnalyticsService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;

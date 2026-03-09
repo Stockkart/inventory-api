@@ -4,8 +4,10 @@ import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.AuthenticationException;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ValidationException;
-import com.inventory.analytics.rest.dto.sales.*;
-import com.inventory.analytics.helper.SalesAnalyticsHelper;
+import com.inventory.analytics.mapper.SalesAnalyticsMapper;
+import com.inventory.analytics.mapper.SalesAnalyticsResponseParams;
+import com.inventory.analytics.rest.dto.response.*;
+import com.inventory.analytics.utils.SalesAnalyticsUtils;
 import com.inventory.product.domain.model.Purchase;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,9 +18,7 @@ import org.springframework.util.StringUtils;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 @Slf4j
 @Service
@@ -26,7 +26,10 @@ import java.util.Map;
 public class SalesAnalyticsService {
 
   @Autowired
-  private SalesAnalyticsHelper analyticsHelper;
+  private SalesAnalyticsUtils salesUtils;
+
+  @Autowired
+  private SalesAnalyticsMapper salesAnalyticsMapper;
 
   /**
    * Get sales analytics for a date range.
@@ -74,61 +77,69 @@ public class SalesAnalyticsService {
       log.debug("Getting sales analytics for shop: {} from {} to {}", shopId, startDate, endDate);
 
       // Get all completed purchases in date range
-      List<Purchase> purchases = analyticsHelper.getCompletedPurchases(shopId, startDate, endDate);
+      List<Purchase> purchases = salesUtils.getCompletedPurchases(shopId, startDate, endDate);
 
-      // Build response
-      SalesAnalyticsResponse response = new SalesAnalyticsResponse();
-
-      // Revenue summary
-      response.setSummary(analyticsHelper.calculateRevenueSummary(purchases));
-
-      // Top products
-      response.setTopProducts(analyticsHelper.getTopProducts(purchases, topN));
-
-      // Sales by group
+      // Build response data
+      RevenueSummaryDto summary = salesUtils.calculateRevenueSummary(purchases);
+      List<TopProductDto> topProducts = salesUtils.getTopProducts(purchases, topN);
+      List<SalesByGroupDto> salesByProduct;
+      List<SalesByGroupDto> salesByLotId;
+      List<SalesByGroupDto> salesByCompany;
       if (StringUtils.hasText(groupBy)) {
         switch (groupBy.toLowerCase()) {
           case "product":
-            response.setSalesByProduct(analyticsHelper.getSalesByProduct(purchases));
+            salesByProduct = salesUtils.getSalesByProduct(purchases);
+            salesByLotId = null;
+            salesByCompany = null;
             break;
           case "lotid":
           case "lot":
-            response.setSalesByLotId(analyticsHelper.getSalesByLotId(purchases));
+            salesByProduct = null;
+            salesByLotId = salesUtils.getSalesByLotId(purchases);
+            salesByCompany = null;
             break;
           case "company":
           case "companyname":
-            response.setSalesByCompany(analyticsHelper.getSalesByCompany(purchases));
+            salesByProduct = null;
+            salesByLotId = null;
+            salesByCompany = salesUtils.getSalesByCompany(purchases);
             break;
+          default:
+            salesByProduct = salesUtils.getSalesByProduct(purchases);
+            salesByLotId = salesUtils.getSalesByLotId(purchases);
+            salesByCompany = salesUtils.getSalesByCompany(purchases);
         }
       } else {
-        // Return all groupings
-        response.setSalesByProduct(analyticsHelper.getSalesByProduct(purchases));
-        response.setSalesByLotId(analyticsHelper.getSalesByLotId(purchases));
-        response.setSalesByCompany(analyticsHelper.getSalesByCompany(purchases));
+        salesByProduct = salesUtils.getSalesByProduct(purchases);
+        salesByLotId = salesUtils.getSalesByLotId(purchases);
+        salesByCompany = salesUtils.getSalesByCompany(purchases);
       }
-
-      // Time series
-      if (StringUtils.hasText(timeSeriesGranularity)) {
-        response.setTimeSeries(analyticsHelper.getTimeSeriesData(purchases, startDate, endDate, timeSeriesGranularity));
-      }
-
-      // Period comparison
+      List<TimeSeriesDataDto> timeSeries = StringUtils.hasText(timeSeriesGranularity)
+          ? salesUtils.getTimeSeriesData(purchases, startDate, endDate, timeSeriesGranularity)
+          : null;
+      PeriodComparisonDto periodComparison = null;
       if (compareWithPrevious) {
         long periodDays = ChronoUnit.DAYS.between(startDate, endDate);
         Instant previousStartDate = startDate.minus(periodDays, ChronoUnit.DAYS);
         Instant previousEndDate = startDate;
-        List<Purchase> previousPurchases = analyticsHelper.getCompletedPurchases(shopId, previousStartDate, previousEndDate);
-        response.setPeriodComparison(analyticsHelper.calculatePeriodComparison(purchases, previousPurchases));
+        List<Purchase> previousPurchases = salesUtils.getCompletedPurchases(shopId, previousStartDate, previousEndDate);
+        periodComparison = salesUtils.calculatePeriodComparison(purchases, previousPurchases);
       }
 
-      // Metadata
-      Map<String, Object> meta = new HashMap<>();
-      meta.put("startDate", startDate);
-      meta.put("endDate", endDate);
-      meta.put("totalPurchases", purchases.size());
-      response.setMeta(meta);
+      SalesAnalyticsResponseParams params = SalesAnalyticsResponseParams.builder()
+          .summary(summary)
+          .topProducts(topProducts)
+          .salesByProduct(salesByProduct)
+          .salesByLotId(salesByLotId)
+          .salesByCompany(salesByCompany)
+          .timeSeries(timeSeries)
+          .periodComparison(periodComparison)
+          .startDate(startDate)
+          .endDate(endDate)
+          .totalPurchases(purchases.size())
+          .build();
 
-      return response;
+      return salesAnalyticsMapper.toResponse(params);
 
     } catch (ValidationException e) {
       log.warn("Validation error in sales analytics: {}", e.getMessage());
