@@ -29,6 +29,13 @@ public interface ParsedInventoryMapper {
   @Mapping(target = "totalItems", expression = "java(result.getParsedItems() != null ? result.getParsedItems().size() : 0)")
   ParsedInventoryListResponse toParsedInventoryListResponse(ParsedInventoryResult result);
 
+  default ParsedInventoryListResponse toParsedInventoryListResponse(List<CreateInventoryItemRequest> items) {
+    ParsedInventoryListResponse response = new ParsedInventoryListResponse();
+    response.setItems(items);
+    response.setTotalItems(items != null ? items.size() : 0);
+    return response;
+  }
+
   default ParsedInventoryResult toParsedInventoryResult(
       String uploadTokenId,
       String userId,

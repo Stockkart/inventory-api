@@ -7,6 +7,7 @@ import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.enums.PurchaseStatus;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.PurchaseRepository;
+import com.inventory.product.mapper.DashboardMapper;
 import com.inventory.product.rest.dto.response.DashboardResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,6 +36,9 @@ public class DashboardService {
 
   @Autowired
   private PurchaseRepository purchaseRepository;
+
+  @Autowired
+  private DashboardMapper dashboardMapper;
 
   private static final int LOW_STOCK_THRESHOLD = 10; // Default threshold for low stock
 
@@ -68,12 +72,8 @@ public class DashboardService {
       // Calculate sales trend
       DashboardResponse.SalesTrend salesTrend = calculateSalesTrend(completedPurchases);
 
-      DashboardResponse response = new DashboardResponse();
-      response.setKeyMetrics(keyMetrics);
-      response.setLowStockItems(lowStockItems);
-      response.setRevenueBreakdown(revenueBreakdown);
-      response.setProductInsights(productInsights);
-      response.setSalesTrend(salesTrend);
+      DashboardResponse response = dashboardMapper.toDashboardResponse(
+          keyMetrics, lowStockItems, revenueBreakdown, productInsights, salesTrend);
 
       log.debug("Successfully fetched dashboard data for shop: {}", shopId);
       return response;

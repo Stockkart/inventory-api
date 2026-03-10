@@ -65,14 +65,7 @@ public class QRUploadService {
     String token = uploadTokenUtil.generateToken();
     Instant expiresAt = uploadTokenUtil.calculateExpiryTime();
 
-    UploadToken uploadToken = new UploadToken();
-    uploadToken.setToken(token);
-    uploadToken.setUserId(userId);
-    uploadToken.setShopId(shopId);
-    uploadToken.setExpiresAt(expiresAt);
-    uploadToken.setCreatedAt(Instant.now());
-    uploadToken.setStatus(UploadToken.UploadStatus.PENDING);
-
+    UploadToken uploadToken = uploadTokenMapper.toEntity(token, userId, shopId, expiresAt);
     uploadToken = uploadTokenRepository.save(uploadToken);
     String uploadUrl = uploadTokenUtil.generateUploadUrl(token);
 
@@ -94,17 +87,10 @@ public class QRUploadService {
 
     UploadToken uploadToken = uploadTokenUtil.getTokenWithoutValidation(token, uploadTokenRepository);
 
-    TokenValidationResponse response = new TokenValidationResponse();
-    response.setToken(token);
-
     if (uploadToken == null) {
-      response.setStatus(UploadToken.UploadStatus.EXPIRED);
-      response.setExpiresAt(null);
-      response.setErrorMessage("Invalid upload token");
-      return response;
+      return uploadTokenMapper.toInvalidTokenResponse(token, "Invalid upload token");
     }
 
-    // Check if expired and update status if needed
     if (uploadTokenUtil.isExpired(uploadToken.getExpiresAt())) {
       if (uploadToken.getStatus() != UploadToken.UploadStatus.EXPIRED) {
         updateTokenStatus(token, UploadToken.UploadStatus.EXPIRED);
@@ -112,18 +98,10 @@ public class QRUploadService {
       }
     }
 
-    // Map to response
-    response = uploadTokenMapper.toTokenValidationResponse(uploadToken);
-
-    // Set error message based on status
-    if (uploadTokenUtil.isExpired(uploadToken.getExpiresAt())) {
-      response.setErrorMessage("Upload token has expired");
-    } else if (uploadToken.getStatus() == UploadToken.UploadStatus.FAILED) {
-      response.setErrorMessage("Upload or processing failed");
-    } else {
-      response.setErrorMessage(null);
-    }
-
+    TokenValidationResponse response = uploadTokenMapper.toTokenValidationResponse(uploadToken);
+    String errorMsg = uploadTokenUtil.isExpired(uploadToken.getExpiresAt()) ? "Upload token has expired"
+        : uploadToken.getStatus() == UploadToken.UploadStatus.FAILED ? "Upload or processing failed" : null;
+    uploadTokenMapper.setErrorMessage(response, errorMsg);
     return response;
   }
 
@@ -248,9 +226,7 @@ public class QRUploadService {
    */
   @Transactional(readOnly = true)
   public UploadToken validateAndGetToken(String token) {
-    if (token == null || token.trim().isEmpty()) {
-      throw new ValidationException("Upload token is required");
-    }
+    uploadTokenValidator.validateToken(token);
 
     UploadToken uploadToken = uploadTokenRepository.findByToken(token)
         .orElseThrow(() -> new ValidationException("Invalid upload token"));

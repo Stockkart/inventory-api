@@ -14,6 +14,7 @@ import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.PurchaseRepository;
 import com.inventory.product.domain.repository.RefundRepository;
 import com.inventory.product.rest.dto.request.RefundRequest;
+import com.inventory.product.mapper.RefundMapper;
 import com.inventory.product.rest.dto.response.RefundListResponse;
 import com.inventory.product.rest.dto.response.RefundResponse;
 import com.inventory.product.rest.dto.response.RefundSummaryDto;
@@ -59,6 +60,9 @@ public class RefundService {
 
   @Autowired
   private CheckoutValidator checkoutValidator;
+
+  @Autowired
+  private RefundMapper refundMapper;
 
   @Autowired
   private CustomerService customerService;
@@ -209,14 +213,9 @@ public class RefundService {
 
       log.info("Refund saved to database with ID: {} for purchase ID: {}", refund.getId(), request.getPurchaseId());
 
-      // Build response
-      RefundResponse response = new RefundResponse();
-      response.setRefundId(refund.getId());
-      response.setPurchaseId(request.getPurchaseId());
-      response.setRefundedItems(refundedItems);
-      response.setRefundAmount(totalRefundAmount.setScale(2, RoundingMode.HALF_UP));
-      response.setTotalItemsRefunded(refundedItems.size());
-      response.setCreatedAt(refund.getCreatedAt());
+      BigDecimal roundedAmount = totalRefundAmount.setScale(2, RoundingMode.HALF_UP);
+      RefundResponse response = refundMapper.toRefundResponse(
+          refund.getId(), request.getPurchaseId(), refundedItems, roundedAmount, refund.getCreatedAt());
 
       log.info("Refund processed successfully for purchase ID: {}. Total refund amount: {}, Items refunded: {}",
           request.getPurchaseId(), totalRefundAmount, refundedItems.size());
@@ -404,14 +403,7 @@ public class RefundService {
         purchaseIds = findPurchaseIdsBySearchCriteria(shopId, invoiceNo, customerPhone, customerId, customerEmail);
 
         if (purchaseIds.isEmpty()) {
-          // No matching purchases found, return empty result
-          RefundListResponse response = new RefundListResponse();
-          response.setRefunds(new ArrayList<>());
-          response.setPage(pageNumber + 1);
-          response.setLimit(pageSize);
-          response.setTotal(0);
-          response.setTotalPages(0);
-          return response;
+          return refundMapper.toRefundListResponse(List.of(), pageNumber + 1, pageSize, 0, 0);
         }
 
         // Find refunds for matching purchase IDs
@@ -421,18 +413,13 @@ public class RefundService {
         refundPage = refundRepository.findByShopId(shopId, pageable);
       }
 
-      // Convert to DTOs
       List<RefundSummaryDto> refundDtos = refundPage.getContent().stream()
           .map(this::toRefundSummaryDto)
           .collect(Collectors.toList());
 
-      // Build response
-      RefundListResponse response = new RefundListResponse();
-      response.setRefunds(refundDtos);
-      response.setPage(pageNumber + 1); // Convert back to 1-based for API response
-      response.setLimit(pageSize);
-      response.setTotal(refundPage.getTotalElements());
-      response.setTotalPages(refundPage.getTotalPages());
+      RefundListResponse response = refundMapper.toRefundListResponse(
+          refundDtos, pageNumber + 1, pageSize,
+          refundPage.getTotalElements(), refundPage.getTotalPages());
 
       log.info("Retrieved {} refunds (page {} of {}) for shop: {}",
           refundDtos.size(), pageNumber + 1, refundPage.getTotalPages(), shopId);

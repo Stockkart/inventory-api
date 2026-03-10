@@ -4,6 +4,7 @@ import com.inventory.notifications.rest.dto.request.CreateReminderForInventoryRe
 import com.inventory.notifications.rest.dto.response.InventoryLowEventDto;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.UnitConversion;
+import com.inventory.product.rest.dto.request.CreateInventoryItemRequest;
 import com.inventory.product.rest.dto.request.CreateInventoryRequest;
 import com.inventory.product.rest.dto.response.*;
 import org.mapstruct.Mapper;
@@ -18,6 +19,22 @@ public interface InventoryMapper {
 
   // lotId, receivedCount, currentCount set in service
   // Pricing: @Transient - set from request for create (AOP persistOnSave writes to Pricing); on read AOP enriches
+  @Mapping(target = "vendorId", ignore = true)
+  @Mapping(target = "lotId", ignore = true)
+  @Mapping(target = "vendorShopId", ignore = true)
+  @Mapping(target = "onCredit", ignore = true)
+  CreateInventoryRequest toCreateInventoryRequest(CreateInventoryItemRequest source);
+
+  default CreateInventoryRequest toCreateInventoryRequest(CreateInventoryItemRequest source,
+      String vendorId, String lotId, String vendorShopId, Boolean onCredit) {
+    CreateInventoryRequest r = toCreateInventoryRequest(source);
+    r.setVendorId(vendorId);
+    r.setLotId(lotId);
+    r.setVendorShopId(vendorShopId);
+    r.setOnCredit(onCredit);
+    return r;
+  }
+
   @Mapping(target = "lotId", ignore = true)
   @Mapping(target = "receivedCount", ignore = true)
   @Mapping(target = "receivedBaseCount", ignore = true)
@@ -56,6 +73,23 @@ public interface InventoryMapper {
     InventoryListResponse response = new InventoryListResponse();
     response.setData(data);
     response.setMeta(null);
+    return response;
+  }
+
+  default LotListResponse toLotListResponse(List<LotSummaryDto> data, PageMeta page) {
+    LotListResponse response = new LotListResponse();
+    response.setData(data);
+    response.setMeta(null);
+    response.setPage(page);
+    return response;
+  }
+
+  default BulkCreateInventoryResponse toBulkCreateInventoryResponse(
+      List<InventoryReceiptResponse> items, int failedCount) {
+    BulkCreateInventoryResponse response = new BulkCreateInventoryResponse();
+    response.setItems(items);
+    response.setTotalCreated(items != null ? items.size() : 0);
+    response.setTotalFailed(failedCount);
     return response;
   }
 

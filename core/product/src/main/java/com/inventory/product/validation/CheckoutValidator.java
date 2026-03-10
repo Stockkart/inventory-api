@@ -1,8 +1,12 @@
 package com.inventory.product.validation;
 
 import com.inventory.common.exception.ValidationException;
+import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.enums.PurchaseStatus;
 import com.inventory.product.domain.model.enums.SchemeType;
+import com.inventory.product.domain.model.Purchase;
+import com.inventory.product.domain.model.PurchaseItem;
+import com.inventory.product.utils.CheckoutUtils;
 import com.inventory.product.rest.dto.request.AddToCartRequest;
 import com.inventory.product.rest.dto.request.CheckoutRequest;
 import com.inventory.product.rest.dto.request.UpdatePurchaseStatusRequest;
@@ -11,6 +15,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 @Component
 public class CheckoutValidator {
@@ -157,4 +164,33 @@ public class CheckoutValidator {
             currentStatus, requestedStatus));
   }
 
+  /**
+   * Resolve and validate that all cart items use a consistent billing mode. Cannot mix REGULAR and BASIC.
+   */
+  public BillingMode resolveAndValidateCartBillingMode(Purchase existingCart, List<PurchaseItem> newItems) {
+    Set<BillingMode> observed = new HashSet<>();
+    BillingMode existingCartMode = existingCart != null ? existingCart.getBillingMode() : null;
+    List<PurchaseItem> existingItems = existingCart != null && existingCart.getItems() != null
+        ? existingCart.getItems()
+        : List.of();
+    boolean hasExistingItems = !existingItems.isEmpty();
+    if (hasExistingItems) {
+      observed.add(CheckoutUtils.normalizeBillingMode(existingCartMode));
+      for (PurchaseItem item : existingItems) {
+        observed.add(CheckoutUtils.normalizeBillingMode(item.getBillingMode()));
+      }
+    }
+    if (newItems != null) {
+      for (PurchaseItem item : newItems) {
+        observed.add(CheckoutUtils.normalizeBillingMode(item.getBillingMode()));
+      }
+    }
+    if (observed.size() > 1) {
+      throw new ValidationException("Cannot mix REGULAR and BASIC inventory items in a single cart");
+    }
+    if (observed.isEmpty()) {
+      return BillingMode.REGULAR;
+    }
+    return observed.iterator().next();
+  }
 }

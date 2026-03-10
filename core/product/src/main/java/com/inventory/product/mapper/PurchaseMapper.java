@@ -12,6 +12,7 @@ import com.inventory.product.rest.dto.request.AddToCartRequest;
 import com.inventory.product.rest.dto.request.CheckoutRequest;
 import com.inventory.product.rest.dto.response.AddToCartResponse;
 import com.inventory.product.rest.dto.response.CheckoutResponse;
+import com.inventory.product.rest.dto.response.PurchaseListResponse;
 import com.inventory.product.rest.dto.response.PurchaseSummaryDto;
 import com.inventory.product.rest.dto.response.SaleStatusResponse;
 import com.inventory.user.service.CustomerService;
@@ -25,6 +26,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.util.Collections;
 import java.util.List;
 
 @Mapper(componentModel = "spring", imports = {Instant.class, BigDecimal.class, PurchaseStatus.class}, unmappedTargetPolicy = ReportingPolicy.IGNORE)
@@ -616,6 +618,20 @@ public abstract class PurchaseMapper {
       // If only customerName is stored (no customerId), use it directly
       dto.setCustomerName(purchase.getCustomerName());
     }
+  }
+
+  /**
+   * Build paginated purchase list response. Use empty list for empty result.
+   */
+  public PurchaseListResponse toPurchaseListResponse(List<PurchaseSummaryDto> purchases,
+      int page, int limit, long total, int totalPages) {
+    PurchaseListResponse response = new PurchaseListResponse();
+    response.setPurchases(purchases != null ? purchases : Collections.emptyList());
+    response.setPage(page);
+    response.setLimit(limit);
+    response.setTotal(total);
+    response.setTotalPages(totalPages);
+    return response;
   }
 }
 
