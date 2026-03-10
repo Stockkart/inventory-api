@@ -37,6 +37,12 @@ public class ReminderValidator {
     }
   }
 
+  public void validateShopId(String shopId) {
+    if (!StringUtils.hasText(shopId)) {
+      throw new ValidationException("Shop ID is required");
+    }
+  }
+
   public void validateStatus(String id, String status) {
     if (!StringUtils.hasText(id)) {
       throw new ValidationException("Reminder ID is required");

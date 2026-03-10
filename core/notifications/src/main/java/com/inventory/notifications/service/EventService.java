@@ -1,15 +1,17 @@
 package com.inventory.notifications.service;
 
 import com.inventory.notifications.domain.model.Event;
-import com.inventory.notifications.domain.model.EventType;
-import com.inventory.notifications.domain.model.EventStatus;
 import com.inventory.notifications.domain.model.Reminder;
 import com.inventory.notifications.domain.model.ReminderStatus;
 import com.inventory.notifications.domain.repository.EventRepository;
 import com.inventory.notifications.domain.repository.ReminderRepository;
 import com.inventory.notifications.rest.dto.InventoryLowEventDto;
 import com.inventory.notifications.rest.dto.ReminderDetailListResponse;
-import com.inventory.notifications.rest.mapper.ReminderMapper;
+import com.inventory.notifications.mapper.EventMapper;
+import com.inventory.notifications.mapper.ReminderMapper;
+import com.inventory.notifications.utils.EventUtils;
+import com.inventory.notifications.utils.SseEmitterUtils;
+import com.inventory.notifications.utils.constants.EventConstants;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,12 +45,11 @@ public class EventService {
   @Autowired
   private ReminderMapper reminderMapper;
 
+  @Autowired
+  private EventMapper eventMapper;
+
   // support multiple tabs/devices per shop
   private final Map<String, List<SseEmitter>> emittersByShop = new ConcurrentHashMap<>();
-
-  private static final int MAX_RETRIES = 3;
-  private static final long BASE_RETRY_SECONDS = 10L; // base for exponential backoff
-  private static final long MAX_BACKOFF_SECONDS = Duration.ofDays(1).getSeconds();
 
   // ---------------------------
   // Subscription / replay
@@ -184,17 +185,8 @@ public class EventService {
       return;
     }
 
-    // 2) Build and persist event (event references the reminder which is now marked SENT)
-    Event event = Event.builder()
-      .reminderId(reminder.getId())
-      .shopId(reminder.getShopId())
-      .type(EventType.valueOf(reminder.getType().name()))
-      .statusAtTrigger(EventStatus.valueOf(reminder.getStatus().name()))
-      .triggeredAt(now)
-      .notes(reminder.getNotes())
-      .delivered(false)
-      .retryCount(0)
-      .build();
+    // 2) Build and persist event via mapper
+    Event event = eventMapper.toEventFromReminderDue(reminder, now);
 
     Event saved = null;
     try {
@@ -242,8 +234,7 @@ public class EventService {
     // failed delivery -> increment retry metadata with exponential backoff
     try {
       int nextRetryCount = event.getRetryCount() + 1;
-      long backoffSeconds = (long) (BASE_RETRY_SECONDS * Math.pow(2, Math.max(0, nextRetryCount - 1)));
-      if (backoffSeconds > MAX_BACKOFF_SECONDS) backoffSeconds = MAX_BACKOFF_SECONDS;
+      long backoffSeconds = EventUtils.computeBackoffSeconds(nextRetryCount);
 
       event.setRetryCount(nextRetryCount);
       event.setLastAttemptAt(Instant.now());
@@ -283,8 +274,7 @@ public class EventService {
         deliveredToAtLeastOne = true;
       } catch (IOException ex) {
         log.warn("Failed to send SSE to shopId={} emitter: {}", shopId, ex.getMessage());
-        // emitter appears dead — clean up
-        emitter.complete();
+        SseEmitterUtils.safeComplete(emitter);
         removeEmitter(shopId, emitter);
       } catch (Exception ex) {
         log.error("Unexpected error sending SSE event {}: {}", event.getId(), ex.getMessage(), ex);
@@ -297,7 +287,7 @@ public class EventService {
   /**
    * Single scheduler that:
    * 1) Finds due reminders (PENDING and reminderAt <= now), creates events and attempts delivery.
-   * 2) Finds existing undelivered events whose nextRetryAt <= now and retryCount < MAX_RETRIES and retries them.
+   * 2) Finds existing undelivered events whose nextRetryAt <= now and retryCount < max retries and retries them.
    * <p>
    * Runs every 'reminders.dispatch-interval-ms' (configurable).
    */
@@ -344,7 +334,7 @@ public class EventService {
     List<Event> toRetry;
     try {
       toRetry = eventRepository.findByDeliveredFalseAndRetryCountLessThanAndNextRetryAtLessThanEqualOrderByTriggeredAtAsc(
-        MAX_RETRIES, now);
+        EventConstants.MAX_RETRIES, now);
     } catch (Exception e) {
       log.error("Failed fetching events for retry at {}: {}", now, e.getMessage(), e);
       toRetry = Collections.emptyList();
@@ -390,10 +380,10 @@ public class EventService {
             log.error("Failed marking reminder {} SENT after retry-delivery: {}", reminder.getId(), saveEx.getMessage(), saveEx);
           }
         } else {
-          if (event.getRetryCount() >= MAX_RETRIES) {
+          if (event.getRetryCount() >= EventConstants.MAX_RETRIES) {
             log.warn("Event {} exhausted retries ({}). Needs manual handling.", event.getId(), event.getRetryCount());
             try {
-              event.setNextRetryAt(Instant.now().plus(Duration.ofDays(30)));
+              event.setNextRetryAt(Instant.now().plus(Duration.ofDays(EventConstants.EXHAUSTED_RETRY_DAYS)));
               eventRepository.save(event);
             } catch (Exception saveEx) {
               log.error("Failed updating exhausted event {}: {}", event.getId(), saveEx.getMessage(), saveEx);
@@ -406,20 +396,8 @@ public class EventService {
     }
   }
 
-  /* =========================================================
-     INVENTORY LOW EVENT
-  ========================================================= */
   public void recordAndBroadcastInventoryLow(InventoryLowEventDto dto) {
-
-    Event event = Event.builder()
-      .shopId(dto.getShopId())
-      .type(EventType.INVENTORY_LOW)
-      .triggeredAt(Instant.now())
-      .payloadJson(dto)
-      .delivered(false)
-      .retryCount(0)
-      .build();
-
+    Event event = eventMapper.toEventFromInventoryLow(dto);
     Event saved = eventRepository.save(event);
 
     broadcastInventoryLow(saved, dto);
@@ -444,22 +422,14 @@ public class EventService {
         );
 
       } catch (IOException ex) {
-
         log.warn("Emitter dead for shop {} — removing", event.getShopId());
-        safeComplete(emitter);
+        SseEmitterUtils.safeComplete(emitter);
         removeEmitter(event.getShopId(), emitter);
-
       } catch (Exception ex) {
-
         log.error("Unexpected SSE error", ex);
-        safeComplete(emitter);
+        SseEmitterUtils.safeComplete(emitter);
         removeEmitter(event.getShopId(), emitter);
       }
     }
-  }
-  private void safeComplete(SseEmitter emitter) {
-    try {
-      emitter.complete();
-    } catch (IllegalStateException ignore) {}
   }
 }

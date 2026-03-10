@@ -1,14 +1,12 @@
 package com.inventory.notifications.rest.controller;
 
-import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.dto.response.ApiResponse;
-import com.inventory.common.exception.AuthenticationException;
 import com.inventory.notifications.rest.dto.*;
 import com.inventory.notifications.service.ReminderService;
+import com.inventory.notifications.validation.ReminderValidator;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
-import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -17,6 +15,9 @@ public class ReminderController {
 
   @Autowired
   private ReminderService reminderService;
+
+  @Autowired
+  private ReminderValidator reminderValidator;
 
   // LIST by shop
   @GetMapping
@@ -28,11 +29,7 @@ public class ReminderController {
     // Get shopId from request attributes (set by AuthenticationInterceptor)
     String shopId = (String) httpRequest.getAttribute("shopId");
 
-    if (!StringUtils.hasText(shopId)) {
-      throw new AuthenticationException(
-        ErrorCode.UNAUTHORIZED,
-        "Unauthorized access to shop reminders");
-    }
+    reminderValidator.validateShopId(shopId);
     return ResponseEntity.ok(ApiResponse.success(reminderService.list(shopId, page, size)));
   }
 
@@ -46,11 +43,7 @@ public class ReminderController {
     // Get shopId from request attributes (set by AuthenticationInterceptor)
     String shopId = (String) httpRequest.getAttribute("shopId");
 
-    if (!StringUtils.hasText(shopId)) {
-      throw new AuthenticationException(
-        ErrorCode.UNAUTHORIZED,
-        "Unauthorized access to shop reminders");
-    }
+    reminderValidator.validateShopId(shopId);
     return ResponseEntity.ok(ApiResponse.success(reminderService.detailList(shopId, page, size)));
   }
 
@@ -76,11 +69,7 @@ public class ReminderController {
     // Get shopId from request attributes (set by AuthenticationInterceptor)
     String shopId = (String) httpRequest.getAttribute("shopId");
 
-    if (!StringUtils.hasText(shopId)) {
-      throw new AuthenticationException(
-        ErrorCode.UNAUTHORIZED,
-        "Unauthorized access to shop reminders");
-    }
+    reminderValidator.validateShopId(shopId);
 
     // Set shopId from interceptor to ensure user can only create reminders for their shop
     request.setShopId(shopId);

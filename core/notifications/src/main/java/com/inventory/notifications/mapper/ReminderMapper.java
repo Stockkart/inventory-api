@@ -1,4 +1,4 @@
-package com.inventory.notifications.rest.mapper;
+package com.inventory.notifications.mapper;
 
 import com.inventory.notifications.domain.model.Reminder;
 import com.inventory.notifications.domain.model.ReminderType;
@@ -25,40 +25,28 @@ public interface ReminderMapper {
     if (reminders == null) {
       return null;
     }
-
     ReminderListResponse response = new ReminderListResponse();
-    response.setData(reminders.stream()
-      .map(this::toResponse)
-      .toList());
-
+    response.setData(reminders.stream().map(this::toResponse).toList());
     return response;
   }
 
   @Mapping(target = "inventory", source = "inventoryId")
   ReminderDetailListResponse toDetailResponse(Reminder reminder);
 
+  default PageMeta toPageMeta(Page<?> page) {
+    if (page == null) {
+      return null;
+    }
+    return new PageMeta(page.getNumber(), page.getSize(), page.getTotalElements(), page.getTotalPages());
+  }
+
   default ReminderDetailListWrapper toDetailListWrapper(Page<Reminder> page) {
     if (page == null) {
       return null;
     }
-
     ReminderDetailListWrapper wrapper = new ReminderDetailListWrapper();
-
-    // Map content
-    wrapper.setData(
-      page.getContent().stream()
-        .map(this::toDetailResponse)
-        .toList()
-    );
-
-    // Map Meta
-    wrapper.setMeta(new PageMeta(
-      page.getNumber(),
-      page.getSize(),
-      page.getTotalElements(),
-      page.getTotalPages()
-    ));
-
+    wrapper.setData(page.getContent().stream().map(this::toDetailResponse).toList());
+    wrapper.setMeta(toPageMeta(page));
     return wrapper;
   }
 
@@ -66,22 +54,9 @@ public interface ReminderMapper {
     if (page == null) {
       return null;
     }
-
     ReminderListResponse response = new ReminderListResponse();
-
-    response.setData(
-      page.getContent().stream()
-        .map(this::toResponse)
-        .toList()
-    );
-
-    response.setMeta(new PageMeta(
-      page.getNumber(),
-      page.getSize(),
-      page.getTotalElements(),
-      page.getTotalPages()
-    ));
-
+    response.setData(page.getContent().stream().map(this::toResponse).toList());
+    response.setMeta(toPageMeta(page));
     return response;
   }
 
@@ -130,4 +105,3 @@ public interface ReminderMapper {
   @Mapping(target = "createdAt", ignore = true)
   void updateReminder(@MappingTarget Reminder reminder, UpdateReminderRequest request);
 }
-
