@@ -6,13 +6,13 @@ import com.inventory.product.domain.model.ParsedInventoryResult;
 import com.inventory.product.domain.model.UploadToken;
 import com.inventory.product.domain.repository.ParsedInventoryResultRepository;
 import com.inventory.product.domain.repository.UploadTokenRepository;
-import com.inventory.product.rest.dto.inventory.ParsedInventoryListResponse;
-import com.inventory.product.rest.dto.upload.CreateUploadTokenResponse;
-import com.inventory.product.rest.dto.upload.TokenValidationResponse;
-import com.inventory.product.rest.dto.upload.UploadStatusResponse;
-import com.inventory.product.rest.mapper.UploadTokenMapper;
-import com.inventory.product.util.ParsedInventoryUtil;
-import com.inventory.product.util.UploadTokenUtil;
+import com.inventory.product.rest.dto.response.CreateUploadTokenResponse;
+import com.inventory.product.rest.dto.response.ParsedInventoryListResponse;
+import com.inventory.product.rest.dto.response.TokenValidationResponse;
+import com.inventory.product.rest.dto.response.UploadStatusResponse;
+import com.inventory.product.mapper.ParsedInventoryMapper;
+import com.inventory.product.mapper.UploadTokenMapper;
+import com.inventory.product.utils.UploadTokenUtil;
 import com.inventory.product.validation.UploadTokenValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,10 +45,10 @@ public class QRUploadService {
   private UploadTokenMapper uploadTokenMapper;
 
   @Autowired
-  private UploadTokenUtil uploadTokenUtil;
+  private ParsedInventoryMapper parsedInventoryMapper;
 
   @Autowired
-  private ParsedInventoryUtil parsedInventoryUtil;
+  private UploadTokenUtil uploadTokenUtil;
 
   /**
    * Create upload token for QR code pairing.
@@ -170,7 +170,7 @@ public class QRUploadService {
         ParsedInventoryListResponse parsedResult =
             inventoryService.parseInvoiceImageFromBytes(finalImageBytes);
 
-        ParsedInventoryResult result = parsedInventoryUtil.createParsedInventoryResult(
+        ParsedInventoryResult result = parsedInventoryMapper.toParsedInventoryResult(
             uploadToken.getId(),
             uploadToken.getUserId(),
             uploadToken.getShopId(),
@@ -226,8 +226,8 @@ public class QRUploadService {
     ParsedInventoryResult result = parsedInventoryResultRepository.findByUploadTokenId(uploadToken.getId())
         .orElseThrow(() -> new ResourceNotFoundException("Parsed inventory result not found"));
 
-    // Convert to response using util
-    ParsedInventoryListResponse response = parsedInventoryUtil.toResponse(result);
+    // Convert to response using mapper
+    ParsedInventoryListResponse response = parsedInventoryMapper.toParsedInventoryListResponse(result);
 
     // Delete parsed result after retrieval since it's no longer needed
     parsedInventoryResultRepository.delete(result);

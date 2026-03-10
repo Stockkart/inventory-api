@@ -1,11 +1,11 @@
 package com.inventory.product.rest.controller;
 
 import com.inventory.common.dto.response.ApiResponse;
-import com.inventory.product.rest.dto.sale.AddToCartRequest;
-import com.inventory.product.rest.dto.sale.AddToCartResponse;
-import com.inventory.product.rest.dto.sale.CheckoutResponse;
-import com.inventory.product.rest.dto.sale.PurchaseListResponse;
-import com.inventory.product.rest.dto.sale.UpdatePurchaseStatusRequest;
+import com.inventory.product.rest.dto.request.AddToCartRequest;
+import com.inventory.product.rest.dto.request.UpdatePurchaseStatusRequest;
+import com.inventory.product.rest.dto.response.AddToCartResponse;
+import com.inventory.product.rest.dto.response.CheckoutResponse;
+import com.inventory.product.rest.dto.response.PurchaseListResponse;
 import com.inventory.product.service.CheckoutService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;

@@ -1,10 +1,10 @@
 package com.inventory.product.rest.controller;
 
 import com.inventory.common.dto.response.ApiResponse;
-import com.inventory.product.rest.dto.shop.RegisterShopRequest;
-import com.inventory.product.rest.dto.shop.ShopApprovalRequest;
-import com.inventory.product.rest.dto.shop.ShopApprovalResponse;
-import com.inventory.product.rest.dto.shop.ShopRegistrationResponse;
+import com.inventory.product.rest.dto.request.RegisterShopRequest;
+import com.inventory.product.rest.dto.request.ShopApprovalRequest;
+import com.inventory.product.rest.dto.response.ShopApprovalResponse;
+import com.inventory.product.rest.dto.response.ShopRegistrationResponse;
 import com.inventory.product.service.ShopService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;

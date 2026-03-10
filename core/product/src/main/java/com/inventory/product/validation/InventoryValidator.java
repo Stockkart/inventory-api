@@ -1,12 +1,12 @@
 package com.inventory.product.validation;
 
 import com.inventory.common.exception.ValidationException;
-import com.inventory.product.domain.model.BillingMode;
-import com.inventory.product.domain.model.ItemType;
-import com.inventory.product.domain.model.SchemeType;
+import com.inventory.product.domain.model.enums.BillingMode;
+import com.inventory.product.domain.model.enums.ItemType;
+import com.inventory.product.domain.model.enums.SchemeType;
 import com.inventory.product.domain.model.UnitConversion;
-import com.inventory.product.rest.dto.inventory.CreateInventoryRequest;
-import com.inventory.product.rest.dto.inventory.UpdateInventoryRequest;
+import com.inventory.product.rest.dto.request.CreateInventoryRequest;
+import com.inventory.product.rest.dto.request.UpdateInventoryRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 

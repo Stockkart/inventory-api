@@ -1,11 +1,12 @@
 package com.inventory.product.validation;
 
 import com.inventory.common.exception.ValidationException;
-import com.inventory.product.domain.model.PurchaseStatus;
-import com.inventory.product.domain.model.SchemeType;
-import com.inventory.product.rest.dto.sale.AddToCartRequest;
-import com.inventory.product.rest.dto.sale.CheckoutRequest;
-import com.inventory.product.rest.dto.sale.UpdatePurchaseStatusRequest;
+import com.inventory.product.domain.model.enums.PurchaseStatus;
+import com.inventory.product.domain.model.enums.SchemeType;
+import com.inventory.product.rest.dto.request.AddToCartRequest;
+import com.inventory.product.rest.dto.request.CheckoutRequest;
+import com.inventory.product.rest.dto.request.UpdatePurchaseStatusRequest;
+import com.inventory.product.utils.constants.ProductConstants;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -14,9 +15,6 @@ import java.math.BigDecimal;
 @Component
 public class CheckoutValidator {
 
-  private static final int MAX_QUANTITY = 1000;
-  private static final int MAX_ITEMS_PER_SALE = 100;
-
   public void validateCheckoutItem(CheckoutRequest.CheckoutItem item) {
     if (!StringUtils.hasText(item.getId())) {
       throw new ValidationException("ID is required for item");
@@ -24,8 +22,8 @@ public class CheckoutValidator {
     if (item.getQuantity() == null || item.getQuantity() <= 0) {
       throw new ValidationException("Invalid quantity for item: " + item.getId());
     }
-    if (item.getQuantity() > MAX_QUANTITY) {
-      throw new ValidationException("Maximum quantity per item is " + MAX_QUANTITY);
+    if (item.getQuantity() > ProductConstants.MAX_QUANTITY_PER_ITEM) {
+      throw new ValidationException("Maximum quantity per item is " + ProductConstants.MAX_QUANTITY_PER_ITEM);
     }
     if (item.getPriceToRetail() == null || item.getPriceToRetail().compareTo(BigDecimal.ZERO) <= 0) {
       throw new ValidationException("Selling price must be greater than zero for item: " + item.getId());
@@ -45,8 +43,8 @@ public class CheckoutValidator {
     if (!StringUtils.hasText(request.getBusinessType())) {
       throw new ValidationException("Business type is required");
     }
-    if (request.getItems().size() > MAX_ITEMS_PER_SALE) {
-      throw new ValidationException("Exceeded maximum number of items per sale (" + MAX_ITEMS_PER_SALE + ")");
+    if (request.getItems().size() > ProductConstants.MAX_ITEMS_PER_SALE) {
+      throw new ValidationException("Exceeded maximum number of items per sale (" + ProductConstants.MAX_ITEMS_PER_SALE + ")");
     }
   }
 
@@ -69,8 +67,8 @@ public class CheckoutValidator {
       if (!hasQuantity && !hasBaseQuantity) {
         throw new ValidationException("Quantity or baseQuantity is required for item: " + item.getId());
       }
-      if (item.getQuantity() != null && Math.abs(item.getQuantity()) > MAX_QUANTITY) {
-        throw new ValidationException("Maximum quantity per item is " + MAX_QUANTITY);
+      if (item.getQuantity() != null && Math.abs(item.getQuantity()) > ProductConstants.MAX_QUANTITY_PER_ITEM) {
+        throw new ValidationException("Maximum quantity per item is " + ProductConstants.MAX_QUANTITY_PER_ITEM);
       }
       if (item.getBaseQuantity() != null && item.getBaseQuantity() == 0) {
         throw new ValidationException("baseQuantity cannot be zero for item: " + item.getId());

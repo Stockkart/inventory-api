@@ -1,5 +1,7 @@
 package com.inventory.product.domain.model;
 
+import com.inventory.product.domain.model.enums.BillingMode;
+import com.inventory.product.domain.model.enums.PurchaseStatus;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;

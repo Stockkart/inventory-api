@@ -1,7 +1,7 @@
 package com.inventory.product.validation;
 
 import com.inventory.common.exception.ValidationException;
-import com.inventory.product.rest.dto.business.CreateBusinessTypeRequest;
+import com.inventory.product.rest.dto.request.CreateBusinessTypeRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 

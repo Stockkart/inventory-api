@@ -1,6 +1,6 @@
 package com.inventory.product.domain.model;
 
-import com.inventory.product.rest.dto.inventory.CreateInventoryItemRequest;
+import com.inventory.product.rest.dto.request.CreateInventoryItemRequest;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;

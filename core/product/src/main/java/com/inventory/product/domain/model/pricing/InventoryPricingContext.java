@@ -1,7 +1,7 @@
 package com.inventory.product.domain.model.pricing;
 
-import com.inventory.product.rest.dto.inventory.CreateInventoryRequest;
-import com.inventory.product.rest.dto.inventory.UpdateInventoryRequest;
+import com.inventory.product.rest.dto.request.CreateInventoryRequest;
+import com.inventory.product.rest.dto.request.UpdateInventoryRequest;
 import org.springframework.util.StringUtils;
 
 /**

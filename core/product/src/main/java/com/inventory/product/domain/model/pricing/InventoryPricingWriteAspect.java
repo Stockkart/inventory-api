@@ -1,7 +1,7 @@
 package com.inventory.product.domain.model.pricing;
 
 import com.inventory.product.domain.model.Inventory;
-import com.inventory.product.rest.dto.inventory.UpdateInventoryRequest;
+import com.inventory.product.rest.dto.request.UpdateInventoryRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;

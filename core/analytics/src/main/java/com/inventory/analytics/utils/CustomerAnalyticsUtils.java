@@ -3,7 +3,7 @@ package com.inventory.analytics.utils;
 import com.inventory.analytics.rest.dto.response.CustomerAnalyticsDto;
 import com.inventory.analytics.rest.dto.response.CustomerSummaryDto;
 import com.inventory.product.domain.model.Purchase;
-import com.inventory.product.domain.model.PurchaseStatus;
+import com.inventory.product.domain.model.enums.PurchaseStatus;
 import com.inventory.product.domain.repository.PurchaseRepository;
 import com.inventory.user.domain.model.Customer;
 import com.inventory.user.domain.repository.CustomerRepository;

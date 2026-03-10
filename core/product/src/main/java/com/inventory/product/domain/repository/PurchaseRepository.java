@@ -1,7 +1,7 @@
 package com.inventory.product.domain.repository;
 
 import com.inventory.product.domain.model.Purchase;
-import com.inventory.product.domain.model.PurchaseStatus;
+import com.inventory.product.domain.model.enums.PurchaseStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.MongoRepository;

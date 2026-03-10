@@ -1,9 +1,9 @@
 package com.inventory.product.rest.controller;
 
 import com.inventory.common.dto.response.ApiResponse;
-import com.inventory.product.rest.dto.sale.RefundListResponse;
-import com.inventory.product.rest.dto.sale.RefundRequest;
-import com.inventory.product.rest.dto.sale.RefundResponse;
+import com.inventory.product.rest.dto.request.RefundRequest;
+import com.inventory.product.rest.dto.response.RefundListResponse;
+import com.inventory.product.rest.dto.response.RefundResponse;
 import com.inventory.product.service.RefundService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;

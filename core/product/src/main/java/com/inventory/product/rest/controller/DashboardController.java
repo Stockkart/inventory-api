@@ -1,7 +1,7 @@
 package com.inventory.product.rest.controller;
 
 import com.inventory.common.dto.response.ApiResponse;
-import com.inventory.product.rest.dto.dashboard.DashboardResponse;
+import com.inventory.product.rest.dto.response.DashboardResponse;
 import com.inventory.product.service.DashboardService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
