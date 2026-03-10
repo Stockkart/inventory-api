@@ -4,17 +4,31 @@ import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
-import com.inventory.notifications.rest.dto.CreateReminderForInventoryRequest;
+import com.inventory.notifications.rest.dto.request.CreateReminderForInventoryRequest;
 import com.inventory.notifications.service.ReminderService;
 import com.inventory.ocr.service.InvoiceParserService;
 import com.inventory.product.domain.model.Inventory;
-import com.inventory.product.domain.model.BillingMode;
-import com.inventory.product.domain.model.SchemeType;
+import com.inventory.product.domain.model.enums.BillingMode;
+import com.inventory.product.domain.model.enums.SchemeType;
 import com.inventory.product.domain.model.UnitConversion;
 import com.inventory.product.domain.repository.InventoryRepository;
-import com.inventory.product.rest.dto.inventory.*;
+import com.inventory.product.rest.dto.request.BulkCreateInventoryRequest;
+import com.inventory.product.rest.dto.request.CreateInventoryItemRequest;
+import com.inventory.product.rest.dto.request.CreateInventoryRequest;
+import com.inventory.product.rest.dto.request.UpdateInventoryRequest;
+import com.inventory.product.rest.dto.response.BulkCreateInventoryResponse;
+import com.inventory.product.rest.dto.response.InventoryDetailResponse;
+import com.inventory.product.rest.dto.response.InventoryListResponse;
+import com.inventory.product.rest.dto.response.InventoryReceiptResponse;
+import com.inventory.product.rest.dto.response.InventorySummaryDto;
+import com.inventory.product.rest.dto.response.LotDetailDto;
+import com.inventory.product.rest.dto.response.LotListResponse;
+import com.inventory.product.rest.dto.response.LotSummaryDto;
+import com.inventory.product.rest.dto.response.PageMeta;
+import com.inventory.product.rest.dto.response.ParsedInventoryListResponse;
 import java.util.ArrayList;
-import com.inventory.product.rest.mapper.InventoryMapper;
+import com.inventory.product.mapper.InventoryMapper;
+import com.inventory.product.mapper.ParsedInventoryMapper;
 import com.inventory.product.validation.InventoryValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -59,6 +73,9 @@ public class InventoryService {
   @Autowired
   private ParsedInventoryMapper parsedInventoryMapper;
 
+  @Autowired
+  private com.inventory.product.validation.ImageValidator imageValidator;
+
   @Autowired(required = false)
   private com.inventory.user.service.CreditLedgerService creditLedgerService;
 
@@ -76,17 +93,7 @@ public class InventoryService {
     log.info("Processing invoice parsing request for image: {}, size: {} bytes",
         image.getOriginalFilename(), image.getSize());
 
-    // Validate file
-    if (image.isEmpty()) {
-      throw new ValidationException("Image file is empty");
-    }
-
-    // Validate content type
-    String contentType = image.getContentType();
-    if (contentType == null ||
-        (!contentType.startsWith("image/") && !contentType.equals("application/octet-stream"))) {
-      throw new ValidationException("File must be an image");
-    }
+    imageValidator.validateImageFileForParsing(image);
 
     try {
       byte[] imageBytes = image.getBytes();
@@ -109,9 +116,7 @@ public class InventoryService {
    */
   @Transactional(readOnly = true)
   public ParsedInventoryListResponse parseInvoiceImageFromBytes(byte[] imageBytes) {
-    if (imageBytes == null || imageBytes.length == 0) {
-      throw new ValidationException("Image bytes are empty");
-    }
+    imageValidator.validateImageBytes(imageBytes);
 
     try {
       List<com.inventory.ocr.dto.ParsedInventoryItem> parsedItems =
@@ -120,13 +125,8 @@ public class InventoryService {
       List<CreateInventoryItemRequest> items =
           parsedInventoryMapper.toCreateInventoryItemRequestList(parsedItems);
 
-      ParsedInventoryListResponse response = new ParsedInventoryListResponse();
-      response.setItems(items);
-      response.setTotalItems(items.size());
-
       log.info("Invoice parsing completed successfully. Extracted {} inventory items", items.size());
-
-      return response;
+      return parsedInventoryMapper.toParsedInventoryListResponse(items);
     } catch (Exception e) {
       log.error("Error parsing invoice image: {}", e.getMessage(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
@@ -163,7 +163,7 @@ public class InventoryService {
       for (CreateInventoryItemRequest itemRequest : bulkRequest.getItems()) {
         try {
           // Convert CreateInventoryItemRequest to CreateInventoryRequest
-          CreateInventoryRequest fullRequest = convertToCreateInventoryRequest(itemRequest, 
+          CreateInventoryRequest fullRequest = inventoryMapper.toCreateInventoryRequest(itemRequest,
               bulkRequest.getVendorId(), lotId, bulkRequest.getVendorShopId(), bulkRequest.getOnCredit());
           
           InventoryReceiptResponse response = create(fullRequest, userId, shopId);
@@ -176,62 +176,8 @@ public class InventoryService {
     }
     
     log.info("Bulk creation completed: {} created, {} failed", createdItems.size(), failedCount);
-    
-    BulkCreateInventoryResponse bulkResponse = new BulkCreateInventoryResponse();
-    bulkResponse.setItems(createdItems);
-    bulkResponse.setTotalCreated(createdItems.size());
-    bulkResponse.setTotalFailed(failedCount);
-    
-    return bulkResponse;
-  }
 
-  /**
-   * Convert CreateInventoryItemRequest to CreateInventoryRequest by adding vendorId, lotId, vendorShopId, onCredit.
-   */
-  private CreateInventoryRequest convertToCreateInventoryRequest(CreateInventoryItemRequest itemRequest, 
-                                                                  String vendorId, String lotId, String vendorShopId, Boolean onCredit) {
-    CreateInventoryRequest fullRequest = new CreateInventoryRequest();
-    
-    // Copy all fields from item request
-    fullRequest.setBarcode(itemRequest.getBarcode());
-    fullRequest.setName(itemRequest.getName());
-    fullRequest.setDescription(itemRequest.getDescription());
-    fullRequest.setCompanyName(itemRequest.getCompanyName());
-    fullRequest.setMaximumRetailPrice(itemRequest.getMaximumRetailPrice());
-    fullRequest.setCostPrice(itemRequest.getCostPrice());
-    fullRequest.setPriceToRetail(itemRequest.getPriceToRetail());
-    fullRequest.setRates(itemRequest.getRates());
-    fullRequest.setDefaultRate(itemRequest.getDefaultRate());
-    fullRequest.setAdditionalDiscount(itemRequest.getAdditionalDiscount());
-    fullRequest.setBusinessType(itemRequest.getBusinessType());
-    fullRequest.setLocation(itemRequest.getLocation());
-    fullRequest.setCount(itemRequest.getCount());
-    fullRequest.setBaseUnit(itemRequest.getBaseUnit());
-    fullRequest.setUnitConversions(itemRequest.getUnitConversions());
-    fullRequest.setThresholdCount(itemRequest.getThresholdCount());
-    fullRequest.setExpiryDate(itemRequest.getExpiryDate());
-    fullRequest.setReminderAt(itemRequest.getReminderAt());
-    fullRequest.setCustomReminders(itemRequest.getCustomReminders());
-    fullRequest.setHsn(itemRequest.getHsn());
-    fullRequest.setBatchNo(itemRequest.getBatchNo());
-    fullRequest.setBillingMode(itemRequest.getBillingMode());
-    fullRequest.setSchemeType(itemRequest.getSchemeType());
-    fullRequest.setScheme(itemRequest.getScheme());
-    fullRequest.setSchemePercentage(itemRequest.getSchemePercentage());
-    fullRequest.setSgst(itemRequest.getSgst());
-    fullRequest.setCgst(itemRequest.getCgst());
-    fullRequest.setItemType(itemRequest.getItemType());
-    fullRequest.setItemTypeDegree(itemRequest.getItemTypeDegree());
-    fullRequest.setDiscountApplicable(itemRequest.getDiscountApplicable());
-    fullRequest.setPurchaseDate(itemRequest.getPurchaseDate());
-
-    // Set shared fields
-    fullRequest.setVendorId(vendorId);
-    fullRequest.setLotId(lotId);
-    fullRequest.setVendorShopId(vendorShopId);
-    fullRequest.setOnCredit(onCredit);
-
-    return fullRequest;
+    return inventoryMapper.toBulkCreateInventoryResponse(createdItems, failedCount);
   }
 
   public InventoryReceiptResponse create(CreateInventoryRequest request, String userId, String shopId) {
@@ -474,13 +420,7 @@ public class InventoryService {
       int totalPages = (int) Math.ceil((double) totalItems / size);
 
       PageMeta pageMeta = new PageMeta(page, size, totalItems, totalPages);
-
-      LotListResponse response = new LotListResponse();
-      response.setData(summaries);
-      response.setMeta(null);
-      response.setPage(pageMeta);
-
-      return response;
+      return inventoryMapper.toLotListResponse(summaries, pageMeta);
 
     } catch (ValidationException e) {
       log.warn("Validation error in list lots: {}", e.getMessage());

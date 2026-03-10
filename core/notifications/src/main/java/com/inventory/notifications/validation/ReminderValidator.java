@@ -2,8 +2,8 @@ package com.inventory.notifications.validation;
 
 import com.inventory.common.exception.ValidationException;
 import com.inventory.notifications.domain.model.ReminderStatus;
-import com.inventory.notifications.rest.dto.CreateReminderRequest;
-import com.inventory.notifications.rest.dto.SnoozeReminderRequest;
+import com.inventory.notifications.rest.dto.request.CreateReminderRequest;
+import com.inventory.notifications.rest.dto.request.SnoozeReminderRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -34,6 +34,12 @@ public class ReminderValidator {
     }
     if (request.getSnoozeDays() == null || request.getSnoozeDays() <= 0) {
       throw new ValidationException("snoozeDays must be a positive number");
+    }
+  }
+
+  public void validateShopId(String shopId) {
+    if (!StringUtils.hasText(shopId)) {
+      throw new ValidationException("Shop ID is required");
     }
   }
 

@@ -1,5 +1,6 @@
 package com.inventory.product.domain.model;
 
+import com.inventory.product.domain.model.enums.ShopType;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;

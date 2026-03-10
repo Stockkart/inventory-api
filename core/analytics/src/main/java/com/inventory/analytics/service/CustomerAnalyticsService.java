@@ -4,10 +4,12 @@ import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.AuthenticationException;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ValidationException;
-import com.inventory.analytics.helper.CustomerAnalyticsHelper;
-import com.inventory.analytics.rest.dto.customer.CustomerAnalyticsDto;
-import com.inventory.analytics.rest.dto.customer.CustomerAnalyticsResponse;
-import com.inventory.analytics.rest.dto.customer.CustomerSummaryDto;
+import com.inventory.analytics.mapper.CustomerAnalyticsMapper;
+import com.inventory.analytics.mapper.CustomerAnalyticsResponseParams;
+import com.inventory.analytics.utils.CustomerAnalyticsUtils;
+import com.inventory.analytics.rest.dto.response.CustomerAnalyticsDto;
+import com.inventory.analytics.rest.dto.response.CustomerAnalyticsResponse;
+import com.inventory.analytics.rest.dto.response.CustomerSummaryDto;
 import com.inventory.product.domain.model.Purchase;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,9 +20,7 @@ import org.springframework.util.StringUtils;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -29,7 +29,10 @@ import java.util.stream.Collectors;
 public class CustomerAnalyticsService {
 
   @Autowired
-  private CustomerAnalyticsHelper analyticsHelper;
+  private CustomerAnalyticsUtils customerUtils;
+
+  @Autowired
+  private CustomerAnalyticsMapper customerAnalyticsMapper;
 
   /**
    * Get comprehensive customer analytics.
@@ -73,47 +76,38 @@ public class CustomerAnalyticsService {
       log.debug("Getting customer analytics for shop: {} from {} to {}", shopId, startDate, endDate);
 
       // Get all completed purchases (for lifetime value calculation)
-      List<Purchase> allPurchases = analyticsHelper.getCompletedPurchases(shopId);
+      List<Purchase> allPurchases = customerUtils.getCompletedPurchases(shopId);
 
       // Get purchases in date range (for period-specific analytics)
-      List<Purchase> purchasesInPeriod = analyticsHelper.getCompletedPurchases(shopId, startDate, endDate);
+      List<Purchase> purchasesInPeriod = customerUtils.getCompletedPurchases(shopId, startDate, endDate);
 
       // Calculate customer analytics (using all purchases for lifetime value, but tracking period purchases)
-      List<CustomerAnalyticsDto> allCustomerAnalytics = analyticsHelper.calculateCustomerAnalytics(
+      List<CustomerAnalyticsDto> allCustomerAnalytics = customerUtils.calculateCustomerAnalytics(
           shopId, allPurchases, startDate, endDate);
 
       // Calculate summary
-      CustomerSummaryDto summary = analyticsHelper.calculateCustomerSummary(allCustomerAnalytics);
+      CustomerSummaryDto summary = customerUtils.calculateCustomerSummary(allCustomerAnalytics);
 
       // Get top customers
       List<CustomerAnalyticsDto> topCustomers = allCustomerAnalytics.stream()
           .limit(topN)
           .collect(Collectors.toList());
 
-      // Build response
-      CustomerAnalyticsResponse response = new CustomerAnalyticsResponse();
-      response.setSummary(summary);
-      response.setTopCustomers(topCustomers);
-      
-      // Include all customers if requested
-      if (includeAll != null && includeAll) {
-        response.setAllCustomers(allCustomerAnalytics);
-      } else {
-        response.setAllCustomers(null); // Don't include all customers by default to reduce payload size
-      }
+      // Build response via mapper
+      CustomerAnalyticsResponseParams params = CustomerAnalyticsResponseParams.builder()
+          .summary(summary)
+          .topCustomers(topCustomers)
+          .allCustomers(includeAll != null && includeAll ? allCustomerAnalytics : null)
+          .startDate(startDate)
+          .endDate(endDate)
+          .totalPurchases(purchasesInPeriod.size())
+          .totalAllPurchases(allPurchases.size())
+          .topN(topN)
+          .includeAll(Boolean.TRUE.equals(includeAll))
+          .totalCustomers(allCustomerAnalytics.size())
+          .build();
 
-      // Metadata
-      Map<String, Object> meta = new HashMap<>();
-      meta.put("startDate", startDate);
-      meta.put("endDate", endDate);
-      meta.put("totalPurchases", purchasesInPeriod.size());
-      meta.put("totalAllPurchases", allPurchases.size());
-      meta.put("topN", topN);
-      meta.put("includeAll", includeAll);
-      meta.put("totalCustomers", allCustomerAnalytics.size());
-      response.setMeta(meta);
-
-      return response;
+      return customerAnalyticsMapper.toResponse(params);
 
     } catch (ValidationException e) {
       log.warn("Validation error in customer analytics: {}", e.getMessage());

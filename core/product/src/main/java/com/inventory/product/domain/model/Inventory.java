@@ -1,6 +1,10 @@
 package com.inventory.product.domain.model;
 
-import com.inventory.pricing.api.dto.RateDto;
+import com.inventory.product.domain.model.enums.BillingMode;
+import com.inventory.product.domain.model.enums.DiscountApplicable;
+import com.inventory.product.domain.model.enums.ItemType;
+import com.inventory.product.domain.model.enums.SchemeType;
+import com.inventory.pricing.rest.dto.response.RateDto;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;

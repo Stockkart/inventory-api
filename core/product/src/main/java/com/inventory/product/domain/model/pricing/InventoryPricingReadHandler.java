@@ -1,8 +1,8 @@
 package com.inventory.product.domain.model.pricing;
 
-import com.inventory.pricing.api.InventoryPricingAdapter;
-import com.inventory.pricing.api.dto.PricingReadDto;
-import com.inventory.product.domain.model.BillingMode;
+import com.inventory.pricing.rest.dto.response.PricingReadDto;
+import com.inventory.pricing.service.InventoryPricingAdapter;
+import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.repository.ShopRepository;
 import lombok.extern.slf4j.Slf4j;

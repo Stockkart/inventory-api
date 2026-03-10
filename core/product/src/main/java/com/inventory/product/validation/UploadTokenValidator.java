@@ -2,6 +2,7 @@ package com.inventory.product.validation;
 
 import com.inventory.common.exception.ValidationException;
 import com.inventory.product.domain.model.UploadToken;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
@@ -10,6 +11,9 @@ import java.time.Instant;
 
 @Component
 public class UploadTokenValidator {
+
+  @Autowired
+  private ImageValidator imageValidator;
 
   public void validateToken(String token) {
     if (!StringUtils.hasText(token)) {
@@ -45,14 +49,7 @@ public class UploadTokenValidator {
   }
 
   public void validateImageFile(MultipartFile image) {
-    if (image == null || image.isEmpty()) {
-      throw new ValidationException("Image file is required");
-    }
-
-    String contentType = image.getContentType();
-    if (contentType == null || !contentType.startsWith("image/")) {
-      throw new ValidationException("File must be an image");
-    }
+    imageValidator.validateImageFile(image);
   }
 
   public void validateUserIdAndShopId(String userId, String shopId) {

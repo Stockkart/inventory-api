@@ -1,10 +1,12 @@
 package com.inventory.user.rest.controller;
 
 import com.inventory.common.dto.response.ApiResponse;
-import com.inventory.user.rest.dto.vendor.CreateVendorRequest;
-import com.inventory.user.rest.dto.vendor.CreateVendorResponse;
-import com.inventory.user.rest.dto.vendor.SearchVendorRequest;
-import com.inventory.user.rest.dto.vendor.VendorDto;
+import com.inventory.user.rest.dto.request.CreateVendorRequest;
+import com.inventory.user.rest.dto.request.SearchVendorRequest;
+import com.inventory.user.rest.dto.response.CreateVendorResponse;
+import com.inventory.user.rest.dto.response.UserShopListResponse;
+import com.inventory.user.rest.dto.response.VendorDto;
+import com.inventory.user.mapper.VendorMapper;
 import com.inventory.user.service.VendorService;
 
 import java.util.List;
@@ -28,6 +30,9 @@ public class VendorController {
   @Autowired
   private VendorService vendorService;
 
+  @Autowired
+  private VendorMapper vendorMapper;
+
   @PostMapping
   public ResponseEntity<ApiResponse<CreateVendorResponse>> create(
       @RequestBody CreateVendorRequest request,
@@ -46,10 +51,7 @@ public class VendorController {
     // Get shopId from request attributes (set by AuthenticationInterceptor)
     String shopId = (String) httpRequest.getAttribute("shopId");
 
-    // Create SearchVendorRequest from query parameter
-    SearchVendorRequest request = new SearchVendorRequest();
-    request.setQuery(query);
-
+    SearchVendorRequest request = vendorMapper.toSearchVendorRequest(query);
     List<VendorDto> response = vendorService.searchVendor(request, shopId);
     return ResponseEntity.ok(ApiResponse.success(response));
   }
@@ -59,7 +61,7 @@ public class VendorController {
    * Must be declared before /{vendorId} to avoid path matching conflict.
    */
   @GetMapping("/{vendorId}/shops")
-  public ResponseEntity<ApiResponse<com.inventory.user.rest.dto.invitation.UserShopListResponse>> getVendorShops(
+  public ResponseEntity<ApiResponse<UserShopListResponse>> getVendorShops(
       @PathVariable String vendorId,
       HttpServletRequest httpRequest) {
     String shopId = (String) httpRequest.getAttribute("shopId");

@@ -4,10 +4,12 @@ import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.AuthenticationException;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ValidationException;
-import com.inventory.analytics.helper.InventoryAnalyticsHelper;
-import com.inventory.analytics.rest.dto.inventory.InventoryAnalyticsDto;
-import com.inventory.analytics.rest.dto.inventory.InventoryAnalyticsResponse;
-import com.inventory.analytics.rest.dto.inventory.InventorySummaryDto;
+import com.inventory.analytics.mapper.InventoryAnalyticsMapper;
+import com.inventory.analytics.mapper.InventoryAnalyticsResponseParams;
+import com.inventory.analytics.utils.InventoryAnalyticsUtils;
+import com.inventory.analytics.rest.dto.response.InventoryAnalyticsDto;
+import com.inventory.analytics.rest.dto.response.InventoryAnalyticsResponse;
+import com.inventory.analytics.rest.dto.response.InventorySummaryDto;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.repository.InventoryRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -17,9 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -28,7 +28,10 @@ import java.util.stream.Collectors;
 public class InventoryAnalyticsService {
 
   @Autowired
-  private InventoryAnalyticsHelper analyticsHelper;
+  private InventoryAnalyticsUtils analyticsUtils;
+
+  @Autowired
+  private InventoryAnalyticsMapper inventoryAnalyticsMapper;
 
   @Autowired
   private InventoryRepository inventoryRepository;
@@ -69,11 +72,11 @@ public class InventoryAnalyticsService {
       List<Inventory> allInventories = inventoryRepository.findByShopId(shopId);
 
       // Calculate analytics for all items
-      List<InventoryAnalyticsDto> allAnalytics = analyticsHelper.calculateInventoryAnalytics(
+      List<InventoryAnalyticsDto> allAnalytics = analyticsUtils.calculateInventoryAnalytics(
           shopId, allInventories, lowStockThreshold, deadStockDays, expiringSoonDays);
 
       // Calculate summary
-      InventorySummaryDto summary = analyticsHelper.calculateSummary(allAnalytics);
+      InventorySummaryDto summary = analyticsUtils.calculateSummary(allAnalytics);
 
       // Filter items by category
       List<InventoryAnalyticsDto> lowStockItems = allAnalytics.stream()
@@ -114,44 +117,30 @@ public class InventoryAnalyticsService {
       List<InventoryAnalyticsDto> deadStockItems = allAnalytics.stream()
           .filter(InventoryAnalyticsDto::getIsDeadStock)
           .sorted((a, b) -> {
-            // Sort by days since last sale or received (oldest first)
-            Long aDays = a.getLastSoldDate() != null 
-                ? a.getDaysSinceReceived() 
-                : a.getDaysSinceReceived();
-            Long bDays = b.getLastSoldDate() != null 
-                ? b.getDaysSinceReceived() 
-                : b.getDaysSinceReceived();
+            Long aDays = a.getLastSoldDate() != null ? a.getDaysSinceReceived() : a.getDaysSinceReceived();
+            Long bDays = b.getLastSoldDate() != null ? b.getDaysSinceReceived() : b.getDaysSinceReceived();
             if (aDays == null) return 1;
             if (bDays == null) return -1;
             return bDays.compareTo(aDays);
           })
           .collect(Collectors.toList());
 
-      // Build response
-      InventoryAnalyticsResponse response = new InventoryAnalyticsResponse();
-      response.setSummary(summary);
-      response.setLowStockItems(lowStockItems);
-      response.setNotSellingItems(notSellingItems);
-      response.setExpiringSoonItems(expiringSoonItems);
-      response.setExpiredItems(expiredItems);
-      response.setDeadStockItems(deadStockItems);
+      InventoryAnalyticsResponseParams params = InventoryAnalyticsResponseParams.builder()
+          .summary(summary)
+          .lowStockItems(lowStockItems)
+          .notSellingItems(notSellingItems)
+          .expiringSoonItems(expiringSoonItems)
+          .expiredItems(expiredItems)
+          .deadStockItems(deadStockItems)
+          .allItems(includeAll != null && includeAll ? allAnalytics : null)
+          .lowStockThreshold(lowStockThreshold)
+          .deadStockDays(deadStockDays)
+          .expiringSoonDays(expiringSoonDays)
+          .includeAll(includeAll)
+          .totalItems(allInventories.size())
+          .build();
 
-      if (includeAll != null && includeAll) {
-        response.setAllItems(allAnalytics);
-      } else {
-        response.setAllItems(null);
-      }
-
-      // Metadata
-      Map<String, Object> meta = new HashMap<>();
-      meta.put("lowStockThreshold", lowStockThreshold);
-      meta.put("deadStockDays", deadStockDays);
-      meta.put("expiringSoonDays", expiringSoonDays);
-      meta.put("includeAll", includeAll);
-      meta.put("totalItems", allInventories.size());
-      response.setMeta(meta);
-
-      return response;
+      return inventoryAnalyticsMapper.toResponse(params);
 
     } catch (ValidationException e) {
       log.warn("Validation error in inventory analytics: {}", e.getMessage());

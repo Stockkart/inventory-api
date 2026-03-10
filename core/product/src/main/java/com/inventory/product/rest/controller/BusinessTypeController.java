@@ -1,8 +1,8 @@
 package com.inventory.product.rest.controller;
 
 import com.inventory.common.dto.response.ApiResponse;
-import com.inventory.product.rest.dto.business.BusinessTypeResponse;
-import com.inventory.product.rest.dto.business.CreateBusinessTypeRequest;
+import com.inventory.product.rest.dto.request.CreateBusinessTypeRequest;
+import com.inventory.product.rest.dto.response.BusinessTypeResponse;
 import com.inventory.product.service.BusinessTypeService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;

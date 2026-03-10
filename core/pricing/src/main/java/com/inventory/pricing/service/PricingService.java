@@ -6,19 +6,20 @@ import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.pricing.domain.model.Pricing;
 import com.inventory.pricing.domain.repository.PricingRepository;
-import com.inventory.pricing.rest.dto.CreatePricingRequest;
-import com.inventory.pricing.rest.dto.PricingResponse;
-import com.inventory.pricing.rest.dto.UpdateDefaultPriceItem;
-import com.inventory.pricing.rest.dto.UpdateDefaultPriceRequest;
-import com.inventory.pricing.rest.dto.UpdatePricingRequest;
-import com.inventory.pricing.rest.mapper.PricingMapper;
+import com.inventory.pricing.rest.dto.request.CreatePricingRequest;
+import com.inventory.pricing.rest.dto.request.UpdateDefaultPriceItem;
+import com.inventory.pricing.rest.dto.request.UpdateDefaultPriceRequest;
+import com.inventory.pricing.rest.dto.request.UpdatePricingRequest;
+import com.inventory.pricing.rest.dto.response.PricingResponse;
+import com.inventory.pricing.mapper.PricingMapper;
+import com.inventory.pricing.utils.PricingUtils;
 import com.inventory.pricing.validation.PricingValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -45,10 +46,6 @@ public class PricingService {
   @Autowired
   private PricingValidator pricingValidator;
 
-  private static final String DEFAULT_RATE_PRICE_TO_RETAIL = "priceToRetail";
-  private static final String DEFAULT_RATE_MAXIMUM_RETAIL_PRICE = "maximumRetailPrice";
-  private static final String DEFAULT_RATE_COST_PRICE = "costPrice";
-
   /**
    * Create pricing and return the saved entity (with id).
    * When defaultRate is not provided, sets defaultRate="priceToRetail" and sellingPrice=priceToRetail.
@@ -56,40 +53,10 @@ public class PricingService {
   public Pricing createAndReturnEntity(CreatePricingRequest request) {
     pricingValidator.validateCreateRequest(request);
     Pricing pricing = pricingMapper.toEntity(request);
-    if (!StringUtils.hasText(pricing.getDefaultRate())) {
-      pricing.setDefaultRate(DEFAULT_RATE_PRICE_TO_RETAIL);
-      pricing.setSellingPrice(pricing.getPriceToRetail());
-    } else {
-      pricing.setSellingPrice(resolveEffectivePriceFromEntity(pricing));
-    }
+    pricingMapper.setDefaultRateAndSellingPrice(pricing);
     pricing = pricingRepository.save(pricing);
     log.debug("Created pricing with id: {}", pricing.getId());
     return pricing;
-  }
-
-  /** Resolve effective selling price from defaultRate: maximumRetailPrice, priceToRetail, costPrice, or rate name. */
-  private BigDecimal resolveEffectivePriceFromEntity(Pricing p) {
-    if (!StringUtils.hasText(p.getDefaultRate())) {
-      return p.getPriceToRetail();
-    }
-    String dr = p.getDefaultRate().trim();
-    if (DEFAULT_RATE_MAXIMUM_RETAIL_PRICE.equalsIgnoreCase(dr)) {
-      return p.getMaximumRetailPrice() != null ? p.getMaximumRetailPrice() : p.getPriceToRetail();
-    }
-    if (DEFAULT_RATE_COST_PRICE.equalsIgnoreCase(dr)) {
-      return p.getCostPrice() != null ? p.getCostPrice() : p.getPriceToRetail();
-    }
-    if (DEFAULT_RATE_PRICE_TO_RETAIL.equalsIgnoreCase(dr)) {
-      return p.getPriceToRetail();
-    }
-    if (p.getRates() != null) {
-      return p.getRates().stream()
-          .filter(r -> dr.equals(r.getName()))
-          .map(com.inventory.pricing.domain.model.Rate::getPrice)
-          .findFirst()
-          .orElse(p.getPriceToRetail());
-    }
-    return p.getPriceToRetail();
   }
 
   /**
@@ -125,10 +92,7 @@ public class PricingService {
       Pricing pricing = pricingRepository.findById(pricingId)
           .orElseThrow(() -> new ResourceNotFoundException("Pricing", "id", pricingId));
 
-      if (shopId != null && !shopId.equals(pricing.getShopId())) {
-        throw new com.inventory.common.exception.AuthenticationException(
-            ErrorCode.ACCESS_DENIED, "Pricing does not belong to your shop");
-      }
+      pricingValidator.validatePricingBelongsToShop(shopId == null || shopId.equals(pricing.getShopId()));
 
       pricingValidator.validateUpdateDefaultPriceRequest(request, pricing.getRates(), pricing.getDefaultRate());
 
@@ -138,7 +102,7 @@ public class PricingService {
       if (StringUtils.hasText(request.getDefaultRate())) {
         pricing.setDefaultRate(request.getDefaultRate());
       }
-      pricing.setSellingPrice(resolveEffectivePriceFromEntity(pricing));
+      pricing.setSellingPrice(PricingUtils.resolveEffectiveSellingPrice(pricing));
       pricing.setUpdatedAt(java.time.Instant.now());
       pricing = pricingRepository.save(pricing);
 
@@ -167,9 +131,7 @@ public class PricingService {
         Pricing pricing = pricingRepository.findById(item.getPricingId())
             .orElseThrow(() -> new ResourceNotFoundException("Pricing", "id", item.getPricingId()));
         pricingValidator.validateUpdateDefaultPriceItem(item, pricing.getRates(), pricing.getDefaultRate());
-        UpdateDefaultPriceRequest req = new UpdateDefaultPriceRequest();
-        req.setRates(item.getRates());
-        req.setDefaultRate(item.getDefaultRate());
+        UpdateDefaultPriceRequest req = pricingMapper.toUpdateDefaultPriceRequest(item);
         results.add(updateDefaultPrice(item.getPricingId(), req, shopId));
       } catch (Exception e) {
         log.warn("Bulk update failed for pricingId {}: {}", item.getPricingId(), e.getMessage());
@@ -218,10 +180,7 @@ public class PricingService {
     pricingValidator.validatePricingId(pricingId);
     Pricing pricing = pricingRepository.findById(pricingId)
         .orElseThrow(() -> new ResourceNotFoundException("Pricing", "id", pricingId));
-    if (shopId != null && !shopId.equals(pricing.getShopId())) {
-      throw new com.inventory.common.exception.AuthenticationException(
-          ErrorCode.ACCESS_DENIED, "Pricing does not belong to your shop");
-    }
+    pricingValidator.validatePricingBelongsToShop(shopId == null || shopId.equals(pricing.getShopId()));
     return pricingMapper.toResponse(pricing);
   }
 

@@ -6,13 +6,13 @@ import com.inventory.product.domain.model.ParsedInventoryResult;
 import com.inventory.product.domain.model.UploadToken;
 import com.inventory.product.domain.repository.ParsedInventoryResultRepository;
 import com.inventory.product.domain.repository.UploadTokenRepository;
-import com.inventory.product.rest.dto.inventory.ParsedInventoryListResponse;
-import com.inventory.product.rest.dto.upload.CreateUploadTokenResponse;
-import com.inventory.product.rest.dto.upload.TokenValidationResponse;
-import com.inventory.product.rest.dto.upload.UploadStatusResponse;
-import com.inventory.product.rest.mapper.UploadTokenMapper;
-import com.inventory.product.util.ParsedInventoryUtil;
-import com.inventory.product.util.UploadTokenUtil;
+import com.inventory.product.rest.dto.response.CreateUploadTokenResponse;
+import com.inventory.product.rest.dto.response.ParsedInventoryListResponse;
+import com.inventory.product.rest.dto.response.TokenValidationResponse;
+import com.inventory.product.rest.dto.response.UploadStatusResponse;
+import com.inventory.product.mapper.ParsedInventoryMapper;
+import com.inventory.product.mapper.UploadTokenMapper;
+import com.inventory.product.utils.UploadTokenUtil;
 import com.inventory.product.validation.UploadTokenValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,10 +45,10 @@ public class QRUploadService {
   private UploadTokenMapper uploadTokenMapper;
 
   @Autowired
-  private UploadTokenUtil uploadTokenUtil;
+  private ParsedInventoryMapper parsedInventoryMapper;
 
   @Autowired
-  private ParsedInventoryUtil parsedInventoryUtil;
+  private UploadTokenUtil uploadTokenUtil;
 
   /**
    * Create upload token for QR code pairing.
@@ -65,14 +65,7 @@ public class QRUploadService {
     String token = uploadTokenUtil.generateToken();
     Instant expiresAt = uploadTokenUtil.calculateExpiryTime();
 
-    UploadToken uploadToken = new UploadToken();
-    uploadToken.setToken(token);
-    uploadToken.setUserId(userId);
-    uploadToken.setShopId(shopId);
-    uploadToken.setExpiresAt(expiresAt);
-    uploadToken.setCreatedAt(Instant.now());
-    uploadToken.setStatus(UploadToken.UploadStatus.PENDING);
-
+    UploadToken uploadToken = uploadTokenMapper.toEntity(token, userId, shopId, expiresAt);
     uploadToken = uploadTokenRepository.save(uploadToken);
     String uploadUrl = uploadTokenUtil.generateUploadUrl(token);
 
@@ -94,17 +87,10 @@ public class QRUploadService {
 
     UploadToken uploadToken = uploadTokenUtil.getTokenWithoutValidation(token, uploadTokenRepository);
 
-    TokenValidationResponse response = new TokenValidationResponse();
-    response.setToken(token);
-
     if (uploadToken == null) {
-      response.setStatus(UploadToken.UploadStatus.EXPIRED);
-      response.setExpiresAt(null);
-      response.setErrorMessage("Invalid upload token");
-      return response;
+      return uploadTokenMapper.toInvalidTokenResponse(token, "Invalid upload token");
     }
 
-    // Check if expired and update status if needed
     if (uploadTokenUtil.isExpired(uploadToken.getExpiresAt())) {
       if (uploadToken.getStatus() != UploadToken.UploadStatus.EXPIRED) {
         updateTokenStatus(token, UploadToken.UploadStatus.EXPIRED);
@@ -112,18 +98,10 @@ public class QRUploadService {
       }
     }
 
-    // Map to response
-    response = uploadTokenMapper.toTokenValidationResponse(uploadToken);
-
-    // Set error message based on status
-    if (uploadTokenUtil.isExpired(uploadToken.getExpiresAt())) {
-      response.setErrorMessage("Upload token has expired");
-    } else if (uploadToken.getStatus() == UploadToken.UploadStatus.FAILED) {
-      response.setErrorMessage("Upload or processing failed");
-    } else {
-      response.setErrorMessage(null);
-    }
-
+    TokenValidationResponse response = uploadTokenMapper.toTokenValidationResponse(uploadToken);
+    String errorMsg = uploadTokenUtil.isExpired(uploadToken.getExpiresAt()) ? "Upload token has expired"
+        : uploadToken.getStatus() == UploadToken.UploadStatus.FAILED ? "Upload or processing failed" : null;
+    uploadTokenMapper.setErrorMessage(response, errorMsg);
     return response;
   }
 
@@ -170,7 +148,7 @@ public class QRUploadService {
         ParsedInventoryListResponse parsedResult =
             inventoryService.parseInvoiceImageFromBytes(finalImageBytes);
 
-        ParsedInventoryResult result = parsedInventoryUtil.createParsedInventoryResult(
+        ParsedInventoryResult result = parsedInventoryMapper.toParsedInventoryResult(
             uploadToken.getId(),
             uploadToken.getUserId(),
             uploadToken.getShopId(),
@@ -226,8 +204,8 @@ public class QRUploadService {
     ParsedInventoryResult result = parsedInventoryResultRepository.findByUploadTokenId(uploadToken.getId())
         .orElseThrow(() -> new ResourceNotFoundException("Parsed inventory result not found"));
 
-    // Convert to response using util
-    ParsedInventoryListResponse response = parsedInventoryUtil.toResponse(result);
+    // Convert to response using mapper
+    ParsedInventoryListResponse response = parsedInventoryMapper.toParsedInventoryListResponse(result);
 
     // Delete parsed result after retrieval since it's no longer needed
     parsedInventoryResultRepository.delete(result);
@@ -248,9 +226,7 @@ public class QRUploadService {
    */
   @Transactional(readOnly = true)
   public UploadToken validateAndGetToken(String token) {
-    if (token == null || token.trim().isEmpty()) {
-      throw new ValidationException("Upload token is required");
-    }
+    uploadTokenValidator.validateToken(token);
 
     UploadToken uploadToken = uploadTokenRepository.findByToken(token)
         .orElseThrow(() -> new ValidationException("Invalid upload token"));

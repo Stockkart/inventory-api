@@ -1,9 +1,13 @@
 package com.inventory.user.validation;
 
 import com.inventory.common.exception.ValidationException;
+import com.inventory.user.domain.model.Invitation;
+import com.inventory.user.domain.model.InvitationStatus;
 import com.inventory.user.domain.model.UserRole;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
+
+import java.time.Instant;
 
 @Component
 public class InvitationValidator {
@@ -43,6 +47,25 @@ public class InvitationValidator {
   public void validateAcceptInvitationRequest(String invitationId) {
     if (!StringUtils.hasText(invitationId)) {
       throw new ValidationException("Invitation ID is required");
+    }
+  }
+
+  public void validateInvitationForCurrentUser(Invitation invitation, String userId) {
+    if (invitation == null || !userId.equals(invitation.getInviteeUserId())) {
+      throw new ValidationException("This invitation is not for the current user");
+    }
+  }
+
+  public void validateInvitationPending(Invitation invitation) {
+    if (invitation == null || !InvitationStatus.PENDING.name().equals(invitation.getStatus())) {
+      throw new ValidationException("Invitation is not in PENDING status");
+    }
+  }
+
+  public void validateInvitationNotExpired(Invitation invitation) {
+    if (invitation != null && invitation.getExpiresAt() != null
+        && invitation.getExpiresAt().isBefore(Instant.now())) {
+      throw new ValidationException("Invitation has expired");
     }
   }
 

@@ -1,21 +1,26 @@
 package com.inventory.product.validation;
 
 import com.inventory.common.exception.ValidationException;
-import com.inventory.product.domain.model.PurchaseStatus;
-import com.inventory.product.domain.model.SchemeType;
-import com.inventory.product.rest.dto.sale.AddToCartRequest;
-import com.inventory.product.rest.dto.sale.CheckoutRequest;
-import com.inventory.product.rest.dto.sale.UpdatePurchaseStatusRequest;
+import com.inventory.product.domain.model.enums.BillingMode;
+import com.inventory.product.domain.model.enums.PurchaseStatus;
+import com.inventory.product.domain.model.enums.SchemeType;
+import com.inventory.product.domain.model.Purchase;
+import com.inventory.product.domain.model.PurchaseItem;
+import com.inventory.product.utils.CheckoutUtils;
+import com.inventory.product.rest.dto.request.AddToCartRequest;
+import com.inventory.product.rest.dto.request.CheckoutRequest;
+import com.inventory.product.rest.dto.request.UpdatePurchaseStatusRequest;
+import com.inventory.product.utils.constants.ProductConstants;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 @Component
 public class CheckoutValidator {
-
-  private static final int MAX_QUANTITY = 1000;
-  private static final int MAX_ITEMS_PER_SALE = 100;
 
   public void validateCheckoutItem(CheckoutRequest.CheckoutItem item) {
     if (!StringUtils.hasText(item.getId())) {
@@ -24,8 +29,8 @@ public class CheckoutValidator {
     if (item.getQuantity() == null || item.getQuantity() <= 0) {
       throw new ValidationException("Invalid quantity for item: " + item.getId());
     }
-    if (item.getQuantity() > MAX_QUANTITY) {
-      throw new ValidationException("Maximum quantity per item is " + MAX_QUANTITY);
+    if (item.getQuantity() > ProductConstants.MAX_QUANTITY_PER_ITEM) {
+      throw new ValidationException("Maximum quantity per item is " + ProductConstants.MAX_QUANTITY_PER_ITEM);
     }
     if (item.getPriceToRetail() == null || item.getPriceToRetail().compareTo(BigDecimal.ZERO) <= 0) {
       throw new ValidationException("Selling price must be greater than zero for item: " + item.getId());
@@ -45,8 +50,8 @@ public class CheckoutValidator {
     if (!StringUtils.hasText(request.getBusinessType())) {
       throw new ValidationException("Business type is required");
     }
-    if (request.getItems().size() > MAX_ITEMS_PER_SALE) {
-      throw new ValidationException("Exceeded maximum number of items per sale (" + MAX_ITEMS_PER_SALE + ")");
+    if (request.getItems().size() > ProductConstants.MAX_ITEMS_PER_SALE) {
+      throw new ValidationException("Exceeded maximum number of items per sale (" + ProductConstants.MAX_ITEMS_PER_SALE + ")");
     }
   }
 
@@ -69,8 +74,8 @@ public class CheckoutValidator {
       if (!hasQuantity && !hasBaseQuantity) {
         throw new ValidationException("Quantity or baseQuantity is required for item: " + item.getId());
       }
-      if (item.getQuantity() != null && Math.abs(item.getQuantity()) > MAX_QUANTITY) {
-        throw new ValidationException("Maximum quantity per item is " + MAX_QUANTITY);
+      if (item.getQuantity() != null && Math.abs(item.getQuantity()) > ProductConstants.MAX_QUANTITY_PER_ITEM) {
+        throw new ValidationException("Maximum quantity per item is " + ProductConstants.MAX_QUANTITY_PER_ITEM);
       }
       if (item.getBaseQuantity() != null && item.getBaseQuantity() == 0) {
         throw new ValidationException("baseQuantity cannot be zero for item: " + item.getId());
@@ -159,4 +164,33 @@ public class CheckoutValidator {
             currentStatus, requestedStatus));
   }
 
+  /**
+   * Resolve and validate that all cart items use a consistent billing mode. Cannot mix REGULAR and BASIC.
+   */
+  public BillingMode resolveAndValidateCartBillingMode(Purchase existingCart, List<PurchaseItem> newItems) {
+    Set<BillingMode> observed = new HashSet<>();
+    BillingMode existingCartMode = existingCart != null ? existingCart.getBillingMode() : null;
+    List<PurchaseItem> existingItems = existingCart != null && existingCart.getItems() != null
+        ? existingCart.getItems()
+        : List.of();
+    boolean hasExistingItems = !existingItems.isEmpty();
+    if (hasExistingItems) {
+      observed.add(CheckoutUtils.normalizeBillingMode(existingCartMode));
+      for (PurchaseItem item : existingItems) {
+        observed.add(CheckoutUtils.normalizeBillingMode(item.getBillingMode()));
+      }
+    }
+    if (newItems != null) {
+      for (PurchaseItem item : newItems) {
+        observed.add(CheckoutUtils.normalizeBillingMode(item.getBillingMode()));
+      }
+    }
+    if (observed.size() > 1) {
+      throw new ValidationException("Cannot mix REGULAR and BASIC inventory items in a single cart");
+    }
+    if (observed.isEmpty()) {
+      return BillingMode.REGULAR;
+    }
+    return observed.iterator().next();
+  }
 }

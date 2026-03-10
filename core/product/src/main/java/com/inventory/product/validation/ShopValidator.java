@@ -1,8 +1,8 @@
 package com.inventory.product.validation;
 
 import com.inventory.common.exception.ValidationException;
-import com.inventory.product.rest.dto.shop.RegisterShopRequest;
-import com.inventory.product.rest.dto.shop.ShopApprovalRequest;
+import com.inventory.product.rest.dto.request.RegisterShopRequest;
+import com.inventory.product.rest.dto.request.ShopApprovalRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 

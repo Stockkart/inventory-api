@@ -1,9 +1,9 @@
 package com.inventory.taxation.service;
 
 import com.inventory.product.domain.model.Purchase;
-import com.inventory.product.domain.model.BillingMode;
+import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.PurchaseItem;
-import com.inventory.product.domain.model.PurchaseStatus;
+import com.inventory.product.domain.model.enums.PurchaseStatus;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Refund;

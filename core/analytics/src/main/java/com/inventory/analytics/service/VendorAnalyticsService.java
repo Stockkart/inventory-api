@@ -4,11 +4,13 @@ import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.AuthenticationException;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ValidationException;
-import com.inventory.analytics.helper.VendorAnalyticsHelper;
-import com.inventory.analytics.helper.SalesAnalyticsHelper;
-import com.inventory.analytics.rest.dto.vendor.VendorAnalyticsResponse;
-import com.inventory.analytics.rest.dto.vendor.VendorDependencyDto;
-import com.inventory.analytics.rest.dto.vendor.VendorRevenueDto;
+import com.inventory.analytics.mapper.VendorAnalyticsMapper;
+import com.inventory.analytics.mapper.VendorAnalyticsResponseParams;
+import com.inventory.analytics.utils.VendorAnalyticsUtils;
+import com.inventory.analytics.utils.SalesAnalyticsUtils;
+import com.inventory.analytics.rest.dto.response.VendorAnalyticsResponse;
+import com.inventory.analytics.rest.dto.response.VendorDependencyDto;
+import com.inventory.analytics.rest.dto.response.VendorRevenueDto;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.repository.InventoryRepository;
@@ -23,9 +25,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 @Slf4j
 @Service
@@ -33,10 +33,13 @@ import java.util.Map;
 public class VendorAnalyticsService {
 
   @Autowired
-  private VendorAnalyticsHelper vendorHelper;
+  private VendorAnalyticsUtils vendorUtils;
 
   @Autowired
-  private SalesAnalyticsHelper salesHelper;
+  private SalesAnalyticsUtils salesUtils;
+
+  @Autowired
+  private VendorAnalyticsMapper vendorAnalyticsMapper;
 
   @Autowired
   private InventoryRepository inventoryRepository;
@@ -76,27 +79,22 @@ public class VendorAnalyticsService {
       List<Inventory> allInventories = inventoryRepository.findByShopId(shopId);
 
       // Get completed purchases for revenue calculations
-      List<Purchase> purchases = salesHelper.getCompletedPurchases(shopId, startDate, endDate);
-
-      // Build response
-      VendorAnalyticsResponse response = new VendorAnalyticsResponse();
+      List<Purchase> purchases = salesUtils.getCompletedPurchases(shopId, startDate, endDate);
 
       // Stock analytics
-      response.setVendorStockAnalytics(vendorHelper.calculateVendorStockAnalytics(shopId, allInventories, purchases));
+      var vendorStockAnalytics = vendorUtils.calculateVendorStockAnalytics(shopId, allInventories, purchases);
 
       // Revenue analytics
-      List<VendorRevenueDto> vendorRevenues = vendorHelper.calculateVendorRevenueAnalytics(shopId, purchases);
-      response.setVendorRevenueAnalytics(vendorRevenues);
+      List<VendorRevenueDto> vendorRevenues = vendorUtils.calculateVendorRevenueAnalytics(shopId, purchases);
 
       // Performance analytics
-      response.setVendorPerformanceAnalytics(vendorHelper.calculateVendorPerformanceAnalytics(shopId, allInventories));
+      var vendorPerformanceAnalytics = vendorUtils.calculateVendorPerformanceAnalytics(shopId, allInventories);
 
       // Category expiry analytics
-      response.setCategoryExpiryAnalytics(vendorHelper.calculateCategoryExpiryAnalytics(shopId, allInventories));
+      var categoryExpiryAnalytics = vendorUtils.calculateCategoryExpiryAnalytics(shopId, allInventories);
 
       // Dependency analytics
-      List<VendorDependencyDto> dependencies = vendorHelper.calculateVendorDependencyAnalytics(shopId, vendorRevenues, allInventories);
-      response.setVendorDependencyAnalytics(dependencies);
+      List<VendorDependencyDto> dependencies = vendorUtils.calculateVendorDependencyAnalytics(shopId, vendorRevenues, allInventories);
 
       // Calculate overall summary
       BigDecimal totalInventoryValue = allInventories.stream()
@@ -154,25 +152,28 @@ public class VendorAnalyticsService {
         mostDependentVendorName = mostDependent.getVendorName();
       }
 
-      response.setTotalVendors(vendorRevenues.size());
-      response.setTotalInventoryValue(totalInventoryValue);
-      response.setTotalRevenue(totalRevenue);
-      response.setTotalExpiredStockValue(totalExpiredStockValue);
-      response.setTotalUnsoldStockValue(totalUnsoldStockValue);
-      response.setTopVendorRevenuePercentage(topVendorRevenuePercent);
-      response.setTop3VendorRevenuePercentage(top3VendorRevenuePercent);
-      response.setMostDependentVendorId(mostDependentVendorId);
-      response.setMostDependentVendorName(mostDependentVendorName);
+      VendorAnalyticsResponseParams params = VendorAnalyticsResponseParams.builder()
+          .vendorStockAnalytics(vendorStockAnalytics)
+          .vendorRevenueAnalytics(vendorRevenues)
+          .vendorPerformanceAnalytics(vendorPerformanceAnalytics)
+          .categoryExpiryAnalytics(categoryExpiryAnalytics)
+          .vendorDependencyAnalytics(dependencies)
+          .totalVendors(vendorRevenues.size())
+          .totalInventoryValue(totalInventoryValue)
+          .totalRevenue(totalRevenue)
+          .totalExpiredStockValue(totalExpiredStockValue)
+          .totalUnsoldStockValue(totalUnsoldStockValue)
+          .topVendorRevenuePercentage(topVendorRevenuePercent)
+          .top3VendorRevenuePercentage(top3VendorRevenuePercent)
+          .mostDependentVendorId(mostDependentVendorId)
+          .mostDependentVendorName(mostDependentVendorName)
+          .startDate(startDate)
+          .endDate(endDate)
+          .totalInventories(allInventories.size())
+          .totalPurchases(purchases.size())
+          .build();
 
-      // Metadata
-      Map<String, Object> meta = new HashMap<>();
-      meta.put("startDate", startDate);
-      meta.put("endDate", endDate);
-      meta.put("totalInventories", allInventories.size());
-      meta.put("totalPurchases", purchases.size());
-      response.setMeta(meta);
-
-      return response;
+      return vendorAnalyticsMapper.toResponse(params);
 
     } catch (ValidationException e) {
       log.warn("Validation error in vendor analytics: {}", e.getMessage());

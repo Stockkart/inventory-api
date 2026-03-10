@@ -9,12 +9,12 @@ import com.inventory.user.domain.model.UserRole;
 import com.inventory.user.domain.model.UserShopMembership;
 import com.inventory.user.domain.repository.UserAccountRepository;
 import com.inventory.user.domain.repository.UserShopMembershipRepository;
-import com.inventory.user.rest.dto.user.DeactivateUserResponse;
-import com.inventory.user.rest.dto.user.LinkableUserDto;
-import com.inventory.user.rest.dto.user.UpdateUserRequest;
-import com.inventory.user.rest.dto.user.UserDto;
-import com.inventory.user.rest.dto.user.UserListResponse;
-import com.inventory.user.rest.mapper.UserMapper;
+import com.inventory.user.rest.dto.request.UpdateUserRequest;
+import com.inventory.user.rest.dto.response.DeactivateUserResponse;
+import com.inventory.user.rest.dto.response.LinkableUserDto;
+import com.inventory.user.rest.dto.response.UserDto;
+import com.inventory.user.rest.dto.response.UserListResponse;
+import com.inventory.user.mapper.UserMapper;
 import com.inventory.user.validation.UserValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -58,9 +58,7 @@ public class UserService {
       for (UserShopMembership m : membershipRepository.findByShopIdAndActiveTrue(shopId)) {
         UserAccount account = userAccountRepository.findById(m.getUserId()).orElse(null);
         if (account != null) {
-          UserDto dto = userMapper.toDto(account);
-          dto.setRole(m.getRole());
-          users.add(dto);
+          users.add(userMapper.toUserDtoWithRole(account, m.getRole()));
         }
       }
 
@@ -73,9 +71,7 @@ public class UserService {
       }
 
       log.debug("Found {} users for shop: {}", users.size(), shopId);
-      UserListResponse response = new UserListResponse();
-      response.setData(users);
-      return response;
+      return userMapper.toUserListResponse(users);
 
     } catch (ValidationException e) {
       log.warn("Validation error in listUsers: {}", e.getMessage());
@@ -164,10 +160,7 @@ public class UserService {
       return Optional.empty();
     }
     return userAccountRepository.findByEmail(email.trim())
-        .map(account -> new LinkableUserDto(
-            account.getUserId(),
-            account.getEmail(),
-            account.getName()));
+        .map(userMapper::toLinkableUserDto);
   }
 
   public DeactivateUserResponse deactivate(String shopId, String userId) {
@@ -209,10 +202,7 @@ public class UserService {
         log.debug("User with ID: {} is already deactivated", userId);
       }
 
-      DeactivateUserResponse response = new DeactivateUserResponse();
-      response.setUserId(account.getUserId());
-      response.setActive(account.isActive());
-      return response;
+      return userMapper.toDeactivateUserResponse(account.getUserId(), account.isActive());
 
     } catch (ValidationException | ResourceNotFoundException e) {
       log.warn("Failed to deactivate user: {}", e.getMessage());

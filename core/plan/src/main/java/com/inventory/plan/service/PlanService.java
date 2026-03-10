@@ -7,13 +7,13 @@ import com.inventory.plan.domain.model.Usage;
 import com.inventory.plan.domain.repository.PlanRepository;
 import com.inventory.plan.domain.repository.PlanTransactionRepository;
 import com.inventory.plan.domain.repository.UsageRepository;
-import com.inventory.plan.rest.dto.plan.AssignPlanRequest;
-import com.inventory.plan.rest.dto.plan.PlanResponse;
-import com.inventory.plan.rest.dto.plan.PlanTransactionResponse;
-import com.inventory.plan.rest.dto.plan.ShopPlanStatusResponse;
-import com.inventory.plan.rest.dto.plan.UsageResponse;
-import com.inventory.plan.rest.mapper.PlanMapper;
-import com.inventory.plan.rest.mapper.PlanTransactionMapper;
+import com.inventory.plan.mapper.PlanMapper;
+import com.inventory.plan.mapper.PlanTransactionMapper;
+import com.inventory.plan.rest.dto.request.AssignPlanRequest;
+import com.inventory.plan.rest.dto.response.PlanResponse;
+import com.inventory.plan.rest.dto.response.PlanTransactionResponse;
+import com.inventory.plan.rest.dto.response.ShopPlanStatusResponse;
+import com.inventory.plan.rest.dto.response.UsageResponse;
 import com.inventory.plan.service.ShopProvider.ShopInfo;
 import com.inventory.plan.validation.PlanValidator;
 import lombok.extern.slf4j.Slf4j;
@@ -106,21 +106,8 @@ public class PlanService {
   public List<PlanTransactionResponse> listPlanTransactions(String shopId) {
     return planTransactionRepository.findByShopId(shopId, Sort.by(Sort.Direction.DESC, "createdAt"))
         .stream()
-        .map(this::toTransactionResponse)
+        .map(planTransactionMapper::toResponse)
         .collect(Collectors.toList());
-  }
-
-  private PlanTransactionResponse toTransactionResponse(PlanTransaction tx) {
-    return new PlanTransactionResponse(
-        tx.getId(),
-        tx.getShopId(),
-        tx.getPlanId(),
-        tx.getPlanName(),
-        tx.getAmount(),
-        tx.getDurationMonths(),
-        tx.getPaymentMethod(),
-        tx.getCreatedAt()
-    );
   }
 
   /**

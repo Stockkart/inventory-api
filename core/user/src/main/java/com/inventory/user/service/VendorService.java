@@ -10,11 +10,12 @@ import com.inventory.user.domain.model.Vendor;
 import com.inventory.user.domain.repository.ShopVendorRepository;
 import com.inventory.user.domain.repository.UserAccountRepository;
 import com.inventory.user.domain.repository.VendorRepository;
-import com.inventory.user.rest.dto.vendor.CreateVendorRequest;
-import com.inventory.user.rest.dto.vendor.CreateVendorResponse;
-import com.inventory.user.rest.dto.vendor.SearchVendorRequest;
-import com.inventory.user.rest.dto.vendor.VendorDto;
-import com.inventory.user.rest.mapper.VendorMapper;
+import com.inventory.user.rest.dto.request.CreateVendorRequest;
+import com.inventory.user.rest.dto.request.SearchVendorRequest;
+import com.inventory.user.rest.dto.response.CreateVendorResponse;
+import com.inventory.user.rest.dto.response.UserShopListResponse;
+import com.inventory.user.rest.dto.response.VendorDto;
+import com.inventory.user.mapper.VendorMapper;
 import com.inventory.user.validation.VendorValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.Instant;
+import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -51,99 +53,6 @@ public class VendorService {
   private UserShopMembershipService membershipService;
 
   /**
-   * Find or create a vendor and link it to a shop.
-   * If vendor info is provided, it will find existing vendor by contactEmail,
-   * or create a new one if not found. Then creates the shop-vendor relationship.
-   *
-   * @param shopId the shop ID
-   * @param vendorName vendor name
-   * @param vendorEmail vendor contact email (optional)
-   * @param vendorPhone vendor contact phone (optional)
-   * @param vendorAddress vendor address (optional)
-   * @param companyName company name (optional)
-   * @param businessType business type (optional)
-   * @return the vendor entity, or null if no vendor info provided
-   */
-  public Vendor findOrCreateVendor(String shopId, String vendorName, String vendorEmail,
-                                   String vendorPhone, String vendorAddress, String companyName,
-                                   String businessType) {
-    // If no vendor name provided, return null
-    if (!StringUtils.hasText(vendorName)) {
-      return null;
-    }
-
-    try {
-      // Try to find existing vendor by email (if email provided)
-      Vendor vendor = null;
-      if (StringUtils.hasText(vendorEmail)) {
-        vendor = vendorRepository.findByContactEmail(vendorEmail.trim())
-            .orElse(null);
-      }
-
-      // If vendor not found, create a new one
-      if (vendor == null) {
-        vendor = new Vendor();
-        vendor.setName(vendorName.trim());
-        vendor.setContactEmail(StringUtils.hasText(vendorEmail) ? vendorEmail.trim() : null);
-        vendor.setContactPhone(StringUtils.hasText(vendorPhone) ? vendorPhone.trim() : null);
-        vendor.setAddress(StringUtils.hasText(vendorAddress) ? vendorAddress.trim() : null);
-        vendor.setCompanyName(StringUtils.hasText(companyName) ? companyName.trim() : null);
-        vendor.setBusinessType(StringUtils.hasText(businessType) ? businessType.trim() : null);
-        vendor.setCreatedAt(Instant.now());
-        vendor.setUpdatedAt(Instant.now());
-
-        vendor = vendorRepository.save(vendor);
-        log.info("Created new vendor with ID: {}", vendor.getId());
-      } else {
-        // Update existing vendor if new info is provided
-        boolean updated = false;
-        if (StringUtils.hasText(vendorName) && !vendorName.trim().equals(vendor.getName())) {
-          vendor.setName(vendorName.trim());
-          updated = true;
-        }
-        if (StringUtils.hasText(vendorPhone) && !vendorPhone.trim().equals(vendor.getContactPhone())) {
-          vendor.setContactPhone(vendorPhone.trim());
-          updated = true;
-        }
-        if (StringUtils.hasText(vendorAddress) && !vendorAddress.trim().equals(vendor.getAddress())) {
-          vendor.setAddress(vendorAddress.trim());
-          updated = true;
-        }
-        if (StringUtils.hasText(companyName) && !companyName.trim().equals(vendor.getCompanyName())) {
-          vendor.setCompanyName(companyName.trim());
-          updated = true;
-        }
-        if (StringUtils.hasText(businessType) && !businessType.trim().equals(vendor.getBusinessType())) {
-          vendor.setBusinessType(businessType.trim());
-          updated = true;
-        }
-
-        if (updated) {
-          vendor.setUpdatedAt(Instant.now());
-          vendor = vendorRepository.save(vendor);
-          log.info("Updated vendor with ID: {}", vendor.getId());
-        }
-      }
-
-      // Create shop-vendor relationship if it doesn't exist
-      if (!shopVendorRepository.existsByShopIdAndVendorId(shopId, vendor.getId())) {
-        ShopVendor shopVendor = new ShopVendor();
-        shopVendor.setShopId(shopId);
-        shopVendor.setVendorId(vendor.getId());
-        shopVendor.setCreatedAt(Instant.now());
-        shopVendorRepository.save(shopVendor);
-        log.info("Linked vendor {} to shop {}", vendor.getId(), shopId);
-      }
-
-      return vendor;
-    } catch (Exception e) {
-      log.error("Error finding or creating vendor for shop: {}", shopId, e);
-      // Don't fail inventory creation if vendor creation fails
-      return null;
-    }
-  }
-
-  /**
    * Create a vendor and link it to a shop.
    *
    * @param shopId the shop ID
@@ -158,10 +67,8 @@ public class VendorService {
           .orElse(null);
     }
 
-    // If vendor not found, create a new one
     if (existingVendor == null) {
-      vendor.setCreatedAt(Instant.now());
-      vendor.setUpdatedAt(Instant.now());
+      vendorMapper.setTimestamps(vendor);
       vendor = vendorRepository.save(vendor);
       log.info("Created new vendor with ID: {}", vendor.getId());
     } else {
@@ -206,38 +113,12 @@ public class VendorService {
 
     // Create shop-vendor relationship if it doesn't exist
     if (!shopVendorRepository.existsByShopIdAndVendorId(shopId, vendor.getId())) {
-      ShopVendor shopVendor = new ShopVendor();
-      shopVendor.setShopId(shopId);
-      shopVendor.setVendorId(vendor.getId());
-      shopVendor.setCreatedAt(Instant.now());
+      ShopVendor shopVendor = vendorMapper.toShopVendor(shopId, vendor.getId());
       shopVendorRepository.save(shopVendor);
       log.info("Linked vendor {} to shop {}", vendor.getId(), shopId);
     }
 
     return vendor;
-  }
-
-  /**
-   * Search vendor by phone or email (globally, not shop-specific).
-   *
-   * @param phone the phone number (optional)
-   * @param email the email address (optional)
-   * @return the vendor if found, empty otherwise
-   */
-  @Transactional(readOnly = true)
-  public java.util.Optional<Vendor> searchVendorByPhoneOrEmail(String phone, String email) {
-    // Try phone first if provided
-    if (StringUtils.hasText(phone)) {
-      java.util.Optional<Vendor> vendor = vendorRepository.findByContactPhone(phone.trim());
-      if (vendor.isPresent()) {
-        return vendor;
-      }
-    }
-    // Try email if provided
-    if (StringUtils.hasText(email)) {
-      return vendorRepository.findByContactEmail(email.trim());
-    }
-    return java.util.Optional.empty();
   }
 
   /**
@@ -300,20 +181,17 @@ public class VendorService {
     // Validate request
     vendorValidator.validateCreateRequest(request);
 
-    // Validate userId if provided (must reference existing user)
     if (StringUtils.hasText(request.getUserId())) {
-      if (userAccountRepository.findById(request.getUserId().trim()).isEmpty()) {
-        throw new ValidationException("User ID does not exist: " + request.getUserId());
-      }
+      vendorValidator.validateUserIdExists(
+          userAccountRepository.findById(request.getUserId().trim()).isPresent(),
+          request.getUserId());
     }
 
     log.info("Creating vendor for shop: {}", shopId);
 
     try {
-      // Map request to entity
       Vendor vendor = vendorMapper.toEntity(request);
-      vendor.setCreatedAt(Instant.now());
-      vendor.setUpdatedAt(Instant.now());
+      vendorMapper.setTimestamps(vendor);
 
       // Create vendor and link to shop
       vendor = createVendor(shopId, vendor);
@@ -357,12 +235,7 @@ public class VendorService {
           "User not authenticated or shop not found");
     }
 
-    // Validate request
     vendorValidator.validateSearchRequest(request);
-
-    if (!StringUtils.hasText(request.getQuery())) {
-      throw new ValidationException("Search query is required");
-    }
 
     log.info("Searching vendors by query '{}' for shop: {}", request.getQuery(), shopId);
 
@@ -412,10 +285,7 @@ public class VendorService {
           "User not authenticated or shop not found");
     }
 
-    // Validate vendorId
-    if (!StringUtils.hasText(vendorId)) {
-      throw new ValidationException("Vendor ID is required");
-    }
+    vendorValidator.validateVendorId(vendorId);
 
     log.info("Getting vendor with ID: {} for shop: {}", vendorId, shopId);
 
@@ -464,20 +334,20 @@ public class VendorService {
    * @return list of shops the vendor user has access to, or empty if vendor is not a user
    */
   @Transactional(readOnly = true)
-  public com.inventory.user.rest.dto.invitation.UserShopListResponse getShopsForVendor(
+  public UserShopListResponse getShopsForVendor(
       String vendorId, String callerShopId) {
     if (!StringUtils.hasText(vendorId) || !StringUtils.hasText(callerShopId)) {
-      return new com.inventory.user.rest.dto.invitation.UserShopListResponse(java.util.Collections.emptyList());
+      return new UserShopListResponse(Collections.emptyList());
     }
     Vendor vendor = vendorRepository.findById(vendorId).orElse(null);
     if (vendor == null || !StringUtils.hasText(vendor.getUserId())) {
-      return new com.inventory.user.rest.dto.invitation.UserShopListResponse(java.util.Collections.emptyList());
+      return new UserShopListResponse(Collections.emptyList());
     }
     if (!isVendorLinkedToShop(callerShopId, vendorId)) {
-      return new com.inventory.user.rest.dto.invitation.UserShopListResponse(java.util.Collections.emptyList());
+      return new UserShopListResponse(Collections.emptyList());
     }
     if (membershipService == null) {
-      return new com.inventory.user.rest.dto.invitation.UserShopListResponse(java.util.Collections.emptyList());
+      return new UserShopListResponse(Collections.emptyList());
     }
     return membershipService.getShopsForUser(vendor.getUserId());
   }

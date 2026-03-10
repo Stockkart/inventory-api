@@ -6,17 +6,16 @@ import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.user.domain.model.UserAccount;
-import com.inventory.user.domain.model.UserRole;
 import com.inventory.user.domain.repository.UserAccountRepository;
-import com.inventory.user.rest.dto.auth.ChangePasswordRequest;
-import com.inventory.user.rest.dto.auth.ChangePasswordResponse;
-import com.inventory.user.rest.dto.auth.LoginRequest;
-import com.inventory.user.rest.dto.auth.LoginResponse;
-import com.inventory.user.rest.dto.auth.LogoutResponse;
-import com.inventory.user.rest.dto.auth.SignupRequest;
-import com.inventory.user.rest.dto.auth.SignupResponse;
-import com.inventory.user.rest.dto.auth.UserResponse;
-import com.inventory.user.rest.mapper.UserMapper;
+import com.inventory.user.externalservice.GoogleTokenVerifier;
+import com.inventory.user.mapper.UserMapper;
+import com.inventory.user.rest.dto.request.ChangePasswordRequest;
+import com.inventory.user.rest.dto.request.LoginRequest;
+import com.inventory.user.rest.dto.request.SignupRequest;
+import com.inventory.user.rest.dto.response.ChangePasswordResponse;
+import com.inventory.user.rest.dto.response.LoginResponse;
+import com.inventory.user.rest.dto.response.LogoutResponse;
+import com.inventory.user.rest.dto.response.SignupResponse;
 import com.inventory.user.validation.AuthValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,8 +45,7 @@ public class AuthService {
 
   @Autowired
   private GoogleTokenVerifier googleTokenVerifier;
-  @Autowired
-  private FacebookTokenVerifier facebookTokenVerifier;
+
   @Autowired
   private TokenValidationService tokenValidationService;
 
@@ -62,15 +60,9 @@ public class AuthService {
 
       UserAccount account;
 
-      // Check if OAuth ID token is provided
+      // Check if OAuth ID token is provided (authValidator validates loginType when idToken present)
       if (request.getIdToken() != null && !request.getIdToken().trim().isEmpty()) {
-        // OAuth authentication (Google/Facebook)
         String loginType = request.getLoginType() != null ? request.getLoginType().toLowerCase() : null;
-        
-        if (loginType == null) {
-          throw new ValidationException("loginType is required when idToken is provided");
-        }
-
         String email;
         Map<String, Object> payload;
 
@@ -83,19 +75,9 @@ public class AuthService {
           email = googleTokenVerifier.getEmail(payload);
 
           log.debug("Google login for email: {}", email);
-        } else if ("facebook".equals(loginType)) {
-          // Facebook authentication
-          log.debug("Attempting Facebook login");
-
-          // Verify Facebook access token
-          payload = facebookTokenVerifier.verifyToken(request.getIdToken());
-          email = facebookTokenVerifier.getEmail(payload);
-
-          log.debug("Facebook login for email: {}", email);
         } else {
           throw new ValidationException("Invalid loginType. Must be 'google' or 'facebook'");
         }
-
         // Find user by email
         String providerName = loginType.substring(0, 1).toUpperCase() + loginType.substring(1);
         account = userAccountRepository.findByEmail(email)
@@ -133,11 +115,7 @@ public class AuthService {
       if (account.getShopId() != null && !account.getShopId().trim().isEmpty() && shopServiceAdapter != null) {
         ShopServiceAdapter.ShopTaxInfo taxInfo = shopServiceAdapter.getShopTaxInfo(account.getShopId());
         if (taxInfo != null) {
-          LoginResponse.ShopInfo shopInfo = new LoginResponse.ShopInfo();
-          shopInfo.setSgst(taxInfo.getSgst());
-          shopInfo.setCgst(taxInfo.getCgst());
-          shopInfo.setName(taxInfo.getName());
-          response.setShop(shopInfo);
+          response.setShop(userMapper.toShopInfo(taxInfo));
         }
       }
 
@@ -167,15 +145,9 @@ public class AuthService {
       UserAccount account;
       String email;
 
-      // Check if OAuth ID token is provided
+      // Check if OAuth ID token is provided (authValidator validates signupType when idToken present)
       if (request.getIdToken() != null && !request.getIdToken().trim().isEmpty()) {
-        // OAuth signup (Google/Facebook)
         String signupType = request.getSignupType() != null ? request.getSignupType().toLowerCase() : null;
-        
-        if (signupType == null) {
-          throw new ValidationException("signupType is required when idToken is provided");
-        }
-
         Map<String, Object> payload;
         String name;
 
@@ -189,16 +161,6 @@ public class AuthService {
           name = googleTokenVerifier.getName(payload);
 
           log.debug("Google signup for email: {}", email);
-        } else if ("facebook".equals(signupType)) {
-          // Facebook signup
-          log.debug("Attempting Facebook signup");
-
-          // Verify Facebook access token
-          payload = facebookTokenVerifier.verifyToken(request.getIdToken());
-          email = facebookTokenVerifier.getEmail(payload);
-          name = facebookTokenVerifier.getName(payload);
-
-          log.debug("Facebook signup for email: {}", email);
         } else {
           throw new ValidationException("Invalid signupType. Must be 'google' or 'facebook'");
         }
@@ -210,20 +172,8 @@ public class AuthService {
           throw new ValidationException("User with this email already exists. Please login instead.");
         }
 
-        // Create user account from OAuth data
-        // MongoDB will auto-generate the userId as ObjectId
-        account = new UserAccount();
-        account.setEmail(email);
-        account.setName(name != null ? name : email.split("@")[0]); // Use email prefix if name not available
-        account.setRole(request.getRole() != null ? request.getRole() : UserRole.OWNER);
-        account.setShopId(request.getShopId());
-        account.setActive(true);
-        account.setInviteAccepted(false);
-        Instant now = Instant.now();
-        account.setCreatedAt(now);
-        account.setUpdatedAt(now);
-        // No password for OAuth-authenticated users
-        account.setPassword(null);
+        // Create user account from OAuth data via mapper
+        account = userMapper.toUserAccountFromOAuth(email, name, request);
 
       } else {
         // Email/password signup
@@ -267,13 +217,7 @@ public class AuthService {
   @Transactional
   public LogoutResponse logout(String userId, String accessToken) {
     try {
-      // Validate inputs
-      if (userId == null || userId.trim().isEmpty()) {
-        throw new ValidationException("User ID is required");
-      }
-      if (accessToken == null || accessToken.trim().isEmpty()) {
-        throw new ValidationException("Access token is required");
-      }
+      authValidator.validateLogoutParams(userId, accessToken);
 
       log.debug("Processing logout for user: {}", userId);
 
@@ -311,12 +255,7 @@ public class AuthService {
 
   @Transactional
   public ChangePasswordResponse changePassword(ChangePasswordRequest request) {
-    if (request == null || request.getEmail() == null || request.getEmail().trim().isEmpty()) {
-      throw new ValidationException("Email is required");
-    }
-    if (request.getPassword() == null || request.getPassword().trim().isEmpty()) {
-      throw new ValidationException("Password is required");
-    }
+    authValidator.validateChangePasswordRequest(request);
 
     UserAccount account = userAccountRepository.findByEmail(request.getEmail().trim())
         .orElseThrow(() -> new ResourceNotFoundException("User", "email", request.getEmail()));
@@ -327,31 +266,6 @@ public class AuthService {
 
     log.info("Password changed successfully for user: {}", account.getUserId());
     return new ChangePasswordResponse("Password has been changed successfully.");
-  }
-
-  @Transactional(readOnly = true)
-  public UserResponse getCurrentUser(String accessToken) {
-    try {
-      log.debug("Getting current user for token");
-
-      // Validate token and get user account
-      UserAccount account = tokenValidationService.validateToken(accessToken);
-
-      log.info("Retrieved current user: {}", account.getUserId());
-
-      // Map to response using mapper
-      return userMapper.toUserResponse(account);
-
-    } catch (AuthenticationException e) {
-      log.warn("Failed to get current user: {}", e.getMessage());
-      throw e;
-    } catch (DataAccessException e) {
-      log.error("Database error while getting current user: {}", e.getMessage(), e);
-      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Error retrieving user information");
-    } catch (Exception e) {
-      log.error("Unexpected error while getting current user: {}", e.getMessage(), e);
-      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
-    }
   }
 }
 

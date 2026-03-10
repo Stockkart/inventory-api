@@ -3,9 +3,9 @@ package com.inventory.plan.validation;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.plan.domain.model.Plan;
 import com.inventory.plan.domain.model.Usage;
-import com.inventory.plan.rest.dto.plan.AssignPlanRequest;
-import com.inventory.plan.rest.dto.plan.PaymentWebhookPayload;
-import com.inventory.plan.rest.dto.plan.RecordUsageRequest;
+import com.inventory.plan.rest.dto.request.AssignPlanRequest;
+import com.inventory.plan.rest.dto.request.PaymentWebhookPayload;
+import com.inventory.plan.rest.dto.request.RecordUsageRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
