@@ -28,21 +28,21 @@ services:
       image-preprocess:
         condition: service_healthy
   # Invoice image preprocessing (OCR). ocr.preprocess.mode=http, url=http://image-preprocess:8081/preprocess
-  image-preprocess:
-    build:
-      context: .
-      dockerfile: image_preprocess/Dockerfile
-    image: image-preprocess:local
-    container_name: image-preprocess
-    restart: unless-stopped
-    ports:
-      - "8081:8081"
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8081/health')\" || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
+#  image-preprocess:
+#    build:
+#      context: .
+#      dockerfile: image_preprocess/Dockerfile
+#    image: image-preprocess:local
+#    container_name: image-preprocess
+#    restart: unless-stopped
+#    ports:
+#      - "8081:8081"
+#    healthcheck:
+#      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8081/health')\" || exit 1"]
+#      interval: 10s
+#      timeout: 5s
+#      retries: 3
+#      start_period: 10s
   # mongodb:
   #   image: mongo:7.0
   #   container_name: inventory-mongodb
