@@ -1,6 +1,8 @@
 package com.inventory.pricing.validation;
 
 import com.inventory.common.exception.ValidationException;
+import com.inventory.pricing.rest.dto.PricingCreateCommand;
+import com.inventory.pricing.rest.dto.PricingUpdateCommand;
 import com.inventory.pricing.domain.model.Rate;
 import com.inventory.pricing.rest.dto.CreatePricingRequest;
 import com.inventory.pricing.rest.dto.UpdateDefaultPriceItem;
@@ -46,9 +48,38 @@ public class PricingValidator {
     }
   }
 
+  public void validateShopId(String shopId) {
+    if (!StringUtils.hasText(shopId)) {
+      throw new ValidationException("Shop ID is required");
+    }
+  }
+
+  public void validatePricingBelongsToShop(boolean belongs) {
+    if (!belongs) {
+      throw new ValidationException("Pricing does not belong to your shop");
+    }
+  }
+
   public void validatePricingId(String pricingId) {
     if (!StringUtils.hasText(pricingId)) {
       throw new ValidationException("Pricing ID is required");
+    }
+  }
+
+  /** Validate API create command before mapping to internal request. */
+  public void validateCreateCommand(PricingCreateCommand command) {
+    if (command == null) {
+      throw new ValidationException("Create pricing command cannot be null");
+    }
+    if (!StringUtils.hasText(command.getShopId())) {
+      throw new ValidationException("Shop ID is required for pricing");
+    }
+  }
+
+  /** Validate API update command before mapping to internal request. */
+  public void validateUpdateCommand(PricingUpdateCommand command) {
+    if (command == null) {
+      throw new ValidationException("Update pricing command cannot be null");
     }
   }
 
@@ -68,6 +99,12 @@ public class PricingValidator {
     String defaultRateToValidate = hasDefaultRate ? request.getDefaultRate() : effectiveDefaultRate;
     if (ratesToValidate != null) {
       validateRates(ratesToValidate, defaultRateToValidate);
+    }
+  }
+
+  public void validateBulkUpdateRequest(List<UpdateDefaultPriceItem> updates) {
+    if (updates == null || updates.isEmpty()) {
+      throw new ValidationException("Updates list cannot be null or empty");
     }
   }
 

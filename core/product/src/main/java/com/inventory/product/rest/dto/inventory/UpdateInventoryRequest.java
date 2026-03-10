@@ -1,7 +1,7 @@
 package com.inventory.product.rest.dto.inventory;
 
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.inventory.pricing.api.dto.RateDto;
+import com.inventory.pricing.rest.dto.RateDto;
 import com.inventory.product.rest.dto.FlexibleInstantDeserializer;
 import com.inventory.product.domain.model.BillingMode;
 import com.inventory.product.domain.model.DiscountApplicable;

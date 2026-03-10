@@ -1,4 +1,4 @@
-package com.inventory.pricing.api.dto;
+package com.inventory.pricing.rest.dto;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -6,7 +6,7 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 
-/** Named price rate (e.g., "Rate-A" = 100). Part of the pricing API contract. */
+/** Named price rate (e.g., "Rate-A" = 100). */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

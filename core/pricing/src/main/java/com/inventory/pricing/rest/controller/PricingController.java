@@ -1,18 +1,15 @@
 package com.inventory.pricing.rest.controller;
 
-import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.dto.response.ApiResponse;
-import com.inventory.common.exception.AuthenticationException;
-import com.inventory.common.exception.ValidationException;
 import com.inventory.pricing.rest.dto.BulkUpdateDefaultPriceRequest;
 import com.inventory.pricing.rest.dto.PricingResponse;
 import com.inventory.pricing.rest.dto.UpdateDefaultPriceRequest;
 import com.inventory.pricing.service.PricingService;
+import com.inventory.pricing.validation.PricingValidator;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
-import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -31,6 +28,9 @@ public class PricingController {
   @Autowired
   private PricingService pricingService;
 
+  @Autowired
+  private PricingValidator pricingValidator;
+
   /**
    * Get pricing by ID.
    */
@@ -39,9 +39,7 @@ public class PricingController {
       @PathVariable String pricingId,
       HttpServletRequest httpRequest) {
     String shopId = (String) httpRequest.getAttribute("shopId");
-    if (StringUtils.isEmpty(shopId)) {
-      throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "User not authenticated or shop not found");
-    }
+    pricingValidator.validateShopId(shopId);
     return ResponseEntity.ok(ApiResponse.success(pricingService.getById(pricingId, shopId)));
   }
 
@@ -55,9 +53,7 @@ public class PricingController {
       @RequestBody UpdateDefaultPriceRequest request,
       HttpServletRequest httpRequest) {
     String shopId = (String) httpRequest.getAttribute("shopId");
-    if (StringUtils.isEmpty(shopId)) {
-      throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "User not authenticated or shop not found");
-    }
+    pricingValidator.validateShopId(shopId);
     return ResponseEntity.ok(ApiResponse.success(pricingService.updateDefaultPrice(pricingId, request, shopId)));
   }
 
@@ -69,12 +65,8 @@ public class PricingController {
       @RequestBody BulkUpdateDefaultPriceRequest request,
       HttpServletRequest httpRequest) {
     String shopId = (String) httpRequest.getAttribute("shopId");
-    if (StringUtils.isEmpty(shopId)) {
-      throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "User not authenticated or shop not found");
-    }
-    if (request == null || request.getUpdates() == null || request.getUpdates().isEmpty()) {
-      throw new ValidationException("Updates list cannot be null or empty");
-    }
+    pricingValidator.validateShopId(shopId);
+    pricingValidator.validateBulkUpdateRequest(request != null ? request.getUpdates() : null);
     List<PricingResponse> results = pricingService.bulkUpdateDefaultPrice(request.getUpdates(), shopId);
     return ResponseEntity.ok(ApiResponse.success(results));
   }

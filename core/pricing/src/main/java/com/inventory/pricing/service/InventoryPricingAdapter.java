@@ -1,15 +1,15 @@
-package com.inventory.pricing.api;
+package com.inventory.pricing.service;
 
-import com.inventory.pricing.api.dto.PricingCreateCommand;
-import com.inventory.pricing.api.dto.PricingReadDto;
-import com.inventory.pricing.api.dto.PricingUpdateCommand;
+import com.inventory.pricing.rest.dto.PricingCreateCommand;
+import com.inventory.pricing.rest.dto.PricingReadDto;
+import com.inventory.pricing.rest.dto.PricingUpdateCommand;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
 /**
- * Port for inventory pricing operations.
+ * Adapter interface for inventory pricing operations.
  * Product module depends on this interface only, not on pricing internals.
  */
 public interface InventoryPricingAdapter {

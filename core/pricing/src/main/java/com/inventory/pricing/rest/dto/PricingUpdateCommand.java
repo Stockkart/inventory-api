@@ -1,4 +1,4 @@
-package com.inventory.pricing.api.dto;
+package com.inventory.pricing.rest.dto;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -8,13 +8,12 @@ import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
 import java.util.List;
 
-/** Command to create pricing. API contract. */
+/** Command to update pricing (partial). Only non-null fields are applied. */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class PricingCreateCommand {
-  private String shopId;
+public class PricingUpdateCommand {
   private BigDecimal maximumRetailPrice;
   private BigDecimal costPrice;
   private BigDecimal priceToRetail;

@@ -1,6 +1,7 @@
 package com.inventory.pricing.config;
 
 import com.inventory.pricing.domain.model.Pricing;
+import com.inventory.pricing.utils.PricingUtils;
 import org.bson.Document;
 import org.springframework.core.Ordered;
 import org.springframework.data.mongodb.core.mapping.event.AfterConvertCallback;
@@ -18,7 +19,7 @@ public class PricingBackwardCompatCallback implements AfterConvertCallback<Prici
   @Override
   public Pricing onAfterConvert(Pricing entity, Document document, String collection) {
     if (entity.getPriceToRetail() == null) {
-      BigDecimal sellingPrice = getBigDecimal(document, "sellingPrice");
+      BigDecimal sellingPrice = PricingUtils.getBigDecimalFromObject(document.get("sellingPrice"));
       if (sellingPrice != null) {
         entity.setPriceToRetail(sellingPrice);
       }
@@ -32,17 +33,5 @@ public class PricingBackwardCompatCallback implements AfterConvertCallback<Prici
   @Override
   public int getOrder() {
     return Ordered.LOWEST_PRECEDENCE;
-  }
-
-  private static BigDecimal getBigDecimal(Document doc, String key) {
-    Object v = doc.get(key);
-    if (v == null) return null;
-    if (v instanceof BigDecimal) return (BigDecimal) v;
-    if (v instanceof Number) return BigDecimal.valueOf(((Number) v).doubleValue());
-    try {
-      return new BigDecimal(v.toString());
-    } catch (Exception e) {
-      return null;
-    }
   }
 }

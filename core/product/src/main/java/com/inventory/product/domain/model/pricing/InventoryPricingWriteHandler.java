@@ -1,8 +1,8 @@
 package com.inventory.product.domain.model.pricing;
 
-import com.inventory.pricing.api.InventoryPricingAdapter;
-import com.inventory.pricing.api.dto.PricingCreateCommand;
-import com.inventory.pricing.api.dto.PricingUpdateCommand;
+import com.inventory.pricing.rest.dto.PricingCreateCommand;
+import com.inventory.pricing.rest.dto.PricingUpdateCommand;
+import com.inventory.pricing.service.InventoryPricingAdapter;
 import com.inventory.product.domain.model.BillingMode;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Shop;
