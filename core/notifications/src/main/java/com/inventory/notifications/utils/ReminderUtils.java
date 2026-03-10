@@ -1,7 +1,7 @@
 package com.inventory.notifications.utils;
 
-import com.inventory.notifications.rest.dto.CreateReminderForInventoryRequest;
-import com.inventory.notifications.rest.dto.CustomReminderRequest;
+import com.inventory.notifications.rest.dto.request.CreateReminderForInventoryRequest;
+import com.inventory.notifications.rest.dto.request.CustomReminderRequest;
 import com.inventory.notifications.utils.constants.ReminderConstants;
 import lombok.extern.slf4j.Slf4j;
 

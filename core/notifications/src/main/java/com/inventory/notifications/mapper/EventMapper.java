@@ -4,7 +4,7 @@ import com.inventory.notifications.domain.model.Event;
 import com.inventory.notifications.domain.model.EventStatus;
 import com.inventory.notifications.domain.model.EventType;
 import com.inventory.notifications.domain.model.Reminder;
-import com.inventory.notifications.rest.dto.InventoryLowEventDto;
+import com.inventory.notifications.rest.dto.response.InventoryLowEventDto;
 import org.mapstruct.Mapper;
 import org.mapstruct.ReportingPolicy;
 

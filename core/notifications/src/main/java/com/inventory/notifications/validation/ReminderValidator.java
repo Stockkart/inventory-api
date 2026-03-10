@@ -2,8 +2,8 @@ package com.inventory.notifications.validation;
 
 import com.inventory.common.exception.ValidationException;
 import com.inventory.notifications.domain.model.ReminderStatus;
-import com.inventory.notifications.rest.dto.CreateReminderRequest;
-import com.inventory.notifications.rest.dto.SnoozeReminderRequest;
+import com.inventory.notifications.rest.dto.request.CreateReminderRequest;
+import com.inventory.notifications.rest.dto.request.SnoozeReminderRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 

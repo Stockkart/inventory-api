@@ -26,7 +26,7 @@ import com.inventory.product.rest.dto.sale.PurchaseSummaryDto;
 import com.inventory.product.rest.dto.sale.UpdatePurchaseStatusRequest;
 import com.inventory.product.rest.mapper.InventoryMapper;
 import com.inventory.product.rest.mapper.PurchaseMapper;
-import com.inventory.plan.rest.dto.plan.RecordUsageRequest;
+import com.inventory.plan.rest.dto.request.RecordUsageRequest;
 import com.inventory.plan.service.UsageService;
 import com.inventory.product.validation.CheckoutValidator;
 import jakarta.servlet.http.HttpServletRequest;

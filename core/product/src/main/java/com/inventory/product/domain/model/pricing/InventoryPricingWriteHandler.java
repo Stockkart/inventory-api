@@ -1,7 +1,7 @@
 package com.inventory.product.domain.model.pricing;
 
-import com.inventory.pricing.rest.dto.PricingCreateCommand;
-import com.inventory.pricing.rest.dto.PricingUpdateCommand;
+import com.inventory.pricing.rest.dto.request.PricingCreateCommand;
+import com.inventory.pricing.rest.dto.request.PricingUpdateCommand;
 import com.inventory.pricing.service.InventoryPricingAdapter;
 import com.inventory.product.domain.model.BillingMode;
 import com.inventory.product.domain.model.Inventory;

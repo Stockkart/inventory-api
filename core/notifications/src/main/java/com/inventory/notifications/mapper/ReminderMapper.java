@@ -2,7 +2,14 @@ package com.inventory.notifications.mapper;
 
 import com.inventory.notifications.domain.model.Reminder;
 import com.inventory.notifications.domain.model.ReminderType;
-import com.inventory.notifications.rest.dto.*;
+import com.inventory.notifications.rest.dto.request.CreateReminderRequest;
+import com.inventory.notifications.rest.dto.request.SnoozeReminderRequest;
+import com.inventory.notifications.rest.dto.request.UpdateReminderRequest;
+import com.inventory.notifications.rest.dto.response.PageMeta;
+import com.inventory.notifications.rest.dto.response.ReminderDetailListResponse;
+import com.inventory.notifications.rest.dto.response.ReminderDetailListWrapper;
+import com.inventory.notifications.rest.dto.response.ReminderListResponse;
+import com.inventory.notifications.rest.dto.response.ReminderResponse;
 import com.inventory.notifications.service.InventoryAdapter;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;

@@ -1,8 +1,8 @@
 package com.inventory.pricing.service;
 
-import com.inventory.pricing.rest.dto.PricingCreateCommand;
-import com.inventory.pricing.rest.dto.PricingReadDto;
-import com.inventory.pricing.rest.dto.PricingUpdateCommand;
+import com.inventory.pricing.rest.dto.request.PricingCreateCommand;
+import com.inventory.pricing.rest.dto.request.PricingUpdateCommand;
+import com.inventory.pricing.rest.dto.response.PricingReadDto;
 
 import java.util.List;
 import java.util.Map;

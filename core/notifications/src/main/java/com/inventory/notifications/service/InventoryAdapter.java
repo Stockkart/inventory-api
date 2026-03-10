@@ -1,6 +1,6 @@
 package com.inventory.notifications.service;
 
-import com.inventory.notifications.rest.dto.ReminderInventorySummary;
+import com.inventory.notifications.rest.dto.response.ReminderInventorySummary;
 
 /**
  * Adapter interface to expose Inventory information to other modules

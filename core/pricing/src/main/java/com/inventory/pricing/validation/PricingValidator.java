@@ -1,13 +1,13 @@
 package com.inventory.pricing.validation;
 
 import com.inventory.common.exception.ValidationException;
-import com.inventory.pricing.rest.dto.PricingCreateCommand;
-import com.inventory.pricing.rest.dto.PricingUpdateCommand;
 import com.inventory.pricing.domain.model.Rate;
-import com.inventory.pricing.rest.dto.CreatePricingRequest;
-import com.inventory.pricing.rest.dto.UpdateDefaultPriceItem;
-import com.inventory.pricing.rest.dto.UpdateDefaultPriceRequest;
-import com.inventory.pricing.rest.dto.UpdatePricingRequest;
+import com.inventory.pricing.rest.dto.request.CreatePricingRequest;
+import com.inventory.pricing.rest.dto.request.PricingCreateCommand;
+import com.inventory.pricing.rest.dto.request.PricingUpdateCommand;
+import com.inventory.pricing.rest.dto.request.UpdateDefaultPriceItem;
+import com.inventory.pricing.rest.dto.request.UpdateDefaultPriceRequest;
+import com.inventory.pricing.rest.dto.request.UpdatePricingRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 

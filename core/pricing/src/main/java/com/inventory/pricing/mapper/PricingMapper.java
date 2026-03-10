@@ -1,16 +1,16 @@
 package com.inventory.pricing.mapper;
 
-import com.inventory.pricing.rest.dto.PricingCreateCommand;
-import com.inventory.pricing.rest.dto.PricingReadDto;
-import com.inventory.pricing.rest.dto.PricingUpdateCommand;
-import com.inventory.pricing.rest.dto.RateDto;
 import com.inventory.pricing.domain.model.Pricing;
 import com.inventory.pricing.domain.model.Rate;
-import com.inventory.pricing.rest.dto.CreatePricingRequest;
-import com.inventory.pricing.rest.dto.PricingResponse;
-import com.inventory.pricing.rest.dto.UpdateDefaultPriceItem;
-import com.inventory.pricing.rest.dto.UpdateDefaultPriceRequest;
-import com.inventory.pricing.rest.dto.UpdatePricingRequest;
+import com.inventory.pricing.rest.dto.request.CreatePricingRequest;
+import com.inventory.pricing.rest.dto.request.PricingCreateCommand;
+import com.inventory.pricing.rest.dto.request.PricingUpdateCommand;
+import com.inventory.pricing.rest.dto.request.UpdateDefaultPriceItem;
+import com.inventory.pricing.rest.dto.request.UpdateDefaultPriceRequest;
+import com.inventory.pricing.rest.dto.request.UpdatePricingRequest;
+import com.inventory.pricing.rest.dto.response.PricingReadDto;
+import com.inventory.pricing.rest.dto.response.PricingResponse;
+import com.inventory.pricing.rest.dto.response.RateDto;
 import com.inventory.pricing.utils.PricingUtils;
 import com.inventory.pricing.utils.constants.PricingConstants;
 import org.mapstruct.BeanMapping;

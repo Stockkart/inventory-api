@@ -1,11 +1,11 @@
 package com.inventory.pricing.service;
 
 import com.inventory.pricing.mapper.PricingMapper;
-import com.inventory.pricing.rest.dto.CreatePricingRequest;
-import com.inventory.pricing.rest.dto.PricingCreateCommand;
-import com.inventory.pricing.rest.dto.PricingReadDto;
-import com.inventory.pricing.rest.dto.PricingUpdateCommand;
-import com.inventory.pricing.rest.dto.UpdatePricingRequest;
+import com.inventory.pricing.rest.dto.request.CreatePricingRequest;
+import com.inventory.pricing.rest.dto.request.PricingCreateCommand;
+import com.inventory.pricing.rest.dto.request.PricingUpdateCommand;
+import com.inventory.pricing.rest.dto.request.UpdatePricingRequest;
+import com.inventory.pricing.rest.dto.response.PricingReadDto;
 import com.inventory.pricing.validation.PricingValidator;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;

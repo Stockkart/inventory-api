@@ -1,6 +1,6 @@
 package com.inventory.product.domain.model.pricing;
 
-import com.inventory.pricing.rest.dto.PricingReadDto;
+import com.inventory.pricing.rest.dto.response.PricingReadDto;
 import com.inventory.pricing.service.InventoryPricingAdapter;
 import com.inventory.product.domain.model.BillingMode;
 import com.inventory.product.domain.model.Inventory;

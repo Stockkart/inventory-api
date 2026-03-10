@@ -1,9 +1,9 @@
 package com.inventory.pricing.rest.controller;
 
 import com.inventory.common.dto.response.ApiResponse;
-import com.inventory.pricing.rest.dto.BulkUpdateDefaultPriceRequest;
-import com.inventory.pricing.rest.dto.PricingResponse;
-import com.inventory.pricing.rest.dto.UpdateDefaultPriceRequest;
+import com.inventory.pricing.rest.dto.request.BulkUpdateDefaultPriceRequest;
+import com.inventory.pricing.rest.dto.request.UpdateDefaultPriceRequest;
+import com.inventory.pricing.rest.dto.response.PricingResponse;
 import com.inventory.pricing.service.PricingService;
 import com.inventory.pricing.validation.PricingValidator;
 import jakarta.servlet.http.HttpServletRequest;

@@ -1,7 +1,7 @@
 package com.inventory.pricing.utils;
 
-import com.inventory.pricing.rest.dto.PricingReadDto;
-import com.inventory.pricing.rest.dto.RateDto;
+import com.inventory.pricing.rest.dto.response.PricingReadDto;
+import com.inventory.pricing.rest.dto.response.RateDto;
 import com.inventory.pricing.domain.model.Pricing;
 import com.inventory.pricing.domain.model.Rate;
 import com.inventory.pricing.utils.constants.PricingConstants;

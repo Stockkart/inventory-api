@@ -3,12 +3,12 @@ package com.inventory.plan.rest.controller;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.common.exception.AuthenticationException;
-import com.inventory.plan.rest.dto.plan.AssignPlanRequest;
-import com.inventory.plan.rest.dto.plan.PlanResponse;
-import com.inventory.plan.rest.dto.plan.PlanTransactionResponse;
-import com.inventory.plan.rest.dto.plan.RecordUsageRequest;
-import com.inventory.plan.rest.dto.plan.ShopPlanStatusResponse;
-import com.inventory.plan.rest.dto.plan.UsageResponse;
+import com.inventory.plan.rest.dto.request.AssignPlanRequest;
+import com.inventory.plan.rest.dto.request.RecordUsageRequest;
+import com.inventory.plan.rest.dto.response.PlanResponse;
+import com.inventory.plan.rest.dto.response.PlanTransactionResponse;
+import com.inventory.plan.rest.dto.response.ShopPlanStatusResponse;
+import com.inventory.plan.rest.dto.response.UsageResponse;
 import com.inventory.plan.service.PlanService;
 import com.inventory.plan.service.UsageService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -35,34 +35,22 @@ public class PlanController {
   @Autowired
   private UsageService usageService;
 
-  /**
-   * List all plans - PUBLIC, no auth required (for pricing page before login).
-   */
   @GetMapping
   public ResponseEntity<ApiResponse<List<PlanResponse>>> listPlans() {
     return ResponseEntity.ok(ApiResponse.success(planService.listPlans()));
   }
 
-  /**
-   * Get plan by ID - PUBLIC.
-   */
   @GetMapping("/{planId}")
   public ResponseEntity<ApiResponse<PlanResponse>> getPlan(@PathVariable String planId) {
     return ResponseEntity.ok(ApiResponse.success(planService.getPlan(planId)));
   }
 
-  /**
-   * Get current shop plan status - uses shopId from request attributes.
-   */
   @GetMapping("/shop/status")
   public ResponseEntity<ApiResponse<ShopPlanStatusResponse>> getShopPlanStatus(HttpServletRequest httpRequest) {
     String shopId = getShopId(httpRequest);
     return ResponseEntity.ok(ApiResponse.success(planService.getShopPlanStatus(shopId)));
   }
 
-  /**
-   * Get suggested next plan for upsell.
-   */
   @GetMapping("/shop/{shopId}/suggested")
   public ResponseEntity<ApiResponse<PlanResponse>> getSuggestedPlan(
       @PathVariable String shopId,
@@ -71,11 +59,6 @@ public class PlanController {
     return ResponseEntity.ok(ApiResponse.success(planService.getSuggestedPlan(shopId)));
   }
 
-  /**
-   * Assign plan to shop. Prefer using payment webhook (/webhook/payment-success) which
-   * is triggered automatically when payment gateway confirms success. This endpoint
-   * is kept for testing/admin use.
-   */
   @PostMapping("/shop/{shopId}/assign")
   public ResponseEntity<ApiResponse<PlanResponse>> assignPlan(
       @PathVariable String shopId,
@@ -85,27 +68,18 @@ public class PlanController {
     return ResponseEntity.ok(ApiResponse.success(planService.assignPlan(shopId, request)));
   }
 
-  /**
-   * List plan payment transactions for current shop.
-   */
   @GetMapping("/shop/transactions")
   public ResponseEntity<ApiResponse<List<PlanTransactionResponse>>> listPlanTransactions(HttpServletRequest httpRequest) {
     String shopId = getShopId(httpRequest);
     return ResponseEntity.ok(ApiResponse.success(planService.listPlanTransactions(shopId)));
   }
 
-  /**
-   * Get current month usage for shop.
-   */
   @GetMapping("/shop/usage")
   public ResponseEntity<ApiResponse<UsageResponse>> getCurrentUsage(HttpServletRequest httpRequest) {
     String shopId = getShopId(httpRequest);
     return ResponseEntity.ok(ApiResponse.success(usageService.getCurrentUsage(shopId)));
   }
 
-  /**
-   * Record usage (billing, SMS, WhatsApp). Called internally when bill is created, etc.
-   */
   @PutMapping("/shop/usage")
   public ResponseEntity<ApiResponse<UsageResponse>> recordUsage(
       @RequestBody RecordUsageRequest request,

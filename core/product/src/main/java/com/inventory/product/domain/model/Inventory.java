@@ -1,6 +1,6 @@
 package com.inventory.product.domain.model;
 
-import com.inventory.pricing.rest.dto.RateDto;
+import com.inventory.pricing.rest.dto.response.RateDto;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
