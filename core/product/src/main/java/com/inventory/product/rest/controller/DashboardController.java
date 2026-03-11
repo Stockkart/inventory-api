@@ -1,6 +1,8 @@
 package com.inventory.product.rest.controller;
 
 import com.inventory.common.dto.response.ApiResponse;
+import com.inventory.metrics.annotation.Latency;
+import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.product.rest.dto.response.DashboardResponse;
 import com.inventory.product.service.DashboardService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -12,6 +14,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/dashboard")
+@Latency(module = "product")
+@RecordStatusCodes(module = "product")
 public class DashboardController {
 
   @Autowired

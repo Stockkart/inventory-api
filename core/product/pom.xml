@@ -56,6 +56,11 @@
             <version>1.0.0</version>
         </dependency>
         <dependency>
+            <groupId>com.inventory</groupId>
+            <artifactId>metrics</artifactId>
+            <version>1.0.0</version>
+        </dependency>
+        <dependency>
             <groupId>org.mapstruct</groupId>
             <artifactId>mapstruct</artifactId>
             <version>1.5.5.Final</version>

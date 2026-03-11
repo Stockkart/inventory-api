@@ -1,6 +1,8 @@
 package com.inventory.product.rest.controller;
 
 import com.inventory.common.dto.response.ApiResponse;
+import com.inventory.metrics.annotation.Latency;
+import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.product.rest.dto.request.CreateBusinessTypeRequest;
 import com.inventory.product.rest.dto.response.BusinessTypeResponse;
 import com.inventory.product.service.BusinessTypeService;
@@ -13,6 +15,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/business-types")
+@Latency(module = "product")
+@RecordStatusCodes(module = "product")
 public class BusinessTypeController {
 
   @Autowired

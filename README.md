@@ -116,6 +116,19 @@ The app loads `.env` from the project root and exposes:
 - **Health:** http://localhost:8080/actuator/health  
 - **Prometheus:** http://localhost:8080/actuator/prometheus  
 
+### 5. Metrics with Prometheus & Grafana
+
+When running with `docker compose up`, Prometheus and Grafana are started automatically:
+
+| Service   | URL                    | Description                          |
+|-----------|------------------------|--------------------------------------|
+| Prometheus| http://localhost:9090  | Scrapes metrics from the app         |
+| Grafana   | http://localhost:3001  | Dashboards (login: `admin` / `admin`)|
+
+**Custom metric example:** Hit `GET http://localhost:8080/metrics-demo` to increment a counter. View it in Grafana under **Inventory API Overview**.
+
+Set `GF_USERNAME` and `GF_PASSWORD` in `.env` to customize Grafana credentials (default: `admin`/`admin`).
+
 ---
 
 ## Multimodule Structure

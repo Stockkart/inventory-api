@@ -24,9 +24,9 @@ services:
       UPLOAD_TOKEN_EXPIRY_MINUTES: ${UPLOAD_TOKEN_EXPIRY_MINUTES}
     ports:
       - "8080:8080"
-#    depends_on:
-#      image-preprocess:
-#        condition: service_healthy
+    # depends_on:
+    #   image-preprocess:
+    #     condition: service_healthy
   # Invoice image preprocessing (OCR). ocr.preprocess.mode=http, url=http://image-preprocess:8081/preprocess
 #  image-preprocess:
 #    build:
@@ -62,27 +62,29 @@ services:
   #     timeout: 5s
   #     retries: 5
   #     start_period: 10s
-#  prometheus:
-#    image: prom/prometheus:latest
-#    container_name: inventory-prometheus
-#    restart: unless-stopped
-#    volumes:
-#      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
-#    command:
-#      - "--config.file=/etc/prometheus/prometheus.yml"
-#    ports:
-#      - "9090:9090"
-#    depends_on:
-#      - app
-#  #
-#  grafana:
-#    image: grafana/grafana:latest
-#    container_name: inventory-grafana
-#    restart: unless-stopped
-#    ports:
-#      - "3001:3000"   # browser: http://localhost:3001
-#    depends_on:
-#      - prometheus
-#    environment:
-#      GF_SECURITY_ADMIN_USER: ${GF_USERNAME}
-#      GF_SECURITY_ADMIN_PASSWORD: ${GF_PASSWORD}
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: inventory-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    ports:
+      - "9090:9090"
+    depends_on:
+      - app
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: inventory-grafana
+    restart: unless-stopped
+    ports:
+      - "3001:3000"   # browser: http://localhost:3001
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GF_USERNAME:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"

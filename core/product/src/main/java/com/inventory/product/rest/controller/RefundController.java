@@ -1,6 +1,8 @@
 package com.inventory.product.rest.controller;
 
 import com.inventory.common.dto.response.ApiResponse;
+import com.inventory.metrics.annotation.Latency;
+import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.product.rest.dto.request.RefundRequest;
 import com.inventory.product.rest.dto.response.RefundListResponse;
 import com.inventory.product.rest.dto.response.RefundResponse;
@@ -20,6 +22,8 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/refund")
+@Latency(module = "product")
+@RecordStatusCodes(module = "product")
 public class RefundController {
 
   @Autowired
