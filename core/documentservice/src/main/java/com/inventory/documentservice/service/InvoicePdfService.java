@@ -109,11 +109,13 @@ public class InvoicePdfService {
     return context;
   }
 
+  private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
+
   private String formatDate(Instant instant) {
     if (instant == null) {
       return "";
     }
-    LocalDateTime dateTime = LocalDateTime.ofInstant(instant, ZoneId.systemDefault());
+    LocalDateTime dateTime = LocalDateTime.ofInstant(instant, IST);
     return dateTime.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"));
   }
 
@@ -121,8 +123,8 @@ public class InvoicePdfService {
     if (instant == null) {
       return "";
     }
-    LocalDateTime dateTime = LocalDateTime.ofInstant(instant, ZoneId.systemDefault());
-    return dateTime.format(DateTimeFormatter.ofPattern("HH:mm"));
+    LocalDateTime dateTime = LocalDateTime.ofInstant(instant, IST);
+    return dateTime.format(DateTimeFormatter.ofPattern("hh:mm a"));
   }
 
   private byte[] convertHtmlToPdf(String html) throws IOException {

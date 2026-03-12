@@ -238,8 +238,8 @@
 
     .summary-table tr.savings-row {
         background: #f0f0f0;
-        font-weight: 600;
-        font-size: 10px;
+        font-weight: 700;
+        font-size: 11px;
         border-top: 1px solid #000;
     }
 
@@ -455,7 +455,7 @@
     <div class="summary-right">
       <table class="summary-table">
         <tr>
-          <td>TOTAL AMOUNT</td>
+          <td>Total Amount</td>
           <td th:text="${#numbers.formatDecimal(subTotal, 1, 2)}"></td>
         </tr>
         <tr th:if="${additionalDiscountTotal != null && additionalDiscountTotal > 0}">
@@ -471,7 +471,7 @@
           <td th:text="${#numbers.formatDecimal(cgstAmount, 1, 2)}"></td>
         </tr>
         <tr class="net-amount">
-          <td>NET AMOUNT</td>
+          <td>Net Amount</td>
           <td th:text="${#numbers.formatDecimal(grandTotal, 1, 2)}"></td>
         </tr>
         <tr th:if="${totalAmountSaved != null && totalAmountSaved > 0}" class="savings-row">

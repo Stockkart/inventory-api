@@ -101,7 +101,7 @@ public class InvoiceService {
     // Invoice basic info
     request.setInvoiceNo(purchase.getInvoiceNo() != null ? purchase.getInvoiceNo() : "");
     if (purchase.getSoldAt() != null) {
-      LocalDateTime soldAt = LocalDateTime.ofInstant(purchase.getSoldAt(), ZoneId.systemDefault());
+      LocalDateTime soldAt = LocalDateTime.ofInstant(purchase.getSoldAt(), ZoneId.of("Asia/Kolkata"));
       request.setInvoiceDate(soldAt.format(DateTimeFormatter.ofPattern("dd-MM-yyyy")));
       request.setInvoiceTime(soldAt.format(DateTimeFormatter.ofPattern("hh:mm a")));
     }
@@ -187,7 +187,7 @@ public class InvoiceService {
               invoiceItem.setScheme(inventory.getScheme());
             }
             if (inventory.getExpiryDate() != null) {
-              LocalDateTime expiryDateTime = LocalDateTime.ofInstant(inventory.getExpiryDate(), ZoneId.systemDefault());
+              LocalDateTime expiryDateTime = LocalDateTime.ofInstant(inventory.getExpiryDate(), ZoneId.of("Asia/Kolkata"));
               invoiceItem.setExpiryDate(expiryDateTime.format(DateTimeFormatter.ofPattern("MM/yy")));
             }
           }
