@@ -1,15 +1,14 @@
 package com.inventory.product.validation;
 
-import com.inventory.common.exception.ValidationException;
 import org.springframework.stereotype.Component;
-import org.springframework.util.StringUtils;
 
 @Component
 public class ProductValidator {
 
+  /**
+   * Validates barcode if needed. Barcode is optional - no validation when null or empty.
+   */
   public void validateBarcode(String barcode) {
-    if (!StringUtils.hasText(barcode)) {
-      throw new ValidationException("Product barcode is required");
-    }
+    // Barcode is optional; no validation required
   }
 }

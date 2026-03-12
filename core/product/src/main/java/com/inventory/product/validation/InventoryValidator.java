@@ -21,9 +21,6 @@ public class InventoryValidator {
     if (request == null) {
       throw new ValidationException("Request cannot be null");
     }
-    if (!StringUtils.hasText(request.getBarcode())) {
-      throw new ValidationException("Barcode is required");
-    }
     if (!StringUtils.hasText(request.getName())) {
       throw new ValidationException("Product name is required");
     }

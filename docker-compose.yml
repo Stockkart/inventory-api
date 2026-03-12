@@ -24,9 +24,9 @@ services:
       UPLOAD_TOKEN_EXPIRY_MINUTES: ${UPLOAD_TOKEN_EXPIRY_MINUTES}
     ports:
       - "8080:8080"
-    depends_on:
-      image-preprocess:
-        condition: service_healthy
+#    depends_on:
+#      image-preprocess:
+#        condition: service_healthy
   # Invoice image preprocessing (OCR). ocr.preprocess.mode=http, url=http://image-preprocess:8081/preprocess
 #  image-preprocess:
 #    build:

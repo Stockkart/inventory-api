@@ -203,7 +203,7 @@ public class CheckoutService {
 
       checkoutValidator.validateStatusTransition(currentStatus, requestedStatus);
 
-      // If status is being changed to COMPLETED, check plan limits, decrease inventory
+      // If status is being changed to COMPLETED, check plan limits, decrease inventory, assign invoice number
       if (requestedStatus == PurchaseStatus.COMPLETED) {
         BigDecimal grandTotal = purchase.getGrandTotal() != null ? purchase.getGrandTotal() : BigDecimal.ZERO;
         if (usageService != null) {
@@ -213,6 +213,15 @@ public class CheckoutService {
         updateInventoryForCompletedPurchase(purchase);
         // Sale date for GSTR and reporting: when the sale was completed (invoice date)
         purchase.setSoldAt(Instant.now());
+        // Assign invoice number only on completion (avoids wasting sequence when cart changes before purchase)
+        if (!StringUtils.hasText(purchase.getInvoiceNo())) {
+          BillingMode billingMode = purchase.getBillingMode() != null ? purchase.getBillingMode() : BillingMode.REGULAR;
+          if (billingMode == BillingMode.BASIC) {
+            purchase.setInvoiceNo(invoiceSequenceService.getNextBasicInvoiceNo(shopId));
+          } else {
+            purchase.setInvoiceNo(invoiceSequenceService.getNextInvoiceNo(shopId));
+          }
+        }
         // Record customer credit when sale is on credit
         recordCustomerCreditIfApplicable(purchase, request.getPaymentMethod(), userId);
       }
@@ -1031,11 +1040,7 @@ public class CheckoutService {
       Purchase purchase = purchaseMapper.toPurchaseForCart(
           request, purchaseItems, subTotal, taxResult.getTaxTotal(), discountTotal, grandTotal, shopId, userId, customerId, billingMode
       );
-      if (billingMode == BillingMode.BASIC) {
-        purchase.setInvoiceNo(invoiceSequenceService.getNextBasicInvoiceNo(shopId));
-      } else {
-        purchase.setInvoiceNo(invoiceSequenceService.getNextInvoiceNo(shopId));
-      }
+      // Invoice number is assigned only when purchase is completed (avoids wasting sequence on cart changes)
       // Set tax amounts, additional discount, and customerName
       purchase.setSgstAmount(taxResult.getSgstAmount());
       purchase.setCgstAmount(taxResult.getCgstAmount());
