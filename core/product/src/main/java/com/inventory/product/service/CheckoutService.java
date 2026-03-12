@@ -903,6 +903,14 @@ public class CheckoutService {
   }
 
   /**
+   * Round grand total to nearest whole rupee (e.g. 319.19 → 319, 319.50 → 320).
+   */
+  private BigDecimal roundOffToWholeRupee(BigDecimal amount) {
+    if (amount == null) return BigDecimal.ZERO;
+    return amount.setScale(0, RoundingMode.HALF_UP);
+  }
+
+  /**
    * Calculate totalAmount for a single purchase item.
    * Formula:
    * 1. Apply additionalDiscount to priceToRetail: priceToRetail * (1 - additionalDiscount/100)
@@ -1033,7 +1041,8 @@ public class CheckoutService {
       TaxCalculationResult taxResult = calculateTax(purchaseItems, shopId, billingMode);
       BigDecimal discountTotal = calculateTotalDiscount(purchaseItems);
       BigDecimal additionalDiscountTotal = calculateAdditionalDiscountTotal(purchaseItems);
-      BigDecimal grandTotal = subTotal.add(taxResult.getTaxTotal()).subtract(additionalDiscountTotal);
+      BigDecimal calculatedTotal = subTotal.add(taxResult.getTaxTotal()).subtract(additionalDiscountTotal);
+      BigDecimal grandTotal = roundOffToWholeRupee(calculatedTotal);
 
       // Create purchase with CREATED status using mapper
       // MongoDB will auto-generate the id as ObjectId
@@ -1314,9 +1323,10 @@ public class CheckoutService {
       BigDecimal additionalDiscountTotal = calculateAdditionalDiscountTotal(mergedItems);
       existingCart.setDiscountTotal(discountTotal);
       existingCart.setAdditionalDiscountTotal(additionalDiscountTotal);
-      existingCart.setGrandTotal(newSubTotal
+      BigDecimal calculatedTotal = newSubTotal
           .add(taxResult.getTaxTotal())
-          .subtract(additionalDiscountTotal));
+          .subtract(additionalDiscountTotal);
+      existingCart.setGrandTotal(roundOffToWholeRupee(calculatedTotal));
       setPurchaseMarginDetails(existingCart);
 
       // If cart is empty after updates, we can either delete it or keep it with empty items
