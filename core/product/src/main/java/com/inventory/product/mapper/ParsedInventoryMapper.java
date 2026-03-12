@@ -8,6 +8,7 @@ import com.inventory.product.rest.dto.request.CreateInventoryItemRequest;
 import com.inventory.product.rest.dto.response.ParsedInventoryListResponse;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
+import org.mapstruct.Named;
 import org.mapstruct.ReportingPolicy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,11 +51,11 @@ public interface ParsedInventoryMapper {
     return result;
   }
 
-  @Mapping(target = "businessType", expression = "java(mapBusinessType(parsedItem.getBusinessType()))")
-  @Mapping(target = "thresholdCount", expression = "java(mapThresholdCount(parsedItem.getThresholdCount()))")
-  @Mapping(target = "expiryDate", expression = "java(parseInstant(parsedItem.getExpiryDate()))")
-  @Mapping(target = "reminderAt", expression = "java(parseInstant(parsedItem.getReminderAt()))")
-  @Mapping(target = "customReminders", expression = "java(mapCustomReminders(parsedItem.getCustomReminders()))")
+  @Mapping(target = "businessType", source = "businessType", qualifiedByName = "mapBusinessType")
+  @Mapping(target = "thresholdCount", source = "thresholdCount", qualifiedByName = "mapThresholdCount")
+  @Mapping(target = "expiryDate", source = "expiryDate", qualifiedByName = "parseInstant")
+  @Mapping(target = "reminderAt", source = "reminderAt", qualifiedByName = "parseInstant")
+  @Mapping(target = "customReminders", source = "customReminders", qualifiedByName = "mapCustomReminders")
   CreateInventoryItemRequest toCreateInventoryItemRequest(ParsedInventoryItem parsedItem);
 
   default List<CreateInventoryItemRequest> toCreateInventoryItemRequestList(List<ParsedInventoryItem> parsedItems) {
@@ -72,14 +73,17 @@ public interface ParsedInventoryMapper {
     return requests;
   }
 
+  @Named("mapBusinessType")
   default String mapBusinessType(String businessType) {
     return businessType != null ? businessType : "PHARMACEUTICAL";
   }
 
+  @Named("mapThresholdCount")
   default Integer mapThresholdCount(Integer thresholdCount) {
     return thresholdCount != null ? thresholdCount : 10;
   }
 
+  @Named("parseInstant")
   default Instant parseInstant(String value) {
     if (value == null || value.trim().isEmpty()) {
       return null;
@@ -91,6 +95,7 @@ public interface ParsedInventoryMapper {
     }
   }
 
+  @Named("mapCustomReminders")
   default List<CustomReminderRequest> mapCustomReminders(List<ParsedReminderDto> parsedReminders) {
     if (parsedReminders == null || parsedReminders.isEmpty()) {
       return null;
