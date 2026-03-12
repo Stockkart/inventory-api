@@ -2,6 +2,7 @@ package com.inventory.product.rest.controller;
 
 import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.metrics.annotation.Latency;
+import com.inventory.metrics.annotation.RecordRequestRate;
 import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.product.service.InvoiceService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/invoices")
 @Latency(module = "product")
+@RecordRequestRate(module = "product")
 @RecordStatusCodes(module = "product")
 @Slf4j
 public class InvoiceController {

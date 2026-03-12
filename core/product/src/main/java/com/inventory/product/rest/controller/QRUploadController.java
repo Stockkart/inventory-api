@@ -2,6 +2,7 @@ package com.inventory.product.rest.controller;
 
 import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.metrics.annotation.Latency;
+import com.inventory.metrics.annotation.RecordRequestRate;
 import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.common.exception.AuthenticationException;
 import com.inventory.common.exception.ValidationException;
@@ -26,6 +27,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @Latency(module = "product")
+@RecordRequestRate(module = "product")
 @RecordStatusCodes(module = "product")
 @Slf4j
 public class QRUploadController {
