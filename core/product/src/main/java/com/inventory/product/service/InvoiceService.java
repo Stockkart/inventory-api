@@ -15,6 +15,7 @@ import com.inventory.product.domain.model.enums.ShopType;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.PurchaseRepository;
 import com.inventory.product.domain.repository.ShopRepository;
+import com.inventory.product.utils.constants.ProductMetricsConstants;
 import com.inventory.product.utils.AmountToWordsConverter;
 import com.inventory.user.domain.model.Customer;
 import com.inventory.user.service.CustomerService;
@@ -55,6 +56,9 @@ public class InvoiceService {
   @Autowired
   private DocumentService documentService;
 
+  @Autowired(required = false)
+  private com.inventory.metrics.MetricsWrapper metrics;
+
   /**
    * Generate invoice PDF for a purchase.
    *
@@ -82,7 +86,11 @@ public class InvoiceService {
     GenerateInvoiceRequest request = buildGenerateInvoiceRequest(purchase, shop);
 
     // Generate PDF
-    return documentService.generateInvoice(request);
+    byte[] pdf = documentService.generateInvoice(request);
+    if (metrics != null) {
+      metrics.record(ProductMetricsConstants.INVOICES_GENERATED, 1, "module", ProductMetricsConstants.MODULE);
+    }
+    return pdf;
   }
 
   /**

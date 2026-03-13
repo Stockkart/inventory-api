@@ -29,6 +29,7 @@ import com.inventory.product.mapper.PurchaseMapper;
 import com.inventory.plan.rest.dto.request.RecordUsageRequest;
 import com.inventory.plan.service.UsageService;
 import com.inventory.product.utils.CheckoutUtils;
+import com.inventory.product.utils.constants.ProductMetricsConstants;
 import com.inventory.product.validation.CheckoutValidator;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -95,6 +96,9 @@ public class CheckoutService {
   @Autowired
   private UsageService usageService;
 
+  @Autowired(required = false)
+  private com.inventory.metrics.MetricsWrapper metrics;
+
   @Transactional
   public AddToCartResponse addToCart(AddToCartRequest request, HttpServletRequest httpRequest) {
     // Get shopId and userId from request attributes (set by AuthenticationInterceptor)
@@ -134,6 +138,9 @@ public class CheckoutService {
         // Update existing cart - merge items (including quantity-0 update-only items)
         log.info("Updating existing cart with ID: {}", existingCart.getId());
         purchase = updateCart(existingCart, newItems, request.getBusinessType(), customerId, customerName, cartBillingMode);
+        if (metrics != null) {
+          metrics.record(ProductMetricsConstants.CART_UPDATED, 1, "module", ProductMetricsConstants.MODULE);
+        }
       } else {
         // New cart: only items with quantity > 0 can be added; quantity-0 items are for updating discount on existing cart only
         List<PurchaseItem> itemsToAdd = newItems.stream()
@@ -145,6 +152,9 @@ public class CheckoutService {
         }
         log.info("Creating new cart");
         purchase = createCart(request, itemsToAdd, shopId, userId, customerId, customerName, cartBillingMode);
+        if (metrics != null) {
+          metrics.record(ProductMetricsConstants.CART_CREATED, 1, "module", ProductMetricsConstants.MODULE);
+        }
       }
 
       log.info("Successfully updated cart with ID: {}", purchase.getId());
@@ -235,6 +245,13 @@ public class CheckoutService {
       // Record billing usage after successful completion
       if (requestedStatus == PurchaseStatus.COMPLETED && usageService != null) {
         recordBillingUsageForPurchase(shopId, purchase);
+      }
+      if (requestedStatus == PurchaseStatus.COMPLETED && metrics != null) {
+        BigDecimal grandTotal = purchase.getGrandTotal() != null ? purchase.getGrandTotal() : BigDecimal.ZERO;
+        metrics.record(ProductMetricsConstants.ORDERS_COMPLETED, 1, "module", ProductMetricsConstants.MODULE);
+        if (grandTotal.compareTo(BigDecimal.ZERO) > 0) {
+          metrics.record(ProductMetricsConstants.ORDERS_AMOUNT, grandTotal.doubleValue(), "module", ProductMetricsConstants.MODULE);
+        }
       }
 
       log.info("Successfully updated purchase status from {} to {} for purchase ID: {}",
