@@ -1,7 +1,7 @@
 package com.inventory.product.mapper;
 
-import com.inventory.notifications.rest.dto.request.CreateReminderForInventoryRequest;
-import com.inventory.notifications.rest.dto.response.InventoryLowEventDto;
+import com.inventory.reminders.rest.dto.request.CreateReminderForInventoryRequest;
+import com.inventory.reminders.rest.dto.response.InventoryLowEventDto;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.UnitConversion;
 import com.inventory.product.rest.dto.request.CreateInventoryItemRequest;

@@ -18,5 +18,7 @@ public interface UserAccountRepository extends MongoRepository<UserAccount, Stri
   // Find user by access token in tokens list
   @Query("{ 'tokens.accessToken': ?0 }")
   Optional<UserAccount> findByAccessToken(String accessToken);
+
+  Optional<UserAccount> findByPasswordResetToken(String passwordResetToken);
 }
 
