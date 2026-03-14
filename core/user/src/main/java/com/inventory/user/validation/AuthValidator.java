@@ -2,8 +2,10 @@ package com.inventory.user.validation;
 
 import com.inventory.common.exception.ValidationException;
 import com.inventory.user.rest.dto.request.ChangePasswordRequest;
+import com.inventory.user.rest.dto.request.ForgotPasswordRequest;
 import com.inventory.user.rest.dto.request.LoginRequest;
 import com.inventory.user.rest.dto.request.LogoutRequest;
+import com.inventory.user.rest.dto.request.ResetPasswordRequest;
 import com.inventory.user.rest.dto.request.SignupRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -115,6 +117,24 @@ public class AuthValidator {
     }
     if (request.getPassword() == null || request.getPassword().trim().isEmpty()) {
       throw new ValidationException("Password is required");
+    }
+  }
+
+  public void validateForgotPasswordRequest(ForgotPasswordRequest request) {
+    if (request == null || request.getEmail() == null || request.getEmail().trim().isEmpty()) {
+      throw new ValidationException("Email is required");
+    }
+  }
+
+  public void validateResetPasswordRequest(ResetPasswordRequest request) {
+    if (request == null || request.getToken() == null || request.getToken().trim().isEmpty()) {
+      throw new ValidationException("Reset token is required");
+    }
+    if (request.getNewPassword() == null || request.getNewPassword().trim().isEmpty()) {
+      throw new ValidationException("New password is required");
+    }
+    if (request.getNewPassword().length() < 8) {
+      throw new ValidationException("Password must be at least 8 characters long");
     }
   }
 }

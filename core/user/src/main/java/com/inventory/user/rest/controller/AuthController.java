@@ -2,11 +2,15 @@ package com.inventory.user.rest.controller;
 
 import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.user.rest.dto.request.ChangePasswordRequest;
+import com.inventory.user.rest.dto.request.ForgotPasswordRequest;
 import com.inventory.user.rest.dto.request.LoginRequest;
+import com.inventory.user.rest.dto.request.ResetPasswordRequest;
 import com.inventory.user.rest.dto.request.SignupRequest;
 import com.inventory.user.rest.dto.response.ChangePasswordResponse;
+import com.inventory.user.rest.dto.response.ForgotPasswordResponse;
 import com.inventory.user.rest.dto.response.LoginResponse;
 import com.inventory.user.rest.dto.response.LogoutResponse;
+import com.inventory.user.rest.dto.response.ResetPasswordResponse;
 import com.inventory.user.rest.dto.response.SignupResponse;
 import com.inventory.user.rest.dto.response.UserResponse;
 import com.inventory.user.mapper.UserMapper;
@@ -48,6 +52,18 @@ public class AuthController {
   public ResponseEntity<ApiResponse<ChangePasswordResponse>> changePassword(
       @RequestBody ChangePasswordRequest request) {
     return ResponseEntity.ok(ApiResponse.success(authService.changePassword(request)));
+  }
+
+  @PostMapping("/forgot-password")
+  public ResponseEntity<ApiResponse<ForgotPasswordResponse>> forgotPassword(
+      @RequestBody ForgotPasswordRequest request) {
+    return ResponseEntity.ok(ApiResponse.success(authService.forgotPassword(request)));
+  }
+
+  @PostMapping("/reset-password")
+  public ResponseEntity<ApiResponse<ResetPasswordResponse>> resetPassword(
+      @RequestBody ResetPasswordRequest request) {
+    return ResponseEntity.ok(ApiResponse.success(authService.resetPassword(request)));
   }
 
   @PostMapping("/logout")
