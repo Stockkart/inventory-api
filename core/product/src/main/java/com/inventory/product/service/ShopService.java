@@ -9,8 +9,11 @@ import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.rest.dto.request.RegisterShopRequest;
 import com.inventory.product.rest.dto.request.ShopApprovalRequest;
+import com.inventory.product.rest.dto.request.UpdateShopRequest;
 import com.inventory.product.rest.dto.response.ShopApprovalResponse;
+import com.inventory.product.rest.dto.response.ShopDetailResponse;
 import com.inventory.product.rest.dto.response.ShopRegistrationResponse;
+import com.inventory.product.domain.model.Location;
 import com.inventory.product.mapper.ShopMapper;
 import com.inventory.product.validation.ShopValidator;
 import com.inventory.user.domain.model.UserRole;
@@ -220,5 +223,42 @@ public class ShopService {
 
   /** DTO for plan module. */
   public record ShopPlanInfo(String shopId, String planId, Instant planExpiryDate) {}
+
+  /**
+   * Get shop detail by id. Caller must have access to the shop.
+   */
+  @Transactional(readOnly = true)
+  public ShopDetailResponse getShopDetail(String shopId, String userId) {
+    shopValidator.validateShopAccess(membershipService.hasAccess(userId, shopId));
+    Shop shop = shopRepository.findById(shopId)
+        .orElseThrow(() -> new ResourceNotFoundException("Shop", "id", shopId));
+    return shopMapper.toShopDetailResponse(shop);
+  }
+
+  /**
+   * Update shop tagline and/or location. Only provided fields are updated.
+   */
+  @Transactional
+  public ShopDetailResponse update(String shopId, UpdateShopRequest request, String userId) {
+    shopValidator.validateUpdateRequest(request);
+    shopValidator.validateShopAccess(membershipService.hasAccess(userId, shopId));
+    Shop shop = shopRepository.findById(shopId)
+        .orElseThrow(() -> new ResourceNotFoundException("Shop", "id", shopId));
+
+    if (request.getTagline() != null) {
+      shop.setTagline(request.getTagline().trim().isEmpty() ? null : request.getTagline().trim());
+    }
+    if (request.getLocation() != null) {
+      Location loc = shopMapper.toLocation(request.getLocation());
+      if (loc.getCountry() == null || loc.getCountry().trim().isEmpty()) {
+        loc.setCountry("IND");
+      }
+      shop.setLocation(loc);
+    }
+
+    shop = shopRepository.save(shop);
+    log.info("Updated shop {} (tagline/location) for user {}", shopId, userId);
+    return shopMapper.toShopDetailResponse(shop);
+  }
 }
 
