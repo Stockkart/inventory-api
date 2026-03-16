@@ -53,7 +53,10 @@ public class UpdateInventoryRequest {
 
   // Scheme
   private SchemeType schemeType;
+  /** @deprecated Prefer schemePayFor + schemeFree. */
   private Integer scheme;
+  private Integer schemePayFor;
+  private Integer schemeFree;
   private BigDecimal schemePercentage;
 
   // Units and stock

@@ -35,8 +35,17 @@ public class InventoryValidator {
           || request.getSchemePercentage().compareTo(BigDecimal.valueOf(100)) > 0) {
         throw new ValidationException("Scheme percentage must be between 0 and 100 (inclusive)");
       }
-    } else if (request.getScheme() != null && request.getScheme() < 0) {
-      throw new ValidationException("Scheme (free units) must be zero or greater");
+    } else {
+      boolean newStyle = request.getSchemePayFor() != null || request.getSchemeFree() != null;
+      if (newStyle) {
+        int payFor = request.getSchemePayFor() != null ? request.getSchemePayFor() : 0;
+        int free = request.getSchemeFree() != null ? request.getSchemeFree() : 0;
+        if (payFor < 0 || free < 0) {
+          throw new ValidationException("schemePayFor and schemeFree must be zero or greater (e.g. 10 + 2)");
+        }
+      } else if (request.getScheme() != null && request.getScheme() < 0) {
+        throw new ValidationException("Scheme (free units) must be zero or greater");
+      }
     }
     if (request.getItemType() == ItemType.DEGREE
         && (request.getItemTypeDegree() == null || request.getItemTypeDegree() <= 0)) {
@@ -68,8 +77,17 @@ public class InventoryValidator {
           || request.getSchemePercentage().compareTo(BigDecimal.valueOf(100)) > 0) {
         throw new ValidationException("Scheme percentage must be between 0 and 100 (inclusive)");
       }
-    } else if (request.getScheme() != null && request.getScheme() < 0) {
-      throw new ValidationException("Scheme (free units) must be zero or greater");
+    } else {
+      boolean newStyle = request.getSchemePayFor() != null || request.getSchemeFree() != null;
+      if (newStyle) {
+        int payFor = request.getSchemePayFor() != null ? request.getSchemePayFor() : 0;
+        int free = request.getSchemeFree() != null ? request.getSchemeFree() : 0;
+        if (payFor < 0 || free < 0) {
+          throw new ValidationException("schemePayFor and schemeFree must be zero or greater");
+        }
+      } else if (request.getScheme() != null && request.getScheme() < 0) {
+        throw new ValidationException("Scheme (free units) must be zero or greater");
+      }
     }
     if (request.getBillingMode() != null) {
       validateTaxFieldsByBillingMode(request.getBillingMode(), request.getSgst(), request.getCgst());
