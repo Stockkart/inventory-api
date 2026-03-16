@@ -23,6 +23,8 @@ public class UserAccount {
   private UserRole role;
   private String shopId;
   private String email;
+  /** Optional phone in E.164 format for WhatsApp notifications (e.g. +919876543210) */
+  private String phone;
   private String password;
   private boolean active;
   private boolean inviteAccepted;

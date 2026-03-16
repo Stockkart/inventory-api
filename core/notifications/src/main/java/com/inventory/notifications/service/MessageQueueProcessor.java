@@ -39,7 +39,7 @@ public class MessageQueueProcessor {
     long interval = parseDispatchIntervalMs();
     int adapterCount = adapters != null ? adapters.size() : 0;
     log.info("Message queue processor started. Interval: {} ms. Adapters: {}. " +
-        "Enable email with messaging.email.enabled=true to process messages.",
+        "Email: messaging.email.enabled=true. WhatsApp: messaging.whatsapp.enabled=true.",
         interval, adapterCount);
   }
 
