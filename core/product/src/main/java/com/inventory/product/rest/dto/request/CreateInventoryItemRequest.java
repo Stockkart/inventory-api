@@ -51,7 +51,10 @@ public class CreateInventoryItemRequest {
   // Billing mode for downstream sales: REGULAR or BASIC
   private BillingMode billingMode;
   private SchemeType schemeType;
+  /** @deprecated Prefer schemePayFor + schemeFree. */
   private Integer scheme;
+  private Integer schemePayFor;
+  private Integer schemeFree;
   private BigDecimal schemePercentage;
   // SGST rate (optional, e.g., "9" for 9%). Uses shop default if not provided.
   private String sgst;

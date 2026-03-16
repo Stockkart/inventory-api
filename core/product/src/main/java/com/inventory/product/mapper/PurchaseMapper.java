@@ -136,10 +136,15 @@ public abstract class PurchaseMapper {
         && inventory.getSchemePercentage() != null && inventory.getSchemePercentage().signum() > 0) {
       purchaseItem.setSchemeType(SchemeType.PERCENTAGE);
       purchaseItem.setSchemePercentage(inventory.getSchemePercentage());
-      // schemePayFor/schemeFree left null; getPaidQuantityFromPurchaseItem uses percentage formula
+    } else if (inventory.getSchemePayFor() != null && inventory.getSchemePayFor() > 0
+        && inventory.getSchemeFree() != null && inventory.getSchemeFree() >= 0) {
+      purchaseItem.setSchemeType(SchemeType.FIXED_UNITS);
+      purchaseItem.setSchemePayFor(inventory.getSchemePayFor());
+      purchaseItem.setSchemeFree(inventory.getSchemeFree());
+      purchaseItem.setSchemePercentage(null);
     } else if (inventory.getScheme() != null && inventory.getScheme() > 0
         && getReceivedBaseCount(inventory) > 0) {
-      // FIXED_UNITS or backward compat: use scheme (free units)
+      // Legacy: scheme = free units, derive payFor/free from received
       int received = getReceivedBaseCount(inventory);
       int free = inventory.getScheme();
       int paid = received - free;
