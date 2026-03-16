@@ -96,6 +96,10 @@ public class EventService {
 
     for (Event event : pending) {
       try {
+        if (event.getReminderId() == null || event.getReminderId().isBlank()) {
+          log.debug("Skipping pending event {} (no reminderId, e.g. INVENTORY_LOW)", event.getId());
+          continue;
+        }
         Optional<Reminder> reminderOpt;
         try {
           reminderOpt = reminderRepository.findById(event.getReminderId());
@@ -346,6 +350,10 @@ public class EventService {
 
     for (Event event : toRetry) {
       try {
+        if (event.getReminderId() == null || event.getReminderId().isBlank()) {
+          log.debug("Skipping retry for event {} (no reminderId, e.g. INVENTORY_LOW)", event.getId());
+          continue;
+        }
         Optional<Reminder> reminderOpt;
         try {
           reminderOpt = reminderRepository.findById(event.getReminderId());
