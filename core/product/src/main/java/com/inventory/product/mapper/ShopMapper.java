@@ -5,6 +5,7 @@ import com.inventory.product.domain.model.Shop;
 import com.inventory.product.rest.dto.request.RegisterShopRequest;
 import com.inventory.product.rest.dto.response.LocationDto;
 import com.inventory.product.rest.dto.response.ShopApprovalResponse;
+import com.inventory.product.rest.dto.response.ShopDetailResponse;
 import com.inventory.product.rest.dto.response.ShopRegistrationResponse;
 import com.inventory.user.domain.model.UserAccount;
 import com.inventory.user.domain.model.UserRole;
@@ -29,6 +30,14 @@ public interface ShopMapper {
 
   // Location mapping
   Location toLocation(LocationDto locationDto);
+
+  LocationDto toLocationDto(Location location);
+
+  @Mapping(target = "shopId", source = "shopId")
+  @Mapping(target = "name", source = "name")
+  @Mapping(target = "tagline", source = "tagline")
+  @Mapping(target = "location", source = "location")
+  ShopDetailResponse toShopDetailResponse(Shop shop);
 
   @Mapping(target = "shopId", ignore = true) // Will be set in service
   @Mapping(target = "status", ignore = true)  // Will be set in mapper

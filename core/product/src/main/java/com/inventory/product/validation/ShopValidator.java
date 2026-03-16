@@ -3,6 +3,8 @@ package com.inventory.product.validation;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.product.rest.dto.request.RegisterShopRequest;
 import com.inventory.product.rest.dto.request.ShopApprovalRequest;
+import com.inventory.product.rest.dto.request.UpdateShopRequest;
+import com.inventory.product.rest.dto.response.LocationDto;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -39,6 +41,37 @@ public class ShopValidator {
     }
     if (!StringUtils.hasText(request.getContactPhone())) {
       throw new ValidationException("Contact phone is required");
+    }
+  }
+
+  public void validateUpdateRequest(UpdateShopRequest request) {
+    if (request == null) {
+      throw new ValidationException("Update request cannot be null");
+    }
+    // If location is provided, validate required location fields
+    LocationDto loc = request.getLocation();
+    if (loc != null) {
+      if (!StringUtils.hasText(loc.getPrimaryAddress())) {
+        throw new ValidationException("Primary address is required when updating location");
+      }
+      if (!StringUtils.hasText(loc.getState())) {
+        throw new ValidationException("State is required when updating location");
+      }
+      if (!StringUtils.hasText(loc.getCity())) {
+        throw new ValidationException("City is required when updating location");
+      }
+      if (!StringUtils.hasText(loc.getPin())) {
+        throw new ValidationException("PIN code is required when updating location");
+      }
+      if (!StringUtils.hasText(loc.getCountry())) {
+        throw new ValidationException("Country is required when updating location");
+      }
+    }
+  }
+
+  public void validateShopAccess(boolean hasAccess) {
+    if (!hasAccess) {
+      throw new ValidationException("You do not have access to this shop");
     }
   }
 
