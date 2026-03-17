@@ -1,23 +1,24 @@
 package com.inventory.user.rest.controller;
 
-import com.inventory.common.constants.ErrorCode;
-import com.inventory.common.dto.response.ApiResponse;
-import com.inventory.common.exception.AuthenticationException;
-import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
-import com.inventory.common.exception.ValidationException;
+import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.user.domain.model.Customer;
+import com.inventory.user.rest.dto.request.CreateCustomerRequest;
+import com.inventory.user.rest.dto.request.UpdateCustomerRequest;
 import com.inventory.user.rest.dto.response.CustomerDto;
+import com.inventory.user.rest.dto.response.CustomerListResponse;
 import com.inventory.user.mapper.CustomerMapper;
 import com.inventory.user.service.CustomerService;
 import com.inventory.user.validation.CustomerValidator;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.dao.DataAccessException;
 import org.springframework.http.ResponseEntity;
-import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -41,55 +42,63 @@ public class CustomerController {
       @RequestParam(required = false) String phone,
       @RequestParam(required = false) String email,
       HttpServletRequest httpRequest) {
-    // Get shopId from request attributes (set by AuthenticationInterceptor)
     String shopId = (String) httpRequest.getAttribute("shopId");
-
-    // Validate shopId
-    if (!StringUtils.hasText(shopId)) {
-      throw new AuthenticationException(
-          ErrorCode.UNAUTHORIZED,
-          "User not authenticated or shop not found");
-    }
-
+    customerValidator.validateShopId(shopId);
     customerValidator.validateCustomerSearchParams(phone, email);
 
-    boolean searchByPhone = StringUtils.hasText(phone);
-    String searchValue = searchByPhone ? phone : email;
+    boolean searchByPhone = org.springframework.util.StringUtils.hasText(phone);
+    String searchValue = searchByPhone ? phone.trim() : email.trim();
     log.info("Searching customer by {}: {} for shop: {}",
         searchByPhone ? "phone" : "email", searchValue, shopId);
 
-    try {
-      java.util.Optional<Customer> customerOpt = searchByPhone
-          ? customerService.searchCustomerByPhone(phone.trim(), shopId)
-          : customerService.searchCustomerByEmail(email.trim(), shopId);
+    Customer customer = (searchByPhone
+        ? customerService.searchCustomerByPhone(phone.trim(), shopId)
+        : customerService.searchCustomerByEmail(email.trim(), shopId))
+        .orElseThrow(() -> new ResourceNotFoundException("Customer",
+            searchByPhone ? "phone" : "email",
+            "No customer found with " + (searchByPhone ? "phone " : "email ") + searchValue + " for shop " + shopId));
+    return ResponseEntity.ok(ApiResponse.success(customerMapper.toDto(customer)));
+  }
 
-      if (customerOpt.isEmpty()) {
-        throw new ResourceNotFoundException("Customer", searchByPhone ? "phone" : "email",
-            "No customer found with " + (searchByPhone ? "phone " : "email ") + searchValue + " for shop " + shopId);
-      }
+  @PostMapping
+  public ResponseEntity<ApiResponse<CustomerDto>> create(
+      @RequestBody CreateCustomerRequest request,
+      HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    customerValidator.validateShopId(shopId);
+    customerValidator.validateCreateRequest(request);
 
-      Customer customer = customerOpt.get();
+    Customer customer = customerService.findOrCreateCustomer(shopId, request);
+    return ResponseEntity.ok(ApiResponse.success(customerMapper.toDto(customer)));
+  }
 
-      // Map to response
-      CustomerDto response = customerMapper.toDto(customer);
+  @GetMapping
+  public ResponseEntity<ApiResponse<CustomerListResponse>> list(
+      @RequestParam(required = false, defaultValue = "0") Integer page,
+      @RequestParam(required = false, defaultValue = "20") Integer limit,
+      @RequestParam(required = false) String q,
+      HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    customerValidator.validateShopId(shopId);
+    customerValidator.validateListParams(page, limit);
 
-      log.info("Found customer with ID: {} for shop: {}", customer.getId(), shopId);
-      return ResponseEntity.ok(ApiResponse.success(response));
+    int pageNum = (page != null && page >= 0) ? page : 0;
+    int pageSize = (limit != null && limit > 0 && limit <= 100) ? limit : 20;
+    CustomerListResponse response = customerService.getCustomers(shopId, pageNum, pageSize, q);
+    return ResponseEntity.ok(ApiResponse.success(response));
+  }
 
-    } catch (ValidationException | ResourceNotFoundException e) {
-      log.warn("Search customer failed: {}", e.getMessage());
-      throw e;
-    } catch (DataAccessException e) {
-      log.error("Database error while searching customer: {}", e.getMessage(), e);
-      throw new BaseException(
-          ErrorCode.INTERNAL_SERVER_ERROR,
-          "Error searching customer");
-    } catch (Exception e) {
-      log.error("Unexpected error while searching customer: {}", e.getMessage(), e);
-      throw new BaseException(
-          ErrorCode.INTERNAL_SERVER_ERROR,
-          "Failed to search customer");
-    }
+  @PatchMapping("/{customerId}")
+  public ResponseEntity<ApiResponse<CustomerDto>> update(
+      @PathVariable String customerId,
+      @RequestBody UpdateCustomerRequest request,
+      HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    customerValidator.validateShopId(shopId);
+    customerValidator.validateCustomerId(customerId);
+    customerValidator.validateUpdateRequest(request);
+
+    CustomerDto response = customerService.updateCustomer(customerId, shopId, request);
+    return ResponseEntity.ok(ApiResponse.success(response));
   }
 }
-

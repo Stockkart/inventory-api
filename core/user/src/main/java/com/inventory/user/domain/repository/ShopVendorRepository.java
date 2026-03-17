@@ -1,6 +1,8 @@
 package com.inventory.user.domain.repository;
 
 import com.inventory.user.domain.model.ShopVendor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.stereotype.Repository;
 
@@ -17,6 +19,15 @@ public interface ShopVendorRepository extends MongoRepository<ShopVendor, String
    * @return list of shop-vendor relationships
    */
   List<ShopVendor> findByShopId(String shopId);
+
+  /**
+   * Find shop-vendor relationships for a shop with pagination.
+   *
+   * @param shopId the shop ID
+   * @param pageable pagination parameters
+   * @return page of shop-vendor relationships
+   */
+  Page<ShopVendor> findByShopIdOrderByCreatedAtDesc(String shopId, Pageable pageable);
 
   /**
    * Find all shop-vendor relationships for a specific vendor.

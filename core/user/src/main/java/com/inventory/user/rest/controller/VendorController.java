@@ -3,9 +3,11 @@ package com.inventory.user.rest.controller;
 import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.user.rest.dto.request.CreateVendorRequest;
 import com.inventory.user.rest.dto.request.SearchVendorRequest;
+import com.inventory.user.rest.dto.request.UpdateVendorRequest;
 import com.inventory.user.rest.dto.response.CreateVendorResponse;
 import com.inventory.user.rest.dto.response.UserShopListResponse;
 import com.inventory.user.rest.dto.response.VendorDto;
+import com.inventory.user.rest.dto.response.VendorListResponse;
 import com.inventory.user.mapper.VendorMapper;
 import com.inventory.user.service.VendorService;
 
@@ -15,6 +17,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -32,6 +35,20 @@ public class VendorController {
 
   @Autowired
   private VendorMapper vendorMapper;
+
+  /**
+   * Get paginated list of vendors for the active shop.
+   */
+  @GetMapping
+  public ResponseEntity<ApiResponse<VendorListResponse>> list(
+      @RequestParam(required = false, defaultValue = "0") Integer page,
+      @RequestParam(required = false, defaultValue = "20") Integer limit,
+      @RequestParam(required = false) String q,
+      HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    VendorListResponse response = vendorService.getVendors(shopId, page, limit, q);
+    return ResponseEntity.ok(ApiResponse.success(response));
+  }
 
   @PostMapping
   public ResponseEntity<ApiResponse<CreateVendorResponse>> create(
@@ -81,6 +98,19 @@ public class VendorController {
     String shopId = (String) httpRequest.getAttribute("shopId");
 
     VendorDto response = vendorService.getVendorById(vendorId, shopId);
+    return ResponseEntity.ok(ApiResponse.success(response));
+  }
+
+  /**
+   * Update a vendor.
+   */
+  @PatchMapping("/{vendorId}")
+  public ResponseEntity<ApiResponse<VendorDto>> update(
+      @PathVariable String vendorId,
+      @RequestBody UpdateVendorRequest request,
+      HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    VendorDto response = vendorService.updateVendor(vendorId, shopId, request);
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 }
