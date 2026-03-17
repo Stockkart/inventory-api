@@ -63,6 +63,12 @@ public interface InventoryRepository extends MongoRepository<Inventory, String> 
   List<Inventory> findByShopIdAndBarcode(String shopId, String barcode);
 
   /**
+   * Find inventories by shop and created-at date range (inclusive).
+   * Used for GSTR-2 inward supply reporting (inventory received in period).
+   */
+  List<Inventory> findByShopIdAndCreatedAtBetween(String shopId, Instant start, Instant end);
+
+  /**
    * Check if a lotId exists for a given shop.
    *
    * @param shopId the shop ID

@@ -33,6 +33,11 @@
             <artifactId>user</artifactId>
             <version>1.0.0</version>
         </dependency>
+        <dependency>
+            <groupId>com.inventory</groupId>
+            <artifactId>pricing</artifactId>
+            <version>1.0.0</version>
+        </dependency>
         <!-- Apache POI for Excel -->
         <dependency>
             <groupId>org.apache.poi</groupId>
