@@ -34,6 +34,9 @@ public class CheckoutResponse {
   BigDecimal totalProfit;     // Margin: revenueBeforeTax − totalCost
   BigDecimal marginPercent;   // Margin: (totalProfit / revenueBeforeTax) × 100
   String paymentMethod;
+  BigDecimal amountPaidCash;
+  BigDecimal amountPaidOnline;
+  BigDecimal amountOnCredit;
   PurchaseStatus status;
   String customerId;
   String customerName;
