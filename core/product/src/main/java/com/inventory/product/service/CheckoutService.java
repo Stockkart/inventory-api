@@ -15,6 +15,8 @@ import com.inventory.product.domain.model.enums.SchemeType;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.UnitConversion;
 import com.inventory.product.domain.repository.InventoryRepository;
+import com.inventory.user.domain.model.Customer;
+import com.inventory.user.rest.dto.request.CreateCustomerRequest;
 import com.inventory.product.domain.repository.PurchaseRepository;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.rest.dto.request.AddToCartRequest;
@@ -1084,16 +1086,18 @@ public class CheckoutService {
     boolean hasName = StringUtils.hasText(request.getCustomerName());
 
     if ((hasPhone || hasEmail) && hasName) {
-      com.inventory.user.domain.model.Customer customer = customerService.findOrCreateCustomer(
+      CreateCustomerRequest createCustomerRequest = new CreateCustomerRequest();
+      createCustomerRequest.setName(request.getCustomerName());
+      createCustomerRequest.setPhone(request.getCustomerPhone());
+      createCustomerRequest.setAddress(request.getCustomerAddress());
+      createCustomerRequest.setEmail(request.getCustomerEmail());
+      createCustomerRequest.setGstin(request.getCustomerGstin());
+      createCustomerRequest.setDlNo(request.getCustomerDlNo());
+      createCustomerRequest.setPan(request.getCustomerPan());
+
+      Customer customer = customerService.findOrCreateCustomer(
           shopId,
-          request.getCustomerName(),
-          request.getCustomerPhone(),
-          request.getCustomerAddress(),
-          request.getCustomerEmail(),
-          request.getCustomerGstin(),
-          request.getCustomerDlNo(),
-          request.getCustomerPan(),
-          request.getCustomerUserId()
+          createCustomerRequest
       );
       if (customer != null) {
         log.debug("Found/created customer with ID: {} for shop: {}", customer.getId(), shopId);

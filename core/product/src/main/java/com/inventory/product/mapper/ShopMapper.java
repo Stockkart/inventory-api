@@ -37,7 +37,16 @@ public interface ShopMapper {
   @Mapping(target = "name", source = "name")
   @Mapping(target = "tagline", source = "tagline")
   @Mapping(target = "location", source = "location")
+  @Mapping(target = "panNo", ignore = true)
   ShopDetailResponse toShopDetailResponse(Shop shop);
+
+  @AfterMapping
+  default void setPanNoFromGstin(@MappingTarget ShopDetailResponse response, Shop shop) {
+    String gstin = shop.getGstinNo();
+    if (gstin != null && gstin.length() >= 12) {
+      response.setPanNo(gstin.substring(2, 12)); // 10 chars from 3rd char (1-based)
+    }
+  }
 
   @Mapping(target = "shopId", ignore = true) // Will be set in service
   @Mapping(target = "status", ignore = true)  // Will be set in mapper

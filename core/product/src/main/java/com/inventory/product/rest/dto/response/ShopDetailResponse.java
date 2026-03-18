@@ -13,6 +13,13 @@ public class ShopDetailResponse {
 
   private String shopId;
   private String name;
+  private String contactEmail;
+  private String contactPhone;
+  private String gstinNo;
+  /** PAN derived from GSTIN: 10 chars from 3rd character (1-based). */
+  private String panNo;
+  private String dlNo;
   private String tagline;
   private LocationDto location;
+
 }

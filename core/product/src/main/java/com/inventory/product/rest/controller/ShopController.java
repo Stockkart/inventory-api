@@ -7,9 +7,11 @@ import com.inventory.product.rest.dto.request.UpdateShopRequest;
 import com.inventory.product.rest.dto.response.ShopApprovalResponse;
 import com.inventory.product.rest.dto.response.ShopDetailResponse;
 import com.inventory.product.rest.dto.response.ShopRegistrationResponse;
+import com.inventory.common.exception.ValidationException;
 import com.inventory.product.service.ShopService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.util.StringUtils;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -20,13 +22,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping
+@RequestMapping("/api/v1/shops")
 public class ShopController {
 
   @Autowired
   private ShopService shopService;
 
-  @PostMapping("/api/v1/shops/register")
+  @PostMapping("/register")
   public ResponseEntity<ApiResponse<ShopRegistrationResponse>> register(@RequestBody RegisterShopRequest request,
                                                                         HttpServletRequest httpRequest) {
     String userId = (String) httpRequest.getAttribute("userId");
@@ -39,20 +41,20 @@ public class ShopController {
     return ResponseEntity.ok(ApiResponse.success(shopService.approve(shopId, request)));
   }
 
-  @GetMapping("/api/v1/shops/{shopId}")
-  public ResponseEntity<ApiResponse<ShopDetailResponse>> getShop(
-      @PathVariable String shopId,
+  @GetMapping("/active-shop")
+  public ResponseEntity<ApiResponse<ShopDetailResponse>> getActiveShop(
       HttpServletRequest httpRequest) {
     String userId = (String) httpRequest.getAttribute("userId");
+    String shopId = (String) httpRequest.getAttribute("shopId");
     return ResponseEntity.ok(ApiResponse.success(shopService.getShopDetail(shopId, userId)));
   }
 
-  @PatchMapping("/api/v1/shops/{shopId}")
-  public ResponseEntity<ApiResponse<ShopDetailResponse>> updateShop(
-      @PathVariable String shopId,
+  @PatchMapping("/active-shop")
+  public ResponseEntity<ApiResponse<ShopDetailResponse>> updateActiveShop(
       @RequestBody UpdateShopRequest request,
       HttpServletRequest httpRequest) {
     String userId = (String) httpRequest.getAttribute("userId");
+    String shopId = (String) httpRequest.getAttribute("shopId");
     return ResponseEntity.ok(ApiResponse.success(shopService.update(shopId, request, userId)));
   }
 }

@@ -3,15 +3,26 @@ package com.inventory.user.service;
 import com.inventory.user.domain.model.Customer;
 import com.inventory.user.domain.model.ShopCustomer;
 import com.inventory.user.domain.repository.CustomerRepository;
-import com.inventory.user.mapper.CustomerMapper;
 import com.inventory.user.domain.repository.ShopCustomerRepository;
+import com.inventory.user.mapper.CustomerMapper;
+import com.inventory.user.rest.dto.request.CreateCustomerRequest;
+import com.inventory.user.rest.dto.request.UpdateCustomerRequest;
+import com.inventory.user.rest.dto.response.CustomerDto;
+import com.inventory.user.rest.dto.response.CustomerListResponse;
+import com.inventory.common.exception.ResourceNotFoundException;
+import com.inventory.user.utils.TextUtils;
+import com.inventory.user.validation.CustomerValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 @Service
@@ -28,178 +39,178 @@ public class CustomerService {
   @Autowired
   private CustomerMapper customerMapper;
 
-  /**
-   * Find or create a customer and link it to a shop.
-   * If customer info is provided, it will find existing customer by phone/email,
-   * or create a new one if not found. Then creates the shop-customer relationship.
-   *
-   * @param shopId the shop ID
-   * @param customerName customer name
-   * @param customerPhone customer phone (optional)
-   * @param customerAddress customer address (optional)
-   * @param customerEmail customer email (optional)
-   * @param customerGstin customer GSTIN (optional)
-   * @param customerDlNo customer D.L No. (optional)
-   * @param customerPan customer PAN (optional)
-   * @param customerUserId optional link to StockKart user (enables credit sync)
-   * @return the customer entity, or null if no customer info provided
-   */
-  public Customer findOrCreateCustomer(String shopId, String customerName, String customerPhone,
-                                        String customerAddress, String customerEmail,
-                                        String customerGstin, String customerDlNo, String customerPan,
-                                        String customerUserId) {
-    // If no customer name provided, return null
-    if (!StringUtils.hasText(customerName)) {
-      return null;
+  @Autowired
+  private CustomerValidator customerValidator;
+
+
+  public CustomerDto createCustomerDto(String shopId, CreateCustomerRequest request) {
+    return customerMapper.toDto(findOrCreateCustomer(shopId, request));
+  }
+
+  @Transactional(readOnly = true)
+  public CustomerDto searchCustomer(String shopId, String phone, String email) {
+    customerValidator.validateShopId(shopId);
+    customerValidator.validateCustomerSearchParams(phone, email);
+
+    String normalizedPhone = TextUtils.trimToNull(phone);
+    String normalizedEmail = TextUtils.trimToNull(email);
+    boolean searchByPhone = StringUtils.hasText(normalizedPhone);
+    String searchValue = searchByPhone ? normalizedPhone : normalizedEmail;
+
+    Customer customer = (searchByPhone
+        ? searchCustomerByPhone(normalizedPhone, shopId)
+        : searchCustomerByEmail(normalizedEmail, shopId))
+        .orElseThrow(() -> new ResourceNotFoundException(
+            "Customer",
+            searchByPhone ? "phone" : "email",
+            "No customer found with " + (searchByPhone ? "phone " : "email ") + searchValue + " for shop " + shopId));
+
+    return customerMapper.toDto(customer);
+  }
+
+  public Customer findOrCreateCustomer(String shopId, CreateCustomerRequest request) {
+
+    customerValidator.validateShopId(shopId);
+    customerValidator.validateCreateRequest(request);
+
+    String phone = TextUtils.trimToNull(request.getPhone());
+    String email = TextUtils.trimToNull(request.getEmail());
+
+    Customer customer = null;
+    if (StringUtils.hasText(phone)) {
+      customer = customerRepository.findByPhone(phone).orElse(null);
+    }
+    if (customer == null && StringUtils.hasText(email)) {
+      customer = customerRepository.findByEmail(email).orElse(null);
     }
 
-    try {
-      // Try to find existing customer by phone (preferred) or email
-      Customer customer = null;
-      if (StringUtils.hasText(customerPhone)) {
-        customer = customerRepository.findByPhone(customerPhone.trim())
-            .orElse(null);
-      }
-      if (customer == null && StringUtils.hasText(customerEmail)) {
-        customer = customerRepository.findByEmail(customerEmail.trim())
-            .orElse(null);
-      }
+    if (customer == null) {
+      customer = customerMapper.toCustomer(request);
+      customer = customerRepository.save(customer);
+      log.info("Created new customer with ID: {}", customer.getId());
+    } else {
+      updateExistingCustomerFromCreateRequest(request, customer);
+    }
 
-      // If customer not found, create a new one via mapper
-      if (customer == null) {
-        customer = customerMapper.toCustomer(customerName, customerPhone, customerAddress, customerEmail,
-            customerGstin, customerDlNo, customerPan, customerUserId);
-        customer = customerRepository.save(customer);
-        log.info("Created new customer with ID: {}", customer.getId());
-      } else {
-        // Update existing customer if new info is provided
-        boolean updated = false;
-        if (StringUtils.hasText(customerName) && !customerName.trim().equals(customer.getName())) {
-          customer.setName(customerName.trim());
-          updated = true;
-        }
-        if (StringUtils.hasText(customerPhone) && !customerPhone.trim().equals(customer.getPhone())) {
-          customer.setPhone(customerPhone.trim());
-          updated = true;
-        }
-        if (StringUtils.hasText(customerAddress) && !customerAddress.trim().equals(customer.getAddress())) {
-          customer.setAddress(customerAddress.trim());
-          updated = true;
-        }
-        if (StringUtils.hasText(customerEmail) && !customerEmail.trim().equals(customer.getEmail())) {
-          customer.setEmail(customerEmail.trim());
-          updated = true;
-        }
-        if (StringUtils.hasText(customerGstin) && !customerGstin.trim().equals(customer.getGstin())) {
-          customer.setGstin(customerGstin.trim());
-          updated = true;
-        }
-        if (StringUtils.hasText(customerDlNo) && !customerDlNo.trim().equals(customer.getDlNo())) {
-          customer.setDlNo(customerDlNo.trim());
-          updated = true;
-        }
-        if (StringUtils.hasText(customerPan) && !customerPan.trim().equals(customer.getPan())) {
-          customer.setPan(customerPan.trim());
-          updated = true;
-        }
-        if (StringUtils.hasText(customerUserId) && !customerUserId.trim().equals(customer.getUserId())) {
-          customer.setUserId(customerUserId.trim());
-          updated = true;
-        }
+    linkCustomerToShopIfNeeded(shopId, customer.getId());
+    return customer;
+  }
 
-        if (updated) {
-          customer.setUpdatedAt(Instant.now());
-          customer = customerRepository.save(customer);
-          log.info("Updated customer with ID: {}", customer.getId());
-        }
-      }
+  private void updateExistingCustomerFromCreateRequest(CreateCustomerRequest request, Customer customer) {
+    customerMapper.applyCreateRequest(request, customer);
+    customerRepository.save(customer);
+    log.info("Updated customer with ID: {}", customer.getId());
+  }
 
-      // Create shop-customer relationship if it doesn't exist
-      if (!shopCustomerRepository.existsByShopIdAndCustomerId(shopId, customer.getId())) {
-        ShopCustomer shopCustomer = customerMapper.toShopCustomer(shopId, customer.getId());
-        shopCustomerRepository.save(shopCustomer);
-        log.info("Linked customer {} to shop {}", customer.getId(), shopId);
-      }
-
-      return customer;
-    } catch (Exception e) {
-      log.error("Error finding or creating customer for shop: {}", shopId, e);
-      // Don't fail cart upsert if customer creation fails
-      return null;
+  private void linkCustomerToShopIfNeeded(String shopId, String customerId) {
+    if (!shopCustomerRepository.existsByShopIdAndCustomerId(shopId, customerId)) {
+      ShopCustomer shopCustomer = customerMapper.toShopCustomer(shopId, customerId);
+      shopCustomerRepository.save(shopCustomer);
+      log.info("Linked customer {} to shop {}", customerId, shopId);
     }
   }
 
-  /**
-   * Get a customer by ID.
-   *
-   * @param customerId the customer ID
-   * @return an Optional containing the customer if found, empty otherwise
-   */
   @Transactional(readOnly = true)
   public Optional<Customer> getCustomerById(String customerId) {
-    if (customerId == null || customerId.trim().isEmpty()) {
+    if (!StringUtils.hasText(customerId)) {
       return Optional.empty();
     }
     return customerRepository.findById(customerId.trim());
   }
 
-  /**
-   * Search customer by phone for a shop.
-   *
-   * @param phone the phone number
-   * @param shopId the shop ID
-   * @return the customer if found and linked to shop, empty otherwise
-   */
   @Transactional(readOnly = true)
   public Optional<Customer> searchCustomerByPhone(String phone, String shopId) {
-    if (!StringUtils.hasText(phone)) {
-      return Optional.empty();
-    }
+    return customerRepository.findByPhone(phone.trim())
+        .filter(c -> shopCustomerRepository.existsByShopIdAndCustomerId(shopId, c.getId()));
+  }
 
-    // Find customer by phone
-    Optional<Customer> customerOpt = customerRepository.findByPhone(phone.trim());
-
-    if (customerOpt.isEmpty()) {
-      return Optional.empty();
-    }
-
-    Customer customer = customerOpt.get();
-
-    // Verify customer is linked to the shop
-    if (!shopCustomerRepository.existsByShopIdAndCustomerId(shopId, customer.getId())) {
-      return Optional.empty();
-    }
-
-    return customerOpt;
+  @Transactional(readOnly = true)
+  public Optional<Customer> searchCustomerByEmail(String email, String shopId) {
+    return customerRepository.findByEmail(email.trim())
+        .filter(c -> shopCustomerRepository.existsByShopIdAndCustomerId(shopId, c.getId()));
   }
 
   /**
-   * Search customer by email for a shop.
-   *
-   * @param email the email address
-   * @param shopId the shop ID
-   * @return the customer if found and linked to shop, empty otherwise
+   * Paginated list (API). Validates shop and pagination; normalizes page/limit.
    */
   @Transactional(readOnly = true)
-  public Optional<Customer> searchCustomerByEmail(String email, String shopId) {
-    if (!StringUtils.hasText(email)) {
-      return Optional.empty();
+  public CustomerListResponse listCustomers(String shopId, Integer page, Integer limit, String q) {
+    customerValidator.validateShopId(shopId);
+    customerValidator.validateListParams(page, limit);
+    int pageNum = (page != null && page >= 0) ? page : 0;
+    int pageSize = (limit != null && limit > 0 && limit <= 100) ? limit : 20;
+    return getCustomers(shopId, pageNum, pageSize, q);
+  }
+
+  @Transactional(readOnly = true)
+  public CustomerListResponse getCustomers(String shopId, int page, int limit, String query) {
+    Pageable pageable = PageRequest.of(page, limit, Sort.by(Sort.Direction.DESC, "createdAt"));
+
+    if (StringUtils.hasText(query)) {
+      return getCustomersByQuery(shopId, page, limit, query.trim(), pageable);
     }
 
-    Optional<Customer> customerOpt = customerRepository.findByEmail(email.trim());
-
-    if (customerOpt.isEmpty()) {
-      return Optional.empty();
+    Page<ShopCustomer> shopCustomerPage =
+        shopCustomerRepository.findByShopIdOrderByCreatedAtDesc(shopId, pageable);
+    List<String> customerIds = shopCustomerPage.getContent().stream()
+        .map(ShopCustomer::getCustomerId)
+        .toList();
+    if (customerIds.isEmpty()) {
+      return new CustomerListResponse(List.of(), page, limit, 0, 0);
     }
+    List<Customer> customers = customerRepository.findAllById(customerIds);
+    List<CustomerDto> dtos = customers.stream().map(customerMapper::toDto).toList();
+    return new CustomerListResponse(
+        dtos,
+        shopCustomerPage.getNumber(),
+        shopCustomerPage.getSize(),
+        shopCustomerPage.getTotalElements(),
+        shopCustomerPage.getTotalPages());
+  }
 
-    Customer customer = customerOpt.get();
-
-    // Verify customer is linked to the shop
-    if (!shopCustomerRepository.existsByShopIdAndCustomerId(shopId, customer.getId())) {
-      return Optional.empty();
+  private CustomerListResponse getCustomersByQuery(
+      String shopId, int page, int limit, String query, Pageable pageable) {
+    List<String> shopCustomerIds = shopCustomerRepository.findByShopId(shopId).stream()
+        .map(ShopCustomer::getCustomerId)
+        .toList();
+    if (shopCustomerIds.isEmpty()) {
+      return new CustomerListResponse(List.of(), page, limit, 0, 0);
     }
+    List<Customer> matching = customerRepository.searchByQuery(query);
+    List<Customer> shopCustomers = matching.stream()
+        .filter(c -> shopCustomerIds.contains(c.getId()))
+        .sorted((a, b) -> (b.getUpdatedAt() != null ? b.getUpdatedAt() : b.getCreatedAt())
+            .compareTo(a.getUpdatedAt() != null ? a.getUpdatedAt() : a.getCreatedAt()))
+        .toList();
+    if (shopCustomers.isEmpty()) {
+      return new CustomerListResponse(List.of(), page, limit, 0, 0);
+    }
+    long total = shopCustomers.size();
+    int totalPages = (int) Math.ceil((double) total / limit);
+    int from = page * limit;
+    int to = Math.min(from + limit, shopCustomers.size());
+    List<Customer> paged = from < shopCustomers.size() ? shopCustomers.subList(from, to) : List.of();
+    List<CustomerDto> dtos = paged.stream().map(customerMapper::toDto).toList();
+    return new CustomerListResponse(dtos, page, limit, total, totalPages);
+  }
 
-    return customerOpt;
+  /**
+   * Update a customer (API). All validation in service.
+   */
+  public CustomerDto updateCustomer(String customerId, String shopId, UpdateCustomerRequest request) {
+    customerValidator.validateShopId(shopId);
+    customerValidator.validateCustomerId(customerId);
+    customerValidator.validateUpdateRequest(request);
+
+    if (!shopCustomerRepository.existsByShopIdAndCustomerId(shopId, customerId)) {
+      throw new ResourceNotFoundException("Customer", "id", "Customer not found or not linked to your shop");
+    }
+    Customer customer = customerRepository.findById(customerId)
+        .orElseThrow(() -> new ResourceNotFoundException("Customer", "id", customerId));
+
+    customerMapper.applyUpdate(request, customer);
+    customer = customerRepository.save(customer);
+    log.info("Updated customer with ID: {}", customer.getId());
+    return customerMapper.toDto(customer);
   }
 }
-
