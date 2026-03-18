@@ -15,6 +15,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -131,6 +132,131 @@ public class CheckoutValidator {
     }
     if (request.getStatus() == null) {
       throw new ValidationException("Status is required");
+    }
+    if (request.getStatus() == PurchaseStatus.PENDING && StringUtils.hasText(request.getPaymentMethod())) {
+      String m = request.getPaymentMethod().trim().toUpperCase();
+      if ("SPLIT".equals(m) || "MULTI".equals(m)) {
+        throw new ValidationException("Split and multi payment can only be chosen when completing the sale");
+      }
+    }
+  }
+
+  private static BigDecimal s2(BigDecimal v) {
+    if (v == null) {
+      return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+    }
+    return v.setScale(2, RoundingMode.HALF_UP);
+  }
+
+  private static boolean sameTotal(BigDecimal total, BigDecimal cash, BigDecimal online, BigDecimal credit) {
+    return s2(total).compareTo(s2(cash).add(s2(online)).add(s2(credit))) == 0;
+  }
+
+  /**
+   * Resolves cash/online/credit amounts for COMPLETED checkout. Caller must only invoke when status is COMPLETED.
+   */
+  public PaymentBreakdown resolvePaymentBreakdown(UpdatePurchaseStatusRequest request, Purchase purchase) {
+    BigDecimal total = s2(purchase.getGrandTotal());
+    String method = StringUtils.hasText(request.getPaymentMethod())
+        ? request.getPaymentMethod().trim().toUpperCase()
+        : "CASH";
+    if (method.isEmpty()) {
+      method = "CASH";
+    }
+
+    BigDecimal cash = s2(request.getAmountPaidCash());
+    BigDecimal online = s2(request.getAmountPaidOnline());
+    BigDecimal credit = s2(request.getAmountOnCredit());
+    BigDecimal zero = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+
+    switch (method) {
+      case "CASH":
+        if (cash.signum() == 0 && online.signum() == 0 && credit.signum() == 0) {
+          return new PaymentBreakdown(total, zero, zero, "CASH");
+        }
+        if (!sameTotal(total, cash, online, credit) || online.signum() != 0 || credit.signum() != 0) {
+          throw new ValidationException("CASH: paid amount must equal grand total (cash only)");
+        }
+        return new PaymentBreakdown(cash, zero, zero, "CASH");
+      case "ONLINE":
+        if (cash.signum() == 0 && online.signum() == 0 && credit.signum() == 0) {
+          return new PaymentBreakdown(zero, total, zero, "ONLINE");
+        }
+        if (!sameTotal(total, cash, online, credit) || cash.signum() != 0 || credit.signum() != 0) {
+          throw new ValidationException("ONLINE: paid amount must equal grand total (online only)");
+        }
+        return new PaymentBreakdown(zero, online, zero, "ONLINE");
+      case "CREDIT":
+        if (!StringUtils.hasText(purchase.getCustomerId())) {
+          throw new ValidationException("Customer is required for credit sales. Add customer from cart before checkout.");
+        }
+        if (cash.signum() == 0 && online.signum() == 0 && credit.signum() == 0) {
+          return new PaymentBreakdown(zero, zero, total, "CREDIT");
+        }
+        if (!sameTotal(total, cash, online, credit) || cash.signum() != 0 || online.signum() != 0) {
+          throw new ValidationException("CREDIT: full amount must be on credit");
+        }
+        return new PaymentBreakdown(zero, zero, credit, "CREDIT");
+      case "SPLIT":
+        if (!StringUtils.hasText(purchase.getCustomerId())) {
+          throw new ValidationException("Customer is required for split payment (credit + cash or online)");
+        }
+        if (credit.compareTo(zero) <= 0) {
+          throw new ValidationException("Split payment: amount on credit must be greater than zero");
+        }
+        boolean hasCash = cash.compareTo(zero) > 0;
+        boolean hasOnline = online.compareTo(zero) > 0;
+        if (hasCash == hasOnline) {
+          throw new ValidationException("Split payment: pay the remainder with exactly one of cash or online (not both, not neither)");
+        }
+        if (!sameTotal(total, cash, online, credit)) {
+          throw new ValidationException("Split payment: cash + online + credit must equal grand total");
+        }
+        return new PaymentBreakdown(cash, online, credit, "SPLIT");
+      case "MULTI":
+        if (cash.compareTo(zero) <= 0 || online.compareTo(zero) <= 0) {
+          throw new ValidationException("Multi payment: both cash and online amounts must be greater than zero");
+        }
+        if (credit.signum() != 0) {
+          throw new ValidationException("Multi payment cannot include credit; use Split for credit + paid");
+        }
+        if (!sameTotal(total, cash, online, credit)) {
+          throw new ValidationException("Multi payment: cash + online must equal grand total");
+        }
+        return new PaymentBreakdown(cash, online, zero, "MULTI");
+      default:
+        throw new ValidationException("Invalid payment method. Use CASH, ONLINE, CREDIT, SPLIT, or MULTI");
+    }
+  }
+
+  public static final class PaymentBreakdown {
+    private final BigDecimal amountPaidCash;
+    private final BigDecimal amountPaidOnline;
+    private final BigDecimal amountOnCredit;
+    private final String paymentMethod;
+
+    public PaymentBreakdown(BigDecimal amountPaidCash, BigDecimal amountPaidOnline,
+        BigDecimal amountOnCredit, String paymentMethod) {
+      this.amountPaidCash = amountPaidCash;
+      this.amountPaidOnline = amountPaidOnline;
+      this.amountOnCredit = amountOnCredit;
+      this.paymentMethod = paymentMethod;
+    }
+
+    public BigDecimal getAmountPaidCash() {
+      return amountPaidCash;
+    }
+
+    public BigDecimal getAmountPaidOnline() {
+      return amountPaidOnline;
+    }
+
+    public BigDecimal getAmountOnCredit() {
+      return amountOnCredit;
+    }
+
+    public String getPaymentMethod() {
+      return paymentMethod;
     }
   }
 
