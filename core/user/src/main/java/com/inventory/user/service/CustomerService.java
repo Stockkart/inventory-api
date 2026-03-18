@@ -10,6 +10,8 @@ import com.inventory.user.rest.dto.request.UpdateCustomerRequest;
 import com.inventory.user.rest.dto.response.CustomerDto;
 import com.inventory.user.rest.dto.response.CustomerListResponse;
 import com.inventory.common.exception.ResourceNotFoundException;
+import com.inventory.user.utils.TextUtils;
+import com.inventory.user.validation.CustomerValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -37,13 +39,42 @@ public class CustomerService {
   @Autowired
   private CustomerMapper customerMapper;
 
-  /**
-   * Find or create a customer and link it to a shop. Caller must validate request (e.g. via CustomerValidator).
-   */
+  @Autowired
+  private CustomerValidator customerValidator;
+
+
+  public CustomerDto createCustomerDto(String shopId, CreateCustomerRequest request) {
+    return customerMapper.toDto(findOrCreateCustomer(shopId, request));
+  }
+
+  @Transactional(readOnly = true)
+  public CustomerDto searchCustomer(String shopId, String phone, String email) {
+    customerValidator.validateShopId(shopId);
+    customerValidator.validateCustomerSearchParams(phone, email);
+
+    String normalizedPhone = TextUtils.trimToNull(phone);
+    String normalizedEmail = TextUtils.trimToNull(email);
+    boolean searchByPhone = StringUtils.hasText(normalizedPhone);
+    String searchValue = searchByPhone ? normalizedPhone : normalizedEmail;
+
+    Customer customer = (searchByPhone
+        ? searchCustomerByPhone(normalizedPhone, shopId)
+        : searchCustomerByEmail(normalizedEmail, shopId))
+        .orElseThrow(() -> new ResourceNotFoundException(
+            "Customer",
+            searchByPhone ? "phone" : "email",
+            "No customer found with " + (searchByPhone ? "phone " : "email ") + searchValue + " for shop " + shopId));
+
+    return customerMapper.toDto(customer);
+  }
+
   public Customer findOrCreateCustomer(String shopId, CreateCustomerRequest request) {
-    String name = customerMapper.trimOrNull(request.getName());
-    String phone = customerMapper.trimOrNull(request.getPhone());
-    String email = customerMapper.trimOrNull(request.getEmail());
+
+    customerValidator.validateShopId(shopId);
+    customerValidator.validateCreateRequest(request);
+
+    String phone = TextUtils.trimToNull(request.getPhone());
+    String email = TextUtils.trimToNull(request.getEmail());
 
     Customer customer = null;
     if (StringUtils.hasText(phone)) {
@@ -99,6 +130,18 @@ public class CustomerService {
         .filter(c -> shopCustomerRepository.existsByShopIdAndCustomerId(shopId, c.getId()));
   }
 
+  /**
+   * Paginated list (API). Validates shop and pagination; normalizes page/limit.
+   */
+  @Transactional(readOnly = true)
+  public CustomerListResponse listCustomers(String shopId, Integer page, Integer limit, String q) {
+    customerValidator.validateShopId(shopId);
+    customerValidator.validateListParams(page, limit);
+    int pageNum = (page != null && page >= 0) ? page : 0;
+    int pageSize = (limit != null && limit > 0 && limit <= 100) ? limit : 20;
+    return getCustomers(shopId, pageNum, pageSize, q);
+  }
+
   @Transactional(readOnly = true)
   public CustomerListResponse getCustomers(String shopId, int page, int limit, String query) {
     Pageable pageable = PageRequest.of(page, limit, Sort.by(Sort.Direction.DESC, "createdAt"));
@@ -152,9 +195,13 @@ public class CustomerService {
   }
 
   /**
-   * Update a customer. Caller must validate customerId, shopId and request. Throws if customer not found or not linked to shop.
+   * Update a customer (API). All validation in service.
    */
   public CustomerDto updateCustomer(String customerId, String shopId, UpdateCustomerRequest request) {
+    customerValidator.validateShopId(shopId);
+    customerValidator.validateCustomerId(customerId);
+    customerValidator.validateUpdateRequest(request);
+
     if (!shopCustomerRepository.existsByShopIdAndCustomerId(shopId, customerId)) {
       throw new ResourceNotFoundException("Customer", "id", "Customer not found or not linked to your shop");
     }

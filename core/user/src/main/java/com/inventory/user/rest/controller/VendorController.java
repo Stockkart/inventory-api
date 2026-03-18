@@ -110,8 +110,7 @@ public class VendorController {
       @RequestBody UpdateVendorRequest request,
       HttpServletRequest httpRequest) {
     String shopId = (String) httpRequest.getAttribute("shopId");
-    VendorDto response = vendorService.updateVendor(vendorId, shopId, request);
-    return ResponseEntity.ok(ApiResponse.success(response));
+    return ResponseEntity.ok(ApiResponse.success(vendorService.updateVendor(vendorId, shopId, request)));
   }
 }
 

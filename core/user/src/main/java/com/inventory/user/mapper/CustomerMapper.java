@@ -5,12 +5,12 @@ import com.inventory.user.domain.model.ShopCustomer;
 import com.inventory.user.rest.dto.request.CreateCustomerRequest;
 import com.inventory.user.rest.dto.request.UpdateCustomerRequest;
 import com.inventory.user.rest.dto.response.CustomerDto;
+import com.inventory.user.utils.TextUtils;
 import org.mapstruct.AfterMapping;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.MappingTarget;
 import org.mapstruct.ReportingPolicy;
-import org.springframework.util.StringUtils;
 
 import java.time.Instant;
 
@@ -34,13 +34,13 @@ public interface CustomerMapper {
       return null;
     }
     Customer c = new Customer();
-    c.setName(trimOrNull(request.getName()));
-    c.setPhone(trimOrNull(request.getPhone()));
-    c.setAddress(trimOrNull(request.getAddress()));
-    c.setEmail(trimOrNull(request.getEmail()));
-    c.setGstin(trimOrNull(request.getGstin()));
-    c.setDlNo(trimOrNull(request.getDlNo()));
-    c.setPan(trimOrNull(request.getPan()));
+    c.setName(TextUtils.trimToNull(request.getName()));
+    c.setPhone(TextUtils.trimToNull(request.getPhone()));
+    c.setAddress(TextUtils.trimToNull(request.getAddress()));
+    c.setEmail(TextUtils.trimToNull(request.getEmail()));
+    c.setGstin(TextUtils.trimToNull(request.getGstin()));
+    c.setDlNo(TextUtils.trimToNull(request.getDlNo()));
+    c.setPan(TextUtils.trimToNull(request.getPan()));
     Instant now = Instant.now();
     c.setCreatedAt(now);
     c.setUpdatedAt(now);
@@ -52,25 +52,25 @@ public interface CustomerMapper {
       return;
     }
     if (request.getName() != null) {
-      customer.setName(trimOrNull(request.getName()));
+      customer.setName(TextUtils.trimToNull(request.getName()));
     }
     if (request.getPhone() != null) {
-      customer.setPhone(trimOrNull(request.getPhone()));
+      customer.setPhone(TextUtils.trimToNull(request.getPhone()));
     }
     if (request.getEmail() != null) {
-      customer.setEmail(trimOrNull(request.getEmail()));
+      customer.setEmail(TextUtils.trimToNull(request.getEmail()));
     }
     if (request.getAddress() != null) {
-      customer.setAddress(trimOrNull(request.getAddress()));
+      customer.setAddress(TextUtils.trimToNull(request.getAddress()));
     }
     if (request.getGstin() != null) {
-      customer.setGstin(trimOrNull(request.getGstin()));
+      customer.setGstin(TextUtils.trimToNull(request.getGstin()));
     }
     if (request.getDlNo() != null) {
-      customer.setDlNo(trimOrNull(request.getDlNo()));
+      customer.setDlNo(TextUtils.trimToNull(request.getDlNo()));
     }
     if (request.getPan() != null) {
-      customer.setPan(trimOrNull(request.getPan()));
+      customer.setPan(TextUtils.trimToNull(request.getPan()));
     }
     customer.setUpdatedAt(Instant.now());
   }
@@ -80,18 +80,14 @@ public interface CustomerMapper {
     if (request == null) {
       return;
     }
-    customer.setName(trimOrNull(request.getName()));
-    customer.setPhone(trimOrNull(request.getPhone()));
-    customer.setEmail(trimOrNull(request.getEmail()));
-    customer.setAddress(trimOrNull(request.getAddress()));
-    customer.setGstin(trimOrNull(request.getGstin()));
-    customer.setDlNo(trimOrNull(request.getDlNo()));
-    customer.setPan(trimOrNull(request.getPan()));
+    customer.setName(TextUtils.trimToNull(request.getName()));
+    customer.setPhone(TextUtils.trimToNull(request.getPhone()));
+    customer.setEmail(TextUtils.trimToNull(request.getEmail()));
+    customer.setAddress(TextUtils.trimToNull(request.getAddress()));
+    customer.setGstin(TextUtils.trimToNull(request.getGstin()));
+    customer.setDlNo(TextUtils.trimToNull(request.getDlNo()));
+    customer.setPan(TextUtils.trimToNull(request.getPan()));
     customer.setUpdatedAt(Instant.now());
-  }
-
-  default String trimOrNull(String value) {
-    return StringUtils.hasText(value) ? value.trim() : null;
   }
 
   default ShopCustomer toShopCustomer(String shopId, String customerId) {
