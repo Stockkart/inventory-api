@@ -22,6 +22,7 @@ import com.inventory.user.rest.dto.response.ResetPasswordResponse;
 import com.inventory.user.rest.dto.response.SignupResponse;
 import com.inventory.user.validation.AuthValidator;
 import com.inventory.notifications.domain.model.EmailTemplate;
+import com.inventory.notifications.domain.model.WhatsAppTemplate;
 import com.inventory.notifications.service.MessagingService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -132,6 +133,15 @@ public class AuthService {
             Map.of("userName", account.getName() != null ? account.getName() : "User",
                 "userEmail", account.getEmail())
         );
+        // Send login notification via WhatsApp if user has phone
+        if (account.getPhone() != null && !account.getPhone().isBlank()) {
+          messagingService.sendWhatsAppWithTemplate(
+              account.getPhone(),
+              WhatsAppTemplate.LOGIN_NOTIFICATION,
+              Map.of("userName", account.getName() != null ? account.getName() : "User",
+                  "userEmail", account.getEmail())
+          );
+        }
       }
 
       // Create login response using mapper (tokens set automatically via @AfterMapping and saved to account)
