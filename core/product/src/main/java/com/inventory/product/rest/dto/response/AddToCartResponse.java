@@ -42,8 +42,5 @@ public class AddToCartResponse {
   String customerDlNo;
   String customerPan;
   String paymentMethod;
-  BigDecimal amountPaidCash;
-  BigDecimal amountPaidOnline;
-  BigDecimal amountOnCredit;
 }
 

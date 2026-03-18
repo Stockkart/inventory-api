@@ -179,8 +179,8 @@ public class CheckoutService {
     // Validate request
     checkoutValidator.validateUpdateStatusRequest(request);
 
-    if (request.getStatus() != PurchaseStatus.COMPLETED
-        && !StringUtils.hasText(request.getPaymentMethod())) {
+    // Set default payment method to "CASH" if not provided
+    if (!StringUtils.hasText(request.getPaymentMethod())) {
       request.setPaymentMethod("CASH");
     }
 
@@ -204,11 +204,6 @@ public class CheckoutService {
 
       checkoutValidator.validateStatusTransition(currentStatus, requestedStatus);
 
-      com.inventory.product.validation.CheckoutValidator.PaymentBreakdown paymentBreakdown = null;
-      if (requestedStatus == PurchaseStatus.COMPLETED) {
-        paymentBreakdown = checkoutValidator.resolvePaymentBreakdown(request, purchase);
-      }
-
       // If status is being changed to COMPLETED, check plan limits, decrease inventory, assign invoice number
       if (requestedStatus == PurchaseStatus.COMPLETED) {
         BigDecimal grandTotal = purchase.getGrandTotal() != null ? purchase.getGrandTotal() : BigDecimal.ZERO;
@@ -228,33 +223,25 @@ public class CheckoutService {
             purchase.setInvoiceNo(invoiceSequenceService.getNextInvoiceNo(shopId));
           }
         }
-        recordCustomerCreditIfApplicable(
-            purchase, paymentBreakdown.getAmountOnCredit(), userId);
-        purchase.setPaymentMethod(paymentBreakdown.getPaymentMethod());
-        purchase.setAmountPaidCash(paymentBreakdown.getAmountPaidCash());
-        purchase.setAmountPaidOnline(paymentBreakdown.getAmountPaidOnline());
-        purchase.setAmountOnCredit(paymentBreakdown.getAmountOnCredit());
-      } else {
-        purchase.setStatus(requestedStatus);
-        purchase.setPaymentMethod(request.getPaymentMethod());
-        purchase.setUpdatedAt(Instant.now());
-        purchase = purchaseRepository.save(purchase);
-        log.info("Successfully updated purchase status from {} to {} for purchase ID: {}",
-            currentStatus, requestedStatus, purchase.getId());
-        return purchaseMapper.toCheckoutResponse(purchase);
+        // Record customer credit when sale is on credit
+        recordCustomerCreditIfApplicable(purchase, request.getPaymentMethod(), userId);
       }
 
+      // Update status and payment method
       purchase.setStatus(requestedStatus);
+      purchase.setPaymentMethod(request.getPaymentMethod());
       purchase.setUpdatedAt(Instant.now());
       purchase = purchaseRepository.save(purchase);
 
-      if (usageService != null) {
+      // Record billing usage after successful completion
+      if (requestedStatus == PurchaseStatus.COMPLETED && usageService != null) {
         recordBillingUsageForPurchase(shopId, purchase);
       }
 
       log.info("Successfully updated purchase status from {} to {} for purchase ID: {}",
           currentStatus, requestedStatus, purchase.getId());
 
+      // Build response
       return purchaseMapper.toCheckoutResponse(purchase);
 
     } catch (ValidationException | ResourceNotFoundException e) {
@@ -271,21 +258,24 @@ public class CheckoutService {
     }
   }
 
-  private void recordCustomerCreditIfApplicable(Purchase purchase, BigDecimal creditAmount, String userId) {
+  private void recordCustomerCreditIfApplicable(Purchase purchase, String paymentMethod, String userId) {
     if (creditLedgerService == null) {
       return;
     }
-    if (creditAmount == null || creditAmount.compareTo(BigDecimal.ZERO) <= 0) {
+    if (!"CREDIT".equalsIgnoreCase(paymentMethod != null ? paymentMethod.trim() : "")) {
       return;
     }
     if (!StringUtils.hasText(purchase.getCustomerId())) {
+      return;
+    }
+    if (purchase.getGrandTotal() == null || purchase.getGrandTotal().compareTo(BigDecimal.ZERO) <= 0) {
       return;
     }
     try {
       creditLedgerService.createEntryForSale(
           purchase.getShopId(),
           purchase.getCustomerId(),
-          creditAmount,
+          purchase.getGrandTotal(),
           purchase.getId(),
           userId);
     } catch (Exception e) {

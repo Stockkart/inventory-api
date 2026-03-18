@@ -529,9 +529,6 @@ public abstract class PurchaseMapper {
   @Mapping(target = "customerAddress", ignore = true)
   @Mapping(target = "customerPhone", ignore = true)
   @Mapping(target = "paymentMethod", source = "paymentMethod")
-  @Mapping(target = "amountPaidCash", source = "amountPaidCash")
-  @Mapping(target = "amountPaidOnline", source = "amountPaidOnline")
-  @Mapping(target = "amountOnCredit", source = "amountOnCredit")
   public abstract AddToCartResponse toAddToCartResponse(Purchase purchase);
 
   @AfterMapping
@@ -567,9 +564,6 @@ public abstract class PurchaseMapper {
   @Mapping(target = "additionalDiscountTotal", source = "additionalDiscountTotal")
   @Mapping(target = "grandTotal", source = "grandTotal")
   @Mapping(target = "paymentMethod", source = "paymentMethod")
-  @Mapping(target = "amountPaidCash", source = "amountPaidCash")
-  @Mapping(target = "amountPaidOnline", source = "amountPaidOnline")
-  @Mapping(target = "amountOnCredit", source = "amountOnCredit")
   @Mapping(target = "status", source = "status")
   @Mapping(target = "customerId", source = "customerId")
   @Mapping(target = "customerName", ignore = true)
@@ -610,9 +604,6 @@ public abstract class PurchaseMapper {
   @Mapping(target = "soldAt", source = "soldAt")
   @Mapping(target = "status", source = "status")
   @Mapping(target = "paymentMethod", source = "paymentMethod")
-  @Mapping(target = "amountPaidCash", source = "amountPaidCash")
-  @Mapping(target = "amountPaidOnline", source = "amountPaidOnline")
-  @Mapping(target = "amountOnCredit", source = "amountOnCredit")
   @Mapping(target = "customerId", source = "customerId")
   @Mapping(target = "customerName", ignore = true)
   @Mapping(target = "customerAddress", ignore = true)

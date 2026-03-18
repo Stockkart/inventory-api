@@ -37,9 +37,6 @@ public class PurchaseSummaryDto {
   private Instant soldAt;
   private PurchaseStatus status;
   private String paymentMethod;
-  private BigDecimal amountPaidCash;
-  private BigDecimal amountPaidOnline;
-  private BigDecimal amountOnCredit;
   private String customerId;
   private String customerName;
   private String customerAddress;

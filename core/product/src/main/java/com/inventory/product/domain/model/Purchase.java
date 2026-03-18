@@ -46,12 +46,6 @@ public class Purchase {
   private Instant soldAt;
   private boolean valid;
   private String paymentMethod;
-  /** Portion paid in cash (CASH, SPLIT, MULTI). */
-  private BigDecimal amountPaidCash;
-  /** Portion paid online (ONLINE, SPLIT, MULTI). */
-  private BigDecimal amountPaidOnline;
-  /** Portion on customer credit (CREDIT, SPLIT). Recorded in credit ledger. */
-  private BigDecimal amountOnCredit;
   private PurchaseStatus status;
   private String customerId;
   private String customerName; // Used when only name is provided without phone
