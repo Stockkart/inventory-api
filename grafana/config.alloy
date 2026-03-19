@@ -1,0 +1,63 @@
+// Grafana Alloy: scrape Spring Actuator Prometheus + ship logs to Grafana Cloud.
+// Required env (set in DigitalOcean App Platform as encrypted where noted):
+//   GCLOUD_RW_API_KEY          — Grafana Cloud API key (secret)
+//   GCLOUD_HOSTED_METRICS_ID   — Prometheus instance user ID
+//   GCLOUD_HOSTED_METRICS_URL  — Remote write URL (.../api/prom/push)
+//   GCLOUD_HOSTED_LOGS_ID      — Loki username (instance ID)
+//   GCLOUD_HOSTED_LOGS_URL     — Loki push URL (.../loki/api/v1/push)
+// Optional:
+//   GCLOUD_FM_COLLECTOR_ID     — Fleet label (default set in entrypoint)
+
+prometheus.remote_write "grafana_cloud" {
+  endpoint {
+    url = sys.env("GCLOUD_HOSTED_METRICS_URL")
+
+    basic_auth {
+      username = sys.env("GCLOUD_HOSTED_METRICS_ID")
+      password = sys.env("GCLOUD_RW_API_KEY")
+    }
+  }
+
+  external_labels = {
+    service = "inventory-api",
+  }
+}
+
+prometheus.scrape "inventory_api" {
+  targets = [{
+    __address__ = "127.0.0.1:8080",
+  }]
+
+  job_name        = "inventory-api"
+  metrics_path    = "/actuator/prometheus"
+  scrape_interval = "30s"
+  scrape_timeout  = "10s"
+
+  forward_to = [prometheus.remote_write.grafana_cloud.receiver]
+}
+
+loki.write "grafana_cloud" {
+  endpoint {
+    url = sys.env("GCLOUD_HOSTED_LOGS_URL")
+
+    basic_auth {
+      username = sys.env("GCLOUD_HOSTED_LOGS_ID")
+      password = sys.env("GCLOUD_RW_API_KEY")
+    }
+  }
+
+  external_labels = {
+    service = "inventory-api",
+  }
+}
+
+loki.source.file "inventory_logs" {
+  targets = [{
+    __path__ = "/var/log/inventory/application.log",
+    job    = "inventory-api",
+  }]
+
+  forward_to = [loki.write.grafana_cloud.receiver]
+
+  tail_from_end = true
+}

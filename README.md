@@ -69,6 +69,11 @@ Optional (for AWS Textract):
 
 - `AWS_ACCESS_KEY`, `AWS_SECRET_ACCESS`, `AWS_REGION`
 
+Optional (Grafana Cloud + Alloy in **Docker** — see `docs/GRAFANA_CLOUD.md`):
+
+- `GCLOUD_RW_API_KEY`, `GCLOUD_HOSTED_METRICS_ID`, `GCLOUD_HOSTED_METRICS_URL`, `GCLOUD_HOSTED_LOGS_ID`, `GCLOUD_HOSTED_LOGS_URL`
+- `GCLOUD_FM_COLLECTOR_ID`, `LOGGING_FILE_NAME`
+
 ### 2. Run with Docker Compose
 
 Build and start the app (and image-preprocess if configured):

@@ -17,6 +17,9 @@ RUN mvn -pl app -am clean package -DskipTests
 
 # -------- Runtime stage --------
 FROM eclipse-temurin:21-jre
+
+COPY --from=grafana/alloy:v1.7.5 /bin/alloy /usr/local/bin/alloy
+
 WORKDIR /app
 
 # Convert build arguments to environment variables
@@ -27,10 +30,13 @@ ENV AWS_ACCESS_KEY=${AWS_ACCESS_KEY}
 ENV AWS_SECRET_ACCESS=${AWS_SECRET_ACCESS}
 ENV AWS_REGION=${AWS_REGION}
 
+COPY grafana/config.alloy /etc/alloy/config.alloy
+COPY grafana/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 # copy the built jar from the app module (commit.txt is inside as static resource)
 COPY --from=build /build/app/target/*.jar app.jar
 
 EXPOSE 8080
 
-# Use exec form to ensure environment variables are passed correctly
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENTRYPOINT ["/entrypoint.sh"]
