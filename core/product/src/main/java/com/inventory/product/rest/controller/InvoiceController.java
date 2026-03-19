@@ -14,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -40,14 +41,15 @@ public class InvoiceController {
   @GetMapping("/{purchaseId}/pdf")
   public ResponseEntity<byte[]> generateInvoicePdf(
       @PathVariable String purchaseId,
+      @RequestParam(required = false) String printerType,
       HttpServletRequest httpRequest) {
 
     // Get shopId from request attributes (set by AuthenticationInterceptor)
     String shopId = (String) httpRequest.getAttribute("shopId");
 
-    log.info("Generating invoice PDF for purchase: {}, shop: {}", purchaseId, shopId);
+    log.info("Generating invoice PDF for purchase: {}, shop: {}, printerType: {}", purchaseId, shopId, printerType);
 
-    byte[] pdfBytes = invoiceService.generateInvoicePdf(purchaseId, shopId);
+    byte[] pdfBytes = invoiceService.generateInvoicePdf(purchaseId, shopId, printerType);
 
     String fileName = "invoice_" + purchaseId + ".pdf";
 
