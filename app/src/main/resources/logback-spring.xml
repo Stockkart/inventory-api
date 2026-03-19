@@ -15,7 +15,7 @@
     <logger name="org.springframework" level="INFO"/>
     <logger name="org.mongodb.driver" level="WARN"/>
 
-    <if condition='isDefined("LOG_FILE")'>
+    <if condition='isDefined("LOG_FILE") &amp;&amp; property("LOG_FILE").length() > 0'>
         <then>
             <appender name="FILE_JSON" class="ch.qos.logback.core.rolling.RollingFileAppender">
                 <file>${LOG_FILE}</file>
