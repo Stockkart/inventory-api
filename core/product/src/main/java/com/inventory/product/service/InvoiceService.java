@@ -64,9 +64,10 @@ public class InvoiceService {
    *
    * @param purchaseId the purchase ID
    * @param shopId the shop ID for validation
+   * @param printerType optional printer type (NORMAL or DOT_MATRIX)
    * @return PDF as byte array
    */
-  public byte[] generateInvoicePdf(String purchaseId, String shopId) {
+  public byte[] generateInvoicePdf(String purchaseId, String shopId, String printerType) {
     log.info("Generating invoice PDF for purchase: {}, shop: {}", purchaseId, shopId);
 
     // Get purchase
@@ -84,6 +85,7 @@ public class InvoiceService {
 
     // Build GenerateInvoiceRequest
     GenerateInvoiceRequest request = buildGenerateInvoiceRequest(purchase, shop);
+    request.setPrinterType(printerType);
 
     // Generate PDF
     byte[] pdf = documentService.generateInvoice(request);

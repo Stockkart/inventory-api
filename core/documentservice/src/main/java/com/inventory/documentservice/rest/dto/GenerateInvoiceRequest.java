@@ -16,6 +16,8 @@ public class GenerateInvoiceRequest {
   private String invoiceDate;
   private String invoiceTime;
   private String billingMode;
+  /** Printer type: NORMAL or DOT_MATRIX. When DOT_MATRIX, uses dot-matrix-optimized template. */
+  private String printerType;
   private Boolean showSellerDetails;
   private Boolean showBuyerDetails;
   private Boolean showTaxDetails;

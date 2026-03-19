@@ -40,8 +40,13 @@ public class InvoicePdfService {
       // Prepare template context
       Context context = prepareTemplateContext(request);
 
+      // Select template based on printer type
+      String templateName = "DOT_MATRIX".equalsIgnoreCase(request.getPrinterType())
+          ? "invoice/invoice-dotmatrix"
+          : "invoice/invoice";
+
       // Render HTML from template
-      String html = templateEngine.process("invoice/invoice", context);
+      String html = templateEngine.process(templateName, context);
 
       // Convert HTML to PDF
       return convertHtmlToPdf(html);
