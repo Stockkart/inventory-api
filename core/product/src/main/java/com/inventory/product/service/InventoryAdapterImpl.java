@@ -1,8 +1,8 @@
 package com.inventory.product.service;
 
 import com.inventory.common.exception.ResourceNotFoundException;
-import com.inventory.notifications.rest.dto.response.ReminderInventorySummary;
-import com.inventory.notifications.service.InventoryAdapter;
+import com.inventory.reminders.rest.dto.response.ReminderInventorySummary;
+import com.inventory.reminders.service.InventoryAdapter;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.rest.dto.response.InventoryReminderSummary;

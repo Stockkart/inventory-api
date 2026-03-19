@@ -191,6 +191,8 @@ public class InvoiceService {
               int effectiveFree = pct.multiply(inventory.getReceivedCount())
                   .divide(BigDecimal.valueOf(100).add(pct), 0, RoundingMode.HALF_UP).intValue();
               invoiceItem.setScheme(effectiveFree);
+            } else if (inventory.getSchemePayFor() != null && inventory.getSchemeFree() != null) {
+              invoiceItem.setScheme(inventory.getSchemeFree());
             } else {
               invoiceItem.setScheme(inventory.getScheme());
             }

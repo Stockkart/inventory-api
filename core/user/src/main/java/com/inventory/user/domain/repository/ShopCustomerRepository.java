@@ -1,6 +1,8 @@
 package com.inventory.user.domain.repository;
 
 import com.inventory.user.domain.model.ShopCustomer;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.stereotype.Repository;
 
@@ -17,6 +19,15 @@ public interface ShopCustomerRepository extends MongoRepository<ShopCustomer, St
    * @return list of shop-customer relationships
    */
   List<ShopCustomer> findByShopId(String shopId);
+
+  /**
+   * Find shop-customer relationships for a shop with pagination.
+   *
+   * @param shopId the shop ID
+   * @param pageable pagination parameters
+   * @return page of shop-customer relationships
+   */
+  Page<ShopCustomer> findByShopIdOrderByCreatedAtDesc(String shopId, Pageable pageable);
 
   /**
    * Find all shop-customer relationships for a specific customer.

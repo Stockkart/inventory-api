@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Invoice (Dot Matrix)</title>
+  <style>
+    /* Dot-matrix friendly: compact, monospace, minimal borders */
+    @page {
+      margin: 6mm;
+      size: A4;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: "Courier New", Courier, monospace;
+      font-size: 10px;
+      color: #000;
+      line-height: 1.2;
+    }
+    .box {
+      border: 1px dashed #000;
+      padding: 6px;
+    }
+    .row { display: table; width: 100%; }
+    .cell { display: table-cell; vertical-align: top; }
+    .right { text-align: right; }
+    .center { text-align: center; }
+    .muted { color: #000; }
+    .h1 { font-weight: 700; font-size: 12px; text-transform: uppercase; }
+    .sp8 { height: 8px; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 10px;
+    }
+    th, td {
+      padding: 3px 4px;
+      border-bottom: 1px dotted #000;
+      vertical-align: top;
+    }
+    th { font-weight: 700; }
+    .totals td { border-bottom: none; }
+    .noBorder td { border-bottom: none; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <div class="row">
+      <div class="cell center">
+        <div class="h1" th:text="${shopName}">SHOP NAME</div>
+        <div th:if="${showSellerDetails}">
+          <div th:text="${shopAddress}">Address</div>
+          <div th:if="${shopPhone != null && !shopPhone.isEmpty()}">Ph: <span th:text="${shopPhone}">-</span></div>
+          <div th:if="${shopGstin != null && !shopGstin.isEmpty()}">GSTIN: <span th:text="${shopGstin}">-</span></div>
+        </div>
+      </div>
+      <div class="cell right" style="width: 38%;">
+        <div>Invoice: <strong th:text="${invoiceNo}">INV</strong></div>
+        <div>Date: <span th:text="${invoiceDate}">DD-MM-YYYY</span> <span th:text="${invoiceTime}">TIME</span></div>
+        <div th:if="${paymentMethod != null}">Pay: <span th:text="${paymentMethod}">CASH</span></div>
+      </div>
+    </div>
+
+    <div class="sp8"></div>
+
+    <div th:if="${showBuyerDetails}">
+      <div><strong>Buyer:</strong> <span th:text="${customerName}">Customer</span></div>
+      <div th:if="${customerPhone != null && !customerPhone.isEmpty()}">Ph: <span th:text="${customerPhone}">-</span></div>
+      <div th:if="${customerAddress != null && !customerAddress.isEmpty()}">Addr: <span th:text="${customerAddress}">-</span></div>
+      <div th:if="${customerGstin != null && !customerGstin.isEmpty()}">GSTIN: <span th:text="${customerGstin}">-</span></div>
+    </div>
+
+    <div class="sp8"></div>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 42%;">Item</th>
+          <th style="width: 10%;">Qty</th>
+          <th style="width: 12%;">MRP</th>
+          <th style="width: 12%;">Rate</th>
+          <th style="width: 12%;">Disc</th>
+          <th style="width: 12%;" class="right">Amt</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr th:each="it : ${items}">
+          <td>
+            <div th:text="${it.name}">Item</div>
+            <div class="muted" th:if="${it.hsn != null}">HSN: <span th:text="${it.hsn}">-</span></div>
+          </td>
+          <td th:text="${it.quantity}">1</td>
+          <td th:text="${it.maximumRetailPrice}">0</td>
+          <td th:text="${it.priceToRetail}">0</td>
+          <td th:text="${it.discount != null ? it.discount : 0}">0</td>
+          <td class="right" th:text="${it.totalAmount}">0</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="sp8"></div>
+
+    <table class="noBorder">
+      <tbody class="totals">
+        <tr>
+          <td>SubTotal</td>
+          <td class="right" th:text="${subTotal}">0</td>
+        </tr>
+        <tr th:if="${additionalDiscountTotal != null && additionalDiscountTotal.compareTo(T(java.math.BigDecimal).ZERO) > 0}">
+          <td>Addl Discount</td>
+          <td class="right" th:text="${additionalDiscountTotal}">0</td>
+        </tr>
+        <tr th:if="${showTaxDetails}">
+          <td>Tax</td>
+          <td class="right" th:text="${taxTotal}">0</td>
+        </tr>
+        <tr>
+          <td><strong>Grand Total</strong></td>
+          <td class="right"><strong th:text="${grandTotal}">0</strong></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="sp8"></div>
+    <div class="center" th:if="${amountInWords != null && !amountInWords.isEmpty()}">
+      <div><strong th:text="${amountInWords}">AMOUNT IN WORDS</strong></div>
+    </div>
+  </div>
+</body>
+</html>
+

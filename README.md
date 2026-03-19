@@ -24,7 +24,8 @@ Stock Kart Inventory API provides:
 - **OCR invoice parsing** – Parse invoices via AWS Textract, OpenAI, or Gemini
 - **Documents & invoicing** – Invoice generation, PDF handling
 - **User & shop management** – Multi-shop, roles, invitations
-- **Notifications** – Low-stock alerts, reminders
+- **Reminders** – Low-stock alerts, SSE events, expiry reminders
+- **Notifications** – Email (Resend), WhatsApp-ready; signup/login emails
 - **Analytics** – Customer analytics, dashboards
 - **Plugin engine** – Extensible domain plugins (e.g. medical)
 
@@ -151,7 +152,8 @@ inventory-api/
 │   ├── user/            # Users, shops, customers, vendors
 │   ├── documentservice/ # Invoice generation, documents
 │   ├── ocr/             # OCR providers (Textract, OpenAI, Gemini)
-│   ├── notifications/   # Events, reminders
+│   ├── reminders/       # Events, reminders, low-stock SSE
+│   ├── notifications/   # Email (Resend), WhatsApp; async queue
 │   ├── analytics/       # Customer analytics, reports
 │   └── taxation/        # Tax calculations
 ├── plugins/             # Domain plugins
@@ -171,7 +173,8 @@ inventory-api/
 | **core/user** | Users, shops, customers, vendors, invitations |
 | **core/documentservice** | Invoice generation and document handling |
 | **core/ocr** | OCR for invoice parsing (AWS, OpenAI, Gemini) |
-| **core/notifications** | Events, reminders, low-stock alerts |
+| **core/reminders** | Events, reminders, low-stock SSE alerts |
+| **core/notifications** | Email (Resend), WhatsApp; async queue with retry |
 | **core/analytics** | Customer analytics and reporting |
 | **core/taxation** | Tax calculation logic |
 | **pluginengine** | Plugin discovery and registration |
@@ -224,6 +227,7 @@ inventory-api/
 │   ├── user/
 │   ├── documentservice/
 │   ├── ocr/
+│   ├── reminders/
 │   ├── notifications/
 │   ├── analytics/
 │   └── taxation/

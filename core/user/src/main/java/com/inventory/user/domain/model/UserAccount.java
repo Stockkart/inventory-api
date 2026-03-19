@@ -29,6 +29,10 @@ public class UserAccount {
   private Instant createdAt;
   private Instant updatedAt;
   private List<UserToken> tokens;
+  /** Password reset token (random UUID); cleared after reset or expiry */
+  private String passwordResetToken;
+  /** Expiry time for password reset token */
+  private Instant passwordResetTokenExpiresAt;
 
   public List<UserToken> getTokens() {
     if (tokens == null) {

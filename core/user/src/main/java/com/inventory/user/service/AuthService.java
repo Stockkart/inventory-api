@@ -10,13 +10,19 @@ import com.inventory.user.domain.repository.UserAccountRepository;
 import com.inventory.user.externalservice.GoogleTokenVerifier;
 import com.inventory.user.mapper.UserMapper;
 import com.inventory.user.rest.dto.request.ChangePasswordRequest;
+import com.inventory.user.rest.dto.request.ForgotPasswordRequest;
 import com.inventory.user.rest.dto.request.LoginRequest;
+import com.inventory.user.rest.dto.request.ResetPasswordRequest;
 import com.inventory.user.rest.dto.request.SignupRequest;
 import com.inventory.user.rest.dto.response.ChangePasswordResponse;
+import com.inventory.user.rest.dto.response.ForgotPasswordResponse;
 import com.inventory.user.rest.dto.response.LoginResponse;
 import com.inventory.user.rest.dto.response.LogoutResponse;
+import com.inventory.user.rest.dto.response.ResetPasswordResponse;
 import com.inventory.user.rest.dto.response.SignupResponse;
 import com.inventory.user.validation.AuthValidator;
+import com.inventory.notifications.domain.model.EmailTemplate;
+import com.inventory.notifications.service.MessagingService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
@@ -26,6 +32,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+
+import org.springframework.beans.factory.annotation.Value;
 
 @Service
 @Slf4j
@@ -51,6 +61,12 @@ public class AuthService {
 
   @Autowired(required = false)
   private ShopServiceAdapter shopServiceAdapter;
+
+  @Autowired(required = false)
+  private MessagingService messagingService;
+
+  @Value("${client.url:http://localhost:3000}")
+  private String clientUrl;
 
   @Transactional(readOnly = true)
   public LoginResponse login(LoginRequest request) {
@@ -107,6 +123,16 @@ public class AuthService {
       }
 
       log.info("User logged in successfully: {}", account.getUserId());
+
+      // Send login notification email (async, non-blocking)
+      if (messagingService != null) {
+        messagingService.sendEmailWithTemplate(
+            account.getEmail(),
+            EmailTemplate.LOGIN_NOTIFICATION,
+            Map.of("userName", account.getName() != null ? account.getName() : "User",
+                "userEmail", account.getEmail())
+        );
+      }
 
       // Create login response using mapper (tokens set automatically via @AfterMapping and saved to account)
       LoginResponse response = userMapper.toLoginResponse(account, request.getDeviceId());
@@ -194,6 +220,16 @@ public class AuthService {
 
       log.info("User signed up successfully: {}", account.getUserId());
 
+      // Send welcome email (async, non-blocking)
+      if (messagingService != null) {
+        messagingService.sendEmailWithTemplate(
+            account.getEmail(),
+            EmailTemplate.WELCOME_SIGNUP,
+            Map.of("userName", account.getName() != null ? account.getName() : "User",
+                "userEmail", account.getEmail())
+        );
+      }
+
       // Create signup response using mapper (tokens set automatically via @AfterMapping and saved to account)
       SignupResponse response = userMapper.toSignupResponse(account, request.getDeviceId());
 
@@ -266,6 +302,89 @@ public class AuthService {
 
     log.info("Password changed successfully for user: {}", account.getUserId());
     return new ChangePasswordResponse("Password has been changed successfully.");
+  }
+
+  /**
+   * Forgot password: generates a reset token, saves it on the user, and sends an email with the link.
+   * Always returns success to prevent email enumeration (same message for existing and non-existing users).
+   */
+  @Transactional
+  public ForgotPasswordResponse forgotPassword(ForgotPasswordRequest request) {
+    authValidator.validateForgotPasswordRequest(request);
+
+    String email = request.getEmail().trim().toLowerCase();
+    Optional<UserAccount> accountOpt = userAccountRepository.findByEmail(email);
+
+    if (accountOpt.isEmpty()) {
+      log.debug("Forgot password requested for non-existent email: {}", email);
+      return new ForgotPasswordResponse(
+          "If an account exists with this email, you will receive a password reset link shortly.");
+    }
+
+    UserAccount account = accountOpt.get();
+
+    // OAuth-only users (no password set) cannot reset password
+    if (account.getPassword() == null || account.getPassword().isBlank()) {
+      log.debug("Forgot password for OAuth-only user: {}", email);
+      return new ForgotPasswordResponse(
+          "If an account exists with this email, you will receive a password reset link shortly.");
+    }
+
+    String token = UUID.randomUUID().toString();
+    Instant expiresAt = Instant.now().plusSeconds(3600); // 1 hour
+
+    account.setPasswordResetToken(token);
+    account.setPasswordResetTokenExpiresAt(expiresAt);
+    account.setUpdatedAt(Instant.now());
+    userAccountRepository.save(account);
+
+    String resetLink = clientUrl.replaceAll("/$", "") + "/reset-password?token=" + token;
+
+    if (messagingService != null) {
+      messagingService.sendEmailWithTemplate(
+          account.getEmail(),
+          EmailTemplate.FORGOT_PASSWORD,
+          Map.of(
+              "userName", account.getName() != null ? account.getName() : "User",
+              "userEmail", account.getEmail(),
+              "resetLink", resetLink));
+    } else {
+      log.warn("MessagingService not available; reset link not sent. Link: {}", resetLink);
+    }
+
+    log.info("Password reset token generated for user: {}", account.getUserId());
+    return new ForgotPasswordResponse(
+        "If an account exists with this email, you will receive a password reset link shortly.");
+  }
+
+  /**
+   * Reset password: validates the token and updates the password.
+   */
+  @Transactional
+  public ResetPasswordResponse resetPassword(ResetPasswordRequest request) {
+    authValidator.validateResetPasswordRequest(request);
+
+    String token = request.getToken().trim();
+    UserAccount account = userAccountRepository.findByPasswordResetToken(token)
+        .orElseThrow(() -> new ValidationException("Invalid or expired reset token. Please request a new password reset."));
+
+    if (account.getPasswordResetTokenExpiresAt() == null
+        || account.getPasswordResetTokenExpiresAt().isBefore(Instant.now())) {
+      account.setPasswordResetToken(null);
+      account.setPasswordResetTokenExpiresAt(null);
+      account.setUpdatedAt(Instant.now());
+      userAccountRepository.save(account);
+      throw new ValidationException("Reset token has expired. Please request a new password reset.");
+    }
+
+    account.setPassword(passwordEncoder.encode(request.getNewPassword().trim()));
+    account.setPasswordResetToken(null);
+    account.setPasswordResetTokenExpiresAt(null);
+    account.setUpdatedAt(Instant.now());
+    userAccountRepository.save(account);
+
+    log.info("Password reset successfully for user: {}", account.getUserId());
+    return new ResetPasswordResponse("Your password has been reset successfully. You can now log in.");
   }
 }
 

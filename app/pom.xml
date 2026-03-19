@@ -67,6 +67,11 @@
         </dependency>
         <dependency>
             <groupId>com.inventory</groupId>
+            <artifactId>reminders</artifactId>
+            <version>1.0.0</version>
+        </dependency>
+        <dependency>
+            <groupId>com.inventory</groupId>
             <artifactId>notifications</artifactId>
             <version>1.0.0</version>
         </dependency>

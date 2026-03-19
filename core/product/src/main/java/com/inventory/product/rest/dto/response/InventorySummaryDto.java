@@ -58,6 +58,8 @@ public class InventorySummaryDto {
   BillingMode billingMode;
   SchemeType schemeType;
   Integer scheme;
+  Integer schemePayFor;
+  Integer schemeFree;
   BigDecimal schemePercentage;
   String sgst; // SGST rate (e.g., "9" for 9%)
   String cgst; // CGST rate (e.g., "9" for 9%)

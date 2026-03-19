@@ -11,6 +11,7 @@
         <module>pricing</module>
         <module>analytics</module>
         <module>user</module>
+        <module>reminders</module>
         <module>notifications</module>
         <module>common</module>
         <module>documentservice</module>

@@ -2,11 +2,15 @@ package com.inventory.user.mapper;
 
 import com.inventory.user.domain.model.Customer;
 import com.inventory.user.domain.model.ShopCustomer;
+import com.inventory.user.rest.dto.request.CreateCustomerRequest;
+import com.inventory.user.rest.dto.request.UpdateCustomerRequest;
 import com.inventory.user.rest.dto.response.CustomerDto;
+import com.inventory.user.utils.TextUtils;
+import org.mapstruct.AfterMapping;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
+import org.mapstruct.MappingTarget;
 import org.mapstruct.ReportingPolicy;
-import org.springframework.util.StringUtils;
 
 import java.time.Instant;
 
@@ -14,23 +18,76 @@ import java.time.Instant;
 public interface CustomerMapper {
 
   @Mapping(target = "customerId", source = "id")
+  @Mapping(target = "panNo", ignore = true)
   CustomerDto toDto(Customer customer);
 
-  default Customer toCustomer(String name, String phone, String address, String email,
-      String gstin, String dlNo, String pan, String userId) {
+  @AfterMapping
+  default void setPanNoFromGstin(@MappingTarget CustomerDto dto, Customer customer) {
+    String gstin = customer.getGstin();
+    if (gstin != null && gstin.length() >= 12) {
+      dto.setPanNo(gstin.substring(2, 12));
+    }
+  }
+
+  default Customer toCustomer(CreateCustomerRequest request) {
+    if (request == null) {
+      return null;
+    }
     Customer c = new Customer();
-    c.setName(StringUtils.hasText(name) ? name.trim() : null);
-    c.setPhone(StringUtils.hasText(phone) ? phone.trim() : null);
-    c.setAddress(StringUtils.hasText(address) ? address.trim() : null);
-    c.setEmail(StringUtils.hasText(email) ? email.trim() : null);
-    c.setGstin(StringUtils.hasText(gstin) ? gstin.trim() : null);
-    c.setDlNo(StringUtils.hasText(dlNo) ? dlNo.trim() : null);
-    c.setPan(StringUtils.hasText(pan) ? pan.trim() : null);
-    c.setUserId(StringUtils.hasText(userId) ? userId.trim() : null);
+    c.setName(TextUtils.trimToNull(request.getName()));
+    c.setPhone(TextUtils.trimToNull(request.getPhone()));
+    c.setAddress(TextUtils.trimToNull(request.getAddress()));
+    c.setEmail(TextUtils.trimToNull(request.getEmail()));
+    c.setGstin(TextUtils.trimToNull(request.getGstin()));
+    c.setDlNo(TextUtils.trimToNull(request.getDlNo()));
+    c.setPan(TextUtils.trimToNull(request.getPan()));
     Instant now = Instant.now();
     c.setCreatedAt(now);
     c.setUpdatedAt(now);
     return c;
+  }
+
+  default void applyUpdate(UpdateCustomerRequest request, @MappingTarget Customer customer) {
+    if (request == null) {
+      return;
+    }
+    if (request.getName() != null) {
+      customer.setName(TextUtils.trimToNull(request.getName()));
+    }
+    if (request.getPhone() != null) {
+      customer.setPhone(TextUtils.trimToNull(request.getPhone()));
+    }
+    if (request.getEmail() != null) {
+      customer.setEmail(TextUtils.trimToNull(request.getEmail()));
+    }
+    if (request.getAddress() != null) {
+      customer.setAddress(TextUtils.trimToNull(request.getAddress()));
+    }
+    if (request.getGstin() != null) {
+      customer.setGstin(TextUtils.trimToNull(request.getGstin()));
+    }
+    if (request.getDlNo() != null) {
+      customer.setDlNo(TextUtils.trimToNull(request.getDlNo()));
+    }
+    if (request.getPan() != null) {
+      customer.setPan(TextUtils.trimToNull(request.getPan()));
+    }
+    customer.setUpdatedAt(Instant.now());
+  }
+
+  /** Apply create request fields to an existing customer (e.g. when reusing by phone/email). */
+  default void applyCreateRequest(CreateCustomerRequest request, @MappingTarget Customer customer) {
+    if (request == null) {
+      return;
+    }
+    customer.setName(TextUtils.trimToNull(request.getName()));
+    customer.setPhone(TextUtils.trimToNull(request.getPhone()));
+    customer.setEmail(TextUtils.trimToNull(request.getEmail()));
+    customer.setAddress(TextUtils.trimToNull(request.getAddress()));
+    customer.setGstin(TextUtils.trimToNull(request.getGstin()));
+    customer.setDlNo(TextUtils.trimToNull(request.getDlNo()));
+    customer.setPan(TextUtils.trimToNull(request.getPan()));
+    customer.setUpdatedAt(Instant.now());
   }
 
   default ShopCustomer toShopCustomer(String shopId, String customerId) {

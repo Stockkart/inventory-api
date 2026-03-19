@@ -1,6 +1,6 @@
 package com.inventory.product.rest.dto.request;
 
-import com.inventory.notifications.rest.dto.request.CustomReminderRequest;
+import com.inventory.reminders.rest.dto.request.CustomReminderRequest;
 import com.inventory.pricing.rest.dto.response.RateDto;
 import com.inventory.product.domain.model.enums.DiscountApplicable;
 import com.inventory.product.domain.model.enums.BillingMode;
@@ -58,8 +58,12 @@ public class CreateInventoryRequest {
   private BillingMode billingMode;
   // Scheme type: FIXED_UNITS (default) or PERCENTAGE
   private SchemeType schemeType;
-  // When schemeType FIXED_UNITS: free units. Total stock = count + scheme.
+  /** @deprecated Prefer schemePayFor + schemeFree. When used: total stock = count + scheme. */
   private Integer scheme;
+  /** When schemeType FIXED_UNITS (new): pay for this many (e.g. 10). Quantity in payload = count only. */
+  private Integer schemePayFor;
+  /** When schemeType FIXED_UNITS (new): free units per batch (e.g. 2). "schemeFree free on schemePayFor". */
+  private Integer schemeFree;
   // When schemeType PERCENTAGE: e.g. 10 = 10% extra free.
   private BigDecimal schemePercentage;
   // SGST rate (optional, e.g., "9" for 9%). Uses shop default if not provided.

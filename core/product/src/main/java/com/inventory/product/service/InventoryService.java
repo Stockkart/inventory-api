@@ -4,8 +4,8 @@ import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
-import com.inventory.notifications.rest.dto.request.CreateReminderForInventoryRequest;
-import com.inventory.notifications.service.ReminderService;
+import com.inventory.reminders.rest.dto.request.CreateReminderForInventoryRequest;
+import com.inventory.reminders.service.ReminderService;
 import com.inventory.ocr.service.InvoiceParserService;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.enums.BillingMode;
@@ -211,13 +211,18 @@ public class InventoryService {
       inventory.setBillingMode(normalizeBillingMode(request.getBillingMode()));
 
       int billQty = request.getCount() != null ? request.getCount() : 0;
+      boolean useNewFixedUnits = request.getSchemePayFor() != null || request.getSchemeFree() != null;
       int schemeFreeUnits;
       if (request.getSchemeType() == SchemeType.PERCENTAGE
           && request.getSchemePercentage() != null && request.getSchemePercentage().signum() > 0) {
         BigDecimal pct = request.getSchemePercentage();
         schemeFreeUnits = pct.multiply(BigDecimal.valueOf(billQty))
             .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP).intValue();
+      } else if (useNewFixedUnits) {
+        // New: quantity = count only; scheme is payFor + free (e.g. 10 + 2), not added to stock
+        schemeFreeUnits = 0;
       } else {
+        // Legacy: scheme = free units, total = count + scheme
         schemeFreeUnits = request.getScheme() != null ? request.getScheme() : 0;
       }
       int totalReceivedDisplay = billQty + schemeFreeUnits;
@@ -229,6 +234,13 @@ public class InventoryService {
       inventory.setReceivedBaseCount(totalReceivedBase);
       inventory.setCurrentBaseCount(totalReceivedBase);
       inventory.setSoldBaseCount(0);
+      if (useNewFixedUnits) {
+        inventory.setSchemePayFor(request.getSchemePayFor() != null ? request.getSchemePayFor() : 0);
+        inventory.setSchemeFree(request.getSchemeFree() != null ? request.getSchemeFree() : 0);
+        inventory.setScheme(null);
+      } else if (request.getScheme() != null) {
+        inventory.setScheme(request.getScheme());
+      }
 
       inventory = inventoryRepository.save(inventory);
 
@@ -689,8 +701,14 @@ public class InventoryService {
 
       if (request.getSchemeType() != null) {
         inventory.setSchemeType(request.getSchemeType());
-        inventory.setScheme(request.getScheme());
         inventory.setSchemePercentage(request.getSchemePercentage());
+        if (request.getSchemePayFor() != null || request.getSchemeFree() != null) {
+          inventory.setSchemePayFor(request.getSchemePayFor() != null ? request.getSchemePayFor() : 0);
+          inventory.setSchemeFree(request.getSchemeFree() != null ? request.getSchemeFree() : 0);
+          inventory.setScheme(null);
+        } else {
+          inventory.setScheme(request.getScheme());
+        }
       }
 
       if (request.getBaseUnit() != null) {

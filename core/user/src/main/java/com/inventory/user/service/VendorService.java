@@ -12,9 +12,11 @@ import com.inventory.user.domain.repository.UserAccountRepository;
 import com.inventory.user.domain.repository.VendorRepository;
 import com.inventory.user.rest.dto.request.CreateVendorRequest;
 import com.inventory.user.rest.dto.request.SearchVendorRequest;
+import com.inventory.user.rest.dto.request.UpdateVendorRequest;
 import com.inventory.user.rest.dto.response.CreateVendorResponse;
 import com.inventory.user.rest.dto.response.UserShopListResponse;
 import com.inventory.user.rest.dto.response.VendorDto;
+import com.inventory.user.rest.dto.response.VendorListResponse;
 import com.inventory.user.mapper.VendorMapper;
 import com.inventory.user.validation.VendorValidator;
 import lombok.extern.slf4j.Slf4j;
@@ -28,6 +30,11 @@ import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 
 @Service
 @Slf4j
@@ -350,6 +357,130 @@ public class VendorService {
       return new UserShopListResponse(Collections.emptyList());
     }
     return membershipService.getShopsForUser(vendor.getUserId());
+  }
+
+  /**
+   * Get paginated list of vendors for a shop.
+   *
+   * @param shopId the shop ID
+   * @param page page number (0-based)
+   * @param limit page size
+   * @param query optional search query
+   * @return paginated vendor list
+   */
+  @Transactional(readOnly = true)
+  public VendorListResponse getVendors(String shopId, Integer page, Integer limit, String query) {
+    int pageNum = (page != null && page >= 0) ? page : 0;
+    int pageSize = (limit != null && limit > 0 && limit <= 100) ? limit : 20;
+
+    Pageable pageable = PageRequest.of(pageNum, pageSize, Sort.by(Sort.Direction.DESC, "createdAt"));
+
+    if (StringUtils.hasText(query)) {
+      List<Vendor> matching = searchVendors(shopId, query.trim()).stream()
+          .sorted((a, b) -> (b.getUpdatedAt() != null ? b.getUpdatedAt() : b.getCreatedAt())
+              .compareTo(a.getUpdatedAt() != null ? a.getUpdatedAt() : a.getCreatedAt()))
+          .collect(Collectors.toList());
+      long total = matching.size();
+      int totalPages = (int) Math.ceil((double) total / pageSize);
+      int from = pageNum * pageSize;
+      int to = (int) Math.min((long) from + pageSize, total);
+      List<Vendor> paged = from < matching.size() ? matching.subList(from, to) : List.of();
+      List<VendorDto> dtos = paged.stream().map(vendorMapper::toDto).collect(Collectors.toList());
+      return new VendorListResponse(dtos, pageNum, pageSize, total, totalPages);
+    }
+
+    Page<ShopVendor> shopVendorPage = shopVendorRepository.findByShopIdOrderByCreatedAtDesc(shopId, pageable);
+    List<String> vendorIds = shopVendorPage.getContent().stream()
+        .map(ShopVendor::getVendorId)
+        .collect(Collectors.toList());
+    if (vendorIds.isEmpty()) {
+      return new VendorListResponse(List.of(), pageNum, pageSize, 0, 0);
+    }
+    List<Vendor> vendors = vendorRepository.findAllById(vendorIds);
+    List<VendorDto> dtos = vendors.stream().map(vendorMapper::toDto).collect(Collectors.toList());
+    return new VendorListResponse(
+        dtos,
+        shopVendorPage.getNumber(),
+        shopVendorPage.getSize(),
+        shopVendorPage.getTotalElements(),
+        shopVendorPage.getTotalPages());
+  }
+
+  /**
+   * Update a vendor. Validates that the vendor is linked to the shop.
+   *
+   * @param vendorId the vendor ID
+   * @param shopId the shop ID
+   * @param request the update request
+   * @return the updated vendor DTO
+   */
+  public VendorDto updateVendor(String vendorId, String shopId, UpdateVendorRequest request) {
+    if (!StringUtils.hasText(shopId)) {
+      throw new AuthenticationException(
+          ErrorCode.UNAUTHORIZED,
+          "User not authenticated or shop not found");
+    }
+    vendorValidator.validateVendorId(vendorId);
+    if (!isVendorLinkedToShop(shopId, vendorId)) {
+      throw new ResourceNotFoundException("Vendor", "id", "Vendor not found or not linked to your shop");
+    }
+    Vendor vendor = vendorRepository.findById(vendorId)
+        .orElseThrow(() -> new ResourceNotFoundException("Vendor", "id", vendorId));
+
+    boolean updated = false;
+    if (request.getName() != null && StringUtils.hasText(request.getName()) && !request.getName().trim().equals(vendor.getName())) {
+      vendor.setName(request.getName().trim());
+      updated = true;
+    }
+    if (request.getContactPhone() != null) {
+      String phone = request.getContactPhone().trim();
+      if (!phone.equals(vendor.getContactPhone() != null ? vendor.getContactPhone() : "")) {
+        vendor.setContactPhone(StringUtils.hasText(phone) ? phone : null);
+        updated = true;
+      }
+    }
+    if (request.getContactEmail() != null) {
+      String email = request.getContactEmail().trim();
+      if (!email.equals(vendor.getContactEmail() != null ? vendor.getContactEmail() : "")) {
+        vendor.setContactEmail(StringUtils.hasText(email) ? email : null);
+        updated = true;
+      }
+    }
+    if (request.getAddress() != null) {
+      String addr = request.getAddress().trim();
+      if (!addr.equals(vendor.getAddress() != null ? vendor.getAddress() : "")) {
+        vendor.setAddress(StringUtils.hasText(addr) ? addr : null);
+        updated = true;
+      }
+    }
+    if (request.getCompanyName() != null) {
+      String company = request.getCompanyName().trim();
+      if (!company.equals(vendor.getCompanyName() != null ? vendor.getCompanyName() : "")) {
+        vendor.setCompanyName(StringUtils.hasText(company) ? company : null);
+        updated = true;
+      }
+    }
+    if (request.getBusinessType() != null) {
+      String bt = request.getBusinessType().trim();
+      if (!bt.equals(vendor.getBusinessType() != null ? vendor.getBusinessType() : "")) {
+        vendor.setBusinessType(StringUtils.hasText(bt) ? bt : null);
+        updated = true;
+      }
+    }
+    if (request.getGstinUin() != null) {
+      String gstin = request.getGstinUin().trim();
+      if (!gstin.equals(vendor.getGstinUin() != null ? vendor.getGstinUin() : "")) {
+        vendor.setGstinUin(StringUtils.hasText(gstin) ? gstin : null);
+        updated = true;
+      }
+    }
+
+    if (updated) {
+      vendor.setUpdatedAt(Instant.now());
+      vendor = vendorRepository.save(vendor);
+      log.info("Updated vendor with ID: {}", vendor.getId());
+    }
+    return vendorMapper.toDto(vendor);
   }
 }
 
