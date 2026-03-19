@@ -1,6 +1,9 @@
 package com.inventory.product.rest.controller;
 
 import com.inventory.common.constants.ErrorCode;
+import com.inventory.metrics.annotation.Latency;
+import com.inventory.metrics.annotation.RecordRequestRate;
+import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.common.exception.AuthenticationException;
 import com.inventory.product.rest.dto.request.BulkCreateInventoryRequest;
@@ -32,6 +35,9 @@ import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/v1/inventory")
+@Latency(module = "product")
+@RecordRequestRate(module = "product")
+@RecordStatusCodes(module = "product")
 @Slf4j
 public class InventoryController {
 

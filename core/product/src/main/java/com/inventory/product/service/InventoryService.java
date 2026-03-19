@@ -29,6 +29,7 @@ import com.inventory.product.rest.dto.response.ParsedInventoryListResponse;
 import java.util.ArrayList;
 import com.inventory.product.mapper.InventoryMapper;
 import com.inventory.product.mapper.ParsedInventoryMapper;
+import com.inventory.product.utils.constants.ProductMetricsConstants;
 import com.inventory.product.validation.InventoryValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -78,6 +79,9 @@ public class InventoryService {
 
   @Autowired(required = false)
   private com.inventory.user.service.CreditLedgerService creditLedgerService;
+
+  @Autowired(required = false)
+  private com.inventory.metrics.MetricsWrapper metrics;
 
   /**
    * Parse invoice image and extract inventory items using OCR.
@@ -177,6 +181,11 @@ public class InventoryService {
     
     log.info("Bulk creation completed: {} created, {} failed", createdItems.size(), failedCount);
 
+    if (metrics != null && !createdItems.isEmpty()) {
+      metrics.record(ProductMetricsConstants.INVENTORY_OPERATION, 1, "module", ProductMetricsConstants.MODULE, "operation", "bulk_create");
+      metrics.record(ProductMetricsConstants.INVENTORY_ITEMS_ADDED, createdItems.size(), "module", ProductMetricsConstants.MODULE);
+    }
+
     return inventoryMapper.toBulkCreateInventoryResponse(createdItems, failedCount);
   }
 
@@ -248,6 +257,12 @@ public class InventoryService {
 
       log.info("Successfully created inventory lot: {} for product: {} in shop: {}",
           inventory.getLotId(), inventory.getBarcode(), shopId);
+
+      if (metrics != null) {
+        int itemCount = request.getCount() != null ? request.getCount() : 1;
+        metrics.record(ProductMetricsConstants.INVENTORY_OPERATION, 1, "module", ProductMetricsConstants.MODULE, "operation", "create");
+        metrics.record(ProductMetricsConstants.INVENTORY_ITEMS_ADDED, itemCount, "module", ProductMetricsConstants.MODULE);
+      }
 
       CreateReminderForInventoryRequest reminderRequest =
           inventoryMapper.toCreateReminderForInventoryRequest(request, shopId, inventory.getId());
@@ -715,6 +730,11 @@ public class InventoryService {
       // Save inventory
       inventory = inventoryRepository.save(inventory);
       log.info("Successfully updated inventory with ID: {}", inventoryId);
+
+      if (metrics != null) {
+        metrics.record(ProductMetricsConstants.INVENTORY_OPERATION, 1, "module", ProductMetricsConstants.MODULE, "operation", "update");
+        metrics.record(ProductMetricsConstants.INVENTORY_ITEMS_ADDED, 1, "module", ProductMetricsConstants.MODULE);
+      }
 
       return inventoryMapper.toDetail(inventory);
 

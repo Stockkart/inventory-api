@@ -1,6 +1,9 @@
 package com.inventory.product.rest.controller;
 
 import com.inventory.common.dto.response.ApiResponse;
+import com.inventory.metrics.annotation.Latency;
+import com.inventory.metrics.annotation.RecordRequestRate;
+import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.product.rest.dto.request.RegisterShopRequest;
 import com.inventory.product.rest.dto.request.ShopApprovalRequest;
 import com.inventory.product.rest.dto.request.UpdateShopRequest;
@@ -22,6 +25,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
+@Latency(module = "product")
+@RecordRequestRate(module = "product")
+@RecordStatusCodes(module = "product")
 @RequestMapping("/api/v1/shops")
 public class ShopController {
 

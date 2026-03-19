@@ -18,6 +18,7 @@ import com.inventory.product.mapper.RefundMapper;
 import com.inventory.product.rest.dto.response.RefundListResponse;
 import com.inventory.product.rest.dto.response.RefundResponse;
 import com.inventory.product.rest.dto.response.RefundSummaryDto;
+import com.inventory.product.utils.constants.ProductMetricsConstants;
 import com.inventory.product.validation.CheckoutValidator;
 import com.inventory.user.service.CustomerService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -66,6 +67,9 @@ public class RefundService {
 
   @Autowired
   private CustomerService customerService;
+
+  @Autowired(required = false)
+  private com.inventory.metrics.MetricsWrapper metrics;
 
   @Autowired
   private com.inventory.user.domain.repository.CustomerRepository customerRepository;
@@ -219,6 +223,13 @@ public class RefundService {
 
       log.info("Refund processed successfully for purchase ID: {}. Total refund amount: {}, Items refunded: {}",
           request.getPurchaseId(), totalRefundAmount, refundedItems.size());
+
+      if (metrics != null) {
+        metrics.record(ProductMetricsConstants.REFUNDS_TOTAL, 1, "module", ProductMetricsConstants.MODULE);
+        if (roundedAmount.compareTo(BigDecimal.ZERO) > 0) {
+          metrics.record(ProductMetricsConstants.REFUND_AMOUNT, roundedAmount.doubleValue(), "module", ProductMetricsConstants.MODULE);
+        }
+      }
 
       return response;
 
