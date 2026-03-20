@@ -244,4 +244,23 @@ public class InventoryController {
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 
+  /**
+   * Parse Excel stock sheet for migration from legacy apps.
+   * Supports .xls and .xlsx with auto-detected column mapping.
+   * Returns parsed items ready for review and bulk create.
+   *
+   * @param file the Excel file (.xls or .xlsx) to parse
+   * @return list of parsed inventory items
+   */
+  @PostMapping(value = "/parse-stock-sheet", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+  public ResponseEntity<ApiResponse<ParsedInventoryListResponse>> parseStockSheet(
+      @RequestParam("file") MultipartFile file,
+      HttpServletRequest httpRequest) {
+    log.info("Received stock sheet parse request for file: {}, size: {} bytes",
+        file.getOriginalFilename(), file.getSize());
+
+    ParsedInventoryListResponse response = inventoryService.parseStockSheet(file);
+    return ResponseEntity.ok(ApiResponse.success(response));
+  }
+
 }

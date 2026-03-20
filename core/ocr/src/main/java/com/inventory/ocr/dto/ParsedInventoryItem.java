@@ -34,6 +34,12 @@ public class ParsedInventoryItem {
   private String hsn;
   private String batchNo;
   private Integer scheme;
+  /** Deal column under Sales Scheme: pay-for units (e.g. 10). */
+  private Integer schemePayFor;
+  /** Free column under Sales Scheme: free units per batch (e.g. 1). */
+  private Integer schemeFree;
+  /** Rec.Date / purchase date in ISO-8601 UTC string. */
+  private String purchaseDate;
   private String sgst;
   private String cgst;
 
