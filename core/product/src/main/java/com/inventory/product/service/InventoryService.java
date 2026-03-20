@@ -28,9 +28,11 @@ import com.inventory.product.rest.dto.response.PageMeta;
 import com.inventory.product.rest.dto.response.ParsedInventoryListResponse;
 import java.util.ArrayList;
 import com.inventory.product.mapper.InventoryMapper;
+import com.inventory.product.migration.ExcelStockParser;
 import com.inventory.product.mapper.ParsedInventoryMapper;
 import com.inventory.product.utils.constants.ProductMetricsConstants;
 import com.inventory.product.validation.InventoryValidator;
+import com.inventory.product.validation.StockSheetValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
@@ -76,6 +78,12 @@ public class InventoryService {
 
   @Autowired
   private com.inventory.product.validation.ImageValidator imageValidator;
+
+  @Autowired
+  private StockSheetValidator stockSheetValidator;
+
+  @Autowired
+  private ExcelStockParser excelStockParser;
 
   @Autowired(required = false)
   private com.inventory.user.service.CreditLedgerService creditLedgerService;
@@ -135,6 +143,40 @@ public class InventoryService {
       log.error("Error parsing invoice image: {}", e.getMessage(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
           "Error parsing invoice: " + e.getMessage(), e);
+    }
+  }
+
+  /**
+   * Parse Excel stock sheet and extract inventory items for migration.
+   * Supports .xls and .xlsx from various legacy apps with auto-detected column mapping.
+   *
+   * @param file the Excel file to parse
+   * @return ParsedInventoryListResponse containing list of CreateInventoryItemRequest items
+   */
+  @Transactional(readOnly = true)
+  public ParsedInventoryListResponse parseStockSheet(MultipartFile file) {
+    log.info("Processing stock sheet parse request for file: {}, size: {} bytes",
+        file.getOriginalFilename(), file.getSize());
+
+    stockSheetValidator.validateStockSheet(file);
+
+    try {
+      List<com.inventory.ocr.dto.ParsedInventoryItem> parsedItems =
+          excelStockParser.parse(file.getInputStream(), file.getOriginalFilename());
+
+      List<CreateInventoryItemRequest> items =
+          parsedInventoryMapper.toCreateInventoryItemRequestList(parsedItems);
+
+      log.info("Stock sheet parsing completed. Extracted {} inventory items", items.size());
+      return parsedInventoryMapper.toParsedInventoryListResponse(items);
+    } catch (IOException e) {
+      log.error("Error reading Excel file: {}", e.getMessage(), e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
+          "Error reading Excel file: " + e.getMessage(), e);
+    } catch (Exception e) {
+      log.error("Error parsing stock sheet: {}", e.getMessage(), e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
+          "Error parsing stock sheet: " + e.getMessage(), e);
     }
   }
 

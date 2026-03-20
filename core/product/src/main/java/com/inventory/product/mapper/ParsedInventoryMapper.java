@@ -55,6 +55,7 @@ public interface ParsedInventoryMapper {
   @Mapping(target = "thresholdCount", source = "thresholdCount", qualifiedByName = "mapThresholdCount")
   @Mapping(target = "expiryDate", source = "expiryDate", qualifiedByName = "parseInstant")
   @Mapping(target = "reminderAt", source = "reminderAt", qualifiedByName = "parseInstant")
+  @Mapping(target = "purchaseDate", source = "purchaseDate", qualifiedByName = "parseInstant")
   @Mapping(target = "customReminders", source = "customReminders", qualifiedByName = "mapCustomReminders")
   CreateInventoryItemRequest toCreateInventoryItemRequest(ParsedInventoryItem parsedItem);
 
