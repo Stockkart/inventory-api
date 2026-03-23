@@ -72,6 +72,11 @@ public class Inventory {
   /** When schemeType FIXED_UNITS: free units per batch (e.g. 2). With schemePayFor=10 = "2 free on 10". */
   private Integer schemeFree;
   private BigDecimal schemePercentage; // When schemeType PERCENTAGE: e.g. 10 = 10% extra free.
+  /** Purchase (from vendor) - for comparison at sale. Read-only during sale. */
+  private SchemeType purchaseSchemeType;
+  private Integer purchaseSchemePayFor;
+  private Integer purchaseSchemeFree;
+  private BigDecimal purchaseSchemePercentage;
   /** Transient: populated from Pricing module on read via AOP; not persisted. */
   @Transient
   private BigDecimal maximumRetailPrice;
@@ -89,6 +94,9 @@ public class Inventory {
   private String defaultRate;
   @Transient
   private BigDecimal additionalDiscount;
+  /** Purchase add. discount from Pricing. Populated on read. */
+  @Transient
+  private BigDecimal purchaseAdditionalDiscount;
   @Transient
   private String sgst;
   @Transient

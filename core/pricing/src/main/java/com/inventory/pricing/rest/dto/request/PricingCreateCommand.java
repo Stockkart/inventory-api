@@ -21,6 +21,7 @@ public class PricingCreateCommand {
   private List<RateDto> rates;
   private String defaultRate;
   private BigDecimal additionalDiscount;
+  private BigDecimal purchaseAdditionalDiscount;
   private String sgst;
   private String cgst;
 }

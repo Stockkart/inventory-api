@@ -7,6 +7,8 @@ import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.product.domain.model.enums.PurchaseStatus;
 import com.inventory.product.domain.model.enums.SchemeType;
 import com.inventory.product.domain.model.Shop;
+import com.inventory.product.domain.model.pricing.InventoryPricingReadHandler;
+import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.rest.dto.request.AddToCartRequest;
 import com.inventory.product.rest.dto.request.CheckoutRequest;
@@ -37,6 +39,12 @@ public abstract class PurchaseMapper {
   
   @Autowired
   protected ShopRepository shopRepository;
+
+  @Autowired
+  protected InventoryRepository inventoryRepository;
+
+  @Autowired
+  protected InventoryPricingReadHandler inventoryPricingReadHandler;
 
 
   @Mapping(target = "saleId", source = "id")
@@ -546,6 +554,22 @@ public abstract class PurchaseMapper {
     } else if (purchase.getCustomerName() != null && !purchase.getCustomerName().trim().isEmpty()) {
       // If only customerName is stored (no customerId), use it directly
       response.setCustomerName(purchase.getCustomerName());
+    }
+  }
+
+  @AfterMapping
+  protected void populatePurchaseValuesOnCartItems(@MappingTarget AddToCartResponse response, Purchase purchase) {
+    if (response.getItems() == null) return;
+    for (PurchaseItem item : response.getItems()) {
+      if (item.getInventoryId() == null) continue;
+      inventoryRepository.findById(item.getInventoryId()).ifPresent(inv -> {
+        inventoryPricingReadHandler.enrich(inv);
+        item.setPurchaseAdditionalDiscount(inv.getPurchaseAdditionalDiscount());
+        item.setPurchaseSchemeType(inv.getPurchaseSchemeType());
+        item.setPurchaseSchemePayFor(inv.getPurchaseSchemePayFor());
+        item.setPurchaseSchemeFree(inv.getPurchaseSchemeFree());
+        item.setPurchaseSchemePercentage(inv.getPurchaseSchemePercentage());
+      });
     }
   }
 

@@ -46,8 +46,11 @@ public class Pricing {
   /** Selling price (effective price for sales). Updated when defaultRate changes. Can be set directly. */
   private BigDecimal sellingPrice;
 
-  /** Additional discount percentage (0-100) */
+  /** Additional discount percentage (0-100) - sale default */
   private BigDecimal additionalDiscount;
+
+  /** Purchase add. discount % from vendor - for comparison at sale, no calculation */
+  private BigDecimal purchaseAdditionalDiscount;
 
   /** State GST rate (e.g., "9" for 9%) */
   private String sgst;

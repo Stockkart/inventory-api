@@ -39,6 +39,7 @@ public class InventoryPricingWriteHandler {
             .rates(inventory.getRates())
             .defaultRate(defaultRate)
             .additionalDiscount(inventory.getAdditionalDiscount())
+            .purchaseAdditionalDiscount(inventory.getPurchaseAdditionalDiscount())
             .sgst(resolveSgst(inventory.getSgst(), inventory.getShopId()))
             .cgst(resolveCgst(inventory.getCgst(), inventory.getShopId()))
             .build();

@@ -113,7 +113,7 @@ public class InventoryPricingReadHandler {
     if (mrp == null && cost == null && ptr == null && discount == null && sgst == null && cgst == null) {
       return null;
     }
-    return new PricingReadDto(mrp, cost, ptr, null, null, ptr, discount, sgst, cgst);
+    return new PricingReadDto(mrp, cost, ptr, null, null, ptr, discount, null, sgst, cgst);
   }
 
   private void applyPricing(Inventory inv, PricingReadDto p) {
@@ -126,6 +126,7 @@ public class InventoryPricingReadHandler {
     inv.setPriceToRetail(p.getPriceToRetail());
     inv.setSellingPrice(p.getEffectivePrice());
     inv.setAdditionalDiscount(p.getAdditionalDiscount());
+    inv.setPurchaseAdditionalDiscount(p.getPurchaseAdditionalDiscount());
     if (inv.getBillingMode() == BillingMode.BASIC) {
       inv.setSgst(null);
       inv.setCgst(null);

@@ -47,6 +47,7 @@ public interface PricingMapper {
   @Mapping(target = "rates", source = "rates")
   @Mapping(target = "defaultRate", source = "defaultRate")
   @Mapping(target = "additionalDiscount", source = "additionalDiscount")
+  @Mapping(target = "purchaseAdditionalDiscount", source = "purchaseAdditionalDiscount")
   @Mapping(target = "sgst", source = "sgst")
   @Mapping(target = "cgst", source = "cgst")
   CreatePricingRequest toCreatePricingRequest(PricingCreateCommand command);
@@ -68,6 +69,7 @@ public interface PricingMapper {
   @Mapping(target = "defaultRate", source = "defaultRate")
   @Mapping(target = "sellingPrice", ignore = true)
   @Mapping(target = "additionalDiscount", source = "additionalDiscount")
+  @Mapping(target = "purchaseAdditionalDiscount", source = "purchaseAdditionalDiscount")
   @Mapping(target = "sgst", source = "sgst")
   @Mapping(target = "cgst", source = "cgst")
   PricingReadDto toPricingReadDto(Pricing pricing);

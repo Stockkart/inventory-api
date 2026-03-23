@@ -19,6 +19,7 @@ public class PricingReadDto {
   private String defaultRate;
   private BigDecimal sellingPrice;
   private BigDecimal additionalDiscount;
+  private BigDecimal purchaseAdditionalDiscount;
   private String sgst;
   private String cgst;
 
