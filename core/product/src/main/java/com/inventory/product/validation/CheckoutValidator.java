@@ -93,11 +93,12 @@ public class CheckoutValidator {
     if (item.getPriceToRetail() != null && item.getPriceToRetail().compareTo(BigDecimal.ZERO) <= 0) {
       throw new ValidationException("Selling price must be greater than zero for item: " + item.getId());
     }
-    // additionalDiscount is optional; when provided it must be a valid percentage (0–100)
+    // additionalDiscount is optional; when provided must be -100 to 100.
+    // Negative values act as markup (e.g. -2% increases sell price by 2%).
     if (item.getAdditionalDiscount() != null) {
-      if (item.getAdditionalDiscount().compareTo(BigDecimal.ZERO) < 0
+      if (item.getAdditionalDiscount().compareTo(BigDecimal.valueOf(-100)) < 0
           || item.getAdditionalDiscount().compareTo(BigDecimal.valueOf(100)) > 0) {
-        throw new ValidationException("Additional discount for item " + item.getId() + " must be between 0 and 100");
+        throw new ValidationException("Sale add. discount for item " + item.getId() + " must be between -100 and 100 (negative = markup)");
       }
     }
     // Scheme validation:

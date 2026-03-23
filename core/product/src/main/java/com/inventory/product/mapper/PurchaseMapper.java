@@ -395,9 +395,10 @@ public abstract class PurchaseMapper {
     if (priceToRetail == null || billableQuantity == null || billableQuantity.compareTo(BigDecimal.ZERO) <= 0) {
       return BigDecimal.ZERO;
     }
-    // Step 1: Calculate discounted selling price per unit
+    // Step 1: Calculate discounted/marked-up selling price per unit
+    // Formula: price * (1 - additionalDiscount/100). Negative discount = markup (e.g. -2% => 1.02)
     BigDecimal discountedPricePerUnit = priceToRetail;
-    if (additionalDiscount != null && additionalDiscount.compareTo(BigDecimal.ZERO) > 0) {
+    if (additionalDiscount != null && additionalDiscount.compareTo(BigDecimal.ZERO) != 0) {
       BigDecimal discountMultiplier = BigDecimal.ONE.subtract(
           additionalDiscount.divide(BigDecimal.valueOf(100), 4, java.math.RoundingMode.HALF_UP)
       );
