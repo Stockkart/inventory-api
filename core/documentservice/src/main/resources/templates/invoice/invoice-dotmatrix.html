@@ -2,7 +2,7 @@
 <html xmlns:th="http://www.thymeleaf.org">
 <head>
   <meta charset="UTF-8"/>
-  <title>Invoice (Dot Matrix)</title>
+  <title th:text="${billingMode == 'BASIC' ? 'Estimate (Dot Matrix)' : 'Invoice (Dot Matrix)'}">Invoice (Dot Matrix)</title>
   <style>
     /* Dot-matrix friendly: compact, monospace, minimal borders */
     @page {
@@ -44,19 +44,23 @@
 </head>
 <body>
   <div class="box">
+    <div class="h1 center" th:if="${billingMode == 'BASIC'}" style="margin-bottom: 6px;">Estimate</div>
     <div class="row">
-      <div class="cell center">
+      <div class="cell" style="width: 50%;">
+        <div><strong th:text="${billingMode == 'BASIC' ? 'Challan No.' : 'Invoice'}">Invoice:</strong> <span th:text="${invoiceNo}">INV</span></div>
+        <div><strong>Date:</strong> <span th:text="${invoiceDate}">DD-MM-YYYY</span> <span th:text="${invoiceTime}">TIME</span></div>
+        <div th:if="${paymentMethod != null}"><strong>Pay:</strong> <span th:text="${paymentMethod}">CASH</span></div>
+      </div>
+      <div class="cell right" style="width: 50%;">
         <div class="h1" th:text="${shopName}">SHOP NAME</div>
         <div th:if="${showSellerDetails}">
           <div th:text="${shopAddress}">Address</div>
           <div th:if="${shopPhone != null && !shopPhone.isEmpty()}">Ph: <span th:text="${shopPhone}">-</span></div>
           <div th:if="${shopGstin != null && !shopGstin.isEmpty()}">GSTIN: <span th:text="${shopGstin}">-</span></div>
         </div>
-      </div>
-      <div class="cell right" style="width: 38%;">
-        <div>Invoice: <strong th:text="${invoiceNo}">INV</strong></div>
-        <div>Date: <span th:text="${invoiceDate}">DD-MM-YYYY</span> <span th:text="${invoiceTime}">TIME</span></div>
-        <div th:if="${paymentMethod != null}">Pay: <span th:text="${paymentMethod}">CASH</span></div>
+        <div th:if="${billingMode == 'BASIC' && shopAddress != null && !shopAddress.isEmpty()}">
+          <div th:text="${shopAddress}">Address</div>
+        </div>
       </div>
     </div>
 
@@ -86,7 +90,7 @@
         <tr th:each="it : ${items}">
           <td>
             <div th:text="${it.name}">Item</div>
-            <div class="muted" th:if="${it.hsn != null}">HSN: <span th:text="${it.hsn}">-</span></div>
+            <div class="muted" th:if="${billingMode != 'BASIC' && it.hsn != null}">HSN: <span th:text="${it.hsn}">-</span></div>
           </td>
           <td th:text="${it.quantity}">1</td>
           <td th:text="${it.maximumRetailPrice}">0</td>
@@ -102,11 +106,11 @@
     <table class="noBorder">
       <tbody class="totals">
         <tr>
-          <td>SubTotal</td>
+          <td>Total Amount</td>
           <td class="right" th:text="${subTotal}">0</td>
         </tr>
         <tr th:if="${additionalDiscountTotal != null && additionalDiscountTotal.compareTo(T(java.math.BigDecimal).ZERO) > 0}">
-          <td>Addl Discount</td>
+          <td>Additional Discount</td>
           <td class="right" th:text="${additionalDiscountTotal}">0</td>
         </tr>
         <tr th:if="${showTaxDetails}">
@@ -114,8 +118,12 @@
           <td class="right" th:text="${taxTotal}">0</td>
         </tr>
         <tr>
-          <td><strong>Grand Total</strong></td>
+          <td><strong>Net Amount</strong></td>
           <td class="right"><strong th:text="${grandTotal}">0</strong></td>
+        </tr>
+        <tr>
+          <td><strong>AMOUNT SAVED</strong></td>
+          <td class="right"><strong th:text="${totalAmountSaved != null ? totalAmountSaved : 0}">0</strong></td>
         </tr>
       </tbody>
     </table>

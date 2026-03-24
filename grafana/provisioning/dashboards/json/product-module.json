@@ -10,102 +10,210 @@
     {
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
-      "id": 100,
+      "id": 110,
       "panels": [],
-      "title": "System",
+      "title": "Traffic",
       "type": "row"
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "percentunit", "min": 0, "max": 1 } },
-      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 1 },
-      "id": 101,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "process_cpu_usage", "legendFormat": "process", "refId": "A" }],
-      "title": "CPU - Process",
-      "type": "timeseries"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "bytes", "min": 0 } },
-      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 1 },
-      "id": 102,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "jvm_memory_used_bytes{area=\"heap\"}", "legendFormat": "{{id}}", "refId": "A" }],
-      "title": "Memory - Heap",
-      "type": "timeseries"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "s", "min": 0 } },
-      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 1 },
-      "id": 103,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(jvm_gc_pause_seconds_sum[5m])", "legendFormat": "{{action}} - {{cause}}", "refId": "A" }],
-      "title": "GC - Pause Rate",
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps", "min": 0 } },
+      "gridPos": { "h": 11, "w": 12, "x": 0, "y": 1 },
+      "id": 5,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "showLegend": true, "calcs": ["mean"] } },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(inventory_api_latency_seconds_count{module=\"product\"}[5m])", "legendFormat": "{{endpoint}}", "refId": "A" }],
+      "title": "RPS - Per Endpoint",
       "type": "timeseries"
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "short", "min": 0 } },
-      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 1 },
-      "id": 104,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "jvm_threads_live_threads", "legendFormat": "live", "refId": "A" }],
-      "title": "Threads - Live",
+      "gridPos": { "h": 11, "w": 12, "x": 12, "y": 1 },
+      "id": 201,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "showLegend": true, "calcs": ["mean"] } },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(inventory_api_latency_seconds_count{module=\"product\"}[5m]) * 60", "legendFormat": "{{endpoint}}", "refId": "A" }],
+      "title": "Requests/min - Per Endpoint",
       "type": "timeseries"
     },
     {
-      "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 7 },
-      "id": 110,
-      "panels": [],
-      "title": "HTTP",
-      "type": "row"
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "short", "min": 0 } },
+      "gridPos": { "h": 11, "w": 12, "x": 0, "y": 12 },
+      "id": 202,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "showLegend": true, "calcs": ["mean"] } },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(inventory_api_latency_seconds_count{module=\"product\"}[5m]) * 3600", "legendFormat": "{{endpoint}}", "refId": "A" }],
+      "title": "Requests/hour - Per Endpoint",
+      "type": "timeseries"
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps", "min": 0 } },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
-      "id": 5,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(inventory_api_latency_seconds_count{module=\"product\"}[5m])", "legendFormat": "{{endpoint}}", "refId": "A" }],
-      "title": "RPS - Product Module",
+      "gridPos": { "h": 11, "w": 12, "x": 12, "y": 12 },
+      "id": 203,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "showLegend": true, "calcs": ["mean"] } },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum by (method) (rate(inventory_api_requests_total{module=\"product\"}[5m]))", "legendFormat": "{{method}}", "refId": "A" }],
+      "title": "RPS - By HTTP Method",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "short", "min": 0 } },
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 23 },
+      "id": 204,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "showLegend": true, "calcs": ["mean"] } },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "increase(inventory_api_requests_total{module=\"product\"}[1h])", "legendFormat": "{{endpoint}} - {{method}}", "refId": "A" }],
+      "title": "Request Count - Last Hour (Per API)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 35 },
+      "id": 111,
+      "panels": [],
+      "title": "Latency",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "s", "min": 0 } },
+      "gridPos": { "h": 11, "w": 12, "x": 0, "y": 36 },
+      "id": 1,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "showLegend": true, "calcs": ["mean"] } },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(inventory_api_latency_seconds_sum{module=\"product\"}[5m]) / rate(inventory_api_latency_seconds_count{module=\"product\"}[5m])", "legendFormat": "{{endpoint}}", "refId": "A" }],
+      "title": "Avg Latency - Per Endpoint",
       "type": "timeseries"
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "s", "min": 0 } },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
-      "id": 1,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
+      "gridPos": { "h": 11, "w": 12, "x": 12, "y": 36 },
+      "id": 211,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "showLegend": true, "calcs": ["mean"] } },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "inventory_api_latency_seconds{module=\"product\",quantile=\"0.5\"}", "legendFormat": "{{endpoint}}", "refId": "A" }],
+      "title": "P50 Latency - Per Endpoint",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "s", "min": 0 } },
+      "gridPos": { "h": 11, "w": 12, "x": 0, "y": 47 },
+      "id": 212,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "showLegend": true, "calcs": ["mean"] } },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "inventory_api_latency_seconds{module=\"product\",quantile=\"0.9\"}", "legendFormat": "{{endpoint}}", "refId": "A" }],
+      "title": "P90 Latency - Per Endpoint",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "s", "min": 0 } },
+      "gridPos": { "h": 11, "w": 12, "x": 12, "y": 47 },
+      "id": 213,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "showLegend": true, "calcs": ["mean"] } },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "inventory_api_latency_seconds{module=\"product\",quantile=\"0.95\"}", "legendFormat": "{{endpoint}}", "refId": "A" }],
+      "title": "P95 Latency - Per Endpoint",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "s", "min": 0 } },
+      "gridPos": { "h": 11, "w": 12, "x": 0, "y": 58 },
+      "id": 214,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "showLegend": true, "calcs": ["mean"] } },
       "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "inventory_api_latency_seconds{module=\"product\",quantile=\"0.99\"}", "legendFormat": "{{endpoint}}", "refId": "A" }],
-      "title": "Latency - p99",
+      "title": "P99 Latency - Per Endpoint",
       "type": "timeseries"
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps", "min": 0 } },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
-      "id": 6,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum by (status_class) (rate(inventory_api_status_total{module=\"product\"}[5m]))", "legendFormat": "{{status_class}}", "refId": "A" }],
-      "title": "Responses by Status Class",
-      "type": "timeseries"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps", "min": 0 } },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
-      "id": 7,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(inventory_api_status_total{module=\"product\",status_class=\"5xx\"}[5m])", "legendFormat": "{{endpoint}}", "refId": "A" }],
-      "title": "5xx Errors/sec",
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "s", "min": 0 } },
+      "gridPos": { "h": 11, "w": 12, "x": 12, "y": 58 },
+      "id": 215,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "showLegend": true, "calcs": ["mean"] } },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "max_over_time(inventory_api_latency_seconds{module=\"product\",quantile=\"0.99\"}[1h])", "legendFormat": "{{endpoint}}", "refId": "A" }],
+      "title": "Max Latency - Per Endpoint",
       "type": "timeseries"
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 24 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 69 },
+      "id": 112,
+      "panels": [],
+      "title": "Errors",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps", "min": 0 } },
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 70 },
+      "id": 221,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(rate(inventory_api_status_total{module=\"product\",status_class=~\"4xx|5xx\"}[5m]))", "legendFormat": "total errors", "refId": "A" }],
+      "title": "Error Rate (4xx+5xx)/sec",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "percentunit", "min": 0, "max": 1 } },
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 70 },
+      "id": 222,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(rate(inventory_api_status_total{module=\"product\",status_class=~\"4xx|5xx\"}[5m])) / sum(rate(inventory_api_status_total{module=\"product\"}[5m]))", "legendFormat": "error %", "refId": "A" }],
+      "title": "Error Rate %",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "short", "min": 0 } },
+      "gridPos": { "h": 11, "w": 24, "x": 0, "y": 80 },
+      "id": 223,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "showLegend": true, "calcs": ["mean"] } },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "increase(inventory_api_status_total{module=\"product\",status_class=~\"4xx|5xx\"}[1h])", "legendFormat": "{{endpoint}} - {{status_class}}", "refId": "A" }],
+      "title": "Error Count - Last Hour",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps", "min": 0 } },
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 91 },
+      "id": 6,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "showLegend": true, "calcs": ["mean"] } },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum by (status_class) (rate(inventory_api_status_total{module=\"product\"}[5m]))", "legendFormat": "{{status_class}}", "refId": "A" }],
+      "title": "Responses by Status Class (2xx, 4xx, 5xx)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps", "min": 0 } },
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 91 },
+      "id": 224,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "showLegend": true, "calcs": ["mean"] } },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(inventory_api_status_total{module=\"product\",status_class=\"4xx\"}[5m])", "legendFormat": "{{endpoint}}", "refId": "A" }],
+      "title": "4xx Errors/sec - Per Endpoint",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps", "min": 0 } },
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 101 },
+      "id": 7,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "showLegend": true, "calcs": ["mean"] } },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(inventory_api_status_total{module=\"product\",status_class=\"5xx\"}[5m])", "legendFormat": "{{endpoint}}", "refId": "A" }],
+      "title": "5xx Errors/sec - Per Endpoint",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps", "min": 0 } },
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 101 },
+      "id": 225,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "showLegend": true, "calcs": ["mean"] } },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum by (error_type) (rate(inventory_api_status_total{module=\"product\",error_type=~\"validation|timeout|dependency|client_error|server_error\"}[5m]))", "legendFormat": "{{error_type}}", "refId": "A" }],
+      "title": "Errors by Type (validation, timeout, dependency)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 111 },
       "id": 120,
       "panels": [],
       "title": "DB",
@@ -114,9 +222,9 @@
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "short", "min": 0 } },
-      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 25 },
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 112 },
       "id": 121,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "showLegend": true, "calcs": ["mean"] } },
       "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "mongodb_driver_pool_checkedout", "legendFormat": "{{cluster_id}}", "refId": "A" }],
       "title": "MongoDB - Connections Checked Out",
       "type": "timeseries"
@@ -124,16 +232,16 @@
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "short", "min": 0 } },
-      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 25 },
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 112 },
       "id": 122,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "showLegend": true, "calcs": ["mean"] } },
       "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "mongodb_driver_pool_size", "legendFormat": "{{cluster_id}}", "refId": "A" }],
       "title": "MongoDB - Pool Size",
       "type": "timeseries"
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 31 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 122 },
       "id": 130,
       "panels": [],
       "title": "Business",
@@ -142,7 +250,7 @@
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps", "min": 0 } },
-      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 32 },
+      "gridPos": { "h": 9, "w": 6, "x": 0, "y": 123 },
       "id": 131,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
       "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(inventory_product_orders_completed_total_count{module=\"product\"}[5m])", "legendFormat": "orders", "refId": "A" }],
@@ -152,7 +260,7 @@
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "currencyUSD", "min": 0 } },
-      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 32 },
+      "gridPos": { "h": 9, "w": 6, "x": 6, "y": 123 },
       "id": 132,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
       "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(inventory_product_orders_amount_sum{module=\"product\"}[5m]) * 60", "legendFormat": "revenue/min", "refId": "A" }],
@@ -162,7 +270,7 @@
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps", "min": 0 } },
-      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 32 },
+      "gridPos": { "h": 9, "w": 6, "x": 12, "y": 123 },
       "id": 133,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
       "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(inventory_product_inventory_operations_total_count{module=\"product\"}[5m])", "legendFormat": "{{operation}}", "refId": "A" }],
@@ -172,7 +280,7 @@
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps", "min": 0 } },
-      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 32 },
+      "gridPos": { "h": 9, "w": 6, "x": 18, "y": 123 },
       "id": 134,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
       "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(inventory_product_refunds_total_count{module=\"product\"}[5m])", "legendFormat": "refunds", "refId": "A" }],
@@ -182,7 +290,7 @@
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps", "min": 0 } },
-      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 38 },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 132 },
       "id": 135,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
       "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(inventory_product_invoices_generated_total_count{module=\"product\"}[5m])", "legendFormat": "invoices", "refId": "A" }],
@@ -192,67 +300,11 @@
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps", "min": 0 } },
-      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 38 },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 132 },
       "id": 136,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
       "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(inventory_product_cart_created_total_count{module=\"product\"}[5m])", "legendFormat": "created", "refId": "A" }, { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(inventory_product_cart_updated_total_count{module=\"product\"}[5m])", "legendFormat": "updated", "refId": "B" }],
       "title": "Cart Ops/sec",
-      "type": "timeseries"
-    },
-    {
-      "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 44 },
-      "id": 140,
-      "panels": [],
-      "title": "Errors",
-      "type": "row"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps", "min": 0 } },
-      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 45 },
-      "id": 141,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(rate(inventory_api_status_total{module=\"product\",status_class=\"5xx\"}[5m]))", "legendFormat": "5xx", "refId": "A" }],
-      "title": "500 Errors/sec",
-      "type": "timeseries"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps", "min": 0 } },
-      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 45 },
-      "id": 142,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(inventory_product_exceptions_total_count{module=\"product\"}[5m])", "legendFormat": "{{exception}}", "refId": "A" }],
-      "title": "Exceptions/sec",
-      "type": "timeseries"
-    },
-    {
-      "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 51 },
-      "id": 150,
-      "panels": [],
-      "title": "External",
-      "type": "row"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps", "min": 0 } },
-      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 52 },
-      "id": 151,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(inventory_product_external_calls_total_count{module=\"product\"}[5m])", "legendFormat": "{{service}}", "refId": "A" }],
-      "title": "External API Calls/sec",
-      "type": "timeseries"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps", "min": 0 } },
-      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 52 },
-      "id": 152,
-      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(inventory_product_external_failures_total_count{module=\"product\"}[5m])", "legendFormat": "{{service}}", "refId": "A" }],
-      "title": "External API Failures/sec",
       "type": "timeseries"
     }
   ],
@@ -266,6 +318,6 @@
   "timezone": "browser",
   "title": "Product Module",
   "uid": "product-module",
-  "version": 2,
+  "version": 3,
   "weekStart": ""
 }
