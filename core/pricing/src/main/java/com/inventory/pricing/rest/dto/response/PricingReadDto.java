@@ -20,8 +20,8 @@ public class PricingReadDto {
   private BigDecimal sellingPrice;
   private BigDecimal saleAdditionalDiscount;
   private BigDecimal purchaseAdditionalDiscount;
-  private PurchaseSchemeDto purchaseScheme;
-  private PurchaseSchemeDto saleScheme;
+  private SchemeDto purchaseScheme;
+  private SchemeDto saleScheme;
   private String sgst;
   private String cgst;
 

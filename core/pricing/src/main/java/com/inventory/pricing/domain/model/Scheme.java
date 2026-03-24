@@ -7,14 +7,14 @@ import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
 
 /**
- * Purchase scheme/deal from vendor.
+ * Scheme/deal (purchase from vendor or sale to customer).
  * FIXED_UNITS: pay for schemePayFor, get schemeFree free (e.g. 10+2).
  * PERCENTAGE: schemePercentage extra free (e.g. 10%).
  */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class PurchaseScheme {
+public class Scheme {
 
   /** FIXED_UNITS or PERCENTAGE */
   private String schemeType;

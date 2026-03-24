@@ -1,6 +1,6 @@
 package com.inventory.product.domain.model.pricing;
 
-import com.inventory.pricing.domain.model.PurchaseScheme;
+import com.inventory.pricing.domain.model.Scheme;
 import com.inventory.pricing.rest.dto.request.PricingCreateCommand;
 import com.inventory.pricing.rest.dto.request.PricingUpdateCommand;
 import com.inventory.pricing.service.InventoryPricingAdapter;
@@ -124,7 +124,7 @@ public class InventoryPricingWriteHandler {
     return shopRepository.findById(shopId).map(Shop::getSgst).orElse(null);
   }
 
-  private PurchaseScheme buildPurchaseSchemeFromRequest(UpdateInventoryRequest req) {
+  private Scheme buildPurchaseSchemeFromRequest(UpdateInventoryRequest req) {
     SchemeType st = req.getPurchaseSchemeType();
     Integer payFor = req.getPurchaseSchemePayFor();
     Integer free = req.getPurchaseSchemeFree();
@@ -133,10 +133,10 @@ public class InventoryPricingWriteHandler {
       return null;
     }
     String schemeTypeStr = st != null ? st.name() : null;
-    return new PurchaseScheme(schemeTypeStr, payFor, free, pct);
+    return new Scheme(schemeTypeStr, payFor, free, pct);
   }
 
-  private PurchaseScheme buildPurchaseScheme(Inventory inv) {
+  private Scheme buildPurchaseScheme(Inventory inv) {
     SchemeType st = inv.getPurchaseSchemeType();
     Integer payFor = inv.getPurchaseSchemePayFor();
     Integer free = inv.getPurchaseSchemeFree();
@@ -145,10 +145,10 @@ public class InventoryPricingWriteHandler {
       return null;
     }
     String schemeTypeStr = st != null ? st.name() : null;
-    return new PurchaseScheme(schemeTypeStr, payFor, free, pct);
+    return new Scheme(schemeTypeStr, payFor, free, pct);
   }
 
-  private PurchaseScheme buildSaleScheme(Inventory inv) {
+  private Scheme buildSaleScheme(Inventory inv) {
     SchemeType st = inv.getSchemeType();
     Integer payFor = inv.getSchemePayFor();
     Integer free = inv.getSchemeFree();
@@ -157,10 +157,10 @@ public class InventoryPricingWriteHandler {
       return null;
     }
     String schemeTypeStr = st != null ? st.name() : null;
-    return new PurchaseScheme(schemeTypeStr, payFor, free, pct);
+    return new Scheme(schemeTypeStr, payFor, free, pct);
   }
 
-  private PurchaseScheme buildSaleSchemeFromRequest(UpdateInventoryRequest req) {
+  private Scheme buildSaleSchemeFromRequest(UpdateInventoryRequest req) {
     SchemeType st = req.getSchemeType();
     Integer payFor = req.getSchemePayFor();
     Integer free = req.getSchemeFree();
@@ -169,7 +169,7 @@ public class InventoryPricingWriteHandler {
       return null;
     }
     String schemeTypeStr = st != null ? st.name() : null;
-    return new PurchaseScheme(schemeTypeStr, payFor, free, pct);
+    return new Scheme(schemeTypeStr, payFor, free, pct);
   }
 
   private String resolveCgst(String fromRequest, String shopId) {

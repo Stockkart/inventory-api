@@ -6,11 +6,11 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 
-/** Purchase scheme/deal from vendor. */
+/** Scheme/deal (purchase or sale). */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class PurchaseSchemeDto {
+public class SchemeDto {
   private String schemeType;
   private Integer schemePayFor;
   private Integer schemeFree;

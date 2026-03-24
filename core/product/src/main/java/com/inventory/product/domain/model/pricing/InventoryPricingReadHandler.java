@@ -1,6 +1,6 @@
 package com.inventory.product.domain.model.pricing;
 
-import com.inventory.pricing.rest.dto.response.PurchaseSchemeDto;
+import com.inventory.pricing.rest.dto.response.SchemeDto;
 import com.inventory.pricing.rest.dto.response.PricingReadDto;
 import com.inventory.pricing.service.InventoryPricingAdapter;
 import com.inventory.product.domain.model.enums.BillingMode;
@@ -110,8 +110,8 @@ public class InventoryPricingReadHandler {
     BigDecimal discount = getBigDecimal(doc, "additionalDiscount");
     String sgst = toStringOrNull(doc.get("sgst"));
     String cgst = toStringOrNull(doc.get("cgst"));
-    PurchaseSchemeDto saleScheme = buildLegacySaleScheme(doc);
-    PurchaseSchemeDto purchaseScheme = buildLegacyPurchaseScheme(doc);
+    SchemeDto saleScheme = buildLegacySaleScheme(doc);
+    SchemeDto purchaseScheme = buildLegacyPurchaseScheme(doc);
     log.debug("readLegacyPricing inventoryId={} docKeys={} sgst={} (raw={}) cgst={} (raw={})",
         inventoryId, doc.keySet(), sgst, doc.get("sgst"), cgst, doc.get("cgst"));
     if (mrp == null && cost == null && ptr == null && discount == null && sgst == null && cgst == null
@@ -193,13 +193,13 @@ public class InventoryPricingReadHandler {
     }
   }
 
-  private static PurchaseSchemeDto buildLegacySaleScheme(Document doc) {
+  private static SchemeDto buildLegacySaleScheme(Document doc) {
     String schemeType = toStringOrNull(doc.get("schemeType"));
     Integer payFor = getInt(doc, "schemePayFor");
     Integer free = getInt(doc, "schemeFree");
     BigDecimal pct = getBigDecimal(doc, "schemePercentage");
     if (schemeType == null && payFor == null && free == null && pct == null) return null;
-    PurchaseSchemeDto dto = new PurchaseSchemeDto();
+    SchemeDto dto = new SchemeDto();
     dto.setSchemeType(schemeType);
     dto.setSchemePayFor(payFor);
     dto.setSchemeFree(free);
@@ -207,13 +207,13 @@ public class InventoryPricingReadHandler {
     return dto;
   }
 
-  private static PurchaseSchemeDto buildLegacyPurchaseScheme(Document doc) {
+  private static SchemeDto buildLegacyPurchaseScheme(Document doc) {
     String schemeType = toStringOrNull(doc.get("purchaseSchemeType"));
     Integer payFor = getInt(doc, "purchaseSchemePayFor");
     Integer free = getInt(doc, "purchaseSchemeFree");
     BigDecimal pct = getBigDecimal(doc, "purchaseSchemePercentage");
     if (schemeType == null && payFor == null && free == null && pct == null) return null;
-    PurchaseSchemeDto dto = new PurchaseSchemeDto();
+    SchemeDto dto = new SchemeDto();
     dto.setSchemeType(schemeType);
     dto.setSchemePayFor(payFor);
     dto.setSchemeFree(free);

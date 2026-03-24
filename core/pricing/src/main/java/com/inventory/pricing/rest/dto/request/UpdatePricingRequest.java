@@ -1,7 +1,7 @@
 package com.inventory.pricing.rest.dto.request;
 
 import com.inventory.pricing.domain.model.Rate;
-import com.inventory.pricing.rest.dto.response.PurchaseSchemeDto;
+import com.inventory.pricing.rest.dto.response.SchemeDto;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -16,8 +16,8 @@ public class UpdatePricingRequest {
   private String defaultRate;
   private BigDecimal saleAdditionalDiscount;
   private BigDecimal purchaseAdditionalDiscount;
-  private PurchaseSchemeDto purchaseScheme;
-  private PurchaseSchemeDto saleScheme;
+  private SchemeDto purchaseScheme;
+  private SchemeDto saleScheme;
   private String sgst;
   private String cgst;
 }
