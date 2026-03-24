@@ -96,7 +96,7 @@ public class InvoicePdfService {
     // Totals
     context.setVariable("subTotal", request.getSubTotal() != null ? request.getSubTotal() : BigDecimal.ZERO);
     context.setVariable("discountTotal", request.getDiscountTotal() != null ? request.getDiscountTotal() : BigDecimal.ZERO);
-    context.setVariable("additionalDiscountTotal", request.getAdditionalDiscountTotal() != null ? request.getAdditionalDiscountTotal() : BigDecimal.ZERO);
+    context.setVariable("additionalDiscountTotal", request.getSaleAdditionalDiscountTotal() != null ? request.getSaleAdditionalDiscountTotal() : BigDecimal.ZERO);
     context.setVariable("sgstAmount", request.getSgstAmount() != null ? request.getSgstAmount() : BigDecimal.ZERO);
     context.setVariable("cgstAmount", request.getCgstAmount() != null ? request.getCgstAmount() : BigDecimal.ZERO);
     context.setVariable("sgstPercent", request.getSgstPercent() != null ? request.getSgstPercent() : BigDecimal.valueOf(2.5));

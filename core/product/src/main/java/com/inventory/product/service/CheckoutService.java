@@ -632,7 +632,7 @@ public class CheckoutService {
           || (item.getQuantity() != null && item.getQuantity() != 0);
       boolean updateOnly = (item.getQuantity() == null || item.getQuantity() == 0)
           && !hasQuantityChange
-          && (item.getAdditionalDiscount() != null || hasSchemeChange || item.getPriceToRetail() != null);
+          && (item.getSaleAdditionalDiscount() != null || hasSchemeChange || item.getPriceToRetail() != null);
 
         if (updateOnly) {
           // Verify inventory exists and belongs to shop; no stock check needed
@@ -657,8 +657,8 @@ public class CheckoutService {
               item.getPriceToRetail(),
               BigDecimal.ZERO
           );
-          if (item.getAdditionalDiscount() != null) {
-            purchaseItem.setAdditionalDiscount(item.getAdditionalDiscount());
+          if (item.getSaleAdditionalDiscount() != null) {
+            purchaseItem.setSaleAdditionalDiscount(item.getSaleAdditionalDiscount());
           }
           if (item.getSchemeType() != null) {
             purchaseItem.setSchemeType(item.getSchemeType());
@@ -763,7 +763,7 @@ public class CheckoutService {
           BigDecimal effectivePrice = CheckoutUtils.getEffectiveSellingPricePerUnit(purchaseItem);
           BigDecimal billableQty = CheckoutUtils.getBillableQuantityAsDecimal(purchaseItem);
           boolean includeTax = CheckoutUtils.isTaxApplicableForItem(purchaseItem, itemBillingMode);
-          BigDecimal totalAmount = calculateItemTotalAmount(effectivePrice, purchaseItem.getAdditionalDiscount(), billableQty,
+          BigDecimal totalAmount = calculateItemTotalAmount(effectivePrice, purchaseItem.getSaleAdditionalDiscount(), billableQty,
               purchaseItem.getCgst(), purchaseItem.getSgst(), includeTax);
           purchaseItem.setTotalAmount(totalAmount);
           purchaseItem.setSaleUnit(saleUnit);
@@ -842,8 +842,8 @@ public class CheckoutService {
         BigDecimal billableQty = CheckoutUtils.getBillableQuantityAsDecimal(item);
         itemTotal = effectivePrice.multiply(billableQty);
         // Apply additional discount if present
-        if (item.getAdditionalDiscount() != null && item.getAdditionalDiscount().compareTo(BigDecimal.ZERO) > 0) {
-          itemTotal = itemTotal.multiply(new BigDecimal(1).subtract(item.getAdditionalDiscount().divide(new BigDecimal(
+        if (item.getSaleAdditionalDiscount() != null && item.getSaleAdditionalDiscount().compareTo(BigDecimal.ZERO) > 0) {
+          itemTotal = itemTotal.multiply(new BigDecimal(1).subtract(item.getSaleAdditionalDiscount().divide(new BigDecimal(
               "100"), 4, RoundingMode.HALF_UP)));
         }
       }
@@ -992,7 +992,7 @@ public class CheckoutService {
     return items.stream()
         .map(item -> {
           BigDecimal effectivePrice = CheckoutUtils.getEffectiveSellingPricePerUnit(item);
-          BigDecimal additionalDiscount = item.getAdditionalDiscount() != null ? item.getAdditionalDiscount() : BigDecimal.ZERO;
+          BigDecimal additionalDiscount = item.getSaleAdditionalDiscount() != null ? item.getSaleAdditionalDiscount() : BigDecimal.ZERO;
           BigDecimal billableQty = CheckoutUtils.getBillableQuantityAsDecimal(item);
           BigDecimal itemTotal = effectivePrice.multiply(billableQty);
           BigDecimal discountAmount = itemTotal.multiply(additionalDiscount.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP));
@@ -1013,7 +1013,7 @@ public class CheckoutService {
       BigDecimal billableQty = CheckoutUtils.getBillableQuantityAsDecimal(item);
       item.setTotalAmount(calculateItemTotalAmount(
           effectivePrice,
-          item.getAdditionalDiscount(),
+          item.getSaleAdditionalDiscount(),
           billableQty,
           item.getCgst(),
           item.getSgst(),
@@ -1036,7 +1036,7 @@ public class CheckoutService {
         .setScale(2, RoundingMode.HALF_UP);
     purchase.setTotalCost(totalCost);
     BigDecimal subTotal = purchase.getSubTotal() != null ? purchase.getSubTotal() : BigDecimal.ZERO;
-    BigDecimal additionalDiscountTotal = purchase.getAdditionalDiscountTotal() != null ? purchase.getAdditionalDiscountTotal() : BigDecimal.ZERO;
+    BigDecimal additionalDiscountTotal = purchase.getSaleAdditionalDiscountTotal() != null ? purchase.getSaleAdditionalDiscountTotal() : BigDecimal.ZERO;
     BigDecimal revenueBeforeTax = subTotal.subtract(additionalDiscountTotal).setScale(2, RoundingMode.HALF_UP);
     purchase.setRevenueBeforeTax(revenueBeforeTax);
     BigDecimal revenueAfterTax = purchase.getGrandTotal() != null ? purchase.getGrandTotal() : BigDecimal.ZERO;
@@ -1073,7 +1073,7 @@ public class CheckoutService {
       // Set tax amounts, additional discount, and customerName
       purchase.setSgstAmount(taxResult.getSgstAmount());
       purchase.setCgstAmount(taxResult.getCgstAmount());
-      purchase.setAdditionalDiscountTotal(additionalDiscountTotal);
+      purchase.setSaleAdditionalDiscountTotal(additionalDiscountTotal);
       setPurchaseMarginDetails(purchase);
 
       if (StringUtils.hasText(customerName)) {
@@ -1174,9 +1174,9 @@ public class CheckoutService {
                       ? perUnitDiscount.multiply(quantityForPricing)
                       : BigDecimal.ZERO
               );
-              switchedItem.setAdditionalDiscount(newItem.getAdditionalDiscount() != null
-                  ? newItem.getAdditionalDiscount()
-                  : existingItem.getAdditionalDiscount());
+              switchedItem.setSaleAdditionalDiscount(newItem.getSaleAdditionalDiscount() != null
+                  ? newItem.getSaleAdditionalDiscount()
+                  : existingItem.getSaleAdditionalDiscount());
               SchemeType switchedSchemeType = newItem.getSchemeType() != null ? newItem.getSchemeType() : existingItem.getSchemeType();
               switchedItem.setSchemeType(switchedSchemeType);
               switchedItem.setSchemePercentage(newItem.getSchemePercentage() != null
@@ -1203,7 +1203,7 @@ public class CheckoutService {
               boolean includeTaxForItem = CheckoutUtils.isTaxApplicableForItem(switchedItem, billingMode);
               BigDecimal totalAmount = calculateItemTotalAmount(
                   effectivePrice,
-                  switchedItem.getAdditionalDiscount(),
+                  switchedItem.getSaleAdditionalDiscount(),
                   billableQty,
                   switchedItem.getCgst(),
                   switchedItem.getSgst(),
@@ -1244,9 +1244,9 @@ public class CheckoutService {
                 .subtract(priceToRetail)
                 .multiply(newQuantity);
             // Use payload additionalDiscount when provided (so changing discount updates the line); otherwise keep existing
-            BigDecimal additionalDiscount = newItem.getAdditionalDiscount() != null
-                ? newItem.getAdditionalDiscount()
-                : existingItem.getAdditionalDiscount();
+            BigDecimal additionalDiscount = newItem.getSaleAdditionalDiscount() != null
+                ? newItem.getSaleAdditionalDiscount()
+                : existingItem.getSaleAdditionalDiscount();
             // Use payload scheme when provided; otherwise keep existing
             Integer schemePayFor = newItem.getSchemePayFor() != null ? newItem.getSchemePayFor() : existingItem.getSchemePayFor();
             Integer schemeFree = newItem.getSchemeFree() != null ? newItem.getSchemeFree() : existingItem.getSchemeFree();
@@ -1261,7 +1261,7 @@ public class CheckoutService {
                 priceToRetail,
                 newDiscount.compareTo(BigDecimal.ZERO) > 0 ? newDiscount : BigDecimal.ZERO
             );
-            updatedItem.setAdditionalDiscount(additionalDiscount);
+            updatedItem.setSaleAdditionalDiscount(additionalDiscount);
             updatedItem.setSchemeType(schemeType);
             updatedItem.setSchemePercentage(schemePercentage);
             // Normalize: PERCENTAGE -> payFor/free null; FIXED_UNITS -> schemePercentage null
@@ -1344,7 +1344,7 @@ public class CheckoutService {
       BigDecimal discountTotal = calculateTotalDiscount(mergedItems);
       BigDecimal additionalDiscountTotal = calculateAdditionalDiscountTotal(mergedItems);
       existingCart.setDiscountTotal(discountTotal);
-      existingCart.setAdditionalDiscountTotal(additionalDiscountTotal);
+      existingCart.setSaleAdditionalDiscountTotal(additionalDiscountTotal);
       BigDecimal calculatedTotal = newSubTotal
           .add(taxResult.getTaxTotal())
           .subtract(additionalDiscountTotal);

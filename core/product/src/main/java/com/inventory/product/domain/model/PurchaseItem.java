@@ -30,8 +30,8 @@ public class PurchaseItem {
   private BigDecimal maximumRetailPrice;
   private BigDecimal priceToRetail;
   private BigDecimal discount;
-  private BigDecimal additionalDiscount; // Additional discount percentage from inventory
-  private BigDecimal totalAmount; // Final amount after additionalDiscount and taxes (CGST + SGST)
+  private BigDecimal saleAdditionalDiscount; // Additional discount percentage from inventory
+  private BigDecimal totalAmount; // Final amount after saleAdditionalDiscount and taxes (CGST + SGST)
   private String sgst; // SGST rate from inventory (e.g., "9" for 9%)
   private String cgst; // CGST rate from inventory (e.g., "9" for 9%)
   /** Cost price per unit (from inventory at time of sale). Used for margin/profit breakdown. */

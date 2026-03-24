@@ -24,7 +24,7 @@ public class CreateInventoryRequest {
   private BigDecimal priceToRetail;
   private List<RateDto> rates;
   private String defaultRate;
-  private BigDecimal additionalDiscount; // Optional: Additional discount amount
+  private BigDecimal saleAdditionalDiscount; // Optional: Additional discount amount
   private String businessType;
   private String location;
   private ItemType itemType;

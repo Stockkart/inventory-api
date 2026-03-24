@@ -32,7 +32,7 @@ public class AddToCartRequest {
     private String unit;
     private BigDecimal priceToRetail;
     /** Optional: additional discount percentage for this item (0–100). Overrides inventory default when provided. */
-    private BigDecimal additionalDiscount;
+    private BigDecimal saleAdditionalDiscount;
     /**
      * Optional: scheme type for selling.
      * - FIXED_UNITS: use schemePayFor / schemeFree (e.g. \"2 free on 10\").

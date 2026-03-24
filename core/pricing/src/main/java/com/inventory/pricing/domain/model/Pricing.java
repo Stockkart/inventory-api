@@ -47,10 +47,16 @@ public class Pricing {
   private BigDecimal sellingPrice;
 
   /** Additional discount percentage (0-100) - sale default */
-  private BigDecimal additionalDiscount;
+  private BigDecimal saleAdditionalDiscount;
 
   /** Purchase add. discount % from vendor - for comparison at sale, no calculation */
   private BigDecimal purchaseAdditionalDiscount;
+
+  /** Purchase scheme/deal from vendor - for comparison at sale */
+  private PurchaseScheme purchaseScheme;
+
+  /** Sale scheme/deal (e.g. 7+1). FIXED_UNITS or PERCENTAGE. */
+  private PurchaseScheme saleScheme;
 
   /** State GST rate (e.g., "9" for 9%) */
   private String sgst;

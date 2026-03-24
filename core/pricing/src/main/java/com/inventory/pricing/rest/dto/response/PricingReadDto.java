@@ -18,15 +18,17 @@ public class PricingReadDto {
   private List<RateDto> rates;
   private String defaultRate;
   private BigDecimal sellingPrice;
-  private BigDecimal additionalDiscount;
+  private BigDecimal saleAdditionalDiscount;
   private BigDecimal purchaseAdditionalDiscount;
+  private PurchaseSchemeDto purchaseScheme;
+  private PurchaseSchemeDto saleScheme;
   private String sgst;
   private String cgst;
 
   public boolean isEmpty() {
     return maximumRetailPrice == null && costPrice == null && priceToRetail == null
         && (rates == null || rates.isEmpty())
-        && additionalDiscount == null && sgst == null && cgst == null;
+        && saleAdditionalDiscount == null && sgst == null && cgst == null;
   }
 
   public BigDecimal getEffectivePrice() {

@@ -78,8 +78,8 @@ public abstract class PurchaseMapper {
   @Mapping(target = "maximumRetailPrice", source = "inventory.maximumRetailPrice")
   @Mapping(target = "priceToRetail", source = "item.priceToRetail")
   @Mapping(target = "discount", expression = "java(calculateDiscount(inventory.getMaximumRetailPrice(), item.getPriceToRetail()))")
-  @Mapping(target = "additionalDiscount", source = "inventory.additionalDiscount")
-  @Mapping(target = "totalAmount", expression = "java(calculateTotalAmount(item.getPriceToRetail(), inventory.getAdditionalDiscount(), item.getQuantity() != null ? java.math.BigDecimal.valueOf(item.getQuantity()) : java.math.BigDecimal.ZERO, inventory.getCgst(), inventory.getSgst(), inventory.getShopId()))")
+  @Mapping(target = "saleAdditionalDiscount", source = "inventory.saleAdditionalDiscount")
+  @Mapping(target = "totalAmount", expression = "java(calculateTotalAmount(item.getPriceToRetail(), inventory.getSaleAdditionalDiscount(), item.getQuantity() != null ? java.math.BigDecimal.valueOf(item.getQuantity()) : java.math.BigDecimal.ZERO, inventory.getCgst(), inventory.getSgst(), inventory.getShopId()))")
   @Mapping(target = "sgst", source = "inventory.sgst")
   @Mapping(target = "cgst", source = "inventory.cgst")
   @Mapping(target = "costPrice", source = "inventory.costPrice")
@@ -102,7 +102,7 @@ public abstract class PurchaseMapper {
           if (purchaseItem.getPriceToRetail() != null && purchaseItem.getQuantity() != null) {
             purchaseItem.setTotalAmount(calculateTotalAmount(
                 purchaseItem.getPriceToRetail(),
-                purchaseItem.getAdditionalDiscount(),
+                purchaseItem.getSaleAdditionalDiscount(),
                 purchaseItem.getQuantity(),
                 purchaseItem.getCgst(),
                 purchaseItem.getSgst(),
@@ -121,8 +121,8 @@ public abstract class PurchaseMapper {
   @Mapping(target = "maximumRetailPrice", source = "inventory.maximumRetailPrice")
   @Mapping(target = "priceToRetail", source = "item.priceToRetail")
   @Mapping(target = "discount", expression = "java(calculateDiscount(inventory.getMaximumRetailPrice(), item.getPriceToRetail()))")
-  @Mapping(target = "additionalDiscount", expression = "java(getEffectiveAdditionalDiscount(item, inventory))")
-  @Mapping(target = "totalAmount", expression = "java(calculateTotalAmount(getEffectiveSellingPriceForCartItem(item), getEffectiveAdditionalDiscount(item, inventory), getBillableQuantityAsDecimalForCartItem(item), inventory.getCgst(), inventory.getSgst(), inventory.getShopId()))")
+  @Mapping(target = "saleAdditionalDiscount", expression = "java(getEffectiveSaleAdditionalDiscount(item, inventory))")
+  @Mapping(target = "totalAmount", expression = "java(calculateTotalAmount(getEffectiveSellingPriceForCartItem(item), getEffectiveSaleAdditionalDiscount(item, inventory), getBillableQuantityAsDecimalForCartItem(item), inventory.getCgst(), inventory.getSgst(), inventory.getShopId()))")
   @Mapping(target = "sgst", source = "inventory.sgst")
   @Mapping(target = "cgst", source = "inventory.cgst")
   @Mapping(target = "schemeType", source = "item.schemeType")
@@ -173,7 +173,7 @@ public abstract class PurchaseMapper {
       BigDecimal billableQty = getBillableQuantityAsDecimalFromPurchaseItem(purchaseItem);
       purchaseItem.setTotalAmount(calculateTotalAmount(
           effectivePrice,
-          purchaseItem.getAdditionalDiscount(),
+          purchaseItem.getSaleAdditionalDiscount(),
           billableQty,
           purchaseItem.getCgst(),
           purchaseItem.getSgst(),
@@ -237,7 +237,7 @@ public abstract class PurchaseMapper {
             BigDecimal billableQty = getBillableQuantityAsDecimalFromPurchaseItem(purchaseItem);
             purchaseItem.setTotalAmount(calculateTotalAmount(
                 effectivePrice,
-                purchaseItem.getAdditionalDiscount(),
+                purchaseItem.getSaleAdditionalDiscount(),
                 billableQty,
                 purchaseItem.getCgst(),
                 purchaseItem.getSgst(),
@@ -334,8 +334,8 @@ public abstract class PurchaseMapper {
   }
 
   /** Cart item's additionalDiscount overrides inventory's when provided. */
-  protected BigDecimal getEffectiveAdditionalDiscount(AddToCartRequest.CartItem item, Inventory inventory) {
-    return item.getAdditionalDiscount() != null ? item.getAdditionalDiscount() : inventory.getAdditionalDiscount();
+  protected BigDecimal getEffectiveSaleAdditionalDiscount(AddToCartRequest.CartItem item, Inventory inventory) {
+    return item.getSaleAdditionalDiscount() != null ? item.getSaleAdditionalDiscount() : inventory.getSaleAdditionalDiscount();
   }
 
   /** Billable quantity as decimal for cart item. FIXED_UNITS: qty * schemePayFor/(schemePayFor+schemeFree). */
@@ -465,7 +465,7 @@ public abstract class PurchaseMapper {
     item.setMaximumRetailPrice(maximumRetailPrice);
     item.setPriceToRetail(priceToRetail);
     item.setDiscount(discount);
-    item.setAdditionalDiscount(null); // Not set for negative quantities
+    item.setSaleAdditionalDiscount(null); // Not set for negative quantities
     item.setTotalAmount(BigDecimal.ZERO); // Not calculated for negative quantities
     // Note: CGST/SGST not set here as this method is used for negative quantities
     // For normal items, use toPurchaseItemFromCartItem which includes CGST/SGST from inventory
@@ -486,7 +486,7 @@ public abstract class PurchaseMapper {
     item.setMaximumRetailPrice(maximumRetailPrice);
     item.setPriceToRetail(priceToRetail);
     item.setDiscount(discount);
-    item.setAdditionalDiscount(additionalDiscount);
+    item.setSaleAdditionalDiscount(additionalDiscount);
     item.setCgst(cgst);
     item.setSgst(sgst);
     item.setTotalAmount(calculateTotalAmount(priceToRetail, additionalDiscount, quantity, cgst, sgst, shopId));
@@ -530,7 +530,7 @@ public abstract class PurchaseMapper {
   @Mapping(target = "sgstAmount", source = "sgstAmount")
   @Mapping(target = "cgstAmount", source = "cgstAmount")
   @Mapping(target = "discountTotal", source = "discountTotal")
-  @Mapping(target = "additionalDiscountTotal", source = "additionalDiscountTotal")
+  @Mapping(target = "saleAdditionalDiscountTotal", source = "saleAdditionalDiscountTotal")
   @Mapping(target = "grandTotal", source = "grandTotal")
   @Mapping(target = "status", source = "status")
   @Mapping(target = "customerId", source = "customerId")
@@ -586,7 +586,7 @@ public abstract class PurchaseMapper {
   @Mapping(target = "sgstAmount", source = "sgstAmount")
   @Mapping(target = "cgstAmount", source = "cgstAmount")
   @Mapping(target = "discountTotal", source = "discountTotal")
-  @Mapping(target = "additionalDiscountTotal", source = "additionalDiscountTotal")
+  @Mapping(target = "saleAdditionalDiscountTotal", source = "saleAdditionalDiscountTotal")
   @Mapping(target = "grandTotal", source = "grandTotal")
   @Mapping(target = "paymentMethod", source = "paymentMethod")
   @Mapping(target = "status", source = "status")
@@ -624,7 +624,7 @@ public abstract class PurchaseMapper {
   @Mapping(target = "sgstAmount", source = "sgstAmount")
   @Mapping(target = "cgstAmount", source = "cgstAmount")
   @Mapping(target = "discountTotal", source = "discountTotal")
-  @Mapping(target = "additionalDiscountTotal", source = "additionalDiscountTotal")
+  @Mapping(target = "saleAdditionalDiscountTotal", source = "saleAdditionalDiscountTotal")
   @Mapping(target = "grandTotal", source = "grandTotal")
   @Mapping(target = "soldAt", source = "soldAt")
   @Mapping(target = "status", source = "status")

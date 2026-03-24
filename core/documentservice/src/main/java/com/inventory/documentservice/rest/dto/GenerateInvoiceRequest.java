@@ -49,7 +49,7 @@ public class GenerateInvoiceRequest {
   // Totals and calculations
   private BigDecimal subTotal;
   private BigDecimal discountTotal;
-  private BigDecimal additionalDiscountTotal;
+  private BigDecimal saleAdditionalDiscountTotal;
   private BigDecimal sgstAmount;
   private BigDecimal cgstAmount;
   private BigDecimal sgstPercent;

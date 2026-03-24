@@ -1,6 +1,7 @@
 package com.inventory.pricing.mapper;
 
 import com.inventory.pricing.domain.model.Pricing;
+import com.inventory.pricing.domain.model.PurchaseScheme;
 import com.inventory.pricing.domain.model.Rate;
 import com.inventory.pricing.rest.dto.request.CreatePricingRequest;
 import com.inventory.pricing.rest.dto.request.PricingCreateCommand;
@@ -8,6 +9,7 @@ import com.inventory.pricing.rest.dto.request.PricingUpdateCommand;
 import com.inventory.pricing.rest.dto.request.UpdateDefaultPriceItem;
 import com.inventory.pricing.rest.dto.request.UpdateDefaultPriceRequest;
 import com.inventory.pricing.rest.dto.request.UpdatePricingRequest;
+import com.inventory.pricing.rest.dto.response.PurchaseSchemeDto;
 import com.inventory.pricing.rest.dto.response.PricingReadDto;
 import com.inventory.pricing.rest.dto.response.PricingResponse;
 import com.inventory.pricing.rest.dto.response.RateDto;
@@ -29,8 +31,12 @@ public interface PricingMapper {
   @Mapping(target = "id", ignore = true)
   @Mapping(target = "createdAt", expression = "java(java.time.Instant.now())")
   @Mapping(target = "updatedAt", expression = "java(java.time.Instant.now())")
+  @Mapping(target = "purchaseScheme", expression = "java(toPurchaseScheme(request.getPurchaseScheme()))")
+  @Mapping(target = "saleScheme", expression = "java(toPurchaseScheme(request.getSaleScheme()))")
   Pricing toEntity(CreatePricingRequest request);
 
+  @Mapping(target = "purchaseScheme", expression = "java(toPurchaseSchemeDto(pricing.getPurchaseScheme()))")
+  @Mapping(target = "saleScheme", expression = "java(toPurchaseSchemeDto(pricing.getSaleScheme()))")
   PricingResponse toResponse(Pricing pricing);
 
   @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
@@ -38,6 +44,8 @@ public interface PricingMapper {
   @Mapping(target = "shopId", ignore = true)
   @Mapping(target = "createdAt", ignore = true)
   @Mapping(target = "updatedAt", expression = "java(java.time.Instant.now())")
+  @Mapping(target = "purchaseScheme", expression = "java(toPurchaseScheme(request.getPurchaseScheme()))")
+  @Mapping(target = "saleScheme", expression = "java(toPurchaseScheme(request.getSaleScheme()))")
   void updateEntity(UpdatePricingRequest request, @MappingTarget Pricing pricing);
 
   @Mapping(target = "shopId", source = "shopId")
@@ -46,8 +54,10 @@ public interface PricingMapper {
   @Mapping(target = "priceToRetail", source = "priceToRetail")
   @Mapping(target = "rates", source = "rates")
   @Mapping(target = "defaultRate", source = "defaultRate")
-  @Mapping(target = "additionalDiscount", source = "additionalDiscount")
+  @Mapping(target = "saleAdditionalDiscount", source = "saleAdditionalDiscount")
   @Mapping(target = "purchaseAdditionalDiscount", source = "purchaseAdditionalDiscount")
+  @Mapping(target = "purchaseScheme", expression = "java(toPurchaseSchemeDto(command.getPurchaseScheme()))")
+  @Mapping(target = "saleScheme", expression = "java(toPurchaseSchemeDto(command.getSaleScheme()))")
   @Mapping(target = "sgst", source = "sgst")
   @Mapping(target = "cgst", source = "cgst")
   CreatePricingRequest toCreatePricingRequest(PricingCreateCommand command);
@@ -57,7 +67,10 @@ public interface PricingMapper {
   @Mapping(target = "priceToRetail", source = "priceToRetail")
   @Mapping(target = "rates", source = "rates")
   @Mapping(target = "defaultRate", source = "defaultRate")
-  @Mapping(target = "additionalDiscount", source = "additionalDiscount")
+  @Mapping(target = "saleAdditionalDiscount", source = "saleAdditionalDiscount")
+  @Mapping(target = "purchaseAdditionalDiscount", source = "purchaseAdditionalDiscount")
+  @Mapping(target = "purchaseScheme", expression = "java(toPurchaseSchemeDto(command.getPurchaseScheme()))")
+  @Mapping(target = "saleScheme", expression = "java(toPurchaseSchemeDto(command.getSaleScheme()))")
   @Mapping(target = "sgst", source = "sgst")
   @Mapping(target = "cgst", source = "cgst")
   UpdatePricingRequest toUpdatePricingRequest(PricingUpdateCommand command);
@@ -68,8 +81,10 @@ public interface PricingMapper {
   @Mapping(target = "rates", source = "rates")
   @Mapping(target = "defaultRate", source = "defaultRate")
   @Mapping(target = "sellingPrice", ignore = true)
-  @Mapping(target = "additionalDiscount", source = "additionalDiscount")
+  @Mapping(target = "saleAdditionalDiscount", source = "saleAdditionalDiscount")
   @Mapping(target = "purchaseAdditionalDiscount", source = "purchaseAdditionalDiscount")
+  @Mapping(target = "purchaseScheme", expression = "java(toPurchaseSchemeDto(pricing.getPurchaseScheme()))")
+  @Mapping(target = "saleScheme", expression = "java(toPurchaseSchemeDto(pricing.getSaleScheme()))")
   @Mapping(target = "sgst", source = "sgst")
   @Mapping(target = "cgst", source = "cgst")
   PricingReadDto toPricingReadDto(Pricing pricing);
@@ -102,6 +117,21 @@ public interface PricingMapper {
     req.setRates(item.getRates());
     req.setDefaultRate(item.getDefaultRate());
     return req;
+  }
+
+  default PurchaseSchemeDto toPurchaseSchemeDto(PurchaseScheme s) {
+    if (s == null) return null;
+    PurchaseSchemeDto dto = new PurchaseSchemeDto();
+    dto.setSchemeType(s.getSchemeType());
+    dto.setSchemePayFor(s.getSchemePayFor());
+    dto.setSchemeFree(s.getSchemeFree());
+    dto.setSchemePercentage(s.getSchemePercentage());
+    return dto;
+  }
+
+  default PurchaseScheme toPurchaseScheme(PurchaseSchemeDto dto) {
+    if (dto == null) return null;
+    return new PurchaseScheme(dto.getSchemeType(), dto.getSchemePayFor(), dto.getSchemeFree(), dto.getSchemePercentage());
   }
 
   default void setDefaultRateAndSellingPrice(Pricing pricing) {

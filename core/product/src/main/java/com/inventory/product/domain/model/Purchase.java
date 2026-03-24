@@ -31,7 +31,7 @@ public class Purchase {
   private BigDecimal sgstAmount; // Calculated SGST amount
   private BigDecimal cgstAmount; // Calculated CGST amount
   private BigDecimal discountTotal;
-  private BigDecimal additionalDiscountTotal;
+  private BigDecimal saleAdditionalDiscountTotal;
   private BigDecimal grandTotal;
   /** Margin breakdown: total cost (inventory cost price × quantities). */
   private BigDecimal totalCost;

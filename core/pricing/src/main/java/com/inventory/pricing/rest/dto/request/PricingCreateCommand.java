@@ -1,5 +1,6 @@
 package com.inventory.pricing.rest.dto.request;
 
+import com.inventory.pricing.domain.model.PurchaseScheme;
 import com.inventory.pricing.rest.dto.response.RateDto;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -20,8 +21,10 @@ public class PricingCreateCommand {
   private BigDecimal priceToRetail;
   private List<RateDto> rates;
   private String defaultRate;
-  private BigDecimal additionalDiscount;
+  private BigDecimal saleAdditionalDiscount;
   private BigDecimal purchaseAdditionalDiscount;
+  private PurchaseScheme purchaseScheme;
+  private PurchaseScheme saleScheme;
   private String sgst;
   private String cgst;
 }

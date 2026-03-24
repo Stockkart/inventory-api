@@ -33,7 +33,7 @@ public class InventoryDetailResponse {
   BigDecimal sellingPrice;
   List<RateDto> rates;
   String defaultRate;
-  BigDecimal additionalDiscount;
+  BigDecimal saleAdditionalDiscount;
   BigDecimal receivedCount;
   Integer receivedBaseCount;
   BigDecimal soldCount;

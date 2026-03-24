@@ -31,7 +31,7 @@ public class PricingValidator {
       throw new ValidationException("Either priceToRetail or (rates with defaultRate) is required");
     }
     validatePriceValues(request.getMaximumRetailPrice(), request.getCostPrice(),
-        effectiveSp, request.getAdditionalDiscount());
+        effectiveSp, request.getSaleAdditionalDiscount());
     validateGstRates(request.getSgst(), request.getCgst());
   }
 
@@ -42,9 +42,9 @@ public class PricingValidator {
     validateRates(request.getRates(), request.getDefaultRate());
     validateGstRates(request.getSgst(), request.getCgst());
     if (request.getMaximumRetailPrice() != null || request.getCostPrice() != null
-        || request.getPriceToRetail() != null || request.getAdditionalDiscount() != null) {
+        || request.getPriceToRetail() != null || request.getSaleAdditionalDiscount() != null) {
       validatePriceValues(request.getMaximumRetailPrice(), request.getCostPrice(),
-          request.getPriceToRetail(), request.getAdditionalDiscount());
+          request.getPriceToRetail(), request.getSaleAdditionalDiscount());
     }
   }
 

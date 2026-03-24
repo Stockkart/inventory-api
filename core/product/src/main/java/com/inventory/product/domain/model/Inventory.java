@@ -64,18 +64,32 @@ public class Inventory {
   private String hsn;
   private String batchNo;
   private BillingMode billingMode;
-  private SchemeType schemeType; // FIXED_UNITS (default/backward) or PERCENTAGE
-  /** @deprecated Prefer schemePayFor + schemeFree. When set: legacy "free units" only; total received = count + scheme. */
+  /** Transient: from Pricing.saleScheme. Not persisted on inventory. */
+  @Transient
+  private SchemeType schemeType;
+  /** Transient: legacy; populated from Pricing when applicable. */
+  @Transient
   private Integer scheme;
-  /** When schemeType FIXED_UNITS: pay for this many (e.g. 10). With schemeFree = "schemeFree free on schemePayFor". */
+  /** Transient: from Pricing.saleScheme. */
+  @Transient
   private Integer schemePayFor;
-  /** When schemeType FIXED_UNITS: free units per batch (e.g. 2). With schemePayFor=10 = "2 free on 10". */
+  /** Transient: from Pricing.saleScheme. */
+  @Transient
   private Integer schemeFree;
-  private BigDecimal schemePercentage; // When schemeType PERCENTAGE: e.g. 10 = 10% extra free.
-  /** Purchase (from vendor) - for comparison at sale. Read-only during sale. */
+  /** Transient: from Pricing.saleScheme. */
+  @Transient
+  private BigDecimal schemePercentage;
+  /** Transient: from Pricing.purchaseScheme. */
+  @Transient
   private SchemeType purchaseSchemeType;
+  /** Transient: from Pricing.purchaseScheme. */
+  @Transient
   private Integer purchaseSchemePayFor;
+  /** Transient: from Pricing.purchaseScheme. */
+  @Transient
   private Integer purchaseSchemeFree;
+  /** Transient: from Pricing.purchaseScheme. */
+  @Transient
   private BigDecimal purchaseSchemePercentage;
   /** Transient: populated from Pricing module on read via AOP; not persisted. */
   @Transient
@@ -93,7 +107,7 @@ public class Inventory {
   @Transient
   private String defaultRate;
   @Transient
-  private BigDecimal additionalDiscount;
+  private BigDecimal saleAdditionalDiscount;
   /** Purchase add. discount from Pricing. Populated on read. */
   @Transient
   private BigDecimal purchaseAdditionalDiscount;
