@@ -34,7 +34,13 @@ public class UpdateInventoryRequest {
   private BigDecimal priceToRetail;
   private List<RateDto> rates;
   private String defaultRate;
-  private BigDecimal additionalDiscount;
+  private BigDecimal saleAdditionalDiscount;
+  private BigDecimal purchaseAdditionalDiscount;
+  /** Purchase scheme from vendor. Object: schemeType, schemePayFor, schemeFree, schemePercentage */
+  private SchemeType purchaseSchemeType;
+  private Integer purchaseSchemePayFor;
+  private Integer purchaseSchemeFree;
+  private BigDecimal purchaseSchemePercentage;
   private String sgst;
   private String cgst;
 

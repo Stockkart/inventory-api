@@ -34,7 +34,7 @@ public class InventorySummaryDto {
   BigDecimal sellingPrice;
   List<RateDto> rates;
   String defaultRate;
-  BigDecimal additionalDiscount;
+  BigDecimal saleAdditionalDiscount;
   BigDecimal receivedCount;
   Integer receivedBaseCount;
   Integer thresholdCount;

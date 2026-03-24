@@ -92,12 +92,12 @@ public class EventService {
 
     if (pending == null || pending.isEmpty()) return;
 
-    log.info("Replaying {} pending events for shopId={}", pending.size(), shopId);
+    //log.info("Replaying {} pending events for shopId={}", pending.size(), shopId);
 
     for (Event event : pending) {
       try {
         if (event.getReminderId() == null || event.getReminderId().isBlank()) {
-          log.debug("Skipping pending event {} (no reminderId, e.g. INVENTORY_LOW)", event.getId());
+          //log.debug("Skipping pending event {} (no reminderId, e.g. INVENTORY_LOW)", event.getId());
           continue;
         }
         Optional<Reminder> reminderOpt;
@@ -110,7 +110,7 @@ public class EventService {
         }
 
         if (!reminderOpt.isPresent()) {
-          log.warn("Skipping pending event {} because reminder {} not found", event.getId(), event.getReminderId());
+          //log.warn("Skipping pending event {} because reminder {} not found", event.getId(), event.getReminderId());
           // mark event delivered to stop infinite retry for missing reminder
           try {
             event.setDelivered(true);

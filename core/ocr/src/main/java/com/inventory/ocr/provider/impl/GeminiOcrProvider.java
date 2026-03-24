@@ -275,7 +275,7 @@ public class GeminiOcrProvider implements OcrProvider {
     item.setMaximumRetailPrice(num(n, "maximumRetailPrice"));
     item.setCostPrice(num(n, "costPrice"));
     item.setPriceToRetail(num(n, "priceToRetail"));
-    item.setAdditionalDiscount(num(n, "additionalDiscount"));
+    item.setSaleAdditionalDiscount(num(n, "saleAdditionalDiscount"));
     item.setBusinessType(str(n, "businessType") != null ? str(n, "businessType") : "PHARMACEUTICAL");
     item.setLocation(str(n, "location"));
     item.setCount(intNum(n, "count"));

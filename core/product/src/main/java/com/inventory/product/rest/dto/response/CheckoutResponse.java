@@ -26,7 +26,7 @@ public class CheckoutResponse {
   BigDecimal sgstAmount; // Calculated SGST amount
   BigDecimal cgstAmount; // Calculated CGST amount
   BigDecimal discountTotal;
-  BigDecimal additionalDiscountTotal; // Total additional discount amount
+  BigDecimal saleAdditionalDiscountTotal; // Total additional discount amount
   BigDecimal grandTotal;
   BigDecimal totalCost;       // Margin: total cost (inventory cost × quantities)
   BigDecimal revenueBeforeTax; // Margin: subTotal − additionalDiscountTotal

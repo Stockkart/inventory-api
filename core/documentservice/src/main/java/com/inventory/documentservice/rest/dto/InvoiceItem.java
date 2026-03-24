@@ -17,7 +17,7 @@ public class InvoiceItem {
   private BigDecimal maximumRetailPrice;
   private BigDecimal priceToRetail;
   private BigDecimal discount;
-  private BigDecimal additionalDiscount; // Additional discount percentage
+  private BigDecimal saleAdditionalDiscount; // Additional discount percentage
   private BigDecimal totalAmount; // Final amount after additionalDiscount and taxes
   private Integer scheme; // Inventory scheme (free units in stock) - from inventory
   private Integer schemePayFor; // Selling scheme: pay for X (e.g. 10)

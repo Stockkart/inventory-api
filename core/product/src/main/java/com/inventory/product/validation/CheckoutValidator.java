@@ -62,14 +62,14 @@ public class CheckoutValidator {
     if (StringUtils.hasText(item.getUnit()) && !item.getUnit().trim().toUpperCase().matches("^[A-Z0-9_ ]+$")) {
       throw new ValidationException("Invalid unit for item: " + item.getId());
     }
-    // Quantity may be null or 0 when only updating additionalDiscount, scheme, or priceToRetail (item must already be in cart)
+    // Quantity may be null or 0 when only updating saleAdditionalDiscount, scheme, or priceToRetail (item must already be in cart)
     boolean hasSchemeChange = item.getSchemePayFor() != null || item.getSchemeFree() != null
         || item.getSchemeType() != null || item.getSchemePercentage() != null;
     boolean hasBaseQuantity = item.getBaseQuantity() != null && item.getBaseQuantity() != 0;
     boolean hasQuantity = item.getQuantity() != null && item.getQuantity() != 0;
     boolean updateOnly = (item.getQuantity() == null || item.getQuantity() == 0)
         && !hasBaseQuantity
-        && (item.getAdditionalDiscount() != null || hasSchemeChange || item.getPriceToRetail() != null);
+        && (item.getSaleAdditionalDiscount() != null || hasSchemeChange || item.getPriceToRetail() != null);
     if (!updateOnly) {
       if (!hasQuantity && !hasBaseQuantity) {
         throw new ValidationException("Quantity or baseQuantity is required for item: " + item.getId());
@@ -93,11 +93,12 @@ public class CheckoutValidator {
     if (item.getPriceToRetail() != null && item.getPriceToRetail().compareTo(BigDecimal.ZERO) <= 0) {
       throw new ValidationException("Selling price must be greater than zero for item: " + item.getId());
     }
-    // additionalDiscount is optional; when provided it must be a valid percentage (0–100)
-    if (item.getAdditionalDiscount() != null) {
-      if (item.getAdditionalDiscount().compareTo(BigDecimal.ZERO) < 0
-          || item.getAdditionalDiscount().compareTo(BigDecimal.valueOf(100)) > 0) {
-        throw new ValidationException("Additional discount for item " + item.getId() + " must be between 0 and 100");
+    // saleAdditionalDiscount is optional; when provided must be -100 to 100.
+    // Negative values act as markup (e.g. -2% increases sell price by 2%).
+    if (item.getSaleAdditionalDiscount() != null) {
+      if (item.getSaleAdditionalDiscount().compareTo(BigDecimal.valueOf(-100)) < 0
+          || item.getSaleAdditionalDiscount().compareTo(BigDecimal.valueOf(100)) > 0) {
+        throw new ValidationException("Sale add. discount for item " + item.getId() + " must be between -100 and 100 (negative = markup)");
       }
     }
     // Scheme validation:

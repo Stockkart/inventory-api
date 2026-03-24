@@ -27,7 +27,7 @@ public class PurchaseSummaryDto {
   private BigDecimal sgstAmount; // Calculated SGST amount
   private BigDecimal cgstAmount; // Calculated CGST amount
   private BigDecimal discountTotal;
-  private BigDecimal additionalDiscountTotal; // Total additional discount amount
+  private BigDecimal saleAdditionalDiscountTotal; // Total additional discount amount
   private BigDecimal grandTotal;
   private BigDecimal totalCost;       // Margin: total cost (inventory cost × quantities)
   private BigDecimal revenueBeforeTax; // Margin: subTotal − additionalDiscountTotal

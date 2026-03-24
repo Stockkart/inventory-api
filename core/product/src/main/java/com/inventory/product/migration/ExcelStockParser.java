@@ -203,7 +203,7 @@ public class ExcelStockParser {
       setExpiryAndReminder(row, m.expiry, item);
       setInt(row, m.qty, item::setCount);
       setPrices(row, m, item);
-      setDecimal(row, m.discount, item::setAdditionalDiscount);
+      setDecimal(row, m.discount, item::setSaleAdditionalDiscount);
       setInt(row, m.scheme, item::setScheme);
       setInt(row, m.schemePayFor, item::setSchemePayFor);
       setInt(row, m.schemeFree, item::setSchemeFree);

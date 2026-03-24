@@ -5,6 +5,7 @@ import com.inventory.product.domain.model.enums.SchemeType;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.Transient;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -29,8 +30,8 @@ public class PurchaseItem {
   private BigDecimal maximumRetailPrice;
   private BigDecimal priceToRetail;
   private BigDecimal discount;
-  private BigDecimal additionalDiscount; // Additional discount percentage from inventory
-  private BigDecimal totalAmount; // Final amount after additionalDiscount and taxes (CGST + SGST)
+  private BigDecimal saleAdditionalDiscount; // Additional discount percentage from inventory
+  private BigDecimal totalAmount; // Final amount after saleAdditionalDiscount and taxes (CGST + SGST)
   private String sgst; // SGST rate from inventory (e.g., "9" for 9%)
   private String cgst; // CGST rate from inventory (e.g., "9" for 9%)
   /** Cost price per unit (from inventory at time of sale). Used for margin/profit breakdown. */
@@ -53,5 +54,21 @@ public class PurchaseItem {
   private Integer schemeFree;
   /** Scheme percentage for selling when schemeType is PERCENTAGE (e.g. 10 = 10% extra free). */
   private BigDecimal schemePercentage;
+
+  /** From registration: additional discount % from Pricing. Read-only at sale. */
+  @Transient
+  private BigDecimal purchaseAdditionalDiscount;
+  /** From registration: scheme type from Inventory. Read-only at sale. */
+  @Transient
+  private SchemeType purchaseSchemeType;
+  /** From registration: scheme pay-for from Inventory. Read-only at sale. */
+  @Transient
+  private Integer purchaseSchemePayFor;
+  /** From registration: scheme free from Inventory. Read-only at sale. */
+  @Transient
+  private Integer purchaseSchemeFree;
+  /** From registration: scheme percentage from Inventory when schemeType PERCENTAGE. Read-only at sale. */
+  @Transient
+  private BigDecimal purchaseSchemePercentage;
 }
 

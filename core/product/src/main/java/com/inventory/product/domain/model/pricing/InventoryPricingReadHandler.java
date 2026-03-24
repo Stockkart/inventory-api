@@ -1,9 +1,11 @@
 package com.inventory.product.domain.model.pricing;
 
+import com.inventory.pricing.rest.dto.response.SchemeDto;
 import com.inventory.pricing.rest.dto.response.PricingReadDto;
 import com.inventory.pricing.service.InventoryPricingAdapter;
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.Inventory;
+import com.inventory.product.domain.model.enums.SchemeType;
 import com.inventory.product.domain.repository.ShopRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -108,12 +110,15 @@ public class InventoryPricingReadHandler {
     BigDecimal discount = getBigDecimal(doc, "additionalDiscount");
     String sgst = toStringOrNull(doc.get("sgst"));
     String cgst = toStringOrNull(doc.get("cgst"));
+    SchemeDto saleScheme = buildLegacySaleScheme(doc);
+    SchemeDto purchaseScheme = buildLegacyPurchaseScheme(doc);
     log.debug("readLegacyPricing inventoryId={} docKeys={} sgst={} (raw={}) cgst={} (raw={})",
         inventoryId, doc.keySet(), sgst, doc.get("sgst"), cgst, doc.get("cgst"));
-    if (mrp == null && cost == null && ptr == null && discount == null && sgst == null && cgst == null) {
+    if (mrp == null && cost == null && ptr == null && discount == null && sgst == null && cgst == null
+        && saleScheme == null && purchaseScheme == null) {
       return null;
     }
-    return new PricingReadDto(mrp, cost, ptr, null, null, ptr, discount, sgst, cgst);
+    return new PricingReadDto(mrp, cost, ptr, null, null, ptr, discount, null, purchaseScheme, saleScheme, sgst, cgst);
   }
 
   private void applyPricing(Inventory inv, PricingReadDto p) {
@@ -125,7 +130,30 @@ public class InventoryPricingReadHandler {
         : (p.getPriceToRetail() != null ? "priceToRetail" : null));
     inv.setPriceToRetail(p.getPriceToRetail());
     inv.setSellingPrice(p.getEffectivePrice());
-    inv.setAdditionalDiscount(p.getAdditionalDiscount());
+    inv.setSaleAdditionalDiscount(p.getSaleAdditionalDiscount());
+    inv.setPurchaseAdditionalDiscount(p.getPurchaseAdditionalDiscount());
+    if (p.getSaleScheme() != null) {
+      var ss = p.getSaleScheme();
+      if (StringUtils.hasText(ss.getSchemeType())) {
+        try {
+          inv.setSchemeType(SchemeType.valueOf(ss.getSchemeType()));
+        } catch (IllegalArgumentException ignored) { /* keep null */ }
+      }
+      inv.setSchemePayFor(ss.getSchemePayFor());
+      inv.setSchemeFree(ss.getSchemeFree());
+      inv.setSchemePercentage(ss.getSchemePercentage());
+    }
+    if (p.getPurchaseScheme() != null) {
+      var ps = p.getPurchaseScheme();
+      if (StringUtils.hasText(ps.getSchemeType())) {
+        try {
+          inv.setPurchaseSchemeType(SchemeType.valueOf(ps.getSchemeType()));
+        } catch (IllegalArgumentException ignored) { /* keep null */ }
+      }
+      inv.setPurchaseSchemePayFor(ps.getSchemePayFor());
+      inv.setPurchaseSchemeFree(ps.getSchemeFree());
+      inv.setPurchaseSchemePercentage(ps.getSchemePercentage());
+    }
     if (inv.getBillingMode() == BillingMode.BASIC) {
       inv.setSgst(null);
       inv.setCgst(null);
@@ -160,6 +188,46 @@ public class InventoryPricingReadHandler {
     if (v instanceof Number) return BigDecimal.valueOf(((Number) v).doubleValue());
     try {
       return new BigDecimal(v.toString());
+    } catch (Exception e) {
+      return null;
+    }
+  }
+
+  private static SchemeDto buildLegacySaleScheme(Document doc) {
+    String schemeType = toStringOrNull(doc.get("schemeType"));
+    Integer payFor = getInt(doc, "schemePayFor");
+    Integer free = getInt(doc, "schemeFree");
+    BigDecimal pct = getBigDecimal(doc, "schemePercentage");
+    if (schemeType == null && payFor == null && free == null && pct == null) return null;
+    SchemeDto dto = new SchemeDto();
+    dto.setSchemeType(schemeType);
+    dto.setSchemePayFor(payFor);
+    dto.setSchemeFree(free);
+    dto.setSchemePercentage(pct);
+    return dto;
+  }
+
+  private static SchemeDto buildLegacyPurchaseScheme(Document doc) {
+    String schemeType = toStringOrNull(doc.get("purchaseSchemeType"));
+    Integer payFor = getInt(doc, "purchaseSchemePayFor");
+    Integer free = getInt(doc, "purchaseSchemeFree");
+    BigDecimal pct = getBigDecimal(doc, "purchaseSchemePercentage");
+    if (schemeType == null && payFor == null && free == null && pct == null) return null;
+    SchemeDto dto = new SchemeDto();
+    dto.setSchemeType(schemeType);
+    dto.setSchemePayFor(payFor);
+    dto.setSchemeFree(free);
+    dto.setSchemePercentage(pct);
+    return dto;
+  }
+
+  private static Integer getInt(Document doc, String key) {
+    Object v = doc.get(key);
+    if (v == null) return null;
+    if (v instanceof Integer) return (Integer) v;
+    if (v instanceof Number) return ((Number) v).intValue();
+    try {
+      return Integer.parseInt(v.toString());
     } catch (Exception e) {
       return null;
     }

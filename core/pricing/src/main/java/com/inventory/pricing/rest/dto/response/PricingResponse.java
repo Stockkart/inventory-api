@@ -21,7 +21,10 @@ public class PricingResponse {
   private List<Rate> rates;
   private String defaultRate;
   private BigDecimal sellingPrice;
-  private BigDecimal additionalDiscount;
+  private BigDecimal saleAdditionalDiscount;
+  private BigDecimal purchaseAdditionalDiscount;
+  private SchemeDto purchaseScheme;
+  private SchemeDto saleScheme;
   private String sgst;
   private String cgst;
   private Instant createdAt;

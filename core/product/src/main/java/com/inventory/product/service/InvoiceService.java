@@ -169,7 +169,7 @@ public class InvoiceService {
         invoiceItem.setMaximumRetailPrice(purchaseItem.getMaximumRetailPrice());
         invoiceItem.setPriceToRetail(purchaseItem.getPriceToRetail());
         invoiceItem.setDiscount(purchaseItem.getDiscount());
-        invoiceItem.setAdditionalDiscount(purchaseItem.getAdditionalDiscount());
+        invoiceItem.setSaleAdditionalDiscount(purchaseItem.getSaleAdditionalDiscount());
         invoiceItem.setTotalAmount(purchaseItem.getTotalAmount());
         invoiceItem.setCgst(isBasic ? null : purchaseItem.getCgst());
         invoiceItem.setSgst(isBasic ? null : purchaseItem.getSgst());
@@ -225,7 +225,7 @@ public class InvoiceService {
     // Totals and calculations
     request.setSubTotal(purchase.getSubTotal() != null ? purchase.getSubTotal() : BigDecimal.ZERO);
     request.setDiscountTotal(purchase.getDiscountTotal() != null ? purchase.getDiscountTotal() : BigDecimal.ZERO);
-    request.setAdditionalDiscountTotal(purchase.getAdditionalDiscountTotal() != null ? purchase.getAdditionalDiscountTotal() : BigDecimal.ZERO);
+    request.setSaleAdditionalDiscountTotal(purchase.getSaleAdditionalDiscountTotal() != null ? purchase.getSaleAdditionalDiscountTotal() : BigDecimal.ZERO);
     request.setSgstAmount(!isBasic && purchase.getSgstAmount() != null ? purchase.getSgstAmount() : BigDecimal.ZERO);
     request.setCgstAmount(!isBasic && purchase.getCgstAmount() != null ? purchase.getCgstAmount() : BigDecimal.ZERO);
     

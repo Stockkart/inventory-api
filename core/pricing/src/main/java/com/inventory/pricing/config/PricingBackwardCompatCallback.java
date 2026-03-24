@@ -27,6 +27,12 @@ public class PricingBackwardCompatCallback implements AfterConvertCallback<Prici
     if (entity.getSellingPrice() == null && entity.getPriceToRetail() != null) {
       entity.setSellingPrice(entity.getPriceToRetail());
     }
+    if (entity.getSaleAdditionalDiscount() == null) {
+      BigDecimal additionalDiscount = PricingUtils.getBigDecimalFromObject(document.get("additionalDiscount"));
+      if (additionalDiscount != null) {
+        entity.setSaleAdditionalDiscount(additionalDiscount);
+      }
+    }
     return entity;
   }
 

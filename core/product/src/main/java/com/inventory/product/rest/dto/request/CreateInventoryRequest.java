@@ -24,7 +24,7 @@ public class CreateInventoryRequest {
   private BigDecimal priceToRetail;
   private List<RateDto> rates;
   private String defaultRate;
-  private BigDecimal additionalDiscount; // Optional: Additional discount amount
+  private BigDecimal saleAdditionalDiscount; // Optional: Additional discount amount
   private String businessType;
   private String location;
   private ItemType itemType;
@@ -66,6 +66,12 @@ public class CreateInventoryRequest {
   private Integer schemeFree;
   // When schemeType PERCENTAGE: e.g. 10 = 10% extra free.
   private BigDecimal schemePercentage;
+  /** Purchase (from vendor) - for comparison at sale. Read-only during sale. */
+  private SchemeType purchaseSchemeType;
+  private Integer purchaseSchemePayFor;
+  private Integer purchaseSchemeFree;
+  private BigDecimal purchaseSchemePercentage;
+  private BigDecimal purchaseAdditionalDiscount;
   // SGST rate (optional, e.g., "9" for 9%). Uses shop default if not provided.
   private String sgst;
   // CGST rate (optional, e.g., "9" for 9%). Uses shop default if not provided.
