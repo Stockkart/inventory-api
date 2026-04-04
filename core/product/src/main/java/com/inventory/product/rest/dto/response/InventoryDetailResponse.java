@@ -46,6 +46,7 @@ public class InventoryDetailResponse {
   String location;
   Instant expiryDate;
   String shopId;
+  String vendorPurchaseInvoiceId;
   ItemType itemType;
   Integer itemTypeDegree;
   DiscountApplicable discountApplicable;

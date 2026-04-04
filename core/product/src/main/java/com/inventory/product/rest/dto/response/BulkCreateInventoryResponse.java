@@ -1,5 +1,6 @@
 package com.inventory.product.rest.dto.response;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -14,7 +15,19 @@ import java.util.List;
 @AllArgsConstructor
 public class BulkCreateInventoryResponse {
   private List<InventoryReceiptResponse> items;
+  /** Number of successfully created inventory rows (alias: createdCount for API clients). */
   private int totalCreated;
   private int totalFailed;
+  /**
+   * Same as {@link #vendorPurchaseInvoiceId}; kept for older clients that read {@code lotId}.
+   */
+  private String lotId;
+  /** Present when {@code vendorPurchaseInvoice} was sent and at least one line was created. */
+  private String vendorPurchaseInvoiceId;
+
+  @JsonProperty("createdCount")
+  public int getCreatedCount() {
+    return totalCreated;
+  }
 }
 

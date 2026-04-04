@@ -50,6 +50,8 @@ public class CreateInventoryRequest {
   private String vendorShopId;
   // Lot ID (optional - if provided, will reuse existing lot; if not, will generate new one)
   private String lotId;
+  /** Set when bulk registration includes vendor purchase invoice metadata. */
+  private String vendorPurchaseInvoiceId;
   // HSN code (optional)
   private String hsn;
   // Batch number (optional)

@@ -49,6 +49,7 @@ public class InventorySummaryDto {
   Instant expiryDate;
   String shopId;
   String vendorId;
+  String vendorPurchaseInvoiceId;
   ItemType itemType;
   Integer itemTypeDegree;
   DiscountApplicable discountApplicable;
