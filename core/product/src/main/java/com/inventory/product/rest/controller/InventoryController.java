@@ -63,9 +63,9 @@ public class InventoryController {
   }
 
   /**
-   * Bulk create inventory items with shared vendorId and lotId.
+   * Bulk create inventory items with shared vendorId; stock-in is keyed by vendor purchase invoice id.
    *
-   * @param bulkRequest the bulk creation request containing list of items and shared vendorId/lotId
+   * @param bulkRequest the bulk creation request containing list of items and shared vendorId
    * @param httpRequest HTTP request containing shopId from authentication
    * @return bulk creation response with created items
    */

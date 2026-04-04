@@ -17,5 +17,7 @@ import java.util.List;
 public class ParsedInventoryListResponse {
   private List<CreateInventoryItemRequest> items;
   private int totalItems;
+  /** Optional header fields when the parser extracts them; otherwise null. */
+  private ParsedVendorInvoiceDto vendorPurchaseInvoice;
 }
 

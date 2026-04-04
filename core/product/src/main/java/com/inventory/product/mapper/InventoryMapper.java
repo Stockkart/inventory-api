@@ -85,11 +85,15 @@ public interface InventoryMapper {
   }
 
   default BulkCreateInventoryResponse toBulkCreateInventoryResponse(
-      List<InventoryReceiptResponse> items, int failedCount) {
+      List<InventoryReceiptResponse> items,
+      int failedCount,
+      String vendorPurchaseInvoiceId) {
     BulkCreateInventoryResponse response = new BulkCreateInventoryResponse();
     response.setItems(items);
     response.setTotalCreated(items != null ? items.size() : 0);
     response.setTotalFailed(failedCount);
+    response.setLotId(vendorPurchaseInvoiceId);
+    response.setVendorPurchaseInvoiceId(vendorPurchaseInvoiceId);
     return response;
   }
 
@@ -117,6 +121,7 @@ public interface InventoryMapper {
   @Mapping(target = "expiryDate", source = "expiryDate")
   @Mapping(target = "shopId", source = "shopId")
   @Mapping(target = "vendorId", source = "vendorId")
+  @Mapping(target = "vendorPurchaseInvoiceId", source = "vendorPurchaseInvoiceId")
   @Mapping(target = "itemType", source = "itemType")
   @Mapping(target = "itemTypeDegree", source = "itemTypeDegree")
   @Mapping(target = "discountApplicable", source = "discountApplicable")
@@ -154,6 +159,7 @@ public interface InventoryMapper {
   @Mapping(target = "location", source = "location")
   @Mapping(target = "expiryDate", source = "expiryDate")
   @Mapping(target = "shopId", source = "shopId")
+  @Mapping(target = "vendorPurchaseInvoiceId", source = "vendorPurchaseInvoiceId")
   @Mapping(target = "itemType", source = "itemType")
   @Mapping(target = "itemTypeDegree", source = "itemTypeDegree")
   @Mapping(target = "discountApplicable", source = "discountApplicable")

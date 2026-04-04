@@ -6,7 +6,7 @@ import java.util.List;
 
 /**
  * Request DTO for bulk inventory creation.
- * vendorId and lotId are shared across all items in the list.
+ * vendorId is shared across all items. Stock-in is grouped by vendor purchase invoice id (created per bulk).
  */
 @Data
 public class BulkCreateInventoryRequest {
@@ -16,8 +16,12 @@ public class BulkCreateInventoryRequest {
   private Boolean onCredit;
   /** When vendor is a StockKart user and purchase is on credit, assign to vendor's shop. */
   private String vendorShopId;
-  private String lotId;
-  
+
+  /**
+   * Optional vendor invoice metadata. When absent or without invoice number, an AUTO-* synthetic invoice is created.
+   */
+  private VendorPurchaseInvoiceRequest vendorPurchaseInvoice;
+
   // List of inventory items (without vendorId and lotId)
   private List<CreateInventoryItemRequest> items;
 }

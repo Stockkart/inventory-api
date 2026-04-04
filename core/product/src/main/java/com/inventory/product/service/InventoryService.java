@@ -4,6 +4,10 @@ import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.product.domain.model.VendorPurchaseInvoice;
+import com.inventory.product.domain.model.VendorPurchaseInvoiceLine;
+import com.inventory.product.domain.repository.VendorPurchaseInvoiceRepository;
+import com.inventory.product.rest.dto.request.VendorPurchaseInvoiceRequest;
 import com.inventory.reminders.rest.dto.request.CreateReminderForInventoryRequest;
 import com.inventory.reminders.service.ReminderService;
 import com.inventory.ocr.service.InvoiceParserService;
@@ -34,8 +38,10 @@ import com.inventory.product.utils.constants.ProductMetricsConstants;
 import com.inventory.product.validation.InventoryValidator;
 import com.inventory.product.validation.StockSheetValidator;
 import lombok.extern.slf4j.Slf4j;
+import org.bson.types.ObjectId;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -57,6 +63,9 @@ public class InventoryService {
 
   @Autowired
   private InventoryRepository inventoryRepository;
+
+  @Autowired
+  private VendorPurchaseInvoiceRepository vendorPurchaseInvoiceRepository;
 
   @Autowired
   private InventoryMapper inventoryMapper;
@@ -191,44 +200,120 @@ public class InventoryService {
   public BulkCreateInventoryResponse bulkCreate(BulkCreateInventoryRequest bulkRequest, String userId, String shopId) {
     List<InventoryReceiptResponse> createdItems = new ArrayList<>();
     int failedCount = 0;
-    
-    // Validate vendorId if provided
-    if (StringUtils.hasText(bulkRequest.getVendorId())) {
-      validateVendorId(bulkRequest.getVendorId(), shopId);
+
+    if (!StringUtils.hasText(bulkRequest.getVendorId())) {
+      throw new ValidationException("Vendor is required for bulk inventory registration");
     }
-    
-    // Determine lotId: use provided lotId or generate new one
-    String lotId = determineLotId(bulkRequest.getLotId(), shopId);
-    
-    log.info("Bulk creating {} inventory items with lotId: {} and vendorId: {}", 
-        bulkRequest.getItems() != null ? bulkRequest.getItems().size() : 0, 
-        lotId, bulkRequest.getVendorId());
-    
-    // Process each item
+    validateVendorId(bulkRequest.getVendorId(), shopId);
+
+    VendorPurchaseInvoiceRequest invReq = bulkRequest.getVendorPurchaseInvoice();
+    boolean userInvoice =
+        invReq != null && StringUtils.hasText(invReq.getInvoiceNo());
+
+    VendorPurchaseInvoice pendingInvoice = new VendorPurchaseInvoice();
+    pendingInvoice.setShopId(shopId);
+    pendingInvoice.setVendorId(bulkRequest.getVendorId());
+    pendingInvoice.setCreatedAt(Instant.now());
+    pendingInvoice.setCreatedByUserId(userId);
+    pendingInvoice.setLines(new ArrayList<>());
+
+    if (userInvoice) {
+      String normalizedNo = invReq.getInvoiceNo().trim();
+      if (vendorPurchaseInvoiceRepository.existsByShopIdAndVendorIdAndInvoiceNo(
+          shopId, bulkRequest.getVendorId(), normalizedNo)) {
+        throw new ValidationException(
+            "An invoice with this number already exists for this vendor");
+      }
+      pendingInvoice.setInvoiceNo(normalizedNo);
+      pendingInvoice.setSynthetic(Boolean.FALSE);
+    } else {
+      pendingInvoice.setInvoiceNo("AUTO-" + new ObjectId().toHexString());
+      pendingInvoice.setSynthetic(Boolean.TRUE);
+    }
+    if (invReq != null) {
+      pendingInvoice.setInvoiceDate(invReq.getInvoiceDate());
+      pendingInvoice.setLineSubTotal(invReq.getLineSubTotal());
+      pendingInvoice.setTaxTotal(invReq.getTaxTotal());
+      pendingInvoice.setShippingCharge(invReq.getShippingCharge());
+      pendingInvoice.setOtherCharges(invReq.getOtherCharges());
+      pendingInvoice.setRoundOff(invReq.getRoundOff());
+      pendingInvoice.setInvoiceTotal(invReq.getInvoiceTotal());
+    }
+
+    try {
+      pendingInvoice = vendorPurchaseInvoiceRepository.save(pendingInvoice);
+    } catch (DuplicateKeyException e) {
+      throw new ValidationException(
+          "An invoice with this number already exists for this vendor");
+    }
+
+    String registrationId = pendingInvoice.getId();
+
+    log.info(
+        "Bulk creating {} inventory items with vendorPurchaseInvoiceId: {} and vendorId: {}",
+        bulkRequest.getItems() != null ? bulkRequest.getItems().size() : 0,
+        registrationId,
+        bulkRequest.getVendorId());
+
+    List<VendorPurchaseInvoiceLine> invoiceLines = new ArrayList<>();
     if (bulkRequest.getItems() != null) {
       for (CreateInventoryItemRequest itemRequest : bulkRequest.getItems()) {
         try {
-          // Convert CreateInventoryItemRequest to CreateInventoryRequest
-          CreateInventoryRequest fullRequest = inventoryMapper.toCreateInventoryRequest(itemRequest,
-              bulkRequest.getVendorId(), lotId, bulkRequest.getVendorShopId(), bulkRequest.getOnCredit());
-          
+          CreateInventoryRequest fullRequest =
+              inventoryMapper.toCreateInventoryRequest(
+                  itemRequest,
+                  bulkRequest.getVendorId(),
+                  registrationId,
+                  bulkRequest.getVendorShopId(),
+                  bulkRequest.getOnCredit());
+          fullRequest.setVendorPurchaseInvoiceId(registrationId);
+
           InventoryReceiptResponse response = create(fullRequest, userId, shopId);
           createdItems.add(response);
+
+          VendorPurchaseInvoiceLine line = new VendorPurchaseInvoiceLine();
+          line.setLineIndex(invoiceLines.size());
+          line.setName(itemRequest.getName());
+          line.setBarcode(itemRequest.getBarcode());
+          line.setCount(itemRequest.getCount());
+          line.setCostPrice(itemRequest.getCostPrice());
+          line.setInventoryId(response.getId());
+          invoiceLines.add(line);
         } catch (Exception e) {
           log.error("Failed to create inventory item: {}", e.getMessage(), e);
           failedCount++;
         }
       }
     }
-    
+
+    String returnedInvoiceId = null;
+    if (invoiceLines.isEmpty()) {
+      vendorPurchaseInvoiceRepository.deleteById(pendingInvoice.getId());
+    } else {
+      pendingInvoice.setLines(invoiceLines);
+      vendorPurchaseInvoiceRepository.save(pendingInvoice);
+      returnedInvoiceId = pendingInvoice.getId();
+    }
+
     log.info("Bulk creation completed: {} created, {} failed", createdItems.size(), failedCount);
 
     if (metrics != null && !createdItems.isEmpty()) {
-      metrics.record(ProductMetricsConstants.INVENTORY_OPERATION, 1, "module", ProductMetricsConstants.MODULE, "operation", "bulk_create");
-      metrics.record(ProductMetricsConstants.INVENTORY_ITEMS_ADDED, createdItems.size(), "module", ProductMetricsConstants.MODULE);
+      metrics.record(
+          ProductMetricsConstants.INVENTORY_OPERATION,
+          1,
+          "module",
+          ProductMetricsConstants.MODULE,
+          "operation",
+          "bulk_create");
+      metrics.record(
+          ProductMetricsConstants.INVENTORY_ITEMS_ADDED,
+          createdItems.size(),
+          "module",
+          ProductMetricsConstants.MODULE);
     }
 
-    return inventoryMapper.toBulkCreateInventoryResponse(createdItems, failedCount);
+    return inventoryMapper.toBulkCreateInventoryResponse(
+        createdItems, failedCount, returnedInvoiceId);
   }
 
   public InventoryReceiptResponse create(CreateInventoryRequest request, String userId, String shopId) {

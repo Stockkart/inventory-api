@@ -59,6 +59,8 @@ public class Inventory {
   private String shopId;
   private String userId;
   private String vendorId;
+  /** Vendor purchase invoice document id when stock-in was registered with invoice metadata. */
+  private String vendorPurchaseInvoiceId;
   /** Reference to Pricing document (faster lookup by _id). Null for legacy inventories. */
   private String pricingId;
   private String hsn;
