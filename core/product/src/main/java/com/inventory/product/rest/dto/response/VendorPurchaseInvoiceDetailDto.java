@@ -14,6 +14,8 @@ import java.util.List;
 public class VendorPurchaseInvoiceDetailDto {
   private String id;
   private String vendorId;
+  /** Resolved from {@link com.inventory.user.domain.model.Vendor}; null if missing or deleted */
+  private String vendorName;
   private String invoiceNo;
   private Instant invoiceDate;
   private BigDecimal lineSubTotal;

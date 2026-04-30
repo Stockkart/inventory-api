@@ -55,6 +55,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -469,6 +470,37 @@ public class InventoryService {
       log.error("Unexpected error while searching inventory: {}", e.getMessage(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Failed to search inventory");
     }
+  }
+
+  @Transactional(readOnly = true)
+  public List<InventoryDetailResponse> getByIds(List<String> inventoryIds, String shopId) {
+    inventoryValidator.validateShopId(shopId);
+    if (inventoryIds == null || inventoryIds.isEmpty()) {
+      return List.of();
+    }
+
+    List<String> normalizedIds = inventoryIds.stream()
+        .filter(StringUtils::hasText)
+        .map(String::trim)
+        .distinct()
+        .toList();
+    if (normalizedIds.isEmpty()) {
+      return List.of();
+    }
+
+    List<Inventory> inventories = inventoryRepository.findByIdIn(normalizedIds);
+    Map<String, Inventory> inventoryById = inventories.stream()
+        .filter(inv -> shopId.equals(inv.getShopId()))
+        .collect(Collectors.toMap(Inventory::getId, inv -> inv, (a, b) -> a));
+
+    List<InventoryDetailResponse> out = new ArrayList<>();
+    for (String id : normalizedIds) {
+      Inventory inv = inventoryById.get(id);
+      if (inv != null) {
+        out.add(inventoryMapper.toDetail(inv));
+      }
+    }
+    return out;
   }
 
   public InventoryDetailResponse getLot(String lotId) {
