@@ -6,6 +6,7 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 
 /**
  * Summary DTO for refund listing.
@@ -63,6 +64,9 @@ public class RefundSummaryDto {
    * Number of items refunded.
    */
   private Integer totalItemsRefunded;
+
+  /** Per-product lines (when persisted on document). */
+  private List<RefundSummaryItemDto> refundedItems;
 
   /**
    * Optional reason for refund.

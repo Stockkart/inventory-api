@@ -17,4 +17,6 @@ public interface VendorPurchaseInvoiceRepository extends MongoRepository<VendorP
   List<VendorPurchaseInvoice> findByShopId(String shopId);
 
   Optional<VendorPurchaseInvoice> findByIdAndShopId(String id, String shopId);
+
+  List<VendorPurchaseInvoice> findByShopIdAndInvoiceNo(String shopId, String invoiceNo);
 }

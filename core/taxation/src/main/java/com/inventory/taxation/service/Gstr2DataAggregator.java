@@ -1,7 +1,12 @@
 package com.inventory.taxation.service;
 
 import com.inventory.product.domain.model.Inventory;
+import com.inventory.product.domain.model.VendorPurchaseInvoice;
+import com.inventory.product.domain.model.VendorPurchaseReturn;
+import com.inventory.product.domain.model.VendorPurchaseReturnItem;
 import com.inventory.product.domain.repository.InventoryRepository;
+import com.inventory.product.domain.repository.VendorPurchaseInvoiceRepository;
+import com.inventory.product.domain.repository.VendorPurchaseReturnRepository;
 import com.inventory.taxation.domain.gstr2.*;
 import com.inventory.taxation.domain.model.GstHsnLine;
 import com.inventory.product.domain.model.Shop;
@@ -39,6 +44,10 @@ public class Gstr2DataAggregator {
   private PricingRepository pricingRepository;
   @Autowired
   private ShopRepository shopRepository;
+  @Autowired
+  private VendorPurchaseReturnRepository vendorPurchaseReturnRepository;
+  @Autowired
+  private VendorPurchaseInvoiceRepository vendorPurchaseInvoiceRepository;
 
   public Gstr2ReportContext buildContext(String shopId, String period) {
     Shop shop = shopRepository.findById(shopId)
@@ -58,11 +67,43 @@ public class Gstr2DataAggregator {
     Instant rangeEnd = LocalDate.of(year, month, 1).plusMonths(1)
         .atStartOfDay(ZoneId.systemDefault()).toInstant().minusNanos(1);
 
+    List<VendorPurchaseReturn> vendorReturns =
+        vendorPurchaseReturnRepository.findByShopIdAndCreatedAtBetween(shopId, rangeStart, rangeEnd);
+
     List<Inventory> inventories = inventoryRepository.findByShopIdAndCreatedAtBetween(shopId, rangeStart, rangeEnd);
     inventories = inventories.stream().filter(inv -> inv.getVendorId() != null).toList();
 
-    if (inventories.isEmpty()) {
+    if (inventories.isEmpty() && vendorReturns.isEmpty()) {
       return buildEmptyContext(shopId, shop, period, year, month);
+    }
+
+    String placeOfSupply = shop.getLocation() != null && StringUtils.hasText(shop.getLocation().getState())
+        ? shop.getLocation().getState()
+        : "";
+
+    List<Gstr2CdnrLine> cdnrFromReturns = new ArrayList<>();
+    List<Gstr2CdnurLine> cdnurFromReturns = new ArrayList<>();
+    appendVendorReturnCdnLines(shopId, vendorReturns, placeOfSupply, cdnrFromReturns, cdnurFromReturns);
+
+    if (inventories.isEmpty()) {
+      return Gstr2ReportContext.builder()
+          .shopId(shopId)
+          .shopGstin(shop.getGstinNo() != null ? shop.getGstinNo() : "")
+          .period(period)
+          .year(year)
+          .month(month)
+          .b2bLines(new ArrayList<>())
+          .b2burLines(new ArrayList<>())
+          .impsLines(new ArrayList<>())
+          .impgLines(new ArrayList<>())
+          .cdnrLines(cdnrFromReturns)
+          .cdnurLines(cdnurFromReturns)
+          .atLines(new ArrayList<>())
+          .atadjLines(new ArrayList<>())
+          .exempLines(buildDefaultExempLines())
+          .itcrLines(new ArrayList<>())
+          .hsnLines(new ArrayList<>())
+          .build();
     }
 
     Set<String> vendorIds = inventories.stream()
@@ -78,10 +119,6 @@ public class Gstr2DataAggregator {
         .collect(Collectors.toSet());
     Map<String, Pricing> pricingMap = pricingIds.isEmpty() ? Map.of()
         : pricingRepository.findAllById(pricingIds).stream().collect(Collectors.toMap(Pricing::getId, p -> p));
-
-    String placeOfSupply = shop.getLocation() != null && StringUtils.hasText(shop.getLocation().getState())
-        ? shop.getLocation().getState()
-        : "";
 
     // Group by lotId + vendorId as a pseudo-invoice (one vendor batch)
     Map<String, List<Inventory>> byLotVendor = inventories.stream()
@@ -228,8 +265,8 @@ public class Gstr2DataAggregator {
         .b2burLines(b2burLines)
         .impsLines(new ArrayList<>())
         .impgLines(new ArrayList<>())
-        .cdnrLines(new ArrayList<>())
-        .cdnurLines(new ArrayList<>())
+        .cdnrLines(cdnrFromReturns)
+        .cdnurLines(cdnurFromReturns)
         .atLines(new ArrayList<>())
         .atadjLines(new ArrayList<>())
         .exempLines(buildDefaultExempLines())
@@ -284,6 +321,150 @@ public class Gstr2DataAggregator {
       return new BigDecimal(rateStr.trim());
     } catch (NumberFormatException e) {
       return BigDecimal.ZERO;
+    }
+  }
+
+  /**
+   * Maps recorded vendor invoice returns into GSTR-2 CDNR (supplier with GSTIN) / CDNUR (otherwise).
+   */
+  private void appendVendorReturnCdnLines(
+      String shopId,
+      List<VendorPurchaseReturn> returns,
+      String placeOfSupply,
+      List<Gstr2CdnrLine> outCdnr,
+      List<Gstr2CdnurLine> outCdnur) {
+    if (returns == null || returns.isEmpty()) {
+      return;
+    }
+    Set<String> invoiceIds = returns.stream()
+        .map(VendorPurchaseReturn::getVendorPurchaseInvoiceId)
+        .filter(StringUtils::hasText)
+        .collect(Collectors.toSet());
+    if (invoiceIds.isEmpty()) {
+      return;
+    }
+    Map<String, VendorPurchaseInvoice> invoiceMap = vendorPurchaseInvoiceRepository.findAllById(invoiceIds)
+        .stream()
+        .filter(inv -> shopId.equals(inv.getShopId()))
+        .collect(Collectors.toMap(VendorPurchaseInvoice::getId, inv -> inv));
+
+    Set<String> vendorIds = invoiceMap.values().stream()
+        .map(VendorPurchaseInvoice::getVendorId)
+        .filter(StringUtils::hasText)
+        .collect(Collectors.toSet());
+    Map<String, Vendor> vendorMap =
+        vendorIds.isEmpty()
+            ? Map.of()
+            : vendorRepository.findAllById(vendorIds).stream()
+                .collect(Collectors.toMap(Vendor::getId, v -> v));
+
+    for (VendorPurchaseReturn vr : returns) {
+      VendorPurchaseInvoice inv = invoiceMap.get(vr.getVendorPurchaseInvoiceId());
+      if (inv == null) {
+        continue;
+      }
+      Vendor vendor =
+          inv.getVendorId() != null ? vendorMap.get(inv.getVendorId()) : null;
+      boolean registered = vendor != null && StringUtils.hasText(vendor.getGstinUin());
+      String supplierGstin =
+          vendor != null && vendor.getGstinUin() != null ? vendor.getGstinUin().trim() : "";
+
+      BigDecimal totalTaxable = BigDecimal.ZERO;
+      BigDecimal totalCgst = BigDecimal.ZERO;
+      BigDecimal totalSgst = BigDecimal.ZERO;
+      if (vr.getItems() != null) {
+        for (VendorPurchaseReturnItem it : vr.getItems()) {
+          if (it.getTaxableValue() != null) {
+            totalTaxable = totalTaxable.add(it.getTaxableValue());
+          }
+          if (it.getCentralTaxAmount() != null) {
+            totalCgst = totalCgst.add(it.getCentralTaxAmount());
+          }
+          if (it.getStateUtTaxAmount() != null) {
+            totalSgst = totalSgst.add(it.getStateUtTaxAmount());
+          }
+        }
+      }
+      BigDecimal noteValue =
+          vr.getReturnAmount() != null
+              ? vr.getReturnAmount()
+              : totalTaxable.add(totalCgst).add(totalSgst);
+      BigDecimal ratePct =
+          totalTaxable.compareTo(BigDecimal.ZERO) > 0
+              ? totalCgst.add(totalSgst).multiply(BigDecimal.valueOf(100)).divide(totalTaxable, 2, RoundingMode.HALF_UP)
+              : BigDecimal.ZERO;
+
+      LocalDate noteDate =
+          vr.getCreatedAt() != null
+              ? LocalDateTime.ofInstant(vr.getCreatedAt(), ZoneId.systemDefault()).toLocalDate()
+              : LocalDate.now();
+      LocalDate origInvDate = null;
+      if (inv.getInvoiceDate() != null) {
+        origInvDate = LocalDateTime.ofInstant(inv.getInvoiceDate(), ZoneId.systemDefault()).toLocalDate();
+      } else if (inv.getCreatedAt() != null) {
+        origInvDate = LocalDateTime.ofInstant(inv.getCreatedAt(), ZoneId.systemDefault()).toLocalDate();
+      }
+      if (origInvDate == null) {
+        origInvDate = LocalDate.now();
+      }
+      String noteNumber =
+          StringUtils.hasText(vr.getSupplierCreditNoteNo())
+              ? vr.getSupplierCreditNoteNo()
+              : ("VCN-" + vr.getId());
+      String invoiceNo =
+          inv.getInvoiceNo() != null && !inv.getInvoiceNo().isBlank() ? inv.getInvoiceNo() : inv.getId();
+      String reason =
+          StringUtils.hasText(vr.getReason())
+              ? vr.getReason().trim().length() > 120
+                  ? vr.getReason().trim().substring(0, 120)
+                  : vr.getReason().trim()
+              : "Post purchase return";
+
+      if (registered) {
+        outCdnr.add(
+            Gstr2CdnrLine.builder()
+                .supplierGstin(supplierGstin)
+                .noteNumber(noteNumber)
+                .noteDate(noteDate)
+                .invoiceNo(invoiceNo)
+                .invoiceDate(origInvDate)
+                .preGst("No")
+                .documentType("Credit Note")
+                .reasonForIssuing(reason)
+                .supplyType("Intra State")
+                .noteValue(noteValue)
+                .rate(ratePct)
+                .taxableValue(totalTaxable.setScale(2, RoundingMode.HALF_UP))
+                .integratedTaxPaid(BigDecimal.ZERO)
+                .centralTaxPaid(totalCgst.setScale(2, RoundingMode.HALF_UP))
+                .stateUtTaxPaid(totalSgst.setScale(2, RoundingMode.HALF_UP))
+                .cessPaid(BigDecimal.ZERO)
+                .itcEligibility("Inputs")
+                .availedItcIntegrated(BigDecimal.ZERO)
+                .build());
+      } else {
+        outCdnur.add(
+            Gstr2CdnurLine.builder()
+                .noteNumber(noteNumber)
+                .noteDate(noteDate)
+                .invoiceNo(invoiceNo)
+                .invoiceDate(origInvDate)
+                .preGst("No")
+                .documentType("Credit Note")
+                .reasonForIssuing(reason)
+                .supplyType("Intra State")
+                .invoiceType("Purchases from unregistered supplier")
+                .noteValue(noteValue)
+                .rate(ratePct)
+                .taxableValue(totalTaxable.setScale(2, RoundingMode.HALF_UP))
+                .integratedTaxPaid(BigDecimal.ZERO)
+                .centralTaxPaid(totalCgst.setScale(2, RoundingMode.HALF_UP))
+                .stateUtTaxPaid(totalSgst.setScale(2, RoundingMode.HALF_UP))
+                .cessPaid(BigDecimal.ZERO)
+                .itcEligibility("Inputs")
+                .availedItcIntegrated(BigDecimal.ZERO)
+                .build());
+      }
     }
   }
 }
