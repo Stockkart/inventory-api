@@ -206,7 +206,9 @@ public class Gstr1DataAggregator {
       LocalDate noteDate = refund.getCreatedAt() != null
           ? LocalDateTime.ofInstant(refund.getCreatedAt(), ZoneId.systemDefault()).toLocalDate()
           : LocalDate.now();
-      String noteNumber = "CN-" + refund.getId();
+      String noteNumber = StringUtils.hasText(refund.getCreditNoteNo())
+          ? refund.getCreditNoteNo()
+          : ("CN-" + refund.getId());
 
       GstRefundLine rLine = GstRefundLine.builder()
           .registered(registered)

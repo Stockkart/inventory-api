@@ -20,6 +20,11 @@ public class RefundSummaryDto {
   private String refundId;
 
   /**
+   * Credit note number (e.g. CN-00001).
+   */
+  private String creditNoteNo;
+
+  /**
    * Purchase ID that was refunded.
    */
   private String purchaseId;

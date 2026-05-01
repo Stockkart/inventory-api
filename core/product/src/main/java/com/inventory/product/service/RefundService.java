@@ -68,6 +68,9 @@ public class RefundService {
   @Autowired
   private CustomerService customerService;
 
+  @Autowired
+  private InvoiceSequenceService invoiceSequenceService;
+
   @Autowired(required = false)
   private com.inventory.metrics.MetricsWrapper metrics;
 
@@ -205,6 +208,7 @@ public class RefundService {
       refund.setPurchaseId(request.getPurchaseId());
       refund.setShopId(shopId);
       refund.setUserId(userId);
+      refund.setCreditNoteNo(invoiceSequenceService.getNextCreditNoteNo(shopId));
       refund.setRefundedItems(domainRefundItems);
       refund.setRefundAmount(totalRefundAmount.setScale(2, RoundingMode.HALF_UP));
       refund.setTotalItemsRefunded(refundedItems.size());
@@ -215,11 +219,17 @@ public class RefundService {
       // Save refund to database
       refund = refundRepository.save(refund);
 
-      log.info("Refund saved to database with ID: {} for purchase ID: {}", refund.getId(), request.getPurchaseId());
+      log.info("Refund saved with credit note {} (id {}) for purchase ID: {}",
+          refund.getCreditNoteNo(), refund.getId(), request.getPurchaseId());
 
       BigDecimal roundedAmount = totalRefundAmount.setScale(2, RoundingMode.HALF_UP);
       RefundResponse response = refundMapper.toRefundResponse(
-          refund.getId(), request.getPurchaseId(), refundedItems, roundedAmount, refund.getCreatedAt());
+          refund.getId(),
+          refund.getCreditNoteNo(),
+          request.getPurchaseId(),
+          refundedItems,
+          roundedAmount,
+          refund.getCreatedAt());
 
       log.info("Refund processed successfully for purchase ID: {}. Total refund amount: {}, Items refunded: {}",
           request.getPurchaseId(), totalRefundAmount, refundedItems.size());
@@ -538,6 +548,7 @@ public class RefundService {
   private RefundSummaryDto toRefundSummaryDto(Refund refund) {
     RefundSummaryDto dto = new RefundSummaryDto();
     dto.setRefundId(refund.getId());
+    dto.setCreditNoteNo(refund.getCreditNoteNo());
     dto.setPurchaseId(refund.getPurchaseId());
     dto.setRefundAmount(refund.getRefundAmount());
     dto.setTotalItemsRefunded(refund.getTotalItemsRefunded());

@@ -49,10 +49,12 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 @Service
 @Slf4j
@@ -394,15 +396,15 @@ public class CheckoutService {
   }
 
   /**
-   * Search purchases with pagination and customer search support.
-   * Supports searching by invoice number (regex), customer email, phone, and name (regex).
+   * Search purchases with pagination and exact customer filters.
+   * All provided customer fields are combined with AND semantics.
    *
    * @param page page number (1-based)
    * @param limit page size
-   * @param invoiceNo optional invoice number regex pattern to search
-   * @param customerEmail optional customer email to search
-   * @param customerPhone optional customer phone to search
-   * @param customerName optional customer name regex pattern to search
+   * @param invoiceNo optional exact invoice number
+   * @param customerEmail optional exact customer email
+   * @param customerPhone optional exact customer phone
+   * @param customerName optional exact customer name (case-insensitive)
    * @param httpRequest HTTP request containing shopId
    * @return PurchaseListResponse with paginated purchases
    */
@@ -452,9 +454,8 @@ public class CheckoutService {
 
       // Search purchases based on criteria
       if (StringUtils.hasText(invoiceNo) && finalCustomerIds != null && !finalCustomerIds.isEmpty()) {
-        // Search by both invoice number (regex) and customer IDs
-        // Filter purchases by invoiceNo regex first, then by customerIds
-        List<Purchase> purchasesByInvoice = purchaseRepository.findByShopIdAndInvoiceNoRegex(shopId, invoiceNo.trim());
+        // Search by both exact invoice number and customer IDs
+        List<Purchase> purchasesByInvoice = purchaseRepository.findByShopIdAndInvoiceNo(shopId, invoiceNo.trim());
         // Filter by customerIds
         List<Purchase> filteredPurchases = purchasesByInvoice.stream()
             .filter(p -> finalCustomerIds.contains(p.getCustomerId()))
@@ -474,8 +475,8 @@ public class CheckoutService {
         purchasePage = new org.springframework.data.domain.PageImpl<>(
             pagedPurchases, pageable, filteredPurchases.size());
       } else if (StringUtils.hasText(invoiceNo)) {
-        // Search by invoice number using regex (case-insensitive)
-        List<Purchase> purchases = purchaseRepository.findByShopIdAndInvoiceNoRegex(shopId, invoiceNo.trim());
+        // Search by exact invoice number
+        List<Purchase> purchases = purchaseRepository.findByShopIdAndInvoiceNo(shopId, invoiceNo.trim());
         // Sort by soldAt descending
         purchases.sort((a, b) -> {
           if (a.getSoldAt() == null && b.getSoldAt() == null) return 0;
@@ -524,58 +525,59 @@ public class CheckoutService {
   }
 
   /**
-   * Find customer IDs by search criteria (email, phone, name regex).
-   *
-   * @param shopId the shop ID
-   * @param customerEmail optional customer email
-   * @param customerPhone optional customer phone
-   * @param customerName optional customer name regex pattern
-   * @return list of customer IDs matching the criteria
+   * Find customer IDs by exact criteria.
+   * When multiple criteria are provided, all of them must match the same customer (AND).
    */
   private List<String> findCustomerIdsBySearchCriteria(String shopId, String customerEmail,
                                                        String customerPhone, String customerName) {
-    List<String> customerIds = new ArrayList<>();
-    List<com.inventory.user.domain.model.Customer> customers = new ArrayList<>();
+    Set<String> matchingCustomerIds = null;
 
-    // Search by email
+    // Exact email match (plus shop linkage)
     if (StringUtils.hasText(customerEmail)) {
+      Set<String> emailMatches = new HashSet<>();
       customerRepository.findByEmail(customerEmail.trim()).ifPresent(customer -> {
         if (shopCustomerRepository.existsByShopIdAndCustomerId(shopId, customer.getId())) {
-          customers.add(customer);
+          emailMatches.add(customer.getId());
         }
       });
+      matchingCustomerIds = intersect(matchingCustomerIds, emailMatches);
     }
 
-    // Search by phone
+    // Exact phone match (plus shop linkage)
     if (StringUtils.hasText(customerPhone)) {
+      Set<String> phoneMatches = new HashSet<>();
       customerService.searchCustomerByPhone(customerPhone.trim(), shopId).ifPresent(customer -> {
-        if (!customers.contains(customer)) {
-          customers.add(customer);
-        }
+        phoneMatches.add(customer.getId());
       });
+      matchingCustomerIds = intersect(matchingCustomerIds, phoneMatches);
     }
 
-    // Search by name (regex)
+    // Exact name match (case-insensitive) + shop linkage
     if (StringUtils.hasText(customerName)) {
-      // Use CustomerRepository searchByQuery which supports regex on name
-      List<com.inventory.user.domain.model.Customer> nameMatches = customerRepository.searchByQuery(customerName.trim());
-      // Filter by shop
-      for (com.inventory.user.domain.model.Customer customer : nameMatches) {
+      Set<String> nameMatches = new HashSet<>();
+      List<com.inventory.user.domain.model.Customer> candidates =
+          customerRepository.findByNameIgnoreCase(customerName.trim());
+      for (com.inventory.user.domain.model.Customer customer : candidates) {
         if (shopCustomerRepository.existsByShopIdAndCustomerId(shopId, customer.getId())) {
-          if (!customers.contains(customer)) {
-            customers.add(customer);
-          }
+          nameMatches.add(customer.getId());
         }
       }
+      matchingCustomerIds = intersect(matchingCustomerIds, nameMatches);
     }
 
-    // Extract customer IDs
-    customerIds = customers.stream()
-        .map(com.inventory.user.domain.model.Customer::getId)
-        .distinct()
-        .collect(java.util.stream.Collectors.toList());
+    if (matchingCustomerIds == null || matchingCustomerIds.isEmpty()) {
+      return List.of();
+    }
 
-    return customerIds;
+    return new ArrayList<>(matchingCustomerIds);
+  }
+
+  private Set<String> intersect(Set<String> existing, Set<String> incoming) {
+    if (existing == null) {
+      return new HashSet<>(incoming);
+    }
+    existing.retainAll(incoming);
+    return existing;
   }
 
   private Sort parseSortOrder(String order) {
