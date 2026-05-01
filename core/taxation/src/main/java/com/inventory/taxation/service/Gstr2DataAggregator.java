@@ -120,6 +120,22 @@ public class Gstr2DataAggregator {
     Map<String, Pricing> pricingMap = pricingIds.isEmpty() ? Map.of()
         : pricingRepository.findAllById(pricingIds).stream().collect(Collectors.toMap(Pricing::getId, p -> p));
 
+    Set<String> purchaseInvoiceDocIds = new HashSet<>();
+    for (Inventory inv : inventories) {
+      if (StringUtils.hasText(inv.getVendorPurchaseInvoiceId())) {
+        purchaseInvoiceDocIds.add(inv.getVendorPurchaseInvoiceId().trim());
+      }
+      if (StringUtils.hasText(inv.getLotId())) {
+        purchaseInvoiceDocIds.add(inv.getLotId().trim());
+      }
+    }
+    Map<String, VendorPurchaseInvoice> purchaseInvoiceById =
+        purchaseInvoiceDocIds.isEmpty()
+            ? Map.of()
+            : vendorPurchaseInvoiceRepository.findAllById(purchaseInvoiceDocIds).stream()
+                .filter(vpi -> shopId.equals(vpi.getShopId()))
+                .collect(Collectors.toMap(VendorPurchaseInvoice::getId, v -> v, (a, b) -> a));
+
     // Group by lotId + vendorId as a pseudo-invoice (one vendor batch)
     Map<String, List<Inventory>> byLotVendor = inventories.stream()
         .collect(Collectors.groupingBy(inv -> (inv.getLotId() != null ? inv.getLotId() : inv.getId()) + "|" + (inv.getVendorId() != null ? inv.getVendorId() : "")));
@@ -206,7 +222,7 @@ public class Gstr2DataAggregator {
         }
       }
 
-      String invoiceNo = first.getLotId() != null ? first.getLotId() : ("LOT-" + first.getId());
+      String invoiceNo = resolveGstrPurchaseInvoiceDisplayNo(first, purchaseInvoiceById);
       if (invDate == null) invDate = LocalDate.now();
 
       if (isRegistered) {
@@ -313,6 +329,31 @@ public class Gstr2DataAggregator {
             .nonGstSupplies(BigDecimal.ZERO)
             .build()
     );
+  }
+
+  /**
+   * Prefer human-readable supplier invoice number from {@link VendorPurchaseInvoice}; inventory
+   * {@code lotId} is usually the invoice document id after stock-in migration.
+   */
+  private String resolveGstrPurchaseInvoiceDisplayNo(
+      Inventory first, Map<String, VendorPurchaseInvoice> purchaseInvoiceById) {
+    String docId =
+        StringUtils.hasText(first.getVendorPurchaseInvoiceId())
+            ? first.getVendorPurchaseInvoiceId().trim()
+            : null;
+    if (docId == null && StringUtils.hasText(first.getLotId())) {
+      docId = first.getLotId().trim();
+    }
+    if (docId != null) {
+      VendorPurchaseInvoice invoice = purchaseInvoiceById.get(docId);
+      if (invoice != null && StringUtils.hasText(invoice.getInvoiceNo())) {
+        return invoice.getInvoiceNo().trim();
+      }
+    }
+    if (StringUtils.hasText(first.getLotId())) {
+      return first.getLotId().trim();
+    }
+    return "INV-" + first.getId();
   }
 
   private BigDecimal parseRate(String rateStr) {
