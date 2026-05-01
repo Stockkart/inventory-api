@@ -15,15 +15,19 @@ import com.inventory.product.domain.repository.PurchaseRepository;
 import com.inventory.product.domain.repository.RefundRepository;
 import com.inventory.product.rest.dto.request.RefundRequest;
 import com.inventory.product.mapper.RefundMapper;
+import com.inventory.product.util.MongoEmbeddedReadUtil;
 import com.inventory.product.rest.dto.response.RefundListResponse;
 import com.inventory.product.rest.dto.response.RefundResponse;
 import com.inventory.product.rest.dto.response.RefundSummaryDto;
+import com.inventory.product.rest.dto.response.RefundSummaryItemDto;
 import com.inventory.product.utils.constants.ProductMetricsConstants;
 import com.inventory.product.validation.CheckoutValidator;
 import com.inventory.user.service.CustomerService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.bson.Document;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -68,6 +72,9 @@ public class RefundService {
   @Autowired
   private CustomerService customerService;
 
+  @Autowired
+  private InvoiceSequenceService invoiceSequenceService;
+
   @Autowired(required = false)
   private com.inventory.metrics.MetricsWrapper metrics;
 
@@ -76,6 +83,9 @@ public class RefundService {
 
   @Autowired
   private com.inventory.user.domain.repository.ShopCustomerRepository shopCustomerRepository;
+
+  @Autowired
+  private MongoTemplate mongoTemplate;
 
   /**
    * Process refund for a purchase.
@@ -205,6 +215,7 @@ public class RefundService {
       refund.setPurchaseId(request.getPurchaseId());
       refund.setShopId(shopId);
       refund.setUserId(userId);
+      refund.setCreditNoteNo(invoiceSequenceService.getNextCreditNoteNo(shopId));
       refund.setRefundedItems(domainRefundItems);
       refund.setRefundAmount(totalRefundAmount.setScale(2, RoundingMode.HALF_UP));
       refund.setTotalItemsRefunded(refundedItems.size());
@@ -215,11 +226,17 @@ public class RefundService {
       // Save refund to database
       refund = refundRepository.save(refund);
 
-      log.info("Refund saved to database with ID: {} for purchase ID: {}", refund.getId(), request.getPurchaseId());
+      log.info("Refund saved with credit note {} (id {}) for purchase ID: {}",
+          refund.getCreditNoteNo(), refund.getId(), request.getPurchaseId());
 
       BigDecimal roundedAmount = totalRefundAmount.setScale(2, RoundingMode.HALF_UP);
       RefundResponse response = refundMapper.toRefundResponse(
-          refund.getId(), request.getPurchaseId(), refundedItems, roundedAmount, refund.getCreatedAt());
+          refund.getId(),
+          refund.getCreditNoteNo(),
+          request.getPurchaseId(),
+          refundedItems,
+          roundedAmount,
+          refund.getCreatedAt());
 
       log.info("Refund processed successfully for purchase ID: {}. Total refund amount: {}, Items refunded: {}",
           request.getPurchaseId(), totalRefundAmount, refundedItems.size());
@@ -424,9 +441,24 @@ public class RefundService {
         refundPage = refundRepository.findByShopId(shopId, pageable);
       }
 
-      List<RefundSummaryDto> refundDtos = refundPage.getContent().stream()
-          .map(this::toRefundSummaryDto)
-          .collect(Collectors.toList());
+      List<String> refundIdsForRawFallback =
+          refundPage.getContent().stream()
+              .filter(
+                  r ->
+                      r.getRefundedItems() == null || r.getRefundedItems().isEmpty())
+              .map(Refund::getId)
+              .filter(StringUtils::hasText)
+              .distinct()
+              .collect(Collectors.toList());
+
+      Map<String, Document> rawRefundById =
+          MongoEmbeddedReadUtil.documentsByShopAndIds(
+              mongoTemplate, "refunds", shopId, refundIdsForRawFallback);
+
+      List<RefundSummaryDto> refundDtos =
+          refundPage.getContent().stream()
+              .map(r -> toRefundSummaryDto(r, rawRefundById.get(r.getId())))
+              .collect(Collectors.toList());
 
       RefundListResponse response = refundMapper.toRefundListResponse(
           refundDtos, pageNumber + 1, pageSize,
@@ -535,14 +567,20 @@ public class RefundService {
    * @param refund the refund entity
    * @return RefundSummaryDto
    */
-  private RefundSummaryDto toRefundSummaryDto(Refund refund) {
+  private RefundSummaryDto toRefundSummaryDto(Refund refund, Document rawFallback) {
     RefundSummaryDto dto = new RefundSummaryDto();
     dto.setRefundId(refund.getId());
+    dto.setCreditNoteNo(refund.getCreditNoteNo());
     dto.setPurchaseId(refund.getPurchaseId());
     dto.setRefundAmount(refund.getRefundAmount());
     dto.setTotalItemsRefunded(refund.getTotalItemsRefunded());
     dto.setReason(refund.getReason());
     dto.setCreatedAt(refund.getCreatedAt());
+    List<RefundItem> lineItems = resolveRefundedLineItems(refund, rawFallback);
+    if (lineItems != null && !lineItems.isEmpty()) {
+      dto.setRefundedItems(
+          lineItems.stream().map(this::toRefundSummaryItemDto).collect(Collectors.toList()));
+    }
 
     // Fetch purchase details to get invoice number and customer info
     purchaseRepository.findById(refund.getPurchaseId()).ifPresent(purchase -> {
@@ -561,6 +599,22 @@ public class RefundService {
     });
 
     return dto;
+  }
+
+  private List<RefundItem> resolveRefundedLineItems(Refund refund, Document rawFallback) {
+    if (refund.getRefundedItems() != null && !refund.getRefundedItems().isEmpty()) {
+      return refund.getRefundedItems();
+    }
+    return MongoEmbeddedReadUtil.refundLineItems(rawFallback);
+  }
+
+  private RefundSummaryItemDto toRefundSummaryItemDto(RefundItem item) {
+    return new RefundSummaryItemDto(
+        item.getInventoryId(),
+        item.getName(),
+        item.getQuantity(),
+        item.getPriceToRetail(),
+        item.getItemRefundAmount());
   }
 }
 

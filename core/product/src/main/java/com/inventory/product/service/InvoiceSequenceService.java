@@ -21,6 +21,11 @@ public class InvoiceSequenceService {
   private static final String REGULAR_PREFIX = "INV-";
   private static final String BASIC_PREFIX = "BSC-";
   private static final String BASIC_SEQUENCE_SUFFIX = ":BASIC";
+  private static final String CREDIT_NOTE_PREFIX = "CN-";
+  private static final String CREDIT_NOTE_SEQUENCE_SUFFIX = ":CN";
+  /** Inward-facing (supplier CN) numbering for vendor purchase returns / GSTR-2 CDNR. */
+  private static final String VENDOR_CN_PREFIX = "VCN-";
+  private static final String VENDOR_CN_SEQUENCE_SUFFIX = ":VCN";
 
   private final MongoTemplate mongoTemplate;
 
@@ -44,6 +49,23 @@ public class InvoiceSequenceService {
   public String getNextBasicInvoiceNo(String shopId) {
     String sequenceKey = shopId + BASIC_SEQUENCE_SUFFIX;
     return getNextSequence(shopId, sequenceKey, BASIC_PREFIX);
+  }
+
+  /**
+   * Next credit note number for returns/refunds (GSTR-1 CDNR/CDNUR). Format: CN-00001, ...
+   * Independent sequence from invoice numbers, per shop.
+   */
+  public String getNextCreditNoteNo(String shopId) {
+    String sequenceKey = shopId + CREDIT_NOTE_SEQUENCE_SUFFIX;
+    return getNextSequence(shopId, sequenceKey, CREDIT_NOTE_PREFIX);
+  }
+
+  /**
+   * Next reference for inward vendor credit-note / purchase-return (e.g. VCN-00001).
+   */
+  public String getNextVendorCreditNoteNo(String shopId) {
+    String sequenceKey = shopId + VENDOR_CN_SEQUENCE_SUFFIX;
+    return getNextSequence(shopId, sequenceKey, VENDOR_CN_PREFIX);
   }
 
   private String getNextSequence(String shopId, String sequenceKey, String prefix) {

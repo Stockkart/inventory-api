@@ -8,6 +8,7 @@ import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.common.exception.AuthenticationException;
 import com.inventory.product.rest.dto.request.BulkCreateInventoryRequest;
 import com.inventory.product.rest.dto.request.CreateInventoryRequest;
+import com.inventory.product.rest.dto.request.InventoryIdsRequest;
 import com.inventory.product.rest.dto.request.UpdateInventoryRequest;
 import com.inventory.product.rest.dto.response.BulkCreateInventoryResponse;
 import com.inventory.product.rest.dto.response.InventoryDetailResponse;
@@ -32,6 +33,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/inventory")
@@ -124,6 +126,20 @@ public class InventoryController {
     }
 
     return ResponseEntity.ok(ApiResponse.success(inventoryService.search(shopId, q)));
+  }
+
+  @PostMapping("/by-ids")
+  public ResponseEntity<ApiResponse<List<InventoryDetailResponse>>> getByIds(
+      @RequestBody InventoryIdsRequest request,
+      HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    if (StringUtils.isEmpty(shopId)) {
+      throw new AuthenticationException(
+          ErrorCode.UNAUTHORIZED,
+          "Unauthorized access to shop inventory");
+    }
+    List<String> ids = request != null ? request.getInventoryIds() : List.of();
+    return ResponseEntity.ok(ApiResponse.success(inventoryService.getByIds(ids, shopId)));
   }
 
   @GetMapping("/lots/search")

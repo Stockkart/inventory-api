@@ -31,10 +31,11 @@ public interface RefundMapper {
   /**
    * Build refund response after processing.
    */
-  default RefundResponse toRefundResponse(String refundId, String purchaseId,
+  default RefundResponse toRefundResponse(String refundId, String creditNoteNo, String purchaseId,
       List<RefundResponse.RefundedItem> refundedItems, BigDecimal refundAmount, Instant createdAt) {
     RefundResponse response = new RefundResponse();
     response.setRefundId(refundId);
+    response.setCreditNoteNo(creditNoteNo);
     response.setPurchaseId(purchaseId);
     response.setRefundedItems(refundedItems != null ? refundedItems : Collections.emptyList());
     response.setRefundAmount(refundAmount);

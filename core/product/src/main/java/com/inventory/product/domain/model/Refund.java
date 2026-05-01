@@ -29,6 +29,11 @@ public class Refund {
   private String purchaseId;
 
   /**
+   * Human-readable credit note number for GST / receipts (e.g. CN-00001). Assigned at creation.
+   */
+  private String creditNoteNo;
+
+  /**
    * Shop ID where the refund was processed.
    */
   private String shopId;

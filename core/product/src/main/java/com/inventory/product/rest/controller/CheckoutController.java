@@ -58,15 +58,15 @@ public class CheckoutController {
   }
 
   /**
-   * Search purchases with pagination and customer search support.
-   * Supports searching by invoice number (regex), customer email, phone, and name (regex).
+   * Search purchases with pagination and exact customer matching.
+   * All provided customer fields are combined with AND semantics.
    *
    * @param page page number (1-based, optional, default: 1)
    * @param limit page size (optional, default: 20, max: 100)
-   * @param invoiceNo optional invoice number regex pattern to search
-   * @param customerEmail optional customer email to search
-   * @param customerPhone optional customer phone to search
-   * @param customerName optional customer name regex pattern to search
+   * @param invoiceNo optional exact invoice number
+   * @param customerEmail optional exact customer email
+   * @param customerPhone optional exact customer phone
+   * @param customerName optional exact customer name (case-insensitive)
    * @param httpRequest HTTP request containing shopId
    * @return list of purchases with pagination
    */

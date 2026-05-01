@@ -36,6 +36,14 @@ public interface CustomerRepository extends MongoRepository<Customer, String> {
   List<Customer> findByUserId(String userId);
 
   /**
+   * Find customers by exact name match (case-insensitive).
+   *
+   * @param name customer name
+   * @return list of matching customers
+   */
+  List<Customer> findByNameIgnoreCase(String name);
+
+  /**
    * Search customers by query (name, phone, email, or address).
    *
    * @param query the search query

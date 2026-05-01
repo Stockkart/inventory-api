@@ -21,6 +21,11 @@ public class RefundResponse {
   private String refundId;
 
   /**
+   * Credit note number shown on documents and GSTR-1 (e.g. CN-00001).
+   */
+  private String creditNoteNo;
+
+  /**
    * Purchase ID that was refunded.
    */
   private String purchaseId;

@@ -36,14 +36,15 @@ public class VendorPurchaseInvoiceController {
   public ResponseEntity<ApiResponse<VendorPurchaseInvoiceListResponse>> list(
       HttpServletRequest httpRequest,
       @RequestParam(defaultValue = "0") int page,
-      @RequestParam(defaultValue = "20") int size) {
+      @RequestParam(defaultValue = "20") int size,
+      @RequestParam(required = false, name = "q") String q) {
     String shopId = (String) httpRequest.getAttribute("shopId");
     if (StringUtils.isEmpty(shopId)) {
       throw new AuthenticationException(
           ErrorCode.UNAUTHORIZED, "User not authenticated or shop not found");
     }
     return ResponseEntity.ok(
-        ApiResponse.success(vendorPurchaseInvoiceService.list(shopId, page, size)));
+        ApiResponse.success(vendorPurchaseInvoiceService.list(shopId, page, size, q)));
   }
 
   @GetMapping(value = "/{id}", produces = MediaType.APPLICATION_JSON_VALUE)
