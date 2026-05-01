@@ -12,9 +12,9 @@ import com.inventory.reminders.mapper.ReminderMapper;
 import com.inventory.reminders.utils.EventUtils;
 import com.inventory.reminders.utils.SseEmitterUtils;
 import com.inventory.reminders.utils.constants.EventConstants;
-import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,7 +32,6 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 @Slf4j
 @Service
-@AllArgsConstructor
 @Transactional
 public class EventService {
 
@@ -51,11 +50,14 @@ public class EventService {
   // support multiple tabs/devices per shop
   private final Map<String, List<SseEmitter>> emittersByShop = new ConcurrentHashMap<>();
 
+  @Value("${sse.emitter-timeout-ms:1800000}")
+  private long sseEmitterTimeoutMs;
+
   // ---------------------------
   // Subscription / replay
   // ---------------------------
   public SseEmitter subscribe(String shopId) {
-    SseEmitter emitter = new SseEmitter(0L); // no timeout
+    SseEmitter emitter = new SseEmitter(sseEmitterTimeoutMs);
 
     emittersByShop
       .computeIfAbsent(shopId, k -> new CopyOnWriteArrayList<>())

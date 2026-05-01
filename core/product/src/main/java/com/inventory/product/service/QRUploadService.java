@@ -16,6 +16,7 @@ import com.inventory.product.utils.UploadTokenUtil;
 import com.inventory.product.validation.UploadTokenValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,6 +24,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Instant;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 
 @Slf4j
 @Service
@@ -49,6 +51,10 @@ public class QRUploadService {
 
   @Autowired
   private UploadTokenUtil uploadTokenUtil;
+
+  @Autowired
+  @Qualifier("ocrTaskExecutor")
+  private Executor ocrTaskExecutor;
 
   /**
    * Create upload token for QR code pairing.
@@ -163,7 +169,7 @@ public class QRUploadService {
         log.error("Error processing image for token: {}", token, e);
         markTokenFailed(token, e.getMessage());
       }
-    });
+    }, ocrTaskExecutor);
   }
 
   /**

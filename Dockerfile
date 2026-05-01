@@ -46,4 +46,5 @@ EXPOSE 8080
 
 #ENTRYPOINT ["/entrypoint.sh"]
 
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# Heap scales with cgroup memory (~75%); leave room for native, metaspace, Mongo driver buffers
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75.0", "-XX:InitialRAMPercentage=25.0", "-jar", "app.jar"]
