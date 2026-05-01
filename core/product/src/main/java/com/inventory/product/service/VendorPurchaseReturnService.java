@@ -274,11 +274,21 @@ public class VendorPurchaseReturnService {
           invRec != null && StringUtils.hasText(invRec.getBarcode())
               ? invRec.getBarcode().trim()
               : extras.barcode;
+      Integer baseReturned = it.getBaseQuantityReturned();
+      BigDecimal displayQtyReturned = null;
+      if (baseReturned != null && baseReturned >= 0) {
+        if (invRec != null) {
+          displayQtyReturned = toDisplayQuantity(baseReturned, invRec);
+        } else {
+          displayQtyReturned = BigDecimal.valueOf(baseReturned);
+        }
+      }
       list.add(
           VendorPurchaseReturnLineSummaryDto.builder()
               .inventoryId(inventoryId.isEmpty() ? null : inventoryId)
               .productName(productName)
               .barcode(barcode)
+              .displayQuantityReturned(displayQtyReturned)
               .baseQuantityReturned(it.getBaseQuantityReturned())
               .taxableValue(it.getTaxableValue())
               .centralGstAmount(it.getCentralTaxAmount())
@@ -412,8 +422,11 @@ public class VendorPurchaseReturnService {
         BigDecimal sgstRate = parseRatePct(sgstStr);
         BigDecimal cgstRate = parseRatePct(cgstStr);
 
+        // Cost on pricing / vendor bill is per display (invoice) unit, not per base unit.
+        // Match purchase valuation: taxable = unitCost × quantity returned in those same units.
+        BigDecimal displayQtyReturned = toDisplayQuantity(qtyBase, inventory);
         BigDecimal taxableVal =
-            costPrice.multiply(BigDecimal.valueOf(qtyBase)).setScale(2, RoundingMode.HALF_UP);
+            costPrice.multiply(displayQtyReturned).setScale(2, RoundingMode.HALF_UP);
         BigDecimal cgstAmt =
             taxableVal
                 .multiply(cgstRate)

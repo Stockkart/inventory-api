@@ -21,6 +21,12 @@ public class VendorPurchaseReturnLineSummaryDto {
 
   private String barcode;
 
+  /**
+   * Quantity returned in invoice / POS (sell) units — derived from stored base qty ÷ pack factor.
+   */
+  private BigDecimal displayQuantityReturned;
+
+  /** Persisted canonical base units on the debit note (for audit; omit from UI if not needed). */
   private Integer baseQuantityReturned;
 
   private BigDecimal taxableValue;
