@@ -25,6 +25,9 @@ public class BulkCreateInventoryResponse {
   /** Present when {@code vendorPurchaseInvoice} was sent and at least one line was created. */
   private String vendorPurchaseInvoiceId;
 
+  /** Present when a PURCHASE journal was posted for {@link #vendorPurchaseInvoiceId}. */
+  private String accountingJournalEntryId;
+
   @JsonProperty("createdCount")
   public int getCreatedCount() {
     return totalCreated;

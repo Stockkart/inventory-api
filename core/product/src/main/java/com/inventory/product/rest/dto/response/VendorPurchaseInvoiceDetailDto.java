@@ -27,5 +27,7 @@ public class VendorPurchaseInvoiceDetailDto {
   private Instant createdAt;
   private Boolean synthetic;
   private String legacyLotId;
+  /** Set when a PURCHASE journal exists for this invoice (<code>PRODUCT:PURCHASE_INV:&lt;id&gt;</code>). */
+  private String accountingJournalEntryId;
   private List<VendorPurchaseInvoiceLineDto> lines;
 }

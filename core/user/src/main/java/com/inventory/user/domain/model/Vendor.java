@@ -23,7 +23,7 @@ public class Vendor {
   private String companyName;
   private String businessType;
   private String gstinUin; // GSTIN or UIN (Unique Identification Number)
-  /** Optional link to UserAccount when vendor is a registered user. Enables credit sync across shops. */
+  /** Optional link to UserAccount when vendor is a registered user. */
   private String userId;
   private Instant createdAt;
   private Instant updatedAt;

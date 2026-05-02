@@ -23,7 +23,7 @@ public class Customer {
   private String gstin; // Optional: GSTIN number
   private String dlNo; // Optional: D.L No.
   private String pan; // Optional: PAN number
-  /** Optional link to UserAccount when customer is a registered user. Enables credit sync across shops. */
+  /** Optional link to UserAccount when customer is a registered user. */
   private String userId;
   private Instant createdAt;
   private Instant updatedAt;

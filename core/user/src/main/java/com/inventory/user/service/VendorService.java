@@ -334,7 +334,6 @@ public class VendorService {
 
   /**
    * Get shops for a vendor when the vendor is a StockKart user (has userId).
-   * Used when buyer assigns credit to vendor's shop - they can pick which shop.
    *
    * @param vendorId the vendor ID
    * @param callerShopId the buyer's shop (vendor must be linked to this shop)

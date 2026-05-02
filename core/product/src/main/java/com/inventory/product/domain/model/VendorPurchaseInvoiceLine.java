@@ -19,6 +19,8 @@ public class VendorPurchaseInvoiceLine {
   private String barcode;
   private Integer count;
   private BigDecimal costPrice;
+  /** PTR / PTS fallback for accounting when {@link #costPrice} is absent or zero. */
+  private BigDecimal priceToRetail;
   /** Set after successful inventory create for this line */
   private String inventoryId;
 }

@@ -39,5 +39,7 @@ public class CheckoutResponse {
   String customerName;
   String customerAddress;
   String customerPhone;
+  /** Set when checkout completion posts a SALE journal entry (general ledger id). */
+  String accountingJournalEntryId;
 }
 

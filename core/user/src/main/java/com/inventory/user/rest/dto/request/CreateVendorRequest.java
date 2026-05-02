@@ -11,6 +11,6 @@ public class CreateVendorRequest {
   private String companyName;
   private String businessType;
   private String gstinUin; // GSTIN or UIN (Unique Identification Number)
-  /** Optional. When set, links this vendor to a registered user (enables credit sync across shops). */
+  /** Optional. When set, links this vendor to a registered user account. */
   private String userId;
 }
