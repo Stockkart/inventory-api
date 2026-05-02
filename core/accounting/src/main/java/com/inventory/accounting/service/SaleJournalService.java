@@ -1,8 +1,13 @@
 package com.inventory.accounting.service;
 
+import com.inventory.accounting.domain.model.AccountType;
 import com.inventory.accounting.domain.model.DefaultAccountCodes;
 import com.inventory.accounting.domain.model.JournalPostingSource;
+import com.inventory.accounting.domain.model.GlAccount;
+import com.inventory.accounting.domain.repository.GlAccountRepository;
 import com.inventory.accounting.service.PostingService.PostingLineDraft;
+import com.inventory.common.exception.ValidationException;
+import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,7 +21,8 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Posts when checkout completes: Dr {@link DefaultAccountCodes#CASH} (cash received); Cr revenue
+ * Posts when checkout completes: debits an asset receipt account (typically {@link
+ * DefaultAccountCodes#CASH} or a manual bank); credits revenue
  * plus consolidated GST output. Purchase/stock-in cost is recognised on {@link
  * DefaultAccountCodes#PURCHASES_EXPENSE} via {@link PurchaseJournalService}, not on cash.
  */
@@ -28,6 +34,7 @@ public class SaleJournalService {
 
   private final PostingService postingService;
   private final GlBootstrapService glBootstrapService;
+  private final GlAccountRepository glAccountRepository;
 
   @Transactional
   public Optional<String> recordRetailSaleLedger(
@@ -40,6 +47,7 @@ public class SaleJournalService {
       BigDecimal cgstAmount,
       BigDecimal taxTotal,
       String paymentMethod,
+      String receiptGlAccountCode,
       Instant journalDate,
       String userId) {
 
@@ -105,8 +113,28 @@ public class SaleJournalService {
       payMemo = payMemo.substring(0, 280);
     }
 
+    String debitCode = resolveReceiptAccountCode(receiptGlAccountCode);
+    GlAccount receiptAcc =
+        glAccountRepository
+            .findFirstByShopIdAndCodeOrderByIdAsc(shopId, debitCode)
+            .orElseThrow(
+                () ->
+                    new ValidationException(
+                        "Unknown receipt GL account \""
+                            + debitCode
+                            + "\". Use CASH or add a bank/asset account under Chart of accounts."));
+
+    if (!receiptAcc.isActive()) {
+      throw new ValidationException("Receipt account is inactive: " + debitCode);
+    }
+    if (receiptAcc.getAccountType() != AccountType.ASSET) {
+      throw new ValidationException(
+          "Sale receipts must debit an ASSET account (e.g. CASH or a bank account). Got: "
+              + receiptAcc.getAccountType());
+    }
+
     List<PostingLineDraft> drafts = new ArrayList<>();
-    drafts.add(new PostingLineDraft(DefaultAccountCodes.CASH, gt, null, payMemo, null, null));
+    drafts.add(new PostingLineDraft(receiptAcc.getCode(), gt, null, payMemo, null, null));
 
     drafts.add(
         new PostingLineDraft(
@@ -156,5 +184,12 @@ public class SaleJournalService {
       return zero();
     }
     return scale(v);
+  }
+
+  private static String resolveReceiptAccountCode(String receiptGlAccountCode) {
+    if (!StringUtils.hasText(receiptGlAccountCode)) {
+      return DefaultAccountCodes.CASH;
+    }
+    return receiptGlAccountCode.trim().toUpperCase(Locale.ROOT);
   }
 }

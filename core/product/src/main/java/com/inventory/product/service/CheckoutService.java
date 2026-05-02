@@ -275,6 +275,7 @@ public class CheckoutService {
                   purchase.getCgstAmount(),
                   purchase.getTaxTotal(),
                   purchase.getPaymentMethod(),
+                  request.getReceiptGlAccountCode(),
                   journalDt,
                   userId)
               .ifPresent(response::setAccountingJournalEntryId);
