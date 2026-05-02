@@ -4,9 +4,13 @@ import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.accounting.service.PurchaseJournalService;
+import com.inventory.accounting.service.VendorPurchaseLedgerInput;
 import com.inventory.product.domain.model.VendorPurchaseInvoice;
 import com.inventory.product.domain.model.VendorPurchaseInvoiceLine;
 import com.inventory.product.domain.repository.VendorPurchaseInvoiceRepository;
+import com.inventory.user.domain.model.Vendor;
+import com.inventory.user.domain.repository.VendorRepository;
 import com.inventory.product.rest.dto.request.VendorPurchaseInvoiceRequest;
 import com.inventory.reminders.rest.dto.request.CreateReminderForInventoryRequest;
 import com.inventory.reminders.service.ReminderService;
@@ -21,6 +25,7 @@ import com.inventory.product.rest.dto.request.CreateInventoryItemRequest;
 import com.inventory.product.rest.dto.request.CreateInventoryRequest;
 import com.inventory.product.rest.dto.request.UpdateInventoryRequest;
 import com.inventory.product.rest.dto.response.BulkCreateInventoryResponse;
+import com.inventory.product.rest.dto.response.PostPurchaseLedgerResultDto;
 import com.inventory.product.rest.dto.response.InventoryDetailResponse;
 import com.inventory.product.rest.dto.response.InventoryListResponse;
 import com.inventory.product.rest.dto.response.InventoryReceiptResponse;
@@ -54,6 +59,7 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -67,6 +73,9 @@ public class InventoryService {
 
   @Autowired
   private VendorPurchaseInvoiceRepository vendorPurchaseInvoiceRepository;
+
+  @Autowired
+  private VendorRepository vendorRepository;
 
   @Autowired
   private InventoryMapper inventoryMapper;
@@ -96,10 +105,10 @@ public class InventoryService {
   private ExcelStockParser excelStockParser;
 
   @Autowired(required = false)
-  private com.inventory.user.service.CreditLedgerService creditLedgerService;
-
-  @Autowired(required = false)
   private com.inventory.metrics.MetricsWrapper metrics;
+
+  @Autowired
+  private PurchaseJournalService purchaseJournalService;
 
   /**
    * Parse invoice image and extract inventory items using OCR.
@@ -262,11 +271,7 @@ public class InventoryService {
         try {
           CreateInventoryRequest fullRequest =
               inventoryMapper.toCreateInventoryRequest(
-                  itemRequest,
-                  bulkRequest.getVendorId(),
-                  registrationId,
-                  bulkRequest.getVendorShopId(),
-                  bulkRequest.getOnCredit());
+                  itemRequest, bulkRequest.getVendorId(), registrationId);
           fullRequest.setVendorPurchaseInvoiceId(registrationId);
 
           InventoryReceiptResponse response = create(fullRequest, userId, shopId);
@@ -278,6 +283,7 @@ public class InventoryService {
           line.setBarcode(itemRequest.getBarcode());
           line.setCount(itemRequest.getCount());
           line.setCostPrice(itemRequest.getCostPrice());
+          line.setPriceToRetail(itemRequest.getPriceToRetail());
           line.setInventoryId(response.getId());
           invoiceLines.add(line);
         } catch (Exception e) {
@@ -298,6 +304,33 @@ public class InventoryService {
 
     log.info("Bulk creation completed: {} created, {} failed", createdItems.size(), failedCount);
 
+    String accountingJournalEntryId = null;
+    if (returnedInvoiceId != null) {
+      var invOpt = vendorPurchaseInvoiceRepository.findById(returnedInvoiceId);
+      if (invOpt.isPresent()) {
+        VendorPurchaseLedgerInput ledgerIn = toVendorPurchaseLedgerInput(invOpt.get());
+        try {
+          accountingJournalEntryId =
+              purchaseJournalService
+                  .recordVendorPurchaseLedger(shopId, userId, ledgerIn)
+                  .orElse(null);
+        } catch (ValidationException vex) {
+          log.warn(
+              "Accounting PURCHASE journal rejected for vendor invoice {} shop {} — stock-in kept: {}",
+              returnedInvoiceId,
+              shopId,
+              vex.getMessage());
+        } catch (Exception ex) {
+          log.error(
+              "Accounting PURCHASE journal failed for vendor invoice {} shop {} — stock-in kept: {}",
+              returnedInvoiceId,
+              shopId,
+              ex.getMessage(),
+              ex);
+        }
+      }
+    }
+
     if (metrics != null && !createdItems.isEmpty()) {
       metrics.record(
           ProductMetricsConstants.INVENTORY_OPERATION,
@@ -314,7 +347,83 @@ public class InventoryService {
     }
 
     return inventoryMapper.toBulkCreateInventoryResponse(
-        createdItems, failedCount, returnedInvoiceId);
+        createdItems, failedCount, returnedInvoiceId, accountingJournalEntryId);
+  }
+
+  /**
+   * Idempotently ensures a PURCHASE journal exists for a saved vendor stock-in invoice (same rules
+   * as bulk registration). Useful when postings were skipped on an older server build.
+   */
+  public PostPurchaseLedgerResultDto syncPurchaseLedgerForVendorInvoice(
+      String invoiceId, String shopId, String userId) {
+    VendorPurchaseInvoice inv =
+        vendorPurchaseInvoiceRepository
+            .findByIdAndShopId(invoiceId, shopId)
+            .orElseThrow(
+                () ->
+                    new ResourceNotFoundException(
+                        "Vendor purchase invoice", "id", invoiceId));
+
+    VendorPurchaseLedgerInput ledgerIn = toVendorPurchaseLedgerInput(inv);
+    try {
+      Optional<String> jid =
+          purchaseJournalService.recordVendorPurchaseLedger(shopId, userId, ledgerIn);
+      if (jid.isEmpty()) {
+        return new PostPurchaseLedgerResultDto(
+            null,
+            true,
+            "No ledger entry was created — the payable amount was zero "
+                + "(invoice totals missing or qty × unit cost/PTR yielded no base). "
+                + "Fill invoice totals or line amounts and try again.");
+      }
+      return new PostPurchaseLedgerResultDto(jid.get(), false, null);
+    } catch (ValidationException vex) {
+      throw vex;
+    } catch (Exception ex) {
+      log.error(
+          "Purchase ledger sync failed for vendor invoice {} shop {}: {}",
+          invoiceId,
+          shopId,
+          ex.getMessage(),
+          ex);
+      throw new BaseException(
+          ErrorCode.INTERNAL_SERVER_ERROR,
+          "Purchase ledger sync failed: " + ex.getMessage(),
+          ex);
+    }
+  }
+
+  private VendorPurchaseLedgerInput toVendorPurchaseLedgerInput(VendorPurchaseInvoice inv) {
+    List<VendorPurchaseLedgerInput.Line> lines =
+        inv.getLines().stream()
+            .map(
+                l ->
+                    new VendorPurchaseLedgerInput.Line(
+                        l.getCount(), l.getCostPrice(), l.getPriceToRetail()))
+            .toList();
+    String vendorDisplayName =
+        StringUtils.hasText(inv.getVendorId())
+            ? vendorRepository
+                .findById(inv.getVendorId().trim())
+                .map(Vendor::getName)
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .orElse(null)
+            : null;
+    return new VendorPurchaseLedgerInput(
+        inv.getId(),
+        inv.getVendorId(),
+        inv.getInvoiceNo(),
+        inv.getInvoiceDate(),
+        inv.getCreatedAt(),
+        inv.getLineSubTotal(),
+        inv.getTaxTotal(),
+        inv.getShippingCharge(),
+        inv.getOtherCharges(),
+        inv.getRoundOff(),
+        inv.getInvoiceTotal(),
+        lines,
+        vendorDisplayName);
   }
 
   public InventoryReceiptResponse create(CreateInventoryRequest request, String userId, String shopId) {
@@ -371,17 +480,6 @@ public class InventoryService {
       }
 
       inventory = inventoryRepository.save(inventory);
-
-      // Record vendor credit only when explicitly on credit
-      Boolean onCredit = Boolean.TRUE.equals(request.getOnCredit());
-      if (onCredit && creditLedgerService != null && StringUtils.hasText(request.getVendorId())
-          && request.getCostPrice() != null && request.getCostPrice().compareTo(BigDecimal.ZERO) > 0
-          && request.getCount() != null && request.getCount() > 0) {
-        BigDecimal amount = request.getCostPrice().multiply(BigDecimal.valueOf(request.getCount()));
-        creditLedgerService.createEntryForVendorPurchase(
-            shopId, request.getVendorId(), amount, inventory.getId(), userId,
-            request.getVendorShopId());
-      }
 
       log.info("Successfully created inventory lot: {} for product: {} in shop: {}",
           inventory.getLotId(), inventory.getBarcode(), shopId);

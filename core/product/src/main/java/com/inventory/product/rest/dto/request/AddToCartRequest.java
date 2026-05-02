@@ -19,7 +19,7 @@ public class AddToCartRequest {
   private String customerGstin; // Optional: Customer GSTIN
   private String customerDlNo; // Optional: Customer D.L No.
   private String customerPan; // Optional: Customer PAN
-  /** Optional: Links customer to a StockKart user. Enables credit sync across shops. */
+  /** Optional: links party to a registered StockKart user (same user id as UserAccount). */
   private String customerUserId;
 
   @Data

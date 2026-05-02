@@ -94,14 +94,14 @@ public class CheckoutService {
   @Autowired
   private InvoiceSequenceService invoiceSequenceService;
 
-  @Autowired(required = false)
-  private com.inventory.user.service.CreditLedgerService creditLedgerService;
-
   @Autowired
   private UsageService usageService;
 
   @Autowired(required = false)
   private com.inventory.metrics.MetricsWrapper metrics;
+
+  @Autowired
+  private com.inventory.accounting.service.SaleJournalService saleJournalService;
 
   @Transactional
   public AddToCartResponse addToCart(AddToCartRequest request, HttpServletRequest httpRequest) {
@@ -236,8 +236,6 @@ public class CheckoutService {
             purchase.setInvoiceNo(invoiceSequenceService.getNextInvoiceNo(shopId));
           }
         }
-        // Record customer credit when sale is on credit
-        recordCustomerCreditIfApplicable(purchase, request.getPaymentMethod(), userId);
       }
 
       // Update status and payment method
@@ -262,7 +260,36 @@ public class CheckoutService {
           currentStatus, requestedStatus, purchase.getId());
 
       // Build response
-      return purchaseMapper.toCheckoutResponse(purchase);
+      CheckoutResponse response = purchaseMapper.toCheckoutResponse(purchase);
+      if (requestedStatus == PurchaseStatus.COMPLETED) {
+        try {
+          Instant journalDt = purchase.getSoldAt() != null ? purchase.getSoldAt() : Instant.now();
+          saleJournalService
+              .recordRetailSaleLedger(
+                  shopId,
+                  purchase.getId(),
+                  purchase.getInvoiceNo(),
+                  purchase.getGrandTotal(),
+                  purchase.getRevenueBeforeTax(),
+                  purchase.getSgstAmount(),
+                  purchase.getCgstAmount(),
+                  purchase.getTaxTotal(),
+                  purchase.getPaymentMethod(),
+                  journalDt,
+                  userId)
+              .ifPresent(response::setAccountingJournalEntryId);
+        } catch (ValidationException vex) {
+          throw vex;
+        } catch (Exception ex) {
+          log.error(
+              "Accounting SALE journal failed for purchase {} shop {} — sale still completed: {}",
+              purchase.getId(),
+              shopId,
+              ex.getMessage(),
+              ex);
+        }
+      }
+      return response;
 
     } catch (ValidationException | ResourceNotFoundException e) {
       log.warn("Update purchase status failed: {}", e.getMessage());
@@ -275,31 +302,6 @@ public class CheckoutService {
       log.error("Unexpected error during update purchase status for shop: {}, user: {}", shopId, userId, e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
           "An unexpected error occurred during update purchase status: " + e.getMessage(), e);
-    }
-  }
-
-  private void recordCustomerCreditIfApplicable(Purchase purchase, String paymentMethod, String userId) {
-    if (creditLedgerService == null) {
-      return;
-    }
-    if (!"CREDIT".equalsIgnoreCase(paymentMethod != null ? paymentMethod.trim() : "")) {
-      return;
-    }
-    if (!StringUtils.hasText(purchase.getCustomerId())) {
-      return;
-    }
-    if (purchase.getGrandTotal() == null || purchase.getGrandTotal().compareTo(BigDecimal.ZERO) <= 0) {
-      return;
-    }
-    try {
-      creditLedgerService.createEntryForSale(
-          purchase.getShopId(),
-          purchase.getCustomerId(),
-          purchase.getGrandTotal(),
-          purchase.getId(),
-          userId);
-    } catch (Exception e) {
-      log.warn("Failed to record customer credit for purchase {}: {}", purchase.getId(), e.getMessage());
     }
   }
 

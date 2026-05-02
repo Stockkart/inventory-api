@@ -17,6 +17,7 @@
         <module>documentservice</module>
         <module>ocr</module>
         <module>taxation</module>
+        <module>accounting</module>
     </modules>
 
     <properties>

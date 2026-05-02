@@ -44,10 +44,6 @@ public class CreateInventoryRequest {
   private List<CustomReminderRequest> customReminders;
   // Vendor ID (optional - reference to existing vendor)
   private String vendorId;
-  /** When true, record this purchase as credit (buyer owes vendor). When false, treated as paid/cash. */
-  private Boolean onCredit;
-  /** When vendor is a StockKart user and purchase is on credit, assign to vendor's shop so they can see it. */
-  private String vendorShopId;
   // Lot ID (optional - if provided, will reuse existing lot; if not, will generate new one)
   private String lotId;
   /** Set when bulk registration includes vendor purchase invoice metadata. */

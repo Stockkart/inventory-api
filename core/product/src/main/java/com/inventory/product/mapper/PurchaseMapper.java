@@ -594,6 +594,7 @@ public abstract class PurchaseMapper {
   @Mapping(target = "customerName", ignore = true)
   @Mapping(target = "customerAddress", ignore = true)
   @Mapping(target = "customerPhone", ignore = true)
+  @Mapping(target = "accountingJournalEntryId", ignore = true)
   public abstract CheckoutResponse toCheckoutResponse(Purchase purchase);
 
   @AfterMapping

@@ -21,17 +21,13 @@ public interface InventoryMapper {
   // Pricing: @Transient - set from request for create (AOP persistOnSave writes to Pricing); on read AOP enriches
   @Mapping(target = "vendorId", ignore = true)
   @Mapping(target = "lotId", ignore = true)
-  @Mapping(target = "vendorShopId", ignore = true)
-  @Mapping(target = "onCredit", ignore = true)
   CreateInventoryRequest toCreateInventoryRequest(CreateInventoryItemRequest source);
 
-  default CreateInventoryRequest toCreateInventoryRequest(CreateInventoryItemRequest source,
-      String vendorId, String lotId, String vendorShopId, Boolean onCredit) {
+  default CreateInventoryRequest toCreateInventoryRequest(
+      CreateInventoryItemRequest source, String vendorId, String lotId) {
     CreateInventoryRequest r = toCreateInventoryRequest(source);
     r.setVendorId(vendorId);
     r.setLotId(lotId);
-    r.setVendorShopId(vendorShopId);
-    r.setOnCredit(onCredit);
     return r;
   }
 
@@ -87,13 +83,15 @@ public interface InventoryMapper {
   default BulkCreateInventoryResponse toBulkCreateInventoryResponse(
       List<InventoryReceiptResponse> items,
       int failedCount,
-      String vendorPurchaseInvoiceId) {
+      String vendorPurchaseInvoiceId,
+      String accountingJournalEntryId) {
     BulkCreateInventoryResponse response = new BulkCreateInventoryResponse();
     response.setItems(items);
     response.setTotalCreated(items != null ? items.size() : 0);
     response.setTotalFailed(failedCount);
     response.setLotId(vendorPurchaseInvoiceId);
     response.setVendorPurchaseInvoiceId(vendorPurchaseInvoiceId);
+    response.setAccountingJournalEntryId(accountingJournalEntryId);
     return response;
   }
 
