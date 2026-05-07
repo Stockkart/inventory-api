@@ -19,4 +19,8 @@ public class VendorPurchaseInvoiceRequest {
   private BigDecimal otherCharges;
   private BigDecimal roundOff;
   private BigDecimal invoiceTotal;
+  /** CASH | ONLINE | CREDIT (defaults to CASH when omitted). */
+  private String paymentMethod;
+  /** Optional paid-now amount for split credit purchases. */
+  private BigDecimal paidAmount;
 }

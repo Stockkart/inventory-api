@@ -21,7 +21,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
     "com.inventory.user.domain.repository",
     "com.inventory.reminders.domain.repository",
     "com.inventory.notifications.domain.repository",
-    "com.inventory.accounting.domain.repository"
+    "com.inventory.accounting.domain.repository",
+    "com.inventory.credit.domain.repository"
 })
 @EnableAsync
 @EnableScheduling

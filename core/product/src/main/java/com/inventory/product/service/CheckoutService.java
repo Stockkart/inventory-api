@@ -103,6 +103,9 @@ public class CheckoutService {
   @Autowired
   private com.inventory.accounting.service.SaleJournalService saleJournalService;
 
+  @Autowired(required = false)
+  private com.inventory.credit.service.CreditService creditService;
+
   @Transactional
   public AddToCartResponse addToCart(AddToCartRequest request, HttpServletRequest httpRequest) {
     // Get shopId and userId from request attributes (set by AuthenticationInterceptor)
@@ -264,6 +267,9 @@ public class CheckoutService {
       if (requestedStatus == PurchaseStatus.COMPLETED) {
         try {
           Instant journalDt = purchase.getSoldAt() != null ? purchase.getSoldAt() : Instant.now();
+          BigDecimal saleTotal = nzMoney(purchase.getGrandTotal());
+          String method = normalizePaymentMethod(request.getPaymentMethod());
+          BigDecimal paidNow = resolvePaidNow(saleTotal, method, request.getCreditPaidAmount());
           saleJournalService
               .recordRetailSaleLedger(
                   shopId,
@@ -277,13 +283,29 @@ public class CheckoutService {
                   purchase.getPaymentMethod(),
                   request.getReceiptGlAccountCode(),
                   journalDt,
-                  userId)
+                  userId,
+                  paidNow,
+                  purchase.getCustomerId())
               .ifPresent(response::setAccountingJournalEntryId);
         } catch (ValidationException vex) {
           throw vex;
         } catch (Exception ex) {
           log.error(
               "Accounting SALE journal failed for purchase {} shop {} — sale still completed: {}",
+              purchase.getId(),
+              shopId,
+              ex.getMessage(),
+              ex);
+        }
+        try {
+          String creditEntryId =
+              postCreditChargeForCompletedSale(purchase, request, shopId, userId);
+          response.setCreditEntryId(creditEntryId);
+        } catch (ValidationException vex) {
+          throw vex;
+        } catch (Exception ex) {
+          log.error(
+              "Credit charge posting failed for sale {} shop {}: {}",
               purchase.getId(),
               shopId,
               ex.getMessage(),
@@ -1731,6 +1753,102 @@ public class CheckoutService {
     }
 
     log.info("Successfully updated inventory for all items in purchase {}", purchase.getId());
+  }
+
+  /**
+   * Uses {@code purchase.customerName} when set; otherwise loads the name from {@link Customer}
+   * by {@code purchase.customerId}. Falls back to plain {@code Customer} (never show raw ids in
+   * ledger labels).
+   */
+  private String resolveCustomerPartyDisplayNameForCredit(Purchase purchase) {
+    if (purchase == null) {
+      return "Customer";
+    }
+    if (StringUtils.hasText(purchase.getCustomerName())) {
+      return purchase.getCustomerName().trim();
+    }
+    if (!StringUtils.hasText(purchase.getCustomerId())) {
+      return "Customer";
+    }
+    String cid = purchase.getCustomerId().trim();
+    return customerRepository
+        .findById(cid)
+        .map(Customer::getName)
+        .filter(StringUtils::hasText)
+        .map(String::trim)
+        .orElse("Customer");
+  }
+
+  private String postCreditChargeForCompletedSale(
+      Purchase purchase,
+      UpdatePurchaseStatusRequest request,
+      String shopId,
+      String userId) {
+    if (creditService == null || purchase == null) {
+      return null;
+    }
+    BigDecimal total = nzMoney(purchase.getGrandTotal());
+    if (total.signum() <= 0) {
+      return null;
+    }
+
+    String method = normalizePaymentMethod(request.getPaymentMethod());
+    BigDecimal paidNow = resolvePaidNow(total, method, request.getCreditPaidAmount());
+    if (paidNow.compareTo(total) > 0) {
+      throw new ValidationException("Paid now amount cannot exceed grand total");
+    }
+    BigDecimal outstanding = total.subtract(paidNow).setScale(4, RoundingMode.HALF_UP);
+    if (outstanding.signum() <= 0) {
+      return null;
+    }
+
+    if (!StringUtils.hasText(purchase.getCustomerId())) {
+      throw new ValidationException(
+          "Customer must be selected for credit/split sale so due can be tracked.");
+    }
+
+    com.inventory.credit.rest.dto.request.CreateCreditChargeRequest charge =
+        new com.inventory.credit.rest.dto.request.CreateCreditChargeRequest();
+    charge.setPartyType(com.inventory.credit.domain.model.CreditPartyType.CUSTOMER);
+    charge.setPartyId(purchase.getCustomerId().trim());
+    charge.setPartyDisplayName(resolveCustomerPartyDisplayNameForCredit(purchase));
+    charge.setPartyPhone(null);
+    charge.setAmount(outstanding);
+    charge.setReferenceType("SALE");
+    charge.setReferenceId(purchase.getId());
+    charge.setSourceKey("SALE:CREDIT:" + purchase.getId());
+    charge.setNote(
+        "Sale due"
+            + (StringUtils.hasText(purchase.getInvoiceNo())
+                ? " · Inv " + purchase.getInvoiceNo().trim()
+                : ""));
+
+    var entry = creditService.createCharge(shopId, userId, charge);
+    return entry != null ? entry.getId() : null;
+  }
+
+  private static String normalizePaymentMethod(String raw) {
+    if (!StringUtils.hasText(raw)) {
+      return "CASH";
+    }
+    return raw.trim().toUpperCase();
+  }
+
+  private static BigDecimal resolvePaidNow(
+      BigDecimal total,
+      String paymentMethod,
+      BigDecimal requestedPaidNow) {
+    if ("CREDIT".equals(paymentMethod)) {
+      return nzMoney(requestedPaidNow);
+    }
+    if (requestedPaidNow != null && requestedPaidNow.signum() >= 0) {
+      return requestedPaidNow.setScale(4, RoundingMode.HALF_UP);
+    }
+    return total;
+  }
+
+  private static BigDecimal nzMoney(BigDecimal v) {
+    return (v == null ? BigDecimal.ZERO : v).setScale(4, RoundingMode.HALF_UP);
   }
 
 }

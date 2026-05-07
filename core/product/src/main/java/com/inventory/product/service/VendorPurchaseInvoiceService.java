@@ -205,6 +205,8 @@ public class VendorPurchaseInvoiceService {
         e.getInvoiceNo(),
         e.getInvoiceDate(),
         e.getInvoiceTotal(),
+        e.getPaymentMethod(),
+        e.getPaidAmount(),
         lineCount,
         e.getCreatedAt(),
         e.getSynthetic(),
@@ -227,6 +229,8 @@ public class VendorPurchaseInvoiceService {
     dto.setOtherCharges(e.getOtherCharges());
     dto.setRoundOff(e.getRoundOff());
     dto.setInvoiceTotal(e.getInvoiceTotal());
+    dto.setPaymentMethod(e.getPaymentMethod());
+    dto.setPaidAmount(e.getPaidAmount());
     dto.setCreatedAt(e.getCreatedAt());
     dto.setSynthetic(e.getSynthetic());
     dto.setLegacyLotId(e.getLegacyLotId());

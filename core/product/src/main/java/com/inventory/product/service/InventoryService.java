@@ -110,6 +110,9 @@ public class InventoryService {
   @Autowired
   private PurchaseJournalService purchaseJournalService;
 
+  @Autowired(required = false)
+  private com.inventory.credit.service.CreditService creditService;
+
   /**
    * Parse invoice image and extract inventory items using OCR.
    * Validates the image file and converts parsed items to CreateInventoryItemRequest format.
@@ -248,6 +251,8 @@ public class InventoryService {
       pendingInvoice.setOtherCharges(invReq.getOtherCharges());
       pendingInvoice.setRoundOff(invReq.getRoundOff());
       pendingInvoice.setInvoiceTotal(invReq.getInvoiceTotal());
+      pendingInvoice.setPaymentMethod(invReq.getPaymentMethod());
+      pendingInvoice.setPaidAmount(invReq.getPaidAmount());
     }
 
     try {
@@ -305,9 +310,11 @@ public class InventoryService {
     log.info("Bulk creation completed: {} created, {} failed", createdItems.size(), failedCount);
 
     String accountingJournalEntryId = null;
+    String creditEntryId = null;
     if (returnedInvoiceId != null) {
       var invOpt = vendorPurchaseInvoiceRepository.findById(returnedInvoiceId);
       if (invOpt.isPresent()) {
+        VendorPurchaseInvoice persistedInvoice = invOpt.get();
         VendorPurchaseLedgerInput ledgerIn = toVendorPurchaseLedgerInput(invOpt.get());
         try {
           accountingJournalEntryId =
@@ -323,6 +330,18 @@ public class InventoryService {
         } catch (Exception ex) {
           log.error(
               "Accounting PURCHASE journal failed for vendor invoice {} shop {} — stock-in kept: {}",
+              returnedInvoiceId,
+              shopId,
+              ex.getMessage(),
+              ex);
+        }
+        try {
+          creditEntryId = postCreditChargeForVendorInvoice(persistedInvoice, shopId, userId);
+        } catch (ValidationException vex) {
+          throw vex;
+        } catch (Exception ex) {
+          log.error(
+              "Credit charge posting failed for vendor invoice {} shop {}: {}",
               returnedInvoiceId,
               shopId,
               ex.getMessage(),
@@ -346,8 +365,11 @@ public class InventoryService {
           ProductMetricsConstants.MODULE);
     }
 
-    return inventoryMapper.toBulkCreateInventoryResponse(
-        createdItems, failedCount, returnedInvoiceId, accountingJournalEntryId);
+    BulkCreateInventoryResponse out =
+        inventoryMapper.toBulkCreateInventoryResponse(
+            createdItems, failedCount, returnedInvoiceId, accountingJournalEntryId);
+    out.setCreditEntryId(creditEntryId);
+    return out;
   }
 
   /**
@@ -424,6 +446,88 @@ public class InventoryService {
         inv.getInvoiceTotal(),
         lines,
         vendorDisplayName);
+  }
+
+  private String postCreditChargeForVendorInvoice(
+      VendorPurchaseInvoice inv, String shopId, String userId) {
+    if (creditService == null || inv == null) {
+      return null;
+    }
+    BigDecimal total = deriveInvoiceTotalForCredit(inv);
+    if (total.signum() <= 0) {
+      return null;
+    }
+    String method = normalizePaymentMethod(inv.getPaymentMethod());
+    BigDecimal paidNow = resolveVendorPaidNow(total, method, inv.getPaidAmount());
+    if (paidNow.compareTo(total) > 0) {
+      throw new ValidationException("Paid amount cannot exceed vendor invoice total");
+    }
+    BigDecimal outstanding = total.subtract(paidNow).setScale(4, RoundingMode.HALF_UP);
+    if (outstanding.signum() <= 0) {
+      return null;
+    }
+
+    String vendorId = StringUtils.hasText(inv.getVendorId()) ? inv.getVendorId().trim() : null;
+    if (!StringUtils.hasText(vendorId)) {
+      throw new ValidationException("Vendor id is required to track vendor credit");
+    }
+    String vendorName =
+        vendorRepository
+            .findById(vendorId)
+            .map(Vendor::getName)
+            .filter(StringUtils::hasText)
+            .map(String::trim)
+            .orElse("Vendor " + vendorId);
+
+    com.inventory.credit.rest.dto.request.CreateCreditChargeRequest charge =
+        new com.inventory.credit.rest.dto.request.CreateCreditChargeRequest();
+    charge.setPartyType(com.inventory.credit.domain.model.CreditPartyType.VENDOR);
+    charge.setPartyId(vendorId);
+    charge.setPartyDisplayName(vendorName);
+    charge.setAmount(outstanding);
+    charge.setReferenceType("PURCHASE");
+    charge.setReferenceId(inv.getId());
+    charge.setSourceKey("PURCHASE:CREDIT:" + inv.getId());
+    charge.setNote(
+        "Vendor payable"
+            + (StringUtils.hasText(inv.getInvoiceNo()) ? " · Inv " + inv.getInvoiceNo().trim() : ""));
+    var entry = creditService.createCharge(shopId, userId, charge);
+    return entry != null ? entry.getId() : null;
+  }
+
+  private static BigDecimal deriveInvoiceTotalForCredit(VendorPurchaseInvoice inv) {
+    BigDecimal invTotal = nz(inv.getInvoiceTotal());
+    if (invTotal.signum() > 0) {
+      return invTotal.setScale(4, RoundingMode.HALF_UP);
+    }
+    return nz(inv.getLineSubTotal())
+        .add(nz(inv.getTaxTotal()))
+        .add(nz(inv.getShippingCharge()))
+        .add(nz(inv.getOtherCharges()))
+        .add(nz(inv.getRoundOff()))
+        .setScale(4, RoundingMode.HALF_UP);
+  }
+
+  private static String normalizePaymentMethod(String raw) {
+    if (!StringUtils.hasText(raw)) {
+      return "CASH";
+    }
+    return raw.trim().toUpperCase();
+  }
+
+  private static BigDecimal resolveVendorPaidNow(
+      BigDecimal total, String paymentMethod, BigDecimal paidAmount) {
+    if ("CREDIT".equals(paymentMethod)) {
+      return nz(paidAmount).setScale(4, RoundingMode.HALF_UP);
+    }
+    if (paidAmount != null && paidAmount.signum() >= 0) {
+      return paidAmount.setScale(4, RoundingMode.HALF_UP);
+    }
+    return total;
+  }
+
+  private static BigDecimal nz(BigDecimal v) {
+    return v != null ? v : BigDecimal.ZERO;
   }
 
   public InventoryReceiptResponse create(CreateInventoryRequest request, String userId, String shopId) {

@@ -22,6 +22,11 @@
             <version>1.0.0</version>
         </dependency>
         <dependency>
+            <groupId>com.inventory</groupId>
+            <artifactId>credit</artifactId>
+            <version>1.0.0</version>
+        </dependency>
+        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-aop</artifactId>
         </dependency>
