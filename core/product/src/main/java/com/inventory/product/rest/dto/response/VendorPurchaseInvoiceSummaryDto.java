@@ -18,6 +18,8 @@ public class VendorPurchaseInvoiceSummaryDto {
   private String invoiceNo;
   private Instant invoiceDate;
   private BigDecimal invoiceTotal;
+  private String paymentMethod;
+  private BigDecimal paidAmount;
   private int lineCount;
   private Instant createdAt;
   private Boolean synthetic;

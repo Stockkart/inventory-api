@@ -34,6 +34,8 @@ public class VendorPurchaseInvoice {
   private BigDecimal otherCharges;
   private BigDecimal roundOff;
   private BigDecimal invoiceTotal;
+  private String paymentMethod;
+  private BigDecimal paidAmount;
   /**
    * True when invoice number was generated (AUTO-*) because the user did not enter one.
    * User-entered invoices are non-synthetic.

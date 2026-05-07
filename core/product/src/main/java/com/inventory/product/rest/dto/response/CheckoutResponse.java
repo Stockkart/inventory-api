@@ -41,5 +41,7 @@ public class CheckoutResponse {
   String customerPhone;
   /** Set when checkout completion posts a SALE journal entry (general ledger id). */
   String accountingJournalEntryId;
+  /** Set when checkout completion creates a customer due in credit ledger. */
+  String creditEntryId;
 }
 

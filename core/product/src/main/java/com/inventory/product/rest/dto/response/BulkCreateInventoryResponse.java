@@ -27,6 +27,8 @@ public class BulkCreateInventoryResponse {
 
   /** Present when a PURCHASE journal was posted for {@link #vendorPurchaseInvoiceId}. */
   private String accountingJournalEntryId;
+  /** Present when vendor purchase created/updated vendor credit ledger due. */
+  private String creditEntryId;
 
   @JsonProperty("createdCount")
   public int getCreatedCount() {

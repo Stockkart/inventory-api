@@ -4,6 +4,7 @@ import com.inventory.accounting.domain.model.AccountType;
 import com.inventory.accounting.domain.model.DefaultAccountCodes;
 import com.inventory.accounting.domain.model.JournalPostingSource;
 import com.inventory.accounting.domain.model.GlAccount;
+import com.inventory.accounting.domain.model.PartyType;
 import com.inventory.accounting.domain.repository.GlAccountRepository;
 import com.inventory.accounting.service.PostingService.PostingLineDraft;
 import com.inventory.common.exception.ValidationException;
@@ -21,10 +22,10 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Posts when checkout completes: debits an asset receipt account (typically {@link
- * DefaultAccountCodes#CASH} or a manual bank); credits revenue
- * plus consolidated GST output. Purchase/stock-in cost is recognised on {@link
- * DefaultAccountCodes#PURCHASES_EXPENSE} via {@link PurchaseJournalService}, not on cash.
+ * Posts when checkout completes: credits revenue and GST output; debits assets — cash/bank for the
+ * amount received now, and {@link DefaultAccountCodes#ACCOUNTS_RECEIVABLE} for any unpaid balance
+ * (same accrual idea as vendor purchases crediting {@code VEN-*} payables). Purchase cost is still
+ * recognised on {@link DefaultAccountCodes#PURCHASES_EXPENSE} via {@link PurchaseJournalService}.
  */
 @Service
 @RequiredArgsConstructor
@@ -49,7 +50,9 @@ public class SaleJournalService {
       String paymentMethod,
       String receiptGlAccountCode,
       Instant journalDate,
-      String userId) {
+      String userId,
+      BigDecimal amountReceivedNow,
+      String customerIdForReceivable) {
 
     glBootstrapService.ensureDefaultsForShop(shopId);
 
@@ -113,28 +116,77 @@ public class SaleJournalService {
       payMemo = payMemo.substring(0, 280);
     }
 
-    String debitCode = resolveReceiptAccountCode(receiptGlAccountCode);
-    GlAccount receiptAcc =
-        glAccountRepository
-            .findFirstByShopIdAndCodeOrderByIdAsc(shopId, debitCode)
-            .orElseThrow(
-                () ->
-                    new ValidationException(
-                        "Unknown receipt GL account \""
-                            + debitCode
-                            + "\". Use CASH or add a bank/asset account under Chart of accounts."));
-
-    if (!receiptAcc.isActive()) {
-      throw new ValidationException("Receipt account is inactive: " + debitCode);
+    BigDecimal immediate = scale(nz(amountReceivedNow));
+    if (immediate.compareTo(gt) > 0) {
+      throw new ValidationException("Amount received now cannot exceed sale total");
     }
-    if (receiptAcc.getAccountType() != AccountType.ASSET) {
+    BigDecimal arAmt = scale(gt.subtract(immediate));
+    if (arAmt.signum() > 0 && !StringUtils.hasText(customerIdForReceivable)) {
       throw new ValidationException(
-          "Sale receipts must debit an ASSET account (e.g. CASH or a bank account). Got: "
-              + receiptAcc.getAccountType());
+          "Customer is required on the sale to post accounts receivable for the unpaid portion.");
+    }
+
+    List<PostingLineDraft> debitDrafts = new ArrayList<>();
+    if (immediate.signum() > 0) {
+      String debitCode = resolveReceiptAccountCode(receiptGlAccountCode);
+      GlAccount receiptAcc =
+          glAccountRepository
+              .findFirstByShopIdAndCodeOrderByIdAsc(shopId, debitCode)
+              .orElseThrow(
+                  () ->
+                      new ValidationException(
+                          "Unknown receipt GL account \""
+                              + debitCode
+                              + "\". Use CASH or add a bank/asset account under Chart of accounts."));
+
+      if (!receiptAcc.isActive()) {
+        throw new ValidationException("Receipt account is inactive: " + debitCode);
+      }
+      if (receiptAcc.getAccountType() != AccountType.ASSET) {
+        throw new ValidationException(
+            "Sale receipts must debit an ASSET account (e.g. CASH or a bank account). Got: "
+                + receiptAcc.getAccountType());
+      }
+      debitDrafts.add(
+          new PostingLineDraft(receiptAcc.getCode(), immediate, null, payMemo, null, null));
+    }
+    if (arAmt.signum() > 0) {
+      GlAccount arAcc =
+          glAccountRepository
+              .findFirstByShopIdAndCodeOrderByIdAsc(shopId, DefaultAccountCodes.ACCOUNTS_RECEIVABLE)
+              .orElseThrow(
+                  () ->
+                      new ValidationException(
+                          "Missing nominal account "
+                              + DefaultAccountCodes.ACCOUNTS_RECEIVABLE
+                              + ". Run chart bootstrap."));
+
+      if (!arAcc.isActive()) {
+        throw new ValidationException(
+            "Accounts receivable account is inactive: " + DefaultAccountCodes.ACCOUNTS_RECEIVABLE);
+      }
+      if (arAcc.getAccountType() != AccountType.ASSET) {
+        throw new ValidationException(
+            "Accounts receivable must be an ASSET account. Got: " + arAcc.getAccountType());
+      }
+      String arMemo =
+          "Customer balance due"
+              + (StringUtils.hasText(invoiceNo) ? " · Inv " + invoiceNo.trim() : "");
+      if (arMemo.length() > 280) {
+        arMemo = arMemo.substring(0, 280);
+      }
+      debitDrafts.add(
+          new PostingLineDraft(
+              DefaultAccountCodes.ACCOUNTS_RECEIVABLE,
+              arAmt,
+              null,
+              arMemo,
+              PartyType.CUSTOMER,
+              customerIdForReceivable.trim()));
     }
 
     List<PostingLineDraft> drafts = new ArrayList<>();
-    drafts.add(new PostingLineDraft(receiptAcc.getCode(), gt, null, payMemo, null, null));
+    drafts.addAll(debitDrafts);
 
     drafts.add(
         new PostingLineDraft(

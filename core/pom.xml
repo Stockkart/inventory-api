@@ -18,6 +18,7 @@
         <module>ocr</module>
         <module>taxation</module>
         <module>accounting</module>
+        <module>credit</module>
     </modules>
 
     <properties>
