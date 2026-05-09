@@ -23,6 +23,9 @@ public class Gstr1ReportService {
   @Autowired
   private Gstr1DataAggregator dataAggregator;
 
+  @Autowired
+  private Gstr1OfflinePortalJsonService gstr1OfflinePortalJsonService;
+
   private static final List<Gstr1TabWriter> TAB_WRITERS = List.of(
       new Gstr1B2bTabWriter(),
       new Gstr1B2clTabWriter(),
@@ -52,5 +55,11 @@ public class Gstr1ReportService {
       workbook.write(out);
       return out.toByteArray();
     }
+  }
+
+  /** GST offline utility / portal style JSON ({@code fp}, {@code b2b}, {@code b2cs}, {@code hsn}, …). */
+  public byte[] generateOfflinePortalJson(String shopId, String period) {
+    Gstr1ReportContext context = dataAggregator.buildContext(shopId, period);
+    return gstr1OfflinePortalJsonService.toJsonUtf8(context);
   }
 }

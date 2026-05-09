@@ -78,4 +78,31 @@ public class Gstr1Controller {
 
     return ResponseEntity.ok().headers(headers).body(bytes);
   }
+
+  /**
+   * Download GSTR-1 as offline-return JSON matching the GST utility layout (gstin/fp/version/hash/
+   * b2b/b2cs/hsn/doc_issue).
+   */
+  @GetMapping("/download/offline-return")
+  public ResponseEntity<byte[]> downloadOfflinePortalJson(
+      @RequestParam String period,
+      HttpServletRequest httpRequest) {
+
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    if (!StringUtils.hasText(shopId)) {
+      throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "Unauthorized access to taxation");
+    }
+
+    YearMonth ym = YearMonth.parse(period);
+    String fp = String.format(Locale.ROOT, "%02d%d", ym.getMonthValue(), ym.getYear());
+    byte[] bytes = gstr1ReportService.generateOfflinePortalJson(shopId, period);
+    String filename = "GSTR1_" + fp + ".json";
+
+    HttpHeaders headers = new HttpHeaders();
+    headers.setContentType(MediaType.APPLICATION_JSON);
+    headers.setContentDispositionFormData("attachment", filename);
+    headers.setContentLength(bytes.length);
+
+    return ResponseEntity.ok().headers(headers).body(bytes);
+  }
 }
