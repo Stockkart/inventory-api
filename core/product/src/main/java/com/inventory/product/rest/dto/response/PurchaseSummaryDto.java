@@ -10,6 +10,7 @@ import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 @Data
 @NoArgsConstructor
@@ -37,6 +38,7 @@ public class PurchaseSummaryDto {
   private Instant soldAt;
   private PurchaseStatus status;
   private String paymentMethod;
+  private Map<String, BigDecimal> splitAmounts;
   private String customerId;
   private String customerName;
   private String customerAddress;

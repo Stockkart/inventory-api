@@ -32,6 +32,10 @@ public class GlBootstrapService {
               "Cash — receipts when customers pay you (checkout, cash-in)",
               AccountType.ASSET),
           new Seed(
+              DefaultAccountCodes.BANK,
+              "Bank — online/UPI/card payments (for bank reconciliation)",
+              AccountType.ASSET),
+          new Seed(
               DefaultAccountCodes.ACCOUNTS_RECEIVABLE,
               "Accounts receivable (customers)",
               AccountType.ASSET),

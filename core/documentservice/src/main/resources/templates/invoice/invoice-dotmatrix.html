@@ -49,7 +49,7 @@
       <div class="cell" style="width: 50%;">
         <div><strong th:text="${billingMode == 'BASIC' ? 'Challan No.' : 'Invoice'}">Invoice:</strong> <span th:text="${invoiceNo}">INV</span></div>
         <div><strong>Date:</strong> <span th:text="${invoiceDate}">DD-MM-YYYY</span> <span th:text="${invoiceTime}">TIME</span></div>
-        <div th:if="${paymentMethod != null}"><strong>Pay:</strong> <span th:text="${paymentMethod}">CASH</span></div>
+        <div th:if="${paymentMethod != null}"><strong>Pay:</strong> <span th:text="${paymentMethod == 'CASH_ONLINE' ? 'Cash + Online' : (paymentMethod == 'ONLINE_CREDIT' ? 'Online + Credit' : (paymentMethod == 'CREDIT_CASH' ? 'Credit + Cash' : paymentMethod))}">CASH</span></div>
       </div>
       <div class="cell right" style="width: 50%;">
         <div class="h1" th:text="${shopName}">SHOP NAME</div>

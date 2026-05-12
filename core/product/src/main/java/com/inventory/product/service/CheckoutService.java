@@ -244,6 +244,7 @@ public class CheckoutService {
       // Update status and payment method
       purchase.setStatus(requestedStatus);
       purchase.setPaymentMethod(request.getPaymentMethod());
+      purchase.setSplitAmounts(request.getSplitAmounts());
       purchase.setUpdatedAt(Instant.now());
       purchase = purchaseRepository.save(purchase);
 
@@ -269,7 +270,7 @@ public class CheckoutService {
           Instant journalDt = purchase.getSoldAt() != null ? purchase.getSoldAt() : Instant.now();
           BigDecimal saleTotal = nzMoney(purchase.getGrandTotal());
           String method = normalizePaymentMethod(request.getPaymentMethod());
-          BigDecimal paidNow = resolvePaidNow(saleTotal, method, request.getCreditPaidAmount());
+          BigDecimal paidNow = resolvePaidNow(saleTotal, method, request.getCreditPaidAmount(), request.getSplitAmounts());
           saleJournalService
               .recordRetailSaleLedger(
                   shopId,
@@ -285,7 +286,9 @@ public class CheckoutService {
                   journalDt,
                   userId,
                   paidNow,
-                  purchase.getCustomerId())
+                  purchase.getCustomerId(),
+                  request.getSplitAmounts(),
+                  request.getBankGlAccountCode())
               .ifPresent(response::setAccountingJournalEntryId);
         } catch (ValidationException vex) {
           throw vex;
@@ -1793,7 +1796,7 @@ public class CheckoutService {
     }
 
     String method = normalizePaymentMethod(request.getPaymentMethod());
-    BigDecimal paidNow = resolvePaidNow(total, method, request.getCreditPaidAmount());
+    BigDecimal paidNow = resolvePaidNow(total, method, request.getCreditPaidAmount(), request.getSplitAmounts());
     if (paidNow.compareTo(total) > 0) {
       throw new ValidationException("Paid now amount cannot exceed grand total");
     }
@@ -1837,14 +1840,35 @@ public class CheckoutService {
   private static BigDecimal resolvePaidNow(
       BigDecimal total,
       String paymentMethod,
-      BigDecimal requestedPaidNow) {
+      BigDecimal requestedPaidNow,
+      java.util.Map<String, BigDecimal> splitAmounts) {
+    if (splitAmounts != null && !splitAmounts.isEmpty()) {
+      BigDecimal sum = BigDecimal.ZERO;
+      for (java.util.Map.Entry<String, BigDecimal> e : splitAmounts.entrySet()) {
+        if (!"CREDIT".equalsIgnoreCase(e.getKey()) && e.getValue() != null) {
+          sum = sum.add(e.getValue());
+        }
+      }
+      return sum.setScale(4, RoundingMode.HALF_UP);
+    }
     if ("CREDIT".equals(paymentMethod)) {
+      return nzMoney(requestedPaidNow);
+    }
+    if ("ONLINE_CREDIT".equals(paymentMethod) || "CREDIT_CASH".equals(paymentMethod)) {
       return nzMoney(requestedPaidNow);
     }
     if (requestedPaidNow != null && requestedPaidNow.signum() >= 0) {
       return requestedPaidNow.setScale(4, RoundingMode.HALF_UP);
     }
     return total;
+  }
+
+  @SuppressWarnings("unused")
+  private static BigDecimal resolvePaidNow(
+      BigDecimal total,
+      String paymentMethod,
+      BigDecimal requestedPaidNow) {
+    return resolvePaidNow(total, paymentMethod, requestedPaidNow, null);
   }
 
   private static BigDecimal nzMoney(BigDecimal v) {

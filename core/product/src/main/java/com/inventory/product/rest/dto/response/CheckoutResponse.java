@@ -9,6 +9,7 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 @Data
 @NoArgsConstructor
@@ -34,6 +35,7 @@ public class CheckoutResponse {
   BigDecimal totalProfit;     // Margin: revenueBeforeTax − totalCost
   BigDecimal marginPercent;   // Margin: (totalProfit / revenueBeforeTax) × 100
   String paymentMethod;
+  Map<String, BigDecimal> splitAmounts;
   PurchaseStatus status;
   String customerId;
   String customerName;

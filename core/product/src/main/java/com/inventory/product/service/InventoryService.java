@@ -253,6 +253,8 @@ public class InventoryService {
       pendingInvoice.setInvoiceTotal(invReq.getInvoiceTotal());
       pendingInvoice.setPaymentMethod(invReq.getPaymentMethod());
       pendingInvoice.setPaidAmount(invReq.getPaidAmount());
+      pendingInvoice.setSplitAmounts(invReq.getSplitAmounts());
+      pendingInvoice.setBankGlAccountCode(invReq.getBankGlAccountCode());
     }
 
     try {
@@ -445,7 +447,11 @@ public class InventoryService {
         inv.getRoundOff(),
         inv.getInvoiceTotal(),
         lines,
-        vendorDisplayName);
+        vendorDisplayName,
+        inv.getPaymentMethod(),
+        inv.getPaidAmount(),
+        inv.getSplitAmounts(),
+        inv.getBankGlAccountCode());
   }
 
   private String postCreditChargeForVendorInvoice(
@@ -458,7 +464,7 @@ public class InventoryService {
       return null;
     }
     String method = normalizePaymentMethod(inv.getPaymentMethod());
-    BigDecimal paidNow = resolveVendorPaidNow(total, method, inv.getPaidAmount());
+    BigDecimal paidNow = resolveVendorPaidNow(total, method, inv.getPaidAmount(), inv.getSplitAmounts());
     if (paidNow.compareTo(total) > 0) {
       throw new ValidationException("Paid amount cannot exceed vendor invoice total");
     }
@@ -517,7 +523,23 @@ public class InventoryService {
 
   private static BigDecimal resolveVendorPaidNow(
       BigDecimal total, String paymentMethod, BigDecimal paidAmount) {
-    if ("CREDIT".equals(paymentMethod)) {
+    return resolveVendorPaidNow(total, paymentMethod, paidAmount, null);
+  }
+
+  private static BigDecimal resolveVendorPaidNow(
+      BigDecimal total, String paymentMethod, BigDecimal paidAmount,
+      java.util.Map<String, java.math.BigDecimal> splitAmounts) {
+    if (splitAmounts != null && !splitAmounts.isEmpty()) {
+      java.math.BigDecimal sum = java.math.BigDecimal.ZERO;
+      for (java.util.Map.Entry<String, java.math.BigDecimal> e : splitAmounts.entrySet()) {
+        if (!"CREDIT".equalsIgnoreCase(e.getKey()) && e.getValue() != null) {
+          sum = sum.add(e.getValue());
+        }
+      }
+      return sum.setScale(4, RoundingMode.HALF_UP);
+    }
+    if ("CREDIT".equals(paymentMethod) || "ONLINE_CREDIT".equals(paymentMethod)
+        || "CREDIT_CASH".equals(paymentMethod)) {
       return nz(paidAmount).setScale(4, RoundingMode.HALF_UP);
     }
     if (paidAmount != null && paidAmount.signum() >= 0) {

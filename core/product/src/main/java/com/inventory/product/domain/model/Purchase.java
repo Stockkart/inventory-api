@@ -11,6 +11,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 @Data
 @NoArgsConstructor
@@ -46,6 +47,7 @@ public class Purchase {
   private Instant soldAt;
   private boolean valid;
   private String paymentMethod;
+  private Map<String, BigDecimal> splitAmounts;
   private PurchaseStatus status;
   private String customerId;
   private String customerName; // Used when only name is provided without phone

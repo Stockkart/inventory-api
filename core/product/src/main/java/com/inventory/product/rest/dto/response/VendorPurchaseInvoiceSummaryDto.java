@@ -6,6 +6,7 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Map;
 
 @Data
 @NoArgsConstructor
@@ -20,6 +21,7 @@ public class VendorPurchaseInvoiceSummaryDto {
   private BigDecimal invoiceTotal;
   private String paymentMethod;
   private BigDecimal paidAmount;
+  private Map<String, BigDecimal> splitAmounts;
   private int lineCount;
   private Instant createdAt;
   private Boolean synthetic;

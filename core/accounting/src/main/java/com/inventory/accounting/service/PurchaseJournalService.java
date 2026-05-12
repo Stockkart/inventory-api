@@ -16,6 +16,7 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -109,26 +110,60 @@ public class PurchaseJournalService {
               null));
     }
 
-    GlAccount vendorAp =
-        vendorPayableNominalService.resolveOrCreateVendorPayable(
-            shopId, inv.vendorId(), inv.vendorDisplayName());
+    List<PaymentMethodResolver.ReceiptAllocation> allocations =
+        PaymentMethodResolver.resolveAllocations(
+            inv.paymentMethod(), payable, inv.splitAmounts(), inv.paidAmount(),
+            inv.bankGlAccountCode());
 
-    String apMemo =
-        "Purchase / stock-in"
+    BigDecimal creditPortion = PaymentMethodResolver.computeCreditAmount(allocations);
+    BigDecimal paidPortion = PaymentMethodResolver.computePaidNow(allocations);
+
+    if (paidPortion.signum() > 0) {
+      for (PaymentMethodResolver.ReceiptAllocation alloc : allocations) {
+        if (alloc.isCredit()) continue;
+        String creditCode = alloc.glAccountCode();
+        String creditMemo = "Paid to vendor (" + creditCode.toLowerCase() + ")"
             + (StringUtils.hasText(invNo) ? " · Inv " + invNo.trim().replace('\n', ' ') : "");
+        if (creditMemo.length() > 280) creditMemo = creditMemo.substring(0, 280);
+        drafts.add(
+            new PostingLineDraft(creditCode, null, alloc.amount(), creditMemo, null, null));
+      }
+    }
 
-    drafts.add(
-        new PostingLineDraft(
-            vendorAp.getCode(),
-            null,
-            payable,
-            apMemo.length() > 280 ? apMemo.substring(0, 280) : apMemo,
-            PartyType.VENDOR,
-            inv.vendorId().trim()));
+    if (creditPortion.signum() > 0) {
+      GlAccount vendorAp =
+          vendorPayableNominalService.resolveOrCreateVendorPayable(
+              shopId, inv.vendorId(), inv.vendorDisplayName());
+      String apMemo =
+          "Purchase / stock-in (credit)"
+              + (StringUtils.hasText(invNo) ? " · Inv " + invNo.trim().replace('\n', ' ') : "");
+      if (apMemo.length() > 280) apMemo = apMemo.substring(0, 280);
+      drafts.add(
+          new PostingLineDraft(
+              vendorAp.getCode(), null, creditPortion, apMemo,
+              PartyType.VENDOR, inv.vendorId().trim()));
+    }
 
+    if (paidPortion.signum() <= 0 && creditPortion.signum() <= 0) {
+      GlAccount vendorAp =
+          vendorPayableNominalService.resolveOrCreateVendorPayable(
+              shopId, inv.vendorId(), inv.vendorDisplayName());
+      String apMemo =
+          "Purchase / stock-in"
+              + (StringUtils.hasText(invNo) ? " · Inv " + invNo.trim().replace('\n', ' ') : "");
+      if (apMemo.length() > 280) apMemo = apMemo.substring(0, 280);
+      drafts.add(
+          new PostingLineDraft(
+              vendorAp.getCode(), null, payable, apMemo,
+              PartyType.VENDOR, inv.vendorId().trim()));
+    }
+
+    String methodLabel = StringUtils.hasText(inv.paymentMethod())
+        ? " · " + inv.paymentMethod().trim() : "";
     String desc =
         "Purchase/stock-in"
-            + (StringUtils.hasText(invNo) ? " · " + invNo.trim().replace('\n', ' ') : "");
+            + (StringUtils.hasText(invNo) ? " · " + invNo.trim().replace('\n', ' ') : "")
+            + methodLabel;
 
     Instant journalDate =
         inv.invoiceDate() != null ? inv.invoiceDate() : nzInstant(inv.createdAt());

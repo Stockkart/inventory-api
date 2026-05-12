@@ -19,6 +19,7 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -53,6 +54,53 @@ public class SaleJournalService {
       String userId,
       BigDecimal amountReceivedNow,
       String customerIdForReceivable) {
+    return recordRetailSaleLedger(
+        shopId, purchaseId, invoiceNo, grandTotal, revenueBeforeTax,
+        sgstAmount, cgstAmount, taxTotal, paymentMethod, receiptGlAccountCode,
+        journalDate, userId, amountReceivedNow, customerIdForReceivable, null);
+  }
+
+  @Transactional
+  public Optional<String> recordRetailSaleLedger(
+      String shopId,
+      String purchaseId,
+      String invoiceNo,
+      BigDecimal grandTotal,
+      BigDecimal revenueBeforeTax,
+      BigDecimal sgstAmount,
+      BigDecimal cgstAmount,
+      BigDecimal taxTotal,
+      String paymentMethod,
+      String receiptGlAccountCode,
+      Instant journalDate,
+      String userId,
+      BigDecimal amountReceivedNow,
+      String customerIdForReceivable,
+      Map<String, BigDecimal> splitAmounts) {
+    return recordRetailSaleLedger(
+        shopId, purchaseId, invoiceNo, grandTotal, revenueBeforeTax,
+        sgstAmount, cgstAmount, taxTotal, paymentMethod, receiptGlAccountCode,
+        journalDate, userId, amountReceivedNow, customerIdForReceivable, splitAmounts, null);
+  }
+
+  @Transactional
+  public Optional<String> recordRetailSaleLedger(
+      String shopId,
+      String purchaseId,
+      String invoiceNo,
+      BigDecimal grandTotal,
+      BigDecimal revenueBeforeTax,
+      BigDecimal sgstAmount,
+      BigDecimal cgstAmount,
+      BigDecimal taxTotal,
+      String paymentMethod,
+      String receiptGlAccountCode,
+      Instant journalDate,
+      String userId,
+      BigDecimal amountReceivedNow,
+      String customerIdForReceivable,
+      Map<String, BigDecimal> splitAmounts,
+      String bankGlAccountCode) {
 
     glBootstrapService.ensureDefaultsForShop(shopId);
 
@@ -116,73 +164,67 @@ public class SaleJournalService {
       payMemo = payMemo.substring(0, 280);
     }
 
-    BigDecimal immediate = scale(nz(amountReceivedNow));
-    if (immediate.compareTo(gt) > 0) {
-      throw new ValidationException("Amount received now cannot exceed sale total");
-    }
-    BigDecimal arAmt = scale(gt.subtract(immediate));
+    String effectiveBankCode = StringUtils.hasText(bankGlAccountCode)
+        ? bankGlAccountCode.trim().toUpperCase(Locale.ROOT)
+        : (StringUtils.hasText(receiptGlAccountCode) ? receiptGlAccountCode.trim().toUpperCase(Locale.ROOT) : null);
+
+    List<PaymentMethodResolver.ReceiptAllocation> allocations =
+        PaymentMethodResolver.resolveAllocations(
+            paymentMethod, gt, splitAmounts, amountReceivedNow, effectiveBankCode);
+
+    BigDecimal immediate = PaymentMethodResolver.computePaidNow(allocations);
+    BigDecimal arAmt = PaymentMethodResolver.computeCreditAmount(allocations);
+
     if (arAmt.signum() > 0 && !StringUtils.hasText(customerIdForReceivable)) {
       throw new ValidationException(
           "Customer is required on the sale to post accounts receivable for the unpaid portion.");
     }
 
     List<PostingLineDraft> debitDrafts = new ArrayList<>();
-    if (immediate.signum() > 0) {
-      String debitCode = resolveReceiptAccountCode(receiptGlAccountCode);
-      GlAccount receiptAcc =
+    for (PaymentMethodResolver.ReceiptAllocation alloc : allocations) {
+      final String debitCode = alloc.glAccountCode();
+
+      GlAccount acc =
           glAccountRepository
               .findFirstByShopIdAndCodeOrderByIdAsc(shopId, debitCode)
               .orElseThrow(
                   () ->
                       new ValidationException(
-                          "Unknown receipt GL account \""
+                          "Unknown GL account \""
                               + debitCode
-                              + "\". Use CASH or add a bank/asset account under Chart of accounts."));
+                              + "\". Ensure it exists under Chart of accounts."));
 
-      if (!receiptAcc.isActive()) {
-        throw new ValidationException("Receipt account is inactive: " + debitCode);
+      if (!acc.isActive()) {
+        throw new ValidationException("GL account is inactive: " + debitCode);
       }
-      if (receiptAcc.getAccountType() != AccountType.ASSET) {
+      if (acc.getAccountType() != AccountType.ASSET) {
         throw new ValidationException(
-            "Sale receipts must debit an ASSET account (e.g. CASH or a bank account). Got: "
-                + receiptAcc.getAccountType());
+            "Sale receipts must debit an ASSET account. Got: "
+                + acc.getAccountType() + " for " + debitCode);
       }
-      debitDrafts.add(
-          new PostingLineDraft(receiptAcc.getCode(), immediate, null, payMemo, null, null));
-    }
-    if (arAmt.signum() > 0) {
-      GlAccount arAcc =
-          glAccountRepository
-              .findFirstByShopIdAndCodeOrderByIdAsc(shopId, DefaultAccountCodes.ACCOUNTS_RECEIVABLE)
-              .orElseThrow(
-                  () ->
-                      new ValidationException(
-                          "Missing nominal account "
-                              + DefaultAccountCodes.ACCOUNTS_RECEIVABLE
-                              + ". Run chart bootstrap."));
 
-      if (!arAcc.isActive()) {
-        throw new ValidationException(
-            "Accounts receivable account is inactive: " + DefaultAccountCodes.ACCOUNTS_RECEIVABLE);
+      String memo;
+      if (alloc.isCredit()) {
+        memo = "Customer balance due"
+            + (StringUtils.hasText(invoiceNo) ? " · Inv " + invoiceNo.trim() : "");
+      } else {
+        String methodLabel = debitCode.equals(DefaultAccountCodes.BANK) ? "online" : "cash";
+        memo = "Received via " + methodLabel
+            + (StringUtils.hasText(invoiceNo) ? " · Inv " + invoiceNo : "");
       }
-      if (arAcc.getAccountType() != AccountType.ASSET) {
-        throw new ValidationException(
-            "Accounts receivable must be an ASSET account. Got: " + arAcc.getAccountType());
+      if (memo.length() > 280) {
+        memo = memo.substring(0, 280);
       }
-      String arMemo =
-          "Customer balance due"
-              + (StringUtils.hasText(invoiceNo) ? " · Inv " + invoiceNo.trim() : "");
-      if (arMemo.length() > 280) {
-        arMemo = arMemo.substring(0, 280);
+
+      if (alloc.isCredit()) {
+        debitDrafts.add(
+            new PostingLineDraft(
+                debitCode, alloc.amount(), null, memo,
+                PartyType.CUSTOMER, customerIdForReceivable.trim()));
+      } else {
+        debitDrafts.add(
+            new PostingLineDraft(debitCode, alloc.amount(), null, memo, null, null));
       }
-      debitDrafts.add(
-          new PostingLineDraft(
-              DefaultAccountCodes.ACCOUNTS_RECEIVABLE,
-              arAmt,
-              null,
-              arMemo,
-              PartyType.CUSTOMER,
-              customerIdForReceivable.trim()));
     }
 
     List<PostingLineDraft> drafts = new ArrayList<>();
@@ -238,10 +280,4 @@ public class SaleJournalService {
     return scale(v);
   }
 
-  private static String resolveReceiptAccountCode(String receiptGlAccountCode) {
-    if (!StringUtils.hasText(receiptGlAccountCode)) {
-      return DefaultAccountCodes.CASH;
-    }
-    return receiptGlAccountCode.trim().toUpperCase(Locale.ROOT);
-  }
 }

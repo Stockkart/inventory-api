@@ -11,6 +11,8 @@ public final class DefaultAccountCodes {
   private DefaultAccountCodes() {}
 
   public static final String CASH = "CASH";
+  /** Default bank asset account for online/UPI/card payments — enables bank reconciliation. */
+  public static final String BANK = "BANK";
   public static final String ACCOUNTS_RECEIVABLE = "RECEIVABLES";
   public static final String ACCOUNTS_PAYABLE = "PAYABLES";
   public static final String OWNER_EQUITY = "EQUITY";
@@ -28,6 +30,7 @@ public final class DefaultAccountCodes {
   public static Set<String> seededCodesUppercase() {
     return Set.of(
         CASH,
+        BANK,
         ACCOUNTS_RECEIVABLE,
         ACCOUNTS_PAYABLE,
         OWNER_EQUITY,

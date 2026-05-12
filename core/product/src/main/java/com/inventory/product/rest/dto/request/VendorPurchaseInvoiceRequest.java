@@ -4,6 +4,7 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Map;
 
 /**
  * Optional vendor invoice header for bulk stock registration. When omitted, behavior is unchanged.
@@ -19,8 +20,12 @@ public class VendorPurchaseInvoiceRequest {
   private BigDecimal otherCharges;
   private BigDecimal roundOff;
   private BigDecimal invoiceTotal;
-  /** CASH | ONLINE | CREDIT (defaults to CASH when omitted). */
+  /** CASH | ONLINE | CREDIT | CASH_ONLINE | ONLINE_CREDIT | CREDIT_CASH (defaults to CASH). */
   private String paymentMethod;
   /** Optional paid-now amount for split credit purchases. */
   private BigDecimal paidAmount;
+  /** For combination modes: breakdown per sub-method e.g. {CASH: 600, ONLINE: 400}. */
+  private Map<String, BigDecimal> splitAmounts;
+  /** User-selected bank GL account code for online payments (e.g. BANK-AXIS). Falls back to BANK. */
+  private String bankGlAccountCode;
 }

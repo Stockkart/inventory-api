@@ -2,6 +2,7 @@ package com.inventory.product.rest.dto.request;
 
 import com.inventory.product.domain.model.enums.PurchaseStatus;
 import java.math.BigDecimal;
+import java.util.Map;
 import lombok.Data;
 
 @Data
@@ -13,5 +14,9 @@ public class UpdatePurchaseStatusRequest {
   private String receiptGlAccountCode;
   /** Optional paid-now amount for split credit sale (remaining goes to credit ledger). */
   private BigDecimal creditPaidAmount;
+  /** For combination modes (CASH_ONLINE, ONLINE_CREDIT, CREDIT_CASH): breakdown per sub-method. */
+  private Map<String, BigDecimal> splitAmounts;
+  /** User-selected bank GL account code for online payments (e.g. BANK-AXIS). Falls back to BANK. */
+  private String bankGlAccountCode;
 }
 
