@@ -6,8 +6,6 @@ import com.inventory.user.domain.model.Vendor;
 import com.inventory.user.domain.repository.VendorRepository;
 import com.inventory.product.domain.model.VendorPurchaseInvoice;
 import com.inventory.product.domain.model.VendorPurchaseInvoiceLine;
-import com.inventory.accounting.domain.repository.JournalEntryRepository;
-import com.inventory.accounting.service.PurchaseJournalService;
 import com.inventory.product.domain.repository.VendorPurchaseInvoiceRepository;
 import com.inventory.product.rest.dto.response.PageMeta;
 import com.inventory.product.rest.dto.response.VendorPurchaseInvoiceDetailDto;
@@ -38,8 +36,6 @@ public class VendorPurchaseInvoiceService {
   private VendorPurchaseInvoiceRepository vendorPurchaseInvoiceRepository;
 
   @Autowired private VendorRepository vendorRepository;
-
-  @Autowired private JournalEntryRepository journalEntryRepository;
 
   public VendorPurchaseInvoiceListResponse list(String shopId, int page, int size, String query) {
     if (query != null && !query.trim().isEmpty()) {
@@ -110,17 +106,7 @@ public class VendorPurchaseInvoiceService {
                 () ->
                     new ResourceNotFoundException(
                         "Vendor purchase invoice not found: " + id));
-    VendorPurchaseInvoiceDetailDto dto = toDetail(inv);
-    attachAccountingJournalPointer(dto, shopId);
-    return dto;
-  }
-
-  private void attachAccountingJournalPointer(VendorPurchaseInvoiceDetailDto dto, String shopId) {
-    if (dto.getId() == null || shopId == null || shopId.isBlank()) {
-      return;
-    }
-    String key = PurchaseJournalService.PURCHASE_SOURCE_PREFIX + dto.getId();
-    journalEntryRepository.findByShopIdAndSourceKey(shopId.trim(), key).ifPresent(j -> dto.setAccountingJournalEntryId(j.getId()));
+    return toDetail(inv);
   }
 
   private Map<String, String> loadVendorNames(Set<String> vendorIds) {

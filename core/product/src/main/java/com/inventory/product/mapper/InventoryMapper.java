@@ -83,15 +83,13 @@ public interface InventoryMapper {
   default BulkCreateInventoryResponse toBulkCreateInventoryResponse(
       List<InventoryReceiptResponse> items,
       int failedCount,
-      String vendorPurchaseInvoiceId,
-      String accountingJournalEntryId) {
+      String vendorPurchaseInvoiceId) {
     BulkCreateInventoryResponse response = new BulkCreateInventoryResponse();
     response.setItems(items);
     response.setTotalCreated(items != null ? items.size() : 0);
     response.setTotalFailed(failedCount);
     response.setLotId(vendorPurchaseInvoiceId);
     response.setVendorPurchaseInvoiceId(vendorPurchaseInvoiceId);
-    response.setAccountingJournalEntryId(accountingJournalEntryId);
     return response;
   }
 

@@ -100,9 +100,6 @@ public class CheckoutService {
   @Autowired(required = false)
   private com.inventory.metrics.MetricsWrapper metrics;
 
-  @Autowired
-  private com.inventory.accounting.service.SaleJournalService saleJournalService;
-
   @Autowired(required = false)
   private com.inventory.credit.service.CreditService creditService;
 
@@ -265,38 +262,6 @@ public class CheckoutService {
       // Build response
       CheckoutResponse response = purchaseMapper.toCheckoutResponse(purchase);
       if (requestedStatus == PurchaseStatus.COMPLETED) {
-        try {
-          Instant journalDt = purchase.getSoldAt() != null ? purchase.getSoldAt() : Instant.now();
-          BigDecimal saleTotal = nzMoney(purchase.getGrandTotal());
-          String method = normalizePaymentMethod(request.getPaymentMethod());
-          BigDecimal paidNow = resolvePaidNow(saleTotal, method, request.getCreditPaidAmount());
-          saleJournalService
-              .recordRetailSaleLedger(
-                  shopId,
-                  purchase.getId(),
-                  purchase.getInvoiceNo(),
-                  purchase.getGrandTotal(),
-                  purchase.getRevenueBeforeTax(),
-                  purchase.getSgstAmount(),
-                  purchase.getCgstAmount(),
-                  purchase.getTaxTotal(),
-                  purchase.getPaymentMethod(),
-                  request.getReceiptGlAccountCode(),
-                  journalDt,
-                  userId,
-                  paidNow,
-                  purchase.getCustomerId())
-              .ifPresent(response::setAccountingJournalEntryId);
-        } catch (ValidationException vex) {
-          throw vex;
-        } catch (Exception ex) {
-          log.error(
-              "Accounting SALE journal failed for purchase {} shop {} — sale still completed: {}",
-              purchase.getId(),
-              shopId,
-              ex.getMessage(),
-              ex);
-        }
         try {
           String creditEntryId =
               postCreditChargeForCompletedSale(purchase, request, shopId, userId);
