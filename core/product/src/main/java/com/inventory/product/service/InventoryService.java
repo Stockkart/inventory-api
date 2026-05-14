@@ -4,6 +4,7 @@ import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.VendorPurchaseInvoice;
 import com.inventory.product.domain.model.VendorPurchaseInvoiceLine;
 import com.inventory.product.domain.repository.VendorPurchaseInvoiceRepository;
@@ -105,6 +106,15 @@ public class InventoryService {
 
   @Autowired(required = false)
   private com.inventory.credit.service.CreditService creditService;
+
+  @Autowired(required = false)
+  private com.inventory.accounting.api.AccountingFacade accountingFacade;
+
+  @Autowired
+  private com.inventory.product.domain.repository.ShopRepository shopRepository;
+
+  @Autowired
+  private com.inventory.pricing.domain.repository.PricingRepository pricingRepository;
 
   /**
    * Parse invoice image and extract inventory items using OCR.
@@ -319,6 +329,16 @@ public class InventoryService {
               ex.getMessage(),
               ex);
         }
+        try {
+          postAccountingForVendorInvoice(persistedInvoice, shopId, userId);
+        } catch (Exception ex) {
+          log.error(
+              "Accounting posting failed for vendor invoice {} shop {}: {}",
+              returnedInvoiceId,
+              shopId,
+              ex.getMessage(),
+              ex);
+        }
       }
     }
 
@@ -391,6 +411,208 @@ public class InventoryService {
     return entry != null ? entry.getId() : null;
   }
 
+  /**
+   * Posts the canonical vendor purchase invoice double-entry into the accounting ledger via the
+   * AccountingFacade. Idempotent on {@code sourceId == inv.getId()}; safe to re-run.
+   */
+  private void postAccountingForVendorInvoice(
+      VendorPurchaseInvoice inv, String shopId, String userId) {
+    if (accountingFacade == null || inv == null) {
+      return;
+    }
+    BigDecimal goodsValue = nz(inv.getLineSubTotal());
+    BigDecimal taxTotal = nz(inv.getTaxTotal());
+    BigDecimal invoiceTotal = deriveInvoiceTotalForCredit(inv);
+    if (invoiceTotal.signum() <= 0) {
+      return;
+    }
+    BigDecimal paidNow =
+        resolveVendorPaidNow(
+            invoiceTotal, normalizePaymentMethod(inv.getPaymentMethod()), inv.getPaidAmount());
+    String vendorId = StringUtils.hasText(inv.getVendorId()) ? inv.getVendorId().trim() : null;
+    String vendorName =
+        vendorId != null
+            ? vendorRepository
+                .findById(vendorId)
+                .map(Vendor::getName)
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .orElse("Vendor " + vendorId)
+            : null;
+
+    java.time.LocalDate txnDate =
+        inv.getInvoiceDate() != null
+            ? java.time.LocalDate.ofInstant(inv.getInvoiceDate(), java.time.ZoneOffset.UTC)
+            : (inv.getCreatedAt() != null
+                ? java.time.LocalDate.ofInstant(inv.getCreatedAt(), java.time.ZoneOffset.UTC)
+                : java.time.LocalDate.now());
+
+    // GST routing: split the combined taxTotal into CGST + SGST. Source of truth is per-line:
+    // each {@link VendorPurchaseInvoiceLine} points to an inventory item whose {@code pricing}
+    // doc carries the actual cgst / sgst rates. We compute CGST and SGST amounts per line and
+    // sum them, falling back to shop-level rates only when an inventory or pricing lookup is
+    // missing. IGST is intentionally always zero here — interstate tax will be wired in once
+    // the FE captures a place-of-supply / interstate flag on the invoice.
+    GstSplit gst = splitTaxByLines(shopId, inv, taxTotal);
+    String paymentMethod = normalizePaymentMethod(inv.getPaymentMethod());
+    com.inventory.accounting.api.VendorPurchaseInvoicePostingRequest req =
+        com.inventory.accounting.api.VendorPurchaseInvoicePostingRequest.builder()
+            .sourceId(inv.getId())
+            .invoiceNo(inv.getInvoiceNo())
+            .txnDate(txnDate)
+            .vendorId(vendorId)
+            .vendorDisplayName(vendorName)
+            .goodsValue(goodsValue)
+            .inputCgst(gst.cgst())
+            .inputSgst(gst.sgst())
+            .shippingCharge(nz(inv.getShippingCharge()))
+            .otherCharges(nz(inv.getOtherCharges()))
+            .roundOff(nz(inv.getRoundOff()))
+            .invoiceTotal(invoiceTotal)
+            .paidAmount(paidNow)
+            .paymentMethod(paymentMethod)
+            .build();
+    accountingFacade.postVendorPurchaseInvoice(shopId, userId, req);
+  }
+
+  /**
+   * Splits a combined {@code taxTotal} into CGST + SGST by walking each invoice line and reading
+   * the CGST / SGST percentages from that line's pricing document. This mirrors the way the
+   * cart/checkout flow originally computed the tax (per-line, per-item rate), so the journal
+   * entry uses the same source of truth instead of guessing from a shop-level fallback.
+   *
+   * <p>Resolution order (in priority):
+   * <ol>
+   *   <li>Per-line: {@code lineValue × pricing.cgst / 100} and {@code × pricing.sgst / 100}.
+   *       Line value is taken from {@code count × costPrice} (PTR is a last-resort fallback
+   *       for legacy lines that never captured cost price).</li>
+   *   <li>Lines that don't resolve to a pricing doc fall back to the shop's configured
+   *       CGST / SGST.</li>
+   *   <li>If neither pricing nor shop rates exist, that line contributes nothing and the
+   *       residual tax is split using whatever per-line numbers we did manage to compute.</li>
+   * </ol>
+   *
+   * <p>The two halves are reconciled against {@code taxTotal} before returning: any rounding
+   * delta (typically < ₹1) is absorbed into the larger of the two halves so the books always
+   * balance. If we couldn't compute anything (no lines, no rates), the input tax is split using
+   * the shop's CGST/SGST percentages.
+   */
+  private GstSplit splitTaxByLines(String shopId, VendorPurchaseInvoice inv, BigDecimal taxTotal) {
+    BigDecimal total = nz(taxTotal);
+    BigDecimal zero = BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP);
+    if (total.signum() <= 0) {
+      return new GstSplit(zero, zero);
+    }
+    Shop shop =
+        StringUtils.hasText(shopId) ? shopRepository.findById(shopId).orElse(null) : null;
+    BigDecimal shopCgstPct = parsePercentage(shop != null ? shop.getCgst() : null);
+    BigDecimal shopSgstPct = parsePercentage(shop != null ? shop.getSgst() : null);
+
+    BigDecimal cgstSum = BigDecimal.ZERO;
+    BigDecimal sgstSum = BigDecimal.ZERO;
+    boolean anyLineContributed = false;
+
+    List<VendorPurchaseInvoiceLine> lines =
+        inv.getLines() != null ? inv.getLines() : java.util.Collections.emptyList();
+    for (VendorPurchaseInvoiceLine line : lines) {
+      BigDecimal cgstPct = shopCgstPct;
+      BigDecimal sgstPct = shopSgstPct;
+      String inventoryId = line.getInventoryId();
+      if (StringUtils.hasText(inventoryId)) {
+        com.inventory.pricing.domain.model.Pricing pricing =
+            inventoryRepository
+                .findById(inventoryId)
+                .map(Inventory::getPricingId)
+                .filter(StringUtils::hasText)
+                .flatMap(pricingRepository::findById)
+                .orElse(null);
+        if (pricing != null) {
+          BigDecimal pCgst = parsePercentage(pricing.getCgst());
+          BigDecimal pSgst = parsePercentage(pricing.getSgst());
+          if (pCgst.signum() > 0 || pSgst.signum() > 0) {
+            cgstPct = pCgst;
+            sgstPct = pSgst;
+          }
+        }
+      }
+      BigDecimal lineValue = lineGoodsValue(line);
+      if (lineValue.signum() <= 0) continue;
+      if (cgstPct.signum() <= 0 && sgstPct.signum() <= 0) continue;
+      BigDecimal cgstAmt =
+          lineValue.multiply(cgstPct).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
+      BigDecimal sgstAmt =
+          lineValue.multiply(sgstPct).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
+      cgstSum = cgstSum.add(cgstAmt);
+      sgstSum = sgstSum.add(sgstAmt);
+      anyLineContributed = true;
+    }
+
+    if (!anyLineContributed) {
+      // No usable line data — fall back to shop ratio split of the invoice's stated taxTotal.
+      return splitByRatio(total, shopCgstPct, shopSgstPct);
+    }
+
+    // Reconcile rounding drift back to taxTotal so the JE always ties out.
+    BigDecimal computed = cgstSum.add(sgstSum);
+    BigDecimal drift = total.subtract(computed).setScale(4, RoundingMode.HALF_UP);
+    if (drift.signum() != 0) {
+      // Push the rounding penny to whichever side is larger, defaulting to SGST when equal.
+      if (cgstSum.compareTo(sgstSum) > 0) {
+        cgstSum = cgstSum.add(drift);
+      } else {
+        sgstSum = sgstSum.add(drift);
+      }
+    }
+    return new GstSplit(
+        cgstSum.setScale(4, RoundingMode.HALF_UP),
+        sgstSum.setScale(4, RoundingMode.HALF_UP));
+  }
+
+  /** Per-line "goods value" used as the GST base. Prefers costPrice; falls back to PTR. */
+  private static BigDecimal lineGoodsValue(VendorPurchaseInvoiceLine line) {
+    BigDecimal qty =
+        line.getCount() != null ? BigDecimal.valueOf(line.getCount()) : BigDecimal.ZERO;
+    if (qty.signum() <= 0) return BigDecimal.ZERO;
+    BigDecimal price = nz(line.getCostPrice());
+    if (price.signum() <= 0) price = nz(line.getPriceToRetail());
+    return price.multiply(qty);
+  }
+
+  /** Plain ratio split — used only when no line-level rates are available. */
+  private static GstSplit splitByRatio(
+      BigDecimal total, BigDecimal cgstPct, BigDecimal sgstPct) {
+    BigDecimal zero = BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP);
+    if (cgstPct.signum() > 0 && sgstPct.signum() > 0) {
+      BigDecimal denom = cgstPct.add(sgstPct);
+      BigDecimal cgst = total.multiply(cgstPct).divide(denom, 4, RoundingMode.HALF_UP);
+      BigDecimal sgst = total.subtract(cgst).setScale(4, RoundingMode.HALF_UP);
+      return new GstSplit(cgst, sgst);
+    }
+    if (cgstPct.signum() > 0) return new GstSplit(total.setScale(4, RoundingMode.HALF_UP), zero);
+    if (sgstPct.signum() > 0) return new GstSplit(zero, total.setScale(4, RoundingMode.HALF_UP));
+    BigDecimal half = total.divide(BigDecimal.valueOf(2), 4, RoundingMode.HALF_UP);
+    return new GstSplit(
+        total.subtract(half).setScale(4, RoundingMode.HALF_UP),
+        half.setScale(4, RoundingMode.HALF_UP));
+  }
+
+  /** Parses a shop's percentage field ({@code "9"}, {@code "9.00"}, {@code "9%"}). */
+  private static BigDecimal parsePercentage(String raw) {
+    if (raw == null) return BigDecimal.ZERO;
+    String t = raw.trim();
+    if (t.isEmpty()) return BigDecimal.ZERO;
+    if (t.endsWith("%")) t = t.substring(0, t.length() - 1).trim();
+    try {
+      BigDecimal v = new BigDecimal(t);
+      return v.signum() < 0 ? BigDecimal.ZERO : v;
+    } catch (NumberFormatException ex) {
+      return BigDecimal.ZERO;
+    }
+  }
+
+  /** Per-invoice CGST / SGST slice. IGST is wired in once the invoice carries a place-of-supply. */
+  private record GstSplit(BigDecimal cgst, BigDecimal sgst) {}
+
   private static BigDecimal deriveInvoiceTotalForCredit(VendorPurchaseInvoice inv) {
     BigDecimal invTotal = nz(inv.getInvoiceTotal());
     if (invTotal.signum() > 0) {
@@ -404,22 +626,33 @@ public class InventoryService {
         .setScale(4, RoundingMode.HALF_UP);
   }
 
+  /**
+   * Vendor purchase invoices default to {@code CREDIT} (i.e., owed to the vendor) when no
+   * payment method is supplied. Historically this defaulted to {@code CASH}, which silently
+   * routed the full invoice to Cash on Hand and drove the account negative for shops that had
+   * not been seeded with opening cash. Treating credit as the default is both more accurate to
+   * how B2B purchases work and forces an explicit user choice to claim a cash payment.
+   */
+  private static final java.util.Set<String> CASH_EQUIVALENT_METHODS =
+      java.util.Set.of("CASH", "UPI", "BANK", "CARD");
+
   private static String normalizePaymentMethod(String raw) {
     if (!StringUtils.hasText(raw)) {
-      return "CASH";
+      return "CREDIT";
     }
     return raw.trim().toUpperCase();
   }
 
   private static BigDecimal resolveVendorPaidNow(
       BigDecimal total, String paymentMethod, BigDecimal paidAmount) {
-    if ("CREDIT".equals(paymentMethod)) {
-      return nz(paidAmount).setScale(4, RoundingMode.HALF_UP);
-    }
     if (paidAmount != null && paidAmount.signum() >= 0) {
-      return paidAmount.setScale(4, RoundingMode.HALF_UP);
+      BigDecimal capped = paidAmount.setScale(4, RoundingMode.HALF_UP);
+      return capped.compareTo(total) > 0 ? total : capped;
     }
-    return total;
+    if (CASH_EQUIVALENT_METHODS.contains(paymentMethod)) {
+      return total;
+    }
+    return BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP);
   }
 
   private static BigDecimal nz(BigDecimal v) {

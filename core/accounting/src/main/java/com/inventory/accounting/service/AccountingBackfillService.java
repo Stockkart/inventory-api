@@ -1,0 +1,388 @@
+package com.inventory.accounting.service;
+
+import com.inventory.accounting.api.AccountingFacade;
+import com.inventory.accounting.api.VendorPurchaseInvoicePostingRequest;
+import com.inventory.accounting.domain.model.JournalEntry;
+import com.inventory.accounting.domain.model.JournalSource;
+import com.inventory.accounting.domain.repository.JournalEntryRepository;
+import com.inventory.accounting.domain.repository.LedgerEntryRepository;
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.util.Date;
+import java.util.List;
+import java.util.Optional;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.bson.Document;
+import org.bson.types.ObjectId;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.stereotype.Service;
+
+/**
+ * Replays historical business events through the {@link AccountingFacade} so a shop turning the
+ * accounting module on for the first time has a full retrospective ledger. Reads source documents
+ * directly via {@link MongoTemplate} to avoid an inverse dependency on the product module.
+ *
+ * <p>Idempotent — entries already present in {@code journal_entries} are skipped by the
+ * (shopId, sourceType, sourceId) unique index.
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class AccountingBackfillService {
+
+  private static final String VENDOR_PURCHASE_INVOICES = "vendor_purchase_invoices";
+  private static final String VENDORS = "vendors";
+  private static final String SHOPS = "shops";
+  private static final String INVENTORIES = "inventory";
+  private static final String PRICING = "pricing";
+
+  private final MongoTemplate mongoTemplate;
+  private final AccountingFacade accountingFacade;
+  private final JournalEntryRepository journalEntryRepository;
+  private final LedgerEntryRepository ledgerEntryRepository;
+  private final AccountService accountService;
+
+  public BackfillResult backfill(String shopId, String userId, LocalDate from, LocalDate to) {
+    return backfill(shopId, userId, from, to, false);
+  }
+
+  /**
+   * Replays vendor purchase invoices through the accounting facade.
+   *
+   * <p>{@code force=false} (default) is idempotent — invoices that already have a posted journal
+   * entry are skipped. {@code force=true} first deletes any existing journal entry (and its ledger
+   * rows) for each invoice in scope and then re-posts through the current logic. Use this after
+   * tweaking shop-level GST / payment / chart-of-accounts settings to make the books reflect the
+   * new configuration.
+   */
+  public BackfillResult backfill(
+      String shopId, String userId, LocalDate from, LocalDate to, boolean force) {
+    accountService.ensureSeeded(shopId);
+    int processed = 0;
+    int skipped = 0;
+    int posted = 0;
+    int reposted = 0;
+    int failed = 0;
+
+    Criteria criteria = Criteria.where("shopId").is(shopId);
+    if (from != null) {
+      criteria = criteria.and("createdAt").gte(Date.from(from.atStartOfDay(ZoneOffset.UTC).toInstant()));
+    }
+    if (to != null) {
+      Date toExclusive =
+          Date.from(to.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant());
+      criteria =
+          criteria.andOperator(
+              Criteria.where("createdAt").lt(toExclusive),
+              from != null
+                  ? Criteria.where("createdAt")
+                      .gte(Date.from(from.atStartOfDay(ZoneOffset.UTC).toInstant()))
+                  : new Criteria());
+    }
+    Query q = new Query(criteria);
+
+    Document shopDoc =
+        mongoTemplate.findOne(
+            new Query(Criteria.where("_id").is(shopId)), Document.class, SHOPS);
+    BigDecimal shopCgstPct = parsePercentage(shopDoc != null ? shopDoc.getString("cgst") : null);
+    BigDecimal shopSgstPct = parsePercentage(shopDoc != null ? shopDoc.getString("sgst") : null);
+
+    List<Document> invoices = mongoTemplate.find(q, Document.class, VENDOR_PURCHASE_INVOICES);
+    for (Document inv : invoices) {
+      processed++;
+      String invoiceId = stringId(inv.get("_id"));
+      if (invoiceId == null) {
+        failed++;
+        continue;
+      }
+      Optional<JournalEntry> existing =
+          journalEntryRepository.findByShopIdAndSourceTypeAndSourceId(
+              shopId, JournalSource.VENDOR_PURCHASE_INVOICE, invoiceId);
+      boolean alreadyPosted = existing.isPresent();
+      if (alreadyPosted && !force) {
+        skipped++;
+        continue;
+      }
+      try {
+        VendorPurchaseInvoicePostingRequest req =
+            toRequest(invoiceId, inv, shopCgstPct, shopSgstPct);
+        if (req == null) {
+          skipped++;
+          continue;
+        }
+        if (alreadyPosted) {
+          deleteExistingPosting(shopId, existing.get());
+        }
+        accountingFacade.postVendorPurchaseInvoice(shopId, userId, req);
+        if (alreadyPosted) {
+          reposted++;
+        } else {
+          posted++;
+        }
+      } catch (Exception ex) {
+        failed++;
+        log.warn(
+            "Backfill failed for vendor purchase invoice {} shop {}: {}",
+            invoiceId,
+            shopId,
+            ex.getMessage());
+      }
+    }
+
+    // Re-run the seeder so retired codes (e.g. legacy IGST accounts) that no longer have any
+    // ledger activity after the rebuild get pruned automatically.
+    if (force) {
+      accountService.ensureSeeded(shopId);
+    }
+    return new BackfillResult(processed, posted, reposted, skipped, failed);
+  }
+
+  /**
+   * Hard-deletes a journal entry and all of its ledger rows. Used by the {@code force=true} path
+   * to make room for a fresh posting; the facade itself never deletes — it only posts forward,
+   * which is why we go through the repositories here.
+   */
+  private void deleteExistingPosting(String shopId, JournalEntry je) {
+    var ledgerRows =
+        ledgerEntryRepository.findByShopIdAndJournalEntryId(shopId, je.getId());
+    if (!ledgerRows.isEmpty()) {
+      ledgerEntryRepository.deleteAll(ledgerRows);
+    }
+    // Also delete any reversal mate so the new posting starts from a clean slate.
+    if (je.getReversedByEntryId() != null) {
+      journalEntryRepository
+          .findById(je.getReversedByEntryId())
+          .ifPresent(
+              rev -> {
+                var revRows =
+                    ledgerEntryRepository.findByShopIdAndJournalEntryId(shopId, rev.getId());
+                if (!revRows.isEmpty()) ledgerEntryRepository.deleteAll(revRows);
+                journalEntryRepository.delete(rev);
+              });
+    }
+    journalEntryRepository.delete(je);
+  }
+
+  private VendorPurchaseInvoicePostingRequest toRequest(
+      String invoiceId, Document inv, BigDecimal shopCgstPct, BigDecimal shopSgstPct) {
+    String vendorId = inv.getString("vendorId");
+    if (vendorId == null || vendorId.isBlank()) {
+      return null;
+    }
+    String shopId = inv.getString("shopId");
+    BigDecimal goods = toBigDecimal(inv.get("lineSubTotal"));
+    BigDecimal tax = toBigDecimal(inv.get("taxTotal"));
+    BigDecimal invoiceTotal = toBigDecimal(inv.get("invoiceTotal"));
+    BigDecimal shipping = toBigDecimal(inv.get("shippingCharge"));
+    BigDecimal otherCharges = toBigDecimal(inv.get("otherCharges"));
+    BigDecimal roundOff = toBigDecimal(inv.get("roundOff"));
+    BigDecimal paidAmount = toBigDecimal(inv.get("paidAmount"));
+    String paymentMethod = inv.getString("paymentMethod");
+    if (paymentMethod == null || paymentMethod.isBlank()) {
+      paymentMethod = "CREDIT";
+    }
+
+    if (invoiceTotal.signum() <= 0) {
+      BigDecimal computed = goods.add(tax).add(shipping).add(otherCharges);
+      if (computed.signum() <= 0) {
+        return null;
+      }
+      invoiceTotal = computed;
+    }
+
+    LocalDate txnDate = toLocalDate(inv.get("invoiceDate"));
+    if (txnDate == null) txnDate = toLocalDate(inv.get("createdAt"));
+    if (txnDate == null) txnDate = LocalDate.now();
+
+    Document vendorDoc =
+        mongoTemplate.findOne(
+            new Query(Criteria.where("_id").is(vendorId)), Document.class, VENDORS);
+    String vendorName = vendorDoc != null ? vendorDoc.getString("name") : null;
+
+    GstSplit gst = splitGstByLines(shopId, inv, tax, shopCgstPct, shopSgstPct);
+
+    return VendorPurchaseInvoicePostingRequest.builder()
+        .sourceId(invoiceId)
+        .invoiceNo(inv.getString("invoiceNo"))
+        .txnDate(txnDate)
+        .vendorId(vendorId)
+        .vendorDisplayName(vendorName)
+        .goodsValue(goods)
+        .inputCgst(gst.cgst)
+        .inputSgst(gst.sgst)
+        .shippingCharge(shipping)
+        .otherCharges(otherCharges)
+        .roundOff(roundOff)
+        .invoiceTotal(invoiceTotal)
+        .paidAmount(paidAmount)
+        .paymentMethod(paymentMethod)
+        .build();
+  }
+
+  /**
+   * Same rule the live posting hook uses: walk each invoice line, look up its inventory's
+   * pricing doc, and split CGST + SGST from those per-line rates. Lines that don't resolve to a
+   * pricing doc fall back to the shop's configured rates. IGST is always zero here — interstate
+   * tax will be wired in once invoices carry a place-of-supply marker.
+   */
+  private GstSplit splitGstByLines(
+      String shopId,
+      Document inv,
+      BigDecimal taxTotal,
+      BigDecimal shopCgstPct,
+      BigDecimal shopSgstPct) {
+    BigDecimal total = taxTotal != null ? taxTotal : BigDecimal.ZERO;
+    BigDecimal zero = BigDecimal.ZERO.setScale(4, java.math.RoundingMode.HALF_UP);
+    if (total.signum() <= 0) return new GstSplit(zero, zero);
+
+    Object linesObj = inv.get("lines");
+    if (!(linesObj instanceof List<?> lines) || lines.isEmpty()) {
+      return ratioSplit(total, shopCgstPct, shopSgstPct);
+    }
+
+    BigDecimal cgstSum = BigDecimal.ZERO;
+    BigDecimal sgstSum = BigDecimal.ZERO;
+    boolean anyLineContributed = false;
+    for (Object lineObj : lines) {
+      if (!(lineObj instanceof Document line)) continue;
+      BigDecimal cgstPct = shopCgstPct;
+      BigDecimal sgstPct = shopSgstPct;
+      String inventoryId = line.getString("inventoryId");
+      if (inventoryId != null && !inventoryId.isBlank()) {
+        Document inventoryDoc =
+            mongoTemplate.findOne(
+                new Query(Criteria.where("_id").is(inventoryId)), Document.class, INVENTORIES);
+        String pricingId = inventoryDoc != null ? inventoryDoc.getString("pricingId") : null;
+        if (pricingId != null && !pricingId.isBlank()) {
+          Document pricingDoc =
+              mongoTemplate.findOne(
+                  new Query(Criteria.where("_id").is(pricingId)), Document.class, PRICING);
+          if (pricingDoc != null) {
+            BigDecimal pCgst = parsePercentage(pricingDoc.getString("cgst"));
+            BigDecimal pSgst = parsePercentage(pricingDoc.getString("sgst"));
+            if (pCgst.signum() > 0 || pSgst.signum() > 0) {
+              cgstPct = pCgst;
+              sgstPct = pSgst;
+            }
+          }
+        }
+      }
+      BigDecimal qty =
+          line.get("count") instanceof Number n
+              ? BigDecimal.valueOf(n.longValue())
+              : BigDecimal.ZERO;
+      if (qty.signum() <= 0) continue;
+      BigDecimal price = toBigDecimal(line.get("costPrice"));
+      if (price.signum() <= 0) price = toBigDecimal(line.get("priceToRetail"));
+      BigDecimal lineValue = price.multiply(qty);
+      if (lineValue.signum() <= 0) continue;
+      if (cgstPct.signum() <= 0 && sgstPct.signum() <= 0) continue;
+      cgstSum =
+          cgstSum.add(
+              lineValue
+                  .multiply(cgstPct)
+                  .divide(BigDecimal.valueOf(100), 4, java.math.RoundingMode.HALF_UP));
+      sgstSum =
+          sgstSum.add(
+              lineValue
+                  .multiply(sgstPct)
+                  .divide(BigDecimal.valueOf(100), 4, java.math.RoundingMode.HALF_UP));
+      anyLineContributed = true;
+    }
+
+    if (!anyLineContributed) {
+      return ratioSplit(total, shopCgstPct, shopSgstPct);
+    }
+
+    // Reconcile rounding drift so the JE ties out exactly to taxTotal.
+    BigDecimal drift =
+        total.subtract(cgstSum.add(sgstSum)).setScale(4, java.math.RoundingMode.HALF_UP);
+    if (drift.signum() != 0) {
+      if (cgstSum.compareTo(sgstSum) > 0) cgstSum = cgstSum.add(drift);
+      else sgstSum = sgstSum.add(drift);
+    }
+    return new GstSplit(
+        cgstSum.setScale(4, java.math.RoundingMode.HALF_UP),
+        sgstSum.setScale(4, java.math.RoundingMode.HALF_UP));
+  }
+
+  private static GstSplit ratioSplit(BigDecimal total, BigDecimal cgstPct, BigDecimal sgstPct) {
+    BigDecimal zero = BigDecimal.ZERO.setScale(4, java.math.RoundingMode.HALF_UP);
+    BigDecimal cgst;
+    BigDecimal sgst;
+    if (cgstPct.signum() > 0 && sgstPct.signum() > 0) {
+      BigDecimal denom = cgstPct.add(sgstPct);
+      cgst = total.multiply(cgstPct).divide(denom, 4, java.math.RoundingMode.HALF_UP);
+      sgst = total.subtract(cgst).setScale(4, java.math.RoundingMode.HALF_UP);
+    } else if (cgstPct.signum() > 0) {
+      cgst = total.setScale(4, java.math.RoundingMode.HALF_UP);
+      sgst = zero;
+    } else if (sgstPct.signum() > 0) {
+      cgst = zero;
+      sgst = total.setScale(4, java.math.RoundingMode.HALF_UP);
+    } else {
+      BigDecimal half = total.divide(BigDecimal.valueOf(2), 4, java.math.RoundingMode.HALF_UP);
+      cgst = total.subtract(half).setScale(4, java.math.RoundingMode.HALF_UP);
+      sgst = half.setScale(4, java.math.RoundingMode.HALF_UP);
+    }
+    return new GstSplit(cgst, sgst);
+  }
+
+  private static BigDecimal parsePercentage(String raw) {
+    if (raw == null) return BigDecimal.ZERO;
+    String t = raw.trim();
+    if (t.isEmpty()) return BigDecimal.ZERO;
+    if (t.endsWith("%")) t = t.substring(0, t.length() - 1).trim();
+    try {
+      BigDecimal v = new BigDecimal(t);
+      return v.signum() < 0 ? BigDecimal.ZERO : v;
+    } catch (NumberFormatException ex) {
+      return BigDecimal.ZERO;
+    }
+  }
+
+  private record GstSplit(BigDecimal cgst, BigDecimal sgst) {}
+
+  private static String stringId(Object id) {
+    if (id == null) return null;
+    if (id instanceof ObjectId oid) return oid.toHexString();
+    return id.toString();
+  }
+
+  private static BigDecimal toBigDecimal(Object v) {
+    if (v == null) return BigDecimal.ZERO;
+    if (v instanceof BigDecimal bd) return bd;
+    if (v instanceof Number n) return BigDecimal.valueOf(n.doubleValue());
+    try {
+      return new BigDecimal(v.toString());
+    } catch (NumberFormatException nfe) {
+      return BigDecimal.ZERO;
+    }
+  }
+
+  private static LocalDate toLocalDate(Object v) {
+    if (v == null) return null;
+    if (v instanceof Date d) return d.toInstant().atOffset(ZoneOffset.UTC).toLocalDate();
+    if (v instanceof Instant i) return i.atOffset(ZoneOffset.UTC).toLocalDate();
+    if (v instanceof Long l) return Instant.ofEpochMilli(l).atOffset(ZoneOffset.UTC).toLocalDate();
+    try {
+      return LocalDate.parse(v.toString());
+    } catch (Exception ignore) {
+      return null;
+    }
+  }
+
+  /**
+   * Counters returned by the backfill endpoint. {@code reposted} is non-zero only on a
+   * {@code force=true} run and counts invoices whose existing journal entry was deleted and
+   * replaced with a fresh posting (after a settings change such as updated GST percentages or
+   * CoA tweaks).
+   */
+  public record BackfillResult(
+      int processed, int posted, int reposted, int skipped, int failed) {}
+}
