@@ -52,29 +52,26 @@ public class AccountingCreditSettlementFacade implements CreditSettlementFacade 
       JournalSource journalSource = journalSourceFor(body.getPartyType());
       var existingJe =
           accountingFacade.findBySource(shopId, journalSource, settlementId);
-      if (existingJe.isPresent()) {
-        body.setSourceKey(creditSourceKey);
-        return creditService.createSettlement(shopId, userId, body);
-      }
+      if (existingJe.isEmpty()) {
+        PartySettlementPostingRequest posting =
+            PartySettlementPostingRequest.builder()
+                .sourceId(settlementId)
+                .txnDate(body.getTxnDate())
+                .paymentMethod(body.getPaymentMethod())
+                .amount(body.getAmount())
+                .partyId(body.getPartyId())
+                .partyDisplayName(body.getPartyDisplayName())
+                .bankRef(body.getBankRef())
+                .narration(buildNarration(body))
+                .build();
 
-      PartySettlementPostingRequest posting =
-          PartySettlementPostingRequest.builder()
-              .sourceId(settlementId)
-              .txnDate(body.getTxnDate())
-              .paymentMethod(body.getPaymentMethod())
-              .amount(body.getAmount())
-              .partyId(body.getPartyId())
-              .partyDisplayName(body.getPartyDisplayName())
-              .bankRef(body.getBankRef())
-              .narration(buildNarration(body))
-              .build();
-
-      if (body.getPartyType() == CreditPartyType.VENDOR) {
-        accountingFacade.postVendorPayment(shopId, userId, posting);
-      } else if (body.getPartyType() == CreditPartyType.CUSTOMER) {
-        accountingFacade.postCustomerSettlement(shopId, userId, posting);
-      } else {
-        throw new ValidationException("Unsupported partyType for settlement");
+        if (body.getPartyType() == CreditPartyType.VENDOR) {
+          accountingFacade.postVendorPayment(shopId, userId, posting);
+        } else if (body.getPartyType() == CreditPartyType.CUSTOMER) {
+          accountingFacade.postCustomerSettlement(shopId, userId, posting);
+        } else {
+          throw new ValidationException("Unsupported partyType for settlement");
+        }
       }
     }
 

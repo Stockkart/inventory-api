@@ -9,6 +9,7 @@ import com.inventory.accounting.api.PostJournalLine;
 import com.inventory.accounting.api.PostJournalRequest;
 import com.inventory.accounting.api.PartyCreditChargePostingRequest;
 import com.inventory.accounting.api.PartySettlementPostingRequest;
+import com.inventory.accounting.api.SaleInvoicePostingRequest;
 import com.inventory.accounting.api.VendorPurchaseInvoicePostingRequest;
 import com.inventory.accounting.domain.model.JournalEntry;
 import com.inventory.accounting.domain.model.JournalSource;
@@ -153,6 +154,162 @@ public class AccountingFacadeImpl implements AccountingFacade {
     req.setTxnDate(resolveTxnDate(in.getTxnDate()));
     req.setNarration(
         "Vendor purchase invoice"
+            + (in.getInvoiceNo() != null && !in.getInvoiceNo().isBlank()
+                ? " · " + in.getInvoiceNo().trim()
+                : ""));
+    req.setLines(lines);
+
+    return postingService.post(shopId, userId, req);
+  }
+
+  /**
+   * Posts the standard journal for a completed sale (perpetual inventory + output GST):
+   *
+   * <pre>
+   * Dr Cash on Hand                    = paidCash
+   * Dr Bank                            = paidOnline
+   * Dr Sundry Debtors [CUSTOMER]       = receivable (credit leg)
+   * — or legacy single Dr Cash/Bank     = paidAmount when split fields absent
+   * Dr Round-off Expense               = max(roundOff, 0)
+   * Dr COGS                            = cogsAmount
+   *     Cr Sales                       = taxableRevenue
+   *     Cr Output CGST/SGST/IGST       = tax components (where positive)
+   *     Cr Round-off Payable           = max(−roundOff, 0)
+   *     Cr Inventory                   = cogsAmount
+   * </pre>
+   */
+  @Override
+  @Transactional
+  public JournalEntry postSale(String shopId, String userId, SaleInvoicePostingRequest in) {
+    if (in == null) {
+      throw new ValidationException("Sale posting request is required");
+    }
+    if (in.getSourceId() == null || in.getSourceId().isBlank()) {
+      throw new ValidationException("sourceId (sale / purchase id) is required");
+    }
+
+    BigDecimal revenue = nz(in.getTaxableRevenue());
+    BigDecimal cgst = nz(in.getOutputCgst());
+    BigDecimal sgst = nz(in.getOutputSgst());
+    BigDecimal igst = nz(in.getOutputIgst());
+    BigDecimal cogs = nz(in.getCogsAmount());
+    BigDecimal roundOff = nz(in.getRoundOff());
+
+    BigDecimal computedTotal = scale(revenue.add(cgst).add(sgst).add(igst).add(roundOff));
+    BigDecimal saleTotal =
+        in.getSaleTotal() != null && in.getSaleTotal().signum() > 0
+            ? scale(in.getSaleTotal())
+            : computedTotal;
+
+    if (saleTotal.signum() <= 0) {
+      throw new ValidationException("Sale total must be greater than zero to post");
+    }
+
+    BigDecimal paidCash = nz(in.getPaidCash());
+    BigDecimal paidOnline = nz(in.getPaidOnline());
+    boolean splitTender = in.getPaidCash() != null || in.getPaidOnline() != null;
+
+    BigDecimal outstanding;
+    if (in.getReceivableAmount() != null) {
+      outstanding = scale(in.getReceivableAmount());
+    } else if (splitTender) {
+      outstanding = scale(saleTotal.subtract(paidCash).subtract(paidOnline));
+    } else {
+      BigDecimal paid =
+          in.getPaidAmount() != null && in.getPaidAmount().signum() > 0
+              ? scale(in.getPaidAmount())
+              : MoneyUtil.zero();
+      if (paid.compareTo(saleTotal) > 0) {
+        paid = saleTotal;
+      }
+      outstanding = scale(saleTotal.subtract(paid));
+      if (paid.signum() > 0) {
+        String legacyMethod =
+            in.getPaymentMethod() != null ? in.getPaymentMethod().trim().toUpperCase() : "CASH";
+        if (resolvePaidAccount(legacyMethod).equals(BANK)) {
+          paidOnline = paid;
+        } else {
+          paidCash = paid;
+        }
+      }
+    }
+
+    if (paidCash.add(paidOnline).add(outstanding).compareTo(saleTotal) > 0) {
+      BigDecimal excess = paidCash.add(paidOnline).add(outstanding).subtract(saleTotal);
+      if (paidCash.compareTo(excess) >= 0) {
+        paidCash = paidCash.subtract(excess);
+      } else {
+        excess = excess.subtract(paidCash);
+        paidCash = MoneyUtil.zero();
+        paidOnline = paidOnline.subtract(excess).max(MoneyUtil.zero());
+      }
+      outstanding = scale(saleTotal.subtract(paidCash).subtract(paidOnline));
+    } else if (paidCash.add(paidOnline).add(outstanding).compareTo(saleTotal) < 0) {
+      outstanding = scale(saleTotal.subtract(paidCash).subtract(paidOnline));
+    }
+
+    // Sale round-off is opposite to purchase: grand total rounded *down* (negative roundOff)
+    // means the customer paid less than revenue + tax → Dr round-off expense. Rounded *up*
+    // → Cr round-off payable. (Purchase credits payable on a discount; sale debits expense.)
+    BigDecimal roundLoss = roundOff.signum() < 0 ? roundOff.negate() : MoneyUtil.zero();
+    BigDecimal roundGain = roundOff.signum() > 0 ? roundOff : MoneyUtil.zero();
+
+    // Absorb sub-paisa drift between 2-decimal checkout totals and 4-decimal ledger lines.
+    BigDecimal tenderAndRoundDr =
+        scale(paidCash.add(paidOnline).add(outstanding).add(roundLoss));
+    BigDecimal revenueAndRoundCr =
+        scale(revenue.add(cgst).add(sgst).add(igst).add(roundGain));
+    BigDecimal drift = revenueAndRoundCr.subtract(tenderAndRoundDr);
+    if (drift.signum() != 0) {
+      if (drift.signum() > 0) {
+        roundLoss = scale(roundLoss.add(drift));
+      } else {
+        roundGain = scale(roundGain.add(drift.negate()));
+      }
+    }
+
+    List<PostJournalLine> lines = new ArrayList<>();
+    if (paidCash.signum() > 0) {
+      lines.add(debit(CASH, scale(paidCash)));
+    }
+    if (paidOnline.signum() > 0) {
+      lines.add(debit(BANK, scale(paidOnline)));
+    }
+    if (outstanding.signum() > 0) {
+      if (in.getCustomerId() == null || in.getCustomerId().isBlank()) {
+        throw new ValidationException(
+            "customerId is required when sale has an outstanding receivable");
+      }
+      PostJournalLine debtors = debit(SUNDRY_DEBTORS, outstanding);
+      debtors.setPartyType(PartyType.CUSTOMER);
+      debtors.setPartyRefId(in.getCustomerId().trim());
+      debtors.setPartyDisplayName(
+          in.getCustomerDisplayName() != null ? in.getCustomerDisplayName().trim() : null);
+      lines.add(debtors);
+    }
+    if (roundLoss.signum() > 0) {
+      lines.add(debit(ROUND_OFF_EXPENSE, roundLoss));
+    }
+    if (cogs.signum() > 0) {
+      lines.add(debit(COGS, cogs));
+    }
+
+    if (revenue.signum() > 0) {
+      lines.add(credit(SALES, revenue));
+    }
+    if (cgst.signum() > 0) lines.add(credit(OUTPUT_CGST, cgst));
+    if (sgst.signum() > 0) lines.add(credit(OUTPUT_SGST, sgst));
+    if (igst.signum() > 0) lines.add(credit(OUTPUT_IGST, igst));
+    if (roundGain.signum() > 0) lines.add(credit(ROUND_OFF_PAYABLE, roundGain));
+    if (cogs.signum() > 0) lines.add(credit(INVENTORY, cogs));
+
+    PostJournalRequest req = new PostJournalRequest();
+    req.setSourceType(JournalSource.SALE);
+    req.setSourceId(in.getSourceId().trim());
+    req.setSourceKey("SALE:" + in.getSourceId().trim());
+    req.setTxnDate(resolveTxnDate(in.getTxnDate()));
+    req.setNarration(
+        "Sale"
             + (in.getInvoiceNo() != null && !in.getInvoiceNo().isBlank()
                 ? " · " + in.getInvoiceNo().trim()
                 : ""));

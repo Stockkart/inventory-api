@@ -3,6 +3,7 @@ package com.inventory.accounting.service;
 import com.inventory.accounting.api.AccountingFacade;
 import com.inventory.accounting.api.PartyCreditChargePostingRequest;
 import com.inventory.accounting.api.PartySettlementPostingRequest;
+import com.inventory.accounting.api.SaleInvoicePostingRequest;
 import com.inventory.accounting.api.VendorPurchaseInvoicePostingRequest;
 import com.inventory.accounting.domain.model.JournalEntry;
 import com.inventory.accounting.domain.model.JournalSource;
@@ -23,6 +24,7 @@ import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 /**
  * Replays historical business events through the {@link AccountingFacade} so a shop turning the
@@ -43,6 +45,8 @@ public class AccountingBackfillService {
   private static final String INVENTORIES = "inventory";
   private static final String PRICING = "pricing";
   private static final String CREDIT_ENTRIES = "credit_entries";
+  private static final String PURCHASES = "purchases";
+  private static final String CUSTOMERS = "customers";
 
   private final MongoTemplate mongoTemplate;
   private final AccountingFacade accountingFacade;
@@ -137,6 +141,58 @@ public class AccountingBackfillService {
       }
     }
 
+    Criteria saleCriteria =
+        Criteria.where("shopId").is(shopId).and("status").is("COMPLETED");
+    if (from != null) {
+      saleCriteria =
+          saleCriteria.and("createdAt").gte(Date.from(from.atStartOfDay(ZoneOffset.UTC).toInstant()));
+    }
+    if (to != null) {
+      Date toExclusive =
+          Date.from(to.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant());
+      saleCriteria = saleCriteria.and("createdAt").lt(toExclusive);
+    }
+    List<Document> sales = mongoTemplate.find(new Query(saleCriteria), Document.class, PURCHASES);
+    for (Document sale : sales) {
+      processed++;
+      String saleId = stringId(sale.get("_id"));
+      if (saleId == null) {
+        failed++;
+        continue;
+      }
+      Optional<JournalEntry> existingSale =
+          journalEntryRepository.findByShopIdAndSourceTypeAndSourceId(
+              shopId, JournalSource.SALE, saleId);
+      boolean saleAlreadyPosted = existingSale.isPresent();
+      if (saleAlreadyPosted && !force) {
+        skipped++;
+        continue;
+      }
+      try {
+        SaleInvoicePostingRequest saleReq = toSaleRequest(saleId, sale, shopCgstPct, shopSgstPct);
+        if (saleReq == null) {
+          skipped++;
+          continue;
+        }
+        if (saleAlreadyPosted) {
+          deleteExistingPosting(shopId, existingSale.get());
+        }
+        accountingFacade.postSale(shopId, userId, saleReq);
+        if (saleAlreadyPosted) {
+          reposted++;
+        } else {
+          posted++;
+        }
+      } catch (Exception ex) {
+        failed++;
+        log.warn(
+            "Backfill failed for sale {} shop {}: {}",
+            saleId,
+            shopId,
+            ex.getMessage());
+      }
+    }
+
     int[] settlementCounts = backfillCreditSettlements(shopId, userId, from, to);
     posted += settlementCounts[0];
     skipped += settlementCounts[1];
@@ -198,6 +254,7 @@ public class AccountingBackfillService {
         failed++;
         continue;
       }
+      String partyName = resolvePartyDisplayName(shopId, partyTypeRaw, partyId);
       BigDecimal amount = toBigDecimal(row.get("amount"));
       if (amount.signum() <= 0) {
         skipped++;
@@ -211,7 +268,7 @@ public class AccountingBackfillService {
                 .paymentMethod(inferPaymentMethod(row))
                 .amount(amount)
                 .partyId(partyId)
-                .partyDisplayName(partyId)
+                .partyDisplayName(partyName)
                 .bankRef(row.getString("bankRef"))
                 .narration(row.getString("note"))
                 .build();
@@ -349,6 +406,24 @@ public class AccountingBackfillService {
     return entryId;
   }
 
+  private String resolvePartyDisplayName(String shopId, String partyTypeRaw, String partyId) {
+    if ("CUSTOMER".equalsIgnoreCase(partyTypeRaw)) {
+      Document customer =
+          mongoTemplate.findOne(
+              new Query(Criteria.where("_id").is(partyId)), Document.class, CUSTOMERS);
+      if (customer != null && StringUtils.hasText(customer.getString("name"))) {
+        return customer.getString("name").trim();
+      }
+      return "Customer";
+    }
+    Document vendor =
+        mongoTemplate.findOne(new Query(Criteria.where("_id").is(partyId)), Document.class, VENDORS);
+    if (vendor != null && StringUtils.hasText(vendor.getString("name"))) {
+      return vendor.getString("name").trim();
+    }
+    return "Vendor";
+  }
+
   private static String inferPaymentMethod(Document row) {
     String method = row.getString("paymentMethod");
     if (method != null && !method.isBlank()) {
@@ -385,6 +460,240 @@ public class AccountingBackfillService {
               });
     }
     journalEntryRepository.delete(je);
+  }
+
+  private SaleInvoicePostingRequest toSaleRequest(
+      String saleId, Document sale, BigDecimal shopCgstPct, BigDecimal shopSgstPct) {
+    BigDecimal saleTotal = toBigDecimal(sale.get("grandTotal"));
+    if (saleTotal.signum() <= 0) {
+      return null;
+    }
+
+    BigDecimal revenue = toBigDecimal(sale.get("revenueBeforeTax"));
+    if (revenue.signum() <= 0) {
+      BigDecimal subTotal = toBigDecimal(sale.get("subTotal"));
+      BigDecimal additional = toBigDecimal(sale.get("saleAdditionalDiscountTotal"));
+      revenue = subTotal.subtract(additional).max(BigDecimal.ZERO);
+    }
+
+    BigDecimal cgst = toBigDecimal(sale.get("cgstAmount"));
+    BigDecimal sgst = toBigDecimal(sale.get("sgstAmount"));
+    BigDecimal taxTotal = toBigDecimal(sale.get("taxTotal"));
+    if (cgst.signum() <= 0 && sgst.signum() <= 0 && taxTotal.signum() > 0) {
+      GstSplit gst = splitSaleTaxByLines(sale, taxTotal, shopCgstPct, shopSgstPct);
+      cgst = gst.cgst();
+      sgst = gst.sgst();
+    }
+
+    BigDecimal taxBeforeRound = revenue.add(cgst).add(sgst);
+    BigDecimal roundOff =
+        saleTotal.subtract(taxBeforeRound).setScale(4, java.math.RoundingMode.HALF_UP);
+
+    String paymentMethod = sale.getString("paymentMethod");
+    if (paymentMethod == null || paymentMethod.isBlank()) {
+      paymentMethod = "CASH";
+    } else {
+      paymentMethod = paymentMethod.trim().toUpperCase();
+    }
+
+    BigDecimal paidCash = toBigDecimal(sale.get("cashAmount"));
+    BigDecimal paidOnline = toBigDecimal(sale.get("onlineAmount"));
+    BigDecimal receivable = toBigDecimal(sale.get("creditAmount"));
+    boolean hasStoredSplit =
+        sale.get("cashAmount") != null
+            || sale.get("onlineAmount") != null
+            || sale.get("creditAmount") != null;
+    if (!hasStoredSplit) {
+      BigDecimal legacyPaid = resolveSaleLegacyPaidAmount(saleId, sale, saleTotal, paymentMethod);
+      receivable = saleTotal.subtract(legacyPaid).max(BigDecimal.ZERO);
+      switch (paymentMethod) {
+        case "ONLINE", "UPI", "BANK", "CARD" -> {
+          paidCash = BigDecimal.ZERO;
+          paidOnline = legacyPaid;
+        }
+        case "ONLINE_CREDIT" -> {
+          paidCash = BigDecimal.ZERO;
+          paidOnline = legacyPaid;
+        }
+        case "CREDIT_CASH" -> {
+          paidCash = legacyPaid;
+          paidOnline = BigDecimal.ZERO;
+        }
+        case "CASH_ONLINE" -> {
+          BigDecimal half =
+              legacyPaid.divide(BigDecimal.valueOf(2), 4, java.math.RoundingMode.HALF_UP);
+          paidCash = half;
+          paidOnline = legacyPaid.subtract(half);
+        }
+        case "CREDIT" -> {
+          paidCash = BigDecimal.ZERO;
+          paidOnline = BigDecimal.ZERO;
+        }
+        default -> {
+          paidCash = legacyPaid;
+          paidOnline = BigDecimal.ZERO;
+        }
+      }
+    }
+    BigDecimal cogs = toBigDecimal(sale.get("totalCost"));
+
+    LocalDate txnDate = toLocalDate(sale.get("soldAt"));
+    if (txnDate == null) txnDate = toLocalDate(sale.get("updatedAt"));
+    if (txnDate == null) txnDate = toLocalDate(sale.get("createdAt"));
+    if (txnDate == null) txnDate = LocalDate.now();
+
+    String customerId = sale.getString("customerId");
+    String customerName = sale.getString("customerName");
+    if ((customerName == null || customerName.isBlank())
+        && customerId != null
+        && !customerId.isBlank()) {
+      Document customerDoc =
+          mongoTemplate.findOne(
+              new Query(Criteria.where("_id").is(customerId)), Document.class, CUSTOMERS);
+      if (customerDoc != null) {
+        customerName = customerDoc.getString("name");
+      }
+    }
+
+    return SaleInvoicePostingRequest.builder()
+        .sourceId(saleId)
+        .invoiceNo(sale.getString("invoiceNo"))
+        .txnDate(txnDate)
+        .customerId(customerId)
+        .customerDisplayName(customerName)
+        .taxableRevenue(revenue)
+        .outputCgst(cgst)
+        .outputSgst(sgst)
+        .saleTotal(saleTotal)
+        .paidCash(paidCash)
+        .paidOnline(paidOnline)
+        .receivableAmount(receivable)
+        .paymentMethod(paymentMethod)
+        .cogsAmount(cogs)
+        .roundOff(roundOff)
+        .build();
+  }
+
+  /**
+   * Infers cash collected at sale time. Uses linked {@code SALE:CREDIT:} credit row when present;
+   * otherwise {@code CREDIT} tender means nothing paid up-front.
+   */
+  private BigDecimal resolveSaleLegacyPaidAmount(
+      String saleId, Document sale, BigDecimal saleTotal, String paymentMethod) {
+    Document creditRow =
+        mongoTemplate.findOne(
+            new Query(
+                Criteria.where("sourceKey")
+                    .is("SALE:CREDIT:" + saleId)
+                    .and("entryType")
+                    .is("CHARGE")),
+            Document.class,
+            CREDIT_ENTRIES);
+    if (creditRow != null) {
+      BigDecimal outstanding = toBigDecimal(creditRow.get("amount"));
+      if (outstanding.signum() > 0 && outstanding.compareTo(saleTotal) < 0) {
+        return saleTotal.subtract(outstanding).setScale(4, java.math.RoundingMode.HALF_UP);
+      }
+      if (outstanding.compareTo(saleTotal) >= 0) {
+        return BigDecimal.ZERO.setScale(4, java.math.RoundingMode.HALF_UP);
+      }
+    }
+    if ("CREDIT".equals(paymentMethod)) {
+      return BigDecimal.ZERO.setScale(4, java.math.RoundingMode.HALF_UP);
+    }
+    return saleTotal.setScale(4, java.math.RoundingMode.HALF_UP);
+  }
+
+  /** Splits sale {@code taxTotal} using per-line CGST/SGST from inventory pricing (sale taxable base). */
+  private GstSplit splitSaleTaxByLines(
+      Document sale, BigDecimal taxTotal, BigDecimal shopCgstPct, BigDecimal shopSgstPct) {
+    BigDecimal total = taxTotal != null ? taxTotal : BigDecimal.ZERO;
+    BigDecimal zero = BigDecimal.ZERO.setScale(4, java.math.RoundingMode.HALF_UP);
+    if (total.signum() <= 0) return new GstSplit(zero, zero);
+
+    Object itemsObj = sale.get("items");
+    if (!(itemsObj instanceof List<?> items) || items.isEmpty()) {
+      return ratioSplit(total, shopCgstPct, shopSgstPct);
+    }
+
+    BigDecimal cgstSum = BigDecimal.ZERO;
+    BigDecimal sgstSum = BigDecimal.ZERO;
+    boolean anyLineContributed = false;
+    for (Object itemObj : items) {
+      if (!(itemObj instanceof Document item)) continue;
+      BigDecimal cgstPct = parsePercentage(item.getString("cgst"));
+      BigDecimal sgstPct = parsePercentage(item.getString("sgst"));
+      if (cgstPct.signum() <= 0 && sgstPct.signum() <= 0) {
+        cgstPct = shopCgstPct;
+        sgstPct = shopSgstPct;
+      }
+      String inventoryId = item.getString("inventoryId");
+      if (inventoryId != null && !inventoryId.isBlank()) {
+        Document inventoryDoc =
+            mongoTemplate.findOne(
+                new Query(Criteria.where("_id").is(inventoryId)), Document.class, INVENTORIES);
+        String pricingId = inventoryDoc != null ? inventoryDoc.getString("pricingId") : null;
+        if (pricingId != null && !pricingId.isBlank()) {
+          Document pricingDoc =
+              mongoTemplate.findOne(
+                  new Query(Criteria.where("_id").is(pricingId)), Document.class, PRICING);
+          if (pricingDoc != null) {
+            BigDecimal pCgst = parsePercentage(pricingDoc.getString("cgst"));
+            BigDecimal pSgst = parsePercentage(pricingDoc.getString("sgst"));
+            if (pCgst.signum() > 0 || pSgst.signum() > 0) {
+              cgstPct = pCgst;
+              sgstPct = pSgst;
+            }
+          }
+        }
+      }
+      BigDecimal lineBase = saleLineTaxableBase(item);
+      if (lineBase.signum() <= 0) continue;
+      if (cgstPct.signum() <= 0 && sgstPct.signum() <= 0) continue;
+      cgstSum =
+          cgstSum.add(
+              lineBase
+                  .multiply(cgstPct)
+                  .divide(BigDecimal.valueOf(100), 4, java.math.RoundingMode.HALF_UP));
+      sgstSum =
+          sgstSum.add(
+              lineBase
+                  .multiply(sgstPct)
+                  .divide(BigDecimal.valueOf(100), 4, java.math.RoundingMode.HALF_UP));
+      anyLineContributed = true;
+    }
+
+    if (!anyLineContributed) {
+      return ratioSplit(total, shopCgstPct, shopSgstPct);
+    }
+
+    BigDecimal drift =
+        total.subtract(cgstSum.add(sgstSum)).setScale(4, java.math.RoundingMode.HALF_UP);
+    if (drift.signum() != 0) {
+      if (cgstSum.compareTo(sgstSum) > 0) cgstSum = cgstSum.add(drift);
+      else sgstSum = sgstSum.add(drift);
+    }
+    return new GstSplit(
+        cgstSum.setScale(4, java.math.RoundingMode.HALF_UP),
+        sgstSum.setScale(4, java.math.RoundingMode.HALF_UP));
+  }
+
+  private static BigDecimal saleLineTaxableBase(Document item) {
+    BigDecimal qty = toBigDecimal(item.get("quantity"));
+    if (qty.signum() <= 0) return BigDecimal.ZERO;
+    BigDecimal ptr = toBigDecimal(item.get("priceToRetail"));
+    BigDecimal mrp = toBigDecimal(item.get("maximumRetailPrice"));
+    BigDecimal price = ptr.signum() > 0 ? ptr : mrp;
+    if (price.signum() <= 0) return BigDecimal.ZERO;
+    BigDecimal base = price.multiply(qty);
+    BigDecimal addDisc = toBigDecimal(item.get("saleAdditionalDiscount"));
+    if (addDisc.signum() > 0) {
+      base =
+          base.multiply(
+              BigDecimal.ONE.subtract(
+                  addDisc.divide(BigDecimal.valueOf(100), 4, java.math.RoundingMode.HALF_UP)));
+    }
+    return base.setScale(4, java.math.RoundingMode.HALF_UP);
   }
 
   private VendorPurchaseInvoicePostingRequest toRequest(

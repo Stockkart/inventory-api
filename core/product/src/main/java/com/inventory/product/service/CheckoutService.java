@@ -103,6 +103,12 @@ public class CheckoutService {
   @Autowired(required = false)
   private com.inventory.credit.service.CreditService creditService;
 
+  @Autowired(required = false)
+  private com.inventory.credit.service.CreditChargeFacade creditChargeFacade;
+
+  @Autowired(required = false)
+  private com.inventory.accounting.api.AccountingFacade accountingFacade;
+
   @Transactional
   public AddToCartResponse addToCart(AddToCartRequest request, HttpServletRequest httpRequest) {
     // Get shopId and userId from request attributes (set by AuthenticationInterceptor)
@@ -241,6 +247,9 @@ public class CheckoutService {
       // Update status and payment method
       purchase.setStatus(requestedStatus);
       purchase.setPaymentMethod(request.getPaymentMethod());
+      if (requestedStatus == PurchaseStatus.COMPLETED) {
+        applyPaymentSplitToPurchase(purchase, request);
+      }
       purchase.setUpdatedAt(Instant.now());
       purchase = purchaseRepository.save(purchase);
 
@@ -262,20 +271,9 @@ public class CheckoutService {
       // Build response
       CheckoutResponse response = purchaseMapper.toCheckoutResponse(purchase);
       if (requestedStatus == PurchaseStatus.COMPLETED) {
-        try {
-          String creditEntryId =
-              postCreditChargeForCompletedSale(purchase, request, shopId, userId);
-          response.setCreditEntryId(creditEntryId);
-        } catch (ValidationException vex) {
-          throw vex;
-        } catch (Exception ex) {
-          log.error(
-              "Credit charge posting failed for sale {} shop {}: {}",
-              purchase.getId(),
-              shopId,
-              ex.getMessage(),
-              ex);
-        }
+        String creditEntryId =
+            postCreditAndAccountingForCompletedSale(purchase, request, shopId, userId);
+        response.setCreditEntryId(creditEntryId);
       }
       return response;
 
@@ -1744,12 +1742,92 @@ public class CheckoutService {
         .orElse("Customer");
   }
 
+  /**
+   * Sale credit charge and accounting journal in one transaction; failures roll back both.
+   */
+  private String postCreditAndAccountingForCompletedSale(
+      Purchase purchase,
+      UpdatePurchaseStatusRequest request,
+      String shopId,
+      String userId) {
+    String creditEntryId = postCreditChargeForCompletedSale(purchase, request, shopId, userId);
+    postAccountingForSale(purchase, request, shopId, userId);
+    return creditEntryId;
+  }
+
+  /**
+   * Posts the canonical sale double-entry via {@link com.inventory.accounting.api.AccountingFacade}.
+   * Idempotent on {@code sourceId == purchase.id}.
+   */
+  private void postAccountingForSale(
+      Purchase purchase,
+      UpdatePurchaseStatusRequest request,
+      String shopId,
+      String userId) {
+    if (accountingFacade == null || purchase == null) {
+      return;
+    }
+    BigDecimal saleTotal = nzMoney(purchase.getGrandTotal());
+    if (saleTotal.signum() <= 0) {
+      return;
+    }
+
+    BigDecimal revenue = nzMoney(purchase.getRevenueBeforeTax());
+    if (revenue.signum() <= 0) {
+      BigDecimal subTotal = nzMoney(purchase.getSubTotal());
+      BigDecimal additional =
+          nzMoney(purchase.getSaleAdditionalDiscountTotal());
+      revenue = subTotal.subtract(additional).max(BigDecimal.ZERO);
+    }
+
+    BigDecimal cgst = nzMoney(purchase.getCgstAmount());
+    BigDecimal sgst = nzMoney(purchase.getSgstAmount());
+    BigDecimal taxBeforeRound = revenue.add(cgst).add(sgst);
+    BigDecimal roundOff = saleTotal.subtract(taxBeforeRound).setScale(4, RoundingMode.HALF_UP);
+
+    SalePaymentBreakdown payment =
+        resolveSalePaymentBreakdown(saleTotal, request.getPaymentMethod(), request);
+
+    java.time.LocalDate txnDate =
+        purchase.getSoldAt() != null
+            ? java.time.LocalDate.ofInstant(purchase.getSoldAt(), java.time.ZoneOffset.UTC)
+            : (purchase.getUpdatedAt() != null
+                ? java.time.LocalDate.ofInstant(purchase.getUpdatedAt(), java.time.ZoneOffset.UTC)
+                : java.time.LocalDate.now());
+
+    String customerId =
+        StringUtils.hasText(purchase.getCustomerId()) ? purchase.getCustomerId().trim() : null;
+
+    com.inventory.accounting.api.SaleInvoicePostingRequest req =
+        com.inventory.accounting.api.SaleInvoicePostingRequest.builder()
+            .sourceId(purchase.getId())
+            .invoiceNo(purchase.getInvoiceNo())
+            .txnDate(txnDate)
+            .customerId(customerId)
+            .customerDisplayName(resolveCustomerPartyDisplayNameForCredit(purchase))
+            .taxableRevenue(revenue)
+            .outputCgst(cgst)
+            .outputSgst(sgst)
+            .saleTotal(saleTotal)
+            .paidCash(payment.cash())
+            .paidOnline(payment.online())
+            .receivableAmount(payment.receivable())
+            .paymentMethod(payment.method())
+            .cogsAmount(nzMoney(purchase.getTotalCost()))
+            .roundOff(roundOff)
+            .build();
+    accountingFacade.postSale(shopId, userId, req);
+  }
+
   private String postCreditChargeForCompletedSale(
       Purchase purchase,
       UpdatePurchaseStatusRequest request,
       String shopId,
       String userId) {
-    if (creditService == null || purchase == null) {
+    if (purchase == null) {
+      return null;
+    }
+    if (creditChargeFacade == null && creditService == null) {
       return null;
     }
     BigDecimal total = nzMoney(purchase.getGrandTotal());
@@ -1757,13 +1835,9 @@ public class CheckoutService {
       return null;
     }
 
-    String method = normalizePaymentMethod(request.getPaymentMethod());
-    BigDecimal paidNow = resolvePaidNow(total, method, request.getCreditPaidAmount());
-    if (paidNow.compareTo(total) > 0) {
-      throw new ValidationException("Paid now amount cannot exceed grand total");
-    }
-    BigDecimal outstanding = total.subtract(paidNow).setScale(4, RoundingMode.HALF_UP);
-    if (outstanding.signum() <= 0) {
+    SalePaymentBreakdown payment =
+        resolveSalePaymentBreakdown(total, request.getPaymentMethod(), request);
+    if (payment.receivable().signum() <= 0) {
       return null;
     }
 
@@ -1778,7 +1852,7 @@ public class CheckoutService {
     charge.setPartyId(purchase.getCustomerId().trim());
     charge.setPartyDisplayName(resolveCustomerPartyDisplayNameForCredit(purchase));
     charge.setPartyPhone(null);
-    charge.setAmount(outstanding);
+    charge.setAmount(payment.receivable());
     charge.setReferenceType("SALE");
     charge.setReferenceId(purchase.getId());
     charge.setSourceKey("SALE:CREDIT:" + purchase.getId());
@@ -1788,8 +1862,100 @@ public class CheckoutService {
                 ? " · Inv " + purchase.getInvoiceNo().trim()
                 : ""));
 
-    var entry = creditService.createCharge(shopId, userId, charge);
+    com.inventory.credit.domain.model.CreditEntry entry =
+        creditChargeFacade != null
+            ? creditChargeFacade.createCharge(shopId, userId, charge)
+            : creditService.createCharge(shopId, userId, charge);
     return entry != null ? entry.getId() : null;
+  }
+
+  private static void applyPaymentSplitToPurchase(
+      Purchase purchase, UpdatePurchaseStatusRequest request) {
+    SalePaymentBreakdown payment =
+        resolveSalePaymentBreakdown(
+            nzMoney(purchase.getGrandTotal()), request.getPaymentMethod(), request);
+    purchase.setCashAmount(payment.cash());
+    purchase.setOnlineAmount(payment.online());
+    purchase.setCreditAmount(payment.receivable());
+  }
+
+  /**
+   * Resolves cash / online / credit legs for the six canonical checkout methods. Prefers explicit
+   * {@code cashAmount}/{@code onlineAmount}/{@code creditAmount} from the client; falls back to
+   * {@code creditPaidAmount} and method heuristics for older clients.
+   */
+  private static SalePaymentBreakdown resolveSalePaymentBreakdown(
+      BigDecimal saleTotal,
+      String rawMethod,
+      UpdatePurchaseStatusRequest request) {
+    String method = normalizePaymentMethod(rawMethod);
+    boolean hasExplicitSplit =
+        request.getCashAmount() != null
+            || request.getOnlineAmount() != null
+            || request.getCreditAmount() != null;
+    if (hasExplicitSplit) {
+      BigDecimal cash = capTender(nzMoney(request.getCashAmount()), saleTotal);
+      BigDecimal online = capTender(nzMoney(request.getOnlineAmount()), saleTotal);
+      BigDecimal credit = capTender(nzMoney(request.getCreditAmount()), saleTotal);
+      BigDecimal sum = cash.add(online).add(credit);
+      if (sum.compareTo(saleTotal) > 0) {
+        throw new ValidationException(
+            "Payment split (cash + online + credit) cannot exceed sale total");
+      }
+      BigDecimal receivable = credit;
+      if (credit.signum() == 0 && sum.compareTo(saleTotal) < 0) {
+        receivable = saleTotal.subtract(cash).subtract(online);
+      }
+      return new SalePaymentBreakdown(method, cash, online, receivable);
+    }
+
+    BigDecimal paidNow = resolveLegacyPaidNow(saleTotal, method, request.getCreditPaidAmount());
+    if (paidNow.compareTo(saleTotal) > 0) {
+      throw new ValidationException("Paid now amount cannot exceed grand total");
+    }
+    BigDecimal receivable = saleTotal.subtract(paidNow).setScale(4, RoundingMode.HALF_UP);
+    return switch (method) {
+      case "ONLINE", "UPI", "BANK", "CARD" -> new SalePaymentBreakdown(method, BigDecimal.ZERO, paidNow, receivable);
+      case "CREDIT" -> new SalePaymentBreakdown(method, BigDecimal.ZERO, BigDecimal.ZERO, receivable);
+      case "CASH_ONLINE" -> splitLegacyPaidEvenly(method, paidNow, receivable);
+      case "ONLINE_CREDIT" -> new SalePaymentBreakdown(method, BigDecimal.ZERO, paidNow, receivable);
+      case "CREDIT_CASH" -> new SalePaymentBreakdown(method, paidNow, BigDecimal.ZERO, receivable);
+      default -> new SalePaymentBreakdown(method, paidNow, BigDecimal.ZERO, receivable);
+    };
+  }
+
+  private static SalePaymentBreakdown splitLegacyPaidEvenly(
+      String method, BigDecimal paidNow, BigDecimal receivable) {
+    if (paidNow.signum() <= 0) {
+      return new SalePaymentBreakdown(method, BigDecimal.ZERO, BigDecimal.ZERO, receivable);
+    }
+    BigDecimal half =
+        paidNow.divide(BigDecimal.valueOf(2), 4, RoundingMode.HALF_UP);
+    BigDecimal cash = half;
+    BigDecimal online = paidNow.subtract(half).setScale(4, RoundingMode.HALF_UP);
+    return new SalePaymentBreakdown(method, cash, online, receivable);
+  }
+
+  private static BigDecimal capTender(BigDecimal amount, BigDecimal saleTotal) {
+    if (amount.compareTo(saleTotal) > 0) {
+      return saleTotal;
+    }
+    return amount;
+  }
+
+  private static BigDecimal resolveLegacyPaidNow(
+      BigDecimal total,
+      String paymentMethod,
+      BigDecimal requestedPaidNow) {
+    if ("CREDIT".equals(paymentMethod)
+        || "ONLINE_CREDIT".equals(paymentMethod)
+        || "CREDIT_CASH".equals(paymentMethod)) {
+      return nzMoney(requestedPaidNow);
+    }
+    if (requestedPaidNow != null && requestedPaidNow.signum() >= 0) {
+      return requestedPaidNow.setScale(4, RoundingMode.HALF_UP);
+    }
+    return total;
   }
 
   private static String normalizePaymentMethod(String raw) {
@@ -1799,21 +1965,11 @@ public class CheckoutService {
     return raw.trim().toUpperCase();
   }
 
-  private static BigDecimal resolvePaidNow(
-      BigDecimal total,
-      String paymentMethod,
-      BigDecimal requestedPaidNow) {
-    if ("CREDIT".equals(paymentMethod)) {
-      return nzMoney(requestedPaidNow);
-    }
-    if (requestedPaidNow != null && requestedPaidNow.signum() >= 0) {
-      return requestedPaidNow.setScale(4, RoundingMode.HALF_UP);
-    }
-    return total;
-  }
-
   private static BigDecimal nzMoney(BigDecimal v) {
     return (v == null ? BigDecimal.ZERO : v).setScale(4, RoundingMode.HALF_UP);
   }
+
+  private record SalePaymentBreakdown(
+      String method, BigDecimal cash, BigDecimal online, BigDecimal receivable) {}
 
 }

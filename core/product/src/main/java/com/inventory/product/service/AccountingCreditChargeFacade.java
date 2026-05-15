@@ -41,7 +41,7 @@ public class AccountingCreditChargeFacade implements CreditChargeFacade {
   public CreditEntry createCharge(String shopId, String userId, CreateCreditChargeRequest body) {
     String chargeId = resolveChargeId(body);
     JournalSource journalSource = journalSourceFor(body.getPartyType());
-    String creditSourceKey = journalSource.name() + ":" + chargeId;
+    String creditSourceKey = resolveCreditSourceKey(body, journalSource, chargeId);
 
     Optional<CreditEntry> existingCredit =
         creditEntryRepository.findFirstByShopIdAndSourceKey(shopId, creditSourceKey);
@@ -100,6 +100,22 @@ public class AccountingCreditChargeFacade implements CreditChargeFacade {
           .isEmpty();
     }
     return true;
+  }
+
+  /**
+   * Keeps invoice-linked keys ({@code SALE:CREDIT:}, {@code PURCHASE:CREDIT:}) so the credit
+   * ledger stays tied to the source document; other charges use {@code SOURCE:id}.
+   */
+  private static String resolveCreditSourceKey(
+      CreateCreditChargeRequest body, JournalSource journalSource, String chargeId) {
+    if (StringUtils.hasText(body.getSourceKey())) {
+      String sk = body.getSourceKey().trim();
+      String upper = sk.toUpperCase();
+      if (upper.startsWith(PURCHASE_CREDIT_PREFIX) || upper.startsWith(SALE_CREDIT_PREFIX)) {
+        return sk;
+      }
+    }
+    return journalSource.name() + ":" + chargeId;
   }
 
   private static String resolveChargeId(CreateCreditChargeRequest body) {

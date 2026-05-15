@@ -23,6 +23,9 @@ public interface AccountingFacade {
   JournalEntry postVendorPurchaseInvoice(
       String shopId, String userId, VendorPurchaseInvoicePostingRequest req);
 
+  /** High-level helper for a completed sale ({@code SALE}). */
+  JournalEntry postSale(String shopId, String userId, SaleInvoicePostingRequest req);
+
   /** Pay down vendor payable: Dr Sundry Creditors, Cr Cash/Bank or Discount Received. */
   JournalEntry postVendorPayment(String shopId, String userId, PartySettlementPostingRequest req);
 
