@@ -22,6 +22,7 @@ import com.inventory.user.domain.repository.VendorRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -57,12 +58,16 @@ public class CreditService {
         body.getNote(),
         body.getReferenceType(),
         body.getReferenceId(),
-        body.getSourceKey());
+        body.getSourceKey(),
+        null,
+        null,
+        null);
   }
 
   @Transactional
   public CreditEntry createSettlement(
       String shopId, String userId, CreateCreditSettlementRequest body) {
+    validateSettlementPaymentMethod(body.getPaymentMethod());
     return applyEntry(
         shopId,
         userId,
@@ -76,7 +81,10 @@ public class CreditService {
         body.getNote(),
         body.getReferenceType(),
         body.getReferenceId(),
-        body.getSourceKey());
+        body.getSourceKey(),
+        normalize(body.getPaymentMethod()),
+        normalize(body.getBankRef()),
+        body.getTxnDate());
   }
 
   @Transactional(readOnly = true)
@@ -197,7 +205,10 @@ public class CreditService {
       String note,
       String referenceType,
       String referenceId,
-      String sourceKey) {
+      String sourceKey,
+      String paymentMethod,
+      String bankRef,
+      LocalDate txnDate) {
     validateParty(partyType, partyId, partyDisplayName);
     BigDecimal amt = scalePositiveAmount(amount);
 
@@ -241,9 +252,27 @@ public class CreditService {
     entry.setReferenceType(limit(normalize(referenceType), 64));
     entry.setReferenceId(limit(normalize(referenceId), 128));
     entry.setSourceKey(normalizedSourceKey);
+    entry.setPaymentMethod(limit(normalize(paymentMethod), 32));
+    entry.setBankRef(limit(normalize(bankRef), 128));
+    entry.setTxnDate(txnDate);
     entry.setCreatedByUserId(normalize(userId));
     entry.setCreatedAt(now);
     return creditEntryRepository.save(entry);
+  }
+
+  private static void validateSettlementPaymentMethod(String paymentMethod) {
+    if (!StringUtils.hasText(paymentMethod)) {
+      throw new ValidationException("paymentMethod is required for settlement");
+    }
+    String m = paymentMethod.trim().toUpperCase();
+    if (!m.equals("CASH")
+        && !m.equals("UPI")
+        && !m.equals("BANK")
+        && !m.equals("CARD")
+        && !m.equals("ADJUSTMENT")) {
+      throw new ValidationException(
+          "paymentMethod must be one of CASH, UPI, BANK, CARD, ADJUSTMENT");
+    }
   }
 
   private static CreditAccount newAccount(

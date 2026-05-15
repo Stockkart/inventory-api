@@ -317,28 +317,7 @@ public class InventoryService {
       var invOpt = vendorPurchaseInvoiceRepository.findById(returnedInvoiceId);
       if (invOpt.isPresent()) {
         VendorPurchaseInvoice persistedInvoice = invOpt.get();
-        try {
-          creditEntryId = postCreditChargeForVendorInvoice(persistedInvoice, shopId, userId);
-        } catch (ValidationException vex) {
-          throw vex;
-        } catch (Exception ex) {
-          log.error(
-              "Credit charge posting failed for vendor invoice {} shop {}: {}",
-              returnedInvoiceId,
-              shopId,
-              ex.getMessage(),
-              ex);
-        }
-        try {
-          postAccountingForVendorInvoice(persistedInvoice, shopId, userId);
-        } catch (Exception ex) {
-          log.error(
-              "Accounting posting failed for vendor invoice {} shop {}: {}",
-              returnedInvoiceId,
-              shopId,
-              ex.getMessage(),
-              ex);
-        }
+        creditEntryId = postCreditAndAccountingForVendorInvoice(persistedInvoice, shopId, userId);
       }
     }
 
@@ -409,6 +388,16 @@ public class InventoryService {
             + (StringUtils.hasText(inv.getInvoiceNo()) ? " · Inv " + inv.getInvoiceNo().trim() : ""));
     var entry = creditService.createCharge(shopId, userId, charge);
     return entry != null ? entry.getId() : null;
+  }
+
+  /**
+   * Vendor invoice credit charge and accounting journal in one transaction; failures roll back both.
+   */
+  private String postCreditAndAccountingForVendorInvoice(
+      VendorPurchaseInvoice inv, String shopId, String userId) {
+    String creditEntryId = postCreditChargeForVendorInvoice(inv, shopId, userId);
+    postAccountingForVendorInvoice(inv, shopId, userId);
+    return creditEntryId;
   }
 
   /**

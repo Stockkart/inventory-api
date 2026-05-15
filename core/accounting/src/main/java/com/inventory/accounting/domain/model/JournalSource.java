@@ -9,6 +9,10 @@ public enum JournalSource {
   SALES_RETURN,
   CUSTOMER_SETTLEMENT,
   VENDOR_PAYMENT,
+  /** Manual or UI-driven increase in vendor payable (credit charge). */
+  VENDOR_CREDIT_CHARGE,
+  /** Manual or UI-driven increase in customer receivable (credit charge). */
+  CUSTOMER_CREDIT_CHARGE,
   INVENTORY_CORRECTION,
   MANUAL,
   REVERSAL

@@ -7,6 +7,8 @@ import static com.inventory.accounting.service.MoneyUtil.scale;
 import com.inventory.accounting.api.AccountingFacade;
 import com.inventory.accounting.api.PostJournalLine;
 import com.inventory.accounting.api.PostJournalRequest;
+import com.inventory.accounting.api.PartyCreditChargePostingRequest;
+import com.inventory.accounting.api.PartySettlementPostingRequest;
 import com.inventory.accounting.api.VendorPurchaseInvoicePostingRequest;
 import com.inventory.accounting.domain.model.JournalEntry;
 import com.inventory.accounting.domain.model.JournalSource;
@@ -156,6 +158,209 @@ public class AccountingFacadeImpl implements AccountingFacade {
                 : ""));
     req.setLines(lines);
 
+    return postingService.post(shopId, userId, req);
+  }
+
+  /**
+   * Vendor payment against Sundry Creditors:
+   *
+   * <pre>
+   * Dr Sundry Creditors [VENDOR]  = amount
+   *     Cr Cash / Bank            = amount (tender)
+   *     — or Cr Discount Received = amount (ADJUSTMENT)
+   * </pre>
+   */
+  @Override
+  @Transactional
+  public JournalEntry postVendorPayment(
+      String shopId, String userId, PartySettlementPostingRequest in) {
+    return postPartySettlement(
+        shopId,
+        userId,
+        in,
+        JournalSource.VENDOR_PAYMENT,
+        PartyType.VENDOR,
+        SUNDRY_CREDITORS,
+        true);
+  }
+
+  /**
+   * Customer settlement against Sundry Debtors:
+   *
+   * <pre>
+   * Dr Cash / Bank            = amount (tender)
+   *     — or Dr Bad Debts       = amount (ADJUSTMENT)
+   *     Cr Sundry Debtors [CUSTOMER] = amount
+   * </pre>
+   */
+  @Override
+  @Transactional
+  public JournalEntry postCustomerSettlement(
+      String shopId, String userId, PartySettlementPostingRequest in) {
+    return postPartySettlement(
+        shopId,
+        userId,
+        in,
+        JournalSource.CUSTOMER_SETTLEMENT,
+        PartyType.CUSTOMER,
+        SUNDRY_DEBTORS,
+        false);
+  }
+
+  /**
+   * Standalone vendor payable increase (UI “You owe more”):
+   *
+   * <pre>
+   * Dr Purchases                 = amount
+   *     Cr Sundry Creditors [VENDOR] = amount
+   * </pre>
+   */
+  @Override
+  @Transactional
+  public JournalEntry postVendorCreditCharge(
+      String shopId, String userId, PartyCreditChargePostingRequest in) {
+    return postPartyCreditCharge(shopId, userId, in, JournalSource.VENDOR_CREDIT_CHARGE, true);
+  }
+
+  /**
+   * Standalone customer receivable increase (UI “They owe more”):
+   *
+   * <pre>
+   * Dr Sundry Debtors [CUSTOMER] = amount
+   *     Cr Sales                   = amount
+   * </pre>
+   */
+  @Override
+  @Transactional
+  public JournalEntry postCustomerCreditCharge(
+      String shopId, String userId, PartyCreditChargePostingRequest in) {
+    return postPartyCreditCharge(shopId, userId, in, JournalSource.CUSTOMER_CREDIT_CHARGE, false);
+  }
+
+  private JournalEntry postPartyCreditCharge(
+      String shopId,
+      String userId,
+      PartyCreditChargePostingRequest in,
+      JournalSource sourceType,
+      boolean vendorCharge) {
+    if (in == null) {
+      throw new ValidationException("Credit charge posting request is required");
+    }
+    if (in.getSourceId() == null || in.getSourceId().isBlank()) {
+      throw new ValidationException("sourceId is required for credit charge posting");
+    }
+    if (in.getPartyId() == null || in.getPartyId().isBlank()) {
+      throw new ValidationException("partyId is required for credit charge posting");
+    }
+    BigDecimal amount = nz(in.getAmount());
+    if (amount.signum() <= 0) {
+      throw new ValidationException("Credit charge amount must be greater than zero");
+    }
+
+    List<PostJournalLine> lines = new ArrayList<>();
+    if (vendorCharge) {
+      lines.add(debit(PURCHASES, amount));
+      PostJournalLine creditors = credit(SUNDRY_CREDITORS, amount);
+      creditors.setPartyType(PartyType.VENDOR);
+      creditors.setPartyRefId(in.getPartyId().trim());
+      creditors.setPartyDisplayName(
+          in.getPartyDisplayName() != null ? in.getPartyDisplayName().trim() : null);
+      lines.add(creditors);
+    } else {
+      PostJournalLine debtors = debit(SUNDRY_DEBTORS, amount);
+      debtors.setPartyType(PartyType.CUSTOMER);
+      debtors.setPartyRefId(in.getPartyId().trim());
+      debtors.setPartyDisplayName(
+          in.getPartyDisplayName() != null ? in.getPartyDisplayName().trim() : null);
+      lines.add(debtors);
+      lines.add(credit(SALES, amount));
+    }
+
+    String sourceId = in.getSourceId().trim();
+    PostJournalRequest req = new PostJournalRequest();
+    req.setSourceType(sourceType);
+    req.setSourceId(sourceId);
+    req.setSourceKey(sourceType.name() + ":" + sourceId);
+    req.setTxnDate(resolveTxnDate(in.getTxnDate()));
+    req.setNarration(
+        in.getNarration() != null && !in.getNarration().isBlank()
+            ? in.getNarration().trim()
+            : (vendorCharge ? "Vendor payable increase" : "Customer receivable increase"));
+    req.setLines(lines);
+    return postingService.post(shopId, userId, req);
+  }
+
+  private JournalEntry postPartySettlement(
+      String shopId,
+      String userId,
+      PartySettlementPostingRequest in,
+      JournalSource sourceType,
+      PartyType partyType,
+      String controlAccountCode,
+      boolean vendorPayment) {
+    if (in == null) {
+      throw new ValidationException("Settlement posting request is required");
+    }
+    if (in.getSourceId() == null || in.getSourceId().isBlank()) {
+      throw new ValidationException("sourceId is required for settlement posting");
+    }
+    if (in.getPartyId() == null || in.getPartyId().isBlank()) {
+      throw new ValidationException("partyId is required for settlement posting");
+    }
+    BigDecimal amount = nz(in.getAmount());
+    if (amount.signum() <= 0) {
+      throw new ValidationException("Settlement amount must be greater than zero");
+    }
+
+    String method =
+        in.getPaymentMethod() != null ? in.getPaymentMethod().trim().toUpperCase() : "CASH";
+    boolean adjustment = "ADJUSTMENT".equals(method);
+
+    List<PostJournalLine> lines = new ArrayList<>();
+    PostJournalLine controlLine;
+    if (vendorPayment) {
+      controlLine = debit(controlAccountCode, amount);
+    } else {
+      controlLine = credit(controlAccountCode, amount);
+    }
+    controlLine.setPartyType(partyType);
+    controlLine.setPartyRefId(in.getPartyId().trim());
+    controlLine.setPartyDisplayName(
+        in.getPartyDisplayName() != null ? in.getPartyDisplayName().trim() : null);
+    lines.add(controlLine);
+
+    if (vendorPayment) {
+      if (adjustment) {
+        lines.add(credit(DISCOUNT_RECEIVED, amount));
+      } else {
+        lines.add(credit(resolvePaidAccount(method), amount));
+      }
+    } else {
+      if (adjustment) {
+        lines.add(debit(BAD_DEBTS_WRITTEN_OFF, amount));
+      } else {
+        lines.add(debit(resolvePaidAccount(method), amount));
+      }
+    }
+
+    String sourceId = in.getSourceId().trim();
+    PostJournalRequest req = new PostJournalRequest();
+    req.setSourceType(sourceType);
+    req.setSourceId(sourceId);
+    req.setSourceKey(sourceType.name() + ":" + sourceId);
+    req.setTxnDate(resolveTxnDate(in.getTxnDate()));
+    String narration = in.getNarration();
+    if (narration == null || narration.isBlank()) {
+      narration =
+          vendorPayment
+              ? "Vendor payment"
+              : "Customer settlement";
+    }
+    if (in.getBankRef() != null && !in.getBankRef().isBlank()) {
+      narration = narration + " · Ref " + in.getBankRef().trim();
+    }
+    req.setNarration(narration);
+    req.setLines(lines);
     return postingService.post(shopId, userId, req);
   }
 

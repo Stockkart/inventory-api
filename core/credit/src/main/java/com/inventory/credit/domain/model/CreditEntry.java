@@ -2,6 +2,7 @@ package com.inventory.credit.domain.model;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -39,6 +40,14 @@ public class CreditEntry {
 
   /** Optional idempotency key from caller. */
   private String sourceKey;
+
+  /** Tender used for {@link CreditEntryType#SETTLEMENT} rows. */
+  private String paymentMethod;
+
+  private String bankRef;
+
+  /** Business date supplied at settlement time (may differ from {@link #createdAt}). */
+  private LocalDate txnDate;
 
   private String createdByUserId;
   private Instant createdAt;

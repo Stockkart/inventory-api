@@ -5,6 +5,7 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import lombok.Data;
 
 @Data
@@ -27,4 +28,12 @@ public class CreateCreditSettlementRequest {
   private String referenceType;
   private String referenceId;
   private String sourceKey;
+
+  /** {@code CASH}, {@code UPI}, {@code BANK}, {@code CARD}, or {@code ADJUSTMENT}. */
+  @NotBlank private String paymentMethod;
+
+  private String bankRef;
+
+  /** Business date of the settlement; defaults to today when omitted. */
+  private LocalDate txnDate;
 }

@@ -1,6 +1,8 @@
 package com.inventory.accounting.service;
 
 import com.inventory.accounting.api.AccountingFacade;
+import com.inventory.accounting.api.PartyCreditChargePostingRequest;
+import com.inventory.accounting.api.PartySettlementPostingRequest;
 import com.inventory.accounting.api.VendorPurchaseInvoicePostingRequest;
 import com.inventory.accounting.domain.model.JournalEntry;
 import com.inventory.accounting.domain.model.JournalSource;
@@ -40,6 +42,7 @@ public class AccountingBackfillService {
   private static final String SHOPS = "shops";
   private static final String INVENTORIES = "inventory";
   private static final String PRICING = "pricing";
+  private static final String CREDIT_ENTRIES = "credit_entries";
 
   private final MongoTemplate mongoTemplate;
   private final AccountingFacade accountingFacade;
@@ -134,12 +137,228 @@ public class AccountingBackfillService {
       }
     }
 
+    int[] settlementCounts = backfillCreditSettlements(shopId, userId, from, to);
+    posted += settlementCounts[0];
+    skipped += settlementCounts[1];
+    failed += settlementCounts[2];
+
+    int[] chargeCounts = backfillCreditCharges(shopId, userId, from, to);
+    posted += chargeCounts[0];
+    skipped += chargeCounts[1];
+    failed += chargeCounts[2];
+
     // Re-run the seeder so retired codes (e.g. legacy IGST accounts) that no longer have any
     // ledger activity after the rebuild get pruned automatically.
     if (force) {
       accountService.ensureSeeded(shopId);
     }
     return new BackfillResult(processed, posted, reposted, skipped, failed);
+  }
+
+  /**
+   * Posts journal entries for historical credit settlements that pre-date accounting integration.
+   * Returns {@code [posted, skipped, failed]}.
+   */
+  private int[] backfillCreditSettlements(
+      String shopId, String userId, LocalDate from, LocalDate to) {
+    int posted = 0;
+    int skipped = 0;
+    int failed = 0;
+
+    Criteria c = Criteria.where("shopId").is(shopId).and("entryType").is("SETTLEMENT");
+    if (from != null) {
+      c = c.and("createdAt").gte(Date.from(from.atStartOfDay(ZoneOffset.UTC).toInstant()));
+    }
+    if (to != null) {
+      c =
+          c.and("createdAt")
+              .lt(Date.from(to.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()));
+    }
+
+    List<Document> rows = mongoTemplate.find(new Query(c), Document.class, CREDIT_ENTRIES);
+    for (Document row : rows) {
+      String entryId = stringId(row.get("_id"));
+      if (entryId == null) {
+        failed++;
+        continue;
+      }
+      String partyTypeRaw = row.getString("partyType");
+      boolean vendor = "VENDOR".equalsIgnoreCase(partyTypeRaw);
+      JournalSource sourceType =
+          vendor ? JournalSource.VENDOR_PAYMENT : JournalSource.CUSTOMER_SETTLEMENT;
+      String settlementId = settlementIdFromCreditRow(row, entryId);
+      if (journalEntryRepository
+          .findByShopIdAndSourceTypeAndSourceId(shopId, sourceType, settlementId)
+          .isPresent()) {
+        skipped++;
+        continue;
+      }
+      String partyId = row.getString("partyRefId");
+      if (partyId == null || partyId.isBlank()) {
+        failed++;
+        continue;
+      }
+      BigDecimal amount = toBigDecimal(row.get("amount"));
+      if (amount.signum() <= 0) {
+        skipped++;
+        continue;
+      }
+      try {
+        PartySettlementPostingRequest req =
+            PartySettlementPostingRequest.builder()
+                .sourceId(settlementId)
+                .txnDate(toLocalDate(row.get("txnDate")))
+                .paymentMethod(inferPaymentMethod(row))
+                .amount(amount)
+                .partyId(partyId)
+                .partyDisplayName(partyId)
+                .bankRef(row.getString("bankRef"))
+                .narration(row.getString("note"))
+                .build();
+        if (vendor) {
+          accountingFacade.postVendorPayment(shopId, userId, req);
+        } else {
+          accountingFacade.postCustomerSettlement(shopId, userId, req);
+        }
+        posted++;
+      } catch (Exception ex) {
+        failed++;
+        log.warn(
+            "Settlement backfill failed for credit entry {} shop {}: {}",
+            entryId,
+            shopId,
+            ex.getMessage());
+      }
+    }
+    return new int[] {posted, skipped, failed};
+  }
+
+  /**
+   * Posts journal entries for historical credit charges (UI “You owe more” / “They owe more”) that
+   * are not already covered by a purchase or sale invoice JE. Returns {@code [posted, skipped,
+   * failed]}.
+   */
+  private int[] backfillCreditCharges(String shopId, String userId, LocalDate from, LocalDate to) {
+    int posted = 0;
+    int skipped = 0;
+    int failed = 0;
+
+    Criteria c = Criteria.where("shopId").is(shopId).and("entryType").is("CHARGE");
+    if (from != null) {
+      c = c.and("createdAt").gte(Date.from(from.atStartOfDay(ZoneOffset.UTC).toInstant()));
+    }
+    if (to != null) {
+      c =
+          c.and("createdAt")
+              .lt(Date.from(to.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()));
+    }
+
+    List<Document> rows = mongoTemplate.find(new Query(c), Document.class, CREDIT_ENTRIES);
+    for (Document row : rows) {
+      String entryId = stringId(row.get("_id"));
+      if (entryId == null) {
+        failed++;
+        continue;
+      }
+      if (shouldSkipChargeBackfill(shopId, row)) {
+        skipped++;
+        continue;
+      }
+      String partyTypeRaw = row.getString("partyType");
+      boolean vendor = "VENDOR".equalsIgnoreCase(partyTypeRaw);
+      JournalSource sourceType =
+          vendor ? JournalSource.VENDOR_CREDIT_CHARGE : JournalSource.CUSTOMER_CREDIT_CHARGE;
+      String chargeId = settlementIdFromCreditRow(row, entryId);
+      if (journalEntryRepository
+          .findByShopIdAndSourceTypeAndSourceId(shopId, sourceType, chargeId)
+          .isPresent()) {
+        skipped++;
+        continue;
+      }
+      String partyId = row.getString("partyRefId");
+      if (partyId == null || partyId.isBlank()) {
+        failed++;
+        continue;
+      }
+      BigDecimal amount = toBigDecimal(row.get("amount"));
+      if (amount.signum() <= 0) {
+        skipped++;
+        continue;
+      }
+      try {
+        PartyCreditChargePostingRequest req =
+            PartyCreditChargePostingRequest.builder()
+                .sourceId(chargeId)
+                .txnDate(toLocalDate(row.get("txnDate")))
+                .amount(amount)
+                .partyId(partyId)
+                .partyDisplayName(partyId)
+                .narration(row.getString("note"))
+                .build();
+        if (vendor) {
+          accountingFacade.postVendorCreditCharge(shopId, userId, req);
+        } else {
+          accountingFacade.postCustomerCreditCharge(shopId, userId, req);
+        }
+        posted++;
+      } catch (Exception ex) {
+        failed++;
+        log.warn(
+            "Charge backfill failed for credit entry {} shop {}: {}",
+            entryId,
+            shopId,
+            ex.getMessage());
+      }
+    }
+    return new int[] {posted, skipped, failed};
+  }
+
+  private boolean shouldSkipChargeBackfill(String shopId, Document row) {
+    String sourceKey = row.getString("sourceKey");
+    if (sourceKey != null) {
+      String sk = sourceKey.trim().toUpperCase();
+      if (sk.startsWith("PURCHASE:CREDIT:") || sk.startsWith("SALE:CREDIT:")) {
+        return true;
+      }
+    }
+    String refType = row.getString("referenceType");
+    String refId = row.getString("referenceId");
+    if ("PURCHASE".equalsIgnoreCase(refType) && refId != null && !refId.isBlank()) {
+      return journalEntryRepository
+          .findByShopIdAndSourceTypeAndSourceId(
+              shopId, JournalSource.VENDOR_PURCHASE_INVOICE, refId.trim())
+          .isPresent();
+    }
+    if ("SALE".equalsIgnoreCase(refType) && refId != null && !refId.isBlank()) {
+      return journalEntryRepository
+          .findByShopIdAndSourceTypeAndSourceId(shopId, JournalSource.SALE, refId.trim())
+          .isPresent();
+    }
+    return false;
+  }
+
+  private static String settlementIdFromCreditRow(Document row, String entryId) {
+    String sourceKey = row.getString("sourceKey");
+    if (sourceKey != null && !sourceKey.isBlank()) {
+      int colon = sourceKey.indexOf(':');
+      if (colon > 0 && colon < sourceKey.length() - 1) {
+        return sourceKey.substring(colon + 1).trim();
+      }
+      return sourceKey.trim();
+    }
+    return entryId;
+  }
+
+  private static String inferPaymentMethod(Document row) {
+    String method = row.getString("paymentMethod");
+    if (method != null && !method.isBlank()) {
+      return method.trim().toUpperCase();
+    }
+    String note = row.getString("note");
+    if (note != null && note.toLowerCase().contains("cash")) {
+      return "CASH";
+    }
+    return "BANK";
   }
 
   /**

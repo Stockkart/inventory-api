@@ -36,6 +36,8 @@ public final class SystemAccountCode {
   public static final String SALES = "4100";
   public static final String SALES_RETURNS = "4200";
   public static final String DISCOUNT_ALLOWED = "4300";
+  /** Vendor settlement write-off / discount in our favour (credit side of vendor payment). */
+  public static final String DISCOUNT_RECEIVED = "4350";
 
   // Expenses
   public static final String PURCHASES = "5100";
@@ -43,5 +45,7 @@ public final class SystemAccountCode {
   public static final String COGS = "5300";
   public static final String SHIPPING_FREIGHT = "5400";
   public static final String ROUND_OFF_EXPENSE = "5500";
+  /** Customer settlement shortfall / bad debt write-off. */
+  public static final String BAD_DEBTS_WRITTEN_OFF = "5600";
   public static final String OTHER_OPERATING_EXPENSES = "5900";
 }

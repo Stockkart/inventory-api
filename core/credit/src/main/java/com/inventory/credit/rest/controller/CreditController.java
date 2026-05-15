@@ -9,6 +9,8 @@ import com.inventory.credit.rest.dto.response.CreditAccountResponse;
 import com.inventory.credit.rest.dto.response.CreditEntriesPageResponse;
 import com.inventory.credit.service.CreditMapper;
 import com.inventory.credit.service.CreditService;
+import com.inventory.credit.service.CreditChargeFacade;
+import com.inventory.credit.service.CreditSettlementFacade;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -29,13 +31,15 @@ import org.springframework.web.bind.annotation.RestController;
 public class CreditController {
 
   private final CreditService creditService;
+  private final CreditChargeFacade chargeFacade;
+  private final CreditSettlementFacade settlementFacade;
 
   @PostMapping("/charge")
   public ResponseEntity<ApiResponse<?>> createCharge(
       @Valid @RequestBody CreateCreditChargeRequest body, HttpServletRequest request) {
     String shopId = resolveShop(request);
     String userId = (String) request.getAttribute("userId");
-    var row = creditService.createCharge(shopId, userId, body);
+    var row = chargeFacade.createCharge(shopId, userId, body);
     return ResponseEntity.ok(ApiResponse.success(CreditMapper.toResponse(row)));
   }
 
@@ -44,7 +48,7 @@ public class CreditController {
       @Valid @RequestBody CreateCreditSettlementRequest body, HttpServletRequest request) {
     String shopId = resolveShop(request);
     String userId = (String) request.getAttribute("userId");
-    var row = creditService.createSettlement(shopId, userId, body);
+    var row = settlementFacade.createSettlement(shopId, userId, body);
     return ResponseEntity.ok(ApiResponse.success(CreditMapper.toResponse(row)));
   }
 
