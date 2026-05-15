@@ -29,6 +29,7 @@ public class AccountingCreditChargeFacade implements CreditChargeFacade {
 
   private static final String PURCHASE_CREDIT_PREFIX = "PURCHASE:CREDIT:";
   private static final String SALE_CREDIT_PREFIX = "SALE:CREDIT:";
+  private static final String RETURN_CREDIT_PREFIX = "RETURN:CREDIT:";
 
   private final CreditService creditService;
   private final CreditEntryRepository creditEntryRepository;
@@ -81,7 +82,9 @@ public class AccountingCreditChargeFacade implements CreditChargeFacade {
     String sourceKey = body.getSourceKey();
     if (StringUtils.hasText(sourceKey)) {
       String sk = sourceKey.trim().toUpperCase();
-      if (sk.startsWith(PURCHASE_CREDIT_PREFIX) || sk.startsWith(SALE_CREDIT_PREFIX)) {
+      if (sk.startsWith(PURCHASE_CREDIT_PREFIX)
+          || sk.startsWith(SALE_CREDIT_PREFIX)
+          || sk.startsWith(RETURN_CREDIT_PREFIX)) {
         return false;
       }
     }
@@ -97,6 +100,20 @@ public class AccountingCreditChargeFacade implements CreditChargeFacade {
         && accountingFacade != null) {
       return accountingFacade
           .findBySource(shopId, JournalSource.SALE, body.getReferenceId().trim())
+          .isEmpty();
+    }
+    if ("REFUND".equalsIgnoreCase(body.getReferenceType())
+        && StringUtils.hasText(body.getReferenceId())
+        && accountingFacade != null) {
+      return accountingFacade
+          .findBySource(shopId, JournalSource.SALES_RETURN, body.getReferenceId().trim())
+          .isEmpty();
+    }
+    if ("VENDOR_RETURN".equalsIgnoreCase(body.getReferenceType())
+        && StringUtils.hasText(body.getReferenceId())
+        && accountingFacade != null) {
+      return accountingFacade
+          .findBySource(shopId, JournalSource.VENDOR_PURCHASE_RETURN, body.getReferenceId().trim())
           .isEmpty();
     }
     return true;

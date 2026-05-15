@@ -10,7 +10,9 @@ import com.inventory.accounting.api.PostJournalRequest;
 import com.inventory.accounting.api.PartyCreditChargePostingRequest;
 import com.inventory.accounting.api.PartySettlementPostingRequest;
 import com.inventory.accounting.api.SaleInvoicePostingRequest;
+import com.inventory.accounting.api.SalesReturnPostingRequest;
 import com.inventory.accounting.api.VendorPurchaseInvoicePostingRequest;
+import com.inventory.accounting.api.VendorPurchaseReturnPostingRequest;
 import com.inventory.accounting.domain.model.JournalEntry;
 import com.inventory.accounting.domain.model.JournalSource;
 import com.inventory.accounting.domain.model.PartyType;
@@ -315,6 +317,220 @@ public class AccountingFacadeImpl implements AccountingFacade {
                 : ""));
     req.setLines(lines);
 
+    return postingService.post(shopId, userId, req);
+  }
+
+  /**
+   * Customer sales return / credit note (reverses sale revenue, output GST, and COGS):
+   *
+   * <pre>
+   * Dr Sales Returns              = taxableRevenue
+   * Dr Output CGST/SGST/IGST      = tax
+   * Dr Inventory                  = cogsAmount
+   *     Cr COGS                       = cogsAmount
+   *     Cr Cash / Bank                = refundCash / refundOnline
+   *     Cr Sundry Debtors [CUSTOMER]  = refundToCredit
+   *     Cr Round-off Payable          = roundGain (if CN rounded down)
+   * Dr Round-off Expense            = roundLoss (if CN rounded up)
+   * </pre>
+   */
+  @Override
+  @Transactional
+  public JournalEntry postSalesReturn(String shopId, String userId, SalesReturnPostingRequest in) {
+    if (in == null) {
+      throw new ValidationException("Sales return posting request is required");
+    }
+    if (in.getSourceId() == null || in.getSourceId().isBlank()) {
+      throw new ValidationException("sourceId (refund id) is required");
+    }
+
+    BigDecimal taxable = nz(in.getTaxableRevenue());
+    BigDecimal cgst = nz(in.getOutputCgst());
+    BigDecimal sgst = nz(in.getOutputSgst());
+    BigDecimal igst = nz(in.getOutputIgst());
+    BigDecimal cogs = nz(in.getCogsAmount());
+    BigDecimal roundOff = nz(in.getRoundOff());
+
+    BigDecimal computedTotal = scale(taxable.add(cgst).add(sgst).add(igst).add(roundOff));
+    BigDecimal returnTotal =
+        in.getReturnTotal() != null && in.getReturnTotal().signum() > 0
+            ? scale(in.getReturnTotal())
+            : computedTotal;
+
+    if (returnTotal.signum() <= 0) {
+      throw new ValidationException("Return total must be greater than zero to post");
+    }
+
+    BigDecimal refundCash = nz(in.getRefundCash());
+    BigDecimal refundOnline = nz(in.getRefundOnline());
+    BigDecimal refundToCredit = nz(in.getRefundToCredit());
+    if (refundCash.add(refundOnline).add(refundToCredit).compareTo(returnTotal) > 0) {
+      BigDecimal excess = refundCash.add(refundOnline).add(refundToCredit).subtract(returnTotal);
+      if (refundCash.compareTo(excess) >= 0) {
+        refundCash = refundCash.subtract(excess);
+      } else {
+        excess = excess.subtract(refundCash);
+        refundCash = MoneyUtil.zero();
+        refundOnline = refundOnline.subtract(excess).max(MoneyUtil.zero());
+      }
+      refundToCredit = scale(returnTotal.subtract(refundCash).subtract(refundOnline));
+    } else if (refundCash.add(refundOnline).add(refundToCredit).compareTo(returnTotal) < 0) {
+      refundToCredit = scale(returnTotal.subtract(refundCash).subtract(refundOnline));
+    }
+
+    BigDecimal roundLoss = roundOff.signum() < 0 ? roundOff.negate() : MoneyUtil.zero();
+    BigDecimal roundGain = roundOff.signum() > 0 ? roundOff : MoneyUtil.zero();
+
+    BigDecimal revenueDr = scale(taxable.add(cgst).add(sgst).add(igst).add(roundLoss));
+    BigDecimal refundCr = scale(refundCash.add(refundOnline).add(refundToCredit).add(roundGain));
+    BigDecimal drift = revenueDr.subtract(refundCr);
+    if (drift.signum() != 0) {
+      if (drift.signum() > 0) {
+        roundLoss = scale(roundLoss.add(drift));
+      } else {
+        roundGain = scale(roundGain.add(drift.negate()));
+      }
+    }
+
+    List<PostJournalLine> lines = new ArrayList<>();
+    if (taxable.signum() > 0) {
+      lines.add(debit(SALES_RETURNS, taxable));
+    }
+    if (cgst.signum() > 0) lines.add(debit(OUTPUT_CGST, cgst));
+    if (sgst.signum() > 0) lines.add(debit(OUTPUT_SGST, sgst));
+    if (igst.signum() > 0) lines.add(debit(OUTPUT_IGST, igst));
+    if (roundLoss.signum() > 0) lines.add(debit(ROUND_OFF_EXPENSE, roundLoss));
+    if (cogs.signum() > 0) {
+      lines.add(debit(INVENTORY, cogs));
+      lines.add(credit(COGS, cogs));
+    }
+    if (refundCash.signum() > 0) lines.add(credit(CASH, scale(refundCash)));
+    if (refundOnline.signum() > 0) lines.add(credit(BANK, scale(refundOnline)));
+    if (refundToCredit.signum() > 0) {
+      if (in.getCustomerId() == null || in.getCustomerId().isBlank()) {
+        throw new ValidationException(
+            "customerId is required when return reduces customer receivable");
+      }
+      PostJournalLine debtors = credit(SUNDRY_DEBTORS, scale(refundToCredit));
+      debtors.setPartyType(PartyType.CUSTOMER);
+      debtors.setPartyRefId(in.getCustomerId().trim());
+      debtors.setPartyDisplayName(
+          in.getCustomerDisplayName() != null ? in.getCustomerDisplayName().trim() : null);
+      lines.add(debtors);
+    }
+    if (roundGain.signum() > 0) lines.add(credit(ROUND_OFF_PAYABLE, roundGain));
+
+    PostJournalRequest req = new PostJournalRequest();
+    req.setSourceType(JournalSource.SALES_RETURN);
+    req.setSourceId(in.getSourceId().trim());
+    req.setSourceKey("SALES_RETURN:" + in.getSourceId().trim());
+    req.setTxnDate(resolveTxnDate(in.getTxnDate()));
+    String narration = "Sales return";
+    if (in.getCreditNoteNo() != null && !in.getCreditNoteNo().isBlank()) {
+      narration = narration + " · " + in.getCreditNoteNo().trim();
+    } else if (in.getOriginalInvoiceNo() != null && !in.getOriginalInvoiceNo().isBlank()) {
+      narration = narration + " · vs " + in.getOriginalInvoiceNo().trim();
+    }
+    req.setNarration(narration);
+    req.setLines(lines);
+    return postingService.post(shopId, userId, req);
+  }
+
+  /**
+   * Vendor purchase return (reverses inventory and input GST; reduces payable or records cash in):
+   *
+   * <pre>
+   * Dr Sundry Creditors [VENDOR]  = refundToCredit
+   * Dr Cash / Bank                  = refundCash / refundOnline
+   *     Cr Inventory                = goodsValue
+   *     Cr Input CGST/SGST/IGST     = tax
+   *     Dr Round-off Expense        = roundLoss
+   *     Cr Round-off Payable        = roundGain
+   * </pre>
+   */
+  @Override
+  @Transactional
+  public JournalEntry postVendorPurchaseReturn(
+      String shopId, String userId, VendorPurchaseReturnPostingRequest in) {
+    if (in == null) {
+      throw new ValidationException("Vendor purchase return posting request is required");
+    }
+    if (in.getSourceId() == null || in.getSourceId().isBlank()) {
+      throw new ValidationException("sourceId (vendor return id) is required");
+    }
+    if (in.getVendorId() == null || in.getVendorId().isBlank()) {
+      throw new ValidationException("vendorId is required for vendor purchase return posting");
+    }
+
+    BigDecimal goods = nz(in.getGoodsValue());
+    BigDecimal cgst = nz(in.getInputCgst());
+    BigDecimal sgst = nz(in.getInputSgst());
+    BigDecimal igst = nz(in.getInputIgst());
+    BigDecimal roundOff = nz(in.getRoundOff());
+
+    BigDecimal computedTotal = scale(goods.add(cgst).add(sgst).add(igst).add(roundOff));
+    BigDecimal returnTotal =
+        in.getReturnTotal() != null && in.getReturnTotal().signum() > 0
+            ? scale(in.getReturnTotal())
+            : computedTotal;
+
+    if (returnTotal.signum() <= 0) {
+      throw new ValidationException("Vendor return total must be greater than zero to post");
+    }
+
+    BigDecimal refundCash = nz(in.getRefundCash());
+    BigDecimal refundOnline = nz(in.getRefundOnline());
+    BigDecimal refundToCredit = nz(in.getRefundToCredit());
+    if (refundCash.add(refundOnline).add(refundToCredit).compareTo(returnTotal) > 0) {
+      BigDecimal excess = refundCash.add(refundOnline).add(refundToCredit).subtract(returnTotal);
+      if (refundCash.compareTo(excess) >= 0) {
+        refundCash = refundCash.subtract(excess);
+      } else {
+        excess = excess.subtract(refundCash);
+        refundCash = MoneyUtil.zero();
+        refundOnline = refundOnline.subtract(excess).max(MoneyUtil.zero());
+      }
+      refundToCredit = scale(returnTotal.subtract(refundCash).subtract(refundOnline));
+    } else if (refundCash.add(refundOnline).add(refundToCredit).compareTo(returnTotal) < 0) {
+      refundToCredit = scale(returnTotal.subtract(refundCash).subtract(refundOnline));
+    }
+
+    BigDecimal roundLoss = roundOff.signum() > 0 ? roundOff : MoneyUtil.zero();
+    BigDecimal roundGain = roundOff.signum() < 0 ? roundOff.negate() : MoneyUtil.zero();
+
+    List<PostJournalLine> lines = new ArrayList<>();
+    if (refundToCredit.signum() > 0) {
+      PostJournalLine creditors = debit(SUNDRY_CREDITORS, scale(refundToCredit));
+      creditors.setPartyType(PartyType.VENDOR);
+      creditors.setPartyRefId(in.getVendorId().trim());
+      creditors.setPartyDisplayName(
+          in.getVendorDisplayName() != null ? in.getVendorDisplayName().trim() : null);
+      lines.add(creditors);
+    }
+    if (refundCash.signum() > 0) {
+      lines.add(debit(CASH, scale(refundCash)));
+    }
+    if (refundOnline.signum() > 0) {
+      lines.add(debit(BANK, scale(refundOnline)));
+    }
+    if (roundLoss.signum() > 0) lines.add(debit(ROUND_OFF_EXPENSE, roundLoss));
+    if (goods.signum() > 0) lines.add(credit(INVENTORY, goods));
+    if (cgst.signum() > 0) lines.add(credit(INPUT_CGST, cgst));
+    if (sgst.signum() > 0) lines.add(credit(INPUT_SGST, sgst));
+    if (igst.signum() > 0) lines.add(credit(INPUT_IGST, igst));
+    if (roundGain.signum() > 0) lines.add(credit(ROUND_OFF_PAYABLE, roundGain));
+
+    PostJournalRequest req = new PostJournalRequest();
+    req.setSourceType(JournalSource.VENDOR_PURCHASE_RETURN);
+    req.setSourceId(in.getSourceId().trim());
+    req.setSourceKey("VENDOR_PURCHASE_RETURN:" + in.getSourceId().trim());
+    req.setTxnDate(resolveTxnDate(in.getTxnDate()));
+    req.setNarration(
+        "Vendor purchase return"
+            + (in.getSupplierCreditNoteNo() != null && !in.getSupplierCreditNoteNo().isBlank()
+                ? " · " + in.getSupplierCreditNoteNo().trim()
+                : ""));
+    req.setLines(lines);
     return postingService.post(shopId, userId, req);
   }
 

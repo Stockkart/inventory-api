@@ -64,6 +64,42 @@ public class CreditService {
         null);
   }
 
+  /**
+   * Reduces party due after a return with a credit leg. Does not post cash settlement accounting
+   * (the return JE already Cr Debtors / Dr Creditors). Idempotent on {@code sourceKey}.
+   */
+  @Transactional
+  public CreditEntry recordReturnDueReduction(
+      String shopId,
+      String userId,
+      CreditPartyType partyType,
+      String partyId,
+      String partyDisplayName,
+      BigDecimal amount,
+      String referenceType,
+      String referenceId,
+      String sourceKey,
+      String note,
+      LocalDate txnDate) {
+    return applyEntry(
+        shopId,
+        userId,
+        partyType,
+        partyId,
+        partyDisplayName,
+        null,
+        amount,
+        CreditEntryType.RETURN,
+        CreditDirection.DECREASE_DUE,
+        note,
+        referenceType,
+        referenceId,
+        sourceKey,
+        "CREDIT",
+        null,
+        txnDate);
+  }
+
   @Transactional
   public CreditEntry createSettlement(
       String shopId, String userId, CreateCreditSettlementRequest body) {

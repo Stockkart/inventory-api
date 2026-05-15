@@ -49,9 +49,21 @@ public class Refund {
   private List<RefundItem> refundedItems;
 
   /**
-   * Total refund amount.
+   * Total refund amount (credit note total, typically whole rupees).
    */
   private BigDecimal refundAmount;
+
+  private BigDecimal taxableTotal;
+  private BigDecimal cgstAmount;
+  private BigDecimal sgstAmount;
+  private BigDecimal cogsTotal;
+  private BigDecimal roundOff;
+
+  private String customerId;
+  private BigDecimal refundCash;
+  private BigDecimal refundOnline;
+  private BigDecimal refundToCredit;
+  private String paymentMethod;
 
   /**
    * Number of items refunded.

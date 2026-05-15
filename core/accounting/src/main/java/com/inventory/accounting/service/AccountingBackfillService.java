@@ -4,7 +4,9 @@ import com.inventory.accounting.api.AccountingFacade;
 import com.inventory.accounting.api.PartyCreditChargePostingRequest;
 import com.inventory.accounting.api.PartySettlementPostingRequest;
 import com.inventory.accounting.api.SaleInvoicePostingRequest;
+import com.inventory.accounting.api.SalesReturnPostingRequest;
 import com.inventory.accounting.api.VendorPurchaseInvoicePostingRequest;
+import com.inventory.accounting.api.VendorPurchaseReturnPostingRequest;
 import com.inventory.accounting.domain.model.JournalEntry;
 import com.inventory.accounting.domain.model.JournalSource;
 import com.inventory.accounting.domain.repository.JournalEntryRepository;
@@ -47,6 +49,8 @@ public class AccountingBackfillService {
   private static final String CREDIT_ENTRIES = "credit_entries";
   private static final String PURCHASES = "purchases";
   private static final String CUSTOMERS = "customers";
+  private static final String REFUNDS = "refunds";
+  private static final String VENDOR_PURCHASE_RETURNS = "vendor_purchase_returns";
 
   private final MongoTemplate mongoTemplate;
   private final AccountingFacade accountingFacade;
@@ -193,6 +197,99 @@ public class AccountingBackfillService {
       }
     }
 
+    Criteria returnDate = Criteria.where("shopId").is(shopId);
+    if (from != null) {
+      returnDate =
+          returnDate.and("createdAt").gte(Date.from(from.atStartOfDay(ZoneOffset.UTC).toInstant()));
+    }
+    if (to != null) {
+      returnDate =
+          returnDate.and("createdAt")
+              .lt(Date.from(to.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()));
+    }
+    List<Document> vendorReturns =
+        mongoTemplate.find(new Query(returnDate), Document.class, VENDOR_PURCHASE_RETURNS);
+    for (Document vr : vendorReturns) {
+      processed++;
+      String returnId = stringId(vr.get("_id"));
+      if (returnId == null) {
+        failed++;
+        continue;
+      }
+      Optional<JournalEntry> existingVr =
+          journalEntryRepository.findByShopIdAndSourceTypeAndSourceId(
+              shopId, JournalSource.VENDOR_PURCHASE_RETURN, returnId);
+      boolean vrPosted = existingVr.isPresent();
+      if (vrPosted && !force) {
+        skipped++;
+        continue;
+      }
+      try {
+        VendorPurchaseReturnPostingRequest vrReq = toVendorReturnRequest(returnId, vr);
+        if (vrReq == null) {
+          skipped++;
+          continue;
+        }
+        if (vrPosted) {
+          deleteExistingPosting(shopId, existingVr.get());
+        }
+        accountingFacade.postVendorPurchaseReturn(shopId, userId, vrReq);
+        if (vrPosted) {
+          reposted++;
+        } else {
+          posted++;
+        }
+      } catch (Exception ex) {
+        failed++;
+        log.warn(
+            "Backfill failed for vendor purchase return {} shop {}: {}",
+            returnId,
+            shopId,
+            ex.getMessage());
+      }
+    }
+
+    List<Document> refundDocs = mongoTemplate.find(new Query(returnDate), Document.class, REFUNDS);
+    for (Document refundDoc : refundDocs) {
+      processed++;
+      String refundId = stringId(refundDoc.get("_id"));
+      if (refundId == null) {
+        failed++;
+        continue;
+      }
+      Optional<JournalEntry> existingRefund =
+          journalEntryRepository.findByShopIdAndSourceTypeAndSourceId(
+              shopId, JournalSource.SALES_RETURN, refundId);
+      boolean refundPosted = existingRefund.isPresent();
+      if (refundPosted && !force) {
+        skipped++;
+        continue;
+      }
+      try {
+        SalesReturnPostingRequest refundReq = toSalesReturnRequest(shopId, refundId, refundDoc);
+        if (refundReq == null) {
+          skipped++;
+          continue;
+        }
+        if (refundPosted) {
+          deleteExistingPosting(shopId, existingRefund.get());
+        }
+        accountingFacade.postSalesReturn(shopId, userId, refundReq);
+        if (refundPosted) {
+          reposted++;
+        } else {
+          posted++;
+        }
+      } catch (Exception ex) {
+        failed++;
+        log.warn(
+            "Backfill failed for sales return {} shop {}: {}",
+            refundId,
+            shopId,
+            ex.getMessage());
+      }
+    }
+
     int[] settlementCounts = backfillCreditSettlements(shopId, userId, from, to);
     posted += settlementCounts[0];
     skipped += settlementCounts[1];
@@ -236,6 +333,10 @@ public class AccountingBackfillService {
       String entryId = stringId(row.get("_id"));
       if (entryId == null) {
         failed++;
+        continue;
+      }
+      if (shouldSkipSettlementBackfill(row)) {
+        skipped++;
         continue;
       }
       String partyTypeRaw = row.getString("partyType");
@@ -370,6 +471,18 @@ public class AccountingBackfillService {
     return new int[] {posted, skipped, failed};
   }
 
+  private static boolean shouldSkipSettlementBackfill(Document row) {
+    if ("RETURN".equalsIgnoreCase(row.getString("entryType"))) {
+      return true;
+    }
+    String sourceKey = row.getString("sourceKey");
+    if (sourceKey != null && sourceKey.trim().toUpperCase().startsWith("RETURN:CREDIT:")) {
+      return true;
+    }
+    String refType = row.getString("referenceType");
+    return "REFUND".equalsIgnoreCase(refType) || "VENDOR_RETURN".equalsIgnoreCase(refType);
+  }
+
   private boolean shouldSkipChargeBackfill(String shopId, Document row) {
     String sourceKey = row.getString("sourceKey");
     if (sourceKey != null) {
@@ -460,6 +573,128 @@ public class AccountingBackfillService {
               });
     }
     journalEntryRepository.delete(je);
+  }
+
+  private VendorPurchaseReturnPostingRequest toVendorReturnRequest(String returnId, Document vr) {
+    String invoiceId = vr.getString("vendorPurchaseInvoiceId");
+    if (invoiceId == null || invoiceId.isBlank()) {
+      return null;
+    }
+    Document invoice =
+        mongoTemplate.findOne(
+            new Query(Criteria.where("_id").is(invoiceId)), Document.class, VENDOR_PURCHASE_INVOICES);
+    if (invoice == null) {
+      return null;
+    }
+    String vendorId = invoice.getString("vendorId");
+    if (vendorId == null || vendorId.isBlank()) {
+      return null;
+    }
+    BigDecimal goods = BigDecimal.ZERO;
+    BigDecimal cgst = BigDecimal.ZERO;
+    BigDecimal sgst = BigDecimal.ZERO;
+    Object itemsObj = vr.get("items");
+    if (itemsObj instanceof List<?> items) {
+      for (Object o : items) {
+        if (!(o instanceof Document line)) continue;
+        goods = goods.add(toBigDecimal(line.get("taxableValue")));
+        cgst = cgst.add(toBigDecimal(line.get("centralTaxAmount")));
+        sgst = sgst.add(toBigDecimal(line.get("stateUtTaxAmount")));
+      }
+    }
+    BigDecimal returnTotal = toBigDecimal(vr.get("returnAmount"));
+    if (returnTotal.signum() <= 0) {
+      returnTotal = goods.add(cgst).add(sgst);
+    }
+    BigDecimal preRound = goods.add(cgst).add(sgst).setScale(2, java.math.RoundingMode.HALF_UP);
+    BigDecimal roundOff =
+        returnTotal.subtract(preRound).setScale(4, java.math.RoundingMode.HALF_UP);
+
+    Document vendorDoc =
+        mongoTemplate.findOne(new Query(Criteria.where("_id").is(vendorId)), Document.class, VENDORS);
+
+    return VendorPurchaseReturnPostingRequest.builder()
+        .sourceId(returnId)
+        .supplierCreditNoteNo(vr.getString("supplierCreditNoteNo"))
+        .txnDate(toLocalDate(vr.get("createdAt")))
+        .vendorId(vendorId)
+        .vendorDisplayName(vendorDoc != null ? vendorDoc.getString("name") : null)
+        .originalInvoiceId(invoiceId)
+        .originalInvoiceNo(invoice.getString("invoiceNo"))
+        .goodsValue(goods)
+        .inputCgst(cgst)
+        .inputSgst(sgst)
+        .returnTotal(returnTotal)
+        .roundOff(roundOff)
+        .refundCash(toBigDecimal(vr.get("refundCash")))
+        .refundOnline(toBigDecimal(vr.get("refundOnline")))
+        .refundToCredit(resolveReturnRefundToCredit(vr, returnTotal))
+        .paymentMethod(
+            vr.getString("paymentMethod") != null
+                ? vr.getString("paymentMethod")
+                : invoice.getString("paymentMethod"))
+        .build();
+  }
+
+  private SalesReturnPostingRequest toSalesReturnRequest(
+      String shopId, String refundId, Document refundDoc) {
+    BigDecimal returnTotal = toBigDecimal(refundDoc.get("refundAmount"));
+    if (returnTotal.signum() <= 0) {
+      return null;
+    }
+    BigDecimal taxable = toBigDecimal(refundDoc.get("taxableTotal"));
+    BigDecimal cgst = toBigDecimal(refundDoc.get("cgstAmount"));
+    BigDecimal sgst = toBigDecimal(refundDoc.get("sgstAmount"));
+    if (taxable.signum() <= 0 && cgst.signum() <= 0 && sgst.signum() <= 0) {
+      return null;
+    }
+    String purchaseId = refundDoc.getString("purchaseId");
+    Document purchase =
+        purchaseId != null
+            ? mongoTemplate.findOne(
+                new Query(Criteria.where("_id").is(purchaseId)), Document.class, PURCHASES)
+            : null;
+    String customerId = refundDoc.getString("customerId");
+    if ((customerId == null || customerId.isBlank()) && purchase != null) {
+      customerId = purchase.getString("customerId");
+    }
+    String customerName = purchase != null ? purchase.getString("customerName") : null;
+    if ((customerName == null || customerName.isBlank()) && customerId != null) {
+      customerName = resolvePartyDisplayName(shopId, "CUSTOMER", customerId);
+    }
+    BigDecimal refundCash = toBigDecimal(refundDoc.get("refundCash"));
+    BigDecimal refundOnline = toBigDecimal(refundDoc.get("refundOnline"));
+    BigDecimal refundToCredit = toBigDecimal(refundDoc.get("refundToCredit"));
+    if (refundCash.signum() == 0 && refundOnline.signum() == 0 && refundToCredit.signum() == 0) {
+      refundToCredit = returnTotal;
+    }
+    BigDecimal roundOff = toBigDecimal(refundDoc.get("roundOff"));
+    if (roundOff.signum() == 0) {
+      BigDecimal preRound = taxable.add(cgst).add(sgst);
+      roundOff = returnTotal.subtract(preRound).setScale(4, java.math.RoundingMode.HALF_UP);
+    }
+    return SalesReturnPostingRequest.builder()
+        .sourceId(refundId)
+        .creditNoteNo(refundDoc.getString("creditNoteNo"))
+        .txnDate(toLocalDate(refundDoc.get("createdAt")))
+        .customerId(customerId)
+        .customerDisplayName(customerName)
+        .originalSaleId(purchaseId)
+        .originalInvoiceNo(purchase != null ? purchase.getString("invoiceNo") : null)
+        .taxableRevenue(taxable)
+        .outputCgst(cgst)
+        .outputSgst(sgst)
+        .returnTotal(returnTotal)
+        .cogsAmount(toBigDecimal(refundDoc.get("cogsTotal")))
+        .roundOff(roundOff)
+        .refundCash(refundCash)
+        .refundOnline(refundOnline)
+        .refundToCredit(refundToCredit)
+        .paymentMethod(
+            refundDoc.getString("paymentMethod") != null
+                ? refundDoc.getString("paymentMethod")
+                : (purchase != null ? purchase.getString("paymentMethod") : null))
+        .build();
   }
 
   private SaleInvoicePostingRequest toSaleRequest(
@@ -880,6 +1115,16 @@ public class AccountingBackfillService {
     if (id == null) return null;
     if (id instanceof ObjectId oid) return oid.toHexString();
     return id.toString();
+  }
+
+  private static BigDecimal resolveReturnRefundToCredit(Document doc, BigDecimal returnTotal) {
+    BigDecimal cash = toBigDecimal(doc.get("refundCash"));
+    BigDecimal online = toBigDecimal(doc.get("refundOnline"));
+    BigDecimal credit = toBigDecimal(doc.get("refundToCredit"));
+    if (cash.signum() == 0 && online.signum() == 0 && credit.signum() == 0) {
+      return returnTotal;
+    }
+    return credit;
   }
 
   private static BigDecimal toBigDecimal(Object v) {

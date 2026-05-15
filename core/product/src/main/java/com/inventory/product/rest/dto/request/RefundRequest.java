@@ -1,8 +1,8 @@
 package com.inventory.product.rest.dto.request;
 
-import lombok.Data;
-
+import java.math.BigDecimal;
 import java.util.List;
+import lombok.Data;
 
 /**
  * Request DTO for processing refunds.
@@ -25,6 +25,20 @@ public class RefundRequest {
    * Optional reason or notes for the refund.
    */
   private String reason;
+
+  /**
+   * How the customer is refunded: {@code CASH}, {@code ONLINE}, {@code CREDIT}, or mixed methods.
+   */
+  private String paymentMethod;
+
+  /** Cash refunded now (split-aware). */
+  private BigDecimal cashAmount;
+
+  /** Online / UPI / bank refunded now (split-aware). */
+  private BigDecimal onlineAmount;
+
+  /** Portion applied to customer credit balance (reduces receivable). */
+  private BigDecimal creditAmount;
 
   @Data
   public static class RefundItem {

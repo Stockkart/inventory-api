@@ -36,6 +36,11 @@ public class VendorPurchaseReturn {
   /** Total note value incl. tax parts we track (≈ taxable + CGST + SGST). */
   private BigDecimal returnAmount;
 
+  private String paymentMethod;
+  private BigDecimal refundCash;
+  private BigDecimal refundOnline;
+  private BigDecimal refundToCredit;
+
   private Integer totalLinesReturned;
 
   private String reason;

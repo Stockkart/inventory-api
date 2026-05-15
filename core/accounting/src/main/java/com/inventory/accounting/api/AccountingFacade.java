@@ -26,6 +26,13 @@ public interface AccountingFacade {
   /** High-level helper for a completed sale ({@code SALE}). */
   JournalEntry postSale(String shopId, String userId, SaleInvoicePostingRequest req);
 
+  /** Customer return / credit note ({@code SALES_RETURN}). */
+  JournalEntry postSalesReturn(String shopId, String userId, SalesReturnPostingRequest req);
+
+  /** Vendor purchase return ({@code VENDOR_PURCHASE_RETURN}). */
+  JournalEntry postVendorPurchaseReturn(
+      String shopId, String userId, VendorPurchaseReturnPostingRequest req);
+
   /** Pay down vendor payable: Dr Sundry Creditors, Cr Cash/Bank or Discount Received. */
   JournalEntry postVendorPayment(String shopId, String userId, PartySettlementPostingRequest req);
 
