@@ -12,6 +12,9 @@ import com.inventory.accounting.rest.dto.response.PartyStatementEntryResponse;
 import com.inventory.accounting.rest.dto.response.PartyStatementResponse;
 import com.inventory.accounting.rest.dto.response.PartySummariesResponse;
 import com.inventory.accounting.rest.dto.response.PartySummaryResponse;
+import com.inventory.accounting.rest.dto.response.BalanceSheetResponse;
+import com.inventory.accounting.rest.dto.response.FinancialReportLineDto;
+import com.inventory.accounting.rest.dto.response.ProfitAndLossResponse;
 import com.inventory.accounting.rest.dto.response.TrialBalanceResponse;
 import java.util.List;
 
@@ -158,6 +161,42 @@ public final class AccountingMapper {
         e.getCredit(),
         row.balanceAfter(),
         e.getNarration());
+  }
+
+  public static FinancialReportLineDto toResponse(FinancialReportsService.ReportLine line) {
+    if (line == null) return null;
+    return new FinancialReportLineDto(
+        line.accountId(),
+        line.accountCode(),
+        line.accountName(),
+        line.accountType(),
+        line.amount());
+  }
+
+  public static ProfitAndLossResponse toResponse(FinancialReportsService.ProfitAndLoss pl) {
+    if (pl == null) return null;
+    return new ProfitAndLossResponse(
+        pl.from(),
+        pl.to(),
+        pl.revenueLines().stream().map(AccountingMapper::toResponse).toList(),
+        pl.expenseLines().stream().map(AccountingMapper::toResponse).toList(),
+        pl.totalRevenue(),
+        pl.totalExpense(),
+        pl.netProfit());
+  }
+
+  public static BalanceSheetResponse toResponse(FinancialReportsService.BalanceSheet bs) {
+    if (bs == null) return null;
+    return new BalanceSheetResponse(
+        bs.asOf(),
+        bs.assets().stream().map(AccountingMapper::toResponse).toList(),
+        bs.liabilities().stream().map(AccountingMapper::toResponse).toList(),
+        bs.equity().stream().map(AccountingMapper::toResponse).toList(),
+        bs.totalAssets(),
+        bs.totalLiabilities(),
+        bs.totalEquity(),
+        bs.totalLiabilitiesAndEquity(),
+        bs.imbalance());
   }
 
   public static PartyStatementResponse toResponse(PartyLedgerService.Statement st) {
