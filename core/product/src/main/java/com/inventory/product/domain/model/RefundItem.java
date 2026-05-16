@@ -38,5 +38,11 @@ public class RefundItem {
    * Total refund amount for this item (priceToRetail * quantity).
    */
   private BigDecimal itemRefundAmount;
+
+  private BigDecimal taxableValue;
+  private BigDecimal cgstAmount;
+  private BigDecimal sgstAmount;
+  private BigDecimal cogsAmount;
+  private BigDecimal lineReturnTotal;
 }
 

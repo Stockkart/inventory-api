@@ -5,6 +5,7 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import lombok.Data;
 
 @Data
@@ -27,4 +28,7 @@ public class CreateCreditChargeRequest {
   private String referenceType;
   private String referenceId;
   private String sourceKey;
+
+  /** Business date for the charge; defaults to today when omitted. */
+  private LocalDate txnDate;
 }

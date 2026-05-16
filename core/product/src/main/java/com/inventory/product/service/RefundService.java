@@ -7,7 +7,9 @@ import com.inventory.common.exception.ValidationException;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
+import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.enums.PurchaseStatus;
+import com.inventory.credit.domain.model.CreditPartyType;
 import com.inventory.product.domain.model.Refund;
 import com.inventory.product.domain.model.RefundItem;
 import com.inventory.product.domain.repository.InventoryRepository;
@@ -87,6 +89,12 @@ public class RefundService {
   @Autowired
   private MongoTemplate mongoTemplate;
 
+  @Autowired(required = false)
+  private com.inventory.accounting.api.AccountingFacade accountingFacade;
+
+  @Autowired(required = false)
+  private com.inventory.credit.service.CreditService creditService;
+
   /**
    * Process refund for a purchase.
    * Validates the purchase, calculates refund amount, and restores inventory.
@@ -133,118 +141,157 @@ public class RefundService {
         throw new ValidationException("Can only refund completed purchases. Current status: " + purchase.getStatus());
       }
 
-      // Validate and process refund items
-      List<RefundResponse.RefundedItem> refundedItems = new ArrayList<>();
-      BigDecimal totalRefundAmount = BigDecimal.ZERO;
+      BillingMode billingMode =
+          purchase.getBillingMode() != null ? purchase.getBillingMode() : BillingMode.REGULAR;
       Map<String, Integer> purchasedBaseQuantities = new HashMap<>();
-
-      // Build map of purchased items and quantities
       if (purchase.getItems() != null) {
         for (PurchaseItem purchasedItem : purchase.getItems()) {
-          purchasedBaseQuantities.put(purchasedItem.getInventoryId(),
+          purchasedBaseQuantities.put(
+              purchasedItem.getInventoryId(),
               purchasedItem.getBaseQuantity() != null ? purchasedItem.getBaseQuantity() : 0);
         }
       }
+      Map<String, Integer> priorRefundedBase = priorRefundedBaseByInventory(request.getPurchaseId());
 
-      // Process each refund item
+      List<RefundResponse.RefundedItem> refundedItems = new ArrayList<>();
+      List<RefundItem> domainRefundItems = new ArrayList<>();
+      List<SalesReturnValuation.LineAmounts> lineAmounts = new ArrayList<>();
+
       for (RefundRequest.RefundItem refundItem : request.getItems()) {
         if (!StringUtils.hasText(refundItem.getInventoryId())) {
           throw new ValidationException("Inventory ID is required for all refund items");
         }
         if (refundItem.getQuantity() == null || refundItem.getQuantity() <= 0) {
-          throw new ValidationException("Refund quantity must be greater than 0 for inventory ID: " + refundItem.getInventoryId());
+          throw new ValidationException(
+              "Refund quantity must be greater than 0 for inventory ID: "
+                  + refundItem.getInventoryId());
         }
 
-        // Verify item exists in purchase
         Integer purchasedBaseQty = purchasedBaseQuantities.get(refundItem.getInventoryId());
         if (purchasedBaseQty == null) {
-          throw new ValidationException("Item with inventory ID " + refundItem.getInventoryId() +
-              " was not found in purchase " + request.getPurchaseId());
+          throw new ValidationException(
+              "Item with inventory ID "
+                  + refundItem.getInventoryId()
+                  + " was not found in purchase "
+                  + request.getPurchaseId());
         }
 
-        // Find the purchase item to get selling price
-        PurchaseItem purchaseItem = purchase.getItems().stream()
-            .filter(item -> item.getInventoryId().equals(refundItem.getInventoryId()))
-            .findFirst()
-            .orElseThrow(() -> new ResourceNotFoundException("PurchaseItem", "inventoryId",
-                "Purchase item not found for inventory ID: " + refundItem.getInventoryId()));
-
-        // Calculate refund amount for this item
-        BigDecimal priceToRetail = purchaseItem.getPriceToRetail() != null ? purchaseItem.getPriceToRetail() : BigDecimal.ZERO;
-        BigDecimal itemRefundAmount = priceToRetail.multiply(BigDecimal.valueOf(refundItem.getQuantity()))
-            .setScale(2, RoundingMode.HALF_UP);
+        PurchaseItem purchaseItem =
+            purchase.getItems().stream()
+                .filter(item -> item.getInventoryId().equals(refundItem.getInventoryId()))
+                .findFirst()
+                .orElseThrow(
+                    () ->
+                        new ResourceNotFoundException(
+                            "PurchaseItem",
+                            "inventoryId",
+                            "Purchase item not found for inventory ID: "
+                                + refundItem.getInventoryId()));
 
         int refundBaseQuantity = getRefundBaseQuantity(purchaseItem, refundItem.getQuantity());
-
-        // Verify refund quantity doesn't exceed purchased quantity (in base units)
-        if (refundBaseQuantity > purchasedBaseQty) {
-          throw new ValidationException("Refund quantity (" + refundItem.getQuantity() +
-              ") exceeds purchased quantity for inventory ID: " + refundItem.getInventoryId());
+        int alreadyRefunded =
+            priorRefundedBase.getOrDefault(refundItem.getInventoryId(), 0);
+        if (alreadyRefunded + refundBaseQuantity > purchasedBaseQty) {
+          throw new ValidationException(
+              "Refund quantity exceeds remaining purchased quantity for inventory ID: "
+                  + refundItem.getInventoryId());
         }
 
-        // Restore inventory (always in base units)
+        SalesReturnValuation.LineAmounts amounts =
+            SalesReturnValuation.lineAmounts(
+                purchaseItem, refundBaseQuantity, refundItem.getQuantity(), billingMode);
+
         restoreInventoryForRefund(refundItem.getInventoryId(), refundBaseQuantity, shopId);
 
-        // Create refunded item response
+        BigDecimal priceToRetail =
+            purchaseItem.getPriceToRetail() != null ? purchaseItem.getPriceToRetail() : BigDecimal.ZERO;
+
         RefundResponse.RefundedItem refundedItem = new RefundResponse.RefundedItem();
         refundedItem.setInventoryId(refundItem.getInventoryId());
         refundedItem.setName(purchaseItem.getName());
         refundedItem.setQuantity(refundItem.getQuantity());
         refundedItem.setPriceToRetail(priceToRetail);
-        refundedItem.setItemRefundAmount(itemRefundAmount);
-
+        refundedItem.setItemRefundAmount(amounts.lineTotal());
         refundedItems.add(refundedItem);
-        totalRefundAmount = totalRefundAmount.add(itemRefundAmount);
+
+        RefundItem domainItem = new RefundItem();
+        domainItem.setInventoryId(refundItem.getInventoryId());
+        domainItem.setName(purchaseItem.getName());
+        domainItem.setQuantity(refundItem.getQuantity());
+        domainItem.setPriceToRetail(priceToRetail);
+        domainItem.setItemRefundAmount(amounts.lineTotal());
+        domainItem.setTaxableValue(amounts.taxable());
+        domainItem.setCgstAmount(amounts.cgst());
+        domainItem.setSgstAmount(amounts.sgst());
+        domainItem.setCogsAmount(amounts.cogs());
+        domainItem.setLineReturnTotal(amounts.lineTotal());
+        domainRefundItems.add(domainItem);
+        lineAmounts.add(amounts);
       }
 
-      // Convert response items to domain model items
-      List<RefundItem> domainRefundItems = refundedItems.stream()
-          .map(item -> {
-            RefundItem domainItem = new RefundItem();
-            domainItem.setInventoryId(item.getInventoryId());
-            domainItem.setName(item.getName());
-            domainItem.setQuantity(item.getQuantity());
-            domainItem.setPriceToRetail(item.getPriceToRetail());
-            domainItem.setItemRefundAmount(item.getItemRefundAmount());
-            return domainItem;
-          })
-          .collect(Collectors.toList());
+      SalesReturnValuation.AmountTotals totals = SalesReturnValuation.aggregate(lineAmounts);
+      ReturnPaymentBreakdown.Result tender =
+          ReturnPaymentBreakdown.resolve(
+              totals.returnTotal(),
+              request.getPaymentMethod(),
+              request.getCashAmount(),
+              request.getOnlineAmount(),
+              request.getCreditAmount());
 
-      // Create and save refund entity
       Refund refund = new Refund();
       refund.setPurchaseId(request.getPurchaseId());
       refund.setShopId(shopId);
       refund.setUserId(userId);
       refund.setCreditNoteNo(invoiceSequenceService.getNextCreditNoteNo(shopId));
       refund.setRefundedItems(domainRefundItems);
-      refund.setRefundAmount(totalRefundAmount.setScale(2, RoundingMode.HALF_UP));
+      refund.setRefundAmount(totals.returnTotal());
+      refund.setTaxableTotal(totals.taxableTotal());
+      refund.setCgstAmount(totals.cgstTotal());
+      refund.setSgstAmount(totals.sgstTotal());
+      refund.setCogsTotal(totals.cogsTotal());
+      refund.setRoundOff(totals.roundOff());
+      refund.setCustomerId(purchase.getCustomerId());
+      refund.setRefundCash(tender.refundCash());
+      refund.setRefundOnline(tender.refundOnline());
+      refund.setRefundToCredit(tender.refundToCredit());
+      refund.setPaymentMethod(tender.paymentMethod());
       refund.setTotalItemsRefunded(refundedItems.size());
-      refund.setReason(request.getReason()); // Optional reason from request
+      refund.setReason(request.getReason());
       refund.setCreatedAt(Instant.now());
       refund.setUpdatedAt(Instant.now());
 
-      // Save refund to database
       refund = refundRepository.save(refund);
+
+      postAccountingAndCreditForRefund(refund, purchase, totals, shopId, userId);
 
       log.info("Refund saved with credit note {} (id {}) for purchase ID: {}",
           refund.getCreditNoteNo(), refund.getId(), request.getPurchaseId());
 
-      BigDecimal roundedAmount = totalRefundAmount.setScale(2, RoundingMode.HALF_UP);
-      RefundResponse response = refundMapper.toRefundResponse(
-          refund.getId(),
-          refund.getCreditNoteNo(),
-          request.getPurchaseId(),
-          refundedItems,
-          roundedAmount,
-          refund.getCreatedAt());
+      BigDecimal roundedAmount = totals.returnTotal();
+      RefundResponse response =
+          refundMapper.toRefundResponse(
+              refund.getId(),
+              refund.getCreditNoteNo(),
+              request.getPurchaseId(),
+              refundedItems,
+              roundedAmount,
+              refund.getCreatedAt());
 
-      log.info("Refund processed successfully for purchase ID: {}. Total refund amount: {}, Items refunded: {}",
-          request.getPurchaseId(), totalRefundAmount, refundedItems.size());
+      log.info(
+          "Refund processed successfully for purchase ID: {}. Total refund amount: {}, Items refunded: {}",
+          request.getPurchaseId(),
+          roundedAmount,
+          refundedItems.size());
 
       if (metrics != null) {
-        metrics.record(ProductMetricsConstants.REFUNDS_TOTAL, 1, "module", ProductMetricsConstants.MODULE);
+        metrics.record(
+            ProductMetricsConstants.REFUNDS_TOTAL, 1, "module", ProductMetricsConstants.MODULE);
         if (roundedAmount.compareTo(BigDecimal.ZERO) > 0) {
-          metrics.record(ProductMetricsConstants.REFUND_AMOUNT, roundedAmount.doubleValue(), "module", ProductMetricsConstants.MODULE);
+          metrics.record(
+              ProductMetricsConstants.REFUND_AMOUNT,
+              roundedAmount.doubleValue(),
+              "module",
+              ProductMetricsConstants.MODULE);
         }
       }
 
@@ -365,6 +412,118 @@ public class RefundService {
       return 1;
     }
     return inventory.getUnitConversions().getFactor();
+  }
+
+  private void postAccountingAndCreditForRefund(
+      Refund refund,
+      Purchase purchase,
+      SalesReturnValuation.AmountTotals totals,
+      String shopId,
+      String userId) {
+    if (accountingFacade != null && refund != null) {
+      java.time.LocalDate txnDate =
+          refund.getCreatedAt() != null
+              ? java.time.LocalDate.ofInstant(refund.getCreatedAt(), java.time.ZoneOffset.UTC)
+              : java.time.LocalDate.now();
+      com.inventory.accounting.api.SalesReturnPostingRequest req =
+          com.inventory.accounting.api.SalesReturnPostingRequest.builder()
+              .sourceId(refund.getId())
+              .creditNoteNo(refund.getCreditNoteNo())
+              .txnDate(txnDate)
+              .customerId(refund.getCustomerId())
+              .customerDisplayName(resolveCustomerDisplayName(purchase))
+              .originalSaleId(purchase.getId())
+              .originalInvoiceNo(purchase.getInvoiceNo())
+              .taxableRevenue(totals.taxableTotal())
+              .outputCgst(totals.cgstTotal())
+              .outputSgst(totals.sgstTotal())
+              .returnTotal(totals.returnTotal())
+              .cogsAmount(totals.cogsTotal())
+              .roundOff(totals.roundOff())
+              .refundCash(refund.getRefundCash())
+              .refundOnline(refund.getRefundOnline())
+              .refundToCredit(refund.getRefundToCredit())
+              .paymentMethod(refund.getPaymentMethod())
+              .build();
+      accountingFacade.postSalesReturn(shopId, userId, req);
+    }
+
+    if (creditService != null
+        && refund != null
+        && refund.getRefundToCredit() != null
+        && refund.getRefundToCredit().signum() > 0
+        && StringUtils.hasText(refund.getCustomerId())) {
+      creditService.recordReturnDueReduction(
+          shopId,
+          userId,
+          CreditPartyType.CUSTOMER,
+          refund.getCustomerId().trim(),
+          resolveCustomerDisplayName(purchase),
+          refund.getRefundToCredit(),
+          "REFUND",
+          refund.getId(),
+          "RETURN:CREDIT:" + refund.getId(),
+          "Sales return (credit)"
+              + (StringUtils.hasText(refund.getCreditNoteNo())
+                  ? " · CN " + refund.getCreditNoteNo().trim()
+                  : "")
+              + (StringUtils.hasText(purchase.getInvoiceNo())
+                  ? " · vs " + purchase.getInvoiceNo().trim()
+                  : ""),
+          refund.getCreatedAt() != null
+              ? java.time.LocalDate.ofInstant(refund.getCreatedAt(), java.time.ZoneOffset.UTC)
+              : java.time.LocalDate.now());
+    }
+  }
+
+  private String resolveCustomerDisplayName(Purchase purchase) {
+    if (purchase == null) {
+      return "Customer";
+    }
+    if (StringUtils.hasText(purchase.getCustomerName())) {
+      return purchase.getCustomerName().trim();
+    }
+    if (!StringUtils.hasText(purchase.getCustomerId())) {
+      return "Customer";
+    }
+    return customerRepository
+        .findById(purchase.getCustomerId().trim())
+        .map(c -> StringUtils.hasText(c.getName()) ? c.getName().trim() : "Customer")
+        .orElse("Customer");
+  }
+
+  private Map<String, Integer> priorRefundedBaseByInventory(String purchaseId) {
+    Map<String, Integer> out = new HashMap<>();
+    if (!StringUtils.hasText(purchaseId)) {
+      return out;
+    }
+    Purchase purchase = purchaseRepository.findById(purchaseId).orElse(null);
+    if (purchase == null) {
+      return out;
+    }
+    for (Refund prior : refundRepository.findByPurchaseIdOrderByCreatedAtDesc(purchaseId)) {
+      if (prior.getRefundedItems() == null) {
+        continue;
+      }
+      for (RefundItem item : prior.getRefundedItems()) {
+        if (!StringUtils.hasText(item.getInventoryId()) || item.getQuantity() == null) {
+          continue;
+        }
+        PurchaseItem pi =
+            purchase.getItems() == null
+                ? null
+                : purchase.getItems().stream()
+                    .filter(p -> item.getInventoryId().equals(p.getInventoryId()))
+                    .findFirst()
+                    .orElse(null);
+        if (pi == null) {
+          continue;
+        }
+        int base = getRefundBaseQuantity(pi, item.getQuantity());
+        out.merge(item.getInventoryId(), base, Integer::sum);
+      }
+    }
+    return out;
   }
 
   private int getRefundBaseQuantity(PurchaseItem purchaseItem, Integer refundQuantity) {

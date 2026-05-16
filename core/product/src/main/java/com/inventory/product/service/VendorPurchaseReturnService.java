@@ -81,6 +81,12 @@ public class VendorPurchaseReturnService {
   @Autowired
   private MongoTemplate mongoTemplate;
 
+  @Autowired(required = false)
+  private com.inventory.accounting.api.AccountingFacade accountingFacade;
+
+  @Autowired(required = false)
+  private com.inventory.credit.service.CreditService creditService;
+
   /**
    * Paginated supplier return history for the shop, newest first.
    *
@@ -456,12 +462,29 @@ public class VendorPurchaseReturnService {
       record.setVendorPurchaseInvoiceId(invoice.getId());
       record.setSupplierCreditNoteNo(supplierCn);
       record.setItems(List.copyOf(aggregates.values()));
-      record.setReturnAmount(totalReturnAmount.setScale(2, RoundingMode.HALF_UP));
+      BigDecimal returnAmount = totalReturnAmount.setScale(2, RoundingMode.HALF_UP);
+      ReturnPaymentBreakdown.Result tender =
+          ReturnPaymentBreakdown.scaleToTotal(
+              ReturnPaymentBreakdown.resolve(
+                  returnAmount,
+                  request.getPaymentMethod(),
+                  request.getCashAmount(),
+                  request.getOnlineAmount(),
+                  request.getCreditAmount()),
+              returnAmount);
+
+      record.setReturnAmount(returnAmount);
+      record.setPaymentMethod(tender.paymentMethod());
+      record.setRefundCash(tender.refundCash());
+      record.setRefundOnline(tender.refundOnline());
+      record.setRefundToCredit(tender.refundToCredit());
       record.setTotalLinesReturned(aggregates.size());
       record.setReason(StringUtils.hasText(request.getReason()) ? request.getReason().trim() : null);
       record.setCreatedAt(Instant.now());
       record.setUpdatedAt(Instant.now());
       record = vendorPurchaseReturnRepository.save(record);
+
+      postAccountingAndCreditForVendorReturn(record, invoice, shopId, userId);
 
       log.info(
           "Vendor purchase return recorded: {}, supplierCn={}, invoice={}, shop={}",
@@ -488,6 +511,105 @@ public class VendorPurchaseReturnService {
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
           "Unexpected error recording vendor purchase return: " + e.getMessage(), e);
     }
+  }
+
+  private void postAccountingAndCreditForVendorReturn(
+      VendorPurchaseReturn record,
+      VendorPurchaseInvoice invoice,
+      String shopId,
+      String userId) {
+    if (record == null || invoice == null) {
+      return;
+    }
+    BigDecimal goods = BigDecimal.ZERO;
+    BigDecimal cgst = BigDecimal.ZERO;
+    BigDecimal sgst = BigDecimal.ZERO;
+    if (record.getItems() != null) {
+      for (VendorPurchaseReturnItem line : record.getItems()) {
+        goods = goods.add(nz(line.getTaxableValue()));
+        cgst = cgst.add(nz(line.getCentralTaxAmount()));
+        sgst = sgst.add(nz(line.getStateUtTaxAmount()));
+      }
+    }
+    goods = goods.setScale(2, RoundingMode.HALF_UP);
+    cgst = cgst.setScale(2, RoundingMode.HALF_UP);
+    sgst = sgst.setScale(2, RoundingMode.HALF_UP);
+    BigDecimal returnTotal = nz(record.getReturnAmount()).setScale(2, RoundingMode.HALF_UP);
+    BigDecimal preRound = goods.add(cgst).add(sgst).setScale(2, RoundingMode.HALF_UP);
+    BigDecimal roundOff = returnTotal.subtract(preRound).setScale(4, RoundingMode.HALF_UP);
+
+    String vendorId = invoice.getVendorId();
+    String vendorName =
+        vendorId != null
+            ? vendorRepository
+                .findById(vendorId.trim())
+                .map(v -> StringUtils.hasText(v.getName()) ? v.getName().trim() : "Vendor")
+                .orElse("Vendor")
+            : "Vendor";
+
+    BigDecimal refundCash = nz(record.getRefundCash());
+    BigDecimal refundOnline = nz(record.getRefundOnline());
+    BigDecimal refundToCredit = nz(record.getRefundToCredit());
+
+    if (accountingFacade != null) {
+      java.time.LocalDate txnDate =
+          record.getCreatedAt() != null
+              ? java.time.LocalDate.ofInstant(record.getCreatedAt(), java.time.ZoneOffset.UTC)
+              : java.time.LocalDate.now();
+      accountingFacade.postVendorPurchaseReturn(
+          shopId,
+          userId,
+          com.inventory.accounting.api.VendorPurchaseReturnPostingRequest.builder()
+              .sourceId(record.getId())
+              .supplierCreditNoteNo(record.getSupplierCreditNoteNo())
+              .txnDate(txnDate)
+              .vendorId(vendorId)
+              .vendorDisplayName(vendorName)
+              .originalInvoiceId(invoice.getId())
+              .originalInvoiceNo(invoice.getInvoiceNo())
+              .goodsValue(goods)
+              .inputCgst(cgst)
+              .inputSgst(sgst)
+              .returnTotal(returnTotal)
+              .roundOff(roundOff)
+              .refundCash(refundCash)
+              .refundOnline(refundOnline)
+              .refundToCredit(refundToCredit)
+              .paymentMethod(
+                  record.getPaymentMethod() != null
+                      ? record.getPaymentMethod()
+                      : "CREDIT")
+              .build());
+    }
+
+    if (creditService != null
+        && refundToCredit.signum() > 0
+        && StringUtils.hasText(vendorId)) {
+      creditService.recordReturnDueReduction(
+          shopId,
+          userId,
+          com.inventory.credit.domain.model.CreditPartyType.VENDOR,
+          vendorId.trim(),
+          vendorName,
+          refundToCredit,
+          "VENDOR_RETURN",
+          record.getId(),
+          "RETURN:CREDIT:" + record.getId(),
+          "Purchase return (credit)"
+              + (StringUtils.hasText(record.getSupplierCreditNoteNo())
+                  ? " · CN " + record.getSupplierCreditNoteNo().trim()
+                  : "")
+              + (StringUtils.hasText(invoice.getInvoiceNo())
+                  ? " · vs " + invoice.getInvoiceNo().trim()
+                  : ""),
+          record.getCreatedAt() != null
+              ? java.time.LocalDate.ofInstant(record.getCreatedAt(), java.time.ZoneOffset.UTC)
+              : java.time.LocalDate.now());
+    }
+  }
+
+  private static BigDecimal nz(BigDecimal v) {
+    return v != null ? v : BigDecimal.ZERO;
   }
 
   private void reduceInventoryForVendorReturn(

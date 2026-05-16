@@ -46,6 +46,12 @@ public class Purchase {
   private Instant soldAt;
   private boolean valid;
   private String paymentMethod;
+  /** Cash leg at checkout completion (split payment). */
+  private BigDecimal cashAmount;
+  /** Online leg at checkout completion (split payment). */
+  private BigDecimal onlineAmount;
+  /** Credit leg at checkout completion (customer due). */
+  private BigDecimal creditAmount;
   private PurchaseStatus status;
   private String customerId;
   private String customerName; // Used when only name is provided without phone

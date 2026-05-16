@@ -1,24 +1,27 @@
 package com.inventory.accounting.domain.repository;
 
 import com.inventory.accounting.domain.model.JournalEntry;
-import java.util.List;
+import com.inventory.accounting.domain.model.JournalSource;
+import java.time.LocalDate;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.MongoRepository;
-import org.springframework.data.mongodb.repository.Query;
 
 public interface JournalEntryRepository extends MongoRepository<JournalEntry, String> {
 
-  Page<JournalEntry> findByShopIdOrderByPostedAtDesc(String shopId, Pageable pageable);
+  Optional<JournalEntry> findByShopIdAndId(String shopId, String id);
 
-  Page<JournalEntry> findByShopIdOrderByPostedAtAsc(String shopId, Pageable pageable);
+  Optional<JournalEntry> findByShopIdAndSourceTypeAndSourceId(
+      String shopId, JournalSource sourceType, String sourceId);
 
-  Optional<JournalEntry> findByShopIdAndSourceKey(String shopId, String sourceKey);
+  Page<JournalEntry> findByShopIdOrderByTxnDateDescPostedAtDesc(String shopId, Pageable pageable);
 
-  /** Journals that embed at least one {@code lines[].accountId} matching the argument. */
-  @Query("{ 'shopId': ?0, 'lines.accountId': ?1 }")
-  List<JournalEntry> findByShopIdAndLineAccountId(String shopId, String accountId);
+  Page<JournalEntry> findByShopIdAndTxnDateBetweenOrderByTxnDateDescPostedAtDesc(
+      String shopId, LocalDate from, LocalDate to, Pageable pageable);
+
+  Page<JournalEntry> findByShopIdAndSourceTypeOrderByTxnDateDescPostedAtDesc(
+      String shopId, JournalSource sourceType, Pageable pageable);
 
   long countByShopId(String shopId);
 }

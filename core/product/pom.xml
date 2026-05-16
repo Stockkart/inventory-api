@@ -18,12 +18,12 @@
         </dependency>
         <dependency>
             <groupId>com.inventory</groupId>
-            <artifactId>accounting</artifactId>
+            <artifactId>credit</artifactId>
             <version>1.0.0</version>
         </dependency>
         <dependency>
             <groupId>com.inventory</groupId>
-            <artifactId>credit</artifactId>
+            <artifactId>accounting</artifactId>
             <version>1.0.0</version>
         </dependency>
         <dependency>

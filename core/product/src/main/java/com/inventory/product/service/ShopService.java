@@ -56,6 +56,9 @@ public class ShopService {
   @Value("${plan.trial-days:30}")
   private int trialDays;
 
+  @Autowired(required = false)
+  private com.inventory.accounting.service.ChartOfAccountsSeeder chartOfAccountsSeeder;
+
   @Transactional
   public ShopRegistrationResponse register(RegisterShopRequest request, String userId) {
     try {
@@ -102,6 +105,17 @@ public class ShopService {
       userAccountRepository.save(userAccount);
 
       log.info("Successfully registered shop with ID: {} and updated user account: {}", shop.getShopId(), userId);
+
+      if (chartOfAccountsSeeder != null) {
+        try {
+          chartOfAccountsSeeder.seedShop(shop.getShopId());
+        } catch (Exception ex) {
+          log.warn(
+              "Failed to seed chart of accounts for shop {}: {}",
+              shop.getShopId(),
+              ex.getMessage());
+        }
+      }
 
       return shopMapper.toRegistrationResponse(shop);
 

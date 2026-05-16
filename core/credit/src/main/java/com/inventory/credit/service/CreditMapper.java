@@ -34,6 +34,9 @@ public final class CreditMapper {
         e.getReferenceType(),
         e.getReferenceId(),
         e.getSourceKey(),
+        e.getPaymentMethod(),
+        e.getBankRef(),
+        e.getTxnDate(),
         e.getCreatedByUserId(),
         e.getCreatedAt());
   }
