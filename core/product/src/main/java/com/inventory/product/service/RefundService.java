@@ -231,14 +231,12 @@ public class RefundService {
 
       SalesReturnValuation.AmountTotals totals = SalesReturnValuation.aggregate(lineAmounts);
       ReturnPaymentBreakdown.Result tender =
-          ReturnPaymentBreakdown.scaleToTotal(
-              ReturnPaymentBreakdown.resolve(
-                  totals.returnTotal(),
-                  request.getPaymentMethod(),
-                  request.getCashAmount(),
-                  request.getOnlineAmount(),
-                  request.getCreditAmount()),
-              totals.returnTotal());
+          ReturnPaymentBreakdown.resolve(
+              totals.returnTotal(),
+              request.getPaymentMethod(),
+              request.getCashAmount(),
+              request.getOnlineAmount(),
+              request.getCreditAmount());
 
       Refund refund = new Refund();
       refund.setPurchaseId(request.getPurchaseId());

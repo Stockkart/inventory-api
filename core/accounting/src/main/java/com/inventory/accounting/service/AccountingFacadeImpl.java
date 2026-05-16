@@ -19,6 +19,7 @@ import com.inventory.accounting.domain.model.PartyType;
 import com.inventory.accounting.domain.repository.JournalEntryRepository;
 import com.inventory.common.exception.ValidationException;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -305,6 +306,8 @@ public class AccountingFacadeImpl implements AccountingFacade {
     if (roundGain.signum() > 0) lines.add(credit(ROUND_OFF_PAYABLE, roundGain));
     if (cogs.signum() > 0) lines.add(credit(INVENTORY, cogs));
 
+    absorbPostingRoundingDrift(lines);
+
     PostJournalRequest req = new PostJournalRequest();
     req.setSourceType(JournalSource.SALE);
     req.setSourceId(in.getSourceId().trim());
@@ -364,19 +367,11 @@ public class AccountingFacadeImpl implements AccountingFacade {
     BigDecimal refundCash = nz(in.getRefundCash());
     BigDecimal refundOnline = nz(in.getRefundOnline());
     BigDecimal refundToCredit = nz(in.getRefundToCredit());
-    if (refundCash.add(refundOnline).add(refundToCredit).compareTo(returnTotal) > 0) {
-      BigDecimal excess = refundCash.add(refundOnline).add(refundToCredit).subtract(returnTotal);
-      if (refundCash.compareTo(excess) >= 0) {
-        refundCash = refundCash.subtract(excess);
-      } else {
-        excess = excess.subtract(refundCash);
-        refundCash = MoneyUtil.zero();
-        refundOnline = refundOnline.subtract(excess).max(MoneyUtil.zero());
-      }
-      refundToCredit = scale(returnTotal.subtract(refundCash).subtract(refundOnline));
-    } else if (refundCash.add(refundOnline).add(refundToCredit).compareTo(returnTotal) < 0) {
-      refundToCredit = scale(returnTotal.subtract(refundCash).subtract(refundOnline));
-    }
+    RefundTenderSplit tenders =
+        normalizeRefundTendersToReturnTotal(returnTotal, refundCash, refundOnline, refundToCredit);
+    refundCash = tenders.cash();
+    refundOnline = tenders.online();
+    refundToCredit = tenders.credit();
 
     BigDecimal roundLoss = roundOff.signum() < 0 ? roundOff.negate() : MoneyUtil.zero();
     BigDecimal roundGain = roundOff.signum() > 0 ? roundOff : MoneyUtil.zero();
@@ -419,6 +414,8 @@ public class AccountingFacadeImpl implements AccountingFacade {
       lines.add(debtors);
     }
     if (roundGain.signum() > 0) lines.add(credit(ROUND_OFF_PAYABLE, roundGain));
+
+    absorbPostingRoundingDrift(lines);
 
     PostJournalRequest req = new PostJournalRequest();
     req.setSourceType(JournalSource.SALES_RETURN);
@@ -481,19 +478,11 @@ public class AccountingFacadeImpl implements AccountingFacade {
     BigDecimal refundCash = nz(in.getRefundCash());
     BigDecimal refundOnline = nz(in.getRefundOnline());
     BigDecimal refundToCredit = nz(in.getRefundToCredit());
-    if (refundCash.add(refundOnline).add(refundToCredit).compareTo(returnTotal) > 0) {
-      BigDecimal excess = refundCash.add(refundOnline).add(refundToCredit).subtract(returnTotal);
-      if (refundCash.compareTo(excess) >= 0) {
-        refundCash = refundCash.subtract(excess);
-      } else {
-        excess = excess.subtract(refundCash);
-        refundCash = MoneyUtil.zero();
-        refundOnline = refundOnline.subtract(excess).max(MoneyUtil.zero());
-      }
-      refundToCredit = scale(returnTotal.subtract(refundCash).subtract(refundOnline));
-    } else if (refundCash.add(refundOnline).add(refundToCredit).compareTo(returnTotal) < 0) {
-      refundToCredit = scale(returnTotal.subtract(refundCash).subtract(refundOnline));
-    }
+    RefundTenderSplit tenders =
+        normalizeRefundTendersToReturnTotal(returnTotal, refundCash, refundOnline, refundToCredit);
+    refundCash = tenders.cash();
+    refundOnline = tenders.online();
+    refundToCredit = tenders.credit();
 
     BigDecimal roundLoss = roundOff.signum() > 0 ? roundOff : MoneyUtil.zero();
     BigDecimal roundGain = roundOff.signum() < 0 ? roundOff.negate() : MoneyUtil.zero();
@@ -519,6 +508,8 @@ public class AccountingFacadeImpl implements AccountingFacade {
     if (sgst.signum() > 0) lines.add(credit(INPUT_SGST, sgst));
     if (igst.signum() > 0) lines.add(credit(INPUT_IGST, igst));
     if (roundGain.signum() > 0) lines.add(credit(ROUND_OFF_PAYABLE, roundGain));
+
+    absorbPostingRoundingDrift(lines);
 
     PostJournalRequest req = new PostJournalRequest();
     req.setSourceType(JournalSource.VENDOR_PURCHASE_RETURN);
@@ -763,6 +754,67 @@ public class AccountingFacadeImpl implements AccountingFacade {
       case "CASH":
       default:
         return CASH;
+    }
+  }
+
+  private record RefundTenderSplit(BigDecimal cash, BigDecimal online, BigDecimal credit) {}
+
+  /**
+   * Scales cash / online / credit refund legs proportionally to {@code returnTotal}. Matches
+   * {@code ReturnPaymentBreakdown} in the product module — avoids zeroing bank when the caller
+   * intended a mixed tender and the sum only differs slightly from the CN total.
+   */
+  private static RefundTenderSplit normalizeRefundTendersToReturnTotal(
+      BigDecimal returnTotal,
+      BigDecimal cashIn,
+      BigDecimal onlineIn,
+      BigDecimal creditIn) {
+    BigDecimal target = scale(returnTotal);
+    BigDecimal cash = nz(cashIn);
+    BigDecimal online = nz(onlineIn);
+    BigDecimal credit = nz(creditIn);
+    BigDecimal sum = cash.add(online).add(credit);
+    if (sum.compareTo(target) == 0) {
+      return new RefundTenderSplit(cash, online, credit);
+    }
+    if (sum.signum() == 0) {
+      return new RefundTenderSplit(MoneyUtil.zero(), MoneyUtil.zero(), target);
+    }
+    cash = cash.multiply(target).divide(sum, 4, RoundingMode.HALF_UP);
+    online = online.multiply(target).divide(sum, 4, RoundingMode.HALF_UP);
+    credit = target.subtract(cash).subtract(online).setScale(4, RoundingMode.HALF_UP);
+    if (credit.signum() < 0) {
+      if (cash.compareTo(credit.negate()) >= 0) {
+        cash = cash.add(credit);
+      } else {
+        online = online.add(cash).add(credit);
+        cash = MoneyUtil.zero();
+      }
+      credit = MoneyUtil.zero();
+    }
+    return new RefundTenderSplit(scale(cash), scale(online), scale(credit));
+  }
+
+  private static void absorbPostingRoundingDrift(List<PostJournalLine> lines) {
+    BigDecimal totalDebit = MoneyUtil.zero();
+    BigDecimal totalCredit = MoneyUtil.zero();
+    for (PostJournalLine in : lines) {
+      BigDecimal debit = nz(in.getDebit());
+      BigDecimal credit = nz(in.getCredit());
+      if (debit.signum() == 0 && credit.signum() == 0) {
+        continue;
+      }
+      totalDebit = scale(totalDebit.add(debit));
+      totalCredit = scale(totalCredit.add(credit));
+    }
+    BigDecimal diff = totalDebit.subtract(totalCredit);
+    if (diff.signum() == 0) {
+      return;
+    }
+    if (diff.signum() > 0) {
+      lines.add(credit(ROUND_OFF_PAYABLE, diff));
+    } else {
+      lines.add(debit(ROUND_OFF_EXPENSE, diff.negate()));
     }
   }
 

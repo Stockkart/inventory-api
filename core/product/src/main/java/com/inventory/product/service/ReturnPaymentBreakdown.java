@@ -46,15 +46,12 @@ public final class ReturnPaymentBreakdown {
         throw new ValidationException(
             "Refund split (cash + online + credit) cannot exceed return total");
       }
-      if (sum.compareTo(total) < 0) {
-        throw new ValidationException(
-            "Refund split must equal return total ("
-                + sum.setScale(2, RoundingMode.HALF_UP)
-                + " vs "
-                + total.setScale(2, RoundingMode.HALF_UP)
-                + ")");
+      Result tentative = new Result(method, cash, online, credit);
+      if (sum.compareTo(total) != 0) {
+        // UI estimate often differs from server total (whole-rupee rounding, tax per line).
+        return scaleToTotal(tentative, total);
       }
-      return new Result(method, cash, online, credit);
+      return tentative;
     }
 
     return resolveFromMethodOnly(method, total);
