@@ -43,5 +43,7 @@ public class Shop {
   private Instant planExpiryDate;
   /** Shop type: RETAILER, DISTRIBUTOR, or WHOLESALER. Affects default price (MRP for retailer) and tax handling. */
   private ShopType shopType;
+  /** Business profile id (e.g. pharmacy). Drives validation and UI field rules. */
+  private String businessProfileId;
 }
 

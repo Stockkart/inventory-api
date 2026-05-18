@@ -1,0 +1,66 @@
+{
+  "id": "pharmacy",
+  "code": "pharmacy",
+  "name": "Pharmacy / Medical",
+  "enabled": true,
+  "version": 1,
+  "modules": {
+    "batchTracking": true,
+    "expiryReminders": true,
+    "schemes": true,
+    "gstrReports": true,
+    "ocrStockIn": true,
+    "vendorPurchaseInvoice": true,
+    "credit": true,
+    "accounting": true,
+    "whatsappMarketing": true,
+    "itemTypeDegree": true,
+    "billingModeBasic": true
+  },
+  "entities": {
+    "inventory": {
+      "fields": [
+        { "key": "name", "type": "string", "required": true, "storage": "column", "label": "Product name" },
+        { "key": "companyName", "type": "string", "required": true, "storage": "column", "label": "Company" },
+        { "key": "location", "type": "string", "required": true, "storage": "column", "label": "Location" },
+        { "key": "count", "type": "number", "required": true, "storage": "column", "label": "Quantity" },
+        { "key": "batchNo", "type": "string", "required": true, "storage": "column", "label": "Batch No" },
+        { "key": "expiryDate", "type": "date", "required": true, "storage": "column", "label": "Expiry date" },
+        { "key": "maximumRetailPrice", "type": "money", "required": true, "storage": "pricing", "label": "MRP" },
+        { "key": "priceToRetail", "type": "money", "required": true, "storage": "pricing", "label": "PTR" },
+        { "key": "costPrice", "type": "money", "required": true, "storage": "pricing", "label": "Cost (PTS)" },
+        { "key": "hsn", "type": "string", "required": false, "storage": "column", "label": "HSN" },
+        { "key": "scheme", "type": "object", "required": false, "storage": "column", "label": "Scheme" },
+        { "key": "sgst", "type": "string", "required": false, "storage": "column", "label": "SGST %" },
+        { "key": "cgst", "type": "string", "required": false, "storage": "column", "label": "CGST %" }
+      ]
+    },
+    "shop": {
+      "fields": [
+        { "key": "dlNo", "type": "string", "required": true, "storage": "column", "label": "Drug licence" },
+        { "key": "gstinNo", "type": "string", "required": false, "storage": "column", "label": "GSTIN" },
+        { "key": "fssai", "type": "string", "required": false, "storage": "column", "label": "FSSAI" }
+      ]
+    }
+  },
+  "pricing": {
+    "model": "MRP_PTR_COST",
+    "defaultSellRateByShopType": {
+      "RETAILER": "maximumRetailPrice",
+      "DISTRIBUTOR": "priceToRetail",
+      "WHOLESALER": "priceToRetail"
+    }
+  },
+  "strategies": {
+    "pricing": "pharmacyPricing",
+    "inventoryValidator": "pharmacyInventory",
+    "taxLine": "indiaGstMrpAware",
+    "partyValidator": "pharmacyParty",
+    "stockInParser": "pharmaInvoiceParser"
+  },
+  "compliance": { "packId": "gst-india" },
+  "ui": {
+    "posMode": "barcode",
+    "navHidden": []
+  }
+}

@@ -12,6 +12,11 @@
     <dependencies>
         <dependency>
             <groupId>com.inventory</groupId>
+            <artifactId>common</artifactId>
+            <version>1.0.0</version>
+        </dependency>
+        <dependency>
+            <groupId>com.inventory</groupId>
             <artifactId>pluginengine</artifactId>
             <version>1.0.0</version>
         </dependency>

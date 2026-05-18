@@ -15,6 +15,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 @Data
 @NoArgsConstructor
@@ -119,5 +120,9 @@ public class Inventory {
   private String cgst;
   private Instant createdAt;
   private Instant updatedAt;
+  /** Vertical-specific optional fields (whitelisted per business profile). */
+  private Map<String, Object> attributes;
+  /** Profile active when this row was created (audit). */
+  private String profileIdAtCreate;
 }
 

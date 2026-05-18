@@ -1,10 +1,14 @@
 package com.inventory.product.validation;
 
 import com.inventory.common.exception.ValidationException;
+import com.inventory.pluginengine.policy.PolicyRegistry;
+import com.inventory.pluginengine.profile.BusinessProfile;
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.enums.ItemType;
 import com.inventory.product.domain.model.enums.SchemeType;
 import com.inventory.product.domain.model.UnitConversion;
+import com.inventory.product.profile.InventoryCreateValidationMapper;
+import com.inventory.product.profile.ProfileResolver;
 import com.inventory.product.rest.dto.request.CreateInventoryRequest;
 import com.inventory.product.rest.dto.request.UpdateInventoryRequest;
 import org.springframework.stereotype.Component;
@@ -17,45 +21,31 @@ import java.time.temporal.ChronoUnit;
 @Component
 public class InventoryValidator {
 
-  public void validateCreateRequest(CreateInventoryRequest request) {
+  private final ProfileResolver profileResolver;
+  private final PolicyRegistry policyRegistry;
+  private final InventoryCreateValidationMapper validationMapper;
+
+  public InventoryValidator(
+      ProfileResolver profileResolver,
+      PolicyRegistry policyRegistry,
+      InventoryCreateValidationMapper validationMapper) {
+    this.profileResolver = profileResolver;
+    this.policyRegistry = policyRegistry;
+    this.validationMapper = validationMapper;
+  }
+
+  public void validateCreateRequest(CreateInventoryRequest request, String shopId) {
+    validateShopId(shopId);
     if (request == null) {
       throw new ValidationException("Request cannot be null");
     }
-    if (!StringUtils.hasText(request.getName())) {
-      throw new ValidationException("Product name is required");
+    BusinessProfile profile = profileResolver.resolveForShop(shopId);
+    String strategy = profile.strategy("inventoryValidator");
+    if (!StringUtils.hasText(strategy)) {
+      strategy = "pharmacyInventory";
     }
-    if (request.getCount() == null || request.getCount() <= 0) {
-      throw new ValidationException("Count must be greater than zero");
-    }
-    if (request.getSchemeType() == SchemeType.PERCENTAGE) {
-      if (request.getSchemePercentage() == null) {
-        throw new ValidationException("When schemeType is PERCENTAGE, schemePercentage is required");
-      }
-      if (request.getSchemePercentage().compareTo(BigDecimal.ZERO) < 0
-          || request.getSchemePercentage().compareTo(BigDecimal.valueOf(100)) > 0) {
-        throw new ValidationException("Scheme percentage must be between 0 and 100 (inclusive)");
-      }
-    } else {
-      boolean newStyle = request.getSchemePayFor() != null || request.getSchemeFree() != null;
-      if (newStyle) {
-        int payFor = request.getSchemePayFor() != null ? request.getSchemePayFor() : 0;
-        int free = request.getSchemeFree() != null ? request.getSchemeFree() : 0;
-        if (payFor < 0 || free < 0) {
-          throw new ValidationException("schemePayFor and schemeFree must be zero or greater (e.g. 10 + 2)");
-        }
-      } else if (request.getScheme() != null && request.getScheme() < 0) {
-        throw new ValidationException("Scheme (free units) must be zero or greater");
-      }
-    }
-    if (request.getItemType() == ItemType.DEGREE
-        && (request.getItemTypeDegree() == null || request.getItemTypeDegree() <= 0)) {
-      throw new ValidationException("When itemType is DEGREE, itemTypeDegree must be present and greater than zero");
-    }
-    if (request.getPurchaseDate() != null) {
-      validatePurchaseDate(request.getPurchaseDate());
-    }
-    validateTaxFieldsByBillingMode(request.getBillingMode(), request.getSgst(), request.getCgst());
-    validateUnits(request.getBaseUnit(), request.getUnitConversions());
+    policyRegistry.inventoryValidator(strategy)
+        .validateCreate(validationMapper.toInput(request), profile);
   }
 
   public void validateUpdateRequest(UpdateInventoryRequest request) {

@@ -38,6 +38,8 @@ import com.inventory.product.mapper.InventoryMapper;
 import com.inventory.product.migration.ExcelStockParser;
 import com.inventory.product.mapper.ParsedInventoryMapper;
 import com.inventory.product.utils.constants.ProductMetricsConstants;
+import com.inventory.pluginengine.profile.BusinessProfile;
+import com.inventory.product.profile.ProfileResolver;
 import com.inventory.product.validation.InventoryValidator;
 import com.inventory.product.validation.StockSheetValidator;
 import lombok.extern.slf4j.Slf4j;
@@ -79,6 +81,9 @@ public class InventoryService {
 
   @Autowired
   private InventoryValidator inventoryValidator;
+
+  @Autowired
+  private ProfileResolver profileResolver;
 
   @Autowired
   private ReminderService reminderService;
@@ -650,7 +655,8 @@ public class InventoryService {
 
   public InventoryReceiptResponse create(CreateInventoryRequest request, String userId, String shopId) {
     try {
-      inventoryValidator.validateCreateRequest(request);
+      inventoryValidator.validateCreateRequest(request, shopId);
+      BusinessProfile profile = profileResolver.resolveForShop(shopId);
       log.debug("Creating inventory for barcode: {} in shop: {}", request.getBarcode(), shopId);
       if (StringUtils.hasText(request.getVendorId())) {
         validateVendorId(request.getVendorId(), shopId);
@@ -661,6 +667,10 @@ public class InventoryService {
       inventory.setLotId(lotId);
       inventory.setShopId(shopId);
       inventory.setUserId(userId);
+      inventory.setProfileIdAtCreate(profile.getId());
+      if (!StringUtils.hasText(inventory.getBusinessType())) {
+        inventory.setBusinessType("PHARMACEUTICAL");
+      }
       inventory.setExpiryDate(request.getExpiryDate());
       inventory.setVendorId(request.getVendorId());
       String normalizedBaseUnit = normalizeUnitName(request.getBaseUnit());
@@ -670,19 +680,24 @@ public class InventoryService {
       inventory.setBillingMode(normalizeBillingMode(request.getBillingMode()));
 
       int billQty = request.getCount() != null ? request.getCount() : 0;
-      boolean useNewFixedUnits = request.getSchemePayFor() != null || request.getSchemeFree() != null;
+      boolean schemesEnabled = profile.isModuleEnabled("schemes");
+      boolean useNewFixedUnits = schemesEnabled
+          && (request.getSchemePayFor() != null || request.getSchemeFree() != null);
       int schemeFreeUnits;
-      if (request.getSchemeType() == SchemeType.PERCENTAGE
+      if (schemesEnabled
+          && request.getSchemeType() == SchemeType.PERCENTAGE
           && request.getSchemePercentage() != null && request.getSchemePercentage().signum() > 0) {
         BigDecimal pct = request.getSchemePercentage();
         schemeFreeUnits = pct.multiply(BigDecimal.valueOf(billQty))
             .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP).intValue();
-      } else if (useNewFixedUnits) {
+      } else if (schemesEnabled && useNewFixedUnits) {
         // New: quantity = count only; scheme is payFor + free (e.g. 10 + 2), not added to stock
         schemeFreeUnits = 0;
-      } else {
+      } else if (schemesEnabled) {
         // Legacy: scheme = free units, total = count + scheme
         schemeFreeUnits = request.getScheme() != null ? request.getScheme() : 0;
+      } else {
+        schemeFreeUnits = 0;
       }
       int totalReceivedDisplay = billQty + schemeFreeUnits;
       int totalReceivedBase = toBaseQuantityFromDisplay(totalReceivedDisplay, inventory);
@@ -693,11 +708,11 @@ public class InventoryService {
       inventory.setReceivedBaseCount(totalReceivedBase);
       inventory.setCurrentBaseCount(totalReceivedBase);
       inventory.setSoldBaseCount(0);
-      if (useNewFixedUnits) {
+      if (schemesEnabled && useNewFixedUnits) {
         inventory.setSchemePayFor(request.getSchemePayFor() != null ? request.getSchemePayFor() : 0);
         inventory.setSchemeFree(request.getSchemeFree() != null ? request.getSchemeFree() : 0);
         inventory.setScheme(null);
-      } else if (request.getScheme() != null) {
+      } else if (schemesEnabled && request.getScheme() != null) {
         inventory.setScheme(request.getScheme());
       }
 

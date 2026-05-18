@@ -2,6 +2,7 @@ package com.inventory.product.mapper;
 
 import com.inventory.product.domain.model.Location;
 import com.inventory.product.domain.model.Shop;
+import com.inventory.pluginengine.profile.BusinessProfile;
 import com.inventory.product.rest.dto.request.RegisterShopRequest;
 import com.inventory.product.rest.dto.response.LocationDto;
 import com.inventory.product.rest.dto.response.ShopApprovalResponse;
@@ -75,6 +76,9 @@ public interface ShopMapper {
     shop.setActive(true);
     shop.setCreatedAt(Instant.now());
     shop.setApprovedAt(Instant.now());
+    if (shop.getBusinessProfileId() == null || shop.getBusinessProfileId().isBlank()) {
+      shop.setBusinessProfileId(BusinessProfile.DEFAULT_PROFILE_ID);
+    }
   }
 
   // Method to update existing UserAccount with shopId

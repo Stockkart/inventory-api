@@ -7,10 +7,12 @@ import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.product.rest.dto.request.RegisterShopRequest;
 import com.inventory.product.rest.dto.request.ShopApprovalRequest;
 import com.inventory.product.rest.dto.request.UpdateShopRequest;
+import com.inventory.product.rest.dto.response.BusinessProfileResponse;
 import com.inventory.product.rest.dto.response.ShopApprovalResponse;
 import com.inventory.product.rest.dto.response.ShopDetailResponse;
 import com.inventory.product.rest.dto.response.ShopRegistrationResponse;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.product.service.BusinessProfileService;
 import com.inventory.product.service.ShopService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,6 +36,9 @@ public class ShopController {
   @Autowired
   private ShopService shopService;
 
+  @Autowired
+  private BusinessProfileService businessProfileService;
+
   @PostMapping("/register")
   public ResponseEntity<ApiResponse<ShopRegistrationResponse>> register(@RequestBody RegisterShopRequest request,
                                                                         HttpServletRequest httpRequest) {
@@ -53,6 +58,16 @@ public class ShopController {
     String userId = (String) httpRequest.getAttribute("userId");
     String shopId = (String) httpRequest.getAttribute("shopId");
     return ResponseEntity.ok(ApiResponse.success(shopService.getShopDetail(shopId, userId)));
+  }
+
+  @GetMapping("/business-profile")
+  public ResponseEntity<ApiResponse<BusinessProfileResponse>> getBusinessProfile(
+      HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    if (!StringUtils.hasText(shopId)) {
+      throw new ValidationException("Shop not found for current session");
+    }
+    return ResponseEntity.ok(ApiResponse.success(businessProfileService.getForShop(shopId)));
   }
 
   @PatchMapping("/active-shop")

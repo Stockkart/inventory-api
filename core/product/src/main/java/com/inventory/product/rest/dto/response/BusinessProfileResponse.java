@@ -1,34 +1,28 @@
-package com.inventory.product.domain.model;
+package com.inventory.product.rest.dto.response;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.mapping.Document;
 
-import java.time.Instant;
 import java.util.Map;
 
 @Data
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Document(collection = "business_types")
-public class BusinessType {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class BusinessProfileResponse {
 
-  @Id
   private String id;
   private String code;
   private String name;
-  private boolean enabled;
-  private Integer version;
+  private int version;
   private Map<String, Boolean> modules;
   private Map<String, Object> entities;
   private Map<String, Object> pricing;
   private Map<String, String> strategies;
   private Map<String, Object> compliance;
   private Map<String, Object> ui;
-  private Map<String, Object> registeredAttributes;
-  private Map<String, Object> registeredTaxRules;
-  private Instant registeredAt;
 }
-
