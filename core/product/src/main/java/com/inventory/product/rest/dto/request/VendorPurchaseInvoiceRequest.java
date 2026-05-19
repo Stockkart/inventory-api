@@ -17,6 +17,8 @@ public class VendorPurchaseInvoiceRequest {
   private BigDecimal taxTotal;
   private BigDecimal shippingCharge;
   private BigDecimal otherCharges;
+  /** Bill-level discount in currency units (not %). */
+  private BigDecimal overallDiscount;
   private BigDecimal roundOff;
   private BigDecimal invoiceTotal;
   /** CASH | ONLINE | CREDIT (defaults to CASH when omitted). */

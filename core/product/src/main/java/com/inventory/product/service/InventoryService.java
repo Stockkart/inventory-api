@@ -252,6 +252,7 @@ public class InventoryService {
       pendingInvoice.setTaxTotal(invReq.getTaxTotal());
       pendingInvoice.setShippingCharge(invReq.getShippingCharge());
       pendingInvoice.setOtherCharges(invReq.getOtherCharges());
+      pendingInvoice.setOverallDiscount(invReq.getOverallDiscount());
       pendingInvoice.setRoundOff(invReq.getRoundOff());
       pendingInvoice.setInvoiceTotal(invReq.getInvoiceTotal());
       pendingInvoice.setPaymentMethod(invReq.getPaymentMethod());
@@ -409,7 +410,8 @@ public class InventoryService {
     if (accountingFacade == null || inv == null) {
       return;
     }
-    BigDecimal goodsValue = nz(inv.getLineSubTotal());
+    BigDecimal goodsValue =
+        nz(inv.getLineSubTotal()).subtract(nz(inv.getOverallDiscount())).max(BigDecimal.ZERO);
     BigDecimal taxTotal = nz(inv.getTaxTotal());
     BigDecimal invoiceTotal = deriveInvoiceTotalForCredit(inv);
     if (invoiceTotal.signum() <= 0) {
@@ -612,6 +614,8 @@ public class InventoryService {
         .add(nz(inv.getShippingCharge()))
         .add(nz(inv.getOtherCharges()))
         .add(nz(inv.getRoundOff()))
+        .subtract(nz(inv.getOverallDiscount()))
+        .max(BigDecimal.ZERO)
         .setScale(4, RoundingMode.HALF_UP);
   }
 
