@@ -44,6 +44,12 @@ public class ParsedInventoryItem {
   private Integer purchaseSchemeFree;
   /** Rec.Date / purchase date in ISO-8601 UTC string. */
   private String purchaseDate;
+  /** Raw Pack/Pkg column (e.g. 1*10, 1*100ML). */
+  private String packDetail;
+  /** GST UQC base unit inferred from pack or product name (e.g. TBS, MLT). */
+  private String baseUnit;
+  /** Base units per pack when pack shows e.g. 1*10 → 10. */
+  private Integer unitsPerPack;
   private String sgst;
   private String cgst;
 

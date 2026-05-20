@@ -36,6 +36,13 @@ public final class SchemeTextParser {
     return null;
   }
 
+  public static void applyVendorScheme(ParsedInventoryItem item, String cellText) {
+    if (item == null || cellText == null || cellText.isBlank()) {
+      return;
+    }
+    applyToItem(item, parse(cellText, null, null, null, null, null));
+  }
+
   public static void applyToItem(ParsedInventoryItem item, ParsedScheme parsed) {
     if (item == null || parsed == null) {
       return;

@@ -6,7 +6,9 @@ import com.inventory.ocr.dto.ParsedInventoryItem;
 import com.inventory.ocr.preprocess.ImagePreprocessor;
 import com.inventory.ocr.provider.OcrProvider;
 import com.inventory.ocr.constants.OcrConstants;
+import com.inventory.ocr.util.OcrJsonPackagingSupport;
 import com.inventory.ocr.util.OcrJsonSchemeSupport;
+import com.inventory.ocr.util.PackTextParser;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.web.client.RestClient;
@@ -41,7 +43,8 @@ public class ChatGptOcrProvider implements OcrProvider {
       - Missing fields => null.
       - customReminders MUST ALWAYS be [] (never null).
       - barcode must be null unless invoice explicitly shows Barcode/EAN/UPC.
-      - name must include full product name with pack size/strength (do not shorten).
+      - name: Product column only; do not merge Pack column into name.
+      - pack: Pack/Pkg column exactly (e.g. 1*10, 1*100ML). baseUnit/unitsPerPack when inferable.
       
       Quantity (count):
       - count must come from the quantity field of the product row (Qty/Quantity/Units/Pack/etc).
@@ -172,7 +175,8 @@ public class ChatGptOcrProvider implements OcrProvider {
     item.setBusinessType("PHARMACEUTICAL");
     item.setThresholdCount(10);
     item.setBarcode(str(n, "barcode"));
-    item.setName(str(n, "name"));
+    String name = str(n, "name");
+    item.setName(name != null ? PackTextParser.cleanProductName(name) : null);
     item.setDescription(str(n, "description"));
     item.setCompanyName(str(n, "companyName"));
     item.setMaximumRetailPrice(num(n, "maximumRetailPrice"));
@@ -192,6 +196,7 @@ public class ChatGptOcrProvider implements OcrProvider {
     item.setHsn(str(n, "hsn"));
     item.setBatchNo(str(n, "batchNo"));
     OcrJsonSchemeSupport.applySchemeFromJson(n, item);
+    OcrJsonPackagingSupport.applyPackagingFromJson(n, item);
     item.setSgst(str(n, "sgst"));
     item.setCgst(str(n, "cgst"));
     if (item.getName() == null || item.getName().isBlank()) return null;

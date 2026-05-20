@@ -4,8 +4,10 @@ import com.inventory.reminders.rest.dto.request.CustomReminderRequest;
 import com.inventory.ocr.dto.ParsedInventoryItem;
 import com.inventory.ocr.dto.ParsedReminderDto;
 import com.inventory.product.domain.model.ParsedInventoryResult;
+import com.inventory.product.domain.model.UnitConversion;
 import com.inventory.product.domain.model.enums.SchemeType;
 import com.inventory.product.rest.dto.request.CreateInventoryItemRequest;
+import org.springframework.util.StringUtils;
 import com.inventory.product.rest.dto.response.ParsedInventoryListResponse;
 import org.mapstruct.AfterMapping;
 import org.mapstruct.Mapper;
@@ -61,6 +63,24 @@ public interface ParsedInventoryMapper {
   @Mapping(target = "purchaseDate", source = "purchaseDate", qualifiedByName = "parseInstant")
   @Mapping(target = "customReminders", source = "customReminders", qualifiedByName = "mapCustomReminders")
   CreateInventoryItemRequest toCreateInventoryItemRequest(ParsedInventoryItem parsedItem);
+
+  @AfterMapping
+  default void enrichPackagingFields(
+      @MappingTarget CreateInventoryItemRequest target,
+      ParsedInventoryItem source) {
+    if (StringUtils.hasText(source.getBaseUnit())) {
+      target.setBaseUnit(source.getBaseUnit().trim().toUpperCase());
+    }
+    if (source.getUnitsPerPack() != null && source.getUnitsPerPack() > 1) {
+      target.setUnitsPerPack(source.getUnitsPerPack());
+      if (StringUtils.hasText(source.getBaseUnit())) {
+        UnitConversion conversion = new UnitConversion();
+        conversion.setUnit("PAC");
+        conversion.setFactor(source.getUnitsPerPack());
+        target.setUnitConversions(conversion);
+      }
+    }
+  }
 
   @AfterMapping
   default void enrichSchemeFields(
