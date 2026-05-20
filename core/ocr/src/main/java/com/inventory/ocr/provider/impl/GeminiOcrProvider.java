@@ -6,6 +6,9 @@ import com.inventory.ocr.dto.ParsedInventoryItem;
 import com.inventory.ocr.preprocess.ImagePreprocessor;
 import com.inventory.ocr.provider.OcrProvider;
 import com.inventory.ocr.constants.OcrConstants;
+import com.inventory.ocr.util.OcrJsonPackagingSupport;
+import com.inventory.ocr.util.OcrJsonSchemeSupport;
+import com.inventory.ocr.util.PackTextParser;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.web.client.RestClient;
@@ -34,13 +37,16 @@ public class GeminiOcrProvider implements OcrProvider {
       Return ONLY a valid JSON array. No markdown, no code blocks, no extra text. Raw JSON array like [{"name":"...","count":1,...},...]
       Each object MUST have these keys:
       barcode, name, description, companyName, maximumRetailPrice, costPrice, priceToRetail, additionalDiscount,
-      businessType, location, count, thresholdCount, expiryDate, reminderAt, customReminders, hsn, batchNo, scheme, sgst, cgst.
+      businessType, location, count, thresholdCount, expiryDate, reminderAt, customReminders, hsn, batchNo, scheme,
+      pack, baseUnit, unitsPerPack, sgst, cgst.
   
       Rules:
       - Missing fields => null.
       - barcode must be null unless the invoice explicitly shows Barcode/EAN/UPC.
-      - name MUST include full product name with pack size/strength if present.
-        Do not shorten the name.
+      - name: Product column ONLY (e.g. PULMICUS-600 TAB). Do NOT prepend Pack text to name.
+      - pack: copy Pack/Pkg/Packaging column exactly (e.g. "1*10", "1*15", "15*15", "1*100ML", "1").
+      - baseUnit: GST-style unit if obvious from pack suffix or product (TAB/TABS→TBS, ML→MLT, CAPS→PCS); else null.
+      - unitsPerPack: numeric base units per one pack from pack (1*10 → 10; 15*15 → 225; lone "1" → null).
       - Numbers must be numeric (not strings).
       - count: use QTY/Qty/Quantity/Count/Nos/Units; if missing compute from PKG DETAIL like "3 x 56" => 168.
       - maximumRetailPrice: use Reduced MRP if present else MRP.
@@ -269,13 +275,18 @@ public class GeminiOcrProvider implements OcrProvider {
     item.setBusinessType("PHARMACEUTICAL");
     item.setThresholdCount(10);
     item.setBarcode(str(n, "barcode"));
-    item.setName(str(n, "name"));
+    String name = str(n, "name");
+    item.setName(name != null ? PackTextParser.cleanProductName(name) : null);
     item.setDescription(str(n, "description"));
     item.setCompanyName(str(n, "companyName"));
     item.setMaximumRetailPrice(num(n, "maximumRetailPrice"));
     item.setCostPrice(num(n, "costPrice"));
     item.setPriceToRetail(num(n, "priceToRetail"));
-    item.setSaleAdditionalDiscount(num(n, "saleAdditionalDiscount"));
+    BigDecimal addDisc = num(n, "saleAdditionalDiscount");
+    if (addDisc == null) {
+      addDisc = num(n, "additionalDiscount");
+    }
+    item.setSaleAdditionalDiscount(addDisc);
     item.setBusinessType(str(n, "businessType") != null ? str(n, "businessType") : "PHARMACEUTICAL");
     item.setLocation(str(n, "location"));
     item.setCount(intNum(n, "count"));
@@ -284,7 +295,8 @@ public class GeminiOcrProvider implements OcrProvider {
     item.setReminderAt(str(n, "reminderAt"));
     item.setHsn(str(n, "hsn"));
     item.setBatchNo(str(n, "batchNo"));
-    item.setScheme(intNum(n, "scheme"));
+    OcrJsonSchemeSupport.applySchemeFromJson(n, item);
+    OcrJsonPackagingSupport.applyPackagingFromJson(n, item);
     item.setSgst(str(n, "sgst"));
     item.setCgst(str(n, "cgst"));
     if (item.getName() == null || item.getName().isBlank()) return null;

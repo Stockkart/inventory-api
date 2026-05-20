@@ -38,6 +38,7 @@ import com.inventory.product.mapper.InventoryMapper;
 import com.inventory.product.migration.ExcelStockParser;
 import com.inventory.product.mapper.ParsedInventoryMapper;
 import com.inventory.product.utils.constants.ProductMetricsConstants;
+import com.inventory.product.validation.ImageValidator;
 import com.inventory.product.validation.InventoryValidator;
 import com.inventory.product.validation.StockSheetValidator;
 import lombok.extern.slf4j.Slf4j;
@@ -130,19 +131,65 @@ public class InventoryService {
    */
   @Transactional(readOnly = true)
   public ParsedInventoryListResponse parseInvoiceImage(MultipartFile image) {
-    log.info("Processing invoice parsing request for image: {}, size: {} bytes",
-        image.getOriginalFilename(), image.getSize());
+    return parseInvoiceImages(java.util.List.of(image));
+  }
 
-    imageValidator.validateImageFileForParsing(image);
-
-    try {
-      byte[] imageBytes = image.getBytes();
-      return parseInvoiceImageFromBytes(imageBytes);
-    } catch (IOException e) {
-      log.error("Error reading image file: {}", e.getMessage(), e);
-      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
-          "Error reading image file: " + e.getMessage(), e);
+  /**
+   * Parse one or more invoice images (e.g. multi-page purchase bill) and merge line items in order.
+   */
+  @Transactional(readOnly = true)
+  public ParsedInventoryListResponse parseInvoiceImages(java.util.List<MultipartFile> images) {
+    imageValidator.validateInvoiceImageBatch(images);
+    java.util.List<byte[]> bytesList = new java.util.ArrayList<>();
+    for (MultipartFile image : images) {
+      try {
+        bytesList.add(image.getBytes());
+      } catch (IOException e) {
+        log.error("Error reading image file {}: {}", image.getOriginalFilename(), e.getMessage(), e);
+        throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
+            "Error reading image file: " + e.getMessage(), e);
+      }
     }
+    return parseInvoiceImagesFromBytes(bytesList);
+  }
+
+  /**
+   * Parse one or more invoice images from raw bytes (e.g. QR mobile upload batch).
+   */
+  @Transactional(readOnly = true)
+  public ParsedInventoryListResponse parseInvoiceImagesFromBytes(java.util.List<byte[]> imageBytesList) {
+    if (imageBytesList == null || imageBytesList.isEmpty()) {
+      throw new ValidationException("At least one image is required");
+    }
+    if (imageBytesList.size() > ImageValidator.MAX_INVOICE_IMAGES) {
+      throw new ValidationException("At most " + ImageValidator.MAX_INVOICE_IMAGES + " images per request");
+    }
+    for (int i = 0; i < imageBytesList.size(); i++) {
+      byte[] bytes = imageBytesList.get(i);
+      imageValidator.validateImageBytes(bytes);
+      if (bytes.length > ImageValidator.MAX_INVOICE_IMAGE_BYTES) {
+        throw new ValidationException("Image " + (i + 1) + " exceeds maximum size of 10 MB");
+      }
+    }
+
+    log.info("Processing invoice parsing for {} image(s)", imageBytesList.size());
+    java.util.List<CreateInventoryItemRequest> mergedItems = new java.util.ArrayList<>();
+    com.inventory.product.rest.dto.response.ParsedVendorInvoiceDto vendorInvoice = null;
+
+    for (int i = 0; i < imageBytesList.size(); i++) {
+      log.info("Parsing invoice image {}/{}", i + 1, imageBytesList.size());
+      ParsedInventoryListResponse page = parseInvoiceImageFromBytes(imageBytesList.get(i));
+      if (page.getItems() != null && !page.getItems().isEmpty()) {
+        mergedItems.addAll(page.getItems());
+      }
+      if (vendorInvoice == null && page.getVendorPurchaseInvoice() != null) {
+        vendorInvoice = page.getVendorPurchaseInvoice();
+      }
+    }
+
+    log.info("Multi-image invoice parse done: {} image(s), {} total line item(s)",
+        imageBytesList.size(), mergedItems.size());
+    return parsedInventoryMapper.toParsedInventoryListResponse(mergedItems, vendorInvoice);
   }
 
   /**

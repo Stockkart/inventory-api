@@ -38,8 +38,18 @@ public class ParsedInventoryItem {
   private Integer schemePayFor;
   /** Free column under Sales Scheme: free units per batch (e.g. 1). */
   private Integer schemeFree;
+  /** Vendor PO Sch. column: pay-for units (e.g. 10 in "10+1"). */
+  private Integer purchaseSchemePayFor;
+  /** Vendor PO Sch. column: free units (e.g. 1 in "10+1"). */
+  private Integer purchaseSchemeFree;
   /** Rec.Date / purchase date in ISO-8601 UTC string. */
   private String purchaseDate;
+  /** Raw Pack/Pkg column (e.g. 1*10, 1*100ML). */
+  private String packDetail;
+  /** GST UQC base unit inferred from pack or product name (e.g. TBS, MLT). */
+  private String baseUnit;
+  /** Base units per pack when pack shows e.g. 1*10 → 10. */
+  private Integer unitsPerPack;
   private String sgst;
   private String cgst;
 

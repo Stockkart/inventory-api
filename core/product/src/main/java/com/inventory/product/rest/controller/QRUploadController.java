@@ -90,14 +90,19 @@ public class QRUploadController {
   @PostMapping(value = "/m/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   public ResponseEntity<ApiResponse<String>> uploadImage(
       @RequestParam("token") String token,
-      @RequestParam("image") MultipartFile image) {
+      @RequestParam(value = "image", required = false) MultipartFile image,
+      @RequestParam(value = "images", required = false) java.util.List<MultipartFile> images) {
 
-    log.info("Received mobile upload request for token: {}, file: {}, size: {} bytes",
-        token, image.getOriginalFilename(), image.getSize());
+    java.util.List<MultipartFile> toUpload = InventoryController.resolveInvoiceImages(image, images);
+    log.info("Received mobile upload request for token: {}, {} image(s)",
+        token, toUpload.size());
 
     try {
-      qrUploadService.uploadAndProcessImage(token, image);
-      return ResponseEntity.ok(ApiResponse.success("Image uploaded successfully. Processing..."));
+      qrUploadService.uploadAndProcessImages(token, toUpload);
+      String msg = toUpload.size() == 1
+          ? "Image uploaded successfully. Processing..."
+          : toUpload.size() + " images uploaded successfully. Processing...";
+      return ResponseEntity.ok(ApiResponse.success(msg));
     } catch (ValidationException e) {
       log.warn("Invalid token for upload: {}", token);
       return ResponseEntity.status(HttpStatus.BAD_REQUEST)

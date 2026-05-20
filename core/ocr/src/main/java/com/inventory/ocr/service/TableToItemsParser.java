@@ -2,6 +2,7 @@ package com.inventory.ocr.service;
 
 import com.inventory.ocr.dto.ParsedInventoryItem;
 import com.inventory.ocr.dto.ParsedReminderDto;
+import com.inventory.ocr.util.PackTextParser;
 import com.inventory.ocr.model.OcrCell;
 import com.inventory.ocr.model.OcrTable;
 import lombok.extern.slf4j.Slf4j;
@@ -141,11 +142,11 @@ public class TableToItemsParser {
       else if (h.contains("RATE") && !h.contains("MRP") && !h.contains("GST")) m.rate = col;
       else if (h.contains("MRP") && !h.contains("REDUCED") && !h.contains("RED")) m.mrp = col;
       else if (h.contains("REDUCED") || h.contains("RED MRP")) m.reducedMrp = col;
-      else if (h.contains("PACK") || h.contains("PKG")) m.pkgDetail = col;
+      else if ("SCH".equals(h) || h.contains("SCHEME")) m.scheme = col;
+      else if ("PACK".equals(h) || h.contains("PKG") || h.contains("PACKAGING")) m.pkgDetail = col;
       else if ("SGST".equals(h) || (h.contains("SGST") && !h.contains("VALUE") && !h.contains("AMOUNT"))) m.sgst = col;
       else if ("CGST".equals(h) || (h.contains("CGST") && !h.contains("VALUE") && !h.contains("AMOUNT"))) m.cgst = col;
       else if (h.contains("DISC") || h.contains("DISCOUNT")) m.discount = col;
-      else if (h.contains("SCHEME")) m.scheme = col;
     }
     return m;
   }
@@ -159,14 +160,21 @@ public class TableToItemsParser {
 
       setStr(row, m.code, item::setBarcode);
       setHsn(row, m, item);
-      setStr(row, m.description, v -> { item.setName(v); item.setDescription(v); });
+      setStr(row, m.description, v -> {
+        String cleaned = PackTextParser.cleanProductName(v);
+        item.setName(cleaned);
+        item.setDescription(cleaned);
+      });
       setStr(row, m.batchNo, item::setBatchNo);
       setCompanyFromMfd(row, m.mfd, item);
       setExpiryAndReminder(row, m.expiry, item);
       setInt(row, m.qty, item::setCount);
       setPrices(row, m, item);
       setDecimal(row, m.discount, item::setSaleAdditionalDiscount);
-      setInt(row, m.scheme, item::setScheme);
+      setSchemeFromPackColumn(row, m.scheme, item);
+      if (m.pkgDetail != null && row.containsKey(m.pkgDetail)) {
+        PackTextParser.applyPackaging(item, clean(row.get(m.pkgDetail)), item.getName());
+      }
       if (m.sgst != null && row.containsKey(m.sgst)) {
         String v = clean(row.get(m.sgst)).replaceAll("[^0-9.]", "");
         if (!v.isEmpty()) item.setSgst(v);
@@ -227,6 +235,17 @@ public class TableToItemsParser {
     r.setNotes("Expiry reminder - 30 days before expiry");
     list.add(r);
     item.setCustomReminders(list);
+  }
+
+  private void setSchemeFromPackColumn(Map<Integer, String> row, Integer col, ParsedInventoryItem item) {
+    if (col == null || !row.containsKey(col)) {
+      return;
+    }
+    String v = clean(row.get(col));
+    if (v.isEmpty()) {
+      return;
+    }
+    com.inventory.ocr.util.SchemeTextParser.applyVendorScheme(item, v);
   }
 
   private void setInt(Map<Integer, String> row, Integer col, java.util.function.Consumer<Integer> setter) {

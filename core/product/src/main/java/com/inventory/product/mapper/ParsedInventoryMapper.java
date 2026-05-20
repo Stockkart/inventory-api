@@ -4,10 +4,15 @@ import com.inventory.reminders.rest.dto.request.CustomReminderRequest;
 import com.inventory.ocr.dto.ParsedInventoryItem;
 import com.inventory.ocr.dto.ParsedReminderDto;
 import com.inventory.product.domain.model.ParsedInventoryResult;
+import com.inventory.product.domain.model.UnitConversion;
+import com.inventory.product.domain.model.enums.SchemeType;
 import com.inventory.product.rest.dto.request.CreateInventoryItemRequest;
+import org.springframework.util.StringUtils;
 import com.inventory.product.rest.dto.response.ParsedInventoryListResponse;
+import org.mapstruct.AfterMapping;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
+import org.mapstruct.MappingTarget;
 import org.mapstruct.Named;
 import org.mapstruct.ReportingPolicy;
 import org.slf4j.Logger;
@@ -31,9 +36,16 @@ public interface ParsedInventoryMapper {
   ParsedInventoryListResponse toParsedInventoryListResponse(ParsedInventoryResult result);
 
   default ParsedInventoryListResponse toParsedInventoryListResponse(List<CreateInventoryItemRequest> items) {
+    return toParsedInventoryListResponse(items, null);
+  }
+
+  default ParsedInventoryListResponse toParsedInventoryListResponse(
+      List<CreateInventoryItemRequest> items,
+      com.inventory.product.rest.dto.response.ParsedVendorInvoiceDto vendorPurchaseInvoice) {
     ParsedInventoryListResponse response = new ParsedInventoryListResponse();
     response.setItems(items);
     response.setTotalItems(items != null ? items.size() : 0);
+    response.setVendorPurchaseInvoice(vendorPurchaseInvoice);
     return response;
   }
 
@@ -58,6 +70,43 @@ public interface ParsedInventoryMapper {
   @Mapping(target = "purchaseDate", source = "purchaseDate", qualifiedByName = "parseInstant")
   @Mapping(target = "customReminders", source = "customReminders", qualifiedByName = "mapCustomReminders")
   CreateInventoryItemRequest toCreateInventoryItemRequest(ParsedInventoryItem parsedItem);
+
+  @AfterMapping
+  default void enrichPackagingFields(
+      @MappingTarget CreateInventoryItemRequest target,
+      ParsedInventoryItem source) {
+    if (StringUtils.hasText(source.getBaseUnit())) {
+      target.setBaseUnit(source.getBaseUnit().trim().toUpperCase());
+    }
+    if (source.getUnitsPerPack() != null && source.getUnitsPerPack() > 1) {
+      target.setUnitsPerPack(source.getUnitsPerPack());
+      if (StringUtils.hasText(source.getBaseUnit())) {
+        UnitConversion conversion = new UnitConversion();
+        conversion.setUnit("PAC");
+        conversion.setFactor(source.getUnitsPerPack());
+        target.setUnitConversions(conversion);
+      }
+    }
+  }
+
+  @AfterMapping
+  default void enrichSchemeFields(
+      @MappingTarget CreateInventoryItemRequest target,
+      ParsedInventoryItem source) {
+    if (source.getSchemePayFor() != null || source.getSchemeFree() != null) {
+      target.setSchemeType(SchemeType.FIXED_UNITS);
+      target.setSchemePayFor(source.getSchemePayFor());
+      target.setSchemeFree(source.getSchemeFree());
+      target.setScheme(null);
+    } else if (source.getScheme() != null) {
+      target.setScheme(source.getScheme());
+    }
+    if (source.getPurchaseSchemePayFor() != null || source.getPurchaseSchemeFree() != null) {
+      target.setPurchaseSchemeType(SchemeType.FIXED_UNITS);
+      target.setPurchaseSchemePayFor(source.getPurchaseSchemePayFor());
+      target.setPurchaseSchemeFree(source.getPurchaseSchemeFree());
+    }
+  }
 
   default List<CreateInventoryItemRequest> toCreateInventoryItemRequestList(List<ParsedInventoryItem> parsedItems) {
     if (parsedItems == null) {
