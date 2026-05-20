@@ -36,9 +36,11 @@ public class CreateInventoryItemRequest {
   private DiscountApplicable discountApplicable;
   private Instant purchaseDate;
   private Integer count;
-  /** Base stock unit (e.g. TAB, ML, BOTTLE). Defaults to UNIT when omitted. */
+  /** GST UQC base unit (e.g. TBS, MLT, PCS). */
   private String baseUnit;
-  /** Optional conversion where factor is base units in 1 sale/display unit. */
+  /** Base units per pack (e.g. 50, 100). */
+  private Integer unitsPerPack;
+  /** Legacy pack conversion; prefer unitsPerPack. */
   private UnitConversion unitConversions;
   private Integer thresholdCount;
   private Instant expiryDate;

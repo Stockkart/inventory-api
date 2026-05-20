@@ -5,6 +5,7 @@ import com.inventory.product.domain.model.enums.DiscountApplicable;
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.enums.ItemType;
 import com.inventory.product.domain.model.enums.SchemeType;
+import com.inventory.product.domain.model.enums.SellUnitRule;
 import com.inventory.product.domain.model.UnitConversion;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -43,7 +44,12 @@ public class InventorySummaryDto {
   BigDecimal currentCount;
   Integer currentBaseCount;
   String baseUnit;
+  /** Same as baseUnit; GST UQC for invoices / GSTR-1. */
+  String uqc;
   UnitConversion unitConversions;
+  Integer unitsPerPack;
+  String packUnitUqc;
+  SellUnitRule sellUnitRule;
   List<AvailableUnitDto> availableUnits;
   String location;
   Instant expiryDate;
