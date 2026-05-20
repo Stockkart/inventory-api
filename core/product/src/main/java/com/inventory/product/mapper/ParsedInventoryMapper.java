@@ -36,9 +36,16 @@ public interface ParsedInventoryMapper {
   ParsedInventoryListResponse toParsedInventoryListResponse(ParsedInventoryResult result);
 
   default ParsedInventoryListResponse toParsedInventoryListResponse(List<CreateInventoryItemRequest> items) {
+    return toParsedInventoryListResponse(items, null);
+  }
+
+  default ParsedInventoryListResponse toParsedInventoryListResponse(
+      List<CreateInventoryItemRequest> items,
+      com.inventory.product.rest.dto.response.ParsedVendorInvoiceDto vendorPurchaseInvoice) {
     ParsedInventoryListResponse response = new ParsedInventoryListResponse();
     response.setItems(items);
     response.setTotalItems(items != null ? items.size() : 0);
+    response.setVendorPurchaseInvoice(vendorPurchaseInvoice);
     return response;
   }
 

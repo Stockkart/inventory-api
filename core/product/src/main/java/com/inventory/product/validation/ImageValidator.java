@@ -44,4 +44,27 @@ public class ImageValidator {
       throw new ValidationException("File must be an image");
     }
   }
+
+  /** Max images per multi-page invoice parse request. */
+  public static final int MAX_INVOICE_IMAGES = 20;
+
+  /** Max bytes per invoice image (10 MB). */
+  public static final long MAX_INVOICE_IMAGE_BYTES = 10L * 1024 * 1024;
+
+  public void validateInvoiceImageBatch(java.util.List<MultipartFile> images) {
+    if (images == null || images.isEmpty()) {
+      throw new ValidationException("At least one image is required");
+    }
+    if (images.size() > MAX_INVOICE_IMAGES) {
+      throw new ValidationException("At most " + MAX_INVOICE_IMAGES + " images per request");
+    }
+    for (int i = 0; i < images.size(); i++) {
+      MultipartFile image = images.get(i);
+      validateImageFileForParsing(image);
+      if (image.getSize() > MAX_INVOICE_IMAGE_BYTES) {
+        throw new ValidationException(
+            "Image " + (i + 1) + " exceeds maximum size of 10 MB");
+      }
+    }
+  }
 }

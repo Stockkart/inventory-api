@@ -112,47 +112,49 @@ public class QRUploadService {
   }
 
   /**
-   * Upload and process image asynchronously.
-   * 
-   * @param token the upload token
-   * @param image the image file
+   * Upload and process a single image asynchronously.
    */
   public void uploadAndProcessImage(String token, MultipartFile image) {
-    // Validate token
+    uploadAndProcessImages(token, java.util.List.of(image));
+  }
+
+  /**
+   * Upload and process one or more invoice images (multi-page) asynchronously.
+   */
+  public void uploadAndProcessImages(String token, java.util.List<MultipartFile> images) {
     UploadToken uploadToken = validateAndGetToken(token);
+    uploadTokenValidator.validateInvoiceImageBatch(images);
 
-    // Validate image
-    uploadTokenValidator.validateImageFile(image);
-
-    // Read image bytes synchronously in the request thread. MultipartFile uses temp files
-    // that are deleted after the request completes; passing MultipartFile to async task
-    // causes "Error reading image file: /tmp/...upload_xxx.tmp" in production.
-    byte[] imageBytes;
+    java.util.List<byte[]> imageBytesList = new java.util.ArrayList<>();
     try {
-      imageBytes = image.getBytes();
-      if (imageBytes == null || imageBytes.length == 0) {
-        markTokenFailed(token, "Image file is empty");
-        throw new ValidationException("Image file is empty");
+      for (MultipartFile image : images) {
+        byte[] bytes = image.getBytes();
+        if (bytes == null || bytes.length == 0) {
+          markTokenFailed(token, "Image file is empty");
+          throw new ValidationException("Image file is empty");
+        }
+        imageBytesList.add(bytes);
       }
+    } catch (ValidationException e) {
+      throw e;
     } catch (Exception e) {
-      log.error("Error reading image file for token: {}", token, e);
+      log.error("Error reading image file(s) for token: {}", token, e);
       markTokenFailed(token, "Error reading image file: " + e.getMessage());
       throw new ValidationException("Error reading image file: " + e.getMessage());
     }
 
-    // Update status to UPLOADING then PROCESSING
     updateTokenStatus(token, UploadToken.UploadStatus.UPLOADING);
     updateTokenStatus(token, UploadToken.UploadStatus.PROCESSING);
 
-    final byte[] finalImageBytes = imageBytes;
+    final java.util.List<byte[]> finalBytes = imageBytesList;
+    final int imageCount = imageBytesList.size();
 
-    // Process image asynchronously using bytes only (no MultipartFile)
     CompletableFuture.runAsync(() -> {
       try {
-        log.info("Processing uploaded image for token: {}", token);
+        log.info("Processing {} uploaded image(s) for token: {}", imageCount, token);
 
         ParsedInventoryListResponse parsedResult =
-            inventoryService.parseInvoiceImageFromBytes(finalImageBytes);
+            inventoryService.parseInvoiceImagesFromBytes(finalBytes);
 
         ParsedInventoryResult result = parsedInventoryMapper.toParsedInventoryResult(
             uploadToken.getId(),
@@ -163,10 +165,10 @@ public class QRUploadService {
         result = parsedInventoryResultRepository.save(result);
         markTokenCompleted(token, result.getId());
 
-        log.info("Successfully processed image for token: {}, parsed {} items, result ID: {}",
-            token, parsedResult.getTotalItems(), result.getId());
+        log.info("Successfully processed {} image(s) for token: {}, parsed {} items, result ID: {}",
+            imageCount, token, parsedResult.getTotalItems(), result.getId());
       } catch (Exception e) {
-        log.error("Error processing image for token: {}", token, e);
+        log.error("Error processing image(s) for token: {}", token, e);
         markTokenFailed(token, e.getMessage());
       }
     }, ocrTaskExecutor);

@@ -251,13 +251,28 @@ public class InventoryController {
    */
   @PostMapping(value = "/parse-invoice", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   public ResponseEntity<ApiResponse<ParsedInventoryListResponse>> parseInvoice(
-      @RequestParam("image") MultipartFile image,
+      @RequestParam(value = "image", required = false) MultipartFile image,
+      @RequestParam(value = "images", required = false) java.util.List<MultipartFile> images,
       HttpServletRequest httpRequest) {
-    log.info("Received invoice parsing request for image: {}, size: {} bytes",
-        image.getOriginalFilename(), image.getSize());
+    java.util.List<MultipartFile> toParse = resolveInvoiceImages(image, images);
+    log.info("Received invoice parsing request for {} image(s)", toParse.size());
 
-    ParsedInventoryListResponse response = inventoryService.parseInvoiceImage(image);
+    ParsedInventoryListResponse response = inventoryService.parseInvoiceImages(toParse);
     return ResponseEntity.ok(ApiResponse.success(response));
+  }
+
+  public static java.util.List<MultipartFile> resolveInvoiceImages(
+      MultipartFile image,
+      java.util.List<MultipartFile> images) {
+    if (images != null && !images.isEmpty()) {
+      return images.stream()
+          .filter(f -> f != null && !f.isEmpty())
+          .toList();
+    }
+    if (image != null && !image.isEmpty()) {
+      return java.util.List.of(image);
+    }
+    throw new com.inventory.common.exception.ValidationException("At least one image is required");
   }
 
   /**

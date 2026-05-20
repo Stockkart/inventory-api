@@ -8,6 +8,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Instant;
+import java.util.List;
 
 @Component
 public class UploadTokenValidator {
@@ -50,6 +51,10 @@ public class UploadTokenValidator {
 
   public void validateImageFile(MultipartFile image) {
     imageValidator.validateImageFile(image);
+  }
+
+  public void validateInvoiceImageBatch(List<MultipartFile> images) {
+    imageValidator.validateInvoiceImageBatch(images);
   }
 
   public void validateUserIdAndShopId(String userId, String shopId) {
