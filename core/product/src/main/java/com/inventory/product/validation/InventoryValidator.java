@@ -7,15 +7,27 @@ import com.inventory.product.domain.model.enums.SchemeType;
 import com.inventory.product.domain.model.UnitConversion;
 import com.inventory.product.rest.dto.request.CreateInventoryRequest;
 import com.inventory.product.rest.dto.request.UpdateInventoryRequest;
+import com.inventory.product.service.PackagingUnitService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.regex.Pattern;
 
 @Component
+@RequiredArgsConstructor
 public class InventoryValidator {
+
+  /**
+   * Auto-generated: {@code LOT-YYYYMMDDHHMMSS-XXXXXXXX}. User-provided: alphanumeric reference.
+   */
+  private static final Pattern LOT_ID_FORMAT = Pattern.compile(
+      "^(LOT-\\d{14}-[A-Z0-9]{8}|[A-Za-z0-9][A-Za-z0-9._/-]{2,63})$");
+
+  private final PackagingUnitService packagingUnitService;
 
   public void validateCreateRequest(CreateInventoryRequest request) {
     if (request == null) {
@@ -55,7 +67,7 @@ public class InventoryValidator {
       validatePurchaseDate(request.getPurchaseDate());
     }
     validateTaxFieldsByBillingMode(request.getBillingMode(), request.getSgst(), request.getCgst());
-    validateUnits(request.getBaseUnit(), request.getUnitConversions());
+    validatePackaging(request.getBaseUnit(), request.getUnitsPerPack(), request.getUnitConversions());
   }
 
   public void validateUpdateRequest(UpdateInventoryRequest request) {
@@ -93,25 +105,39 @@ public class InventoryValidator {
       validateTaxFieldsByBillingMode(request.getBillingMode(), request.getSgst(), request.getCgst());
     }
     if (request.getBaseUnit() != null || request.getUnitConversions() != null) {
-      validateUnits(request.getBaseUnit(), request.getUnitConversions());
+      Integer unitsPerPack = request.getUnitConversions() != null
+          ? request.getUnitConversions().getFactor()
+          : null;
+      validatePackaging(request.getBaseUnit(), unitsPerPack, request.getUnitConversions());
     }
   }
 
-  private void validateUnits(String baseUnit, UnitConversion unitConversions) {
-    String effectiveBaseUnit = org.springframework.util.StringUtils.hasText(baseUnit)
-        ? baseUnit.trim().toUpperCase()
-        : "UNIT";
-    validateUnitName(effectiveBaseUnit, "baseUnit");
-    if (unitConversions == null) {
-      return;
+  private void validatePackaging(
+      String baseUnit,
+      Integer unitsPerPack,
+      UnitConversion unitConversions) {
+    String effectiveBase = StringUtils.hasText(baseUnit)
+        ? PackagingUnitService.normalizeUqc(baseUnit)
+        : "UNT";
+    packagingUnitService.validateBaseUnit(effectiveBase);
+
+    Integer effectiveUnitsPerPack = unitsPerPack;
+    if ((effectiveUnitsPerPack == null || effectiveUnitsPerPack <= 0)
+        && unitConversions != null
+        && unitConversions.getFactor() != null
+        && unitConversions.getFactor() > 0) {
+      effectiveUnitsPerPack = unitConversions.getFactor();
     }
-    String unit = unitConversions.getUnit() != null ? unitConversions.getUnit().trim().toUpperCase() : null;
-    validateUnitName(unit, "unitConversions.unit");
-    if (effectiveBaseUnit.equals(unit)) {
-      throw new ValidationException("unitConversions cannot include the baseUnit");
-    }
-    if (unitConversions.getFactor() == null || unitConversions.getFactor() <= 0) {
-      throw new ValidationException("unitConversions.factor must be greater than zero for unit: " + unit);
+    packagingUnitService.validateUnitsPerPack(effectiveBase, effectiveUnitsPerPack);
+
+    if (unitConversions != null && StringUtils.hasText(unitConversions.getUnit())) {
+      String packUnit = unitConversions.getUnit().trim().toUpperCase();
+      if (packUnit.equals(effectiveBase)) {
+        throw new ValidationException("Pack unit cannot be the same as base UQC");
+      }
+      if (unitConversions.getFactor() == null || unitConversions.getFactor() <= 0) {
+        throw new ValidationException("unitConversions.factor must be greater than zero");
+      }
     }
   }
 
@@ -125,15 +151,6 @@ public class InventoryValidator {
     }
   }
 
-  private void validateUnitName(String unit, String fieldName) {
-    if (!StringUtils.hasText(unit)) {
-      throw new ValidationException(fieldName + " is required");
-    }
-    if (!unit.matches("^[A-Z0-9_ ]+$")) {
-      throw new ValidationException(fieldName + " must contain only letters, digits, underscore and space");
-    }
-  }
-
   /**
    * Purchase date must be within 30 days in the past and not more than 30 days in the future.
    */
@@ -142,10 +159,10 @@ public class InventoryValidator {
     Instant minAllowed = now.minus(30, ChronoUnit.DAYS);
     Instant maxAllowed = now.plus(30, ChronoUnit.DAYS);
     if (purchaseDate.isBefore(minAllowed)) {
-      throw new ValidationException("Purchase date must not be older than 30 days");
+      throw new ValidationException("Purchase date cannot be more than 30 days in the past");
     }
     if (purchaseDate.isAfter(maxAllowed)) {
-      throw new ValidationException("Purchase date must not be more than 30 days in the future");
+      throw new ValidationException("Purchase date cannot be more than 30 days in the future");
     }
   }
 
@@ -159,33 +176,22 @@ public class InventoryValidator {
     if (!StringUtils.hasText(lotId)) {
       throw new ValidationException("Lot ID is required");
     }
+    if (lotId.trim().length() > 128) {
+      throw new ValidationException("Lot ID is too long");
+    }
   }
 
-  /**
-   * Validate lotId format.
-   * Allows alphanumeric characters, dashes, and underscores.
-   * Minimum length: 3, Maximum length: 100
-   *
-   * @param lotId the lot ID to validate
-   */
   public void validateLotIdFormat(String lotId) {
     if (!StringUtils.hasText(lotId)) {
       throw new ValidationException("Lot ID is required");
     }
-
-    String trimmedLotId = lotId.trim();
-    
-    // Length validation
-    if (trimmedLotId.length() < 3) {
-      throw new ValidationException("Lot ID must be at least 3 characters long");
+    String trimmed = lotId.trim();
+    if (trimmed.length() > 64) {
+      throw new ValidationException("Lot ID must be at most 64 characters");
     }
-    if (trimmedLotId.length() > 100) {
-      throw new ValidationException("Lot ID must not exceed 100 characters");
-    }
-
-    // Format validation: alphanumeric, dashes, underscores only
-    if (!trimmedLotId.matches("^[a-zA-Z0-9_-]+$")) {
-      throw new ValidationException("Lot ID can only contain alphanumeric characters, dashes, and underscores");
+    if (!LOT_ID_FORMAT.matcher(trimmed).matches()) {
+      throw new ValidationException(
+          "Lot ID must be LOT-YYYYMMDDHHMMSS-XXXXXXXX or an alphanumeric reference (letters, numbers, ., _, /, -)");
     }
   }
 }

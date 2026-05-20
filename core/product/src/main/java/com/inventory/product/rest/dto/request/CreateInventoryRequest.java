@@ -34,9 +34,11 @@ public class CreateInventoryRequest {
   /** Purchase date (when bought from vendor). Optional; defaults to received date if not set. */
   private Instant purchaseDate;
   private Integer count;
-  /** Base stock unit (e.g. TAB, ML, BOTTLE). Defaults to UNIT when omitted. */
+  /** GST UQC base unit (e.g. TBS, MLT, PCS). See GET /inventory/packaging-units. */
   private String baseUnit;
-  /** Optional conversion where factor is base units in 1 sale/display unit. */
+  /** Base units per pack (e.g. 50 tablets, 100 ML). Server builds unitConversions when set. */
+  private Integer unitsPerPack;
+  /** Optional conversion where factor is base units in 1 pack (legacy; prefer unitsPerPack). */
   private UnitConversion unitConversions;
   private Integer thresholdCount;
   private Instant expiryDate;

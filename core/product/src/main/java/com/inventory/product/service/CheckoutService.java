@@ -74,6 +74,9 @@ public class CheckoutService {
   private CheckoutValidator checkoutValidator;
 
   @Autowired
+  private PackagingUnitService packagingUnitService;
+
+  @Autowired
   private com.inventory.user.service.CustomerService customerService;
 
   @Autowired
@@ -642,7 +645,7 @@ public class CheckoutService {
           PurchaseItem purchaseItem = purchaseMapper.createPurchaseItem(
               item.getId(),
               inventory.getName(),
-              pricingQuantity,
+              toSaleQuantityDecimal(baseQuantity, saleUnitFactor),
               maximumRetailPrice,
               item.getPriceToRetail(),
               BigDecimal.ZERO
@@ -667,8 +670,8 @@ public class CheckoutService {
           }
           purchaseItem.setSaleUnit(saleUnit);
           purchaseItem.setBaseQuantity(baseQuantity);
-          purchaseItem.setUnitFactor(pricingFactor);
-          purchaseItem.setAvailableUnits(mapAvailableUnits(inventory));
+          purchaseItem.setUnitFactor(saleUnitFactor);
+          enrichCartItemPackaging(purchaseItem, inventory);
           CheckoutUtils.applyItemTaxMode(purchaseItem, CheckoutUtils.resolveInventoryBillingMode(inventory));
           purchaseItems.add(purchaseItem);
         } else if ((item.getQuantity() != null && item.getQuantity() < 0)
@@ -696,15 +699,15 @@ public class CheckoutService {
           PurchaseItem purchaseItem = purchaseMapper.createPurchaseItem(
               item.getId(),
               inventory.getName(),
-              pricingQuantity, // Negative quantity in pricing/display units
+              toSaleQuantityDecimal(baseQuantity, factor),
               maximumRetailPrice,
               BigDecimal.ZERO, // Not used for negative quantities
               BigDecimal.ZERO
           );
           purchaseItem.setSaleUnit(saleUnit);
           purchaseItem.setBaseQuantity(baseQuantity);
-          purchaseItem.setUnitFactor(pricingFactor);
-          purchaseItem.setAvailableUnits(mapAvailableUnits(inventory));
+          purchaseItem.setUnitFactor(factor);
+          enrichCartItemPackaging(purchaseItem, inventory);
           CheckoutUtils.applyItemTaxMode(purchaseItem, CheckoutUtils.resolveInventoryBillingMode(inventory));
           purchaseItems.add(purchaseItem);
         } else {
@@ -720,6 +723,18 @@ public class CheckoutService {
           int factor = getConversionFactorToBase(inventory, saleUnit);
           int pricingFactor = getDisplayToBaseFactor(inventory);
           int baseQuantity = resolveRequestedBaseQuantity(item, inventory, saleUnit, factor);
+          int displayQty = item.getQuantity() != null ? Math.abs(item.getQuantity()) : 0;
+          if (displayQty <= 0 && factor > 0 && baseQuantity > 0) {
+            displayQty = Math.abs(baseQuantity) / factor;
+          } else if (displayQty <= 0) {
+            displayQty = Math.abs(baseQuantity);
+          }
+          packagingUnitService.validateSaleQuantity(
+              inventory.getBaseUnit(),
+              getConfiguredUnitConversion(inventory),
+              saleUnit,
+              displayQty,
+              Math.abs(baseQuantity));
           BigDecimal pricingQuantity = BigDecimal.valueOf(baseQuantity)
               .divide(BigDecimal.valueOf(pricingFactor), 4, RoundingMode.HALF_UP);
           BigDecimal maximumRetailPrice = inventory.getMaximumRetailPrice();
@@ -738,11 +753,11 @@ public class CheckoutService {
           CheckoutUtils.normalizeSchemeFields(purchaseItem);
           BigDecimal sellingPrice = inventory.getSellingPrice() != null ? inventory.getSellingPrice() : inventory.getPriceToRetail();
           BigDecimal costPrice = inventory.getCostPrice();
-          purchaseItem.setQuantity(pricingQuantity);
+          purchaseItem.setQuantity(toSaleQuantityDecimal(Math.abs(baseQuantity), factor));
           purchaseItem.setMaximumRetailPrice(maximumRetailPrice);
           purchaseItem.setPriceToRetail(sellingPrice);
           purchaseItem.setCostPrice(costPrice);
-          purchaseItem.setUnitFactor(pricingFactor);
+          purchaseItem.setUnitFactor(factor);
           BigDecimal perUnitDiscount = maximumRetailPrice
               .subtract(sellingPrice != null ? sellingPrice : BigDecimal.ZERO);
           if (perUnitDiscount.compareTo(BigDecimal.ZERO) > 0) {
@@ -758,7 +773,7 @@ public class CheckoutService {
           purchaseItem.setTotalAmount(totalAmount);
           purchaseItem.setSaleUnit(saleUnit);
           purchaseItem.setBaseQuantity(baseQuantity);
-          purchaseItem.setAvailableUnits(mapAvailableUnits(inventory));
+          enrichCartItemPackaging(purchaseItem, inventory);
           purchaseMapper.enrichPurchaseItemMargin(purchaseItem);
           purchaseItems.add(purchaseItem);
         }
@@ -1146,10 +1161,15 @@ public class CheckoutService {
                 }
                 switchBaseQuantity = roundedWholeUnits * targetFactor;
               }
-              int pricingFactor = getDisplayToBaseFactor(inventory);
-              BigDecimal quantityForPricing = BigDecimal.valueOf(switchBaseQuantity)
-                  .divide(BigDecimal.valueOf(pricingFactor), 4, RoundingMode.HALF_UP);
+              BigDecimal saleQty = toSaleQuantityDecimal(switchBaseQuantity, targetFactor);
               BigDecimal priceToRetail = newItem.getPriceToRetail() != null ? newItem.getPriceToRetail() : existingItem.getPriceToRetail();
+              if (priceToRetail != null
+                  && existingItem.getQuantity() != null
+                  && existingItem.getQuantity().compareTo(BigDecimal.ZERO) > 0
+                  && saleQty.compareTo(BigDecimal.ZERO) > 0) {
+                BigDecimal lineTotal = priceToRetail.multiply(existingItem.getQuantity());
+                priceToRetail = lineTotal.divide(saleQty, 2, RoundingMode.HALF_UP);
+              }
               BigDecimal maximumRetailPrice = inventory.getMaximumRetailPrice();
               BigDecimal costPrice = inventory.getCostPrice();
               BigDecimal perUnitDiscount = maximumRetailPrice.subtract(priceToRetail != null ? priceToRetail : BigDecimal.ZERO);
@@ -1157,11 +1177,11 @@ public class CheckoutService {
               PurchaseItem switchedItem = purchaseMapper.createPurchaseItem(
                   existingItem.getInventoryId(),
                   existingItem.getName(),
-                  quantityForPricing,
+                  saleQty,
                   maximumRetailPrice,
                   priceToRetail,
                   perUnitDiscount.compareTo(BigDecimal.ZERO) > 0
-                      ? perUnitDiscount.multiply(quantityForPricing)
+                      ? perUnitDiscount.multiply(saleQty)
                       : BigDecimal.ZERO
               );
               switchedItem.setSaleAdditionalDiscount(newItem.getSaleAdditionalDiscount() != null
@@ -1185,8 +1205,8 @@ public class CheckoutService {
               switchedItem.setCostPrice(costPrice);
               switchedItem.setSaleUnit(incomingSaleUnit);
               switchedItem.setBaseQuantity(switchBaseQuantity);
-              switchedItem.setUnitFactor(pricingFactor);
-              switchedItem.setAvailableUnits(mapAvailableUnits(inventory));
+              switchedItem.setUnitFactor(targetFactor);
+              enrichCartItemPackaging(switchedItem, inventory);
               CheckoutUtils.applyItemTaxMode(switchedItem, billingMode);
               BigDecimal effectivePrice = CheckoutUtils.getEffectiveSellingPricePerUnit(switchedItem);
               BigDecimal billableQty = CheckoutUtils.getBillableQuantityAsDecimal(switchedItem);
@@ -1207,9 +1227,13 @@ public class CheckoutService {
               break;
             }
             // Handle quantity update based on positive or negative
+            Inventory inventory = inventoryRepository.findById(existingItem.getInventoryId())
+                .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", existingItem.getInventoryId()));
             int existingBaseQuantity = getBaseQuantityOrFallback(existingItem);
             int incomingBaseQuantity = getBaseQuantityOrFallback(newItem);
-            int newBaseQuantity = existingBaseQuantity + incomingBaseQuantity;
+            int newBaseQuantity = isAbsoluteQuantityUpdate(newItem, inventory)
+                ? incomingBaseQuantity
+                : existingBaseQuantity + incomingBaseQuantity;
 
             // Case 3: If negative value is more negative or equal to current item quantity, remove the item
             if (newBaseQuantity <= 0) {
@@ -1219,17 +1243,14 @@ public class CheckoutService {
             }
 
             // Case 1 & 2: Update quantity (positive adds, negative decreases). Use payload priceToRetail when provided (update-only or add); for negative qty we only remove, keep existing price.
-            Inventory inventory = inventoryRepository.findById(existingItem.getInventoryId())
-                .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", existingItem.getInventoryId()));
             BigDecimal priceToRetail = ((newItem.getQuantity() == null || newItem.getQuantity().compareTo(BigDecimal.ZERO) >= 0)
                 && newItem.getPriceToRetail() != null)
                 ? newItem.getPriceToRetail()
                 : existingItem.getPriceToRetail();
-            int pricingFactor = existingItem.getUnitFactor() != null ? existingItem.getUnitFactor() : getDefaultFactor(inventory);
+            int saleUnitFactor = getConversionFactorToBase(inventory, existingSaleUnit);
             BigDecimal maximumRetailPrice = inventory.getMaximumRetailPrice();
             BigDecimal costPrice = inventory.getCostPrice();
-            BigDecimal newQuantity = BigDecimal.valueOf(newBaseQuantity)
-                .divide(BigDecimal.valueOf(pricingFactor), 4, RoundingMode.HALF_UP);
+            BigDecimal newQuantity = toSaleQuantityDecimal(newBaseQuantity, saleUnitFactor);
             BigDecimal newDiscount = existingItem.getMaximumRetailPrice()
                 .subtract(priceToRetail)
                 .multiply(newQuantity);
@@ -1268,8 +1289,8 @@ public class CheckoutService {
             updatedItem.setCostPrice(costPrice);
             updatedItem.setSaleUnit(existingSaleUnit);
             updatedItem.setBaseQuantity(newBaseQuantity);
-            updatedItem.setUnitFactor(pricingFactor);
-            updatedItem.setAvailableUnits(mapAvailableUnits(inventory));
+            updatedItem.setUnitFactor(saleUnitFactor);
+            enrichCartItemPackaging(updatedItem, inventory);
             CheckoutUtils.applyItemTaxMode(updatedItem, billingMode);
             BigDecimal perUnitDiscount = maximumRetailPrice.subtract(
                 priceToRetail != null ? priceToRetail : BigDecimal.ZERO);
@@ -1382,18 +1403,29 @@ public class CheckoutService {
           throw new ValidationException("Inventory lot " + newItem.getInventoryId() + " does not belong to shop " + shopId);
         }
 
-        int finalBaseQuantity = currentCartBaseQuantity + addingBaseQuantity;
-        if (existingItem != null) {
-          String existingSaleUnit = existingItem.getSaleUnit() != null ? existingItem.getSaleUnit() : "UNIT";
-          String incomingSaleUnit = newItem.getSaleUnit() != null ? newItem.getSaleUnit() : existingSaleUnit;
-          if (!existingSaleUnit.equals(incomingSaleUnit)) {
+        String existingSaleUnit = existingItem != null
+            ? resolvePurchaseItemSaleUnit(existingItem, inventory)
+            : null;
+        String incomingSaleUnit = resolvePurchaseItemSaleUnit(newItem, inventory);
+        boolean unitChanged = existingItem != null
+            && existingSaleUnit != null
+            && !existingSaleUnit.equals(incomingSaleUnit);
+        boolean absoluteUpdate = isAbsoluteQuantityUpdate(newItem, inventory);
+
+        int finalBaseQuantity;
+        if (existingItem == null) {
+          finalBaseQuantity = addingBaseQuantity;
+        } else if (absoluteUpdate || unitChanged) {
+          int requestedBase = addingBaseQuantity > 0 ? addingBaseQuantity : currentCartBaseQuantity;
+          if (unitChanged) {
             int targetFactor = getConversionFactorToBase(inventory, incomingSaleUnit);
-            int requestedBase = addingBaseQuantity > 0 ? addingBaseQuantity : currentCartBaseQuantity;
             if (targetFactor > 1) {
               requestedBase = (requestedBase / targetFactor) * targetFactor;
             }
-            finalBaseQuantity = requestedBase;
           }
+          finalBaseQuantity = requestedBase;
+        } else {
+          finalBaseQuantity = currentCartBaseQuantity + addingBaseQuantity;
         }
 
         // Check if final quantity exceeds available stock
@@ -1547,6 +1579,30 @@ public class CheckoutService {
     return item.getQuantity() != null ? item.getQuantity().setScale(0, RoundingMode.HALF_UP).intValue() : 0;
   }
 
+  private String resolvePurchaseItemSaleUnit(PurchaseItem item, Inventory inventory) {
+    if (StringUtils.hasText(item.getSaleUnit())) {
+      return item.getSaleUnit().trim().toUpperCase();
+    }
+    return normalizeSaleUnit(null, inventory);
+  }
+
+  /**
+   * Full-cart sync (unit change, qty input) sends absolute base quantities; +/- buttons send single-step deltas.
+   */
+  private boolean isAbsoluteQuantityUpdate(PurchaseItem newItem, Inventory inventory) {
+    int baseQty = Math.abs(getBaseQuantityOrFallback(newItem));
+    if (baseQty <= 0) {
+      return false;
+    }
+    String saleUnit = resolvePurchaseItemSaleUnit(newItem, inventory);
+    int factor = getConversionFactorToBase(inventory, saleUnit);
+    int displayQty = 0;
+    if (newItem.getQuantity() != null) {
+      displayQty = Math.abs(newItem.getQuantity().setScale(0, RoundingMode.HALF_UP).intValue());
+    }
+    return displayQty > 1 || baseQty > Math.max(1, factor);
+  }
+
   private int getCurrentBaseCount(Inventory inventory) {
     if (inventory.getCurrentBaseCount() != null) {
       return inventory.getCurrentBaseCount();
@@ -1603,23 +1659,38 @@ public class CheckoutService {
     return conversion.getFactor();
   }
 
+  /** Sale quantity in {@code saleUnit} from canonical base quantity. */
+  private BigDecimal toSaleQuantityDecimal(int baseQuantity, int saleUnitFactor) {
+    int absBase = Math.abs(baseQuantity);
+    int factor = saleUnitFactor > 0 ? saleUnitFactor : 1;
+    BigDecimal qty = BigDecimal.valueOf(absBase)
+        .divide(BigDecimal.valueOf(factor), 4, RoundingMode.HALF_UP);
+    return baseQuantity < 0 ? qty.negate() : qty;
+  }
+
   private List<AvailableUnit> mapAvailableUnits(Inventory inventory) {
-    List<AvailableUnit> units = new ArrayList<>();
-    if (inventory == null) {
-      return units;
+    if (inventory == null || !StringUtils.hasText(inventory.getBaseUnit())) {
+      return List.of();
+    }
+    return packagingUnitService
+        .mapAvailableUnitsForSale(inventory.getBaseUnit(), getConfiguredUnitConversion(inventory))
+        .stream()
+        .map(dto -> new AvailableUnit(dto.getUnit(), dto.isBaseUnit()))
+        .toList();
+  }
+
+  private void enrichCartItemPackaging(PurchaseItem item, Inventory inventory) {
+    if (item == null || inventory == null) {
+      return;
     }
     if (StringUtils.hasText(inventory.getBaseUnit())) {
-      units.add(new AvailableUnit(inventory.getBaseUnit().trim().toUpperCase(), true));
+      item.setBaseUnit(inventory.getBaseUnit().trim().toUpperCase());
     }
     UnitConversion conversion = getConfiguredUnitConversion(inventory);
     if (conversion != null && StringUtils.hasText(conversion.getUnit())) {
-      String conversionUnit = conversion.getUnit().trim().toUpperCase();
-      boolean alreadyPresent = units.stream().anyMatch(u -> conversionUnit.equals(u.getUnit()));
-      if (!alreadyPresent) {
-        units.add(new AvailableUnit(conversionUnit, false));
-      }
+      item.setPackUnitUqc(conversion.getUnit().trim().toUpperCase());
     }
-    return units;
+    item.setAvailableUnits(mapAvailableUnits(inventory));
   }
 
   /**

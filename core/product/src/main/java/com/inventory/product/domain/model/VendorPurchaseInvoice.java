@@ -32,6 +32,8 @@ public class VendorPurchaseInvoice {
   private BigDecimal taxTotal;
   private BigDecimal shippingCharge;
   private BigDecimal otherCharges;
+  /** Bill-level discount (₹); reduces payable total and capitalized goods value. */
+  private BigDecimal overallDiscount;
   private BigDecimal roundOff;
   private BigDecimal invoiceTotal;
   private String paymentMethod;

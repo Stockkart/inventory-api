@@ -81,6 +81,9 @@ public class InventoryService {
   private InventoryValidator inventoryValidator;
 
   @Autowired
+  private PackagingUnitService packagingUnitService;
+
+  @Autowired
   private ReminderService reminderService;
 
   @Autowired
@@ -252,6 +255,7 @@ public class InventoryService {
       pendingInvoice.setTaxTotal(invReq.getTaxTotal());
       pendingInvoice.setShippingCharge(invReq.getShippingCharge());
       pendingInvoice.setOtherCharges(invReq.getOtherCharges());
+      pendingInvoice.setOverallDiscount(invReq.getOverallDiscount());
       pendingInvoice.setRoundOff(invReq.getRoundOff());
       pendingInvoice.setInvoiceTotal(invReq.getInvoiceTotal());
       pendingInvoice.setPaymentMethod(invReq.getPaymentMethod());
@@ -409,7 +413,8 @@ public class InventoryService {
     if (accountingFacade == null || inv == null) {
       return;
     }
-    BigDecimal goodsValue = nz(inv.getLineSubTotal());
+    BigDecimal goodsValue =
+        nz(inv.getLineSubTotal()).subtract(nz(inv.getOverallDiscount())).max(BigDecimal.ZERO);
     BigDecimal taxTotal = nz(inv.getTaxTotal());
     BigDecimal invoiceTotal = deriveInvoiceTotalForCredit(inv);
     if (invoiceTotal.signum() <= 0) {
@@ -612,6 +617,8 @@ public class InventoryService {
         .add(nz(inv.getShippingCharge()))
         .add(nz(inv.getOtherCharges()))
         .add(nz(inv.getRoundOff()))
+        .subtract(nz(inv.getOverallDiscount()))
+        .max(BigDecimal.ZERO)
         .setScale(4, RoundingMode.HALF_UP);
   }
 
@@ -665,7 +672,8 @@ public class InventoryService {
       inventory.setVendorId(request.getVendorId());
       String normalizedBaseUnit = normalizeUnitName(request.getBaseUnit());
       inventory.setBaseUnit(normalizedBaseUnit);
-      inventory.setUnitConversions(normalizeUnitConversion(request.getUnitConversions(), normalizedBaseUnit));
+      inventory.setUnitConversions(resolveUnitConversionForCreate(
+          request, normalizedBaseUnit));
       inventory.setPurchaseDate(request.getPurchaseDate() != null ? request.getPurchaseDate() : Instant.now());
       inventory.setBillingMode(normalizeBillingMode(request.getBillingMode()));
 
@@ -741,6 +749,7 @@ public class InventoryService {
       List<Inventory> inventories = inventoryRepository.findByShopId(shopId, pageable);
       List<InventorySummaryDto> summaries = inventories.stream()
           .map(inventoryMapper::toSummary)
+          .map(this::enrichPackagingOnSummary)
           .toList();
 
       // total count for shop
@@ -776,6 +785,7 @@ public class InventoryService {
       List<Inventory> inventories = inventoryRepository.searchByShopIdAndQuery(shopId, query.trim());
       List<InventorySummaryDto> summaries = inventories.stream()
           .map(inventoryMapper::toSummary)
+          .map(this::enrichPackagingOnSummary)
           .toList();
 
       return inventoryMapper.toInventoryListResponse(summaries);
@@ -817,7 +827,7 @@ public class InventoryService {
     for (String id : normalizedIds) {
       Inventory inv = inventoryById.get(id);
       if (inv != null) {
-        out.add(inventoryMapper.toDetail(inv));
+        out.add(enrichPackagingOnDetail(inventoryMapper.toDetail(inv)));
       }
     }
     return out;
@@ -833,7 +843,7 @@ public class InventoryService {
       // Find inventory by ID
       Inventory inventory = inventoryRepository.findById(lotId)
           .orElseThrow(() -> new ResourceNotFoundException("Inventory lot", "lotId", lotId));
-      return inventoryMapper.toDetail(inventory);
+      return enrichPackagingOnDetail(inventoryMapper.toDetail(inventory));
 
     } catch (ResourceNotFoundException e) {
       log.warn("Inventory lot not found: {}", lotId);
@@ -965,6 +975,7 @@ public class InventoryService {
 
       List<InventorySummaryDto> items = inventories.stream()
           .map(inventoryMapper::toSummary)
+          .map(this::enrichPackagingOnSummary)
           .toList();
 
       // Calculate totals
@@ -1112,7 +1123,7 @@ public class InventoryService {
         return current <= threshold;
       })
       .map(inv -> {
-        InventorySummaryDto dto = inventoryMapper.toSummary(inv);
+        InventorySummaryDto dto = enrichPackagingOnSummary(inventoryMapper.toSummary(inv));
         dto.setThresholdCount(inv.getThresholdCount() != null ? inv.getThresholdCount() : 50);
         return dto;
       })
@@ -1215,7 +1226,7 @@ public class InventoryService {
         metrics.record(ProductMetricsConstants.INVENTORY_ITEMS_ADDED, 1, "module", ProductMetricsConstants.MODULE);
       }
 
-      return inventoryMapper.toDetail(inventory);
+      return enrichPackagingOnDetail(inventoryMapper.toDetail(inventory));
 
     } catch (ValidationException | ResourceNotFoundException e) {
       log.warn("Update inventory validation failed: {}", e.getMessage());
@@ -1231,9 +1242,46 @@ public class InventoryService {
 
   private String normalizeUnitName(String unit) {
     if (!StringUtils.hasText(unit)) {
-      return "UNIT";
+      return PackagingUnitService.normalizeUqc("UNT");
     }
-    return unit.trim().toUpperCase();
+    return PackagingUnitService.normalizeUqc(unit);
+  }
+
+  private UnitConversion resolveUnitConversionForCreate(
+      CreateInventoryRequest request,
+      String normalizedBaseUnit) {
+    if (request.getUnitsPerPack() != null && request.getUnitsPerPack() > 0) {
+      return packagingUnitService.buildUnitConversion(normalizedBaseUnit, request.getUnitsPerPack());
+    }
+    return normalizeUnitConversion(request.getUnitConversions(), normalizedBaseUnit);
+  }
+
+  private InventorySummaryDto enrichPackagingOnSummary(InventorySummaryDto dto) {
+    if (dto == null || !StringUtils.hasText(dto.getBaseUnit())) {
+      return dto;
+    }
+    var def = packagingUnitService.resolveDefinition(dto.getBaseUnit());
+    dto.setUqc(def.getUqc());
+    dto.setSellUnitRule(def.getSellUnitRule());
+    dto.setUnitsPerPack(packagingUnitService.resolveUnitsPerPack(dto.getUnitConversions()));
+    dto.setPackUnitUqc(packagingUnitService.resolvePackUnitUqc(dto.getUnitConversions()));
+    dto.setAvailableUnits(
+        packagingUnitService.mapAvailableUnitsForSale(dto.getBaseUnit(), dto.getUnitConversions()));
+    return dto;
+  }
+
+  private InventoryDetailResponse enrichPackagingOnDetail(InventoryDetailResponse dto) {
+    if (dto == null || !StringUtils.hasText(dto.getBaseUnit())) {
+      return dto;
+    }
+    var def = packagingUnitService.resolveDefinition(dto.getBaseUnit());
+    dto.setUqc(def.getUqc());
+    dto.setSellUnitRule(def.getSellUnitRule());
+    dto.setUnitsPerPack(packagingUnitService.resolveUnitsPerPack(dto.getUnitConversions()));
+    dto.setPackUnitUqc(packagingUnitService.resolvePackUnitUqc(dto.getUnitConversions()));
+    dto.setAvailableUnits(
+        packagingUnitService.mapAvailableUnitsForSale(dto.getBaseUnit(), dto.getUnitConversions()));
+    return dto;
   }
 
   private UnitConversion normalizeUnitConversion(UnitConversion rawConversion, String normalizedBaseUnit) {
