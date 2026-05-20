@@ -6,6 +6,7 @@ import com.inventory.ocr.dto.ParsedInventoryItem;
 import com.inventory.ocr.preprocess.ImagePreprocessor;
 import com.inventory.ocr.provider.OcrProvider;
 import com.inventory.ocr.constants.OcrConstants;
+import com.inventory.ocr.util.OcrJsonSchemeSupport;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.web.client.RestClient;
@@ -177,7 +178,11 @@ public class ChatGptOcrProvider implements OcrProvider {
     item.setMaximumRetailPrice(num(n, "maximumRetailPrice"));
     item.setCostPrice(num(n, "costPrice"));
     item.setPriceToRetail(num(n, "priceToRetail"));
-    item.setSaleAdditionalDiscount(num(n, "saleAdditionalDiscount"));
+    BigDecimal addDisc = num(n, "saleAdditionalDiscount");
+    if (addDisc == null) {
+      addDisc = num(n, "additionalDiscount");
+    }
+    item.setSaleAdditionalDiscount(addDisc);
     item.setBusinessType(str(n, "businessType") != null ? str(n, "businessType") : "PHARMACEUTICAL");
     item.setLocation(str(n, "location"));
     item.setCount(intNum(n, "count"));
@@ -186,7 +191,7 @@ public class ChatGptOcrProvider implements OcrProvider {
     item.setReminderAt(str(n, "reminderAt"));
     item.setHsn(str(n, "hsn"));
     item.setBatchNo(str(n, "batchNo"));
-    item.setScheme(intNum(n, "scheme"));
+    OcrJsonSchemeSupport.applySchemeFromJson(n, item);
     item.setSgst(str(n, "sgst"));
     item.setCgst(str(n, "cgst"));
     if (item.getName() == null || item.getName().isBlank()) return null;
