@@ -213,6 +213,7 @@ public class VendorPurchaseInvoiceService {
     dto.setTaxTotal(e.getTaxTotal());
     dto.setShippingCharge(e.getShippingCharge());
     dto.setOtherCharges(e.getOtherCharges());
+    dto.setOverallDiscount(e.getOverallDiscount());
     dto.setRoundOff(e.getRoundOff());
     dto.setInvoiceTotal(e.getInvoiceTotal());
     dto.setPaymentMethod(e.getPaymentMethod());

@@ -21,6 +21,10 @@ public class PurchaseItem {
   private BigDecimal quantity;
   /** Sale/display unit for quantity (e.g. STRIP, PACK). */
   private String saleUnit;
+  /** Inventory base UQC (e.g. MLT, TBS). */
+  private String baseUnit;
+  /** Pack UQC when unitConversions configured (e.g. BTL, PAC). */
+  private String packUnitUqc;
   /** Quantity converted to inventory base unit, used for stock deductions. */
   private Integer baseQuantity;
   /** Base units represented by one quantity unit (e.g. 10 for strip of 10 tabs). */

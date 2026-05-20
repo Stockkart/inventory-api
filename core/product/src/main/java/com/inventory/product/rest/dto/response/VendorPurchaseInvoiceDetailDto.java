@@ -22,6 +22,7 @@ public class VendorPurchaseInvoiceDetailDto {
   private BigDecimal taxTotal;
   private BigDecimal shippingCharge;
   private BigDecimal otherCharges;
+  private BigDecimal overallDiscount;
   private BigDecimal roundOff;
   private BigDecimal invoiceTotal;
   private String paymentMethod;

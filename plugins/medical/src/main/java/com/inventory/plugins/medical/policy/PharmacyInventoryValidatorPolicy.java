@@ -70,7 +70,7 @@ public class PharmacyInventoryValidatorPolicy implements InventoryValidatorPolic
     }
 
     validateTaxFieldsByBillingMode(input.getBillingMode(), input.getSgst(), input.getCgst());
-    validateUnits(input);
+    // Packaging (UQC / unitsPerPack) is validated in InventoryValidator after policy delegation.
   }
 
   private void validateSchemes(InventoryCreateValidationInput input) {
@@ -103,35 +103,6 @@ public class PharmacyInventoryValidatorPolicy implements InventoryValidatorPolic
     }
     if (StringUtils.hasText(sgst) || StringUtils.hasText(cgst)) {
       throw new ValidationException("SGST/CGST must not be provided when billingMode is BASIC");
-    }
-  }
-
-  private void validateUnits(InventoryCreateValidationInput input) {
-    String effectiveBaseUnit = StringUtils.hasText(input.getBaseUnit())
-        ? input.getBaseUnit().trim().toUpperCase()
-        : "UNIT";
-    validateUnitName(effectiveBaseUnit, "baseUnit");
-    if (!input.isHasUnitConversion()) {
-      return;
-    }
-    String unit = input.getUnitConversionUnit() != null
-        ? input.getUnitConversionUnit().trim().toUpperCase()
-        : null;
-    validateUnitName(unit, "unitConversions.unit");
-    if (effectiveBaseUnit.equals(unit)) {
-      throw new ValidationException("unitConversions cannot include the baseUnit");
-    }
-    if (input.getUnitConversionFactor() == null || input.getUnitConversionFactor() <= 0) {
-      throw new ValidationException("unitConversions.factor must be greater than zero for unit: " + unit);
-    }
-  }
-
-  private void validateUnitName(String unit, String fieldName) {
-    if (!StringUtils.hasText(unit)) {
-      throw new ValidationException(fieldName + " is required");
-    }
-    if (!unit.matches("^[A-Z0-9_ ]+$")) {
-      throw new ValidationException(fieldName + " must contain only letters, digits, underscore and space");
     }
   }
 
