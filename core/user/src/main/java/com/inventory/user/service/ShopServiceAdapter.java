@@ -37,7 +37,12 @@ public interface ShopServiceAdapter {
    * @return ShopTaxInfo containing sgst and cgst, or null if shop not found
    */
   ShopTaxInfo getShopTaxInfo(String shopId);
-  
+
+  /**
+   * Business profile summary for a shop (multi-business platform).
+   */
+  ShopProfileSummary getShopProfileSummary(String shopId);
+
   /**
    * Data class for shop tax information.
    */
@@ -73,5 +78,33 @@ public interface ShopServiceAdapter {
     public String getName() {return name;}
 
     public void setName(String name) {this.name = name;}
+  }
+
+  class ShopProfileSummary {
+    private String businessProfileId;
+    private String businessProfileName;
+
+    public ShopProfileSummary() {}
+
+    public ShopProfileSummary(String businessProfileId, String businessProfileName) {
+      this.businessProfileId = businessProfileId;
+      this.businessProfileName = businessProfileName;
+    }
+
+    public String getBusinessProfileId() {
+      return businessProfileId;
+    }
+
+    public void setBusinessProfileId(String businessProfileId) {
+      this.businessProfileId = businessProfileId;
+    }
+
+    public String getBusinessProfileName() {
+      return businessProfileName;
+    }
+
+    public void setBusinessProfileName(String businessProfileName) {
+      this.businessProfileName = businessProfileName;
+    }
   }
 }

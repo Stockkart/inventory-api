@@ -15,4 +15,6 @@ public class UserShopDto {
   private String role;
   private String relationship; // OWNER or INVITED
   private Instant joinedAt;
+  private String businessProfileId;
+  private String businessProfileName;
 }

@@ -1,0 +1,72 @@
+{
+  "id": "pharmacy",
+  "code": "pharmacy",
+  "name": "Pharmacy / Medical",
+  "enabled": true,
+  "version": 1,
+  "modules": {
+    "batchTracking": true,
+    "expiryReminders": true,
+    "schemes": true,
+    "gstrReports": true,
+    "ocrStockIn": true,
+    "vendorPurchaseInvoice": true,
+    "credit": true,
+    "accounting": true,
+    "whatsappMarketing": true,
+    "stockCorrections": true,
+    "vendorReturn": true,
+    "customerReturn": true,
+    "lowStockAlerts": true,
+    "customReminders": true,
+    "itemTypeDegree": true,
+    "billingModeBasic": true,
+    "unitConversions": true,
+    "multiRatePricing": true
+  },
+  "entities": {
+    "shop": {
+      "fields": [
+        {
+          "key": "dlNo",
+          "required": true,
+          "visible": true,
+          "storage": "column",
+          "label": "Drug License No (DL No)"
+        },
+        {
+          "key": "gstinNo",
+          "required": false,
+          "visible": true,
+          "storage": "column",
+          "label": "GSTIN No"
+        },
+        {
+          "key": "fssai",
+          "required": true,
+          "visible": true,
+          "storage": "column",
+          "label": "FSSAI"
+        }
+      ]
+    }
+  },
+  "strategies": {
+    "inventoryValidator": "pharmacyInventory",
+    "pricing": "pharmacyPricing",
+    "taxLine": "indiaGstMrpAware",
+    "partyValidator": "pharmacyParty",
+    "stockInParser": "pharmaInvoiceParser"
+  },
+  "pricing": {
+    "model": "MRP_PTR_COST",
+    "defaultSellRateByShopType": {
+      "RETAILER": "maximumRetailPrice",
+      "DISTRIBUTOR": "priceToRetail",
+      "WHOLESALER": "priceToRetail"
+    }
+  },
+  "ui": {
+    "navHidden": []
+  }
+}

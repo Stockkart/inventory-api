@@ -21,6 +21,8 @@ public class Shop {
   private String name;
   private Location location;
   private String businessId;
+  /** Config profile id: pharmacy, sports-shop, etc. */
+  private String businessProfileId;
   private String contactEmail;
   private String contactPhone;
   private String status;

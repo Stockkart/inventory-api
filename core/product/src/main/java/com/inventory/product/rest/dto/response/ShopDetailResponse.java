@@ -12,6 +12,8 @@ import lombok.NoArgsConstructor;
 public class ShopDetailResponse {
 
   private String shopId;
+  private String businessProfileId;
+  private String businessProfileName;
   private String name;
   private String contactEmail;
   private String contactPhone;

@@ -7,9 +7,8 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class ShopRegistrationResponse {
-  String shopId;
-  String status;
-  String businessProfileId;
-}
+public class BusinessProfileOptionResponse {
 
+  private String id;
+  private String name;
+}
