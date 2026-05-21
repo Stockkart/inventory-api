@@ -19,6 +19,8 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class InventoryDetailResponse {
+  /** Mongo inventory document id (use for PUT /inventory/{id}). */
+  String id;
   String lotId;
   /** Pricing document ID. Null for legacy inventories without a pricing record. */
   String pricingId;
@@ -35,6 +37,11 @@ public class InventoryDetailResponse {
   List<RateDto> rates;
   String defaultRate;
   BigDecimal saleAdditionalDiscount;
+  BigDecimal purchaseAdditionalDiscount;
+  SchemeType purchaseSchemeType;
+  Integer purchaseSchemePayFor;
+  Integer purchaseSchemeFree;
+  BigDecimal purchaseSchemePercentage;
   BigDecimal receivedCount;
   Integer receivedBaseCount;
   BigDecimal soldCount;
