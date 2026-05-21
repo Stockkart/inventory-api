@@ -15,7 +15,11 @@ import com.inventory.product.rest.dto.response.ShopDetailResponse;
 import com.inventory.product.rest.dto.response.ShopRegistrationResponse;
 import com.inventory.product.domain.model.Location;
 import com.inventory.product.mapper.ShopMapper;
+import com.inventory.pluginengine.profile.BusinessProfile;
+import com.inventory.product.service.profile.ProfileResolver;
+import com.inventory.product.validation.ShopProfileValidator;
 import com.inventory.product.validation.ShopValidator;
+import org.springframework.util.StringUtils;
 import com.inventory.user.domain.model.UserRole;
 import com.inventory.user.domain.repository.UserAccountRepository;
 import com.inventory.user.service.UserShopMembershipService;
@@ -47,6 +51,12 @@ public class ShopService {
   private ShopValidator shopValidator;
 
   @Autowired
+  private ShopProfileValidator shopProfileValidator;
+
+  @Autowired
+  private ProfileResolver profileResolver;
+
+  @Autowired
   private UserAccountRepository userAccountRepository;
 
   @Autowired
@@ -62,8 +72,12 @@ public class ShopService {
   @Transactional
   public ShopRegistrationResponse register(RegisterShopRequest request, String userId) {
     try {
-      // Input validation using ShopValidator
       shopValidator.validateRegisterRequest(request);
+
+      String profileId = StringUtils.hasText(request.getBusinessProfileId())
+          ? request.getBusinessProfileId().trim()
+          : BusinessProfile.DEFAULT_PROFILE_ID;
+      shopProfileValidator.validateRegisterRequest(request, profileId);
 
       if (userId == null || userId.trim().isEmpty()) {
         throw new ValidationException("User ID is required");
@@ -87,6 +101,10 @@ public class ShopService {
       // Map request to entity using MapStruct (sets defaults: APPROVED, active=true)
       // MongoDB will auto-generate the shopId as ObjectId
       Shop shop = shopMapper.toEntity(request);
+      shop.setBusinessProfileId(profileId);
+      if (!StringUtils.hasText(shop.getBusinessId())) {
+        shop.setBusinessId(profileId);
+      }
       shop.setUserLimit(0); // Can be set later if needed
       shop.setPlanId(null); // Trial: no plan purchased yet
       shop.setPlanExpiryDate(Instant.now().plus(trialDays, ChronoUnit.DAYS)); // trial from config
@@ -235,6 +253,19 @@ public class ShopService {
         .orElse(null);
   }
 
+  @Transactional(readOnly = true)
+  public com.inventory.user.service.ShopServiceAdapter.ShopProfileSummary getShopProfileSummary(String shopId) {
+    return shopRepository.findById(shopId)
+        .map(shop -> {
+          String profileId = StringUtils.hasText(shop.getBusinessProfileId())
+              ? shop.getBusinessProfileId()
+              : BusinessProfile.DEFAULT_PROFILE_ID;
+          String profileName = profileResolver.getProfileDisplayName(profileId).orElse(profileId);
+          return new com.inventory.user.service.ShopServiceAdapter.ShopProfileSummary(profileId, profileName);
+        })
+        .orElse(null);
+  }
+
   /** DTO for plan module. */
   public record ShopPlanInfo(String shopId, String planId, Instant planExpiryDate) {}
 
@@ -246,7 +277,13 @@ public class ShopService {
     shopValidator.validateShopAccess(membershipService.hasAccess(userId, shopId));
     Shop shop = shopRepository.findById(shopId)
         .orElseThrow(() -> new ResourceNotFoundException("Shop", "id", shopId));
-    return shopMapper.toShopDetailResponse(shop);
+    ShopDetailResponse response = shopMapper.toShopDetailResponse(shop);
+    String profileId = StringUtils.hasText(shop.getBusinessProfileId())
+        ? shop.getBusinessProfileId()
+        : BusinessProfile.DEFAULT_PROFILE_ID;
+    response.setBusinessProfileId(profileId);
+    profileResolver.getProfileDisplayName(profileId).ifPresent(response::setBusinessProfileName);
+    return response;
   }
 
   /**

@@ -22,6 +22,7 @@ public interface ShopMapper {
 
   @Mapping(target = "shopId", source = "shop.shopId")
   @Mapping(target = "status", source = "shop.status")
+  @Mapping(target = "businessProfileId", source = "shop.businessProfileId")
   ShopRegistrationResponse toRegistrationResponse(Shop shop);
 
   @Mapping(target = "shopId", source = "shop.shopId")
@@ -38,6 +39,7 @@ public interface ShopMapper {
   @Mapping(target = "tagline", source = "tagline")
   @Mapping(target = "location", source = "location")
   @Mapping(target = "panNo", ignore = true)
+  @Mapping(target = "businessProfileName", ignore = true)
   ShopDetailResponse toShopDetailResponse(Shop shop);
 
   @AfterMapping
@@ -75,6 +77,14 @@ public interface ShopMapper {
     shop.setActive(true);
     shop.setCreatedAt(Instant.now());
     shop.setApprovedAt(Instant.now());
+
+    String profileId = org.springframework.util.StringUtils.hasText(request.getBusinessProfileId())
+        ? request.getBusinessProfileId().trim()
+        : com.inventory.pluginengine.profile.BusinessProfile.DEFAULT_PROFILE_ID;
+    shop.setBusinessProfileId(profileId);
+    if (!org.springframework.util.StringUtils.hasText(shop.getBusinessId())) {
+      shop.setBusinessId(profileId);
+    }
   }
 
   // Method to update existing UserAccount with shopId

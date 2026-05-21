@@ -1,0 +1,75 @@
+{
+  "id": "sports-shop",
+  "code": "sports-shop",
+  "name": "Sports Shop",
+  "enabled": true,
+  "version": 1,
+  "modules": {
+    "batchTracking": false,
+    "expiryReminders": false,
+    "schemes": false,
+    "gstrReports": false,
+    "ocrStockIn": true,
+    "vendorPurchaseInvoice": true,
+    "credit": true,
+    "accounting": true,
+    "whatsappMarketing": false,
+    "stockCorrections": true,
+    "vendorReturn": true,
+    "customerReturn": true,
+    "lowStockAlerts": true,
+    "customReminders": false,
+    "itemTypeDegree": false,
+    "billingModeBasic": false,
+    "unitConversions": true,
+    "multiRatePricing": true
+  },
+  "entities": {
+    "shop": {
+      "fields": [
+        {
+          "key": "gstinNo",
+          "required": false,
+          "visible": true,
+          "storage": "column",
+          "label": "GSTIN No"
+        },
+        {
+          "key": "dlNo",
+          "required": false,
+          "visible": false,
+          "storage": "column",
+          "label": "Drug License No"
+        },
+        {
+          "key": "fssai",
+          "required": false,
+          "visible": false,
+          "storage": "column",
+          "label": "FSSAI"
+        }
+      ]
+    }
+  },
+  "strategies": {
+    "inventoryValidator": "sportsShopInventory",
+    "pricing": "sportsShopPricing",
+    "taxLine": "indiaGstStandard",
+    "partyValidator": "genericParty",
+    "stockInParser": "sportsInvoiceParser"
+  },
+  "pricing": {
+    "model": "COST_PLUS_SELL",
+    "defaultSellRateByShopType": {
+      "RETAILER": "priceToRetail",
+      "DISTRIBUTOR": "priceToRetail",
+      "WHOLESALER": "priceToRetail"
+    }
+  },
+  "ui": {
+    "navHidden": [
+      "/dashboard/taxes",
+      "/dashboard/reminders"
+    ]
+  }
+}

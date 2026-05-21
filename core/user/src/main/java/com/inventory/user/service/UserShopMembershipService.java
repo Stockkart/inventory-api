@@ -100,9 +100,14 @@ public class UserShopMembershipService {
 
       for (UserShopMembership m : memberships) {
         String shopName = shopServiceAdapter != null ? shopServiceAdapter.getShopName(m.getShopId()) : null;
+        ShopServiceAdapter.ShopProfileSummary profileSummary = shopServiceAdapter != null
+            ? shopServiceAdapter.getShopProfileSummary(m.getShopId())
+            : null;
         shops.add(userShopMembershipMapper.toUserShopDto(
             m.getShopId(), shopName, m.getRole() != null ? m.getRole().name() : null,
-            m.getRelationship(), m.getJoinedAt()));
+            m.getRelationship(), m.getJoinedAt(),
+            profileSummary != null ? profileSummary.getBusinessProfileId() : null,
+            profileSummary != null ? profileSummary.getBusinessProfileName() : null));
       }
 
       // Backward compatibility: if user has shopId but no membership for it, include it
@@ -114,12 +119,17 @@ public class UserShopMembershipService {
             String shopName = shopServiceAdapter != null
                 ? shopServiceAdapter.getShopName(account.getShopId())
                 : account.getShopId();
+            ShopServiceAdapter.ShopProfileSummary profileSummary = shopServiceAdapter != null
+                ? shopServiceAdapter.getShopProfileSummary(account.getShopId())
+                : null;
             shops.add(userShopMembershipMapper.toUserShopDto(
                 account.getShopId(),
                 shopName != null ? shopName : account.getShopId(),
                 account.getRole() != null ? account.getRole().name() : UserRole.OWNER.name(),
                 RELATIONSHIP_OWNER,
-                account.getUpdatedAt() != null ? account.getUpdatedAt() : account.getCreatedAt()));
+                account.getUpdatedAt() != null ? account.getUpdatedAt() : account.getCreatedAt(),
+                profileSummary != null ? profileSummary.getBusinessProfileId() : null,
+                profileSummary != null ? profileSummary.getBusinessProfileName() : null));
           }
         }
       });

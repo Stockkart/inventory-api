@@ -9,6 +9,8 @@ public class RegisterShopRequest {
 
   private String name;
   private String businessId;
+  /** Config profile id (pharmacy, sports-shop). Defaults to pharmacy when omitted. */
+  private String businessProfileId;
   private LocationDto location;
   private String contactEmail;
   private String contactPhone;

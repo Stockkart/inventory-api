@@ -26,13 +26,17 @@ public interface UserShopMembershipMapper {
     return m;
   }
 
-  default UserShopDto toUserShopDto(String shopId, String shopName, String role, String relationship, Instant joinedAt) {
-    return new UserShopDto(
-        shopId,
-        StringUtils.hasText(shopName) ? shopName : shopId,
-        StringUtils.hasText(role) ? role : UserRole.OWNER.name(),
-        StringUtils.hasText(relationship) ? relationship : "OWNER",
-        joinedAt != null ? joinedAt : Instant.now());
+  default UserShopDto toUserShopDto(String shopId, String shopName, String role, String relationship,
+      Instant joinedAt, String businessProfileId, String businessProfileName) {
+    UserShopDto dto = new UserShopDto();
+    dto.setShopId(shopId);
+    dto.setShopName(StringUtils.hasText(shopName) ? shopName : shopId);
+    dto.setRole(StringUtils.hasText(role) ? role : UserRole.OWNER.name());
+    dto.setRelationship(StringUtils.hasText(relationship) ? relationship : "OWNER");
+    dto.setJoinedAt(joinedAt != null ? joinedAt : Instant.now());
+    dto.setBusinessProfileId(businessProfileId);
+    dto.setBusinessProfileName(businessProfileName);
+    return dto;
   }
 
   default UserShopListResponse toUserShopListResponse(List<UserShopDto> shops) {
