@@ -7,7 +7,6 @@ import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.product.rest.dto.request.RegisterShopRequest;
 import com.inventory.product.rest.dto.request.ShopApprovalRequest;
 import com.inventory.product.rest.dto.request.UpdateShopRequest;
-import com.inventory.product.rest.dto.response.BusinessProfileOptionResponse;
 import com.inventory.product.rest.dto.response.BusinessProfileResponse;
 import com.inventory.product.rest.dto.response.ShopApprovalResponse;
 import com.inventory.product.rest.dto.response.ShopDetailResponse;
@@ -53,8 +52,8 @@ public class ShopController {
   }
 
   @GetMapping("/business-profiles")
-  public ResponseEntity<ApiResponse<List<BusinessProfileOptionResponse>>> listBusinessProfiles() {
-    return ResponseEntity.ok(ApiResponse.success(businessProfileService.listEnabledProfileOptions()));
+  public ResponseEntity<ApiResponse<List<BusinessProfileResponse>>> listBusinessProfiles() {
+    return ResponseEntity.ok(ApiResponse.success(businessProfileService.listEnabledProfiles()));
   }
 
   @PostMapping("/register")

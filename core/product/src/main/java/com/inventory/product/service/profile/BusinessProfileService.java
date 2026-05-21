@@ -2,8 +2,8 @@ package com.inventory.product.service.profile;
 
 import com.inventory.product.domain.model.BusinessType;
 import com.inventory.product.domain.repository.BusinessTypeRepository;
+import com.inventory.product.mapper.BusinessProfileMapper;
 import com.inventory.product.mapper.BusinessProfileResponseMapper;
-import com.inventory.product.rest.dto.response.BusinessProfileOptionResponse;
 import com.inventory.product.rest.dto.response.BusinessProfileResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,15 +27,20 @@ public class BusinessProfileService {
   @Autowired
   private BusinessProfileResponseMapper responseMapper;
 
+  @Autowired
+  private BusinessProfileMapper businessProfileMapper;
+
   public BusinessProfileResponse getProfileForShop(String shopId) {
     return responseMapper.toResponse(profileResolver.resolveForShop(shopId));
   }
 
-  public List<BusinessProfileOptionResponse> listEnabledProfileOptions() {
+  /** Full profile config for onboarding (no active shop required). */
+  public List<BusinessProfileResponse> listEnabledProfiles() {
     return businessTypeRepository.findAll().stream()
         .filter(BusinessType::isEnabled)
         .sorted(Comparator.comparing(BusinessType::getName, Comparator.nullsLast(String::compareToIgnoreCase)))
-        .map(doc -> new BusinessProfileOptionResponse(doc.getId(), doc.getName()))
+        .map(businessProfileMapper::toProfile)
+        .map(responseMapper::toResponse)
         .toList();
   }
 }
