@@ -19,6 +19,7 @@
         <module>taxation</module>
         <module>credit</module>
         <module>accounting</module>
+        <module>help</module>
     </modules>
 
     <properties>

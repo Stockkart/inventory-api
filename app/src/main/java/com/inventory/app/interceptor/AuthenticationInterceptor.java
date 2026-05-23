@@ -39,7 +39,8 @@ public class AuthenticationInterceptor implements HandlerInterceptor {
   private static final List<String> PUBLIC_ENDPOINT_PATTERNS = Arrays.asList(
       "/api/v1/plans",
       "/api/v1/plans/[a-fA-F0-9]{24}",
-      "/api/v1/plans/webhook/payment-success"
+      "/api/v1/plans/webhook/payment-success",
+      "/api/v1/help/videos/key/[a-zA-Z0-9-]+"
   );
   @Autowired
   private TokenValidationService tokenValidationService;
