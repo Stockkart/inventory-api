@@ -49,21 +49,46 @@ public class CustomerService {
 
   @Transactional(readOnly = true)
   public CustomerDto searchCustomer(String shopId, String phone, String email) {
+    return searchCustomer(shopId, phone, email, null);
+  }
+
+  /**
+   * Looks up a single customer linked to {@code shopId} by exactly one of phone, email, or name.
+   *
+   * <p>Names are not guaranteed to be unique, so when multiple shop-linked customers share the
+   * same name we return the most recently active match (last {@code updatedAt}, falling back to
+   * {@code createdAt}). The cashier can correct the choice on the form if needed.
+   */
+  @Transactional(readOnly = true)
+  public CustomerDto searchCustomer(String shopId, String phone, String email, String name) {
     customerValidator.validateShopId(shopId);
-    customerValidator.validateCustomerSearchParams(phone, email);
+    customerValidator.validateCustomerSearchParams(phone, email, name);
 
     String normalizedPhone = TextUtils.trimToNull(phone);
     String normalizedEmail = TextUtils.trimToNull(email);
-    boolean searchByPhone = StringUtils.hasText(normalizedPhone);
-    String searchValue = searchByPhone ? normalizedPhone : normalizedEmail;
+    String normalizedName = TextUtils.trimToNull(name);
 
-    Customer customer = (searchByPhone
-        ? searchCustomerByPhone(normalizedPhone, shopId)
-        : searchCustomerByEmail(normalizedEmail, shopId))
-        .orElseThrow(() -> new ResourceNotFoundException(
-            "Customer",
-            searchByPhone ? "phone" : "email",
-            "No customer found with " + (searchByPhone ? "phone " : "email ") + searchValue + " for shop " + shopId));
+    String field;
+    String searchValue;
+    Optional<Customer> result;
+    if (StringUtils.hasText(normalizedPhone)) {
+      field = "phone";
+      searchValue = normalizedPhone;
+      result = searchCustomerByPhone(normalizedPhone, shopId);
+    } else if (StringUtils.hasText(normalizedEmail)) {
+      field = "email";
+      searchValue = normalizedEmail;
+      result = searchCustomerByEmail(normalizedEmail, shopId);
+    } else {
+      field = "name";
+      searchValue = normalizedName;
+      result = searchCustomerByName(normalizedName, shopId);
+    }
+
+    Customer customer = result.orElseThrow(() -> new ResourceNotFoundException(
+        "Customer",
+        field,
+        "No customer found with " + field + " " + searchValue + " for shop " + shopId));
 
     return customerMapper.toDto(customer);
   }
@@ -128,6 +153,30 @@ public class CustomerService {
   public Optional<Customer> searchCustomerByEmail(String email, String shopId) {
     return customerRepository.findByEmail(email.trim())
         .filter(c -> shopCustomerRepository.existsByShopIdAndCustomerId(shopId, c.getId()));
+  }
+
+  /**
+   * Find a single shop-linked customer by case-insensitive exact name. If multiple customers
+   * with the same name are linked to the shop (names aren't unique), returns the most recently
+   * touched one so the cashier sees the customer they are most likely to be ringing up.
+   */
+  @Transactional(readOnly = true)
+  public Optional<Customer> searchCustomerByName(String name, String shopId) {
+    if (!StringUtils.hasText(name)) {
+      return Optional.empty();
+    }
+    List<Customer> matches = customerRepository.findByNameIgnoreCase(name.trim()).stream()
+        .filter(c -> shopCustomerRepository.existsByShopIdAndCustomerId(shopId, c.getId()))
+        .sorted((a, b) -> {
+          java.time.Instant aT = a.getUpdatedAt() != null ? a.getUpdatedAt() : a.getCreatedAt();
+          java.time.Instant bT = b.getUpdatedAt() != null ? b.getUpdatedAt() : b.getCreatedAt();
+          if (aT == null && bT == null) return 0;
+          if (aT == null) return 1;
+          if (bT == null) return -1;
+          return bT.compareTo(aT);
+        })
+        .toList();
+    return matches.isEmpty() ? Optional.empty() : Optional.of(matches.get(0));
   }
 
   /**

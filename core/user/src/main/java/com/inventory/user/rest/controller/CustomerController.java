@@ -31,10 +31,11 @@ public class CustomerController {
   public ResponseEntity<ApiResponse<CustomerDto>> search(
       @RequestParam(required = false) String phone,
       @RequestParam(required = false) String email,
+      @RequestParam(required = false) String name,
       HttpServletRequest httpRequest) {
     String shopId = (String) httpRequest.getAttribute("shopId");
     return ResponseEntity.ok(
-        ApiResponse.success(customerService.searchCustomer(shopId, phone, email)));
+        ApiResponse.success(customerService.searchCustomer(shopId, phone, email, name)));
   }
 
   @PostMapping
