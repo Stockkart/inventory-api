@@ -1,10 +1,10 @@
-package com.inventory.video.utils;
+package com.inventory.resource.utils;
 
-import com.inventory.video.domain.model.TutorialVideo;
+import com.inventory.resource.domain.model.TutorialResource;
 
-public final class VideoRouteUtils {
+public final class ResourceRouteUtils {
 
-  private VideoRouteUtils() {}
+  private ResourceRouteUtils() {}
 
   public static String normalizePath(String rawPath) {
     if (rawPath == null || rawPath.isBlank()) {
@@ -20,11 +20,11 @@ public final class VideoRouteUtils {
     return path;
   }
 
-  public static boolean matchesRoute(TutorialVideo video, String path) {
-    if (video.getRoutePaths() == null || video.getRoutePaths().isEmpty()) {
+  public static boolean matchesRoute(TutorialResource resource, String path) {
+    if (resource.getRoutePaths() == null || resource.getRoutePaths().isEmpty()) {
       return false;
     }
-    for (String routePath : video.getRoutePaths()) {
+    for (String routePath : resource.getRoutePaths()) {
       String normalized = normalizePath(routePath);
       if (normalized.isEmpty()) {
         continue;
@@ -42,12 +42,12 @@ public final class VideoRouteUtils {
     return false;
   }
 
-  public static int routeMatchScore(TutorialVideo video, String path) {
-    if (video.getRoutePaths() == null) {
+  public static int routeMatchScore(TutorialResource resource, String path) {
+    if (resource.getRoutePaths() == null) {
       return 0;
     }
     int best = 0;
-    for (String routePath : video.getRoutePaths()) {
+    for (String routePath : resource.getRoutePaths()) {
       String normalized = normalizePath(routePath);
       if (path.equals(normalized)) {
         best = Math.max(best, normalized.length() + 1000);

@@ -40,7 +40,7 @@ public class AuthenticationInterceptor implements HandlerInterceptor {
       "/api/v1/plans",
       "/api/v1/plans/[a-fA-F0-9]{24}",
       "/api/v1/plans/webhook/payment-success",
-      "/api/v1/videos/key/[a-zA-Z0-9-]+"
+      "/api/v1/resources/key/[a-zA-Z0-9-]+"
   );
   @Autowired
   private TokenValidationService tokenValidationService;

@@ -1,4 +1,4 @@
-package com.inventory.video.rest.dto.response;
+package com.inventory.resource.rest.dto.response;
 
 import java.util.List;
 import lombok.AllArgsConstructor;
@@ -10,7 +10,7 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class TutorialVideoResponse {
+public class TutorialResourceResponse {
 
   private String id;
   private String videoKey;

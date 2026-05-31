@@ -1,4 +1,4 @@
-package com.inventory.video.domain.model;
+package com.inventory.resource.domain.model;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -20,7 +20,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 @NoArgsConstructor
 @AllArgsConstructor
 @Document(collection = "help_videos")
-public class TutorialVideo {
+public class TutorialResource {
 
   @Id
   private String id;
@@ -40,8 +40,8 @@ public class TutorialVideo {
   private String youtubeVideoId;
 
   /**
-   * Dashboard paths this video applies to (e.g. {@code /dashboard/product-registration}).
-   * Empty list means the video is only reachable by {@code videoKey}, not route matching.
+   * Dashboard paths this resource applies to (e.g. {@code /dashboard/product-registration}).
+   * Empty list means the resource is only reachable by {@code videoKey}, not route matching.
    */
   @Builder.Default
   private List<String> routePaths = new ArrayList<>();
@@ -52,7 +52,7 @@ public class TutorialVideo {
   @Builder.Default
   private boolean active = true;
 
-  /** When true, {@code GET /api/v1/videos/key/{videoKey}} works without auth. */
+  /** When true, {@code GET /api/v1/resources/key/{videoKey}} works without auth. */
   @Builder.Default
   private boolean isPublic = false;
 

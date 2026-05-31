@@ -9,11 +9,11 @@
         <version>1.0.0</version>
     </parent>
 
-    <artifactId>video</artifactId>
+    <artifactId>resource</artifactId>
     <version>1.0.0</version>
     <packaging>jar</packaging>
-    <name>video</name>
-    <description>YouTube tutorial videos for contextual in-app guidance</description>
+    <name>resource</name>
+    <description>YouTube tutorial resources for contextual in-app guidance</description>
 
     <dependencies>
         <dependency>

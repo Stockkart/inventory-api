@@ -1,6 +1,6 @@
-package com.inventory.video.utils;
+package com.inventory.resource.utils;
 
-import com.inventory.video.domain.model.TutorialVideo;
+import com.inventory.resource.domain.model.TutorialResource;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -27,13 +27,13 @@ public final class YoutubeUrlUtils {
     return null;
   }
 
-  public static String resolveVideoId(TutorialVideo video) {
-    if (video == null) {
+  public static String resolveVideoId(TutorialResource resource) {
+    if (resource == null) {
       return null;
     }
-    if (video.getYoutubeVideoId() != null && !video.getYoutubeVideoId().isBlank()) {
-      return video.getYoutubeVideoId();
+    if (resource.getYoutubeVideoId() != null && !resource.getYoutubeVideoId().isBlank()) {
+      return resource.getYoutubeVideoId();
     }
-    return extractVideoId(video.getYoutubeUrl());
+    return extractVideoId(resource.getYoutubeUrl());
   }
 }
