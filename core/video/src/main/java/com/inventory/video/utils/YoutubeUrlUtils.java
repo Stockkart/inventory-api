@@ -1,6 +1,6 @@
-package com.inventory.help.utils;
+package com.inventory.video.utils;
 
-import com.inventory.help.domain.model.HelpVideo;
+import com.inventory.video.domain.model.TutorialVideo;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -27,7 +27,7 @@ public final class YoutubeUrlUtils {
     return null;
   }
 
-  public static String resolveVideoId(HelpVideo video) {
+  public static String resolveVideoId(TutorialVideo video) {
     if (video == null) {
       return null;
     }

@@ -1,4 +1,4 @@
-package com.inventory.help.domain.model;
+package com.inventory.video.domain.model;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -13,14 +13,14 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 /**
  * YouTube tutorial linked by a stable {@code videoKey} (e.g. {@code stockkart-overview})
- * and optionally mapped to dashboard routes for contextual help.
+ * and optionally mapped to dashboard routes for contextual guidance.
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 @Document(collection = "help_videos")
-public class HelpVideo {
+public class TutorialVideo {
 
   @Id
   private String id;
@@ -52,7 +52,7 @@ public class HelpVideo {
   @Builder.Default
   private boolean active = true;
 
-  /** When true, {@code GET /api/v1/help/videos/key/{videoKey}} works without auth. */
+  /** When true, {@code GET /api/v1/videos/key/{videoKey}} works without auth. */
   @Builder.Default
   private boolean isPublic = false;
 

@@ -1,10 +1,10 @@
-package com.inventory.help.utils;
+package com.inventory.video.utils;
 
-import com.inventory.help.domain.model.HelpVideo;
+import com.inventory.video.domain.model.TutorialVideo;
 
-public final class HelpVideoPathUtils {
+public final class VideoRouteUtils {
 
-  private HelpVideoPathUtils() {}
+  private VideoRouteUtils() {}
 
   public static String normalizePath(String rawPath) {
     if (rawPath == null || rawPath.isBlank()) {
@@ -20,7 +20,7 @@ public final class HelpVideoPathUtils {
     return path;
   }
 
-  public static boolean matchesRoute(HelpVideo video, String path) {
+  public static boolean matchesRoute(TutorialVideo video, String path) {
     if (video.getRoutePaths() == null || video.getRoutePaths().isEmpty()) {
       return false;
     }
@@ -42,7 +42,7 @@ public final class HelpVideoPathUtils {
     return false;
   }
 
-  public static int routeMatchScore(HelpVideo video, String path) {
+  public static int routeMatchScore(TutorialVideo video, String path) {
     if (video.getRoutePaths() == null) {
       return 0;
     }

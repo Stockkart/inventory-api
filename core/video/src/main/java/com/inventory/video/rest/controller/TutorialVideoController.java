@@ -1,8 +1,8 @@
-package com.inventory.help.rest.controller;
+package com.inventory.video.rest.controller;
 
 import com.inventory.common.dto.response.ApiResponse;
-import com.inventory.help.rest.dto.response.HelpVideoResponse;
-import com.inventory.help.service.HelpVideoService;
+import com.inventory.video.rest.dto.response.TutorialVideoResponse;
+import com.inventory.video.service.TutorialVideoService;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -13,16 +13,16 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/v1/help/videos")
+@RequestMapping("/api/v1/videos")
 @RequiredArgsConstructor
-public class HelpVideoController {
+public class TutorialVideoController {
 
-  private final HelpVideoService helpVideoService;
+  private final TutorialVideoService tutorialVideoService;
 
-  /** List all active help videos (authenticated). */
+  /** List all active tutorial videos (authenticated). */
   @GetMapping
-  public ResponseEntity<ApiResponse<List<HelpVideoResponse>>> listVideos() {
-    return ResponseEntity.ok(ApiResponse.success(helpVideoService.listActive()));
+  public ResponseEntity<ApiResponse<List<TutorialVideoResponse>>> listVideos() {
+    return ResponseEntity.ok(ApiResponse.success(tutorialVideoService.listActive()));
   }
 
   /**
@@ -30,15 +30,15 @@ public class HelpVideoController {
    * Public keys are available without authentication.
    */
   @GetMapping("/key/{videoKey}")
-  public ResponseEntity<ApiResponse<HelpVideoResponse>> getByVideoKey(
+  public ResponseEntity<ApiResponse<TutorialVideoResponse>> getByVideoKey(
       @PathVariable String videoKey) {
-    return ResponseEntity.ok(ApiResponse.success(helpVideoService.getByVideoKey(videoKey)));
+    return ResponseEntity.ok(ApiResponse.success(tutorialVideoService.getByVideoKey(videoKey)));
   }
 
   /** Videos suggested for the current dashboard route (authenticated). */
   @GetMapping("/for-route")
-  public ResponseEntity<ApiResponse<List<HelpVideoResponse>>> listForRoute(
+  public ResponseEntity<ApiResponse<List<TutorialVideoResponse>>> listForRoute(
       @RequestParam("path") String path) {
-    return ResponseEntity.ok(ApiResponse.success(helpVideoService.listForRoute(path)));
+    return ResponseEntity.ok(ApiResponse.success(tutorialVideoService.listForRoute(path)));
   }
 }

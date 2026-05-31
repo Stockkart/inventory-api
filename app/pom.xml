@@ -92,7 +92,7 @@
         </dependency>
         <dependency>
             <groupId>com.inventory</groupId>
-            <artifactId>help</artifactId>
+            <artifactId>video</artifactId>
             <version>1.0.0</version>
         </dependency>
         <dependency>
