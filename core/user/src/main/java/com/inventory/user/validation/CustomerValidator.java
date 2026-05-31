@@ -37,11 +37,19 @@ public class CustomerValidator {
   }
 
   public void validateCustomerSearchParams(String phone, String email) {
-    if (!StringUtils.hasText(phone) && !StringUtils.hasText(email)) {
-      throw new ValidationException("Phone or email is required for search");
+    validateCustomerSearchParams(phone, email, null);
+  }
+
+  public void validateCustomerSearchParams(String phone, String email, String name) {
+    int provided = 0;
+    if (StringUtils.hasText(phone)) provided++;
+    if (StringUtils.hasText(email)) provided++;
+    if (StringUtils.hasText(name)) provided++;
+    if (provided == 0) {
+      throw new ValidationException("Phone, email or name is required for search");
     }
-    if (StringUtils.hasText(phone) && StringUtils.hasText(email)) {
-      throw new ValidationException("Provide either phone or email, not both");
+    if (provided > 1) {
+      throw new ValidationException("Provide only one of phone, email or name");
     }
   }
 

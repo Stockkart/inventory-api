@@ -23,6 +23,8 @@ import com.inventory.product.rest.dto.request.AddToCartRequest;
 import com.inventory.product.rest.dto.request.UpdatePurchaseStatusRequest;
 import com.inventory.product.rest.dto.response.AddToCartResponse;
 import com.inventory.product.rest.dto.response.CheckoutResponse;
+import com.inventory.product.rest.dto.response.CustomerProductHistoryEntry;
+import com.inventory.product.rest.dto.response.CustomerProductHistoryResponse;
 import com.inventory.product.rest.dto.response.InventoryEventDto;
 import com.inventory.product.rest.dto.response.PurchaseListResponse;
 import com.inventory.product.rest.dto.response.PurchaseSummaryDto;
@@ -51,6 +53,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -384,6 +387,119 @@ public class CheckoutService {
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
           "An unexpected error occurred while getting purchases: " + e.getMessage(), e);
     }
+  }
+
+  /**
+   * Default + cap for {@link #getCustomerProductHistory(String, String, List, Integer, HttpServletRequest)}.
+   */
+  private static final int CUSTOMER_PRODUCT_HISTORY_DEFAULT_LIMIT = 3;
+  private static final int CUSTOMER_PRODUCT_HISTORY_MAX_LIMIT = 10;
+  /** How many recent purchases to scan when filtering past sales of the requested inventory lines. */
+  private static final int CUSTOMER_PRODUCT_HISTORY_SCAN_PAGE_SIZE = 50;
+
+  /**
+   * Recent prices/quantities the same customer paid for each requested inventory line.
+   * Resolves the customer via {@code customerId} (preferred) or {@code customerPhone}.
+   */
+  @Transactional(readOnly = true)
+  public CustomerProductHistoryResponse getCustomerProductHistory(
+      String customerId,
+      String customerPhone,
+      List<String> inventoryIds,
+      Integer perItemLimit,
+      HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    String userId = (String) httpRequest.getAttribute("userId");
+    checkoutValidator.validateShopIdAndUserId(shopId, userId);
+
+    int limit = perItemLimit == null || perItemLimit <= 0
+        ? CUSTOMER_PRODUCT_HISTORY_DEFAULT_LIMIT
+        : Math.min(perItemLimit, CUSTOMER_PRODUCT_HISTORY_MAX_LIMIT);
+
+    String resolvedCustomerId = resolveCustomerIdForHistory(shopId, customerId, customerPhone);
+    if (resolvedCustomerId == null || inventoryIds == null || inventoryIds.isEmpty()) {
+      return CustomerProductHistoryResponse.builder()
+          .customerId(resolvedCustomerId)
+          .perItemLimit(limit)
+          .history(Map.of())
+          .build();
+    }
+
+    Set<String> wantedIds = new HashSet<>();
+    for (String id : inventoryIds) {
+      if (StringUtils.hasText(id)) {
+        wantedIds.add(id.trim());
+      }
+    }
+    if (wantedIds.isEmpty()) {
+      return CustomerProductHistoryResponse.builder()
+          .customerId(resolvedCustomerId)
+          .perItemLimit(limit)
+          .history(Map.of())
+          .build();
+    }
+
+    Pageable pageable = PageRequest.of(
+        0,
+        CUSTOMER_PRODUCT_HISTORY_SCAN_PAGE_SIZE,
+        Sort.by(Sort.Direction.DESC, "soldAt"));
+    Page<Purchase> purchasePage = purchaseRepository.findByShopIdAndCustomerIdAndStatus(
+        shopId, resolvedCustomerId, PurchaseStatus.COMPLETED, pageable);
+
+    Map<String, List<CustomerProductHistoryEntry>> grouped = new LinkedHashMap<>();
+    for (Purchase purchase : purchasePage.getContent()) {
+      if (purchase.getItems() == null) continue;
+      for (PurchaseItem item : purchase.getItems()) {
+        if (item == null || item.getInventoryId() == null) continue;
+        if (!wantedIds.contains(item.getInventoryId())) continue;
+        List<CustomerProductHistoryEntry> bucket = grouped.computeIfAbsent(
+            item.getInventoryId(), k -> new ArrayList<>());
+        if (bucket.size() >= limit) continue;
+        bucket.add(toCustomerProductHistoryEntry(purchase, item));
+      }
+    }
+
+    return CustomerProductHistoryResponse.builder()
+        .customerId(resolvedCustomerId)
+        .perItemLimit(limit)
+        .history(grouped)
+        .build();
+  }
+
+  private String resolveCustomerIdForHistory(String shopId, String customerId, String customerPhone) {
+    if (StringUtils.hasText(customerId)) {
+      String trimmed = customerId.trim();
+      if (shopCustomerRepository.existsByShopIdAndCustomerId(shopId, trimmed)) {
+        return trimmed;
+      }
+    }
+    if (StringUtils.hasText(customerPhone)) {
+      return customerService.searchCustomerByPhone(customerPhone.trim(), shopId)
+          .map(Customer::getId)
+          .orElse(null);
+    }
+    return null;
+  }
+
+  private CustomerProductHistoryEntry toCustomerProductHistoryEntry(Purchase purchase, PurchaseItem item) {
+    return CustomerProductHistoryEntry.builder()
+        .purchaseId(purchase.getId())
+        .invoiceNo(purchase.getInvoiceNo())
+        .soldAt(purchase.getSoldAt())
+        .inventoryId(item.getInventoryId())
+        .name(item.getName())
+        .quantity(item.getQuantity())
+        .saleUnit(item.getSaleUnit())
+        .priceToRetail(item.getPriceToRetail())
+        .saleAdditionalDiscount(item.getSaleAdditionalDiscount())
+        .totalAmount(item.getTotalAmount())
+        .cgst(item.getCgst())
+        .sgst(item.getSgst())
+        .schemeType(item.getSchemeType())
+        .schemePayFor(item.getSchemePayFor())
+        .schemeFree(item.getSchemeFree())
+        .schemePercentage(item.getSchemePercentage())
+        .build();
   }
 
   /**

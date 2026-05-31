@@ -42,6 +42,19 @@ public interface PurchaseRepository extends MongoRepository<Purchase, String> {
   List<Purchase> findByShopIdAndCustomerId(String shopId, String customerId);
 
   /**
+   * Find completed purchases by a customer for a shop, newest first. Used by scan-and-sell to
+   * surface previous prices for the same customer.
+   *
+   * @param shopId the shop ID
+   * @param customerId the customer ID
+   * @param status status filter (typically {@link PurchaseStatus#COMPLETED})
+   * @param pageable pagination + sort
+   * @return matching purchases (paged)
+   */
+  Page<Purchase> findByShopIdAndCustomerIdAndStatus(
+      String shopId, String customerId, PurchaseStatus status, Pageable pageable);
+
+  /**
    * Find purchases by shop ID, invoice number, and customer ID.
    *
    * @param shopId the shop ID
