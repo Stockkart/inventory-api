@@ -21,5 +21,7 @@ public class RegisterShopRequest {
   private String tagline; // Optional: Shop tagline, banner word, or highlight text
   /** Shop type: RETAILER, DISTRIBUTOR, or WHOLESALER. For retailer, default price is MRP (tax-inclusive). */
   private ShopType shopType;
+  /** Optional: medical (default), sports, … — server validates against registered verticals. */
+  private String verticalId;
 }
 

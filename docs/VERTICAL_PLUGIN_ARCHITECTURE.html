@@ -1,0 +1,2049 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>StockKart Vertical Plugin Architecture v4.5</title>
+  <style>
+:root {
+  --bg: #f8fafc;
+  --surface: #ffffff;
+  --text: #0f172a;
+  --muted: #64748b;
+  --border: #e2e8f0;
+  --accent: #0d9488;
+  --accent-soft: #ccfbf1;
+  --code-bg: #f1f5f9;
+  --sidebar-w: 280px;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--text);
+  background: var(--bg);
+}
+.layout {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  min-height: 100vh;
+}
+nav.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 1.25rem 1rem 2rem;
+  font-size: 0.8rem;
+}
+nav.sidebar h2 {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 0 0 0.75rem;
+}
+nav.sidebar ul { list-style: none; padding: 0; margin: 0; }
+nav.sidebar li { margin: 0.2rem 0; }
+nav.sidebar a {
+  color: var(--text);
+  text-decoration: none;
+  display: block;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+}
+nav.sidebar a:hover { background: var(--accent-soft); color: var(--accent); }
+nav.sidebar .toc-h3 { padding-left: 0.75rem; font-size: 0.75rem; color: var(--muted); }
+main {
+  max-width: 52rem;
+  padding: 2rem 2.5rem 4rem;
+  background: var(--surface);
+  margin: 1rem;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(15,23,42,0.08);
+}
+header.doc-header {
+  border-bottom: 2px solid var(--accent);
+  padding-bottom: 1.25rem;
+  margin-bottom: 2rem;
+}
+header.doc-header h1 { margin: 0 0 0.5rem; font-size: 1.85rem; line-height: 1.25; }
+header.doc-header .meta { color: var(--muted); font-size: 0.9rem; }
+header.doc-header .badge {
+  display: inline-block;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 0.75rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  margin-right: 0.5rem;
+}
+h2 { margin-top: 2.5rem; padding-top: 0.5rem; border-top: 1px solid var(--border); font-size: 1.35rem; }
+h2:first-of-type { border-top: none; margin-top: 0; }
+h3 { font-size: 1.1rem; margin-top: 1.75rem; }
+h4 { font-size: 1rem; margin-top: 1.25rem; }
+p { margin: 0.75rem 0; }
+ul, ol { margin: 0.75rem 0; padding-left: 1.5rem; }
+li { margin: 0.25rem 0; }
+hr { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.9rem;
+}
+th, td {
+  border: 1px solid var(--border);
+  padding: 0.5rem 0.65rem;
+  text-align: left;
+  vertical-align: top;
+}
+th { background: var(--code-bg); font-weight: 600; }
+tr:nth-child(even) td { background: #fafbfc; }
+code {
+  font-family: ui-monospace, "Cascadia Code", "SF Mono", monospace;
+  font-size: 0.88em;
+  background: var(--code-bg);
+  padding: 0.12em 0.35em;
+  border-radius: 4px;
+}
+pre {
+  background: #1e293b;
+  color: #e2e8f0;
+  padding: 1rem 1.15rem;
+  border-radius: 8px;
+  overflow-x: auto;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  margin: 1rem 0;
+}
+pre code {
+  background: none;
+  padding: 0;
+  color: inherit;
+  font-size: inherit;
+}
+a { color: var(--accent); }
+strong { font-weight: 600; }
+blockquote {
+  margin: 1rem 0;
+  padding: 0.5rem 1rem;
+  border-left: 4px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+figure.doc-figure {
+  margin: 1.25rem 0 1.5rem;
+  text-align: center;
+}
+figure.doc-figure img {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(15,23,42,0.08);
+}
+figure.doc-figure figcaption {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+details {
+  margin: 1rem 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fafbfc;
+}
+details summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--muted);
+}
+.checklist { list-style: none; padding-left: 0; }
+.checklist li::before { content: "☐ "; color: var(--muted); }
+footer.doc-footer {
+  margin-top: 3rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+@media print {
+  .layout { display: block; }
+  nav.sidebar { display: none; }
+  main { margin: 0; box-shadow: none; max-width: none; }
+  pre { white-space: pre-wrap; word-break: break-word; }
+}
+@media (max-width: 900px) {
+  .layout { grid-template-columns: 1fr; }
+  nav.sidebar {
+    position: relative;
+    height: auto;
+    max-height: 40vh;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+}
+</style>
+</head>
+<body>
+  <div class="layout">
+    <nav class="sidebar"><h2>Contents</h2><ul><li><a href="#1-overview">1. Overview</a></li><li class="toc-h3"><a href="#goals">Goals</a></li><li class="toc-h3"><a href="#core-principles">Core principles</a></li><li class="toc-h3"><a href="#today-vs-target">Today vs target</a></li><li><a href="#2-system-architecture">2. System architecture</a></li><li class="toc-h3"><a href="#layer-responsibilities">Layer responsibilities</a></li><li><a href="#3-request-flow-and-inventoryservice">3. Request flow and InventoryService</a></li><li class="toc-h3"><a href="#standard-request-flow">Standard request flow</a></li><li class="toc-h3"><a href="#why-inventoryservice-instead-of-a-separate-orchestrator">Why `InventoryService` instead of a separate orchestrator</a></li><li class="toc-h3"><a href="#inventoryservicecreate-register-write">`InventoryService.create()` (register / write)</a></li><li class="toc-h3"><a href="#inventoryservicegetbyid-list-hydrate-read">`InventoryService.getById()` / list hydrate (read)</a></li><li class="toc-h3"><a href="#inventoryservicesearch-vertical-filters">`InventoryService.search()` (vertical filters)</a></li><li class="toc-h3"><a href="#cross-module-access">Cross-module access</a></li><li class="toc-h3"><a href="#examples">Examples</a></li><li class="toc-h3"><a href="#end-to-end-flows">End-to-end flows</a></li><li class="toc-h3"><a href="#create-inventory">Create inventory</a></li><li class="toc-h3"><a href="#get-inventory-detail">Get inventory detail</a></li><li class="toc-h3"><a href="#search-near-expiry">Search (near expiry)</a></li><li class="toc-h3"><a href="#analytics-profit-inventory">Analytics (profit / inventory)</a></li><li class="toc-h3"><a href="#schema-for-ui">Schema for UI</a></li><li class="toc-h3"><a href="#write-read-search-ownership">Write / read / search ownership</a></li><li class="toc-h3"><a href="#guiding-rule">Guiding rule</a></li><li class="toc-h3"><a href="#write-responsibility">Write responsibility</a></li><li class="toc-h3"><a href="#read-responsibility">Read responsibility</a></li><li class="toc-h3"><a href="#search-responsibility">Search responsibility</a></li><li class="toc-h3"><a href="#non-negotiable-boundaries">Non-negotiable boundaries</a></li><li class="toc-h3"><a href="#why-this-works">Why this works</a></li><li><a href="#4-data-model">4. Data model</a></li><li class="toc-h3"><a href="#shop">Shop</a></li><li class="toc-h3"><a href="#inventory-core-universal-only">Inventory (core — universal only)</a></li><li class="toc-h3"><a href="#other-core-entities-unchanged">Other core entities (unchanged)</a></li><li class="toc-h3"><a href="#extension-collections">Extension collections</a></li><li class="toc-h3"><a href="#naming-convention">Naming convention</a></li><li class="toc-h3"><a href="#standard-extension-document">Standard extension document</a></li><li class="toc-h3"><a href="#rules">Rules</a></li><li class="toc-h3"><a href="#examples-by-vertical">Examples by vertical</a></li><li class="toc-h3"><a href="#collection-ownership-and-api-types">Collection ownership and API types</a></li><li class="toc-h3"><a href="#who-owns-which-collection">Who owns which collection</a></li><li class="toc-h3"><a href="#11-link">1:1 link</a></li><li class="toc-h3"><a href="#api-types-three-layers">API types (three layers)</a></li><li class="toc-h3"><a href="#recommended-wire-shape-flat-merged">Recommended wire shape (flat merged)</a></li><li class="toc-h3"><a href="#backend-java">Backend Java</a></li><li class="toc-h3"><a href="#frontend-typescript">Frontend TypeScript</a></li><li><a href="#5-plugin-system">5. Plugin system</a></li><li class="toc-h3"><a href="#resolution-flow">Resolution flow</a></li><li class="toc-h3"><a href="#plugin-module-layout-thin-like-pricing">Plugin module layout (thin — like pricing)</a></li><li class="toc-h3"><a href="#required-verticalplugin">Required: `VerticalPlugin`</a></li><li class="toc-h3"><a href="#optional-extension-points">Optional extension points</a></li><li class="toc-h3"><a href="#module-structure-pluginengine-plugins">Module structure (pluginengine + plugins)</a></li><li class="toc-h3"><a href="#module-layout">Module layout</a></li><li class="toc-h3"><a href="#what-the-abstract-base-provides">What the abstract base provides</a></li><li class="toc-h3"><a href="#what-each-vertical-module-must-still-own">What each vertical module must still own</a></li><li class="toc-h3"><a href="#when-to-split-into-a-new-maven-module">When to split into a new Maven module</a></li><li><a href="#6-schema-and-ui">6. Schema and UI</a></li><li class="toc-h3"><a href="#vertical-schemas-collection-db">`vertical_schemas` collection (DB)</a></li><li class="toc-h3"><a href="#field-tiers-mandatory-regular-basic-same-vertical">Field tiers: mandatory, regular, basic (same vertical)</a></li><li class="toc-h3"><a href="#field-metadata">Field metadata</a></li><li class="toc-h3"><a href="#storage-flags">Storage flags</a></li><li class="toc-h3"><a href="#dynamic-ui-flow">Dynamic UI flow</a></li><li class="toc-h3"><a href="#where-to-put-a-new-field">Where to put a new field</a></li><li><a href="#7-codebase-layout">7. Codebase layout</a></li><li class="toc-h3"><a href="#backend-maven-modules">Backend Maven modules</a></li><li class="toc-h3"><a href="#coreproduct-package-tree">`core/product` package tree</a></li><li class="toc-h3"><a href="#pluginengine-and-plugins-today-vs-target">`pluginengine` and `plugins` — today vs target</a></li><li class="toc-h3"><a href="#other-core-modules-example-analytics">Other core modules (example: analytics)</a></li><li class="toc-h3"><a href="#app-module-boot-and-auth">`app` module — boot and auth</a></li><li class="toc-h3"><a href="#frontend-repo-inventory-platform">Frontend repo (`inventory-platform`)</a></li><li class="toc-h3"><a href="#mongodb-collections">MongoDB collections</a></li><li class="toc-h3"><a href="#request-flows-with-concrete-files">Request flows with concrete files</a></li><li class="toc-h3"><a href="#maven-dependency-direction">Maven dependency direction</a></li><li class="toc-h3"><a href="#today-vs-target-checklist">Today vs target checklist</a></li><li><a href="#8-shop-isolation">8. Shop isolation</a></li><li class="toc-h3"><a href="#defense-in-depth">Defense in depth</a></li><li class="toc-h3"><a href="#layer-1-authentication-resolve-shop">Layer 1 — Authentication (resolve shop)</a></li><li class="toc-h3"><a href="#layer-2-core-inventory-access">Layer 2 — Core inventory access</a></li><li class="toc-h3"><a href="#layer-3-extension-collection-access">Layer 3 — Extension collection access</a></li><li class="toc-h3"><a href="#layer-4-write-path-inventoryservice">Layer 4 — Write path (`InventoryService`)</a></li><li class="toc-h3"><a href="#layer-5-search-and-list-hydration">Layer 5 — Search and list hydration</a></li><li class="toc-h3"><a href="#layer-6-multi-shop-users">Layer 6 — Multi-shop users</a></li><li class="toc-h3"><a href="#layer-7-analytics-and-exports">Layer 7 — Analytics and exports</a></li><li class="toc-h3"><a href="#implementation-checklist">Implementation checklist</a></li><li class="toc-h3"><a href="#anti-patterns-data-leak">Anti-patterns (data leak)</a></li><li><a href="#9-migration">9. Migration</a></li><li class="toc-h3"><a href="#phased-plan-m1m8">Phased plan (M1–M8)</a></li><li class="toc-h3"><a href="#existing-medical-production-data">Existing medical production data</a></li><li class="toc-h3"><a href="#what-exists-today">What exists today</a></li><li class="toc-h3"><a href="#what-users-experience-during-migration">What users experience during migration</a></li><li class="toc-h3"><a href="#shop-tagging-m1">Shop tagging (M1)</a></li><li class="toc-h3"><a href="#segregation-script-core-inventory-inventory-ext-medical-m4">Segregation script — core `inventory` → `inventory_ext_medical` (M4)</a></li><li class="toc-h3"><a href="#dual-read-merge-m5">Dual-read merge (M5)</a></li><li class="toc-h3"><a href="#dual-write-m3">Dual-write (M3)</a></li><li class="toc-h3"><a href="#search-cutover-m6">Search cutover (M6)</a></li><li class="toc-h3"><a href="#risks-and-mitigations">Risks and mitigations</a></li><li class="toc-h3"><a href="#verification-checklist-medical-shops">Verification checklist (medical shops)</a></li><li><a href="#10-implementation-roadmap">10. Implementation roadmap</a></li><li class="toc-h3"><a href="#phase-1-foundation">Phase 1 — Foundation</a></li><li class="toc-h3"><a href="#phase-2-dynamic-ui">Phase 2 — Dynamic UI</a></li><li class="toc-h3"><a href="#phase-3-extension-storage-product-service-integration">Phase 3 — Extension storage + product service integration</a></li><li class="toc-h3"><a href="#phase-4-search-providers">Phase 4 — Search providers</a></li><li class="toc-h3"><a href="#phase-5-second-vertical-proof">Phase 5 — Second vertical (proof)</a></li><li class="toc-h3"><a href="#phase-6-import-widgets-shop-extensions">Phase 6 — Import, widgets, shop extensions</a></li><li class="toc-h3"><a href="#phase-7-scale-and-analytics">Phase 7 — Scale and analytics</a></li><li><a href="#11-adding-a-new-vertical">11. Adding a new vertical</a></li><li class="toc-h3"><a href="#a-discovery-12-days">A. Discovery (1–2 days)</a></li><li class="toc-h3"><a href="#b-backend-plugin-module">B. Backend plugin module</a></li><li class="toc-h3"><a href="#c-extension-storage-and-indexes">C. Extension storage and indexes</a></li><li class="toc-h3"><a href="#d-api-verification">D. API verification</a></li><li class="toc-h3"><a href="#e-frontend">E. Frontend</a></li><li class="toc-h3"><a href="#f-onboarding-and-rollout">F. Onboarding and rollout</a></li><li class="toc-h3"><a href="#g-test-deploy-monitor">G. Test → Deploy → Monitor</a></li><li class="toc-h3"><a href="#launch-checklist">Launch checklist</a></li></ul></nav>
+    <main>
+      <header class="doc-header">
+        <span class="badge">v4.5</span>
+        <span class="badge">StockKart</span>
+        <h1>Vertical Plugin Architecture</h1>
+        <p class="meta">Implementation &amp; operations guide · Last updated 2026-06-06</p>
+        <p class="meta">Source: <code>docs/VERTICAL_PLUGIN_ARCHITECTURE.md</code> — open this file in a browser or print to PDF.</p>
+      </header>
+      <article class="content">
+<h1 id="stockkart-vertical-plugin-architecture-v4">StockKart Vertical Plugin Architecture v4</h1>
+<p><strong>Implementation guide for multi-vertical inventory (medical, apparel, cafe/F&amp;B, sports, …)</strong></p>
+<p>StockKart supports many industries through <strong>one platform</strong>: minimal core <code>Inventory</code>, <strong>per-vertical extension collections</strong> (<code>inventory_ext_medical</code>, …), and thin <strong>plugins</strong> coordinated by <strong><code>InventoryService</code></strong> in the product module. No separate orchestrator layer. No client-sent <code>verticalId</code> — the server resolves it from <code>Shop.verticalId</code>.</p>
+<hr>
+<h2 id="1-overview">1. Overview</h2>
+<p>Build <strong>one inventory platform</strong> capable of supporting many industries without:</p>
+<ul>
+<li>Separate applications or duplicate codebases</li>
+<li>A giant <code>Inventory</code> table with dozens of nullable vertical columns</li>
+<li>JSON-only storage that cannot be searched at scale</li>
+<li>Core code full of <code>if (vertical == medical)</code> branches</li>
+</ul>
+<p>A new vertical (e.g. jewelry with <code>carat</code>, <code>purity</code>, <code>certificateNo</code>) must be addable with <strong>minimal impact on existing shops</strong> and <strong>no changes to</strong> Order, Customer, Checkout, or Accounting.</p>
+<h3 id="goals">Goals</h3>
+<ul>
+<li>Support <strong>10–20+ verticals</strong> long-term</li>
+<li>Each shop has different fields, validations, UI, search, and reports</li>
+<li>Keep <strong>cart, checkout, accounting, users, pricing</strong> universal</li>
+<li><strong>Fast indexed search</strong> on vertical-specific fields (expiry, size, sport, …)</li>
+<li>Add verticals <strong>additively</strong> — existing shops unchanged</li>
+</ul>
+<h3 id="core-principles">Core principles</h3>
+<table><thead><tr><th>#</th><th>Principle</th><th>Meaning</th></tr></thead><tbody><tr><td>1</td><td><strong>Thin core</strong></td><td>Core owns universal concepts only. It must never know <code>expiryDate</code>, <code>size</code>, <code>sport</code>, <code>carat</code>, etc.</td></tr><tr><td>2</td><td><strong>Vertical ownership</strong></td><td>Each vertical owns schema, validation, search, import, widgets, reports, and <strong>its extension storage</strong></td></tr><tr><td>3</td><td><strong>Schema-driven UI</strong></td><td>Frontend never hardcodes vertical forms; UI is generated from API schema</td></tr><tr><td>4</td><td><strong>Indexed search fields</strong></td><td>Fields used for search/filter/sort/reports live in <strong>indexed extension storage</strong>, not unindexed JSON</td></tr><tr><td>5</td><td><strong>Additive growth</strong></td><td>New vertical = new plugin + new extension collection. Core unchanged</td></tr><tr><td>6</td><td><strong>Stable API</strong></td><td>Clients call the same endpoints; merged responses hide storage layout</td></tr><tr><td>7</td><td><strong>Shop-scoped queries</strong></td><td>Every query starts with <code>shopId</code></td></tr><tr><td>8</td><td><strong>Vertical is stable</strong></td><td>Chosen at shop creation; switching is a rare admin migration</td></tr></tbody></table>
+<h3 id="today-vs-target">Today vs target</h3>
+<h4 id="today-baseline">Today (baseline)</h4>
+<table><thead><tr><th>Area</th><th>Current</th></tr></thead><tbody><tr><td>Backend</td><td><code>pluginengine</code> with stub <code>ProductPlugin</code>; <code>plugins/medical</code> is empty</td></tr><tr><td>Inventory</td><td>Large <code>Inventory</code> document with pharmacy fields (<code>batchNo</code>, <code>expiryDate</code>, …) baked into core</td></tr><tr><td>Business type</td><td>Hardcoded pharmacy assumptions; no <code>Shop.verticalId</code> yet</td></tr><tr><td>Frontend</td><td>Hardcoded forms; <code>businessType: &#x27;pharmacy&#x27;</code> on many requests</td></tr><tr><td>Shop</td><td><code>ShopType</code> (RETAILER / WHOLESALER); no <code>verticalId</code></td></tr></tbody></table>
+<h4 id="target-v4">Target (v4)</h4>
+<table><thead><tr><th>Area</th><th>Target</th></tr></thead><tbody><tr><td>Shop</td><td><code>verticalId</code> + <code>pluginVersion</code></td></tr><tr><td>Inventory (core)</td><td>Universal fields only — no vertical columns</td></tr><tr><td>Vertical data</td><td>One extension collection per vertical (e.g. <code>inventory_ext_medical</code>)</td></tr><tr><td>Plugin engine</td><td>Registry, schema loader, extension router</td></tr><tr><td>Product service</td><td><strong><code>InventoryService</code></strong> — plugin resolution, core + extension coordination</td></tr><tr><td>Plugins</td><td>Schema, validators, <code>SearchProvider</code>, import mappers, widgets</td></tr><tr><td>Frontend</td><td>Dynamic form renderer + lazy-loaded vertical UI packs</td></tr><tr><td>API</td><td>Stable CRUD/search; <code>GET /shops/me/schema</code> drives UI</td></tr></tbody></table>
+<hr>
+<h2 id="2-system-architecture">2. System architecture</h2>
+<figure class="doc-figure"><img src="assets/system-architecture-high-level.png" alt="StockKart system architecture — frontend, backend modular monolith, MongoDB"><figcaption>StockKart system architecture — frontend, backend modular monolith, MongoDB</figcaption></figure>
+<p><em>Nx frontend → REST <code>/api/v1/</em></code> → Spring Boot → core modules → <strong><code>InventoryService</code></strong> (product hub) → pluginengine / plugins → MongoDB.*</p>
+<h3 id="layer-responsibilities">Layer responsibilities</h3>
+<table><thead><tr><th>Layer</th><th>Owns</th><th>Must NOT own</th></tr></thead><tbody><tr><td><strong>Controllers</strong></td><td>HTTP, auth context (<code>userId</code>, <code>shopId</code>), DTO mapping</td><td>Plugin resolution, Mongo access</td></tr><tr><td><strong>Module services</strong></td><td>Domain logic for that module (profit, checkout, reminders)</td><td>Direct cross-module repository calls</td></tr><tr><td><strong>Product / <code>InventoryService</code></strong></td><td>Core inventory CRUD, plugin resolution, txn core+extension, merged inventory views</td><td>Vertical-specific business rules (delegates to plugin)</td></tr><tr><td><strong>Plugin engine</strong></td><td>Discover plugins, schema loading</td><td>Vertical field definitions</td></tr><tr><td><strong>Vertical plugin</strong></td><td>Schema, extension repo, validators, search, import</td><td>Duplicate checkout/cart controllers</td></tr><tr><td><strong>Frontend pack</strong></td><td>Custom widgets (expiry badge, size matrix)</td><td>API business logic</td></tr></tbody></table>
+<hr>
+<h2 id="3-request-flow-and-inventoryservice">3. Request flow and InventoryService</h2>
+<p><strong>Rule:</strong> Controller → module Service → (often) <strong><code>InventoryService</code></strong> → plugin → repository. Cross-module: <strong>Service → Service</strong> — never call another module&#x27;s repository.</p>
+<p><strong>Final design (v4):</strong> No separate orchestrator or facade classes. The <strong>product module</strong> is the centre of the application. <strong><code>InventoryService</code></strong> in <code>core/product</code> resolves the vertical plugin from <code>Shop.verticalId</code> and coordinates core inventory with extension storage.</p>
+<h3 id="standard-request-flow">Standard request flow</h3>
+<pre><code class="language-text">Frontend
+  → API Controller (any module)
+  → Module Service (analytics, checkout, reminders, …)
+  → InventoryService (product)     ← most inventory / vertical flows pass through here
+  → PluginRegistry → VerticalPlugin
+  → Product InventoryRepository  and/or  plugin ExtensionRepository
+  → merged response</code></pre>
+<table><thead><tr><th>Example</th><th>Call chain</th></tr></thead><tbody><tr><td>Register product</td><td><code>InventoryController</code> → <code>InventoryService.create()</code></td></tr><tr><td>Profit analytics needing inventory context</td><td><code>ProfitAnalyticsController</code> → <code>ProfitAnalyticsService</code> → <strong><code>InventoryService</code></strong> (batch load / dimensions)</td></tr><tr><td>Checkout display vertical fields</td><td><code>CheckoutController</code> → <code>CheckoutService</code> → <strong><code>InventoryService.getMergedView()</code></strong></td></tr><tr><td>Near-expiry search</td><td><code>InventoryController</code> → <code>InventoryService.search()</code> → plugin <code>SearchProvider</code></td></tr></tbody></table>
+<p>Controllers stay thin. <strong>Plugin resolution never lives in the controller</strong> and <strong>never trusts a vertical id from the frontend</strong> — only authenticated <code>shopId</code> → <code>Shop.verticalId</code>.</p>
+<h3 id="why-inventoryservice-instead-of-a-separate-orchestrator">Why <code>InventoryService</code> instead of a separate orchestrator</h3>
+<table><thead><tr><th>Concern</th><th>Handled by</th></tr></thead><tbody><tr><td>Product is the main domain of StockKart</td><td>Existing <code>InventoryService</code> already owns inventory CRUD</td></tr><tr><td>Resolve plugin from shop</td><td><code>InventoryService</code> loads <code>Shop</code>, calls <code>PluginRegistry.get(verticalId)</code></td></tr><tr><td>Split core vs extension payload</td><td>Schema-driven split inside <code>InventoryService</code> (or private helpers in same module)</td></tr><tr><td>Transaction core + extension</td><td><code>InventoryService</code> <code>@Transactional</code> boundary</td></tr><tr><td>Merged API DTO</td><td><code>InventoryService</code> + <code>VerticalInventoryMapper</code></td></tr><tr><td>Avoid extra abstraction layer</td><td>One well-known entry point for all modules</td></tr></tbody></table>
+<p>No <code>InventoryWriteOrchestrator</code>, <code>ReadFacade</code>, or <code>SearchFacade</code> — same responsibilities, <strong>inside product service</strong>.</p>
+<h3 id="inventoryservicecreate-register-write"><code>InventoryService.create()</code> (register / write)</h3>
+<pre><code class="language-text">1. Auth → shopId (from controller; set by interceptor)
+2. ShopRepository → verticalId, pluginVersion
+3. PluginRegistry → VerticalPlugin
+4. Split payload: core vs extension (schema storage flags)
+5. Validate core fields (existing InventoryValidator)
+6. plugin.getInventoryValidator().validate(extensionPayload, shopId)
+7. Mongo transaction start
+8. InventoryRepository.save(core)
+9. plugin.getExtensionRepository().save(inventoryId, shopId, extensionPayload)
+10. Commit transaction
+11. Post-write hooks (ReminderService, events) — call other module **services**, not their repos
+12. Return merged InventoryView / InventoryReceiptResponse</code></pre>
+<h3 id="inventoryservicegetbyid-list-hydrate-read"><code>InventoryService.getById()</code> / list hydrate (read)</h3>
+<pre><code class="language-text">1. InventoryRepository.findByIdAndShopId(id, shopId)
+2. PluginRegistry → plugin → extensionRepository.findByInventoryId(shopId, id)
+3. Merge (schema-driven); migration fallback → extensionStatus PARTIAL if needed
+4. Return flat DTO</code></pre>
+<p><strong>List views:</strong> batch <code>findByInventoryIdIn(shopId, ids)</code> — no N+1.</p>
+<h3 id="inventoryservicesearch-vertical-filters"><code>InventoryService.search()</code> (vertical filters)</h3>
+<pre><code class="language-text">1. shopId → Shop → plugin
+2. plugin.getSearchProvider().search(shopId, filters, pagination) → inventoryIds
+3. Batch load core + extension
+4. Merge page; return cursor pagination</code></pre>
+<p>Clients call <code>GET /inventory/search?…</code> — they never know which extension collection ran the query.</p>
+<hr>
+<h3 id="cross-module-access">Cross-module access</h3>
+<p>Modules must not reach into each other&#x27;s repositories directly. Default rule: <strong>Service → Service → Repository</strong>.</p>
+<p>When that would create a <strong>Maven circular dependency</strong> (A depends on B and B depends on A), use the <strong>adapter / facade pattern already in the codebase</strong> — same idea as SPI: <strong>interface in the consumer module, implementation in the owner module</strong>.</p>
+<pre><code class="language-text">┌─────────────────┐         ┌─────────────────┐         ┌──────────────────┐
+│ analytics       │         │ product         │         │ accounting       │
+│ ProfitAnalytics │ ──────► │ InventoryService│         │ AccountingService│
+│ Service         │  calls  │                 │ ◄────── │                  │
+└─────────────────┘  service└────────┬────────┘  facade └────────┬─────────┘
+                                     │                              │
+                                     ▼                              ▼
+                            InventoryRepository              AccountRepository
+                            (+ plugin ExtensionRepo)         (accounting module only)</code></pre>
+<table><thead><tr><th>Rule</th><th>Meaning</th></tr></thead><tbody><tr><td><strong>Controller → own module Service</strong></td><td>Never skip service layer</td></tr><tr><td><strong>Module A → Module B (no cycle)</strong></td><td>Call <strong>B&#x27;s Service</strong> directly</td></tr><tr><td><strong>Module A ↔ Module B (cycle risk)</strong></td><td><strong>Adapter interface</strong> in one module, *<em><code></em>Impl</code>** in the other — see below</td></tr><tr><td><strong>Service → own Repository</strong></td><td>Repos stay inside owning module</td></tr><tr><td><strong>Product + plugin extension</strong></td><td><code>InventoryService</code> invokes plugin <code>ExtensionRepository</code> via <code>VerticalPlugin</code> — product never imports <code>MedicalInventoryExtension</code></td></tr><tr><td><strong>No vertical header from frontend</strong></td><td><code>verticalId</code> from <code>Shop</code> row only</td></tr></tbody></table>
+<h4 id="breaking-circular-dependencies-adapter-facade">Breaking circular dependencies (adapter / facade)</h4>
+<p><strong>Problem:</strong> <code>product</code> needs <code>reminders</code> and <code>reminders</code> needs inventory data → cannot have both modules depend on each other&#x27;s services.</p>
+<p><strong>Solution:</strong> Consumer module defines a <strong>narrow interface</strong>. Owner module provides <strong><code>@Component</code> implementation</strong> that delegates to its service (or repo for read-only summaries).</p>
+<pre><code class="language-text">┌──────────────────┐                      ┌─────────────────────────────┐
+│  consumer module │                      │  owner module (product)      │
+│                  │   depends on         │                              │
+│  InventoryAdapter│ ◄── interface only   │  InventoryAdapterImpl        │
+│  (interface)     │                      │    → InventoryRepository   │
+│                  │                      │    (or InventoryService)   │
+│  ReminderService │                      │                              │
+└──────────────────┘                      └─────────────────────────────┘
+
+Maven:  reminders  ✗  product
+        product   →  reminders   (for interface + DTOs only)</code></pre>
+<table><thead><tr><th>Pattern</th><th>Interface (consumer / API module)</th><th>Implementation (owner)</th><th>Delegates to</th></tr></thead><tbody><tr><td>Inventory for reminders</td><td><code>reminders.service.InventoryAdapter</code></td><td><code>product.service.InventoryAdapterImpl</code></td><td><code>InventoryRepository</code></td></tr><tr><td>Shop for user / auth</td><td><code>user.service.ShopServiceAdapter</code></td><td><code>product.service.ShopServiceAdapterImpl</code></td><td><code>ShopService</code></td></tr><tr><td>Shop for plan / usage</td><td><code>plan.service.ShopProvider</code></td><td><code>product.config.ShopProviderImpl</code></td><td><code>ShopService</code></td></tr><tr><td>Pricing for product</td><td><code>pricing.service.InventoryPricingAdapter</code></td><td><code>pricing.service.InventoryPricingAdapterImpl</code></td><td><code>PricingService</code></td></tr><tr><td>Ledger postings</td><td><code>accounting.api.AccountingFacade</code></td><td><code>accounting.service.AccountingFacadeImpl</code></td><td>accounting services</td></tr><tr><td>Credit bridge</td><td><code>credit.service.CreditChargeFacade</code></td><td><code>product.service.AccountingCreditChargeFacade</code></td><td><code>AccountingFacade</code></td></tr></tbody></table>
+<p><strong>Rules for adapters</strong></p>
+<table><thead><tr><th>Do</th><th>Don&#x27;t</th></tr></thead><tbody><tr><td>Keep interface <strong>small</strong> — only what the consumer needs</td><td>Expose full entity graphs or repositories</td></tr><tr><td>Implementation lives in the <strong>owning</strong> module (<code>product</code>, <code>accounting</code>, …)</td><td>Put <code>*Impl</code> in the consumer module</td></tr><tr><td>Prefer delegate to <strong>Service</strong> inside impl</td><td>Caller reaches foreign <code>Repository</code> directly</td></tr><tr><td>Use <code>@Autowired(required = false)</code> in consumer when optional (existing pattern in <code>InvitationService</code>)</td><td>Fail startup when adapter missing if module always present</td></tr><tr><td>Return <strong>DTOs / summaries</strong>, not Mongo entities across modules</td><td>Leak <code>Inventory</code> entity into reminders/analytics</td></tr></tbody></table>
+<p><strong>Example (existing — reminders ← product):</strong></p>
+<pre><code class="language-java">// core/reminders — interface only, no product dependency
+public interface InventoryAdapter {
+  ReminderInventorySummary getInventorySummary(String inventoryId);
+  boolean inventoryExists(String inventoryId);
+}
+
+// core/product — implementation
+@Component
+public class InventoryAdapterImpl implements InventoryAdapter {
+  @Autowired private InventoryRepository inventoryRepository;
+  // maps to ReminderInventorySummary
+}</code></pre>
+<h4 id="target-v4-analytics-and-plugins-without-cycles">Target v4: analytics and plugins without cycles</h4>
+<table><thead><tr><th>Scenario</th><th>Approach</th></tr></thead><tbody><tr><td>Analytics needs inventory + vertical dimensions</td><td><strong>Preferred:</strong> <code>analytics</code> → <code>product</code> dependency already exists → call <strong><code>InventoryService.getMergedView()</code> / <code>resolveDimensions()</code></strong> directly (no cycle)</td></tr><tr><td>Product must not depend on analytics</td><td>Never import analytics from product; use events if product needs to notify analytics later</td></tr><tr><td>Reminders need inventory after plugin migration</td><td>Extend <strong><code>InventoryAdapter</code></strong> (or add methods) in reminders; implement in <strong><code>InventoryAdapterImpl</code></strong> using <strong><code>InventoryService</code></strong> merge + plugin — reminders still does not depend on plugin types</td></tr><tr><td>Two modules both need each other</td><td>Extract shared <strong>interface + DTOs</strong> into consumer (or <code>common</code> if truly shared); <strong>one</strong> <code>@Component</code> impl in owner</td></tr></tbody></table>
+<p><strong>Do not</strong> add <code>product → analytics → product</code>. If both directions are ever required, introduce an <strong><code>InventoryReadAdapter</code></strong> interface in analytics (or <code>common.api</code>) and implement it in product — same pattern as <code>InventoryAdapter</code>.</p>
+<h3 id="examples">Examples</h3>
+<table><thead><tr><th>Caller</th><th>Correct</th><th>Wrong</th></tr></thead><tbody><tr><td><code>ProfitAnalyticsService</code> needs inventory / vertical dimensions</td><td><code>InventoryService.resolveDimensions(shopId, ids)</code> — or <code>InventoryReadAdapter</code> if cycle</td><td><code>InventoryRepository</code> from analytics</td></tr><tr><td><code>ReminderService</code> needs batch/expiry label</td><td><code>InventoryAdapter.getInventorySummary()</code> → impl uses merge/service</td><td>Reminders importing <code>inventory_ext_medical</code></td></tr><tr><td><code>CheckoutService</code> needs batch/expiry for display</td><td><code>InventoryService.getMergedView(shopId, inventoryId)</code></td><td>Query extension collection from checkout</td></tr><tr><td><code>InventoryService</code> needs accounting entry on stock-in</td><td><code>AccountingFacade.postVendorPurchaseInvoice(...)</code></td><td><code>AccountRepository</code> from product</td></tr><tr><td><code>AuthService</code> needs shop tax info</td><td><code>ShopServiceAdapter.getShopTaxInfo(shopId)</code></td><td><code>ShopRepository</code> from user module</td></tr><tr><td><code>PlanService</code> needs shop plan fields</td><td><code>ShopProvider.getShop(shopId)</code></td><td><code>ShopRepository</code> from plan module</td></tr></tbody></table>
+<p>Analytics, checkout, cart, and reminders <strong>delegate inventory + vertical work to <code>InventoryService</code> or an inventory adapter</strong>, which alone resolves the plugin.</p>
+<hr>
+<h3 id="end-to-end-flows">End-to-end flows</h3>
+<h3 id="create-inventory">Create inventory</h3>
+<pre><code class="language-text">POST /inventory  { core fields + extension fields (flat or nested) }
+
+→ InventoryController
+→ InventoryService.create()
+→ Shop → PluginRegistry → plugin
+→ split by schema storage flags
+→ validate core + plugin
+→ save inventory + inventory_ext_&lt;vertical&gt;  (transaction)
+→ return merged DTO</code></pre>
+<h3 id="get-inventory-detail">Get inventory detail</h3>
+<pre><code class="language-text">GET /inventory/{id}
+
+→ InventoryController
+→ InventoryService.getById()
+→ load core + extension
+→ merge per schema
+→ return DTO</code></pre>
+<h3 id="search-near-expiry">Search (near expiry)</h3>
+<pre><code class="language-text">GET /inventory/search?expiryBefore=2026-06-30&amp;qtyMin=1
+
+→ InventoryController
+→ InventoryService.search()
+→ MedicalSearchProvider queries inventory_ext_medical (indexed)
+→ inventoryIds → batch hydrate
+→ paginated merged response</code></pre>
+<h3 id="analytics-profit-inventory">Analytics (profit / inventory)</h3>
+<pre><code class="language-text">GET /api/v1/analytics/profit?...
+
+→ ProfitAnalyticsController
+→ ProfitAnalyticsService
+→ PurchaseRepository (analytics module — own repo OK)
+→ InventoryService.resolveDimensions(shopId, inventoryIds)   ← product service, not InventoryRepository from analytics
+→ aggregate → response</code></pre>
+<h3 id="schema-for-ui">Schema for UI</h3>
+<pre><code class="language-text">GET /shops/me/schema
+
+→ shop.verticalId → plugin.getSchema()
+→ return JSON
+→ frontend renders forms</code></pre>
+<hr>
+<h3 id="write-read-search-ownership">Write / read / search ownership</h3>
+<p>This section defines who is responsible for writes, reads, and search so the system stays maintainable as verticals grow.</p>
+<h3 id="guiding-rule">Guiding rule</h3>
+<ul>
+<li><strong><code>InventoryService</code> (product) owns plugin resolution, transactions, and merged inventory views</strong></li>
+<li><strong>Other modules call <code>InventoryService</code>, not product or plugin repositories</strong></li>
+<li><strong>Plugins own vertical rules and search strategy</strong></li>
+</ul>
+<p>Plugins should not expose their own CRUD controllers for standard inventory flows.</p>
+<h3 id="write-responsibility">Write responsibility</h3>
+<table><thead><tr><th>Concern</th><th>Owner</th><th>Notes</th></tr></thead><tbody><tr><td>HTTP endpoint contracts (<code>POST /inventory</code>, <code>PATCH /inventory/{id}</code>)</td><td>Product controller</td><td>Stable API for all verticals</td></tr><tr><td>Auth + shop resolution (<code>shopId → verticalId</code>)</td><td>Product / <code>InventoryService</code></td><td>Load <code>Shop</code>; never trust client vertical header</td></tr><tr><td>Transaction boundary</td><td><code>InventoryService</code></td><td>Save core + extension atomically</td></tr><tr><td>Core inventory persistence</td><td><code>InventoryRepository</code> (product)</td><td><code>inventory</code> collection only</td></tr><tr><td>Vertical field validation</td><td>Plugin</td><td>Via <code>InventoryValidator</code> + schema</td></tr><tr><td>Extension payload mapping</td><td>Plugin</td><td>Schema/storage-aware mapping</td></tr><tr><td>Extension persistence call</td><td><code>InventoryService</code> invokes plugin repository</td><td>Product controls order + rollback</td></tr><tr><td>Post-write hooks (reminders, analytics)</td><td>Other module <strong>services</strong>, invoked by <code>InventoryService</code></td><td>Must be idempotent</td></tr></tbody></table>
+<h3 id="read-responsibility">Read responsibility</h3>
+<table><thead><tr><th>Concern</th><th>Owner</th><th>Notes</th></tr></thead><tbody><tr><td>Detail endpoint (<code>GET /inventory/{id}</code>)</td><td>Product controller → <code>InventoryService</code></td><td>Stable contract</td></tr><tr><td>Core row read</td><td><code>InventoryRepository</code></td><td>From <code>inventory</code></td></tr><tr><td>Extension row read</td><td>Plugin repository via <code>InventoryService</code></td><td>No direct controller or cross-module repo access</td></tr><tr><td>DTO merge (core + extension)</td><td><code>InventoryService</code> + mapper</td><td>Schema-driven output</td></tr><tr><td>List hydration</td><td><code>InventoryService</code></td><td><strong>Batch</strong> extension reads (<code>findByInventoryIdIn</code>) to avoid N+1</td></tr></tbody></table>
+<h3 id="search-responsibility">Search responsibility</h3>
+<p>Use a two-layer strategy:</p>
+<ol>
+<li><strong>Default:</strong> plugin <code>SearchProvider</code> executes indexed extension queries and returns <code>inventoryIds</code></li>
+<li><strong><code>InventoryService.search()</code>:</strong> batch-hydrates core + extension and returns merged page</li>
+</ol>
+<table><thead><tr><th>Concern</th><th>Owner</th><th>Notes</th></tr></thead><tbody><tr><td>Parse API filters/pagination</td><td><code>InventoryService</code></td><td>Validate common params</td></tr><tr><td>Vertical-specific query logic</td><td>Plugin <code>SearchProvider</code></td><td>Uses extension indexes</td></tr><tr><td>Result pagination contract</td><td><code>InventoryService</code></td><td>Cursor/page normalization</td></tr><tr><td>Response hydration</td><td><code>InventoryService</code></td><td>Batch reads, merged DTO</td></tr></tbody></table>
+<h3 id="non-negotiable-boundaries">Non-negotiable boundaries</h3>
+<ul>
+<li>No plugin-owned inventory CRUD endpoints</li>
+<li>No module other than product should call <code>InventoryRepository</code> for vertical-enriched flows — use <strong><code>InventoryService</code></strong></li>
+<li>No service should hardcode <code>inventory_ext_medical</code> (or any vertical collection)</li>
+<li>No plugin should independently manage transaction scope for standard inventory writes</li>
+<li>All list/search flows must use batch extension loads (no per-row extension lookup)</li>
+</ul>
+<h3 id="why-this-works">Why this works</h3>
+<ul>
+<li>Product remains the single hub for inventory + vertical behaviour</li>
+<li>Other modules stay decoupled from plugin storage details</li>
+<li>Lets each plugin optimize validation/search internally without leaking collection names to clients</li>
+</ul>
+<hr>
+<hr>
+<h2 id="4-data-model">4. Data model</h2>
+<h3 id="shop">Shop</h3>
+<pre><code class="language-text">Shop
+├── shopId, name, status, …
+├── shopType              RETAILER | DISTRIBUTOR | WHOLESALER   (how they sell)
+├── verticalId            medical | apparel | sports | …        (what they sell)
+├── pluginVersion         1.0.0                                  (pinned behavior)
+└── config                { enabledFeatures, overrides }         (optional)</code></pre>
+<p><code>verticalId</code> determines which plugin is active for the shop.</p>
+<h3 id="inventory-core-universal-only">Inventory (core — universal only)</h3>
+<pre><code class="language-text">Inventory
+├── id, shopId
+├── barcode, name, description
+├── quantities / units (received, sold, current, baseUnit, conversions)
+├── pricingId, vendorId, location
+├── hsn                    (if used cross-vertical for tax)
+├── status                 ACTIVE | ARCHIVED
+├── createdAt, updatedAt
+└── (NO batchNo, expiryDate, size, color, sport, carat, …)</code></pre>
+<h3 id="other-core-entities-unchanged">Other core entities (unchanged)</h3>
+<pre><code class="language-text">Customer    id, name, phone, email, …
+Order       id, customerId, total, status, …
+Cart, Checkout, Accounting, Pricing — universal; no vertical columns</code></pre>
+<hr>
+<h3 id="extension-collections">Extension collections</h3>
+<p>Each vertical owns a <strong>dedicated extension collection</strong> with a <strong>standard document shape</strong>.</p>
+<h3 id="naming-convention">Naming convention</h3>
+<pre><code class="language-text">inventory_ext_medical
+inventory_ext_apparel
+inventory_ext_sports
+inventory_ext_grocery
+inventory_ext_jewelry
+shop_ext_medical          (optional — vertical shop fields)</code></pre>
+<h3 id="standard-extension-document">Standard extension document</h3>
+<p>Every inventory extension document follows the same contract:</p>
+<pre><code class="language-text">InventoryExtension (per vertical collection)
+├── inventoryId       unique FK → inventory.id (1:1)
+├── shopId            denormalized — all queries scope by shop first
+├── verticalId
+├── pluginVersion
+├── …vertical fields…           (batchNo, expiryDate, size, sport, … — indexed or not per schema)
+├── createdAt, updatedAt</code></pre>
+<h3 id="rules">Rules</h3>
+<table><thead><tr><th>Rule</th><th>Why</th></tr></thead><tbody><tr><td><code>inventoryId</code> is <strong>unique</strong> per extension collection</td><td>Enforces 1:1 with core inventory</td></tr><tr><td>Always index <code>(shopId, …search fields…)</code> for filterable fields</td><td>Fast shop-scoped queries</td></tr><tr><td>Searchable / reportable fields</td><td>Top-level extension columns with <code>indexed: true</code> — never unindexed blobs for filters</td></tr><tr><td>Optional display-only fields</td><td>Top-level extension columns with <code>indexed: false</code></td></tr><tr><td>Core <strong>never</strong> stores vertical fields after migration</td><td>Prevents god-table growth</td></tr><tr><td>Plugin owns repository + indexes for its collection</td><td>Core product code does not import <code>inventory_ext_medical</code></td></tr></tbody></table>
+<h3 id="examples-by-vertical">Examples by vertical</h3>
+<p><strong>Medical — <code>inventory_ext_medical</code></strong></p>
+<pre><code class="language-text">inventoryId, shopId, batchNo, expiryDate, manufacturer, schedule
+Indexes: (shopId, expiryDate), (shopId, batchNo), (shopId, barcode via join)</code></pre>
+<p><strong>Apparel — <code>inventory_ext_apparel</code></strong></p>
+<pre><code class="language-text">inventoryId, shopId, size, color, brand, style
+Indexes: (shopId, size), (shopId, color), (shopId, brand)</code></pre>
+<p><strong>Sports — <code>inventory_ext_sports</code></strong></p>
+<pre><code class="language-text">inventoryId, shopId, sport, brand, model
+Indexes: (shopId, sport), (shopId, brand)</code></pre>
+<p><strong>Grocery — <code>inventory_ext_grocery</code></strong></p>
+<pre><code class="language-text">inventoryId, shopId, expiryDate, brand, category
+Indexes: (shopId, expiryDate), (shopId, category)</code></pre>
+<p><strong>Jewelry — <code>inventory_ext_jewelry</code></strong></p>
+<pre><code class="language-text">inventoryId, shopId, carat, purity, stoneType, certificateNo
+Indexes: (shopId, carat), (shopId, certificateNo)</code></pre>
+<p><strong>Cafe / F&amp;B — <code>inventory_ext_cafe</code></strong> (raw ingredients; see <a href="#example-vertical-cafe--fb-menu-tokens-ingredients">Cafe vertical</a>)</p>
+<pre><code class="language-text">inventoryId, shopId, ingredientType, unitOfMeasure, packSize, packUnit, reorderLevel, lastPurchaseRate
+Indexes: (shopId, ingredientType), (shopId, unitOfMeasure)</code></pre>
+<hr>
+<h3 id="collection-ownership-and-api-types">Collection ownership and API types</h3>
+<h3 id="who-owns-which-collection">Who owns which collection</h3>
+<table><thead><tr><th>MongoDB collection</th><th>Owner</th><th>Java package</th></tr></thead><tbody><tr><td><code>inventory</code></td><td>Core (<code>core/product</code>)</td><td><code>Inventory</code>, <code>InventoryRepository</code></td></tr><tr><td><code>inventory_ext_medical</code></td><td><code>plugins/medical</code></td><td><code>MedicalInventoryExtension</code>, <code>MedicalExtensionRepository</code></td></tr><tr><td><code>inventory_ext_apparel</code></td><td><code>plugins/apparel</code></td><td>Same pattern</td></tr><tr><td><code>shop_ext_&lt;vertical&gt;</code></td><td>Vertical plugin (optional)</td><td>Vertical shop extension repo</td></tr></tbody></table>
+<p><strong>Rule:</strong> Core product code never imports <code>MedicalInventoryExtension</code> or queries <code>inventory_ext_medical</code> directly. <strong><code>InventoryService</code></strong> resolves <code>VerticalPlugin</code> and calls plugin repositories through the interface.</p>
+<h3 id="11-link">1:1 link</h3>
+<pre><code class="language-text">inventory._id  ==  inventory_ext_medical.inventoryId  (unique)</code></pre>
+<p>Writes and deletes must keep this invariant (transaction or compensating delete).</p>
+<h3 id="api-types-three-layers">API types (three layers)</h3>
+<table><thead><tr><th>Layer</th><th>Type</th><th>Purpose</th></tr></thead><tbody><tr><td>Persistence</td><td><code>Inventory</code>, <code>MedicalInventoryExtension</code></td><td>Mongo entities</td></tr><tr><td>Internal</td><td><code>MedicalExtensionDto</code> (optional)</td><td>Plugin ↔ <code>InventoryService</code></td></tr><tr><td><strong>Wire (REST)</strong></td><td><code>InventoryViewResponse</code></td><td><strong>Single merged object</strong> for frontend</td></tr></tbody></table>
+<h3 id="recommended-wire-shape-flat-merged">Recommended wire shape (flat merged)</h3>
+<p>Clients receive <strong>one</strong> object — not <code>{ core, extension }</code> unless debugging:</p>
+<pre><code class="language-json">{
+  &quot;id&quot;: &quot;inv-123&quot;,
+  &quot;shopId&quot;: &quot;shop-A&quot;,
+  &quot;name&quot;: &quot;Paracetamol&quot;,
+  &quot;barcode&quot;: &quot;890...&quot;,
+  &quot;currentCount&quot;: 50,
+  &quot;verticalId&quot;: &quot;medical&quot;,
+  &quot;batchNo&quot;: &quot;B001&quot;,
+  &quot;expiryDate&quot;: &quot;2026-12-01&quot;,
+  &quot;schedule&quot;: &quot;H&quot;
+}</code></pre>
+<h3 id="backend-java">Backend Java</h3>
+<pre><code class="language-java">// Core — universal fields only
+public class InventoryCoreResponse { /* id, shopId, name, barcode, qty, pricingId, … */ }
+
+// API — merged (long-term: schema-driven map avoids DTO bloat)
+public class InventoryViewResponse extends InventoryCoreResponse {
+  private String verticalId;
+  private String pluginVersion;
+  private Map&lt;String, Object&gt; verticalFields;  // keys from schema (batchNo, warrantyMonths, …)
+  private ExtensionMergeStatus extensionStatus; // OK | PARTIAL | MISSING
+}</code></pre>
+<p><code>AbstractVerticalPlugin.mergeIntoView(core, extension, schema)</code> flattens <code>verticalFields</code> for JSON (or use <code>@JsonUnwrapped</code> strategy).</p>
+<h3 id="frontend-typescript">Frontend TypeScript</h3>
+<pre><code class="language-ts">export interface InventoryCore {
+  id: string;
+  shopId: string;
+  name: string | null;
+  barcode: string | null;
+  currentCount: number;
+  // … universal only
+}
+
+export type InventoryView = InventoryCore &amp;
+  Record&lt;string, unknown&gt; &amp; {
+    verticalId?: string;
+    pluginVersion?: string;
+    extensionStatus?: &#x27;OK&#x27; | &#x27;PARTIAL&#x27; | &#x27;MISSING&#x27;;
+  };</code></pre>
+<ul>
+<li>UI reads vertical values via schema keys: <code>item[&#x27;batchNo&#x27;]</code>, <code>item[&#x27;warrantyMonths&#x27;]</code>.</li>
+<li>Optional strict type <code>InventoryMedicalView</code> only inside medical widget pack after narrowing by <code>verticalId</code>.</li>
+</ul>
+<hr>
+<hr>
+<h2 id="5-plugin-system">5. Plugin system</h2>
+<h3 id="resolution-flow">Resolution flow</h3>
+<pre><code class="language-text">shop → verticalId → plugin → schema → validators → search provider → extension repository</code></pre>
+<p>Core never directly references specific verticals by name.</p>
+<h3 id="plugin-module-layout-thin-like-pricing">Plugin module layout (thin — like pricing)</h3>
+<p>Plugins stay <strong>small</strong>. Heavy coordination stays in <strong><code>core/product</code></strong>, same as pricing:</p>
+<table><thead><tr><th>Pricing (done today)</th><th>Vertical plugin (target)</th></tr></thead><tbody><tr><td><code>pricing</code> module owns <code>PricingService</code>, table, validator</td><td><code>plugins/medical</code> owns extension repo, validator, search</td></tr><tr><td><code>InventoryPricingAdapter</code> <strong>interface</strong> in pricing</td><td><code>VerticalPlugin</code> <strong>interface</strong> in pluginengine</td></tr><tr><td><code>InventoryPricingAdapterImpl</code> in product</td><td><code>MedicalPlugin</code> <code>@Component</code> in plugins/medical</td></tr><tr><td><code>InventoryPricingReadHandler</code> / <code>WriteHandler</code> in product</td><td><code>InventoryVerticalReadHandler</code> / write hooks in product (optional split)</td></tr><tr><td><code>InventoryService</code> unchanged entry points; handlers call adapter</td><td><code>InventoryService</code> calls <code>PluginRegistry</code> + extension port</td></tr><tr><td>Legacy fields on <code>inventory</code> until migrated</td><td>Legacy batch/expiry on core until M4–M7</td></tr></tbody></table>
+<pre><code class="language-text">plugins/medical/          ← thin (no REST controllers)
+├── MedicalPlugin.java
+├── MedicalInventoryExtension.java
+├── MedicalExtensionRepository.java
+├── MedicalInventoryValidator.java
+└── MedicalSearchProvider.java
+
+core/product/
+├── InventoryService.java              ← same public API
+├── domain/vertical/                   ← optional, mirrors pricing handlers
+│   ├── InventoryVerticalReadHandler.java   # merge core + extension
+│   └── InventoryVerticalWriteHandler.java  # split payload, txn
+└── (existing InventoryPricingReadHandler pattern)</code></pre>
+<p><strong>Minimal-change rule:</strong> Do <strong>not</strong> rewrite <code>InventoryController</code> or checkout. Add plugin resolution <strong>inside</strong> <code>InventoryService</code> (and small handlers if needed), dual-write legacy core fields during migration, same as pricing dual-read from <code>pricingId</code> vs legacy document.</p>
+<h3 id="required-verticalplugin">Required: <code>VerticalPlugin</code></h3>
+<pre><code class="language-java">String getVerticalId();
+String getVersion();
+VerticalSchema getSchema();
+ExtensionRepository getInventoryExtensionRepository();</code></pre>
+<h3 id="optional-extension-points">Optional extension points</h3>
+<table><thead><tr><th>Extension</th><th>Purpose</th><th>Example</th></tr></thead><tbody><tr><td><code>InventoryValidator</code></td><td>Create/update rules</td><td>Medical: expiry required</td></tr><tr><td><code>SearchProvider</code></td><td>Indexed search on extension collection</td><td>Near-expiry, size/color filter</td></tr><tr><td><code>ImportRowMapper</code></td><td>Excel → core + extension</td><td>Map &quot;Batch&quot; column</td></tr><tr><td><code>CheckoutGuard</code></td><td>Warn/block at sell</td><td>Block expired medicine</td></tr><tr><td><code>InvoiceLineEnricher</code></td><td>Extra invoice content</td><td>Schedule drug disclaimer</td></tr><tr><td><code>WidgetProvider</code></td><td>Frontend widget hints</td><td>Expiry badge, size matrix</td></tr><tr><td><code>ShopValidator</code></td><td>Shop onboarding rules</td><td>DL required for medical</td></tr><tr><td><code>ShopExtensionRepository</code></td><td>Vertical shop fields</td><td><code>shop_ext_medical.dlNo</code></td></tr></tbody></table>
+<p>Plugins implement <strong>only what they need</strong>.</p>
+<hr>
+<h3 id="module-structure-pluginengine-plugins">Module structure (pluginengine + plugins)</h3>
+<p>StockKart uses a <strong>hybrid</strong> layout: shared abstractions in <code>pluginengine</code>, thin vertical modules in <code>plugins/&lt;verticalId&gt;/</code>.</p>
+<h3 id="module-layout">Module layout</h3>
+<pre><code class="language-text">pluginengine/
+├── VerticalPlugin.java                 (interface)
+├── InventoryExtensionDocument.java     (base shape: inventoryId, shopId, …)
+├── AbstractVerticalPlugin.java         (template: schema, registry hooks)
+├── AbstractExtensionRepository.java    (findByInventoryId, findByInventoryIdIn)
+├── AbstractSearchProvider.java         (common filter parsing, pagination)
+├── VerticalInventoryMapper.java        (merge extension → API view)
+└── SchemaLoader.java
+
+plugins/
+├── medical/
+│   ├── MedicalPlugin extends AbstractVerticalPlugin
+│   ├── MedicalInventoryExtension
+│   ├── MedicalExtensionRepository extends AbstractExtensionRepository
+│   ├── MedicalInventoryValidator
+│   └── MedicalSearchProvider extends AbstractSearchProvider
+├── apparel/
+└── electronics/
+
+core/product/
+├── InventoryService.java
+├── InventoryController.java
+├── InventoryRepository.java
+└── ShopRepository.java
+
+# Schema JSON lives in MongoDB (vertical_schemas) — not under plugins/*/schema/</code></pre>
+<h3 id="what-the-abstract-base-provides">What the abstract base provides</h3>
+<table><thead><tr><th>Responsibility</th><th>Abstract base</th><th>Vertical subclass</th></tr></thead><tbody><tr><td>Extension document shape (<code>inventoryId</code>, <code>shopId</code>, timestamps)</td><td>Yes</td><td>—</td></tr><tr><td><code>findByInventoryId</code> / <code>findByInventoryIdIn</code></td><td>Yes</td><td>Supplies entity class + collection name</td></tr><tr><td>Parse generic filter map → Mongo criteria (indexed fields from schema)</td><td>Yes</td><td>Override for special cases (FEFO, regex)</td></tr><tr><td>Merge extension fields into <code>InventoryViewResponse</code></td><td>Yes (schema-driven)</td><td>Override only if custom mapping</td></tr><tr><td>Index bootstrap from schema <code>indexed: true</code></td><td>Yes</td><td>Declares schema resource</td></tr><tr><td>Validator hook registration</td><td>Template method</td><td>Implements rules</td></tr></tbody></table>
+<h3 id="what-each-vertical-module-must-still-own">What each vertical module must still own</h3>
+<ul>
+<li>Extension <strong>entity</strong> mapped to <code>inventory_ext_&lt;verticalId&gt;</code></li>
+<li><strong>Repository</strong> bean (collection name, indexes)</li>
+<li><strong>Schema JSON</strong> (field list, storage flags)</li>
+<li><strong>SearchProvider</strong> overrides when behavior is not generic (e.g. near-expiry buckets, serial uniqueness join)</li>
+<li>Optional: <code>CheckoutGuard</code>, <code>ImportRowMapper</code>, <code>WidgetProvider</code></li>
+</ul>
+<h3 id="when-to-split-into-a-new-maven-module">When to split into a new Maven module</h3>
+<p>Create <code>plugins/&lt;verticalId&gt;/</code> when the vertical has its own extension collection and non-trivial search/validation. Keep shared logic in <code>pluginengine</code> — do not copy-paste repositories across medical/apparel/electronics.</p>
+<hr>
+<hr>
+<h2 id="6-schema-and-ui">6. Schema and UI</h2>
+<p>Schema is the <strong>single source of truth</strong> for UI, validation routing, and storage placement.</p>
+<p><strong>Storage:</strong> Schema documents live in <strong>MongoDB only</strong> (<code>vertical_schemas</code> collection). There is <strong>no</strong> runtime read from <code>plugins/medical/schema/medical-v1.json</code> on classpath. JSON files in repo are <strong>seed/migration sources</strong> used once to populate the DB.</p>
+<h3 id="vertical-schemas-collection-db"><code>vertical_schemas</code> collection (DB)</h3>
+<pre><code class="language-text">vertical_schemas
+├── verticalId          medical | apparel | cafe | …
+├── version             1.0.0  (semver)
+├── status              ACTIVE | DEPRECATED
+├── schema              { full JSON document — same shape as former medical-v1.json }
+├── publishedAt
+├── createdBy           platform admin / seed job
+└── checksum            optional — detect drift</code></pre>
+<table><thead><tr><th>Rule</th><th>Meaning</th></tr></thead><tbody><tr><td><strong>Shop pins version</strong></td><td><code>Shop.pluginVersion</code> selects which row to load</td></tr><tr><td><strong>SchemaLoader</strong></td><td>Loads from <code>vertical_schemas</code> by <code>(verticalId, version)</code> — caches in memory</td></tr><tr><td><strong>Deploy new field</strong></td><td>Insert new schema version → migrate shops → no plugin JAR change for metadata-only updates</td></tr><tr><td><strong>Seed job</strong></td><td>On boot or admin: upsert from <code>docs/seeds/medical-v1.json</code> if no ACTIVE row exists</td></tr></tbody></table>
+<pre><code class="language-java">// SchemaLoader (pluginengine) — target
+VerticalSchema load(String verticalId, String version) {
+  return schemaRepository.findByVerticalIdAndVersion(verticalId, version)
+      .orElseThrow(...);
+}</code></pre>
+<p>API:</p>
+<pre><code class="language-text">GET /shops/me/schema     → Shop.verticalId + Shop.pluginVersion → DB schema → JSON for UI
+GET /verticals           → list verticalId + active version (catalog)</code></pre>
+<h3 id="field-tiers-mandatory-regular-basic-same-vertical">Field tiers: mandatory, regular, basic (same vertical)</h3>
+<p>One medical shop can run <strong>full registration</strong> (regular) or <strong>quick stock-in</strong> (basic) — same vertical, different visible/required fields. Aligns with existing <code>BillingMode</code> (<code>REGULAR</code> / <code>BASIC</code>) on inventory/checkout.</p>
+<table><thead><tr><th>Tier</th><th>Schema flags</th><th>UX</th><th>Example (medical)</th></tr></thead><tbody><tr><td><strong>Mandatory</strong></td><td><code>required: true</code></td><td>Must be present on save — <strong>both</strong> REGULAR and BASIC flows</td><td><code>name</code>, <code>batchNo</code>, <code>expiryDate</code> (business rules via validator)</td></tr><tr><td><strong>Regular</strong></td><td><code>required: false</code>, <code>showIn</code> includes <code>registration</code>, <code>scan-sell</code>, <code>tier: regular</code> (or omit <code>tier</code>)</td><td>Full pharmacy registration and sell screens</td><td><code>manufacturer</code>, <code>schedule</code>, <code>storageTemp</code></td></tr><tr><td><strong>Basic</strong></td><td><code>required: false</code>, <code>showIn</code> includes <code>registration</code>, <code>tier: basic</code></td><td>Minimal fields for fast entry (BASIC billing / quick add)</td><td><code>batchNo</code>, <code>expiryDate</code>, qty, price only — hide schedule, HSN extras</td></tr></tbody></table>
+<p><strong>How to decide (checklist per field):</strong></p>
+<table><thead><tr><th>Question</th><th>→ Tier / flags</th></tr></thead><tbody><tr><td>Legal/compliance or sell safety (expired batch blocked)?</td><td><strong>Mandatory</strong> + validator</td></tr><tr><td>Needed on invoice or compliance print?</td><td><strong>Mandatory</strong> or <strong>Regular</strong> + <code>showIn: invoice</code></td></tr><tr><td>Operator uses daily on scan-sell?</td><td><strong>Regular</strong> + <code>showIn: scan-sell</code></td></tr><tr><td>Only for full product master data?</td><td><strong>Regular</strong>, not basic</td></tr><tr><td>Nice-to-have / rare?</td><td><strong>Regular</strong>, <code>required: false</code>, <code>indexed: false</code></td></tr><tr><td>Quick stock-in only (minimal UI)?</td><td><strong>Basic</strong> + <code>tier: basic</code></td></tr><tr><td>Filter/report/search?</td><td>Any tier + <code>indexed: true</code>, <code>searchable: true</code></td></tr></tbody></table>
+<p><strong>Runtime:</strong></p>
+<pre><code class="language-text">UI: shop.billingMode or registrationMode = REGULAR | BASIC
+  → GET /shops/me/schema?mode=regular|basic
+  → filter fields where showIn contains screen AND (tier matches mode OR tier absent for regular)
+Validator: always enforce required: true regardless of mode</code></pre>
+<p>Example field metadata:</p>
+<pre><code class="language-json">{
+  &quot;key&quot;: &quot;batchNo&quot;,
+  &quot;type&quot;: &quot;string&quot;,
+  &quot;required&quot;: true,
+  &quot;tier&quot;: &quot;mandatory&quot;,
+  &quot;storage&quot;: &quot;extension&quot;,
+  &quot;indexed&quot;: true,
+  &quot;showIn&quot;: [&quot;registration&quot;, &quot;scan-sell&quot;, &quot;invoice&quot;]
+},
+{
+  &quot;key&quot;: &quot;schedule&quot;,
+  &quot;type&quot;: &quot;string&quot;,
+  &quot;required&quot;: false,
+  &quot;tier&quot;: &quot;regular&quot;,
+  &quot;storage&quot;: &quot;extension&quot;,
+  &quot;showIn&quot;: [&quot;registration&quot;, &quot;invoice&quot;]
+},
+{
+  &quot;key&quot;: &quot;expiryDate&quot;,
+  &quot;type&quot;: &quot;date&quot;,
+  &quot;required&quot;: true,
+  &quot;tier&quot;: &quot;mandatory&quot;,
+  &quot;storage&quot;: &quot;extension&quot;,
+  &quot;indexed&quot;: true,
+  &quot;showIn&quot;: [&quot;registration&quot;, &quot;basic&quot;, &quot;scan-sell&quot;]
+}</code></pre>
+<p><strong>Mandatory</strong> is enforced in <strong><code>MedicalInventoryValidator</code></strong> + schema <code>required: true</code>. <strong>Regular vs basic</strong> is a <strong>UI/filter</strong> concern on schema <code>tier</code> + <code>showIn</code> — not different verticals.</p>
+<h3 id="field-metadata">Field metadata</h3>
+<pre><code class="language-json">{
+  &quot;key&quot;: &quot;expiryDate&quot;,
+  &quot;label&quot;: &quot;Expiry Date&quot;,
+  &quot;type&quot;: &quot;date&quot;,
+  &quot;required&quot;: true,
+  &quot;storage&quot;: &quot;extension&quot;,
+  &quot;indexed&quot;: true,
+  &quot;searchable&quot;: true,
+  &quot;sortable&quot;: true,
+  &quot;group&quot;: &quot;compliance&quot;,
+  &quot;showIn&quot;: [&quot;registration&quot;, &quot;scan-sell&quot;, &quot;reports&quot;, &quot;invoice&quot;],
+  &quot;validation&quot;: { &quot;minDaysFromToday&quot;: 0 }
+}</code></pre>
+<h3 id="storage-flags">Storage flags</h3>
+<table><thead><tr><th><code>storage</code></th><th>Persisted where</th><th>Use when</th></tr></thead><tbody><tr><td><code>core</code></td><td><code>Inventory</code> document</td><td>Universal: name, barcode, qty, pricingId</td></tr><tr><td><code>extension</code></td><td>Vertical extension collection (top-level field)</td><td>All vertical-specific fields; set <code>indexed: true</code> when filter/sort/report needed</td></tr></tbody></table>
+<table><thead><tr><th>Flag</th><th>Effect</th></tr></thead><tbody><tr><td><code>indexed: true</code></td><td>Plugin ensures compound index with <code>shopId</code> on extension collection</td></tr><tr><td><code>indexed: false</code></td><td>Stored on extension document only; display / detail — not used in SearchProvider filters</td></tr><tr><td><code>searchable: true</code></td><td>Exposed in search API / filter UI (requires <code>indexed: true</code>)</td></tr><tr><td><code>showIn</code></td><td>Which screens render the field</td></tr></tbody></table>
+<h3 id="dynamic-ui-flow">Dynamic UI flow</h3>
+<pre><code class="language-text">Login → Fetch Shop → Resolve verticalId + pluginVersion
+  → GET /shops/me/schema?mode=regular|basic
+  → SchemaLoader reads vertical_schemas (MongoDB)
+  → Render dynamic form</code></pre>
+<p>Same registration screen, different fields:</p>
+<ul>
+<li><strong>Medical:</strong> Name, Price, Batch No, Expiry Date</li>
+<li><strong>Apparel:</strong> Name, Price, Size, Color</li>
+<li><strong>Sports:</strong> Name, Price, Sport, Brand</li>
+</ul>
+<hr>
+<h3 id="where-to-put-a-new-field">Where to put a new field</h3>
+<p>For each new field:</p>
+<table><thead><tr><th>Question</th><th>Yes →</th><th>No →</th></tr></thead><tbody><tr><td>Universal across all verticals (name, qty, barcode)?</td><td><code>storage: core</code></td><td>Continue ↓</td></tr><tr><td>Will users filter, sort, or report on it?</td><td><code>storage: extension</code>, <code>indexed: true</code></td><td>↓</td></tr><tr><td>Required on every save (compliance/safety)?</td><td><code>required: true</code>, <code>tier: mandatory</code></td><td>↓</td></tr><tr><td>Full registration only (not quick basic mode)?</td><td><code>tier: regular</code>, <code>showIn</code> without <code>basic</code></td><td>↓</td></tr><tr><td>Quick basic registration only?</td><td><code>tier: basic</code>, <code>showIn</code> includes <code>basic</code></td><td>↓</td></tr><tr><td>Needed on invoice/compliance?</td><td>Usually <code>storage: extension</code></td><td>—</td></tr><tr><td>Display-only (never filtered at scale)?</td><td><code>storage: extension</code>, <code>indexed: false</code></td><td>—</td></tr><tr><td>Sellable on menu but not a stocked SKU (latte, combo)?</td><td>Plugin collection <code>cafe_menu_items</code> + recipe BOM</td><td>Do not overload core <code>Inventory</code></td></tr><tr><td>Periodic physical count (daily/weekly/monthly)?</td><td>Plugin <code>cafe_stock_count_sessions</code></td><td>Core qty updated only on submit if shop allows</td></tr></tbody></table>
+<hr>
+<hr>
+<h2 id="7-codebase-layout">7. Codebase layout</h2>
+<p>Low-level map of <strong>repositories</strong>, <strong>Maven modules</strong>, <strong>packages</strong>, <strong>request paths</strong>, and <strong>Mongo collections</strong>. Labels <strong>(today)</strong> vs <strong>(target)</strong> mark what exists in code now vs v4 plugin rollout.</p>
+<hr>
+<h3 id="backend-maven-modules">Backend Maven modules</h3>
+<pre><code class="language-text">inventory-api/
+├── pom.xml                          # parent: app, core, plugins, pluginengine
+├── app/                             # runnable Spring Boot JAR
+├── pluginengine/                    # plugin SDK (stub today → target: registry + abstractions)
+├── plugins/
+│   └── medical/                     # first vertical (stub today)
+├── core/
+│   ├── common/                      # ApiResponse, exceptions, shared utilities
+│   ├── product/                     # ★ main domain — inventory, shop, checkout, purchases
+│   ├── analytics/                   # profit, sales, inventory analytics
+│   ├── user/                        # auth, vendors, invitations, membership
+│   ├── accounting/                  # ledger, chart of accounts, journal
+│   ├── credit/                      # credit charges / settlement
+│   ├── pricing/                     # rates, pricing rules
+│   ├── reminders/                   # expiry reminders
+│   ├── taxation/                    # GSTR reports
+│   ├── plan/                        # subscriptions
+│   ├── ocr/                         # invoice OCR
+│   ├── documentservice/
+│   ├── notifications/
+│   └── metrics/                     # latency / request-rate metrics
+└── docs/
+    ├── VERTICAL_PLUGIN_ARCHITECTURE.md
+    ├── VERTICAL_PLUGIN_ARCHITECTURE.html
+    └── generate_architecture_html.py</code></pre>
+<hr>
+<h3 id="coreproduct-package-tree"><code>core/product</code> package tree</h3>
+<p>Product is the application hub (~170+ Java files). Standard layout per module:</p>
+<pre><code class="language-text">core/product/src/main/java/com/inventory/product/
+│
+├── rest/controller/                 # HTTP entry
+│   ├── InventoryController.java     # POST/GET /api/v1/inventory
+│   ├── CheckoutController.java      # cart, checkout, sell
+│   ├── ShopController.java
+│   ├── DashboardController.java
+│   ├── VendorPurchaseInvoiceController.java
+│   ├── RefundController.java
+│   ├── InventoryCorrectionController.java
+│   └── …
+│
+├── service/                         # business logic
+│   ├── InventoryService.java        # ★ plugin coordination (target)
+│   ├── InventoryAdapterImpl.java    # implements reminders.InventoryAdapter
+│   ├── ShopServiceAdapterImpl.java  # implements user.ShopServiceAdapter
+│   ├── CheckoutService.java
+│   ├── ShopService.java
+│   ├── DashboardService.java
+│   ├── VendorPurchaseInvoiceService.java
+│   ├── RefundService.java
+│   └── …
+│
+├── config/
+│   └── ShopProviderImpl.java        # implements plan.ShopProvider
+│
+├── domain/
+│   ├── model/
+│   │   ├── Inventory.java           # core entity (batchNo/expiry on core today)
+│   │   ├── Shop.java                # target: + verticalId, pluginVersion
+│   │   ├── Purchase.java, PurchaseItem.java
+│   │   └── …
+│   └── repository/
+│       ├── InventoryRepository.java
+│       ├── ShopRepository.java
+│       ├── PurchaseRepository.java
+│       └── …
+│
+├── rest/dto/request/                # CreateInventoryRequest, CheckoutRequest, …
+├── rest/dto/response/               # InventoryDetailResponse, InventoryReceiptResponse, …
+├── mapper/                          # MapStruct entity ↔ DTO
+├── validation/                      # InventoryValidator, ShopValidator, …
+├── migration/                       # one-off data migrations
+└── config/                          # backward-compat callbacks</code></pre>
+<p><strong>Target additions (same module, no orchestrator classes):</strong></p>
+<pre><code class="language-text">service/InventoryService.java        # + resolvePlugin(), createWithExtension(),
+                                     #   search(), getMergedView(), resolveDimensions()
+rest/dto/response/InventoryViewResponse.java   # flat core + extension API type</code></pre>
+<hr>
+<h3 id="pluginengine-and-plugins-today-vs-target"><code>pluginengine</code> and <code>plugins</code> — today vs target</h3>
+<p><strong>Today (stub):</strong></p>
+<pre><code class="language-text">pluginengine/src/main/java/com/inventory/pluginengine/
+├── ProductPlugin.java               # getPluginId() only
+└── PluginManager.java
+
+plugins/medical/src/main/java/com/inventory/plugins/medical/
+└── MedicalPlugin.java             # implements ProductPlugin (stub)</code></pre>
+<p><strong>Target v4:</strong></p>
+<pre><code class="language-text">pluginengine/
+├── VerticalPlugin.java
+├── PluginRegistry.java              # Map&lt;verticalId, VerticalPlugin&gt;
+├── SchemaLoader.java
+├── AbstractVerticalPlugin.java
+├── AbstractExtensionRepository.java
+├── AbstractSearchProvider.java
+└── VerticalInventoryMapper.java
+
+plugins/medical/
+├── MedicalPlugin.java               # @Component
+├── MedicalInventoryExtension.java
+├── MedicalExtensionRepository.java  # → inventory_ext_medical
+├── MedicalInventoryValidator.java
+├── MedicalSearchProvider.java
+└── MedicalAnalyticsContributor.java # optional
+
+MongoDB: vertical_schemas (medical v1.0.0 document — seeded from docs/seeds/)
+
+plugins/cafe/                        # future
+plugins/apparel/                     # future</code></pre>
+<hr>
+<h3 id="other-core-modules-example-analytics">Other core modules (example: analytics)</h3>
+<pre><code class="language-text">core/analytics/src/main/java/com/inventory/analytics/
+├── rest/controller/
+│   ├── ProfitAnalyticsController.java     # GET /api/v1/analytics/profit
+│   ├── SalesAnalyticsController.java
+│   ├── InventoryAnalyticsController.java
+│   ├── CustomerAnalyticsController.java
+│   └── VendorAnalyticsController.java
+├── service/
+│   ├── ProfitAnalyticsService.java
+│   ├── SalesAnalyticsService.java
+│   └── InventoryAnalyticsService.java
+└── utils/
+    ├── ProfitAnalyticsUtils.java          # today: may call InventoryRepository
+    ├── SalesAnalyticsUtils.java
+    └── InventoryAnalyticsUtils.java</code></pre>
+<table><thead><tr><th>Today</th><th>Target v4</th></tr></thead><tbody><tr><td><code>ProfitAnalyticsUtils</code> → <code>InventoryRepository.findById()</code></td><td><code>ProfitAnalyticsService</code> → <strong><code>InventoryService.resolveDimensions()</code></strong></td></tr><tr><td>Own-module repos for purchases OK</td><td>Cross-module inventory → product service only</td></tr></tbody></table>
+<p>Same pattern for checkout (display fields), reminders (post-create hooks invoked <strong>by</strong> <code>InventoryService</code>).</p>
+<hr>
+<h3 id="app-module-boot-and-auth"><code>app</code> module — boot and auth</h3>
+<pre><code class="language-text">app/src/main/java/com/inventory/app/
+├── AppApplication.java              # scanBasePackages = com.inventory.*
+├── config/CorsConfig.java
+└── interceptor/AuthenticationInterceptor.java   # JWT → userId, shopId on request</code></pre>
+<p>All controllers read <code>shopId</code> from <code>HttpServletRequest.getAttribute(&quot;shopId&quot;)</code>. <strong>Never</strong> trust <code>verticalId</code> from client headers — resolve from <code>Shop</code> via <code>InventoryService</code>.</p>
+<hr>
+<h3 id="frontend-repo-inventory-platform">Frontend repo (<code>inventory-platform</code>)</h3>
+<pre><code class="language-text">inventory-platform/
+├── apps/inventory/app/routes/           # route → page wiring
+│   ├── dashboard.product-registration.tsx
+│   ├── dashboard.scan-sell.tsx
+│   └── dashboard.analytics.*.tsx
+│
+├── features/
+│   ├── dashboard/src/lib/routes/        # product registration, scan-sell, checkout
+│   └── analytics/src/lib/               # ProfitAnalytics, InventoryAnalytics
+│
+├── shared/
+│   ├── api/src/lib/                     # HTTP clients
+│   │   ├── inventory.ts
+│   │   ├── analytics.ts
+│   │   ├── checkout.ts
+│   │   └── shops.ts
+│   └── types/                           # InventoryItem, …
+│
+Target:
+  GET /shops/me/schema → dynamic form fields from plugin schema
+  Cache schema by verticalId + pluginVersion
+  No businessType / verticalId on write payloads</code></pre>
+<hr>
+<h3 id="mongodb-collections">MongoDB collections</h3>
+<table><thead><tr><th>Collection</th><th>Owner</th><th>Java entity</th><th>Notes</th></tr></thead><tbody><tr><td><code>inventory</code></td><td>product</td><td><code>Inventory.java</code></td><td>Universal fields; vertical columns removed after migration</td></tr><tr><td><code>shops</code></td><td>product</td><td><code>Shop.java</code></td><td>+ <code>verticalId</code>, <code>pluginVersion</code> (target)</td></tr><tr><td><code>purchases</code></td><td>product</td><td><code>Purchase.java</code></td><td>Checkout / sales facts</td></tr><tr><td><code>inventory_ext_medical</code></td><td>plugins/medical</td><td><code>MedicalInventoryExtension</code></td><td>1:1 with <code>inventory._id</code> (target)</td></tr><tr><td><code>inventory_ext_cafe</code></td><td>plugins/cafe</td><td>future</td><td></td></tr><tr><td><code>shop_ext_medical</code></td><td>plugins/medical</td><td>optional</td><td>DL, licenses</td></tr><tr><td>accounts / ledger</td><td>accounting</td><td>separate module</td><td></td></tr></tbody></table>
+<p>Extension docs use <strong>top-level fields only</strong> (<code>storage: core</code> | <code>storage: extension</code>). No nested <code>attributes</code> map.</p>
+<hr>
+<h3 id="request-flows-with-concrete-files">Request flows with concrete files</h3>
+<h4 id="register-product-today">Register product — today</h4>
+<pre><code class="language-text">shared/api/inventory.ts
+  → POST /api/v1/inventory
+
+AuthenticationInterceptor.java
+  → request attribute shopId
+
+InventoryController.java
+  → inventoryService.create(request, userId, shopId)
+
+InventoryService.java
+  → InventoryValidator → InventoryMapper → inventoryRepository.save()
+
+Mongo: inventory (batchNo, expiryDate on same document today)</code></pre>
+<h4 id="register-product-target-v4">Register product — target v4</h4>
+<pre><code class="language-text">InventoryController.java
+  → InventoryService.create()
+
+InventoryService.java
+  1. ShopRepository → verticalId
+  2. PluginRegistry → MedicalPlugin
+  3. Schema split: core vs extension fields
+  4. Core + plugin validation
+  5. Transaction: InventoryRepository + MedicalExtensionRepository
+  6. ReminderService.create… (service call)
+  7. Return InventoryViewResponse</code></pre>
+<h4 id="profit-analytics-today-target">Profit analytics — today → target</h4>
+<pre><code class="language-text">shared/api/analytics.ts → GET /api/v1/analytics/profit
+
+ProfitAnalyticsController.java
+  → ProfitAnalyticsService.getProfitAnalytics(shopId, …)
+  → PurchaseRepository (analytics — OK, own module)
+  → InventoryRepository via ProfitAnalyticsUtils (today)
+
+Target:
+  → InventoryService.resolveDimensions(shopId, inventoryIds)
+  → plugin contributor → inventory_ext_medical batch load</code></pre>
+<h4 id="checkout-scan-sell">Checkout / scan-sell</h4>
+<pre><code class="language-text">CheckoutController.java → CheckoutService.java
+Target vertical display:
+  CheckoutService → InventoryService.getMergedView(shopId, inventoryId)</code></pre>
+<hr>
+<h3 id="maven-dependency-direction">Maven dependency direction</h3>
+<pre><code class="language-text">app
+ ├── product ──────► pluginengine ◄── plugins/medical
+ ├── analytics ────► product
+ ├── user            (ShopServiceAdapter interface — no product dep)
+ ├── plan            (ShopProvider interface — no product dep)
+ ├── reminders       (InventoryAdapter interface — no product dep)
+ ├── accounting ◄── product (AccountingFacade SPI)
+ └── …
+
+Allowed:
+  plugins/*     →  pluginengine, common
+  product       →  user, plan, reminders, pricing, accounting, …  (implements their adapters)
+  analytics     →  product, common
+  reminders     ✗  product   (cycle broken by InventoryAdapter)
+
+Forbidden:
+  pluginengine  →  product
+  reminders     →  product   (use InventoryAdapter interface instead)
+  product       →  analytics (use events or adapter in analytics if reverse needed)
+  Any module    →  foreign Repository</code></pre>
+<p><strong>Cycle break:</strong> consumer defines interface; <strong>product</strong> (or owner) registers <code><em>Impl</code> / <code></em>ProviderImpl</code> <code>@Component</code>. See <a href="#cross-module-access">Cross-module access</a>.</p>
+<hr>
+<h3 id="today-vs-target-checklist">Today vs target checklist</h3>
+<table><thead><tr><th>Area</th><th>Today</th><th>Target v4</th></tr></thead><tbody><tr><td>Plugin resolution</td><td>Stub <code>PluginManager</code> / <code>MedicalPlugin</code></td><td><code>InventoryService</code> + <code>PluginRegistry</code></td></tr><tr><td>Vertical field storage</td><td>Core <code>Inventory</code> document</td><td><code>inventory_ext_&lt;vertical&gt;</code></td></tr><tr><td><code>Shop.verticalId</code></td><td>Not on entity yet</td><td>Server source of truth</td></tr><tr><td>Coordinator classes</td><td>N/A</td><td>Logic in <code>InventoryService</code> only</td></tr><tr><td>Analytics → inventory</td><td>Direct <code>InventoryRepository</code> in utils</td><td><code>InventoryService</code></td></tr><tr><td>Extension <code>attributes</code> map</td><td>N/A</td><td>Not used — top-level extension columns</td></tr><tr><td>Frontend vertical hint</td><td><code>businessType: pharmacy</code> on requests</td><td>Schema API from <code>vertical_schemas</code> (DB)</td></tr><tr><td>Schema source</td><td>N/A</td><td><strong>MongoDB <code>vertical_schemas</code> only</strong> at runtime</td></tr></tbody></table>
+<hr>
+<hr>
+<h2 id="8-shop-isolation">8. Shop isolation</h2>
+<p>Every API response must contain <strong>only data for the authenticated shop</strong>. Vertical plugins add <strong>more collections</strong> but do not change the rule: <strong><code>shopId</code> is mandatory on every read and write path</strong>.</p>
+<h3 id="defense-in-depth">Defense in depth</h3>
+<pre><code class="language-text">┌─────────────────────────────────────────────────────────────┐
+│ 1. Auth: JWT + effective shopId on request attribute       │
+│ 2. Controllers: never trust client-supplied shopId alone     │
+│ 3. Core repos: query always includes shopId                  │
+│ 4. Extension repos: query always includes shopId           │
+│ 5. Facade: hydrate only ids that match authenticated shop   │
+│ 6. Tests: Shop A cannot read Shop B inventory by id          │
+└─────────────────────────────────────────────────────────────┘</code></pre>
+<h3 id="layer-1-authentication-resolve-shop">Layer 1 — Authentication (resolve shop)</h3>
+<p>Already handled by <code>AuthenticationInterceptor</code>:</p>
+<pre><code class="language-text">1. Validate Bearer token → UserAccount
+2. effectiveShopId =
+     X-Shop-Id header IF user has membership access to that shop
+     ELSE userAccount.shopId (active shop)
+3. request.setAttribute(&quot;shopId&quot;, effectiveShopId)</code></pre>
+<table><thead><tr><th>Rule</th><th>Implementation</th></tr></thead><tbody><tr><td>Client cannot pick arbitrary shop</td><td>Header ignored unless <code>membershipService.hasAccess(userId, headerShopId)</code></td></tr><tr><td>Controllers read <code>shopId</code> from attribute</td><td>Not from unvalidated query/body alone</td></tr></tbody></table>
+<h3 id="layer-2-core-inventory-access">Layer 2 — Core inventory access</h3>
+<table><thead><tr><th>Operation</th><th>Required pattern</th></tr></thead><tbody><tr><td>List</td><td><code>inventoryRepository.findByShopId(shopId, pageable)</code></td></tr><tr><td>Create</td><td><code>inventory.setShopId(shopId)</code> from server attribute only</td></tr><tr><td>Update</td><td>Load inventory, then <code>if (!shopId.equals(inventory.getShopId()))</code> reject</td></tr><tr><td>Delete</td><td>Same ownership check before delete</td></tr><tr><td>Get by id</td><td><strong>Prefer</strong> <code>findByIdAndShopId(id, shopId)</code> in <code>InventoryService</code> (avoid findById-only paths)</td></tr></tbody></table>
+<p>Existing code already checks ownership on update (<code>InventoryService.update</code>). Extend the same rule to <strong>all</strong> read/update/delete entry points in <code>InventoryService</code>.</p>
+<p><strong>ID guessing:</strong> Attacker with Shop A token guessing Shop B’s <code>inventoryId</code> must get <strong>404 or 403</strong>, not Shop B’s data.</p>
+<h3 id="layer-3-extension-collection-access">Layer 3 — Extension collection access</h3>
+<p>Extension documents <strong>denormalize <code>shopId</code></strong> (same value as core). Plugin repositories must <strong>require</strong> <code>shopId</code> on every method:</p>
+<pre><code class="language-java">// Required API shape
+Optional&lt;MedicalInventoryExtension&gt; findByInventoryId(String shopId, String inventoryId);
+List&lt;MedicalInventoryExtension&gt; findByInventoryIdIn(String shopId, List&lt;String&gt; inventoryIds);
+SearchResult search(String shopId, Map&lt;String, Object&gt; filters, Cursor cursor, int limit);
+
+// Forbidden
+findByInventoryId(String inventoryId);           // without shopId
+findByBatchNo(String batchNo);                   // without shopId</code></pre>
+<p>Vertical search example (<code>batchNo</code>, <code>warranty</code>, <code>expiryDate</code>):</p>
+<pre><code class="language-javascript">// MongoDB predicate — always
+{ shopId: &quot;&lt;authenticatedShopId&gt;&quot;, batchNo: &quot;B001&quot; }</code></pre>
+<p>Another shop’s identical <code>batchNo</code> is <strong>never returned</strong> because <code>shopId</code> is in every query.</p>
+<p>Indexes must be compound with <code>shopId</code> first: <code>(shopId, batchNo)</code>, <code>(shopId, expiryDate)</code>.</p>
+<h3 id="layer-4-write-path-inventoryservice">Layer 4 — Write path (<code>InventoryService</code>)</h3>
+<p>On create:</p>
+<pre><code class="language-text">core.shopId = authenticatedShopId
+extension.shopId = authenticatedShopId   // same value, not from client body
+extension.inventoryId = core.id</code></pre>
+<table><thead><tr><th>Rule</th><th>Why</th></tr></thead><tbody><tr><td>Do not accept <code>shopId</code> in extension payload from client</td><td>Prevents cross-shop injection</td></tr><tr><td>Validator: <code>extension.shopId == core.shopId</code></td><td>Belt-and-suspenders</td></tr></tbody></table>
+<p>On update: verify core ownership first, then update extension with <strong>same</strong> <code>shopId</code> + <code>inventoryId</code>.</p>
+<h3 id="layer-5-search-and-list-hydration">Layer 5 — Search and list hydration</h3>
+<pre><code class="language-text">1. SearchProvider.search(authenticatedShopId, filters) → inventoryIds
+2. coreRows = inventoryRepo.findByShopIdAndIdIn(authenticatedShopId, ids)
+3. extRows = verticalRepo.findByInventoryIdIn(authenticatedShopId, ids)
+4. Merge only pairs where core.id is in ids AND core.shopId == authenticatedShopId
+5. Drop orphan ids (extension without core or shop mismatch)</code></pre>
+<p>Never hydrate extension rows without re-validating core <code>shopId</code>.</p>
+<h3 id="layer-6-multi-shop-users">Layer 6 — Multi-shop users</h3>
+<p>Users with access to Shop A and Shop B:</p>
+<ul>
+<li>Data from A and B is <strong>never mixed</strong> in one response.</li>
+<li>Switching shop = change <code>X-Shop-Id</code> header (with access check) or active shop on token.</li>
+<li>Cache keys on frontend must include <code>shopId</code>: <code>[&#x27;inventory&#x27;, shopId, id]</code>.</li>
+</ul>
+<h3 id="layer-7-analytics-and-exports">Layer 7 — Analytics and exports</h3>
+<p>Same rule: every aggregation starts with <code>shopId = authenticatedShopId</code>. Extension dimension joins batch-load extensions with <code>(shopId, inventoryId)</code> only for facts already scoped to that shop.</p>
+<h3 id="implementation-checklist">Implementation checklist</h3>
+<ul class="checklist">
+<li>All controller methods use <code>request.getAttribute(&quot;shopId&quot;)</code></li>
+<li><code>InventoryService</code> uses <code>findByIdAndShopId</code> (core)</li>
+<li><code>AbstractExtensionRepository</code> requires <code>shopId</code> on all public methods</li>
+<li><code>SearchProvider</code> first parameter is always <code>shopId</code></li>
+<li>No repository method exposes vertical lookup without <code>shopId</code></li>
+<li>Integration test: create item in Shop A; Shop B token cannot GET/PATCH/search it</li>
+<li>Integration test: same <code>batchNo</code> in A and B; search from A returns only A’s rows</li>
+</ul>
+<h3 id="anti-patterns-data-leak">Anti-patterns (data leak)</h3>
+<table><thead><tr><th>Do NOT</th><th>Do instead</th></tr></thead><tbody><tr><td><code>findById(inventoryId)</code> without shop check</td><td><code>findByIdAndShopId</code> or ownership assert</td></tr><tr><td><code>findByBatchNo(batchNo)</code> globally</td><td><code>findByShopIdAndBatchNo(shopId, batchNo)</code></td></tr><tr><td>Trust <code>shopId</code> from request body</td><td>Use auth attribute only</td></tr><tr><td>Return extension row without loading core shopId</td><td>Always pair and verify</td></tr><tr><td>Share cached list across shops</td><td>Cache key includes <code>shopId</code></td></tr></tbody></table>
+<hr>
+<hr>
+<h2 id="9-migration">9. Migration</h2>
+<h3 id="phased-plan-m1m8">Phased plan (M1–M8)</h3>
+<p>StockKart already has pharmacy fields on the main <code>Inventory</code> document. Migrate incrementally — no big-bang rewrite.</p>
+<p><strong>Segregation approach:</strong> vertical data is split from core <code>inventory</code> into <code>inventory_ext_medical</code> using a <strong>dedicated migration script</strong> (M4), not ad-hoc manual DB edits and not by rewriting history on every API read. Application code uses dual-read/dual-write during transition; the script is the one-time (idempotent) bulk copy that establishes the extension collection for existing rows.</p>
+<table><thead><tr><th>Step</th><th>Action</th></tr></thead><tbody><tr><td><strong>M1</strong></td><td>Add <code>Shop.verticalId</code>, plugin registry, schema API</td></tr><tr><td><strong>M2</strong></td><td>Create <code>inventory_ext_medical</code> + <code>MedicalExtensionRepository</code></td></tr><tr><td><strong>M3</strong></td><td><strong>Dual-write:</strong> save batch/expiry to core (legacy) AND extension</td></tr><tr><td><strong>M4</strong></td><td><strong>Segregation script:</strong> copy legacy core vertical fields → <code>inventory_ext_medical</code> (core rows unchanged)</td></tr><tr><td><strong>M5</strong></td><td>Switch reads to <code>InventoryService</code> merged views (extension as source of truth)</td></tr><tr><td><strong>M6</strong></td><td>Switch search to <code>MedicalSearchProvider</code> on extension indexes</td></tr><tr><td><strong>M7</strong></td><td>Stop writing vertical fields on core <code>Inventory</code></td></tr><tr><td><strong>M8</strong></td><td>(Later) Optional <strong>cleanup script</strong> — unset legacy medical keys on core <code>inventory</code> BSON</td></tr></tbody></table>
+<p>Existing shops keep working throughout dual-write phase. M4 does <strong>not</strong> delete or truncate core <code>inventory</code>; it only <strong>inserts</strong> missing extension documents.</p>
+<hr>
+<h3 id="existing-medical-production-data">Existing medical production data</h3>
+<p>StockKart <strong>already has</strong> pharmacy/medical fields (<code>batchNo</code>, <code>expiryDate</code>, <code>companyName</code>, etc.) stored on the core <code>inventory</code> collection. Moving to <code>inventory_ext_medical</code> does <strong>not</strong> require deleting or rewriting production data in one cutover.</p>
+<h3 id="what-exists-today">What exists today</h3>
+<table><thead><tr><th>Store</th><th>Content for medical shops</th></tr></thead><tbody><tr><td><code>shops</code></td><td>Pharmacy shops without <code>verticalId</code> yet</td></tr><tr><td><code>inventory</code></td><td>Universal fields <strong>plus</strong> <code>batchNo</code>, <code>expiryDate</code>, and other pharmacy columns on the same document</td></tr></tbody></table>
+<p>After plugin rollout, <strong>new</strong> medical vertical fields live in <code>inventory_ext_medical</code>. Legacy BSON keys may remain on old <code>inventory</code> documents until optional cleanup (M8).</p>
+<h3 id="what-users-experience-during-migration">What users experience during migration</h3>
+<table><thead><tr><th>Phase</th><th>Behaviour</th></tr></thead><tbody><tr><td>Before M4 segregation script</td><td>Reads still work from <strong>legacy core fields</strong> (via merge fallback)</td></tr><tr><td>After M4 segregation script</td><td>Reads prefer <strong>extension</strong>; values match what was on core</td></tr><tr><td>M3 dual-write</td><td>New/updated rows written to <strong>both</strong> stores</td></tr><tr><td>After M7</td><td>New writes only touch extension for vertical fields</td></tr><tr><td>After M8 (optional)</td><td>Java entity drops legacy fields; old Mongo keys may still exist until compaction script</td></tr></tbody></table>
+<p>No downtime is required. Cart, checkout, and sales continue to reference the same <code>inventoryId</code>.</p>
+<h3 id="shop-tagging-m1">Shop tagging (M1)</h3>
+<p>Before running the M4 segregation script, tag existing pharmacy shops:</p>
+<pre><code class="language-text">FOR each Shop that is pharmacy/medical (business rule or manual list):
+  SET verticalId = &#x27;medical&#x27;
+  SET pluginVersion = &#x27;1.0.0&#x27;   // or current medical schema version</code></pre>
+<p>Inventory rows do not need <code>verticalId</code> on core if <code>InventoryService</code> always resolves vertical from <code>shopId</code> → <code>Shop.verticalId</code>.</p>
+<h3 id="segregation-script-core-inventory-inventory-ext-medical-m4">Segregation script — core <code>inventory</code> → <code>inventory_ext_medical</code> (M4)</h3>
+<p>Use a <strong>migration script</strong> to segregate existing production data: one row in core <code>inventory</code> stays as the universal record; a <strong>new</strong> document in <code>inventory_ext_medical</code> holds the medical-only fields. Same <code>inventoryId</code> on both sides — cart, sales, and pricing references do not change.</p>
+<h4 id="what-the-script-does">What the script does</h4>
+<table><thead><tr><th>Action</th><th>M4 segregation script</th><th>M8 cleanup script (optional, later)</th></tr></thead><tbody><tr><td>Read core <code>inventory</code> for medical shops</td><td>Yes</td><td>Yes</td></tr><tr><td>Insert into <code>inventory_ext_medical</code> if missing</td><td>Yes</td><td>No</td></tr><tr><td>Update core <code>inventory</code></td><td>No</td><td>Unset legacy keys only (<code>batchNo</code>, <code>expiryDate</code>, …)</td></tr><tr><td>Delete rows</td><td>No</td><td>No</td></tr></tbody></table>
+<h4 id="script-placement-and-invocation">Script placement and invocation</h4>
+<p>Follow the same pattern as existing one-off migrations (<code>UserShopMembershipMigrationRunner</code>, <code>LotIdToVendorPurchaseInvoiceMigration</code>):</p>
+<pre><code class="language-text">core/product/src/main/java/com/inventory/product/migration/
+  SegregateMedicalInventoryMigration.java   // M4 — primary segregation
+  StripLegacyMedicalFieldsMigration.java    // M8 — optional BSON cleanup</code></pre>
+<table><thead><tr><th>Run mode</th><th>When to use</th></tr></thead><tbody><tr><td><strong>Dry-run</strong> (<code>--dry-run</code>)</td><td>Staging / pre-prod: log would-insert counts, no writes</td></tr><tr><td><strong>Single shop</strong> (<code>--shop-id=…</code>)</td><td>Pilot one pharmacy before all shops</td></tr><tr><td><strong>All medical shops</strong> (default after M1 tagging)</td><td>Production cutover once dual-write (M3) is live</td></tr></tbody></table>
+<p>Prefer a <strong>CLI entry point</strong> or Spring <code>@Profile(&quot;migration&quot;)</code> runner so the job is explicit ops work, not silent on every app startup. Safe to re-run: idempotent on <code>(shopId, inventoryId)</code>.</p>
+<h4 id="field-mapping-core-extension">Field mapping (core → extension)</h4>
+<p>Copy only fields that belong in the medical extension schema. Universal fields (<code>name</code>, <code>barcode</code>, <code>currentCount</code>, pricing links, …) <strong>stay on core</strong> and are not duplicated.</p>
+<table><thead><tr><th>Core <code>inventory</code> (legacy)</th><th><code>inventory_ext_medical</code></th><th>Notes</th></tr></thead><tbody><tr><td><code>_id</code></td><td><code>inventoryId</code></td><td>1:1 link; unique index on extension</td></tr><tr><td><code>shopId</code></td><td><code>shopId</code></td><td>Must match core; never from client</td></tr><tr><td>—</td><td><code>verticalId</code></td><td>Constant <code>&#x27;medical&#x27;</code></td></tr><tr><td><code>batchNo</code></td><td><code>batchNo</code></td><td>Skip key if null</td></tr><tr><td><code>expiryDate</code></td><td><code>expiryDate</code></td><td>Skip key if null</td></tr><tr><td><code>companyName</code></td><td><code>manufacturer</code></td><td>Schema name differs from legacy core column</td></tr><tr><td><code>schedule</code> (if present in BSON)</td><td><code>schedule</code></td><td>Not on Java entity today; copy if key exists</td></tr></tbody></table>
+<p>Rows with <strong>no</strong> medical data on core (all mapped fields null/absent) may still get an empty extension shell if the shop is medical — or skip insert per product rule; document choice in script logs.</p>
+<h4 id="algorithm-idempotent">Algorithm (idempotent)</h4>
+<pre><code class="language-text">FOR each Shop WHERE verticalId = &#x27;medical&#x27;:
+  FOR each Inventory WHERE shopId = Shop.shopId:
+    IF EXISTS inventory_ext_medical WHERE shopId = Inventory.shopId
+                                  AND inventoryId = Inventory.id:
+      SKIP (already segregated)
+    ELSE:
+      INSERT inventory_ext_medical {
+        inventoryId: Inventory.id,
+        shopId: Inventory.shopId,
+        verticalId: &#x27;medical&#x27;,
+        batchNo: Inventory.batchNo,
+        expiryDate: Inventory.expiryDate,
+        manufacturer: Inventory.companyName,
+        schedule: Inventory.schedule   // if present in BSON
+      }
+      // Do NOT unset batchNo/expiryDate on core in M4</code></pre>
+<h4 id="preconditions">Preconditions</h4>
+<ul>
+<li>M1 complete: target shops tagged <code>verticalId = &#x27;medical&#x27;</code></li>
+<li>M2 complete: <code>inventory_ext_medical</code> collection + unique index on <code>inventoryId</code> (and compound indexes for search)</li>
+<li>Recommended: M3 dual-write live so new edits land in both stores before/after script run</li>
+</ul>
+<h4 id="post-run-logging-and-verification">Post-run logging and verification</h4>
+<p>Log per run:</p>
+<ul>
+<li>shops processed</li>
+<li>rows inserted (new extension docs)</li>
+<li>rows skipped (extension already existed)</li>
+<li>rows with no mappable medical fields (informational)</li>
+<li>errors (duplicate key, shop mismatch)</li>
+</ul>
+<p>Reconciliation query (optional nightly job): for medical shops, compare core legacy fields vs extension for drift until M7 stops core writes.</p>
+<p>Sample verification:</p>
+<pre><code class="language-text">db.inventory_ext_medical.countDocuments({ shopId: &quot;&lt;pilotShopId&gt;&quot; })
+  ≈ db.inventory.countDocuments({ shopId: &quot;&lt;pilotShopId&gt;&quot; })
+  // minus intentionally skipped empty rows</code></pre>
+<h3 id="dual-read-merge-m5">Dual-read merge (M5)</h3>
+<p><code>InventoryService</code> / <code>AbstractVerticalPlugin.mergeIntoView</code>:</p>
+<pre><code class="language-text">1. Load core Inventory by (shopId, inventoryId)
+2. Load extension by (shopId, inventoryId)
+3. IF extension present:
+     merge extension fields → verticalFields / flat API
+     extensionStatus = OK
+4. ELSE IF shop.verticalId = &#x27;medical&#x27; AND core has legacy batchNo/expiryDate:
+     map legacy core fields into response (migration fallback)
+     extensionStatus = PARTIAL
+5. ELSE:
+     extensionStatus = MISSING (core-only row)</code></pre>
+<p>Frontend continues to receive one flat <code>InventoryView</code>; users should not see broken screens during or after the segregation script.</p>
+<h3 id="dual-write-m3">Dual-write (M3)</h3>
+<p>On create/update until M7:</p>
+<pre><code class="language-text">1. Save core Inventory (still includes legacy fields if not yet removed from service)
+2. Save inventory_ext_medical with same vertical field values
+3. Same transaction where possible (Mongo multi-document transaction)</code></pre>
+<p>Nightly reconciliation (optional): compare core legacy fields vs extension for medical shops; report drift.</p>
+<h3 id="search-cutover-m6">Search cutover (M6)</h3>
+<table><thead><tr><th>Stage</th><th>Search behaviour</th></tr></thead><tbody><tr><td>Before M4 script complete</td><td>Keep search on <strong>core</strong> legacy fields OR block extension-only filters</td></tr><tr><td>After M4 script + indexes</td><td><code>MedicalSearchProvider</code> on <code>inventory_ext_medical</code></td></tr><tr><td>Transition</td><td>Feature flag per shop: <code>useExtensionSearch=true</code> after segregation verified</td></tr></tbody></table>
+<p>Do not enable <code>filters[expiryBefore]</code> on extension indexes until the M4 script and indexes are verified for that shop.</p>
+<h3 id="risks-and-mitigations">Risks and mitigations</h3>
+<table><thead><tr><th>Risk</th><th>Mitigation</th></tr></thead><tbody><tr><td>Segregation script missed rows</td><td>Reconciliation report; <code>PARTIAL</code> on read; re-run M4 script (idempotent)</td></tr><tr><td>Dual-write drift</td><td>Transaction; reconciliation job</td></tr><tr><td>Search returns incomplete set</td><td>M4 segregation gate before M6; per-shop flag</td></tr><tr><td>Duplicate extension insert</td><td>Unique index on <code>inventoryId</code></td></tr><tr><td>Wrong shop in segregation script</td><td>Script scopes by <code>Shop.verticalId = &#x27;medical&#x27;</code> and <code>Inventory.shopId = Shop.shopId</code> only</td></tr><tr><td>Script run before M2 indexes</td><td>Create extension collection + unique <code>inventoryId</code> index before first insert</td></tr></tbody></table>
+<h3 id="verification-checklist-medical-shops">Verification checklist (medical shops)</h3>
+<ul class="checklist">
+<li>Sample 100 inventory rows: extension values match legacy core</li>
+<li>Product registration read/write shows same batch/expiry</li>
+<li>Near-expiry search returns same ids as legacy query (before cutover)</li>
+<li>Scan-sell / cart unchanged for <code>inventoryId</code> references</li>
+<li>No shop sees empty batch/expiry after M4 script unless data was null before</li>
+</ul>
+<hr>
+<hr>
+<h2 id="10-implementation-roadmap">10. Implementation roadmap</h2>
+<h3 id="phase-1-foundation">Phase 1 — Foundation</h3>
+<p><strong>Goal:</strong> Vertical resolution, plugin registry, <strong>DB-backed schema</strong>, medical validator — <strong>pricing-style minimal change</strong>.</p>
+<ul class="checklist">
+<li>Add <code>Shop.verticalId</code>, <code>Shop.pluginVersion</code></li>
+<li>Backfill existing shops → <code>verticalId = medical</code></li>
+<li>Replace stub <code>ProductPlugin</code> with <code>VerticalPlugin</code> + <code>PluginRegistry</code></li>
+<li>Create <code>vertical_schemas</code> collection + <code>VerticalSchemaRepository</code></li>
+<li>Seed medical schema from <code>docs/seeds/medical-v1.json</code> → DB (runtime reads DB only)</li>
+<li><code>SchemaLoader</code> loads <code>(verticalId, version)</code> from MongoDB</li>
+<li>Schema API: <code>GET /verticals</code>, <code>GET /shops/me/schema?mode=regular|basic</code></li>
+<li>Thin <code>plugins/medical</code> + hooks inside <code>InventoryService</code> (mirror pricing handlers)</li>
+<li>Resolve vertical server-side; deprecate client-sent <code>businessType</code></li>
+</ul>
+<p><strong>Done when:</strong> New medical shop gets schema from DB; validators run; existing shops unaffected.</p>
+<hr>
+<h3 id="phase-2-dynamic-ui">Phase 2 — Dynamic UI</h3>
+<p><strong>Goal:</strong> Schema-driven forms; remove hardcoded pharmacy UI.</p>
+<ul class="checklist">
+<li>Dynamic Form Renderer (<code>shared/dynamic-form</code>)</li>
+<li>Product registration from <code>schema.entities.inventory</code></li>
+<li>Scan-sell / list columns from schema <code>showIn</code></li>
+<li>Widget registry (<code>expiry-badge</code>, …)</li>
+<li>Remove hardcoded <code>businessType: &#x27;pharmacy&#x27;</code> from frontend</li>
+</ul>
+<p><strong>Done when:</strong> Optional medical schema field appears in UI after deploy without TS form edits.</p>
+<hr>
+<h3 id="phase-3-extension-storage-product-service-integration">Phase 3 — Extension storage + product service integration</h3>
+<p><strong>Goal:</strong> Vertical data leaves core <code>Inventory</code>; medical extension is live.</p>
+<ul class="checklist">
+<li>Define <code>InventoryExtension</code> contract + <code>inventory_ext_medical</code> entity</li>
+<li><code>MedicalExtensionRepository</code> + indexes <code>(shopId, expiryDate)</code>, <code>(shopId, batchNo)</code></li>
+<li>Extend <code>InventoryService</code>: plugin resolution, create/read/search merge, transactions</li>
+<li>Dual-write migration (core + extension)</li>
+<li><strong><code>SegregateMedicalInventoryMigration</code> script</strong> — copy legacy core fields → <code>inventory_ext_medical</code> (M4; idempotent, dry-run + per-shop flags)</li>
+<li>Switch reads to merged views in <code>InventoryService</code></li>
+<li>(After M7) optional <strong><code>StripLegacyMedicalFieldsMigration</code></strong> — unset legacy keys on core BSON (M8)</li>
+</ul>
+<p><strong>Done when:</strong> New medical inventory writes extension only (dual-write for legacy); reads merge core + extension.</p>
+<hr>
+<h3 id="phase-4-search-providers">Phase 4 — Search providers</h3>
+<p><strong>Goal:</strong> Fast vertical search without JSON scans.</p>
+<ul class="checklist">
+<li><code>SearchProvider</code> interface in plugin engine</li>
+<li><code>MedicalSearchProvider</code> — near-expiry, batch lookup, FEFO helpers</li>
+<li><code>InventoryService.search()</code> + <code>GET /inventory/search</code></li>
+<li>Batch hydration for list pages</li>
+<li>Pre-aggregated expiry buckets in reminders (dashboard counts)</li>
+</ul>
+<p><strong>Done when:</strong> Near-expiry report uses extension index; list pages don&#x27;t N+1.</p>
+<hr>
+<h3 id="phase-5-second-vertical-proof">Phase 5 — Second vertical (proof)</h3>
+<p><strong>Goal:</strong> Prove additive model — <strong>no core changes</strong>.</p>
+<ul class="checklist">
+<li><code>plugins/apparel</code> (or sports or <strong>cafe</strong>): schema, extension collection, validator, search</li>
+<li><code>inventory_ext_apparel</code> + indexes</li>
+<li>Onboarding option for apparel</li>
+<li>End-to-end: register → search by size → sell</li>
+</ul>
+<p><strong>Done when:</strong> Medical shops unchanged; apparel shop works without new <code>if</code> in core.</p>
+<hr>
+<h3 id="phase-6-import-widgets-shop-extensions">Phase 6 — Import, widgets, shop extensions</h3>
+<ul class="checklist">
+<li><code>ImportRowMapper</code> per vertical</li>
+<li><code>WidgetProvider</code> + lazy frontend packs</li>
+<li><code>shop_ext_medical</code> for DL and licenses</li>
+<li><code>CheckoutGuard</code> (e.g. block expired medicine)</li>
+</ul>
+<hr>
+<h3 id="phase-7-scale-and-analytics">Phase 7 — Scale and analytics</h3>
+<ul class="checklist">
+<li>Archive <code>status: ARCHIVED</code> / zero-qty rows</li>
+<li>Optional read projections for huge shops</li>
+<li>Async export jobs</li>
+<li>Vertical-specific reports and analytics facets</li>
+<li>Feature flags: <code>enabledVerticals</code></li>
+<li>Admin schema overrides (optional)</li>
+</ul>
+<hr>
+<hr>
+<h2 id="11-adding-a-new-vertical">11. Adding a new vertical</h2>
+<p>Use this every time you add e.g. <strong>jewelry</strong>, <strong>electronics</strong>, <strong>furniture</strong>.</p>
+<h3 id="a-discovery-12-days">A. Discovery (1–2 days)</h3>
+<ul class="checklist">
+<li>Choose <code>verticalId</code> slug (lowercase, e.g. <code>jewelry</code>)</li>
+<li>List entities: inventory, shop, customer, vendor</li>
+<li>Required fields per entity</li>
+<li>Search/filter/report fields → <code>storage: extension</code>, <code>indexed: true</code></li>
+<li>Compliance rules, checkout guards</li>
+<li>Excel import columns</li>
+<li>Custom UI widgets</li>
+<li>Complete <a href="#appendix-field-placement-decision-table">field placement decision table</a></li>
+</ul>
+<p><strong>Output:</strong> One-pager + draft <code>schema/&lt;verticalId&gt;-v1.json</code></p>
+<hr>
+<h3 id="b-backend-plugin-module">B. Backend plugin module</h3>
+<ul class="checklist">
+<li><code>plugins/&lt;verticalId&gt;/</code> Maven module (<code>pluginengine</code> + <code>common</code> only)</li>
+<li>Add to <code>plugins/pom.xml</code> and <code>app/pom.xml</code></li>
+<li>Implement <code>VerticalPlugin</code></li>
+<li>Schema JSON in <code>src/main/resources/schema/</code></li>
+<li>Extension entity: <code>InventoryExt&lt;Vertical&gt;</code> → collection <code>inventory_ext_&lt;verticalId&gt;</code></li>
+<li><code>ExtensionRepository</code> with standard shape (<code>inventoryId</code>, <code>shopId</code>, …)</li>
+<li><code>InventoryValidator</code>, optional <code>ShopValidator</code></li>
+<li><code>SearchProvider</code> with indexes declared in schema</li>
+<li>Optional: <code>ImportRowMapper</code>, <code>CheckoutGuard</code>, <code>WidgetProvider</code></li>
+<li>Register in <code>PluginRegistry</code>; add to <code>enabledVerticals</code></li>
+</ul>
+<p><strong>Do not</strong> modify <code>Inventory</code>, <code>Order</code>, <code>Checkout</code>, or <code>Accounting</code> Java classes.</p>
+<hr>
+<h3 id="c-extension-storage-and-indexes">C. Extension storage and indexes</h3>
+<ul class="checklist">
+<li>Create MongoDB collection <code>inventory_ext_&lt;verticalId&gt;</code></li>
+<li>Unique index on <code>inventoryId</code></li>
+<li>Compound indexes: <code>(shopId, &lt;each indexed field&gt;)</code></li>
+<li>Idempotent index migration on app boot</li>
+<li>Wire plugin repositories into <code>InventoryService</code> (no direct controller or cross-module repo access)</li>
+</ul>
+<hr>
+<h3 id="d-api-verification">D. API verification</h3>
+<ul class="checklist">
+<li><code>GET /verticals</code> lists new vertical</li>
+<li><code>GET /shops/me/schema</code> returns new schema for shops of that vertical</li>
+<li>Create/update/search integration tests</li>
+<li>Regression: other verticals unchanged</li>
+</ul>
+<hr>
+<h3 id="e-frontend">E. Frontend</h3>
+<ul class="checklist">
+<li>Lazy-load <code>plugin-&lt;verticalId&gt;</code> pack if custom widgets needed</li>
+<li>Register widgets in widget registry</li>
+<li>Import template (if applicable)</li>
+<li>Onboarding card for new vertical</li>
+<li>Core screens unchanged — schema drives layout</li>
+</ul>
+<hr>
+<h3 id="f-onboarding-and-rollout">F. Onboarding and rollout</h3>
+<ul class="checklist">
+<li>Add to shop registration UI</li>
+<li>Default <code>pluginVersion</code> for new shops</li>
+<li>Feature flag for pilot shops</li>
+<li>Document required shop fields</li>
+</ul>
+<hr>
+<h3 id="g-test-deploy-monitor">G. Test → Deploy → Monitor</h3>
+<p>Run <a href="#testing-checklist">testing</a> and <a href="#deployment-checklist">deployment</a> checklists.</p>
+<p><strong>Estimated effort:</strong> 1–2 weeks MVP per vertical (schema + extension + search + dynamic forms); +1 week for heavy import/custom UI.</p>
+<hr>
+<h3 id="launch-checklist">Launch checklist</h3>
+<pre><code class="language-text">□ Discovery doc + schema draft
+□ plugins/&lt;id&gt;/ Maven module
+□ VerticalPlugin + schema JSON
+□ inventory_ext_&lt;id&gt; entity + repository
+□ Indexes (unique inventoryId + shopId compounds)
+□ InventoryValidator + SearchProvider
+□ Register plugin + enabledVerticals
+□ InventoryService wired for plugin resolution (no direct extension access from controllers or other modules)
+□ Cross-module calls use Service → Service or Adapter/Facade (not foreign Repository)
+□ If Maven cycle: adapter interface in consumer + *Impl in owner (see §3)
+□ GET /verticals + /shops/me/schema verified
+□ Integration tests (create, update, search)
+□ Frontend widget pack (if needed)
+□ Onboarding option added
+□ Staging smoke test
+□ Deploy backend + frontend
+□ Post-launch monitoring</code></pre>
+<hr>
+<pre><code class="language-text">
+
+---
+
+## 12. Example: Cafe / F&amp;B
+
+
+Many cafes and small restaurants operate differently from pharmacy-style **scan-sell per SKU**. They need:
+
+| Need | Typical behaviour |
+|------|-------------------|
+| **Menu-wise billing** | Cashier picks items from a **menu list** (chai, sandwich, thali), not barcode per potato |
+| **Order token** | After bill, print/display **token number** (e.g. `T-042`) for kitchen / customer pickup |
+| **Raw inventory** | Buy ingredients in **weight/volume** (potato **1 kg** @ ₹40, carrot **2 kg** @ ₹60), track what is left |
+| **Stock checks** | Owner counts stock **daily**, **weekly**, or **monthly** and compares to system |
+| **Money view** | How much **invested** in stock, how much **consumed**, **revenue**, **profit** |
+
+This fits the **same plugin model** as medical: core stays minimal; the **cafe plugin** owns vertical collections, validators, checkout hooks, and analytics enrichment.
+
+### What stays in core (unchanged)
+
+| Core entity | Cafe usage |
+|-------------|------------|
+| `Inventory` | One row per **ingredient SKU** (potato, carrot, milk, tea leaves) — `name`, `quantity`, `unitPrice` / cost, `shopId` |
+| `Order` / checkout | Standard order lines, payments, tax — line may reference `menuItemId` via plugin metadata |
+| `Purchase` | Stock-in when vendor delivers (updates qty and cost) |
+| `Accounting` | Revenue, COGS, profit from ledger — same path as other verticals |
+
+Core does **not** gain `menuCategory`, `recipeLines`, or `tokenNumber` columns on `Inventory`.
+
+### What the cafe plugin owns
+</code></pre>
+<p>plugins/cafe/ ├── schema/cafe-v1.json ├── CafePlugin.java ├── inventory_ext_cafe          ← per-ingredient extension (UOM, pack size, reorder) ├── cafe_menu_items             ← sellable menu (not the same as raw inventory) ├── cafe_menu_recipes           ← BOM: menu item → ingredient lines + qty per serve ├── cafe_stock_count_sessions   ← daily / weekly / monthly physical counts ├── order_ext_cafe              ← token number, service mode (dine-in / takeaway) ├── CafeInventoryValidator ├── CafeSearchProvider          ← low stock, by ingredient type, reorder alerts ├── CafeCheckoutHandler         ← on paid order: deduct recipe from inventory ├── CafeStockCountService       ← variance vs system qty └── CafeAnalyticsContributor    ← invested, consumed, margin by period</p>
+<pre><code class="language-text">
+All collections are **shop-scoped** (`shopId` on every document and query). See [Multi-tenant shop isolation](#multi-tenant-shop-isolation).
+
+### Conceptual model
+</code></pre>
+<p>┌─────────────────┐     ┌──────────────────┐     ┌─────────────────────────┐ │ cafe_menu_items │────▶│ cafe_menu_recipes │────▶│ inventory (+ ext_cafe)  │ │ (sellable)      │     │ (BOM per serve)   │     │ (raw: potato, carrot…)  │ └────────┬────────┘     └──────────────────┘     └─────────────────────────┘          │          ▼ ┌─────────────────┐     ┌──────────────────┐ │ Order / checkout│────▶│ order_ext_cafe    │ │ (core)          │     │ tokenNo, counter  │ └─────────────────┘     └──────────────────┘</p>
+<pre><code class="language-text">
+- **Menu item** = what appears on the bill (price, category, VAT).
+- **Recipe** = how much of each **inventoryId** is consumed per 1 serve (e.g. 150 g potato, 50 g carrot for one plate).
+- **Ingredient** = core `Inventory` row + `inventory_ext_cafe` for UOM and purchase pack metadata.
+
+### Registering raw ingredients (inventory + extension)
+
+Example: potato purchased as **1 kg** at **₹40**.
+
+**Core `Inventory`:**
+</code></pre>
+<p>name: &quot;Potato&quot; quantity: 1.0          // current on-hand in canonical unit unit: &quot;kg&quot;             // or map via schema; core may use qty + price fields shop already has purchasePrice / cost: 40 shopId: &lt;authenticated&gt;</p>
+<pre><code class="language-text">
+**`inventory_ext_cafe`:**
+</code></pre>
+<p>{   &quot;inventoryId&quot;: &quot;&lt;core id&gt;&quot;,   &quot;shopId&quot;: &quot;&lt;shop&gt;&quot;,   &quot;ingredientType&quot;: &quot;vegetable&quot;,   &quot;unitOfMeasure&quot;: &quot;kg&quot;,   &quot;packSize&quot;: 1,   &quot;packUnit&quot;: &quot;kg&quot;,   &quot;lastPurchaseRate&quot;: 40,   &quot;reorderLevel&quot;: 0.5,   &quot;supplier&quot;: &quot;Local mandi&quot; }</p>
+<pre><code class="language-text">
+Carrot **2 kg** @ **₹60** is a separate inventory row with its own extension doc. Purchases **add** to `quantity`; sales and recipe deduction **subtract**.
+
+Flat API (`InventoryView`) merges core + extension the same way as medical.
+
+### Menu list-wise billing
+
+UI flow (frontend driven by `GET /shops/me/schema` + cafe-specific **menu API** from plugin):
+</code></pre>
+<ol>
+<li>Load menu categories + items (cafe_menu_items for shopId)</li>
+<li>Cashier taps line items → cart lines reference menuItemId + qty + price snapshot</li>
+<li>POST checkout (core) with lines:</li>
+</ol>
+<p>     { menuItemId, quantity, unitPrice, lineTotal, … }</p>
+<ol>
+<li>CafeCheckoutHandler (plugin):</li>
+</ol>
+<p>     - Resolve recipes for each menuItemId × qty      - Validate sufficient ingredient stock (or warn / block per shop setting)      - On payment success: deduct ingredient quantities (atomic per shop)      - Assign token in order_ext_cafe</p>
+<ol>
+<li>Response: merged receipt + tokenNo (flat DTO for UI/print)</li>
+</ol>
+<pre><code class="language-text">
+**Core order lines** can carry `inventoryId: null` and `externalRef: { type: &quot;menuItem&quot;, id: &quot;…&quot; }` if core already supports opaque line refs; otherwise plugin stores menu line detail in `order_ext_cafe.lineItems` and core stores totals only — pick one pattern in implementation and keep controllers thin; checkout calls **`InventoryService`** for display fields.
+
+### Order token
+
+After checkout, kitchen/customer needs a **token**, not an ingredient SKU.
+
+**`order_ext_cafe` (1:1 with core order id):**
+</code></pre>
+<p>{   &quot;orderId&quot;: &quot;&lt;core order id&gt;&quot;,   &quot;shopId&quot;: &quot;&lt;shop&gt;&quot;,   &quot;tokenNo&quot;: &quot;T-042&quot;,   &quot;tokenSequence&quot;: 42,   &quot;serviceMode&quot;: &quot;dine-in&quot;,   &quot;counterId&quot;: &quot;main&quot;,   &quot;printedAt&quot;: &quot;2026-06-02T10:15:00Z&quot; }</p>
+<pre><code class="language-text">
+- Token sequence: plugin maintains `(shopId, counterId, day) → next number` (indexed, transactional).
+- Search/list “open tokens” for kitchen display: `CafeSearchProvider` or dedicated `GET /cafe/tokens?status=open` in plugin module — still filtered by `shopId`.
+
+### Periodic stock checks (daily / weekly / monthly)
+
+Owners physically count what is left and reconcile with the system.
+
+**`cafe_stock_count_sessions`:**
+</code></pre>
+<p>{   &quot;shopId&quot;: &quot;&lt;shop&gt;&quot;,   &quot;sessionId&quot;: &quot;…&quot;,   &quot;cadence&quot;: &quot;weekly&quot;,   &quot;periodStart&quot;: &quot;2026-05-26&quot;,   &quot;periodEnd&quot;: &quot;2026-06-02&quot;,   &quot;status&quot;: &quot;DRAFT | SUBMITTED | CLOSED&quot;,   &quot;lines&quot;: [     {       &quot;inventoryId&quot;: &quot;…&quot;,       &quot;systemQty&quot;: 1.2,       &quot;countedQty&quot;: 1.0,       &quot;unitOfMeasure&quot;: &quot;kg&quot;,       &quot;variance&quot;: -0.2,       &quot;varianceValue&quot;: -8.0     }   ],   &quot;createdBy&quot;: &quot;userId&quot;,   &quot;submittedAt&quot;: &quot;…&quot; }</p>
+<pre><code class="language-text">
+| Cadence | Typical use |
+|---------|-------------|
+| **Daily** | High-volume perishables (milk, bread) |
+| **Weekly** | Vegetables, oils, staples |
+| **Monthly** | Dry goods, cleaning supplies, audit |
+
+On **submit**, plugin may:
+
+1. Record variance report (no auto-adjust) — owner reviews; or  
+2. **Adjust** core `Inventory.quantity` to `countedQty` with audit reason `STOCK_COUNT` (shop setting).
+
+Indexes: `(shopId, status)`, `(shopId, cadence, periodEnd)`.
+
+### Investment, consumption, profit (analytics)
+
+Uses [Analytics across verticals](#analytics-across-verticals): **core facts** + **cafe plugin enrichment**.
+
+| Metric | Source | Notes |
+|--------|--------|--------|
+| **Revenue** | Core checkout / ledger | Menu line totals |
+| **COGS (consumption cost)** | Recipe deduction × `lastPurchaseRate` or weighted avg cost | Plugin computes per period from deduction events |
+| **Gross profit** | Revenue − COGS | Core P&amp;amp;L + cafe contributor |
+| **Stock investment (on hand)** | Σ `quantity × unit cost` for ingredient inventory | Snapshot report; extension for reorder |
+| **Purchases in period** | Core `Purchase` | Money spent buying stock |
+| **Waste / variance** | Stock count sessions | `varianceValue` summed |
+
+**`CafeAnalyticsContributor`** (optional extension point):
+</code></pre>
+<p>GET /analytics/cafe/summary?period=week|month&amp;from=&amp;to=</p>
+<p>Returns:   revenue, cogs, grossProfit,   purchaseSpend,   stockValueOnHand,   topMenuItems,   lowStockIngredients,   stockCountVarianceTotal</p>
+<pre><code class="language-text">
+Implementation: Pattern A (batch-load `inventory_ext_cafe` for ids in purchase/sales facts) until volume warrants Pattern B projection (`inventory_analytics_dims` with `dim_ingredientType`, `dim_cadence`).
+
+### Search and dashboards (plugin)
+
+| User question | Provider |
+|---------------|----------|
+| “What is left of potato?” | Core qty + `GET /inventory/{id}` merged view |
+| “All vegetables below reorder” | `CafeSearchProvider`: `{ shopId, ingredientType, qtyBelow: reorderLevel }` |
+| “Items to count this week” | Sessions API + filter cadence |
+| “How much did we make this month?” | Cafe analytics summary |
+
+Indexes on `inventory_ext_cafe`: `(shopId, ingredientType)`, `(shopId, reorderLevel)`; recipe lookups `(shopId, menuItemId)`.
+
+### Runtime flow (cafe bill + token)
+</code></pre>
+<p>POST /checkout  { lines: [{ menuItemId, qty }, …] }</p>
+<p>→ Core checkout creates Order + payment → CafeCheckoutHandler.afterPayment(order):      load recipes → sum ingredient deductions per inventoryId      validate stock (shopId-scoped)      decrement Inventory.quantity (core) in transaction      insert order_ext_cafe { tokenNo, … } → Return { orderId, tokenNo, lines, totals }</p>
+<pre><code class="language-text"></code></pre>
+<p>POST /cafe/stock-count-sessions  { cadence, lines: [{ inventoryId, countedQty }] }</p>
+<p>→ CafeStockCountService → compare to systemQty (InventoryService.getMergedView) → save session; optional adjust on submit</p>
+<pre><code class="language-text">
+### Schema sketch (`cafe-v1.json`)
+</code></pre>
+<p>{   &quot;verticalId&quot;: &quot;cafe&quot;,   &quot;version&quot;: &quot;1.0.0&quot;,   &quot;entities&quot;: {     &quot;inventory&quot;: {       &quot;fields&quot;: [         { &quot;key&quot;: &quot;ingredientType&quot;, &quot;type&quot;: &quot;enum&quot;, &quot;values&quot;: [&quot;vegetable&quot;,&quot;dairy&quot;,&quot;beverage&quot;,&quot;dry&quot;,&quot;other&quot;], &quot;storage&quot;: &quot;extension&quot;, &quot;indexed&quot;: true, &quot;showIn&quot;: [&quot;registration&quot;] },         { &quot;key&quot;: &quot;unitOfMeasure&quot;, &quot;type&quot;: &quot;enum&quot;, &quot;values&quot;: [&quot;kg&quot;,&quot;g&quot;,&quot;L&quot;,&quot;ml&quot;,&quot;piece&quot;], &quot;required&quot;: true, &quot;storage&quot;: &quot;extension&quot;, &quot;indexed&quot;: true },         { &quot;key&quot;: &quot;packSize&quot;, &quot;type&quot;: &quot;number&quot;, &quot;storage&quot;: &quot;extension&quot;, &quot;showIn&quot;: [&quot;registration&quot;] },         { &quot;key&quot;: &quot;packUnit&quot;, &quot;type&quot;: &quot;string&quot;, &quot;storage&quot;: &quot;extension&quot; },         { &quot;key&quot;: &quot;reorderLevel&quot;, &quot;type&quot;: &quot;number&quot;, &quot;storage&quot;: &quot;extension&quot;, &quot;indexed&quot;: true },         { &quot;key&quot;: &quot;lastPurchaseRate&quot;, &quot;type&quot;: &quot;money&quot;, &quot;storage&quot;: &quot;extension&quot;, &quot;showIn&quot;: [&quot;registration&quot;, &quot;reports&quot;] }       ]     },     &quot;menu&quot;: {       &quot;fields&quot;: [         { &quot;key&quot;: &quot;category&quot;, &quot;type&quot;: &quot;string&quot;, &quot;storage&quot;: &quot;menu_item&quot;, &quot;indexed&quot;: true },         { &quot;key&quot;: &quot;sellingPrice&quot;, &quot;type&quot;: &quot;money&quot;, &quot;required&quot;: true, &quot;storage&quot;: &quot;menu_item&quot; },         { &quot;key&quot;: &quot;available&quot;, &quot;type&quot;: &quot;boolean&quot;, &quot;storage&quot;: &quot;menu_item&quot; }       ]     }   },   &quot;workflows&quot;: {     &quot;billingMode&quot;: &quot;menu-list&quot;,     &quot;tokenEnabled&quot;: true,     &quot;stockCountCadences&quot;: [&quot;daily&quot;, &quot;weekly&quot;, &quot;monthly&quot;]   } }</p>
+<pre><code class="language-text">
+`menu` entity maps to plugin-owned `cafe_menu_items`, not core `Inventory`.
+
+### Comparison: medical vs cafe (same platform)
+
+| Aspect | Medical | Cafe / F&amp;B |
+|--------|---------|------------|
+| Primary sell UX | Scan SKU / batch | Menu list + token |
+| Extension focus | batch, expiry | UOM, pack, reorder |
+| Extra collections | Usually extension only | Menu, recipes, stock counts, order extension |
+| Stock deduction | Per unit sold at checkout | Per **recipe** when menu item sold |
+| Typical search | expiry, batch | low stock, ingredient type |
+| Compliance | schedule, expiry | food safety notes as optional extension field (`indexed: false`) |
+
+### Implementation phase suggestion
+
+| Phase | Cafe deliverable |
+|-------|------------------|
+| After Phase 3–4 (medical ext + search proven) | `inventory_ext_cafe` + ingredient registration |
+| Phase 5+ | Menu + recipes + menu checkout + token |
+| Phase 7 | Stock count sessions + cafe analytics summary |
+
+**Done when:** A cafe shop can register potato/carrot with kg and cost, sell from menu, receive a token, run a weekly stock count, and see weekly invested/consumed/profit — **without** new fields on core `Inventory` or `Order` entities beyond generic hooks.
+
+### Cafe-specific hard problems
+
+| Problem | Mitigation |
+|---------|------------|
+| Recipe cost stale after purchase price change | Weighted average cost in core or `lastPurchaseRate` refresh on purchase; schema flag for costing method |
+| Concurrent orders deplete same ingredient | Transactional decrement per `inventoryId`; optimistic lock or atomic `$inc` on quantity |
+| Menu price change mid-day | Snapshot `unitPrice` on order line at checkout |
+| Over-selling when stock not deducted until payment | Deduct on payment only; optional soft reserve (later) |
+| Unit mismatch (buy kg, recipe uses g) | Canonical unit in core; plugin normalizes in recipe lines |
+
+---
+
+
+---
+
+# Reference
+
+*Detailed topics for implementers — read when building search, analytics, or ops.*
+
+
+## Reference — Search
+
+
+Search runs against **indexed top-level fields** on the vertical extension collection, not core `Inventory`.
+
+### Medical: near-expiry
+</code></pre>
+<p>Query:  products expiring within 30 days, qty &gt; 0 Collection: inventory_ext_medical Filter:   shopId + expiryDate range Index:    (shopId, expiryDate) Flow:     SearchProvider → inventoryIds → hydrate core rows</p>
+<pre><code class="language-text">
+### Apparel: find XL red shirts
+</code></pre>
+<p>Collection: inventory_ext_apparel Filter:   shopId + size=XL + color=red Index:    (shopId, size, color)</p>
+<pre><code class="language-text">
+### Sports: cricket equipment
+</code></pre>
+<p>Collection: inventory_ext_sports Filter:   shopId + sport=cricket Index:    (shopId, sport)</p>
+<pre><code class="language-text">
+### FEFO at billing (sell oldest batch first)
+</code></pre>
+<ol>
+<li>shopId + barcode (core inventory lookup)</li>
+<li>Multiple inventory rows OR batch lines</li>
+<li>SearchProvider / extension query: sort by expiryDate ASC</li>
+<li>Index: (shopId, barcode) on core + (shopId, expiryDate) on medical extension</li>
+</ol>
+<pre><code class="language-text">
+### Pagination
+
+- Cursor-based on indexed extension field + `inventoryId`
+- Default page size 50; never return unbounded result sets
+- Dashboard totals from **pre-aggregated buckets** (reminders/analytics), not full scans
+
+### Optional: read projections (Phase 7+)
+
+For very large shops, plugins may maintain thin materialized collections:
+</code></pre>
+<p>inventory_medical_expiry_index   shopId, inventoryId, expiryDate, qty, bucket</p>
+<pre><code class="language-text">
+Updated on write or by nightly job. Not required for MVP.
+
+---
+
+
+Search on vertical fields (e.g. `batchNo`, `expiryDate`, `warrantyMonths`, `serialNumber`) **never** scans core `inventory` JSON. It runs on the **vertical extension collection** via the plugin `SearchProvider`.
+
+### Request contract (stable)
+</code></pre>
+<p>GET /api/v1/inventory/search   ?shopId=...                    (from auth)   &amp;filters[batchNo]=B001   &amp;filters[expiryBefore]=2026-06-30   &amp;filters[warrantyMonths]=24   &amp;filters[size]=XL   &amp;sort=expiryDate:asc   &amp;cursor=...   &amp;limit=50</p>
+<pre><code class="language-text">
+- Filter keys must match **schema** `searchable: true` fields for the shop’s vertical.
+- Core validates pagination; plugin validates filter keys against schema.
+
+### Resolution flow
+</code></pre>
+<ol>
+<li>Auth → shopId</li>
+<li>Load Shop → verticalId (e.g. medical)</li>
+<li>PluginRegistry → MedicalPlugin</li>
+<li>MedicalSearchProvider.search(shopId, filters, sort, cursor, limit)</li>
+</ol>
+<p>     → query inventory_ext_medical with compound index      → returns SearchResult { inventoryIds[], nextCursor, totalEstimate? }</p>
+<ol>
+<li>InventoryService batch-hydrates:</li>
+</ol>
+<p>     → inventory.findAllByIdIn(shopId, inventoryIds)     // core batch      → medicalRepo.findByInventoryIdIn(shopId, ids)    // extension batch</p>
+<ol>
+<li>AbstractVerticalPlugin.mergeIntoView per row</li>
+<li>Return Page&lt;InventoryViewResponse&gt;</li>
+</ol>
+<pre><code class="language-text">
+### Index requirements (per vertical)
+
+Declare in schema; plugin migration runner creates indexes on boot:
+
+| Vertical | Example filter | Index |
+|----------|----------------|-------|
+| Medical | `batchNo` | `(shopId, batchNo)` |
+| Medical | `expiryDate` range | `(shopId, expiryDate)` |
+| Electronics | `serialNumber` | `(shopId, serialNumber)` unique if business requires |
+| Apparel | `size`, `color` | `(shopId, size, color)` |
+
+### Special search (override `SearchProvider`)
+
+| Case | Why override |
+|------|----------------|
+| FEFO (sell oldest expiry first) | Sort policy + multiple rows per barcode |
+| Near-expiry dashboard | May use pre-aggregated bucket collection |
+| Serial number global uniqueness | Join `serial_registry` side collection |
+| Full-text on product name | Search core `inventory.name` first, then filter extensions |
+
+**Hybrid search (name + vertical field):**
+</code></pre>
+<p>Step A: If filters contain core fields (name, barcode)         → query inventory (shopId + text index) → candidate inventoryIds Step B: Intersect with extension query on inventory_ext_&lt;vertical&gt; Step C: Hydrate merged page</p>
+<pre><code class="language-text">
+Document supported filter combinations in schema (`searchGroups: [&quot;core&quot;, &quot;extension&quot;]`).
+
+### Invalid filters
+
+- Filter key not in schema → `400` with `supportedFilters[]` from `GET /shops/me/schema`.
+- Filter on another vertical’s field (e.g. `size` on medical shop) → rejected.
+
+---
+
+
+“Mixed response” means: **core row + extension row + pricing transients + optional partial failure** assembled into one API object.
+
+### Merge pipeline (read/search)
+</code></pre>
+<p>For each inventoryId in result set:   coreRow      = inventoryRepo.findById(shopId, id)           // O(1) per id with index on _id   extensionRow = verticalRepo.findByInventoryId(shopId, id)  // O(1) per id, unique inventoryId   pricing      = pricingFacade.enrich(coreRow)                 // existing AOP/cache   view         = merge(coreRow, extensionRow, schema)</p>
+<pre><code class="language-text">
+**List/search:** always **batch** load:
+</code></pre>
+<p>ids = searchProvider returns [id1..idN]   // N = page size (e.g. 50) coreRows = inventoryRepo.findByShopIdAndIdIn(shopId, ids)      // 1 query extRows  = verticalRepo.findByInventoryIdIn(shopId, ids)       // 1 query Map merge by inventoryId</p>
+<pre><code class="language-text">
+Never loop per row with separate DB calls (avoids N+1).
+
+### Partial / inconsistent data
+
+| State | `extensionStatus` | UI |
+|-------|-------------------|-----|
+| Core + extension present | `OK` | Normal |
+| Core exists, extension missing (migration lag) | `PARTIAL` | Show core; banner on detail |
+| Extension exists, core missing | — | Should not happen; log + skip row |
+| Dual-write phase | `PARTIAL` possible | Prefer extension; fallback legacy core fields |
+
+### Search time complexity
+
+Assume **shop-scoped** queries and proper indexes.
+
+| Phase | Operation | Complexity | Notes |
+|-------|-----------|------------|-------|
+| 1 | Extension search (indexed filters) | **O(log n + k)** | n = extension docs for shop; k = page size; Mongo index range/ equality |
+| 2 | Batch load core by ids | **O(k)** | k lookups or one `$in` query |
+| 3 | Batch load extensions by ids | **O(k)** | one `$in` on `inventoryId` |
+| 4 | Merge in memory | **O(k)** | k = page size (bounded) |
+| **Per request** | | **O(log n + k)** | Dominant term is indexed extension query |
+
+**Not O(n)** over full inventory if indexes exist and `shopId` is always in the query predicate.
+
+### Worst cases to avoid
+
+| Anti-pattern | Complexity | Fix |
+|--------------|------------|-----|
+| Full collection scan on `inventory_ext_medical` | O(n) | Compound indexes on `(shopId, filterField)` |
+| Load all inventory then filter in app | O(n) | Push filters to Mongo in SearchProvider |
+| Per-row hydrate in loop | O(k) queries × 2 | Batch `findByInventoryIdIn` |
+| Sort on unindexed field | O(n log n) scan | Mark `sortable: true` only with index |
+| Join across all vertical collections | O(verticals × n) | One vertical per shop — only one extension collection active |
+
+### Cursor pagination
+
+Extension search returns `nextCursor` (e.g. base64 of `expiryDate|inventoryId`). Keeps page size bounded and avoids large skip offsets (`skip` gets slow on deep pages).
+
+---
+
+
+Medical and grocery both need `expiryDate`. **Do not** move expiry back to core.
+
+**Recommended (Option A):** same field semantics, **separate extension collections**
+
+- Medical shop → `inventory_ext_medical.expiryDate`
+- Grocery shop → `inventory_ext_grocery.expiryDate`
+
+Each plugin owns its indexes. A shop has only one vertical, so there is no duplication on a single row.
+
+**Option B (later, if needed):** optional core `InventoryLot` entity for universal FEFO/batch traceability, with vertical extensions adding industry-specific fields. Extract only when duplication becomes painful.
+
+---
+
+
+Vertical-specific shop fields use the same pattern:
+</code></pre>
+<p>shop_ext_medical   shopId (unique), dlNo, …</p>
+<p>shop_ext_jewelry   shopId (unique), …</p>
+<pre><code class="language-text">
+Validated via `ShopValidator` at onboarding. Core `Shop` stays minimal.
+
+---
+
+
+## Reference — Analytics
+
+
+Analytics must work when facts live in **core** (sales, purchases) and dimensions live in **extension** (batch, size, sport, warranty).
+
+### Two-layer model
+
+| Layer | Data source | Examples |
+|-------|-------------|----------|
+| **Core analytics** | Purchases, checkout lines, ledger, core inventory | Revenue, profit, margin, tax, top products by name/id, low stock |
+| **Vertical analytics** | Extension collection + optional projections | Profit by expiry bucket, sales by size/color, warranty exposure |
+
+**All shops get core analytics automatically** (same checkout/accounting path).
+
+### How vertical dimensions attach
+
+**Pattern A — Dimension resolver (default)**
+</code></pre>
+<ol>
+<li>Query core facts for (shopId, dateRange)</li>
+</ol>
+<p>     → purchase lines: inventoryId, amount, qty, …</p>
+<ol>
+<li>Batch load extension rows for inventoryIds in result set</li>
+<li>Attach dimension values (expiryDate, size, sport, …)</li>
+<li>Aggregate in service (group by bucket / field)</li>
+</ol>
+<pre><code class="language-text">
+- **Complexity:** O(f + k) per page of facts; batch extension load O(k).
+- Good until high volume; use pagination on fact queries.
+
+**Pattern B — Analytics projection (scale)**
+
+On inventory write/update, plugin or capability hook upserts:
+</code></pre>
+<p>inventory_analytics_dims   shopId, inventoryId, verticalId,   dim_expiryBucket, dim_size, dim_sport, …   updatedAt</p>
+<pre><code class="language-text">
+Dashboard queries hit projection only — no join at report time.
+
+| Scale | Approach |
+|-------|----------|
+| &amp;lt; 100k lines / shop | Pattern A |
+| 100k+ / heavy dashboards | Pattern B + nightly reconciliation job |
+
+### API shape
+</code></pre>
+<p>GET /api/v1/analytics/sales?groupBy=day|product|verticalDimension:expiryBucket</p>
+<pre><code class="language-text">
+Runtime:
+
+- `groupBy=product` → core only
+- `groupBy=verticalDimension:size` → core facts + apparel extension resolver
+- Unsupported dimension → 400 + list from schema `reportable: true`
+
+### Plugin role in analytics
+
+| Component | Owner |
+|-----------|--------|
+| `ProfitAnalyticsService` / other analytics services | Aggregations on purchases, P&amp;amp;L (own repos OK) |
+| **`InventoryService`** | Vertical dimension enrichment when analytics needs extension fields — analytics calls **service**, not `InventoryRepository` |
+| `AnalyticsDimensionContributor` (via plugin) | Maps `inventoryId` → dimension map; invoked from `InventoryService` |
+| Vertical plugin | Implements contributor using `inventory_ext_&lt;vertical&gt;` |
+| Pre-aggregate jobs | Medical near-expiry buckets, etc. |
+
+Plugins do **not** own checkout totals — only **enrichment** and **vertical-specific reports**.
+
+### Cross-vertical admin view
+
+Platform admin grouping by `shop.verticalId` uses core data only. Per-shop drill-down uses that shop’s plugin contributor.
+
+---
+
+
+## Reference — Operations and checklists
+
+
+| Active lines / shop | Approach |
+|---------------------|----------|
+| &lt; 50k | Extension indexes + shop-scoped queries + pagination |
+| 50k – 500k | Batch hydration, partial indexes, archive old stock |
+| 500k+ | Read projections + bucket aggregates for dashboards |
+| Exports | Async jobs reading extension indexes in batches |
+
+### Avoid N+1
+
+Always batch-load extensions for list/search:
+</code></pre>
+<p>findByInventoryIdIn(shopId, ids)   // one query per page, not per row</p>
+<pre><code class="language-text">
+### Archive
+
+Move zero-qty / long-expired rows to `status: ARCHIVED` or cold collection so hot indexes stay small.
+
+---
+
+
+### Per vertical
+
+- [ ] Shop registration sets `verticalId` + `pluginVersion`
+- [ ] Schema API correct
+- [ ] Create — required extension fields enforced
+- [ ] Create — invalid data rejected
+- [ ] Update — validators run on extension
+- [ ] Search on indexed extension fields — correct, fast
+- [ ] List — batch hydration, no N+1
+- [ ] Dual-write / read facade (during migration)
+- [ ] M4 segregation script verification for medical shops (sample + reconciliation)
+- [ ] Shop isolation: Shop A cannot access Shop B inventory by id
+- [ ] Checkout + `CheckoutGuard` if configured
+- [ ] Import mapper if configured
+- [ ] Other verticals — regression smoke
+
+### Plugin engine
+
+- [ ] Unknown `verticalId` → clear error
+- [ ] Disabled vertical hidden from onboarding
+- [ ] Multiple plugins on classpath — correct resolution
+
+---
+
+
+- [ ] Plugin JAR on classpath (`app` rebuild)
+- [ ] Extension collection indexes created (check boot logs)
+- [ ] `enabledVerticals` config updated
+- [ ] Frontend vertical pack deployed (if any)
+- [ ] Onboarding shows new vertical
+- [ ] Staging smoke test with new vertical shop
+- [ ] Rollback plan documented
+
+---
+
+
+### Today (recommended starting point): modular monolith
+
+StockKart today is a **Maven multi-module monolith** (`app` JAR, `core/*`, `plugins/*`, `pluginengine`).
+</code></pre>
+<p>┌─────────────────────────────────────────────┐ │            inventory-api (single deploy)     │ │  app + core/product + core/user + …          │ │  + pluginengine + plugins/medical + …        │ │              ↓                               │ │           MongoDB                            │ └─────────────────────────────────────────────┘          ↑    inventory-platform (Nx frontend)</p>
+<pre><code class="language-text">
+| Aspect | Behavior |
+|--------|----------|
+| Plugin discovery | Spring classpath / `PluginRegistry` at startup |
+| Product service + plugins | In-process calls (no network) |
+| Transactions | Single MongoDB transaction across `inventory` + `inventory_ext_medical` |
+| Latency | Lowest — no inter-service RPC |
+
+**This is the right default** until team scale or independent scaling requirements force a split.
+
+### Future: microservices (if ever needed)
+
+Possible split — **not required for v4**:
+</code></pre>
+<p>inventory-service     ← core inventory CRUD + InventoryService plugin coordination checkout-service      ← cart, purchases (unchanged contract) analytics-service     ← reads events + projections; calls inventory-service for dimensions plugin-medical-svc    ← only if plugins must scale independently (unusual)</p>
+<pre><code class="language-text">
+Challenges with plugins as separate microservices:
+
+| Problem | Mitigation |
+|---------|------------|
+| No single Mongo transaction across core + extension | Saga / outbox pattern; eventual consistency |
+| Search needs two data stores | `inventory-service` owns merged inventory API; extension stays with plugin |
+| Plugin versioning | API versioning per plugin service |
+| Latency | Batch internal gRPC; cache schema per shop |
+
+**Recommendation:** Keep **vertical plugins as libraries inside inventory-api**, not separate deployables, until clear organizational or scaling boundaries exist.
+
+### Event-driven complement (works in monolith too)
+</code></pre>
+<p>InventoryService (after commit)   → publish InventoryUpdatedEvent   → reminders, analytics projection, search index (async)</p>
+<pre><code class="language-text">
+Decouples heavy work without splitting the deployable.
+
+---
+
+
+- Each shop stores `pluginVersion` (e.g. `1.0.0`)
+- Plugin ships `schema/&lt;verticalId&gt;-v1.json`, `-v1.1.json`, …
+- Engine loads schema matching pinned version
+
+**Upgrade flow:**
+
+1. Deploy plugin v1.1 (backward compatible)
+2. New shops → v1.1
+3. Existing shops stay on v1.0 until admin upgrade
+4. Upgrade job: validate data, backfill optional fields, bump `pluginVersion`, add new indexes
+
+Avoid breaking changes in minor versions. If unavoidable: new `verticalId` suffix or explicit migration tool.
+
+---
+
+
+**Default:** vertical is **immutable** after shop creation.
+
+If ever required (medical → grocery):
+
+1. Admin-only + confirmation
+2. Export inventory snapshot (core + extension)
+3. Field mapping script or manual review
+4. Unmapped data → archived or dropped from new extension docs
+5. Delete old extension docs; create new extension docs
+6. Update `verticalId`, `pluginVersion`
+
+Treat as a **data migration project**, not a settings toggle.
+
+---
+
+
+### Principles
+
+- Frontend never knows collection names (`inventory_ext_medical`).
+- One API type: `InventoryView` (core + optional vertical keys).
+- Schema drives columns, filters, and form fields.
+
+### Read
+</code></pre>
+<p>GET /inventory/{id} → InventoryView</p>
+<pre><code class="language-text">
+Access: `getField(item, schemaKey)` — missing keys render as `—`, do not throw.
+
+### Search
+</code></pre>
+<p>GET /inventory/search?filters[batchNo]=...&amp;cursor=...</p>
+<pre><code class="language-text">
+- Build filter UI only from schema `searchable: true`.
+- Debounce + `AbortController` for stale responses.
+- Same `InventoryView[]` shape as list endpoints.
+
+### Caching
+
+| Data | Cache key |
+|------|-----------|
+| Schema | `verticalId + pluginVersion` |
+| Search results | Short-lived; invalidate on inventory write |
+
+See [Ownership model (write/read/search)](#ownership-model-writereadsearch) for backend split.
+
+---
+
+
+## Reference — Edge cases and anti-patterns
+
+
+| Do NOT | Do instead |
+|--------|------------|
+| Put every vertical field on core `Inventory` | Extension collection per vertical |
+| Put filterable fields on extension without `(shopId, field)` index | `indexed: true` + compound index |
+| Query `inventory_ext_medical` from non-product services | `InventoryService` + plugin `SearchProvider` |
+| N+1 extension load on lists | Batch `findByInventoryIdIn` |
+| `if (vertical == medical)` in core | Plugin hook |
+| One plugin per shop | One plugin per **industry** |
+| Separate checkout flow per vertical | `CheckoutGuard` only |
+| Read schema from classpath JSON at runtime | Load from **`vertical_schemas`** via `SchemaLoader` |
+| Hardcoded forms per vertical | Schema-driven renderer from DB schema |
+| Change vertical without migration | Block or admin migration tool |
+| Cross-module repo access | Owning **Service** or **Adapter/Facade** (`InventoryService`, `AccountingFacade`, `InventoryAdapter`) |
+| Module A ↔ B circular Maven dep | **Adapter interface** in consumer, `*Impl` in owner — do not add mutual module dependencies |
+| Leak collection names to frontend | Merged API DTO |
+
+---
+
+
+| Strategy | Best for | Weakness |
+|----------|----------|----------|
+| **A. Promoted columns on `Inventory`** | 1–2 verticals, short MVP | God table at 10+ verticals; core churn |
+| **B. Extension collection per vertical (v3/v4)** | 5–20+ verticals, long-term | Join on read; `InventoryService` coordinates |
+| **C. Single generic extension + dynamic indexes** | Theoretical flexibility | Mongo indexes don&#x27;t fit 20 different shapes well |
+| **D. OpenSearch for everything** | Huge scale, complex facets | Extra infra; extension remains source of truth |
+
+**StockKart v4 standard: B**, with optional read projections at scale (Phase 7).
+
+---
+
+
+### 1. Delete inventory
+
+Order: delete extension first or core first inside transaction; prefer **delete both in one transaction**. Plugin registers `onInventoryDelete` if side collections (`serial_registry`) exist.
+
+### 2. Duplicate `batchNo` across products
+
+Business rule belongs in **MedicalInventoryValidator**, not core. May require compound unique index `(shopId, batchNo, inventoryId)` not global unique on batch alone.
+
+### 3. Search by core + extension together
+
+Example: “name contains Paracetamol AND expiry &amp;lt; 30 days”.
+
+- Resolve name on `inventory` (text index).
+- Intersect ids with extension expiry query.
+- **Complexity:** O(log n₁ + log n₂ + k) with indexes; avoid loading all ids into memory — use `$lookup` only if intersection sets are small or use aggregation pipeline in SearchProvider override.
+
+### 4. Legacy rows during migration
+
+Dual-read: if extension missing, map legacy core `batchNo`/`expiryDate` into `verticalFields` in merge step; set `extensionStatus: PARTIAL`.
+
+### 5. Plugin version upgrade
+
+Shop pinned to `pluginVersion`. Schema v1.1 adds field → backfill job; old clients ignore unknown keys. Search indexes added in migration before enabling new filter.
+
+### 6. Warranty / serial as both field and registry
+
+`warrantyMonths` in extension; **serial uniqueness** may need `electronics_serial_registry` collection maintained by electronics plugin on write — SearchProvider joins registry for “is serial already sold”.
+
+### 7. Bulk import 10k rows
+
+Batch insert core rows → batch insert extensions → bulk index refresh. Async job with progress; do not call `InventoryService.create()` 10k times synchronously in one HTTP request.
+
+### 8. Cart / checkout still use inventory id
+
+Checkout lines reference `inventoryId` only. Vertical fields for display loaded via **`InventoryService.getMergedView()`** — no separate cart schema per vertical.
+
+### 9. Reporting export 100k rows
+
+Async export job: cursor through extension search, stream CSV, no full in-memory list.
+
+### 10. Security / multi-tenant
+
+See [Multi-tenant shop isolation](#multi-tenant-shop-isolation). Every query predicate includes `shopId`; extension repositories must not expose lookups without `shopId`.
+
+---
+
+
+## Reference — Example schemas (JSON)
+
+**Note:** Examples below are the **document shape** stored inside `vertical_schemas.schema` in MongoDB. Seed with these payloads; runtime does not read files from the plugin JAR.
+
+### Medical
+</code></pre>
+<p>{   &quot;verticalId&quot;: &quot;medical&quot;,   &quot;version&quot;: &quot;1.0.0&quot;,   &quot;entities&quot;: {     &quot;inventory&quot;: {       &quot;fields&quot;: [         { &quot;key&quot;: &quot;name&quot;, &quot;type&quot;: &quot;string&quot;, &quot;required&quot;: true, &quot;storage&quot;: &quot;core&quot;, &quot;showIn&quot;: [&quot;registration&quot;, &quot;scan-sell&quot;] },         { &quot;key&quot;: &quot;batchNo&quot;, &quot;type&quot;: &quot;string&quot;, &quot;required&quot;: true, &quot;storage&quot;: &quot;extension&quot;, &quot;indexed&quot;: true, &quot;showIn&quot;: [&quot;registration&quot;, &quot;scan-sell&quot;, &quot;invoice&quot;] },         { &quot;key&quot;: &quot;expiryDate&quot;, &quot;type&quot;: &quot;date&quot;, &quot;required&quot;: true, &quot;storage&quot;: &quot;extension&quot;, &quot;indexed&quot;: true, &quot;sortable&quot;: true, &quot;showIn&quot;: [&quot;registration&quot;, &quot;scan-sell&quot;, &quot;reports&quot;] },         { &quot;key&quot;: &quot;manufacturer&quot;, &quot;type&quot;: &quot;string&quot;, &quot;storage&quot;: &quot;extension&quot;, &quot;indexed&quot;: true, &quot;showIn&quot;: [&quot;registration&quot;] },         { &quot;key&quot;: &quot;schedule&quot;, &quot;type&quot;: &quot;string&quot;, &quot;storage&quot;: &quot;extension&quot;, &quot;showIn&quot;: [&quot;registration&quot;, &quot;invoice&quot;] },         { &quot;key&quot;: &quot;storageTemp&quot;, &quot;type&quot;: &quot;string&quot;, &quot;storage&quot;: &quot;extension&quot;, &quot;indexed&quot;: false, &quot;showIn&quot;: [&quot;registration&quot;] }       ]     },     &quot;shop&quot;: {       &quot;fields&quot;: [         { &quot;key&quot;: &quot;dlNo&quot;, &quot;type&quot;: &quot;string&quot;, &quot;required&quot;: true, &quot;storage&quot;: &quot;extension&quot;, &quot;showIn&quot;: [&quot;onboarding&quot;] }       ]     }   } }</p>
+<pre><code class="language-text">
+**Collection:** `inventory_ext_medical`  
+**Indexes:** `(shopId, expiryDate)`, `(shopId, batchNo)`, unique `(inventoryId)`
+
+---
+
+### Apparel
+</code></pre>
+<p>{   &quot;verticalId&quot;: &quot;apparel&quot;,   &quot;version&quot;: &quot;1.0.0&quot;,   &quot;entities&quot;: {     &quot;inventory&quot;: {       &quot;fields&quot;: [         { &quot;key&quot;: &quot;size&quot;, &quot;type&quot;: &quot;enum&quot;, &quot;values&quot;: [&quot;XS&quot;,&quot;S&quot;,&quot;M&quot;,&quot;L&quot;,&quot;XL&quot;,&quot;XXL&quot;], &quot;required&quot;: true, &quot;storage&quot;: &quot;extension&quot;, &quot;indexed&quot;: true, &quot;showIn&quot;: [&quot;registration&quot;, &quot;scan-sell&quot;] },         { &quot;key&quot;: &quot;color&quot;, &quot;type&quot;: &quot;string&quot;, &quot;required&quot;: true, &quot;storage&quot;: &quot;extension&quot;, &quot;indexed&quot;: true, &quot;showIn&quot;: [&quot;registration&quot;, &quot;scan-sell&quot;] },         { &quot;key&quot;: &quot;brand&quot;, &quot;type&quot;: &quot;string&quot;, &quot;storage&quot;: &quot;extension&quot;, &quot;indexed&quot;: true },         { &quot;key&quot;: &quot;style&quot;, &quot;type&quot;: &quot;string&quot;, &quot;storage&quot;: &quot;extension&quot;, &quot;indexed&quot;: true },         { &quot;key&quot;: &quot;season&quot;, &quot;type&quot;: &quot;string&quot;, &quot;storage&quot;: &quot;extension&quot;, &quot;indexed&quot;: false, &quot;showIn&quot;: [&quot;registration&quot;] }       ]     }   } }</p>
+<pre><code class="language-text">
+**Collection:** `inventory_ext_apparel`  
+**Indexes:** `(shopId, size)`, `(shopId, color)`, `(shopId, brand)`
+
+---
+
+### Sports
+</code></pre>
+<p>{   &quot;verticalId&quot;: &quot;sports&quot;,   &quot;version&quot;: &quot;1.0.0&quot;,   &quot;entities&quot;: {     &quot;inventory&quot;: {       &quot;fields&quot;: [         { &quot;key&quot;: &quot;sport&quot;, &quot;type&quot;: &quot;enum&quot;, &quot;values&quot;: [&quot;cricket&quot;,&quot;football&quot;,&quot;gym&quot;,&quot;tennis&quot;], &quot;required&quot;: true, &quot;storage&quot;: &quot;extension&quot;, &quot;indexed&quot;: true },         { &quot;key&quot;: &quot;brand&quot;, &quot;type&quot;: &quot;string&quot;, &quot;required&quot;: true, &quot;storage&quot;: &quot;extension&quot;, &quot;indexed&quot;: true },         { &quot;key&quot;: &quot;model&quot;, &quot;type&quot;: &quot;string&quot;, &quot;required&quot;: true, &quot;storage&quot;: &quot;extension&quot;, &quot;indexed&quot;: true },         { &quot;key&quot;: &quot;warrantyMonths&quot;, &quot;type&quot;: &quot;number&quot;, &quot;storage&quot;: &quot;extension&quot;, &quot;indexed&quot;: false, &quot;showIn&quot;: [&quot;registration&quot;] }       ]     }   } }</p>
+<pre><code class="language-text">
+**Collection:** `inventory_ext_sports`
+
+---
+
+### Jewelry (new vertical example)
+</code></pre>
+<p>{   &quot;verticalId&quot;: &quot;jewelry&quot;,   &quot;version&quot;: &quot;1.0.0&quot;,   &quot;entities&quot;: {     &quot;inventory&quot;: {       &quot;fields&quot;: [         { &quot;key&quot;: &quot;carat&quot;, &quot;type&quot;: &quot;number&quot;, &quot;required&quot;: true, &quot;storage&quot;: &quot;extension&quot;, &quot;indexed&quot;: true },         { &quot;key&quot;: &quot;purity&quot;, &quot;type&quot;: &quot;string&quot;, &quot;required&quot;: true, &quot;storage&quot;: &quot;extension&quot;, &quot;indexed&quot;: true },         { &quot;key&quot;: &quot;stoneType&quot;, &quot;type&quot;: &quot;string&quot;, &quot;storage&quot;: &quot;extension&quot;, &quot;indexed&quot;: true },         { &quot;key&quot;: &quot;certificateNo&quot;, &quot;type&quot;: &quot;string&quot;, &quot;storage&quot;: &quot;extension&quot;, &quot;indexed&quot;: true, &quot;showIn&quot;: [&quot;registration&quot;, &quot;invoice&quot;] }       ]     }   } }</p>
+<pre><code class="language-text">
+**Collection:** `inventory_ext_jewelry`  
+**No changes to:** `Inventory`, `Order`, `Customer`, `Checkout`, `Accounting`
+
+---
+
+### Cafe / F&amp;B
+</code></pre>
+<p>{   &quot;verticalId&quot;: &quot;cafe&quot;,   &quot;version&quot;: &quot;1.0.0&quot;,   &quot;entities&quot;: {     &quot;inventory&quot;: {       &quot;fields&quot;: [         { &quot;key&quot;: &quot;ingredientType&quot;, &quot;type&quot;: &quot;enum&quot;, &quot;values&quot;: [&quot;vegetable&quot;,&quot;dairy&quot;,&quot;beverage&quot;,&quot;dry&quot;,&quot;other&quot;], &quot;required&quot;: true, &quot;storage&quot;: &quot;extension&quot;, &quot;indexed&quot;: true, &quot;showIn&quot;: [&quot;registration&quot;, &quot;stock-count&quot;] },         { &quot;key&quot;: &quot;unitOfMeasure&quot;, &quot;type&quot;: &quot;enum&quot;, &quot;values&quot;: [&quot;kg&quot;,&quot;g&quot;,&quot;L&quot;,&quot;ml&quot;,&quot;piece&quot;], &quot;required&quot;: true, &quot;storage&quot;: &quot;extension&quot;, &quot;indexed&quot;: true },         { &quot;key&quot;: &quot;packSize&quot;, &quot;type&quot;: &quot;number&quot;, &quot;storage&quot;: &quot;extension&quot;, &quot;showIn&quot;: [&quot;registration&quot;] },         { &quot;key&quot;: &quot;lastPurchaseRate&quot;, &quot;type&quot;: &quot;money&quot;, &quot;storage&quot;: &quot;extension&quot;, &quot;showIn&quot;: [&quot;registration&quot;, &quot;reports&quot;] },         { &quot;key&quot;: &quot;reorderLevel&quot;, &quot;type&quot;: &quot;number&quot;, &quot;storage&quot;: &quot;extension&quot;, &quot;indexed&quot;: true, &quot;showIn&quot;: [&quot;dashboard&quot;] }       ]     }   },   &quot;workflows&quot;: {     &quot;billingMode&quot;: &quot;menu-list&quot;,     &quot;tokenEnabled&quot;: true,     &quot;stockCountCadences&quot;: [&quot;daily&quot;, &quot;weekly&quot;, &quot;monthly&quot;]   } }</p>
+<pre><code class="language-text">
+**Collections:** `inventory_ext_cafe`, `cafe_menu_items`, `cafe_menu_recipes`, `cafe_stock_count_sessions`, `order_ext_cafe`  
+**Hooks:** `CafeCheckoutHandler` (recipe deduct + token), `CafeAnalyticsContributor` (invested / consumed / profit)  
+**No changes to:** core `Inventory` columns for menu or token; core checkout remains the payment source of truth
+
+---
+
+
+---
+
+## Summary
+
+
+A new vertical is added by shipping:
+</code></pre>
+<p>Plugin  +  Schema  +  Validator  +  SearchProvider  +  Extension Storage</p>
+<pre><code class="language-text">
+**Without modifying:**
+</code></pre>
+<p>Inventory (core)  |  Orders  |  Customers  |  Checkout  |  Accounting</p>
+      </article>
+      <footer class="doc-footer">
+        <p>Generated from VERTICAL_PLUGIN_ARCHITECTURE.md. Regenerate with <code>python3 docs/generate_architecture_html.py</code>.</p>
+      </footer>
+    </main>
+  </div>
+</body>
+</html>

@@ -10,11 +10,11 @@ import com.inventory.product.rest.dto.request.UpdateShopRequest;
 import com.inventory.product.rest.dto.response.ShopApprovalResponse;
 import com.inventory.product.rest.dto.response.ShopDetailResponse;
 import com.inventory.product.rest.dto.response.ShopRegistrationResponse;
-import com.inventory.common.exception.ValidationException;
+import com.inventory.product.rest.dto.response.ShopSchemaResponse;
 import com.inventory.product.service.ShopService;
+import com.inventory.product.service.vertical.VerticalSchemaService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.util.StringUtils;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -33,6 +34,9 @@ public class ShopController {
 
   @Autowired
   private ShopService shopService;
+
+  @Autowired
+  private VerticalSchemaService verticalSchemaService;
 
   @PostMapping("/register")
   public ResponseEntity<ApiResponse<ShopRegistrationResponse>> register(@RequestBody RegisterShopRequest request,
@@ -62,6 +66,17 @@ public class ShopController {
     String userId = (String) httpRequest.getAttribute("userId");
     String shopId = (String) httpRequest.getAttribute("shopId");
     return ResponseEntity.ok(ApiResponse.success(shopService.update(shopId, request, userId)));
+  }
+
+  /** Schema for the authenticated shop's vertical (server resolves verticalId from Shop). */
+  @GetMapping("/me/schema")
+  public ResponseEntity<ApiResponse<ShopSchemaResponse>> getShopSchema(
+      @RequestParam(name = "mode", defaultValue = "regular") String mode,
+      HttpServletRequest httpRequest) {
+    String userId = (String) httpRequest.getAttribute("userId");
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    return ResponseEntity.ok(
+        ApiResponse.success(verticalSchemaService.getShopSchema(shopId, userId, mode)));
   }
 }
 

@@ -1,26 +1,22 @@
-package com.inventory.plugins.medical;
+package com.inventory.plugins.sports;
 
 import com.inventory.pluginengine.InventoryVerticalValidator;
 import com.inventory.pluginengine.SchemaDrivenInventoryValidator;
 import com.inventory.pluginengine.VerticalConstants;
 import com.inventory.pluginengine.VerticalPlugin;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import org.springframework.stereotype.Component;
 
 @Component
-public class MedicalPlugin implements VerticalPlugin {
+public class SportsPlugin implements VerticalPlugin {
 
   private final InventoryVerticalValidator inventoryValidator =
-      new SchemaDrivenInventoryValidator(
-          "medical",
-          Map.of("manufacturer", "companyName"),
-          List.of(SchemaDrivenInventoryValidator.expiryNotInPastOnCreate()));
+      new SchemaDrivenInventoryValidator("sports", null, List.of());
 
   @Override
   public String getVerticalId() {
-    return VerticalConstants.MEDICAL;
+    return VerticalConstants.SPORTS;
   }
 
   @Override

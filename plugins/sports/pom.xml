@@ -36,7 +36,7 @@
         </dependency>
     </dependencies>
 
-    <artifactId>medical</artifactId>
+    <artifactId>sports</artifactId>
 
     <properties>
         <maven.compiler.source>21</maven.compiler.source>

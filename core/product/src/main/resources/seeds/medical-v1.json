@@ -1,0 +1,77 @@
+{
+  "verticalId": "medical",
+  "version": "1.0.0",
+  "entities": {
+    "inventory": {
+      "fields": [
+        {
+          "key": "name",
+          "type": "string",
+          "required": true,
+          "tier": "mandatory",
+          "storage": "core",
+          "showIn": ["registration", "scan-sell"]
+        },
+        {
+          "key": "batchNo",
+          "type": "string",
+          "required": true,
+          "tier": "mandatory",
+          "storage": "extension",
+          "indexed": true,
+          "searchable": true,
+          "showIn": ["registration", "scan-sell", "invoice", "basic"]
+        },
+        {
+          "key": "expiryDate",
+          "type": "date",
+          "required": true,
+          "tier": "mandatory",
+          "storage": "extension",
+          "indexed": true,
+          "searchable": true,
+          "sortable": true,
+          "showIn": ["registration", "scan-sell", "reports", "basic"]
+        },
+        {
+          "key": "manufacturer",
+          "type": "string",
+          "required": false,
+          "tier": "regular",
+          "storage": "extension",
+          "indexed": true,
+          "showIn": ["registration"]
+        },
+        {
+          "key": "schedule",
+          "type": "string",
+          "required": false,
+          "tier": "regular",
+          "storage": "extension",
+          "showIn": ["registration", "invoice"]
+        },
+        {
+          "key": "storageTemp",
+          "type": "string",
+          "required": false,
+          "tier": "regular",
+          "storage": "extension",
+          "indexed": false,
+          "showIn": ["registration"]
+        }
+      ]
+    },
+    "shop": {
+      "fields": [
+        {
+          "key": "dlNo",
+          "type": "string",
+          "required": true,
+          "tier": "mandatory",
+          "storage": "core",
+          "showIn": ["onboarding"]
+        }
+      ]
+    }
+  }
+}

@@ -69,5 +69,7 @@ public class UpdateInventoryRequest {
   private String baseUnit;
   private UnitConversion unitConversions;
   private Integer thresholdCount;
+  /** Vertical-specific fields (sport, brand, model, …) keyed by schema field name. */
+  private java.util.Map<String, Object> verticalFields;
 }
 
