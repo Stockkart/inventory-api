@@ -43,14 +43,6 @@
           "showIn": ["registration"]
         },
         {
-          "key": "schedule",
-          "type": "string",
-          "required": false,
-          "tier": "regular",
-          "storage": "extension",
-          "showIn": ["registration", "invoice"]
-        },
-        {
           "key": "storageTemp",
           "type": "string",
           "required": false,

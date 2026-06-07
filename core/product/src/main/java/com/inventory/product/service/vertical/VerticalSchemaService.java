@@ -85,7 +85,6 @@ public class VerticalSchemaService {
     response.setPluginVersion(pluginVersion);
     response.setMode(mode.name().toLowerCase());
     response.setEntities(filteredEntities);
-    response.setTaxRules(schema.getTaxRules());
     return response;
   }
 

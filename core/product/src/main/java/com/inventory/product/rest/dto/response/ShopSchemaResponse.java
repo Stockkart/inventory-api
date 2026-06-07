@@ -18,6 +18,4 @@ public class ShopSchemaResponse {
   private String pluginVersion;
   private String mode;
   private Map<String, VerticalEntitySchema> entities;
-  /** Tax column hints for invoice UI (e.g. intrastate CGST+SGST vs interstate IGST). */
-  private Map<String, Object> taxRules;
 }

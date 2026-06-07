@@ -18,8 +18,4 @@ public class VerticalSchemaField {
   private String group;
   private List<String> showIn;
   private List<String> values;
-  /** Tax applicability: {@code intrastate}, {@code interstate}, or {@code always}. */
-  private String applicableWhen;
-  /** When true, value is derived at invoice/checkout time (e.g. line amount). */
-  private Boolean computed;
 }

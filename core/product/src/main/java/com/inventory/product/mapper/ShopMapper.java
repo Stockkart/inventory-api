@@ -1,6 +1,5 @@
 package com.inventory.product.mapper;
 
-import com.inventory.pluginengine.VerticalConstants;
 import com.inventory.product.domain.model.Location;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.rest.dto.request.RegisterShopRequest;
@@ -76,15 +75,6 @@ public interface ShopMapper {
     shop.setActive(true);
     shop.setCreatedAt(Instant.now());
     shop.setApprovedAt(Instant.now());
-    shop.setVerticalId(resolveVerticalId(request.getVerticalId()));
-    shop.setPluginVersion(VerticalConstants.DEFAULT_PLUGIN_VERSION);
-  }
-
-  private static String resolveVerticalId(String requested) {
-    if (requested != null && VerticalConstants.isKnownVertical(requested)) {
-      return requested.trim().toLowerCase();
-    }
-    return VerticalConstants.MEDICAL;
   }
 
   // Method to update existing UserAccount with shopId

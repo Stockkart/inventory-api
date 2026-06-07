@@ -11,9 +11,7 @@ public interface VerticalPlugin {
   String getVerticalId();
 
   /** Plugin module semver — informational; shop pins schema version via {@code Shop.pluginVersion}. */
-  default String getPluginVersion() {
-    return VerticalConstants.DEFAULT_PLUGIN_VERSION;
-  }
+  String getPluginVersion();
 
   default Optional<InventoryVerticalValidator> getInventoryValidator() {
     return Optional.empty();

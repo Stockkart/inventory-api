@@ -1,11 +1,6 @@
 {
   "verticalId": "sports",
   "version": "1.0.0",
-  "taxRules": {
-    "note": "Intrastate (same state): CGST + SGST. Interstate: IGST only — not both.",
-    "intrastate": ["cgst", "sgst"],
-    "interstate": ["igst"]
-  },
   "entities": {
     "inventory": {
       "fields": [
@@ -16,7 +11,7 @@
           "required": true,
           "tier": "mandatory",
           "storage": "core",
-          "showIn": ["registration", "scan-sell", "invoice"]
+          "showIn": ["registration", "scan-sell"]
         },
         {
           "key": "hsn",
@@ -25,7 +20,7 @@
           "required": false,
           "tier": "regular",
           "storage": "core",
-          "showIn": ["registration", "invoice"]
+          "showIn": ["registration"]
         },
         {
           "key": "baseUnit",
@@ -34,7 +29,7 @@
           "required": true,
           "tier": "mandatory",
           "storage": "core",
-          "showIn": ["registration", "invoice"]
+          "showIn": ["registration"]
         },
         {
           "key": "sport",
@@ -57,7 +52,7 @@
           "storage": "extension",
           "indexed": true,
           "searchable": true,
-          "showIn": ["registration", "scan-sell", "invoice"]
+          "showIn": ["registration", "scan-sell"]
         },
         {
           "key": "model",
@@ -78,77 +73,6 @@
           "storage": "extension",
           "indexed": false,
           "showIn": ["registration"]
-        }
-      ]
-    },
-    "invoiceLine": {
-      "fields": [
-        {
-          "key": "name",
-          "label": "Products",
-          "type": "string",
-          "storage": "core",
-          "showIn": ["invoice"]
-        },
-        {
-          "key": "hsn",
-          "label": "HSN/SAC",
-          "type": "string",
-          "storage": "core",
-          "showIn": ["invoice"]
-        },
-        {
-          "key": "qty",
-          "label": "Qty",
-          "type": "number",
-          "storage": "core",
-          "showIn": ["invoice"]
-        },
-        {
-          "key": "baseUnit",
-          "label": "Unit",
-          "type": "string",
-          "storage": "core",
-          "showIn": ["invoice"]
-        },
-        {
-          "key": "rate",
-          "label": "Rate",
-          "type": "money",
-          "storage": "core",
-          "showIn": ["invoice"]
-        },
-        {
-          "key": "cgst",
-          "label": "CGST",
-          "type": "tax",
-          "storage": "core",
-          "applicableWhen": "intrastate",
-          "showIn": ["invoice"]
-        },
-        {
-          "key": "sgst",
-          "label": "SGST",
-          "type": "tax",
-          "storage": "core",
-          "applicableWhen": "intrastate",
-          "showIn": ["invoice"]
-        },
-        {
-          "key": "igst",
-          "label": "IGST",
-          "type": "tax",
-          "storage": "core",
-          "applicableWhen": "interstate",
-          "showIn": ["invoice"]
-        },
-        {
-          "key": "amount",
-          "label": "Amount",
-          "type": "money",
-          "storage": "computed",
-          "computed": true,
-          "showIn": ["invoice"]
         }
       ]
     }

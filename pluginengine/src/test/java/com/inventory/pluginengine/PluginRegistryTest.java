@@ -42,5 +42,10 @@ class PluginRegistryTest {
     public String getVerticalId() {
       return verticalId;
     }
+
+    @Override
+    public String getPluginVersion() {
+      return "1.0.0";
+    }
   }
 }
