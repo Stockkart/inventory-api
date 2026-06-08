@@ -61,6 +61,24 @@ class SportsInventoryValidatorTest {
   }
 
   @Test
+  void createFailsWhenSportNotInEnum() {
+    InventoryValidationContext context =
+        new InventoryValidationContext(
+            "shop-1",
+            "sports",
+            "1.0.0",
+            schema,
+            Map.of(
+                "name", "Cricket Bat",
+                "baseUnit", "PCS",
+                "sport", "rugby",
+                "brand", "MRF",
+                "model", "Genius Grand"));
+
+    assertThrows(ValidationException.class, () -> validator.validateCreate(context));
+  }
+
+  @Test
   void createFailsWhenBaseUnitMissing() {
     InventoryValidationContext context =
         new InventoryValidationContext(
@@ -77,15 +95,44 @@ class SportsInventoryValidatorTest {
     assertThrows(ValidationException.class, () -> validator.validateCreate(context));
   }
 
+  @Test
+  void createFailsWhenWarrantyMonthsOutOfRange() {
+    InventoryValidationContext context =
+        new InventoryValidationContext(
+            "shop-1",
+            "sports",
+            "1.0.0",
+            schema,
+            Map.of(
+                "name", "Cricket Bat",
+                "baseUnit", "PCS",
+                "sport", "cricket",
+                "brand", "MRF",
+                "model", "Genius Grand",
+                "warrantyMonths", 200));
+
+    assertThrows(ValidationException.class, () -> validator.validateCreate(context));
+  }
+
   private static VerticalSchema sportsSchema() {
+    VerticalSchemaField name = field("name", "string", true);
+    name.setValidation(Map.of("minLength", 1, "maxLength", 255));
+
+    VerticalSchemaField sport = field("sport", "enum", true);
+    sport.setValues(List.of("cricket", "football", "gym", "tennis", "badminton", "other"));
+
+    VerticalSchemaField warrantyMonths = field("warrantyMonths", "number", false);
+    warrantyMonths.setValidation(Map.of("min", 0, "max", 120));
+
     VerticalEntitySchema inventory = new VerticalEntitySchema();
     inventory.setFields(
         List.of(
-            field("name", true),
-            field("baseUnit", true),
-            field("sport", true),
-            field("brand", true),
-            field("model", true)));
+            name,
+            field("baseUnit", "string", true),
+            sport,
+            field("brand", "string", true),
+            field("model", "string", true),
+            warrantyMonths));
 
     VerticalSchema schema = new VerticalSchema();
     schema.setVerticalId("sports");
@@ -94,9 +141,10 @@ class SportsInventoryValidatorTest {
     return schema;
   }
 
-  private static VerticalSchemaField field(String key, boolean required) {
+  private static VerticalSchemaField field(String key, String type, boolean required) {
     VerticalSchemaField f = new VerticalSchemaField();
     f.setKey(key);
+    f.setType(type);
     f.setRequired(required);
     return f;
   }

@@ -10,7 +10,8 @@
           "type": "string",
           "required": true,
           "storage": "core",
-          "showIn": ["registration", "scan-sell"]
+          "showIn": ["registration", "scan-sell"],
+          "validation": { "minLength": 1, "maxLength": 255 }
         },
         {
           "key": "hsn",
@@ -19,7 +20,8 @@
           "required": false,
           "tier": "regular",
           "storage": "core",
-          "showIn": ["registration"]
+          "showIn": ["registration"],
+          "validation": { "maxLength": 16, "pattern": "^[0-9]{4,16}$" }
         },
         {
           "key": "baseUnit",
@@ -27,7 +29,8 @@
           "type": "string",
           "required": true,
           "storage": "core",
-          "showIn": ["registration"]
+          "showIn": ["registration"],
+          "validation": { "minLength": 1, "maxLength": 16 }
         },
         {
           "key": "sport",
@@ -48,7 +51,8 @@
           "storage": "extension",
           "indexed": true,
           "searchable": true,
-          "showIn": ["registration", "scan-sell"]
+          "showIn": ["registration", "scan-sell"],
+          "validation": { "minLength": 1, "maxLength": 120 }
         },
         {
           "key": "model",
@@ -57,7 +61,8 @@
           "required": true,
           "storage": "extension",
           "indexed": true,
-          "showIn": ["registration", "scan-sell"]
+          "showIn": ["registration", "scan-sell"],
+          "validation": { "minLength": 1, "maxLength": 120 }
         },
         {
           "key": "warrantyMonths",

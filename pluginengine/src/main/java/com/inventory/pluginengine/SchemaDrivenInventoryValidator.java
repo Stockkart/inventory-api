@@ -63,10 +63,7 @@ public final class SchemaDrivenInventoryValidator implements InventoryVerticalVa
 
       if (Boolean.TRUE.equals(field.getRequired()) && isMissing(value)) {
         errors.add(key + ": is required for " + verticalLabel + " inventory");
-        continue;
-      }
-
-      if (!isMissing(value)) {
+      } else {
         SchemaFieldValidation.validate(field, value, create, errors);
       }
 

@@ -9,7 +9,8 @@
           "type": "string",
           "required": true,
           "storage": "core",
-          "showIn": ["registration", "scan-sell"]
+          "showIn": ["registration", "scan-sell"],
+          "validation": { "minLength": 1, "maxLength": 255 }
         },
         {
           "key": "batchNo",
@@ -18,7 +19,8 @@
           "storage": "extension",
           "indexed": true,
           "searchable": true,
-          "showIn": ["registration", "scan-sell", "invoice", "basic"]
+          "showIn": ["registration", "scan-sell", "invoice", "basic"],
+          "validation": { "minLength": 1, "maxLength": 64 }
         },
         {
           "key": "expiryDate",
@@ -39,7 +41,8 @@
           "tier": "regular",
           "storage": "extension",
           "indexed": true,
-          "showIn": ["registration"]
+          "showIn": ["registration"],
+          "validation": { "maxLength": 200 }
         },
         {
           "key": "storageTemp",
@@ -48,7 +51,8 @@
           "tier": "regular",
           "storage": "extension",
           "indexed": false,
-          "showIn": ["registration"]
+          "showIn": ["registration"],
+          "validation": { "maxLength": 100 }
         }
       ]
     },
@@ -59,7 +63,8 @@
           "type": "string",
           "required": true,
           "storage": "core",
-          "showIn": ["onboarding"]
+          "showIn": ["onboarding"],
+          "validation": { "minLength": 1, "maxLength": 64 }
         }
       ]
     }

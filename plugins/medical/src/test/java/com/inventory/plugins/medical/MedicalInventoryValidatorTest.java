@@ -73,6 +73,40 @@ class MedicalInventoryValidatorTest {
   }
 
   @Test
+  void createFailsWhenNameHasWrongType() {
+    Instant future = Instant.now().plus(30, ChronoUnit.DAYS);
+    InventoryValidationContext context =
+        new InventoryValidationContext(
+            "shop-1",
+            "medical",
+            "1.0.0",
+            schema,
+            Map.of(
+                "name", 42,
+                "batchNo", "B001",
+                "expiryDate", future));
+
+    assertThrows(ValidationException.class, () -> validator.validateCreate(context));
+  }
+
+  @Test
+  void createFailsWhenBatchNoTooLong() {
+    Instant future = Instant.now().plus(30, ChronoUnit.DAYS);
+    InventoryValidationContext context =
+        new InventoryValidationContext(
+            "shop-1",
+            "medical",
+            "1.0.0",
+            schema,
+            Map.of(
+                "name", "Paracetamol",
+                "batchNo", "x".repeat(65),
+                "expiryDate", future));
+
+    assertThrows(ValidationException.class, () -> validator.validateCreate(context));
+  }
+
+  @Test
   void updateAllowsPastExpiryOnExistingStock() {
     Instant past = Instant.now().minus(1, ChronoUnit.DAYS);
     InventoryValidationContext context =
@@ -87,11 +121,17 @@ class MedicalInventoryValidatorTest {
   }
 
   private static VerticalSchema medicalSchema() {
-    VerticalSchemaField expiryDate = field("expiryDate", true);
+    VerticalSchemaField name = field("name", "string", true);
+    name.setValidation(Map.of("minLength", 1, "maxLength", 255));
+
+    VerticalSchemaField batchNo = field("batchNo", "string", true);
+    batchNo.setValidation(Map.of("minLength", 1, "maxLength", 64));
+
+    VerticalSchemaField expiryDate = field("expiryDate", "date", true);
     expiryDate.setValidation(Map.of("notPastOnCreate", true));
 
     VerticalEntitySchema inventory = new VerticalEntitySchema();
-    inventory.setFields(List.of(field("name", true), field("batchNo", true), expiryDate));
+    inventory.setFields(List.of(name, batchNo, expiryDate));
 
     VerticalSchema schema = new VerticalSchema();
     schema.setVerticalId("medical");
@@ -100,9 +140,10 @@ class MedicalInventoryValidatorTest {
     return schema;
   }
 
-  private static VerticalSchemaField field(String key, boolean required) {
+  private static VerticalSchemaField field(String key, String type, boolean required) {
     VerticalSchemaField f = new VerticalSchemaField();
     f.setKey(key);
+    f.setType(type);
     f.setRequired(required);
     return f;
   }
