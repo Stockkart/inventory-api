@@ -9,7 +9,6 @@
           "label": "Product",
           "type": "string",
           "required": true,
-          "tier": "mandatory",
           "storage": "core",
           "showIn": ["registration", "scan-sell"]
         },
@@ -27,7 +26,6 @@
           "label": "Unit",
           "type": "string",
           "required": true,
-          "tier": "mandatory",
           "storage": "core",
           "showIn": ["registration"]
         },
@@ -37,7 +35,6 @@
           "type": "enum",
           "values": ["cricket", "football", "gym", "tennis", "badminton", "other"],
           "required": true,
-          "tier": "mandatory",
           "storage": "extension",
           "indexed": true,
           "searchable": true,
@@ -48,7 +45,6 @@
           "label": "Brand",
           "type": "string",
           "required": true,
-          "tier": "mandatory",
           "storage": "extension",
           "indexed": true,
           "searchable": true,
@@ -59,7 +55,6 @@
           "label": "Model",
           "type": "string",
           "required": true,
-          "tier": "mandatory",
           "storage": "extension",
           "indexed": true,
           "showIn": ["registration", "scan-sell"]
@@ -72,7 +67,8 @@
           "tier": "regular",
           "storage": "extension",
           "indexed": false,
-          "showIn": ["registration"]
+          "showIn": ["registration"],
+          "validation": { "min": 0, "max": 120 }
         }
       ]
     }

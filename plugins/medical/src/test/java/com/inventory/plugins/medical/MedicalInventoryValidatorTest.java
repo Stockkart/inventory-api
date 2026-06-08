@@ -23,11 +23,7 @@ class MedicalInventoryValidatorTest {
 
   @BeforeEach
   void setUp() {
-    validator =
-        new SchemaDrivenInventoryValidator(
-            "medical",
-            Map.of("manufacturer", "companyName"),
-            List.of(SchemaDrivenInventoryValidator.expiryNotInPastOnCreate()));
+    validator = new SchemaDrivenInventoryValidator("medical");
     schema = medicalSchema();
   }
 
@@ -91,12 +87,11 @@ class MedicalInventoryValidatorTest {
   }
 
   private static VerticalSchema medicalSchema() {
-    VerticalSchemaField name = field("name", true);
-    VerticalSchemaField batchNo = field("batchNo", true);
     VerticalSchemaField expiryDate = field("expiryDate", true);
+    expiryDate.setValidation(Map.of("notPastOnCreate", true));
 
     VerticalEntitySchema inventory = new VerticalEntitySchema();
-    inventory.setFields(List.of(name, batchNo, expiryDate));
+    inventory.setFields(List.of(field("name", true), field("batchNo", true), expiryDate));
 
     VerticalSchema schema = new VerticalSchema();
     schema.setVerticalId("medical");

@@ -21,7 +21,7 @@ class SportsInventoryValidatorTest {
 
   @BeforeEach
   void setUp() {
-    validator = new SchemaDrivenInventoryValidator("sports", null, List.of());
+    validator = new SchemaDrivenInventoryValidator("sports");
     schema = sportsSchema();
   }
 

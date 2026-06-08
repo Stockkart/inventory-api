@@ -8,7 +8,6 @@
           "key": "name",
           "type": "string",
           "required": true,
-          "tier": "mandatory",
           "storage": "core",
           "showIn": ["registration", "scan-sell"]
         },
@@ -16,7 +15,6 @@
           "key": "batchNo",
           "type": "string",
           "required": true,
-          "tier": "mandatory",
           "storage": "extension",
           "indexed": true,
           "searchable": true,
@@ -26,15 +24,16 @@
           "key": "expiryDate",
           "type": "date",
           "required": true,
-          "tier": "mandatory",
           "storage": "extension",
           "indexed": true,
           "searchable": true,
           "sortable": true,
-          "showIn": ["registration", "scan-sell", "reports", "basic"]
+          "showIn": ["registration", "scan-sell", "reports", "basic"],
+          "validation": { "notPastOnCreate": true }
         },
         {
           "key": "manufacturer",
+          "apiKey": "companyName",
           "type": "string",
           "required": false,
           "tier": "regular",
@@ -59,7 +58,6 @@
           "key": "dlNo",
           "type": "string",
           "required": true,
-          "tier": "mandatory",
           "storage": "core",
           "showIn": ["onboarding"]
         }

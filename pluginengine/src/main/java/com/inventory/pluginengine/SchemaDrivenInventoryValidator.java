@@ -2,17 +2,18 @@ package com.inventory.pluginengine;
 
 import com.inventory.common.exception.ValidationException;
 import com.inventory.pluginengine.InventoryVerticalValidator.InventoryValidationContext;
+import com.inventory.pluginengine.schema.SchemaFieldValidation;
 import com.inventory.pluginengine.schema.VerticalEntitySchema;
 import com.inventory.pluginengine.schema.VerticalSchema;
 import com.inventory.pluginengine.schema.VerticalSchemaField;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.springframework.util.StringUtils;
 
 /**
- * Validates required schema fields from a flat field map. Used by vertical plugins (medical, sports, …).
+ * Validates inventory payloads using schema {@code required}, {@code validation}, and optional
+ * plugin {@link FieldRule} overrides.
  */
 public final class SchemaDrivenInventoryValidator implements InventoryVerticalValidator {
 
@@ -23,27 +24,28 @@ public final class SchemaDrivenInventoryValidator implements InventoryVerticalVa
   }
 
   private final String verticalLabel;
-  private final Map<String, String> fieldAliases;
   private final List<FieldRule> customRules;
 
-  public SchemaDrivenInventoryValidator(
-      String verticalLabel, Map<String, String> fieldAliases, List<FieldRule> customRules) {
+  public SchemaDrivenInventoryValidator(String verticalLabel) {
+    this(verticalLabel, List.of());
+  }
+
+  public SchemaDrivenInventoryValidator(String verticalLabel, List<FieldRule> customRules) {
     this.verticalLabel = verticalLabel;
-    this.fieldAliases = fieldAliases != null ? fieldAliases : Map.of();
     this.customRules = customRules != null ? customRules : List.of();
   }
 
   @Override
   public void validateCreate(InventoryValidationContext context) {
-    validateRequiredFields(context, true);
+    validateFields(context, true);
   }
 
   @Override
   public void validateUpdate(InventoryValidationContext context) {
-    validateRequiredFields(context, false);
+    validateFields(context, false);
   }
 
-  private void validateRequiredFields(InventoryValidationContext context, boolean create) {
+  private void validateFields(InventoryValidationContext context, boolean create) {
     Map<String, Object> fields = context.fields();
     VerticalSchema schema = context.schema();
     if (schema == null || schema.getEntities() == null) {
@@ -56,14 +58,18 @@ public final class SchemaDrivenInventoryValidator implements InventoryVerticalVa
 
     List<String> errors = new ArrayList<>();
     for (VerticalSchemaField field : inventoryEntity.getFields()) {
-      if (!Boolean.TRUE.equals(field.getRequired())) {
+      String key = field.getKey();
+      Object value = fields.get(key);
+
+      if (Boolean.TRUE.equals(field.getRequired()) && isMissing(value)) {
+        errors.add(key + ": is required for " + verticalLabel + " inventory");
         continue;
       }
-      String key = field.getKey();
-      Object value = resolveFieldValue(key, fields);
-      if (isMissing(value)) {
-        errors.add(key + ": is required for " + verticalLabel + " inventory");
+
+      if (!isMissing(value)) {
+        SchemaFieldValidation.validate(field, value, create, errors);
       }
+
       for (FieldRule rule : customRules) {
         rule.validate(key, value, create, errors, verticalLabel);
       }
@@ -74,17 +80,6 @@ public final class SchemaDrivenInventoryValidator implements InventoryVerticalVa
     }
   }
 
-  private Object resolveFieldValue(String schemaKey, Map<String, Object> fields) {
-    if (fields.containsKey(schemaKey)) {
-      return fields.get(schemaKey);
-    }
-    String alias = fieldAliases.get(schemaKey);
-    if (alias != null) {
-      return fields.get(alias);
-    }
-    return null;
-  }
-
   private static boolean isMissing(Object value) {
     if (value == null) {
       return true;
@@ -93,15 +88,5 @@ public final class SchemaDrivenInventoryValidator implements InventoryVerticalVa
       return !StringUtils.hasText(s);
     }
     return false;
-  }
-
-  public static FieldRule expiryNotInPastOnCreate() {
-    return (key, value, create, errors, verticalLabel) -> {
-      if ("expiryDate".equals(key) && create && value instanceof Instant expiry) {
-        if (expiry.isBefore(Instant.now())) {
-          errors.add("expiryDate: must not be in the past");
-        }
-      }
-    };
   }
 }

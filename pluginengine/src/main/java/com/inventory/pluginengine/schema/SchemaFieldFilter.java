@@ -8,8 +8,8 @@ public final class SchemaFieldFilter {
   private SchemaFieldFilter() {}
 
   /**
-   * Filters entity fields for UI mode (regular vs basic). Mandatory ({@code required: true}) fields
-   * are always included regardless of tier.
+   * Filters entity fields for UI mode. {@code required: true} fields are always included.
+   * Optional fields use {@code tier} ({@code regular} | {@code basic}) and {@code showIn}.
    */
   public static List<VerticalSchemaField> filterForMode(
       List<VerticalSchemaField> fields, SchemaDisplayMode mode) {
@@ -26,14 +26,14 @@ public final class SchemaFieldFilter {
     if (mode == SchemaDisplayMode.INVOICE) {
       return field.getShowIn() != null && field.getShowIn().contains("invoice");
     }
-    String tier = field.getTier();
     if (mode == SchemaDisplayMode.BASIC) {
-      return "basic".equalsIgnoreCase(tier)
-          || "mandatory".equalsIgnoreCase(tier)
+      return "basic".equalsIgnoreCase(field.getTier())
           || (field.getShowIn() != null && field.getShowIn().contains("basic"));
     }
-    return !StringUtils.hasText(tier)
-        || "regular".equalsIgnoreCase(tier)
-        || "mandatory".equalsIgnoreCase(tier);
+    // REGULAR: optional fields with tier=basic are hidden; regular or unset tier are shown
+    if ("basic".equalsIgnoreCase(field.getTier())) {
+      return field.getShowIn() != null && field.getShowIn().contains("basic");
+    }
+    return !StringUtils.hasText(field.getTier()) || "regular".equalsIgnoreCase(field.getTier());
   }
 }
