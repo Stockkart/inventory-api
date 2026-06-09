@@ -11,10 +11,9 @@ import org.junit.jupiter.api.Test;
 class VerticalSchemaFieldResolverTest {
 
   @Test
-  void resolvesApiKeyFromRequestBean() {
-    VerticalSchemaField manufacturer = new VerticalSchemaField();
-    manufacturer.setKey("manufacturer");
-    manufacturer.setApiKey("companyName");
+  void readsSchemaFieldsFromRequestBeanWhenVerticalFieldsAbsent() {
+    VerticalSchemaField companyName = new VerticalSchemaField();
+    companyName.setKey("companyName");
 
     VerticalSchemaField batchNo = new VerticalSchemaField();
     batchNo.setKey("batchNo");
@@ -24,11 +23,56 @@ class VerticalSchemaFieldResolverTest {
     request.setBatchNo("B001");
 
     Map<String, Object> fields =
-        VerticalSchemaFieldResolver.resolve(
-            List.of(manufacturer, batchNo), request, null);
+        VerticalSchemaFieldResolver.mergeVerticalFields(
+            List.of(companyName, batchNo), request, null);
 
-    assertEquals("Acme Pharma", fields.get("manufacturer"));
+    assertEquals("Acme Pharma", fields.get("companyName"));
     assertEquals("B001", fields.get("batchNo"));
+  }
+
+  @Test
+  void verticalFieldsOverrideRequestBeanValues() {
+    VerticalSchemaField sport = new VerticalSchemaField();
+    sport.setKey("sport");
+
+    SampleCreateRequest request = new SampleCreateRequest();
+    request.setSport("football");
+    request.setVerticalFields(Map.of("sport", "cricket"));
+
+    Map<String, Object> fields =
+        VerticalSchemaFieldResolver.mergeVerticalFields(List.of(sport), request, null);
+
+    assertEquals("cricket", fields.get("sport"));
+  }
+
+  @Test
+  void verticalFieldsBagProvidesExtensionOnlyFields() {
+    VerticalSchemaField brand = new VerticalSchemaField();
+    brand.setKey("brand");
+
+    SampleCreateRequest request = new SampleCreateRequest();
+    request.setVerticalFields(Map.of("brand", "MRF", "model", "Grand"));
+
+    Map<String, Object> fields =
+        VerticalSchemaFieldResolver.mergeVerticalFields(List.of(brand), request, null);
+
+    assertEquals("MRF", fields.get("brand"));
+    assertEquals("Grand", fields.get("model"));
+  }
+
+  @Test
+  void resolvesApiKeyWhenPropertyNameDiffersFromSchemaKey() {
+    VerticalSchemaField legacy = new VerticalSchemaField();
+    legacy.setKey("displayName");
+    legacy.setApiKey("name");
+
+    SampleCreateRequest request = new SampleCreateRequest();
+    request.setName("Widget");
+
+    Map<String, Object> fields =
+        VerticalSchemaFieldResolver.mergeVerticalFields(List.of(legacy), request, null);
+
+    assertEquals("Widget", fields.get("displayName"));
   }
 
   @Test
@@ -41,22 +85,9 @@ class VerticalSchemaFieldResolverTest {
     existing.setBatchNo("B-old");
 
     Map<String, Object> fields =
-        VerticalSchemaFieldResolver.resolve(List.of(batchNo), request, existing);
+        VerticalSchemaFieldResolver.mergeVerticalFields(List.of(batchNo), request, existing);
 
     assertEquals("B-old", fields.get("batchNo"));
-  }
-
-  @Test
-  void mergeVerticalFieldsOverridesSchemaExtractedValues() {
-    Map<String, Object> fields = new java.util.LinkedHashMap<>();
-    fields.put("sport", "football");
-
-    SampleCreateRequest request = new SampleCreateRequest();
-    request.setVerticalFields(Map.of("sport", "cricket"));
-
-    VerticalSchemaFieldResolver.mergeVerticalFields(fields, request);
-
-    assertEquals("cricket", fields.get("sport"));
   }
 
   @Test
@@ -65,15 +96,26 @@ class VerticalSchemaFieldResolverTest {
     storageTemp.setKey("storageTemp");
 
     Map<String, Object> fields =
-        VerticalSchemaFieldResolver.resolve(List.of(storageTemp), new SampleCreateRequest(), null);
+        VerticalSchemaFieldResolver.mergeVerticalFields(
+            List.of(storageTemp), new SampleCreateRequest(), null);
 
     assertNull(fields.get("storageTemp"));
   }
 
   static class SampleCreateRequest {
+    private String name;
     private String companyName;
     private String batchNo;
+    private String sport;
     private Map<String, Object> verticalFields;
+
+    public String getName() {
+      return name;
+    }
+
+    public void setName(String name) {
+      this.name = name;
+    }
 
     public String getCompanyName() {
       return companyName;
@@ -89,6 +131,14 @@ class VerticalSchemaFieldResolverTest {
 
     public void setBatchNo(String batchNo) {
       this.batchNo = batchNo;
+    }
+
+    public String getSport() {
+      return sport;
+    }
+
+    public void setSport(String sport) {
+      this.sport = sport;
     }
 
     public Map<String, Object> getVerticalFields() {

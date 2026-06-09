@@ -11,28 +11,13 @@ import java.util.List;
 import java.util.Map;
 import org.springframework.util.StringUtils;
 
-/**
- * Validates inventory payloads using schema {@code required}, {@code validation}, and optional
- * plugin {@link FieldRule} overrides.
- */
+/** Validates inventory payloads using schema {@code required} and {@code validation} metadata. */
 public final class SchemaDrivenInventoryValidator implements InventoryVerticalValidator {
 
-  @FunctionalInterface
-  public interface FieldRule {
-    void validate(
-        String key, Object value, boolean create, List<String> errors, String verticalLabel);
-  }
-
   private final String verticalLabel;
-  private final List<FieldRule> customRules;
 
   public SchemaDrivenInventoryValidator(String verticalLabel) {
-    this(verticalLabel, List.of());
-  }
-
-  public SchemaDrivenInventoryValidator(String verticalLabel, List<FieldRule> customRules) {
     this.verticalLabel = verticalLabel;
-    this.customRules = customRules != null ? customRules : List.of();
   }
 
   @Override
@@ -65,10 +50,6 @@ public final class SchemaDrivenInventoryValidator implements InventoryVerticalVa
         errors.add(key + ": is required for " + verticalLabel + " inventory");
       } else {
         SchemaFieldValidation.validate(field, value, create, errors);
-      }
-
-      for (FieldRule rule : customRules) {
-        rule.validate(key, value, create, errors, verticalLabel);
       }
     }
 

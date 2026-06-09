@@ -8,46 +8,48 @@ import org.springframework.beans.BeanWrapperImpl;
 import org.springframework.util.StringUtils;
 
 /**
- * Builds a flat map keyed by schema field name from request/entity beans using {@code apiKey} (or
- * {@code key}) as the Java property name.
+ * Builds a flat map keyed by schema field name for vertical validation.
+ *
+ * <p>Priority per field: {@code verticalFields} on the request, then the request bean property
+ * ({@code apiKey} or {@code key}), then the fallback entity on update.
  */
 public final class VerticalSchemaFieldResolver {
 
   private VerticalSchemaFieldResolver() {}
 
-  public static Map<String, Object> resolve(
-      List<VerticalSchemaField> schemaFields, Object primaryBean, Object fallbackBean) {
+  public static Map<String, Object> mergeVerticalFields(
+      List<VerticalSchemaField> schemaFields, Object requestBean, Object fallbackBean) {
     Map<String, Object> out = new LinkedHashMap<>();
     if (schemaFields == null || schemaFields.isEmpty()) {
       return out;
     }
-    BeanWrapper primary = wrap(primaryBean);
+
+    BeanWrapper request = wrap(requestBean);
     BeanWrapper fallback = wrap(fallbackBean);
+
+    if (request != null && request.isReadableProperty("verticalFields")) {
+      Object raw = request.getPropertyValue("verticalFields");
+      if (raw instanceof Map<?, ?> verticalFields && !verticalFields.isEmpty()) {
+        verticalFields.forEach((k, v) -> out.put(String.valueOf(k), v));
+      }
+    }
+
     for (VerticalSchemaField field : schemaFields) {
+      String key = field.getKey();
+      if (out.containsKey(key)) {
+        continue;
+      }
       String property = apiProperty(field);
-      Object value = readProperty(primary, property);
-      if (value == null && fallback != null) {
+      Object value = readProperty(request, property);
+      if (value == null) {
         value = readProperty(fallback, property);
       }
       if (value != null) {
-        out.put(field.getKey(), value);
+        out.put(key, value);
       }
     }
-    return out;
-  }
 
-  public static void mergeVerticalFields(Map<String, Object> fields, Object requestBean) {
-    if (requestBean == null || fields == null) {
-      return;
-    }
-    BeanWrapper wrapper = wrap(requestBean);
-    if (!wrapper.isReadableProperty("verticalFields")) {
-      return;
-    }
-    Object raw = wrapper.getPropertyValue("verticalFields");
-    if (raw instanceof Map<?, ?> verticalFields && !verticalFields.isEmpty()) {
-      verticalFields.forEach((k, v) -> fields.put(String.valueOf(k), v));
-    }
+    return out;
   }
 
   private static String apiProperty(VerticalSchemaField field) {

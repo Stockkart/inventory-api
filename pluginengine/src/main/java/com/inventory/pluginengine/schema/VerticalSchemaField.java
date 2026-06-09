@@ -8,7 +8,7 @@ import lombok.Data;
 public class VerticalSchemaField {
 
   private String key;
-  /** REST/entity property name when it differs from {@link #key} (e.g. {@code companyName} for manufacturer). */
+  /** REST/entity property name when it differs from {@link #key} (rare; prefer same name as schema key). */
   private String apiKey;
   private String label;
   private String type;

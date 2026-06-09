@@ -14,7 +14,7 @@ class SchemaFieldFilterTest {
         List.of(
             field("name", true, null),
             field("batchNo", true, null),
-            field("manufacturer", false, "regular"),
+            field("companyName", false, "regular"),
             field("storageTemp", false, "regular"));
 
     List<VerticalSchemaField> filtered =
@@ -28,7 +28,7 @@ class SchemaFieldFilterTest {
     List<VerticalSchemaField> fields =
         List.of(
             field("name", false, null, List.of("registration", "invoice")),
-            field("manufacturer", false, "regular", List.of("registration")),
+            field("companyName", false, "regular", List.of("registration")),
             field("batchNo", false, null, List.of("invoice")));
 
     List<VerticalSchemaField> filtered =
@@ -37,7 +37,7 @@ class SchemaFieldFilterTest {
     assertEquals(2, filtered.size());
     assertTrue(filtered.stream().anyMatch(f -> "name".equals(f.getKey())));
     assertTrue(filtered.stream().anyMatch(f -> "batchNo".equals(f.getKey())));
-    assertTrue(filtered.stream().noneMatch(f -> "manufacturer".equals(f.getKey())));
+    assertTrue(filtered.stream().noneMatch(f -> "companyName".equals(f.getKey())));
   }
 
   @Test
@@ -46,7 +46,7 @@ class SchemaFieldFilterTest {
         List.of(
             field("name", true, null),
             field("batchNo", true, null, List.of("registration", "basic")),
-            field("manufacturer", false, "regular"),
+            field("companyName", false, "regular"),
             field("expiryDate", true, null, List.of("registration", "basic")));
 
     List<VerticalSchemaField> filtered =
@@ -54,7 +54,7 @@ class SchemaFieldFilterTest {
 
     assertEquals(3, filtered.size());
     assertTrue(filtered.stream().anyMatch(f -> "batchNo".equals(f.getKey())));
-    assertTrue(filtered.stream().noneMatch(f -> "manufacturer".equals(f.getKey())));
+    assertTrue(filtered.stream().noneMatch(f -> "companyName".equals(f.getKey())));
   }
 
   @Test

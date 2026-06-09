@@ -20,7 +20,7 @@ import org.springframework.util.StringUtils;
 
 /**
  * Resolves shop vertical and delegates inventory validation to the registered plugin validator.
- * Field values are extracted from the request using schema {@code apiKey} metadata.
+ * Field values are built from {@code verticalFields} and request/entity properties via the schema resolver.
  */
 @Component
 @Slf4j
@@ -65,8 +65,8 @@ public class InventoryVerticalValidationHandler {
                   schemaLoader.load(shop.getVerticalId(), shop.getPluginVersion());
               List<VerticalSchemaField> inventoryFields = inventoryFields(schema);
               Map<String, Object> fields =
-                  VerticalSchemaFieldResolver.resolve(inventoryFields, requestBean, existing);
-              VerticalSchemaFieldResolver.mergeVerticalFields(fields, requestBean);
+                  VerticalSchemaFieldResolver.mergeVerticalFields(
+                      inventoryFields, requestBean, existing);
 
               InventoryValidationContext context =
                   new InventoryValidationContext(

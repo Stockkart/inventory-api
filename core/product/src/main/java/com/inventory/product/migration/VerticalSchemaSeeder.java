@@ -48,6 +48,7 @@ public class VerticalSchemaSeeder {
     if (anyInserted) {
       schemaLoader.evictCache();
     }
+    schemaLoader.warmCache();
   }
 
   private boolean seedResource(Resource resource) {

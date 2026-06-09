@@ -13,7 +13,7 @@ public interface InventoryVerticalValidator {
   void validateUpdate(InventoryValidationContext context);
 
   /**
-   * Flat field map keyed by schema field name (e.g. {@code batchNo}, {@code manufacturer}).
+   * Flat field map keyed by schema field name (e.g. {@code batchNo}, {@code companyName}).
    * Core request DTOs may use different property names — plugins map as needed.
    */
   record InventoryValidationContext(

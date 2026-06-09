@@ -34,12 +34,11 @@
           "validation": { "notPastOnCreate": true }
         },
         {
-          "key": "manufacturer",
-          "apiKey": "companyName",
+          "key": "companyName",
           "type": "string",
           "required": false,
           "tier": "regular",
-          "storage": "extension",
+          "storage": "core",
           "indexed": true,
           "showIn": ["registration"],
           "validation": { "maxLength": 200 }
