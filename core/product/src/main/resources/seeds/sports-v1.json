@@ -1,0 +1,81 @@
+{
+  "verticalId": "sports",
+  "version": "1.0.0",
+  "entities": {
+    "inventory": {
+      "fields": [
+        {
+          "key": "name",
+          "label": "Product",
+          "type": "string",
+          "required": true,
+          "storage": "core",
+          "showIn": ["registration", "scan-sell"],
+          "validation": { "minLength": 1, "maxLength": 255 }
+        },
+        {
+          "key": "hsn",
+          "label": "HSN/SAC",
+          "type": "string",
+          "required": false,
+          "tier": "regular",
+          "storage": "core",
+          "showIn": ["registration"],
+          "validation": { "maxLength": 16, "pattern": "^[0-9]{4,16}$" }
+        },
+        {
+          "key": "baseUnit",
+          "label": "Unit",
+          "type": "string",
+          "required": true,
+          "storage": "core",
+          "showIn": ["registration"],
+          "validation": { "minLength": 1, "maxLength": 16 }
+        },
+        {
+          "key": "sport",
+          "label": "Sport",
+          "type": "enum",
+          "values": ["cricket", "football", "gym", "tennis", "badminton", "other"],
+          "required": true,
+          "storage": "extension",
+          "indexed": true,
+          "searchable": true,
+          "showIn": ["registration", "scan-sell"]
+        },
+        {
+          "key": "brand",
+          "label": "Brand",
+          "type": "string",
+          "required": true,
+          "storage": "extension",
+          "indexed": true,
+          "searchable": true,
+          "showIn": ["registration", "scan-sell"],
+          "validation": { "minLength": 1, "maxLength": 120 }
+        },
+        {
+          "key": "model",
+          "label": "Model",
+          "type": "string",
+          "required": true,
+          "storage": "extension",
+          "indexed": true,
+          "showIn": ["registration", "scan-sell"],
+          "validation": { "minLength": 1, "maxLength": 120 }
+        },
+        {
+          "key": "warrantyMonths",
+          "label": "Warranty (months)",
+          "type": "number",
+          "required": false,
+          "tier": "regular",
+          "storage": "extension",
+          "indexed": false,
+          "showIn": ["registration"],
+          "validation": { "min": 0, "max": 120 }
+        }
+      ]
+    }
+  }
+}

@@ -76,5 +76,7 @@ public class CreateInventoryRequest {
   private String sgst;
   // CGST rate (optional, e.g., "9" for 9%). Uses shop default if not provided.
   private String cgst;
+  /** Vertical-specific fields (sport, brand, model, …) keyed by schema field name. */
+  private java.util.Map<String, Object> verticalFields;
 }
 

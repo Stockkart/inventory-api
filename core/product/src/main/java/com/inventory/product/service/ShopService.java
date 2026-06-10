@@ -15,6 +15,7 @@ import com.inventory.product.rest.dto.response.ShopDetailResponse;
 import com.inventory.product.rest.dto.response.ShopRegistrationResponse;
 import com.inventory.product.domain.model.Location;
 import com.inventory.product.mapper.ShopMapper;
+import com.inventory.product.service.vertical.VerticalCatalogService;
 import com.inventory.product.validation.ShopValidator;
 import com.inventory.user.domain.model.UserRole;
 import com.inventory.user.domain.repository.UserAccountRepository;
@@ -59,6 +60,9 @@ public class ShopService {
   @Autowired(required = false)
   private com.inventory.accounting.service.ChartOfAccountsSeeder chartOfAccountsSeeder;
 
+  @Autowired
+  private VerticalCatalogService verticalCatalogService;
+
   @Transactional
   public ShopRegistrationResponse register(RegisterShopRequest request, String userId) {
     try {
@@ -87,6 +91,10 @@ public class ShopService {
       // Map request to entity using MapStruct (sets defaults: APPROVED, active=true)
       // MongoDB will auto-generate the shopId as ObjectId
       Shop shop = shopMapper.toEntity(request);
+      VerticalCatalogService.VerticalPin vertical =
+          verticalCatalogService.resolveForNewShop(request.getVerticalId());
+      shop.setVerticalId(vertical.verticalId());
+      shop.setPluginVersion(vertical.pluginVersion());
       shop.setUserLimit(0); // Can be set later if needed
       shop.setPlanId(null); // Trial: no plan purchased yet
       shop.setPlanExpiryDate(Instant.now().plus(trialDays, ChronoUnit.DAYS)); // trial from config

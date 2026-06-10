@@ -43,5 +43,9 @@ public class Shop {
   private Instant planExpiryDate;
   /** Shop type: RETAILER, DISTRIBUTOR, or WHOLESALER. Affects default price (MRP for retailer) and tax handling. */
   private ShopType shopType;
+  /** Vertical plugin id (medical, apparel, cafe, …). Server source of truth — not sent by clients. */
+  private String verticalId;
+  /** Pinned vertical schema version (semver), e.g. 1.0.0. Selects row in vertical_schemas. */
+  private String pluginVersion;
 }
 

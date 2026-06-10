@@ -21,5 +21,7 @@ public class ShopDetailResponse {
   private String dlNo;
   private String tagline;
   private LocationDto location;
+  private String verticalId;
+  private String pluginVersion;
 
 }

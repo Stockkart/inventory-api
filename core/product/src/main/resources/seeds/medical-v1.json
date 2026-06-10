@@ -1,0 +1,71 @@
+{
+  "verticalId": "medical",
+  "version": "1.0.0",
+  "entities": {
+    "inventory": {
+      "fields": [
+        {
+          "key": "name",
+          "type": "string",
+          "required": true,
+          "storage": "core",
+          "showIn": ["registration", "scan-sell"],
+          "validation": { "minLength": 1, "maxLength": 255 }
+        },
+        {
+          "key": "batchNo",
+          "type": "string",
+          "required": true,
+          "storage": "extension",
+          "indexed": true,
+          "searchable": true,
+          "showIn": ["registration", "scan-sell", "invoice", "basic"],
+          "validation": { "minLength": 1, "maxLength": 64 }
+        },
+        {
+          "key": "expiryDate",
+          "type": "date",
+          "required": true,
+          "storage": "extension",
+          "indexed": true,
+          "searchable": true,
+          "sortable": true,
+          "showIn": ["registration", "scan-sell", "reports", "basic"],
+          "validation": { "notPastOnCreate": true }
+        },
+        {
+          "key": "companyName",
+          "type": "string",
+          "required": false,
+          "tier": "regular",
+          "storage": "core",
+          "indexed": true,
+          "showIn": ["registration"],
+          "validation": { "maxLength": 200 }
+        },
+        {
+          "key": "storageTemp",
+          "type": "string",
+          "required": false,
+          "tier": "regular",
+          "storage": "extension",
+          "indexed": false,
+          "showIn": ["registration"],
+          "validation": { "maxLength": 100 }
+        }
+      ]
+    },
+    "shop": {
+      "fields": [
+        {
+          "key": "dlNo",
+          "type": "string",
+          "required": true,
+          "storage": "core",
+          "showIn": ["onboarding"],
+          "validation": { "minLength": 1, "maxLength": 64 }
+        }
+      ]
+    }
+  }
+}

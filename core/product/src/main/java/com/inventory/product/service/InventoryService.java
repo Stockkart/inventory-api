@@ -38,6 +38,7 @@ import com.inventory.product.mapper.InventoryMapper;
 import com.inventory.product.migration.ExcelStockParser;
 import com.inventory.product.mapper.ParsedInventoryMapper;
 import com.inventory.product.utils.constants.ProductMetricsConstants;
+import com.inventory.product.service.vertical.InventoryVerticalValidationHandler;
 import com.inventory.product.validation.ImageValidator;
 import com.inventory.product.validation.InventoryValidator;
 import com.inventory.product.validation.StockSheetValidator;
@@ -116,6 +117,9 @@ public class InventoryService {
 
   @Autowired
   private com.inventory.product.domain.repository.ShopRepository shopRepository;
+
+  @Autowired
+  private InventoryVerticalValidationHandler inventoryVerticalValidationHandler;
 
   @Autowired
   private com.inventory.pricing.domain.repository.PricingRepository pricingRepository;
@@ -705,6 +709,7 @@ public class InventoryService {
   public InventoryReceiptResponse create(CreateInventoryRequest request, String userId, String shopId) {
     try {
       inventoryValidator.validateCreateRequest(request);
+      inventoryVerticalValidationHandler.validateCreate(shopId, request);
       log.debug("Creating inventory for barcode: {} in shop: {}", request.getBarcode(), shopId);
       if (StringUtils.hasText(request.getVendorId())) {
         validateVendorId(request.getVendorId(), shopId);
@@ -1212,6 +1217,8 @@ public class InventoryService {
       if (!shopId.equals(inventory.getShopId())) {
         throw new ValidationException("Inventory does not belong to the authenticated shop");
       }
+
+      inventoryVerticalValidationHandler.validateUpdate(shopId, inventory, request);
 
       // Product details - only update when provided
       if (request.getBarcode() != null) inventory.setBarcode(request.getBarcode());

@@ -180,6 +180,11 @@ inventory-api/
 | **pluginengine** | Plugin discovery and registration |
 | **plugins/medical** | Medical-domain extensions |
 
+### Documentation
+
+- [Vertical Plugin Architecture v4.6](docs/VERTICAL_PLUGIN_ARCHITECTURE.md) — top-down guide: architecture diagram, flows, plugins, migration; search/analytics in reference section
+- [Vertical Plugin Architecture (HTML)](docs/VERTICAL_PLUGIN_ARCHITECTURE.html) — same doc for browser / print / PDF
+
 ### Build commands
 
 ```bash
