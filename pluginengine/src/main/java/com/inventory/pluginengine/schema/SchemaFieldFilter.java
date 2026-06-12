@@ -20,17 +20,24 @@ public final class SchemaFieldFilter {
   }
 
   static boolean isVisibleInMode(VerticalSchemaField field, SchemaDisplayMode mode) {
-    if (Boolean.TRUE.equals(field.getRequired())) {
-      return true;
-    }
     if (mode == SchemaDisplayMode.INVOICE) {
       return field.getShowIn() != null && field.getShowIn().contains("invoice");
     }
     if (mode == SchemaDisplayMode.BASIC) {
+      if (Boolean.TRUE.equals(field.getRequired())) {
+        return field.getShowIn() == null
+            || field.getShowIn().isEmpty()
+            || field.getShowIn().contains("basic");
+      }
       return "basic".equalsIgnoreCase(field.getTier())
           || (field.getShowIn() != null && field.getShowIn().contains("basic"));
     }
-    // REGULAR: optional fields with tier=basic are hidden; regular or unset tier are shown
+    // REGULAR
+    if (Boolean.TRUE.equals(field.getRequired())) {
+      return field.getShowIn() == null
+          || field.getShowIn().isEmpty()
+          || field.getShowIn().contains("registration");
+    }
     if ("basic".equalsIgnoreCase(field.getTier())) {
       return field.getShowIn() != null && field.getShowIn().contains("basic");
     }
