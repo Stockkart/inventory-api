@@ -45,16 +45,17 @@ class SchemaFieldFilterTest {
     List<VerticalSchemaField> fields =
         List.of(
             field("name", true, null),
-            field("batchNo", true, null, List.of("registration", "basic")),
-            field("companyName", false, "regular"),
+            field("batchNo", true, null, List.of("registration")),
+            field("companyName", false, null, List.of("registration", "basic")),
             field("expiryDate", true, null, List.of("registration", "basic")));
 
     List<VerticalSchemaField> filtered =
         SchemaFieldFilter.filterForMode(fields, SchemaDisplayMode.BASIC);
 
-    assertEquals(3, filtered.size());
-    assertTrue(filtered.stream().anyMatch(f -> "batchNo".equals(f.getKey())));
-    assertTrue(filtered.stream().noneMatch(f -> "companyName".equals(f.getKey())));
+    assertEquals(2, filtered.size());
+    assertTrue(filtered.stream().noneMatch(f -> "batchNo".equals(f.getKey())));
+    assertTrue(filtered.stream().anyMatch(f -> "companyName".equals(f.getKey())));
+    assertTrue(filtered.stream().anyMatch(f -> "expiryDate".equals(f.getKey())));
   }
 
   @Test

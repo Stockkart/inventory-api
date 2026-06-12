@@ -12,6 +12,7 @@ import com.inventory.product.domain.model.VerticalSchemaDocument;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.domain.repository.VerticalSchemaRepository;
 import com.inventory.product.rest.dto.response.ShopSchemaResponse;
+import com.inventory.product.rest.dto.response.VerticalSchemaResponse;
 import com.inventory.product.rest.dto.response.VerticalSummaryResponse;
 import com.inventory.product.validation.ShopValidator;
 import com.inventory.user.service.UserShopMembershipService;
@@ -64,28 +65,53 @@ public class VerticalSchemaService {
     if (!StringUtils.hasText(shop.getVerticalId())) {
       throw new ValidationException("Shop has no vertical configured");
     }
-    String pluginVersion = shop.getPluginVersion();
-    VerticalSchema schema = schemaLoader.load(shop.getVerticalId(), pluginVersion);
-    SchemaDisplayMode mode = SchemaDisplayMode.fromQuery(modeQuery);
-
-    Map<String, VerticalEntitySchema> filteredEntities = new LinkedHashMap<>();
-    if (schema.getEntities() != null) {
-      schema.getEntities().forEach((entityName, entitySchema) -> {
-        List<VerticalSchemaField> filtered =
-            SchemaFieldFilter.filterForMode(entitySchema.getFields(), mode);
-        VerticalEntitySchema copy = new VerticalEntitySchema();
-        copy.setFields(filtered);
-        filteredEntities.put(entityName, copy);
-      });
-    }
+    VerticalSchemaResponse base =
+        getVerticalSchema(shop.getVerticalId(), shop.getPluginVersion(), modeQuery);
 
     ShopSchemaResponse response = new ShopSchemaResponse();
     response.setShopId(shopId);
-    response.setVerticalId(shop.getVerticalId());
-    response.setPluginVersion(pluginVersion);
-    response.setMode(mode.name().toLowerCase());
-    response.setEntities(filteredEntities);
+    response.setVerticalId(base.getVerticalId());
+    response.setPluginVersion(base.getPluginVersion());
+    response.setMode(base.getMode());
+    response.setEntities(base.getEntities());
     return response;
+  }
+
+  /** Public schema for onboarding / previews (no shop context). */
+  public VerticalSchemaResponse getVerticalSchema(
+      String verticalId, String version, String modeQuery) {
+    if (!StringUtils.hasText(verticalId)) {
+      throw new ValidationException("verticalId is required");
+    }
+    String vid = verticalId.trim().toLowerCase();
+    VerticalSchema schema = schemaLoader.load(vid, version);
+    SchemaDisplayMode mode = SchemaDisplayMode.fromQuery(modeQuery);
+
+    VerticalSchemaResponse response = new VerticalSchemaResponse();
+    response.setVerticalId(vid);
+    response.setPluginVersion(schema.getVersion());
+    response.setMode(mode.name().toLowerCase());
+    response.setEntities(filterEntities(schema, mode));
+    return response;
+  }
+
+  private static Map<String, VerticalEntitySchema> filterEntities(
+      VerticalSchema schema, SchemaDisplayMode mode) {
+    Map<String, VerticalEntitySchema> filteredEntities = new LinkedHashMap<>();
+    if (schema.getEntities() == null) {
+      return filteredEntities;
+    }
+    schema
+        .getEntities()
+        .forEach(
+            (entityName, entitySchema) -> {
+              List<VerticalSchemaField> filtered =
+                  SchemaFieldFilter.filterForMode(entitySchema.getFields(), mode);
+              VerticalEntitySchema copy = new VerticalEntitySchema();
+              copy.setFields(filtered);
+              filteredEntities.put(entityName, copy);
+            });
+    return filteredEntities;
   }
 
   private VerticalSummaryResponse toSummary(VerticalSchemaDocument doc) {
