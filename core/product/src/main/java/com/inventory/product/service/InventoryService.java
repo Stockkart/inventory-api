@@ -33,6 +33,7 @@ import com.inventory.product.rest.dto.response.LotListResponse;
 import com.inventory.product.rest.dto.response.LotSummaryDto;
 import com.inventory.product.rest.dto.response.PageMeta;
 import com.inventory.product.rest.dto.response.ParsedInventoryListResponse;
+import com.inventory.pluginengine.schema.InventoryVerticalRequestNormalizer;
 import java.util.ArrayList;
 import com.inventory.product.mapper.InventoryMapper;
 import com.inventory.product.migration.ExcelStockParser;
@@ -341,7 +342,7 @@ public class InventoryService {
               inventoryMapper.toCreateInventoryRequest(
                   itemRequest, bulkRequest.getVendorId(), registrationId);
           fullRequest.setVendorPurchaseInvoiceId(registrationId);
-          com.inventory.pluginengine.schema.InventoryVerticalRequestNormalizer.normalizeCreate(
+          InventoryVerticalRequestNormalizer.normalizeCreate(
               fullRequest);
 
           InventoryReceiptResponse response = create(fullRequest, userId, shopId);
@@ -722,7 +723,7 @@ public class InventoryService {
 
   public InventoryReceiptResponse create(CreateInventoryRequest request, String userId, String shopId) {
     try {
-      com.inventory.pluginengine.schema.InventoryVerticalRequestNormalizer.normalizeCreate(request);
+      InventoryVerticalRequestNormalizer.normalizeCreate(request);
       inventoryValidator.validateCreateRequest(request);
       inventoryVerticalValidationHandler.validateCreate(shopId, request);
       log.debug("Creating inventory for barcode: {} in shop: {}", request.getBarcode(), shopId);
@@ -1213,7 +1214,7 @@ public class InventoryService {
   @Transactional
   public InventoryDetailResponse update(String inventoryId, UpdateInventoryRequest request, String shopId) {
     try {
-      com.inventory.pluginengine.schema.InventoryVerticalRequestNormalizer.normalizeCreate(request);
+      InventoryVerticalRequestNormalizer.normalizeCreate(request);
       // Validate inputs
       inventoryValidator.validateShopId(shopId);
       if (inventoryId == null || inventoryId.trim().isEmpty()) {
