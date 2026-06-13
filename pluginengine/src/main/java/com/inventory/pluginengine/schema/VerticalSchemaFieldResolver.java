@@ -19,6 +19,40 @@ public final class VerticalSchemaFieldResolver {
 
   public static Map<String, Object> mergeVerticalFields(
       List<VerticalSchemaField> schemaFields, Object requestBean, Object fallbackBean) {
+    return mergeVerticalFields(schemaFields, requestBean, fallbackBean, null);
+  }
+
+  /**
+   * Like {@link #mergeVerticalFields(List, Object, Object)} but fills missing extension keys from
+   * {@code extensionFallback} (existing extension document) when absent on request/core entity.
+   */
+  public static Map<String, Object> mergeVerticalFields(
+      List<VerticalSchemaField> schemaFields,
+      Object requestBean,
+      Object fallbackBean,
+      Map<String, Object> extensionFallback) {
+    Map<String, Object> out = mergeVerticalFieldsInternal(schemaFields, requestBean, fallbackBean);
+    if (extensionFallback == null || extensionFallback.isEmpty()) {
+      return out;
+    }
+    for (VerticalSchemaField field : schemaFields) {
+      if (!VerticalSchemaStorage.STORAGE_EXTENSION.equalsIgnoreCase(
+          field.getStorage() != null ? field.getStorage().trim() : "")) {
+        continue;
+      }
+      String key = field.getKey();
+      if (!out.containsKey(key) && extensionFallback.containsKey(key)) {
+        Object value = extensionFallback.get(key);
+        if (value != null) {
+          out.put(key, value);
+        }
+      }
+    }
+    return out;
+  }
+
+  private static Map<String, Object> mergeVerticalFieldsInternal(
+      List<VerticalSchemaField> schemaFields, Object requestBean, Object fallbackBean) {
     Map<String, Object> out = new LinkedHashMap<>();
     if (schemaFields == null || schemaFields.isEmpty()) {
       return out;

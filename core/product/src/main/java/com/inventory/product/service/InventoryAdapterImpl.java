@@ -5,15 +5,16 @@ import com.inventory.reminders.rest.dto.response.ReminderInventorySummary;
 import com.inventory.reminders.service.InventoryAdapter;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.repository.InventoryRepository;
-import com.inventory.product.rest.dto.response.InventoryReminderSummary;
+import com.inventory.product.service.vertical.InventoryVerticalExtensionHandler;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
 public class InventoryAdapterImpl implements InventoryAdapter {
 
-  @Autowired
-  private InventoryRepository inventoryRepository;
+  @Autowired private InventoryRepository inventoryRepository;
+
+  @Autowired private InventoryVerticalExtensionHandler inventoryVerticalExtensionHandler;
 
   @Override
   public ReminderInventorySummary getInventorySummary(String inventoryId) {
@@ -22,20 +23,26 @@ public class InventoryAdapterImpl implements InventoryAdapter {
       return null;
     }
 
-    return inventoryRepository.findById(inventoryId).map(inv -> {
-      ReminderInventorySummary dto = new ReminderInventorySummary();
-      dto.setId(inv.getId());
-      dto.setLotId(inv.getLotId());
-      dto.setName(inv.getName());
-      dto.setCompanyName(inv.getCompanyName());
-      dto.setLocation(inv.getLocation());
-      dto.setVendorId(inv.getVendorId());
-      dto.setBatchNo(inv.getBatchNo());
-      dto.setMaximumRetailPrice(inv.getMaximumRetailPrice());
-      dto.setCostPrice(inv.getCostPrice());
-      dto.setPriceToRetail(inv.getPriceToRetail());
-      return dto;
-    }).orElse(null);
+    return inventoryRepository
+        .findById(inventoryId)
+        .map(
+            inv -> {
+              inventoryVerticalExtensionHandler.enrichInventoryFromExtension(
+                  inv.getShopId(), inv);
+              ReminderInventorySummary dto = new ReminderInventorySummary();
+              dto.setId(inv.getId());
+              dto.setLotId(inv.getLotId());
+              dto.setName(inv.getName());
+              dto.setCompanyName(inv.getCompanyName());
+              dto.setLocation(inv.getLocation());
+              dto.setVendorId(inv.getVendorId());
+              dto.setBatchNo(inv.getBatchNo());
+              dto.setMaximumRetailPrice(inv.getMaximumRetailPrice());
+              dto.setCostPrice(inv.getCostPrice());
+              dto.setPriceToRetail(inv.getPriceToRetail());
+              return dto;
+            })
+        .orElse(null);
   }
 
   @Override

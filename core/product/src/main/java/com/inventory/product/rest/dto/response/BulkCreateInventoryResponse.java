@@ -32,5 +32,8 @@ public class BulkCreateInventoryResponse {
   public int getCreatedCount() {
     return totalCreated;
   }
+
+  /** Per-item failure messages when {@link #totalFailed} &gt; 0 (product name + reason). */
+  private List<String> itemErrors;
 }
 

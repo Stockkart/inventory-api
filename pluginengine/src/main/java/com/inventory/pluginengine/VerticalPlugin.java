@@ -16,4 +16,8 @@ public interface VerticalPlugin {
   default Optional<InventoryVerticalValidator> getInventoryValidator() {
     return Optional.empty();
   }
+
+  default Optional<InventoryExtensionRepository> getInventoryExtensionRepository() {
+    return Optional.empty();
+  }
 }

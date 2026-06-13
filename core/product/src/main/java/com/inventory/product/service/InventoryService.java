@@ -38,6 +38,7 @@ import com.inventory.product.mapper.InventoryMapper;
 import com.inventory.product.migration.ExcelStockParser;
 import com.inventory.product.mapper.ParsedInventoryMapper;
 import com.inventory.product.utils.constants.ProductMetricsConstants;
+import com.inventory.product.service.vertical.InventoryVerticalExtensionHandler;
 import com.inventory.product.service.vertical.InventoryVerticalValidationHandler;
 import com.inventory.product.validation.ImageValidator;
 import com.inventory.product.validation.InventoryValidator;
@@ -120,6 +121,9 @@ public class InventoryService {
 
   @Autowired
   private InventoryVerticalValidationHandler inventoryVerticalValidationHandler;
+
+  @Autowired
+  private InventoryVerticalExtensionHandler inventoryVerticalExtensionHandler;
 
   @Autowired
   private com.inventory.pricing.domain.repository.PricingRepository pricingRepository;
@@ -329,6 +333,7 @@ public class InventoryService {
         bulkRequest.getVendorId());
 
     List<VendorPurchaseInvoiceLine> invoiceLines = new ArrayList<>();
+    List<String> itemErrors = new ArrayList<>();
     if (bulkRequest.getItems() != null) {
       for (CreateInventoryItemRequest itemRequest : bulkRequest.getItems()) {
         try {
@@ -336,6 +341,8 @@ public class InventoryService {
               inventoryMapper.toCreateInventoryRequest(
                   itemRequest, bulkRequest.getVendorId(), registrationId);
           fullRequest.setVendorPurchaseInvoiceId(registrationId);
+          com.inventory.pluginengine.schema.InventoryVerticalRequestNormalizer.normalizeCreate(
+              fullRequest);
 
           InventoryReceiptResponse response = create(fullRequest, userId, shopId);
           createdItems.add(response);
@@ -350,7 +357,13 @@ public class InventoryService {
           line.setInventoryId(response.getId());
           invoiceLines.add(line);
         } catch (Exception e) {
-          log.error("Failed to create inventory item: {}", e.getMessage(), e);
+          String itemLabel =
+              StringUtils.hasText(itemRequest.getName())
+                  ? itemRequest.getName()
+                  : "item-" + (failedCount + 1);
+          String message = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+          log.error("Failed to create inventory item {}: {}", itemLabel, message, e);
+          itemErrors.add(itemLabel + ": " + message);
           failedCount++;
         }
       }
@@ -394,6 +407,7 @@ public class InventoryService {
     BulkCreateInventoryResponse out =
         inventoryMapper.toBulkCreateInventoryResponse(
             createdItems, failedCount, returnedInvoiceId);
+    out.setItemErrors(itemErrors.isEmpty() ? null : itemErrors);
     out.setCreditEntryId(creditEntryId);
     return out;
   }
@@ -708,6 +722,7 @@ public class InventoryService {
 
   public InventoryReceiptResponse create(CreateInventoryRequest request, String userId, String shopId) {
     try {
+      com.inventory.pluginengine.schema.InventoryVerticalRequestNormalizer.normalizeCreate(request);
       inventoryValidator.validateCreateRequest(request);
       inventoryVerticalValidationHandler.validateCreate(shopId, request);
       log.debug("Creating inventory for barcode: {} in shop: {}", request.getBarcode(), shopId);
@@ -720,7 +735,6 @@ public class InventoryService {
       inventory.setLotId(lotId);
       inventory.setShopId(shopId);
       inventory.setUserId(userId);
-      inventory.setExpiryDate(request.getExpiryDate());
       inventory.setVendorId(request.getVendorId());
       String normalizedBaseUnit = normalizeUnitName(request.getBaseUnit());
       inventory.setBaseUnit(normalizedBaseUnit);
@@ -761,7 +775,11 @@ public class InventoryService {
         inventory.setScheme(request.getScheme());
       }
 
+      inventoryVerticalExtensionHandler.clearExtensionFieldsFromCore(shopId, inventory);
+
       inventory = inventoryRepository.save(inventory);
+
+      inventoryVerticalExtensionHandler.persistAfterCreate(shopId, inventory, request);
 
       log.info("Successfully created inventory lot: {} for product: {} in shop: {}",
           inventory.getLotId(), inventory.getBarcode(), shopId);
@@ -775,7 +793,7 @@ public class InventoryService {
       CreateReminderForInventoryRequest reminderRequest =
           inventoryMapper.toCreateReminderForInventoryRequest(request, shopId, inventory.getId());
       reminderService.createReminderForInventoryCreate(reminderRequest);
-      boolean reminderCreated = inventory.getExpiryDate() != null;
+      boolean reminderCreated = request.getExpiryDate() != null;
       return inventoryMapper.toReceiptResponseWithReminder(inventory, reminderCreated);
 
     } catch (ValidationException e) {
@@ -799,10 +817,7 @@ public class InventoryService {
       PageRequest pageable = PageRequest.of(page, size);
 
       List<Inventory> inventories = inventoryRepository.findByShopId(shopId, pageable);
-      List<InventorySummaryDto> summaries = inventories.stream()
-          .map(inventoryMapper::toSummary)
-          .map(this::enrichPackagingOnSummary)
-          .toList();
+      List<InventorySummaryDto> summaries = toSummariesWithExtensions(shopId, inventories);
 
       // total count for shop
       long totalItems = inventoryRepository.countByShopId(shopId);
@@ -835,10 +850,7 @@ public class InventoryService {
       log.debug("Searching inventory for shop: {} with query: {}", shopId, query);
 
       List<Inventory> inventories = inventoryRepository.searchByShopIdAndQuery(shopId, query.trim());
-      List<InventorySummaryDto> summaries = inventories.stream()
-          .map(inventoryMapper::toSummary)
-          .map(this::enrichPackagingOnSummary)
-          .toList();
+      List<InventorySummaryDto> summaries = toSummariesWithExtensions(shopId, inventories);
 
       return inventoryMapper.toInventoryListResponse(summaries);
 
@@ -876,12 +888,15 @@ public class InventoryService {
         .collect(Collectors.toMap(Inventory::getId, inv -> inv, (a, b) -> a));
 
     List<InventoryDetailResponse> out = new ArrayList<>();
+    List<Inventory> ordered = new ArrayList<>();
     for (String id : normalizedIds) {
       Inventory inv = inventoryById.get(id);
       if (inv != null) {
+        ordered.add(inv);
         out.add(enrichPackagingOnDetail(inventoryMapper.toDetail(inv)));
       }
     }
+    inventoryVerticalExtensionHandler.mergeDetails(shopId, ordered, out);
     return out;
   }
 
@@ -895,7 +910,7 @@ public class InventoryService {
       // Find inventory by ID
       Inventory inventory = inventoryRepository.findById(lotId)
           .orElseThrow(() -> new ResourceNotFoundException("Inventory lot", "lotId", lotId));
-      return enrichPackagingOnDetail(inventoryMapper.toDetail(inventory));
+      return toDetailWithExtensions(inventory.getShopId(), inventory);
 
     } catch (ResourceNotFoundException e) {
       log.warn("Inventory lot not found: {}", lotId);
@@ -1025,10 +1040,7 @@ public class InventoryService {
         throw new ResourceNotFoundException("Lot", "lotId", lotId);
       }
 
-      List<InventorySummaryDto> items = inventories.stream()
-          .map(inventoryMapper::toSummary)
-          .map(this::enrichPackagingOnSummary)
-          .toList();
+      List<InventorySummaryDto> items = toSummariesWithExtensions(shopId, inventories);
 
       // Calculate totals
       Integer totalProductCount = inventories.size();
@@ -1168,18 +1180,19 @@ public class InventoryService {
     PageRequest pageable = PageRequest.of(page, size);
 
     List<Inventory> inventories = inventoryRepository.findByShopId(shopId, pageable);
-    List<InventorySummaryDto> lowStock = inventories.stream()
-      .filter(inv -> {
-        int threshold = inv.getThresholdCount() != null ? inv.getThresholdCount() : 50;
-        int current = getCurrentBaseCount(inv);
-        return current <= threshold;
-      })
-      .map(inv -> {
+    List<InventorySummaryDto> lowStock = new ArrayList<>();
+    List<Inventory> lowStockInventories = new ArrayList<>();
+    for (Inventory inv : inventories) {
+      int threshold = inv.getThresholdCount() != null ? inv.getThresholdCount() : 50;
+      int current = getCurrentBaseCount(inv);
+      if (current <= threshold) {
         InventorySummaryDto dto = enrichPackagingOnSummary(inventoryMapper.toSummary(inv));
-        dto.setThresholdCount(inv.getThresholdCount() != null ? inv.getThresholdCount() : 50);
-        return dto;
-      })
-      .toList();
+        dto.setThresholdCount(threshold);
+        lowStock.add(dto);
+        lowStockInventories.add(inv);
+      }
+    }
+    inventoryVerticalExtensionHandler.mergeSummaries(shopId, lowStockInventories, lowStock);
 
     long totalItems = inventoryRepository.countByShopId(shopId);
     int totalPages = (int) Math.ceil((double) totalItems / size);
@@ -1200,6 +1213,7 @@ public class InventoryService {
   @Transactional
   public InventoryDetailResponse update(String inventoryId, UpdateInventoryRequest request, String shopId) {
     try {
+      com.inventory.pluginengine.schema.InventoryVerticalRequestNormalizer.normalizeCreate(request);
       // Validate inputs
       inventoryValidator.validateShopId(shopId);
       if (inventoryId == null || inventoryId.trim().isEmpty()) {
@@ -1228,10 +1242,8 @@ public class InventoryService {
       if (request.getBusinessType() != null) inventory.setBusinessType(request.getBusinessType());
       if (request.getLocation() != null) inventory.setLocation(request.getLocation());
 
-      // Inventory attributes
-      if (request.getExpiryDate() != null) inventory.setExpiryDate(request.getExpiryDate());
+      // Inventory attributes (extension-schema fields: batchNo, expiryDate, sport, … → extension only)
       if (request.getHsn() != null) inventory.setHsn(request.getHsn());
-      if (request.getBatchNo() != null) inventory.setBatchNo(request.getBatchNo());
       if (request.getVendorId() != null) inventory.setVendorId(request.getVendorId());
       if (request.getThresholdCount() != null) inventory.setThresholdCount(request.getThresholdCount());
       if (request.getBillingMode() != null) inventory.setBillingMode(normalizeBillingMode(request.getBillingMode()));
@@ -1271,8 +1283,11 @@ public class InventoryService {
       // Update updatedAt timestamp
       inventory.setUpdatedAt(Instant.now());
 
+      inventoryVerticalExtensionHandler.clearExtensionFieldsFromCore(shopId, inventory);
+
       // Save inventory
       inventory = inventoryRepository.save(inventory);
+      inventoryVerticalExtensionHandler.persistAfterUpdate(shopId, inventory, request);
       log.info("Successfully updated inventory with ID: {}", inventoryId);
 
       if (metrics != null) {
@@ -1280,7 +1295,7 @@ public class InventoryService {
         metrics.record(ProductMetricsConstants.INVENTORY_ITEMS_ADDED, 1, "module", ProductMetricsConstants.MODULE);
       }
 
-      return enrichPackagingOnDetail(inventoryMapper.toDetail(inventory));
+      return toDetailWithExtensions(shopId, inventory);
 
     } catch (ValidationException | ResourceNotFoundException e) {
       log.warn("Update inventory validation failed: {}", e.getMessage());
@@ -1308,6 +1323,26 @@ public class InventoryService {
       return packagingUnitService.buildUnitConversion(normalizedBaseUnit, request.getUnitsPerPack());
     }
     return normalizeUnitConversion(request.getUnitConversions(), normalizedBaseUnit);
+  }
+
+  private InventoryDetailResponse toDetailWithExtensions(String shopId, Inventory inventory) {
+    InventoryDetailResponse detail =
+        enrichPackagingOnDetail(inventoryMapper.toDetail(inventory));
+    return inventoryVerticalExtensionHandler.mergeDetail(shopId, inventory, detail);
+  }
+
+  private List<InventorySummaryDto> toSummariesWithExtensions(
+      String shopId, List<Inventory> inventories) {
+    if (inventories == null || inventories.isEmpty()) {
+      return List.of();
+    }
+    List<InventorySummaryDto> summaries =
+        inventories.stream()
+            .map(inventoryMapper::toSummary)
+            .map(this::enrichPackagingOnSummary)
+            .toList();
+    inventoryVerticalExtensionHandler.mergeSummaries(shopId, inventories, summaries);
+    return summaries;
   }
 
   private InventorySummaryDto enrichPackagingOnSummary(InventorySummaryDto dto) {

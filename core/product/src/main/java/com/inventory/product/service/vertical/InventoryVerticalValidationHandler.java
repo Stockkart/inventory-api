@@ -29,12 +29,17 @@ public class InventoryVerticalValidationHandler {
   private final ShopRepository shopRepository;
   private final PluginRegistry pluginRegistry;
   private final SchemaLoader schemaLoader;
+  private final InventoryVerticalExtensionHandler inventoryVerticalExtensionHandler;
 
   public InventoryVerticalValidationHandler(
-      ShopRepository shopRepository, PluginRegistry pluginRegistry, SchemaLoader schemaLoader) {
+      ShopRepository shopRepository,
+      PluginRegistry pluginRegistry,
+      SchemaLoader schemaLoader,
+      InventoryVerticalExtensionHandler inventoryVerticalExtensionHandler) {
     this.shopRepository = shopRepository;
     this.pluginRegistry = pluginRegistry;
     this.schemaLoader = schemaLoader;
+    this.inventoryVerticalExtensionHandler = inventoryVerticalExtensionHandler;
   }
 
   public void validateCreate(String shopId, CreateInventoryRequest request) {
@@ -64,9 +69,14 @@ public class InventoryVerticalValidationHandler {
               VerticalSchema schema =
                   schemaLoader.load(shop.getVerticalId(), shop.getPluginVersion());
               List<VerticalSchemaField> inventoryFields = inventoryFields(schema);
+              Map<String, Object> extensionFallback =
+                  existing != null
+                      ? inventoryVerticalExtensionHandler.loadExtensionFieldsForValidation(
+                          shopId, existing.getId())
+                      : Map.of();
               Map<String, Object> fields =
                   VerticalSchemaFieldResolver.mergeVerticalFields(
-                      inventoryFields, requestBean, existing);
+                      inventoryFields, requestBean, existing, extensionFallback);
 
               InventoryValidationContext context =
                   new InventoryValidationContext(

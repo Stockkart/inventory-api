@@ -1,5 +1,6 @@
 package com.inventory.product.rest.dto.request;
 
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.inventory.reminders.rest.dto.request.CustomReminderRequest;
 import com.inventory.pricing.rest.dto.response.RateDto;
 import com.inventory.product.domain.model.enums.DiscountApplicable;
@@ -7,6 +8,7 @@ import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.enums.ItemType;
 import com.inventory.product.domain.model.enums.SchemeType;
 import com.inventory.product.domain.model.UnitConversion;
+import com.inventory.product.utils.FlexibleInstantDeserializer;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -41,7 +43,9 @@ public class CreateInventoryRequest {
   /** Optional conversion where factor is base units in 1 pack (legacy; prefer unitsPerPack). */
   private UnitConversion unitConversions;
   private Integer thresholdCount;
+  @JsonDeserialize(using = FlexibleInstantDeserializer.class)
   private Instant expiryDate;
+  @JsonDeserialize(using = FlexibleInstantDeserializer.class)
   private Instant reminderAt;
   private List<CustomReminderRequest> customReminders;
   // Vendor ID (optional - reference to existing vendor)
