@@ -14,6 +14,7 @@ import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 @Data
 @NoArgsConstructor
@@ -66,5 +67,7 @@ public class InventoryDetailResponse {
   BigDecimal schemePercentage;
   String sgst; // SGST rate (e.g., "9" for 9%)
   String cgst; // CGST rate (e.g., "9" for 9%)
+  /** Vertical extension fields keyed by schema field name (sport, brand, batchNo, …). */
+  Map<String, Object> verticalFields;
 }
 

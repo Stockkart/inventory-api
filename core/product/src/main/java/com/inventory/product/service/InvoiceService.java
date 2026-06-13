@@ -51,6 +51,10 @@ public class InvoiceService {
   private InventoryRepository inventoryRepository;
 
   @Autowired
+  private com.inventory.product.service.vertical.InventoryVerticalExtensionHandler
+      inventoryVerticalExtensionHandler;
+
+  @Autowired
   private CustomerService customerService;
 
   @Autowired
@@ -182,6 +186,8 @@ public class InvoiceService {
           Optional<Inventory> inventoryOpt = inventoryRepository.findById(purchaseItem.getInventoryId());
           if (inventoryOpt.isPresent()) {
             Inventory inventory = inventoryOpt.get();
+            inventoryVerticalExtensionHandler.enrichInventoryFromExtension(
+                inventory.getShopId(), inventory);
             invoiceItem.setHsn(inventory.getHsn());
             invoiceItem.setCompanyName(inventory.getCompanyName());
             invoiceItem.setBatchNo(inventory.getBatchNo());

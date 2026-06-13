@@ -27,7 +27,8 @@ Stock Kart Inventory API provides:
 - **Reminders** – Low-stock alerts, SSE events, expiry reminders
 - **Notifications** – Email (Resend), WhatsApp-ready; signup/login emails
 - **Analytics** – Customer analytics, dashboards
-- **Plugin engine** – Extensible domain plugins (e.g. medical)
+- **Plugin engine** – Extensible domain plugins (medical, sports, …)
+- **Vertical schemas** – DB-backed `vertical_schemas`; schema-driven validation and UI metadata
 
 **Tech stack:** Java 21, Spring Boot 3.3, MongoDB, Maven, MapStruct, Lombok
 
@@ -179,11 +180,30 @@ inventory-api/
 | **core/taxation** | Tax calculation logic |
 | **pluginengine** | Plugin discovery and registration |
 | **plugins/medical** | Medical-domain extensions |
+| **plugins/sports** | Sports-domain extensions |
 
 ### Documentation
 
-- [Vertical Plugin Architecture v4.6](docs/VERTICAL_PLUGIN_ARCHITECTURE.md) — top-down guide: architecture diagram, flows, plugins, migration; search/analytics in reference section
+- [Vertical Plugin Architecture v4.8](docs/VERTICAL_PLUGIN_ARCHITECTURE.md) — top-down guide: architecture diagram, flows, plugins, Phase 1–2 implementation status, migration
 - [Vertical Plugin Architecture (HTML)](docs/VERTICAL_PLUGIN_ARCHITECTURE.html) — same doc for browser / print / PDF
+
+### Vertical plugins & schema API
+
+Shops are bound to a **vertical** (`Shop.verticalId` + `Shop.pluginVersion`). Field definitions live in MongoDB (`vertical_schemas`), seeded from `core/product/src/main/resources/seeds/*.json` on boot.
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/v1/verticals` | List ACTIVE verticals (onboarding catalog) |
+| `GET /api/v1/verticals/{verticalId}/schema?mode=` | Public schema preview (no shop context) |
+| `GET /api/v1/shops/me/schema?mode=regular\|basic\|invoice` | Filtered schema for logged-in shop UI |
+
+**Modes:** `regular` (full registration), `basic` (quick stock-in), `invoice` (print surfaces). Required fields respect `showIn` per mode after Phase 2 filter updates.
+
+**After changing seed JSON**, re-seed or delete the stale `vertical_schemas` row (e.g. `medical_1.0.0`) so `SchemaLoader` picks up new labels/fields. `SchemaLoader.warmCache()` runs at startup after seeding.
+
+**Seed mirrors:** `docs/seeds/medical-v1.json`, `docs/seeds/sports-v1.json`
+
+**Frontend (inventory-platform):** consumes schema APIs for onboarding, product registration, and scan-sell `businessType` — see architecture doc § Phase 2.
 
 ### Build commands
 

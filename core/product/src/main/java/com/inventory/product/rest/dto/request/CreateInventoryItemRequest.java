@@ -1,5 +1,6 @@
 package com.inventory.product.rest.dto.request;
 
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.inventory.reminders.rest.dto.request.CustomReminderRequest;
 import com.inventory.pricing.rest.dto.response.RateDto;
 import com.inventory.product.domain.model.enums.DiscountApplicable;
@@ -7,11 +8,13 @@ import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.enums.ItemType;
 import com.inventory.product.domain.model.enums.SchemeType;
 import com.inventory.product.domain.model.UnitConversion;
+import com.inventory.product.utils.FlexibleInstantDeserializer;
 import lombok.Data;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Request DTO for a single inventory item (without vendorId and lotId).
@@ -43,7 +46,9 @@ public class CreateInventoryItemRequest {
   /** Legacy pack conversion; prefer unitsPerPack. */
   private UnitConversion unitConversions;
   private Integer thresholdCount;
+  @JsonDeserialize(using = FlexibleInstantDeserializer.class)
   private Instant expiryDate;
+  @JsonDeserialize(using = FlexibleInstantDeserializer.class)
   private Instant reminderAt;
   private List<CustomReminderRequest> customReminders;
   // HSN code (optional)
@@ -68,5 +73,7 @@ public class CreateInventoryItemRequest {
   private String sgst;
   // CGST rate (optional, e.g., "9" for 9%). Uses shop default if not provided.
   private String cgst;
+  /** Vertical-specific fields (sport, brand, model, batchNo, expiryDate, …) keyed by schema field name. */
+  private Map<String, Object> verticalFields;
 }
 
