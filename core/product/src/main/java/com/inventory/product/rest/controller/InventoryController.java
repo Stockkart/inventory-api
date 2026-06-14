@@ -116,10 +116,7 @@ public class InventoryController {
 
   @GetMapping("/search")
   public ResponseEntity<ApiResponse<InventoryListResponse>> search(
-      @RequestParam(value = "q", required = false) String q,
-      @RequestParam Map<String, String> allParams,
-      @RequestParam(value = "sort", required = false) String sort,
-      @RequestParam(value = "limit", required = false) Integer limit,
+      @RequestParam Map<String, String> query,
       HttpServletRequest httpRequest) {
     String shopId = (String) httpRequest.getAttribute("shopId");
 
@@ -129,16 +126,8 @@ public class InventoryController {
           "Unauthorized access to shop inventory");
     }
 
-    Map<String, String> filters = new java.util.LinkedHashMap<>();
-    allParams.forEach(
-        (key, value) -> {
-          if (key.startsWith("filters[") && key.endsWith("]") && StringUtils.hasText(value)) {
-            filters.put(key.substring(8, key.length() - 1), value);
-          }
-        });
-
     return ResponseEntity.ok(
-        ApiResponse.success(inventoryService.search(shopId, q, filters, sort, limit)));
+        ApiResponse.success(inventoryService.search(shopId, query)));
   }
 
   @GetMapping("/expiry-buckets")

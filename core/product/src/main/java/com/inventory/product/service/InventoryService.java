@@ -8,6 +8,7 @@ import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.VendorPurchaseInvoice;
 import com.inventory.product.domain.model.VendorPurchaseInvoiceLine;
 import com.inventory.product.domain.repository.VendorPurchaseInvoiceRepository;
+import com.inventory.product.utils.constants.ProductMetricsConstants;
 import com.inventory.user.domain.model.Vendor;
 import com.inventory.user.domain.repository.VendorRepository;
 import com.inventory.product.rest.dto.request.VendorPurchaseInvoiceRequest;
@@ -39,7 +40,7 @@ import java.util.ArrayList;
 import com.inventory.product.mapper.InventoryMapper;
 import com.inventory.product.migration.ExcelStockParser;
 import com.inventory.product.mapper.ParsedInventoryMapper;
-import com.inventory.product.utils.constants.ProductMetricsConstants;
+import com.inventory.product.utils.InventorySearchQueryParser;
 import com.inventory.product.service.vertical.InventoryVerticalExpiryHandler;
 import com.inventory.product.service.vertical.InventoryVerticalExtensionHandler;
 import com.inventory.product.service.vertical.InventoryVerticalSearchHandler;
@@ -848,6 +849,20 @@ public class InventoryService {
       log.error("Unexpected error while listing inventory: {}", e.getMessage(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Failed to retrieve inventory list");
     }
+  }
+
+  public InventoryListResponse search(String shopId, Map<String, String> query) {
+    InventorySearchQueryParser.Parsed parsed = InventorySearchQueryParser.parse(query);
+    if (parsed.fefo()) {
+      String batchNo = parsed.fieldFilters().get("batchNo");
+      return getFefoInventory(shopId, batchNo, parsed.limit());
+    }
+    return search(
+        shopId,
+        parsed.q(),
+        parsed.fieldFilters(),
+        parsed.sort(),
+        parsed.limit());
   }
 
   public InventoryListResponse search(
