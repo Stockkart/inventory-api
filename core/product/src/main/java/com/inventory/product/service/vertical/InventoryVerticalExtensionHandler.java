@@ -20,6 +20,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.BeanWrapper;
+import org.springframework.beans.BeanWrapperImpl;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -63,6 +65,25 @@ public class InventoryVerticalExtensionHandler {
       return Map.of();
     }
     return ctx.repository().findByInventoryIds(shopId, inventoryIds);
+  }
+
+  /** Clears extension-schema values from core {@link Inventory} before Mongo save. */
+  public void clearExtensionFieldsFromCore(String shopId, Inventory inventory) {
+    if (inventory == null) {
+      return;
+    }
+    ExtensionContext ctx = resolveContext(shopId).orElse(null);
+    if (ctx == null || ctx.extensionFields().isEmpty()) {
+      return;
+    }
+    BeanWrapper wrapper = new BeanWrapperImpl(inventory);
+    for (VerticalSchemaField field : ctx.extensionFields()) {
+      String property =
+          StringUtils.hasText(field.getApiKey()) ? field.getApiKey() : field.getKey();
+      if (wrapper.isWritableProperty(property)) {
+        wrapper.setPropertyValue(property, null);
+      }
+    }
   }
 
   public void persistAfterCreate(

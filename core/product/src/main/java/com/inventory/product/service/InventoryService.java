@@ -36,6 +36,7 @@ import com.inventory.product.rest.dto.response.LotSummaryDto;
 import com.inventory.product.rest.dto.response.PageMeta;
 import com.inventory.product.rest.dto.response.ParsedInventoryListResponse;
 import com.inventory.pluginengine.VerticalFieldsReader;
+import com.inventory.pluginengine.schema.InventoryVerticalRequestNormalizer;
 import java.util.ArrayList;
 import com.inventory.product.mapper.InventoryMapper;
 import com.inventory.product.migration.ExcelStockParser;
