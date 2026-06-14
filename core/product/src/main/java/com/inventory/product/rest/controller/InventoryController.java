@@ -144,36 +144,6 @@ public class InventoryController {
         ApiResponse.success(inventoryService.getExpiryBuckets(shopId, expiringSoonDays)));
   }
 
-  @GetMapping("/near-expiry")
-  public ResponseEntity<ApiResponse<InventoryListResponse>> nearExpiry(
-      @RequestParam(value = "days", required = false) Integer days,
-      @RequestParam(value = "limit", required = false) Integer limit,
-      HttpServletRequest httpRequest) {
-    String shopId = (String) httpRequest.getAttribute("shopId");
-    if (StringUtils.isEmpty(shopId)) {
-      throw new AuthenticationException(
-          ErrorCode.UNAUTHORIZED,
-          "Unauthorized access to shop inventory");
-    }
-    return ResponseEntity.ok(
-        ApiResponse.success(inventoryService.getNearExpiryReport(shopId, days, limit)));
-  }
-
-  @GetMapping("/fefo")
-  public ResponseEntity<ApiResponse<InventoryListResponse>> fefo(
-      @RequestParam(value = "batchNo", required = false) String batchNo,
-      @RequestParam(value = "limit", required = false) Integer limit,
-      HttpServletRequest httpRequest) {
-    String shopId = (String) httpRequest.getAttribute("shopId");
-    if (StringUtils.isEmpty(shopId)) {
-      throw new AuthenticationException(
-          ErrorCode.UNAUTHORIZED,
-          "Unauthorized access to shop inventory");
-    }
-    return ResponseEntity.ok(
-        ApiResponse.success(inventoryService.getFefoInventory(shopId, batchNo, limit)));
-  }
-
   @PostMapping("/by-ids")
   public ResponseEntity<ApiResponse<List<InventoryDetailResponse>>> getByIds(
       @RequestBody InventoryIdsRequest request,

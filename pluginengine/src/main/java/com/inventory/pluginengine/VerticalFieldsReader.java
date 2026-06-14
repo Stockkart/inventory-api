@@ -33,7 +33,11 @@ public final class VerticalFieldsReader {
   }
 
   public static Instant expiryDateFrom(Object requestBean) {
-    return asInstant(bagFrom(requestBean).get("expiryDate"));
+    Instant fromBag = asInstant(bagFrom(requestBean).get("expiryDate"));
+    if (fromBag != null) {
+      return fromBag;
+    }
+    return readInstantProperty(requestBean, "expiryDate");
   }
 
   public static String batchNoFrom(Object requestBean) {
@@ -51,6 +55,17 @@ public final class VerticalFieldsReader {
     }
     Object value = extensionFields.get("batchNo");
     return value != null ? String.valueOf(value) : null;
+  }
+
+  private static Instant readInstantProperty(Object requestBean, String property) {
+    if (requestBean == null) {
+      return null;
+    }
+    BeanWrapper wrapper = new BeanWrapperImpl(requestBean);
+    if (!wrapper.isReadableProperty(property)) {
+      return null;
+    }
+    return asInstant(wrapper.getPropertyValue(property));
   }
 
   private static Instant asInstant(Object value) {

@@ -13,12 +13,11 @@ public final class InventorySearchQueryParser {
 
   private InventorySearchQueryParser() {}
 
-  public record Parsed(
-      String q, String sort, Integer limit, Map<String, String> fieldFilters, boolean fefo) {}
+  public record Parsed(String q, String sort, Integer limit, Map<String, String> fieldFilters) {}
 
   public static Parsed parse(Map<String, String> query) {
     if (query == null || query.isEmpty()) {
-      return new Parsed(null, null, null, Map.of(), false);
+      return new Parsed(null, null, null, Map.of());
     }
 
     String sort = trimToNull(query.get("sort"));
@@ -26,7 +25,6 @@ public final class InventorySearchQueryParser {
 
     String rawQ = trimToNull(query.get("q"));
     Map<String, String> fieldFilters = new LinkedHashMap<>();
-    boolean fefo = false;
     String q = rawQ;
 
     if (rawQ != null) {
@@ -34,13 +32,13 @@ public final class InventorySearchQueryParser {
           InventoryUnifiedSearchQueryParser.parse(rawQ);
       q = unified.textQuery();
       fieldFilters.putAll(unified.fieldFilters());
-      fefo = unified.fefo();
-      if (unified.sortByExpiry() && sort == null) {
-        sort = "expiryDate:asc";
-      }
     }
 
-    return new Parsed(q, sort, limit, fieldFilters, fefo);
+    if (sort == null) {
+      sort = "expiryDate:asc";
+    }
+
+    return new Parsed(q, sort, limit, fieldFilters);
   }
 
   private static String trimToNull(String value) {

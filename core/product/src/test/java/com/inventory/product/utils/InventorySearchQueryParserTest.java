@@ -1,7 +1,6 @@
 package com.inventory.product.utils;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -17,13 +16,13 @@ class InventorySearchQueryParserTest {
     assertEquals("dolo", parsed.q());
     assertEquals(25, parsed.limit());
     assertEquals("ABC12", parsed.fieldFilters().get("batchNo"));
+    assertEquals("expiryDate:asc", parsed.sort());
   }
 
   @Test
-  void parse_fefoRoutesFlag() {
+  void parse_defaultsExpirySort() {
     InventorySearchQueryParser.Parsed parsed =
-        InventorySearchQueryParser.parse(Map.of("q", "fefo batch B9"));
-    assertTrue(parsed.fefo());
-    assertEquals("B9", parsed.fieldFilters().get("batchNo"));
+        InventorySearchQueryParser.parse(Map.of("q", "paracetamol"));
+    assertEquals("expiryDate:asc", parsed.sort());
   }
 }
