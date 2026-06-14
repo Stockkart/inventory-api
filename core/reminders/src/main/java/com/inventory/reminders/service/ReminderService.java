@@ -7,6 +7,7 @@ import com.inventory.reminders.rest.dto.request.SnoozeReminderRequest;
 import com.inventory.reminders.rest.dto.request.UpdateReminderRequest;
 import com.inventory.reminders.rest.dto.response.ReminderDetailListResponse;
 import com.inventory.reminders.rest.dto.response.ReminderDetailListWrapper;
+import com.inventory.reminders.rest.dto.response.ReminderExpiryBucketsResponse;
 import com.inventory.reminders.rest.dto.response.ReminderListResponse;
 import com.inventory.reminders.rest.dto.response.ReminderResponse;
 import com.inventory.common.exception.ResourceNotFoundException;
@@ -43,6 +44,14 @@ public class ReminderService {
 
   @Autowired
   private ReminderValidator reminderValidator;
+
+  @Autowired
+  private InventoryAdapter inventoryAdapter;
+
+  public ReminderExpiryBucketsResponse getExpiryBuckets(String shopId, Integer expiringSoonDays) {
+    reminderValidator.validateShopId(shopId);
+    return inventoryAdapter.getExpiryBuckets(shopId, expiringSoonDays);
+  }
 
   public ReminderListResponse list(String shopId, int page, int size) {
     PageRequest pageable = PageRequest.of(page, size);

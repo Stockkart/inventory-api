@@ -38,6 +38,8 @@ public interface InventoryMapper {
   @Mapping(target = "soldBaseCount", constant = "0")
   @Mapping(target = "currentCount", ignore = true)
   @Mapping(target = "currentBaseCount", ignore = true)
+  @Mapping(target = "expiryDate", ignore = true)
+  @Mapping(target = "batchNo", ignore = true)
   @Mapping(target = "receivedDate", expression = "java(java.time.Instant.now())")
   @Mapping(target = "createdAt", expression = "java(java.time.Instant.now())")
   @Mapping(target = "updatedAt", expression = "java(java.time.Instant.now())")
@@ -114,7 +116,6 @@ public interface InventoryMapper {
   @Mapping(target = "currentCount", source = "currentCount")
   @Mapping(target = "currentBaseCount", expression = "java(resolveCurrentBaseCount(inventory))")
   @Mapping(target = "location", source = "location")
-  @Mapping(target = "expiryDate", source = "expiryDate")
   @Mapping(target = "shopId", source = "shopId")
   @Mapping(target = "vendorId", source = "vendorId")
   @Mapping(target = "vendorPurchaseInvoiceId", source = "vendorPurchaseInvoiceId")
@@ -153,7 +154,6 @@ public interface InventoryMapper {
   @Mapping(target = "currentCount", source = "currentCount")
   @Mapping(target = "currentBaseCount", expression = "java(resolveCurrentBaseCount(inventory))")
   @Mapping(target = "location", source = "location")
-  @Mapping(target = "expiryDate", source = "expiryDate")
   @Mapping(target = "shopId", source = "shopId")
   @Mapping(target = "vendorPurchaseInvoiceId", source = "vendorPurchaseInvoiceId")
   @Mapping(target = "itemType", source = "itemType")
@@ -172,7 +172,7 @@ public interface InventoryMapper {
 
   @Mapping(target = "shopId", source = "shopId")
   @Mapping(target = "inventoryId", source = "inventoryId")
-  @Mapping(target = "expiryDate", source = "request.expiryDate")
+  @Mapping(target = "expiryDate", ignore = true)
   @Mapping(target = "reminderAt", source = "request.reminderAt")
   @Mapping(target = "customReminders", source = "request.customReminders")
   CreateReminderForInventoryRequest toCreateReminderForInventoryRequest(

@@ -20,4 +20,8 @@ public interface VerticalPlugin {
   default Optional<InventoryExtensionRepository> getInventoryExtensionRepository() {
     return Optional.empty();
   }
+
+  default Optional<InventorySearchProvider> getSearchProvider() {
+    return Optional.empty();
+  }
 }

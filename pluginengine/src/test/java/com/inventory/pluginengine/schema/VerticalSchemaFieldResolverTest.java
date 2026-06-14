@@ -11,29 +11,35 @@ import org.junit.jupiter.api.Test;
 class VerticalSchemaFieldResolverTest {
 
   @Test
-  void readsSchemaFieldsFromRequestBeanWhenVerticalFieldsAbsent() {
-    VerticalSchemaField companyName = new VerticalSchemaField();
-    companyName.setKey("companyName");
-
-    VerticalSchemaField batchNo = new VerticalSchemaField();
-    batchNo.setKey("batchNo");
+  void readsCoreFieldsFromRequestBean() {
+    VerticalSchemaField companyName = field("companyName", "core");
 
     SampleCreateRequest request = new SampleCreateRequest();
     request.setCompanyName("Acme Pharma");
-    request.setBatchNo("B001");
 
     Map<String, Object> fields =
-        VerticalSchemaFieldResolver.mergeVerticalFields(
-            List.of(companyName, batchNo), request, null);
+        VerticalSchemaFieldResolver.mergeVerticalFields(List.of(companyName), request, null);
 
     assertEquals("Acme Pharma", fields.get("companyName"));
+  }
+
+  @Test
+  void extensionFieldsComeOnlyFromVerticalFieldsBag() {
+    VerticalSchemaField batchNo = field("batchNo", "extension");
+
+    SampleCreateRequest request = new SampleCreateRequest();
+    request.setBatchNo("IGNORED");
+    request.setVerticalFields(Map.of("batchNo", "B001"));
+
+    Map<String, Object> fields =
+        VerticalSchemaFieldResolver.mergeVerticalFields(List.of(batchNo), request, null);
+
     assertEquals("B001", fields.get("batchNo"));
   }
 
   @Test
   void verticalFieldsOverrideRequestBeanValues() {
-    VerticalSchemaField sport = new VerticalSchemaField();
-    sport.setKey("sport");
+    VerticalSchemaField sport = field("sport", "extension");
 
     SampleCreateRequest request = new SampleCreateRequest();
     request.setSport("football");
@@ -47,8 +53,7 @@ class VerticalSchemaFieldResolverTest {
 
   @Test
   void verticalFieldsBagProvidesExtensionOnlyFields() {
-    VerticalSchemaField brand = new VerticalSchemaField();
-    brand.setKey("brand");
+    VerticalSchemaField brand = field("brand", "extension");
 
     SampleCreateRequest request = new SampleCreateRequest();
     request.setVerticalFields(Map.of("brand", "MRF", "model", "Grand"));
@@ -62,8 +67,7 @@ class VerticalSchemaFieldResolverTest {
 
   @Test
   void resolvesApiKeyWhenPropertyNameDiffersFromSchemaKey() {
-    VerticalSchemaField legacy = new VerticalSchemaField();
-    legacy.setKey("displayName");
+    VerticalSchemaField legacy = field("displayName", "core");
     legacy.setApiKey("name");
 
     SampleCreateRequest request = new SampleCreateRequest();
@@ -76,30 +80,34 @@ class VerticalSchemaFieldResolverTest {
   }
 
   @Test
-  void updateFallsBackToExistingInventory() {
-    VerticalSchemaField batchNo = new VerticalSchemaField();
-    batchNo.setKey("batchNo");
+  void updateFallsBackToExtensionDocument() {
+    VerticalSchemaField batchNo = field("batchNo", "extension");
 
     SampleUpdateRequest request = new SampleUpdateRequest();
-    SampleInventory existing = new SampleInventory();
-    existing.setBatchNo("B-old");
 
     Map<String, Object> fields =
-        VerticalSchemaFieldResolver.mergeVerticalFields(List.of(batchNo), request, existing);
+        VerticalSchemaFieldResolver.mergeVerticalFields(
+            List.of(batchNo), request, null, Map.of("batchNo", "B-old"));
 
     assertEquals("B-old", fields.get("batchNo"));
   }
 
   @Test
   void missingPropertyIsOmittedFromMap() {
-    VerticalSchemaField storageTemp = new VerticalSchemaField();
-    storageTemp.setKey("storageTemp");
+    VerticalSchemaField storageTemp = field("storageTemp", "extension");
 
     Map<String, Object> fields =
         VerticalSchemaFieldResolver.mergeVerticalFields(
             List.of(storageTemp), new SampleCreateRequest(), null);
 
     assertNull(fields.get("storageTemp"));
+  }
+
+  private static VerticalSchemaField field(String key, String storage) {
+    VerticalSchemaField field = new VerticalSchemaField();
+    field.setKey(key);
+    field.setStorage(storage);
+    return field;
   }
 
   static class SampleCreateRequest {
@@ -158,6 +166,7 @@ class VerticalSchemaFieldResolverTest {
     }
   }
 
+  @SuppressWarnings("unused")
   static class SampleInventory {
     private String batchNo;
     private Instant expiryDate;

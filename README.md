@@ -184,8 +184,20 @@ inventory-api/
 
 ### Documentation
 
-- [Vertical Plugin Architecture v4.8](docs/VERTICAL_PLUGIN_ARCHITECTURE.md) — top-down guide: architecture diagram, flows, plugins, Phase 1–2 implementation status, migration
+- [Vertical Plugin Architecture v4.9](docs/VERTICAL_PLUGIN_ARCHITECTURE.md) — architecture, **implementation status**, phases 1–7 roadmap
 - [Vertical Plugin Architecture (HTML)](docs/VERTICAL_PLUGIN_ARCHITECTURE.html) — same doc for browser / print / PDF
+
+### Implementation status (vertical plugins)
+
+| Phase | Status |
+|-------|--------|
+| 1 — Foundation | **Shipped** |
+| 2 — Dynamic UI | **Mostly shipped** (platform) |
+| 3 — Extension storage | **Shipped** |
+| 4 — Search providers | **Shipped** |
+| 5 — Second vertical proof | **Partial** (sports done; apparel/cafe planned) |
+| 6 — Import, widgets | Planned |
+| 7 — Scale & analytics | Planned |
 
 ### Vertical plugins & schema API
 
@@ -197,13 +209,25 @@ Shops are bound to a **vertical** (`Shop.verticalId` + `Shop.pluginVersion`). Fi
 | `GET /api/v1/verticals/{verticalId}/schema?mode=` | Public schema preview (no shop context) |
 | `GET /api/v1/shops/me/schema?mode=regular\|basic\|invoice` | Filtered schema for logged-in shop UI |
 
+**Inventory search & expiry (Phase 4):**
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/v1/inventory/search` | Text `q` + `filters[key]` + `sort` + `limit` |
+| `GET /api/v1/inventory/expiry-buckets` | Expiry bucket counts |
+| `GET /api/v1/inventory/near-expiry` | Near-expiry inventory list |
+| `GET /api/v1/inventory/fefo` | FEFO-ordered in-stock list |
+| `GET /api/v1/reminders/expiry-buckets` | Same buckets for reminders dashboard |
+
 **Modes:** `regular` (full registration), `basic` (quick stock-in), `invoice` (print surfaces). Required fields respect `showIn` per mode after Phase 2 filter updates.
 
 **After changing seed JSON**, re-seed or delete the stale `vertical_schemas` row (e.g. `medical_1.0.0`) so `SchemaLoader` picks up new labels/fields. `SchemaLoader.warmCache()` runs at startup after seeding.
 
 **Seed mirrors:** `docs/seeds/medical-v1.json`, `docs/seeds/sports-v1.json`
 
-**Frontend (inventory-platform):** consumes schema APIs for onboarding, product registration, and scan-sell `businessType` — see architecture doc § Phase 2.
+**Frontend (inventory-platform):** consumes schema APIs for onboarding, product registration, scan-sell, product-search filters, and reminders expiry buckets — see architecture doc § Implementation status.
+
+**Remaining:** M8 core field strip migration; cursor pagination; FEFO in checkout UI; apparel/cafe vertical (Phase 5); import mappers + widgets (Phase 6).
 
 ### Build commands
 

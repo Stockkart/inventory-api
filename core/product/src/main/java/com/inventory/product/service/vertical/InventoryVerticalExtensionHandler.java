@@ -2,6 +2,7 @@ package com.inventory.product.service.vertical;
 
 import com.inventory.pluginengine.InventoryExtensionRepository;
 import com.inventory.pluginengine.PluginRegistry;
+import com.inventory.pluginengine.VerticalFieldsReader;
 import com.inventory.pluginengine.schema.VerticalSchema;
 import com.inventory.pluginengine.schema.VerticalSchemaField;
 import com.inventory.pluginengine.schema.VerticalSchemaFieldResolver;
@@ -13,19 +14,18 @@ import com.inventory.product.rest.dto.request.CreateInventoryRequest;
 import com.inventory.product.rest.dto.request.UpdateInventoryRequest;
 import com.inventory.product.rest.dto.response.InventoryDetailResponse;
 import com.inventory.product.rest.dto.response.InventorySummaryDto;
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.BeanWrapper;
-import org.springframework.beans.BeanWrapperImpl;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 /**
- * Extension-only writes and read-merge for vertical inventory fields via {@link PluginRegistry}.
- * Schema {@code storage: extension} fields are never persisted on core {@link Inventory}.
+ * Extension-only writes and {@code verticalFields} on API responses.
+ * Extension-schema fields are never persisted on core {@link Inventory}.
  */
 @Component
 @Slf4j
@@ -44,39 +44,25 @@ public class InventoryVerticalExtensionHandler {
     this.schemaLoader = schemaLoader;
   }
 
-  /** Strip extension-schema fields from core entity before save (M7 — extension-only writes). */
-  public void clearExtensionFieldsFromCore(String shopId, Inventory inventory) {
-    ExtensionContext ctx = resolveContext(shopId).orElse(null);
-    if (ctx == null || inventory == null || ctx.extensionFields().isEmpty()) {
-      return;
-    }
-    BeanWrapper wrapper = new BeanWrapperImpl(inventory);
-    for (VerticalSchemaField field : ctx.extensionFields()) {
-      String property =
-          StringUtils.hasText(field.getApiKey()) ? field.getApiKey() : field.getKey();
-      if (wrapper.isWritableProperty(property)) {
-        wrapper.setPropertyValue(property, null);
-      }
-    }
+  public Map<String, Object> loadExtensionFields(String shopId, String inventoryId) {
+    return loadExtensionFieldsForValidation(shopId, inventoryId);
   }
 
-  /** Load extension fields onto an in-memory inventory (invoices, reminders, internal reads). */
-  public void enrichInventoryFromExtension(String shopId, Inventory inventory) {
-    if (inventory == null || !StringUtils.hasText(inventory.getId())) {
-      return;
-    }
+  public Instant loadExpiryDate(String shopId, String inventoryId) {
+    return VerticalFieldsReader.expiryDateFrom(loadExtensionFields(shopId, inventoryId));
+  }
+
+  public String loadBatchNo(String shopId, String inventoryId) {
+    return VerticalFieldsReader.batchNoFrom(loadExtensionFields(shopId, inventoryId));
+  }
+
+  public Map<String, Map<String, Object>> loadExtensionFieldsBatch(
+      String shopId, List<String> inventoryIds) {
     ExtensionContext ctx = resolveContext(shopId).orElse(null);
-    if (ctx == null) {
-      return;
+    if (ctx == null || inventoryIds == null || inventoryIds.isEmpty()) {
+      return Map.of();
     }
-    Map<String, Object> stored =
-        ctx.repository()
-            .findByInventoryId(shopId, inventory.getId())
-            .orElse(Map.of());
-    Map<String, Object> merged =
-        VerticalSchemaStorage.mergeExtensionReadFields(
-            ctx.extensionFields(), stored, inventory);
-    VerticalSchemaStorage.applyExtensionFieldsToBean(inventory, merged);
+    return ctx.repository().findByInventoryIds(shopId, inventoryIds);
   }
 
   public void persistAfterCreate(
@@ -103,7 +89,7 @@ public class InventoryVerticalExtensionHandler {
             : Map.of();
     Map<String, Object> merged =
         VerticalSchemaFieldResolver.mergeVerticalFields(
-            ctx.inventoryFields(), request, existingForMerge, extensionFallback);
+            ctx.inventoryFields(), request, null, extensionFallback);
     Map<String, Object> extensionFields =
         VerticalSchemaStorage.extractExtensionFields(ctx.inventoryFields(), merged);
     if (extensionFields.isEmpty()) {
@@ -130,7 +116,7 @@ public class InventoryVerticalExtensionHandler {
         ctx.repository()
             .findByInventoryId(shopId, inventory.getId())
             .orElse(Map.of());
-    applyMergedFields(detail, inventory, stored, ctx);
+    applyVerticalFieldsOnly(detail, stored, ctx);
     return detail;
   }
 
@@ -147,7 +133,7 @@ public class InventoryVerticalExtensionHandler {
         ctx.repository()
             .findByInventoryId(shopId, inventory.getId())
             .orElse(Map.of());
-    applyMergedFields(summary, inventory, stored, ctx);
+    applyVerticalFieldsOnly(summary, stored, ctx);
     return summary;
   }
 
@@ -169,7 +155,7 @@ public class InventoryVerticalExtensionHandler {
     for (int i = 0; i < inventories.size(); i++) {
       Map<String, Object> fields =
           stored.getOrDefault(inventories.get(i).getId(), Map.of());
-      applyMergedFields(details.get(i), inventories.get(i), fields, ctx);
+      applyVerticalFieldsOnly(details.get(i), fields, ctx);
     }
   }
 
@@ -191,7 +177,7 @@ public class InventoryVerticalExtensionHandler {
     for (int i = 0; i < inventories.size(); i++) {
       Map<String, Object> fields =
           stored.getOrDefault(inventories.get(i).getId(), Map.of());
-      applyMergedFields(summaries.get(i), inventories.get(i), fields, ctx);
+      applyVerticalFieldsOnly(summaries.get(i), fields, ctx);
     }
   }
 
@@ -204,23 +190,18 @@ public class InventoryVerticalExtensionHandler {
     return ctx.repository().findByInventoryId(shopId, inventoryId).orElse(Map.of());
   }
 
-  private void applyMergedFields(
-      Object responseDto,
-      Inventory inventory,
-      Map<String, Object> storedExtension,
-      ExtensionContext ctx) {
-    Map<String, Object> merged =
-        VerticalSchemaStorage.mergeExtensionReadFields(
-            ctx.extensionFields(), storedExtension, inventory);
-    if (merged.isEmpty()) {
+  private void applyVerticalFieldsOnly(
+      Object responseDto, Map<String, Object> storedExtension, ExtensionContext ctx) {
+    Map<String, Object> fields =
+        VerticalSchemaStorage.mergeExtensionReadFields(ctx.extensionFields(), storedExtension);
+    if (fields.isEmpty()) {
       return;
     }
     if (responseDto instanceof InventoryDetailResponse detail) {
-      detail.setVerticalFields(new LinkedHashMap<>(merged));
+      detail.setVerticalFields(new LinkedHashMap<>(fields));
     } else if (responseDto instanceof InventorySummaryDto summary) {
-      summary.setVerticalFields(new LinkedHashMap<>(merged));
+      summary.setVerticalFields(new LinkedHashMap<>(fields));
     }
-    VerticalSchemaStorage.applyExtensionFieldsToBean(responseDto, merged);
   }
 
   private Optional<ExtensionContext> resolveContext(String shopId) {

@@ -15,6 +15,8 @@ import com.inventory.product.domain.model.enums.ShopType;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.PurchaseRepository;
 import com.inventory.product.domain.repository.ShopRepository;
+import com.inventory.pluginengine.VerticalFieldsReader;
+import com.inventory.product.service.vertical.InventoryVerticalExtensionHandler;
 import com.inventory.product.utils.constants.ProductMetricsConstants;
 import com.inventory.product.utils.AmountToWordsConverter;
 import com.inventory.user.domain.model.Customer;
@@ -31,6 +33,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -186,11 +189,12 @@ public class InvoiceService {
           Optional<Inventory> inventoryOpt = inventoryRepository.findById(purchaseItem.getInventoryId());
           if (inventoryOpt.isPresent()) {
             Inventory inventory = inventoryOpt.get();
-            inventoryVerticalExtensionHandler.enrichInventoryFromExtension(
-                inventory.getShopId(), inventory);
+            Map<String, Object> extensionFields =
+                inventoryVerticalExtensionHandler.loadExtensionFields(
+                    inventory.getShopId(), inventory.getId());
             invoiceItem.setHsn(inventory.getHsn());
             invoiceItem.setCompanyName(inventory.getCompanyName());
-            invoiceItem.setBatchNo(inventory.getBatchNo());
+            invoiceItem.setBatchNo(VerticalFieldsReader.batchNoFrom(extensionFields));
             if (inventory.getSchemeType() == SchemeType.PERCENTAGE
                 && inventory.getSchemePercentage() != null
                 && inventory.getReceivedCount() != null
@@ -204,8 +208,11 @@ public class InvoiceService {
             } else {
               invoiceItem.setScheme(inventory.getScheme());
             }
-            if (inventory.getExpiryDate() != null) {
-              LocalDateTime expiryDateTime = LocalDateTime.ofInstant(inventory.getExpiryDate(), ZoneId.of("Asia/Kolkata"));
+            if (VerticalFieldsReader.expiryDateFrom(extensionFields) != null) {
+              LocalDateTime expiryDateTime =
+                  LocalDateTime.ofInstant(
+                      VerticalFieldsReader.expiryDateFrom(extensionFields),
+                      ZoneId.of("Asia/Kolkata"));
               invoiceItem.setExpiryDate(expiryDateTime.format(DateTimeFormatter.ofPattern("MM/yy")));
             }
           }

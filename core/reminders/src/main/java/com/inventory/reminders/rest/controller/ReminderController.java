@@ -6,6 +6,7 @@ import com.inventory.reminders.rest.dto.request.SnoozeReminderRequest;
 import com.inventory.reminders.rest.dto.request.UpdateReminderRequest;
 import com.inventory.reminders.rest.dto.response.ReminderDetailListResponse;
 import com.inventory.reminders.rest.dto.response.ReminderDetailListWrapper;
+import com.inventory.reminders.rest.dto.response.ReminderExpiryBucketsResponse;
 import com.inventory.reminders.rest.dto.response.ReminderListResponse;
 import com.inventory.reminders.rest.dto.response.ReminderResponse;
 import com.inventory.reminders.service.ReminderService;
@@ -51,6 +52,16 @@ public class ReminderController {
 
     reminderValidator.validateShopId(shopId);
     return ResponseEntity.ok(ApiResponse.success(reminderService.detailList(shopId, page, size)));
+  }
+
+  @GetMapping("/expiry-buckets")
+  public ResponseEntity<ApiResponse<ReminderExpiryBucketsResponse>> expiryBuckets(
+      HttpServletRequest httpRequest,
+      @RequestParam(value = "expiringSoonDays", required = false) Integer expiringSoonDays) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    reminderValidator.validateShopId(shopId);
+    return ResponseEntity.ok(
+        ApiResponse.success(reminderService.getExpiryBuckets(shopId, expiringSoonDays)));
   }
 
   @GetMapping("/{id}/details")

@@ -4,7 +4,9 @@ import com.inventory.analytics.rest.dto.response.*;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
+import com.inventory.pluginengine.VerticalFieldsReader;
 import com.inventory.product.domain.repository.InventoryRepository;
+import com.inventory.product.service.vertical.InventoryVerticalExtensionHandler;
 import com.inventory.user.domain.model.Vendor;
 import com.inventory.user.domain.repository.VendorRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +26,9 @@ public class VendorAnalyticsUtils {
 
   @Autowired
   private InventoryRepository inventoryRepository;
+
+  @Autowired
+  private InventoryVerticalExtensionHandler inventoryVerticalExtensionHandler;
 
   @Autowired
   private VendorRepository vendorRepository;
@@ -59,6 +64,10 @@ public class VendorAnalyticsUtils {
       vendorMap.put(vendorId, data);
     }
 
+    Map<String, Map<String, Object>> extensionByInventoryId =
+        inventoryVerticalExtensionHandler.loadExtensionFieldsBatch(
+            shopId, allInventories.stream().map(Inventory::getId).toList());
+
     // Process inventory
     for (Inventory inventory : allInventories) {
       if (inventory.getVendorId() == null) continue;
@@ -76,7 +85,10 @@ public class VendorAnalyticsUtils {
       data.totalUnsoldStock += current;
 
       // Check if expired
-      if (inventory.getExpiryDate() != null && inventory.getExpiryDate().isBefore(Instant.now())) {
+      Instant expiryDate =
+          VerticalFieldsReader.expiryDateFrom(
+              extensionByInventoryId.getOrDefault(inventory.getId(), Map.of()));
+      if (expiryDate != null && expiryDate.isBefore(Instant.now())) {
         data.totalExpiredStock += current;
         data.expiredStockValue = data.expiredStockValue.add(costPrice.multiply(BigDecimal.valueOf(current)));
       }
@@ -258,6 +270,9 @@ public class VendorAnalyticsUtils {
     }
 
     Instant now = Instant.now();
+    Map<String, Map<String, Object>> extensionByInventoryId =
+        inventoryVerticalExtensionHandler.loadExtensionFieldsBatch(
+            shopId, allInventories.stream().map(Inventory::getId).toList());
 
     // Process inventory
     for (Inventory inventory : allInventories) {
@@ -279,7 +294,10 @@ public class VendorAnalyticsUtils {
       }
 
       // Check for expired items
-      if (inventory.getExpiryDate() != null && inventory.getExpiryDate().isBefore(now)) {
+      Instant expiryDate =
+          VerticalFieldsReader.expiryDateFrom(
+              extensionByInventoryId.getOrDefault(inventory.getId(), Map.of()));
+      if (expiryDate != null && expiryDate.isBefore(now)) {
         data.totalExpiredItems += current;
         data.expiredStockValue = data.expiredStockValue.add(costPrice.multiply(BigDecimal.valueOf(current)));
       }
@@ -390,6 +408,9 @@ public class VendorAnalyticsUtils {
     }
 
     Instant now = Instant.now();
+    Map<String, Map<String, Object>> extensionByInventoryId =
+        inventoryVerticalExtensionHandler.loadExtensionFieldsBatch(
+            shopId, allInventories.stream().map(Inventory::getId).toList());
 
     // Process inventory
     for (Inventory inventory : allInventories) {
@@ -412,7 +433,10 @@ public class VendorAnalyticsUtils {
 
       data.totalReceived += received;
 
-      if (inventory.getExpiryDate() != null && inventory.getExpiryDate().isBefore(now)) {
+      Instant expiryDate =
+          VerticalFieldsReader.expiryDateFrom(
+              extensionByInventoryId.getOrDefault(inventory.getId(), Map.of()));
+      if (expiryDate != null && expiryDate.isBefore(now)) {
         data.totalExpired += current;
         data.expiredStockValue = data.expiredStockValue.add(costPrice.multiply(BigDecimal.valueOf(current)));
       }

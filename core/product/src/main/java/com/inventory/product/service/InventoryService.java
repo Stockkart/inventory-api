@@ -25,6 +25,7 @@ import com.inventory.product.rest.dto.request.CreateInventoryRequest;
 import com.inventory.product.rest.dto.request.UpdateInventoryRequest;
 import com.inventory.product.rest.dto.response.BulkCreateInventoryResponse;
 import com.inventory.product.rest.dto.response.InventoryDetailResponse;
+import com.inventory.product.rest.dto.response.InventoryExpiryBucketsResponse;
 import com.inventory.product.rest.dto.response.InventoryListResponse;
 import com.inventory.product.rest.dto.response.InventoryReceiptResponse;
 import com.inventory.product.rest.dto.response.InventorySummaryDto;
@@ -33,13 +34,15 @@ import com.inventory.product.rest.dto.response.LotListResponse;
 import com.inventory.product.rest.dto.response.LotSummaryDto;
 import com.inventory.product.rest.dto.response.PageMeta;
 import com.inventory.product.rest.dto.response.ParsedInventoryListResponse;
-import com.inventory.pluginengine.schema.InventoryVerticalRequestNormalizer;
+import com.inventory.pluginengine.VerticalFieldsReader;
 import java.util.ArrayList;
 import com.inventory.product.mapper.InventoryMapper;
 import com.inventory.product.migration.ExcelStockParser;
 import com.inventory.product.mapper.ParsedInventoryMapper;
 import com.inventory.product.utils.constants.ProductMetricsConstants;
+import com.inventory.product.service.vertical.InventoryVerticalExpiryHandler;
 import com.inventory.product.service.vertical.InventoryVerticalExtensionHandler;
+import com.inventory.product.service.vertical.InventoryVerticalSearchHandler;
 import com.inventory.product.service.vertical.InventoryVerticalValidationHandler;
 import com.inventory.product.validation.ImageValidator;
 import com.inventory.product.validation.InventoryValidator;
@@ -125,6 +128,12 @@ public class InventoryService {
 
   @Autowired
   private InventoryVerticalExtensionHandler inventoryVerticalExtensionHandler;
+
+  @Autowired
+  private InventoryVerticalSearchHandler inventoryVerticalSearchHandler;
+
+  @Autowired
+  private InventoryVerticalExpiryHandler inventoryVerticalExpiryHandler;
 
   @Autowired
   private com.inventory.pricing.domain.repository.PricingRepository pricingRepository;
@@ -342,8 +351,6 @@ public class InventoryService {
               inventoryMapper.toCreateInventoryRequest(
                   itemRequest, bulkRequest.getVendorId(), registrationId);
           fullRequest.setVendorPurchaseInvoiceId(registrationId);
-          InventoryVerticalRequestNormalizer.normalizeCreate(
-              fullRequest);
 
           InventoryReceiptResponse response = create(fullRequest, userId, shopId);
           createdItems.add(response);
@@ -723,7 +730,6 @@ public class InventoryService {
 
   public InventoryReceiptResponse create(CreateInventoryRequest request, String userId, String shopId) {
     try {
-      InventoryVerticalRequestNormalizer.normalizeCreate(request);
       inventoryValidator.validateCreateRequest(request);
       inventoryVerticalValidationHandler.validateCreate(shopId, request);
       log.debug("Creating inventory for barcode: {} in shop: {}", request.getBarcode(), shopId);
@@ -776,8 +782,6 @@ public class InventoryService {
         inventory.setScheme(request.getScheme());
       }
 
-      inventoryVerticalExtensionHandler.clearExtensionFieldsFromCore(shopId, inventory);
-
       inventory = inventoryRepository.save(inventory);
 
       inventoryVerticalExtensionHandler.persistAfterCreate(shopId, inventory, request);
@@ -793,8 +797,9 @@ public class InventoryService {
 
       CreateReminderForInventoryRequest reminderRequest =
           inventoryMapper.toCreateReminderForInventoryRequest(request, shopId, inventory.getId());
+      reminderRequest.setExpiryDate(VerticalFieldsReader.expiryDateFrom(request));
       reminderService.createReminderForInventoryCreate(reminderRequest);
-      boolean reminderCreated = request.getExpiryDate() != null;
+      boolean reminderCreated = reminderRequest.getExpiryDate() != null;
       return inventoryMapper.toReceiptResponseWithReminder(inventory, reminderCreated);
 
     } catch (ValidationException e) {
@@ -840,17 +845,27 @@ public class InventoryService {
     }
   }
 
-  public InventoryListResponse search(String shopId, String query) {
+  public InventoryListResponse search(
+      String shopId, String query, Map<String, String> filters, String sort, Integer limit) {
     try {
-      // Validate inputs
       inventoryValidator.validateShopId(shopId);
-      if (query == null || query.trim().isEmpty()) {
-        throw new ValidationException("Search query is required");
+      boolean hasQuery = StringUtils.hasText(query);
+      boolean hasFilters = filters != null && !filters.isEmpty();
+      if (!hasQuery && !hasFilters) {
+        throw new ValidationException("Search query or filters are required");
       }
 
-      log.debug("Searching inventory for shop: {} with query: {}", shopId, query);
+      log.debug(
+          "Searching inventory for shop: {} q={} filters={} sort={}",
+          shopId,
+          query,
+          filters,
+          sort);
 
-      List<Inventory> inventories = inventoryRepository.searchByShopIdAndQuery(shopId, query.trim());
+      int effectiveLimit = limit != null && limit > 0 ? Math.min(limit, 200) : 50;
+      List<Inventory> inventories =
+          inventoryVerticalSearchHandler.search(
+              shopId, hasQuery ? query.trim() : null, filters, sort, effectiveLimit);
       List<InventorySummaryDto> summaries = toSummariesWithExtensions(shopId, inventories);
 
       return inventoryMapper.toInventoryListResponse(summaries);
@@ -865,6 +880,36 @@ public class InventoryService {
       log.error("Unexpected error while searching inventory: {}", e.getMessage(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Failed to search inventory");
     }
+  }
+
+  @Transactional(readOnly = true)
+  public InventoryExpiryBucketsResponse getExpiryBuckets(String shopId, Integer expiringSoonDays) {
+    inventoryValidator.validateShopId(shopId);
+    int days = expiringSoonDays != null && expiringSoonDays > 0 ? expiringSoonDays : 30;
+    return inventoryVerticalExpiryHandler.getExpiryBuckets(shopId, days);
+  }
+
+  @Transactional(readOnly = true)
+  public InventoryListResponse getNearExpiryReport(
+      String shopId, Integer days, Integer limit) {
+    inventoryValidator.validateShopId(shopId);
+    int effectiveDays = days != null && days > 0 ? days : 30;
+    int effectiveLimit = limit != null && limit > 0 ? Math.min(limit, 200) : 50;
+    List<Inventory> inventories =
+        inventoryVerticalExpiryHandler.findNearExpiry(shopId, effectiveDays, effectiveLimit);
+    List<InventorySummaryDto> summaries = toSummariesWithExtensions(shopId, inventories);
+    return inventoryMapper.toInventoryListResponse(summaries);
+  }
+
+  @Transactional(readOnly = true)
+  public InventoryListResponse getFefoInventory(
+      String shopId, String batchNo, Integer limit) {
+    inventoryValidator.validateShopId(shopId);
+    int effectiveLimit = limit != null && limit > 0 ? Math.min(limit, 200) : 50;
+    List<Inventory> inventories =
+        inventoryVerticalExpiryHandler.findFefo(shopId, batchNo, effectiveLimit);
+    List<InventorySummaryDto> summaries = toSummariesWithExtensions(shopId, inventories);
+    return inventoryMapper.toInventoryListResponse(summaries);
   }
 
   @Transactional(readOnly = true)
@@ -1214,8 +1259,6 @@ public class InventoryService {
   @Transactional
   public InventoryDetailResponse update(String inventoryId, UpdateInventoryRequest request, String shopId) {
     try {
-      InventoryVerticalRequestNormalizer.normalizeCreate(request);
-      // Validate inputs
       inventoryValidator.validateShopId(shopId);
       if (inventoryId == null || inventoryId.trim().isEmpty()) {
         throw new ValidationException("Inventory ID is required");
@@ -1284,9 +1327,6 @@ public class InventoryService {
       // Update updatedAt timestamp
       inventory.setUpdatedAt(Instant.now());
 
-      inventoryVerticalExtensionHandler.clearExtensionFieldsFromCore(shopId, inventory);
-
-      // Save inventory
       inventory = inventoryRepository.save(inventory);
       inventoryVerticalExtensionHandler.persistAfterUpdate(shopId, inventory, request);
       log.info("Successfully updated inventory with ID: {}", inventoryId);
