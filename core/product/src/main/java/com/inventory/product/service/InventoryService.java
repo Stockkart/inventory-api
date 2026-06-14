@@ -351,6 +351,8 @@ public class InventoryService {
               inventoryMapper.toCreateInventoryRequest(
                   itemRequest, bulkRequest.getVendorId(), registrationId);
           fullRequest.setVendorPurchaseInvoiceId(registrationId);
+          InventoryVerticalRequestNormalizer.normalizeCreate(
+              fullRequest);
 
           InventoryReceiptResponse response = create(fullRequest, userId, shopId);
           createdItems.add(response);
@@ -730,6 +732,7 @@ public class InventoryService {
 
   public InventoryReceiptResponse create(CreateInventoryRequest request, String userId, String shopId) {
     try {
+      InventoryVerticalRequestNormalizer.normalizeCreate(request);
       inventoryValidator.validateCreateRequest(request);
       inventoryVerticalValidationHandler.validateCreate(shopId, request);
       log.debug("Creating inventory for barcode: {} in shop: {}", request.getBarcode(), shopId);
@@ -781,6 +784,8 @@ public class InventoryService {
       } else if (request.getScheme() != null) {
         inventory.setScheme(request.getScheme());
       }
+
+      inventoryVerticalExtensionHandler.clearExtensionFieldsFromCore(shopId, inventory);
 
       inventory = inventoryRepository.save(inventory);
 
