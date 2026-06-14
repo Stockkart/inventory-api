@@ -8,10 +8,10 @@ import org.springframework.beans.BeanWrapperImpl;
 import org.springframework.util.StringUtils;
 
 /**
- * Builds a flat map keyed by schema field name for vertical validation.
+ * Builds a flat map keyed by schema field name for vertical validation and extension writes.
  *
- * <p>Priority per field: {@code verticalFields} on the request, then the request bean property
- * ({@code apiKey} or {@code key}), then the fallback entity on update.
+ * <p>Extension fields ({@code storage: extension}) come only from {@code verticalFields} on the
+ * request and {@code extensionFallback} on update. Core fields use request bean properties.
  */
 public final class VerticalSchemaFieldResolver {
 
@@ -22,10 +22,6 @@ public final class VerticalSchemaFieldResolver {
     return mergeVerticalFields(schemaFields, requestBean, fallbackBean, null);
   }
 
-  /**
-   * Like {@link #mergeVerticalFields(List, Object, Object)} but fills missing extension keys from
-   * {@code extensionFallback} (existing extension document) when absent on request/core entity.
-   */
   public static Map<String, Object> mergeVerticalFields(
       List<VerticalSchemaField> schemaFields,
       Object requestBean,
@@ -36,8 +32,7 @@ public final class VerticalSchemaFieldResolver {
       return out;
     }
     for (VerticalSchemaField field : schemaFields) {
-      if (!VerticalSchemaStorage.STORAGE_EXTENSION.equalsIgnoreCase(
-          field.getStorage() != null ? field.getStorage().trim() : "")) {
+      if (!isExtensionStorage(field)) {
         continue;
       }
       String key = field.getKey();
@@ -69,6 +64,9 @@ public final class VerticalSchemaFieldResolver {
     }
 
     for (VerticalSchemaField field : schemaFields) {
+      if (isExtensionStorage(field)) {
+        continue;
+      }
       String key = field.getKey();
       if (out.containsKey(key)) {
         continue;
@@ -84,6 +82,12 @@ public final class VerticalSchemaFieldResolver {
     }
 
     return out;
+  }
+
+  private static boolean isExtensionStorage(VerticalSchemaField field) {
+    return field != null
+        && StringUtils.hasText(field.getStorage())
+        && VerticalSchemaStorage.STORAGE_EXTENSION.equalsIgnoreCase(field.getStorage().trim());
   }
 
   private static String apiProperty(VerticalSchemaField field) {

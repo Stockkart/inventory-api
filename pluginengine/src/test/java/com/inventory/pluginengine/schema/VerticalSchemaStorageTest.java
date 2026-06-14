@@ -34,21 +34,17 @@ class VerticalSchemaStorageTest {
   }
 
   @Test
-  void mergeExtensionReadFields_prefersStoredExtensionThenLegacyCore() {
+  void mergeExtensionReadFields_usesStoredExtensionOnly() {
     List<VerticalSchemaField> extensionFields = List.of(field("batchNo", "extension"));
-    LegacyInventory legacy = new LegacyInventory();
-    legacy.setBatchNo("LEGACY-BATCH");
 
     Map<String, Object> fromExtension = Map.of("batchNo", "EXT-BATCH");
     Map<String, Object> mergedExtension =
-        VerticalSchemaStorage.mergeExtensionReadFields(
-            extensionFields, fromExtension, legacy);
+        VerticalSchemaStorage.mergeExtensionReadFields(extensionFields, fromExtension);
     assertEquals("EXT-BATCH", mergedExtension.get("batchNo"));
 
-    Map<String, Object> mergedLegacy =
-        VerticalSchemaStorage.mergeExtensionReadFields(
-            extensionFields, Map.of(), legacy);
-    assertEquals("LEGACY-BATCH", mergedLegacy.get("batchNo"));
+    Map<String, Object> mergedEmpty =
+        VerticalSchemaStorage.mergeExtensionReadFields(extensionFields, Map.of());
+    assertTrue(mergedEmpty.isEmpty());
   }
 
   private static VerticalSchemaField field(String key, String storage) {
@@ -56,18 +52,5 @@ class VerticalSchemaStorageTest {
     field.setKey(key);
     field.setStorage(storage);
     return field;
-  }
-
-  @SuppressWarnings("unused")
-  private static class LegacyInventory {
-    private String batchNo;
-
-    public String getBatchNo() {
-      return batchNo;
-    }
-
-    public void setBatchNo(String batchNo) {
-      this.batchNo = batchNo;
-    }
   }
 }

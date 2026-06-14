@@ -1,5 +1,6 @@
 package com.inventory.reminders.service;
 
+import com.inventory.reminders.rest.dto.response.ReminderExpiryBucketsResponse;
 import com.inventory.reminders.rest.dto.response.ReminderInventorySummary;
 
 /**
@@ -11,4 +12,6 @@ public interface InventoryAdapter {
   ReminderInventorySummary getInventorySummary(String inventoryId);
 
   boolean inventoryExists(String inventoryId);
+
+  ReminderExpiryBucketsResponse getExpiryBuckets(String shopId, Integer expiringSoonDays);
 }

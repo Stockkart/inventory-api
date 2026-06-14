@@ -14,6 +14,8 @@ import com.inventory.analytics.rest.dto.response.VendorRevenueDto;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.repository.InventoryRepository;
+import com.inventory.pluginengine.VerticalFieldsReader;
+import com.inventory.product.service.vertical.InventoryVerticalExtensionHandler;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
@@ -26,6 +28,7 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -43,6 +46,9 @@ public class VendorAnalyticsService {
 
   @Autowired
   private InventoryRepository inventoryRepository;
+
+  @Autowired
+  private InventoryVerticalExtensionHandler inventoryVerticalExtensionHandler;
 
   /**
    * Get comprehensive vendor analytics.
@@ -109,8 +115,17 @@ public class VendorAnalyticsService {
           .map(VendorRevenueDto::getTotalRevenue)
           .reduce(BigDecimal.ZERO, BigDecimal::add);
 
+      Map<String, Map<String, Object>> extensionByInventoryId =
+          inventoryVerticalExtensionHandler.loadExtensionFieldsBatch(
+              shopId, allInventories.stream().map(Inventory::getId).toList());
       BigDecimal totalExpiredStockValue = allInventories.stream()
-          .filter(inv -> inv.getExpiryDate() != null && inv.getExpiryDate().isBefore(Instant.now()))
+          .filter(
+              inv -> {
+                Instant expiry =
+                    VerticalFieldsReader.expiryDateFrom(
+                        extensionByInventoryId.getOrDefault(inv.getId(), Map.of()));
+                return expiry != null && expiry.isBefore(Instant.now());
+              })
           .map(inv -> {
             Integer current = getCurrentBaseCount(inv);
             BigDecimal costPrice = inv.getCostPrice() != null ? inv.getCostPrice() : BigDecimal.ZERO;

@@ -6,7 +6,9 @@ import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.product.domain.model.enums.PurchaseStatus;
+import com.inventory.pluginengine.VerticalFieldsReader;
 import com.inventory.product.domain.repository.InventoryRepository;
+import com.inventory.product.service.vertical.InventoryVerticalExtensionHandler;
 import com.inventory.product.domain.repository.PurchaseRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,6 +30,9 @@ public class InventoryAnalyticsUtils {
   private InventoryRepository inventoryRepository;
 
   @Autowired
+  private InventoryVerticalExtensionHandler inventoryVerticalExtensionHandler;
+
+  @Autowired
   private PurchaseRepository purchaseRepository;
 
   public List<InventoryAnalyticsDto> calculateInventoryAnalytics(
@@ -39,6 +44,9 @@ public class InventoryAnalyticsUtils {
 
     Map<String, Instant> lastSoldDates = getLastSoldDates(shopId, allInventories);
     Instant now = Instant.now();
+    Map<String, Map<String, Object>> extensionByInventoryId =
+        inventoryVerticalExtensionHandler.loadExtensionFieldsBatch(
+            shopId, allInventories.stream().map(Inventory::getId).toList());
 
     return allInventories.stream()
         .map(inv -> {
@@ -80,11 +88,14 @@ public class InventoryAnalyticsUtils {
           }
           dto.setReceivedDate(inv.getReceivedDate());
 
-          if (inv.getExpiryDate() != null) {
-            long daysUntilExpiry = ChronoUnit.DAYS.between(now, inv.getExpiryDate());
+          Instant expiryDate =
+              VerticalFieldsReader.expiryDateFrom(
+                  extensionByInventoryId.getOrDefault(inv.getId(), Map.of()));
+          if (expiryDate != null) {
+            long daysUntilExpiry = ChronoUnit.DAYS.between(now, expiryDate);
             dto.setDaysUntilExpiry(daysUntilExpiry);
             dto.setIsExpired(daysUntilExpiry < 0);
-            dto.setExpiryDate(inv.getExpiryDate());
+            dto.setExpiryDate(expiryDate);
             boolean isExpiringSoon = false;
             if (expiringSoonDays != null) {
               isExpiringSoon = daysUntilExpiry >= 0 && daysUntilExpiry <= expiringSoonDays;
@@ -97,7 +108,7 @@ public class InventoryAnalyticsUtils {
             dto.setIsExpired(false);
             dto.setIsExpiringSoon(false);
           }
-          dto.setExpiryDate(inv.getExpiryDate());
+          dto.setExpiryDate(expiryDate);
 
           BigDecimal turnoverRatio = calculateTurnoverRatio(received, sold, inv.getReceivedDate(), now);
           dto.setTurnoverRatio(turnoverRatio);

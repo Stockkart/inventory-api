@@ -12,6 +12,8 @@ import com.inventory.analytics.rest.dto.response.InventoryAnalyticsResponse;
 import com.inventory.analytics.rest.dto.response.InventorySummaryDto;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.repository.InventoryRepository;
+import com.inventory.product.rest.dto.response.InventoryExpiryBucketsResponse;
+import com.inventory.product.service.vertical.InventoryVerticalExpiryHandler;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
@@ -35,6 +37,9 @@ public class InventoryAnalyticsService {
 
   @Autowired
   private InventoryRepository inventoryRepository;
+
+  @Autowired
+  private InventoryVerticalExpiryHandler inventoryVerticalExpiryHandler;
 
   /**
    * Get comprehensive inventory analytics.
@@ -65,18 +70,66 @@ public class InventoryAnalyticsService {
       if (includeAll == null) {
         includeAll = false;
       }
+      int effectiveExpiringSoonDays =
+          expiringSoonDays != null && expiringSoonDays > 0 ? expiringSoonDays : 30;
 
       log.debug("Getting inventory analytics for shop: {}", shopId);
 
       // Get all inventory for the shop
       List<Inventory> allInventories = inventoryRepository.findByShopId(shopId);
 
-      // Calculate analytics for all items
+      // Calculate analytics for all items (low stock, dead stock, turnover, etc.)
       List<InventoryAnalyticsDto> allAnalytics = analyticsUtils.calculateInventoryAnalytics(
-          shopId, allInventories, lowStockThreshold, deadStockDays, expiringSoonDays);
+          shopId, allInventories, lowStockThreshold, deadStockDays, effectiveExpiringSoonDays);
 
-      // Calculate summary
+      // Calculate summary from full analytics, then override expiry counts from extension index
       InventorySummaryDto summary = analyticsUtils.calculateSummary(allAnalytics);
+      InventoryExpiryBucketsResponse expiryBuckets =
+          inventoryVerticalExpiryHandler.getExpiryBuckets(shopId, effectiveExpiringSoonDays);
+      summary.setExpiredProducts(expiryBuckets.getExpired());
+      summary.setExpiringSoonProducts(expiryBuckets.getExpiringSoonTotal());
+
+      // Near-expiry and expired lists via indexed extension search (no full-shop filter)
+      List<Inventory> nearExpiryInventories =
+          inventoryVerticalExpiryHandler.findNearExpiry(shopId, effectiveExpiringSoonDays, 200);
+      List<Inventory> expiredInventories =
+          inventoryVerticalExpiryHandler.findExpired(shopId, 200);
+
+      List<InventoryAnalyticsDto> expiringSoonItems =
+          analyticsUtils
+              .calculateInventoryAnalytics(
+                  shopId,
+                  nearExpiryInventories,
+                  lowStockThreshold,
+                  deadStockDays,
+                  effectiveExpiringSoonDays)
+              .stream()
+              .filter(dto -> dto.getIsExpiringSoon() != null && dto.getIsExpiringSoon())
+              .sorted(
+                  (a, b) -> {
+                    if (a.getDaysUntilExpiry() == null) return 1;
+                    if (b.getDaysUntilExpiry() == null) return -1;
+                    return a.getDaysUntilExpiry().compareTo(b.getDaysUntilExpiry());
+                  })
+              .collect(Collectors.toList());
+
+      List<InventoryAnalyticsDto> expiredItems =
+          analyticsUtils
+              .calculateInventoryAnalytics(
+                  shopId,
+                  expiredInventories,
+                  lowStockThreshold,
+                  deadStockDays,
+                  effectiveExpiringSoonDays)
+              .stream()
+              .filter(dto -> dto.getIsExpired() != null && dto.getIsExpired())
+              .sorted(
+                  (a, b) -> {
+                    if (a.getDaysUntilExpiry() == null) return 1;
+                    if (b.getDaysUntilExpiry() == null) return -1;
+                    return a.getDaysUntilExpiry().compareTo(b.getDaysUntilExpiry());
+                  })
+              .collect(Collectors.toList());
 
       // Filter items by category
       List<InventoryAnalyticsDto> lowStockItems = allAnalytics.stream()
@@ -91,26 +144,6 @@ public class InventoryAnalyticsService {
             if (a.getDaysSinceReceived() == null) return 1;
             if (b.getDaysSinceReceived() == null) return -1;
             return b.getDaysSinceReceived().compareTo(a.getDaysSinceReceived());
-          })
-          .collect(Collectors.toList());
-
-      List<InventoryAnalyticsDto> expiringSoonItems = allAnalytics.stream()
-          .filter(dto -> dto.getIsExpiringSoon() != null && dto.getIsExpiringSoon())
-          .sorted((a, b) -> {
-            // Sort by days until expiry (soonest first)
-            if (a.getDaysUntilExpiry() == null) return 1;
-            if (b.getDaysUntilExpiry() == null) return -1;
-            return a.getDaysUntilExpiry().compareTo(b.getDaysUntilExpiry());
-          })
-          .collect(Collectors.toList());
-
-      List<InventoryAnalyticsDto> expiredItems = allAnalytics.stream()
-          .filter(dto -> dto.getIsExpired() != null && dto.getIsExpired())
-          .sorted((a, b) -> {
-            // Sort by days until expiry (most expired first)
-            if (a.getDaysUntilExpiry() == null) return 1;
-            if (b.getDaysUntilExpiry() == null) return -1;
-            return a.getDaysUntilExpiry().compareTo(b.getDaysUntilExpiry());
           })
           .collect(Collectors.toList());
 

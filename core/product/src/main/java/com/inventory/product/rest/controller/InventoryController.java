@@ -12,6 +12,7 @@ import com.inventory.product.rest.dto.request.InventoryIdsRequest;
 import com.inventory.product.rest.dto.request.UpdateInventoryRequest;
 import com.inventory.product.rest.dto.response.BulkCreateInventoryResponse;
 import com.inventory.product.rest.dto.response.InventoryDetailResponse;
+import com.inventory.product.rest.dto.response.InventoryExpiryBucketsResponse;
 import com.inventory.product.rest.dto.response.InventoryListResponse;
 import com.inventory.product.rest.dto.response.InventoryReceiptResponse;
 import com.inventory.product.rest.dto.response.LotDetailDto;
@@ -34,6 +35,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/inventory")
@@ -114,9 +116,8 @@ public class InventoryController {
 
   @GetMapping("/search")
   public ResponseEntity<ApiResponse<InventoryListResponse>> search(
-      @RequestParam("q") String q,
+      @RequestParam Map<String, String> query,
       HttpServletRequest httpRequest) {
-    // Get shopId from request attributes to ensure user can only search their shop's inventory
     String shopId = (String) httpRequest.getAttribute("shopId");
 
     if (StringUtils.isEmpty(shopId)) {
@@ -125,7 +126,22 @@ public class InventoryController {
           "Unauthorized access to shop inventory");
     }
 
-    return ResponseEntity.ok(ApiResponse.success(inventoryService.search(shopId, q)));
+    return ResponseEntity.ok(
+        ApiResponse.success(inventoryService.search(shopId, query)));
+  }
+
+  @GetMapping("/expiry-buckets")
+  public ResponseEntity<ApiResponse<InventoryExpiryBucketsResponse>> expiryBuckets(
+      @RequestParam(value = "expiringSoonDays", required = false) Integer expiringSoonDays,
+      HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    if (StringUtils.isEmpty(shopId)) {
+      throw new AuthenticationException(
+          ErrorCode.UNAUTHORIZED,
+          "Unauthorized access to shop inventory");
+    }
+    return ResponseEntity.ok(
+        ApiResponse.success(inventoryService.getExpiryBuckets(shopId, expiringSoonDays)));
   }
 
   @PostMapping("/by-ids")

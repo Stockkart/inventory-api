@@ -73,20 +73,14 @@ public final class VerticalSchemaStorage {
   }
 
   public static Map<String, Object> mergeExtensionReadFields(
-      List<VerticalSchemaField> extensionSchemaFields,
-      Map<String, Object> storedExtension,
-      Object legacyCoreEntity) {
+      List<VerticalSchemaField> extensionSchemaFields, Map<String, Object> storedExtension) {
     Map<String, Object> out = new LinkedHashMap<>();
-    BeanWrapper core = legacyCoreEntity != null ? new BeanWrapperImpl(legacyCoreEntity) : null;
+    if (storedExtension == null || storedExtension.isEmpty()) {
+      return out;
+    }
     for (VerticalSchemaField field : extensionSchemaFields) {
       String key = field.getKey();
-      Object value = storedExtension != null ? storedExtension.get(key) : null;
-      if (value == null && core != null) {
-        String property = apiProperty(field);
-        if (core.isReadableProperty(property)) {
-          value = core.getPropertyValue(property);
-        }
-      }
+      Object value = storedExtension.get(key);
       if (value != null) {
         out.put(key, value);
       }
