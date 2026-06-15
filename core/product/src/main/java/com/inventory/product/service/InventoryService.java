@@ -1424,6 +1424,30 @@ public class InventoryService {
     return summaries;
   }
 
+  private List<InventorySummaryDto> sortSummariesByExpirySoonest(
+      List<InventorySummaryDto> summaries) {
+    if (summaries == null || summaries.size() <= 1) {
+      return summaries;
+    }
+    return summaries.stream()
+        .sorted(
+            (a, b) -> {
+              Instant ea = VerticalFieldsReader.expiryDateFrom(a.getVerticalFields());
+              Instant eb = VerticalFieldsReader.expiryDateFrom(b.getVerticalFields());
+              if (ea == null && eb == null) {
+                return 0;
+              }
+              if (ea == null) {
+                return 1;
+              }
+              if (eb == null) {
+                return -1;
+              }
+              return ea.compareTo(eb);
+            })
+        .toList();
+  }
+
   private InventorySummaryDto enrichPackagingOnSummary(InventorySummaryDto dto) {
     if (dto == null || !StringUtils.hasText(dto.getBaseUnit())) {
       return dto;
