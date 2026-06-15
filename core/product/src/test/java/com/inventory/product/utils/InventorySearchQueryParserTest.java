@@ -25,4 +25,13 @@ class InventorySearchQueryParserTest {
         InventorySearchQueryParser.parse(Map.of("q", "paracetamol"));
     assertEquals("expiryDate:asc", parsed.sort());
   }
+
+  @Test
+  void parse_cursorParam() {
+    InventorySearchQueryParser.Parsed parsed =
+        InventorySearchQueryParser.parse(
+            Map.of("q", "dolo", "cursor", "abc123", "limit", "10"));
+    assertEquals("abc123", parsed.cursor());
+    assertEquals(10, parsed.limit());
+  }
 }

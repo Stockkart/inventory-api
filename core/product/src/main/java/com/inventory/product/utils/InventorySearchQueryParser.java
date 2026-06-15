@@ -9,19 +9,21 @@ import org.springframework.util.StringUtils;
 public final class InventorySearchQueryParser {
 
   private static final Set<String> RESERVED =
-      Set.of("q", "sort", "limit", "page", "size");
+      Set.of("q", "sort", "limit", "cursor", "page", "size");
 
   private InventorySearchQueryParser() {}
 
-  public record Parsed(String q, String sort, Integer limit, Map<String, String> fieldFilters) {}
+  public record Parsed(
+      String q, String sort, Integer limit, Map<String, String> fieldFilters, String cursor) {}
 
   public static Parsed parse(Map<String, String> query) {
     if (query == null || query.isEmpty()) {
-      return new Parsed(null, null, null, Map.of());
+      return new Parsed(null, null, null, Map.of(), null);
     }
 
     String sort = trimToNull(query.get("sort"));
     Integer limit = parsePositiveInt(query.get("limit"));
+    String cursor = trimToNull(query.get("cursor"));
 
     String rawQ = trimToNull(query.get("q"));
     Map<String, String> fieldFilters = new LinkedHashMap<>();
@@ -38,7 +40,7 @@ public final class InventorySearchQueryParser {
       sort = "expiryDate:asc";
     }
 
-    return new Parsed(q, sort, limit, fieldFilters);
+    return new Parsed(q, sort, limit, fieldFilters, cursor);
   }
 
   private static String trimToNull(String value) {

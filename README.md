@@ -213,11 +213,11 @@ Shops are bound to a **vertical** (`Shop.verticalId` + `Shop.pluginVersion`). Fi
 
 | Endpoint | Purpose |
 |----------|---------|
-| `GET /api/v1/inventory/search` | Text `q` + `filters[key]` + `sort` + `limit` |
-| `GET /api/v1/inventory/expiry-buckets` | Expiry bucket counts |
-| `GET /api/v1/inventory/near-expiry` | Near-expiry inventory list |
-| `GET /api/v1/inventory/fefo` | FEFO-ordered in-stock list |
-| `GET /api/v1/reminders/expiry-buckets` | Same buckets for reminders dashboard |
+| `GET /api/v1/inventory/search` | Unified `q`, `sort`, `limit`, `cursor` → `meta.nextCursor` |
+| `GET /api/v1/inventory/expiry-buckets` | Expiry bucket counts (Analytics) |
+| `GET /api/v1/reminders/expiry-buckets` | Expiry bucket cards (Reminders dashboard) |
+
+**Removed:** `GET /inventory/near-expiry`, `GET /inventory/fefo`.
 
 **Modes:** `regular` (full registration), `basic` (quick stock-in), `invoice` (print surfaces). Required fields respect `showIn` per mode after Phase 2 filter updates.
 
@@ -225,9 +225,9 @@ Shops are bound to a **vertical** (`Shop.verticalId` + `Shop.pluginVersion`). Fi
 
 **Seed mirrors:** `docs/seeds/medical-v1.json`, `docs/seeds/sports-v1.json`
 
-**Frontend (inventory-platform):** consumes schema APIs for onboarding, product registration, scan-sell, product-search filters, and reminders expiry buckets — see architecture doc § Implementation status.
+**Frontend (inventory-platform):** consumes schema APIs for onboarding, product registration, scan-sell, product search (cursor pagination), and reminders expiry buckets — see architecture doc § Implementation status.
 
-**Remaining:** M8 core field strip migration; cursor pagination; FEFO in checkout UI; apparel/cafe vertical (Phase 5); import mappers + widgets (Phase 6).
+**Remaining:** M8 core field strip migration; scan-sell detail modal schema columns; apparel/cafe vertical (Phase 5); import mappers + widgets (Phase 6).
 
 ### Build commands
 

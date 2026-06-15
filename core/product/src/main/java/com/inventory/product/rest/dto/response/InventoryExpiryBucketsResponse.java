@@ -14,6 +14,5 @@ public class InventoryExpiryBucketsResponse {
   private int expiringWithin7Days;
   private int expiringWithinSoonDays;
   private int expiringSoonTotal;
-  private int totalWithExpiry;
   private int expiringSoonDays;
 }

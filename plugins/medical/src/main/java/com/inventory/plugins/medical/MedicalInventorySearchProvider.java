@@ -1,5 +1,6 @@
 package com.inventory.plugins.medical;
 
+import com.inventory.pluginengine.ExtensionInventorySearchMongo;
 import com.inventory.pluginengine.ExtensionFieldCoercion;
 import com.inventory.pluginengine.InventoryExpiryBucketSummary;
 import com.inventory.pluginengine.InventorySearchProvider;
@@ -9,10 +10,9 @@ import com.inventory.plugins.medical.domain.MedicalInventoryExtension;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import org.springframework.data.domain.Sort;
+import java.util.Set;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -33,51 +33,60 @@ public class MedicalInventorySearchProvider implements InventorySearchProvider {
   @Override
   public InventorySearchResult search(String shopId, InventorySearchQuery query) {
     Criteria criteria = Criteria.where("shopId").is(shopId);
-    if (query.getFilters() != null) {
-      query
-          .getFilters()
-          .forEach(
-              (key, raw) -> {
-                if (!StringUtils.hasText(raw)) {
-                  return;
-                }
-                switch (key) {
-                  case "batchNo" -> criteria.and("batchNo").is(raw.trim());
-                  case "expiryBefore" ->
-                      criteria.and("expiryDate").lte(ExtensionFieldCoercion.asInstant(raw.trim()));
-                  case "expiryAfter" ->
-                      criteria.and("expiryDate").gte(ExtensionFieldCoercion.asInstant(raw.trim()));
-                  case "nearExpiryDays" -> {
-                    int days = Integer.parseInt(raw.trim());
-                    Instant now = Instant.now();
-                    criteria
-                        .and("expiryDate")
-                        .gte(now)
-                        .lte(now.plusSeconds((long) days * 86_400));
-                  }
-                  default -> {}
-                }
-              });
-    }
+    applyFilters(criteria, query);
+    applyRestrictIds(criteria, query.getRestrictInventoryIds());
 
     int limit = query.getLimit() > 0 ? Math.min(query.getLimit(), 200) : 50;
-    Query mongoQuery = new Query(criteria).limit(limit);
-    if (StringUtils.hasText(query.getSort()) && query.getSort().startsWith("expiryDate")) {
-      boolean asc = !query.getSort().endsWith(":desc");
-      mongoQuery.with(Sort.by(asc ? Sort.Direction.ASC : Sort.Direction.DESC, "expiryDate"));
-    } else {
-      mongoQuery.with(Sort.by(Sort.Direction.ASC, "expiryDate"));
-    }
+    ExtensionInventorySearchMongo.ExpirySortedPage page =
+        ExtensionInventorySearchMongo.findSortedByExpiry(
+            mongoTemplate,
+            MedicalInventoryExtension.class,
+            criteria,
+            query.getCursor(),
+            query.getSkip(),
+            limit);
+    return InventorySearchResult.builder()
+        .inventoryIds(page.inventoryIds())
+        .nextCursor(page.nextCursor())
+        .totalMatched(page.inventoryIds().size())
+        .build();
+  }
 
-    List<MedicalInventoryExtension> docs =
-        mongoTemplate.find(mongoQuery, MedicalInventoryExtension.class);
-    List<String> ids = new ArrayList<>();
-    for (MedicalInventoryExtension doc : docs) {
-      if (StringUtils.hasText(doc.getInventoryId())) {
-        ids.add(doc.getInventoryId());
-      }
+  private static void applyRestrictIds(Criteria criteria, Set<String> restrictInventoryIds) {
+    if (restrictInventoryIds == null || restrictInventoryIds.isEmpty()) {
+      return;
     }
-    return InventorySearchResult.builder().inventoryIds(ids).totalMatched(ids.size()).build();
+    criteria.and("inventoryId").in(restrictInventoryIds);
+  }
+
+  private static void applyFilters(Criteria criteria, InventorySearchQuery query) {
+    if (query.getFilters() == null) {
+      return;
+    }
+    query
+        .getFilters()
+        .forEach(
+            (key, raw) -> {
+              if (!StringUtils.hasText(raw)) {
+                return;
+              }
+              switch (key) {
+                case "batchNo" -> criteria.and("batchNo").is(raw.trim());
+                case "expiryBefore" ->
+                    criteria.and("expiryDate").lte(ExtensionFieldCoercion.asInstant(raw.trim()));
+                case "expiryAfter" ->
+                    criteria.and("expiryDate").gte(ExtensionFieldCoercion.asInstant(raw.trim()));
+                case "nearExpiryDays" -> {
+                  int days = Integer.parseInt(raw.trim());
+                  Instant now = Instant.now();
+                  criteria
+                      .and("expiryDate")
+                      .gte(now)
+                      .lte(now.plusSeconds((long) days * 86_400));
+                }
+                default -> {}
+              }
+            });
   }
 
   @Override
@@ -90,7 +99,7 @@ public class MedicalInventorySearchProvider implements InventorySearchProvider {
     int expired =
         (int)
             mongoTemplate.count(
-                new Query(
+                new org.springframework.data.mongodb.core.query.Query(
                     Criteria.where("shopId")
                         .is(shopId)
                         .and("expiryDate")
@@ -101,7 +110,7 @@ public class MedicalInventorySearchProvider implements InventorySearchProvider {
     int expiringWithin7Days =
         (int)
             mongoTemplate.count(
-                new Query(
+                new org.springframework.data.mongodb.core.query.Query(
                     Criteria.where("shopId")
                         .is(shopId)
                         .and("expiryDate")
@@ -112,7 +121,7 @@ public class MedicalInventorySearchProvider implements InventorySearchProvider {
     int expiringWithinSoonDays =
         (int)
             mongoTemplate.count(
-                new Query(
+                new org.springframework.data.mongodb.core.query.Query(
                     Criteria.where("shopId")
                         .is(shopId)
                         .and("expiryDate")
@@ -120,18 +129,10 @@ public class MedicalInventorySearchProvider implements InventorySearchProvider {
                         .lte(soonEnd)),
                 MedicalInventoryExtension.class);
 
-    int totalWithExpiry =
-        (int)
-            mongoTemplate.count(
-                new Query(
-                    Criteria.where("shopId").is(shopId).and("expiryDate").exists(true)),
-                MedicalInventoryExtension.class);
-
     return InventoryExpiryBucketSummary.builder()
         .expired(expired)
         .expiringWithin7Days(expiringWithin7Days)
         .expiringWithinSoonDays(expiringWithinSoonDays)
-        .totalWithExpiry(totalWithExpiry)
         .expiringSoonDays(windowDays)
         .build();
   }
