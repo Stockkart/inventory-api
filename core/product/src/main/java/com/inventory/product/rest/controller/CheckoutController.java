@@ -8,6 +8,7 @@ import com.inventory.product.rest.dto.request.AddToCartRequest;
 import com.inventory.product.rest.dto.request.UpdatePurchaseStatusRequest;
 import com.inventory.product.rest.dto.response.AddToCartResponse;
 import com.inventory.product.rest.dto.response.CheckoutResponse;
+import com.inventory.product.rest.dto.response.CustomerProductHistoryResponse;
 import com.inventory.product.rest.dto.response.PurchaseListResponse;
 import com.inventory.product.service.CheckoutService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -81,6 +82,27 @@ public class CheckoutController {
       HttpServletRequest httpRequest) {
     return ResponseEntity.ok(ApiResponse.success(
         checkoutService.searchPurchases(page, limit, invoiceNo, customerEmail, customerPhone, customerName, httpRequest)));
+  }
+
+  /**
+   * Per-line purchase history for a single customer. Used by scan-and-sell to surface the prices
+   * that the same customer paid previously for any of the items currently in the cart.
+   *
+   * @param customerId    preferred resolver; must belong to the current shop
+   * @param customerPhone fallback if {@code customerId} is missing
+   * @param inventoryIds  comma-separated list of inventory line ids to look up
+   * @param perItemLimit  max entries to return per inventoryId (default 3, capped at 10)
+   */
+  @GetMapping("/purchases/customer-product-history")
+  public ResponseEntity<ApiResponse<CustomerProductHistoryResponse>> getCustomerProductHistory(
+      @RequestParam(required = false) String customerId,
+      @RequestParam(required = false) String customerPhone,
+      @RequestParam(required = false) java.util.List<String> inventoryIds,
+      @RequestParam(required = false) Integer perItemLimit,
+      HttpServletRequest httpRequest) {
+    return ResponseEntity.ok(ApiResponse.success(
+        checkoutService.getCustomerProductHistory(
+            customerId, customerPhone, inventoryIds, perItemLimit, httpRequest)));
   }
 }
 
