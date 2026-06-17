@@ -8,7 +8,6 @@ import com.inventory.product.domain.model.UnitConversion;
 import com.inventory.product.rest.dto.request.CreateInventoryRequest;
 import com.inventory.product.rest.dto.request.UpdateInventoryRequest;
 import com.inventory.product.service.PackagingUnitService;
-import com.inventory.reminders.rest.dto.request.CustomReminderRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -16,7 +15,6 @@ import org.springframework.util.StringUtils;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.List;
 import java.util.regex.Pattern;
 
 @Component
@@ -70,7 +68,6 @@ public class InventoryValidator {
     }
     validateTaxFieldsByBillingMode(request.getBillingMode(), request.getSgst(), request.getCgst());
     validatePackaging(request.getBaseUnit(), request.getUnitsPerPack(), request.getUnitConversions());
-    validateCustomReminders(request.getCustomReminders());
   }
 
   public void validateUpdateRequest(UpdateInventoryRequest request) {
@@ -166,35 +163,6 @@ public class InventoryValidator {
     }
     if (purchaseDate.isAfter(maxAllowed)) {
       throw new ValidationException("Purchase date cannot be more than 30 days in the future");
-    }
-  }
-
-  private void validateCustomReminders(List<CustomReminderRequest> customReminders) {
-    if (customReminders == null || customReminders.isEmpty()) {
-      return;
-    }
-    for (int i = 0; i < customReminders.size(); i++) {
-      CustomReminderRequest reminder = customReminders.get(i);
-      if (reminder == null) {
-        continue;
-      }
-      Instant reminderAt = reminder.getReminderAt();
-      Instant endDate = reminder.getEndDate();
-      if (reminderAt == null && endDate == null) {
-        continue;
-      }
-      if (reminderAt == null) {
-        throw new ValidationException(
-            "Custom reminder " + (i + 1) + ": reminderAt is required");
-      }
-      if (endDate == null) {
-        throw new ValidationException(
-            "Custom reminder " + (i + 1) + ": endDate is required");
-      }
-      if (endDate.isBefore(reminderAt)) {
-        throw new ValidationException(
-            "Custom reminder " + (i + 1) + ": endDate cannot be before reminderAt");
-      }
     }
   }
 

@@ -1,12 +1,12 @@
 package com.inventory.plugins.medical;
 
-import com.inventory.pluginengine.ExtensionInventorySearchMongo;
 import com.inventory.pluginengine.ExtensionFieldCoercion;
 import com.inventory.pluginengine.InventoryExpiryBucketSummary;
 import com.inventory.pluginengine.InventorySearchProvider;
 import com.inventory.pluginengine.InventorySearchQuery;
 import com.inventory.pluginengine.InventorySearchResult;
 import com.inventory.plugins.medical.domain.MedicalInventoryExtension;
+import com.inventory.plugins.medical.search.MedicalExpirySortedSearch;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -15,6 +15,7 @@ import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
+import org.springframework.data.mongodb.core.query.Query;
 
 @Component
 public class MedicalInventorySearchProvider implements InventorySearchProvider {
@@ -37,8 +38,8 @@ public class MedicalInventorySearchProvider implements InventorySearchProvider {
     applyRestrictIds(criteria, query.getRestrictInventoryIds());
 
     int limit = query.getLimit() > 0 ? Math.min(query.getLimit(), 200) : 50;
-    ExtensionInventorySearchMongo.ExpirySortedPage page =
-        ExtensionInventorySearchMongo.findSortedByExpiry(
+    MedicalExpirySortedSearch.ExpirySortedPage page =
+        MedicalExpirySortedSearch.findSortedByExpiry(
             mongoTemplate,
             MedicalInventoryExtension.class,
             criteria,
@@ -99,7 +100,7 @@ public class MedicalInventorySearchProvider implements InventorySearchProvider {
     int expired =
         (int)
             mongoTemplate.count(
-                new org.springframework.data.mongodb.core.query.Query(
+                new Query(
                     Criteria.where("shopId")
                         .is(shopId)
                         .and("expiryDate")
@@ -110,7 +111,7 @@ public class MedicalInventorySearchProvider implements InventorySearchProvider {
     int expiringWithin7Days =
         (int)
             mongoTemplate.count(
-                new org.springframework.data.mongodb.core.query.Query(
+                new Query(
                     Criteria.where("shopId")
                         .is(shopId)
                         .and("expiryDate")
@@ -121,7 +122,7 @@ public class MedicalInventorySearchProvider implements InventorySearchProvider {
     int expiringWithinSoonDays =
         (int)
             mongoTemplate.count(
-                new org.springframework.data.mongodb.core.query.Query(
+                new Query(
                     Criteria.where("shopId")
                         .is(shopId)
                         .and("expiryDate")

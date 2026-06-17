@@ -1,4 +1,4 @@
-package com.inventory.pluginengine;
+package com.inventory.plugins.medical.search;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -6,22 +6,22 @@ import java.util.Base64;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.util.StringUtils;
 
-/** Opaque cursor for compound (expiryDate, inventoryId) sort pages. */
-public final class InventorySearchCursorCodec {
+/** Opaque cursor for medical extension search sorted by (expiryDate, inventoryId). */
+final class MedicalInventorySearchCursorCodec {
 
   private static final String NULL_EXPIRY = "none";
   private static final Instant NULL_EXPIRY_SORT_SENTINEL =
       Instant.parse("9999-12-31T23:59:59.999Z");
 
-  private InventorySearchCursorCodec() {}
+  private MedicalInventorySearchCursorCodec() {}
 
-  public record Decoded(long expiryEpochMillis, String inventoryId) {}
+  record Decoded(long expiryEpochMillis, String inventoryId) {}
 
-  public static Instant nullExpirySortSentinel() {
+  static Instant nullExpirySortSentinel() {
     return NULL_EXPIRY_SORT_SENTINEL;
   }
 
-  public static String encode(Instant expiryDate, String inventoryId) {
+  static String encode(Instant expiryDate, String inventoryId) {
     if (!StringUtils.hasText(inventoryId)) {
       return null;
     }
@@ -33,7 +33,7 @@ public final class InventorySearchCursorCodec {
         .encodeToString(raw.getBytes(StandardCharsets.UTF_8));
   }
 
-  public static Decoded decode(String cursor) {
+  static Decoded decode(String cursor) {
     if (!StringUtils.hasText(cursor)) {
       return null;
     }
@@ -57,8 +57,7 @@ public final class InventorySearchCursorCodec {
     }
   }
 
-  /** Cursor filter for sort key (expiry asc, inventoryId asc) with null expiry last. */
-  public static Criteria cursorAfter(String cursor) {
+  static Criteria cursorAfter(String cursor) {
     Decoded decoded = decode(cursor);
     if (decoded == null) {
       return new Criteria();

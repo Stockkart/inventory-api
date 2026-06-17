@@ -1,4 +1,4 @@
-package com.inventory.pluginengine;
+package com.inventory.plugins.medical.search;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -12,16 +12,13 @@ import org.springframework.data.mongodb.core.aggregation.AggregationResults;
 import org.springframework.data.mongodb.core.aggregation.ConditionalOperators;
 import org.springframework.data.mongodb.core.aggregation.LimitOperation;
 import org.springframework.data.mongodb.core.aggregation.SkipOperation;
-import org.springframework.data.mongodb.core.aggregation.SortOperation;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.util.StringUtils;
 
-/**
- * Extension collection search sorted by expiry (soonest first) with DB-level cursor / skip.
- */
-public final class ExtensionInventorySearchMongo {
+/** Medical extension collection search sorted by expiry (soonest first) with cursor / skip. */
+public final class MedicalExpirySortedSearch {
 
-  private ExtensionInventorySearchMongo() {}
+  private MedicalExpirySortedSearch() {}
 
   public record ExpirySortedPage(List<String> inventoryIds, String nextCursor) {}
 
@@ -39,7 +36,7 @@ public final class ExtensionInventorySearchMongo {
     ops.add(Aggregation.match(matchCriteria));
 
     if (StringUtils.hasText(cursor)) {
-      Criteria cursorCriteria = InventorySearchCursorCodec.cursorAfter(cursor);
+      Criteria cursorCriteria = MedicalInventorySearchCursorCodec.cursorAfter(cursor);
       if (!cursorCriteria.getCriteriaObject().isEmpty()) {
         ops.add(Aggregation.match(cursorCriteria));
       }
@@ -51,7 +48,7 @@ public final class ExtensionInventorySearchMongo {
             .addFieldWithValue(
                 "sortExpiry",
                 ConditionalOperators.ifNull("expiryDate")
-                    .then(InventorySearchCursorCodec.nullExpirySortSentinel()))
+                    .then(MedicalInventorySearchCursorCodec.nullExpirySortSentinel()))
             .build());
     ops.add(
         Aggregation.sort(
@@ -88,7 +85,7 @@ public final class ExtensionInventorySearchMongo {
 
     String nextCursor = null;
     if (results.getMappedResults().size() > effectiveLimit && lastInventoryId != null) {
-      nextCursor = InventorySearchCursorCodec.encode(lastExpiry, lastInventoryId);
+      nextCursor = MedicalInventorySearchCursorCodec.encode(lastExpiry, lastInventoryId);
     }
     return new ExpirySortedPage(ids, nextCursor);
   }
