@@ -7,4 +7,5 @@ import lombok.Data;
 public class VerticalEntitySchema {
 
   private List<VerticalSchemaField> fields;
+  private VerticalEntitySearchConfig search;
 }

@@ -13,6 +13,7 @@
     <artifactId>plugins</artifactId>
     <packaging>pom</packaging>
     <modules>
+        <module>search-support</module>
         <module>medical</module>
         <module>sports</module>
     </modules>

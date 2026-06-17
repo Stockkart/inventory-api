@@ -1,28 +1,27 @@
 package com.inventory.plugins.medical;
 
+import com.inventory.plugins.search.support.SchemaDrivenInventorySearchProvider;
 import com.inventory.pluginengine.ExtensionFieldCoercion;
 import com.inventory.pluginengine.InventoryExpiryBucketSummary;
-import com.inventory.pluginengine.InventorySearchProvider;
 import com.inventory.pluginengine.InventorySearchQuery;
 import com.inventory.pluginengine.InventorySearchResult;
+import com.inventory.pluginengine.schema.VerticalSchema;
 import com.inventory.plugins.medical.domain.MedicalInventoryExtension;
-import com.inventory.plugins.medical.search.MedicalExpirySortedSearch;
+import com.inventory.plugins.medical.search.MedicalSearchSchema;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
-import org.springframework.data.mongodb.core.query.Query;
 
 @Component
-public class MedicalInventorySearchProvider implements InventorySearchProvider {
+public class MedicalInventorySearchProvider extends SchemaDrivenInventorySearchProvider {
 
   private final MongoTemplate mongoTemplate;
 
   public MedicalInventorySearchProvider(MongoTemplate mongoTemplate) {
+    super(mongoTemplate, MedicalInventoryExtension.class);
     this.mongoTemplate = mongoTemplate;
   }
 
@@ -32,35 +31,8 @@ public class MedicalInventorySearchProvider implements InventorySearchProvider {
   }
 
   @Override
-  public InventorySearchResult search(String shopId, InventorySearchQuery query) {
-    Criteria criteria = Criteria.where("shopId").is(shopId);
-    applyFilters(criteria, query);
-    applyRestrictIds(criteria, query.getRestrictInventoryIds());
-
-    int limit = query.getLimit() > 0 ? Math.min(query.getLimit(), 200) : 50;
-    MedicalExpirySortedSearch.ExpirySortedPage page =
-        MedicalExpirySortedSearch.findSortedByExpiry(
-            mongoTemplate,
-            MedicalInventoryExtension.class,
-            criteria,
-            query.getCursor(),
-            query.getSkip(),
-            limit);
-    return InventorySearchResult.builder()
-        .inventoryIds(page.inventoryIds())
-        .nextCursor(page.nextCursor())
-        .totalMatched(page.inventoryIds().size())
-        .build();
-  }
-
-  private static void applyRestrictIds(Criteria criteria, Set<String> restrictInventoryIds) {
-    if (restrictInventoryIds == null || restrictInventoryIds.isEmpty()) {
-      return;
-    }
-    criteria.and("inventoryId").in(restrictInventoryIds);
-  }
-
-  private static void applyFilters(Criteria criteria, InventorySearchQuery query) {
+  protected void applyVerticalFilters(
+      Criteria criteria, InventorySearchQuery query, VerticalSchema schema) {
     if (query.getFilters() == null) {
       return;
     }
@@ -72,7 +44,6 @@ public class MedicalInventorySearchProvider implements InventorySearchProvider {
                 return;
               }
               switch (key) {
-                case "batchNo" -> criteria.and("batchNo").is(raw.trim());
                 case "expiryBefore" ->
                     criteria.and("expiryDate").lte(ExtensionFieldCoercion.asInstant(raw.trim()));
                 case "expiryAfter" ->
@@ -141,7 +112,10 @@ public class MedicalInventorySearchProvider implements InventorySearchProvider {
   @Override
   public InventorySearchResult searchFefo(String shopId, String batchNo, int limit) {
     InventorySearchQuery.InventorySearchQueryBuilder builder =
-        InventorySearchQuery.builder().sort("expiryDate:asc").limit(limit > 0 ? limit : 50);
+        InventorySearchQuery.builder()
+            .sort("expiryDate:asc")
+            .limit(limit > 0 ? limit : 50)
+            .schema(MedicalSearchSchema.fallback());
     if (StringUtils.hasText(batchNo)) {
       builder.filters(java.util.Map.of("batchNo", batchNo.trim()));
     }

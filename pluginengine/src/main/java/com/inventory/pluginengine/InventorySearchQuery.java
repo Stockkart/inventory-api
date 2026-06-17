@@ -7,6 +7,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import com.inventory.pluginengine.schema.VerticalSchema;
 
 /** Filter/sort query for extension-backed inventory search. */
 @Data
@@ -35,4 +36,9 @@ public class InventorySearchQuery {
   /** Offset pagination (list API); ignored when {@code cursor} is set. */
   @Builder.Default
   private int skip = 0;
+
+  /**
+   * Vertical schema for the shop (set by product layer). Drives default sort and cursor strategy.
+   */
+  private VerticalSchema schema;
 }

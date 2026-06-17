@@ -86,6 +86,7 @@ public class InventoryVerticalSearchHandler {
                     .cursor(cursor)
                     .skip(skip)
                     .restrictInventoryIds(restrictIds)
+                    .schema(schemaLoader.load(shop.getVerticalId(), shop.getPluginVersion()))
                     .build());
 
     List<Inventory> items = loadInventoriesOrdered(shopId, result.getInventoryIds());

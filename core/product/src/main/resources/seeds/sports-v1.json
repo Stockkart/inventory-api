@@ -41,6 +41,7 @@
           "storage": "extension",
           "indexed": true,
           "searchable": true,
+          "sortable": true,
           "showIn": ["registration", "scan-sell"]
         },
         {
@@ -51,6 +52,7 @@
           "storage": "extension",
           "indexed": true,
           "searchable": true,
+          "sortable": true,
           "showIn": ["registration", "scan-sell"],
           "validation": { "minLength": 1, "maxLength": 120 }
         },
@@ -75,7 +77,15 @@
           "showIn": ["registration"],
           "validation": { "min": 0, "max": 120 }
         }
-      ]
+      ],
+      "search": {
+        "defaultSort": [
+          { "field": "brand", "direction": "asc" },
+          { "field": "sport", "direction": "asc" },
+          { "field": "inventoryId", "direction": "asc" }
+        ],
+        "cursor": "skip"
+      }
     }
   }
 }
