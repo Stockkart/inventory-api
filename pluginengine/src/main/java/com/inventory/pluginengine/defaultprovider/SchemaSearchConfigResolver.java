@@ -1,7 +1,6 @@
-package com.inventory.plugins.search.support;
+package com.inventory.pluginengine.defaultprovider;
 
 import com.inventory.common.exception.ValidationException;
-import com.inventory.pluginengine.InventorySearchContract;
 import com.inventory.pluginengine.schema.VerticalEntitySchema;
 import com.inventory.pluginengine.schema.VerticalEntitySearchConfig;
 import com.inventory.pluginengine.schema.VerticalSchema;
@@ -22,7 +21,7 @@ public final class SchemaSearchConfigResolver {
   public record ResolvedSearch(
       List<VerticalSearchSortField> sortFields,
       Map<String, VerticalSchemaField> fieldTypesByKey,
-      String cursorMode) {}
+      InventorySearchCursorMode cursorMode) {}
 
   public static ResolvedSearch resolve(VerticalSchema schema, String sortParam) {
     if (schema == null) {
@@ -38,11 +37,10 @@ public final class SchemaSearchConfigResolver {
     if (StringUtils.hasText(sortParam)) {
       sortFields = applySortOverride(sortFields, sortParam.trim(), fieldTypes);
     }
-    sortFields = ensureInventoryIdTiebreaker(sortFields);
 
-    String cursorMode =
+    InventorySearchCursorMode cursorMode =
         config != null && StringUtils.hasText(config.getCursor())
-            ? config.getCursor().trim()
+            ? InventorySearchCursorMode.fromSchema(config.getCursor())
             : defaultCursorMode(sortFields, fieldTypes);
     return new ResolvedSearch(sortFields, fieldTypes, cursorMode);
   }
@@ -70,8 +68,7 @@ public final class SchemaSearchConfigResolver {
     List<VerticalSearchSortField> next = new ArrayList<>();
     next.add(override);
     for (VerticalSearchSortField existing : current) {
-      if (!field.equals(existing.getField())
-          && !InventorySearchContract.INVENTORY_ID_FIELD.equals(existing.getField())) {
+      if (!field.equals(existing.getField())) {
         next.add(copyField(existing));
       }
     }
@@ -79,9 +76,6 @@ public final class SchemaSearchConfigResolver {
   }
 
   private static void validateSortable(String field, Map<String, VerticalSchemaField> fieldTypes) {
-    if (InventorySearchContract.INVENTORY_ID_FIELD.equals(field)) {
-      return;
-    }
     VerticalSchemaField schemaField = fieldTypes.get(field);
     if (schemaField == null) {
       throw new ValidationException("Unsupported sort field: " + field);
@@ -104,34 +98,18 @@ public final class SchemaSearchConfigResolver {
         sort.add(spec);
       }
     }
-    return ensureInventoryIdTiebreaker(sort);
+    return sort;
   }
 
-  private static List<VerticalSearchSortField> ensureInventoryIdTiebreaker(
-      List<VerticalSearchSortField> sortFields) {
-    boolean hasId =
-        sortFields.stream()
-            .anyMatch(s -> InventorySearchContract.INVENTORY_ID_FIELD.equals(s.getField()));
-    if (hasId) {
-      return sortFields;
-    }
-    List<VerticalSearchSortField> next = new ArrayList<>(sortFields);
-    VerticalSearchSortField id = new VerticalSearchSortField();
-    id.setField(InventorySearchContract.INVENTORY_ID_FIELD);
-    id.setDirection("asc");
-    next.add(id);
-    return next;
-  }
-
-  private static String defaultCursorMode(
+  private static InventorySearchCursorMode defaultCursorMode(
       List<VerticalSearchSortField> sortFields, Map<String, VerticalSchemaField> fieldTypes) {
     for (VerticalSearchSortField sortField : sortFields) {
       VerticalSchemaField field = fieldTypes.get(sortField.getField());
       if (field != null && "date".equalsIgnoreCase(field.getType())) {
-        return InventorySearchContract.CURSOR_COMPOUND_KEY;
+        return InventorySearchCursorMode.COMPOUND_KEY;
       }
     }
-    return InventorySearchContract.CURSOR_SKIP;
+    return InventorySearchCursorMode.SKIP;
   }
 
   private static VerticalEntitySearchConfig inventorySearchConfig(VerticalSchema schema) {

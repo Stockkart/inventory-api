@@ -1,4 +1,4 @@
-package com.inventory.plugins.search.support;
+package com.inventory.pluginengine.defaultprovider;
 
 import com.inventory.pluginengine.schema.VerticalSchema;
 import com.inventory.pluginengine.schema.VerticalSchemaField;

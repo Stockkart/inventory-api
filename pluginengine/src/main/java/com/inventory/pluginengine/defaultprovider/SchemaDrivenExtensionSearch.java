@@ -1,12 +1,12 @@
-package com.inventory.plugins.search.support;
+package com.inventory.pluginengine.defaultprovider;
 
-import com.inventory.pluginengine.InventorySearchContract;
 import com.inventory.pluginengine.schema.VerticalSchemaField;
 import com.inventory.pluginengine.schema.VerticalSearchSortField;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import org.bson.Document;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.aggregation.AddFieldsOperation;
@@ -19,10 +19,12 @@ import org.springframework.data.mongodb.core.aggregation.SkipOperation;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.util.StringUtils;
-import org.bson.Document;
 
 /** Schema-driven extension collection search (sort + cursor from vertical schema). */
 public final class SchemaDrivenExtensionSearch {
+
+  private static final String SKIP_CURSOR_PREFIX =
+      InventorySearchCursorMode.SKIP.schemaValue() + ":";
 
   private SchemaDrivenExtensionSearch() {}
 
@@ -36,7 +38,7 @@ public final class SchemaDrivenExtensionSearch {
       String cursor,
       int skip,
       int limit) {
-    if (InventorySearchContract.CURSOR_SKIP.equals(resolved.cursorMode())) {
+    if (resolved.cursorMode() == InventorySearchCursorMode.SKIP) {
       return searchWithSkip(mongoTemplate, documentClass, matchCriteria, resolved, cursor, skip, limit);
     }
     return searchWithCompoundKey(
@@ -53,9 +55,9 @@ public final class SchemaDrivenExtensionSearch {
       int limit) {
     int effectiveLimit = effectiveLimit(limit);
     int effectiveSkip = Math.max(skip, 0);
-    if (StringUtils.hasText(cursor) && cursor.startsWith("skip:")) {
+    if (StringUtils.hasText(cursor) && cursor.startsWith(SKIP_CURSOR_PREFIX)) {
       try {
-        effectiveSkip = Integer.parseInt(cursor.substring("skip:".length()));
+        effectiveSkip = Integer.parseInt(cursor.substring(SKIP_CURSOR_PREFIX.length()));
       } catch (NumberFormatException ignored) {
         // keep request skip
       }
@@ -72,7 +74,8 @@ public final class SchemaDrivenExtensionSearch {
 
     List<Document> docs =
         mongoTemplate.find(mongoQuery, Document.class, collectionName(mongoTemplate, documentClass));
-    return pageFromDocuments(docs, effectiveLimit, resolved, null, "skip:" + (effectiveSkip + effectiveLimit));
+    return pageFromDocuments(
+        docs, effectiveLimit, null, SKIP_CURSOR_PREFIX + (effectiveSkip + effectiveLimit));
   }
 
   private static SearchPage searchWithCompoundKey(
@@ -89,7 +92,7 @@ public final class SchemaDrivenExtensionSearch {
     List<AggregationOperation> ops = new ArrayList<>();
     ops.add(Aggregation.match(matchCriteria));
 
-    if (StringUtils.hasText(cursor) && !cursor.startsWith("skip:")) {
+    if (StringUtils.hasText(cursor) && !cursor.startsWith(SKIP_CURSOR_PREFIX)) {
       Criteria cursorCriteria = cursorAfter(resolved, cursor);
       if (!cursorCriteria.getCriteriaObject().isEmpty()) {
         ops.add(Aggregation.match(cursorCriteria));
@@ -128,21 +131,21 @@ public final class SchemaDrivenExtensionSearch {
         docs.size() > effectiveLimit && !cursorTokens.isEmpty()
             ? CompoundKeySearchCursorCodec.encode(cursorTokens)
             : null;
-    return pageFromDocuments(docs, effectiveLimit, resolved, nextCursor, null);
+    return pageFromDocuments(docs, effectiveLimit, nextCursor, null);
   }
 
   private static SearchPage pageFromDocuments(
       List<Document> docs,
       int effectiveLimit,
-      SchemaSearchConfigResolver.ResolvedSearch resolved,
       String compoundNextCursor,
       String skipNextCursor) {
     List<String> ids = new ArrayList<>();
+    String inventoryIdField = ExtensionDocumentField.inventoryIdFieldName();
     for (Document doc : docs) {
       if (ids.size() >= effectiveLimit) {
         break;
       }
-      Object inventoryId = doc.get(InventorySearchContract.INVENTORY_ID_FIELD);
+      Object inventoryId = doc.get(inventoryIdField);
       if (inventoryId != null && StringUtils.hasText(String.valueOf(inventoryId))) {
         ids.add(String.valueOf(inventoryId));
       }
@@ -193,14 +196,15 @@ public final class SchemaDrivenExtensionSearch {
     boolean nullsLast = usesNullsLastSentinel(spec, fieldTypes);
 
     if (index == sortFields.size() - 1) {
-      return lastFieldAfter(field, type, token, nullsLast);
+      return lastFieldAfter(field, type, token, nullsLast, isAsc(spec));
     }
 
     if (nullsLast
         && "date".equalsIgnoreCase(type)
         && CompoundKeySearchCursorCodec.NULL_TOKEN.equals(token)) {
       Criteria equal = equalsField(field, type, token, nullsLast);
-      Criteria afterRest = cursorAfterFrom(sortFields, fieldTypes, tokens, index + 1);
+      Criteria afterRest =
+          cursorAfterFrom(sortFields, fieldTypes, tokens, index + 1);
       if (!afterRest.getCriteriaObject().isEmpty()) {
         return new Criteria().andOperator(equal, afterRest);
       }
@@ -208,7 +212,7 @@ public final class SchemaDrivenExtensionSearch {
     }
 
     List<Criteria> branches = new ArrayList<>();
-    branches.add(greaterThan(field, type, token, nullsLast));
+    branches.add(greaterThanInSortOrder(field, type, token, nullsLast, isAsc(spec)));
 
     Criteria equal = equalsField(field, type, token, nullsLast);
     Criteria afterRest = cursorAfterFrom(sortFields, fieldTypes, tokens, index + 1);
@@ -216,7 +220,9 @@ public final class SchemaDrivenExtensionSearch {
       branches.add(new Criteria().andOperator(equal, afterRest));
     }
 
-    if (nullsLast && "date".equalsIgnoreCase(type) && !CompoundKeySearchCursorCodec.NULL_TOKEN.equals(token)) {
+    if (nullsLast
+        && "date".equalsIgnoreCase(type)
+        && !CompoundKeySearchCursorCodec.NULL_TOKEN.equals(token)) {
       branches.add(
           new Criteria()
               .orOperator(
@@ -226,37 +232,44 @@ public final class SchemaDrivenExtensionSearch {
     return new Criteria().orOperator(branches.toArray(Criteria[]::new));
   }
 
+  private static boolean isAsc(VerticalSearchSortField spec) {
+    return spec == null || !"desc".equalsIgnoreCase(spec.getDirection());
+  }
+
   private static Criteria lastFieldAfter(
-      String field, String type, String token, boolean nullsLast) {
-    if (InventorySearchContract.INVENTORY_ID_FIELD.equals(field)
+      String field, String type, String token, boolean nullsLast, boolean asc) {
+    if (ExtensionDocumentField.isInventoryId(field)
         || "string".equalsIgnoreCase(type)
         || "enum".equalsIgnoreCase(type)) {
-      return Criteria.where(field).gt(token);
+      return asc ? Criteria.where(field).gt(token) : Criteria.where(field).lt(token);
     }
-    if ("date".equalsIgnoreCase(type) && nullsLast && CompoundKeySearchCursorCodec.NULL_TOKEN.equals(token)) {
+    if ("date".equalsIgnoreCase(type)
+        && nullsLast
+        && CompoundKeySearchCursorCodec.NULL_TOKEN.equals(token)) {
       return new Criteria()
-          .andOperator(
-              new Criteria()
-                  .orOperator(
-                      Criteria.where(field).exists(false), Criteria.where(field).is(null)),
-              Criteria.where(InventorySearchContract.INVENTORY_ID_FIELD).gt(token));
+          .orOperator(
+              Criteria.where(field).exists(false), Criteria.where(field).is(null));
     }
     if ("date".equalsIgnoreCase(type)) {
       Instant expiry = Instant.ofEpochMilli(Long.parseLong(token));
-      return Criteria.where(field).gt(expiry);
+      return asc ? Criteria.where(field).gt(expiry) : Criteria.where(field).lt(expiry);
     }
-    return Criteria.where(field).gt(token);
+    return asc ? Criteria.where(field).gt(token) : Criteria.where(field).lt(token);
   }
 
-  private static Criteria greaterThan(
-      String field, String type, String token, boolean nullsLast) {
-    if ("date".equalsIgnoreCase(type) && nullsLast && CompoundKeySearchCursorCodec.NULL_TOKEN.equals(token)) {
-      return new Criteria().orOperator(Criteria.where(field).exists(false), Criteria.where(field).is(null));
+  private static Criteria greaterThanInSortOrder(
+      String field, String type, String token, boolean nullsLast, boolean asc) {
+    if ("date".equalsIgnoreCase(type)
+        && nullsLast
+        && CompoundKeySearchCursorCodec.NULL_TOKEN.equals(token)) {
+      return new Criteria()
+          .orOperator(Criteria.where(field).exists(false), Criteria.where(field).is(null));
     }
     if ("date".equalsIgnoreCase(type)) {
-      return Criteria.where(field).gt(Instant.ofEpochMilli(Long.parseLong(token)));
+      Instant instant = Instant.ofEpochMilli(Long.parseLong(token));
+      return asc ? Criteria.where(field).gt(instant) : Criteria.where(field).lt(instant);
     }
-    return Criteria.where(field).gt(token);
+    return asc ? Criteria.where(field).gt(token) : Criteria.where(field).lt(token);
   }
 
   private static Criteria equalsField(
@@ -299,7 +312,7 @@ public final class SchemaDrivenExtensionSearch {
   }
 
   private static String fieldType(String field, Map<String, VerticalSchemaField> fieldTypes) {
-    if (InventorySearchContract.INVENTORY_ID_FIELD.equals(field)) {
+    if (ExtensionDocumentField.isInventoryId(field)) {
       return "string";
     }
     VerticalSchemaField schemaField = fieldTypes.get(field);

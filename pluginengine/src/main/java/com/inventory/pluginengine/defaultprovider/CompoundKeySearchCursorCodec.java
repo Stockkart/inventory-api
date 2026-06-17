@@ -1,4 +1,4 @@
-package com.inventory.plugins.search.support;
+package com.inventory.pluginengine.defaultprovider;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -28,7 +28,7 @@ public final class CompoundKeySearchCursorCodec {
     if (!StringUtils.hasText(cursor)) {
       return List.of();
     }
-    if (cursor.startsWith("skip:")) {
+    if (cursor.startsWith(InventorySearchCursorMode.SKIP.schemaValue() + ":")) {
       return List.of();
     }
     try {

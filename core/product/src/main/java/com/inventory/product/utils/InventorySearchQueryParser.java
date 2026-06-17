@@ -36,10 +36,6 @@ public final class InventorySearchQueryParser {
       fieldFilters.putAll(unified.fieldFilters());
     }
 
-    if (sort == null) {
-      sort = "expiryDate:asc";
-    }
-
     return new Parsed(q, sort, limit, fieldFilters, cursor);
   }
 

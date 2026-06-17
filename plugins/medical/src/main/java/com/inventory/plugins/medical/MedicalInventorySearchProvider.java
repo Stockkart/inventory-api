@@ -1,6 +1,6 @@
 package com.inventory.plugins.medical;
 
-import com.inventory.plugins.search.support.SchemaDrivenInventorySearchProvider;
+import com.inventory.pluginengine.defaultprovider.SchemaDrivenInventorySearchProvider;
 import com.inventory.pluginengine.ExtensionFieldCoercion;
 import com.inventory.pluginengine.InventoryExpiryBucketSummary;
 import com.inventory.pluginengine.InventorySearchQuery;

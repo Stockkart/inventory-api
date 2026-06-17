@@ -81,8 +81,7 @@
       "search": {
         "defaultSort": [
           { "field": "brand", "direction": "asc" },
-          { "field": "sport", "direction": "asc" },
-          { "field": "inventoryId", "direction": "asc" }
+          { "field": "sport", "direction": "asc" }
         ],
         "cursor": "skip"
       }

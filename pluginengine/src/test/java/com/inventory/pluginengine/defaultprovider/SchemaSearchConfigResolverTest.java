@@ -1,10 +1,9 @@
-package com.inventory.plugins.search.support;
+package com.inventory.pluginengine.defaultprovider;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.inventory.common.exception.ValidationException;
-import com.inventory.pluginengine.InventorySearchContract;
 import com.inventory.pluginengine.schema.VerticalEntitySchema;
 import com.inventory.pluginengine.schema.VerticalEntitySearchConfig;
 import com.inventory.pluginengine.schema.VerticalSchema;
@@ -23,10 +22,9 @@ class SchemaSearchConfigResolverTest {
     SchemaSearchConfigResolver.ResolvedSearch resolved =
         SchemaSearchConfigResolver.resolve(schema, null);
 
-    assertEquals(InventorySearchContract.CURSOR_COMPOUND_KEY, resolved.cursorMode());
-    assertEquals(2, resolved.sortFields().size());
+    assertEquals(InventorySearchCursorMode.COMPOUND_KEY, resolved.cursorMode());
+    assertEquals(1, resolved.sortFields().size());
     assertEquals("expiryDate", resolved.sortFields().get(0).getField());
-    assertEquals("inventoryId", resolved.sortFields().get(1).getField());
   }
 
   @Test
@@ -35,8 +33,8 @@ class SchemaSearchConfigResolverTest {
     SchemaSearchConfigResolver.ResolvedSearch resolved =
         SchemaSearchConfigResolver.resolve(schema, "expiryDate:asc");
 
+    assertEquals(1, resolved.sortFields().size());
     assertEquals("expiryDate", resolved.sortFields().get(0).getField());
-    assertEquals("inventoryId", resolved.sortFields().get(1).getField());
   }
 
   @Test
@@ -52,8 +50,17 @@ class SchemaSearchConfigResolverTest {
     VerticalSchema schema = sportsSchema();
     SchemaSearchConfigResolver.ResolvedSearch resolved =
         SchemaSearchConfigResolver.resolve(schema, null);
-    assertEquals(InventorySearchContract.CURSOR_SKIP, resolved.cursorMode());
+    assertEquals(InventorySearchCursorMode.SKIP, resolved.cursorMode());
     assertEquals("brand", resolved.sortFields().get(0).getField());
+    assertEquals("sport", resolved.sortFields().get(1).getField());
+  }
+
+  @Test
+  void parsesCursorModeFromSchemaJson() {
+    assertEquals(
+        InventorySearchCursorMode.COMPOUND_KEY,
+        InventorySearchCursorMode.fromSchema("compound-key"));
+    assertEquals(InventorySearchCursorMode.SKIP, InventorySearchCursorMode.fromSchema("skip"));
   }
 
   private static VerticalSchema medicalSchema() {
@@ -70,13 +77,9 @@ class SchemaSearchConfigResolverTest {
     expirySort.setDirection("asc");
     expirySort.setNulls("last");
 
-    VerticalSearchSortField idSort = new VerticalSearchSortField();
-    idSort.setField("inventoryId");
-    idSort.setDirection("asc");
-
     VerticalEntitySearchConfig search = new VerticalEntitySearchConfig();
-    search.setDefaultSort(List.of(expirySort, idSort));
-    search.setCursor(InventorySearchContract.CURSOR_COMPOUND_KEY);
+    search.setDefaultSort(List.of(expirySort));
+    search.setCursor(InventorySearchCursorMode.COMPOUND_KEY.schemaValue());
 
     VerticalEntitySchema inventory = new VerticalEntitySchema();
     inventory.setFields(List.of(expiry));
@@ -98,13 +101,10 @@ class SchemaSearchConfigResolverTest {
     VerticalSearchSortField sport = new VerticalSearchSortField();
     sport.setField("sport");
     sport.setDirection("asc");
-    VerticalSearchSortField id = new VerticalSearchSortField();
-    id.setField("inventoryId");
-    id.setDirection("asc");
 
     VerticalEntitySearchConfig search = new VerticalEntitySearchConfig();
-    search.setDefaultSort(List.of(brand, sport, id));
-    search.setCursor(InventorySearchContract.CURSOR_SKIP);
+    search.setDefaultSort(List.of(brand, sport));
+    search.setCursor(InventorySearchCursorMode.SKIP.schemaValue());
 
     VerticalEntitySchema inventory = new VerticalEntitySchema();
     inventory.setSearch(search);

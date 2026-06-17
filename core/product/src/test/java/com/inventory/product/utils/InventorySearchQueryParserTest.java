@@ -1,6 +1,7 @@
 package com.inventory.product.utils;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -16,14 +17,15 @@ class InventorySearchQueryParserTest {
     assertEquals("dolo", parsed.q());
     assertEquals(25, parsed.limit());
     assertEquals("ABC12", parsed.fieldFilters().get("batchNo"));
-    assertEquals("expiryDate:asc", parsed.sort());
+    assertNull(parsed.sort());
   }
 
   @Test
-  void parse_defaultsExpirySort() {
+  void parse_explicitSort() {
     InventorySearchQueryParser.Parsed parsed =
-        InventorySearchQueryParser.parse(Map.of("q", "paracetamol"));
-    assertEquals("expiryDate:asc", parsed.sort());
+        InventorySearchQueryParser.parse(
+            Map.of("q", "paracetamol", "sort", "expiryDate:desc"));
+    assertEquals("expiryDate:desc", parsed.sort());
   }
 
   @Test

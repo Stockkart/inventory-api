@@ -12,7 +12,8 @@ public class VerticalEntitySearchConfig {
   private List<VerticalSearchSortField> defaultSort;
 
   /**
-   * Pagination strategy: {@code compound-key} (keyset on sort fields) or {@code skip} (offset token).
+   * Pagination strategy: {@link com.inventory.pluginengine.defaultprovider.InventorySearchCursorMode}
+   * schema value (e.g. {@code compound-key}, {@code skip}).
    */
   private String cursor;
 }

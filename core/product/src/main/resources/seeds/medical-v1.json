@@ -48,8 +48,7 @@
       ],
       "search": {
         "defaultSort": [
-          { "field": "expiryDate", "direction": "asc", "nulls": "last" },
-          { "field": "inventoryId", "direction": "asc" }
+          { "field": "expiryDate", "direction": "asc", "nulls": "last" }
         ],
         "cursor": "compound-key"
       }

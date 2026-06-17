@@ -1,4 +1,4 @@
-package com.inventory.plugins.search.support;
+package com.inventory.pluginengine.defaultprovider;
 
 import com.inventory.common.exception.ValidationException;
 import com.inventory.pluginengine.AbstractInventorySearchProvider;
@@ -10,7 +10,7 @@ import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 
 /**
- * Default schema-driven extension search implementation. Vertical plugins extend this and override
+ * Default schema-driven extension search. Vertical plugins extend this and override
  * {@link #applyVerticalFilters} for virtual filters (e.g. expiryBefore).
  */
 public abstract class SchemaDrivenInventorySearchProvider extends AbstractInventorySearchProvider {
@@ -60,6 +60,6 @@ public abstract class SchemaDrivenInventorySearchProvider extends AbstractInvent
     if (restrictInventoryIds == null || restrictInventoryIds.isEmpty()) {
       return;
     }
-    criteria.and("inventoryId").in(restrictInventoryIds);
+    criteria.and(ExtensionDocumentField.inventoryIdFieldName()).in(restrictInventoryIds);
   }
 }

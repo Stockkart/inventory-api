@@ -1,6 +1,6 @@
 package com.inventory.plugins.sports;
 
-import com.inventory.plugins.search.support.SchemaDrivenInventorySearchProvider;
+import com.inventory.pluginengine.defaultprovider.SchemaDrivenInventorySearchProvider;
 import com.inventory.plugins.sports.domain.SportsInventoryExtension;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.stereotype.Component;

@@ -1,4 +1,4 @@
-package com.inventory.plugins.search.support;
+package com.inventory.pluginengine.defaultprovider;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -36,6 +36,9 @@ class CompoundKeySearchCursorCodecTest {
 
   @Test
   void ignoresSkipCursorPrefix() {
-    assertTrue(CompoundKeySearchCursorCodec.decode("skip:20").isEmpty());
+    assertTrue(
+        CompoundKeySearchCursorCodec.decode(
+                InventorySearchCursorMode.SKIP.schemaValue() + ":20")
+            .isEmpty());
   }
 }

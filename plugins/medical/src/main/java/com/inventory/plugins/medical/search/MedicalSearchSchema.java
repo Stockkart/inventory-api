@@ -1,5 +1,6 @@
 package com.inventory.plugins.medical.search;
 
+import com.inventory.pluginengine.defaultprovider.InventorySearchCursorMode;
 import com.inventory.pluginengine.schema.VerticalEntitySchema;
 import com.inventory.pluginengine.schema.VerticalEntitySearchConfig;
 import com.inventory.pluginengine.schema.VerticalSchema;
@@ -28,13 +29,9 @@ public final class MedicalSearchSchema {
     expirySort.setDirection("asc");
     expirySort.setNulls("last");
 
-    VerticalSearchSortField idSort = new VerticalSearchSortField();
-    idSort.setField("inventoryId");
-    idSort.setDirection("asc");
-
     VerticalEntitySearchConfig search = new VerticalEntitySearchConfig();
-    search.setDefaultSort(List.of(expirySort, idSort));
-    search.setCursor("compound-key");
+    search.setDefaultSort(List.of(expirySort));
+    search.setCursor(InventorySearchCursorMode.COMPOUND_KEY.schemaValue());
 
     VerticalEntitySchema inventory = new VerticalEntitySchema();
     inventory.setFields(List.of(expiry));
