@@ -38,6 +38,7 @@ import com.inventory.product.rest.dto.response.ParsedInventoryListResponse;
 import com.inventory.pluginengine.VerticalFieldsReader;
 import com.inventory.pluginengine.schema.InventoryVerticalRequestNormalizer;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import com.inventory.product.mapper.InventoryMapper;
 import com.inventory.product.migration.ExcelStockParser;
 import com.inventory.product.mapper.ParsedInventoryMapper;
@@ -285,12 +286,43 @@ public class InventoryService {
    */
   public BulkCreateInventoryResponse bulkCreate(BulkCreateInventoryRequest bulkRequest, String userId, String shopId) {
     List<InventoryReceiptResponse> createdItems = new ArrayList<>();
-    int failedCount = 0;
 
     if (!StringUtils.hasText(bulkRequest.getVendorId())) {
       throw new ValidationException("Vendor is required for bulk inventory registration");
     }
     validateVendorId(bulkRequest.getVendorId(), shopId);
+
+    List<CreateInventoryItemRequest> itemRequests = bulkRequest.getItems();
+    if (itemRequests == null || itemRequests.isEmpty()) {
+      throw new ValidationException("At least one product is required for bulk registration");
+    }
+
+    List<String> validationErrors = new ArrayList<>();
+    for (int i = 0; i < itemRequests.size(); i++) {
+      CreateInventoryItemRequest itemRequest = itemRequests.get(i);
+      try {
+        CreateInventoryRequest fullRequest =
+            inventoryMapper.toCreateInventoryRequest(
+                itemRequest, bulkRequest.getVendorId(), null);
+        validateCreateInventoryRequest(fullRequest, shopId);
+      } catch (ValidationException e) {
+        String itemLabel =
+            StringUtils.hasText(itemRequest.getName())
+                ? itemRequest.getName()
+                : "item-" + (i + 1);
+        validationErrors.add(itemLabel + ": " + describeValidationFailure(e));
+      } catch (Exception e) {
+        String itemLabel =
+            StringUtils.hasText(itemRequest.getName())
+                ? itemRequest.getName()
+                : "item-" + (i + 1);
+        String message = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+        validationErrors.add(itemLabel + ": " + message);
+      }
+    }
+    if (!validationErrors.isEmpty()) {
+      throw new ValidationException(new LinkedHashSet<>(validationErrors));
+    }
 
     VendorPurchaseInvoiceRequest invReq = bulkRequest.getVendorPurchaseInvoice();
     boolean userInvoice =
@@ -340,65 +372,43 @@ public class InventoryService {
 
     log.info(
         "Bulk creating {} inventory items with vendorPurchaseInvoiceId: {} and vendorId: {}",
-        bulkRequest.getItems() != null ? bulkRequest.getItems().size() : 0,
+        itemRequests.size(),
         registrationId,
         bulkRequest.getVendorId());
 
     List<VendorPurchaseInvoiceLine> invoiceLines = new ArrayList<>();
-    List<String> itemErrors = new ArrayList<>();
-    if (bulkRequest.getItems() != null) {
-      for (CreateInventoryItemRequest itemRequest : bulkRequest.getItems()) {
-        try {
-          CreateInventoryRequest fullRequest =
-              inventoryMapper.toCreateInventoryRequest(
-                  itemRequest, bulkRequest.getVendorId(), registrationId);
-          fullRequest.setVendorPurchaseInvoiceId(registrationId);
-          InventoryVerticalRequestNormalizer.normalizeCreate(
-              fullRequest);
+    for (CreateInventoryItemRequest itemRequest : itemRequests) {
+      CreateInventoryRequest fullRequest =
+          inventoryMapper.toCreateInventoryRequest(
+              itemRequest, bulkRequest.getVendorId(), registrationId);
+      fullRequest.setVendorPurchaseInvoiceId(registrationId);
+      InventoryVerticalRequestNormalizer.normalizeCreate(fullRequest);
 
-          InventoryReceiptResponse response = create(fullRequest, userId, shopId);
-          createdItems.add(response);
+      InventoryReceiptResponse response = create(fullRequest, userId, shopId);
+      createdItems.add(response);
 
-          VendorPurchaseInvoiceLine line = new VendorPurchaseInvoiceLine();
-          line.setLineIndex(invoiceLines.size());
-          line.setName(itemRequest.getName());
-          line.setBarcode(itemRequest.getBarcode());
-          line.setCount(itemRequest.getCount());
-          line.setCostPrice(itemRequest.getCostPrice());
-          line.setPriceToRetail(itemRequest.getPriceToRetail());
-          line.setInventoryId(response.getId());
-          invoiceLines.add(line);
-        } catch (Exception e) {
-          String itemLabel =
-              StringUtils.hasText(itemRequest.getName())
-                  ? itemRequest.getName()
-                  : "item-" + (failedCount + 1);
-          String message = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-          log.error("Failed to create inventory item {}: {}", itemLabel, message, e);
-          itemErrors.add(itemLabel + ": " + message);
-          failedCount++;
-        }
-      }
+      VendorPurchaseInvoiceLine line = new VendorPurchaseInvoiceLine();
+      line.setLineIndex(invoiceLines.size());
+      line.setName(itemRequest.getName());
+      line.setBarcode(itemRequest.getBarcode());
+      line.setCount(itemRequest.getCount());
+      line.setCostPrice(itemRequest.getCostPrice());
+      line.setPriceToRetail(itemRequest.getPriceToRetail());
+      line.setInventoryId(response.getId());
+      invoiceLines.add(line);
     }
 
-    String returnedInvoiceId = null;
-    if (invoiceLines.isEmpty()) {
-      vendorPurchaseInvoiceRepository.deleteById(pendingInvoice.getId());
-    } else {
-      pendingInvoice.setLines(invoiceLines);
-      vendorPurchaseInvoiceRepository.save(pendingInvoice);
-      returnedInvoiceId = pendingInvoice.getId();
-    }
+    pendingInvoice.setLines(invoiceLines);
+    vendorPurchaseInvoiceRepository.save(pendingInvoice);
+    String returnedInvoiceId = pendingInvoice.getId();
 
-    log.info("Bulk creation completed: {} created, {} failed", createdItems.size(), failedCount);
+    log.info("Bulk creation completed: {} created", createdItems.size());
 
     String creditEntryId = null;
-    if (returnedInvoiceId != null) {
-      var invOpt = vendorPurchaseInvoiceRepository.findById(returnedInvoiceId);
-      if (invOpt.isPresent()) {
-        VendorPurchaseInvoice persistedInvoice = invOpt.get();
-        creditEntryId = postCreditAndAccountingForVendorInvoice(persistedInvoice, shopId, userId);
-      }
+    var invOpt = vendorPurchaseInvoiceRepository.findById(returnedInvoiceId);
+    if (invOpt.isPresent()) {
+      VendorPurchaseInvoice persistedInvoice = invOpt.get();
+      creditEntryId = postCreditAndAccountingForVendorInvoice(persistedInvoice, shopId, userId);
     }
 
     if (metrics != null && !createdItems.isEmpty()) {
@@ -418,10 +428,23 @@ public class InventoryService {
 
     BulkCreateInventoryResponse out =
         inventoryMapper.toBulkCreateInventoryResponse(
-            createdItems, failedCount, returnedInvoiceId);
-    out.setItemErrors(itemErrors.isEmpty() ? null : itemErrors);
+            createdItems, 0, returnedInvoiceId);
+    out.setItemErrors(null);
     out.setCreditEntryId(creditEntryId);
     return out;
+  }
+
+  private void validateCreateInventoryRequest(CreateInventoryRequest request, String shopId) {
+    InventoryVerticalRequestNormalizer.normalizeCreate(request);
+    inventoryValidator.validateCreateRequest(request);
+    inventoryVerticalValidationHandler.validateCreate(shopId, request);
+  }
+
+  private static String describeValidationFailure(ValidationException exception) {
+    if (exception.getValidationErrors() != null && !exception.getValidationErrors().isEmpty()) {
+      return String.join("; ", exception.getValidationErrors());
+    }
+    return exception.getMessage() != null ? exception.getMessage() : "Validation failed";
   }
 
   private String postCreditChargeForVendorInvoice(
@@ -823,21 +846,22 @@ public class InventoryService {
 
   public InventoryListResponse list(String shopId, int page, int size) {
     try {
-      // Validate shopId
       inventoryValidator.validateShopId(shopId);
 
       log.debug("Listing inventory for shop: {}", shopId);
-      PageRequest pageable = PageRequest.of(page, size);
+      int effectiveSize = size > 0 ? size : 10;
 
-      List<Inventory> inventories = inventoryRepository.findByShopId(shopId, pageable);
+      InventoryVerticalSearchHandler.VerticalSearchPage searchPage =
+          inventoryVerticalSearchHandler.listPage(
+              shopId, "expiryDate:asc", effectiveSize, page * effectiveSize);
+
       List<InventorySummaryDto> summaries =
-          sortSummariesByExpirySoonest(toSummariesWithExtensions(shopId, inventories));
+          toSummariesWithExtensions(shopId, searchPage.items());
 
-      // total count for shop
       long totalItems = inventoryRepository.countByShopId(shopId);
-      int totalPages = (int) Math.ceil((double) totalItems / size);
+      int totalPages = (int) Math.ceil((double) totalItems / effectiveSize);
 
-      PageMeta pageMeta = new PageMeta(page, size, totalItems, totalPages);
+      PageMeta pageMeta = new PageMeta(page, effectiveSize, totalItems, totalPages);
 
       return inventoryMapper.toInventoryListResponse(summaries, pageMeta);
 
@@ -860,11 +884,17 @@ public class InventoryService {
         parsed.q(),
         parsed.fieldFilters(),
         parsed.sort(),
-        parsed.limit());
+        parsed.limit(),
+        parsed.cursor());
   }
 
   public InventoryListResponse search(
-      String shopId, String query, Map<String, String> filters, String sort, Integer limit) {
+      String shopId,
+      String query,
+      Map<String, String> filters,
+      String sort,
+      Integer limit,
+      String cursor) {
     try {
       inventoryValidator.validateShopId(shopId);
       boolean hasQuery = StringUtils.hasText(query);
@@ -874,20 +904,32 @@ public class InventoryService {
       }
 
       log.debug(
-          "Searching inventory for shop: {} q={} filters={} sort={}",
+          "Searching inventory for shop: {} q={} filters={} sort={} cursor={}",
           shopId,
           query,
           filters,
-          sort);
+          sort,
+          cursor);
 
       int effectiveLimit = limit != null && limit > 0 ? Math.min(limit, 200) : 50;
-      List<Inventory> inventories =
-          inventoryVerticalSearchHandler.search(
-              shopId, hasQuery ? query.trim() : null, filters, sort, effectiveLimit);
-      List<InventorySummaryDto> summaries =
-          sortSummariesByExpirySoonest(toSummariesWithExtensions(shopId, inventories));
+      InventoryVerticalSearchHandler.VerticalSearchPage searchPage =
+          inventoryVerticalSearchHandler.searchPage(
+              shopId,
+              hasQuery ? query.trim() : null,
+              filters != null ? filters : Map.of(),
+              sort,
+              effectiveLimit,
+              cursor,
+              0);
 
-      return inventoryMapper.toInventoryListResponse(summaries);
+      List<InventorySummaryDto> summaries =
+          toSummariesWithExtensions(shopId, searchPage.items());
+
+      InventoryListResponse response = inventoryMapper.toInventoryListResponse(summaries);
+      if (StringUtils.hasText(searchPage.nextCursor())) {
+        response.setMeta(Map.of("nextCursor", searchPage.nextCursor()));
+      }
+      return response;
 
     } catch (ValidationException e) {
       log.warn("Validation error in search inventory: {}", e.getMessage());
@@ -906,29 +948,6 @@ public class InventoryService {
     inventoryValidator.validateShopId(shopId);
     int days = expiringSoonDays != null && expiringSoonDays > 0 ? expiringSoonDays : 30;
     return inventoryVerticalExpiryHandler.getExpiryBuckets(shopId, days);
-  }
-
-  @Transactional(readOnly = true)
-  public InventoryListResponse getNearExpiryReport(
-      String shopId, Integer days, Integer limit) {
-    inventoryValidator.validateShopId(shopId);
-    int effectiveDays = days != null && days > 0 ? days : 30;
-    int effectiveLimit = limit != null && limit > 0 ? Math.min(limit, 200) : 50;
-    List<Inventory> inventories =
-        inventoryVerticalExpiryHandler.findNearExpiry(shopId, effectiveDays, effectiveLimit);
-    List<InventorySummaryDto> summaries = toSummariesWithExtensions(shopId, inventories);
-    return inventoryMapper.toInventoryListResponse(summaries);
-  }
-
-  @Transactional(readOnly = true)
-  public InventoryListResponse getFefoInventory(
-      String shopId, String batchNo, Integer limit) {
-    inventoryValidator.validateShopId(shopId);
-    int effectiveLimit = limit != null && limit > 0 ? Math.min(limit, 200) : 50;
-    List<Inventory> inventories =
-        inventoryVerticalExpiryHandler.findFefo(shopId, batchNo, effectiveLimit);
-    List<InventorySummaryDto> summaries = toSummariesWithExtensions(shopId, inventories);
-    return inventoryMapper.toInventoryListResponse(summaries);
   }
 
   @Transactional(readOnly = true)

@@ -20,8 +20,8 @@ public class ReminderValidator {
     if (request.getReminderAt() == null) {
       throw new ValidationException("reminderAt is required");
     }
-    if (request.getEndDate() != null && !request.getEndDate().isAfter(request.getReminderAt())) {
-      throw new ValidationException("endDate must be after reminderAt");
+    if (request.getEndDate() != null && request.getEndDate().isBefore(request.getReminderAt())) {
+      throw new ValidationException("endDate cannot be before reminderAt");
     }
   }
 

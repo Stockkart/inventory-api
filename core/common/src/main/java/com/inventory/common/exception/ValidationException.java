@@ -19,8 +19,15 @@ public class ValidationException extends BaseException {
   }
 
   public ValidationException(Set<String> validationErrors) {
-    super(ErrorCode.VALIDATION_ERROR, "Validation failed");
+    super(ErrorCode.VALIDATION_ERROR, summarizeValidationErrors(validationErrors));
     this.validationErrors = validationErrors != null ? validationErrors : Collections.emptySet();
+  }
+
+  private static String summarizeValidationErrors(Set<String> validationErrors) {
+    if (validationErrors == null || validationErrors.isEmpty()) {
+      return "Validation failed";
+    }
+    return String.join("; ", validationErrors);
   }
 
   public static <T> ValidationException fromViolations(Set<ConstraintViolation<T>> violations) {

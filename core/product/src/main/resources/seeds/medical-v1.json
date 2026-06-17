@@ -45,7 +45,13 @@
           "showIn": ["registration", "basic"],
           "validation": { "maxLength": 200 }
         }
-      ]
+      ],
+      "search": {
+        "defaultSort": [
+          { "field": "expiryDate", "direction": "asc", "nulls": "last" }
+        ],
+        "cursor": "compound-key"
+      }
     },
     "shop": {
       "fields": [

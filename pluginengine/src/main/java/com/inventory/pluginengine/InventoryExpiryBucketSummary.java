@@ -21,8 +21,5 @@ public class InventoryExpiryBucketSummary {
   /** Within expiringSoonDays window but &gt; 7 days (configurable window) */
   private int expiringWithinSoonDays;
 
-  /** Total extension docs with an expiryDate set */
-  private int totalWithExpiry;
-
   private int expiringSoonDays;
 }

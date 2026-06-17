@@ -1,15 +1,14 @@
 package com.inventory.plugins.medical;
 
+import com.inventory.pluginengine.defaultprovider.SchemaDrivenInventorySearchProvider;
 import com.inventory.pluginengine.ExtensionFieldCoercion;
 import com.inventory.pluginengine.InventoryExpiryBucketSummary;
-import com.inventory.pluginengine.InventorySearchProvider;
 import com.inventory.pluginengine.InventorySearchQuery;
 import com.inventory.pluginengine.InventorySearchResult;
+import com.inventory.pluginengine.schema.VerticalSchema;
 import com.inventory.plugins.medical.domain.MedicalInventoryExtension;
+import com.inventory.plugins.medical.search.MedicalSearchSchema;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
-import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -17,11 +16,12 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 @Component
-public class MedicalInventorySearchProvider implements InventorySearchProvider {
+public class MedicalInventorySearchProvider extends SchemaDrivenInventorySearchProvider {
 
   private final MongoTemplate mongoTemplate;
 
   public MedicalInventorySearchProvider(MongoTemplate mongoTemplate) {
+    super(mongoTemplate, MedicalInventoryExtension.class);
     this.mongoTemplate = mongoTemplate;
   }
 
@@ -31,53 +31,34 @@ public class MedicalInventorySearchProvider implements InventorySearchProvider {
   }
 
   @Override
-  public InventorySearchResult search(String shopId, InventorySearchQuery query) {
-    Criteria criteria = Criteria.where("shopId").is(shopId);
-    if (query.getFilters() != null) {
-      query
-          .getFilters()
-          .forEach(
-              (key, raw) -> {
-                if (!StringUtils.hasText(raw)) {
-                  return;
+  protected void applyVerticalFilters(
+      Criteria criteria, InventorySearchQuery query, VerticalSchema schema) {
+    if (query.getFilters() == null) {
+      return;
+    }
+    query
+        .getFilters()
+        .forEach(
+            (key, raw) -> {
+              if (!StringUtils.hasText(raw)) {
+                return;
+              }
+              switch (key) {
+                case "expiryBefore" ->
+                    criteria.and("expiryDate").lte(ExtensionFieldCoercion.asInstant(raw.trim()));
+                case "expiryAfter" ->
+                    criteria.and("expiryDate").gte(ExtensionFieldCoercion.asInstant(raw.trim()));
+                case "nearExpiryDays" -> {
+                  int days = Integer.parseInt(raw.trim());
+                  Instant now = Instant.now();
+                  criteria
+                      .and("expiryDate")
+                      .gte(now)
+                      .lte(now.plusSeconds((long) days * 86_400));
                 }
-                switch (key) {
-                  case "batchNo" -> criteria.and("batchNo").is(raw.trim());
-                  case "expiryBefore" ->
-                      criteria.and("expiryDate").lte(ExtensionFieldCoercion.asInstant(raw.trim()));
-                  case "expiryAfter" ->
-                      criteria.and("expiryDate").gte(ExtensionFieldCoercion.asInstant(raw.trim()));
-                  case "nearExpiryDays" -> {
-                    int days = Integer.parseInt(raw.trim());
-                    Instant now = Instant.now();
-                    criteria
-                        .and("expiryDate")
-                        .gte(now)
-                        .lte(now.plusSeconds((long) days * 86_400));
-                  }
-                  default -> {}
-                }
-              });
-    }
-
-    int limit = query.getLimit() > 0 ? Math.min(query.getLimit(), 200) : 50;
-    Query mongoQuery = new Query(criteria).limit(limit);
-    if (StringUtils.hasText(query.getSort()) && query.getSort().startsWith("expiryDate")) {
-      boolean asc = !query.getSort().endsWith(":desc");
-      mongoQuery.with(Sort.by(asc ? Sort.Direction.ASC : Sort.Direction.DESC, "expiryDate"));
-    } else {
-      mongoQuery.with(Sort.by(Sort.Direction.ASC, "expiryDate"));
-    }
-
-    List<MedicalInventoryExtension> docs =
-        mongoTemplate.find(mongoQuery, MedicalInventoryExtension.class);
-    List<String> ids = new ArrayList<>();
-    for (MedicalInventoryExtension doc : docs) {
-      if (StringUtils.hasText(doc.getInventoryId())) {
-        ids.add(doc.getInventoryId());
-      }
-    }
-    return InventorySearchResult.builder().inventoryIds(ids).totalMatched(ids.size()).build();
+                default -> {}
+              }
+            });
   }
 
   @Override
@@ -120,18 +101,10 @@ public class MedicalInventorySearchProvider implements InventorySearchProvider {
                         .lte(soonEnd)),
                 MedicalInventoryExtension.class);
 
-    int totalWithExpiry =
-        (int)
-            mongoTemplate.count(
-                new Query(
-                    Criteria.where("shopId").is(shopId).and("expiryDate").exists(true)),
-                MedicalInventoryExtension.class);
-
     return InventoryExpiryBucketSummary.builder()
         .expired(expired)
         .expiringWithin7Days(expiringWithin7Days)
         .expiringWithinSoonDays(expiringWithinSoonDays)
-        .totalWithExpiry(totalWithExpiry)
         .expiringSoonDays(windowDays)
         .build();
   }
@@ -139,7 +112,10 @@ public class MedicalInventorySearchProvider implements InventorySearchProvider {
   @Override
   public InventorySearchResult searchFefo(String shopId, String batchNo, int limit) {
     InventorySearchQuery.InventorySearchQueryBuilder builder =
-        InventorySearchQuery.builder().sort("expiryDate:asc").limit(limit > 0 ? limit : 50);
+        InventorySearchQuery.builder()
+            .sort("expiryDate:asc")
+            .limit(limit > 0 ? limit : 50)
+            .schema(MedicalSearchSchema.fallback());
     if (StringUtils.hasText(batchNo)) {
       builder.filters(java.util.Map.of("batchNo", batchNo.trim()));
     }

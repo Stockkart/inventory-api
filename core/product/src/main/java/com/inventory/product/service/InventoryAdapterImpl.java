@@ -72,7 +72,6 @@ public class InventoryAdapterImpl implements InventoryAdapter {
         .expiringWithin7Days(buckets.getExpiringWithin7Days())
         .expiringWithinSoonDays(buckets.getExpiringWithinSoonDays())
         .expiringSoonTotal(buckets.getExpiringSoonTotal())
-        .totalWithExpiry(buckets.getTotalWithExpiry())
         .expiringSoonDays(buckets.getExpiringSoonDays())
         .build();
   }
