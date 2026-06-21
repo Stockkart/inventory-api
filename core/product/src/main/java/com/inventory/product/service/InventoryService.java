@@ -853,7 +853,7 @@ public class InventoryService {
 
       InventoryVerticalSearchHandler.VerticalSearchPage searchPage =
           inventoryVerticalSearchHandler.listPage(
-              shopId, "expiryDate:asc", effectiveSize, page * effectiveSize);
+              shopId, null, effectiveSize, page * effectiveSize);
 
       List<InventorySummaryDto> summaries =
           toSummariesWithExtensions(shopId, searchPage.items());

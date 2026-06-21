@@ -22,6 +22,7 @@ import com.inventory.product.rest.dto.response.VendorPurchaseReturnResponse;
 import com.inventory.product.rest.dto.response.VendorPurchaseReturnLineSummaryDto;
 import com.inventory.product.rest.dto.response.VendorPurchaseReturnSummaryDto;
 import com.inventory.product.validation.CheckoutValidator;
+import com.inventory.product.service.vertical.ShopCapabilityService;
 import com.inventory.user.domain.repository.VendorRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -87,6 +88,9 @@ public class VendorPurchaseReturnService {
   @Autowired(required = false)
   private com.inventory.credit.service.CreditService creditService;
 
+  @Autowired
+  private ShopCapabilityService shopCapabilityService;
+
   /**
    * Paginated supplier return history for the shop, newest first.
    *
@@ -99,6 +103,11 @@ public class VendorPurchaseReturnService {
 
     if (!StringUtils.hasText(shopId)) {
       throw new ValidationException("Shop ID is required");
+    }
+
+    String userId = (String) httpRequest.getAttribute("userId");
+    if (StringUtils.hasText(userId)) {
+      shopCapabilityService.requireVendorReturn(shopId, userId);
     }
 
     int pageNumber = (page != null && page > 0) ? page - 1 : 0;
@@ -334,6 +343,7 @@ public class VendorPurchaseReturnService {
     String shopId = (String) httpRequest.getAttribute("shopId");
     String userId = (String) httpRequest.getAttribute("userId");
     checkoutValidator.validateShopIdAndUserId(shopId, userId);
+    shopCapabilityService.requireVendorReturn(shopId, userId);
 
     if (request == null) {
       throw new ValidationException("Request cannot be null");

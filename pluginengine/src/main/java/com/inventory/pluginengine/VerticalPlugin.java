@@ -1,5 +1,9 @@
 package com.inventory.pluginengine;
 
+import com.inventory.pluginengine.capabilities.VerticalUiContributor;
+import com.inventory.pluginengine.cart.CartLineContributor;
+import com.inventory.pluginengine.cart.CheckoutCompletionHandler;
+import com.inventory.pluginengine.menu.MenuVerticalValidator;
 import java.util.Optional;
 
 /**
@@ -22,6 +26,22 @@ public interface VerticalPlugin {
   }
 
   default Optional<InventorySearchProvider> getSearchProvider() {
+    return Optional.empty();
+  }
+
+  default Optional<CartLineContributor> getCartLineContributor() {
+    return Optional.empty();
+  }
+
+  default Optional<CheckoutCompletionHandler> getCheckoutCompletionHandler() {
+    return Optional.empty();
+  }
+
+  default Optional<MenuVerticalValidator> getMenuVerticalValidator() {
+    return Optional.empty();
+  }
+
+  default Optional<VerticalUiContributor> getUiContributor() {
     return Optional.empty();
   }
 }
