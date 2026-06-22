@@ -9,6 +9,7 @@ import com.inventory.pluginengine.capabilities.VerticalUiContributor;
 import com.inventory.pluginengine.cart.CartLineContributor;
 import com.inventory.pluginengine.cart.CheckoutCompletionHandler;
 import com.inventory.pluginengine.menu.MenuVerticalValidator;
+import com.inventory.pluginengine.pricing.VerticalPricingPolicy;
 import com.inventory.plugins.cafe.repository.CafeInventoryExtensionRepository;
 import java.util.Optional;
 import org.springframework.stereotype.Component;
@@ -23,6 +24,7 @@ public class CafePlugin extends ConfiguredVerticalPlugin {
   private final CafeUiContributor uiContributor;
   private final CafeMenuCartLineContributor menuCartLineContributor;
   private final CafeCheckoutCompletionHandler checkoutCompletionHandler;
+  private final CafePricingPolicy cafePricingPolicy;
 
   public CafePlugin(
       CafeVerticalProperties properties,
@@ -31,7 +33,8 @@ public class CafePlugin extends ConfiguredVerticalPlugin {
       CafeMenuVerticalValidator menuVerticalValidator,
       CafeUiContributor uiContributor,
       CafeMenuCartLineContributor menuCartLineContributor,
-      CafeCheckoutCompletionHandler checkoutCompletionHandler) {
+      CafeCheckoutCompletionHandler checkoutCompletionHandler,
+      CafePricingPolicy cafePricingPolicy) {
     super(properties.getId(), properties.getVersion());
     this.inventoryValidator = new SchemaDrivenInventoryValidator(properties.getId());
     this.extensionRepository = extensionRepository;
@@ -40,6 +43,7 @@ public class CafePlugin extends ConfiguredVerticalPlugin {
     this.uiContributor = uiContributor;
     this.menuCartLineContributor = menuCartLineContributor;
     this.checkoutCompletionHandler = checkoutCompletionHandler;
+    this.cafePricingPolicy = cafePricingPolicy;
   }
 
   @Override
@@ -75,5 +79,10 @@ public class CafePlugin extends ConfiguredVerticalPlugin {
   @Override
   public Optional<CheckoutCompletionHandler> getCheckoutCompletionHandler() {
     return Optional.of(checkoutCompletionHandler);
+  }
+
+  @Override
+  public Optional<VerticalPricingPolicy> getPricingPolicy() {
+    return Optional.of(cafePricingPolicy);
   }
 }

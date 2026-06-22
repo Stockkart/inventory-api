@@ -17,4 +17,6 @@ public class InventoryLineSnapshot {
   private String cgst;
   private String sgst;
   private int availableBaseCount;
+  /** Canonical stock unit (e.g. BTL). */
+  private String baseUnit;
 }

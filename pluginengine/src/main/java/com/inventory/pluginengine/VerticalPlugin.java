@@ -4,6 +4,7 @@ import com.inventory.pluginengine.capabilities.VerticalUiContributor;
 import com.inventory.pluginengine.cart.CartLineContributor;
 import com.inventory.pluginengine.cart.CheckoutCompletionHandler;
 import com.inventory.pluginengine.menu.MenuVerticalValidator;
+import com.inventory.pluginengine.pricing.VerticalPricingPolicy;
 import java.util.Optional;
 
 /**
@@ -42,6 +43,10 @@ public interface VerticalPlugin {
   }
 
   default Optional<VerticalUiContributor> getUiContributor() {
+    return Optional.empty();
+  }
+
+  default Optional<VerticalPricingPolicy> getPricingPolicy() {
     return Optional.empty();
   }
 }

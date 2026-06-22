@@ -72,6 +72,9 @@ public class CafeInventoryExtensionRepository implements InventoryExtensionRepos
     if (doc.getUnitOfMeasure() != null) {
       out.put("unitOfMeasure", doc.getUnitOfMeasure());
     }
+    if (doc.getSellDirect() != null) {
+      out.put("sellDirect", Boolean.TRUE.equals(doc.getSellDirect()) ? "yes" : "no");
+    }
     return out;
   }
 
@@ -85,5 +88,27 @@ public class CafeInventoryExtensionRepository implements InventoryExtensionRepos
     if (fields.containsKey("unitOfMeasure")) {
       doc.setUnitOfMeasure(ExtensionFieldCoercion.asString(fields.get("unitOfMeasure")));
     }
+    if (fields.containsKey("sellDirect")) {
+      doc.setSellDirect(coerceSellDirect(fields.get("sellDirect")));
+    }
+  }
+
+  private static Boolean coerceSellDirect(Object value) {
+    if (value == null) {
+      return null;
+    }
+    if (value instanceof Boolean bool) {
+      return bool;
+    }
+    String text = String.valueOf(value).trim();
+    if (!text.isEmpty()) {
+      if ("yes".equalsIgnoreCase(text)) {
+        return true;
+      }
+      if ("no".equalsIgnoreCase(text)) {
+        return false;
+      }
+    }
+    return ExtensionFieldCoercion.asBoolean(value);
   }
 }

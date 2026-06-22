@@ -8,6 +8,7 @@ import com.inventory.product.rest.dto.request.RegisterShopRequest;
 import com.inventory.product.rest.dto.request.ShopApprovalRequest;
 import com.inventory.product.rest.dto.request.UpdateShopRequest;
 import com.inventory.product.rest.dto.request.UpsertShopMenuRequest;
+import com.inventory.product.rest.dto.response.SellCatalogResponse;
 import com.inventory.product.rest.dto.response.ShopApprovalResponse;
 import com.inventory.product.rest.dto.response.ShopDetailResponse;
 import com.inventory.product.rest.dto.response.ShopMenuResponse;
@@ -15,6 +16,7 @@ import com.inventory.product.rest.dto.response.ShopRegistrationResponse;
 import com.inventory.product.rest.dto.response.ShopSchemaResponse;
 import com.inventory.product.service.ShopService;
 import com.inventory.product.service.vertical.ShopCapabilityService;
+import com.inventory.product.service.vertical.ShopSellCatalogService;
 import com.inventory.product.service.vertical.ShopMenuService;
 import com.inventory.product.service.vertical.VerticalSchemaService;
 import com.inventory.pluginengine.capabilities.ShopUiCapabilities;
@@ -49,6 +51,9 @@ public class ShopController {
 
   @Autowired
   private ShopMenuService shopMenuService;
+
+  @Autowired
+  private ShopSellCatalogService shopSellCatalogService;
 
   @PostMapping("/register")
   public ResponseEntity<ApiResponse<ShopRegistrationResponse>> register(@RequestBody RegisterShopRequest request,
@@ -116,6 +121,17 @@ public class ShopController {
     String shopId = (String) httpRequest.getAttribute("shopId");
     return ResponseEntity.ok(
         ApiResponse.success(shopMenuService.upsertShopMenu(shopId, userId, request)));
+  }
+
+  /** Menu + direct-sell stock for the cashier sell surface (cafe). */
+  @GetMapping("/me/sell-catalog")
+  public ResponseEntity<ApiResponse<SellCatalogResponse>> getSellCatalog(
+      @RequestParam(name = "q", required = false) String query,
+      HttpServletRequest httpRequest) {
+    String userId = (String) httpRequest.getAttribute("userId");
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    return ResponseEntity.ok(
+        ApiResponse.success(shopSellCatalogService.getSellCatalog(shopId, userId, query)));
   }
 }
 

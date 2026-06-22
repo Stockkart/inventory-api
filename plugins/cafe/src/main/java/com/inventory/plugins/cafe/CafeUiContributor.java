@@ -51,6 +51,7 @@ public class CafeUiContributor implements VerticalUiContributor {
                 .manualStock(true)
                 .customerReturn(false)
                 .vendorReturn(false)
+                .simplePricing(true)
                 .build())
         .purchaseSearch(
             PurchaseSearchConfig.builder()

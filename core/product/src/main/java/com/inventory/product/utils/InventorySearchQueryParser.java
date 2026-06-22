@@ -29,6 +29,15 @@ public final class InventorySearchQueryParser {
     Map<String, String> fieldFilters = new LinkedHashMap<>();
     String q = rawQ;
 
+    for (Map.Entry<String, String> entry : query.entrySet()) {
+      if (RESERVED.contains(entry.getKey())) {
+        continue;
+      }
+      if (StringUtils.hasText(entry.getValue())) {
+        fieldFilters.put(entry.getKey(), entry.getValue().trim());
+      }
+    }
+
     if (rawQ != null) {
       InventoryUnifiedSearchQueryParser.UnifiedParsed unified =
           InventoryUnifiedSearchQueryParser.parse(rawQ);

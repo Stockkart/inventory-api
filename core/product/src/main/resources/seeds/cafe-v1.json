@@ -33,6 +33,17 @@
           "storage": "extension",
           "indexed": true,
           "showIn": ["registration"]
+        },
+        {
+          "key": "sellDirect",
+          "label": "Sell directly?",
+          "type": "enum",
+          "values": ["no", "yes"],
+          "required": true,
+          "storage": "extension",
+          "indexed": true,
+          "searchable": true,
+          "showIn": ["registration"]
         }
       ],
       "search": {
@@ -53,20 +64,6 @@
           "key": "sellingPrice",
           "type": "money",
           "required": true,
-          "storage": "menu_item",
-          "showIn": ["menu_form"]
-        },
-        {
-          "key": "sellMode",
-          "type": "enum",
-          "values": ["menu", "direct"],
-          "required": true,
-          "storage": "menu_item",
-          "showIn": ["menu_form"]
-        },
-        {
-          "key": "inventoryId",
-          "type": "ref",
           "storage": "menu_item",
           "showIn": ["menu_form"]
         },

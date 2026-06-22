@@ -33,6 +33,7 @@ public interface PricingMapper {
   @Mapping(target = "updatedAt", expression = "java(java.time.Instant.now())")
   @Mapping(target = "purchaseScheme", expression = "java(toScheme(request.getPurchaseScheme()))")
   @Mapping(target = "saleScheme", expression = "java(toScheme(request.getSaleScheme()))")
+  @Mapping(target = "sellingPrice", source = "sellingPrice")
   Pricing toEntity(CreatePricingRequest request);
 
   @Mapping(target = "purchaseScheme", expression = "java(toSchemeDto(pricing.getPurchaseScheme()))")
@@ -46,12 +47,15 @@ public interface PricingMapper {
   @Mapping(target = "updatedAt", expression = "java(java.time.Instant.now())")
   @Mapping(target = "purchaseScheme", expression = "java(toScheme(request.getPurchaseScheme()))")
   @Mapping(target = "saleScheme", expression = "java(toScheme(request.getSaleScheme()))")
+  @Mapping(target = "sellingPrice", source = "sellingPrice")
   void updateEntity(UpdatePricingRequest request, @MappingTarget Pricing pricing);
 
   @Mapping(target = "shopId", source = "shopId")
+  @Mapping(target = "verticalId", source = "verticalId")
   @Mapping(target = "maximumRetailPrice", source = "maximumRetailPrice")
   @Mapping(target = "costPrice", source = "costPrice")
   @Mapping(target = "priceToRetail", source = "priceToRetail")
+  @Mapping(target = "sellingPrice", source = "sellingPrice")
   @Mapping(target = "rates", source = "rates")
   @Mapping(target = "defaultRate", source = "defaultRate")
   @Mapping(target = "saleAdditionalDiscount", source = "saleAdditionalDiscount")
@@ -65,6 +69,7 @@ public interface PricingMapper {
   @Mapping(target = "maximumRetailPrice", source = "maximumRetailPrice")
   @Mapping(target = "costPrice", source = "costPrice")
   @Mapping(target = "priceToRetail", source = "priceToRetail")
+  @Mapping(target = "sellingPrice", source = "sellingPrice")
   @Mapping(target = "rates", source = "rates")
   @Mapping(target = "defaultRate", source = "defaultRate")
   @Mapping(target = "saleAdditionalDiscount", source = "saleAdditionalDiscount")

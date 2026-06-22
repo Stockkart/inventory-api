@@ -27,6 +27,8 @@ public class CafeInventoryExtension implements InventoryExtensionDocument {
 
   private String ingredientType;
   private String unitOfMeasure;
+  /** When true, item appears on cafe sell screen and deducts stock at checkout. */
+  private Boolean sellDirect;
 
   private Instant createdAt;
   private Instant updatedAt;

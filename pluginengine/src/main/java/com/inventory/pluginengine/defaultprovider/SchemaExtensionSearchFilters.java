@@ -24,7 +24,21 @@ public final class SchemaExtensionSearchFilters {
           if (!StringUtils.hasText(raw) || !searchable.containsKey(key)) {
             return;
           }
-          criteria.and(key).is(raw.trim());
+          VerticalSchemaField field = searchable.get(key);
+          if ("sellDirect".equals(key)) {
+            String normalized = raw.trim();
+            if ("yes".equalsIgnoreCase(normalized) || "true".equalsIgnoreCase(normalized)) {
+              criteria.and(key).is(true);
+            } else if ("no".equalsIgnoreCase(normalized) || "false".equalsIgnoreCase(normalized)) {
+              criteria.and(key).is(false);
+            }
+            return;
+          }
+          if ("boolean".equalsIgnoreCase(field.getType())) {
+            criteria.and(key).is(Boolean.parseBoolean(raw.trim()));
+          } else {
+            criteria.and(key).is(raw.trim());
+          }
         });
   }
 

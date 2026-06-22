@@ -1226,9 +1226,14 @@ public class CheckoutService {
                 BigDecimal lineTotal = priceToRetail.multiply(existingItem.getQuantity());
                 priceToRetail = lineTotal.divide(saleQty, 2, RoundingMode.HALF_UP);
               }
-              BigDecimal maximumRetailPrice = inventory.getMaximumRetailPrice();
+              BigDecimal maximumRetailPrice = resolveInventoryMaximumRetailPrice(
+                  inventory,
+                  existingItem.getMaximumRetailPrice(),
+                  newItem.getMaximumRetailPrice(),
+                  priceToRetail);
               BigDecimal costPrice = inventory.getCostPrice();
-              BigDecimal perUnitDiscount = maximumRetailPrice.subtract(priceToRetail != null ? priceToRetail : BigDecimal.ZERO);
+              BigDecimal unitPrice = priceToRetail != null ? priceToRetail : BigDecimal.ZERO;
+              BigDecimal perUnitDiscount = maximumRetailPrice.subtract(unitPrice);
 
               PurchaseItem switchedItem = purchaseMapper.createPurchaseItem(
                   existingLotId,
@@ -1305,12 +1310,19 @@ public class CheckoutService {
                 ? newItem.getPriceToRetail()
                 : existingItem.getPriceToRetail();
             int saleUnitFactor = getConversionFactorToBase(inventory, existingSaleUnit);
-            BigDecimal maximumRetailPrice = inventory.getMaximumRetailPrice();
+            BigDecimal maximumRetailPrice = resolveInventoryMaximumRetailPrice(
+                inventory,
+                existingItem.getMaximumRetailPrice(),
+                newItem.getMaximumRetailPrice(),
+                priceToRetail);
             BigDecimal costPrice = inventory.getCostPrice();
             BigDecimal newQuantity = toSaleQuantityDecimal(newBaseQuantity, saleUnitFactor);
-            BigDecimal newDiscount = existingItem.getMaximumRetailPrice()
-                .subtract(priceToRetail)
-                .multiply(newQuantity);
+            BigDecimal unitPrice = priceToRetail != null ? priceToRetail : BigDecimal.ZERO;
+            BigDecimal perUnitDiscount = maximumRetailPrice.subtract(unitPrice);
+            BigDecimal newDiscount =
+                perUnitDiscount.compareTo(BigDecimal.ZERO) > 0
+                    ? perUnitDiscount.multiply(newQuantity)
+                    : BigDecimal.ZERO;
             // Use payload additionalDiscount when provided (so changing discount updates the line); otherwise keep existing
             BigDecimal additionalDiscount = newItem.getSaleAdditionalDiscount() != null
                 ? newItem.getSaleAdditionalDiscount()
@@ -1349,10 +1361,11 @@ public class CheckoutService {
             updatedItem.setUnitFactor(saleUnitFactor);
             enrichCartItemPackaging(updatedItem, inventory);
             CheckoutUtils.applyItemTaxMode(updatedItem, billingMode);
-            BigDecimal perUnitDiscount = maximumRetailPrice.subtract(
-                priceToRetail != null ? priceToRetail : BigDecimal.ZERO);
-            if (perUnitDiscount.compareTo(BigDecimal.ZERO) > 0) {
-              updatedItem.setDiscount(perUnitDiscount.multiply(CheckoutUtils.getQuantityAsPricingUnits(updatedItem)));
+            BigDecimal perUnitDiscountAfterUpdate = maximumRetailPrice.subtract(unitPrice);
+            if (perUnitDiscountAfterUpdate.compareTo(BigDecimal.ZERO) > 0) {
+              updatedItem.setDiscount(
+                  perUnitDiscountAfterUpdate.multiply(
+                      CheckoutUtils.getQuantityAsPricingUnits(updatedItem)));
             } else {
               updatedItem.setDiscount(BigDecimal.ZERO);
             }
@@ -1514,6 +1527,30 @@ public class CheckoutService {
       return inventory.getBaseUnit().trim().toUpperCase();
     }
     return "UNIT";
+  }
+
+  /**
+   * Cafe and other verticals may register sell price without MRP; fall back to sell/PTR on cart lines.
+   */
+  private BigDecimal resolveInventoryMaximumRetailPrice(
+      Inventory inventory, BigDecimal... fallbacks) {
+    if (inventory.getMaximumRetailPrice() != null) {
+      return inventory.getMaximumRetailPrice();
+    }
+    if (fallbacks != null) {
+      for (BigDecimal fallback : fallbacks) {
+        if (fallback != null) {
+          return fallback;
+        }
+      }
+    }
+    if (inventory.getSellingPrice() != null) {
+      return inventory.getSellingPrice();
+    }
+    if (inventory.getPriceToRetail() != null) {
+      return inventory.getPriceToRetail();
+    }
+    return BigDecimal.ZERO;
   }
 
   private int resolveSaleQuantity(Integer requestedQuantity, String requestedUnit, Inventory inventory, String saleUnit) {

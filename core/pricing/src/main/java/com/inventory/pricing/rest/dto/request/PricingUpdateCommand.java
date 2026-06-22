@@ -15,9 +15,11 @@ import java.util.List;
 @AllArgsConstructor
 @Builder
 public class PricingUpdateCommand {
+  private String verticalId;
   private BigDecimal maximumRetailPrice;
   private BigDecimal costPrice;
   private BigDecimal priceToRetail;
+  private BigDecimal sellingPrice;
   private List<RateDto> rates;
   private String defaultRate;
   private BigDecimal saleAdditionalDiscount;

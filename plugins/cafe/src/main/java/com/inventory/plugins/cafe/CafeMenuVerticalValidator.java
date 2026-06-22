@@ -57,11 +57,7 @@ public class CafeMenuVerticalValidator implements MenuVerticalValidator {
       throw new ValidationException("Menu item selling price must be positive for: " + item.getName());
     }
     if (item.getSellMode() == null) {
-      throw new ValidationException("Menu item sellMode is required for: " + item.getName());
-    }
-    if (item.getSellMode() == MenuSellMode.direct && !StringUtils.hasText(item.getInventoryId())) {
-      throw new ValidationException(
-          "Menu item \"" + item.getName() + "\" with sellMode=direct requires inventoryId");
+      item.setSellMode(MenuSellMode.menu);
     }
     if (item.getAvailable() == null) {
       item.setAvailable(Boolean.TRUE);

@@ -50,6 +50,20 @@ public final class ExtensionFieldCoercion {
     return new BigDecimal(text);
   }
 
+  public static Boolean asBoolean(Object value) {
+    if (value == null) {
+      return null;
+    }
+    if (value instanceof Boolean bool) {
+      return bool;
+    }
+    String text = String.valueOf(value).trim();
+    if (!StringUtils.hasText(text)) {
+      return null;
+    }
+    return "true".equalsIgnoreCase(text) || "1".equals(text) || "yes".equalsIgnoreCase(text);
+  }
+
   public static Instant asInstant(Object value) {
     if (value == null) {
       return null;
