@@ -24,7 +24,12 @@ public class AddToCartRequest {
 
   @Data
   public static class CartItem {
+    /** Canonical line ref, e.g. {@code inventory:lotId} or {@code menu:itemId}. */
+    private String sellableRef;
+    /** @deprecated use {@code sellableRef} with {@code inventory:…} prefix */
     private String id;
+    /** @deprecated use {@code sellableRef} with {@code menu:…} prefix */
+    private String menuItemId;
     private Integer quantity;
     /** Optional base-unit quantity (e.g. tabs/ml) for loose sale. */
     private Integer baseQuantity;

@@ -17,16 +17,22 @@ import java.util.List;
 @Component
 public class PricingValidator {
 
-  public void validateCreateRequest(CreatePricingRequest request) {
+  public void validateCreateBasics(CreatePricingRequest request) {
     if (request == null) {
       throw new ValidationException("Create pricing request cannot be null");
     }
     if (!StringUtils.hasText(request.getShopId())) {
       throw new ValidationException("Shop ID is required for pricing");
     }
+  }
+
+  /** @deprecated Use {@link #validateCreateBasics} plus vertical pricing policy. */
+  @Deprecated
+  public void validateCreateRequest(CreatePricingRequest request) {
+    validateCreateBasics(request);
     validateRates(request.getRates(), request.getDefaultRate());
     BigDecimal effectiveSp = resolveEffectivePrice(request.getMaximumRetailPrice(), request.getCostPrice(),
-        request.getPriceToRetail(), request.getRates(), request.getDefaultRate());
+        request.getPriceToRetail(), request.getSellingPrice(), request.getRates(), request.getDefaultRate());
     if (effectiveSp == null) {
       throw new ValidationException("Either priceToRetail or (rates with defaultRate) is required");
     }
@@ -172,7 +178,11 @@ public class PricingValidator {
     }
   }
 
-  private static BigDecimal resolveEffectivePrice(BigDecimal mrp, BigDecimal costPrice, BigDecimal priceToRetail, List<Rate> rates, String defaultRate) {
+  private static BigDecimal resolveEffectivePrice(BigDecimal mrp, BigDecimal costPrice, BigDecimal priceToRetail,
+      BigDecimal sellingPrice, List<Rate> rates, String defaultRate) {
+    if (sellingPrice != null) {
+      return sellingPrice;
+    }
     if (!StringUtils.hasText(defaultRate)) {
       return priceToRetail;
     }

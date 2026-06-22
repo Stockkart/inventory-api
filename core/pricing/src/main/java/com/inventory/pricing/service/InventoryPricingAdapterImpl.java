@@ -55,6 +55,6 @@ public class InventoryPricingAdapterImpl implements InventoryPricingAdapter {
   public void update(String pricingId, PricingUpdateCommand command) {
     pricingValidator.validateUpdateCommand(command);
     UpdatePricingRequest req = pricingMapper.toUpdatePricingRequest(command);
-    pricingService.update(pricingId, req);
+    pricingService.update(pricingId, req, command.getVerticalId());
   }
 }

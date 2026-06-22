@@ -30,8 +30,17 @@ import com.inventory.product.mapper.InventoryMapper;
 import com.inventory.product.mapper.PurchaseMapper;
 import com.inventory.plan.rest.dto.request.RecordUsageRequest;
 import com.inventory.plan.service.UsageService;
+import com.inventory.product.util.PurchaseItemRefs;
 import com.inventory.product.utils.CheckoutUtils;
 import com.inventory.product.utils.constants.ProductMetricsConstants;
+import com.inventory.pluginengine.cart.CartBuildContext;
+import com.inventory.pluginengine.cart.CartLineContributor;
+import com.inventory.pluginengine.cart.CartLineInput;
+import com.inventory.pluginengine.cart.CartLineRefs;
+import com.inventory.pluginengine.ref.SellableRef;
+import com.inventory.product.service.vertical.CartContributorResolver;
+import com.inventory.product.service.vertical.CartLineSnapshotMapper;
+import com.inventory.product.service.vertical.CheckoutCompletionOrchestrator;
 import com.inventory.product.validation.CheckoutValidator;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -111,6 +120,15 @@ public class CheckoutService {
 
   @Autowired(required = false)
   private com.inventory.accounting.api.AccountingFacade accountingFacade;
+
+  @Autowired
+  private CartContributorResolver cartContributorResolver;
+
+  @Autowired
+  private CartLineSnapshotMapper cartLineSnapshotMapper;
+
+  @Autowired
+  private CheckoutCompletionOrchestrator checkoutCompletionOrchestrator;
 
   @Transactional
   public AddToCartResponse addToCart(AddToCartRequest request, HttpServletRequest httpRequest) {
@@ -277,6 +295,9 @@ public class CheckoutService {
         String creditEntryId =
             postCreditAndAccountingForCompletedSale(purchase, request, shopId, userId);
         response.setCreditEntryId(creditEntryId);
+        checkoutCompletionOrchestrator
+            .onPurchaseCompleted(purchase)
+            .ifPresent(result -> response.setTokenNo(result.getTokenNo()));
       }
       return response;
 
@@ -610,6 +631,36 @@ public class CheckoutService {
   }
 
   private List<PurchaseItem> processCartItems(List<AddToCartRequest.CartItem> items, String shopId) {
+    Optional<CartLineContributor> contributor = cartContributorResolver.resolveContributor(shopId);
+    if (contributor.isPresent()) {
+      List<CartLineInput> inputs = items.stream().map(this::toCartLineInput).toList();
+      CartBuildContext ctx = cartContributorResolver.buildContext(shopId);
+
+      List<PurchaseItem> menuDeltaItems = new ArrayList<>();
+      List<CartLineInput> buildInputs = new ArrayList<>();
+      for (CartLineInput input : inputs) {
+        int qty = input.getQuantity() != null ? input.getQuantity() : 0;
+        if (qty < 0) {
+          SellableRef ref = CartLineRefs.parseRequired(input);
+          if (ref.isMenu()) {
+            menuDeltaItems.add(buildMenuQuantityDeltaItem(ref, qty));
+            continue;
+          }
+        }
+        buildInputs.add(input);
+      }
+
+      List<PurchaseItem> result = new ArrayList<>(menuDeltaItems);
+      if (!buildInputs.isEmpty()) {
+        contributor.get().validateRequestItems(buildInputs);
+        result.addAll(
+            contributor.get().buildLines(buildInputs, ctx).stream()
+                .map(cartLineSnapshotMapper::toPurchaseItem)
+                .toList());
+      }
+      return result;
+    }
+
     List<PurchaseItem> purchaseItems = new ArrayList<>();
 
     for (AddToCartRequest.CartItem item : items) {
@@ -864,7 +915,7 @@ public class CheckoutService {
           BigDecimal itemSgstAmount = itemTotal.multiply(sgstRate).setScale(2, RoundingMode.HALF_UP);
           totalSgstAmount = totalSgstAmount.add(itemSgstAmount);
         } catch (NumberFormatException e) {
-          log.warn("Invalid SGST value '{}' for item {}, using 0", itemSgst, item.getInventoryId());
+          log.warn("Invalid SGST value '{}' for item {}, using 0", itemSgst, PurchaseItemRefs.stockLotId(item));
         }
       }
       
@@ -875,7 +926,7 @@ public class CheckoutService {
           BigDecimal itemCgstAmount = itemTotal.multiply(cgstRate).setScale(2, RoundingMode.HALF_UP);
           totalCgstAmount = totalCgstAmount.add(itemCgstAmount);
         } catch (NumberFormatException e) {
-          log.warn("Invalid CGST value '{}' for item {}, using 0", itemCgst, item.getInventoryId());
+          log.warn("Invalid CGST value '{}' for item {}, using 0", itemCgst, PurchaseItemRefs.stockLotId(item));
         }
       }
     }
@@ -1140,15 +1191,20 @@ public class CheckoutService {
       List<PurchaseItem> mergedItems = new ArrayList<>(existingCart.getItems() != null ? existingCart.getItems() : new ArrayList<>());
 
       for (PurchaseItem newItem : newItems) {
+        if (PurchaseItemRefs.isMenuLine(newItem)) {
+          mergeMenuCartLine(mergedItems, newItem);
+          continue;
+        }
         boolean found = false;
         for (int i = 0; i < mergedItems.size(); i++) {
           PurchaseItem existingItem = mergedItems.get(i);
-          if (existingItem.getInventoryId().equals(newItem.getInventoryId())) {
+          if (sameCartLine(existingItem, newItem)) {
             String existingSaleUnit = existingItem.getSaleUnit() != null ? existingItem.getSaleUnit() : "UNIT";
             String incomingSaleUnit = newItem.getSaleUnit() != null ? newItem.getSaleUnit() : existingSaleUnit;
             if (!existingSaleUnit.equals(incomingSaleUnit)) {
-              Inventory inventory = inventoryRepository.findById(existingItem.getInventoryId())
-                  .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", existingItem.getInventoryId()));
+              String existingLotId = PurchaseItemRefs.stockLotId(existingItem);
+              Inventory inventory = inventoryRepository.findById(existingLotId)
+                  .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", existingLotId));
               int existingBaseQuantity = getBaseQuantityOrFallback(existingItem);
               int incomingBaseQuantity = getBaseQuantityOrFallback(newItem);
               int switchBaseQuantity = incomingBaseQuantity > 0 ? incomingBaseQuantity : existingBaseQuantity;
@@ -1170,12 +1226,17 @@ public class CheckoutService {
                 BigDecimal lineTotal = priceToRetail.multiply(existingItem.getQuantity());
                 priceToRetail = lineTotal.divide(saleQty, 2, RoundingMode.HALF_UP);
               }
-              BigDecimal maximumRetailPrice = inventory.getMaximumRetailPrice();
+              BigDecimal maximumRetailPrice = resolveInventoryMaximumRetailPrice(
+                  inventory,
+                  existingItem.getMaximumRetailPrice(),
+                  newItem.getMaximumRetailPrice(),
+                  priceToRetail);
               BigDecimal costPrice = inventory.getCostPrice();
-              BigDecimal perUnitDiscount = maximumRetailPrice.subtract(priceToRetail != null ? priceToRetail : BigDecimal.ZERO);
+              BigDecimal unitPrice = priceToRetail != null ? priceToRetail : BigDecimal.ZERO;
+              BigDecimal perUnitDiscount = maximumRetailPrice.subtract(unitPrice);
 
               PurchaseItem switchedItem = purchaseMapper.createPurchaseItem(
-                  existingItem.getInventoryId(),
+                  existingLotId,
                   existingItem.getName(),
                   saleQty,
                   maximumRetailPrice,
@@ -1227,8 +1288,9 @@ public class CheckoutService {
               break;
             }
             // Handle quantity update based on positive or negative
-            Inventory inventory = inventoryRepository.findById(existingItem.getInventoryId())
-                .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", existingItem.getInventoryId()));
+            String existingLotId = PurchaseItemRefs.stockLotId(existingItem);
+            Inventory inventory = inventoryRepository.findById(existingLotId)
+                .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", existingLotId));
             int existingBaseQuantity = getBaseQuantityOrFallback(existingItem);
             int incomingBaseQuantity = getBaseQuantityOrFallback(newItem);
             int newBaseQuantity = isAbsoluteQuantityUpdate(newItem, inventory)
@@ -1248,12 +1310,19 @@ public class CheckoutService {
                 ? newItem.getPriceToRetail()
                 : existingItem.getPriceToRetail();
             int saleUnitFactor = getConversionFactorToBase(inventory, existingSaleUnit);
-            BigDecimal maximumRetailPrice = inventory.getMaximumRetailPrice();
+            BigDecimal maximumRetailPrice = resolveInventoryMaximumRetailPrice(
+                inventory,
+                existingItem.getMaximumRetailPrice(),
+                newItem.getMaximumRetailPrice(),
+                priceToRetail);
             BigDecimal costPrice = inventory.getCostPrice();
             BigDecimal newQuantity = toSaleQuantityDecimal(newBaseQuantity, saleUnitFactor);
-            BigDecimal newDiscount = existingItem.getMaximumRetailPrice()
-                .subtract(priceToRetail)
-                .multiply(newQuantity);
+            BigDecimal unitPrice = priceToRetail != null ? priceToRetail : BigDecimal.ZERO;
+            BigDecimal perUnitDiscount = maximumRetailPrice.subtract(unitPrice);
+            BigDecimal newDiscount =
+                perUnitDiscount.compareTo(BigDecimal.ZERO) > 0
+                    ? perUnitDiscount.multiply(newQuantity)
+                    : BigDecimal.ZERO;
             // Use payload additionalDiscount when provided (so changing discount updates the line); otherwise keep existing
             BigDecimal additionalDiscount = newItem.getSaleAdditionalDiscount() != null
                 ? newItem.getSaleAdditionalDiscount()
@@ -1265,7 +1334,7 @@ public class CheckoutService {
             BigDecimal schemePercentage = newItem.getSchemePercentage() != null ? newItem.getSchemePercentage() : existingItem.getSchemePercentage();
 
             PurchaseItem updatedItem = purchaseMapper.createPurchaseItem(
-                existingItem.getInventoryId(),
+                existingLotId,
                 existingItem.getName(),
                 newQuantity,
                 maximumRetailPrice,
@@ -1292,10 +1361,11 @@ public class CheckoutService {
             updatedItem.setUnitFactor(saleUnitFactor);
             enrichCartItemPackaging(updatedItem, inventory);
             CheckoutUtils.applyItemTaxMode(updatedItem, billingMode);
-            BigDecimal perUnitDiscount = maximumRetailPrice.subtract(
-                priceToRetail != null ? priceToRetail : BigDecimal.ZERO);
-            if (perUnitDiscount.compareTo(BigDecimal.ZERO) > 0) {
-              updatedItem.setDiscount(perUnitDiscount.multiply(CheckoutUtils.getQuantityAsPricingUnits(updatedItem)));
+            BigDecimal perUnitDiscountAfterUpdate = maximumRetailPrice.subtract(unitPrice);
+            if (perUnitDiscountAfterUpdate.compareTo(BigDecimal.ZERO) > 0) {
+              updatedItem.setDiscount(
+                  perUnitDiscountAfterUpdate.multiply(
+                      CheckoutUtils.getQuantityAsPricingUnits(updatedItem)));
             } else {
               updatedItem.setDiscount(BigDecimal.ZERO);
             }
@@ -1318,7 +1388,7 @@ public class CheckoutService {
         }
         // Case 2 & 3: If item not found and quantity is negative, throw error (can't remove what doesn't exist)
         if (!found && getBaseQuantityOrFallback(newItem) < 0) {
-          throw new ValidationException("Cannot remove item with lotId " + newItem.getInventoryId() +
+          throw new ValidationException("Cannot remove item with lotId " + PurchaseItemRefs.stockLotId(newItem) +
               " as it does not exist in the cart");
         }
       }
@@ -1383,24 +1453,27 @@ public class CheckoutService {
     Map<String, PurchaseItem> existingItemsMap = new HashMap<>();
     if (existingCart.getItems() != null) {
       for (PurchaseItem item : existingCart.getItems()) {
-        existingItemsMap.put(item.getInventoryId(), item);
+        existingItemsMap.put(cartLineKey(item), item);
       }
     }
 
     // Validate each new item
     for (PurchaseItem newItem : newItems) {
+      if ("menu".equalsIgnoreCase(newItem.getSellMode())) {
+        continue;
+      }
       // Only validate stock for positive quantities (adding items)
       if (getBaseQuantityOrFallback(newItem) > 0) {
-        PurchaseItem existingItem = existingItemsMap.get(newItem.getInventoryId());
+        PurchaseItem existingItem = existingItemsMap.get(cartLineKey(newItem));
         int currentCartBaseQuantity = existingItem != null ? getBaseQuantityOrFallback(existingItem) : 0;
         int addingBaseQuantity = getBaseQuantityOrFallback(newItem);
         // Get inventory to check available stock
-        Inventory inventory = inventoryRepository.findById(newItem.getInventoryId())
-            .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", newItem.getInventoryId()));
+        String stockLotId = PurchaseItemRefs.stockLotId(newItem);
+        Inventory inventory = inventoryRepository.findById(stockLotId)
+            .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", stockLotId));
 
-        // Verify inventory belongs to shop
         if (!shopId.equals(inventory.getShopId())) {
-          throw new ValidationException("Inventory lot " + newItem.getInventoryId() + " does not belong to shop " + shopId);
+          throw new ValidationException("Inventory lot " + stockLotId + " does not belong to shop " + shopId);
         }
 
         String existingSaleUnit = existingItem != null
@@ -1454,6 +1527,30 @@ public class CheckoutService {
       return inventory.getBaseUnit().trim().toUpperCase();
     }
     return "UNIT";
+  }
+
+  /**
+   * Cafe and other verticals may register sell price without MRP; fall back to sell/PTR on cart lines.
+   */
+  private BigDecimal resolveInventoryMaximumRetailPrice(
+      Inventory inventory, BigDecimal... fallbacks) {
+    if (inventory.getMaximumRetailPrice() != null) {
+      return inventory.getMaximumRetailPrice();
+    }
+    if (fallbacks != null) {
+      for (BigDecimal fallback : fallbacks) {
+        if (fallback != null) {
+          return fallback;
+        }
+      }
+    }
+    if (inventory.getSellingPrice() != null) {
+      return inventory.getSellingPrice();
+    }
+    if (inventory.getPriceToRetail() != null) {
+      return inventory.getPriceToRetail();
+    }
+    return BigDecimal.ZERO;
   }
 
   private int resolveSaleQuantity(Integer requestedQuantity, String requestedUnit, Inventory inventory, String saleUnit) {
@@ -1716,15 +1813,20 @@ public class CheckoutService {
     log.info("Updating inventory for {} items in purchase {}", purchase.getItems().size(), purchase.getId());
 
     for (PurchaseItem item : purchase.getItems()) {
+      String stockLotId = PurchaseItemRefs.stockLotId(item);
       try {
-        // Find inventory by lotId (inventoryId in PurchaseItem)
-        Inventory inventory = inventoryRepository.findById(item.getInventoryId())
+        if ("menu".equalsIgnoreCase(item.getSellMode())) {
+          continue;
+        }
+        if (!StringUtils.hasText(stockLotId)) {
+          continue;
+        }
+        Inventory inventory = inventoryRepository.findById(stockLotId)
             .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId",
-                "Inventory not found with lotId: " + item.getInventoryId()));
+                "Inventory not found with lotId: " + stockLotId));
 
-        // Verify inventory belongs to the same shop
         if (!purchase.getShopId().equals(inventory.getShopId())) {
-          throw new ValidationException("Inventory lot " + item.getInventoryId() +
+          throw new ValidationException("Inventory lot " + stockLotId +
               " does not belong to shop " + purchase.getShopId());
         }
 
@@ -1774,15 +1876,15 @@ public class CheckoutService {
         }
 
         log.info("Updated inventory for lotId: {} - decreased currentCount by {} (new: {}), increased soldCount by {} (new: {})",
-            item.getInventoryId(), baseQuantity, inventory.getCurrentBaseCount(), baseQuantity, inventory.getSoldBaseCount());
+            stockLotId, baseQuantity, inventory.getCurrentBaseCount(), baseQuantity, inventory.getSoldBaseCount());
 
       } catch (ResourceNotFoundException | ValidationException | InsufficientStockException e) {
-        log.error("Error updating inventory for lotId: {} - {}", item.getInventoryId(), e.getMessage());
+        log.error("Error updating inventory for lotId: {} - {}", stockLotId, e.getMessage());
         throw e;
       } catch (Exception e) {
-        log.error("Unexpected error updating inventory for lotId: {}", item.getInventoryId(), e);
+        log.error("Unexpected error updating inventory for lotId: {}", stockLotId, e);
         throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
-            "Error updating inventory for lotId " + item.getInventoryId() + ": " + e.getMessage(), e);
+            "Error updating inventory for lotId " + stockLotId + ": " + e.getMessage(), e);
       }
     }
 
@@ -2042,5 +2144,74 @@ public class CheckoutService {
 
   private record SalePaymentBreakdown(
       String method, BigDecimal cash, BigDecimal online, BigDecimal receivable) {}
+
+  /** Merge-only line for cafe menu decrement/remove (cart upsert adds this delta to existing qty). */
+  private PurchaseItem buildMenuQuantityDeltaItem(SellableRef sellable, int deltaQty) {
+    PurchaseItem item = new PurchaseItem();
+    item.setSellableRef(sellable.encode());
+    item.setSellMode("menu");
+    item.setBaseQuantity(deltaQty);
+    item.setQuantity(BigDecimal.valueOf(deltaQty));
+    item.setUnitFactor(1);
+    PurchaseItemRefs.normalize(item);
+    return item;
+  }
+
+  private CartLineInput toCartLineInput(AddToCartRequest.CartItem item) {
+    String sellableRef =
+        PurchaseItemRefs.resolveSellableRefFromCartInput(
+            item.getSellableRef(), item.getId(), item.getMenuItemId());
+    return CartLineInput.builder()
+        .sellableRef(sellableRef)
+        .quantity(item.getQuantity())
+        .baseQuantity(item.getBaseQuantity())
+        .unit(item.getUnit())
+        .priceToRetail(item.getPriceToRetail())
+        .saleAdditionalDiscount(item.getSaleAdditionalDiscount())
+        .schemeType(item.getSchemeType() != null ? item.getSchemeType().name() : null)
+        .schemePayFor(item.getSchemePayFor())
+        .schemeFree(item.getSchemeFree())
+        .schemePercentage(item.getSchemePercentage())
+        .build();
+  }
+
+  private static boolean sameCartLine(PurchaseItem a, PurchaseItem b) {
+    return cartLineKey(a).equals(cartLineKey(b));
+  }
+
+  private static String cartLineKey(PurchaseItem item) {
+    return PurchaseItemRefs.lineKey(item);
+  }
+
+  private void mergeMenuCartLine(List<PurchaseItem> mergedItems, PurchaseItem newItem) {
+    for (int i = 0; i < mergedItems.size(); i++) {
+      PurchaseItem existing = mergedItems.get(i);
+      if (!sameCartLine(existing, newItem)) {
+        continue;
+      }
+      int existingQty = existing.getBaseQuantity() != null ? existing.getBaseQuantity() : 0;
+      int addQty = newItem.getBaseQuantity() != null ? newItem.getBaseQuantity() : 0;
+      int combined = existingQty + addQty;
+      if (combined <= 0) {
+        mergedItems.remove(i);
+        return;
+      }
+      existing.setBaseQuantity(combined);
+      existing.setQuantity(BigDecimal.valueOf(combined));
+      if (newItem.getTotalAmount() != null && existing.getPriceToRetail() != null) {
+        existing.setTotalAmount(
+            existing
+                .getPriceToRetail()
+                .multiply(BigDecimal.valueOf(combined))
+                .setScale(2, RoundingMode.HALF_UP));
+      }
+      purchaseMapper.enrichPurchaseItemMargin(existing);
+      mergedItems.set(i, existing);
+      return;
+    }
+    if (newItem.getBaseQuantity() != null && newItem.getBaseQuantity() > 0) {
+      mergedItems.add(newItem);
+    }
+  }
 
 }

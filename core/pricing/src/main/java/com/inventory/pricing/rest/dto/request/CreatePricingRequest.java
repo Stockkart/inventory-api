@@ -10,9 +10,11 @@ import java.util.List;
 @Data
 public class CreatePricingRequest {
   private String shopId;
+  private String verticalId;
   private BigDecimal maximumRetailPrice;
   private BigDecimal costPrice;
   private BigDecimal priceToRetail;
+  private BigDecimal sellingPrice;
   private List<Rate> rates;
   private String defaultRate;
   private BigDecimal saleAdditionalDiscount;

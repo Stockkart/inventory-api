@@ -24,6 +24,7 @@ import com.inventory.product.rest.dto.response.RefundSummaryDto;
 import com.inventory.product.rest.dto.response.RefundSummaryItemDto;
 import com.inventory.product.utils.constants.ProductMetricsConstants;
 import com.inventory.product.validation.CheckoutValidator;
+import com.inventory.product.service.vertical.ShopCapabilityService;
 import com.inventory.user.service.CustomerService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -95,6 +96,9 @@ public class RefundService {
   @Autowired(required = false)
   private com.inventory.credit.service.CreditService creditService;
 
+  @Autowired
+  private ShopCapabilityService shopCapabilityService;
+
   /**
    * Process refund for a purchase.
    * Validates the purchase, calculates refund amount, and restores inventory.
@@ -110,6 +114,7 @@ public class RefundService {
 
     // Validate shopId and userId
     checkoutValidator.validateShopIdAndUserId(shopId, userId);
+    shopCapabilityService.requireCustomerReturn(shopId, userId);
 
     // Validate refund request
     if (request == null) {
@@ -562,6 +567,11 @@ public class RefundService {
 
     if (!StringUtils.hasText(shopId)) {
       throw new ValidationException("Shop ID is required");
+    }
+
+    String userId = (String) httpRequest.getAttribute("userId");
+    if (StringUtils.hasText(userId)) {
+      shopCapabilityService.requireCustomerReturn(shopId, userId);
     }
 
     log.info("Getting refunds for shop: {}, page: {}, limit: {}, invoiceNo: {}, customerPhone: {}, customerId: {}, customerEmail: {}",

@@ -1,0 +1,97 @@
+{
+  "verticalId": "cafe",
+  "version": "1.0.0",
+  "entities": {
+    "inventory": {
+      "fields": [
+        {
+          "key": "name",
+          "type": "string",
+          "required": true,
+          "storage": "core",
+          "showIn": ["registration"],
+          "validation": { "minLength": 1, "maxLength": 255 }
+        },
+        {
+          "key": "ingredientType",
+          "label": "Ingredient Type",
+          "type": "enum",
+          "values": ["vegetable", "beverage", "dry", "dairy", "other"],
+          "required": false,
+          "storage": "extension",
+          "indexed": true,
+          "searchable": true,
+          "sortable": true,
+          "showIn": ["registration"]
+        },
+        {
+          "key": "unitOfMeasure",
+          "label": "Unit",
+          "type": "enum",
+          "values": ["kg", "g", "L", "ml", "piece"],
+          "required": true,
+          "storage": "extension",
+          "indexed": true,
+          "showIn": ["registration"]
+        },
+        {
+          "key": "sellDirect",
+          "label": "Sell directly?",
+          "type": "enum",
+          "values": ["no", "yes"],
+          "required": true,
+          "storage": "extension",
+          "indexed": true,
+          "searchable": true,
+          "showIn": ["registration"]
+        }
+      ],
+      "search": {
+        "defaultSort": [{ "field": "ingredientType", "direction": "asc" }],
+        "cursor": "skip"
+      }
+    },
+    "menu": {
+      "fields": [
+        {
+          "key": "name",
+          "type": "string",
+          "required": true,
+          "storage": "menu_item",
+          "showIn": ["menu_form"]
+        },
+        {
+          "key": "sellingPrice",
+          "type": "money",
+          "required": true,
+          "storage": "menu_item",
+          "showIn": ["menu_form"]
+        },
+        {
+          "key": "available",
+          "type": "boolean",
+          "storage": "menu_item",
+          "showIn": ["menu_form"]
+        },
+        {
+          "key": "cgst",
+          "type": "string",
+          "storage": "menu_item",
+          "showIn": ["menu_form"]
+        },
+        {
+          "key": "sgst",
+          "type": "string",
+          "storage": "menu_item",
+          "showIn": ["menu_form"]
+        }
+      ]
+    }
+  },
+  "workflows": {
+    "billingMode": "menu-list",
+    "tokenEnabled": true,
+    "stockMode": "manual",
+    "tokenReset": "daily_midnight"
+  }
+}

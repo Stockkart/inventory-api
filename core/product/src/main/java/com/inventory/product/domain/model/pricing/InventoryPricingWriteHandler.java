@@ -31,13 +31,16 @@ public class InventoryPricingWriteHandler {
 
   public void persistOnSave(Inventory inventory) {
     try {
+      String verticalId = resolveVerticalId(inventory.getShopId());
       if (inventory.getId() == null && hasPricingData(inventory) && StringUtils.hasText(inventory.getShopId())) {
-        String defaultRate = resolveDefaultRateForCreate(inventory);
+        String defaultRate = resolveDefaultRateForCreate(inventory, verticalId);
         var cmd = PricingCreateCommand.builder()
             .shopId(inventory.getShopId())
+            .verticalId(verticalId)
             .maximumRetailPrice(inventory.getMaximumRetailPrice())
             .costPrice(inventory.getCostPrice())
             .priceToRetail(inventory.getPriceToRetail())
+            .sellingPrice(inventory.getSellingPrice())
             .rates(inventory.getRates())
             .defaultRate(defaultRate)
             .saleAdditionalDiscount(inventory.getSaleAdditionalDiscount())
@@ -56,9 +59,11 @@ public class InventoryPricingWriteHandler {
         UpdateInventoryRequest req = ctx.updateRequest;
         if (hasAnyPricingUpdate(req) && StringUtils.hasText(inventory.getPricingId())) {
           var cmd = PricingUpdateCommand.builder()
+              .verticalId(verticalId)
               .maximumRetailPrice(req.getMaximumRetailPrice())
               .costPrice(req.getCostPrice())
               .priceToRetail(req.getPriceToRetail())
+              .sellingPrice(req.getSellingPrice())
               .rates(req.getRates())
               .defaultRate(req.getDefaultRate())
               .saleAdditionalDiscount(req.getSaleAdditionalDiscount())
@@ -76,8 +81,11 @@ public class InventoryPricingWriteHandler {
     }
   }
 
-  /** For retailer shops, default price is MRP (tax-inclusive). Otherwise use request/default (PTR). */
-  private String resolveDefaultRateForCreate(Inventory inv) {
+  /** For retailer shops, default price is MRP (tax-inclusive). Cafe uses simple pricing without defaultRate. */
+  private String resolveDefaultRateForCreate(Inventory inv, String verticalId) {
+    if ("cafe".equalsIgnoreCase(verticalId)) {
+      return null;
+    }
     if (StringUtils.hasText(inv.getDefaultRate())) {
       return inv.getDefaultRate();
     }
@@ -100,12 +108,14 @@ public class InventoryPricingWriteHandler {
         || req.getSchemeFree() != null || req.getSchemePercentage() != null
         || (req.getRates() != null && !req.getRates().isEmpty())
         || StringUtils.hasText(req.getDefaultRate())
+        || req.getSellingPrice() != null
         || StringUtils.hasText(req.getSgst()) || StringUtils.hasText(req.getCgst());
   }
 
   private boolean hasPricingData(Inventory inv) {
     return inv.getMaximumRetailPrice() != null || inv.getCostPrice() != null
-        || inv.getPriceToRetail() != null || inv.getSaleAdditionalDiscount() != null
+        || inv.getPriceToRetail() != null || inv.getSellingPrice() != null
+        || inv.getSaleAdditionalDiscount() != null
         || (inv.getRates() != null && !inv.getRates().isEmpty())
         || inv.getSchemeType() != null || inv.getSchemePayFor() != null
         || inv.getSchemeFree() != null || inv.getSchemePercentage() != null
@@ -170,6 +180,13 @@ public class InventoryPricingWriteHandler {
     }
     String schemeTypeStr = st != null ? st.name() : null;
     return new Scheme(schemeTypeStr, payFor, free, pct);
+  }
+
+  private String resolveVerticalId(String shopId) {
+    if (!StringUtils.hasText(shopId)) {
+      return null;
+    }
+    return shopRepository.findById(shopId).map(Shop::getVerticalId).orElse(null);
   }
 
   private String resolveCgst(String fromRequest, String shopId) {

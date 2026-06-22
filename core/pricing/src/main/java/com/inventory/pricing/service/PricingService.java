@@ -46,14 +46,18 @@ public class PricingService {
   @Autowired
   private PricingValidator pricingValidator;
 
+  @Autowired
+  private VerticalPricingPolicyPort pricingPolicyPort;
+
   /**
    * Create pricing and return the saved entity (with id).
-   * When defaultRate is not provided, sets defaultRate="priceToRetail" and sellingPrice=priceToRetail.
+   * Vertical policy validates fields and normalizes defaultRate/sellingPrice.
    */
   public Pricing createAndReturnEntity(CreatePricingRequest request) {
-    pricingValidator.validateCreateRequest(request);
+    pricingValidator.validateCreateBasics(request);
+    pricingPolicyPort.validateAndNormalizeCreate(request);
     Pricing pricing = pricingMapper.toEntity(request);
-    pricingMapper.setDefaultRateAndSellingPrice(pricing);
+    pricingPolicyPort.normalizeEntity(pricing, request.getVerticalId());
     pricing = pricingRepository.save(pricing);
     log.debug("Created pricing with id: {}", pricing.getId());
     return pricing;
@@ -144,13 +148,15 @@ public class PricingService {
   /**
    * Update pricing by pricing ID.
    */
-  public PricingResponse update(String pricingId, UpdatePricingRequest request) {
+  public PricingResponse update(String pricingId, UpdatePricingRequest request, String verticalId) {
     try {
       pricingValidator.validatePricingId(pricingId);
-      pricingValidator.validateUpdateRequest(request);
 
       Pricing pricing = pricingRepository.findById(pricingId)
           .orElseThrow(() -> new ResourceNotFoundException("Pricing", "id", pricingId));
+
+      pricingPolicyPort.validateAndNormalizeUpdate(request, verticalId, pricing);
+      pricingValidator.validateUpdateRequest(request);
 
       pricingMapper.updateEntity(request, pricing);
       pricing = pricingRepository.save(pricing);

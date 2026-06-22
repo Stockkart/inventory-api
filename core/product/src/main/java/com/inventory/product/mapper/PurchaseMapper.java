@@ -17,6 +17,7 @@ import com.inventory.product.rest.dto.response.CheckoutResponse;
 import com.inventory.product.rest.dto.response.PurchaseListResponse;
 import com.inventory.product.rest.dto.response.PurchaseSummaryDto;
 import com.inventory.product.rest.dto.response.SaleStatusResponse;
+import com.inventory.product.util.PurchaseItemRefs;
 import com.inventory.user.service.CustomerService;
 import org.mapstruct.AfterMapping;
 import org.mapstruct.Mapper;
@@ -72,7 +73,8 @@ public abstract class PurchaseMapper {
                       BigDecimal subTotal, BigDecimal taxTotal,
                       BigDecimal discountTotal, BigDecimal grandTotal);
 
-  @Mapping(target = "inventoryId", source = "item.id")
+  @Mapping(target = "sellableRef", ignore = true)
+  @Mapping(target = "stockRef", ignore = true)
   @Mapping(target = "name", source = "inventory.name")
   @Mapping(target = "quantity", expression = "java(item.getQuantity() != null ? java.math.BigDecimal.valueOf(item.getQuantity()) : java.math.BigDecimal.ZERO)")
   @Mapping(target = "maximumRetailPrice", source = "inventory.maximumRetailPrice")
@@ -113,9 +115,11 @@ public abstract class PurchaseMapper {
       }
     }
     enrichPurchaseItemMargin(purchaseItem);
+    PurchaseItemRefs.applyInventoryLine(purchaseItem, inventory.getId());
   }
 
-  @Mapping(target = "inventoryId", source = "item.id")
+  @Mapping(target = "sellableRef", ignore = true)
+  @Mapping(target = "stockRef", ignore = true)
   @Mapping(target = "name", source = "inventory.name")
   @Mapping(target = "quantity", expression = "java(item.getQuantity() != null ? java.math.BigDecimal.valueOf(item.getQuantity()) : java.math.BigDecimal.ZERO)")
   @Mapping(target = "maximumRetailPrice", source = "inventory.maximumRetailPrice")
@@ -184,8 +188,11 @@ public abstract class PurchaseMapper {
   }
 
   @AfterMapping
-  protected void enrichPurchaseItemMarginFromCart(@MappingTarget PurchaseItem purchaseItem, AddToCartRequest.CartItem item, Inventory inventory) {
-    enrichPurchaseItemMargin(purchaseItem);
+  protected void applyInventoryRefsFromCart(
+      @MappingTarget PurchaseItem purchaseItem, AddToCartRequest.CartItem item, Inventory inventory) {
+    if (inventory != null && inventory.getId() != null) {
+      PurchaseItemRefs.applyInventoryLine(purchaseItem, inventory.getId());
+    }
   }
 
   private static int gcd(int a, int b) {
@@ -459,7 +466,7 @@ public abstract class PurchaseMapper {
   public PurchaseItem createPurchaseItem(String inventoryId, String name, BigDecimal quantity,
                                           BigDecimal maximumRetailPrice, BigDecimal priceToRetail, BigDecimal discount) {
     PurchaseItem item = new PurchaseItem();
-    item.setInventoryId(inventoryId);
+    PurchaseItemRefs.applyInventoryLine(item, inventoryId);
     item.setName(name);
     item.setQuantity(quantity);
     item.setMaximumRetailPrice(maximumRetailPrice);
@@ -480,7 +487,7 @@ public abstract class PurchaseMapper {
                                                    BigDecimal discount, BigDecimal additionalDiscount,
                                                    String cgst, String sgst, String shopId) {
     PurchaseItem item = new PurchaseItem();
-    item.setInventoryId(inventoryId);
+    PurchaseItemRefs.applyInventoryLine(item, inventoryId);
     item.setName(name);
     item.setQuantity(quantity);
     item.setMaximumRetailPrice(maximumRetailPrice);
@@ -562,8 +569,9 @@ public abstract class PurchaseMapper {
   protected void populatePurchaseValuesOnCartItems(@MappingTarget AddToCartResponse response, Purchase purchase) {
     if (response.getItems() == null) return;
     for (PurchaseItem item : response.getItems()) {
-      if (item.getInventoryId() == null) continue;
-      inventoryRepository.findById(item.getInventoryId()).ifPresent(inv -> {
+      String lotId = PurchaseItemRefs.stockLotId(item);
+      if (lotId == null) continue;
+      inventoryRepository.findById(lotId).ifPresent(inv -> {
         inventoryPricingReadHandler.enrich(inv);
         item.setPurchaseAdditionalDiscount(inv.getPurchaseAdditionalDiscount());
         item.setPurchaseSchemeType(inv.getPurchaseSchemeType());
@@ -575,6 +583,7 @@ public abstract class PurchaseMapper {
   }
 
   // Method to map Purchase to CheckoutResponse
+  @Mapping(target = "purchaseId", source = "id")
   @Mapping(target = "invoiceNo", source = "invoiceNo")
   @Mapping(target = "businessType", source = "businessType")
   @Mapping(target = "billingMode", source = "billingMode")

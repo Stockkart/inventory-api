@@ -16,9 +16,11 @@ import java.util.List;
 @Builder
 public class PricingCreateCommand {
   private String shopId;
+  private String verticalId;
   private BigDecimal maximumRetailPrice;
   private BigDecimal costPrice;
   private BigDecimal priceToRetail;
+  private BigDecimal sellingPrice;
   private List<RateDto> rates;
   private String defaultRate;
   private BigDecimal saleAdditionalDiscount;

@@ -39,7 +39,10 @@ public class CheckoutResponse {
   String customerName;
   String customerAddress;
   String customerPhone;
+  String customerPan;
   /** Set when checkout completion creates a customer due in credit ledger. */
   String creditEntryId;
+  /** Daily order token for menu-billing verticals (cafe). */
+  String tokenNo;
 }
 

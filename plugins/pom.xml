@@ -15,6 +15,7 @@
     <modules>
         <module>medical</module>
         <module>sports</module>
+        <module>cafe</module>
     </modules>
     <version>1.0.0</version>
 

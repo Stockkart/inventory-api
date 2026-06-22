@@ -1,5 +1,6 @@
 package com.inventory.pluginengine;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -30,6 +31,37 @@ public final class ExtensionFieldCoercion {
       return null;
     }
     return Integer.valueOf(text);
+  }
+
+  public static BigDecimal asBigDecimal(Object value) {
+    if (value == null) {
+      return null;
+    }
+    if (value instanceof BigDecimal decimal) {
+      return decimal;
+    }
+    if (value instanceof Number number) {
+      return BigDecimal.valueOf(number.doubleValue());
+    }
+    String text = String.valueOf(value).trim();
+    if (!StringUtils.hasText(text)) {
+      return null;
+    }
+    return new BigDecimal(text);
+  }
+
+  public static Boolean asBoolean(Object value) {
+    if (value == null) {
+      return null;
+    }
+    if (value instanceof Boolean bool) {
+      return bool;
+    }
+    String text = String.valueOf(value).trim();
+    if (!StringUtils.hasText(text)) {
+      return null;
+    }
+    return "true".equalsIgnoreCase(text) || "1".equals(text) || "yes".equalsIgnoreCase(text);
   }
 
   public static Instant asInstant(Object value) {
