@@ -15,6 +15,8 @@ import com.inventory.plan.rest.dto.response.PlanTransactionResponse;
 import com.inventory.plan.rest.dto.response.ShopPlanStatusResponse;
 import com.inventory.plan.rest.dto.response.UsageResponse;
 import com.inventory.plan.service.ShopProvider.ShopInfo;
+import com.inventory.plan.utils.PlanUtils;
+import com.inventory.plan.utils.PlanUtils;
 import com.inventory.plan.validation.PlanValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,7 +24,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -89,7 +90,8 @@ public class PlanService {
     Plan plan = planRepository.findById(request.getPlanId())
         .orElseThrow(() -> new ResourceNotFoundException("Plan", "id", request.getPlanId()));
 
-    Instant expiryDate = Instant.now().plus(request.getDurationMonths() != null ? request.getDurationMonths() : 1, ChronoUnit.MONTHS);
+    int durationMonths = request.getDurationMonths() != null ? request.getDurationMonths() : 1;
+    Instant expiryDate = PlanUtils.plusMonths(Instant.now(), durationMonths);
     shopProvider.updatePlan(shopId, plan.getId(), expiryDate);
 
     PlanTransaction tx = planTransactionMapper.toTransaction(shopId, plan, request);
@@ -122,7 +124,8 @@ public class PlanService {
       plan = planRepository.findById(shopInfo.planId()).orElse(null);
     }
     boolean trial = (plan == null && shopInfo.planExpiryDate() != null);
-    boolean trialExpired = trial && shopInfo.planExpiryDate() != null && shopInfo.planExpiryDate().isBefore(Instant.now());
+    boolean planExpired = PlanUtils.isExpired(shopInfo.planExpiryDate());
+    boolean trialExpired = trial && planExpired;
 
     Plan effectivePlan = plan != null ? plan
         : planRepository.findByPlanName("Base")
@@ -145,6 +148,7 @@ public class PlanService {
         shopInfo.planExpiryDate(),
         trial,
         trialExpired,
+        planExpired,
         usageResponse,
         suggestedPlan,
         limits,

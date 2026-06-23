@@ -37,6 +37,7 @@ public interface PlanMapper {
       Instant planExpiryDate,
       boolean trial,
       boolean trialExpired,
+      boolean planExpired,
       UsageResponse currentUsage,
       PlanResponse suggestedPlan,
       LimitReachedResult limits,
@@ -48,6 +49,7 @@ public interface PlanMapper {
         .planExpiryDate(planExpiryDate)
         .trial(trial)
         .trialExpired(trialExpired)
+        .planExpired(planExpired)
         .currentUsage(currentUsage)
         .suggestedPlan(suggestedPlan)
         .billingLimitReached(limits.billingLimitReached())

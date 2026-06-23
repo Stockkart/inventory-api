@@ -19,6 +19,8 @@ public class ShopPlanStatusResponse {
   private Instant planExpiryDate;
   private boolean trial;
   private boolean trialExpired;
+  /** True when planExpiryDate is in the past (trial or paid subscription). */
+  private boolean planExpired;
   private UsageResponse currentUsage;
   private PlanResponse suggestedPlan;
   private boolean billingLimitReached;
