@@ -19,5 +19,7 @@ public class PlanTransactionResponse {
   private BigDecimal amount;
   private Integer durationMonths;
   private String paymentMethod;
+  private String provider;
+  private String providerPaymentId;
   private Instant createdAt;
 }

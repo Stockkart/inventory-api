@@ -1,11 +1,15 @@
 package com.inventory.plan.validation;
 
 import com.inventory.common.exception.ValidationException;
+import com.inventory.plan.config.PaymentProperties;
 import com.inventory.plan.domain.model.Plan;
 import com.inventory.plan.domain.model.Usage;
 import com.inventory.plan.rest.dto.request.AssignPlanRequest;
+import com.inventory.plan.rest.dto.request.CreatePlanCheckoutRequest;
 import com.inventory.plan.rest.dto.request.PaymentWebhookPayload;
 import com.inventory.plan.rest.dto.request.RecordUsageRequest;
+import com.inventory.plan.rest.dto.request.VerifyPlanPaymentRequest;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -13,6 +17,9 @@ import java.math.BigDecimal;
 
 @Component
 public class PlanValidator {
+
+  @Autowired(required = false)
+  private PaymentProperties paymentProperties;
 
   public void validateAssignPlanRequest(String shopId, AssignPlanRequest request) {
     if (!StringUtils.hasText(shopId)) {
@@ -26,6 +33,11 @@ public class PlanValidator {
     }
     if (request.getDurationMonths() == null || request.getDurationMonths() < 1) {
       throw new ValidationException("Duration must be at least 1 month");
+    }
+    if (paymentProperties != null
+        && StringUtils.hasText(paymentProperties.getGateway())
+        && !StringUtils.hasText(request.getProviderPaymentId())) {
+      throw new ValidationException("Complete payment checkout before activating a plan");
     }
   }
 
@@ -60,6 +72,36 @@ public class PlanValidator {
     }
     if (!StringUtils.hasText(payload.getPlanId())) {
       throw new ValidationException("Plan ID is required in webhook");
+    }
+  }
+
+  public void validateCreateCheckoutRequest(String shopId, CreatePlanCheckoutRequest request) {
+    if (!StringUtils.hasText(shopId)) {
+      throw new ValidationException("Shop ID is required");
+    }
+    if (request == null || !StringUtils.hasText(request.getPlanId())) {
+      throw new ValidationException("Plan ID is required");
+    }
+    if (request.getDurationMonths() != null && request.getDurationMonths() < 1) {
+      throw new ValidationException("Duration must be at least 1 month");
+    }
+  }
+
+  public void validateVerifyPaymentRequest(VerifyPlanPaymentRequest request) {
+    if (request == null) {
+      throw new ValidationException("Request cannot be null");
+    }
+    if (!StringUtils.hasText(request.getOrderId())) {
+      throw new ValidationException("Order ID is required");
+    }
+    if (!StringUtils.hasText(request.getRazorpayPaymentId())) {
+      throw new ValidationException("Payment ID is required");
+    }
+    if (!StringUtils.hasText(request.getRazorpayOrderId())) {
+      throw new ValidationException("Razorpay order ID is required");
+    }
+    if (!StringUtils.hasText(request.getRazorpaySignature())) {
+      throw new ValidationException("Payment signature is required");
     }
   }
 
