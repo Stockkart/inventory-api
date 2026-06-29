@@ -145,10 +145,31 @@ public final class SchemaFieldValidation {
         || field.getValues().isEmpty()) {
       return;
     }
-    String text = toText(value);
-    if (text == null || !field.getValues().contains(text)) {
+    String normalized = normalizeEnumToken(value);
+    if (normalized == null) {
+      errors.add(field.getKey() + ": must be one of " + field.getValues());
+      return;
+    }
+    boolean allowed =
+        field.getValues().stream()
+            .map(SchemaFieldValidation::normalizeEnumToken)
+            .anyMatch(normalized::equals);
+    if (!allowed) {
       errors.add(field.getKey() + ": must be one of " + field.getValues());
     }
+  }
+
+  /** Maps yes/no and true/false enum representations to a common token for comparison. */
+  private static String normalizeEnumToken(Object value) {
+    String text = toText(value);
+    if (text == null) {
+      return null;
+    }
+    return switch (text.toLowerCase()) {
+      case "true", "yes" -> "yes";
+      case "false", "no" -> "no";
+      default -> text;
+    };
   }
 
   private static boolean isAbsent(Object value) {

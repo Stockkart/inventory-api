@@ -34,7 +34,6 @@ public class RbacModuleInterceptor implements HandlerInterceptor {
           new ModuleRule("/api/v1/accounting", RbacService.MODULE_ACCOUNTING),
           new ModuleRule("/api/v1/analytics", RbacService.MODULE_ANALYTICS),
           new ModuleRule("/api/v1/taxation", RbacService.MODULE_TAXES),
-          new ModuleRule("/api/v1/inventory-corrections", RbacService.MODULE_STOCK_CORRECTION),
           new ModuleRule("/api/v1/plans/shop/transactions", RbacService.MODULE_PAYMENT_PLAN),
           new ModuleRule("/api/v1/plans/shop/usage", RbacService.MODULE_PAYMENT_PLAN),
           new ModuleRule("/api/v1/plans/payment/checkout", RbacService.MODULE_PAYMENT_PLAN),
@@ -45,6 +44,11 @@ public class RbacModuleInterceptor implements HandlerInterceptor {
           new PatternModuleRule(
               Pattern.compile("/api/v1/plans/shop/[a-fA-F0-9]{24}/(assign|suggested)"),
               RbacService.MODULE_PAYMENT_PLAN));
+
+  private static final List<Pattern> STOCK_CORRECTION_APPROVAL_PATHS =
+      List.of(
+          Pattern.compile("/api/v1/inventory-corrections/[^/]+/lines/[^/]+/approve"),
+          Pattern.compile("/api/v1/inventory-corrections/[^/]+/lines/[^/]+/reject"));
 
   private static final List<TeamRule> TEAM_RULES =
       List.of(
@@ -91,9 +95,19 @@ public class RbacModuleInterceptor implements HandlerInterceptor {
     if (teamKey != null) {
       log.debug("RBAC team check: user={} shop={} team={} path={}", userId, shopId, teamKey, path);
       rbacService.requireTeamAccess(userId, shopId, teamKey);
+      return true;
+    }
+
+    if (requiresStockCorrectionApproval(path)) {
+      log.debug("RBAC stock correction approval: user={} shop={} path={}", userId, shopId, path);
+      rbacService.requireStockCorrectionApproval(userId, shopId);
     }
 
     return true;
+  }
+
+  private static boolean requiresStockCorrectionApproval(String path) {
+    return STOCK_CORRECTION_APPROVAL_PATHS.stream().anyMatch(p -> p.matcher(path).matches());
   }
 
   private static boolean shouldSkip(String path) {

@@ -38,8 +38,8 @@ class SportsInventoryValidatorTest {
                 "baseUnit", "PCS",
                 "sport", "cricket",
                 "brand", "MRF",
-                "model", "Genius Grand"));
-
+                "model", "Genius Grand"),
+            null);
     assertDoesNotThrow(() -> validator.validateCreate(context));
   }
 
@@ -55,8 +55,8 @@ class SportsInventoryValidatorTest {
                 "name", "Cricket Bat",
                 "baseUnit", "PCS",
                 "brand", "MRF",
-                "model", "Genius Grand"));
-
+                "model", "Genius Grand"),
+            null);
     assertThrows(ValidationException.class, () -> validator.validateCreate(context));
   }
 
@@ -73,8 +73,8 @@ class SportsInventoryValidatorTest {
                 "baseUnit", "PCS",
                 "sport", "rugby",
                 "brand", "MRF",
-                "model", "Genius Grand"));
-
+                "model", "Genius Grand"),
+            null);
     assertThrows(ValidationException.class, () -> validator.validateCreate(context));
   }
 
@@ -90,8 +90,8 @@ class SportsInventoryValidatorTest {
                 "name", "Cricket Bat",
                 "sport", "cricket",
                 "brand", "MRF",
-                "model", "Genius Grand"));
-
+                "model", "Genius Grand"),
+            null);
     assertThrows(ValidationException.class, () -> validator.validateCreate(context));
   }
 
@@ -109,8 +109,8 @@ class SportsInventoryValidatorTest {
                 "sport", "cricket",
                 "brand", "MRF",
                 "model", "Genius Grand",
-                "warrantyMonths", 200));
-
+                "warrantyMonths", 200),
+            null);
     assertThrows(ValidationException.class, () -> validator.validateCreate(context));
   }
 

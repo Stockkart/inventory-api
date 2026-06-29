@@ -18,6 +18,7 @@ public class ShopAccessResponse {
   private boolean owner;
   private boolean canManageAccess;
   private ProductSearchAccessDto productSearch;
+  private StockCorrectionAccessDto stockCorrection;
   private Map<String, Boolean> modules;
   private TeamAccessDto team;
 
@@ -27,9 +28,21 @@ public class ShopAccessResponse {
   @AllArgsConstructor
   public static class ProductSearchAccessDto {
     private boolean canView;
+    private boolean canEdit;
     private ProductSearchEditMode editMode;
     private boolean canEditAll;
     private List<String> editableFields;
+  }
+
+  @Data
+  @Builder
+  @NoArgsConstructor
+  @AllArgsConstructor
+  public static class StockCorrectionAccessDto {
+    /** Any shop member may propose a pending correction. */
+    private boolean canCreate;
+    /** Owner, manager, or admin may approve or reject lines. */
+    private boolean canApprove;
   }
 
   @Data

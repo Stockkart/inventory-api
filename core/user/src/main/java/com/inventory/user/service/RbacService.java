@@ -44,6 +44,7 @@ public class RbacService {
   public static final String MODULE_STOCK_CORRECTION = "stockCorrection";
   public static final String MODULE_MARKETING = "marketing";
   public static final String MODULE_PAYMENT_PLAN = "paymentPlan";
+  public static final String MODULE_PRODUCT_SEARCH_EDIT = "productSearchEdit";
 
   public static final String TEAM_MANAGE_INVITATIONS = "manageInvitations";
   public static final String TEAM_MANAGE_JOIN_REQUESTS = "manageJoinRequests";
@@ -155,6 +156,8 @@ public class RbacService {
       permissions.setProductSearchEditableFields(
           new LinkedHashSet<>(request.getProductSearchEditableFields()));
     }
+    ProductSearchEditMode editMode = getOrDefaultPolicy(shopId).getProductSearchEditMode();
+    syncProductSearchEditFlag(permissions, editMode);
     membership.setPermissions(permissions);
     membershipRepository.save(membership);
 
@@ -163,7 +166,6 @@ public class RbacService {
             .findById(targetUserId)
             .orElseThrow(() -> new ResourceNotFoundException("User", "userId", targetUserId));
     MembershipContext ctx = contextFromMembership(membership, account);
-    ProductSearchEditMode editMode = getOrDefaultPolicy(shopId).getProductSearchEditMode();
     return ShopMemberAccessDto.builder()
         .userId(account.getUserId())
         .name(account.getName())
@@ -216,6 +218,10 @@ public class RbacService {
       return;
     }
     ShopAccessResponse.ProductSearchAccessDto productSearch = access.getProductSearch();
+    if (!productSearch.isCanEdit()) {
+      throw new BaseException(
+          ErrorCode.ACCESS_DENIED, "You do not have permission to edit products");
+    }
     if (productSearch.getEditMode() == ProductSearchEditMode.FULL_EDIT) {
       return;
     }
@@ -227,6 +233,16 @@ public class RbacService {
             "You are not allowed to edit product field: " + field);
       }
     }
+  }
+
+  /** Owner, manager, or admin may approve or reject stock correction lines. */
+  public void requireStockCorrectionApproval(String userId, String shopId) {
+    ShopAccessResponse access = getEffectiveAccess(userId, shopId);
+    if (access.getStockCorrection() != null && access.getStockCorrection().isCanApprove()) {
+      return;
+    }
+    throw new BaseException(
+        ErrorCode.ACCESS_DENIED, "Only the owner or manager can approve stock corrections");
   }
 
   private void requireOwner(String userId, String shopId) {
@@ -290,10 +306,16 @@ public class RbacService {
     Map<String, Boolean> modules = resolveModules(ctx.role(), ctx.permissions());
     ShopAccessResponse.TeamAccessDto team = resolveTeam(ctx.role());
     List<String> editableFields = resolveEditableFields(ctx, editMode, modules);
+    boolean canEditProducts = hasProductSearchEditAccess(editMode, modules, editableFields);
+    if (canEditProducts && editMode == ProductSearchEditMode.PERMISSION_BASED && !editableFields.isEmpty()) {
+      modules = new LinkedHashMap<>(modules);
+      modules.put(MODULE_PRODUCT_SEARCH_EDIT, true);
+    }
     boolean canEditAll =
-        editMode == ProductSearchEditMode.FULL_EDIT
-            || (editMode == ProductSearchEditMode.PERMISSION_BASED
-                && editableFields.size() == CORE_PRODUCT_SEARCH_FIELDS.size());
+        canEditProducts
+            && (editMode == ProductSearchEditMode.FULL_EDIT
+                || (editMode == ProductSearchEditMode.PERMISSION_BASED
+                    && editableFields.size() == CORE_PRODUCT_SEARCH_FIELDS.size()));
 
     return ShopAccessResponse.builder()
         .role(ctx.role().name())
@@ -303,17 +325,36 @@ public class RbacService {
         .productSearch(
             ShopAccessResponse.ProductSearchAccessDto.builder()
                 .canView(true)
+                .canEdit(canEditProducts)
                 .editMode(editMode)
                 .canEditAll(canEditAll)
                 .editableFields(editableFields)
                 .build())
+        .stockCorrection(resolveStockCorrectionAccess(ctx))
         .modules(modules)
         .team(team)
         .build();
   }
 
+  private ShopAccessResponse.StockCorrectionAccessDto resolveStockCorrectionAccess(
+      MembershipContext ctx) {
+    return ShopAccessResponse.StockCorrectionAccessDto.builder()
+        .canCreate(true)
+        .canApprove(canApproveStockCorrections(ctx))
+        .build();
+  }
+
+  private boolean canApproveStockCorrections(MembershipContext ctx) {
+    if (ctx.owner()) {
+      return true;
+    }
+    UserRole role = ctx.role();
+    return role == UserRole.OWNER || role == UserRole.MANAGER || role == UserRole.ADMIN;
+  }
+
   private ShopAccessResponse ownerAccess(ProductSearchEditMode editMode) {
     Map<String, Boolean> allModules = defaultModulesForRole(UserRole.OWNER, null);
+    allModules.put(MODULE_PRODUCT_SEARCH_EDIT, true);
     return ShopAccessResponse.builder()
         .role(UserRole.OWNER.name())
         .relationship(UserShopMembershipService.RELATIONSHIP_OWNER)
@@ -322,9 +363,15 @@ public class RbacService {
         .productSearch(
             ShopAccessResponse.ProductSearchAccessDto.builder()
                 .canView(true)
+                .canEdit(true)
                 .editMode(editMode)
                 .canEditAll(true)
                 .editableFields(CORE_PRODUCT_SEARCH_FIELDS)
+                .build())
+        .stockCorrection(
+            ShopAccessResponse.StockCorrectionAccessDto.builder()
+                .canCreate(true)
+                .canApprove(true)
                 .build())
         .modules(allModules)
         .team(
@@ -350,6 +397,7 @@ public class RbacService {
     applyOverride(resolved, MODULE_STOCK_CORRECTION, overrides.getStockCorrection());
     applyOverride(resolved, MODULE_MARKETING, overrides.getMarketing());
     applyOverride(resolved, MODULE_PAYMENT_PLAN, overrides.getPaymentPlan());
+    applyOverride(resolved, MODULE_PRODUCT_SEARCH_EDIT, overrides.getProductSearchEdit());
     return resolved;
   }
 
@@ -369,6 +417,7 @@ public class RbacService {
     modules.put(MODULE_STOCK_CORRECTION, fullStaff && !cashier);
     modules.put(MODULE_MARKETING, fullStaff && !cashier);
     modules.put(MODULE_PAYMENT_PLAN, fullStaff && !cashier);
+    modules.put(MODULE_PRODUCT_SEARCH_EDIT, false);
     return modules;
   }
 
@@ -385,6 +434,9 @@ public class RbacService {
   private List<String> resolveEditableFields(
       MembershipContext ctx, ProductSearchEditMode editMode, Map<String, Boolean> modules) {
     if (editMode == ProductSearchEditMode.FULL_EDIT) {
+      if (!Boolean.TRUE.equals(modules.get(MODULE_PRODUCT_SEARCH_EDIT))) {
+        return List.of();
+      }
       return CORE_PRODUCT_SEARCH_FIELDS;
     }
     if (ctx.permissions() == null
@@ -399,6 +451,31 @@ public class RbacService {
       }
     }
     return List.copyOf(allowed);
+  }
+
+  /** In permission-based mode, any assigned field grants edit; in full-edit mode, module flag is required. */
+  private boolean hasProductSearchEditAccess(
+      ProductSearchEditMode editMode, Map<String, Boolean> modules, List<String> editableFields) {
+    if (editMode == ProductSearchEditMode.PERMISSION_BASED) {
+      return !editableFields.isEmpty();
+    }
+    return Boolean.TRUE.equals(modules.get(MODULE_PRODUCT_SEARCH_EDIT));
+  }
+
+  /**
+   * Keeps {@link #MODULE_PRODUCT_SEARCH_EDIT} aligned with assigned fields when the shop uses
+   * permission-based product search editing.
+   */
+  private void syncProductSearchEditFlag(
+      MemberPermissions permissions, ProductSearchEditMode editMode) {
+    if (editMode != ProductSearchEditMode.PERMISSION_BASED) {
+      return;
+    }
+    MemberModulePermissions modules =
+        permissions.getModules() != null ? permissions.getModules() : new MemberModulePermissions();
+    Set<String> fields = permissions.getProductSearchEditableFields();
+    modules.setProductSearchEdit(fields != null && !fields.isEmpty());
+    permissions.setModules(modules);
   }
 
   private record MembershipContext(

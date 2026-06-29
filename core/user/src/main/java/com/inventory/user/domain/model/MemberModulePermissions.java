@@ -15,4 +15,6 @@ public class MemberModulePermissions {
   private Boolean stockCorrection;
   private Boolean marketing;
   private Boolean paymentPlan;
+  /** Explicit grant to edit products from product search / detail modal. */
+  private Boolean productSearchEdit;
 }

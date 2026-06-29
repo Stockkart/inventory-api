@@ -39,8 +39,8 @@ class MedicalInventoryValidatorTest {
             Map.of(
                 "name", "Paracetamol",
                 "batchNo", "B001",
-                "expiryDate", future));
-
+                "expiryDate", future),
+            null);
     assertDoesNotThrow(() -> validator.validateCreate(context));
   }
 
@@ -53,8 +53,8 @@ class MedicalInventoryValidatorTest {
             "medical",
             "1.0.0",
             schema,
-            Map.of("name", "Paracetamol", "expiryDate", future));
-
+            Map.of("name", "Paracetamol", "expiryDate", future),
+            null);
     assertThrows(ValidationException.class, () -> validator.validateCreate(context));
   }
 
@@ -67,8 +67,8 @@ class MedicalInventoryValidatorTest {
             "medical",
             "1.0.0",
             schema,
-            Map.of("name", "Paracetamol", "batchNo", "B001", "expiryDate", past));
-
+            Map.of("name", "Paracetamol", "batchNo", "B001", "expiryDate", past),
+            null);
     assertThrows(ValidationException.class, () -> validator.validateCreate(context));
   }
 
@@ -84,8 +84,8 @@ class MedicalInventoryValidatorTest {
             Map.of(
                 "name", 42,
                 "batchNo", "B001",
-                "expiryDate", future));
-
+                "expiryDate", future),
+            null);
     assertThrows(ValidationException.class, () -> validator.validateCreate(context));
   }
 
@@ -101,8 +101,8 @@ class MedicalInventoryValidatorTest {
             Map.of(
                 "name", "Paracetamol",
                 "batchNo", "x".repeat(65),
-                "expiryDate", future));
-
+                "expiryDate", future),
+            null);
     assertThrows(ValidationException.class, () -> validator.validateCreate(context));
   }
 
@@ -115,8 +115,8 @@ class MedicalInventoryValidatorTest {
             "medical",
             "1.0.0",
             schema,
-            Map.of("name", "Paracetamol", "batchNo", "B001", "expiryDate", past));
-
+            Map.of("name", "Paracetamol", "batchNo", "B001", "expiryDate", past),
+            null);
     assertDoesNotThrow(() -> validator.validateUpdate(context));
   }
 
