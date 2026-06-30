@@ -8,8 +8,10 @@ import com.inventory.product.rest.dto.request.AddToCartRequest;
 import com.inventory.product.rest.dto.request.UpdatePurchaseStatusRequest;
 import com.inventory.product.rest.dto.response.AddToCartResponse;
 import com.inventory.product.rest.dto.response.CheckoutResponse;
+import com.inventory.product.rest.dto.response.CustomerProductHistoryResponse;
 import com.inventory.product.rest.dto.response.PurchaseListResponse;
 import com.inventory.product.service.CheckoutService;
+import com.inventory.product.service.CustomerProductHistoryService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -21,6 +23,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/v1")
 @Latency(module = "product")
@@ -30,6 +34,9 @@ public class CheckoutController {
 
   @Autowired
   private CheckoutService checkoutService;
+
+  @Autowired
+  private CustomerProductHistoryService customerProductHistoryService;
 
   @GetMapping("/cart")
   public ResponseEntity<ApiResponse<AddToCartResponse>> getCart(HttpServletRequest httpRequest) {
@@ -81,6 +88,28 @@ public class CheckoutController {
       HttpServletRequest httpRequest) {
     return ResponseEntity.ok(ApiResponse.success(
         checkoutService.searchPurchases(page, limit, invoiceNo, customerEmail, customerPhone, customerName, httpRequest)));
+  }
+
+  /**
+   * Prior completed sales of specific products to a customer (batched by sellableRef).
+   * Used at sell time to show purchase history hints on cart lines.
+   */
+  @GetMapping("/purchases/customer-product-history")
+  public ResponseEntity<ApiResponse<CustomerProductHistoryResponse>> getCustomerProductHistory(
+      @RequestParam(required = false) String customerId,
+      @RequestParam(required = false) String customerPhone,
+      @RequestParam String sellableRefs,
+      @RequestParam(required = false, defaultValue = "3") Integer limit,
+      @RequestParam(required = false) String excludePurchaseId,
+      HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    List<String> refs = java.util.Arrays.stream(sellableRefs.split(","))
+        .map(String::trim)
+        .filter(s -> !s.isEmpty())
+        .toList();
+    return ResponseEntity.ok(ApiResponse.success(
+        customerProductHistoryService.getHistory(
+            shopId, customerId, customerPhone, refs, limit, excludePurchaseId)));
   }
 }
 
