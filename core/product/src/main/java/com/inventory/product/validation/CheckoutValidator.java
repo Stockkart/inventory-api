@@ -50,6 +50,9 @@ public class CheckoutValidator {
     if (!StringUtils.hasText(request.getBusinessType())) {
       throw new ValidationException("Business type is required");
     }
+    if (request.getItems() == null) {
+      throw new ValidationException("Cart items are required");
+    }
     if (request.getItems().size() > ProductConstants.MAX_ITEMS_PER_SALE) {
       throw new ValidationException("Exceeded maximum number of items per sale (" + ProductConstants.MAX_ITEMS_PER_SALE + ")");
     }
@@ -148,6 +151,11 @@ public class CheckoutValidator {
 
     // CREATED -> PENDING:
     if (currentStatus == PurchaseStatus.CREATED && requestedStatus == PurchaseStatus.PENDING) {
+      return;
+    }
+
+    // CREATED -> CANCELLED: manual quotation cancel
+    if (currentStatus == PurchaseStatus.CREATED && requestedStatus == PurchaseStatus.CANCELLED) {
       return;
     }
 

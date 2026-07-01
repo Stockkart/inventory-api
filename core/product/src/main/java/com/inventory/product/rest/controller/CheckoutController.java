@@ -5,17 +5,22 @@ import com.inventory.metrics.annotation.Latency;
 import com.inventory.metrics.annotation.RecordRequestRate;
 import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.product.rest.dto.request.AddToCartRequest;
+import com.inventory.product.rest.dto.request.CreateQuotationRequest;
 import com.inventory.product.rest.dto.request.UpdatePurchaseStatusRequest;
 import com.inventory.product.rest.dto.response.AddToCartResponse;
 import com.inventory.product.rest.dto.response.CheckoutResponse;
 import com.inventory.product.rest.dto.response.CustomerProductHistoryResponse;
 import com.inventory.product.rest.dto.response.PurchaseListResponse;
+import com.inventory.product.rest.dto.response.QuotationListResponse;
 import com.inventory.product.service.CheckoutService;
 import com.inventory.product.service.CustomerProductHistoryService;
+import com.inventory.product.service.QuotationService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -38,9 +43,43 @@ public class CheckoutController {
   @Autowired
   private CustomerProductHistoryService customerProductHistoryService;
 
+  @Autowired
+  private QuotationService quotationService;
+
   @GetMapping("/cart")
-  public ResponseEntity<ApiResponse<AddToCartResponse>> getCart(HttpServletRequest httpRequest) {
-    return ResponseEntity.ok(ApiResponse.success(checkoutService.getCart(httpRequest)));
+  public ResponseEntity<ApiResponse<AddToCartResponse>> getCart(
+      @RequestParam(required = false) String purchaseId,
+      HttpServletRequest httpRequest) {
+    return ResponseEntity.ok(ApiResponse.success(checkoutService.getCart(httpRequest, purchaseId)));
+  }
+
+  @GetMapping("/cart/quotations")
+  public ResponseEntity<ApiResponse<QuotationListResponse>> listQuotations(
+      HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    String userId = (String) httpRequest.getAttribute("userId");
+    return ResponseEntity.ok(
+        ApiResponse.success(quotationService.listOpenQuotations(userId, shopId)));
+  }
+
+  @PostMapping("/cart/quotations")
+  public ResponseEntity<ApiResponse<AddToCartResponse>> createQuotation(
+      @RequestBody CreateQuotationRequest request,
+      HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    String userId = (String) httpRequest.getAttribute("userId");
+    return ResponseEntity.ok(
+        ApiResponse.success(quotationService.createQuotation(request, userId, shopId)));
+  }
+
+  @DeleteMapping("/cart/quotations/{purchaseId}")
+  public ResponseEntity<ApiResponse<Void>> cancelQuotation(
+      @PathVariable String purchaseId,
+      HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    String userId = (String) httpRequest.getAttribute("userId");
+    quotationService.cancelQuotation(purchaseId, userId, shopId);
+    return ResponseEntity.ok(ApiResponse.success(null));
   }
 
   @PostMapping("/cart/upsert")

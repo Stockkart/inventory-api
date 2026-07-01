@@ -17,6 +17,13 @@ public interface PurchaseRepository extends MongoRepository<Purchase, String> {
 
   Optional<Purchase> findByUserIdAndShopIdAndStatus(String userId, String shopId, PurchaseStatus status);
 
+  List<Purchase> findByUserIdAndShopIdAndStatusOrderByUpdatedAtDesc(
+      String userId, String shopId, PurchaseStatus status);
+
+  List<Purchase> findByShopIdAndStatus(String shopId, PurchaseStatus status);
+
+  Optional<Purchase> findByIdAndUserIdAndShopId(String id, String userId, String shopId);
+
   Optional<Purchase> findByUserIdAndShopIdAndStatusIn(String userId, String shopId, List<PurchaseStatus> statuses);
 
   Page<Purchase> findByShopId(String shopId, Pageable pageable);
