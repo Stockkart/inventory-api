@@ -1,0 +1,42 @@
+name: Build and Deploy to Cloud Run
+on:
+  push:
+    branches: [ gcp-deploy ]
+
+env:
+  PROJECT_ID: inven-501417
+  REGION: us-central1
+  REPO_NAME: docker-repo
+  SERVICE_NAME: backend-service
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Google Auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/1090716420387/locations/global/workloadIdentityPools/my-pool/providers/my-provider'
+          service_account: 'github-deployer@inven-501417.iam.gserviceaccount.com'
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker us-central1-docker.pkg.dev
+
+      - name: Build and Push Container
+        run: |
+          docker build -t us-central1-docker.pkg.dev/$PROJECT_ID/$REPO_NAME/app:$GITHUB_SHA .
+          docker push us-central1-docker.pkg.dev/$PROJECT_ID/$REPO_NAME/app:$GITHUB_SHA
+
+      - name: Deploy to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE_NAME }}
+          region: ${{ env.REGION }}
+          image: us-central1-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/app:${{ github.sha }}
