@@ -49,6 +49,7 @@ public class CheckoutCompletionOrchestrator {
             .shopId(purchase.getShopId())
             .purchaseId(purchase.getId())
             .verticalId(shop.getVerticalId())
+            .existingTokenNo(purchase.getTokenNo())
             .grandTotal(purchase.getGrandTotal())
             .lines(mapLines(purchase.getItems()))
             .build();

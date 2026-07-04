@@ -83,6 +83,17 @@ class SchemaFieldValidationTest {
   }
 
   @Test
+  void enumValuesAcceptYesNoWhenSchemaUsesBooleans() {
+    VerticalSchemaField field = field("sellDirect", "enum");
+    field.setValues(List.of("false", "true"));
+
+    List<String> errors = new ArrayList<>();
+    SchemaFieldValidation.validate(field, "yes", true, errors);
+
+    assertTrue(errors.isEmpty());
+  }
+
+  @Test
   void minMaxValidatesNumbers() {
     VerticalSchemaField field = field("warrantyMonths", "number");
     field.setValidation(Map.of("min", 0, "max", 120));

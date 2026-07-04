@@ -8,7 +8,7 @@ import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.enums.ItemType;
 import com.inventory.product.domain.model.enums.SchemeType;
 import com.inventory.product.domain.model.UnitConversion;
-import com.inventory.product.utils.FlexibleInstantDeserializer;
+import com.inventory.common.jackson.FlexibleInstantDeserializer;
 import lombok.Data;
 
 import java.math.BigDecimal;

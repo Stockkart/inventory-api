@@ -130,6 +130,9 @@ public class CheckoutService {
   @Autowired
   private CheckoutCompletionOrchestrator checkoutCompletionOrchestrator;
 
+  @Autowired
+  private QuotationService quotationService;
+
   @Transactional
   public AddToCartResponse addToCart(AddToCartRequest request, HttpServletRequest httpRequest) {
     // Get shopId and userId from request attributes (set by AuthenticationInterceptor)
@@ -145,9 +148,7 @@ public class CheckoutService {
     log.info("Adding items to cart for shop: {}, user: {}", shopId, userId);
 
     try {
-      // Find existing cart (CREATED status)
-      Purchase existingCart = purchaseRepository.findByUserIdAndShopIdAndStatus(userId, shopId, PurchaseStatus.CREATED)
-          .orElse(null);
+      Purchase existingCart = quotationService.resolveTargetCart(request, userId, shopId);
 
       // Get or create customer and get customerId/customerName
       String customerId = getOrCreateCustomerId(shopId, request);
@@ -155,17 +156,23 @@ public class CheckoutService {
       // If only customer name provided (no phone), store it directly
       if (customerId == null && StringUtils.hasText(request.getCustomerName()) && !StringUtils.hasText(request.getCustomerPhone())) {
         customerName = request.getCustomerName().trim();
+      } else if (customerId == null && StringUtils.hasText(request.getCustomerPhone()) && !StringUtils.hasText(request.getCustomerName())) {
+        customerName = request.getCustomerPhone().trim();
       }
 
       // Process new items
       List<PurchaseItem> newItems = processCartItems(request.getItems(), shopId);
+      Purchase stockCheckCart =
+          existingCart != null ? existingCart : new Purchase();
+      if (existingCart == null) {
+        stockCheckCart.setItems(new ArrayList<>());
+      }
+      validateStockAvailabilityForCartUpdate(stockCheckCart, newItems, shopId);
+
       BillingMode cartBillingMode = checkoutValidator.resolveAndValidateCartBillingMode(existingCart, newItems);
 
       Purchase purchase;
       if (existingCart != null) {
-        // Validate stock availability before updating cart (check final quantities)
-        validateStockAvailabilityForCartUpdate(existingCart, newItems, shopId);
-
         // Update existing cart - merge items (including quantity-0 update-only items)
         log.info("Updating existing cart with ID: {}", existingCart.getId());
         purchase = updateCart(existingCart, newItems, request.getBusinessType(), customerId, customerName, cartBillingMode);
@@ -295,9 +302,17 @@ public class CheckoutService {
         String creditEntryId =
             postCreditAndAccountingForCompletedSale(purchase, request, shopId, userId);
         response.setCreditEntryId(creditEntryId);
+        final Purchase completedPurchase = purchase;
         checkoutCompletionOrchestrator
-            .onPurchaseCompleted(purchase)
-            .ifPresent(result -> response.setTokenNo(result.getTokenNo()));
+            .onPurchaseCompleted(completedPurchase)
+            .ifPresent(
+                result -> {
+                  response.setTokenNo(result.getTokenNo());
+                  if (StringUtils.hasText(result.getTokenNo())) {
+                    completedPurchase.setTokenNo(result.getTokenNo());
+                    purchaseRepository.save(completedPurchase);
+                  }
+                });
       }
       return response;
 
@@ -316,7 +331,7 @@ public class CheckoutService {
   }
 
   @Transactional(readOnly = true)
-  public AddToCartResponse getCart(HttpServletRequest httpRequest) {
+  public AddToCartResponse getCart(HttpServletRequest httpRequest, String purchaseId) {
     // Get shopId and userId from request attributes (set by AuthenticationInterceptor)
     String shopId = (String) httpRequest.getAttribute("shopId");
     String userId = (String) httpRequest.getAttribute("userId");
@@ -324,18 +339,20 @@ public class CheckoutService {
     // Validate shopId and userId
     checkoutValidator.validateShopIdAndUserId(shopId, userId);
 
-    log.info("Getting cart for shop: {}, user: {}", shopId, userId);
+    log.info("Getting cart for shop: {}, user: {}, purchaseId: {}", shopId, userId, purchaseId);
 
     try {
-      // Find cart with CREATED or PENDING status
-      List<PurchaseStatus> statuses = List.of(PurchaseStatus.CREATED, PurchaseStatus.PENDING);
-      Purchase cart = purchaseRepository.findByUserIdAndShopIdAndStatusIn(userId, shopId, statuses)
-          .orElseThrow(() -> new ResourceNotFoundException("Cart", "userId and shopId",
-              "No active cart found for user " + userId + " and shop " + shopId));
-
-      log.info("Found cart with ID: {} and status: {}", cart.getId(), cart.getStatus());
-
-      return purchaseMapper.toAddToCartResponse(cart);
+      if (StringUtils.hasText(purchaseId)) {
+        return quotationService.getQuotation(purchaseId.trim(), userId, shopId);
+      }
+      return quotationService
+          .findLegacyActiveCart(userId, shopId)
+          .orElseThrow(
+              () ->
+                  new ResourceNotFoundException(
+                      "Cart",
+                      "userId and shopId",
+                      "No active cart found for user " + userId + " and shop " + shopId));
 
     } catch (ResourceNotFoundException e) {
       log.warn("Cart not found for shop: {}, user: {}", shopId, userId);
@@ -1177,6 +1194,11 @@ public class CheckoutService {
         log.debug("Found/created customer with ID: {} for shop: {}", customer.getId(), shopId);
         return customer.getId();
       }
+    } else if (hasPhone) {
+      return customerService
+          .searchCustomerByPhone(request.getCustomerPhone().trim(), shopId)
+          .map(Customer::getId)
+          .orElse(null);
     } else if (hasName) {
       log.debug("Only customer name provided (no phone/email), not creating customer record");
     }
@@ -1501,12 +1523,17 @@ public class CheckoutService {
           finalBaseQuantity = currentCartBaseQuantity + addingBaseQuantity;
         }
 
-        // Check if final quantity exceeds available stock
-        int availableStock = getCurrentBaseCount(inventory);
+        // Check if final quantity exceeds available stock (minus other open quotations)
+        Map<String, Integer> quotedElsewhere =
+            quotationService.quotedBaseQuantitiesByLot(
+                shopId, existingCart != null ? existingCart.getId() : null);
+        int reservedElsewhere = quotedElsewhere.getOrDefault(stockLotId, 0);
+        int availableStock = getCurrentBaseCount(inventory) - reservedElsewhere;
         if (finalBaseQuantity > availableStock) {
           throw new InsufficientStockException(
               "Insufficient stock for product: " + inventory.getName() +
                   ". Available: " + availableStock +
+                  " (reserved in other quotations: " + reservedElsewhere + ")" +
                   ", Requested final quantity in base units: " + finalBaseQuantity +
                   " (current in cart base units: " + currentCartBaseQuantity + ", adding base units: " + addingBaseQuantity + ")",
               inventory.getBarcode(), availableStock, finalBaseQuantity);

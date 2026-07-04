@@ -19,6 +19,8 @@ import com.inventory.product.rest.dto.response.LotDetailDto;
 import com.inventory.product.rest.dto.response.LotListResponse;
 import com.inventory.product.rest.dto.response.ParsedInventoryListResponse;
 import com.inventory.product.service.InventoryService;
+import com.inventory.product.service.ProductSearchUpdateFields;
+import com.inventory.user.service.RbacService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -47,6 +49,9 @@ public class InventoryController {
 
   @Autowired
   private InventoryService inventoryService;
+
+  @Autowired
+  private RbacService rbacService;
 
 
   @PostMapping
@@ -246,14 +251,20 @@ public class InventoryController {
       @PathVariable String inventoryId,
       @RequestBody UpdateInventoryRequest request,
       HttpServletRequest httpRequest) {
-    // Get shopId from request attributes (set by AuthenticationInterceptor)
     String shopId = (String) httpRequest.getAttribute("shopId");
+    String userId = (String) httpRequest.getAttribute("userId");
 
     if (StringUtils.isEmpty(shopId)) {
       throw new AuthenticationException(
           ErrorCode.UNAUTHORIZED,
           "Unauthorized access to shop inventory");
     }
+    if (StringUtils.isEmpty(userId)) {
+      throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "User not authenticated");
+    }
+
+    rbacService.validateProductSearchFieldUpdates(
+        userId, shopId, ProductSearchUpdateFields.fromUpdateRequest(request));
 
     return ResponseEntity.ok(ApiResponse.success(inventoryService.update(inventoryId, request, shopId)));
   }

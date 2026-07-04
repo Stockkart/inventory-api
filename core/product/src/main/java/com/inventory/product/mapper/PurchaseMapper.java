@@ -560,8 +560,7 @@ public abstract class PurchaseMapper {
         response.setCustomerPan(customer.getPan());
       });
     } else if (purchase.getCustomerName() != null && !purchase.getCustomerName().trim().isEmpty()) {
-      // If only customerName is stored (no customerId), use it directly
-      response.setCustomerName(purchase.getCustomerName());
+      applyStoredCustomerLabel(purchase.getCustomerName().trim(), response::setCustomerName, response::setCustomerPhone);
     }
   }
 
@@ -616,8 +615,7 @@ public abstract class PurchaseMapper {
         response.setCustomerPhone(customer.getPhone());
       });
     } else if (purchase.getCustomerName() != null && !purchase.getCustomerName().trim().isEmpty()) {
-      // If only customerName is stored (no customerId), use it directly
-      response.setCustomerName(purchase.getCustomerName());
+      applyStoredCustomerLabel(purchase.getCustomerName().trim(), response::setCustomerName, response::setCustomerPhone);
     }
   }
 
@@ -655,9 +653,28 @@ public abstract class PurchaseMapper {
         dto.setCustomerPhone(customer.getPhone());
       });
     } else if (purchase.getCustomerName() != null && !purchase.getCustomerName().trim().isEmpty()) {
-      // If only customerName is stored (no customerId), use it directly
-      dto.setCustomerName(purchase.getCustomerName());
+      applyStoredCustomerLabel(purchase.getCustomerName().trim(), dto::setCustomerName, dto::setCustomerPhone);
     }
+  }
+
+  private static void applyStoredCustomerLabel(
+      String stored,
+      java.util.function.Consumer<String> setName,
+      java.util.function.Consumer<String> setPhone) {
+    if (isPhoneLikeCustomerLabel(stored)) {
+      setPhone.accept(stored);
+    } else {
+      setName.accept(stored);
+    }
+  }
+
+  private static boolean isPhoneLikeCustomerLabel(String value) {
+    if (value == null || value.isBlank()) {
+      return false;
+    }
+    String digits = value.replaceAll("\\D", "");
+    return digits.length() >= 7 && digits.length() <= 15
+        && value.matches("^[+]?[\\d\\s-]+$");
   }
 
   /**

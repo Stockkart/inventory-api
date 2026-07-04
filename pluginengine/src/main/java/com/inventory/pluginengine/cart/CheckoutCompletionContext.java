@@ -12,6 +12,8 @@ public class CheckoutCompletionContext {
   private String shopId;
   private String purchaseId;
   private String verticalId;
+  /** Token already assigned when quotation was opened (cafe). */
+  private String existingTokenNo;
   private BigDecimal grandTotal;
   private List<CompletedCartLine> lines;
 

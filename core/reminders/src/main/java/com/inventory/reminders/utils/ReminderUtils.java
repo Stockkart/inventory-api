@@ -60,14 +60,21 @@ public final class ReminderUtils {
   }
 
   /**
-   * Computes custom reminder time from custom reminder request.
+   * Resolves when a custom reminder should fire.
+   *
+   * <p>Registration sends an explicit {@code reminderAt}; honor it as-is (even if slightly in the
+   * past) so user-chosen datetimes are not silently dropped. When only {@code endDate} is set,
+   * derive reminder time using the standard days-before rule and skip if that falls in the past.
    */
   public static Instant computeCustomReminderTime(CustomReminderRequest customReminder) {
     if (customReminder == null) {
       return null;
     }
+    if (customReminder.getReminderAt() != null) {
+      return customReminder.getReminderAt();
+    }
     return computeReminderTime(
-        customReminder.getReminderAt(),
+        null,
         customReminder.getEndDate(),
         ReminderConstants.REMINDER_DAYS_BEFORE,
         "custom reminder");

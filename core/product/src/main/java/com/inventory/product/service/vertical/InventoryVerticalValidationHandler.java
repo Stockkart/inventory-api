@@ -12,8 +12,10 @@ import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.rest.dto.request.CreateInventoryRequest;
 import com.inventory.product.rest.dto.request.UpdateInventoryRequest;
+import com.inventory.product.service.ProductSearchUpdateFields;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -78,13 +80,20 @@ public class InventoryVerticalValidationHandler {
                   VerticalSchemaFieldResolver.mergeVerticalFields(
                       inventoryFields, requestBean, existing, extensionFallback);
 
+              Set<String> touchedFieldKeys =
+                  create
+                      ? null
+                      : ProductSearchUpdateFields.fromUpdateRequest(
+                          (UpdateInventoryRequest) requestBean);
+
               InventoryValidationContext context =
                   new InventoryValidationContext(
                       shopId,
                       shop.getVerticalId(),
                       shop.getPluginVersion(),
                       schema,
-                      fields);
+                      fields,
+                      touchedFieldKeys);
               if (create) {
                 validator.validateCreate(context);
               } else {

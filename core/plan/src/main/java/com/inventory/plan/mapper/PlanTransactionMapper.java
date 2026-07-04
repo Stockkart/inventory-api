@@ -21,6 +21,10 @@ public interface PlanTransactionMapper {
   @Mapping(target = "amount", source = "plan", qualifiedByName = "planAmount")
   @Mapping(target = "durationMonths", source = "request", qualifiedByName = "durationMonths")
   @Mapping(target = "paymentMethod", source = "request", qualifiedByName = "paymentMethod")
+  @Mapping(target = "paymentOrderId", source = "request.paymentOrderId")
+  @Mapping(target = "provider", source = "request.provider")
+  @Mapping(target = "providerPaymentId", source = "request.providerPaymentId")
+  @Mapping(target = "providerOrderId", source = "request.providerOrderId")
   @Mapping(target = "createdAt", expression = "java(java.time.Instant.now())")
   PlanTransaction toTransaction(String shopId, Plan plan, AssignPlanRequest request);
 

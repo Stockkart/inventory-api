@@ -34,6 +34,10 @@ services:
       RESEND_API_KEY: ${RESEND_API_KEY}
       RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-notifications@example.com}
       RESEND_FROM_NAME: ${RESEND_FROM_NAME:-Stock Kart}
+      PAYMENT_GATEWAY: ${PAYMENT_GATEWAY:-razorpay}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
     ports:
       - "8080:8080"
     # depends_on:

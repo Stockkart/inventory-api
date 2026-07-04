@@ -31,4 +31,8 @@ public class PlanTransaction {
   /** Payment method: CARD, UPI, NET_BANKING, etc. */
   private String paymentMethod;
   private Instant createdAt;
+  private String paymentOrderId;
+  private String provider;
+  private String providerPaymentId;
+  private String providerOrderId;
 }

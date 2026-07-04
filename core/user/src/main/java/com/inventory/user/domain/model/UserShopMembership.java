@@ -29,4 +29,6 @@ public class UserShopMembership {
   private String relationship; // OWNER or INVITED
   private boolean active;
   private Instant joinedAt;
+  /** Owner-assigned module and field permissions (optional; role defaults apply when absent). */
+  private MemberPermissions permissions;
 }

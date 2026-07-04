@@ -5,21 +5,30 @@ import com.inventory.metrics.annotation.Latency;
 import com.inventory.metrics.annotation.RecordRequestRate;
 import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.product.rest.dto.request.AddToCartRequest;
+import com.inventory.product.rest.dto.request.CreateQuotationRequest;
 import com.inventory.product.rest.dto.request.UpdatePurchaseStatusRequest;
 import com.inventory.product.rest.dto.response.AddToCartResponse;
 import com.inventory.product.rest.dto.response.CheckoutResponse;
+import com.inventory.product.rest.dto.response.CustomerProductHistoryResponse;
 import com.inventory.product.rest.dto.response.PurchaseListResponse;
+import com.inventory.product.rest.dto.response.QuotationListResponse;
 import com.inventory.product.service.CheckoutService;
+import com.inventory.product.service.CustomerProductHistoryService;
+import com.inventory.product.service.QuotationService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1")
@@ -31,9 +40,46 @@ public class CheckoutController {
   @Autowired
   private CheckoutService checkoutService;
 
+  @Autowired
+  private CustomerProductHistoryService customerProductHistoryService;
+
+  @Autowired
+  private QuotationService quotationService;
+
   @GetMapping("/cart")
-  public ResponseEntity<ApiResponse<AddToCartResponse>> getCart(HttpServletRequest httpRequest) {
-    return ResponseEntity.ok(ApiResponse.success(checkoutService.getCart(httpRequest)));
+  public ResponseEntity<ApiResponse<AddToCartResponse>> getCart(
+      @RequestParam(required = false) String purchaseId,
+      HttpServletRequest httpRequest) {
+    return ResponseEntity.ok(ApiResponse.success(checkoutService.getCart(httpRequest, purchaseId)));
+  }
+
+  @GetMapping("/cart/quotations")
+  public ResponseEntity<ApiResponse<QuotationListResponse>> listQuotations(
+      HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    String userId = (String) httpRequest.getAttribute("userId");
+    return ResponseEntity.ok(
+        ApiResponse.success(quotationService.listOpenQuotations(userId, shopId)));
+  }
+
+  @PostMapping("/cart/quotations")
+  public ResponseEntity<ApiResponse<AddToCartResponse>> createQuotation(
+      @RequestBody CreateQuotationRequest request,
+      HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    String userId = (String) httpRequest.getAttribute("userId");
+    return ResponseEntity.ok(
+        ApiResponse.success(quotationService.createQuotation(request, userId, shopId)));
+  }
+
+  @DeleteMapping("/cart/quotations/{purchaseId}")
+  public ResponseEntity<ApiResponse<Void>> cancelQuotation(
+      @PathVariable String purchaseId,
+      HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    String userId = (String) httpRequest.getAttribute("userId");
+    quotationService.cancelQuotation(purchaseId, userId, shopId);
+    return ResponseEntity.ok(ApiResponse.success(null));
   }
 
   @PostMapping("/cart/upsert")
@@ -81,6 +127,28 @@ public class CheckoutController {
       HttpServletRequest httpRequest) {
     return ResponseEntity.ok(ApiResponse.success(
         checkoutService.searchPurchases(page, limit, invoiceNo, customerEmail, customerPhone, customerName, httpRequest)));
+  }
+
+  /**
+   * Prior completed sales of specific products to a customer (batched by sellableRef).
+   * Used at sell time to show purchase history hints on cart lines.
+   */
+  @GetMapping("/purchases/customer-product-history")
+  public ResponseEntity<ApiResponse<CustomerProductHistoryResponse>> getCustomerProductHistory(
+      @RequestParam(required = false) String customerId,
+      @RequestParam(required = false) String customerPhone,
+      @RequestParam String sellableRefs,
+      @RequestParam(required = false, defaultValue = "3") Integer limit,
+      @RequestParam(required = false) String excludePurchaseId,
+      HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    List<String> refs = java.util.Arrays.stream(sellableRefs.split(","))
+        .map(String::trim)
+        .filter(s -> !s.isEmpty())
+        .toList();
+    return ResponseEntity.ok(ApiResponse.success(
+        customerProductHistoryService.getHistory(
+            shopId, customerId, customerPhone, refs, limit, excludePurchaseId)));
   }
 }
 

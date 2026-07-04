@@ -6,6 +6,8 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
+import org.springframework.data.mongodb.core.index.CompoundIndexes;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.math.BigDecimal;
@@ -16,6 +18,11 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @Document(collection = "purchases")
+@CompoundIndexes({
+    @CompoundIndex(
+        name = "shop_customer_status_soldAt",
+        def = "{'shopId': 1, 'customerId': 1, 'status': 1, 'soldAt': -1}")
+})
 public class Purchase {
 
   @Id
@@ -55,6 +62,8 @@ public class Purchase {
   private PurchaseStatus status;
   private String customerId;
   private String customerName; // Used when only name is provided without phone
+  /** Daily order token (cafe vertical). */
+  private String tokenNo;
   private Instant createdAt;
   private Instant updatedAt;
 }

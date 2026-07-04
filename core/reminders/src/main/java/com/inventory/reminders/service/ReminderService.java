@@ -22,7 +22,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -75,7 +74,6 @@ public class ReminderService {
   }
 
 
-  @Async
   public void createReminderForInventoryCreate(CreateReminderForInventoryRequest request) {
     // Check if there's anything to create
     boolean hasExpiryReminder = request.getExpiryDate() != null;
@@ -121,6 +119,12 @@ public class ReminderService {
     }
 
     for (CustomReminderRequest customReminder : customReminders) {
+      if (customReminder.getReminderAt() == null && customReminder.getEndDate() == null) {
+        log.warn(
+            "Skipping custom reminder for inventoryId={}: reminderAt and endDate are both null",
+            request.getInventoryId());
+        continue;
+      }
       Instant customReminderAt = ReminderUtils.computeCustomReminderTime(customReminder);
       createAndSaveReminderIfValid(
         request,

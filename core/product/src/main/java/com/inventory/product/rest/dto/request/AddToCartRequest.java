@@ -10,6 +10,10 @@ import java.util.List;
 public class AddToCartRequest {
 
   private String businessType;
+  /** Target an existing open quotation (CREATED). */
+  private String purchaseId;
+  /** When true, always start a new quotation instead of updating the latest open cart. */
+  private Boolean createNewQuotation;
   private List<CartItem> items;
   // Customer info (optional)
   private String customerName;

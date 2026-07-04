@@ -9,6 +9,7 @@ import com.inventory.pluginengine.schema.VerticalSchemaField;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.springframework.util.StringUtils;
 
 /** Validates inventory payloads using schema {@code required} and {@code validation} metadata. */
@@ -42,8 +43,12 @@ public final class SchemaDrivenInventoryValidator implements InventoryVerticalVa
     }
 
     List<String> errors = new ArrayList<>();
+    Set<String> touched = context.touchedFieldKeys();
     for (VerticalSchemaField field : inventoryEntity.getFields()) {
       String key = field.getKey();
+      if (!create && touched != null && !touched.isEmpty() && !touched.contains(key)) {
+        continue;
+      }
       Object value = fields.get(key);
 
       if (Boolean.TRUE.equals(field.getRequired()) && isMissing(value)) {

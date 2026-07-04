@@ -38,6 +38,7 @@ public class AddToCartResponse {
   String customerName;
   String customerAddress;
   String customerPhone;
+  String tokenNo;
   String customerGstin;
   String customerDlNo;
   String customerPan;

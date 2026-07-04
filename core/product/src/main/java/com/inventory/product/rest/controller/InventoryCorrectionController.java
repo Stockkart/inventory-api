@@ -8,6 +8,7 @@ import com.inventory.product.rest.dto.request.ProcessInventoryCorrectionLineRequ
 import com.inventory.product.rest.dto.response.InventoryCorrectionDto;
 import com.inventory.product.rest.dto.response.InventoryCorrectionListResponse;
 import com.inventory.product.service.InventoryCorrectionService;
+import com.inventory.user.service.RbacService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -25,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class InventoryCorrectionController {
 
   @Autowired private InventoryCorrectionService inventoryCorrectionService;
+  @Autowired private RbacService rbacService;
 
   @PostMapping
   public ResponseEntity<ApiResponse<InventoryCorrectionDto>> create(
@@ -68,6 +70,7 @@ public class InventoryCorrectionController {
     String userId = (String) httpRequest.getAttribute("userId");
     String shopId = (String) httpRequest.getAttribute("shopId");
     ensureAuth(userId, shopId);
+    rbacService.requireStockCorrectionApproval(userId, shopId);
     return ResponseEntity.ok(
         ApiResponse.success(inventoryCorrectionService.approveLine(id, lineId, shopId, userId)));
   }
@@ -81,6 +84,7 @@ public class InventoryCorrectionController {
     String userId = (String) httpRequest.getAttribute("userId");
     String shopId = (String) httpRequest.getAttribute("shopId");
     ensureAuth(userId, shopId);
+    rbacService.requireStockCorrectionApproval(userId, shopId);
     String reason = request != null ? request.getReason() : null;
     return ResponseEntity.ok(
         ApiResponse.success(

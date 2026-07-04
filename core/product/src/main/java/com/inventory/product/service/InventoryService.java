@@ -829,7 +829,10 @@ public class InventoryService {
           inventoryMapper.toCreateReminderForInventoryRequest(request, shopId, inventory.getId());
       reminderRequest.setExpiryDate(VerticalFieldsReader.expiryDateFrom(request));
       reminderService.createReminderForInventoryCreate(reminderRequest);
-      boolean reminderCreated = reminderRequest.getExpiryDate() != null;
+      boolean reminderCreated =
+          reminderRequest.getExpiryDate() != null
+              || (reminderRequest.getCustomReminders() != null
+                  && !reminderRequest.getCustomReminders().isEmpty());
       return inventoryMapper.toReceiptResponseWithReminder(inventory, reminderCreated);
 
     } catch (ValidationException e) {

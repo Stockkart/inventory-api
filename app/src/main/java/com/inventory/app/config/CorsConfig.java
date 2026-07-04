@@ -2,6 +2,7 @@ package com.inventory.app.config;
 
 import com.inventory.app.interceptor.AuthenticationInterceptor;
 import com.inventory.app.interceptor.PlanExpiryInterceptor;
+import com.inventory.app.interceptor.RbacModuleInterceptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
@@ -20,6 +21,9 @@ public class CorsConfig implements WebMvcConfigurer {
 
   @Autowired
   private PlanExpiryInterceptor planExpiryInterceptor;
+
+  @Autowired
+  private RbacModuleInterceptor rbacModuleInterceptor;
 
   @Override
   public void addCorsMappings(CorsRegistry registry) {
@@ -59,6 +63,20 @@ public class CorsConfig implements WebMvcConfigurer {
             "/api/product/get-plugin",
             "/api/product/",
             "/m/**" // Exclude mobile upload endpoints from authentication
+        );
+
+    registry.addInterceptor(rbacModuleInterceptor)
+        .addPathPatterns("/api/**")
+        .excludePathPatterns(
+            "/api/v1/auth/login",
+            "/api/v1/auth/signup",
+            "/api/v1/auth/change-password",
+            "/api/v1/auth/forgot-password",
+            "/api/v1/auth/reset-password",
+            "/api/v1/auth/accept-invite",
+            "/api/product/get-plugin",
+            "/api/product/",
+            "/m/**"
         );
 
     registry.addInterceptor(planExpiryInterceptor)

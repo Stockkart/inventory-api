@@ -8,6 +8,7 @@ import com.inventory.pluginengine.SchemaDrivenInventoryValidator;
 import com.inventory.pluginengine.capabilities.VerticalUiContributor;
 import com.inventory.pluginengine.cart.CartLineContributor;
 import com.inventory.pluginengine.cart.CheckoutCompletionHandler;
+import com.inventory.pluginengine.cart.QuotationCreateHandler;
 import com.inventory.pluginengine.menu.MenuVerticalValidator;
 import com.inventory.pluginengine.pricing.VerticalPricingPolicy;
 import com.inventory.plugins.cafe.repository.CafeInventoryExtensionRepository;
@@ -24,6 +25,7 @@ public class CafePlugin extends ConfiguredVerticalPlugin {
   private final CafeUiContributor uiContributor;
   private final CafeMenuCartLineContributor menuCartLineContributor;
   private final CafeCheckoutCompletionHandler checkoutCompletionHandler;
+  private final CafeQuotationCreateHandler quotationCreateHandler;
   private final CafePricingPolicy cafePricingPolicy;
 
   public CafePlugin(
@@ -34,6 +36,7 @@ public class CafePlugin extends ConfiguredVerticalPlugin {
       CafeUiContributor uiContributor,
       CafeMenuCartLineContributor menuCartLineContributor,
       CafeCheckoutCompletionHandler checkoutCompletionHandler,
+      CafeQuotationCreateHandler quotationCreateHandler,
       CafePricingPolicy cafePricingPolicy) {
     super(properties.getId(), properties.getVersion());
     this.inventoryValidator = new SchemaDrivenInventoryValidator(properties.getId());
@@ -43,6 +46,7 @@ public class CafePlugin extends ConfiguredVerticalPlugin {
     this.uiContributor = uiContributor;
     this.menuCartLineContributor = menuCartLineContributor;
     this.checkoutCompletionHandler = checkoutCompletionHandler;
+    this.quotationCreateHandler = quotationCreateHandler;
     this.cafePricingPolicy = cafePricingPolicy;
   }
 
@@ -79,6 +83,11 @@ public class CafePlugin extends ConfiguredVerticalPlugin {
   @Override
   public Optional<CheckoutCompletionHandler> getCheckoutCompletionHandler() {
     return Optional.of(checkoutCompletionHandler);
+  }
+
+  @Override
+  public Optional<QuotationCreateHandler> getQuotationCreateHandler() {
+    return Optional.of(quotationCreateHandler);
   }
 
   @Override
