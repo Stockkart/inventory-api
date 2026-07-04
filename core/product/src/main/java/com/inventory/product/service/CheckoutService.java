@@ -302,9 +302,17 @@ public class CheckoutService {
         String creditEntryId =
             postCreditAndAccountingForCompletedSale(purchase, request, shopId, userId);
         response.setCreditEntryId(creditEntryId);
+        final Purchase completedPurchase = purchase;
         checkoutCompletionOrchestrator
-            .onPurchaseCompleted(purchase)
-            .ifPresent(result -> response.setTokenNo(result.getTokenNo()));
+            .onPurchaseCompleted(completedPurchase)
+            .ifPresent(
+                result -> {
+                  response.setTokenNo(result.getTokenNo());
+                  if (StringUtils.hasText(result.getTokenNo())) {
+                    completedPurchase.setTokenNo(result.getTokenNo());
+                    purchaseRepository.save(completedPurchase);
+                  }
+                });
       }
       return response;
 

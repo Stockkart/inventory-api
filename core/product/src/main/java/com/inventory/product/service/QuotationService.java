@@ -16,6 +16,7 @@ import com.inventory.product.rest.dto.response.AddToCartResponse;
 import com.inventory.product.rest.dto.response.QuotationListResponse;
 import com.inventory.product.rest.dto.response.QuotationSummaryDto;
 import com.inventory.product.util.PurchaseItemRefs;
+import com.inventory.product.service.vertical.QuotationCreateOrchestrator;
 import com.inventory.user.domain.model.Customer;
 import com.inventory.user.rest.dto.request.CreateCustomerRequest;
 import com.inventory.user.service.CustomerService;
@@ -44,12 +45,24 @@ public class QuotationService {
   private final PurchaseRepository purchaseRepository;
   private final PurchaseMapper purchaseMapper;
   private final CustomerService customerService;
+  private final QuotationCreateOrchestrator quotationCreateOrchestrator;
 
-  @Transactional(readOnly = true)
+  @Transactional
   public QuotationListResponse listOpenQuotations(String userId, String shopId) {
     List<Purchase> purchases =
         purchaseRepository.findByUserIdAndShopIdAndStatusOrderByUpdatedAtDesc(
             userId, shopId, PurchaseStatus.CREATED);
+    for (Purchase purchase : purchases) {
+      if (!StringUtils.hasText(purchase.getTokenNo())) {
+        quotationCreateOrchestrator
+            .ensureQuotationToken(shopId, purchase.getBusinessType())
+            .ifPresent(
+                token -> {
+                  purchase.setTokenNo(token);
+                  purchaseRepository.save(purchase);
+                });
+      }
+    }
     List<QuotationSummaryDto> summaries = purchases.stream().map(this::toSummary).toList();
     return new QuotationListResponse(summaries);
   }
@@ -91,6 +104,9 @@ public class QuotationService {
       if (StringUtils.hasText(customerName)) {
         purchase.setCustomerName(customerName);
       }
+      quotationCreateOrchestrator
+          .allocateTokenForNewQuotation(shopId, request.getBusinessType())
+          .ifPresent(purchase::setTokenNo);
       purchase = purchaseRepository.save(purchase);
       log.info("Created quotation {} for shop {}", purchase.getId(), shopId);
       return purchaseMapper.toAddToCartResponse(purchase);
@@ -242,6 +258,7 @@ public class QuotationService {
         purchase.getCustomerId(),
         name,
         phone,
+        purchase.getTokenNo(),
         itemCount,
         purchase.getGrandTotal() != null ? purchase.getGrandTotal() : BigDecimal.ZERO,
         purchase.getCreatedAt(),

@@ -16,6 +16,7 @@ public class QuotationSummaryDto {
   private String customerId;
   private String customerName;
   private String customerPhone;
+  private String tokenNo;
   private int itemCount;
   private BigDecimal grandTotal;
   private Instant createdAt;

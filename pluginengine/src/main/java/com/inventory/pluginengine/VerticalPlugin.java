@@ -3,6 +3,7 @@ package com.inventory.pluginengine;
 import com.inventory.pluginengine.capabilities.VerticalUiContributor;
 import com.inventory.pluginengine.cart.CartLineContributor;
 import com.inventory.pluginengine.cart.CheckoutCompletionHandler;
+import com.inventory.pluginengine.cart.QuotationCreateHandler;
 import com.inventory.pluginengine.menu.MenuVerticalValidator;
 import com.inventory.pluginengine.pricing.VerticalPricingPolicy;
 import java.util.Optional;
@@ -35,6 +36,10 @@ public interface VerticalPlugin {
   }
 
   default Optional<CheckoutCompletionHandler> getCheckoutCompletionHandler() {
+    return Optional.empty();
+  }
+
+  default Optional<QuotationCreateHandler> getQuotationCreateHandler() {
     return Optional.empty();
   }
 

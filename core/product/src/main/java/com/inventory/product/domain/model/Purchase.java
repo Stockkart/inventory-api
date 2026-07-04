@@ -62,6 +62,8 @@ public class Purchase {
   private PurchaseStatus status;
   private String customerId;
   private String customerName; // Used when only name is provided without phone
+  /** Daily order token (cafe vertical). */
+  private String tokenNo;
   private Instant createdAt;
   private Instant updatedAt;
 }
