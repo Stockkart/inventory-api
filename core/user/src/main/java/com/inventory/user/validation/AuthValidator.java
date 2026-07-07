@@ -13,6 +13,20 @@ import org.springframework.util.StringUtils;
 @Component
 public class AuthValidator {
 
+  private String normalizeIndianPhone(String rawPhone) {
+    if (!StringUtils.hasText(rawPhone)) {
+      return null;
+    }
+    String digitsOnly = rawPhone.replaceAll("\\D", "");
+    if (digitsOnly.matches("\\d{10}")) {
+      return digitsOnly;
+    }
+    if (digitsOnly.matches("91\\d{10}")) {
+      return digitsOnly.substring(2);
+    }
+    return null;
+  }
+
   public void validateLoginRequest(LoginRequest request) {
     if (request == null) {
       throw new ValidationException("Login request cannot be null");
@@ -54,6 +68,7 @@ public class AuthValidator {
     boolean hasEmail = StringUtils.hasText(request.getEmail());
     boolean hasPassword = StringUtils.hasText(request.getPassword());
     boolean hasName = StringUtils.hasText(request.getName());
+    boolean hasPhone = StringUtils.hasText(request.getPhone());
     boolean hasSignupType = StringUtils.hasText(request.getSignupType());
 
     if (hasIdToken) {
@@ -84,6 +99,14 @@ public class AuthValidator {
     if (!hasName) {
       throw new ValidationException("Name is required");
     }
+    if (!hasPhone) {
+      throw new ValidationException("Phone is required");
+    }
+    String normalizedPhone = normalizeIndianPhone(request.getPhone());
+    if (normalizedPhone == null) {
+      throw new ValidationException("Phone must be a valid Indian number (10 digits or +91 format)");
+    }
+    request.setPhone(normalizedPhone);
     if (request.getRole() == null) {
       throw new ValidationException("Role is required");
     }

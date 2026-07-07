@@ -20,6 +20,9 @@ public final class SchemaFieldFilter {
   }
 
   static boolean isVisibleInMode(VerticalSchemaField field, SchemaDisplayMode mode) {
+    if (mode == SchemaDisplayMode.ONBOARDING) {
+      return field.getShowIn() != null && field.getShowIn().contains("onboarding");
+    }
     if (mode == SchemaDisplayMode.INVOICE) {
       return field.getShowIn() != null && field.getShowIn().contains("invoice");
     }
