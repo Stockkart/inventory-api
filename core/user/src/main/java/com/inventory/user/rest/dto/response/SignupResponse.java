@@ -18,7 +18,6 @@ public class SignupResponse {
     String shopId;
     String email;
     String name;
-    String phone;
     Boolean active;
     Instant createdAt;
   }

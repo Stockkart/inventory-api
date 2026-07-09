@@ -18,7 +18,6 @@ public class UserResponse {
   private String shopId;  // Active shop (backward compatible)
   private String email;
   private String name;
-  private String phone;
   private Boolean active;
   private String createdAt;
   private List<UserShopDto> shops;  // All shops user has access to (multi-shop)
