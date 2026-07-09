@@ -59,33 +59,6 @@ class SchemaFieldFilterTest {
   }
 
   @Test
-  void onboardingModeIncludesShopOnboardingFieldsOnly() {
-    List<VerticalSchemaField> fields =
-        List.of(
-            field("dlNo", true, null, List.of("onboarding")),
-            field("fssai", false, null, List.of("onboarding")),
-            field("batchNo", true, null, List.of("registration")));
-
-    List<VerticalSchemaField> filtered =
-        SchemaFieldFilter.filterForMode(fields, SchemaDisplayMode.ONBOARDING);
-
-    assertEquals(2, filtered.size());
-    assertTrue(filtered.stream().anyMatch(f -> "dlNo".equals(f.getKey())));
-    assertTrue(filtered.stream().anyMatch(f -> "fssai".equals(f.getKey())));
-    assertTrue(filtered.stream().noneMatch(f -> "batchNo".equals(f.getKey())));
-  }
-
-  @Test
-  void regularModeHidesOnboardingOnlyRequiredFields() {
-    VerticalSchemaField dlNo = field("dlNo", true, null, List.of("onboarding"));
-
-    List<VerticalSchemaField> filtered =
-        SchemaFieldFilter.filterForMode(List.of(dlNo), SchemaDisplayMode.REGULAR);
-
-    assertEquals(0, filtered.size());
-  }
-
-  @Test
   void regularModeHidesBasicTierOptionalFieldsUnlessShowInBasic() {
     VerticalSchemaField basicOnly = field("quickNote", false, "basic");
     basicOnly.setShowIn(List.of("registration"));

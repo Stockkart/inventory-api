@@ -23,7 +23,6 @@ public class UserAccount {
   private UserRole role;
   private String shopId;
   private String email;
-  private String phone;
   private String password;
   private boolean active;
   private boolean inviteAccepted;
