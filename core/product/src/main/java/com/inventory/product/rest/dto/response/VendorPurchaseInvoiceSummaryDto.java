@@ -20,6 +20,9 @@ public class VendorPurchaseInvoiceSummaryDto {
   private BigDecimal invoiceTotal;
   private String paymentMethod;
   private BigDecimal paidAmount;
+  private BigDecimal cashAmount;
+  private BigDecimal onlineAmount;
+  private BigDecimal creditAmount;
   private int lineCount;
   private Instant createdAt;
   private Boolean synthetic;

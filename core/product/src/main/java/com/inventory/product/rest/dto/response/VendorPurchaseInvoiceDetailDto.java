@@ -27,6 +27,9 @@ public class VendorPurchaseInvoiceDetailDto {
   private BigDecimal invoiceTotal;
   private String paymentMethod;
   private BigDecimal paidAmount;
+  private BigDecimal cashAmount;
+  private BigDecimal onlineAmount;
+  private BigDecimal creditAmount;
   private Instant createdAt;
   private Boolean synthetic;
   private String legacyLotId;

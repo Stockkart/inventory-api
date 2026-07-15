@@ -132,7 +132,10 @@ public class InvoicePdfService {
     return dateTime.format(DateTimeFormatter.ofPattern("hh:mm a"));
   }
 
-  private byte[] convertHtmlToPdf(String html) throws IOException {
+  /**
+   * Convert arbitrary XHTML/HTML to PDF — shared by invoice and report exporters.
+   */
+  public byte[] convertHtmlToPdf(String html) throws IOException {
     try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
       PdfRendererBuilder builder = new PdfRendererBuilder();
       builder.withHtmlContent(html, null);

@@ -357,8 +357,27 @@ public class InventoryService {
       pendingInvoice.setOverallDiscount(invReq.getOverallDiscount());
       pendingInvoice.setRoundOff(invReq.getRoundOff());
       pendingInvoice.setInvoiceTotal(invReq.getInvoiceTotal());
-      pendingInvoice.setPaymentMethod(invReq.getPaymentMethod());
-      pendingInvoice.setPaidAmount(invReq.getPaidAmount());
+      BigDecimal derivedTotal =
+          invReq.getInvoiceTotal() != null
+              ? invReq.getInvoiceTotal()
+              : BigDecimal.ZERO;
+      VendorPurchasePaymentBreakdown.Result tender =
+          VendorPurchasePaymentBreakdown.resolve(
+              derivedTotal.signum() > 0
+                  ? derivedTotal
+                  : (invReq.getLineSubTotal() != null
+                      ? invReq.getLineSubTotal()
+                      : BigDecimal.ZERO),
+              invReq.getPaymentMethod(),
+              invReq.getPaidAmount(),
+              invReq.getCashAmount(),
+              invReq.getOnlineAmount(),
+              invReq.getCreditAmount());
+      pendingInvoice.setPaymentMethod(tender.paymentMethod());
+      pendingInvoice.setPaidAmount(tender.paidAmount());
+      pendingInvoice.setCashAmount(tender.cashAmount());
+      pendingInvoice.setOnlineAmount(tender.onlineAmount());
+      pendingInvoice.setCreditAmount(tender.creditAmount());
     }
 
     try {
@@ -456,12 +475,8 @@ public class InventoryService {
     if (total.signum() <= 0) {
       return null;
     }
-    String method = normalizePaymentMethod(inv.getPaymentMethod());
-    BigDecimal paidNow = resolveVendorPaidNow(total, method, inv.getPaidAmount());
-    if (paidNow.compareTo(total) > 0) {
-      throw new ValidationException("Paid amount cannot exceed vendor invoice total");
-    }
-    BigDecimal outstanding = total.subtract(paidNow).setScale(4, RoundingMode.HALF_UP);
+    VendorPurchasePaymentBreakdown.Result tender = resolveVendorTender(inv, total);
+    BigDecimal outstanding = tender.creditAmount();
     if (outstanding.signum() <= 0) {
       return null;
     }
@@ -520,9 +535,7 @@ public class InventoryService {
     if (invoiceTotal.signum() <= 0) {
       return;
     }
-    BigDecimal paidNow =
-        resolveVendorPaidNow(
-            invoiceTotal, normalizePaymentMethod(inv.getPaymentMethod()), inv.getPaidAmount());
+    VendorPurchasePaymentBreakdown.Result tender = resolveVendorTender(inv, invoiceTotal);
     String vendorId = StringUtils.hasText(inv.getVendorId()) ? inv.getVendorId().trim() : null;
     String vendorName =
         vendorId != null
@@ -548,7 +561,6 @@ public class InventoryService {
     // missing. IGST is intentionally always zero here — interstate tax will be wired in once
     // the FE captures a place-of-supply / interstate flag on the invoice.
     GstSplit gst = splitTaxByLines(shopId, inv, taxTotal);
-    String paymentMethod = normalizePaymentMethod(inv.getPaymentMethod());
     com.inventory.accounting.api.VendorPurchaseInvoicePostingRequest req =
         com.inventory.accounting.api.VendorPurchaseInvoicePostingRequest.builder()
             .sourceId(inv.getId())
@@ -563,8 +575,11 @@ public class InventoryService {
             .otherCharges(nz(inv.getOtherCharges()))
             .roundOff(nz(inv.getRoundOff()))
             .invoiceTotal(invoiceTotal)
-            .paidAmount(paidNow)
-            .paymentMethod(paymentMethod)
+            .paidAmount(tender.paidAmount())
+            .paymentMethod(tender.paymentMethod())
+            .paidCash(tender.cashAmount())
+            .paidOnline(tender.onlineAmount())
+            .creditAmount(tender.creditAmount())
             .build();
     accountingFacade.postVendorPurchaseInvoice(shopId, userId, req);
   }
@@ -722,6 +737,17 @@ public class InventoryService {
         .setScale(4, RoundingMode.HALF_UP);
   }
 
+  private static VendorPurchasePaymentBreakdown.Result resolveVendorTender(
+      VendorPurchaseInvoice inv, BigDecimal total) {
+    return VendorPurchasePaymentBreakdown.resolve(
+        total,
+        inv.getPaymentMethod(),
+        inv.getPaidAmount(),
+        inv.getCashAmount(),
+        inv.getOnlineAmount(),
+        inv.getCreditAmount());
+  }
+
   /**
    * Vendor purchase invoices default to {@code CREDIT} (i.e., owed to the vendor) when no
    * payment method is supplied. Historically this defaulted to {@code CASH}, which silently
@@ -739,16 +765,11 @@ public class InventoryService {
     return raw.trim().toUpperCase();
   }
 
+  /** @deprecated prefer {@link #resolveVendorTender} */
   private static BigDecimal resolveVendorPaidNow(
       BigDecimal total, String paymentMethod, BigDecimal paidAmount) {
-    if (paidAmount != null && paidAmount.signum() >= 0) {
-      BigDecimal capped = paidAmount.setScale(4, RoundingMode.HALF_UP);
-      return capped.compareTo(total) > 0 ? total : capped;
-    }
-    if (CASH_EQUIVALENT_METHODS.contains(paymentMethod)) {
-      return total;
-    }
-    return BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP);
+    return VendorPurchasePaymentBreakdown.resolve(total, paymentMethod, paidAmount, null, null, null)
+        .paidAmount();
   }
 
   private static BigDecimal nz(BigDecimal v) {
