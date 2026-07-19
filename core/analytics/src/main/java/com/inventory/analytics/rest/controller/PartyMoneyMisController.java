@@ -45,12 +45,8 @@ public class PartyMoneyMisController {
       @RequestParam(required = false) String q,
       HttpServletRequest httpRequest) {
     String shopId = requireShopId(httpRequest);
-    if (!"VENDOR".equalsIgnoreCase(side)) {
-      throw new IllegalArgumentException("Only side=VENDOR is supported in this release");
-    }
     PartyMoneyMisResponse response =
-        partyMoneyMisService.getVendorMis(
-            shopId, from, to, partyId, parseTxnTypes(txnTypes), moneyFilter, q);
+        runReport(side, shopId, from, to, partyId, txnTypes, moneyFilter, q);
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 
@@ -67,11 +63,10 @@ public class PartyMoneyMisController {
       throws Exception {
     String shopId = requireShopId(httpRequest);
     PartyMoneyMisResponse report =
-        partyMoneyMisService.getVendorMis(
-            shopId, from, to, partyId, parseTxnTypes(txnTypes), moneyFilter, q);
+        runReport(side, shopId, from, to, partyId, txnTypes, moneyFilter, q);
     byte[] bytes = excelWriter.write(report);
     String filename =
-        "vendor-money-mis-"
+        filePrefix(report)
             + (report.getFrom() != null ? report.getFrom() : "from")
             + "-"
             + (report.getTo() != null ? report.getTo() : "to")
@@ -97,11 +92,10 @@ public class PartyMoneyMisController {
       HttpServletRequest httpRequest) {
     String shopId = requireShopId(httpRequest);
     PartyMoneyMisResponse report =
-        partyMoneyMisService.getVendorMis(
-            shopId, from, to, partyId, parseTxnTypes(txnTypes), moneyFilter, q);
+        runReport(side, shopId, from, to, partyId, txnTypes, moneyFilter, q);
     byte[] bytes = pdfService.generate(report, "Shop");
     String filename =
-        "vendor-money-mis-"
+        filePrefix(report)
             + (report.getFrom() != null ? report.getFrom() : "from")
             + "-"
             + (report.getTo() != null ? report.getTo() : "to")
@@ -111,6 +105,30 @@ public class PartyMoneyMisController {
     headers.setContentDispositionFormData("attachment", filename);
     headers.setContentLength(bytes.length);
     return ResponseEntity.ok().headers(headers).body(bytes);
+  }
+
+  private PartyMoneyMisResponse runReport(
+      String side,
+      String shopId,
+      LocalDate from,
+      LocalDate to,
+      String partyId,
+      String txnTypes,
+      String moneyFilter,
+      String q) {
+    Set<String> types = parseTxnTypes(txnTypes);
+    if ("CUSTOMER".equalsIgnoreCase(side)) {
+      return partyMoneyMisService.getCustomerMis(
+          shopId, from, to, partyId, types, moneyFilter, q);
+    }
+    if (side != null && !"VENDOR".equalsIgnoreCase(side)) {
+      throw new IllegalArgumentException("side must be VENDOR or CUSTOMER");
+    }
+    return partyMoneyMisService.getVendorMis(shopId, from, to, partyId, types, moneyFilter, q);
+  }
+
+  private static String filePrefix(PartyMoneyMisResponse report) {
+    return "CUSTOMER".equalsIgnoreCase(report.getSide()) ? "sales-money-mis-" : "vendor-money-mis-";
   }
 
   private static String requireShopId(HttpServletRequest httpRequest) {

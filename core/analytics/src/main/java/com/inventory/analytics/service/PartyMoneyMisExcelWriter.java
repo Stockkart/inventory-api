@@ -24,7 +24,8 @@ public class PartyMoneyMisExcelWriter {
   public byte[] write(PartyMoneyMisResponse report) throws IOException {
     try (Workbook workbook = new XSSFWorkbook();
         ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-      Sheet sheet = workbook.createSheet("Vendor Money MIS");
+      String reportTitle = titleFor(report);
+      Sheet sheet = workbook.createSheet(reportTitle);
       CellStyle headerStyle = workbook.createCellStyle();
       Font headerFont = workbook.createFont();
       headerFont.setBold(true);
@@ -32,7 +33,7 @@ public class PartyMoneyMisExcelWriter {
 
       int r = 0;
       Row title = sheet.createRow(r++);
-      title.createCell(0).setCellValue("Vendor Money MIS");
+      title.createCell(0).setCellValue(reportTitle);
       Row meta = sheet.createRow(r++);
       meta.createCell(0)
           .setCellValue(
@@ -97,6 +98,10 @@ public class PartyMoneyMisExcelWriter {
       workbook.write(out);
       return out.toByteArray();
     }
+  }
+
+  private static String titleFor(PartyMoneyMisResponse report) {
+    return "CUSTOMER".equalsIgnoreCase(report.getSide()) ? "Sales Money MIS" : "Vendor Money MIS";
   }
 
   private static void setMoney(Cell cell, BigDecimal value) {

@@ -41,9 +41,10 @@ public class PartyMoneyMisPdfService {
         .append("td.num{text-align:right;}")
         .append(".summary{margin-top:12px;}")
         .append("</style></head><body>");
+    boolean customer = "CUSTOMER".equalsIgnoreCase(report.getSide());
     sb.append("<h1>")
         .append(escape(shopName != null ? shopName : "Shop"))
-        .append(" — Vendor Money MIS</h1>");
+        .append(customer ? " — Sales Money MIS</h1>" : " — Vendor Money MIS</h1>");
     sb.append("<p class='meta'>Period: ")
         .append(report.getFrom() != null ? report.getFrom().format(DATE_FMT) : "")
         .append(" – ")
@@ -102,7 +103,7 @@ public class PartyMoneyMisPdfService {
           .append(fmt(s.getPeriodOnlineTotal()))
           .append(" · Credit: ")
           .append(fmt(s.getPeriodCreditTotal()))
-          .append(" · Current payable: ")
+          .append(customer ? " · Current receivable: " : " · Current payable: ")
           .append(fmt(s.getCurrentPayableTotal()))
           .append("</p>");
     }

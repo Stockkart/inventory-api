@@ -8,11 +8,17 @@ import com.inventory.credit.domain.model.CreditEntry;
 import com.inventory.credit.domain.model.CreditEntryType;
 import com.inventory.credit.domain.model.CreditPartyType;
 import com.inventory.credit.domain.repository.CreditEntryRepository;
+import com.inventory.product.domain.model.Purchase;
+import com.inventory.product.domain.model.Refund;
 import com.inventory.product.domain.model.VendorPurchaseInvoice;
 import com.inventory.product.domain.model.VendorPurchaseReturn;
+import com.inventory.product.domain.model.enums.PurchaseStatus;
+import com.inventory.product.domain.repository.PurchaseRepository;
+import com.inventory.product.domain.repository.RefundRepository;
 import com.inventory.product.domain.repository.VendorPurchaseInvoiceRepository;
 import com.inventory.product.domain.repository.VendorPurchaseReturnRepository;
 import com.inventory.product.service.VendorPurchasePaymentBreakdown;
+import com.inventory.user.domain.repository.CustomerRepository;
 import com.inventory.user.domain.repository.VendorRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -21,6 +27,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -47,11 +54,17 @@ public class PartyMoneyMisService {
 
   public static final ZoneId SHOP_ZONE = ZoneId.of("Asia/Kolkata");
   private static final int MAX_ROWS = 2000;
+  /** Synthetic party bucket for walk-in / anonymous cash sales (Purchase.customerId == null). */
+  private static final String WALKIN_PARTY_ID = "WALKIN";
+  private static final String WALKIN_PARTY_NAME = "Walk-in / Cash sale";
 
   private final VendorPurchaseInvoiceRepository vendorPurchaseInvoiceRepository;
   private final VendorPurchaseReturnRepository vendorPurchaseReturnRepository;
   private final CreditEntryRepository creditEntryRepository;
   private final VendorRepository vendorRepository;
+  private final PurchaseRepository purchaseRepository;
+  private final RefundRepository refundRepository;
+  private final CustomerRepository customerRepository;
 
   public PartyMoneyMisResponse getVendorMis(
       String shopId,
@@ -208,6 +221,375 @@ public class PartyMoneyMisService {
         .build();
   }
 
+  /**
+   * Customer / Sales Money MIS: Excel-style row ledger of sale / receipt / sales-return / charge
+   * events with cash/online/credit columns and a running receivable balance per customer. Walk-in
+   * (customerId-less) cash sales roll up under a single synthetic "Walk-in" party.
+   */
+  public PartyMoneyMisResponse getCustomerMis(
+      String shopId,
+      LocalDate from,
+      LocalDate to,
+      String partyId,
+      Set<String> txnTypes,
+      String moneyFilter,
+      String q) {
+    LocalDate rangeTo = to != null ? to : LocalDate.now(SHOP_ZONE);
+    LocalDate rangeFrom = from != null ? from : rangeTo.withDayOfMonth(1);
+
+    Instant fromInstant = rangeFrom.atStartOfDay(SHOP_ZONE).toInstant();
+    Instant toInstantExclusive = rangeTo.plusDays(1).atStartOfDay(SHOP_ZONE).toInstant();
+
+    // Completed sales in period + all prior (needed for opening balance & against-ref resolution).
+    Map<String, Purchase> saleById = new LinkedHashMap<>();
+    for (Purchase sale :
+        purchaseRepository.findByShopIdAndStatusAndSoldAtBetween(
+            shopId, PurchaseStatus.COMPLETED, fromInstant, toInstantExclusive.minusNanos(1))) {
+      if (sale.getId() != null) {
+        saleById.putIfAbsent(sale.getId(), sale);
+      }
+    }
+    for (Purchase sale :
+        purchaseRepository.findByShopIdAndStatusAndSoldAtBetween(
+            shopId, PurchaseStatus.COMPLETED, Instant.EPOCH, fromInstant.minusNanos(1))) {
+      if (sale.getId() != null) {
+        saleById.putIfAbsent(sale.getId(), sale);
+      }
+    }
+
+    Map<String, String> customerNames = loadCustomerNames(saleById.values());
+    List<PartyMoneyMisRowDto> events = new ArrayList<>();
+
+    for (Purchase sale : saleById.values()) {
+      LocalDate day = toShopDate(sale.getSoldAt() != null ? sale.getSoldAt() : sale.getCreatedAt());
+      if (day == null || day.isBefore(rangeFrom) || day.isAfter(rangeTo)) {
+        continue;
+      }
+      if (StringUtils.hasText(partyId) && !partyId.equals(partyKeyForSale(sale))) {
+        continue;
+      }
+      events.add(toSaleRow(sale, customerNames));
+    }
+
+    List<Refund> refunds =
+        refundRepository.findByShopIdAndCreatedAtBetween(
+            shopId, fromInstant, toInstantExclusive.minusNanos(1));
+    for (Refund ref : refunds) {
+      LocalDate day = toShopDate(ref.getCreatedAt());
+      if (day == null || day.isBefore(rangeFrom) || day.isAfter(rangeTo)) {
+        continue;
+      }
+      Purchase linked = ref.getPurchaseId() != null ? saleById.get(ref.getPurchaseId()) : null;
+      if (linked == null && StringUtils.hasText(ref.getPurchaseId())) {
+        linked = purchaseRepository.findById(ref.getPurchaseId()).orElse(null);
+        if (linked != null && linked.getId() != null) {
+          saleById.put(linked.getId(), linked);
+        }
+      }
+      String customerId = refundPartyKey(ref, linked);
+      if (StringUtils.hasText(partyId) && !partyId.equals(customerId)) {
+        continue;
+      }
+      events.add(toSalesReturnRow(ref, linked, customerId, customerNames));
+    }
+
+    List<CreditEntryType> creditTypes =
+        Arrays.asList(CreditEntryType.SETTLEMENT, CreditEntryType.CHARGE, CreditEntryType.ADJUSTMENT);
+    Map<String, CreditEntry> creditById = new LinkedHashMap<>();
+    for (CreditEntry entry :
+        creditEntryRepository.findByShopIdAndPartyTypeAndEntryTypeInAndTxnDateBetween(
+            shopId, CreditPartyType.CUSTOMER, creditTypes, rangeFrom, rangeTo)) {
+      if (entry.getId() != null) {
+        creditById.put(entry.getId(), entry);
+      }
+    }
+    for (CreditEntry entry :
+        creditEntryRepository.findByShopIdAndPartyTypeAndCreatedAtBetween(
+            shopId, CreditPartyType.CUSTOMER, fromInstant, toInstantExclusive.minusNanos(1))) {
+      if (entry.getId() == null) {
+        continue;
+      }
+      if (entry.getEntryType() != CreditEntryType.SETTLEMENT
+          && entry.getEntryType() != CreditEntryType.CHARGE
+          && entry.getEntryType() != CreditEntryType.ADJUSTMENT) {
+        continue;
+      }
+      LocalDate day =
+          entry.getTxnDate() != null ? entry.getTxnDate() : toShopDate(entry.getCreatedAt());
+      if (day == null || day.isBefore(rangeFrom) || day.isAfter(rangeTo)) {
+        continue;
+      }
+      creditById.putIfAbsent(entry.getId(), entry);
+    }
+    for (CreditEntry entry : creditById.values()) {
+      if (StringUtils.hasText(partyId) && !partyId.equals(entry.getPartyRefId())) {
+        continue;
+      }
+      // Skip auto charges that duplicate the credit leg already captured on the sale row.
+      if (entry.getEntryType() == CreditEntryType.CHARGE
+          && entry.getSourceKey() != null
+          && entry.getSourceKey().startsWith("SALE:CREDIT:")) {
+        continue;
+      }
+      events.add(toCustomerCreditRow(entry, customerNames));
+    }
+
+    Map<String, BigDecimal> openingByParty =
+        computeCustomerOpeningBalances(shopId, rangeFrom, partyId, saleById);
+
+    events = filterEvents(events, txnTypes, moneyFilter, q);
+
+    events.sort(
+        Comparator.comparing(PartyMoneyMisRowDto::getTxnDate, Comparator.nullsLast(Comparator.naturalOrder()))
+            .thenComparing(PartyMoneyMisRowDto::getPostedAt, Comparator.nullsLast(Comparator.naturalOrder()))
+            .thenComparing(
+                r -> r.getPartyName() != null ? r.getPartyName().toLowerCase(Locale.ROOT) : "",
+                Comparator.nullsLast(Comparator.naturalOrder())));
+
+    List<PartyMoneyMisRowDto> withBalance =
+        applyRunningBalances(events, openingByParty, customerNames);
+
+    if (withBalance.size() > MAX_ROWS) {
+      withBalance = new ArrayList<>(withBalance.subList(0, MAX_ROWS));
+    }
+
+    PartyMoneyMisSummaryDto summary = buildSummary(withBalance, openingByParty, customerNames);
+
+    return PartyMoneyMisResponse.builder()
+        .side("CUSTOMER")
+        .from(rangeFrom)
+        .to(rangeTo)
+        .rows(withBalance)
+        .summary(summary)
+        .build();
+  }
+
+  private String partyKeyForSale(Purchase sale) {
+    return StringUtils.hasText(sale.getCustomerId()) ? sale.getCustomerId() : WALKIN_PARTY_ID;
+  }
+
+  private String refundPartyKey(Refund ref, Purchase linked) {
+    if (StringUtils.hasText(ref.getCustomerId())) {
+      return ref.getCustomerId();
+    }
+    if (linked != null && StringUtils.hasText(linked.getCustomerId())) {
+      return linked.getCustomerId();
+    }
+    return WALKIN_PARTY_ID;
+  }
+
+  private Map<String, String> loadCustomerNames(Collection<Purchase> sales) {
+    Map<String, String> map = new HashMap<>();
+    map.put(WALKIN_PARTY_ID, WALKIN_PARTY_NAME);
+    for (Purchase sale : sales) {
+      String pid = partyKeyForSale(sale);
+      if (WALKIN_PARTY_ID.equals(pid) || map.containsKey(pid)) {
+        continue;
+      }
+      if (StringUtils.hasText(sale.getCustomerName())) {
+        map.put(pid, sale.getCustomerName());
+        continue;
+      }
+      try {
+        customerRepository
+            .findById(pid)
+            .ifPresent(c -> map.put(c.getId(), c.getName() != null ? c.getName() : c.getId()));
+      } catch (Exception e) {
+        log.warn("Could not load customer {}: {}", pid, e.getMessage());
+      }
+      map.putIfAbsent(pid, pid);
+    }
+    return map;
+  }
+
+  private Map<String, BigDecimal> computeCustomerOpeningBalances(
+      String shopId, LocalDate from, String partyId, Map<String, Purchase> saleById) {
+    Map<String, BigDecimal> opening = new HashMap<>();
+    Instant fromInstant = from.atStartOfDay(SHOP_ZONE).toInstant();
+
+    for (Purchase sale : saleById.values()) {
+      LocalDate day = toShopDate(sale.getSoldAt() != null ? sale.getSoldAt() : sale.getCreatedAt());
+      if (day == null || !day.isBefore(from)) {
+        continue;
+      }
+      String pid = partyKeyForSale(sale);
+      if (StringUtils.hasText(partyId) && !partyId.equals(pid)) {
+        continue;
+      }
+      VendorPurchasePaymentBreakdown.Result tender = tenderForSale(sale);
+      addDelta(opening, pid, tender.creditAmount());
+    }
+
+    List<Refund> priorRefunds =
+        refundRepository.findByShopIdAndCreatedAtBetween(
+            shopId, Instant.EPOCH, fromInstant.minusNanos(1));
+    for (Refund ref : priorRefunds) {
+      Purchase linked = ref.getPurchaseId() != null ? saleById.get(ref.getPurchaseId()) : null;
+      String pid = refundPartyKey(ref, linked);
+      if (!StringUtils.hasText(pid)) {
+        continue;
+      }
+      if (StringUtils.hasText(partyId) && !partyId.equals(pid)) {
+        continue;
+      }
+      BigDecimal creditLeg = nz(ref.getRefundToCredit());
+      if (creditLeg.signum() == 0 && isAllZeroRefund(ref)) {
+        creditLeg = nz(ref.getRefundAmount());
+      }
+      // Sales returns reduce receivable.
+      addDelta(opening, pid, creditLeg.negate());
+    }
+
+    List<CreditEntry> priorCredits =
+        creditEntryRepository.findByShopIdAndPartyTypeAndTxnDateBetween(
+            shopId, CreditPartyType.CUSTOMER, LocalDate.of(1970, 1, 1), from.minusDays(1));
+    for (CreditEntry entry : priorCredits) {
+      if (StringUtils.hasText(partyId) && !partyId.equals(entry.getPartyRefId())) {
+        continue;
+      }
+      if (entry.getEntryType() == CreditEntryType.CHARGE
+          && entry.getSourceKey() != null
+          && entry.getSourceKey().startsWith("SALE:CREDIT:")) {
+        continue;
+      }
+      BigDecimal amt = nz(entry.getAmount());
+      if (entry.getEntryType() == CreditEntryType.SETTLEMENT
+          || entry.getEntryType() == CreditEntryType.RETURN) {
+        addDelta(opening, entry.getPartyRefId(), amt.negate());
+      } else {
+        addDelta(opening, entry.getPartyRefId(), amt);
+      }
+    }
+    return opening;
+  }
+
+  private PartyMoneyMisRowDto toSaleRow(Purchase sale, Map<String, String> customerNames) {
+    VendorPurchasePaymentBreakdown.Result tender = tenderForSale(sale);
+    Instant posted = sale.getSoldAt() != null ? sale.getSoldAt() : sale.getCreatedAt();
+    String pid = partyKeyForSale(sale);
+    BigDecimal total =
+        nz(sale.getGrandTotal()).signum() > 0
+            ? sale.getGrandTotal()
+            : tender.paidAmount().add(tender.creditAmount());
+    String fallbackName = StringUtils.hasText(sale.getCustomerName()) ? sale.getCustomerName() : pid;
+    return PartyMoneyMisRowDto.builder()
+        .txnId("SSAL-" + shortId(sale.getId()))
+        .txnType("SALE")
+        .txnTypeLabel("Sale")
+        .partyId(pid)
+        .partyName(customerNames.getOrDefault(pid, fallbackName))
+        .txnDate(toShopDate(sale.getSoldAt() != null ? sale.getSoldAt() : sale.getCreatedAt()))
+        .postedAt(posted)
+        .refNo(sale.getInvoiceNo())
+        .totalAmount(scale(total))
+        .cashAmount(tender.cashAmount())
+        .onlineAmount(tender.onlineAmount())
+        .creditAmount(tender.creditAmount())
+        .sourceType("SALE_INVOICE")
+        .sourceId(sale.getId())
+        .opening(false)
+        .build();
+  }
+
+  private PartyMoneyMisRowDto toSalesReturnRow(
+      Refund ref, Purchase linked, String customerId, Map<String, String> customerNames) {
+    BigDecimal total = nz(ref.getRefundAmount()).negate();
+    BigDecimal cash = nz(ref.getRefundCash()).negate();
+    BigDecimal online = nz(ref.getRefundOnline()).negate();
+    BigDecimal credit = nz(ref.getRefundToCredit()).negate();
+    if (cash.signum() == 0 && online.signum() == 0 && credit.signum() == 0) {
+      credit = total;
+    }
+    return PartyMoneyMisRowDto.builder()
+        .txnId("SRET-" + shortId(ref.getId()))
+        .txnType("SALES_RETURN")
+        .txnTypeLabel("Sales return")
+        .partyId(customerId)
+        .partyName(customerNames.getOrDefault(customerId, customerId))
+        .txnDate(toShopDate(ref.getCreatedAt()))
+        .postedAt(ref.getCreatedAt())
+        .refNo(ref.getCreditNoteNo())
+        .againstTxnId(linked != null ? "SSAL-" + shortId(linked.getId()) : null)
+        .againstRefNo(linked != null ? linked.getInvoiceNo() : null)
+        .totalAmount(total)
+        .cashAmount(cash)
+        .onlineAmount(online)
+        .creditAmount(credit)
+        .sourceType("SALES_RETURN")
+        .sourceId(ref.getId())
+        .opening(false)
+        .build();
+  }
+
+  private PartyMoneyMisRowDto toCustomerCreditRow(
+      CreditEntry entry, Map<String, String> customerNames) {
+    boolean settlement = entry.getEntryType() == CreditEntryType.SETTLEMENT;
+    String txnType = settlement ? "CUSTOMER_RECEIPT" : "CUSTOMER_CREDIT_CHARGE";
+    String label = settlement ? "Receipt" : "Credit charge";
+    String prefix = settlement ? "SRCT-" : "SCHG-";
+    BigDecimal amount = nz(entry.getAmount());
+    BigDecimal cash = zero();
+    BigDecimal online = zero();
+    BigDecimal credit = zero();
+    if (settlement) {
+      String method =
+          entry.getPaymentMethod() != null ? entry.getPaymentMethod().trim().toUpperCase() : "CASH";
+      if (Set.of("ONLINE", "UPI", "BANK", "CARD").contains(method)) {
+        online = amount;
+      } else {
+        cash = amount;
+      }
+    } else {
+      credit = amount;
+    }
+    LocalDate day = entry.getTxnDate() != null ? entry.getTxnDate() : toShopDate(entry.getCreatedAt());
+    return PartyMoneyMisRowDto.builder()
+        .txnId(prefix + shortId(entry.getId()))
+        .txnType(txnType)
+        .txnTypeLabel(label)
+        .partyId(entry.getPartyRefId())
+        .partyName(customerNames.getOrDefault(entry.getPartyRefId(), entry.getPartyRefId()))
+        .txnDate(day)
+        .postedAt(entry.getCreatedAt())
+        .refNo(
+            StringUtils.hasText(entry.getNote())
+                ? entry.getNote()
+                : (StringUtils.hasText(entry.getBankRef()) ? entry.getBankRef() : entry.getId()))
+        .totalAmount(amount)
+        .cashAmount(cash)
+        .onlineAmount(online)
+        .creditAmount(credit)
+        .sourceType(settlement ? "CUSTOMER_SETTLEMENT" : "CUSTOMER_CREDIT_CHARGE")
+        .sourceId(entry.getId())
+        .opening(false)
+        .build();
+  }
+
+  private VendorPurchasePaymentBreakdown.Result tenderForSale(Purchase sale) {
+    BigDecimal total = nz(sale.getGrandTotal());
+    if (total.signum() <= 0) {
+      total = nz(sale.getSubTotal()).add(nz(sale.getTaxTotal())).subtract(nz(sale.getDiscountTotal()));
+    }
+    if (sale.getCashAmount() != null
+        || sale.getOnlineAmount() != null
+        || sale.getCreditAmount() != null) {
+      return VendorPurchasePaymentBreakdown.resolve(
+          total,
+          sale.getPaymentMethod(),
+          null,
+          sale.getCashAmount(),
+          sale.getOnlineAmount(),
+          sale.getCreditAmount());
+    }
+    return VendorPurchasePaymentBreakdown.deriveForReport(total, sale.getPaymentMethod(), null);
+  }
+
+  private static boolean isAllZeroRefund(Refund ref) {
+    return nz(ref.getRefundCash()).signum() == 0
+        && nz(ref.getRefundOnline()).signum() == 0
+        && nz(ref.getRefundToCredit()).signum() == 0;
+  }
+
   private Map<String, BigDecimal> computeOpeningBalances(
       String shopId,
       LocalDate from,
@@ -327,18 +709,24 @@ public class PartyMoneyMisService {
 
   private BigDecimal partyDelta(PartyMoneyMisRowDto row) {
     String type = row.getTxnType();
-    if ("VENDOR_PURCHASE".equals(type) || "VENDOR_CREDIT_CHARGE".equals(type) || "OPENING".equals(type)) {
+    // Vendor payable and customer receivable share sign conventions: a purchase/sale (credit leg)
+    // or a credit charge increases the balance owed; a payment/receipt or a return reduces it.
+    if ("VENDOR_PURCHASE".equals(type)
+        || "VENDOR_CREDIT_CHARGE".equals(type)
+        || "SALE".equals(type)
+        || "CUSTOMER_CREDIT_CHARGE".equals(type)
+        || "OPENING".equals(type)) {
       return nz(row.getCreditAmount());
     }
-    if ("VENDOR_PAYMENT".equals(type)) {
-      // Settlement reduces payable; amount is in cash/online (or total)
+    if ("VENDOR_PAYMENT".equals(type) || "CUSTOMER_RECEIPT".equals(type)) {
+      // Settlement/receipt reduces balance; amount is in cash/online (or total)
       BigDecimal paid = nz(row.getCashAmount()).add(nz(row.getOnlineAmount()));
       if (paid.signum() == 0) {
         paid = nz(row.getTotalAmount()).abs();
       }
       return paid.negate();
     }
-    if ("VENDOR_RETURN".equals(type)) {
+    if ("VENDOR_RETURN".equals(type) || "SALES_RETURN".equals(type)) {
       // Reduce payable primarily by credit leg; cash/online refunds also reduce what we owed if
       // previously paid, but design: credit leg reduces payable; cash/online are money out from
       // vendor back to us. Net payable change ≈ -credit (and if refund was credit note reducing
@@ -369,7 +757,7 @@ public class PartyMoneyMisService {
       cash = cash.add(nz(row.getCashAmount()));
       online = online.add(nz(row.getOnlineAmount()));
       credit = credit.add(nz(row.getCreditAmount()));
-      if ("VENDOR_PURCHASE".equals(row.getTxnType())) {
+      if ("VENDOR_PURCHASE".equals(row.getTxnType()) || "SALE".equals(row.getTxnType())) {
         purchase = purchase.add(nz(row.getTotalAmount()));
       }
       if (row.getPartyId() != null) {
