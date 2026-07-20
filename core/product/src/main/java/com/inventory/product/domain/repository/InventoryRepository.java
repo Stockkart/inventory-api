@@ -9,11 +9,15 @@ import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface InventoryRepository extends MongoRepository<Inventory, String> {
 
   List<Inventory> findByIdIn(List<String> ids);
+
+  /** Rows not yet linked to a catalog product (used by the one-off product backfill). */
+  List<Inventory> findByShopIdAndProductIdIsNull(String shopId);
 
   List<Inventory> findByShopIdAndCurrentCountLessThanEqual(String shopId, Integer threshold);
 
@@ -61,6 +65,13 @@ public interface InventoryRepository extends MongoRepository<Inventory, String> 
   List<Inventory> searchByShopIdAndQuery(String shopId, String query);
 
   List<Inventory> findByShopIdAndBarcode(String shopId, String barcode);
+
+  /** Inventory rows for a shop whose catalog product matches a text search (identity on Product). */
+  List<Inventory> findByShopIdAndProductIdIn(String shopId, java.util.Collection<String> productIds);
+
+  /** Most recently registered lot for a catalog product (registration prefill). */
+  Optional<Inventory> findFirstByShopIdAndProductIdOrderByCreatedAtDesc(
+      String shopId, String productId);
 
   /**
    * Find inventories by shop and created-at date range (inclusive).

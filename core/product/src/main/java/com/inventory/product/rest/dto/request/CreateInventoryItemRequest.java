@@ -22,6 +22,8 @@ import java.util.Map;
  */
 @Data
 public class CreateInventoryItemRequest {
+  /** Existing catalog product selected in the UI; server reuses or forks based on identity edits. */
+  private String productId;
   private String barcode;
   private String name;
   private String description;

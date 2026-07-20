@@ -65,6 +65,12 @@ public class InventoryDetailResponse {
   Integer schemePayFor;
   Integer schemeFree;
   BigDecimal schemePercentage;
+  SchemeType purchaseSchemeType;
+  Integer purchaseSchemePayFor;
+  Integer purchaseSchemeFree;
+  BigDecimal purchaseSchemePercentage;
+  BigDecimal purchaseAdditionalDiscount;
+  Integer thresholdCount;
   String sgst; // SGST rate (e.g., "9" for 9%)
   String cgst; // CGST rate (e.g., "9" for 9%)
   /** Vertical extension fields keyed by schema field name (sport, brand, batchNo, …). */
