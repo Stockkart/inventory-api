@@ -38,6 +38,12 @@ public class VendorPurchaseInvoice {
   private BigDecimal invoiceTotal;
   private String paymentMethod;
   private BigDecimal paidAmount;
+  /** Amount paid in cash at stock-in (split tender). */
+  private BigDecimal cashAmount;
+  /** Amount paid online at stock-in (split tender). */
+  private BigDecimal onlineAmount;
+  /** Amount posted to vendor credit / payable at stock-in (split tender). */
+  private BigDecimal creditAmount;
   /**
    * True when invoice number was generated (AUTO-*) because the user did not enter one.
    * User-entered invoices are non-synthetic.

@@ -34,6 +34,31 @@
             <artifactId>product</artifactId>
             <version>1.0.0</version>
         </dependency>
+        <dependency>
+            <groupId>com.inventory</groupId>
+            <artifactId>credit</artifactId>
+            <version>1.0.0</version>
+        </dependency>
+        <dependency>
+            <groupId>com.inventory</groupId>
+            <artifactId>accounting</artifactId>
+            <version>1.0.0</version>
+        </dependency>
+        <dependency>
+            <groupId>com.inventory</groupId>
+            <artifactId>documentservice</artifactId>
+            <version>1.0.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi</artifactId>
+            <version>5.2.5</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>5.2.5</version>
+        </dependency>
     </dependencies>
 
 </project>
