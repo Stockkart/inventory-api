@@ -25,14 +25,25 @@ public class Inventory {
   @Id
   private String id;
   private String lotId;
+  /** Reference to the shop-scoped {@link Product} catalog identity this lot belongs to. */
+  private String productId;
+  // --- Catalog identity: owned by Product; @Transient here, hydrated on read via
+  // InventoryProductReadAspect. Not persisted on the inventory document. ---
+  @Transient
   private String barcode;
+  @Transient
   private String name;
+  @Transient
   private String description;
+  @Transient
   private String companyName;
+  @Transient
   private String businessType;
   private String location;
+  @Transient
   private ItemType itemType;
   /** When itemType is DEGREE, e.g. 8 for "8 deg", 24 for "24 deg" */
+  @Transient
   private Integer itemTypeDegree;
   private DiscountApplicable discountApplicable;
   /** Date when this inventory was purchased from vendor */
@@ -49,9 +60,11 @@ public class Inventory {
   private Integer soldBaseCount;
   /** Canonical current quantity stored in baseUnit. */
   private Integer currentBaseCount;
-  /** Base stock unit (e.g. TAB, ML, BOTTLE). Counts are stored in this unit. */
+  /** Base stock unit (e.g. TAB, ML, BOTTLE). Counts are stored in this unit. Owned by Product. */
+  @Transient
   private String baseUnit;
-  /** Optional conversion where factor is base units in 1 sale/display unit. */
+  /** Optional conversion where factor is base units in 1 sale/display unit. Owned by Product. */
+  @Transient
   private UnitConversion unitConversions;
   private Integer thresholdCount;
   private Instant receivedDate;
@@ -63,6 +76,8 @@ public class Inventory {
   private String vendorPurchaseInvoiceId;
   /** Reference to Pricing document (faster lookup by _id). Null for legacy inventories. */
   private String pricingId;
+  /** Owned by Product; @Transient, hydrated on read. */
+  @Transient
   private String hsn;
   private String batchNo;
   private BillingMode billingMode;

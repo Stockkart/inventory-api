@@ -67,6 +67,7 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -86,6 +87,9 @@ public class InventoryService {
 
   @Autowired
   private InventoryMapper inventoryMapper;
+
+  @Autowired
+  private ProductService productService;
 
   @Autowired
   private InventoryValidator inventoryValidator;
@@ -778,6 +782,10 @@ public class InventoryService {
       inventory.setPurchaseDate(request.getPurchaseDate() != null ? request.getPurchaseDate() : Instant.now());
       inventory.setBillingMode(normalizeBillingMode(request.getBillingMode()));
 
+      // Resolve catalog identity: reuse selected product, fork on identity edit, else match/create.
+      inventory.setProductId(
+          productService.resolveForRegistration(request.getProductId(), inventory, shopId));
+
       int billQty = request.getCount() != null ? request.getCount() : 0;
       boolean useNewFixedUnits = request.getSchemePayFor() != null || request.getSchemeFree() != null;
       int schemeFreeUnits;
@@ -1012,6 +1020,22 @@ public class InventoryService {
       log.error("Unexpected error while getting inventory lot: {}", e.getMessage(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Failed to retrieve inventory lot");
     }
+  }
+
+  /**
+   * Latest registered inventory lot for a catalog product. Used by the registration UI to prefill
+   * pricing and vertical extension fields from the previous stock-in.
+   */
+  @Transactional(readOnly = true)
+  public Optional<InventoryDetailResponse> getLastInventoryByProductId(
+      String shopId, String productId) {
+    inventoryValidator.validateShopId(shopId);
+    if (!StringUtils.hasText(productId)) {
+      return Optional.empty();
+    }
+    return inventoryRepository
+        .findFirstByShopIdAndProductIdOrderByCreatedAtDesc(shopId, productId.trim())
+        .map(inv -> toDetailWithExtensions(shopId, inv));
   }
 
   /**
@@ -1364,6 +1388,11 @@ public class InventoryService {
             request.getUnitConversions(),
             normalizeUnitName(inventory.getBaseUnit())));
       }
+
+      // Identity edits are not persisted on the inventory doc; re-resolve the catalog product so an
+      // identity change forks/links a new product while unchanged identity keeps the same one.
+      inventory.setProductId(
+          productService.resolveForRegistration(inventory.getProductId(), inventory, shopId));
 
       // Update updatedAt timestamp
       inventory.setUpdatedAt(Instant.now());

@@ -8,8 +8,10 @@ import com.inventory.pluginengine.PluginRegistry;
 import com.inventory.pluginengine.schema.VerticalSchema;
 import com.inventory.pluginengine.schema.VerticalSchemaField;
 import com.inventory.product.domain.model.Inventory;
+import com.inventory.product.domain.model.Product;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.repository.InventoryRepository;
+import com.inventory.product.domain.repository.ProductRepository;
 import com.inventory.product.domain.repository.ShopRepository;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -33,16 +35,34 @@ public class InventoryVerticalSearchHandler {
   private final PluginRegistry pluginRegistry;
   private final SchemaLoader schemaLoader;
   private final InventoryRepository inventoryRepository;
+  private final ProductRepository productRepository;
 
   public InventoryVerticalSearchHandler(
       ShopRepository shopRepository,
       PluginRegistry pluginRegistry,
       SchemaLoader schemaLoader,
-      InventoryRepository inventoryRepository) {
+      InventoryRepository inventoryRepository,
+      ProductRepository productRepository) {
     this.shopRepository = shopRepository;
     this.pluginRegistry = pluginRegistry;
     this.schemaLoader = schemaLoader;
     this.inventoryRepository = inventoryRepository;
+    this.productRepository = productRepository;
+  }
+
+  /**
+   * Text search over catalog identity. Identity now lives on {@code product}, so match products
+   * first, then load this shop's inventory rows for those products.
+   */
+  private List<Inventory> searchInventoryByText(String shopId, String q) {
+    List<String> productIds = productRepository.findMatchingIdsByShopIdAndQuery(shopId, q).stream()
+        .map(Product::getId)
+        .filter(StringUtils::hasText)
+        .collect(Collectors.toList());
+    if (productIds.isEmpty()) {
+      return List.of();
+    }
+    return inventoryRepository.findByShopIdAndProductIdIn(shopId, productIds);
   }
 
   /**
@@ -102,7 +122,7 @@ public class InventoryVerticalSearchHandler {
     if (!StringUtils.hasText(q)) {
       return null;
     }
-    return inventoryRepository.searchByShopIdAndQuery(shopId, q.trim()).stream()
+    return searchInventoryByText(shopId, q.trim()).stream()
         .map(Inventory::getId)
         .filter(StringUtils::hasText)
         .collect(Collectors.toSet());
@@ -138,7 +158,7 @@ public class InventoryVerticalSearchHandler {
               shopId, org.springframework.data.domain.PageRequest.of(page, effectiveLimit));
       return new VerticalSearchPage(pageItems, null);
     }
-    List<Inventory> matches = inventoryRepository.searchByShopIdAndQuery(shopId, q.trim());
+    List<Inventory> matches = searchInventoryByText(shopId, q.trim());
     int from = Math.max(skip, 0);
     if (from >= matches.size()) {
       return new VerticalSearchPage(List.of(), null);
