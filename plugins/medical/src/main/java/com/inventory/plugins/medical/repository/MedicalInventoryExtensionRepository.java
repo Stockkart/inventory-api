@@ -10,20 +10,40 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.stereotype.Component;
 
 @Component
 public class MedicalInventoryExtensionRepository implements InventoryExtensionRepository {
 
   private final MedicalExtensionMongoRepository mongoRepository;
+  private final MongoTemplate mongoTemplate;
 
-  public MedicalInventoryExtensionRepository(MedicalExtensionMongoRepository mongoRepository) {
+  public MedicalInventoryExtensionRepository(
+      MedicalExtensionMongoRepository mongoRepository, MongoTemplate mongoTemplate) {
     this.mongoRepository = mongoRepository;
+    this.mongoTemplate = mongoTemplate;
   }
 
   @Override
   public String getVerticalId() {
     return "medical";
+  }
+
+  @Override
+  public void ensureBackingCollectionExists() {
+    String collection = "inventory_ext_" + getVerticalId();
+    if (mongoTemplate.collectionExists(collection)) {
+      return;
+    }
+    try {
+      mongoTemplate.createCollection(collection);
+    } catch (RuntimeException e) {
+      // Tolerate a concurrent creation race; rethrow only if the collection is still absent.
+      if (!mongoTemplate.collectionExists(collection)) {
+        throw e;
+      }
+    }
   }
 
   @Override

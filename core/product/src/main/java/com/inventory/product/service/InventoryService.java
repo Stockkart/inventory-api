@@ -315,6 +315,11 @@ public class InventoryService {
                 ? itemRequest.getName()
                 : "item-" + (i + 1);
         validationErrors.add(itemLabel + ": " + describeValidationFailure(e));
+      } catch (BaseException e) {
+        // Coded errors (e.g. missing vertical extension table) are shop-wide config failures, not
+        // per-item validation issues — propagate with their real HTTP status instead of folding
+        // them into the aggregated 400 ValidationException below.
+        throw e;
       } catch (Exception e) {
         String itemLabel =
             StringUtils.hasText(itemRequest.getName())
@@ -845,6 +850,10 @@ public class InventoryService {
 
     } catch (ValidationException e) {
       log.warn("Validation error in create inventory: {}", e.getMessage());
+      throw e;
+    } catch (BaseException e) {
+      // Preserve coded errors (e.g. missing vertical extension table -> 409) rather than masking
+      // them as a generic 500 below.
       throw e;
     } catch (DataAccessException e) {
       log.error("Database error while creating inventory: {}", e.getMessage(), e);
