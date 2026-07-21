@@ -1,5 +1,7 @@
 package com.inventory.product.service.vertical;
 
+import com.inventory.common.constants.ErrorCode;
+import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.pluginengine.InventoryVerticalValidator.InventoryValidationContext;
 import com.inventory.pluginengine.PluginRegistry;
@@ -63,6 +65,10 @@ public class InventoryVerticalValidationHandler {
       return;
     }
 
+    if (create) {
+      ensureExtensionTableReady(shop);
+    }
+
     pluginRegistry
         .find(shop.getVerticalId())
         .flatMap(p -> p.getInventoryValidator())
@@ -98,6 +104,34 @@ public class InventoryVerticalValidationHandler {
                 validator.validateCreate(context);
               } else {
                 validator.validateUpdate(context);
+              }
+            });
+  }
+
+  /**
+   * Provisions the vertical's backing {@code inventory_ext_<vertical>} collection during inventory
+   * creation, creating it if absent, and fails loudly only if that provisioning fails. Runs
+   * independently of the plugin validator so it can never be skipped silently. See production
+   * incident where a missing {@code inventory_ext_medical} collection caused reads to return empty
+   * with no error.
+   */
+  private void ensureExtensionTableReady(Shop shop) {
+    pluginRegistry
+        .find(shop.getVerticalId())
+        .flatMap(p -> p.getInventoryExtensionRepository())
+        .ifPresent(
+            repo -> {
+              try {
+                repo.ensureBackingCollectionExists();
+              } catch (RuntimeException e) {
+                throw new BaseException(
+                    ErrorCode.VERTICAL_EXTENSION_UNAVAILABLE,
+                    "Failed to provision extension table 'inventory_ext_"
+                        + shop.getVerticalId()
+                        + "' for vertical "
+                        + shop.getVerticalId()
+                        + ": "
+                        + e.getMessage());
               }
             });
   }
