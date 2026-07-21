@@ -12,6 +12,14 @@ public interface InventoryExtensionRepository {
 
   String getVerticalId();
 
+  /**
+   * Ensures the backing {@code inventory_ext_<verticalId>} collection exists, creating it if absent.
+   * Missing collections are not an error in MongoDB — reads silently return empty — so inventory
+   * creation provisions the collection up front. Throws if the collection is absent and creation
+   * fails.
+   */
+  void ensureBackingCollectionExists();
+
   Optional<Map<String, Object>> findByInventoryId(String shopId, String inventoryId);
 
   Map<String, Map<String, Object>> findByInventoryIds(String shopId, List<String> inventoryIds);
