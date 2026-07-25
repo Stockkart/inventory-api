@@ -42,6 +42,9 @@ public class ShopValidator {
     if (!StringUtils.hasText(request.getContactPhone())) {
       throw new ValidationException("Contact phone is required");
     }
+    if (request.getShopType() == null) {
+      throw new ValidationException("Business type (shop type) is required");
+    }
   }
 
   public void validateUpdateRequest(UpdateShopRequest request) {

@@ -10,6 +10,7 @@ import com.inventory.pluginengine.capabilities.ShopUiCapabilities;
 import com.inventory.pluginengine.capabilities.VerticalUiContributor;
 import com.inventory.pluginengine.schema.VerticalSchema;
 import com.inventory.product.domain.model.Shop;
+import com.inventory.product.domain.model.enums.ShopType;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.validation.ShopValidator;
 import com.inventory.user.service.UserShopMembershipService;
@@ -57,7 +58,22 @@ public class ShopCapabilityService {
     VerticalSchema schema =
         schemaLoader.load(shop.getVerticalId(), shop.getPluginVersion());
     VerticalUiContributor contributor = resolveUiContributor(shop.getVerticalId());
-    return contributor.contribute(schema);
+    ShopUiCapabilities capabilities = contributor.contribute(schema);
+    applyShopLevelFlags(capabilities, shop);
+    return capabilities;
+  }
+
+  /** Overlays shop-level feature flags that depend on the shop record, not just the vertical. */
+  private void applyShopLevelFlags(ShopUiCapabilities capabilities, Shop shop) {
+    if (capabilities == null) {
+      return;
+    }
+    FeatureFlags features = capabilities.getFeatures();
+    if (features == null) {
+      features = FeatureFlags.builder().build();
+      capabilities.setFeatures(features);
+    }
+    features.setRetailPricing(shop.getShopType() == ShopType.RETAILER);
   }
 
   public boolean isCustomerReturnEnabled(String shopId, String userId) {
