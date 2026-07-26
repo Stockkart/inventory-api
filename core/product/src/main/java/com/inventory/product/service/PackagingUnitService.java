@@ -76,7 +76,10 @@ public class PackagingUnitService {
   public void validateUnitsPerPack(String baseUnitUqc, Integer unitsPerPack) {
     PackagingUnitDefinition def = resolveDefinition(baseUnitUqc);
     if (def.isAllowsUnitsPerPack()) {
-      if (unitsPerPack == null || unitsPerPack <= 0) {
+      // PACK_ONLY (e.g. MLT/BTL) needs a pack factor. FRACTIONAL_BASE (e.g. PCS/TBS)
+      // treats packaging as optional — "1 × 1 PCS" means loose pieces, no pack conversion.
+      boolean packFactorRequired = def.getSellUnitRule() == SellUnitRule.PACK_ONLY;
+      if (packFactorRequired && (unitsPerPack == null || unitsPerPack <= 0)) {
         throw new ValidationException(
             "unitsPerPack is required and must be > 0 for UQC " + def.getUqc()
                 + " (" + def.getLabel() + ")");
