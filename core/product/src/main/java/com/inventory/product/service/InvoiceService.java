@@ -11,7 +11,6 @@ import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.product.domain.model.enums.SchemeType;
 import com.inventory.product.domain.model.Shop;
-import com.inventory.product.domain.model.enums.ShopType;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.PurchaseRepository;
 import com.inventory.product.domain.repository.ShopRepository;
@@ -113,7 +112,7 @@ public class InvoiceService {
     request.setShowSellerDetails(!isBasic);
     request.setShowBuyerDetails(!isBasic);
     request.setShowTaxDetails(!isBasic);
-    request.setShowScheme(shop.getShopType() != ShopType.RETAILER);
+    request.setShowScheme(true);
 
     // Invoice basic info
     request.setInvoiceNo(purchase.getInvoiceNo() != null ? purchase.getInvoiceNo() : "");
