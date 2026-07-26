@@ -33,24 +33,37 @@ public class InventoryPricingWriteHandler {
     try {
       String verticalId = resolveVerticalId(inventory.getShopId());
       if (inventory.getId() == null && hasPricingData(inventory) && StringUtils.hasText(inventory.getShopId())) {
-        String defaultRate = resolveDefaultRateForCreate(inventory, verticalId);
-        var cmd = PricingCreateCommand.builder()
+        var builder = PricingCreateCommand.builder()
             .shopId(inventory.getShopId())
             .verticalId(verticalId)
-            .maximumRetailPrice(inventory.getMaximumRetailPrice())
             .costPrice(inventory.getCostPrice())
-            .priceToRetail(inventory.getPriceToRetail())
-            .sellingPrice(inventory.getSellingPrice())
-            .rates(inventory.getRates())
-            .defaultRate(defaultRate)
             .saleAdditionalDiscount(inventory.getSaleAdditionalDiscount())
             .purchaseAdditionalDiscount(inventory.getPurchaseAdditionalDiscount())
-            .purchaseScheme(buildPurchaseScheme(inventory))
-            .saleScheme(buildSaleScheme(inventory))
             .sgst(resolveSgst(inventory.getSgst(), inventory.getShopId()))
-            .cgst(resolveCgst(inventory.getCgst(), inventory.getShopId()))
-            .build();
-        String pricingId = pricingPort.create(cmd);
+            .cgst(resolveCgst(inventory.getCgst(), inventory.getShopId()));
+        if (isRetailerShop(inventory.getShopId())) {
+          // Retail single-price: the shop enters PTS (cost) + Selling Price only.
+          // Set MRP = PTR = Selling Price and make PTR the effective rate; drop named rates/schemes.
+          java.math.BigDecimal selling = inventory.getSellingPrice();
+          builder
+              .sellingPrice(selling)
+              .maximumRetailPrice(selling)
+              .priceToRetail(selling)
+              .defaultRate("priceToRetail")
+              .rates(null)
+              .purchaseScheme(null)
+              .saleScheme(null);
+        } else {
+          builder
+              .maximumRetailPrice(inventory.getMaximumRetailPrice())
+              .priceToRetail(inventory.getPriceToRetail())
+              .sellingPrice(inventory.getSellingPrice())
+              .rates(inventory.getRates())
+              .defaultRate(resolveDefaultRateForCreate(inventory, verticalId))
+              .purchaseScheme(buildPurchaseScheme(inventory))
+              .saleScheme(buildSaleScheme(inventory));
+        }
+        String pricingId = pricingPort.create(builder.build());
         inventory.setPricingId(pricingId);
         return;
       }
@@ -79,6 +92,15 @@ public class InventoryPricingWriteHandler {
     } catch (Exception e) {
       log.warn("Failed to persist pricing for inventory {}: {}", inventory.getId(), e.getMessage());
     }
+  }
+
+  private boolean isRetailerShop(String shopId) {
+    if (!StringUtils.hasText(shopId)) {
+      return false;
+    }
+    return shopRepository.findById(shopId)
+        .map(s -> s.getShopType() == ShopType.RETAILER)
+        .orElse(false);
   }
 
   /** For retailer shops, default price is MRP (tax-inclusive). Cafe uses simple pricing without defaultRate. */
