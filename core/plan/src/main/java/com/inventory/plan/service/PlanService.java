@@ -58,6 +58,9 @@ public class PlanService {
   @Autowired
   private UsageService usageService;
 
+  @Autowired
+  private EffectivePlanResolver effectivePlanResolver;
+
   @Value("${plan.trial-days:3}")
   private int trialDays;
 
@@ -131,9 +134,7 @@ public class PlanService {
     boolean planExpired = PlanUtils.isExpired(shopInfo.planExpiryDate());
     boolean trialExpired = trial && planExpired;
 
-    Plan effectivePlan = plan != null ? plan
-        : planRepository.findByPlanName("Base")
-            .orElseThrow(() -> new ResourceNotFoundException("Plan", "name", "Base"));
+    Plan effectivePlan = plan != null ? plan : effectivePlanResolver.entryPlan();
     Usage usage = usageService.getOrCreateCurrentMonthUsage(shopId);
     UsageResponse usageResponse = planMapper.toUsageResponse(usage);
 
