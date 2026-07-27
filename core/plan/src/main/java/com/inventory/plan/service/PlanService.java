@@ -20,6 +20,7 @@ import com.inventory.plan.utils.PlanUtils;
 import com.inventory.plan.validation.PlanValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -56,6 +57,9 @@ public class PlanService {
 
   @Autowired
   private UsageService usageService;
+
+  @Value("${plan.trial-days:3}")
+  private int trialDays;
 
   /**
    * List all plans (public - can be called before login for pricing page).
@@ -140,8 +144,9 @@ public class PlanService {
     boolean userLimitReached = userCount >= userLimit;
 
     var limits = planValidator.computeLimitsReached(effectivePlan, usage);
+    boolean ocrLimitReached = isOcrLimitReached(effectivePlan, usage);
 
-    return planMapper.toShopPlanStatusResponse(
+    ShopPlanStatusResponse response = planMapper.toShopPlanStatusResponse(
         shopId,
         shopInfo.planId(),
         plan != null ? planMapper.toResponse(plan) : null,
@@ -153,6 +158,39 @@ public class PlanService {
         suggestedPlan,
         limits,
         userLimitReached);
+
+    response.setOcrLimitReached(ocrLimitReached);
+    response.setUpgradePlan(resolveUpgradePlan(plan));
+    if (trial) {
+      response.setTrialDaysTotal(trialDays);
+      response.setTrialDaysRemaining(PlanUtils.wholeDaysUntil(shopInfo.planExpiryDate()));
+    }
+    return response;
+  }
+
+  /**
+   * Next tier up, following {@code linkedId}.
+   *
+   * <p>Returns null when the shop is on the top tier, or when the link dangles — a catalog edit can
+   * leave a {@code linkedId} pointing at a deleted plan, and a missing upsell is better than a 500.
+   */
+  private PlanResponse resolveUpgradePlan(Plan plan) {
+    if (plan == null || plan.getLinkedId() == null || plan.getLinkedId().isBlank()) {
+      return null;
+    }
+    return planRepository.findById(plan.getLinkedId())
+        .map(planMapper::toResponse)
+        .orElse(null);
+  }
+
+  /** True when the plan caps OCR and the shop has consumed its monthly allowance. */
+  private boolean isOcrLimitReached(Plan effectivePlan, Usage usage) {
+    Integer limit = effectivePlan.getOcrInvoiceLimit();
+    if (effectivePlan.isUnlimited() || limit == null) {
+      return false;
+    }
+    int used = usage.getOcrInvoicesUsed() != null ? usage.getOcrInvoicesUsed() : 0;
+    return used >= limit;
   }
 
   private ShopInfo getShopInfo(String shopId) {

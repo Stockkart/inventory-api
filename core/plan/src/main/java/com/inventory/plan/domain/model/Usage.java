@@ -30,6 +30,8 @@ public class Usage {
   private Integer billCountUsed;
   private Integer smsUsed;
   private Integer whatsappUsed;
+  /** OCR invoices consumed this month. Counts against the plan's ocrInvoiceLimit. */
+  private Integer ocrInvoicesUsed;
   private Instant createdAt;
   private Instant updatedAt;
 }

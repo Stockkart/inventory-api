@@ -28,4 +28,15 @@ public class ShopPlanStatusResponse {
   private boolean smsLimitReached;
   private boolean whatsappLimitReached;
   private boolean userLimitReached;
+
+  /** Length of the granted trial in days. Display only; expiry is decided by planExpiryDate. */
+  private Integer trialDaysTotal;
+
+  /** Whole days left in the trial, floored at 0 once expired. Display only. */
+  private Integer trialDaysRemaining;
+
+  private boolean ocrLimitReached;
+
+  /** Next tier up from the current plan, resolved from {@code Plan.linkedId}. */
+  private PlanResponse upgradePlan;
 }
