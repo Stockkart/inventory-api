@@ -46,7 +46,7 @@ public class Pricing {
   /** Selling price (effective price for sales). Updated when defaultRate changes. Can be set directly. */
   private BigDecimal sellingPrice;
 
-  /** Additional discount percentage (0-100) - sale default */
+  /** Additional discount percentage (-100 to 100; negative = markup) - sale default */
   private BigDecimal saleAdditionalDiscount;
 
   /** Purchase add. discount % from vendor - for comparison at sale, no calculation */

@@ -105,15 +105,15 @@ public class CheckoutValidator {
       }
     }
     // Scheme validation:
-    // - When schemeType is PERCENTAGE, schemePercentage must be between 0 and 100 (inclusive).
+    // - When schemeType is PERCENTAGE, schemePercentage must be between -100 and 100 (inclusive).
     // - Otherwise, when schemePayFor / schemeFree are provided, they must be valid.
     if (item.getSchemeType() == SchemeType.PERCENTAGE) {
       if (item.getSchemePercentage() == null) {
         throw new ValidationException("Scheme percentage is required when schemeType is PERCENTAGE for item: " + item.getId());
       }
-      if (item.getSchemePercentage().compareTo(BigDecimal.ZERO) < 0
+      if (item.getSchemePercentage().compareTo(BigDecimal.valueOf(-100)) < 0
           || item.getSchemePercentage().compareTo(BigDecimal.valueOf(100)) > 0) {
-        throw new ValidationException("Scheme percentage for item " + item.getId() + " must be between 0 and 100 (inclusive)");
+        throw new ValidationException("Scheme percentage for item " + item.getId() + " must be between -100 and 100 (inclusive)");
       }
     } else {
       // Scheme: when provided, schemePayFor must be > 0 and schemeFree must be >= 0 (e.g. "2 free on 10" = payFor 10, free 2)
