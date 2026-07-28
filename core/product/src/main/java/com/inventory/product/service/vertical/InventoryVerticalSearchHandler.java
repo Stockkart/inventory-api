@@ -109,29 +109,37 @@ public class InventoryVerticalSearchHandler {
                     .schema(schemaLoader.load(shop.getVerticalId(), shop.getPluginVersion()))
                     .build());
 
-    List<Inventory> items = loadInventoriesOrdered(shopId, result.getInventoryIds());
-    // Medical/sports list is driven by inventory_ext_*. After the product migration + failed
-    // extension writes, extension rows can be missing or orphaned while inventory/product still
-    // have data — Product Search goes empty while registration typeahead (product collection)
-    // still works. Fall back to core inventory listing/search in that case.
-    if (items.isEmpty()) {
-      boolean noFilters = filters == null || filters.isEmpty();
+    List<String> extensionIds =
+        result.getInventoryIds() != null ? result.getInventoryIds() : List.of();
+    List<Inventory> items = loadInventoriesOrdered(shopId, extensionIds);
+    boolean noFilters = filters == null || filters.isEmpty();
+    // Extension docs can point at missing inventory (orphans). Offset pages then under-fill
+    // (e.g. page 0 → 1 row, page 2 → 50). Fall back when nothing loads, or when an unfiltered
+    // page lost rows to orphans — skip on extension ≠ skip on inventory.
+    boolean orphanedPage =
+        !extensionIds.isEmpty() && items.size() < extensionIds.size();
+    if (items.isEmpty() || (orphanedPage && noFilters)) {
       if (noFilters) {
         log.warn(
-            "[inventory-search] extension search returned no loadable rows for shop {} "
-                + "(q={}, extensionIds={}); falling back to core inventory",
+            "[inventory-search] extension search returned {} ids but only {} loadable for shop {} "
+                + "(q={}); falling back to core inventory",
+            extensionIds.size(),
+            items.size(),
             shopId,
-            q,
-            result.getInventoryIds() == null ? 0 : result.getInventoryIds().size());
+            q);
         return textOnlyCorePage(shopId, q, limit, skip);
       }
     }
     return new VerticalSearchPage(items, result.getNextCursor());
   }
 
-  /** List shop inventory ordered by vertical sort (expiry for medical) via extension index. */
+  /**
+   * Offset list pages the inventory collection directly. Do not drive list offsets off
+   * {@code inventory_ext_*} — orphaned extension rows make page sizes uneven and hide lots that
+   * never got an extension document. Vertical filters/sort still go through {@link #searchPage}.
+   */
   public VerticalSearchPage listPage(String shopId, String sort, int limit, int skip) {
-    return searchPage(shopId, null, Map.of(), sort, limit, null, skip);
+    return textOnlyCorePage(shopId, null, limit, skip);
   }
 
   private Set<String> resolveRestrictInventoryIds(String shopId, String q) {
@@ -171,7 +179,12 @@ public class InventoryVerticalSearchHandler {
       int page = effectiveLimit > 0 ? skip / effectiveLimit : 0;
       List<Inventory> pageItems =
           inventoryRepository.findByShopId(
-              shopId, org.springframework.data.domain.PageRequest.of(page, effectiveLimit));
+              shopId,
+              org.springframework.data.domain.PageRequest.of(
+                  page,
+                  effectiveLimit,
+                  org.springframework.data.domain.Sort.by(
+                      org.springframework.data.domain.Sort.Direction.DESC, "createdAt")));
       return new VerticalSearchPage(pageItems, null);
     }
     List<Inventory> matches = searchInventoryByText(shopId, q.trim());

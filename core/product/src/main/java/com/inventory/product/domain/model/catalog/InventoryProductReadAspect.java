@@ -7,7 +7,6 @@ import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.annotation.Pointcut;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
@@ -18,21 +17,12 @@ import java.util.Optional;
 /**
  * Hydrates inventory identity from {@link com.inventory.product.domain.model.Product} on every
  * {@code find*}/{@code search*} against {@code inventoryRepository}, so ~all read call sites stay
- * unchanged. Mirrors {@code InventoryPricingReadAspect}.
- *
- * <p>On by default now that catalog identity is {@code @Transient} on inventory and owned by
- * {@link com.inventory.product.domain.model.Product}. Can be disabled with
- * {@code stockkart.product-read-hydration.enabled=false} only if identity is being persisted on
- * inventory again.
+ * unchanged. Always on — catalog identity is {@code @Transient} on inventory and owned by Product.
  */
 @Slf4j
 @Aspect
 @Component
 @Order(Ordered.LOWEST_PRECEDENCE)
-@ConditionalOnProperty(
-    name = "stockkart.product-read-hydration.enabled",
-    havingValue = "true",
-    matchIfMissing = true)
 public class InventoryProductReadAspect {
 
   @Autowired
