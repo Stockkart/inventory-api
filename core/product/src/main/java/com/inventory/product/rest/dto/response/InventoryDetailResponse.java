@@ -50,7 +50,6 @@ public class InventoryDetailResponse {
   SellUnitRule sellUnitRule;
   List<AvailableUnitDto> availableUnits;
   String location;
-  Instant expiryDate;
   String shopId;
   String vendorPurchaseInvoiceId;
   ItemType itemType;
@@ -58,7 +57,6 @@ public class InventoryDetailResponse {
   DiscountApplicable discountApplicable;
   Instant purchaseDate;
   String hsn;
-  String batchNo;
   BillingMode billingMode;
   SchemeType schemeType;
   Integer scheme;

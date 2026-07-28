@@ -53,7 +53,6 @@ public class InventorySummaryDto {
   SellUnitRule sellUnitRule;
   List<AvailableUnitDto> availableUnits;
   String location;
-  Instant expiryDate;
   String shopId;
   String vendorId;
   String vendorPurchaseInvoiceId;
@@ -62,7 +61,6 @@ public class InventorySummaryDto {
   DiscountApplicable discountApplicable;
   Instant purchaseDate;
   String hsn;
-  String batchNo;
   BillingMode billingMode;
   SchemeType schemeType;
   Integer scheme;
