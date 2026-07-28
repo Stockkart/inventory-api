@@ -110,6 +110,22 @@ public class InventoryVerticalSearchHandler {
                     .build());
 
     List<Inventory> items = loadInventoriesOrdered(shopId, result.getInventoryIds());
+    // Medical/sports list is driven by inventory_ext_*. After the product migration + failed
+    // extension writes, extension rows can be missing or orphaned while inventory/product still
+    // have data — Product Search goes empty while registration typeahead (product collection)
+    // still works. Fall back to core inventory listing/search in that case.
+    if (items.isEmpty()) {
+      boolean noFilters = filters == null || filters.isEmpty();
+      if (noFilters) {
+        log.warn(
+            "[inventory-search] extension search returned no loadable rows for shop {} "
+                + "(q={}, extensionIds={}); falling back to core inventory",
+            shopId,
+            q,
+            result.getInventoryIds() == null ? 0 : result.getInventoryIds().size());
+        return textOnlyCorePage(shopId, q, limit, skip);
+      }
+    }
     return new VerticalSearchPage(items, result.getNextCursor());
   }
 

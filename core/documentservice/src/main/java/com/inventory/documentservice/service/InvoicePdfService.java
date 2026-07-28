@@ -1,5 +1,6 @@
 package com.inventory.documentservice.service;
 
+import com.inventory.documentservice.domain.PrinterType;
 import com.inventory.documentservice.rest.dto.GenerateInvoiceRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,18 +38,13 @@ public class InvoicePdfService {
     try {
       log.debug("Generating invoice PDF for invoice: {}", request.getInvoiceNo());
 
-      // Prepare template context
       Context context = prepareTemplateContext(request);
+      PrinterType printerType = PrinterType.from(request.getPrinterType());
+      String templateName = printerType.getTemplateName();
 
-      // Select template based on printer type
-      String templateName = "DOT_MATRIX".equalsIgnoreCase(request.getPrinterType())
-          ? "invoice/invoice-dotmatrix"
-          : "invoice/invoice";
+      log.debug("Using printer type {} → template {}", printerType, templateName);
 
-      // Render HTML from template
       String html = templateEngine.process(templateName, context);
-
-      // Convert HTML to PDF
       return convertHtmlToPdf(html);
 
     } catch (Exception e) {
@@ -80,6 +76,8 @@ public class InvoicePdfService {
     context.setVariable("shopPhone", request.getShopPhone());
     context.setVariable("shopEmail", request.getShopEmail());
     context.setVariable("shopTagline", request.getShopTagline());
+    context.setVariable("shopPan", request.getShopPan());
+    context.setVariable("placeOfSupply", request.getPlaceOfSupply());
 
     // Customer/Buyer details
     context.setVariable("customerName", request.getCustomerName());
@@ -94,16 +92,20 @@ public class InvoicePdfService {
     context.setVariable("items", request.getItems());
 
     // Totals
-    context.setVariable("subTotal", request.getSubTotal() != null ? request.getSubTotal() : BigDecimal.ZERO);
+    BigDecimal subTotal = request.getSubTotal() != null ? request.getSubTotal() : BigDecimal.ZERO;
+    BigDecimal taxTotal = request.getTaxTotal() != null ? request.getTaxTotal() : BigDecimal.ZERO;
+    BigDecimal grandTotal = request.getGrandTotal() != null ? request.getGrandTotal() : BigDecimal.ZERO;
+    context.setVariable("subTotal", subTotal);
     context.setVariable("discountTotal", request.getDiscountTotal() != null ? request.getDiscountTotal() : BigDecimal.ZERO);
     context.setVariable("additionalDiscountTotal", request.getSaleAdditionalDiscountTotal() != null ? request.getSaleAdditionalDiscountTotal() : BigDecimal.ZERO);
     context.setVariable("sgstAmount", request.getSgstAmount() != null ? request.getSgstAmount() : BigDecimal.ZERO);
     context.setVariable("cgstAmount", request.getCgstAmount() != null ? request.getCgstAmount() : BigDecimal.ZERO);
     context.setVariable("sgstPercent", request.getSgstPercent() != null ? request.getSgstPercent() : BigDecimal.valueOf(2.5));
     context.setVariable("cgstPercent", request.getCgstPercent() != null ? request.getCgstPercent() : BigDecimal.valueOf(2.5));
-    context.setVariable("taxTotal", request.getTaxTotal() != null ? request.getTaxTotal() : BigDecimal.ZERO);
+    context.setVariable("taxTotal", taxTotal);
+    context.setVariable("taxableAmount", grandTotal.subtract(taxTotal).max(BigDecimal.ZERO));
     context.setVariable("roundOff", request.getRoundOff() != null ? request.getRoundOff() : BigDecimal.ZERO);
-    context.setVariable("grandTotal", request.getGrandTotal() != null ? request.getGrandTotal() : BigDecimal.ZERO);
+    context.setVariable("grandTotal", grandTotal);
     context.setVariable("totalMRPAmount", request.getTotalMRPAmount() != null ? request.getTotalMRPAmount() : BigDecimal.ZERO);
     context.setVariable("totalAmountSaved", request.getTotalAmountSaved() != null ? request.getTotalAmountSaved() : BigDecimal.ZERO);
 

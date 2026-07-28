@@ -21,6 +21,8 @@ import java.util.Map;
 @AllArgsConstructor
 public class InventorySummaryDto {
   String id;
+  /** Catalog product this lot belongs to (identity source). */
+  String productId;
   /** Pricing document ID. Null for legacy inventories without a pricing record. */
   String pricingId;
   String lotId;

@@ -3,7 +3,6 @@ package com.inventory.product.migration;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.UnitConversion;
 import com.inventory.product.domain.model.enums.ItemType;
-import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.service.ProductService;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
@@ -16,6 +15,7 @@ import org.springframework.core.annotation.Order;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -41,7 +41,6 @@ import java.util.Set;
 @Slf4j
 public class ProductBackfillRunner {
 
-  @Autowired private InventoryRepository inventoryRepository;
   @Autowired private ProductService productService;
   @Autowired private MongoTemplate mongoTemplate;
 
@@ -109,8 +108,21 @@ public class ProductBackfillRunner {
         continue;
       }
       String productId = productService.resolveForRegistration(null, inv, shopId);
-      inv.setProductId(productId);
-      inventoryRepository.save(inv);
+      // Only $set productId — never repository.save() a partial entity (that replaces the
+      // whole inventory document and wipes lot/pricing fields).
+      var updateResult =
+          mongoTemplate.updateFirst(
+              Query.query(Criteria.where("_id").is(inv.getId()).and("shopId").is(shopId)),
+              new Update().set("productId", productId),
+              Inventory.class);
+      if (updateResult.getMatchedCount() == 0) {
+        log.warn(
+            "[product-backfill] shop {}: inventory {} not updated (id/shop mismatch)",
+            shopId,
+            inv.getId());
+        skipped++;
+        continue;
+      }
       productIds.add(productId);
       linked++;
     }

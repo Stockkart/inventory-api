@@ -16,7 +16,10 @@ public class GenerateInvoiceRequest {
   private String invoiceDate;
   private String invoiceTime;
   private String billingMode;
-  /** Printer type: NORMAL or DOT_MATRIX. When DOT_MATRIX, uses dot-matrix-optimized template. */
+  /**
+   * Printer layout: {@code NORMAL}, {@code DOT_MATRIX}, or {@code THERMAL_3INCH}.
+   * Resolved via {@link com.inventory.documentservice.domain.PrinterType}.
+   */
   private String printerType;
   private Boolean showSellerDetails;
   private Boolean showBuyerDetails;
@@ -33,6 +36,10 @@ public class GenerateInvoiceRequest {
   private String shopPhone;
   private String shopEmail;
   private String shopTagline; // Optional: Shop tagline, banner word, or highlight text
+  /** Seller PAN (stored or derived from GSTIN). */
+  private String shopPan;
+  /** Place of supply (typically shop state) for tax invoices. */
+  private String placeOfSupply;
   
   // Customer/Buyer information
   private String customerName;

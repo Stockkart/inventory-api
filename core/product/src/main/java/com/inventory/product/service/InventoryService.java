@@ -137,6 +137,10 @@ public class InventoryService {
   private InventoryVerticalExtensionHandler inventoryVerticalExtensionHandler;
 
   @Autowired
+  private com.inventory.product.domain.model.catalog.InventoryProductReadHandler
+      inventoryProductReadHandler;
+
+  @Autowired
   private InventoryVerticalSearchHandler inventoryVerticalSearchHandler;
 
   @Autowired
@@ -1437,6 +1441,8 @@ public class InventoryService {
   }
 
   private InventoryDetailResponse toDetailWithExtensions(String shopId, Inventory inventory) {
+    // Belt-and-suspenders: hydrate catalog identity even if the read AOP is disabled in prod.
+    inventoryProductReadHandler.enrich(inventory);
     InventoryDetailResponse detail =
         enrichPackagingOnDetail(inventoryMapper.toDetail(inventory));
     return inventoryVerticalExtensionHandler.mergeDetail(shopId, inventory, detail);
@@ -1447,6 +1453,7 @@ public class InventoryService {
     if (inventories == null || inventories.isEmpty()) {
       return List.of();
     }
+    inventoryProductReadHandler.enrich(inventories);
     List<InventorySummaryDto> summaries =
         inventories.stream()
             .map(inventoryMapper::toSummary)

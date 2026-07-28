@@ -25,6 +25,8 @@ public class InvoiceItem {
   private String inventoryId;
   private String cgst; // CGST rate (e.g., "2.5" for 2.5%)
   private String sgst; // SGST rate (e.g., "2.5" for 2.5%)
+  /** Combined GST % for thermal/receipt display (cgst + sgst). */
+  private BigDecimal gstPercent;
 }
 
 
