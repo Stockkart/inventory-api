@@ -19,8 +19,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Seeds {@code vertical_schemas} from {@code classpath:seeds/*.json}.
- * Inserts when missing; updates schema body when the same vertical+version already exists
- * so seed file edits (e.g. new medical fields) apply on restart.
+ * Inserts when missing; skips when the same vertical+version already exists.
  */
 @Component
 @Slf4j
@@ -61,14 +60,9 @@ public class VerticalSchemaSeeder {
       }
       String verticalId = schema.getVerticalId().trim().toLowerCase();
       String version = schema.getVersion().trim();
-      var existing = schemaRepository.findByVerticalIdAndVersion(verticalId, version);
-      if (existing.isPresent()) {
-        VerticalSchemaDocument doc = existing.get();
-        doc.setSchema(schema);
-        doc.setPublishedAt(Instant.now());
-        schemaRepository.save(doc);
-        log.info("Updated vertical_schemas {} from {}", doc.getId(), resource.getFilename());
-        return true;
+      if (schemaRepository.findByVerticalIdAndVersion(verticalId, version).isPresent()) {
+        log.debug("vertical_schemas already has {} v{} — skip", verticalId, version);
+        return false;
       }
       VerticalSchemaDocument doc = new VerticalSchemaDocument();
       doc.setId(verticalId + "_" + version);
