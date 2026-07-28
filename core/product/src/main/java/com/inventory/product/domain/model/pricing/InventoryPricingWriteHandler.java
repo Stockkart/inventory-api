@@ -42,8 +42,8 @@ public class InventoryPricingWriteHandler {
             .sgst(resolveSgst(inventory.getSgst(), inventory.getShopId()))
             .cgst(resolveCgst(inventory.getCgst(), inventory.getShopId()));
         if (isRetailerShop(inventory.getShopId())) {
-          // Retail single-price: the shop enters PTS (cost) + Selling Price only.
-          // Set MRP = PTR = Selling Price and make PTR the effective rate; drop named rates/schemes.
+          // Retail: shop enters Rate (cost) + Selling Price; MRP/PTR mirror selling price.
+          // Schemes / discounts still persist (unlike cafe simplePricing).
           java.math.BigDecimal selling = inventory.getSellingPrice();
           builder
               .sellingPrice(selling)
@@ -51,8 +51,8 @@ public class InventoryPricingWriteHandler {
               .priceToRetail(selling)
               .defaultRate("priceToRetail")
               .rates(null)
-              .purchaseScheme(null)
-              .saleScheme(null);
+              .purchaseScheme(buildPurchaseScheme(inventory))
+              .saleScheme(buildSaleScheme(inventory));
         } else {
           builder
               .maximumRetailPrice(inventory.getMaximumRetailPrice())

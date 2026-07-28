@@ -18,8 +18,8 @@ import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.stereotype.Component;
 
 /**
- * Seeds {@code vertical_schemas} from {@code classpath:seeds/*.json} when no row exists for that
- * vertical + version. Runtime validation reads MongoDB only.
+ * Seeds {@code vertical_schemas} from {@code classpath:seeds/*.json}.
+ * Inserts when missing; skips when the same vertical+version already exists.
  */
 @Component
 @Slf4j

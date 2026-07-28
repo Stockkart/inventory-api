@@ -15,8 +15,9 @@ public class FeatureFlags {
   /** When true, ingredient registration uses cost + optional sell price only (no PTR/MRP/rates). */
   @Builder.Default private boolean simplePricing = false;
   /**
-   * When true (RETAILER shops), inventory registration uses two prices only — PTS (cost) and
-   * Selling Price. On save the backend sets MRP = PTR = Selling Price (no PTR/MRP/rates/schemes UI).
+   * When true (RETAILER shops), inventory registration uses Rate (cost) + Selling Price instead of
+   * PTR/MRP. Sale/purchase schemes, item type, and discount-applicable still apply; on save the
+   * backend sets MRP = PTR = Selling Price.
    */
   @Builder.Default private boolean retailPricing = false;
 }

@@ -43,9 +43,9 @@ public class InventoryValidator {
       if (request.getSchemePercentage() == null) {
         throw new ValidationException("When schemeType is PERCENTAGE, schemePercentage is required");
       }
-      if (request.getSchemePercentage().compareTo(BigDecimal.ZERO) < 0
+      if (request.getSchemePercentage().compareTo(BigDecimal.valueOf(-100)) < 0
           || request.getSchemePercentage().compareTo(BigDecimal.valueOf(100)) > 0) {
-        throw new ValidationException("Scheme percentage must be between 0 and 100 (inclusive)");
+        throw new ValidationException("Scheme percentage must be between -100 and 100 (inclusive)");
       }
     } else {
       boolean newStyle = request.getSchemePayFor() != null || request.getSchemeFree() != null;
@@ -85,9 +85,9 @@ public class InventoryValidator {
       if (request.getSchemePercentage() == null) {
         throw new ValidationException("When schemeType is PERCENTAGE, schemePercentage is required");
       }
-      if (request.getSchemePercentage().compareTo(BigDecimal.ZERO) < 0
+      if (request.getSchemePercentage().compareTo(BigDecimal.valueOf(-100)) < 0
           || request.getSchemePercentage().compareTo(BigDecimal.valueOf(100)) > 0) {
-        throw new ValidationException("Scheme percentage must be between 0 and 100 (inclusive)");
+        throw new ValidationException("Scheme percentage must be between -100 and 100 (inclusive)");
       }
     } else {
       boolean newStyle = request.getSchemePayFor() != null || request.getSchemeFree() != null;

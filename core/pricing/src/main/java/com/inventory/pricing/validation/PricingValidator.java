@@ -144,8 +144,10 @@ public class PricingValidator {
       throw new ValidationException("Selling price cannot be negative");
     }
     if (additionalDiscount != null &&
-        (additionalDiscount.compareTo(BigDecimal.ZERO) < 0 || additionalDiscount.compareTo(BigDecimal.valueOf(100)) > 0)) {
-      throw new ValidationException("Additional discount must be between 0 and 100");
+        (additionalDiscount.compareTo(BigDecimal.valueOf(-100)) < 0
+            || additionalDiscount.compareTo(BigDecimal.valueOf(100)) > 0)) {
+      throw new ValidationException(
+          "Additional discount must be between -100 and 100 (negative = markup)");
     }
   }
 
