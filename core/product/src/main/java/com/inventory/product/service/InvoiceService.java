@@ -70,7 +70,7 @@ public class InvoiceService {
    *
    * @param purchaseId the purchase ID
    * @param shopId the shop ID for validation
-   * @param printerType optional printer type (NORMAL or DOT_MATRIX)
+   * @param printerType optional printer type (NORMAL, DOT_MATRIX, or THERMAL_3INCH)
    * @return PDF as byte array
    */
   public byte[] generateInvoicePdf(String purchaseId, String shopId, String printerType) {
@@ -135,10 +135,16 @@ public class InvoiceService {
       if (shop.getLocation().getCity() != null) {
         addressParts.add(shop.getLocation().getCity());
       }
+      if (shop.getLocation().getState() != null) {
+        addressParts.add(shop.getLocation().getState());
+      }
       if (shop.getLocation().getPin() != null) {
         addressParts.add(shop.getLocation().getPin());
       }
       request.setShopAddress(String.join(", ", addressParts));
+      if (!isBasic && shop.getLocation().getState() != null && !shop.getLocation().getState().isEmpty()) {
+        request.setPlaceOfSupply(shop.getLocation().getState());
+      }
     }
     request.setShopDlNo(isBasic ? null : shop.getDlNo());
     request.setShopFssai(isBasic ? null : shop.getFssai());
@@ -146,6 +152,15 @@ public class InvoiceService {
     request.setShopPhone(isBasic ? null : shop.getContactPhone());
     request.setShopEmail(isBasic ? null : shop.getContactEmail());
     request.setShopTagline(isBasic ? null : shop.getTagline());
+    if (!isBasic) {
+      String shopPan = shop.getPanNo();
+      if ((shopPan == null || shopPan.isEmpty())
+          && shop.getGstinNo() != null
+          && shop.getGstinNo().length() >= 12) {
+        shopPan = shop.getGstinNo().substring(2, 12);
+      }
+      request.setShopPan(shopPan);
+    }
 
     // Customer/Buyer information
     if (!isBasic && purchase.getCustomerId() != null && !purchase.getCustomerId().isEmpty()) {
@@ -179,6 +194,9 @@ public class InvoiceService {
         invoiceItem.setTotalAmount(purchaseItem.getTotalAmount());
         invoiceItem.setCgst(isBasic ? null : purchaseItem.getCgst());
         invoiceItem.setSgst(isBasic ? null : purchaseItem.getSgst());
+        if (!isBasic) {
+          invoiceItem.setGstPercent(sumTaxRates(purchaseItem.getCgst(), purchaseItem.getSgst()));
+        }
         invoiceItem.setInventoryId(purchaseItem.getInventoryId());
         invoiceItem.setSchemePayFor(purchaseItem.getSchemePayFor());
         invoiceItem.setSchemeFree(purchaseItem.getSchemeFree());
@@ -293,6 +311,24 @@ public class InvoiceService {
     request.setSoldAt(purchase.getSoldAt());
 
     return request;
+  }
+
+  private static BigDecimal sumTaxRates(String cgst, String sgst) {
+    BigDecimal total = BigDecimal.ZERO;
+    total = total.add(parseTaxRate(cgst));
+    total = total.add(parseTaxRate(sgst));
+    return total;
+  }
+
+  private static BigDecimal parseTaxRate(String rate) {
+    if (rate == null || rate.isBlank()) {
+      return BigDecimal.ZERO;
+    }
+    try {
+      return new BigDecimal(rate.trim());
+    } catch (NumberFormatException e) {
+      return BigDecimal.ZERO;
+    }
   }
 }
 

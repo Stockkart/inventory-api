@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.bson.Document;
+import org.bson.types.ObjectId;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.aggregation.AddFieldsOperation;
@@ -146,8 +147,17 @@ public final class SchemaDrivenExtensionSearch {
         break;
       }
       Object inventoryId = doc.get(inventoryIdField);
-      if (inventoryId != null && StringUtils.hasText(String.valueOf(inventoryId))) {
-        ids.add(String.valueOf(inventoryId));
+      if (inventoryId == null) {
+        continue;
+      }
+      String id;
+      if (inventoryId instanceof ObjectId objectId) {
+        id = objectId.toHexString();
+      } else {
+        id = String.valueOf(inventoryId).trim();
+      }
+      if (StringUtils.hasText(id)) {
+        ids.add(id);
       }
     }
     String nextCursor = compoundNextCursor;
