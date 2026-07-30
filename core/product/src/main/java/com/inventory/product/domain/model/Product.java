@@ -27,7 +27,13 @@ import java.time.Instant;
 @CompoundIndexes({
     @CompoundIndex(
         name = "shop_identity_idx",
-        def = "{'shopId': 1, 'normalizedName': 1, 'companyName': 1, 'baseUnit': 1}")
+        def = "{'shopId': 1, 'normalizedName': 1, 'companyName': 1, 'baseUnit': 1}"),
+    /** Unique non-empty barcodes per shop (sparse: missing/null barcode allowed many times). */
+    @CompoundIndex(
+        name = "shop_barcode_unique_idx",
+        def = "{'shopId': 1, 'barcode': 1}",
+        unique = true,
+        sparse = true)
 })
 public class Product {
 

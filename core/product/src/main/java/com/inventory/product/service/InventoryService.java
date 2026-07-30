@@ -850,6 +850,9 @@ public class InventoryService {
     } catch (ValidationException e) {
       log.warn("Validation error in create inventory: {}", e.getMessage());
       throw e;
+    } catch (BaseException e) {
+      log.warn("Business error in create inventory: {}", e.getMessage());
+      throw e;
     } catch (DataAccessException e) {
       log.error("Database error while creating inventory: {}", e.getMessage(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Error processing inventory");
