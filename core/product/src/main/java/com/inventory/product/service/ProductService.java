@@ -19,6 +19,7 @@ import org.springframework.util.StringUtils;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Owns shop-scoped catalog {@link Product} lifecycle: typeahead suggest and the
@@ -66,24 +67,34 @@ public class ProductService {
   /**
    * Resolve the {@link Product} for a registration line and return its id.
    *
-   * <ul>
-   *   <li>If {@code requestedProductId} points to a product whose identity still matches the
-   *       submitted fields, reuse it.</li>
-   *   <li>If it points to a product but an identity field changed, fork a new product.</li>
-   *   <li>If no product id is supplied, match an existing product by shop identity key, else
-   *       create a new one.</li>
-   * </ul>
-   *
-   * @param requestedProductId product id selected in the UI (may be null/blank)
-   * @param inventory inventory entity with normalized identity fields already populated
-   * @param shopId owning shop
-   * @return the id of the product this inventory lot should link to
+   * <p>When a barcode is present and already owned by a shop product, that product is reused
+   * (stock-in again for the same SKU). Barcodes stay unique per shop — never fork into a
+   * duplicate code.
    */
   public String resolveForRegistration(String requestedProductId, Inventory inventory, String shopId) {
     normalizeInventoryBarcode(inventory);
     productValidator.validateBarcode(inventory.getBarcode());
 
     Product candidate = fromInventory(inventory, shopId);
+
+    // Barcode is the stable shop-unique key: re-registration with the same code reuses the owner.
+    if (StringUtils.hasText(candidate.getBarcode())) {
+      Optional<Product> byBarcode =
+          productRepository.findByShopIdAndBarcode(shopId, candidate.getBarcode());
+      if (byBarcode.isPresent()) {
+        Product owner = byBarcode.get();
+        if (StringUtils.hasText(requestedProductId)
+            && !requestedProductId.trim().equals(owner.getId())) {
+          throw new ResourceExistsException("Barcode", "code", candidate.getBarcode());
+        }
+        log.debug(
+            "Reusing product {} for barcode {} in shop {}",
+            owner.getId(),
+            candidate.getBarcode(),
+            shopId);
+        return owner.getId();
+      }
+    }
 
     if (StringUtils.hasText(requestedProductId)) {
       Product existing = productRepository.findByIdAndShopId(requestedProductId.trim(), shopId)
@@ -92,7 +103,7 @@ public class ProductService {
         if (identityMatches(existing, candidate)) {
           return existing.getId();
         }
-        // Only-barcode change: update in place so attach / generate does not fork the catalog row.
+        // Only-barcode change on an existing product (new free code): update in place.
         if (onlyBarcodeChanged(existing, candidate)) {
           assertBarcodeAvailable(shopId, candidate.getBarcode(), existing.getId());
           existing.setBarcode(candidate.getBarcode());
