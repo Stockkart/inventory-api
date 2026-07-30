@@ -107,6 +107,11 @@
       padding-top: 3px;
       padding-bottom: 3px;
     }
+    .totals .savings td {
+      font-weight: 700;
+      font-size: 9px;
+      padding-top: 2px;
+    }
     .footer {
       margin-top: 6px;
       font-size: 8px;
@@ -155,9 +160,6 @@
     </div>
     <div class="detail" th:if="${customerGstin != null && !customerGstin.isEmpty()}">
       GSTIN: <span th:text="${customerGstin}">-</span>
-    </div>
-    <div class="detail" th:if="${placeOfSupply != null && !placeOfSupply.isEmpty()}">
-      Place of Supply: <span th:text="${placeOfSupply}">-</span>
     </div>
   </div>
 
@@ -236,6 +238,11 @@
     <tr class="grand">
       <td class="label">Total Amount</td>
       <td class="value">Rs. <span th:text="${#numbers.formatDecimal(grandTotal, 1, 2)}">0.00</span></td>
+    </tr>
+    <tr th:if="${totalAmountSaved != null && totalAmountSaved.compareTo(T(java.math.BigDecimal).ZERO) > 0}"
+        class="savings">
+      <td class="label">Amount Saved</td>
+      <td class="value">Rs. <span th:text="${#numbers.formatDecimal(totalAmountSaved, 1, 2)}">0.00</span></td>
     </tr>
   </table>
 
