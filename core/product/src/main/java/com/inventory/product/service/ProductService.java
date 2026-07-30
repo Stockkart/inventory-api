@@ -1,13 +1,16 @@
 package com.inventory.product.service;
 
+import com.inventory.common.exception.ResourceExistsException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Product;
 import com.inventory.product.domain.model.UnitConversion;
 import com.inventory.product.domain.repository.ProductRepository;
 import com.inventory.product.rest.dto.response.ProductSuggestionDto;
+import com.inventory.product.validation.ProductValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,6 +33,13 @@ public class ProductService {
 
   @Autowired
   private ProductRepository productRepository;
+
+  @Autowired
+  private ProductValidator productValidator;
+
+  @Autowired
+  @Lazy
+  private BarcodeService barcodeService;
 
   /** Typeahead for the registration screen. Empty/blank query returns no rows. */
   @Transactional(readOnly = true)
@@ -70,6 +80,9 @@ public class ProductService {
    * @return the id of the product this inventory lot should link to
    */
   public String resolveForRegistration(String requestedProductId, Inventory inventory, String shopId) {
+    normalizeInventoryBarcode(inventory);
+    productValidator.validateBarcode(inventory.getBarcode());
+
     Product candidate = fromInventory(inventory, shopId);
 
     if (StringUtils.hasText(requestedProductId)) {
@@ -79,6 +92,16 @@ public class ProductService {
         if (identityMatches(existing, candidate)) {
           return existing.getId();
         }
+        // Only-barcode change: update in place so attach / generate does not fork the catalog row.
+        if (onlyBarcodeChanged(existing, candidate)) {
+          assertBarcodeAvailable(shopId, candidate.getBarcode(), existing.getId());
+          existing.setBarcode(candidate.getBarcode());
+          existing.setUpdatedAt(Instant.now());
+          productRepository.save(existing);
+          barcodeService.claimPoolForProduct(shopId, existing.getId(), existing.getBarcode());
+          return existing.getId();
+        }
+        assertBarcodeAvailable(shopId, candidate.getBarcode(), null);
         log.info("Product identity changed for {} in shop {}; forking new product",
             existing.getId(), shopId);
         return persistNew(candidate).getId();
@@ -89,7 +112,40 @@ public class ProductService {
     if (matched != null) {
       return matched.getId();
     }
+    assertBarcodeAvailable(shopId, candidate.getBarcode(), null);
     return persistNew(candidate).getId();
+  }
+
+  /**
+   * Set barcode on an existing product without forking. Used by pool attach and regenerate.
+   */
+  public Product updateBarcodeInPlace(String productId, String shopId, String barcode) {
+    Product product = productRepository
+        .findByIdAndShopId(productId, shopId)
+        .orElseThrow(() -> new ResourceNotFoundException("Product", "id", productId));
+    String normalized = productValidator.normalizeBarcode(barcode);
+    productValidator.validateBarcode(normalized);
+    assertBarcodeAvailable(shopId, normalized, productId);
+    product.setBarcode(normalized);
+    product.setUpdatedAt(Instant.now());
+    return productRepository.save(product);
+  }
+
+  /**
+   * Reject when another product in the shop already owns this barcode.
+   *
+   * @param excludeProductId product id that may keep this barcode (null when creating)
+   */
+  public void assertBarcodeAvailable(String shopId, String barcode, String excludeProductId) {
+    String normalized = productValidator.normalizeBarcode(barcode);
+    if (normalized == null) {
+      return;
+    }
+    productRepository.findByShopIdAndBarcode(shopId, normalized).ifPresent(existing -> {
+      if (excludeProductId == null || !excludeProductId.equals(existing.getId())) {
+        throw new ResourceExistsException("Barcode", "code", normalized);
+      }
+    });
   }
 
   private Product findByIdentity(Product candidate, String shopId) {
@@ -117,12 +173,38 @@ public class ProductService {
     Instant now = Instant.now();
     candidate.setCreatedAt(now);
     candidate.setUpdatedAt(now);
-    return productRepository.save(candidate);
+    Product saved = productRepository.save(candidate);
+    barcodeService.claimPoolForProduct(saved.getShopId(), saved.getId(), saved.getBarcode());
+    return saved;
   }
 
   /** True when every catalog identity field is equal (fork otherwise). */
   private static boolean identityMatches(Product a, Product b) {
     return identityKey(a).equals(identityKey(b));
+  }
+
+  /** True when all identity fields match except barcode. */
+  private static boolean onlyBarcodeChanged(Product existing, Product candidate) {
+    Product withoutBarcode = copyIdentity(existing);
+    withoutBarcode.setBarcode(nz(candidate.getBarcode()));
+    Product candidateNorm = copyIdentity(candidate);
+    return identityKey(withoutBarcode).equals(identityKey(candidateNorm))
+        && !java.util.Objects.equals(nz(existing.getBarcode()), nz(candidate.getBarcode()));
+  }
+
+  private static Product copyIdentity(Product src) {
+    Product p = new Product();
+    p.setNormalizedName(src.getNormalizedName());
+    p.setCompanyName(src.getCompanyName());
+    p.setBarcode(src.getBarcode());
+    p.setDescription(src.getDescription());
+    p.setBusinessType(src.getBusinessType());
+    p.setHsn(src.getHsn());
+    p.setBaseUnit(src.getBaseUnit());
+    p.setItemType(src.getItemType());
+    p.setItemTypeDegree(src.getItemTypeDegree());
+    p.setUnitConversions(src.getUnitConversions());
+    return p;
   }
 
   /** Stable string over all catalog identity fields; equal keys mean the same product. */
@@ -139,6 +221,10 @@ public class ProductService {
         String.valueOf(p.getItemType()),
         String.valueOf(p.getItemTypeDegree()),
         String.valueOf(packFactor(p.getUnitConversions())));
+  }
+
+  private void normalizeInventoryBarcode(Inventory inventory) {
+    inventory.setBarcode(productValidator.normalizeBarcode(inventory.getBarcode()));
   }
 
   private static Product fromInventory(Inventory inventory, String shopId) {
