@@ -49,7 +49,7 @@
       <div class="cell" style="width: 50%;">
         <div><strong th:text="${billingMode == 'BASIC' ? 'Challan No.' : 'Invoice'}">Invoice:</strong> <span th:text="${invoiceNo}">INV</span></div>
         <div><strong>Date:</strong> <span th:text="${invoiceDate}">DD-MM-YYYY</span> <span th:text="${invoiceTime}">TIME</span></div>
-        <div th:if="${paymentMethod != null}"><strong>Pay:</strong> <span th:text="${paymentMethod}">CASH</span></div>
+        <div th:if="${showPaymentMethod and paymentMethod != null}"><strong>Pay:</strong> <span th:text="${paymentMethod}">CASH</span></div>
       </div>
       <div class="cell right" style="width: 50%;">
         <div class="h1" th:text="${shopName}">SHOP NAME</div>
@@ -58,7 +58,7 @@
           <div th:if="${shopPhone != null && !shopPhone.isEmpty()}">Ph: <span th:text="${shopPhone}">-</span></div>
           <div th:if="${shopGstin != null && !shopGstin.isEmpty()}">GSTIN: <span th:text="${shopGstin}">-</span></div>
         </div>
-        <div th:if="${billingMode == 'BASIC' && shopAddress != null && !shopAddress.isEmpty()}">
+        <div th:if="${!showSellerDetails && billingMode == 'BASIC' && shopAddress != null && !shopAddress.isEmpty()}">
           <div th:text="${shopAddress}">Address</div>
         </div>
       </div>
@@ -80,9 +80,9 @@
         <tr>
           <th style="width: 42%;">Item</th>
           <th style="width: 10%;">Qty</th>
-          <th style="width: 12%;">MRP</th>
+          <th style="width: 12%;" th:if="${showMrp}">MRP</th>
           <th style="width: 12%;">Rate</th>
-          <th style="width: 12%;">Disc</th>
+          <th style="width: 12%;" th:if="${showLineDiscount}">Disc</th>
           <th style="width: 12%;" class="right">Amt</th>
         </tr>
       </thead>
@@ -90,12 +90,12 @@
         <tr th:each="it : ${items}">
           <td>
             <div th:text="${it.name}">Item</div>
-            <div class="muted" th:if="${billingMode != 'BASIC' && it.hsn != null}">HSN: <span th:text="${it.hsn}">-</span></div>
+            <div class="muted" th:if="${showHsn && it.hsn != null}">HSN: <span th:text="${it.hsn}">-</span></div>
           </td>
           <td th:text="${it.quantity}">1</td>
-          <td th:text="${it.maximumRetailPrice}">0</td>
+          <td th:if="${showMrp}" th:text="${it.maximumRetailPrice}">0</td>
           <td th:text="${it.priceToRetail}">0</td>
-          <td th:text="${it.discount != null ? it.discount : 0}">0</td>
+          <td th:if="${showLineDiscount}" th:text="${it.discount != null ? it.discount : 0}">0</td>
           <td class="right" th:text="${it.totalAmount}">0</td>
         </tr>
       </tbody>
@@ -109,7 +109,7 @@
           <td>Total Amount</td>
           <td class="right" th:text="${subTotal}">0</td>
         </tr>
-        <tr th:if="${additionalDiscountTotal != null && additionalDiscountTotal.compareTo(T(java.math.BigDecimal).ZERO) > 0}">
+        <tr th:if="${showAdditionalDiscount and additionalDiscountTotal != null && additionalDiscountTotal.compareTo(T(java.math.BigDecimal).ZERO) > 0}">
           <td>Additional Discount</td>
           <td class="right" th:text="${additionalDiscountTotal}">0</td>
         </tr>
@@ -121,7 +121,7 @@
           <td><strong>Net Amount</strong></td>
           <td class="right"><strong th:text="${grandTotal}">0</strong></td>
         </tr>
-        <tr>
+        <tr th:if="${showAmountSaved}">
           <td><strong>AMOUNT SAVED</strong></td>
           <td class="right"><strong th:text="${totalAmountSaved != null ? totalAmountSaved : 0}">0</strong></td>
         </tr>
@@ -129,8 +129,11 @@
     </table>
 
     <div class="sp8"></div>
-    <div class="center" th:if="${amountInWords != null && !amountInWords.isEmpty()}">
+    <div class="center" th:if="${showAmountInWords and amountInWords != null && !amountInWords.isEmpty()}">
       <div><strong th:text="${amountInWords}">AMOUNT IN WORDS</strong></div>
+    </div>
+    <div class="center" th:if="${footerNote != null && !footerNote.isEmpty()}" style="margin-top: 6px;">
+      <div th:text="${footerNote}">Thank you</div>
     </div>
   </div>
 </body>
