@@ -62,6 +62,9 @@ public class InvoiceService {
   @Autowired
   private DocumentService documentService;
 
+  @Autowired
+  private InvoiceSettingsService invoiceSettingsService;
+
   @Autowired(required = false)
   private com.inventory.metrics.MetricsWrapper metrics;
 
@@ -70,30 +73,32 @@ public class InvoiceService {
    *
    * @param purchaseId the purchase ID
    * @param shopId the shop ID for validation
-   * @param printerType optional printer type (NORMAL, DOT_MATRIX, or THERMAL_3INCH)
+   * @param printerType optional printer type (NORMAL, DOT_MATRIX, or THERMAL_3INCH);
+   *     when blank, uses the shop default from invoice settings
    * @return PDF as byte array
    */
   public byte[] generateInvoicePdf(String purchaseId, String shopId, String printerType) {
     log.info("Generating invoice PDF for purchase: {}, shop: {}", purchaseId, shopId);
 
-    // Get purchase
     Purchase purchase = purchaseRepository.findById(purchaseId)
         .orElseThrow(() -> new ResourceNotFoundException("Purchase", "id", purchaseId));
 
-    // Validate purchase belongs to shop
     if (!shopId.equals(purchase.getShopId())) {
       throw new ValidationException("Purchase does not belong to the specified shop");
     }
 
-    // Get shop
     Shop shop = shopRepository.findById(purchase.getShopId())
         .orElseThrow(() -> new ResourceNotFoundException("Shop", "shopId", purchase.getShopId()));
 
-    // Build GenerateInvoiceRequest
-    GenerateInvoiceRequest request = buildGenerateInvoiceRequest(purchase, shop);
-    request.setPrinterType(printerType);
+    var settings = invoiceSettingsService.getOrDefaultForShop(shopId);
+    GenerateInvoiceRequest request = buildGenerateInvoiceRequest(purchase, shop, settings);
 
-    // Generate PDF
+    String resolvedPrinter =
+        (printerType != null && !printerType.isBlank())
+            ? printerType
+            : settings.getDefaultPrinterType();
+    request.setPrinterType(resolvedPrinter);
+
     byte[] pdf = documentService.generateInvoice(request);
     if (metrics != null) {
       metrics.record(ProductMetricsConstants.INVOICES_GENERATED, 1, "module", ProductMetricsConstants.MODULE);
@@ -102,17 +107,20 @@ public class InvoiceService {
   }
 
   /**
-   * Build GenerateInvoiceRequest from Purchase and Shop.
+   * Build GenerateInvoiceRequest from Purchase, Shop, and shop invoice settings.
+   * Visibility flags control template display; data is always populated when available.
    */
-  private GenerateInvoiceRequest buildGenerateInvoiceRequest(Purchase purchase, Shop shop) {
+  private GenerateInvoiceRequest buildGenerateInvoiceRequest(
+      Purchase purchase,
+      Shop shop,
+      com.inventory.product.domain.model.ShopInvoiceSettingsDocument settings) {
     GenerateInvoiceRequest request = new GenerateInvoiceRequest();
     BillingMode billingMode = purchase.getBillingMode() != null ? purchase.getBillingMode() : BillingMode.REGULAR;
-    boolean isBasic = billingMode == BillingMode.BASIC;
     request.setBillingMode(billingMode.name());
-    request.setShowSellerDetails(!isBasic);
-    request.setShowBuyerDetails(!isBasic);
-    request.setShowTaxDetails(!isBasic);
-    request.setShowScheme(true);
+
+    var fields = invoiceSettingsService.fieldsForMode(settings, billingMode);
+    invoiceSettingsService.applyVisibility(request, fields);
+    request.setFooterNote(settings.getFooterNote() != null ? settings.getFooterNote() : "");
 
     // Invoice basic info
     request.setInvoiceNo(purchase.getInvoiceNo() != null ? purchase.getInvoiceNo() : "");
@@ -122,7 +130,7 @@ public class InvoiceService {
       request.setInvoiceTime(soldAt.format(DateTimeFormatter.ofPattern("hh:mm a")));
     }
 
-    // Shop/Seller information
+    // Shop/Seller information (always populate; templates honor show* flags)
     request.setShopName(shop.getName() != null ? shop.getName() : "");
     if (shop.getLocation() != null) {
       List<String> addressParts = new ArrayList<>();
@@ -142,28 +150,26 @@ public class InvoiceService {
         addressParts.add(shop.getLocation().getPin());
       }
       request.setShopAddress(String.join(", ", addressParts));
-      if (!isBasic && shop.getLocation().getState() != null && !shop.getLocation().getState().isEmpty()) {
+      if (shop.getLocation().getState() != null && !shop.getLocation().getState().isEmpty()) {
         request.setPlaceOfSupply(shop.getLocation().getState());
       }
     }
-    request.setShopDlNo(isBasic ? null : shop.getDlNo());
-    request.setShopFssai(isBasic ? null : shop.getFssai());
-    request.setShopGstin(isBasic ? null : shop.getGstinNo());
-    request.setShopPhone(isBasic ? null : shop.getContactPhone());
-    request.setShopEmail(isBasic ? null : shop.getContactEmail());
-    request.setShopTagline(isBasic ? null : shop.getTagline());
-    if (!isBasic) {
-      String shopPan = shop.getPanNo();
-      if ((shopPan == null || shopPan.isEmpty())
-          && shop.getGstinNo() != null
-          && shop.getGstinNo().length() >= 12) {
-        shopPan = shop.getGstinNo().substring(2, 12);
-      }
-      request.setShopPan(shopPan);
+    request.setShopDlNo(shop.getDlNo());
+    request.setShopFssai(shop.getFssai());
+    request.setShopGstin(shop.getGstinNo());
+    request.setShopPhone(shop.getContactPhone());
+    request.setShopEmail(shop.getContactEmail());
+    request.setShopTagline(shop.getTagline());
+    String shopPan = shop.getPanNo();
+    if ((shopPan == null || shopPan.isEmpty())
+        && shop.getGstinNo() != null
+        && shop.getGstinNo().length() >= 12) {
+      shopPan = shop.getGstinNo().substring(2, 12);
     }
+    request.setShopPan(shopPan);
 
     // Customer/Buyer information
-    if (!isBasic && purchase.getCustomerId() != null && !purchase.getCustomerId().isEmpty()) {
+    if (purchase.getCustomerId() != null && !purchase.getCustomerId().isEmpty()) {
       Optional<Customer> customerOpt = customerService.getCustomerById(purchase.getCustomerId());
       if (customerOpt.isPresent()) {
         Customer customer = customerOpt.get();
@@ -175,12 +181,10 @@ public class InvoiceService {
         request.setCustomerPhone(customer.getPhone());
         request.setCustomerEmail(customer.getEmail());
       }
-    } else if (!isBasic && purchase.getCustomerName() != null && !purchase.getCustomerName().isEmpty()) {
-      // Use customer name directly if no customer ID
+    } else if (purchase.getCustomerName() != null && !purchase.getCustomerName().isEmpty()) {
       request.setCustomerName(purchase.getCustomerName());
     }
 
-    // Items - need to fetch inventory details for each item
     List<InvoiceItem> invoiceItems = new ArrayList<>();
     if (purchase.getItems() != null) {
       for (PurchaseItem purchaseItem : purchase.getItems()) {
@@ -192,16 +196,13 @@ public class InvoiceService {
         invoiceItem.setDiscount(purchaseItem.getDiscount());
         invoiceItem.setSaleAdditionalDiscount(purchaseItem.getSaleAdditionalDiscount());
         invoiceItem.setTotalAmount(purchaseItem.getTotalAmount());
-        invoiceItem.setCgst(isBasic ? null : purchaseItem.getCgst());
-        invoiceItem.setSgst(isBasic ? null : purchaseItem.getSgst());
-        if (!isBasic) {
-          invoiceItem.setGstPercent(sumTaxRates(purchaseItem.getCgst(), purchaseItem.getSgst()));
-        }
+        invoiceItem.setCgst(purchaseItem.getCgst());
+        invoiceItem.setSgst(purchaseItem.getSgst());
+        invoiceItem.setGstPercent(sumTaxRates(purchaseItem.getCgst(), purchaseItem.getSgst()));
         invoiceItem.setInventoryId(purchaseItem.getInventoryId());
         invoiceItem.setSchemePayFor(purchaseItem.getSchemePayFor());
         invoiceItem.setSchemeFree(purchaseItem.getSchemeFree());
 
-        // Get inventory details
         if (purchaseItem.getInventoryId() != null) {
           Optional<Inventory> inventoryOpt = inventoryRepository.findById(purchaseItem.getInventoryId());
           if (inventoryOpt.isPresent()) {
@@ -240,74 +241,57 @@ public class InvoiceService {
     }
     request.setItems(invoiceItems);
 
-    // Calculate total MRP amount (sum of all MRPs)
     BigDecimal totalMRPAmount = BigDecimal.ZERO;
-    if (invoiceItems != null) {
-      for (InvoiceItem item : invoiceItems) {
-        if (item.getMaximumRetailPrice() != null && item.getQuantity() != null) {
-          BigDecimal itemMRP = item.getMaximumRetailPrice().multiply(item.getQuantity());
-          totalMRPAmount = totalMRPAmount.add(itemMRP);
-        }
+    for (InvoiceItem item : invoiceItems) {
+      if (item.getMaximumRetailPrice() != null && item.getQuantity() != null) {
+        totalMRPAmount = totalMRPAmount.add(item.getMaximumRetailPrice().multiply(item.getQuantity()));
       }
     }
     request.setTotalMRPAmount(totalMRPAmount);
 
-    // Totals and calculations
     request.setSubTotal(purchase.getSubTotal() != null ? purchase.getSubTotal() : BigDecimal.ZERO);
     request.setDiscountTotal(purchase.getDiscountTotal() != null ? purchase.getDiscountTotal() : BigDecimal.ZERO);
     request.setSaleAdditionalDiscountTotal(purchase.getSaleAdditionalDiscountTotal() != null ? purchase.getSaleAdditionalDiscountTotal() : BigDecimal.ZERO);
-    request.setSgstAmount(!isBasic && purchase.getSgstAmount() != null ? purchase.getSgstAmount() : BigDecimal.ZERO);
-    request.setCgstAmount(!isBasic && purchase.getCgstAmount() != null ? purchase.getCgstAmount() : BigDecimal.ZERO);
-    
-    // Calculate tax percentages from first item's rates (assuming all items have same rates)
-    // If items have different rates, we'll use the first item's rates for display
-    if (!isBasic && invoiceItems != null && !invoiceItems.isEmpty()) {
+    request.setSgstAmount(purchase.getSgstAmount() != null ? purchase.getSgstAmount() : BigDecimal.ZERO);
+    request.setCgstAmount(purchase.getCgstAmount() != null ? purchase.getCgstAmount() : BigDecimal.ZERO);
+
+    if (!invoiceItems.isEmpty()) {
       InvoiceItem firstItem = invoiceItems.get(0);
       if (firstItem.getSgst() != null && !firstItem.getSgst().trim().isEmpty()) {
         try {
           request.setSgstPercent(new BigDecimal(firstItem.getSgst().trim()));
         } catch (NumberFormatException e) {
-          request.setSgstPercent(BigDecimal.valueOf(2.5)); // Default
+          request.setSgstPercent(BigDecimal.valueOf(2.5));
         }
       } else {
-        request.setSgstPercent(BigDecimal.valueOf(2.5)); // Default
+        request.setSgstPercent(BigDecimal.valueOf(2.5));
       }
       if (firstItem.getCgst() != null && !firstItem.getCgst().trim().isEmpty()) {
         try {
           request.setCgstPercent(new BigDecimal(firstItem.getCgst().trim()));
         } catch (NumberFormatException e) {
-          request.setCgstPercent(BigDecimal.valueOf(2.5)); // Default
+          request.setCgstPercent(BigDecimal.valueOf(2.5));
         }
       } else {
-        request.setCgstPercent(BigDecimal.valueOf(2.5)); // Default
+        request.setCgstPercent(BigDecimal.valueOf(2.5));
       }
     } else {
-      // Fallback to default if no items
-      request.setSgstPercent(isBasic ? BigDecimal.ZERO : BigDecimal.valueOf(2.5));
-      request.setCgstPercent(isBasic ? BigDecimal.ZERO : BigDecimal.valueOf(2.5));
+      request.setSgstPercent(BigDecimal.valueOf(2.5));
+      request.setCgstPercent(BigDecimal.valueOf(2.5));
     }
-    
-    request.setTaxTotal(!isBasic && purchase.getTaxTotal() != null ? purchase.getTaxTotal() : BigDecimal.ZERO);
-    
-    // Calculate round off
+
+    request.setTaxTotal(purchase.getTaxTotal() != null ? purchase.getTaxTotal() : BigDecimal.ZERO);
+
     BigDecimal grandTotal = purchase.getGrandTotal() != null ? purchase.getGrandTotal() : BigDecimal.ZERO;
     BigDecimal calculatedTotal = request.getSubTotal()
         .subtract(request.getDiscountTotal())
         .add(request.getTaxTotal());
-    BigDecimal roundOff = grandTotal.subtract(calculatedTotal);
-    request.setRoundOff(roundOff);
+    request.setRoundOff(grandTotal.subtract(calculatedTotal));
     request.setGrandTotal(grandTotal);
-    
-    // Calculate total amount saved: totalMRPAmount - grandTotal
-    BigDecimal totalAmountSaved = totalMRPAmount.subtract(grandTotal);
-    request.setTotalAmountSaved(totalAmountSaved);
+    request.setTotalAmountSaved(totalMRPAmount.subtract(grandTotal));
 
-    // Additional fields
     request.setPaymentMethod(purchase.getPaymentMethod());
     request.setAmountInWords(AmountToWordsConverter.convertAmountToWords(grandTotal));
-    request.setFooterNote(""); // Can be configured later
-
-    // Legacy fields
     request.setSoldAt(purchase.getSoldAt());
 
     return request;

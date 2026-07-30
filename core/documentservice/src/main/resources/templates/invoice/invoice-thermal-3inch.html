@@ -182,11 +182,11 @@
       <span class="idx" th:text="${iterStat.count}">1</span>
       <span th:text="${it.name}">ITEM</span>
     </div>
-    <div class="item-gst" th:if="${showTaxDetails && ((it.gstPercent != null && it.gstPercent.compareTo(T(java.math.BigDecimal).ZERO) > 0) || (it.hsn != null && !it.hsn.isEmpty()))}">
+    <div class="item-gst" th:if="${showTaxDetails && ((it.gstPercent != null && it.gstPercent.compareTo(T(java.math.BigDecimal).ZERO) > 0) || (showHsn && it.hsn != null && !it.hsn.isEmpty()))}">
       <span th:if="${it.gstPercent != null && it.gstPercent.compareTo(T(java.math.BigDecimal).ZERO) > 0}">
         GST <span th:text="${#numbers.formatDecimal(it.gstPercent, 1, 2)}">5.00</span>%
       </span>
-      <span th:if="${it.hsn != null && !it.hsn.isEmpty()}">
+      <span th:if="${showHsn && it.hsn != null && !it.hsn.isEmpty()}">
         HSN: <span th:text="${it.hsn}">-</span>
       </span>
     </div>
@@ -225,7 +225,7 @@
     </tr>
   </table>
 
-  <table class="totals" th:if="${!showTaxDetails && additionalDiscountTotal != null && additionalDiscountTotal.compareTo(T(java.math.BigDecimal).ZERO) > 0}">
+  <table class="totals" th:if="${showAdditionalDiscount && !showTaxDetails && additionalDiscountTotal != null && additionalDiscountTotal.compareTo(T(java.math.BigDecimal).ZERO) > 0}">
     <tr>
       <td class="label">Additional Discount</td>
       <td class="value">Rs. <span th:text="${#numbers.formatDecimal(additionalDiscountTotal, 1, 2)}">0.00</span></td>
@@ -239,7 +239,7 @@
       <td class="label">Total Amount</td>
       <td class="value">Rs. <span th:text="${#numbers.formatDecimal(grandTotal, 1, 2)}">0.00</span></td>
     </tr>
-    <tr th:if="${totalAmountSaved != null && totalAmountSaved.compareTo(T(java.math.BigDecimal).ZERO) > 0}"
+    <tr th:if="${showAmountSaved && totalAmountSaved != null && totalAmountSaved.compareTo(T(java.math.BigDecimal).ZERO) > 0}"
         class="savings">
       <td class="label">Amount Saved</td>
       <td class="value">Rs. <span th:text="${#numbers.formatDecimal(totalAmountSaved, 1, 2)}">0.00</span></td>
@@ -249,7 +249,8 @@
   <hr class="line"/>
 
   <div class="footer">
-    <div th:if="${amountInWords != null && !amountInWords.isEmpty()}" th:text="${amountInWords}">Amount in words</div>
+    <div th:if="${showAmountInWords && amountInWords != null && !amountInWords.isEmpty()}" th:text="${amountInWords}">Amount in words</div>
+    <div th:if="${showPaymentMethod && paymentMethod != null && !paymentMethod.isEmpty()}">Pay: <span th:text="${paymentMethod}">CASH</span></div>
     <div th:if="${footerNote != null && !footerNote.isEmpty()}" th:text="${footerNote}">Thank you</div>
     <div th:unless="${footerNote != null && !footerNote.isEmpty()}">Thank you! Visit again.</div>
   </div>

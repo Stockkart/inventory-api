@@ -37,20 +37,23 @@ public class InvoicePdfService {
   public byte[] generateInvoicePdf(GenerateInvoiceRequest request) {
     try {
       log.debug("Generating invoice PDF for invoice: {}", request.getInvoiceNo());
-
-      Context context = prepareTemplateContext(request);
-      PrinterType printerType = PrinterType.from(request.getPrinterType());
-      String templateName = printerType.getTemplateName();
-
-      log.debug("Using printer type {} → template {}", printerType, templateName);
-
-      String html = templateEngine.process(templateName, context);
+      String html = renderInvoiceHtml(request);
       return convertHtmlToPdf(html);
-
     } catch (Exception e) {
       log.error("Error generating invoice PDF: {}", e.getMessage(), e);
       throw new RuntimeException("Failed to generate invoice PDF", e);
     }
+  }
+
+  /**
+   * Render the same Thymeleaf invoice markup used for PDFs (for live HTML preview).
+   */
+  public String renderInvoiceHtml(GenerateInvoiceRequest request) {
+    Context context = prepareTemplateContext(request);
+    PrinterType printerType = PrinterType.from(request.getPrinterType());
+    String templateName = printerType.getTemplateName();
+    log.debug("Rendering invoice HTML with printer type {} → template {}", printerType, templateName);
+    return templateEngine.process(templateName, context);
   }
 
   private Context prepareTemplateContext(GenerateInvoiceRequest request) {
@@ -65,6 +68,21 @@ public class InvoicePdfService {
     context.setVariable("showBuyerDetails", request.getShowBuyerDetails() == null || request.getShowBuyerDetails());
     context.setVariable("showTaxDetails", request.getShowTaxDetails() == null || request.getShowTaxDetails());
     context.setVariable("showScheme", request.getShowScheme() == null || request.getShowScheme());
+    context.setVariable("showPaymentMethod", request.getShowPaymentMethod() == null || request.getShowPaymentMethod());
+    context.setVariable("showAmountInWords", request.getShowAmountInWords() == null || request.getShowAmountInWords());
+    context.setVariable("showAmountSaved", request.getShowAmountSaved() == null || request.getShowAmountSaved());
+    context.setVariable(
+        "showAdditionalDiscount",
+        request.getShowAdditionalDiscount() == null || request.getShowAdditionalDiscount());
+    context.setVariable("showHsn", request.getShowHsn() == null || request.getShowHsn());
+    context.setVariable("showMfg", request.getShowMfg() == null || request.getShowMfg());
+    context.setVariable("showExpiry", request.getShowExpiry() == null || request.getShowExpiry());
+    context.setVariable("showBatch", request.getShowBatch() == null || request.getShowBatch());
+    context.setVariable("showMrp", request.getShowMrp() == null || request.getShowMrp());
+    context.setVariable(
+        "showLineDiscount", request.getShowLineDiscount() == null || request.getShowLineDiscount());
+    context.setVariable(
+        "showSignatures", request.getShowSignatures() == null || request.getShowSignatures());
     context.setVariable("paymentMethod", request.getPaymentMethod());
 
     // Shop/Seller details

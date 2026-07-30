@@ -26,5 +26,13 @@ public class DocumentService {
     log.info("Generating invoice PDF for invoice: {}", request.getInvoiceNo());
     return invoicePdfService.generateInvoicePdf(request);
   }
+
+  /**
+   * Render invoice HTML (same templates as PDF) for in-app preview without browser PDF chrome.
+   */
+  public String generateInvoiceHtml(GenerateInvoiceRequest request) {
+    log.info("Generating invoice HTML preview for invoice: {}", request.getInvoiceNo());
+    return invoicePdfService.renderInvoiceHtml(request);
+  }
 }
 
