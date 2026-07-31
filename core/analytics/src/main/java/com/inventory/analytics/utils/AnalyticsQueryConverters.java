@@ -1,4 +1,4 @@
-package com.inventory.analytics.rest.converter;
+package com.inventory.analytics.utils;
 
 import com.inventory.analytics.domain.model.MisTxnType;
 import com.inventory.analytics.domain.model.MoneyFilter;
