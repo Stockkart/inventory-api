@@ -7,6 +7,7 @@ import lombok.Data;
 public class SignupRequest {
   // For email/password signup
   private String name;
+  private String phone;
   private String email;
   private String password;
 

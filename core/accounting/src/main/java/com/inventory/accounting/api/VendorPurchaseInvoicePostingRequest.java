@@ -38,11 +38,20 @@ public class VendorPurchaseInvoicePostingRequest {
   private BigDecimal paidAmount;
 
   /**
-   * Tender used for the {@code paidAmount} portion: {@code CASH} credits Cash on Hand; {@code UPI},
-   * {@code BANK} and {@code CARD} credit Bank; {@code CREDIT} (or null with zero paidAmount) means
-   * nothing is paid up-front and the whole invoice rolls into Sundry Creditors.
+   * Tender used for the {@code paidAmount} portion when split fields are absent: {@code CASH}
+   * credits Cash on Hand; {@code UPI}/{@code BANK}/{@code CARD} credit Bank; {@code CREDIT} (or
+   * null with zero paidAmount) means the whole invoice rolls into Sundry Creditors.
    */
   private String paymentMethod;
+
+  /** Split tender: cash leg at purchase (preferred over legacy paidAmount). */
+  private BigDecimal paidCash;
+
+  /** Split tender: online/bank leg at purchase. */
+  private BigDecimal paidOnline;
+
+  /** Split tender: credit / payable leg at purchase. */
+  private BigDecimal creditAmount;
 
   /** Positive = round-off loss (Dr 5500); negative = round-off gain (Cr 2300). */
   private BigDecimal roundOff;

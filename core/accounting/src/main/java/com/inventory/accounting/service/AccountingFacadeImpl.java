@@ -76,9 +76,9 @@ public class AccountingFacadeImpl implements AccountingFacade {
    * Dr Shipping &amp; Freight       = shippingCharge (optional)
    * Dr Other Operating Expenses     = otherCharges (optional)
    * Dr Round-off Expense            = max(roundOff, 0)
-   *     Cr Cash in Hand             = paidAmount when paymentMethod=CASH
-   *     Cr Bank                     = paidAmount when paymentMethod=UPI|BANK|CARD
-   *     Cr Sundry Creditors  [VENDOR:vendorId] = invoiceTotal - paidAmount
+   *     Cr Cash in Hand             = paidCash (or legacy paidAmount when CASH)
+   *     Cr Bank                     = paidOnline (or legacy paidAmount when UPI|BANK|CARD)
+   *     Cr Sundry Creditors  [VENDOR:vendorId] = creditAmount / outstanding
    *     Cr Round-off Payable        = max(-roundOff, 0)
    * </pre>
    */
@@ -115,14 +115,47 @@ public class AccountingFacadeImpl implements AccountingFacade {
       throw new ValidationException("Vendor invoice total must be greater than zero to post");
     }
 
-    BigDecimal paid =
-        in.getPaidAmount() != null && in.getPaidAmount().signum() > 0
-            ? scale(in.getPaidAmount())
-            : MoneyUtil.zero();
-    if (paid.compareTo(invoiceTotal) > 0) {
-      paid = invoiceTotal;
+    BigDecimal paidCash = nz(in.getPaidCash());
+    BigDecimal paidOnline = nz(in.getPaidOnline());
+    boolean splitTender =
+        in.getPaidCash() != null || in.getPaidOnline() != null || in.getCreditAmount() != null;
+
+    BigDecimal outstanding;
+    if (splitTender) {
+      if (in.getCreditAmount() != null) {
+        outstanding = scale(in.getCreditAmount());
+      } else {
+        outstanding = scale(invoiceTotal.subtract(paidCash).subtract(paidOnline));
+      }
+    } else {
+      BigDecimal paid =
+          in.getPaidAmount() != null && in.getPaidAmount().signum() > 0
+              ? scale(in.getPaidAmount())
+              : MoneyUtil.zero();
+      if (paid.compareTo(invoiceTotal) > 0) {
+        paid = invoiceTotal;
+      }
+      outstanding = scale(invoiceTotal.subtract(paid));
+      if (paid.signum() > 0) {
+        String legacyMethod =
+            in.getPaymentMethod() != null ? in.getPaymentMethod().trim().toUpperCase() : "CASH";
+        if (resolvePaidAccount(legacyMethod).equals(BANK)) {
+          paidOnline = paid;
+        } else {
+          paidCash = paid;
+        }
+      }
     }
-    BigDecimal outstanding = scale(invoiceTotal.subtract(paid));
+
+    if (paidCash.add(paidOnline).add(outstanding).compareTo(invoiceTotal) > 0) {
+      outstanding = scale(invoiceTotal.subtract(paidCash).subtract(paidOnline));
+    } else if (paidCash.add(paidOnline).add(outstanding).compareTo(invoiceTotal) < 0) {
+      outstanding = scale(invoiceTotal.subtract(paidCash).subtract(paidOnline));
+    }
+    if (outstanding.signum() < 0) {
+      outstanding = MoneyUtil.zero();
+    }
+
     BigDecimal roundLoss = roundOff.signum() > 0 ? roundOff : MoneyUtil.zero();
     BigDecimal roundGain = roundOff.signum() < 0 ? roundOff.negate() : MoneyUtil.zero();
 
@@ -137,8 +170,11 @@ public class AccountingFacadeImpl implements AccountingFacade {
     if (otherCharges.signum() > 0) lines.add(debit(OTHER_OPERATING_EXPENSES, otherCharges));
     if (roundLoss.signum() > 0) lines.add(debit(ROUND_OFF_EXPENSE, roundLoss));
 
-    if (paid.signum() > 0) {
-      lines.add(credit(resolvePaidAccount(in.getPaymentMethod()), paid));
+    if (paidCash.signum() > 0) {
+      lines.add(credit(CASH, scale(paidCash)));
+    }
+    if (paidOnline.signum() > 0) {
+      lines.add(credit(BANK, scale(paidOnline)));
     }
     if (outstanding.signum() > 0) {
       PostJournalLine line = credit(SUNDRY_CREDITORS, outstanding);

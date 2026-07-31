@@ -5,6 +5,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.MongoRepository;
 
+import java.time.Instant;
 import java.util.Optional;
 import java.util.List;
 
@@ -19,4 +20,10 @@ public interface VendorPurchaseInvoiceRepository extends MongoRepository<VendorP
   Optional<VendorPurchaseInvoice> findByIdAndShopId(String id, String shopId);
 
   List<VendorPurchaseInvoice> findByShopIdAndInvoiceNo(String shopId, String invoiceNo);
+
+  List<VendorPurchaseInvoice> findByShopIdAndCreatedAtBetween(
+      String shopId, Instant start, Instant end);
+
+  List<VendorPurchaseInvoice> findByShopIdAndInvoiceDateBetween(
+      String shopId, Instant start, Instant end);
 }

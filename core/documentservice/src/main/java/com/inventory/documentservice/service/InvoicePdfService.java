@@ -11,7 +11,6 @@ import org.thymeleaf.context.Context;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -152,14 +151,19 @@ public class InvoicePdfService {
     return dateTime.format(DateTimeFormatter.ofPattern("hh:mm a"));
   }
 
-  private byte[] convertHtmlToPdf(String html) throws IOException {
+  /**
+   * Convert arbitrary XHTML/HTML to PDF — shared by invoice and report exporters.
+   */
+  public byte[] convertHtmlToPdf(String html) {
     try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
       PdfRendererBuilder builder = new PdfRendererBuilder();
       builder.withHtmlContent(html, null);
       builder.toStream(outputStream);
       builder.run();
-
       return outputStream.toByteArray();
+    } catch (Exception e) {
+      log.error("Error converting HTML to PDF: {}", e.getMessage(), e);
+      throw new RuntimeException("Failed to generate PDF", e);
     }
   }
 }
