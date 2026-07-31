@@ -1,6 +1,5 @@
 package com.inventory.analytics.mapper;
 
-import static com.inventory.analytics.utils.VendorMoneyMisUtils.shortId;
 import static com.inventory.analytics.utils.VendorMoneyMisUtils.toMoneyScale;
 import static com.inventory.analytics.utils.VendorMoneyMisUtils.toShopDate;
 import static com.inventory.analytics.utils.VendorMoneyMisUtils.zeroIfNull;
@@ -81,7 +80,7 @@ public class VendorMoneyMisMapper {
         .refNo(ret.getSupplierCreditNoteNo())
         .againstTxnId(
             linkedInvoice != null
-                ? MisTxnType.VENDOR_PURCHASE.txnId(shortId(linkedInvoice.getId()))
+                ? MisTxnType.VENDOR_PURCHASE.txnId(linkedInvoice.getId())
                 : null)
         .againstRefNo(linkedInvoice != null ? linkedInvoice.getInvoiceNo() : null)
         .totalAmount(total)
@@ -136,7 +135,7 @@ public class VendorMoneyMisMapper {
       Map<String, String> vendorNames) {
     BigDecimal opening = toMoneyScale(openingBalance);
     return VendorMoneyMisRowDto.builder()
-        .txnId(MisTxnType.OPENING.txnId(shortId(vendorId)))
+        .txnId(MisTxnType.OPENING.txnId(vendorId))
         .txnType(MisTxnType.OPENING.name())
         .txnTypeLabel(MisTxnType.OPENING.label())
         .vendorId(vendorId)
@@ -173,7 +172,7 @@ public class VendorMoneyMisMapper {
   private VendorMoneyMisRowDto.VendorMoneyMisRowDtoBuilder baseRow(
       MisTxnType type, String sourceId, String vendorId, Map<String, String> vendorNames) {
     return VendorMoneyMisRowDto.builder()
-        .txnId(type.txnId(shortId(sourceId)))
+        .txnId(type.txnId(sourceId))
         .txnType(type.name())
         .txnTypeLabel(type.label())
         .vendorId(vendorId)

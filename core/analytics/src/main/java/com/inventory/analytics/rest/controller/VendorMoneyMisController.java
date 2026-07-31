@@ -1,5 +1,7 @@
 package com.inventory.analytics.rest.controller;
 
+import com.inventory.analytics.domain.model.MisTxnType;
+import com.inventory.analytics.domain.model.MoneyFilter;
 import com.inventory.analytics.rest.dto.response.VendorMoneyMisResponse;
 import com.inventory.analytics.service.VendorMoneyMisService;
 import com.inventory.analytics.service.VendorMoneyMisService.ExportFile;
@@ -8,6 +10,7 @@ import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.common.exception.AuthenticationException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDate;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -33,8 +36,8 @@ public class VendorMoneyMisController {
       @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
       @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
       @RequestParam(required = false) String vendorId,
-      @RequestParam(required = false) String txnTypes,
-      @RequestParam(required = false, defaultValue = "ALL") String moneyFilter,
+      @RequestParam(required = false) Set<MisTxnType> txnTypes,
+      @RequestParam(required = false, defaultValue = "ALL") MoneyFilter moneyFilter,
       @RequestParam(required = false) String q,
       HttpServletRequest httpRequest) {
     String shopId = requireShopId(httpRequest);
@@ -49,8 +52,8 @@ public class VendorMoneyMisController {
       @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
       @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
       @RequestParam(required = false) String vendorId,
-      @RequestParam(required = false) String txnTypes,
-      @RequestParam(required = false, defaultValue = "ALL") String moneyFilter,
+      @RequestParam(required = false) Set<MisTxnType> txnTypes,
+      @RequestParam(required = false, defaultValue = "ALL") MoneyFilter moneyFilter,
       @RequestParam(required = false) String q,
       HttpServletRequest httpRequest) {
     String shopId = requireShopId(httpRequest);
@@ -68,8 +71,8 @@ public class VendorMoneyMisController {
       @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
       @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
       @RequestParam(required = false) String vendorId,
-      @RequestParam(required = false) String txnTypes,
-      @RequestParam(required = false, defaultValue = "ALL") String moneyFilter,
+      @RequestParam(required = false) Set<MisTxnType> txnTypes,
+      @RequestParam(required = false, defaultValue = "ALL") MoneyFilter moneyFilter,
       @RequestParam(required = false) String q,
       HttpServletRequest httpRequest) {
     String shopId = requireShopId(httpRequest);

@@ -1,11 +1,7 @@
 package com.inventory.analytics.domain.model;
 
-import java.util.Arrays;
-import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Optional;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * Kinds of row that appear in a vendor money ledger.
@@ -56,22 +52,5 @@ public enum MisTxnType {
     } catch (IllegalArgumentException e) {
       return Optional.empty();
     }
-  }
-
-  /**
-   * Parses a comma-separated {@code txnTypes} query parameter.
-   *
-   * <p>Unrecognised tokens are dropped rather than failing the request. An empty result means "no
-   * filter", so a request naming only unknown types returns everything — the same outcome as
-   * before, when unknown strings simply never matched.
-   */
-  public static Set<MisTxnType> parseCsv(String csv) {
-    if (csv == null || csv.isBlank()) {
-      return Set.of();
-    }
-    return Arrays.stream(csv.split(","))
-        .map(MisTxnType::parse)
-        .flatMap(Optional::stream)
-        .collect(Collectors.toCollection(LinkedHashSet::new));
   }
 }

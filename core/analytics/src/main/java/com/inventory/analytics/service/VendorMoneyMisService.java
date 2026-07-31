@@ -123,28 +123,16 @@ public class VendorMoneyMisService {
   // Entry points
   // ---------------------------------------------------------------------------
 
-  public VendorMoneyMisResponse getVendorMis(
-      String shopId,
-      LocalDate from,
-      LocalDate to,
-      String vendorId,
-      String txnTypesCsv,
-      String moneyFilter,
-      String q) {
-    return getVendorMis(
-        shopId, from, to, vendorId, MisTxnType.parseCsv(txnTypesCsv), MoneyFilter.from(moneyFilter), q);
-  }
-
   public ExportFile exportExcel(
       String shopId,
       LocalDate from,
       LocalDate to,
       String vendorId,
-      String txnTypesCsv,
-      String moneyFilter,
+      Set<MisTxnType> txnTypes,
+      MoneyFilter moneyFilter,
       String q) {
     VendorMoneyMisResponse report =
-        getVendorMis(shopId, from, to, vendorId, txnTypesCsv, moneyFilter, q);
+        getVendorMis(shopId, from, to, vendorId, txnTypes, moneyFilter, q);
     return new ExportFile(
         reportDocumentService.renderExcel(toTabularReport(report, "Vendor Money MIS")),
         exportFilename(report, "xlsx"));
@@ -155,11 +143,11 @@ public class VendorMoneyMisService {
       LocalDate from,
       LocalDate to,
       String vendorId,
-      String txnTypesCsv,
-      String moneyFilter,
+      Set<MisTxnType> txnTypes,
+      MoneyFilter moneyFilter,
       String q) {
     VendorMoneyMisResponse report =
-        getVendorMis(shopId, from, to, vendorId, txnTypesCsv, moneyFilter, q);
+        getVendorMis(shopId, from, to, vendorId, txnTypes, moneyFilter, q);
     return new ExportFile(
         reportDocumentService.renderPdf(toTabularReport(report, "Shop")),
         exportFilename(report, "pdf"));
@@ -224,9 +212,24 @@ public class VendorMoneyMisService {
         rangeFrom,
         rangeTo,
         vendorId,
-        txnTypes != null ? txnTypes : Set.of(),
+        knownTxnTypes(txnTypes),
         moneyFilter != null ? moneyFilter : MoneyFilter.ALL,
         q);
+  }
+
+  /**
+   * Drops nulls left by unrecognised {@code txnTypes} tokens.
+   *
+   * <p>The query-parameter converter maps an unknown type to null rather than rejecting the whole
+   * request, so a call naming one known and one stale type still filters on the known one.
+   */
+  private Set<MisTxnType> knownTxnTypes(Set<MisTxnType> txnTypes) {
+    if (txnTypes == null || txnTypes.isEmpty()) {
+      return Set.of();
+    }
+    Set<MisTxnType> known = new HashSet<>(txnTypes);
+    known.remove(null);
+    return known;
   }
 
   // ---------------------------------------------------------------------------
