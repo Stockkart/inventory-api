@@ -1,5 +1,6 @@
 package com.inventory.analytics.service;
 
+import com.inventory.product.service.ProductAnalyticsReadService;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.AuthenticationException;
 import com.inventory.common.exception.BaseException;
@@ -11,7 +12,6 @@ import com.inventory.analytics.rest.dto.response.InventoryAnalyticsDto;
 import com.inventory.analytics.rest.dto.response.InventoryAnalyticsResponse;
 import com.inventory.analytics.rest.dto.response.InventorySummaryDto;
 import com.inventory.product.domain.model.Inventory;
-import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.rest.dto.response.InventoryExpiryBucketsResponse;
 import com.inventory.product.service.vertical.InventoryVerticalExpiryHandler;
 import lombok.extern.slf4j.Slf4j;
@@ -36,7 +36,7 @@ public class InventoryAnalyticsService {
   private InventoryAnalyticsMapper inventoryAnalyticsMapper;
 
   @Autowired
-  private InventoryRepository inventoryRepository;
+  private ProductAnalyticsReadService productReadService;
 
   @Autowired
   private InventoryVerticalExpiryHandler inventoryVerticalExpiryHandler;
@@ -76,7 +76,7 @@ public class InventoryAnalyticsService {
       log.debug("Getting inventory analytics for shop: {}", shopId);
 
       // Get all inventory for the shop
-      List<Inventory> allInventories = inventoryRepository.findByShopId(shopId);
+      List<Inventory> allInventories = productReadService.findInventoryForShop(shopId);
 
       // Calculate analytics for all items (low stock, dead stock, turnover, etc.)
       List<InventoryAnalyticsDto> allAnalytics = analyticsUtils.calculateInventoryAnalytics(

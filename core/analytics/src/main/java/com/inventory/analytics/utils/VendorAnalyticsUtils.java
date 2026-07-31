@@ -1,14 +1,14 @@
 package com.inventory.analytics.utils;
 
+import com.inventory.user.service.VendorDirectoryService;
+import com.inventory.product.service.ProductAnalyticsReadService;
 import com.inventory.analytics.rest.dto.response.*;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.pluginengine.VerticalFieldsReader;
-import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.service.vertical.InventoryVerticalExtensionHandler;
 import com.inventory.user.domain.model.Vendor;
-import com.inventory.user.domain.repository.VendorRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -25,13 +25,13 @@ import java.util.stream.Collectors;
 public class VendorAnalyticsUtils {
 
   @Autowired
-  private InventoryRepository inventoryRepository;
+  private ProductAnalyticsReadService productReadService;
 
   @Autowired
   private InventoryVerticalExtensionHandler inventoryVerticalExtensionHandler;
 
   @Autowired
-  private VendorRepository vendorRepository;
+  private VendorDirectoryService vendorDirectory;
 
   /**
    * Calculate vendor stock analytics.
@@ -50,7 +50,7 @@ public class VendorAnalyticsUtils {
     // Get vendor details
     Map<String, Vendor> vendorMapById = new HashMap<>();
     for (String vendorId : vendorIds) {
-      vendorRepository.findById(vendorId).ifPresent(vendor -> vendorMapById.put(vendorId, vendor));
+      vendorDirectory.findById(vendorId).ifPresent(vendor -> vendorMapById.put(vendorId, vendor));
     }
 
     // Initialize vendor data
@@ -105,7 +105,7 @@ public class VendorAnalyticsUtils {
     for (Purchase purchase : purchases) {
       if (purchase.getItems() != null) {
         for (PurchaseItem item : purchase.getItems()) {
-          Inventory inv = inventoryRepository.findById(item.getInventoryId()).orElse(null);
+          Inventory inv = productReadService.findInventoryById(item.getInventoryId()).orElse(null);
           if (inv != null && inv.getVendorId() != null) {
             BigDecimal itemRevenue = item.getPriceToRetail() != null
                 ? item.getPriceToRetail().multiply(getPricingQuantity(item))
@@ -159,7 +159,7 @@ public class VendorAnalyticsUtils {
     for (Purchase purchase : purchases) {
       if (purchase.getItems() != null) {
         for (PurchaseItem item : purchase.getItems()) {
-          Inventory inv = inventoryRepository.findById(item.getInventoryId()).orElse(null);
+          Inventory inv = productReadService.findInventoryById(item.getInventoryId()).orElse(null);
           if (inv != null && inv.getVendorId() != null) {
             vendorIds.add(inv.getVendorId());
           }
@@ -170,7 +170,7 @@ public class VendorAnalyticsUtils {
     // Get vendor details
     Map<String, Vendor> vendorMapById = new HashMap<>();
     for (String vendorId : vendorIds) {
-      vendorRepository.findById(vendorId).ifPresent(vendor -> vendorMapById.put(vendorId, vendor));
+      vendorDirectory.findById(vendorId).ifPresent(vendor -> vendorMapById.put(vendorId, vendor));
     }
 
     // Initialize vendor data
@@ -188,7 +188,7 @@ public class VendorAnalyticsUtils {
     for (Purchase purchase : purchases) {
       if (purchase.getItems() != null) {
         for (PurchaseItem item : purchase.getItems()) {
-          Inventory inv = inventoryRepository.findById(item.getInventoryId()).orElse(null);
+          Inventory inv = productReadService.findInventoryById(item.getInventoryId()).orElse(null);
           if (inv == null || inv.getVendorId() == null) continue;
 
           VendorRevenueData data = vendorMap.get(inv.getVendorId());
@@ -255,7 +255,7 @@ public class VendorAnalyticsUtils {
     // Get vendor details
     Map<String, Vendor> vendorMapById = new HashMap<>();
     for (String vendorId : vendorIds) {
-      vendorRepository.findById(vendorId).ifPresent(vendor -> vendorMapById.put(vendorId, vendor));
+      vendorDirectory.findById(vendorId).ifPresent(vendor -> vendorMapById.put(vendorId, vendor));
     }
 
     // Initialize vendor data
@@ -404,7 +404,7 @@ public class VendorAnalyticsUtils {
     // Get vendor details
     Map<String, Vendor> vendorMapById = new HashMap<>();
     for (String vendorId : vendorIds) {
-      vendorRepository.findById(vendorId).ifPresent(vendor -> vendorMapById.put(vendorId, vendor));
+      vendorDirectory.findById(vendorId).ifPresent(vendor -> vendorMapById.put(vendorId, vendor));
     }
 
     Instant now = Instant.now();

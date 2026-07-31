@@ -1,15 +1,14 @@
 package com.inventory.analytics.utils;
 
+import com.inventory.user.service.CustomerDirectoryService;
+import com.inventory.product.service.ProductAnalyticsReadService;
 import com.inventory.analytics.rest.dto.response.CustomerAnalyticsDto;
 import com.inventory.analytics.rest.dto.response.CustomerSummaryDto;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.enums.PurchaseStatus;
-import com.inventory.product.domain.repository.PurchaseRepository;
 import com.inventory.user.domain.model.Customer;
-import com.inventory.user.domain.repository.CustomerRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -24,17 +23,16 @@ import java.util.stream.Collectors;
 public class CustomerAnalyticsUtils {
 
   @Autowired
-  private PurchaseRepository purchaseRepository;
+  private ProductAnalyticsReadService productReadService;
 
   @Autowired
-  private CustomerRepository customerRepository;
+  private CustomerDirectoryService customerDirectory;
 
   /**
    * Get all completed purchases for a shop.
    */
   public List<Purchase> getCompletedPurchases(String shopId) {
-    return purchaseRepository.findByShopId(shopId, Pageable.unpaged())
-        .getContent()
+    return productReadService.findPurchasesForShop(shopId)
         .stream()
         .filter(p -> p.getStatus() == PurchaseStatus.COMPLETED)
         .filter(p -> p.getSoldAt() != null)
@@ -45,8 +43,7 @@ public class CustomerAnalyticsUtils {
    * Get completed purchases within a date range.
    */
   public List<Purchase> getCompletedPurchases(String shopId, Instant startDate, Instant endDate) {
-    return purchaseRepository.findByShopId(shopId, Pageable.unpaged())
-        .getContent()
+    return productReadService.findPurchasesForShop(shopId)
         .stream()
         .filter(p -> p.getStatus() == PurchaseStatus.COMPLETED)
         .filter(p -> p.getSoldAt() != null)
@@ -74,7 +71,7 @@ public class CustomerAnalyticsUtils {
     // Get customer details
     Map<String, Customer> customerMapById = new HashMap<>();
     for (String customerId : customerIds) {
-      customerRepository.findById(customerId).ifPresent(customer -> customerMapById.put(customerId, customer));
+      customerDirectory.findById(customerId).ifPresent(customer -> customerMapById.put(customerId, customer));
     }
 
     // Process purchases

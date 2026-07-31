@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+  <head>
+    <meta charset="UTF-8" />
+    <title th:text="${documentTitle}">Report</title>
+    <style>
+      @page {
+        size: A4 landscape;
+        margin: 12mm;
+      }
+      body {
+        font-family: Arial, sans-serif;
+        font-size: 10px;
+        color: #111;
+      }
+      h1 {
+        font-size: 16px;
+        margin: 0 0 4px 0;
+      }
+      p.meta {
+        margin: 0 0 10px 0;
+        color: #444;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th,
+      td {
+        border: 1px solid #333;
+        padding: 4px 6px;
+        text-align: left;
+      }
+      th {
+        background: #eee;
+      }
+      td.num,
+      th.num {
+        text-align: right;
+      }
+      tr.totals td {
+        font-weight: bold;
+        background: #f5f5f5;
+      }
+      .summary {
+        margin-top: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1 th:text="${heading}">Report</h1>
+    <p class="meta" th:if="${subtitle}" th:text="${subtitle}"></p>
+
+    <table>
+      <thead>
+        <tr>
+          <th
+            th:each="column : ${columns}"
+            th:text="${column.label}"
+            th:classappend="${column.numeric} ? 'num' : ''"
+          ></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr th:each="row : ${rows}">
+          <td
+            th:each="cell : ${row}"
+            th:text="${cell.text}"
+            th:classappend="${cell.numeric} ? 'num' : ''"
+          ></td>
+        </tr>
+        <tr class="totals" th:if="${totals}">
+          <td
+            th:each="cell : ${totals}"
+            th:text="${cell.text}"
+            th:classappend="${cell.numeric} ? 'num' : ''"
+          ></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p class="summary" th:if="${summaryNotes}" th:each="note : ${summaryNotes}" th:text="${note}"></p>
+  </body>
+</html>

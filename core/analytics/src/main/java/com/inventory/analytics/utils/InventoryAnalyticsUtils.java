@@ -1,5 +1,6 @@
 package com.inventory.analytics.utils;
 
+import com.inventory.product.service.ProductAnalyticsReadService;
 import com.inventory.analytics.rest.dto.response.InventoryAnalyticsDto;
 import com.inventory.analytics.rest.dto.response.InventorySummaryDto;
 import com.inventory.product.domain.model.Inventory;
@@ -7,12 +8,9 @@ import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.product.domain.model.enums.PurchaseStatus;
 import com.inventory.pluginengine.VerticalFieldsReader;
-import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.service.vertical.InventoryVerticalExtensionHandler;
-import com.inventory.product.domain.repository.PurchaseRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -27,13 +25,10 @@ import java.util.stream.Collectors;
 public class InventoryAnalyticsUtils {
 
   @Autowired
-  private InventoryRepository inventoryRepository;
+  private ProductAnalyticsReadService productReadService;
 
   @Autowired
   private InventoryVerticalExtensionHandler inventoryVerticalExtensionHandler;
-
-  @Autowired
-  private PurchaseRepository purchaseRepository;
 
   public List<InventoryAnalyticsDto> calculateInventoryAnalytics(
       String shopId,
@@ -159,8 +154,7 @@ public class InventoryAnalyticsUtils {
 
   private Map<String, Instant> getLastSoldDates(String shopId, List<Inventory> inventories) {
     Map<String, Instant> lastSoldDates = new HashMap<>();
-    List<Purchase> purchases = purchaseRepository.findByShopId(shopId, Pageable.unpaged())
-        .getContent()
+    List<Purchase> purchases = productReadService.findPurchasesForShop(shopId)
         .stream()
         .filter(p -> p.getStatus() == PurchaseStatus.COMPLETED)
         .filter(p -> p.getSoldAt() != null)

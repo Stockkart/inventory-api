@@ -1,9 +1,9 @@
 package com.inventory.analytics.utils;
 
+import com.inventory.product.service.ProductAnalyticsReadService;
 import com.inventory.analytics.rest.dto.response.*;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
-import com.inventory.product.domain.repository.InventoryRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -23,7 +23,7 @@ import java.util.stream.Collectors;
 public class ProfitAnalyticsUtils {
 
   @Autowired
-  private InventoryRepository inventoryRepository;
+  private ProductAnalyticsReadService productReadService;
 
   /**
    * Calculate product-level profit metrics.
@@ -39,7 +39,7 @@ public class ProfitAnalyticsUtils {
 
           // Get inventory details (cost price, lotId, businessType, etc.)
           if (data.costPrice == null) {
-            inventoryRepository.findById(inventoryId).ifPresent(inv -> {
+            productReadService.findInventoryById(inventoryId).ifPresent(inv -> {
               data.costPrice = inv.getCostPrice() != null ? inv.getCostPrice() : BigDecimal.ZERO;
               data.productName = inv.getName();
               data.lotId = inv.getLotId();
@@ -116,7 +116,7 @@ public class ProfitAnalyticsUtils {
     Map<String, BigDecimal> inventoryToCostPrice = new HashMap<>();
     Map<String, String> inventoryToProductName = new HashMap<>();
     for (String inventoryId : inventoryIds) {
-      inventoryRepository.findById(inventoryId).ifPresent(inv -> {
+      productReadService.findInventoryById(inventoryId).ifPresent(inv -> {
         inventoryToCostPrice.put(inventoryId, inv.getCostPrice() != null ? inv.getCostPrice() : BigDecimal.ZERO);
         inventoryToProductName.put(inventoryId, inv.getName() != null ? inv.getName() : "Unknown");
       });
@@ -192,7 +192,7 @@ public class ProfitAnalyticsUtils {
     Map<String, String> inventoryToLotId = new HashMap<>();
     Map<String, BigDecimal> inventoryToCostPrice = new HashMap<>();
     for (String inventoryId : inventoryIds) {
-      inventoryRepository.findById(inventoryId).ifPresent(inv -> {
+      productReadService.findInventoryById(inventoryId).ifPresent(inv -> {
         inventoryToLotId.put(inventoryId, inv.getLotId());
         inventoryToCostPrice.put(inventoryId, inv.getCostPrice() != null ? inv.getCostPrice() : BigDecimal.ZERO);
       });
@@ -268,7 +268,7 @@ public class ProfitAnalyticsUtils {
     Map<String, String> inventoryToBusinessType = new HashMap<>();
     Map<String, BigDecimal> inventoryToCostPrice = new HashMap<>();
     for (String inventoryId : inventoryIds) {
-      inventoryRepository.findById(inventoryId).ifPresent(inv -> {
+      productReadService.findInventoryById(inventoryId).ifPresent(inv -> {
         inventoryToBusinessType.put(inventoryId, inv.getBusinessType() != null ? inv.getBusinessType() : "Unknown");
         inventoryToCostPrice.put(inventoryId, inv.getCostPrice() != null ? inv.getCostPrice() : BigDecimal.ZERO);
       });
@@ -409,7 +409,7 @@ public class ProfitAnalyticsUtils {
     // Get cost prices from inventory
     Map<String, BigDecimal> inventoryToCostPrice = new HashMap<>();
     for (String inventoryId : inventoryIds) {
-      inventoryRepository.findById(inventoryId).ifPresent(inv -> {
+      productReadService.findInventoryById(inventoryId).ifPresent(inv -> {
         inventoryToCostPrice.put(inventoryId, inv.getCostPrice() != null ? inv.getCostPrice() : BigDecimal.ZERO);
       });
     }

@@ -1,27 +1,37 @@
 package com.inventory.analytics.service;
 
-import com.inventory.analytics.rest.dto.response.VendorMoneyMisVendorSummaryDto;
+import static com.inventory.analytics.utils.VendorMoneyMisUtils.addDelta;
+import static com.inventory.analytics.utils.VendorMoneyMisUtils.containsIgnoreCase;
+import static com.inventory.analytics.utils.VendorMoneyMisUtils.endOfDayInclusive;
+import static com.inventory.analytics.utils.VendorMoneyMisUtils.isNonZero;
+import static com.inventory.analytics.utils.VendorMoneyMisUtils.isWithin;
+import static com.inventory.analytics.utils.VendorMoneyMisUtils.lowerOrEmpty;
+import static com.inventory.analytics.utils.VendorMoneyMisUtils.startOfDay;
+import static com.inventory.analytics.utils.VendorMoneyMisUtils.toMoneyScale;
+import static com.inventory.analytics.utils.VendorMoneyMisUtils.toShopDate;
+import static com.inventory.analytics.utils.VendorMoneyMisUtils.zeroIfNull;
+import static com.inventory.analytics.utils.VendorMoneyMisUtils.zeroMoney;
+
+import com.inventory.analytics.mapper.VendorMoneyMisMapper;
+import com.inventory.analytics.domain.model.MisTxnType;
+import com.inventory.analytics.domain.model.MoneyFilter;
 import com.inventory.analytics.rest.dto.response.VendorMoneyMisResponse;
 import com.inventory.analytics.rest.dto.response.VendorMoneyMisRowDto;
 import com.inventory.analytics.rest.dto.response.VendorMoneyMisSummaryDto;
-import com.inventory.analytics.util.TxnTypeParser;
+import com.inventory.analytics.rest.dto.response.VendorMoneyMisVendorSummaryDto;
 import com.inventory.credit.domain.model.CreditEntry;
 import com.inventory.credit.domain.model.CreditEntryType;
-import com.inventory.credit.domain.model.CreditPartyType;
-import com.inventory.credit.domain.repository.CreditEntryRepository;
-import com.inventory.documentservice.service.DocumentService;
+import com.inventory.credit.service.VendorLedgerReadService;
+import com.inventory.documentservice.rest.dto.TabularReport;
+import com.inventory.documentservice.service.ReportDocumentService;
 import com.inventory.product.domain.model.VendorPurchaseInvoice;
 import com.inventory.product.domain.model.VendorPurchaseReturn;
-import com.inventory.product.domain.repository.VendorPurchaseInvoiceRepository;
-import com.inventory.product.domain.repository.VendorPurchaseReturnRepository;
+import com.inventory.product.service.VendorPurchaseLedgerReadService;
 import com.inventory.product.service.VendorPurchasePaymentBreakdown;
-import com.inventory.user.domain.repository.VendorRepository;
+import com.inventory.user.service.VendorDirectoryService;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.text.NumberFormat;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -30,11 +40,8 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -43,39 +50,78 @@ import org.springframework.util.StringUtils;
 /**
  * Vendor Money MIS: Excel-style row ledger of purchase / payment / return / charge events with
  * cash/online/credit columns and running payable balance per vendor.
+ *
+ * <p>Reads go through the owning modules' read services rather than their repositories, so this
+ * module does not reach across into another aggregate's persistence.
  */
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class VendorMoneyMisService {
 
-  public static final ZoneId SHOP_ZONE = ZoneId.of("Asia/Kolkata");
+  /** Guards against an unbounded report; a wide date range on a busy shop is otherwise unbounded. */
   private static final int MAX_ROWS = 2000;
-  private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("dd-MMM-yyyy");
-  private static final NumberFormat MONEY =
-      NumberFormat.getCurrencyInstance(new Locale("en", "IN"));
-  private static final List<String> EXCEL_HEADERS =
-      List.of(
-          "Date",
-          "Supplier",
-          "Txn ID",
-          "Transaction",
-          "Invoice",
-          "Against",
-          "Bill Amount",
-          "Cash",
-          "Online",
-          "Credit",
-          "Outstanding");
 
-  private final VendorPurchaseInvoiceRepository vendorPurchaseInvoiceRepository;
-  private final VendorPurchaseReturnRepository vendorPurchaseReturnRepository;
-  private final CreditEntryRepository creditEntryRepository;
-  private final VendorRepository vendorRepository;
-  private final DocumentService documentService;
+  private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd-MMM-yyyy");
+
+  /** Ledger-affecting credit entries; other entry types are not money movements against a vendor. */
+  private static final List<CreditEntryType> LEDGER_ENTRY_TYPES =
+      List.of(CreditEntryType.SETTLEMENT, CreditEntryType.CHARGE, CreditEntryType.ADJUSTMENT);
+
+  /**
+   * Charges auto-raised by a credit purchase already appear as the purchase row itself; including
+   * them would double-count the payable.
+   */
+  private static final String AUTO_PURCHASE_CHARGE_PREFIX = "PURCHASE:CREDIT:";
+
+  private static final List<TabularReport.Column> REPORT_COLUMNS =
+      List.of(
+          TabularReport.Column.date("Date"),
+          TabularReport.Column.text("Supplier"),
+          TabularReport.Column.text("Txn ID"),
+          TabularReport.Column.text("Transaction"),
+          TabularReport.Column.text("Invoice"),
+          TabularReport.Column.money("Bill Amount"),
+          TabularReport.Column.money("Cash"),
+          TabularReport.Column.money("Online"),
+          TabularReport.Column.money("Credit"),
+          TabularReport.Column.money("Outstanding"));
+
+  private final VendorPurchaseLedgerReadService vendorPurchaseLedger;
+  private final VendorLedgerReadService vendorCreditLedger;
+  private final VendorDirectoryService vendorDirectory;
+  private final ReportDocumentService reportDocumentService;
+  private final VendorMoneyMisMapper mapper;
 
   /** Binary download payload (bytes + suggested attachment filename). */
   public record ExportFile(byte[] content, String filename) {}
+
+  /** Everything one report run needs, resolved once. */
+  private record ReportQuery(
+      String shopId,
+      LocalDate from,
+      LocalDate to,
+      String vendorId,
+      Set<MisTxnType> txnTypes,
+      MoneyFilter moneyFilter,
+      String search) {
+
+    Instant fromInstant() {
+      return startOfDay(from);
+    }
+
+    Instant toInstantInclusive() {
+      return endOfDayInclusive(to);
+    }
+
+    boolean matchesVendor(String candidateVendorId) {
+      return !StringUtils.hasText(vendorId) || vendorId.equals(candidateVendorId);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Entry points
+  // ---------------------------------------------------------------------------
 
   public VendorMoneyMisResponse getVendorMis(
       String shopId,
@@ -86,7 +132,7 @@ public class VendorMoneyMisService {
       String moneyFilter,
       String q) {
     return getVendorMis(
-        shopId, from, to, vendorId, TxnTypeParser.parse(txnTypesCsv), moneyFilter, q);
+        shopId, from, to, vendorId, MisTxnType.parseCsv(txnTypesCsv), MoneyFilter.from(moneyFilter), q);
   }
 
   public ExportFile exportExcel(
@@ -99,7 +145,9 @@ public class VendorMoneyMisService {
       String q) {
     VendorMoneyMisResponse report =
         getVendorMis(shopId, from, to, vendorId, txnTypesCsv, moneyFilter, q);
-    return new ExportFile(buildExcel(report), exportFilename(report, "xlsx"));
+    return new ExportFile(
+        reportDocumentService.renderExcel(toTabularReport(report, "Vendor Money MIS")),
+        exportFilename(report, "xlsx"));
   }
 
   public ExportFile exportPdf(
@@ -113,7 +161,7 @@ public class VendorMoneyMisService {
     VendorMoneyMisResponse report =
         getVendorMis(shopId, from, to, vendorId, txnTypesCsv, moneyFilter, q);
     return new ExportFile(
-        documentService.generatePdfFromHtml(buildPdfHtml(report, "Shop")),
+        reportDocumentService.renderPdf(toTabularReport(report, "Shop")),
         exportFilename(report, "pdf"));
   }
 
@@ -122,736 +170,639 @@ public class VendorMoneyMisService {
       LocalDate from,
       LocalDate to,
       String vendorId,
-      Set<String> txnTypes,
-      String moneyFilter,
+      Set<MisTxnType> txnTypes,
+      MoneyFilter moneyFilter,
       String q) {
-    LocalDate rangeTo = to != null ? to : LocalDate.now(SHOP_ZONE);
-    LocalDate rangeFrom = from != null ? from : rangeTo.withDayOfMonth(1);
+    ReportQuery query = resolveQuery(shopId, from, to, vendorId, txnTypes, moneyFilter, q);
 
-    Map<String, String> vendorNames = loadVendorNames(shopId);
+    // Invoices are indexed once: rows, returns' against-references and opening balances all need
+    // them, and a return can point at an invoice from outside the reporting window.
+    Map<String, VendorPurchaseInvoice> invoiceIndex = loadInvoiceIndex(query);
+    List<VendorPurchaseReturn> returns = loadReturnsInWindow(query, invoiceIndex);
+    List<CreditEntry> creditEntries = loadCreditEntriesInWindow(query);
+
+    // Names resolved in one batch once every vendor referenced by the report is known.
+    Map<String, String> vendorNames =
+        vendorDirectory.namesByIds(referencedVendorIds(invoiceIndex, returns, creditEntries));
+
     List<VendorMoneyMisRowDto> events = new ArrayList<>();
+    events.addAll(buildPurchaseRows(query, invoiceIndex, vendorNames));
+    events.addAll(buildReturnRows(query, returns, invoiceIndex, vendorNames));
+    events.addAll(buildCreditRows(creditEntries, query, vendorNames));
 
-    Instant fromInstant = rangeFrom.atStartOfDay(SHOP_ZONE).toInstant();
-    Instant toInstantExclusive = rangeTo.plusDays(1).atStartOfDay(SHOP_ZONE).toInstant();
+    Map<String, BigDecimal> openingByVendor = computeOpeningBalances(query, invoiceIndex);
 
-    // Purchases — prefer invoiceDate range; also pull createdAt window to catch missing invoiceDate
-    List<VendorPurchaseInvoice> invoices = new ArrayList<>();
-    invoices.addAll(
-        vendorPurchaseInvoiceRepository.findByShopIdAndInvoiceDateBetween(
-            shopId, fromInstant, toInstantExclusive.minusNanos(1)));
-    invoices.addAll(
-        vendorPurchaseInvoiceRepository.findByShopIdAndCreatedAtBetween(
-            shopId, fromInstant, toInstantExclusive.minusNanos(1)));
-    Map<String, VendorPurchaseInvoice> invoiceById = new LinkedHashMap<>();
-    for (VendorPurchaseInvoice inv : invoices) {
-      if (inv.getId() != null) {
-        invoiceById.putIfAbsent(inv.getId(), inv);
-      }
-    }
-
-    // Need all invoices for opening-balance + against-ref (same shop); load lightly by createdAt before from
-    List<VendorPurchaseInvoice> priorInvoices =
-        vendorPurchaseInvoiceRepository.findByShopIdAndCreatedAtBetween(
-            shopId, Instant.EPOCH, fromInstant.minusNanos(1));
-    for (VendorPurchaseInvoice inv : priorInvoices) {
-      if (inv.getId() != null) {
-        invoiceById.putIfAbsent(inv.getId(), inv);
-      }
-    }
-
-    for (VendorPurchaseInvoice inv : invoiceById.values()) {
-      LocalDate day = toShopDate(inv.getInvoiceDate() != null ? inv.getInvoiceDate() : inv.getCreatedAt());
-      if (day == null || day.isBefore(rangeFrom) || day.isAfter(rangeTo)) {
-        continue;
-      }
-      if (StringUtils.hasText(vendorId) && !vendorId.equals(inv.getVendorId())) {
-        continue;
-      }
-      events.add(toPurchaseRow(inv, vendorNames));
-    }
-
-    List<VendorPurchaseReturn> returns =
-        vendorPurchaseReturnRepository.findByShopIdAndCreatedAtBetween(
-            shopId, fromInstant, toInstantExclusive.minusNanos(1));
-    for (VendorPurchaseReturn ret : returns) {
-      LocalDate day = toShopDate(ret.getCreatedAt());
-      if (day == null || day.isBefore(rangeFrom) || day.isAfter(rangeTo)) {
-        continue;
-      }
-      VendorPurchaseInvoice linked =
-          ret.getVendorPurchaseInvoiceId() != null
-              ? invoiceById.get(ret.getVendorPurchaseInvoiceId())
-              : null;
-      if (linked == null && StringUtils.hasText(ret.getVendorPurchaseInvoiceId())) {
-        linked =
-            vendorPurchaseInvoiceRepository
-                .findById(ret.getVendorPurchaseInvoiceId())
-                .orElse(null);
-        if (linked != null) {
-          invoiceById.put(linked.getId(), linked);
-        }
-      }
-      String rowVendorId = linked != null ? linked.getVendorId() : null;
-      if (StringUtils.hasText(vendorId) && !vendorId.equals(rowVendorId)) {
-        continue;
-      }
-      events.add(toReturnRow(ret, linked, vendorNames));
-    }
-
-    List<CreditEntryType> creditTypes =
-        Arrays.asList(CreditEntryType.SETTLEMENT, CreditEntryType.CHARGE, CreditEntryType.ADJUSTMENT);
-    Map<String, CreditEntry> creditById = new LinkedHashMap<>();
-    for (CreditEntry entry :
-        creditEntryRepository.findByShopIdAndPartyTypeAndEntryTypeInAndTxnDateBetween(
-            shopId, CreditPartyType.VENDOR, creditTypes, rangeFrom, rangeTo)) {
-      if (entry.getId() != null) {
-        creditById.put(entry.getId(), entry);
-      }
-    }
-    for (CreditEntry entry :
-        creditEntryRepository.findByShopIdAndPartyTypeAndCreatedAtBetween(
-            shopId, CreditPartyType.VENDOR, fromInstant, toInstantExclusive.minusNanos(1))) {
-      if (entry.getId() == null) {
-        continue;
-      }
-      if (entry.getEntryType() != CreditEntryType.SETTLEMENT
-          && entry.getEntryType() != CreditEntryType.CHARGE
-          && entry.getEntryType() != CreditEntryType.ADJUSTMENT) {
-        continue;
-      }
-      LocalDate day =
-          entry.getTxnDate() != null ? entry.getTxnDate() : toShopDate(entry.getCreatedAt());
-      if (day == null || day.isBefore(rangeFrom) || day.isAfter(rangeTo)) {
-        continue;
-      }
-      creditById.putIfAbsent(entry.getId(), entry);
-    }
-    for (CreditEntry entry : creditById.values()) {
-      if (StringUtils.hasText(vendorId) && !vendorId.equals(entry.getPartyRefId())) {
-        continue;
-      }
-      // Skip auto charges that duplicate vendor purchase invoices
-      if (entry.getEntryType() == CreditEntryType.CHARGE
-          && entry.getSourceKey() != null
-          && entry.getSourceKey().startsWith("PURCHASE:CREDIT:")) {
-        continue;
-      }
-      events.add(toCreditRow(entry, vendorNames));
-    }
-
-    // Opening balances per party (events before from)
-    Map<String, BigDecimal> openingByParty =
-        computeOpeningBalances(shopId, rangeFrom, vendorId, vendorNames, invoiceById);
-
-    // Filter types / money / search on event rows (before opening rows)
-    events = filterEvents(events, txnTypes, moneyFilter, q);
-
-    // Sort events
-    events.sort(
-        Comparator.comparing(VendorMoneyMisRowDto::getTxnDate, Comparator.nullsLast(Comparator.naturalOrder()))
-            .thenComparing(VendorMoneyMisRowDto::getPostedAt, Comparator.nullsLast(Comparator.naturalOrder()))
-            .thenComparing(
-                r -> r.getVendorName() != null ? r.getVendorName().toLowerCase(Locale.ROOT) : "",
-                Comparator.nullsLast(Comparator.naturalOrder())));
-
-    // Insert opening rows and compute running balances
-    List<VendorMoneyMisRowDto> withBalance = applyRunningBalances(events, openingByParty, vendorNames);
-
-    if (withBalance.size() > MAX_ROWS) {
-      withBalance = new ArrayList<>(withBalance.subList(0, MAX_ROWS));
-    }
-
-    VendorMoneyMisSummaryDto summary = buildSummary(withBalance, openingByParty, vendorNames);
+    List<VendorMoneyMisRowDto> filtered = sortChronologically(applyFilters(events, query));
+    List<VendorMoneyMisRowDto> rows =
+        capRows(withRunningBalances(filtered, openingByVendor, vendorNames));
 
     return VendorMoneyMisResponse.builder()
-        .from(rangeFrom)
-        .to(rangeTo)
-        .rows(withBalance)
-        .summary(summary)
+        .from(query.from())
+        .to(query.to())
+        .rows(rows)
+        .summary(buildSummary(rows, openingByVendor, vendorNames))
         .build();
   }
 
-  private Map<String, BigDecimal> computeOpeningBalances(
+  // ---------------------------------------------------------------------------
+  // Query setup
+  // ---------------------------------------------------------------------------
+
+  /** Defaults an open-ended range to month-to-date. */
+  private ReportQuery resolveQuery(
       String shopId,
       LocalDate from,
+      LocalDate to,
       String vendorId,
-      Map<String, String> vendorNames,
-      Map<String, VendorPurchaseInvoice> invoiceById) {
+      Set<MisTxnType> txnTypes,
+      MoneyFilter moneyFilter,
+      String q) {
+    LocalDate rangeTo = to != null ? to : LocalDate.now(com.inventory.analytics.utils.VendorMoneyMisUtils.SHOP_ZONE);
+    LocalDate rangeFrom = from != null ? from : rangeTo.withDayOfMonth(1);
+    return new ReportQuery(
+        shopId,
+        rangeFrom,
+        rangeTo,
+        vendorId,
+        txnTypes != null ? txnTypes : Set.of(),
+        moneyFilter != null ? moneyFilter : MoneyFilter.ALL,
+        q);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Event loading
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Invoices keyed by id: those dated in the window, those captured in it, and all earlier ones.
+   *
+   * <p>Both date fields are queried because {@code invoiceDate} is optional on older records, and
+   * the prior-history load is what makes opening balances and cross-period return links possible.
+   */
+  private Map<String, VendorPurchaseInvoice> loadInvoiceIndex(ReportQuery query) {
+    Map<String, VendorPurchaseInvoice> index = new LinkedHashMap<>();
+    indexInvoices(
+        index,
+        vendorPurchaseLedger.findInvoicesByInvoiceDate(
+            query.shopId(), query.fromInstant(), query.toInstantInclusive()));
+    indexInvoices(
+        index,
+        vendorPurchaseLedger.findInvoicesByCreatedAt(
+            query.shopId(), query.fromInstant(), query.toInstantInclusive()));
+    indexInvoices(
+        index,
+        vendorPurchaseLedger.findInvoicesByCreatedAt(
+            query.shopId(), Instant.EPOCH, query.fromInstant().minusNanos(1)));
+    return index;
+  }
+
+  private void indexInvoices(
+      Map<String, VendorPurchaseInvoice> index, List<VendorPurchaseInvoice> invoices) {
+    for (VendorPurchaseInvoice invoice : invoices) {
+      if (invoice.getId() != null) {
+        index.putIfAbsent(invoice.getId(), invoice);
+      }
+    }
+  }
+
+  private List<VendorMoneyMisRowDto> buildPurchaseRows(
+      ReportQuery query,
+      Map<String, VendorPurchaseInvoice> invoiceIndex,
+      Map<String, String> vendorNames) {
+    List<VendorMoneyMisRowDto> rows = new ArrayList<>();
+    for (VendorPurchaseInvoice invoice : invoiceIndex.values()) {
+      LocalDate day = toShopDate(VendorMoneyMisMapper.effectiveInvoiceInstant(invoice));
+      if (!isWithin(day, query.from(), query.to()) || !query.matchesVendor(invoice.getVendorId())) {
+        continue;
+      }
+      rows.add(mapper.toPurchaseRow(invoice, tenderFor(invoice), vendorNames));
+    }
+    return rows;
+  }
+
+  /**
+   * Returns posted in the window, with their originating invoices pulled into the index.
+   *
+   * <p>Linking happens during loading so the invoice index is complete before vendor names are
+   * resolved — a return's vendor is only known through its invoice.
+   */
+  private List<VendorPurchaseReturn> loadReturnsInWindow(
+      ReportQuery query, Map<String, VendorPurchaseInvoice> invoiceIndex) {
+    List<VendorPurchaseReturn> inWindow = new ArrayList<>();
+    for (VendorPurchaseReturn ret :
+        vendorPurchaseLedger.findReturnsByCreatedAt(
+            query.shopId(), query.fromInstant(), query.toInstantInclusive())) {
+      if (!isWithin(toShopDate(ret.getCreatedAt()), query.from(), query.to())) {
+        continue;
+      }
+      resolveLinkedInvoice(ret, invoiceIndex);
+      inWindow.add(ret);
+    }
+    return inWindow;
+  }
+
+  private List<VendorMoneyMisRowDto> buildReturnRows(
+      ReportQuery query,
+      List<VendorPurchaseReturn> returns,
+      Map<String, VendorPurchaseInvoice> invoiceIndex,
+      Map<String, String> vendorNames) {
+    List<VendorMoneyMisRowDto> rows = new ArrayList<>();
+    for (VendorPurchaseReturn ret : returns) {
+      VendorPurchaseInvoice linked = linkedInvoiceOf(ret, invoiceIndex);
+      if (!query.matchesVendor(linked != null ? linked.getVendorId() : null)) {
+        continue;
+      }
+      rows.add(mapper.toReturnRow(ret, linked, vendorNames));
+    }
+    return rows;
+  }
+
+  private VendorPurchaseInvoice linkedInvoiceOf(
+      VendorPurchaseReturn ret, Map<String, VendorPurchaseInvoice> invoiceIndex) {
+    return ret.getVendorPurchaseInvoiceId() != null
+        ? invoiceIndex.get(ret.getVendorPurchaseInvoiceId())
+        : null;
+  }
+
+  /** Every vendor the report will reference, so names can be fetched in one round trip. */
+  private Set<String> referencedVendorIds(
+      Map<String, VendorPurchaseInvoice> invoiceIndex,
+      List<VendorPurchaseReturn> returns,
+      List<CreditEntry> creditEntries) {
+    Set<String> ids = new HashSet<>();
+    invoiceIndex.values().forEach(invoice -> ids.add(invoice.getVendorId()));
+    returns.forEach(
+        ret -> {
+          VendorPurchaseInvoice linked = linkedInvoiceOf(ret, invoiceIndex);
+          if (linked != null) {
+            ids.add(linked.getVendorId());
+          }
+        });
+    creditEntries.forEach(entry -> ids.add(entry.getPartyRefId()));
+    ids.remove(null);
+    return ids;
+  }
+
+  /** The invoice a return was raised against, fetching it if it falls outside the loaded window. */
+  private VendorPurchaseInvoice resolveLinkedInvoice(
+      VendorPurchaseReturn ret, Map<String, VendorPurchaseInvoice> invoiceIndex) {
+    String invoiceId = ret.getVendorPurchaseInvoiceId();
+    if (!StringUtils.hasText(invoiceId)) {
+      return null;
+    }
+    VendorPurchaseInvoice linked = invoiceIndex.get(invoiceId);
+    if (linked != null) {
+      return linked;
+    }
+    linked = vendorPurchaseLedger.findInvoiceById(invoiceId).orElse(null);
+    if (linked != null) {
+      invoiceIndex.put(linked.getId(), linked);
+    }
+    return linked;
+  }
+
+  /**
+   * Ledger-affecting vendor credit entries dated or posted inside the window.
+   *
+   * <p>Queried two ways and de-duplicated by id: an entry with no {@code txnDate}, or one
+   * back-dated outside the window, is only reachable by posting time.
+   */
+  private List<CreditEntry> loadCreditEntriesInWindow(ReportQuery query) {
+    Map<String, CreditEntry> byId = new LinkedHashMap<>();
+
+    for (CreditEntry entry :
+        vendorCreditLedger.findVendorEntriesByTxnDate(
+            query.shopId(), LEDGER_ENTRY_TYPES, query.from(), query.to())) {
+      if (entry.getId() != null) {
+        byId.put(entry.getId(), entry);
+      }
+    }
+
+    for (CreditEntry entry :
+        vendorCreditLedger.findVendorEntriesByCreatedAt(
+            query.shopId(), query.fromInstant(), query.toInstantInclusive())) {
+      if (entry.getId() == null || !LEDGER_ENTRY_TYPES.contains(entry.getEntryType())) {
+        continue;
+      }
+      if (!isWithin(effectiveCreditDate(entry), query.from(), query.to())) {
+        continue;
+      }
+      byId.putIfAbsent(entry.getId(), entry);
+    }
+    return new ArrayList<>(byId.values());
+  }
+
+  private List<VendorMoneyMisRowDto> buildCreditRows(
+      List<CreditEntry> creditEntries, ReportQuery query, Map<String, String> vendorNames) {
+    List<VendorMoneyMisRowDto> rows = new ArrayList<>();
+    for (CreditEntry entry : creditEntries) {
+      if (!query.matchesVendor(entry.getPartyRefId()) || isAutoPurchaseCharge(entry)) {
+        continue;
+      }
+      rows.add(mapper.toCreditRow(entry, vendorNames));
+    }
+    return rows;
+  }
+
+  private LocalDate effectiveCreditDate(CreditEntry entry) {
+    return entry.getTxnDate() != null ? entry.getTxnDate() : toShopDate(entry.getCreatedAt());
+  }
+
+  private boolean isAutoPurchaseCharge(CreditEntry entry) {
+    return entry.getEntryType() == CreditEntryType.CHARGE
+        && entry.getSourceKey() != null
+        && entry.getSourceKey().startsWith(AUTO_PURCHASE_CHARGE_PREFIX);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Opening balances
+  // ---------------------------------------------------------------------------
+
+  /** Net payable per vendor carried in from before the window. */
+  private Map<String, BigDecimal> computeOpeningBalances(
+      ReportQuery query, Map<String, VendorPurchaseInvoice> invoiceIndex) {
     Map<String, BigDecimal> opening = new HashMap<>();
-    Instant fromInstant = from.atStartOfDay(SHOP_ZONE).toInstant();
-
-    for (VendorPurchaseInvoice inv : invoiceById.values()) {
-      LocalDate day = toShopDate(inv.getInvoiceDate() != null ? inv.getInvoiceDate() : inv.getCreatedAt());
-      if (day == null || !day.isBefore(from)) {
-        continue;
-      }
-      if (StringUtils.hasText(vendorId) && !vendorId.equals(inv.getVendorId())) {
-        continue;
-      }
-      VendorPurchasePaymentBreakdown.Result tender = tenderForInvoice(inv);
-      addDelta(opening, inv.getVendorId(), tender.creditAmount());
-    }
-
-    List<VendorPurchaseReturn> priorReturns =
-        vendorPurchaseReturnRepository.findByShopIdAndCreatedAtBetween(
-            shopId, Instant.EPOCH, fromInstant.minusNanos(1));
-    for (VendorPurchaseReturn ret : priorReturns) {
-      VendorPurchaseInvoice linked =
-          ret.getVendorPurchaseInvoiceId() != null
-              ? invoiceById.get(ret.getVendorPurchaseInvoiceId())
-              : null;
-      String rowVendorId = linked != null ? linked.getVendorId() : null;
-      if (!StringUtils.hasText(rowVendorId)) {
-        continue;
-      }
-      if (StringUtils.hasText(vendorId) && !vendorId.equals(rowVendorId)) {
-        continue;
-      }
-      BigDecimal creditLeg = nz(ret.getRefundToCredit());
-      if (creditLeg.signum() == 0 && isAllZeroRefund(ret)) {
-        creditLeg = nz(ret.getReturnAmount());
-      }
-      // Returns reduce payable
-      addDelta(opening, rowVendorId, creditLeg.negate());
-    }
-
-    List<CreditEntry> priorCredits =
-        creditEntryRepository.findByShopIdAndPartyTypeAndTxnDateBetween(
-            shopId, CreditPartyType.VENDOR, LocalDate.of(1970, 1, 1), from.minusDays(1));
-    for (CreditEntry entry : priorCredits) {
-      if (StringUtils.hasText(vendorId) && !vendorId.equals(entry.getPartyRefId())) {
-        continue;
-      }
-      if (entry.getEntryType() == CreditEntryType.CHARGE
-          && entry.getSourceKey() != null
-          && entry.getSourceKey().startsWith("PURCHASE:CREDIT:")) {
-        continue;
-      }
-      BigDecimal amt = nz(entry.getAmount());
-      if (entry.getEntryType() == CreditEntryType.SETTLEMENT
-          || entry.getEntryType() == CreditEntryType.RETURN) {
-        addDelta(opening, entry.getPartyRefId(), amt.negate());
-      } else {
-        addDelta(opening, entry.getPartyRefId(), amt);
-      }
-    }
+    addPriorPurchases(opening, query, invoiceIndex);
+    addPriorReturns(opening, query, invoiceIndex);
+    addPriorCreditEntries(opening, query);
     return opening;
   }
 
-  private List<VendorMoneyMisRowDto> applyRunningBalances(
+  private void addPriorPurchases(
+      Map<String, BigDecimal> opening,
+      ReportQuery query,
+      Map<String, VendorPurchaseInvoice> invoiceIndex) {
+    for (VendorPurchaseInvoice invoice : invoiceIndex.values()) {
+      LocalDate day = toShopDate(VendorMoneyMisMapper.effectiveInvoiceInstant(invoice));
+      if (day == null || !day.isBefore(query.from()) || !query.matchesVendor(invoice.getVendorId())) {
+        continue;
+      }
+      // Only the unpaid leg carries forward; cash and online were settled at the time.
+      addDelta(opening, invoice.getVendorId(), tenderFor(invoice).creditAmount());
+    }
+  }
+
+  private void addPriorReturns(
+      Map<String, BigDecimal> opening,
+      ReportQuery query,
+      Map<String, VendorPurchaseInvoice> invoiceIndex) {
+    List<VendorPurchaseReturn> priorReturns =
+        vendorPurchaseLedger.findReturnsByCreatedAt(
+            query.shopId(), Instant.EPOCH, query.fromInstant().minusNanos(1));
+
+    for (VendorPurchaseReturn ret : priorReturns) {
+      VendorPurchaseInvoice linked =
+          ret.getVendorPurchaseInvoiceId() != null
+              ? invoiceIndex.get(ret.getVendorPurchaseInvoiceId())
+              : null;
+      String rowVendorId = linked != null ? linked.getVendorId() : null;
+      if (!StringUtils.hasText(rowVendorId) || !query.matchesVendor(rowVendorId)) {
+        continue;
+      }
+      addDelta(opening, rowVendorId, returnCreditLeg(ret).negate());
+    }
+  }
+
+  /** A return with no refund split recorded is treated as wholly reducing credit. */
+  private BigDecimal returnCreditLeg(VendorPurchaseReturn ret) {
+    BigDecimal creditLeg = zeroIfNull(ret.getRefundToCredit());
+    if (creditLeg.signum() == 0 && hasNoRecordedRefund(ret)) {
+      return zeroIfNull(ret.getReturnAmount());
+    }
+    return creditLeg;
+  }
+
+  private boolean hasNoRecordedRefund(VendorPurchaseReturn ret) {
+    return zeroIfNull(ret.getRefundCash()).signum() == 0
+        && zeroIfNull(ret.getRefundOnline()).signum() == 0
+        && zeroIfNull(ret.getRefundToCredit()).signum() == 0;
+  }
+
+  private void addPriorCreditEntries(Map<String, BigDecimal> opening, ReportQuery query) {
+    List<CreditEntry> priorEntries =
+        vendorCreditLedger.findVendorEntriesByTxnDate(
+            query.shopId(), null, LocalDate.EPOCH, query.from().minusDays(1));
+
+    for (CreditEntry entry : priorEntries) {
+      if (!query.matchesVendor(entry.getPartyRefId()) || isAutoPurchaseCharge(entry)) {
+        continue;
+      }
+      BigDecimal amount = zeroIfNull(entry.getAmount());
+      boolean reducesPayable =
+          entry.getEntryType() == CreditEntryType.SETTLEMENT
+              || entry.getEntryType() == CreditEntryType.RETURN;
+      addDelta(opening, entry.getPartyRefId(), reducesPayable ? amount.negate() : amount);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Filtering, ordering, balances
+  // ---------------------------------------------------------------------------
+
+  private List<VendorMoneyMisRowDto> applyFilters(
+      List<VendorMoneyMisRowDto> events, ReportQuery query) {
+    return events.stream()
+        .filter(row -> matchesTxnType(row, query.txnTypes()))
+        .filter(row -> matchesMoneyFilter(row, query.moneyFilter()))
+        .filter(row -> matchesSearch(row, query.search()))
+        .toList();
+  }
+
+  private boolean matchesTxnType(VendorMoneyMisRowDto row, Set<MisTxnType> txnTypes) {
+    if (txnTypes.isEmpty()) {
+      return true;
+    }
+    return MisTxnType.parse(row.getTxnType()).map(txnTypes::contains).orElse(false);
+  }
+
+  private boolean matchesMoneyFilter(VendorMoneyMisRowDto row, MoneyFilter filter) {
+    return switch (filter) {
+      case ALL -> true;
+      case HAS_CASH -> isNonZero(row.getCashAmount());
+      case HAS_ONLINE -> isNonZero(row.getOnlineAmount());
+      case HAS_CREDIT -> isNonZero(row.getCreditAmount());
+      case FULLY_PAID -> !isNonZero(row.getCreditAmount()) && isNonZero(row.getTotalAmount());
+      case MIXED -> countNonZeroLegs(row) > 1;
+    };
+  }
+
+  private int countNonZeroLegs(VendorMoneyMisRowDto row) {
+    int legs = 0;
+    if (isNonZero(row.getCashAmount())) legs++;
+    if (isNonZero(row.getOnlineAmount())) legs++;
+    if (isNonZero(row.getCreditAmount())) legs++;
+    return legs;
+  }
+
+  private boolean matchesSearch(VendorMoneyMisRowDto row, String search) {
+    if (!StringUtils.hasText(search)) {
+      return true;
+    }
+    String needle = lowerOrEmpty(search.trim());
+    return containsIgnoreCase(row.getVendorName(), needle)
+        || containsIgnoreCase(row.getRefNo(), needle)
+        || containsIgnoreCase(row.getTxnId(), needle)
+        || containsIgnoreCase(row.getAgainstRefNo(), needle);
+  }
+
+  private List<VendorMoneyMisRowDto> sortChronologically(List<VendorMoneyMisRowDto> events) {
+    List<VendorMoneyMisRowDto> sorted = new ArrayList<>(events);
+    sorted.sort(
+        Comparator.comparing(
+                VendorMoneyMisRowDto::getTxnDate, Comparator.nullsLast(Comparator.naturalOrder()))
+            .thenComparing(
+                VendorMoneyMisRowDto::getPostedAt, Comparator.nullsLast(Comparator.naturalOrder()))
+            .thenComparing(row -> lowerOrEmpty(row.getVendorName())));
+    return sorted;
+  }
+
+  /**
+   * Inserts each vendor's opening row and stamps a running payable on every row.
+   *
+   * <p>The opening row is emitted lazily at a vendor's first event rather than up front, so it sits
+   * immediately above the rows it explains.
+   */
+  private List<VendorMoneyMisRowDto> withRunningBalances(
       List<VendorMoneyMisRowDto> events,
-      Map<String, BigDecimal> openingByParty,
+      Map<String, BigDecimal> openingByVendor,
       Map<String, String> vendorNames) {
     Map<String, BigDecimal> running = new HashMap<>();
-    for (Map.Entry<String, BigDecimal> e : openingByParty.entrySet()) {
-      running.put(e.getKey(), scale(e.getValue()));
-    }
+    openingByVendor.forEach((vendorId, amount) -> running.put(vendorId, toMoneyScale(amount)));
 
     List<VendorMoneyMisRowDto> out = new ArrayList<>();
-    Set<String> opened = new HashSet<>();
+    Set<String> seenVendors = new HashSet<>();
 
     for (VendorMoneyMisRowDto row : events) {
-      String pid = row.getVendorId() != null ? row.getVendorId() : "";
-      if (!opened.contains(pid) && openingByParty.containsKey(pid) && openingByParty.get(pid).signum() != 0) {
-        BigDecimal open = scale(openingByParty.get(pid));
-        running.put(pid, open);
+      String vendorId = row.getVendorId() != null ? row.getVendorId() : "";
+
+      if (seenVendors.add(vendorId) && hasOpeningBalance(openingByVendor, vendorId)) {
+        BigDecimal opening = toMoneyScale(openingByVendor.get(vendorId));
+        running.put(vendorId, opening);
         out.add(
-            VendorMoneyMisRowDto.builder()
-                .txnId("OPEN-" + shortId(pid))
-                .txnType("OPENING")
-                .txnTypeLabel("Opening")
-                .vendorId(pid)
-                .vendorName(vendorNames.getOrDefault(pid, row.getVendorName()))
-                .txnDate(row.getTxnDate())
-                .postedAt(null)
-                .refNo("Opening balance")
-                .totalAmount(open)
-                .cashAmount(zero())
-                .onlineAmount(zero())
-                .creditAmount(open)
-                .balanceAfter(open)
-                .sourceType("OPENING")
-                .sourceId(null)
-                .opening(true)
-                .build());
-        opened.add(pid);
+            mapper.toOpeningRow(
+                vendorId, opening, row.getTxnDate(), row.getVendorName(), vendorNames));
       }
 
-      BigDecimal bal = scale(running.getOrDefault(pid, zero()));
-      BigDecimal delta = partyDelta(row);
-      bal = scale(bal.add(delta));
-      running.put(pid, bal);
-      row.setBalanceAfter(bal);
+      BigDecimal balance =
+          toMoneyScale(running.getOrDefault(vendorId, zeroMoney()).add(payableDelta(row)));
+      running.put(vendorId, balance);
+      row.setBalanceAfter(balance);
       out.add(row);
-      opened.add(pid);
     }
     return out;
   }
 
-  private BigDecimal partyDelta(VendorMoneyMisRowDto row) {
-    String type = row.getTxnType();
-    if ("VENDOR_PURCHASE".equals(type) || "VENDOR_CREDIT_CHARGE".equals(type) || "OPENING".equals(type)) {
-      return nz(row.getCreditAmount());
-    }
-    if ("VENDOR_PAYMENT".equals(type)) {
-      // Settlement reduces payable; amount is in cash/online (or total)
-      BigDecimal paid = nz(row.getCashAmount()).add(nz(row.getOnlineAmount()));
-      if (paid.signum() == 0) {
-        paid = nz(row.getTotalAmount()).abs();
-      }
-      return paid.negate();
-    }
-    if ("VENDOR_RETURN".equals(type)) {
-      // Reduce payable primarily by credit leg; cash/online refunds also reduce what we owed if
-      // previously paid, but design: credit leg reduces payable; cash/online are money out from
-      // vendor back to us. Net payable change ≈ -credit (and if refund was credit note reducing
-      // invoice). Using -|credit| or -|total| when credit is zero.
-      BigDecimal credit = nz(row.getCreditAmount()).abs();
-      if (credit.signum() == 0) {
-        return nz(row.getTotalAmount()); // already negative for returns
-      }
-      return credit.negate();
-    }
-    return zero();
+  private boolean hasOpeningBalance(Map<String, BigDecimal> openingByVendor, String vendorId) {
+    BigDecimal opening = openingByVendor.get(vendorId);
+    return opening != null && opening.signum() != 0;
   }
+
+  /** How much a row moves the payable: positive owes more, negative owes less. */
+  private BigDecimal payableDelta(VendorMoneyMisRowDto row) {
+    MisTxnType type = MisTxnType.parse(row.getTxnType()).orElse(null);
+    if (type == null) {
+      return zeroMoney();
+    }
+    if (type.increasesPayable()) {
+      return zeroIfNull(row.getCreditAmount());
+    }
+    return switch (type) {
+      case VENDOR_PAYMENT -> settlementDelta(row);
+      case VENDOR_RETURN -> returnDelta(row);
+      default -> zeroMoney();
+    };
+  }
+
+  /** A settlement reduces the payable by whatever actually moved. */
+  private BigDecimal settlementDelta(VendorMoneyMisRowDto row) {
+    BigDecimal paid = zeroIfNull(row.getCashAmount()).add(zeroIfNull(row.getOnlineAmount()));
+    if (paid.signum() == 0) {
+      paid = zeroIfNull(row.getTotalAmount()).abs();
+    }
+    return paid.negate();
+  }
+
+  /**
+   * A return reduces the payable by its credit leg.
+   *
+   * <p>When no credit leg was recorded the total is used as-is — return totals are already negative,
+   * so it is a reduction either way.
+   */
+  private BigDecimal returnDelta(VendorMoneyMisRowDto row) {
+    BigDecimal credit = zeroIfNull(row.getCreditAmount()).abs();
+    return credit.signum() == 0 ? zeroIfNull(row.getTotalAmount()) : credit.negate();
+  }
+
+  private List<VendorMoneyMisRowDto> capRows(List<VendorMoneyMisRowDto> rows) {
+    if (rows.size() <= MAX_ROWS) {
+      return rows;
+    }
+    log.info("Vendor money MIS truncated from {} to {} rows", rows.size(), MAX_ROWS);
+    return new ArrayList<>(rows.subList(0, MAX_ROWS));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Summary
+  // ---------------------------------------------------------------------------
 
   private VendorMoneyMisSummaryDto buildSummary(
       List<VendorMoneyMisRowDto> rows,
-      Map<String, BigDecimal> openingByParty,
+      Map<String, BigDecimal> openingByVendor,
       Map<String, String> vendorNames) {
-    BigDecimal cash = zero();
-    BigDecimal online = zero();
-    BigDecimal credit = zero();
-    BigDecimal purchase = zero();
-    Map<String, VendorMoneyMisRowDto> lastByParty = new LinkedHashMap<>();
+    BigDecimal cash = zeroMoney();
+    BigDecimal online = zeroMoney();
+    BigDecimal credit = zeroMoney();
+    BigDecimal purchases = zeroMoney();
+    Map<String, VendorMoneyMisRowDto> lastRowByVendor = new LinkedHashMap<>();
 
     for (VendorMoneyMisRowDto row : rows) {
       if (row.isOpening()) {
         continue;
       }
-      cash = cash.add(nz(row.getCashAmount()));
-      online = online.add(nz(row.getOnlineAmount()));
-      credit = credit.add(nz(row.getCreditAmount()));
-      if ("VENDOR_PURCHASE".equals(row.getTxnType())) {
-        purchase = purchase.add(nz(row.getTotalAmount()));
+      cash = cash.add(zeroIfNull(row.getCashAmount()));
+      online = online.add(zeroIfNull(row.getOnlineAmount()));
+      credit = credit.add(zeroIfNull(row.getCreditAmount()));
+      if (MisTxnType.VENDOR_PURCHASE.name().equals(row.getTxnType())) {
+        purchases = purchases.add(zeroIfNull(row.getTotalAmount()));
       }
       if (row.getVendorId() != null) {
-        lastByParty.put(row.getVendorId(), row);
+        lastRowByVendor.put(row.getVendorId(), row);
       }
     }
-
-    BigDecimal openingTotal =
-        openingByParty.values().stream().map(this::scale).reduce(zero(), BigDecimal::add);
-    BigDecimal currentPayable =
-        lastByParty.values().stream()
-            .map(r -> nz(r.getBalanceAfter()))
-            .reduce(zero(), BigDecimal::add);
-
-    // Include parties that only have opening
-    for (Map.Entry<String, BigDecimal> e : openingByParty.entrySet()) {
-      if (!lastByParty.containsKey(e.getKey())) {
-        currentPayable = currentPayable.add(scale(e.getValue()));
-      }
-    }
-
-    List<VendorMoneyMisVendorSummaryDto> vendorSummaries = new ArrayList<>();
-    Set<String> allParties = new HashSet<>(openingByParty.keySet());
-    allParties.addAll(lastByParty.keySet());
-    for (String pid : allParties) {
-      BigDecimal open = scale(openingByParty.getOrDefault(pid, zero()));
-      VendorMoneyMisRowDto last = lastByParty.get(pid);
-      BigDecimal closing = last != null ? nz(last.getBalanceAfter()) : open;
-      vendorSummaries.add(
-          VendorMoneyMisVendorSummaryDto.builder()
-              .vendorId(pid)
-              .vendorName(vendorNames.getOrDefault(pid, pid))
-              .openingBalance(open)
-              .closingBalanceInPeriod(closing)
-              .currentBalance(closing)
-              .build());
-    }
-    vendorSummaries.sort(
-        Comparator.comparing(
-            p -> p.getVendorName() != null ? p.getVendorName().toLowerCase(Locale.ROOT) : "",
-            Comparator.nullsLast(Comparator.naturalOrder())));
 
     return VendorMoneyMisSummaryDto.builder()
-        .openingBalanceTotal(openingTotal)
-        .periodCashTotal(scale(cash))
-        .periodOnlineTotal(scale(online))
-        .periodCreditTotal(scale(credit))
-        .periodPurchaseTotal(scale(purchase))
-        .currentPayableTotal(scale(currentPayable))
-        .vendorSummaries(vendorSummaries)
+        .openingBalanceTotal(sumOpening(openingByVendor))
+        .periodCashTotal(toMoneyScale(cash))
+        .periodOnlineTotal(toMoneyScale(online))
+        .periodCreditTotal(toMoneyScale(credit))
+        .periodPurchaseTotal(toMoneyScale(purchases))
+        .currentPayableTotal(currentPayable(openingByVendor, lastRowByVendor))
+        .vendorSummaries(vendorSummaries(openingByVendor, lastRowByVendor, vendorNames))
         .build();
   }
 
-  private List<VendorMoneyMisRowDto> filterEvents(
-      List<VendorMoneyMisRowDto> events, Set<String> txnTypes, String moneyFilter, String q) {
-    return events.stream()
-        .filter(
-            r -> {
-              if (txnTypes != null && !txnTypes.isEmpty() && !txnTypes.contains(r.getTxnType())) {
-                return false;
-              }
-              if (!matchesMoneyFilter(r, moneyFilter)) {
-                return false;
-              }
-              if (StringUtils.hasText(q)) {
-                String needle = q.trim().toLowerCase(Locale.ROOT);
-                return contains(r.getVendorName(), needle)
-                    || contains(r.getRefNo(), needle)
-                    || contains(r.getTxnId(), needle)
-                    || contains(r.getAgainstRefNo(), needle);
-              }
-              return true;
-            })
-        .collect(Collectors.toList());
+  private BigDecimal sumOpening(Map<String, BigDecimal> openingByVendor) {
+    return openingByVendor.values().stream()
+        .map(com.inventory.analytics.utils.VendorMoneyMisUtils::toMoneyScale)
+        .reduce(zeroMoney(), BigDecimal::add);
   }
 
-  private boolean matchesMoneyFilter(VendorMoneyMisRowDto r, String moneyFilter) {
-    if (!StringUtils.hasText(moneyFilter) || "ALL".equalsIgnoreCase(moneyFilter)) {
-      return true;
-    }
-    return switch (moneyFilter.trim().toUpperCase(Locale.ROOT)) {
-      case "HAS_CASH" -> nz(r.getCashAmount()).signum() != 0;
-      case "HAS_ONLINE" -> nz(r.getOnlineAmount()).signum() != 0;
-      case "HAS_CREDIT" -> nz(r.getCreditAmount()).signum() != 0;
-      case "FULLY_PAID" -> nz(r.getCreditAmount()).signum() == 0 && nz(r.getTotalAmount()).signum() != 0;
-      case "MIXED" -> {
-        int legs = 0;
-        if (nz(r.getCashAmount()).signum() != 0) legs++;
-        if (nz(r.getOnlineAmount()).signum() != 0) legs++;
-        if (nz(r.getCreditAmount()).signum() != 0) legs++;
-        yield legs > 1;
+  /**
+   * Closing payable across vendors.
+   *
+   * <p>Vendors with an opening balance but no activity in the window still owe it, so they are
+   * added from the opening map rather than dropped for having no rows.
+   */
+  private BigDecimal currentPayable(
+      Map<String, BigDecimal> openingByVendor,
+      Map<String, VendorMoneyMisRowDto> lastRowByVendor) {
+    BigDecimal total =
+        lastRowByVendor.values().stream()
+            .map(row -> zeroIfNull(row.getBalanceAfter()))
+            .reduce(zeroMoney(), BigDecimal::add);
+
+    for (Map.Entry<String, BigDecimal> entry : openingByVendor.entrySet()) {
+      if (!lastRowByVendor.containsKey(entry.getKey())) {
+        total = total.add(toMoneyScale(entry.getValue()));
       }
-      default -> true;
-    };
+    }
+    return toMoneyScale(total);
   }
 
-  private VendorMoneyMisRowDto toPurchaseRow(
-      VendorPurchaseInvoice inv, Map<String, String> vendorNames) {
-    VendorPurchasePaymentBreakdown.Result tender = tenderForInvoice(inv);
-    Instant posted = inv.getCreatedAt() != null ? inv.getCreatedAt() : inv.getInvoiceDate();
-    return VendorMoneyMisRowDto.builder()
-        .txnId("VPUR-" + shortId(inv.getId()))
-        .txnType("VENDOR_PURCHASE")
-        .txnTypeLabel("Purchase")
-        .vendorId(inv.getVendorId())
-        .vendorName(vendorNames.getOrDefault(inv.getVendorId(), inv.getVendorId()))
-        .txnDate(toShopDate(inv.getInvoiceDate() != null ? inv.getInvoiceDate() : inv.getCreatedAt()))
-        .postedAt(posted)
-        .refNo(inv.getInvoiceNo())
-        .totalAmount(scale(nz(inv.getInvoiceTotal()).signum() > 0 ? inv.getInvoiceTotal() : tender.paidAmount().add(tender.creditAmount())))
-        .cashAmount(tender.cashAmount())
-        .onlineAmount(tender.onlineAmount())
-        .creditAmount(tender.creditAmount())
-        .sourceType("VENDOR_PURCHASE_INVOICE")
-        .sourceId(inv.getId())
-        .opening(false)
-        .build();
-  }
-
-  private VendorMoneyMisRowDto toReturnRow(
-      VendorPurchaseReturn ret,
-      VendorPurchaseInvoice linked,
+  private List<VendorMoneyMisVendorSummaryDto> vendorSummaries(
+      Map<String, BigDecimal> openingByVendor,
+      Map<String, VendorMoneyMisRowDto> lastRowByVendor,
       Map<String, String> vendorNames) {
-    String vendorId = linked != null ? linked.getVendorId() : null;
-    BigDecimal total = nz(ret.getReturnAmount()).negate();
-    BigDecimal cash = nz(ret.getRefundCash()).negate();
-    BigDecimal online = nz(ret.getRefundOnline()).negate();
-    BigDecimal credit = nz(ret.getRefundToCredit()).negate();
-    if (cash.signum() == 0 && online.signum() == 0 && credit.signum() == 0) {
-      credit = total;
+    Set<String> vendorIds = new HashSet<>(openingByVendor.keySet());
+    vendorIds.addAll(lastRowByVendor.keySet());
+
+    List<VendorMoneyMisVendorSummaryDto> summaries = new ArrayList<>(vendorIds.size());
+    for (String vendorId : vendorIds) {
+      BigDecimal opening = toMoneyScale(openingByVendor.getOrDefault(vendorId, zeroMoney()));
+      VendorMoneyMisRowDto last = lastRowByVendor.get(vendorId);
+      BigDecimal closing = last != null ? zeroIfNull(last.getBalanceAfter()) : opening;
+      summaries.add(mapper.toVendorSummary(vendorId, opening, closing, vendorNames));
     }
-    return VendorMoneyMisRowDto.builder()
-        .txnId("VRET-" + shortId(ret.getId()))
-        .txnType("VENDOR_RETURN")
-        .txnTypeLabel("Return")
-        .vendorId(vendorId)
-        .vendorName(vendorNames.getOrDefault(vendorId, vendorId))
-        .txnDate(toShopDate(ret.getCreatedAt()))
-        .postedAt(ret.getCreatedAt())
-        .refNo(ret.getSupplierCreditNoteNo())
-        .againstTxnId(linked != null ? "VPUR-" + shortId(linked.getId()) : null)
-        .againstRefNo(linked != null ? linked.getInvoiceNo() : null)
-        .totalAmount(total)
-        .cashAmount(cash)
-        .onlineAmount(online)
-        .creditAmount(credit)
-        .sourceType("VENDOR_PURCHASE_RETURN")
-        .sourceId(ret.getId())
-        .opening(false)
-        .build();
+    summaries.sort(Comparator.comparing(s -> lowerOrEmpty(s.getVendorName())));
+    return summaries;
   }
 
-  private VendorMoneyMisRowDto toCreditRow(CreditEntry entry, Map<String, String> vendorNames) {
-    boolean settlement = entry.getEntryType() == CreditEntryType.SETTLEMENT;
-    boolean charge =
-        entry.getEntryType() == CreditEntryType.CHARGE
-            || entry.getEntryType() == CreditEntryType.ADJUSTMENT;
-    String txnType = settlement ? "VENDOR_PAYMENT" : "VENDOR_CREDIT_CHARGE";
-    String label = settlement ? "Payment" : "Credit charge";
-    String prefix = settlement ? "VPAY-" : "VCHG-";
-    BigDecimal amount = nz(entry.getAmount());
-    BigDecimal cash = zero();
-    BigDecimal online = zero();
-    BigDecimal credit = zero();
-    if (settlement) {
-      String method =
-          entry.getPaymentMethod() != null ? entry.getPaymentMethod().trim().toUpperCase() : "CASH";
-      if (Set.of("ONLINE", "UPI", "BANK", "CARD").contains(method)) {
-        online = amount;
-      } else {
-        cash = amount;
-      }
-    } else {
-      credit = amount;
+  // ---------------------------------------------------------------------------
+  // Export shaping
+  // ---------------------------------------------------------------------------
+
+  /** Projects the report onto the generic table model the document service renders. */
+  private TabularReport toTabularReport(VendorMoneyMisResponse report, String shopName) {
+    List<List<Object>> rows = new ArrayList<>(report.getRows().size());
+    for (VendorMoneyMisRowDto row : report.getRows()) {
+      // Arrays.asList rather than List.of: cells are legitimately null and List.of rejects them.
+      rows.add(
+          Arrays.asList(
+              row.getTxnDate(),
+              row.getVendorName(),
+              row.getTxnId(),
+              row.getTxnTypeLabel(),
+              row.getRefNo(),
+              row.getTotalAmount(),
+              row.getCashAmount(),
+              row.getOnlineAmount(),
+              row.getCreditAmount(),
+              row.getBalanceAfter()));
     }
-    LocalDate day = entry.getTxnDate() != null ? entry.getTxnDate() : toShopDate(entry.getCreatedAt());
-    return VendorMoneyMisRowDto.builder()
-        .txnId(prefix + shortId(entry.getId()))
-        .txnType(txnType)
-        .txnTypeLabel(label)
-        .vendorId(entry.getPartyRefId())
-        .vendorName(vendorNames.getOrDefault(entry.getPartyRefId(), entry.getPartyRefId()))
-        .txnDate(day)
-        .postedAt(entry.getCreatedAt())
-        .refNo(
-            StringUtils.hasText(entry.getNote())
-                ? entry.getNote()
-                : (StringUtils.hasText(entry.getBankRef()) ? entry.getBankRef() : entry.getId()))
-        .totalAmount(amount)
-        .cashAmount(cash)
-        .onlineAmount(online)
-        .creditAmount(credit)
-        .sourceType(settlement ? "VENDOR_PAYMENT" : "VENDOR_CREDIT_CHARGE")
-        .sourceId(entry.getId())
-        .opening(false)
-        .build();
+
+    return new TabularReport(
+        "Vendor Money MIS",
+        (shopName != null ? shopName : "Shop") + " — Vendor Money MIS",
+        periodSubtitle(report),
+        REPORT_COLUMNS,
+        rows,
+        totalsRow(report.getSummary()),
+        summaryNotes(report.getSummary()));
   }
 
-  private VendorPurchasePaymentBreakdown.Result tenderForInvoice(VendorPurchaseInvoice inv) {
-    BigDecimal total = nz(inv.getInvoiceTotal());
-    if (total.signum() <= 0) {
-      total =
-          nz(inv.getLineSubTotal())
-              .add(nz(inv.getTaxTotal()))
-              .add(nz(inv.getShippingCharge()))
-              .add(nz(inv.getOtherCharges()))
-              .add(nz(inv.getRoundOff()))
-              .subtract(nz(inv.getOverallDiscount()));
-    }
-    if (inv.getCashAmount() != null
-        || inv.getOnlineAmount() != null
-        || inv.getCreditAmount() != null) {
-      return VendorPurchasePaymentBreakdown.resolve(
-          total,
-          inv.getPaymentMethod(),
-          inv.getPaidAmount(),
-          inv.getCashAmount(),
-          inv.getOnlineAmount(),
-          inv.getCreditAmount());
-    }
-    return VendorPurchasePaymentBreakdown.deriveForReport(
-        total, inv.getPaymentMethod(), inv.getPaidAmount());
+  private String periodSubtitle(VendorMoneyMisResponse report) {
+    return "Period: "
+        + formatDate(report.getFrom())
+        + " – "
+        + formatDate(report.getTo())
+        + " · Timezone Asia/Kolkata";
   }
 
-  private Map<String, String> loadVendorNames(String shopId) {
-    Map<String, String> map = new HashMap<>();
-    // Resolve names lazily from vendor docs as we encounter party ids in events.
-    // Prefill from all invoices for this shop (bounded report windows already load them).
-    try {
-      for (VendorPurchaseInvoice inv : vendorPurchaseInvoiceRepository.findByShopId(shopId)) {
-        if (StringUtils.hasText(inv.getVendorId()) && !map.containsKey(inv.getVendorId())) {
-          vendorRepository
-              .findById(inv.getVendorId())
-              .ifPresent(v -> map.put(v.getId(), v.getName() != null ? v.getName() : v.getId()));
-          map.putIfAbsent(inv.getVendorId(), inv.getVendorId());
-        }
-      }
-    } catch (Exception e) {
-      log.warn("Could not load vendors for shop {}: {}", shopId, e.getMessage());
-    }
-    return map;
+  private String formatDate(LocalDate date) {
+    return date != null ? date.format(DATE_FORMAT) : "";
   }
 
-  private static LocalDate toShopDate(Instant instant) {
-    if (instant == null) {
+  private List<Object> totalsRow(VendorMoneyMisSummaryDto summary) {
+    if (summary == null) {
       return null;
     }
-    return instant.atZone(SHOP_ZONE).toLocalDate();
-  }
-
-  private static String shortId(String id) {
-    if (!StringUtils.hasText(id)) {
-      return "----";
+    List<Object> totals = new ArrayList<>(REPORT_COLUMNS.size());
+    totals.add("Totals");
+    // Blank out Supplier / Txn ID / Transaction / Invoice before money columns.
+    for (int i = 1; i < 5; i++) {
+      totals.add("");
     }
-    String t = id.trim();
-    return t.length() <= 4 ? t : t.substring(0, 4);
+    totals.add(summary.getPeriodPurchaseTotal());
+    totals.add(summary.getPeriodCashTotal());
+    totals.add(summary.getPeriodOnlineTotal());
+    totals.add(summary.getPeriodCreditTotal());
+    totals.add(summary.getCurrentPayableTotal());
+    return totals;
   }
 
-  private static boolean contains(String hay, String needle) {
-    return hay != null && hay.toLowerCase(Locale.ROOT).contains(needle);
-  }
-
-  private static boolean isAllZeroRefund(VendorPurchaseReturn ret) {
-    return nz(ret.getRefundCash()).signum() == 0
-        && nz(ret.getRefundOnline()).signum() == 0
-        && nz(ret.getRefundToCredit()).signum() == 0;
-  }
-
-  private void addDelta(Map<String, BigDecimal> map, String vendorId, BigDecimal delta) {
-    if (!StringUtils.hasText(vendorId) || delta == null) {
-      return;
+  private List<String> summaryNotes(VendorMoneyMisSummaryDto summary) {
+    if (summary == null) {
+      return List.of();
     }
-    map.merge(vendorId, scale(delta), BigDecimal::add);
-  }
-
-  private BigDecimal scale(BigDecimal v) {
-    return nz(v).setScale(2, RoundingMode.HALF_UP);
-  }
-
-  private static BigDecimal nz(BigDecimal v) {
-    return v != null ? v : BigDecimal.ZERO;
-  }
-
-  private static BigDecimal zero() {
-    return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
-  }
-
-  private byte[] buildExcel(VendorMoneyMisResponse report) {
-    String subtitle =
-        "Period: "
-            + (report.getFrom() != null ? report.getFrom().format(DATE_FMT) : "")
-            + " – "
-            + (report.getTo() != null ? report.getTo().format(DATE_FMT) : "");
-
-    List<List<Object>> rows = new ArrayList<>();
-    for (VendorMoneyMisRowDto row : report.getRows()) {
-      List<Object> cells = new ArrayList<>(11);
-      cells.add(row.getTxnDate() != null ? row.getTxnDate().format(DATE_FMT) : "");
-      cells.add(nullToEmpty(row.getVendorName()));
-      cells.add(nullToEmpty(row.getTxnId()));
-      cells.add(nullToEmpty(row.getTxnTypeLabel()));
-      cells.add(nullToEmpty(row.getRefNo()));
-      cells.add(nullToEmpty(row.getAgainstRefNo()));
-      cells.add(row.getTotalAmount());
-      cells.add(row.getCashAmount());
-      cells.add(row.getOnlineAmount());
-      cells.add(row.getCreditAmount());
-      cells.add(row.getBalanceAfter());
-      rows.add(cells);
-    }
-
-    List<Object> totalsRow = null;
-    VendorMoneyMisSummaryDto summary = report.getSummary();
-    if (summary != null) {
-      totalsRow =
-          Arrays.asList(
-              "Totals",
-              "",
-              "",
-              "",
-              "",
-              "",
-              summary.getPeriodPurchaseTotal(),
-              summary.getPeriodCashTotal(),
-              summary.getPeriodOnlineTotal(),
-              summary.getPeriodCreditTotal(),
-              summary.getCurrentPayableTotal());
-    }
-
-    return documentService.generateExcel(
-        "Vendor Money MIS",
-        "Vendor Money MIS",
-        subtitle,
-        EXCEL_HEADERS,
-        rows,
-        totalsRow);
-  }
-
-  private String buildPdfHtml(VendorMoneyMisResponse report, String shopName) {
-    StringBuilder sb = new StringBuilder();
-    sb.append("<!DOCTYPE html><html><head><meta charset='UTF-8'/>")
-        .append("<style>")
-        .append("@page { size: A4 landscape; margin: 12mm; }")
-        .append("body{font-family:Arial,sans-serif;font-size:10px;color:#111;}")
-        .append("h1{font-size:16px;margin:0 0 4px 0;}")
-        .append("p.meta{margin:0 0 10px 0;color:#444;}")
-        .append("table{width:100%;border-collapse:collapse;}")
-        .append("th,td{border:1px solid #333;padding:4px 6px;text-align:left;}")
-        .append("th{background:#eee;}")
-        .append("td.num{text-align:right;}")
-        .append(".summary{margin-top:12px;}")
-        .append("</style></head><body>");
-    sb.append("<h1>")
-        .append(escape(shopName != null ? shopName : "Shop"))
-        .append(" — Vendor Money MIS</h1>");
-    sb.append("<p class='meta'>Period: ")
-        .append(report.getFrom() != null ? report.getFrom().format(DATE_FMT) : "")
-        .append(" – ")
-        .append(report.getTo() != null ? report.getTo().format(DATE_FMT) : "")
-        .append(" · Timezone Asia/Kolkata</p>");
-
-    sb.append("<table><thead><tr>")
-        .append("<th>Date</th><th>Supplier</th><th>Txn ID</th><th>Transaction</th><th>Invoice</th>")
-        .append("<th>Against</th><th>Bill Amount</th><th>Cash</th><th>Online</th><th>Credit</th>")
-        .append("<th>Outstanding</th></tr></thead><tbody>");
-
-    for (VendorMoneyMisRowDto row : report.getRows()) {
-      sb.append("<tr>")
-          .append("<td>")
-          .append(row.getTxnDate() != null ? row.getTxnDate().format(DATE_FMT) : "")
-          .append("</td>")
-          .append("<td>")
-          .append(escape(row.getVendorName()))
-          .append("</td>")
-          .append("<td>")
-          .append(escape(row.getTxnId()))
-          .append("</td>")
-          .append("<td>")
-          .append(escape(row.getTxnTypeLabel()))
-          .append("</td>")
-          .append("<td>")
-          .append(escape(row.getRefNo()))
-          .append("</td>")
-          .append("<td>")
-          .append(escape(row.getAgainstRefNo()))
-          .append("</td>")
-          .append("<td class='num'>")
-          .append(fmtMoney(row.getTotalAmount()))
-          .append("</td>")
-          .append("<td class='num'>")
-          .append(fmtMoney(row.getCashAmount()))
-          .append("</td>")
-          .append("<td class='num'>")
-          .append(fmtMoney(row.getOnlineAmount()))
-          .append("</td>")
-          .append("<td class='num'>")
-          .append(fmtMoney(row.getCreditAmount()))
-          .append("</td>")
-          .append("<td class='num'>")
-          .append(fmtMoney(row.getBalanceAfter()))
-          .append("</td>")
-          .append("</tr>");
-    }
-    sb.append("</tbody></table>");
-
-    VendorMoneyMisSummaryDto s = report.getSummary();
-    if (s != null) {
-      sb.append("<p class='summary'><strong>Summary</strong> — Cash: ")
-          .append(fmtMoney(s.getPeriodCashTotal()))
-          .append(" · Online: ")
-          .append(fmtMoney(s.getPeriodOnlineTotal()))
-          .append(" · Credit: ")
-          .append(fmtMoney(s.getPeriodCreditTotal()))
-          .append(" · Current payable: ")
-          .append(fmtMoney(s.getCurrentPayableTotal()))
-          .append("</p>");
-    }
-    sb.append("</body></html>");
-    return sb.toString();
+    return List.of(
+        "Summary — Cash: "
+            + summary.getPeriodCashTotal()
+            + " · Online: "
+            + summary.getPeriodOnlineTotal()
+            + " · Credit: "
+            + summary.getPeriodCreditTotal()
+            + " · Current payable: "
+            + summary.getCurrentPayableTotal());
   }
 
   private static String exportFilename(VendorMoneyMisResponse report, String extension) {
@@ -863,24 +814,8 @@ public class VendorMoneyMisService {
         + extension;
   }
 
-  private static String fmtMoney(BigDecimal v) {
-    if (v == null || v.signum() == 0) {
-      return "—";
-    }
-    return MONEY.format(v);
-  }
-
-  private static String escape(String s) {
-    if (s == null) {
-      return "";
-    }
-    return s.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace("\"", "&quot;");
-  }
-
-  private static String nullToEmpty(String s) {
-    return s != null ? s : "";
+  /** How an invoice was tendered — derived by the product module, which owns the invoice shape. */
+  private VendorPurchasePaymentBreakdown.Result tenderFor(VendorPurchaseInvoice invoice) {
+    return vendorPurchaseLedger.tenderFor(invoice);
   }
 }
