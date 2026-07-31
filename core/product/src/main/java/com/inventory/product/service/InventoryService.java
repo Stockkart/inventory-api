@@ -877,8 +877,6 @@ public class InventoryService {
       log.warn("Validation error in create inventory: {}", e.getMessage());
       throw e;
     } catch (BaseException e) {
-      // Preserve coded errors (e.g. missing vertical extension table -> 409) rather than masking
-      // them as a generic 500 below.
       log.warn("Business error in create inventory: {}", e.getMessage());
       throw e;
     } catch (DataAccessException e) {

@@ -10,40 +10,20 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
-import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.stereotype.Component;
 
 @Component
 public class CafeInventoryExtensionRepository implements InventoryExtensionRepository {
 
   private final CafeExtensionMongoRepository mongoRepository;
-  private final MongoTemplate mongoTemplate;
 
-  public CafeInventoryExtensionRepository(
-      CafeExtensionMongoRepository mongoRepository, MongoTemplate mongoTemplate) {
+  public CafeInventoryExtensionRepository(CafeExtensionMongoRepository mongoRepository) {
     this.mongoRepository = mongoRepository;
-    this.mongoTemplate = mongoTemplate;
   }
 
   @Override
   public String getVerticalId() {
     return "cafe";
-  }
-
-  @Override
-  public void ensureBackingCollectionExists() {
-    String collection = "inventory_ext_" + getVerticalId();
-    if (mongoTemplate.collectionExists(collection)) {
-      return;
-    }
-    try {
-      mongoTemplate.createCollection(collection);
-    } catch (RuntimeException e) {
-      // Tolerate a concurrent creation race; rethrow only if the collection is still absent.
-      if (!mongoTemplate.collectionExists(collection)) {
-        throw e;
-      }
-    }
   }
 
   @Override
