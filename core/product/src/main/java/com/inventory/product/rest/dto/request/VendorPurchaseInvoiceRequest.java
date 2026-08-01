@@ -23,6 +23,12 @@ public class VendorPurchaseInvoiceRequest {
   private BigDecimal invoiceTotal;
   /** CASH | ONLINE | CREDIT (defaults to CASH when omitted). */
   private String paymentMethod;
-  /** Optional paid-now amount for split credit purchases. */
+  /** Optional paid-now amount for split credit purchases (legacy). Prefer cash/online/credit. */
   private BigDecimal paidAmount;
+  /** Amount paid in cash now (split-aware). */
+  private BigDecimal cashAmount;
+  /** Amount paid online now (split-aware). */
+  private BigDecimal onlineAmount;
+  /** Amount that posts to vendor credit / payable (split-aware). */
+  private BigDecimal creditAmount;
 }

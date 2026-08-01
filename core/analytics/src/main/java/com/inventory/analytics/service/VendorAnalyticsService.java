@@ -1,5 +1,6 @@
 package com.inventory.analytics.service;
 
+import com.inventory.product.service.ProductAnalyticsReadService;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.AuthenticationException;
 import com.inventory.common.exception.BaseException;
@@ -13,7 +14,6 @@ import com.inventory.analytics.rest.dto.response.VendorDependencyDto;
 import com.inventory.analytics.rest.dto.response.VendorRevenueDto;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Purchase;
-import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.pluginengine.VerticalFieldsReader;
 import com.inventory.product.service.vertical.InventoryVerticalExtensionHandler;
 import lombok.extern.slf4j.Slf4j;
@@ -45,7 +45,7 @@ public class VendorAnalyticsService {
   private VendorAnalyticsMapper vendorAnalyticsMapper;
 
   @Autowired
-  private InventoryRepository inventoryRepository;
+  private ProductAnalyticsReadService productReadService;
 
   @Autowired
   private InventoryVerticalExtensionHandler inventoryVerticalExtensionHandler;
@@ -82,7 +82,7 @@ public class VendorAnalyticsService {
       log.debug("Getting vendor analytics for shop: {} from {} to {}", shopId, startDate, endDate);
 
       // Get all inventory for the shop
-      List<Inventory> allInventories = inventoryRepository.findByShopId(shopId);
+      List<Inventory> allInventories = productReadService.findInventoryForShop(shopId);
 
       // Get completed purchases for revenue calculations
       List<Purchase> purchases = salesUtils.getCompletedPurchases(shopId, startDate, endDate);

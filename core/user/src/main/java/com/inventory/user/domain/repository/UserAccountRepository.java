@@ -12,6 +12,7 @@ import java.util.Optional;
 public interface UserAccountRepository extends MongoRepository<UserAccount, String> {
 
   Optional<UserAccount> findByEmail(String email);
+  Optional<UserAccount> findByPhone(String phone);
 
   List<UserAccount> findByShopId(String shopId);
 

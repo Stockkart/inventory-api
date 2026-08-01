@@ -1,14 +1,12 @@
 package com.inventory.analytics.utils;
 
+import com.inventory.product.service.ProductAnalyticsReadService;
 import com.inventory.analytics.rest.dto.response.*;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.product.domain.model.enums.PurchaseStatus;
-import com.inventory.product.domain.repository.InventoryRepository;
-import com.inventory.product.domain.repository.PurchaseRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -26,14 +24,10 @@ import java.util.stream.Collectors;
 public class SalesAnalyticsUtils {
 
   @Autowired
-  private PurchaseRepository purchaseRepository;
-
-  @Autowired
-  private InventoryRepository inventoryRepository;
+  private ProductAnalyticsReadService productReadService;
 
   public List<Purchase> getCompletedPurchases(String shopId, Instant startDate, Instant endDate) {
-    return purchaseRepository.findByShopId(shopId, Pageable.unpaged())
-        .getContent()
+    return productReadService.findPurchasesForShop(shopId)
         .stream()
         .filter(p -> p.getStatus() == PurchaseStatus.COMPLETED)
         .filter(p -> p.getSoldAt() != null)
@@ -89,7 +83,7 @@ public class SalesAnalyticsUtils {
           dto.setProductName(item.getName());
 
           if (dto.getLotId() == null || dto.getCompanyName() == null) {
-            inventoryRepository.findById(inventoryId).ifPresent(inv -> {
+            productReadService.findInventoryById(inventoryId).ifPresent(inv -> {
               dto.setLotId(inv.getLotId());
               dto.setCompanyName(inv.getCompanyName());
             });
@@ -154,7 +148,7 @@ public class SalesAnalyticsUtils {
 
     Map<String, String> inventoryToLotId = new HashMap<>();
     for (String inventoryId : inventoryIds) {
-      inventoryRepository.findById(inventoryId)
+      productReadService.findInventoryById(inventoryId)
           .ifPresent(inv -> inventoryToLotId.put(inventoryId, inv.getLotId()));
     }
 
@@ -201,7 +195,7 @@ public class SalesAnalyticsUtils {
 
     Map<String, String> inventoryToCompany = new HashMap<>();
     for (String inventoryId : inventoryIds) {
-      inventoryRepository.findById(inventoryId)
+      productReadService.findInventoryById(inventoryId)
           .ifPresent(inv -> inventoryToCompany.put(inventoryId,
               inv.getCompanyName() != null ? inv.getCompanyName() : "Unknown"));
     }

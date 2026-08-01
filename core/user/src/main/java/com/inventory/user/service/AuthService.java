@@ -197,6 +197,11 @@ public class AuthService {
           log.warn("{} signup attempt with existing email: {}", providerName, email);
           throw new ValidationException("User with this email already exists. Please login instead.");
         }
+        if (request.getPhone() != null && !request.getPhone().trim().isEmpty()
+            && userAccountRepository.findByPhone(request.getPhone().trim()).isPresent()) {
+          log.warn("{} signup attempt with existing phone: {}", signupType, request.getPhone());
+          throw new ValidationException("User with this phone number already exists");
+        }
 
         // Create user account from OAuth data via mapper
         account = userMapper.toUserAccountFromOAuth(email, name, request);
@@ -210,6 +215,10 @@ public class AuthService {
         if (userAccountRepository.findByEmail(email).isPresent()) {
           log.warn("Signup attempt with existing email: {}", email);
           throw new ValidationException("User with this email already exists");
+        }
+        if (userAccountRepository.findByPhone(request.getPhone().trim()).isPresent()) {
+          log.warn("Signup attempt with existing phone: {}", request.getPhone());
+          throw new ValidationException("User with this phone number already exists");
         }
 
         // Map SignupRequest to UserAccount using mapper (with password encoder context)
