@@ -54,7 +54,7 @@ public class ShopService {
   @Lazy
   private UserShopMembershipService membershipService;
 
-  @Value("${plan.trial-days:30}")
+  @Value("${plan.trial-days:3}")
   private int trialDays;
 
   @Autowired(required = false)

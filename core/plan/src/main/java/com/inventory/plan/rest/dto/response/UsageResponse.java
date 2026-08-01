@@ -17,4 +17,6 @@ public class UsageResponse {
   private Integer billCountUsed;
   private Integer smsUsed;
   private Integer whatsappUsed;
+  /** OCR invoices consumed this month. Counts against {@code PlanResponse.ocrInvoiceLimit}. */
+  private Integer ocrInvoicesUsed;
 }

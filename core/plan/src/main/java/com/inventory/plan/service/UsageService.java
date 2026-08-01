@@ -3,7 +3,6 @@ package com.inventory.plan.service;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.plan.domain.model.Plan;
 import com.inventory.plan.domain.model.Usage;
-import com.inventory.plan.domain.repository.PlanRepository;
 import com.inventory.plan.domain.repository.UsageRepository;
 import com.inventory.plan.mapper.PlanMapper;
 import com.inventory.plan.mapper.UsageMapper;
@@ -31,9 +30,6 @@ public class UsageService {
   @Autowired
   private UsageRepository usageRepository;
 
-  @Autowired
-  private PlanRepository planRepository;
-
   @Autowired(required = false)
   private ShopProvider shopProvider;
 
@@ -48,6 +44,9 @@ public class UsageService {
 
   @Autowired
   private UsageMapper usageMapper;
+
+  @Autowired
+  private EffectivePlanResolver effectivePlanResolver;
 
   public String getCurrentMonthKey() {
     return PlanUtils.getCurrentMonthKey();
@@ -143,11 +142,6 @@ public class UsageService {
   }
 
   private Plan resolveEffectivePlan(ShopInfo shopInfo) {
-    if (shopInfo.planId() != null && !shopInfo.planId().isBlank()) {
-      return planRepository.findById(shopInfo.planId())
-          .orElseThrow(() -> new ResourceNotFoundException("Plan", "id", shopInfo.planId()));
-    }
-    return planRepository.findByPlanName("Base")
-        .orElseThrow(() -> new ResourceNotFoundException("Plan", "name", "Base"));
+    return effectivePlanResolver.forShop(shopInfo.planId());
   }
 }

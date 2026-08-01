@@ -1,5 +1,6 @@
 package com.inventory.plan.utils;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.YearMonth;
 import java.time.ZoneOffset;
@@ -23,5 +24,19 @@ public final class PlanUtils {
 
   public static boolean isExpired(Instant planExpiryDate) {
     return planExpiryDate != null && planExpiryDate.isBefore(Instant.now());
+  }
+
+  /**
+   * Whole days from now until {@code expiry}, floored at 0.
+   *
+   * <p>Truncates rather than rounds, so a trial with 18 hours left reads "0 days remaining" instead
+   * of overstating it as 1. Returns null when there is no expiry to count down to.
+   */
+  public static Integer wholeDaysUntil(Instant expiry) {
+    if (expiry == null) {
+      return null;
+    }
+    long days = Duration.between(Instant.now(), expiry).toDays();
+    return (int) Math.max(0, days);
   }
 }
