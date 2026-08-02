@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.math.BigDecimal;
@@ -21,6 +22,15 @@ public class VendorPurchaseReturn {
 
   @Id
   private String id;
+
+  /**
+   * Stable business transaction identifier (UUID v4). Distinct from {@link #id}, which is the Mongo
+   * storage id. The index is declared here as the canonical schema constraint, but is created
+   * operationally — {@code spring.data.mongodb.auto-index-creation} is intentionally disabled, so
+   * this annotation has no runtime effect. See the design spec, section 1.
+   */
+  @Indexed(unique = true, sparse = true)
+  private String txnId;
 
   private String shopId;
   private String userId;

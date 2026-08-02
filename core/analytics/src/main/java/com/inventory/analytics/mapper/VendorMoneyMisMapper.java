@@ -42,7 +42,8 @@ public class VendorMoneyMisMapper {
     Instant posted =
         invoice.getCreatedAt() != null ? invoice.getCreatedAt() : invoice.getInvoiceDate();
 
-    return baseRow(MisTxnType.VENDOR_PURCHASE, invoice.getId(), invoice.getVendorId(), vendorNames)
+    return baseRow(
+            MisTxnType.VENDOR_PURCHASE, invoice.getTxnId(), invoice.getVendorId(), vendorNames)
         .txnDate(txnDate)
         .postedAt(posted)
         .refNo(invoice.getInvoiceNo())
@@ -74,14 +75,11 @@ public class VendorMoneyMisMapper {
       credit = total;
     }
 
-    return baseRow(MisTxnType.VENDOR_RETURN, ret.getId(), vendorId, vendorNames)
+    return baseRow(MisTxnType.VENDOR_RETURN, ret.getTxnId(), vendorId, vendorNames)
         .txnDate(toShopDate(ret.getCreatedAt()))
         .postedAt(ret.getCreatedAt())
         .refNo(ret.getSupplierCreditNoteNo())
-        .againstTxnId(
-            linkedInvoice != null
-                ? MisTxnType.VENDOR_PURCHASE.txnId(linkedInvoice.getId())
-                : null)
+        .againstTxnId(linkedInvoice != null ? linkedInvoice.getTxnId() : null)
         .againstRefNo(linkedInvoice != null ? linkedInvoice.getInvoiceNo() : null)
         .totalAmount(total)
         .cashAmount(cash)
@@ -114,7 +112,7 @@ public class VendorMoneyMisMapper {
     LocalDate day =
         entry.getTxnDate() != null ? entry.getTxnDate() : toShopDate(entry.getCreatedAt());
 
-    return baseRow(type, entry.getId(), entry.getPartyRefId(), vendorNames)
+    return baseRow(type, entry.getTxnId(), entry.getPartyRefId(), vendorNames)
         .txnDate(day)
         .postedAt(entry.getCreatedAt())
         .refNo(creditRefNo(entry))
@@ -135,7 +133,7 @@ public class VendorMoneyMisMapper {
       Map<String, String> vendorNames) {
     BigDecimal opening = toMoneyScale(openingBalance);
     return VendorMoneyMisRowDto.builder()
-        .txnId(MisTxnType.OPENING.txnId(vendorId))
+        .txnId(vendorId)
         .txnType(MisTxnType.OPENING.name())
         .txnTypeLabel(MisTxnType.OPENING.label())
         .vendorId(vendorId)
@@ -168,11 +166,16 @@ public class VendorMoneyMisMapper {
         .build();
   }
 
-  /** Shared identity columns; callers fill the amount and reference columns. */
+  /**
+   * Shared identity columns; callers fill the amount and reference columns.
+   *
+   * <p>{@code txnId} is the source document's persisted business identifier, not its Mongo id — the
+   * storage id travels separately in {@code sourceId}.
+   */
   private VendorMoneyMisRowDto.VendorMoneyMisRowDtoBuilder baseRow(
-      MisTxnType type, String sourceId, String vendorId, Map<String, String> vendorNames) {
+      MisTxnType type, String txnId, String vendorId, Map<String, String> vendorNames) {
     return VendorMoneyMisRowDto.builder()
-        .txnId(type.txnId(sourceId))
+        .txnId(txnId)
         .txnType(type.name())
         .txnTypeLabel(type.label())
         .vendorId(vendorId)

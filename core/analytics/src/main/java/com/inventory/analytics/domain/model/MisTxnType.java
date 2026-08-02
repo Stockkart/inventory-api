@@ -33,11 +33,6 @@ public enum MisTxnType {
     return sourceType;
   }
 
-  /** Human-facing transaction id — short source id only (type is shown separately). */
-  public String txnId(String shortId) {
-    return shortId != null ? shortId : "";
-  }
-
   /** Increases what the shop owes the vendor. */
   public boolean increasesPayable() {
     return this == VENDOR_PURCHASE || this == VENDOR_CREDIT_CHARGE || this == OPENING;
