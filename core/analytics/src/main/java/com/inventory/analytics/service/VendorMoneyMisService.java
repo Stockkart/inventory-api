@@ -23,7 +23,7 @@ import com.inventory.credit.domain.model.CreditEntry;
 import com.inventory.credit.domain.model.CreditEntryType;
 import com.inventory.credit.service.VendorLedgerReadService;
 import com.inventory.documentservice.rest.dto.TabularReport;
-import com.inventory.documentservice.service.ReportDocumentService;
+import com.inventory.documentservice.service.MISReportService;
 import com.inventory.product.domain.model.VendorPurchaseInvoice;
 import com.inventory.product.domain.model.VendorPurchaseReturn;
 import com.inventory.product.service.VendorPurchaseLedgerReadService;
@@ -90,7 +90,7 @@ public class VendorMoneyMisService {
   private final VendorPurchaseLedgerReadService vendorPurchaseLedger;
   private final VendorLedgerReadService vendorCreditLedger;
   private final VendorDirectoryService vendorDirectory;
-  private final ReportDocumentService reportDocumentService;
+  private final MISReportService misReportService;
   private final VendorMoneyMisMapper mapper;
 
   /** Binary download payload (bytes + suggested attachment filename). */
@@ -134,7 +134,7 @@ public class VendorMoneyMisService {
     VendorMoneyMisResponse report =
         getVendorMis(shopId, from, to, vendorId, txnTypes, moneyFilter, q);
     return new ExportFile(
-        reportDocumentService.renderExcel(toTabularReport(report, "Vendor Money MIS")),
+        misReportService.renderExcel(toTabularReport(report, "Vendor Money MIS")),
         exportFilename(report, "xlsx"));
   }
 
@@ -149,7 +149,7 @@ public class VendorMoneyMisService {
     VendorMoneyMisResponse report =
         getVendorMis(shopId, from, to, vendorId, txnTypes, moneyFilter, q);
     return new ExportFile(
-        reportDocumentService.renderPdf(toTabularReport(report, "Shop")),
+        misReportService.renderPdf(toTabularReport(report, "Shop")),
         exportFilename(report, "pdf"));
   }
 

@@ -26,7 +26,7 @@ import org.thymeleaf.context.Context;
 @Service
 @Slf4j
 @RequiredArgsConstructor
-public class ReportDocumentService {
+public class MISReportService {
 
   private static final String TEMPLATE = "report/tabular-report";
   private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd-MMM-yyyy");
