@@ -99,5 +99,31 @@ public interface PurchaseRepository extends MongoRepository<Purchase, String> {
       + "{ 'updatedAt': { '$gte': ?2, '$lte': ?3 } } "
       + "] }")
   List<Purchase> findCompletedPurchasesInPeriod(String shopId, PurchaseStatus status, Instant rangeStart, Instant rangeEnd);
+
+  /**
+   * True if the shop has at least one completed REGULAR (or legacy null-mode) sale with an invoice
+   * number.
+   */
+  @Query(
+      value =
+          "{ 'shopId': ?0, 'status': 'COMPLETED', 'invoiceNo': { '$exists': true, '$nin': [null, ''] },"
+              + " '$or': [ { 'billingMode': 'REGULAR' }, { 'billingMode': null }, { 'billingMode': { '$exists': false } } ] }",
+      exists = true)
+  boolean existsCompletedRegularInvoice(String shopId);
+
+  /** Invoice numbers for completed REGULAR (or legacy) sales — used for sequence backfill. */
+  @Query(
+      value =
+          "{ 'shopId': ?0, 'status': 'COMPLETED', 'invoiceNo': { '$exists': true, '$nin': [null, ''] },"
+              + " '$or': [ { 'billingMode': 'REGULAR' }, { 'billingMode': null }, { 'billingMode': { '$exists': false } } ] }",
+      fields = "{ 'invoiceNo': 1 }")
+  List<Purchase> findCompletedRegularPurchasesForInvoiceNos(String shopId);
+
+  default List<String> findRegularInvoiceNosByShopId(String shopId) {
+    return findCompletedRegularPurchasesForInvoiceNos(shopId).stream()
+        .map(Purchase::getInvoiceNo)
+        .filter(no -> no != null && !no.isBlank())
+        .toList();
+  }
 }
 
