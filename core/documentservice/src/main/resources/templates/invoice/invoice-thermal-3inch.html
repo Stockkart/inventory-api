@@ -4,23 +4,26 @@
   <meta charset="UTF-8"/>
   <title th:text="${billingMode == 'BASIC' ? 'Estimate' : 'Tax Invoice'}">Tax Invoice</title>
   <style>
-    /* 3-inch (~80mm) thermal receipt — matches typical POS tax-invoice layout */
+    /* ~75mm thermal receipt — bold type for legible thermal output */
     @page {
-      size: 80mm 600mm;
-      margin: 2mm 3mm;
+      size: 75mm 600mm;
+      margin: 2mm 2.5mm;
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: "Courier New", Courier, monospace;
       font-size: 9px;
+      font-weight: 700;
       color: #000;
       line-height: 1.3;
-      width: 74mm;
+      width: 70mm;
+    }
+    body, body * {
+      font-weight: 700 !important;
     }
     .center { text-align: center; }
     .right { text-align: right; }
     .shop-name {
-      font-weight: 700;
       font-size: 13px;
       margin-bottom: 3px;
     }
@@ -46,13 +49,11 @@
       margin-top: 2px;
       font-size: 9px;
     }
-    .bill-to .label { font-weight: 700; }
     .bill-to .detail {
       font-size: 8px;
       margin-top: 1px;
     }
     .col-head {
-      font-weight: 700;
       font-size: 8px;
       display: table;
       width: 100%;
@@ -67,7 +68,6 @@
       margin: 5px 0;
     }
     .item-title {
-      font-weight: 700;
       font-size: 9px;
       text-transform: uppercase;
       word-wrap: break-word;
@@ -102,13 +102,11 @@
     .totals .label { width: 58%; text-align: left; }
     .totals .value { width: 42%; text-align: right; }
     .totals .grand td {
-      font-weight: 700;
       font-size: 10px;
       padding-top: 3px;
       padding-bottom: 3px;
     }
     .totals .savings td {
-      font-weight: 700;
       font-size: 9px;
       padding-top: 2px;
     }

@@ -11,6 +11,7 @@ import com.inventory.pluginengine.schema.VerticalSchema;
 import com.inventory.pluginengine.schema.VerticalSchemaField;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -28,7 +29,7 @@ class MedicalInventoryValidatorTest {
   }
 
   @Test
-  void createSucceedsWithRequiredFields() {
+  void createSucceedsWithOptionalBatchAndExpiry() {
     Instant future = Instant.now().plus(30, ChronoUnit.DAYS);
     InventoryValidationContext context =
         new InventoryValidationContext(
@@ -45,7 +46,7 @@ class MedicalInventoryValidatorTest {
   }
 
   @Test
-  void createFailsWhenBatchMissing() {
+  void createSucceedsWhenBatchMissing() {
     Instant future = Instant.now().plus(30, ChronoUnit.DAYS);
     InventoryValidationContext context =
         new InventoryValidationContext(
@@ -55,19 +56,49 @@ class MedicalInventoryValidatorTest {
             schema,
             Map.of("name", "Paracetamol", "expiryDate", future),
             null);
-    assertThrows(ValidationException.class, () -> validator.validateCreate(context));
+    assertDoesNotThrow(() -> validator.validateCreate(context));
   }
 
   @Test
-  void createFailsWhenExpiryInPast() {
-    Instant past = Instant.now().minus(1, ChronoUnit.DAYS);
+  void createSucceedsWhenExpiryMissing() {
     InventoryValidationContext context =
         new InventoryValidationContext(
             "shop-1",
             "medical",
             "1.0.0",
             schema,
-            Map.of("name", "Paracetamol", "batchNo", "B001", "expiryDate", past),
+            Map.of("name", "Paracetamol", "batchNo", "B001"),
+            null);
+    assertDoesNotThrow(() -> validator.validateCreate(context));
+  }
+
+  @Test
+  void createSucceedsWhenBatchAndExpiryMissing() {
+    InventoryValidationContext context =
+        new InventoryValidationContext(
+            "shop-1",
+            "medical",
+            "1.0.0",
+            schema,
+            Map.of("name", "Paracetamol"),
+            null);
+    assertDoesNotThrow(() -> validator.validateCreate(context));
+  }
+
+  @Test
+  void createFailsWhenExpiryInPast() {
+    Instant past = Instant.now().minus(1, ChronoUnit.DAYS);
+    Map<String, Object> fields = new HashMap<>();
+    fields.put("name", "Paracetamol");
+    fields.put("batchNo", "B001");
+    fields.put("expiryDate", past);
+    InventoryValidationContext context =
+        new InventoryValidationContext(
+            "shop-1",
+            "medical",
+            "1.0.0",
+            schema,
+            fields,
             null);
     assertThrows(ValidationException.class, () -> validator.validateCreate(context));
   }
@@ -75,16 +106,17 @@ class MedicalInventoryValidatorTest {
   @Test
   void createFailsWhenNameHasWrongType() {
     Instant future = Instant.now().plus(30, ChronoUnit.DAYS);
+    Map<String, Object> fields = new HashMap<>();
+    fields.put("name", 42);
+    fields.put("batchNo", "B001");
+    fields.put("expiryDate", future);
     InventoryValidationContext context =
         new InventoryValidationContext(
             "shop-1",
             "medical",
             "1.0.0",
             schema,
-            Map.of(
-                "name", 42,
-                "batchNo", "B001",
-                "expiryDate", future),
+            fields,
             null);
     assertThrows(ValidationException.class, () -> validator.validateCreate(context));
   }
@@ -92,16 +124,17 @@ class MedicalInventoryValidatorTest {
   @Test
   void createFailsWhenBatchNoTooLong() {
     Instant future = Instant.now().plus(30, ChronoUnit.DAYS);
+    Map<String, Object> fields = new HashMap<>();
+    fields.put("name", "Paracetamol");
+    fields.put("batchNo", "x".repeat(65));
+    fields.put("expiryDate", future);
     InventoryValidationContext context =
         new InventoryValidationContext(
             "shop-1",
             "medical",
             "1.0.0",
             schema,
-            Map.of(
-                "name", "Paracetamol",
-                "batchNo", "x".repeat(65),
-                "expiryDate", future),
+            fields,
             null);
     assertThrows(ValidationException.class, () -> validator.validateCreate(context));
   }
@@ -109,13 +142,17 @@ class MedicalInventoryValidatorTest {
   @Test
   void updateAllowsPastExpiryOnExistingStock() {
     Instant past = Instant.now().minus(1, ChronoUnit.DAYS);
+    Map<String, Object> fields = new HashMap<>();
+    fields.put("name", "Paracetamol");
+    fields.put("batchNo", "B001");
+    fields.put("expiryDate", past);
     InventoryValidationContext context =
         new InventoryValidationContext(
             "shop-1",
             "medical",
             "1.0.0",
             schema,
-            Map.of("name", "Paracetamol", "batchNo", "B001", "expiryDate", past),
+            fields,
             null);
     assertDoesNotThrow(() -> validator.validateUpdate(context));
   }
@@ -124,10 +161,10 @@ class MedicalInventoryValidatorTest {
     VerticalSchemaField name = field("name", "string", true);
     name.setValidation(Map.of("minLength", 1, "maxLength", 255));
 
-    VerticalSchemaField batchNo = field("batchNo", "string", true);
+    VerticalSchemaField batchNo = field("batchNo", "string", false);
     batchNo.setValidation(Map.of("minLength", 1, "maxLength", 64));
 
-    VerticalSchemaField expiryDate = field("expiryDate", "date", true);
+    VerticalSchemaField expiryDate = field("expiryDate", "date", false);
     expiryDate.setValidation(Map.of("notPastOnCreate", true));
 
     VerticalEntitySchema inventory = new VerticalEntitySchema();

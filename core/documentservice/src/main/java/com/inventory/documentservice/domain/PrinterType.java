@@ -11,7 +11,7 @@ public enum PrinterType {
   /** Compact monospace layout on A4 for dot-matrix printers. */
   DOT_MATRIX("invoice/invoice-dotmatrix"),
 
-  /** Narrow ~80mm (3-inch) thermal receipt roll. */
+  /** Narrow ~75mm thermal receipt roll. */
   THERMAL_3INCH("invoice/invoice-thermal-3inch");
 
   private final String templateName;
