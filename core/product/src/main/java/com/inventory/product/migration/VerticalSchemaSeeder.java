@@ -8,6 +8,7 @@ import com.inventory.product.domain.repository.VerticalSchemaRepository;
 import com.inventory.product.service.vertical.SchemaLoader;
 import java.io.IOException;
 import java.time.Instant;
+import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -19,7 +20,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Seeds {@code vertical_schemas} from {@code classpath:seeds/*.json}.
- * Inserts when missing; skips when the same vertical+version already exists.
+ * Inserts when missing; refreshes seed-managed rows so classpath seeds remain the source of truth.
  */
 @Component
 @Slf4j
@@ -34,18 +35,18 @@ public class VerticalSchemaSeeder {
   @EventListener(ApplicationReadyEvent.class)
   @Order(10)
   public void seedOnStartup() {
-    boolean anyInserted = false;
+    boolean anyChanged = false;
     try {
       Resource[] resources = new PathMatchingResourcePatternResolver().getResources(SEED_PATTERN);
       for (Resource resource : resources) {
         if (seedResource(resource)) {
-          anyInserted = true;
+          anyChanged = true;
         }
       }
     } catch (IOException e) {
       log.error("Failed to scan {}: {}", SEED_PATTERN, e.getMessage(), e);
     }
-    if (anyInserted) {
+    if (anyChanged) {
       schemaLoader.evictCache();
     }
     schemaLoader.warmCache();
@@ -60,9 +61,26 @@ public class VerticalSchemaSeeder {
       }
       String verticalId = schema.getVerticalId().trim().toLowerCase();
       String version = schema.getVersion().trim();
-      if (schemaRepository.findByVerticalIdAndVersion(verticalId, version).isPresent()) {
-        log.debug("vertical_schemas already has {} v{} — skip", verticalId, version);
-        return false;
+      String createdBy = "seed:" + resource.getFilename();
+      Optional<VerticalSchemaDocument> existing =
+          schemaRepository.findByVerticalIdAndVersion(verticalId, version);
+      if (existing.isPresent()) {
+        VerticalSchemaDocument doc = existing.get();
+        // Only refresh rows that originated from classpath seeds (not custom publishes).
+        if (doc.getCreatedBy() == null || !doc.getCreatedBy().startsWith("seed:")) {
+          log.debug(
+              "vertical_schemas {} v{} exists but is not seed-managed — skip refresh",
+              verticalId,
+              version);
+          return false;
+        }
+        doc.setSchema(schema);
+        doc.setStatus(VerticalSchemaStatus.ACTIVE.name());
+        doc.setCreatedBy(createdBy);
+        doc.setPublishedAt(Instant.now());
+        schemaRepository.save(doc);
+        log.info("Refreshed vertical_schemas {} from {}", doc.getId(), resource.getFilename());
+        return true;
       }
       VerticalSchemaDocument doc = new VerticalSchemaDocument();
       doc.setId(verticalId + "_" + version);
@@ -71,7 +89,7 @@ public class VerticalSchemaSeeder {
       doc.setStatus(VerticalSchemaStatus.ACTIVE.name());
       doc.setSchema(schema);
       doc.setPublishedAt(Instant.now());
-      doc.setCreatedBy("seed:" + resource.getFilename());
+      doc.setCreatedBy(createdBy);
       schemaRepository.save(doc);
       log.info("Seeded vertical_schemas {} from {}", doc.getId(), resource.getFilename());
       return true;

@@ -3,7 +3,7 @@ name: Dockerhub image push for inventory-backend
 on:
   push:
     branches:
-      - main          # build + push on main
+      - some_dummy          # build + push on main
 
 jobs:
   build-and-push:
