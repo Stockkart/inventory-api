@@ -2,6 +2,8 @@ package com.inventory.analytics.utils;
 
 import com.inventory.analytics.domain.model.MisTxnType;
 import com.inventory.analytics.domain.model.MoneyFilter;
+import com.inventory.analytics.domain.model.SalesMisExportScope;
+import com.inventory.analytics.domain.model.SalesMisTxnType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
@@ -42,6 +44,30 @@ public class AnalyticsQueryConverters {
       @Nullable
       public MisTxnType convert(@NonNull String source) {
         return MisTxnType.parse(source).orElse(null);
+      }
+    };
+  }
+
+  /** Unknown or blank export scope means the day-wise summary. */
+  @Bean
+  public Converter<String, SalesMisExportScope> salesMisExportScopeConverter() {
+    return new Converter<>() {
+      @Override
+      @NonNull
+      public SalesMisExportScope convert(@NonNull String source) {
+        return SalesMisExportScope.from(source);
+      }
+    };
+  }
+
+  /** Customer-side counterpart of {@link #misTxnTypeConverter()}, degrading the same way. */
+  @Bean
+  public Converter<String, SalesMisTxnType> salesMisTxnTypeConverter() {
+    return new Converter<>() {
+      @Override
+      @Nullable
+      public SalesMisTxnType convert(@NonNull String source) {
+        return SalesMisTxnType.parse(source).orElse(null);
       }
     };
   }

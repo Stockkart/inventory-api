@@ -56,7 +56,7 @@
         <tr>
           <th
             th:each="column : ${columns}"
-            th:text="${column.label}"
+            th:text="${column.text}"
             th:classappend="${column.numeric} ? 'num' : ''"
           ></th>
         </tr>

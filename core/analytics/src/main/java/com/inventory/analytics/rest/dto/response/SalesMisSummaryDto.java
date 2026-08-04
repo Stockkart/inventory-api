@@ -12,12 +12,12 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class PartyMoneyMisSummaryDto {
+public class SalesMisSummaryDto {
   private BigDecimal openingBalanceTotal;
   private BigDecimal periodCashTotal;
   private BigDecimal periodOnlineTotal;
   private BigDecimal periodCreditTotal;
-  private BigDecimal periodPurchaseTotal;
-  private BigDecimal currentPayableTotal;
-  @Builder.Default private List<PartyMoneyMisPartySummaryDto> partySummaries = new ArrayList<>();
+  private BigDecimal periodSalesTotal;
+  private BigDecimal currentReceivableTotal;
+  @Builder.Default private List<SalesMisCustomerSummaryDto> customerSummaries = new ArrayList<>();
 }

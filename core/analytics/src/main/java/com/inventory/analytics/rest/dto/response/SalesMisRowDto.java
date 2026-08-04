@@ -12,12 +12,12 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class PartyMoneyMisRowDto {
+public class SalesMisRowDto {
   private String txnId;
   private String txnType;
   private String txnTypeLabel;
-  private String partyId;
-  private String partyName;
+  private String customerId;
+  private String customerName;
   private LocalDate txnDate;
   private Instant postedAt;
   private String refNo;

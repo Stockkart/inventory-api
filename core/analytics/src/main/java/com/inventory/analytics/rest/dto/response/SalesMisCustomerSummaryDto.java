@@ -10,9 +10,9 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class PartyMoneyMisPartySummaryDto {
-  private String partyId;
-  private String partyName;
+public class SalesMisCustomerSummaryDto {
+  private String customerId;
+  private String customerName;
   private BigDecimal openingBalance;
   private BigDecimal closingBalanceInPeriod;
   private BigDecimal currentBalance;

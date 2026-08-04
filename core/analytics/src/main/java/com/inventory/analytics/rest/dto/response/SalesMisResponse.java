@@ -12,10 +12,13 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class PartyMoneyMisResponse {
-  private String side;
+public class SalesMisResponse {
   private LocalDate from;
   private LocalDate to;
-  @Builder.Default private List<PartyMoneyMisRowDto> rows = new ArrayList<>();
-  private PartyMoneyMisSummaryDto summary;
+
+  /** Day-wise trading summary, oldest first; one entry per day that had sales activity. */
+  @Builder.Default private List<SalesMisDailyRowDto> dailyRows = new ArrayList<>();
+
+  @Builder.Default private List<SalesMisRowDto> rows = new ArrayList<>();
+  private SalesMisSummaryDto summary;
 }
