@@ -6,9 +6,13 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.poi.ss.usermodel.BorderStyle;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
+import org.apache.poi.ss.usermodel.FillPatternType;
 import org.apache.poi.ss.usermodel.Font;
+import org.apache.poi.ss.usermodel.HorizontalAlignment;
+import org.apache.poi.ss.usermodel.IndexedColors;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
@@ -45,16 +49,17 @@ public class MisExcelDocumentService {
 
   private void writeSummarySheet(Workbook workbook, MisTabularDocumentRequest request) {
     Sheet sheet = workbook.createSheet("Summary");
-    CellStyle bold = boldStyle(workbook);
+    CellStyle labelStyle = boldStyle(workbook);
+    CellStyle headerStyle = headerStyle(workbook);
     int r = 0;
-    r = writeLabelValue(sheet, r, "Report", nullToEmpty(request.getTitle()), bold);
-    r = writeLabelValue(sheet, r, "Shop", nullToEmpty(request.getShopName()), bold);
-    r = writeLabelValue(sheet, r, "Period", nullToEmpty(request.getPeriodLabel()), bold);
-    r = writeLabelValue(sheet, r, "Generated", nullToEmpty(request.getGeneratedAtLabel()), bold);
+    r = writeLabelValue(sheet, r, "Report", nullToEmpty(request.getTitle()), labelStyle);
+    r = writeLabelValue(sheet, r, "Shop", nullToEmpty(request.getShopName()), labelStyle);
+    r = writeLabelValue(sheet, r, "Period", nullToEmpty(request.getPeriodLabel()), labelStyle);
+    r = writeLabelValue(sheet, r, "Generated", nullToEmpty(request.getGeneratedAtLabel()), labelStyle);
     r++;
     Row header = sheet.createRow(r++);
-    cell(header, 0, "KPI", bold);
-    cell(header, 1, "Value", bold);
+    cell(header, 0, "KPI", headerStyle);
+    cell(header, 1, "Value", headerStyle);
     List<MisDocumentKpi> kpis = request.getKpis() != null ? request.getKpis() : List.of();
     for (MisDocumentKpi kpi : kpis) {
       Row row = sheet.createRow(r++);
@@ -68,11 +73,14 @@ public class MisExcelDocumentService {
   private void writeDetailSheet(
       Workbook workbook, String sheetName, List<String> columns, List<List<String>> rows) {
     Sheet sheet = workbook.createSheet(sanitizeSheetName(sheetName));
-    CellStyle bold = boldStyle(workbook);
+    CellStyle headerStyle = headerStyle(workbook);
+    CellStyle numStyle = numericStyle(workbook);
     List<String> cols = columns != null ? columns : List.of();
+    List<Boolean> numeric = MisDocumentColumnStyle.flags(cols, true);
     Row header = sheet.createRow(0);
     for (int c = 0; c < cols.size(); c++) {
-      cell(header, c, cols.get(c), bold);
+      CellStyle style = numeric.get(c) ? headerNumericStyle(workbook) : headerStyle;
+      cell(header, c, cols.get(c), style);
     }
     List<List<String>> data = rows != null ? rows : List.of();
     int r = 1;
@@ -80,7 +88,7 @@ public class MisExcelDocumentService {
       Row row = sheet.createRow(r++);
       for (int c = 0; c < cols.size(); c++) {
         String value = line != null && c < line.size() ? nullToEmpty(line.get(c)) : "";
-        cell(row, c, value, null);
+        cell(row, c, value, Boolean.TRUE.equals(numeric.get(c)) ? numStyle : null);
       }
     }
     for (int c = 0; c < cols.size(); c++) {
@@ -109,6 +117,35 @@ public class MisExcelDocumentService {
     font.setBold(true);
     CellStyle style = workbook.createCellStyle();
     style.setFont(font);
+    return style;
+  }
+
+  private static CellStyle headerStyle(Workbook workbook) {
+    Font font = workbook.createFont();
+    font.setBold(true);
+    font.setColor(IndexedColors.GREY_80_PERCENT.getIndex());
+    CellStyle style = workbook.createCellStyle();
+    style.setFont(font);
+    style.setFillForegroundColor(IndexedColors.GREY_25_PERCENT.getIndex());
+    style.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+    style.setBorderBottom(BorderStyle.THIN);
+    style.setBottomBorderColor(IndexedColors.GREY_40_PERCENT.getIndex());
+    return style;
+  }
+
+  private static CellStyle headerNumericStyle(Workbook workbook) {
+    CellStyle style = workbook.createCellStyle();
+    style.cloneStyleFrom(headerStyle(workbook));
+    style.setAlignment(HorizontalAlignment.RIGHT);
+    return style;
+  }
+
+  private static CellStyle numericStyle(Workbook workbook) {
+    Font font = workbook.createFont();
+    font.setBold(true);
+    CellStyle style = workbook.createCellStyle();
+    style.setFont(font);
+    style.setAlignment(HorizontalAlignment.RIGHT);
     return style;
   }
 

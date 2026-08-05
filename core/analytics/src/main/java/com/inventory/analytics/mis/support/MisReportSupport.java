@@ -3,8 +3,11 @@ package com.inventory.analytics.mis.support;
 import com.inventory.analytics.mis.domain.MisMoneyFilter;
 import com.inventory.common.exception.ValidationException;
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 public final class MisReportSupport {
 
@@ -65,6 +68,19 @@ public final class MisReportSupport {
 
   public static String money(BigDecimal v) {
     return MisMoneyTenderHelper.nz(v).toPlainString();
+  }
+
+  /** INR display for exports (PDF / Excel). Uses Rs. for PDF font compatibility. */
+  public static String rupee(BigDecimal v) {
+    return "Rs. " + money(v);
+  }
+
+  /** Short human date for MIS exports (e.g. 3 Aug 2026). */
+  public static String formatDate(LocalDate date) {
+    if (date == null) {
+      return "";
+    }
+    return date.format(DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH));
   }
 
   /** Prefer persisted UUID txnId; fall back to Mongo id until backfill completes. */

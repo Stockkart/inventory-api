@@ -22,15 +22,25 @@ public class MisPdfDocumentService {
 
   public byte[] generatePdf(MisTabularDocumentRequest request) {
     try {
+      List<MisDocumentKpi> kpis =
+          request.getKpis() != null ? request.getKpis() : List.<MisDocumentKpi>of();
+      List<String> columns =
+          request.getColumns() != null ? request.getColumns() : List.<String>of();
+      List<String> secondaryColumns =
+          request.getSecondaryColumns() != null
+              ? request.getSecondaryColumns()
+              : List.<String>of();
+
       Context context = new Context();
       context.setVariable("title", nullToEmpty(request.getTitle()));
       context.setVariable("shopName", nullToEmpty(request.getShopName()));
       context.setVariable("periodLabel", nullToEmpty(request.getPeriodLabel()));
       context.setVariable("generatedAtLabel", nullToEmpty(request.getGeneratedAtLabel()));
-      context.setVariable(
-          "kpis", request.getKpis() != null ? request.getKpis() : List.<MisDocumentKpi>of());
-      context.setVariable(
-          "columns", request.getColumns() != null ? request.getColumns() : List.<String>of());
+      context.setVariable("kpis", kpis);
+      context.setVariable("kpiChunks", MisDocumentColumnStyle.chunk(kpis, 4));
+      context.setVariable("columns", columns);
+      context.setVariable("numericFlags", MisDocumentColumnStyle.flags(columns, true));
+      context.setVariable("dateFlags", MisDocumentColumnStyle.flags(columns, false));
       context.setVariable(
           "rows", request.getRows() != null ? request.getRows() : List.<List<String>>of());
       context.setVariable(
@@ -38,11 +48,9 @@ public class MisPdfDocumentService {
           !CollectionUtils.isEmpty(request.getSecondaryColumns())
               && !CollectionUtils.isEmpty(request.getSecondaryRows()));
       context.setVariable("secondarySheetTitle", nullToEmpty(request.getSecondarySheetTitle()));
+      context.setVariable("secondaryColumns", secondaryColumns);
       context.setVariable(
-          "secondaryColumns",
-          request.getSecondaryColumns() != null
-              ? request.getSecondaryColumns()
-              : List.<String>of());
+          "secondaryNumericFlags", MisDocumentColumnStyle.flags(secondaryColumns, true));
       context.setVariable(
           "secondaryRows",
           request.getSecondaryRows() != null

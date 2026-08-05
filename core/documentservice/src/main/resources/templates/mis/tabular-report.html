@@ -2,17 +2,109 @@
 <html xmlns:th="http://www.thymeleaf.org" lang="en">
 <head>
   <meta charset="UTF-8"/>
+  <meta name="format-detection" content="telephone=no, date=no, email=no, address=no"/>
   <style>
-    body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #111; margin: 24px; }
-    h1 { font-size: 18px; margin: 0 0 4px 0; }
-    .meta { color: #444; margin-bottom: 16px; }
-    .kpi-grid { width: 100%; border-collapse: collapse; margin-bottom: 18px; }
-    .kpi-grid td { border: 1px solid #ccc; padding: 6px 8px; }
-    .kpi-label { font-weight: bold; width: 40%; background: #f5f5f5; }
-    table.data { width: 100%; border-collapse: collapse; margin-top: 8px; }
-    table.data th, table.data td { border: 1px solid #ccc; padding: 4px 6px; text-align: left; }
-    table.data th { background: #f0f0f0; }
-    h2 { font-size: 14px; margin: 20px 0 8px 0; }
+    @page {
+      size: A4 landscape;
+      margin: 12mm;
+    }
+    body {
+      font-family: Helvetica, Arial, sans-serif;
+      font-size: 10px;
+      color: #0f172a;
+      margin: 0;
+      line-height: 1.35;
+    }
+    h1 {
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin: 0 0 6px 0;
+      color: #0f172a;
+    }
+    .meta {
+      color: #64748b;
+      margin-bottom: 14px;
+      font-size: 10px;
+    }
+    .meta div { margin: 1px 0; }
+    .kpi-grid {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 16px;
+      table-layout: fixed;
+    }
+    .kpi-grid td {
+      border: 1px solid #e2e8f0;
+      padding: 7px 9px;
+      vertical-align: top;
+      width: 25%;
+    }
+    .kpi-label {
+      display: block;
+      font-size: 9px;
+      font-weight: 600;
+      color: #64748b;
+      margin-bottom: 2px;
+    }
+    .kpi-value {
+      display: block;
+      font-size: 12px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: #0f172a;
+      letter-spacing: -0.01em;
+    }
+    h2 {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      margin: 16px 0 8px 0;
+      color: #0f172a;
+    }
+    table.data {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: auto;
+    }
+    table.data th,
+    table.data td {
+      padding: 6px 7px;
+      text-align: left;
+      vertical-align: middle;
+      border: none;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    table.data th {
+      background: #f1f5f9;
+      color: #64748b;
+      font-weight: 600;
+      font-size: 9px;
+      white-space: nowrap;
+    }
+    table.data td {
+      color: #0f172a;
+      font-size: 9.5px;
+    }
+    table.data tr:last-child td {
+      border-bottom: none;
+    }
+    .num {
+      text-align: right !important;
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .muted {
+      color: #64748b;
+      font-weight: 500;
+    }
+    .empty {
+      text-align: center;
+      color: #94a3b8;
+      padding: 16px !important;
+    }
+    a { color: inherit !important; text-decoration: none !important; }
   </style>
 </head>
 <body>
@@ -24,9 +116,14 @@
   </div>
 
   <table class="kpi-grid" th:if="${kpis != null and !kpis.isEmpty()}">
-    <tr th:each="kpi : ${kpis}">
-      <td class="kpi-label" th:text="${kpi.label}">KPI</td>
-      <td th:text="${kpi.value}">0</td>
+    <tr th:each="chunk : ${kpiChunks}">
+      <td th:each="kpi : ${chunk}">
+        <th:block th:if="${kpi != null}">
+          <span class="kpi-label" th:text="${kpi.label}">KPI</span>
+          <span class="kpi-value" th:text="${kpi.value}">0</span>
+        </th:block>
+        <th:block th:if="${kpi == null}">&#160;</th:block>
+      </td>
     </tr>
   </table>
 
@@ -34,15 +131,19 @@
   <table class="data">
     <thead>
       <tr>
-        <th th:each="col : ${columns}" th:text="${col}">Col</th>
+        <th th:each="col, iter : ${columns}"
+            th:classappend="${numericFlags != null and numericFlags[iter.index]} ? 'num'"
+            th:text="${col}">Col</th>
       </tr>
     </thead>
     <tbody>
       <tr th:each="row : ${rows}">
-        <td th:each="cell : ${row}" th:text="${cell}"></td>
+        <td th:each="cell, iter : ${row}"
+            th:classappend="${numericFlags != null and numericFlags[iter.index]} ? 'num' : (${dateFlags != null and dateFlags[iter.index]} ? 'muted' : '')"
+            th:text="${cell}"></td>
       </tr>
       <tr th:if="${rows == null or rows.isEmpty()}">
-        <td th:attr="colspan=${columns.size()}" style="text-align:center;">No rows</td>
+        <td class="empty" th:attr="colspan=${columns.size()}">No rows</td>
       </tr>
     </tbody>
   </table>
@@ -52,12 +153,16 @@
     <table class="data">
       <thead>
         <tr>
-          <th th:each="col : ${secondaryColumns}" th:text="${col}">Col</th>
+          <th th:each="col, iter : ${secondaryColumns}"
+              th:classappend="${secondaryNumericFlags != null and secondaryNumericFlags[iter.index]} ? 'num'"
+              th:text="${col}">Col</th>
         </tr>
       </thead>
       <tbody>
         <tr th:each="row : ${secondaryRows}">
-          <td th:each="cell : ${row}" th:text="${cell}"></td>
+          <td th:each="cell, iter : ${row}"
+              th:classappend="${secondaryNumericFlags != null and secondaryNumericFlags[iter.index]} ? 'num'"
+              th:text="${cell}"></td>
         </tr>
       </tbody>
     </table>
