@@ -4,6 +4,7 @@ import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.common.util.TxnIdGenerator;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.VendorPurchaseInvoice;
 import com.inventory.product.domain.model.VendorPurchaseInvoiceLine;
@@ -339,6 +340,7 @@ public class InventoryService {
     VendorPurchaseInvoice pendingInvoice = new VendorPurchaseInvoice();
     pendingInvoice.setShopId(shopId);
     pendingInvoice.setVendorId(bulkRequest.getVendorId());
+    pendingInvoice.setTxnId(TxnIdGenerator.newId());
     pendingInvoice.setCreatedAt(Instant.now());
     pendingInvoice.setCreatedByUserId(userId);
     pendingInvoice.setLines(new ArrayList<>());

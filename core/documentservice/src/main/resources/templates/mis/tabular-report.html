@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #111; margin: 24px; }
+    h1 { font-size: 18px; margin: 0 0 4px 0; }
+    .meta { color: #444; margin-bottom: 16px; }
+    .kpi-grid { width: 100%; border-collapse: collapse; margin-bottom: 18px; }
+    .kpi-grid td { border: 1px solid #ccc; padding: 6px 8px; }
+    .kpi-label { font-weight: bold; width: 40%; background: #f5f5f5; }
+    table.data { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    table.data th, table.data td { border: 1px solid #ccc; padding: 4px 6px; text-align: left; }
+    table.data th { background: #f0f0f0; }
+    h2 { font-size: 14px; margin: 20px 0 8px 0; }
+  </style>
+</head>
+<body>
+  <h1 th:text="${title}">MIS Report</h1>
+  <div class="meta">
+    <div th:if="${shopName != null and !shopName.isEmpty()}" th:text="'Shop: ' + ${shopName}"></div>
+    <div th:if="${periodLabel != null and !periodLabel.isEmpty()}" th:text="'Period: ' + ${periodLabel}"></div>
+    <div th:if="${generatedAtLabel != null and !generatedAtLabel.isEmpty()}" th:text="'Generated: ' + ${generatedAtLabel}"></div>
+  </div>
+
+  <table class="kpi-grid" th:if="${kpis != null and !kpis.isEmpty()}">
+    <tr th:each="kpi : ${kpis}">
+      <td class="kpi-label" th:text="${kpi.label}">KPI</td>
+      <td th:text="${kpi.value}">0</td>
+    </tr>
+  </table>
+
+  <h2>Detail</h2>
+  <table class="data">
+    <thead>
+      <tr>
+        <th th:each="col : ${columns}" th:text="${col}">Col</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr th:each="row : ${rows}">
+        <td th:each="cell : ${row}" th:text="${cell}"></td>
+      </tr>
+      <tr th:if="${rows == null or rows.isEmpty()}">
+        <td th:attr="colspan=${columns.size()}" style="text-align:center;">No rows</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div th:if="${hasSecondary}">
+    <h2 th:text="${secondarySheetTitle}">Secondary</h2>
+    <table class="data">
+      <thead>
+        <tr>
+          <th th:each="col : ${secondaryColumns}" th:text="${col}">Col</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr th:each="row : ${secondaryRows}">
+          <td th:each="cell : ${row}" th:text="${cell}"></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</body>
+</html>

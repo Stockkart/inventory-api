@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.math.BigDecimal;
@@ -22,6 +23,10 @@ public class Refund {
 
   @Id
   private String id;
+
+  /** System-wide unique money transaction id (UUID). */
+  @Indexed(unique = true, sparse = true)
+  private String txnId;
 
   /**
    * Purchase ID that this refund belongs to.
