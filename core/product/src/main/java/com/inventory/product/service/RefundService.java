@@ -4,6 +4,7 @@ import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.common.util.TxnIdGenerator;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
@@ -247,6 +248,7 @@ public class RefundService {
       refund.setPurchaseId(request.getPurchaseId());
       refund.setShopId(shopId);
       refund.setUserId(userId);
+      refund.setTxnId(TxnIdGenerator.newId());
       refund.setCreditNoteNo(invoiceSequenceService.getNextCreditNoteNo(shopId));
       refund.setRefundedItems(domainRefundItems);
       refund.setRefundAmount(totals.returnTotal());

@@ -40,6 +40,7 @@ public class RbacService {
 
   public static final String MODULE_ACCOUNTING = "accounting";
   public static final String MODULE_ANALYTICS = "analytics";
+  public static final String MODULE_MIS = "mis";
   public static final String MODULE_TAXES = "taxes";
   public static final String MODULE_STOCK_CORRECTION = "stockCorrection";
   public static final String MODULE_MARKETING = "marketing";
@@ -393,6 +394,7 @@ public class RbacService {
     Map<String, Boolean> resolved = new LinkedHashMap<>(defaults);
     applyOverride(resolved, MODULE_ACCOUNTING, overrides.getAccounting());
     applyOverride(resolved, MODULE_ANALYTICS, overrides.getAnalytics());
+    applyOverride(resolved, MODULE_MIS, overrides.getMis());
     applyOverride(resolved, MODULE_TAXES, overrides.getTaxes());
     applyOverride(resolved, MODULE_STOCK_CORRECTION, overrides.getStockCorrection());
     applyOverride(resolved, MODULE_MARKETING, overrides.getMarketing());
@@ -413,6 +415,7 @@ public class RbacService {
     boolean cashier = role == UserRole.CASHIER;
     modules.put(MODULE_ACCOUNTING, fullStaff && !cashier);
     modules.put(MODULE_ANALYTICS, fullStaff && !cashier);
+    modules.put(MODULE_MIS, fullStaff && !cashier);
     modules.put(MODULE_TAXES, fullStaff && !cashier);
     modules.put(MODULE_STOCK_CORRECTION, fullStaff && !cashier);
     modules.put(MODULE_MARKETING, fullStaff && !cashier);

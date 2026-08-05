@@ -5,6 +5,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.math.BigDecimal;
@@ -24,6 +25,9 @@ public class VendorPurchaseInvoice {
 
   @Id
   private String id;
+  /** System-wide unique money transaction id (UUID). */
+  @Indexed(unique = true, sparse = true)
+  private String txnId;
   private String shopId;
   private String vendorId;
   private String invoiceNo;

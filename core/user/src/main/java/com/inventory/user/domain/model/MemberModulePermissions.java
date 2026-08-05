@@ -11,6 +11,7 @@ import lombok.NoArgsConstructor;
 public class MemberModulePermissions {
   private Boolean accounting;
   private Boolean analytics;
+  private Boolean mis;
   private Boolean taxes;
   private Boolean stockCorrection;
   private Boolean marketing;

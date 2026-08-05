@@ -2,6 +2,7 @@ package com.inventory.credit.service;
 
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.common.util.TxnIdGenerator;
 import com.inventory.credit.domain.model.CreditAccount;
 import com.inventory.credit.domain.model.CreditBalanceStatus;
 import com.inventory.credit.domain.model.CreditDirection;
@@ -125,8 +126,7 @@ public class CreditService {
 
   @Transactional(readOnly = true)
   public List<CreditAccount> listAccounts(String shopId) {
-    return creditAccountRepository.findAll().stream()
-        .filter(a -> shopId.equals(a.getShopId()))
+    return creditAccountRepository.findByShopId(shopId).stream()
         .sorted((a, b) -> {
           Instant ia = a.getLastEntryAt() != null ? a.getLastEntryAt() : a.getUpdatedAt();
           Instant ib = b.getLastEntryAt() != null ? b.getLastEntryAt() : b.getUpdatedAt();
@@ -136,6 +136,26 @@ public class CreditService {
           return ib.compareTo(ia);
         })
         .toList();
+  }
+
+  /** Read API for MIS / reporting — accounts for one party type. */
+  @Transactional(readOnly = true)
+  public List<CreditAccount> listAccountsByPartyType(String shopId, CreditPartyType partyType) {
+    return creditAccountRepository.findByShopIdAndPartyType(shopId, partyType);
+  }
+
+  /** All ledger entries for a party type (caller filters by date). */
+  @Transactional(readOnly = true)
+  public List<CreditEntry> listEntriesByPartyType(String shopId, CreditPartyType partyType) {
+    return creditEntryRepository.findByShopIdAndPartyType(shopId, partyType);
+  }
+
+  /** All ledger entries for one party. */
+  @Transactional(readOnly = true)
+  public List<CreditEntry> listEntriesByParty(
+      String shopId, CreditPartyType partyType, String partyRefId) {
+    return creditEntryRepository.findByShopIdAndPartyTypeAndPartyRefId(
+        shopId, partyType, partyRefId);
   }
 
   /**
@@ -278,6 +298,7 @@ public class CreditService {
     CreditEntry entry = new CreditEntry();
     entry.setShopId(shopId);
     entry.setAccountId(account.getId());
+    entry.setTxnId(TxnIdGenerator.newId());
     entry.setPartyType(partyType);
     entry.setPartyRefId(partyId.trim());
     entry.setEntryType(entryType);

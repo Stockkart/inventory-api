@@ -1,6 +1,8 @@
 package com.inventory.credit.domain.repository;
 
 import com.inventory.credit.domain.model.CreditEntry;
+import com.inventory.credit.domain.model.CreditPartyType;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -12,4 +14,9 @@ public interface CreditEntryRepository extends MongoRepository<CreditEntry, Stri
 
   Page<CreditEntry> findByShopIdAndAccountIdOrderByCreatedAtDesc(
       String shopId, String accountId, Pageable pageable);
+
+  List<CreditEntry> findByShopIdAndPartyType(String shopId, CreditPartyType partyType);
+
+  List<CreditEntry> findByShopIdAndPartyTypeAndPartyRefId(
+      String shopId, CreditPartyType partyType, String partyRefId);
 }

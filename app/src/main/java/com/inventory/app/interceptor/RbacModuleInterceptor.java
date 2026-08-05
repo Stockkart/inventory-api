@@ -33,6 +33,7 @@ public class RbacModuleInterceptor implements HandlerInterceptor {
       List.of(
           new ModuleRule("/api/v1/accounting", RbacService.MODULE_ACCOUNTING),
           new ModuleRule("/api/v1/analytics", RbacService.MODULE_ANALYTICS),
+          new ModuleRule("/api/v1/mis", RbacService.MODULE_MIS),
           new ModuleRule("/api/v1/taxation", RbacService.MODULE_TAXES),
           new ModuleRule("/api/v1/plans/shop/transactions", RbacService.MODULE_PAYMENT_PLAN),
           new ModuleRule("/api/v1/plans/shop/usage", RbacService.MODULE_PAYMENT_PLAN),

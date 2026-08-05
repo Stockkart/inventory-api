@@ -5,6 +5,7 @@ import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.InsufficientStockException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.common.util.TxnIdGenerator;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.AvailableUnit;
 import com.inventory.product.domain.model.enums.BillingMode;
@@ -269,6 +270,9 @@ public class CheckoutService {
           } else {
             purchase.setInvoiceNo(invoiceSequenceService.getNextInvoiceNo(shopId));
           }
+        }
+        if (!StringUtils.hasText(purchase.getTxnId())) {
+          purchase.setTxnId(TxnIdGenerator.newId());
         }
       }
 

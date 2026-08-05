@@ -4,6 +4,7 @@ import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.common.util.TxnIdGenerator;
 import com.inventory.pricing.domain.model.Pricing;
 import com.inventory.pricing.domain.repository.PricingRepository;
 import com.inventory.product.domain.model.Inventory;
@@ -469,6 +470,7 @@ public class VendorPurchaseReturnService {
       VendorPurchaseReturn record = new VendorPurchaseReturn();
       record.setShopId(shopId);
       record.setUserId(userId);
+      record.setTxnId(TxnIdGenerator.newId());
       record.setVendorPurchaseInvoiceId(invoice.getId());
       record.setSupplierCreditNoteNo(supplierCn);
       record.setItems(List.copyOf(aggregates.values()));
