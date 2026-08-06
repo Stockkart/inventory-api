@@ -68,6 +68,10 @@ public class AuthValidator {
       if (request.getRole() == null) {
         throw new ValidationException("Role is required for OAuth signup");
       }
+      // Optional phone on OAuth — normalize when present
+      if (StringUtils.hasText(request.getPhone())) {
+        request.setPhone(normalizeIndianMobile(request.getPhone()));
+      }
       return;
     }
 
@@ -87,6 +91,22 @@ public class AuthValidator {
     if (request.getRole() == null) {
       throw new ValidationException("Role is required");
     }
+    if (!StringUtils.hasText(request.getPhone())) {
+      throw new ValidationException("Phone is required");
+    }
+    request.setPhone(normalizeIndianMobile(request.getPhone()));
+  }
+
+  /** Accepts 10 digits or +91 / 91 prefix; stores canonical 10-digit form. */
+  static String normalizeIndianMobile(String raw) {
+    String digitsOnly = raw == null ? "" : raw.replaceAll("\\D", "");
+    if (digitsOnly.matches("\\d{10}")) {
+      return digitsOnly;
+    }
+    if (digitsOnly.matches("91\\d{10}")) {
+      return digitsOnly.substring(2);
+    }
+    throw new ValidationException("Phone must be a valid Indian number (10 digits or +91 format)");
   }
 
   public void validateLogoutRequest(LogoutRequest request) {

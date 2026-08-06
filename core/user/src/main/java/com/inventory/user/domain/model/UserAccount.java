@@ -23,6 +23,8 @@ public class UserAccount {
   private UserRole role;
   private String shopId;
   private String email;
+  /** 10-digit Indian mobile when set at signup. */
+  private String phone;
   private String password;
   private boolean active;
   private boolean inviteAccepted;

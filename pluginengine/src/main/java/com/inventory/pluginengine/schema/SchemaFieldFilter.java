@@ -23,6 +23,9 @@ public final class SchemaFieldFilter {
     if (mode == SchemaDisplayMode.INVOICE) {
       return field.getShowIn() != null && field.getShowIn().contains("invoice");
     }
+    if (mode == SchemaDisplayMode.ONBOARDING) {
+      return field.getShowIn() != null && field.getShowIn().contains("onboarding");
+    }
     if (mode == SchemaDisplayMode.BASIC) {
       if (Boolean.TRUE.equals(field.getRequired())) {
         return field.getShowIn() == null
