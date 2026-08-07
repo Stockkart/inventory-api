@@ -9,14 +9,17 @@ import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.product.rest.dto.request.VendorPurchaseReturnRequest;
 import com.inventory.product.rest.dto.response.VendorPurchaseReturnListResponse;
 import com.inventory.product.rest.dto.response.VendorPurchaseReturnResponse;
+import com.inventory.product.service.CreditNoteService;
 import com.inventory.product.service.VendorPurchaseReturnService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -33,6 +36,9 @@ public class VendorPurchaseReturnController {
 
   @Autowired
   private VendorPurchaseReturnService vendorPurchaseReturnService;
+
+  @Autowired
+  private CreditNoteService creditNoteService;
 
   /**
    * List supplier purchase returns for the shop (pagination, newest first).
@@ -67,5 +73,34 @@ public class VendorPurchaseReturnController {
       throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "Shop context required");
     }
     return ResponseEntity.ok(ApiResponse.success(vendorPurchaseReturnService.processReturn(body, httpRequest)));
+  }
+
+  /**
+   * Generate credit-note PDF for a vendor purchase return.
+   */
+  @GetMapping(value = "/{returnId}/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
+  public ResponseEntity<byte[]> generateCreditNotePdf(
+      @PathVariable String returnId,
+      @RequestParam(required = false) String printerType,
+      HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    if (!StringUtils.hasText(shopId)) {
+      throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "Shop context required");
+    }
+    log.info(
+        "Generating vendor debit note PDF for return={}, shop={}, printerType={}",
+        returnId,
+        shopId,
+        printerType);
+
+    byte[] pdfBytes = creditNoteService.generateVendorCreditNotePdf(returnId, shopId, printerType);
+    String fileName = "debit_note_" + returnId + ".pdf";
+
+    HttpHeaders headers = new HttpHeaders();
+    headers.setContentType(MediaType.APPLICATION_PDF);
+    headers.setContentDispositionFormData("attachment", fileName);
+    headers.setContentLength(pdfBytes.length);
+
+    return ResponseEntity.ok().headers(headers).body(pdfBytes);
   }
 }

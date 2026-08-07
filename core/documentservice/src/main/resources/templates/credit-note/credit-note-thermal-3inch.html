@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8"/>
+  <title th:text="${documentTitle}">Credit Note</title>
+  <style>
+    @page {
+      size: 75mm 600mm;
+      margin: 2mm 2.5mm;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: "Courier New", Courier, monospace;
+      font-size: 9px;
+      font-weight: 700;
+      color: #000;
+      line-height: 1.3;
+      width: 70mm;
+    }
+    body, body * {
+      font-weight: 700 !important;
+    }
+    .center { text-align: center; }
+    .right { text-align: right; }
+    .shop-name {
+      font-size: 13px;
+      margin-bottom: 3px;
+    }
+    .shop-line {
+      font-size: 8px;
+      line-height: 1.35;
+    }
+    .line {
+      border: none;
+      border-top: 1px solid #000;
+      margin: 5px 0;
+    }
+    .row {
+      display: table;
+      width: 100%;
+    }
+    .row .left { display: table-cell; text-align: left; vertical-align: top; }
+    .row .right { display: table-cell; text-align: right; vertical-align: top; }
+    .meta-row .left { width: 48%; }
+    .meta-row .right { width: 52%; }
+    .bill-to {
+      margin-top: 2px;
+      font-size: 9px;
+    }
+    .bill-to .detail {
+      font-size: 8px;
+      margin-top: 1px;
+    }
+    .col-head {
+      font-size: 8px;
+      display: table;
+      width: 100%;
+      margin-bottom: 2px;
+    }
+    .col-head .n { display: table-cell; width: 8%; text-align: left; }
+    .col-head .i { display: table-cell; width: 36%; text-align: left; }
+    .col-head .q { display: table-cell; width: 16%; text-align: left; }
+    .col-head .p { display: table-cell; width: 20%; text-align: center; }
+    .col-head .a { display: table-cell; width: 20%; text-align: right; }
+    .item {
+      margin: 5px 0;
+    }
+    .item-title {
+      font-size: 9px;
+      text-transform: uppercase;
+      word-wrap: break-word;
+    }
+    .item-title .idx {
+      display: inline-block;
+      min-width: 12px;
+      margin-right: 4px;
+    }
+    .item-gst {
+      font-size: 8px;
+      margin: 1px 0 2px 16px;
+    }
+    .item-vals {
+      display: table;
+      width: 100%;
+      font-size: 9px;
+    }
+    .item-vals .spacer { display: table-cell; width: 8%; }
+    .item-vals .q { display: table-cell; width: 36%; text-align: left; }
+    .item-vals .p { display: table-cell; width: 28%; text-align: center; }
+    .item-vals .a { display: table-cell; width: 28%; text-align: right; }
+    .totals {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 9px;
+    }
+    .totals td {
+      padding: 2px 0;
+      vertical-align: top;
+    }
+    .totals .label { width: 58%; text-align: left; }
+    .totals .value { width: 42%; text-align: right; }
+    .totals .grand td {
+      font-size: 10px;
+      padding-top: 3px;
+      padding-bottom: 3px;
+    }
+    .footer {
+      margin-top: 6px;
+      font-size: 8px;
+      text-align: center;
+    }
+    .doc-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="center">
+    <div class="doc-title" th:text="${documentTitle}">Credit Note</div>
+    <div class="shop-name" th:text="${shopName}">Shop Name</div>
+    <div th:if="${showSellerDetails}">
+      <div class="shop-line" th:if="${shopAddress != null && !shopAddress.isEmpty()}" th:text="${shopAddress}">Address</div>
+      <div class="shop-line" th:if="${shopPhone != null && !shopPhone.isEmpty()}">Phone: <span th:text="${shopPhone}">-</span></div>
+      <div class="shop-line" th:if="${shopGstin != null && !shopGstin.isEmpty()}">GSTIN: <span th:text="${shopGstin}">-</span></div>
+      <div class="shop-line" th:if="${shopPan != null && !shopPan.isEmpty()}">PAN Number: <span th:text="${shopPan}">-</span></div>
+    </div>
+  </div>
+
+  <hr class="line"/>
+
+  <div class="row meta-row">
+    <div class="left">
+      <span th:text="${documentNoShort}">CN</span>: <span th:text="${creditNoteNo}">CN</span>
+    </div>
+    <div class="right">
+      <span th:text="${noteDate}">DD-MM-YYYY</span>
+      <span th:text="${noteTime}">TIME</span>
+    </div>
+  </div>
+  <div th:if="${againstInvoiceNo != null && !againstInvoiceNo.isEmpty()}" style="font-size: 8px; margin-top: 2px;">
+    Against: <span th:text="${againstInvoiceNo}">INV</span>
+  </div>
+
+  <div class="bill-to" th:if="${showBuyerDetails && partyName != null && !partyName.isEmpty()}">
+    <div>
+      <span th:text="${partyRole == 'VENDOR' ? 'SUPPLIER:' : 'CUSTOMER:'}"></span>
+      <span th:text="${partyName}">Party</span>
+    </div>
+    <div class="detail" th:if="${partyAddress != null && !partyAddress.isEmpty()}">
+      Address: <span th:text="${partyAddress}">-</span>
+    </div>
+    <div class="detail" th:if="${partyGstin != null && !partyGstin.isEmpty()}">
+      GSTIN: <span th:text="${partyGstin}">-</span>
+    </div>
+  </div>
+
+  <hr class="line"/>
+
+  <div class="col-head">
+    <div class="n">#</div>
+    <div class="i">Item</div>
+    <div class="q">Qty</div>
+    <div class="p">Price</div>
+    <div class="a">Amount</div>
+  </div>
+
+  <hr class="line"/>
+
+  <div th:each="it, iterStat : ${items}" class="item">
+    <div class="item-title">
+      <span class="idx" th:text="${iterStat.count}">1</span>
+      <span th:text="${it.name}">ITEM</span>
+    </div>
+    <div class="item-gst" th:if="${showTaxDetails && ((it.gstPercent != null && it.gstPercent.compareTo(T(java.math.BigDecimal).ZERO) > 0) || (showHsn && it.hsn != null && !it.hsn.isEmpty()))}">
+      <span th:if="${it.gstPercent != null && it.gstPercent.compareTo(T(java.math.BigDecimal).ZERO) > 0}">
+        GST <span th:text="${#numbers.formatDecimal(it.gstPercent, 1, 2)}">5.00</span>%
+      </span>
+      <span th:if="${showHsn && it.hsn != null && !it.hsn.isEmpty()}">
+        HSN: <span th:text="${it.hsn}">-</span>
+      </span>
+    </div>
+    <div class="item-vals">
+      <div class="spacer"></div>
+      <div class="q" th:text="${#numbers.formatDecimal(it.quantity, 1, 2)}">1.00</div>
+      <div class="p">Rs. <span th:text="${#numbers.formatDecimal(it.unitPrice != null ? it.unitPrice : 0, 1, 2)}">0.00</span></div>
+      <div class="a">Rs. <span th:text="${#numbers.formatDecimal(it.lineTotal != null ? it.lineTotal : 0, 1, 2)}">0.00</span></div>
+    </div>
+  </div>
+
+  <hr class="line"/>
+
+  <table class="totals" th:if="${showTaxDetails}">
+    <tr>
+      <td class="label">Taxable Amount</td>
+      <td class="value">Rs. <span th:text="${#numbers.formatDecimal(taxableTotal, 1, 2)}">0.00</span></td>
+    </tr>
+    <tr th:if="${cgstAmount != null && cgstAmount.compareTo(T(java.math.BigDecimal).ZERO) > 0}">
+      <td class="label">CGST @ <span th:text="${#numbers.formatDecimal(cgstPercent, 1, 2)}">2.50</span>%</td>
+      <td class="value">Rs. <span th:text="${#numbers.formatDecimal(cgstAmount, 1, 2)}">0.00</span></td>
+    </tr>
+    <tr th:if="${sgstAmount != null && sgstAmount.compareTo(T(java.math.BigDecimal).ZERO) > 0}">
+      <td class="label">SGST @ <span th:text="${#numbers.formatDecimal(sgstPercent, 1, 2)}">2.50</span>%</td>
+      <td class="value">Rs. <span th:text="${#numbers.formatDecimal(sgstAmount, 1, 2)}">0.00</span></td>
+    </tr>
+  </table>
+
+  <hr class="line"/>
+
+  <table class="totals">
+    <tr class="grand">
+      <td class="label" th:text="${documentAmountLabelShort}">Credit Note Amt</td>
+      <td class="value">Rs. <span th:text="${#numbers.formatDecimal(grandTotal, 1, 2)}">0.00</span></td>
+    </tr>
+  </table>
+
+  <hr class="line"/>
+
+  <div class="footer">
+    <div th:if="${showAmountInWords && amountInWords != null && !amountInWords.isEmpty()}" th:text="${amountInWords}">Amount in words</div>
+    <div th:if="${showPaymentMethod && paymentMethod != null && !paymentMethod.isEmpty()}">Pay: <span th:text="${paymentMethod}">CASH</span></div>
+    <div th:if="${footerNote != null && !footerNote.isEmpty()}" th:text="${footerNote}">Thank you</div>
+    <div th:unless="${footerNote != null && !footerNote.isEmpty()}">Thank you!</div>
+  </div>
+
+</body>
+</html>

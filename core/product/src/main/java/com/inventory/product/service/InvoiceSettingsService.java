@@ -132,6 +132,24 @@ public class InvoiceSettingsService {
     request.setShowSignatures(Boolean.TRUE.equals(fields.getShowSignatures()));
   }
 
+  /** Apply the relevant subset of invoice field visibility to a credit-note print request. */
+  public void applyCreditNoteVisibility(
+      com.inventory.documentservice.rest.dto.GenerateCreditNoteRequest request,
+      InvoiceFieldVisibility fields) {
+    if (request == null || fields == null) {
+      return;
+    }
+    request.setShowSellerDetails(Boolean.TRUE.equals(fields.getShowSellerDetails()));
+    request.setShowBuyerDetails(Boolean.TRUE.equals(fields.getShowBuyerDetails()));
+    request.setShowPaymentMethod(Boolean.TRUE.equals(fields.getShowPaymentMethod()));
+    request.setShowTaxDetails(Boolean.TRUE.equals(fields.getShowTaxDetails()));
+    request.setShowAmountInWords(Boolean.TRUE.equals(fields.getShowAmountInWords()));
+    request.setShowHsn(Boolean.TRUE.equals(fields.getShowHsn()));
+    request.setShowMfg(Boolean.TRUE.equals(fields.getShowMfg()));
+    request.setShowBatch(Boolean.TRUE.equals(fields.getShowBatch()));
+    request.setShowSignatures(Boolean.TRUE.equals(fields.getShowSignatures()));
+  }
+
   public String previewHtml(
       String shopId, String userId, PreviewInvoiceSettingsRequest request) {
     shopValidator.validateShopAccess(membershipService.hasAccess(userId, shopId));

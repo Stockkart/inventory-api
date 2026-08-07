@@ -7,11 +7,16 @@ import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.product.rest.dto.request.RefundRequest;
 import com.inventory.product.rest.dto.response.RefundListResponse;
 import com.inventory.product.rest.dto.response.RefundResponse;
+import com.inventory.product.service.CreditNoteService;
 import com.inventory.product.service.RefundService;
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -26,10 +31,14 @@ import org.springframework.web.bind.annotation.RestController;
 @Latency(module = "product")
 @RecordRequestRate(module = "product")
 @RecordStatusCodes(module = "product")
+@Slf4j
 public class RefundController {
 
   @Autowired
   private RefundService refundService;
+
+  @Autowired
+  private CreditNoteService creditNoteService;
 
   /**
    * Process refund for a purchase.
@@ -71,5 +80,30 @@ public class RefundController {
     return ResponseEntity.ok(ApiResponse.success(
         refundService.getRefunds(page, limit, invoiceNo, customerPhone, customerId, customerEmail, httpRequest)));
   }
-}
 
+  /**
+   * Generate credit-note PDF for a customer sales return / refund.
+   */
+  @GetMapping("/{refundId}/pdf")
+  public ResponseEntity<byte[]> generateCreditNotePdf(
+      @PathVariable String refundId,
+      @RequestParam(required = false) String printerType,
+      HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    log.info(
+        "Generating customer credit note PDF for refund={}, shop={}, printerType={}",
+        refundId,
+        shopId,
+        printerType);
+
+    byte[] pdfBytes = creditNoteService.generateCustomerCreditNotePdf(refundId, shopId, printerType);
+    String fileName = "credit_note_" + refundId + ".pdf";
+
+    HttpHeaders headers = new HttpHeaders();
+    headers.setContentType(MediaType.APPLICATION_PDF);
+    headers.setContentDispositionFormData("attachment", fileName);
+    headers.setContentLength(pdfBytes.length);
+
+    return ResponseEntity.ok().headers(headers).body(pdfBytes);
+  }
+}

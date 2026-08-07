@@ -1,27 +1,33 @@
 package com.inventory.documentservice.domain;
 
 /**
- * Supported invoice printer layouts. Each type maps to a Thymeleaf template
- * optimized for that printer form factor.
+ * Supported printer layouts. Each type maps to a Thymeleaf template within a
+ * {@link DocumentTemplateFamily} (invoice, credit note, …).
  */
 public enum PrinterType {
-  /** Standard A4 tax invoice (laser/inkjet). */
-  NORMAL("invoice/invoice"),
+  /** Standard A4 (laser/inkjet). */
+  NORMAL,
 
   /** Compact monospace layout on A4 for dot-matrix printers. */
-  DOT_MATRIX("invoice/invoice-dotmatrix"),
+  DOT_MATRIX,
 
   /** Narrow ~75mm thermal receipt roll. */
-  THERMAL_3INCH("invoice/invoice-thermal-3inch");
+  THERMAL_3INCH;
 
-  private final String templateName;
-
-  PrinterType(String templateName) {
-    this.templateName = templateName;
+  /**
+   * Invoice template path (backward-compatible with existing callers).
+   */
+  public String getTemplateName() {
+    return DocumentTemplateFamily.INVOICE.templateFor(this);
   }
 
-  public String getTemplateName() {
-    return templateName;
+  /**
+   * Resolve a template for a document family + this printer layout.
+   */
+  public String getTemplateName(DocumentTemplateFamily family) {
+    DocumentTemplateFamily resolved =
+        family != null ? family : DocumentTemplateFamily.INVOICE;
+    return resolved.templateFor(this);
   }
 
   /**

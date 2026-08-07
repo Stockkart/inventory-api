@@ -1,5 +1,6 @@
 package com.inventory.documentservice.service;
 
+import com.inventory.documentservice.rest.dto.GenerateCreditNoteRequest;
 import com.inventory.documentservice.rest.dto.GenerateInvoiceRequest;
 import com.inventory.documentservice.rest.dto.mis.MisTabularDocumentRequest;
 import com.inventory.documentservice.service.mis.MisExcelDocumentService;
@@ -9,8 +10,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
- * Service for document generation and handling.
- * Handles PDF generation, document templates, and document management.
+ * Facade for document generation. Delegates to document-specific PDF services
+ * and MIS exporters.
  */
 @Service
 @Slf4j
@@ -18,6 +19,9 @@ public class DocumentService {
 
   @Autowired
   private InvoicePdfService invoicePdfService;
+
+  @Autowired
+  private CreditNotePdfService creditNotePdfService;
 
   @Autowired
   private MisExcelDocumentService misExcelDocumentService;
@@ -42,6 +46,22 @@ public class DocumentService {
   public String generateInvoiceHtml(GenerateInvoiceRequest request) {
     log.info("Generating invoice HTML preview for invoice: {}", request.getInvoiceNo());
     return invoicePdfService.renderInvoiceHtml(request);
+  }
+
+  /** Generate credit-note PDF (customer or vendor). */
+  public byte[] generateCreditNote(GenerateCreditNoteRequest request) {
+    log.info(
+        "Generating credit note PDF for note: {}",
+        request != null ? request.getCreditNoteNo() : null);
+    return creditNotePdfService.generateCreditNotePdf(request);
+  }
+
+  /** Render credit-note HTML (same templates as PDF) for preview. */
+  public String generateCreditNoteHtml(GenerateCreditNoteRequest request) {
+    log.info(
+        "Generating credit note HTML preview for note: {}",
+        request != null ? request.getCreditNoteNo() : null);
+    return creditNotePdfService.renderCreditNoteHtml(request);
   }
 
   /** MIS tabular Excel (.xlsx). */

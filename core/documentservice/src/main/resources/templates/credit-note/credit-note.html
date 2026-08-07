@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8"/>
+  <title th:text="${documentTitle}">Credit Note</title>
+  <style>
+    @page {
+        margin: 0;
+        size: A4;
+    }
+
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+
+    body {
+        font-family: Arial, sans-serif;
+        font-size: 11px;
+        color: #000;
+        background: #ffffff;
+        padding: 15px;
+        line-height: 1.4;
+    }
+
+    .invoice-container {
+        max-width: 100%;
+        margin: 0 auto;
+        border: 1px solid #000;
+        padding: 10px;
+    }
+
+    .header-section {
+        display: table;
+        width: 100%;
+        margin-bottom: 10px;
+        border-bottom: 1px solid #000;
+        padding-bottom: 8px;
+    }
+
+    .seller-info {
+        display: table-cell;
+        vertical-align: top;
+        width: 100%;
+        padding-right: 15px;
+        text-align: center;
+    }
+
+    .company-name {
+        font-size: 16px;
+        font-weight: 700;
+        color: #000;
+        margin-bottom: 5px;
+        text-transform: uppercase;
+    }
+
+    .company-details {
+        font-size: 10px;
+        color: #000;
+        line-height: 1.5;
+    }
+
+    .company-details div {
+        margin-bottom: 2px;
+    }
+
+    .buyer-section {
+        display: table;
+        width: 100%;
+        table-layout: fixed;
+        margin-bottom: 10px;
+        padding: 8px;
+        border-collapse: separate;
+        border-spacing: 0;
+    }
+
+    .buyer-info {
+        display: table-cell;
+        vertical-align: top;
+        width: 40%;
+        padding-right: 15px;
+    }
+
+    .buyer-label {
+        font-size: 10px;
+        font-weight: 700;
+        margin-bottom: 5px;
+    }
+
+    .buyer-details {
+        font-size: 10px;
+        line-height: 1.5;
+    }
+
+    .notes-section {
+        display: table-cell;
+        vertical-align: top;
+        width: 30%;
+        padding-left: 15px;
+        padding-right: 15px;
+        font-size: 9px;
+    }
+
+    .notes-section div {
+        margin-bottom: 3px;
+    }
+
+    .items-section {
+        margin-bottom: 10px;
+    }
+
+    .items-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 9px;
+    }
+
+    .items-table th {
+        border: 1px solid #000;
+        padding: 5px 3px;
+        text-align: center;
+        font-weight: 700;
+        background: #f0f0f0;
+        font-size: 9px;
+    }
+
+    .items-table td {
+        border: 1px solid #000;
+        padding: 4px 3px;
+        text-align: center;
+        font-size: 9px;
+    }
+
+    .items-table td.text-left {
+        text-align: left;
+    }
+
+    .items-table td.text-right {
+        text-align: right;
+    }
+
+    .product-name {
+        font-weight: 600;
+    }
+
+    .summary-section {
+        display: table;
+        width: 100%;
+        margin-bottom: 10px;
+    }
+
+    .summary-left {
+        display: table-cell;
+        vertical-align: bottom;
+        width: 60%;
+        padding-right: 10px;
+    }
+
+    .summary-right {
+        display: table-cell;
+        vertical-align: top;
+        width: 40%;
+    }
+
+    .summary-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 10px;
+    }
+
+    .summary-table td {
+        padding: 4px 8px;
+        border: 1px solid #000;
+    }
+
+    .summary-table td:first-child {
+        text-align: left;
+        font-weight: 600;
+        width: 60%;
+    }
+
+    .summary-table td:last-child {
+        text-align: right;
+        width: 40%;
+    }
+
+    .summary-table tr.net-amount {
+        background: #f0f0f0;
+        font-weight: 700;
+        font-size: 11px;
+    }
+
+    .amount-in-words {
+        margin-top: 8px;
+        padding: 5px;
+        border: 1px solid #000;
+        font-size: 10px;
+        font-weight: 600;
+    }
+
+    .footer-section {
+        display: table;
+        width: 100%;
+        margin-top: 15px;
+    }
+
+    .signature-left {
+        display: table-cell;
+        vertical-align: top;
+        width: 50%;
+        padding-right: 20px;
+    }
+
+    .signature-right {
+        display: table-cell;
+        vertical-align: top;
+        width: 50%;
+        padding-left: 20px;
+    }
+
+    .signature-box {
+        border-top: 1px solid #000;
+        padding-top: 5px;
+        margin-top: 40px;
+        text-align: center;
+        font-size: 10px;
+    }
+
+    .signature-label {
+        font-weight: 600;
+        margin-top: 30px;
+    }
+
+    .footer-note {
+        margin-top: 10px;
+        font-size: 8px;
+        text-align: center;
+        color: #666;
+    }
+
+    .tagline-section {
+        text-align: center;
+        margin: 8px 0;
+        padding: 5px 0;
+        font-size: 11px;
+        font-weight: 600;
+        color: #000;
+        border-bottom: 1px solid #000;
+    }
+
+    .doc-header {
+        text-align: center;
+        font-size: 16px;
+        font-weight: 700;
+        margin-bottom: 8px;
+        text-transform: uppercase;
+        border-bottom: 1px solid #000;
+        padding-bottom: 4px;
+    }
+  </style>
+</head>
+<body>
+<div class="invoice-container">
+  <div class="doc-header" th:text="${documentTitle}">Credit Note</div>
+
+  <div class="header-section" th:if="${showSellerDetails}">
+    <div class="seller-info">
+      <div class="company-name" th:text="${shopName ?: ''}"></div>
+      <div class="company-details">
+        <div th:text="${shopAddress ?: ''}"></div>
+        <div>
+          <span th:if="${shopDlNo != null && shopDlNo != ''}"><strong>D.L.No.: </strong><span th:text="${shopDlNo}"></span></span>
+          <span th:if="${shopDlNo != null && shopDlNo != '' and shopFssai != null && shopFssai != ''}"><strong> | </strong></span>
+          <span th:if="${shopFssai != null && shopFssai != ''}"><strong>FSSAI: </strong><span th:text="${shopFssai}"></span></span>
+        </div>
+        <div th:if="${shopGstin != null && shopGstin != ''}"><strong>GSTIN NO.: </strong><span th:text="${shopGstin}"></span></div>
+        <div>
+          <span th:if="${shopPhone != null && shopPhone != ''}"><strong>Phone: </strong><span th:text="${shopPhone}"></span></span>
+          <span th:if="${shopPhone != null && shopPhone != '' and shopEmail != null && shopEmail != ''}"><strong> | </strong></span>
+          <span th:if="${shopEmail != null && shopEmail != ''}"><strong>E-Mail: </strong><span th:text="${shopEmail}"></span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tagline-section" th:if="${showSellerDetails and shopTagline != null && shopTagline != ''}">
+    <span th:text="${shopTagline}"></span>
+  </div>
+
+  <div class="buyer-section">
+    <div class="buyer-info" th:if="${showBuyerDetails}">
+      <div class="buyer-label">
+        <span th:text="${partyRole == 'VENDOR' ? 'Supplier' : 'Customer'}"></span>:
+        <span th:text="${partyName ?: ''}"></span>
+      </div>
+      <div class="buyer-details">
+        <div th:if="${partyAddress}" th:text="${partyAddress}"></div>
+      </div>
+    </div>
+    <div class="notes-section" th:if="${showBuyerDetails}">
+      <div><span th:if="${partyDlNo != null && partyDlNo != ''}"><strong>D.L. No.: </strong><span th:text="${partyDlNo}"></span></span></div>
+      <div><span th:if="${partyGstin != null && partyGstin != ''}"><strong>GSTIN No.: </strong><span th:text="${partyGstin}"></span></span></div>
+      <div><span th:if="${partyPan != null && partyPan != ''}"><strong>PAN No.: </strong><span th:text="${partyPan}"></span></span></div>
+    </div>
+    <div class="notes-section">
+      <div><strong th:text="${documentNoLabel}">Credit Note No.</strong> <span th:text="${creditNoteNo ?: ''}"></span></div>
+      <div th:if="${againstInvoiceNo != null && againstInvoiceNo != ''}"><strong>Against Invoice:</strong> <span th:text="${againstInvoiceNo}"></span></div>
+      <div><strong>Date:</strong> <span th:text="${noteDate ?: ''}"></span></div>
+      <div><strong>Time:</strong> <span th:text="${noteTime ?: ''}"></span></div>
+      <div th:if="${reason != null && reason != ''}"><strong>Reason:</strong> <span th:text="${reason}"></span></div>
+    </div>
+  </div>
+
+  <div class="items-section">
+    <table class="items-table">
+      <thead>
+      <tr>
+        <th style="width: 6%;">QTY</th>
+        <th style="width: 28%;">PRODUCTS</th>
+        <th style="width: 10%;" th:if="${showHsn}">HSN</th>
+        <th style="width: 10%;" th:if="${showMfg}">MFG/MKT</th>
+        <th style="width: 8%;" th:if="${showBatch}">BATCH</th>
+        <th style="width: 10%;">RATE</th>
+        <th style="width: 8%;" th:if="${showTaxDetails}">CGST%</th>
+        <th style="width: 8%;" th:if="${showTaxDetails}">SGST%</th>
+        <th style="width: 14%;">AMOUNT</th>
+      </tr>
+      </thead>
+      <tbody>
+      <tr th:each="item : ${items}">
+        <td th:text="${item.quantity}"></td>
+        <td class="text-left product-name" th:text="${item.name}"></td>
+        <td th:if="${showHsn}" th:text="${item.hsn ?: ''}"></td>
+        <td th:if="${showMfg}" th:text="${item.companyName ?: ''}"></td>
+        <td th:if="${showBatch}" th:text="${item.batchNo ?: ''}"></td>
+        <td class="text-right" th:text="${item.unitPrice != null ? #numbers.formatDecimal(item.unitPrice, 1, 2) : '0.00'}"></td>
+        <td class="text-right" th:if="${showTaxDetails}" th:text="${item.cgst != null and item.cgst != '' ? item.cgst : #numbers.formatDecimal(cgstPercent, 1, 2)}"></td>
+        <td class="text-right" th:if="${showTaxDetails}" th:text="${item.sgst != null and item.sgst != '' ? item.sgst : #numbers.formatDecimal(sgstPercent, 1, 2)}"></td>
+        <td class="text-right" th:text="${item.lineTotal != null ? #numbers.formatDecimal(item.lineTotal, 1, 2) : '0.00'}"></td>
+      </tr>
+      </tbody>
+    </table>
+    <div style="margin-top: 5px; font-size: 9px;">
+      <strong>NO OF ITEMS:</strong> <span th:text="${items != null ? items.size() : 0}"></span>
+    </div>
+  </div>
+
+  <div class="summary-section">
+    <div class="summary-left">
+      <div class="amount-in-words" th:if="${showAmountInWords}">
+        <strong>
+          <span th:text="${amountInWords ?: ''}"></span>
+        </strong>
+      </div>
+    </div>
+    <div class="summary-right">
+      <table class="summary-table">
+        <tr th:if="${showTaxDetails}">
+          <td>Taxable Amount</td>
+          <td th:text="${#numbers.formatDecimal(taxableTotal, 1, 2)}"></td>
+        </tr>
+        <tr th:if="${showTaxDetails and sgstAmount != null && sgstAmount > 0}">
+          <td>SGST <span th:text="${sgstPercent ?: ''}"></span> %</td>
+          <td th:text="${#numbers.formatDecimal(sgstAmount, 1, 2)}"></td>
+        </tr>
+        <tr th:if="${showTaxDetails and cgstAmount != null && cgstAmount > 0}">
+          <td>CGST <span th:text="${cgstPercent ?: ''}"></span> %</td>
+          <td th:text="${#numbers.formatDecimal(cgstAmount, 1, 2)}"></td>
+        </tr>
+        <tr th:if="${roundOff != null && roundOff != 0}">
+          <td>Round Off</td>
+          <td th:text="${#numbers.formatDecimal(roundOff, 1, 2)}"></td>
+        </tr>
+        <tr class="net-amount">
+          <td th:text="${documentAmountLabel}">Credit Note Amount</td>
+          <td th:text="${#numbers.formatDecimal(grandTotal, 1, 2)}"></td>
+        </tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="footer-section" th:if="${showSignatures}">
+    <div class="signature-left" th:if="${showSellerDetails}">
+      <div class="signature-box">
+        <div style="margin-bottom: 30px;"><span th:text="${shopName ?: ''}"></span></div>
+        <div class="signature-label">Authorised Signatory</div>
+      </div>
+    </div>
+    <div class="signature-right" th:if="${showBuyerDetails}">
+      <div class="signature-box">
+        <div style="margin-bottom: 30px;" th:text="${partyRole == 'VENDOR' ? 'Received By Supplier' : 'Received By'}"></div>
+        <div class="signature-label" th:text="${partyRole == 'VENDOR' ? 'Supplier Signature' : 'Customer Signature'}"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer-note" th:if="${footerNote}">
+    <div th:utext="${footerNote}"></div>
+  </div>
+</div>
+</body>
+</html>
