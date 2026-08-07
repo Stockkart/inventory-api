@@ -40,7 +40,7 @@
         </dependency>
     </dependencies>
 
-    <artifactId>supermarket</artifactId>
+    <artifactId>grocery</artifactId>
 
     <properties>
         <maven.compiler.source>21</maven.compiler.source>

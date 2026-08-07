@@ -27,7 +27,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
     "com.inventory.accounting.domain.repository",
     "com.inventory.resource.domain.repository",
     "com.inventory.plugins.medical.domain",
-    "com.inventory.plugins.supermarket.domain.repository",
+    "com.inventory.plugins.grocery.domain.repository",
     "com.inventory.plugins.sports.domain",
     "com.inventory.plugins.cafe.domain"
 })

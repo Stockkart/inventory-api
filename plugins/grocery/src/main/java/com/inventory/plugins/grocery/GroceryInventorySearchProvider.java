@@ -1,4 +1,4 @@
-package com.inventory.plugins.supermarket;
+package com.inventory.plugins.grocery;
 
 import com.inventory.pluginengine.ExtensionFieldCoercion;
 import com.inventory.pluginengine.InventoryExpiryBucketSummary;
@@ -6,8 +6,8 @@ import com.inventory.pluginengine.InventorySearchQuery;
 import com.inventory.pluginengine.InventorySearchResult;
 import com.inventory.pluginengine.defaultprovider.SchemaDrivenInventorySearchProvider;
 import com.inventory.pluginengine.schema.VerticalSchema;
-import com.inventory.plugins.supermarket.domain.model.SupermarketInventoryExtension;
-import com.inventory.plugins.supermarket.search.SupermarketSearchSchema;
+import com.inventory.plugins.grocery.domain.model.GroceryInventoryExtension;
+import com.inventory.plugins.grocery.search.GrocerySearchSchema;
 import java.time.Instant;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -16,18 +16,18 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 @Component
-public class SupermarketInventorySearchProvider extends SchemaDrivenInventorySearchProvider {
+public class GroceryInventorySearchProvider extends SchemaDrivenInventorySearchProvider {
 
   private final MongoTemplate mongoTemplate;
 
-  public SupermarketInventorySearchProvider(MongoTemplate mongoTemplate) {
-    super(mongoTemplate, SupermarketInventoryExtension.class);
+  public GroceryInventorySearchProvider(MongoTemplate mongoTemplate) {
+    super(mongoTemplate, GroceryInventoryExtension.class);
     this.mongoTemplate = mongoTemplate;
   }
 
   @Override
   public String getVerticalId() {
-    return "supermarket";
+    return "grocery";
   }
 
   @Override
@@ -73,14 +73,14 @@ public class SupermarketInventorySearchProvider extends SchemaDrivenInventorySea
             mongoTemplate.count(
                 new Query(
                     Criteria.where("shopId").is(shopId).and("expiryDate").exists(true).lt(now)),
-                SupermarketInventoryExtension.class);
+                GroceryInventoryExtension.class);
 
     int expiringWithin7Days =
         (int)
             mongoTemplate.count(
                 new Query(
                     Criteria.where("shopId").is(shopId).and("expiryDate").gte(now).lte(weekEnd)),
-                SupermarketInventoryExtension.class);
+                GroceryInventoryExtension.class);
 
     int expiringWithinSoonDays =
         (int)
@@ -91,7 +91,7 @@ public class SupermarketInventorySearchProvider extends SchemaDrivenInventorySea
                         .and("expiryDate")
                         .gt(weekEnd)
                         .lte(soonEnd)),
-                SupermarketInventoryExtension.class);
+                GroceryInventoryExtension.class);
 
     return InventoryExpiryBucketSummary.builder()
         .expired(expired)
@@ -107,7 +107,7 @@ public class SupermarketInventorySearchProvider extends SchemaDrivenInventorySea
         InventorySearchQuery.builder()
             .sort("expiryDate:asc")
             .limit(limit > 0 ? limit : 50)
-            .schema(SupermarketSearchSchema.fallback());
+            .schema(GrocerySearchSchema.fallback());
     if (StringUtils.hasText(batchNo)) {
       builder.filters(java.util.Map.of("batchNo", batchNo.trim()));
     }
