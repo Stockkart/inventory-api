@@ -69,6 +69,38 @@ class SchemaFieldFilterTest {
     assertEquals(0, filtered.size());
   }
 
+  @Test
+  void onboardingModeIncludesOnboardingTaggedFieldsOnly() {
+    List<VerticalSchemaField> fields =
+        List.of(
+            field("dlNo", true, null, List.of("onboarding")),
+            field("name", true, null, List.of("registration")),
+            field("gstin", false, "regular", List.of("registration")));
+
+    List<VerticalSchemaField> filtered =
+        SchemaFieldFilter.filterForMode(fields, SchemaDisplayMode.ONBOARDING);
+
+    assertEquals(1, filtered.size());
+    assertTrue(filtered.stream().anyMatch(f -> "dlNo".equals(f.getKey())));
+  }
+
+  @Test
+  void regularModeExcludesRequiredOnboardingOnlyFields() {
+    List<VerticalSchemaField> fields =
+        List.of(field("dlNo", true, null, List.of("onboarding")));
+
+    List<VerticalSchemaField> filtered =
+        SchemaFieldFilter.filterForMode(fields, SchemaDisplayMode.REGULAR);
+
+    assertEquals(0, filtered.size());
+  }
+
+  @Test
+  void fromQueryMapsOnboardingMode() {
+    assertEquals(SchemaDisplayMode.ONBOARDING, SchemaDisplayMode.fromQuery("onboarding"));
+    assertEquals(SchemaDisplayMode.ONBOARDING, SchemaDisplayMode.fromQuery("ONBOARDING"));
+  }
+
   private static VerticalSchemaField field(String key, boolean required, String tier) {
     return field(key, required, tier, List.of("registration"));
   }

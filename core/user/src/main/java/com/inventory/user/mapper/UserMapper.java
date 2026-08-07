@@ -45,6 +45,7 @@ public interface UserMapper {
   @Mapping(target = "shopId", source = "shopId")
   @Mapping(target = "email", source = "email")
   @Mapping(target = "name", source = "name")
+  @Mapping(target = "phone", source = "phone")
   @Mapping(target = "active", source = "active")
   @Mapping(target = "createdAt", source = "updatedAt")
   LoginResponse.UserSummary toUserSummary(UserAccount user);
@@ -64,6 +65,7 @@ public interface UserMapper {
   @Mapping(target = "shopId", source = "shopId")
   @Mapping(target = "email", source = "email")
   @Mapping(target = "name", source = "name")
+  @Mapping(target = "phone", source = "phone")
   @Mapping(target = "active", source = "active")
   @Mapping(target = "createdAt", source = "updatedAt")
   SignupResponse.UserSummary toSignupUserSummary(UserAccount user);
@@ -81,6 +83,7 @@ public interface UserMapper {
   // SignupRequest to UserAccount mapping
   @Mapping(target = "name", source = "name")
   @Mapping(target = "email", source = "email")
+  @Mapping(target = "phone", source = "phone")
   @Mapping(target = "role", source = "role")
   @Mapping(target = "shopId", source = "shopId")
   @Mapping(target = "active", constant = "true")
@@ -160,6 +163,7 @@ public interface UserMapper {
   @Mapping(target = "shopId", source = "shopId")
   @Mapping(target = "email", source = "email")
   @Mapping(target = "name", source = "name")
+  @Mapping(target = "phone", source = "phone")
   @Mapping(target = "active", source = "active")
   @Mapping(target = "createdAt", ignore = true)
   UserResponse toUserResponse(UserAccount account);
@@ -183,6 +187,9 @@ public interface UserMapper {
     account.setName(name != null && !name.isBlank() ? name : email.split("@")[0]);
     account.setRole(request != null && request.getRole() != null ? request.getRole() : UserRole.OWNER);
     account.setShopId(request != null ? request.getShopId() : null);
+    account.setPhone(request != null && request.getPhone() != null && !request.getPhone().isBlank()
+        ? request.getPhone().trim()
+        : null);
     account.setActive(true);
     account.setInviteAccepted(false);
     Instant now = Instant.now();

@@ -9,6 +9,8 @@ public class SignupRequest {
   private String name;
   private String email;
   private String password;
+  /** 10-digit Indian mobile (FE may send +91…; AuthValidator normalizes). */
+  private String phone;
 
   // For OAuth signup (Google/Facebook)
   private String idToken;
