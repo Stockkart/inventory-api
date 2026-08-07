@@ -1,4 +1,4 @@
-package com.inventory.plugins.fmcg.search;
+package com.inventory.plugins.supermarket.search;
 
 import com.inventory.pluginengine.defaultprovider.InventorySearchCursorMode;
 import com.inventory.pluginengine.schema.VerticalEntitySchema;
@@ -11,13 +11,13 @@ import java.util.List;
 import java.util.Map;
 
 /** Fallback schema search config when {@code InventorySearchQuery.schema} is not set (e.g. FEFO). */
-public final class FmcgSearchSchema {
+public final class SupermarketSearchSchema {
 
-  private FmcgSearchSchema() {}
+  private SupermarketSearchSchema() {}
 
   public static VerticalSchema fallback() {
     VerticalSchema schema = new VerticalSchema();
-    schema.setVerticalId("fmcg");
+    schema.setVerticalId("supermarket");
 
     VerticalSchemaField expiry = new VerticalSchemaField();
     expiry.setKey("expiryDate");

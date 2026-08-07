@@ -16,7 +16,7 @@
         <module>medical</module>
         <module>sports</module>
         <module>cafe</module>
-        <module>fmcg</module>
+        <module>supermarket</module>
     </modules>
     <version>1.0.0</version>
 

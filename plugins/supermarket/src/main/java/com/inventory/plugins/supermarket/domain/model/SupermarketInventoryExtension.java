@@ -1,4 +1,4 @@
-package com.inventory.plugins.fmcg.domain.model;
+package com.inventory.plugins.supermarket.domain.model;
 
 import com.inventory.pluginengine.InventoryExtensionDocument;
 import java.time.Instant;
@@ -10,12 +10,12 @@ import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 @Data
-@Document(collection = "inventory_ext_fmcg")
+@Document(collection = "inventory_ext_supermarket")
 @CompoundIndexes({
   @CompoundIndex(name = "shop_expiry", def = "{'shopId': 1, 'expiryDate': 1}"),
   @CompoundIndex(name = "shop_batch", def = "{'shopId': 1, 'batchNo': 1}")
 })
-public class FmcgInventoryExtension implements InventoryExtensionDocument {
+public class SupermarketInventoryExtension implements InventoryExtensionDocument {
 
   @Id private String id;
 
@@ -24,7 +24,7 @@ public class FmcgInventoryExtension implements InventoryExtensionDocument {
 
   @Indexed private String shopId;
 
-  private String verticalId = "fmcg";
+  private String verticalId = "supermarket";
 
   private String batchNo;
   private Instant expiryDate;

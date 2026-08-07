@@ -1,9 +1,9 @@
-package com.inventory.plugins.fmcg.domain.repository;
+package com.inventory.plugins.supermarket.domain.repository;
 
 import com.inventory.pluginengine.ExtensionFieldCoercion;
 import com.inventory.pluginengine.InventoryExtensionRepository;
-import com.inventory.plugins.fmcg.domain.model.FmcgInventoryExtension;
-import com.inventory.plugins.fmcg.domain.repository.FmcgExtensionMongoRepository;
+import com.inventory.plugins.supermarket.domain.model.SupermarketInventoryExtension;
+import com.inventory.plugins.supermarket.domain.repository.SupermarketExtensionMongoRepository;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -13,17 +13,17 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Component;
 
 @Component
-public class FmcgInventoryExtensionRepository implements InventoryExtensionRepository {
+public class SupermarketInventoryExtensionRepository implements InventoryExtensionRepository {
 
-  private final FmcgExtensionMongoRepository mongoRepository;
+  private final SupermarketExtensionMongoRepository mongoRepository;
 
-  public FmcgInventoryExtensionRepository(FmcgExtensionMongoRepository mongoRepository) {
+  public SupermarketInventoryExtensionRepository(SupermarketExtensionMongoRepository mongoRepository) {
     this.mongoRepository = mongoRepository;
   }
 
   @Override
   public String getVerticalId() {
-    return "fmcg";
+    return "supermarket";
   }
 
   @Override
@@ -40,7 +40,7 @@ public class FmcgInventoryExtensionRepository implements InventoryExtensionRepos
     return mongoRepository.findByShopIdAndInventoryIdIn(shopId, inventoryIds).stream()
         .collect(
             Collectors.toMap(
-                FmcgInventoryExtension::getInventoryId,
+                SupermarketInventoryExtension::getInventoryId,
                 this::toFieldMap,
                 (a, b) -> a,
                 LinkedHashMap::new));
@@ -48,10 +48,10 @@ public class FmcgInventoryExtensionRepository implements InventoryExtensionRepos
 
   @Override
   public void upsert(String shopId, String inventoryId, Map<String, Object> fields) {
-    FmcgInventoryExtension doc =
+    SupermarketInventoryExtension doc =
         mongoRepository
             .findByShopIdAndInventoryId(shopId, inventoryId)
-            .orElseGet(FmcgInventoryExtension::new);
+            .orElseGet(SupermarketInventoryExtension::new);
     Instant now = Instant.now();
     if (doc.getId() == null) {
       doc.setCreatedAt(now);
@@ -64,7 +64,7 @@ public class FmcgInventoryExtensionRepository implements InventoryExtensionRepos
     mongoRepository.save(doc);
   }
 
-  private Map<String, Object> toFieldMap(FmcgInventoryExtension doc) {
+  private Map<String, Object> toFieldMap(SupermarketInventoryExtension doc) {
     Map<String, Object> out = new LinkedHashMap<>();
     if (doc.getBatchNo() != null) {
       out.put("batchNo", doc.getBatchNo());
@@ -75,7 +75,7 @@ public class FmcgInventoryExtensionRepository implements InventoryExtensionRepos
     return out;
   }
 
-  private void applyFields(FmcgInventoryExtension doc, Map<String, Object> fields) {
+  private void applyFields(SupermarketInventoryExtension doc, Map<String, Object> fields) {
     if (fields == null || fields.isEmpty()) {
       return;
     }
