@@ -44,6 +44,24 @@
           "indexed": true,
           "showIn": ["registration", "basic"],
           "validation": { "maxLength": 200 }
+        },
+        {
+          "key": "itemType",
+          "label": "Item Type",
+          "type": "enum",
+          "required": false,
+          "storage": "core",
+          "values": ["NORMAL", "COSTLY", "DEGREE"],
+          "showIn": ["registration"]
+        },
+        {
+          "key": "itemTypeDegree",
+          "label": "Temperature / Degree",
+          "type": "number",
+          "required": false,
+          "storage": "core",
+          "showIn": ["registration"],
+          "validation": { "min": 1 }
         }
       ],
       "search": {
