@@ -39,7 +39,7 @@
           "key": "companyName",
           "label": "Company Name",
           "type": "string",
-          "required": true,
+          "required": false,
           "storage": "core",
           "indexed": true,
           "showIn": ["registration", "basic"],
