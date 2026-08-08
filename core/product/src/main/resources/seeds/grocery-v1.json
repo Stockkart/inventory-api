@@ -1,0 +1,88 @@
+{
+  "verticalId": "grocery",
+  "version": "1.0.0",
+  "entities": {
+    "inventory": {
+      "fields": [
+        {
+          "key": "name",
+          "type": "string",
+          "required": true,
+          "storage": "core",
+          "showIn": ["registration", "scan-sell"],
+          "validation": { "minLength": 1, "maxLength": 255 }
+        },
+        {
+          "key": "batchNo",
+          "label": "Batch Number",
+          "type": "string",
+          "required": false,
+          "storage": "extension",
+          "indexed": true,
+          "searchable": true,
+          "showIn": ["registration", "scan-sell", "invoice"],
+          "validation": { "minLength": 1, "maxLength": 64 }
+        },
+        {
+          "key": "expiryDate",
+          "label": "Expiry Date",
+          "type": "date",
+          "required": false,
+          "storage": "extension",
+          "indexed": true,
+          "searchable": true,
+          "sortable": true,
+          "showIn": ["registration", "scan-sell", "reports", "basic"],
+          "validation": { "notPastOnCreate": true }
+        },
+        {
+          "key": "companyName",
+          "label": "Company Name",
+          "type": "string",
+          "required": false,
+          "storage": "core",
+          "indexed": true,
+          "showIn": ["registration", "basic"],
+          "validation": { "maxLength": 200 }
+        },
+        {
+          "key": "itemType",
+          "label": "Item Type",
+          "type": "enum",
+          "required": false,
+          "storage": "core",
+          "values": ["NORMAL", "COSTLY", "DEGREE"],
+          "showIn": ["registration"]
+        },
+        {
+          "key": "itemTypeDegree",
+          "label": "Temperature / Degree",
+          "type": "number",
+          "required": false,
+          "storage": "core",
+          "showIn": ["registration"],
+          "validation": { "min": 1 }
+        }
+      ],
+      "search": {
+        "defaultSort": [
+          { "field": "expiryDate", "direction": "asc", "nulls": "last" }
+        ],
+        "cursor": "compound-key"
+      }
+    },
+    "shop": {
+      "fields": [
+        {
+          "key": "fssai",
+          "label": "FSSAI Number",
+          "type": "string",
+          "required": true,
+          "storage": "core",
+          "showIn": ["onboarding"],
+          "validation": { "minLength": 1, "maxLength": 64 }
+        }
+      ]
+    }
+  }
+}
