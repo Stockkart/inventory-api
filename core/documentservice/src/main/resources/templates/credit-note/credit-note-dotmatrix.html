@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8"/>
+  <title th:text="${documentTitle} + ' (Dot Matrix)'">Credit Note (Dot Matrix)</title>
+  <style>
+    @page {
+      margin: 6mm;
+      size: A4;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: "Courier New", Courier, monospace;
+      font-size: 10px;
+      color: #000;
+      line-height: 1.2;
+    }
+    .box {
+      border: 1px dashed #000;
+      padding: 6px;
+    }
+    .row { display: table; width: 100%; }
+    .cell { display: table-cell; vertical-align: top; }
+    .right { text-align: right; }
+    .center { text-align: center; }
+    .muted { color: #000; }
+    .h1 { font-weight: 700; font-size: 12px; text-transform: uppercase; }
+    .sp8 { height: 8px; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 10px;
+    }
+    th, td {
+      padding: 3px 4px;
+      border-bottom: 1px dotted #000;
+      vertical-align: top;
+    }
+    th { font-weight: 700; }
+    .totals td { border-bottom: none; }
+    .noBorder td { border-bottom: none; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <div class="h1 center" style="margin-bottom: 6px;" th:text="${documentTitle}">Credit Note</div>
+    <div class="row">
+      <div class="cell" style="width: 50%;">
+        <div><strong th:text="${documentTitle}">Credit Note</strong>: <span th:text="${creditNoteNo}">CN</span></div>
+        <div th:if="${againstInvoiceNo != null && !againstInvoiceNo.isEmpty()}">
+          <strong>Against:</strong> <span th:text="${againstInvoiceNo}">INV</span>
+        </div>
+        <div><strong>Date:</strong> <span th:text="${noteDate}">DD-MM-YYYY</span> <span th:text="${noteTime}">TIME</span></div>
+        <div th:if="${showPaymentMethod and paymentMethod != null}"><strong>Pay:</strong> <span th:text="${paymentMethod}">CASH</span></div>
+        <div th:if="${reason != null && !reason.isEmpty()}"><strong>Reason:</strong> <span th:text="${reason}">-</span></div>
+      </div>
+      <div class="cell right" style="width: 50%;">
+        <div class="h1" th:text="${shopName}">SHOP NAME</div>
+        <div th:if="${showSellerDetails}">
+          <div th:text="${shopAddress}">Address</div>
+          <div th:if="${shopPhone != null && !shopPhone.isEmpty()}">Ph: <span th:text="${shopPhone}">-</span></div>
+          <div th:if="${shopGstin != null && !shopGstin.isEmpty()}">GSTIN: <span th:text="${shopGstin}">-</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sp8"></div>
+
+    <div th:if="${showBuyerDetails}">
+      <div>
+        <strong th:text="${partyRole == 'VENDOR' ? 'Supplier:' : 'Customer:'}"></strong>
+        <span th:text="${partyName}">Party</span>
+      </div>
+      <div th:if="${partyPhone != null && !partyPhone.isEmpty()}">Ph: <span th:text="${partyPhone}">-</span></div>
+      <div th:if="${partyAddress != null && !partyAddress.isEmpty()}">Addr: <span th:text="${partyAddress}">-</span></div>
+      <div th:if="${partyGstin != null && !partyGstin.isEmpty()}">GSTIN: <span th:text="${partyGstin}">-</span></div>
+    </div>
+
+    <div class="sp8"></div>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 48%;">Item</th>
+          <th style="width: 12%;">Qty</th>
+          <th style="width: 16%;">Rate</th>
+          <th style="width: 24%;" class="right">Amt</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr th:each="it : ${items}">
+          <td>
+            <div th:text="${it.name}">Item</div>
+            <div class="muted" th:if="${showHsn && it.hsn != null}">HSN: <span th:text="${it.hsn}">-</span></div>
+          </td>
+          <td th:text="${it.quantity}">1</td>
+          <td th:text="${it.unitPrice}">0</td>
+          <td class="right" th:text="${it.lineTotal}">0</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="sp8"></div>
+
+    <table class="noBorder">
+      <tbody class="totals">
+        <tr th:if="${showTaxDetails}">
+          <td>Taxable</td>
+          <td class="right" th:text="${taxableTotal}">0</td>
+        </tr>
+        <tr th:if="${showTaxDetails}">
+          <td>Tax</td>
+          <td class="right" th:text="${taxTotal}">0</td>
+        </tr>
+        <tr>
+          <td><strong th:text="${documentAmountLabel}">Credit Note Amount</strong></td>
+          <td class="right"><strong th:text="${grandTotal}">0</strong></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="sp8"></div>
+    <div class="center" th:if="${showAmountInWords and amountInWords != null && !amountInWords.isEmpty()}">
+      <div><strong th:text="${amountInWords}">AMOUNT IN WORDS</strong></div>
+    </div>
+    <div class="center" th:if="${footerNote != null && !footerNote.isEmpty()}" style="margin-top: 6px;">
+      <div th:text="${footerNote}">Thank you</div>
+    </div>
+  </div>
+</body>
+</html>

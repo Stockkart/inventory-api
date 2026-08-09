@@ -1,5 +1,6 @@
 package com.inventory.documentservice.service;
 
+import com.inventory.documentservice.domain.DocumentTemplateFamily;
 import com.inventory.documentservice.domain.PrinterType;
 import com.inventory.documentservice.rest.dto.GenerateInvoiceRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -8,10 +9,6 @@ import org.springframework.stereotype.Service;
 import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
 
-import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
-
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -28,6 +25,9 @@ public class InvoicePdfService {
   @Autowired
   private TemplateEngine templateEngine;
 
+  @Autowired
+  private HtmlToPdfConverter htmlToPdfConverter;
+
   /**
    * Generate invoice PDF from purchase data using Thymeleaf template.
    *
@@ -38,7 +38,7 @@ public class InvoicePdfService {
     try {
       log.debug("Generating invoice PDF for invoice: {}", request.getInvoiceNo());
       String html = renderInvoiceHtml(request);
-      return convertHtmlToPdf(html);
+      return htmlToPdfConverter.convert(html);
     } catch (Exception e) {
       log.error("Error generating invoice PDF: {}", e.getMessage(), e);
       throw new RuntimeException("Failed to generate invoice PDF", e);
@@ -51,7 +51,7 @@ public class InvoicePdfService {
   public String renderInvoiceHtml(GenerateInvoiceRequest request) {
     Context context = prepareTemplateContext(request);
     PrinterType printerType = PrinterType.from(request.getPrinterType());
-    String templateName = printerType.getTemplateName();
+    String templateName = printerType.getTemplateName(DocumentTemplateFamily.INVOICE);
     log.debug("Rendering invoice HTML with printer type {} → template {}", printerType, templateName);
     return templateEngine.process(templateName, context);
   }
@@ -150,16 +150,5 @@ public class InvoicePdfService {
     }
     LocalDateTime dateTime = LocalDateTime.ofInstant(instant, IST);
     return dateTime.format(DateTimeFormatter.ofPattern("hh:mm a"));
-  }
-
-  private byte[] convertHtmlToPdf(String html) throws IOException {
-    try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
-      PdfRendererBuilder builder = new PdfRendererBuilder();
-      builder.withHtmlContent(html, null);
-      builder.toStream(outputStream);
-      builder.run();
-
-      return outputStream.toByteArray();
-    }
   }
 }
