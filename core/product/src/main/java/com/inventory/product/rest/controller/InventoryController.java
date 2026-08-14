@@ -282,9 +282,15 @@ public class InventoryController {
       @RequestParam(value = "images", required = false) java.util.List<MultipartFile> images,
       HttpServletRequest httpRequest) {
     java.util.List<MultipartFile> toParse = resolveInvoiceImages(image, images);
-    log.info("Received invoice parsing request for {} image(s)", toParse.size());
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    if (StringUtils.isEmpty(shopId)) {
+      throw new AuthenticationException(
+          ErrorCode.UNAUTHORIZED,
+          "Unauthorized access to shop inventory");
+    }
+    log.info("Received invoice parsing request for {} image(s) shopId={}", toParse.size(), shopId);
 
-    ParsedInventoryListResponse response = inventoryService.parseInvoiceImages(toParse);
+    ParsedInventoryListResponse response = inventoryService.parseInvoiceImages(toParse, shopId);
     return ResponseEntity.ok(ApiResponse.success(response));
   }
 
