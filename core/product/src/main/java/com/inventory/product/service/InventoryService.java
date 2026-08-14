@@ -15,7 +15,9 @@ import com.inventory.user.domain.repository.VendorRepository;
 import com.inventory.product.rest.dto.request.VendorPurchaseInvoiceRequest;
 import com.inventory.reminders.rest.dto.request.CreateReminderForInventoryRequest;
 import com.inventory.reminders.service.ReminderService;
+import com.inventory.ocr.prompt.InvoicePricingLayout;
 import com.inventory.ocr.service.InvoiceParserService;
+import com.inventory.product.service.ocr.InvoicePricingLayoutResolver;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.enums.SchemeType;
@@ -161,7 +163,7 @@ public class InventoryService {
    */
   @Transactional(readOnly = true)
   public ParsedInventoryListResponse parseInvoiceImage(MultipartFile image) {
-    return parseInvoiceImages(java.util.List.of(image));
+    return parseInvoiceImages(java.util.List.of(image), null);
   }
 
   /**
@@ -169,6 +171,15 @@ public class InventoryService {
    */
   @Transactional(readOnly = true)
   public ParsedInventoryListResponse parseInvoiceImages(java.util.List<MultipartFile> images) {
+    return parseInvoiceImages(images, null);
+  }
+
+  /**
+   * Parse one or more invoice images using the shop's price layout (retailer vs wholesaler).
+   */
+  @Transactional(readOnly = true)
+  public ParsedInventoryListResponse parseInvoiceImages(
+      java.util.List<MultipartFile> images, String shopId) {
     imageValidator.validateInvoiceImageBatch(images);
     java.util.List<byte[]> bytesList = new java.util.ArrayList<>();
     for (MultipartFile image : images) {
@@ -180,7 +191,7 @@ public class InventoryService {
             "Error reading image file: " + e.getMessage(), e);
       }
     }
-    return parseInvoiceImagesFromBytes(bytesList);
+    return parseInvoiceImagesFromBytes(bytesList, shopId);
   }
 
   /**
@@ -188,6 +199,15 @@ public class InventoryService {
    */
   @Transactional(readOnly = true)
   public ParsedInventoryListResponse parseInvoiceImagesFromBytes(java.util.List<byte[]> imageBytesList) {
+    return parseInvoiceImagesFromBytes(imageBytesList, null);
+  }
+
+  /**
+   * Parse one or more invoice images from raw bytes using the shop's price layout.
+   */
+  @Transactional(readOnly = true)
+  public ParsedInventoryListResponse parseInvoiceImagesFromBytes(
+      java.util.List<byte[]> imageBytesList, String shopId) {
     if (imageBytesList == null || imageBytesList.isEmpty()) {
       throw new ValidationException("At least one image is required");
     }
@@ -202,13 +222,15 @@ public class InventoryService {
       }
     }
 
-    log.info("Processing invoice parsing for {} image(s)", imageBytesList.size());
+    InvoicePricingLayout layout = resolveInvoicePricingLayout(shopId);
+    log.info("Processing invoice parsing for {} image(s) shopId={} layout={}",
+        imageBytesList.size(), shopId, layout);
     java.util.List<CreateInventoryItemRequest> mergedItems = new java.util.ArrayList<>();
     com.inventory.product.rest.dto.response.ParsedVendorInvoiceDto vendorInvoice = null;
 
     for (int i = 0; i < imageBytesList.size(); i++) {
       log.info("Parsing invoice image {}/{}", i + 1, imageBytesList.size());
-      ParsedInventoryListResponse page = parseInvoiceImageFromBytes(imageBytesList.get(i));
+      ParsedInventoryListResponse page = parseInvoiceImageFromBytes(imageBytesList.get(i), layout);
       if (page.getItems() != null && !page.getItems().isEmpty()) {
         mergedItems.addAll(page.getItems());
       }
@@ -233,22 +255,39 @@ public class InventoryService {
    */
   @Transactional(readOnly = true)
   public ParsedInventoryListResponse parseInvoiceImageFromBytes(byte[] imageBytes) {
+    return parseInvoiceImageFromBytes(imageBytes, InvoicePricingLayout.WHOLESALER);
+  }
+
+  @Transactional(readOnly = true)
+  public ParsedInventoryListResponse parseInvoiceImageFromBytes(
+      byte[] imageBytes, InvoicePricingLayout layout) {
     imageValidator.validateImageBytes(imageBytes);
+    InvoicePricingLayout resolved = InvoicePricingLayout.orDefault(layout);
 
     try {
       List<com.inventory.ocr.dto.ParsedInventoryItem> parsedItems =
-          invoiceParserService.parseInvoiceImage(imageBytes);
+          invoiceParserService.parseInvoiceImage(imageBytes, resolved);
 
       List<CreateInventoryItemRequest> items =
           parsedInventoryMapper.toCreateInventoryItemRequestList(parsedItems);
 
-      log.info("Invoice parsing completed successfully. Extracted {} inventory items", items.size());
+      log.info("Invoice parsing completed successfully. Extracted {} inventory items layout={}",
+          items.size(), resolved);
       return parsedInventoryMapper.toParsedInventoryListResponse(items);
     } catch (Exception e) {
       log.error("Error parsing invoice image: {}", e.getMessage(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
           "Error parsing invoice: " + e.getMessage(), e);
     }
+  }
+
+  private InvoicePricingLayout resolveInvoicePricingLayout(String shopId) {
+    if (!StringUtils.hasText(shopId)) {
+      return InvoicePricingLayout.WHOLESALER;
+    }
+    return shopRepository.findById(shopId)
+        .map(InvoicePricingLayoutResolver::fromShop)
+        .orElse(InvoicePricingLayout.WHOLESALER);
   }
 
   /**

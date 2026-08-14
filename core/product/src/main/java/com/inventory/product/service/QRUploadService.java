@@ -154,7 +154,7 @@ public class QRUploadService {
         log.info("Processing {} uploaded image(s) for token: {}", imageCount, token);
 
         ParsedInventoryListResponse parsedResult =
-            inventoryService.parseInvoiceImagesFromBytes(finalBytes);
+            inventoryService.parseInvoiceImagesFromBytes(finalBytes, uploadToken.getShopId());
 
         ParsedInventoryResult result = parsedInventoryMapper.toParsedInventoryResult(
             uploadToken.getId(),

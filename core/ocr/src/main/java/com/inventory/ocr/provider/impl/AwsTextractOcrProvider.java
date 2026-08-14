@@ -3,6 +3,7 @@ package com.inventory.ocr.provider.impl;
 import com.inventory.ocr.dto.ParsedInventoryItem;
 import com.inventory.ocr.model.OcrCell;
 import com.inventory.ocr.model.OcrTable;
+import com.inventory.ocr.prompt.InvoicePricingLayout;
 import com.inventory.ocr.provider.OcrProvider;
 import com.inventory.ocr.service.TableToItemsParser;
 import lombok.extern.slf4j.Slf4j;
@@ -39,8 +40,10 @@ public class AwsTextractOcrProvider implements OcrProvider {
   }
 
   @Override
-  public List<ParsedInventoryItem> parseInvoice(byte[] imageBytes) throws IOException {
-    log.info("AWS Textract invoice parse, image size: {} bytes", imageBytes.length);
+  public List<ParsedInventoryItem> parseInvoice(byte[] imageBytes, InvoicePricingLayout layout)
+      throws IOException {
+    log.info("AWS Textract invoice parse layout={}, image size: {} bytes",
+        InvoicePricingLayout.orDefault(layout), imageBytes.length);
 
     Document document = Document.builder()
         .bytes(SdkBytes.fromByteArray(imageBytes))
