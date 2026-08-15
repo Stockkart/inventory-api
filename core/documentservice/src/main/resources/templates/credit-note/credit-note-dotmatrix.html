@@ -55,11 +55,16 @@
         <div th:if="${reason != null && !reason.isEmpty()}"><strong>Reason:</strong> <span th:text="${reason}">-</span></div>
       </div>
       <div class="cell right" style="width: 50%;">
-        <div class="h1" th:text="${shopName}">SHOP NAME</div>
+        <div class="h1" th:if="${!showSellerDetails or showShopName}" th:text="${shopName}">SHOP NAME</div>
         <div th:if="${showSellerDetails}">
-          <div th:text="${shopAddress}">Address</div>
-          <div th:if="${shopPhone != null && !shopPhone.isEmpty()}">Ph: <span th:text="${shopPhone}">-</span></div>
-          <div th:if="${shopGstin != null && !shopGstin.isEmpty()}">GSTIN: <span th:text="${shopGstin}">-</span></div>
+          <div th:if="${showShopAddress and shopAddress != null && !shopAddress.isEmpty()}" th:text="${shopAddress}">Address</div>
+          <div th:if="${showShopPhone and shopPhone != null && !shopPhone.isEmpty()}">Ph: <span th:text="${shopPhone}">-</span></div>
+          <div th:if="${showShopEmail and shopEmail != null && !shopEmail.isEmpty()}">Email: <span th:text="${shopEmail}">-</span></div>
+          <div th:if="${showShopGstin and shopGstin != null && !shopGstin.isEmpty()}">GSTIN: <span th:text="${shopGstin}">-</span></div>
+          <div th:if="${showShopPan and shopPan != null && !shopPan.isEmpty()}">PAN: <span th:text="${shopPan}">-</span></div>
+          <div th:if="${showShopDlNo and shopDlNo != null && !shopDlNo.isEmpty()}">D.L. No.: <span th:text="${shopDlNo}">-</span></div>
+          <div th:if="${showShopFssai and shopFssai != null && !shopFssai.isEmpty()}">FSSAI: <span th:text="${shopFssai}">-</span></div>
+          <div th:if="${showShopTagline and shopTagline != null && !shopTagline.isEmpty()}" th:text="${shopTagline}">Tagline</div>
         </div>
       </div>
     </div>
@@ -67,13 +72,16 @@
     <div class="sp8"></div>
 
     <div th:if="${showBuyerDetails}">
-      <div>
+      <div th:if="${showCustomerName}">
         <strong th:text="${partyRole == 'VENDOR' ? 'Supplier:' : 'Customer:'}"></strong>
         <span th:text="${partyName}">Party</span>
       </div>
-      <div th:if="${partyPhone != null && !partyPhone.isEmpty()}">Ph: <span th:text="${partyPhone}">-</span></div>
-      <div th:if="${partyAddress != null && !partyAddress.isEmpty()}">Addr: <span th:text="${partyAddress}">-</span></div>
-      <div th:if="${partyGstin != null && !partyGstin.isEmpty()}">GSTIN: <span th:text="${partyGstin}">-</span></div>
+      <div th:if="${showCustomerPhone and partyPhone != null && !partyPhone.isEmpty()}">Ph: <span th:text="${partyPhone}">-</span></div>
+      <div th:if="${showCustomerEmail and partyEmail != null && !partyEmail.isEmpty()}">Email: <span th:text="${partyEmail}">-</span></div>
+      <div th:if="${showCustomerAddress and partyAddress != null && !partyAddress.isEmpty()}">Addr: <span th:text="${partyAddress}">-</span></div>
+      <div th:if="${showCustomerGstin and partyGstin != null && !partyGstin.isEmpty()}">GSTIN: <span th:text="${partyGstin}">-</span></div>
+      <div th:if="${showCustomerPan and partyPan != null && !partyPan.isEmpty()}">PAN: <span th:text="${partyPan}">-</span></div>
+      <div th:if="${showCustomerDlNo and partyDlNo != null && !partyDlNo.isEmpty()}">D.L. No.: <span th:text="${partyDlNo}">-</span></div>
     </div>
 
     <div class="sp8"></div>

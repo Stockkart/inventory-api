@@ -120,12 +120,16 @@
 
   <div class="center">
     <div class="doc-title" th:text="${documentTitle}">Credit Note</div>
-    <div class="shop-name" th:text="${shopName}">Shop Name</div>
+    <div class="shop-name" th:if="${!showSellerDetails or showShopName}" th:text="${shopName}">Shop Name</div>
     <div th:if="${showSellerDetails}">
-      <div class="shop-line" th:if="${shopAddress != null && !shopAddress.isEmpty()}" th:text="${shopAddress}">Address</div>
-      <div class="shop-line" th:if="${shopPhone != null && !shopPhone.isEmpty()}">Phone: <span th:text="${shopPhone}">-</span></div>
-      <div class="shop-line" th:if="${shopGstin != null && !shopGstin.isEmpty()}">GSTIN: <span th:text="${shopGstin}">-</span></div>
-      <div class="shop-line" th:if="${shopPan != null && !shopPan.isEmpty()}">PAN Number: <span th:text="${shopPan}">-</span></div>
+      <div class="shop-line" th:if="${showShopAddress and shopAddress != null && !shopAddress.isEmpty()}" th:text="${shopAddress}">Address</div>
+      <div class="shop-line" th:if="${showShopPhone and shopPhone != null && !shopPhone.isEmpty()}">Phone: <span th:text="${shopPhone}">-</span></div>
+      <div class="shop-line" th:if="${showShopEmail and shopEmail != null && !shopEmail.isEmpty()}">Email: <span th:text="${shopEmail}">-</span></div>
+      <div class="shop-line" th:if="${showShopGstin and shopGstin != null && !shopGstin.isEmpty()}">GSTIN: <span th:text="${shopGstin}">-</span></div>
+      <div class="shop-line" th:if="${showShopPan and shopPan != null && !shopPan.isEmpty()}">PAN Number: <span th:text="${shopPan}">-</span></div>
+      <div class="shop-line" th:if="${showShopDlNo and shopDlNo != null && !shopDlNo.isEmpty()}">D.L. No.: <span th:text="${shopDlNo}">-</span></div>
+      <div class="shop-line" th:if="${showShopFssai and shopFssai != null && !shopFssai.isEmpty()}">FSSAI: <span th:text="${shopFssai}">-</span></div>
+      <div class="shop-line" th:if="${showShopTagline and shopTagline != null && !shopTagline.isEmpty()}" th:text="${shopTagline}">Tagline</div>
     </div>
   </div>
 
@@ -144,16 +148,28 @@
     Against: <span th:text="${againstInvoiceNo}">INV</span>
   </div>
 
-  <div class="bill-to" th:if="${showBuyerDetails && partyName != null && !partyName.isEmpty()}">
-    <div>
+  <div class="bill-to" th:if="${showBuyerDetails}">
+    <div th:if="${showCustomerName and partyName != null && !partyName.isEmpty()}">
       <span th:text="${partyRole == 'VENDOR' ? 'SUPPLIER:' : 'CUSTOMER:'}"></span>
       <span th:text="${partyName}">Party</span>
     </div>
-    <div class="detail" th:if="${partyAddress != null && !partyAddress.isEmpty()}">
+    <div class="detail" th:if="${showCustomerAddress and partyAddress != null && !partyAddress.isEmpty()}">
       Address: <span th:text="${partyAddress}">-</span>
     </div>
-    <div class="detail" th:if="${partyGstin != null && !partyGstin.isEmpty()}">
+    <div class="detail" th:if="${showCustomerPhone and partyPhone != null && !partyPhone.isEmpty()}">
+      Phone: <span th:text="${partyPhone}">-</span>
+    </div>
+    <div class="detail" th:if="${showCustomerEmail and partyEmail != null && !partyEmail.isEmpty()}">
+      Email: <span th:text="${partyEmail}">-</span>
+    </div>
+    <div class="detail" th:if="${showCustomerGstin and partyGstin != null && !partyGstin.isEmpty()}">
       GSTIN: <span th:text="${partyGstin}">-</span>
+    </div>
+    <div class="detail" th:if="${showCustomerPan and partyPan != null && !partyPan.isEmpty()}">
+      PAN: <span th:text="${partyPan}">-</span>
+    </div>
+    <div class="detail" th:if="${showCustomerDlNo and partyDlNo != null && !partyDlNo.isEmpty()}">
+      D.L. No.: <span th:text="${partyDlNo}">-</span>
     </div>
   </div>
 
@@ -220,9 +236,7 @@
 
   <div class="footer">
     <div th:if="${showAmountInWords && amountInWords != null && !amountInWords.isEmpty()}" th:text="${amountInWords}">Amount in words</div>
-    <div th:if="${showPaymentMethod && paymentMethod != null && !paymentMethod.isEmpty()}">Pay: <span th:text="${paymentMethod}">CASH</span></div>
     <div th:if="${footerNote != null && !footerNote.isEmpty()}" th:text="${footerNote}">Thank you</div>
-    <div th:unless="${footerNote != null && !footerNote.isEmpty()}">Thank you!</div>
   </div>
 
 </body>

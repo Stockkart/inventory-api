@@ -116,7 +116,23 @@ public class InvoiceSettingsService {
       return;
     }
     request.setShowSellerDetails(Boolean.TRUE.equals(fields.getShowSellerDetails()));
+    request.setShowShopName(Boolean.TRUE.equals(fields.getShowShopName()));
+    request.setShowShopAddress(Boolean.TRUE.equals(fields.getShowShopAddress()));
+    request.setShowShopTagline(Boolean.TRUE.equals(fields.getShowShopTagline()));
+    request.setShowShopPhone(Boolean.TRUE.equals(fields.getShowShopPhone()));
+    request.setShowShopEmail(Boolean.TRUE.equals(fields.getShowShopEmail()));
+    request.setShowShopGstin(Boolean.TRUE.equals(fields.getShowShopGstin()));
+    request.setShowShopPan(Boolean.TRUE.equals(fields.getShowShopPan()));
+    request.setShowShopDlNo(Boolean.TRUE.equals(fields.getShowShopDlNo()));
+    request.setShowShopFssai(Boolean.TRUE.equals(fields.getShowShopFssai()));
     request.setShowBuyerDetails(Boolean.TRUE.equals(fields.getShowBuyerDetails()));
+    request.setShowCustomerName(Boolean.TRUE.equals(fields.getShowCustomerName()));
+    request.setShowCustomerAddress(Boolean.TRUE.equals(fields.getShowCustomerAddress()));
+    request.setShowCustomerPhone(Boolean.TRUE.equals(fields.getShowCustomerPhone()));
+    request.setShowCustomerEmail(Boolean.TRUE.equals(fields.getShowCustomerEmail()));
+    request.setShowCustomerGstin(Boolean.TRUE.equals(fields.getShowCustomerGstin()));
+    request.setShowCustomerPan(Boolean.TRUE.equals(fields.getShowCustomerPan()));
+    request.setShowCustomerDlNo(Boolean.TRUE.equals(fields.getShowCustomerDlNo()));
     request.setShowPaymentMethod(Boolean.TRUE.equals(fields.getShowPaymentMethod()));
     request.setShowTaxDetails(Boolean.TRUE.equals(fields.getShowTaxDetails()));
     request.setShowAmountInWords(Boolean.TRUE.equals(fields.getShowAmountInWords()));
@@ -140,7 +156,23 @@ public class InvoiceSettingsService {
       return;
     }
     request.setShowSellerDetails(Boolean.TRUE.equals(fields.getShowSellerDetails()));
+    request.setShowShopName(Boolean.TRUE.equals(fields.getShowShopName()));
+    request.setShowShopAddress(Boolean.TRUE.equals(fields.getShowShopAddress()));
+    request.setShowShopTagline(Boolean.TRUE.equals(fields.getShowShopTagline()));
+    request.setShowShopPhone(Boolean.TRUE.equals(fields.getShowShopPhone()));
+    request.setShowShopEmail(Boolean.TRUE.equals(fields.getShowShopEmail()));
+    request.setShowShopGstin(Boolean.TRUE.equals(fields.getShowShopGstin()));
+    request.setShowShopPan(Boolean.TRUE.equals(fields.getShowShopPan()));
+    request.setShowShopDlNo(Boolean.TRUE.equals(fields.getShowShopDlNo()));
+    request.setShowShopFssai(Boolean.TRUE.equals(fields.getShowShopFssai()));
     request.setShowBuyerDetails(Boolean.TRUE.equals(fields.getShowBuyerDetails()));
+    request.setShowCustomerName(Boolean.TRUE.equals(fields.getShowCustomerName()));
+    request.setShowCustomerAddress(Boolean.TRUE.equals(fields.getShowCustomerAddress()));
+    request.setShowCustomerPhone(Boolean.TRUE.equals(fields.getShowCustomerPhone()));
+    request.setShowCustomerEmail(Boolean.TRUE.equals(fields.getShowCustomerEmail()));
+    request.setShowCustomerGstin(Boolean.TRUE.equals(fields.getShowCustomerGstin()));
+    request.setShowCustomerPan(Boolean.TRUE.equals(fields.getShowCustomerPan()));
+    request.setShowCustomerDlNo(Boolean.TRUE.equals(fields.getShowCustomerDlNo()));
     request.setShowPaymentMethod(Boolean.TRUE.equals(fields.getShowPaymentMethod()));
     request.setShowTaxDetails(Boolean.TRUE.equals(fields.getShowTaxDetails()));
     request.setShowAmountInWords(Boolean.TRUE.equals(fields.getShowAmountInWords()));

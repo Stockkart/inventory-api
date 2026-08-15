@@ -1,9 +1,12 @@
 package com.inventory.product.rest.dto.response;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.inventory.product.domain.model.enums.ShopType;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+
+import java.time.Instant;
 
 @Data
 @NoArgsConstructor
@@ -16,12 +19,17 @@ public class ShopDetailResponse {
   private String contactEmail;
   private String contactPhone;
   private String gstinNo;
-  /** PAN derived from GSTIN: 10 chars from 3rd character (1-based). */
+  /** PAN from stored shop PAN, or derived from GSTIN (chars 3–12). */
   private String panNo;
   private String dlNo;
+  private String fssai;
   private String tagline;
   private LocationDto location;
   private String verticalId;
   private String pluginVersion;
-
+  private ShopType shopType;
+  private String sgst;
+  private String cgst;
+  private String status;
+  private Instant createdAt;
 }

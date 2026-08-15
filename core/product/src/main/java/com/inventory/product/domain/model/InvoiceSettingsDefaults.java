@@ -13,6 +13,7 @@ public final class InvoiceSettingsDefaults {
   public static InvoiceFieldVisibility regularFields() {
     InvoiceFieldVisibility v = new InvoiceFieldVisibility();
     v.setShowSellerDetails(true);
+    applyPartyChildren(v, true);
     v.setShowBuyerDetails(true);
     v.setShowPaymentMethod(true);
     v.setShowTaxDetails(true);
@@ -34,6 +35,7 @@ public final class InvoiceSettingsDefaults {
   public static InvoiceFieldVisibility basicFields() {
     InvoiceFieldVisibility v = new InvoiceFieldVisibility();
     v.setShowSellerDetails(false);
+    applyPartyChildren(v, false);
     v.setShowBuyerDetails(false);
     v.setShowPaymentMethod(true);
     v.setShowTaxDetails(false);
@@ -71,12 +73,24 @@ public final class InvoiceSettingsDefaults {
     if (stored == null) {
       return base;
     }
-    if (stored.getShowSellerDetails() != null) {
-      base.setShowSellerDetails(stored.getShowSellerDetails());
-    }
-    if (stored.getShowBuyerDetails() != null) {
-      base.setShowBuyerDetails(stored.getShowBuyerDetails());
-    }
+    overlay(stored.getShowSellerDetails(), base::setShowSellerDetails);
+    overlay(stored.getShowShopName(), base::setShowShopName);
+    overlay(stored.getShowShopAddress(), base::setShowShopAddress);
+    overlay(stored.getShowShopTagline(), base::setShowShopTagline);
+    overlay(stored.getShowShopPhone(), base::setShowShopPhone);
+    overlay(stored.getShowShopEmail(), base::setShowShopEmail);
+    overlay(stored.getShowShopGstin(), base::setShowShopGstin);
+    overlay(stored.getShowShopPan(), base::setShowShopPan);
+    overlay(stored.getShowShopDlNo(), base::setShowShopDlNo);
+    overlay(stored.getShowShopFssai(), base::setShowShopFssai);
+    overlay(stored.getShowBuyerDetails(), base::setShowBuyerDetails);
+    overlay(stored.getShowCustomerName(), base::setShowCustomerName);
+    overlay(stored.getShowCustomerAddress(), base::setShowCustomerAddress);
+    overlay(stored.getShowCustomerPhone(), base::setShowCustomerPhone);
+    overlay(stored.getShowCustomerEmail(), base::setShowCustomerEmail);
+    overlay(stored.getShowCustomerGstin(), base::setShowCustomerGstin);
+    overlay(stored.getShowCustomerPan(), base::setShowCustomerPan);
+    overlay(stored.getShowCustomerDlNo(), base::setShowCustomerDlNo);
     if (stored.getShowPaymentMethod() != null) {
       base.setShowPaymentMethod(stored.getShowPaymentMethod());
     }
@@ -125,7 +139,23 @@ public final class InvoiceSettingsDefaults {
     }
     InvoiceFieldVisibility v = new InvoiceFieldVisibility();
     v.setShowSellerDetails(src.getShowSellerDetails());
+    v.setShowShopName(src.getShowShopName());
+    v.setShowShopAddress(src.getShowShopAddress());
+    v.setShowShopTagline(src.getShowShopTagline());
+    v.setShowShopPhone(src.getShowShopPhone());
+    v.setShowShopEmail(src.getShowShopEmail());
+    v.setShowShopGstin(src.getShowShopGstin());
+    v.setShowShopPan(src.getShowShopPan());
+    v.setShowShopDlNo(src.getShowShopDlNo());
+    v.setShowShopFssai(src.getShowShopFssai());
     v.setShowBuyerDetails(src.getShowBuyerDetails());
+    v.setShowCustomerName(src.getShowCustomerName());
+    v.setShowCustomerAddress(src.getShowCustomerAddress());
+    v.setShowCustomerPhone(src.getShowCustomerPhone());
+    v.setShowCustomerEmail(src.getShowCustomerEmail());
+    v.setShowCustomerGstin(src.getShowCustomerGstin());
+    v.setShowCustomerPan(src.getShowCustomerPan());
+    v.setShowCustomerDlNo(src.getShowCustomerDlNo());
     v.setShowPaymentMethod(src.getShowPaymentMethod());
     v.setShowTaxDetails(src.getShowTaxDetails());
     v.setShowAmountInWords(src.getShowAmountInWords());
@@ -140,5 +170,30 @@ public final class InvoiceSettingsDefaults {
     v.setShowLineDiscount(src.getShowLineDiscount());
     v.setShowSignatures(src.getShowSignatures());
     return v;
+  }
+
+  private static void applyPartyChildren(InvoiceFieldVisibility v, boolean on) {
+    v.setShowShopName(on);
+    v.setShowShopAddress(on);
+    v.setShowShopTagline(on);
+    v.setShowShopPhone(on);
+    v.setShowShopEmail(on);
+    v.setShowShopGstin(on);
+    v.setShowShopPan(on);
+    v.setShowShopDlNo(on);
+    v.setShowShopFssai(on);
+    v.setShowCustomerName(on);
+    v.setShowCustomerAddress(on);
+    v.setShowCustomerPhone(on);
+    v.setShowCustomerEmail(on);
+    v.setShowCustomerGstin(on);
+    v.setShowCustomerPan(on);
+    v.setShowCustomerDlNo(on);
+  }
+
+  private static void overlay(Boolean stored, java.util.function.Consumer<Boolean> setter) {
+    if (stored != null) {
+      setter.accept(stored);
+    }
   }
 }

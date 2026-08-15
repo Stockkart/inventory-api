@@ -14,7 +14,25 @@ import lombok.NoArgsConstructor;
 public class InvoiceFieldVisibility {
 
   private Boolean showSellerDetails;
+  private Boolean showShopName;
+  private Boolean showShopAddress;
+  private Boolean showShopTagline;
+  private Boolean showShopPhone;
+  private Boolean showShopEmail;
+  private Boolean showShopGstin;
+  private Boolean showShopPan;
+  private Boolean showShopDlNo;
+  private Boolean showShopFssai;
+
   private Boolean showBuyerDetails;
+  private Boolean showCustomerName;
+  private Boolean showCustomerAddress;
+  private Boolean showCustomerPhone;
+  private Boolean showCustomerEmail;
+  private Boolean showCustomerGstin;
+  private Boolean showCustomerPan;
+  private Boolean showCustomerDlNo;
+
   private Boolean showPaymentMethod;
   private Boolean showTaxDetails;
   private Boolean showAmountInWords;
