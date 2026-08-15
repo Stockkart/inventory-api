@@ -118,6 +118,23 @@ The app loads `.env` from the project root and exposes:
 - **Health:** http://localhost:8080/actuator/health  
 - **Prometheus:** http://localhost:8080/actuator/prometheus  
 
+### Grafana Cloud (optional)
+
+The API **pushes** metrics (OTLP) and INFO logs (Loki HTTP) to Grafana Cloud. Nothing extra runs on the app server. Leave the `GRAFANA_CLOUD_*` vars empty locally.
+
+On **DigitalOcean App Platform** set:
+
+| Variable | Description |
+|----------|-------------|
+| `SPRING_PROFILES_ACTIVE` | `prod` (INFO logs) |
+| `GRAFANA_CLOUD_OTLP_URL` | OTLP metrics URL from Grafana Cloud (…`/otlp/v1/metrics`) |
+| `GRAFANA_CLOUD_OTLP_USER` | Prometheus / OTLP instance user id |
+| `GRAFANA_CLOUD_LOKI_URL` | Loki push URL (`…/loki/api/v1/push`) |
+| `GRAFANA_CLOUD_LOKI_USER` | Loki instance user id |
+| `GRAFANA_CLOUD_API_TOKEN` | Access policy with metrics write + logs write (encrypted) |
+
+In Grafana Explore (Loki): `{service="inventory-api"} | json | shopId="..."` or `requestId="..."`. Dashboard refresh 60s. Responses include `X-Request-Id`.
+
 ---
 
 ## Multimodule Structure

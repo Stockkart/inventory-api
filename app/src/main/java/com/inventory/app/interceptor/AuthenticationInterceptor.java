@@ -1,5 +1,6 @@
 package com.inventory.app.interceptor;
 
+import com.inventory.app.observability.RequestMdc;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.AuthenticationException;
 import com.inventory.user.domain.model.UserAccount;
@@ -8,6 +9,7 @@ import com.inventory.user.service.UserShopMembershipService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -87,6 +89,13 @@ public class AuthenticationInterceptor implements HandlerInterceptor {
       request.setAttribute("shopId", effectiveShopId);
       request.setAttribute("userAccount", userAccount);
       request.setAttribute("accessToken", accessToken);
+
+      if (StringUtils.hasText(userAccount.getUserId())) {
+        MDC.put(RequestMdc.USER_ID, userAccount.getUserId());
+      }
+      if (StringUtils.hasText(effectiveShopId)) {
+        MDC.put(RequestMdc.SHOP_ID, effectiveShopId);
+      }
 
       log.debug("Authentication successful for user: {} on path: {}", userAccount.getUserId(), requestPath);
       return true;
