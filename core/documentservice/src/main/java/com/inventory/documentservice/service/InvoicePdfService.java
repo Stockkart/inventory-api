@@ -64,8 +64,24 @@ public class InvoicePdfService {
     context.setVariable("invoiceDate", request.getInvoiceDate() != null ? request.getInvoiceDate() : formatDate(request.getSoldAt()));
     context.setVariable("invoiceTime", request.getInvoiceTime() != null ? request.getInvoiceTime() : formatTime(request.getSoldAt()));
     context.setVariable("billingMode", request.getBillingMode() != null ? request.getBillingMode() : "REGULAR");
-    context.setVariable("showSellerDetails", request.getShowSellerDetails() == null || request.getShowSellerDetails());
-    context.setVariable("showBuyerDetails", request.getShowBuyerDetails() == null || request.getShowBuyerDetails());
+    context.setVariable("showSellerDetails", visible(request.getShowSellerDetails()));
+    context.setVariable("showShopName", visible(request.getShowShopName()));
+    context.setVariable("showShopAddress", visible(request.getShowShopAddress()));
+    context.setVariable("showShopTagline", visible(request.getShowShopTagline()));
+    context.setVariable("showShopPhone", visible(request.getShowShopPhone()));
+    context.setVariable("showShopEmail", visible(request.getShowShopEmail()));
+    context.setVariable("showShopGstin", visible(request.getShowShopGstin()));
+    context.setVariable("showShopPan", visible(request.getShowShopPan()));
+    context.setVariable("showShopDlNo", visible(request.getShowShopDlNo()));
+    context.setVariable("showShopFssai", visible(request.getShowShopFssai()));
+    context.setVariable("showBuyerDetails", visible(request.getShowBuyerDetails()));
+    context.setVariable("showCustomerName", visible(request.getShowCustomerName()));
+    context.setVariable("showCustomerAddress", visible(request.getShowCustomerAddress()));
+    context.setVariable("showCustomerPhone", visible(request.getShowCustomerPhone()));
+    context.setVariable("showCustomerEmail", visible(request.getShowCustomerEmail()));
+    context.setVariable("showCustomerGstin", visible(request.getShowCustomerGstin()));
+    context.setVariable("showCustomerPan", visible(request.getShowCustomerPan()));
+    context.setVariable("showCustomerDlNo", visible(request.getShowCustomerDlNo()));
     context.setVariable("showTaxDetails", request.getShowTaxDetails() == null || request.getShowTaxDetails());
     context.setVariable("showScheme", request.getShowScheme() == null || request.getShowScheme());
     context.setVariable("showPaymentMethod", request.getShowPaymentMethod() == null || request.getShowPaymentMethod());
@@ -150,5 +166,9 @@ public class InvoicePdfService {
     }
     LocalDateTime dateTime = LocalDateTime.ofInstant(instant, IST);
     return dateTime.format(DateTimeFormatter.ofPattern("hh:mm a"));
+  }
+
+  private static boolean visible(Boolean flag) {
+    return flag == null || flag;
   }
 }

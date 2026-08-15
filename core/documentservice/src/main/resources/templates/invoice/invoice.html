@@ -341,42 +341,48 @@
   <!-- Header: Seller Info and Invoice Meta -->
   <div class="header-section" th:if="${showSellerDetails}">
     <div class="seller-info">
-      <div class="company-name" th:text="${shopName ?: ''}"></div>
+      <div class="company-name" th:if="${showShopName}" th:text="${shopName ?: ''}"></div>
       <div class="company-details">
-        <div th:text="${shopAddress ?: ''}"></div>
+        <div th:if="${showShopAddress and shopAddress != null and shopAddress != ''}" th:text="${shopAddress}"></div>
         <div>
-          <span th:if="${shopDlNo != null && shopDlNo != ''}"><strong>D.L.No.: </strong><span th:text="${shopDlNo}"></span></span>
-          <span th:if="${shopDlNo != null && shopDlNo != '' and shopFssai != null && shopFssai != ''}"><strong> | </strong></span>
-          <span th:if="${shopFssai != null && shopFssai != ''}"><strong>FSSAI: </strong><span th:text="${shopFssai}"></span></span>
+          <span th:if="${showShopDlNo and shopDlNo != null and shopDlNo != ''}"><strong>D.L.No.: </strong><span th:text="${shopDlNo}"></span></span>
+          <span th:if="${showShopDlNo and shopDlNo != null and shopDlNo != '' and showShopFssai and shopFssai != null and shopFssai != ''}"><strong> | </strong></span>
+          <span th:if="${showShopFssai and shopFssai != null and shopFssai != ''}"><strong>FSSAI: </strong><span th:text="${shopFssai}"></span></span>
         </div>
-        <div th:if="${shopGstin != null && shopGstin != ''}"><strong>GSTIN NO.: </strong><span th:text="${shopGstin}"></span></div>
         <div>
-          <span th:if="${shopPhone != null && shopPhone != ''}"><strong>Phone: </strong><span th:text="${shopPhone}"></span></span>
-          <span th:if="${shopPhone != null && shopPhone != '' and shopEmail != null && shopEmail != ''}"><strong> | </strong></span>
-          <span th:if="${shopEmail != null && shopEmail != ''}"><strong>E-Mail: </strong><span th:text="${shopEmail}"></span></span>
+          <span th:if="${showShopGstin and shopGstin != null and shopGstin != ''}"><strong>GSTIN NO.: </strong><span th:text="${shopGstin}"></span></span>
+          <span th:if="${showShopGstin and shopGstin != null and shopGstin != '' and showShopPan and shopPan != null and shopPan != ''}"><strong> | </strong></span>
+          <span th:if="${showShopPan and shopPan != null and shopPan != ''}"><strong>PAN No.: </strong><span th:text="${shopPan}"></span></span>
+        </div>
+        <div>
+          <span th:if="${showShopPhone and shopPhone != null and shopPhone != ''}"><strong>Phone: </strong><span th:text="${shopPhone}"></span></span>
+          <span th:if="${showShopPhone and shopPhone != null and shopPhone != '' and showShopEmail and shopEmail != null and shopEmail != ''}"><strong> | </strong></span>
+          <span th:if="${showShopEmail and shopEmail != null and shopEmail != ''}"><strong>E-Mail: </strong><span th:text="${shopEmail}"></span></span>
         </div>
       </div>
     </div>
   </div>
 
   <!-- Shop Tagline -->
-  <div class="tagline-section" th:if="${showSellerDetails and shopTagline != null && shopTagline != ''}">
+  <div class="tagline-section" th:if="${showSellerDetails and showShopTagline and shopTagline != null and shopTagline != ''}">
     <span th:text="${shopTagline}"></span>
   </div>
 
   <!-- Buyer Section -->
   <div class="buyer-section">
     <div class="buyer-info" th:if="${showBuyerDetails}">
-      <div class="buyer-label"><span th:text="${customerName ?: ''}"></span>
+      <div class="buyer-label" th:if="${showCustomerName}"><span th:text="${customerName ?: ''}"></span>
       </div>
       <div class="buyer-details">
-        <div th:if="${customerAddress}" th:text="${customerAddress}"></div>
+        <div th:if="${showCustomerAddress and customerAddress != null and customerAddress != ''}" th:text="${customerAddress}"></div>
+        <div th:if="${showCustomerPhone and customerPhone != null and customerPhone != ''}"><strong>Phone: </strong><span th:text="${customerPhone}"></span></div>
+        <div th:if="${showCustomerEmail and customerEmail != null and customerEmail != ''}"><strong>E-Mail: </strong><span th:text="${customerEmail}"></span></div>
       </div>
     </div>
     <div class="notes-section" th:if="${showBuyerDetails}">
-      <div><span th:if="${customerDlNo != null && customerDlNo != ''}"><strong>D.L. No.: </strong><span th:text="${customerDlNo}"></span></span></div>
-      <div><span th:if="${customerGstin != null && customerGstin != ''}"><strong>GSTIN No.: </strong><span th:text="${customerGstin}"></span></span></div>
-      <div><span th:if="${customerPan != null && customerPan != ''}"><strong>PAN No.: </strong><span th:text="${customerPan}"></span></span></div>
+      <div><span th:if="${showCustomerDlNo and customerDlNo != null and customerDlNo != ''}"><strong>D.L. No.: </strong><span th:text="${customerDlNo}"></span></span></div>
+      <div><span th:if="${showCustomerGstin and customerGstin != null and customerGstin != ''}"><strong>GSTIN No.: </strong><span th:text="${customerGstin}"></span></span></div>
+      <div><span th:if="${showCustomerPan and customerPan != null and customerPan != ''}"><strong>PAN No.: </strong><span th:text="${customerPan}"></span></span></div>
     </div>
     <div class="notes-section" th:if="${billingMode != 'BASIC'}">
       <div><strong th:text="${billingMode == 'BASIC' ? 'Challan No.' : 'Invoice NO.'}"></strong> <span th:text="${invoiceNo ?: ''}"></span></div>

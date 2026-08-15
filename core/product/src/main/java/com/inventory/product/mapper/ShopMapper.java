@@ -42,6 +42,10 @@ public interface ShopMapper {
 
   @AfterMapping
   default void setPanNoFromGstin(@MappingTarget ShopDetailResponse response, Shop shop) {
+    if (shop.getPanNo() != null && !shop.getPanNo().isBlank()) {
+      response.setPanNo(shop.getPanNo().trim());
+      return;
+    }
     String gstin = shop.getGstinNo();
     if (gstin != null && gstin.length() >= 12) {
       response.setPanNo(gstin.substring(2, 12)); // 10 chars from 3rd char (1-based)
