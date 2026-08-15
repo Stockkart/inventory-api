@@ -48,7 +48,3 @@ metrics.record("cart_created");
 // Record latency
 metrics.recordLatency("my_operation", () -> doSomething());
 ```
-
-## Dashboards
-
-Each module gets a dedicated Grafana dashboard. Add `module="<name>"` in annotations to filter. Create `grafana/provisioning/dashboards/json/<module>-module.json` for new modules.

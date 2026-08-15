@@ -18,8 +18,6 @@ RUN mvn -pl app -am clean package -DskipTests
 # -------- Runtime stage --------
 FROM eclipse-temurin:21-jre
 
-#COPY --from=grafana/alloy:v1.7.5 /bin/alloy /usr/local/bin/alloy
-
 WORKDIR /app
 
 # Convert build arguments to environment variables
@@ -35,16 +33,10 @@ ENV RESEND_API_KEY=${RESEND_API_KEY}
 ENV RESEND_FROM_EMAIL=${RESEND_FROM_EMAIL}
 ENV RESEND_FROM_NAME=${RESEND_FROM_NAME}
 
-#COPY grafana/config.alloy /etc/alloy/config.alloy
-#COPY grafana/entrypoint.sh /entrypoint.sh
-#RUN chmod +x /entrypoint.sh
-
 # copy the built jar from the app module (commit.txt is inside as static resource)
 COPY --from=build /build/app/target/*.jar app.jar
 
 EXPOSE 8080
-
-#ENTRYPOINT ["/entrypoint.sh"]
 
 # Heap scales with cgroup memory (~75%); leave room for native, metaspace, Mongo driver buffers
 ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75.0", "-XX:InitialRAMPercentage=25.0", "-jar", "app.jar"]
