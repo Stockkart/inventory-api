@@ -236,9 +236,7 @@
 
   <div class="footer">
     <div th:if="${showAmountInWords && amountInWords != null && !amountInWords.isEmpty()}" th:text="${amountInWords}">Amount in words</div>
-    <div th:if="${showPaymentMethod && paymentMethod != null && !paymentMethod.isEmpty()}">Pay: <span th:text="${paymentMethod}">CASH</span></div>
     <div th:if="${footerNote != null && !footerNote.isEmpty()}" th:text="${footerNote}">Thank you</div>
-    <div th:unless="${footerNote != null && !footerNote.isEmpty()}">Thank you!</div>
   </div>
 
 </body>

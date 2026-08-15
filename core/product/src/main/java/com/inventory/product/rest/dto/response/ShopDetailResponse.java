@@ -1,9 +1,12 @@
 package com.inventory.product.rest.dto.response;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.inventory.product.domain.model.enums.ShopType;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+
+import java.time.Instant;
 
 @Data
 @NoArgsConstructor
@@ -24,5 +27,9 @@ public class ShopDetailResponse {
   private LocationDto location;
   private String verticalId;
   private String pluginVersion;
-
+  private ShopType shopType;
+  private String sgst;
+  private String cgst;
+  private String status;
+  private Instant createdAt;
 }
