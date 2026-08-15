@@ -7,17 +7,14 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+/** One calendar day of completed sales (and refunds posted that day). */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class MisSalesRowDto {
-  private String saleId;
   private LocalDate date;
-  private String invoiceNo;
-  private String customerId;
-  private String customer;
-  private String paymentMethod;
+  private long orderCount;
   private BigDecimal cash;
   private BigDecimal online;
   private BigDecimal credit;
@@ -28,4 +25,7 @@ public class MisSalesRowDto {
   private BigDecimal cost;
   private BigDecimal profit;
   private BigDecimal margin;
+  private long refundCount;
+  private BigDecimal refundAmount;
+  private BigDecimal netSales;
 }

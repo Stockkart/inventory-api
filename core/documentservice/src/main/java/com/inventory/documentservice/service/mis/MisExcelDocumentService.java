@@ -1,6 +1,7 @@
 package com.inventory.documentservice.service.mis;
 
 import com.inventory.documentservice.rest.dto.mis.MisDocumentKpi;
+import com.inventory.documentservice.rest.dto.mis.MisDocumentSheet;
 import com.inventory.documentservice.rest.dto.mis.MisTabularDocumentRequest;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -30,7 +31,11 @@ public class MisExcelDocumentService {
     try (Workbook workbook = new XSSFWorkbook();
         ByteArrayOutputStream out = new ByteArrayOutputStream()) {
       writeSummarySheet(workbook, request);
-      writeDetailSheet(workbook, "Detail", request.getColumns(), request.getRows());
+      String detailTitle =
+          StringUtils.hasText(request.getDetailSheetTitle())
+              ? request.getDetailSheetTitle()
+              : "Detail";
+      writeDetailSheet(workbook, detailTitle, request.getColumns(), request.getRows());
       if (StringUtils.hasText(request.getSecondarySheetTitle())
           && !CollectionUtils.isEmpty(request.getSecondaryColumns())) {
         writeDetailSheet(
@@ -38,6 +43,16 @@ public class MisExcelDocumentService {
             request.getSecondarySheetTitle(),
             request.getSecondaryColumns(),
             request.getSecondaryRows());
+      }
+      if (request.getExtraSheets() != null) {
+        for (MisDocumentSheet extra : request.getExtraSheets()) {
+          if (extra == null
+              || !StringUtils.hasText(extra.getTitle())
+              || CollectionUtils.isEmpty(extra.getColumns())) {
+            continue;
+          }
+          writeDetailSheet(workbook, extra.getTitle(), extra.getColumns(), extra.getRows());
+        }
       }
       workbook.write(out);
       return out.toByteArray();

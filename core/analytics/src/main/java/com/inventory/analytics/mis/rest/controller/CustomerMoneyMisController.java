@@ -56,7 +56,7 @@ public class CustomerMoneyMisController {
     byte[] body =
         customerMoneyMisService.exportExcel(
             shopId, null, from, to, customerId, txnTypes, moneyFilter, q);
-    return attachment(body, "customer-money-mis.xlsx", MisMedia.XLSX);
+    return attachment(body, "customer-mis.xlsx", MisMedia.XLSX);
   }
 
   @GetMapping("/pdf")

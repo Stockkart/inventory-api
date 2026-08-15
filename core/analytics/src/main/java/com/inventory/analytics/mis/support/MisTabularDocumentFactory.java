@@ -8,6 +8,7 @@ import com.inventory.analytics.mis.rest.dto.MisSalesSummaryDto;
 import com.inventory.analytics.mis.rest.dto.MisStockRowDto;
 import com.inventory.analytics.mis.rest.dto.MisStockSummaryDto;
 import com.inventory.documentservice.rest.dto.mis.MisDocumentKpi;
+import com.inventory.documentservice.rest.dto.mis.MisDocumentSheet;
 import com.inventory.documentservice.rest.dto.mis.MisTabularDocumentRequest;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -101,6 +102,57 @@ public final class MisTabularDocumentFactory {
         .build();
   }
 
+  public static MisTabularDocumentRequest customerMisReport(
+      String shopName,
+      LocalDateTime generatedAt,
+      String periodLabel,
+      MisMoneySummaryDto moneySummary,
+      List<MisMoneyRowDto> moneyRows,
+      MisSalesSummaryDto salesSummary,
+      List<MisSalesRowDto> salesRows) {
+    MisTabularDocumentRequest money =
+        moneyReport(
+            "Customer MIS",
+            shopName,
+            generatedAt,
+            periodLabel,
+            moneySummary,
+            moneyRows,
+            false);
+
+    List<MisDocumentKpi> kpis = new ArrayList<>();
+    if (money.getKpis() != null) {
+      kpis.addAll(money.getKpis());
+    }
+    kpis.addAll(prefixedSalesKpis(salesSummary));
+
+    List<MisDocumentSheet> extra = new ArrayList<>();
+    extra.add(
+        MisDocumentSheet.builder()
+            .title("Sales")
+            .columns(salesDailyColumns())
+            .rows(salesDailyRows(salesRows))
+            .build());
+    extra.add(
+        MisDocumentSheet.builder()
+            .title("By party")
+            .columns(money.getSecondaryColumns())
+            .rows(money.getSecondaryRows())
+            .build());
+
+    return MisTabularDocumentRequest.builder()
+        .title("Customer MIS")
+        .shopName(shopName)
+        .periodLabel(periodLabel)
+        .generatedAtLabel(generatedAt != null ? TS.format(generatedAt) : "")
+        .kpis(kpis)
+        .detailSheetTitle("Customer money")
+        .columns(money.getColumns())
+        .rows(money.getRows())
+        .extraSheets(extra)
+        .build();
+  }
+
   public static MisTabularDocumentRequest salesReport(
       String title,
       String shopName,
@@ -108,69 +160,15 @@ public final class MisTabularDocumentFactory {
       String periodLabel,
       MisSalesSummaryDto summary,
       List<MisSalesRowDto> rows) {
-    List<MisDocumentKpi> kpis = new ArrayList<>();
-    if (summary != null) {
-      kpis.add(kpi("Invoices", String.valueOf(summary.getCount())));
-      kpis.add(kpi("Gross", MisReportSupport.rupee(summary.getGross())));
-      kpis.add(kpi("Tax", MisReportSupport.rupee(summary.getTax())));
-      kpis.add(kpi("Discount", MisReportSupport.rupee(summary.getDiscount())));
-      kpis.add(kpi("Cash", MisReportSupport.rupee(summary.getCashTotal())));
-      kpis.add(kpi("Online", MisReportSupport.rupee(summary.getOnlineTotal())));
-      kpis.add(kpi("Credit", MisReportSupport.rupee(summary.getCreditTotal())));
-      kpis.add(kpi("Profit", MisReportSupport.rupee(summary.getProfit())));
-      kpis.add(kpi("AOV", MisReportSupport.rupee(summary.getAov())));
-      kpis.add(kpi("Refunds", String.valueOf(summary.getRefundCount())));
-      kpis.add(kpi("Refund amount", MisReportSupport.rupee(summary.getRefundAmount())));
-      kpis.add(kpi("Net sales", MisReportSupport.rupee(summary.getNetSales())));
-    }
-
-    List<String> columns =
-        List.of(
-            "Date",
-            "Invoice",
-            "Customer",
-            "Method",
-            "Cash",
-            "Online",
-            "Credit",
-            "Subtotal",
-            "Tax",
-            "Discount",
-            "Grand total",
-            "Cost",
-            "Profit",
-            "Margin %");
-
-    List<List<String>> table = new ArrayList<>();
-    if (rows != null) {
-      for (MisSalesRowDto r : rows) {
-        table.add(
-            List.of(
-                MisReportSupport.formatDate(r.getDate()),
-                nullToEmpty(r.getInvoiceNo()),
-                nullToEmpty(r.getCustomer()),
-                nullToEmpty(r.getPaymentMethod()),
-                MisReportSupport.rupee(r.getCash()),
-                MisReportSupport.rupee(r.getOnline()),
-                MisReportSupport.rupee(r.getCredit()),
-                MisReportSupport.rupee(r.getSubTotal()),
-                MisReportSupport.rupee(r.getTax()),
-                MisReportSupport.rupee(r.getDiscount()),
-                MisReportSupport.rupee(r.getGrandTotal()),
-                MisReportSupport.rupee(r.getCost()),
-                MisReportSupport.rupee(r.getProfit()),
-                MisReportSupport.money(r.getMargin())));
-      }
-    }
-
     return MisTabularDocumentRequest.builder()
         .title(title)
         .shopName(shopName)
         .periodLabel(periodLabel)
         .generatedAtLabel(generatedAt != null ? TS.format(generatedAt) : "")
-        .kpis(kpis)
-        .columns(columns)
-        .rows(table)
+        .kpis(salesKpis(summary))
+        .detailSheetTitle("Sales")
+        .columns(salesDailyColumns())
+        .rows(salesDailyRows(rows))
         .build();
   }
 
@@ -235,6 +233,60 @@ public final class MisTabularDocumentFactory {
         .columns(columns)
         .rows(table)
         .build();
+  }
+
+  private static List<MisDocumentKpi> salesKpis(MisSalesSummaryDto summary) {
+    List<MisDocumentKpi> kpis = new ArrayList<>();
+    if (summary == null) {
+      return kpis;
+    }
+    kpis.add(kpi("Orders", String.valueOf(summary.getCount())));
+    kpis.add(kpi("Gross", MisReportSupport.rupee(summary.getGross())));
+    kpis.add(kpi("Tax", MisReportSupport.rupee(summary.getTax())));
+    kpis.add(kpi("Discount", MisReportSupport.rupee(summary.getDiscount())));
+    kpis.add(kpi("Cash", MisReportSupport.rupee(summary.getCashTotal())));
+    kpis.add(kpi("Online", MisReportSupport.rupee(summary.getOnlineTotal())));
+    kpis.add(kpi("Credit", MisReportSupport.rupee(summary.getCreditTotal())));
+    kpis.add(kpi("Profit", MisReportSupport.rupee(summary.getProfit())));
+    kpis.add(kpi("AOV", MisReportSupport.rupee(summary.getAov())));
+    kpis.add(kpi("Refunds", String.valueOf(summary.getRefundCount())));
+    kpis.add(kpi("Refund amount", MisReportSupport.rupee(summary.getRefundAmount())));
+    kpis.add(kpi("Net sales", MisReportSupport.rupee(summary.getNetSales())));
+    return kpis;
+  }
+
+  private static List<MisDocumentKpi> prefixedSalesKpis(MisSalesSummaryDto summary) {
+    List<MisDocumentKpi> kpis = new ArrayList<>();
+    for (MisDocumentKpi item : salesKpis(summary)) {
+      kpis.add(kpi("Sales - " + item.getLabel(), item.getValue()));
+    }
+    return kpis;
+  }
+
+  private static List<String> salesDailyColumns() {
+    return List.of(
+        "Date", "Orders", "Gross", "Tax", "Cash", "Online", "Credit", "Profit", "Net sales");
+  }
+
+  private static List<List<String>> salesDailyRows(List<MisSalesRowDto> rows) {
+    List<List<String>> table = new ArrayList<>();
+    if (rows == null) {
+      return table;
+    }
+    for (MisSalesRowDto r : rows) {
+      table.add(
+          List.of(
+              MisReportSupport.formatDate(r.getDate()),
+              String.valueOf(r.getOrderCount()),
+              MisReportSupport.rupee(r.getGrandTotal()),
+              MisReportSupport.rupee(r.getTax()),
+              MisReportSupport.rupee(r.getCash()),
+              MisReportSupport.rupee(r.getOnline()),
+              MisReportSupport.rupee(r.getCredit()),
+              MisReportSupport.rupee(r.getProfit()),
+              MisReportSupport.rupee(r.getNetSales())));
+    }
+    return table;
   }
 
   private static MisDocumentKpi kpi(String label, String value) {
