@@ -52,6 +52,7 @@ public class CustomerMoneyMisService {
   private final CreditService creditService;
   private final MisProductQueryService misProductQueryService;
   private final DocumentService documentService;
+  private final SalesMisService salesMisService;
 
   public MisMoneyReportResponse getReport(
       String shopId,
@@ -89,16 +90,19 @@ public class CustomerMoneyMisService {
       String q) {
     BuiltReport built =
         build(shopId, fromIn, toIn, customerId, txnTypesCsv, moneyFilterRaw, q);
+    SalesMisService.BuiltReport sales =
+        salesMisService.buildReport(shopId, fromIn, toIn, null, customerId, null);
     MisReportSupport.assertExportSize(built.filteredRows().size());
+    MisReportSupport.assertExportSize(sales.rows().size());
     MisTabularDocumentRequest doc =
-        MisTabularDocumentFactory.moneyReport(
-            "Customer Money MIS",
+        MisTabularDocumentFactory.customerMisReport(
             shopName,
             LocalDateTime.now(),
             built.from() + " to " + built.to(),
             built.summary(),
             built.filteredRows(),
-            false);
+            sales.summary(),
+            sales.rows());
     return documentService.generateMisExcel(doc);
   }
 

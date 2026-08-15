@@ -27,10 +27,16 @@ public class MisTabularDocumentRequest {
   /** Each row is aligned with {@link #columns}. */
   @Builder.Default private List<List<String>> rows = new ArrayList<>();
 
+  /** Detail sheet name. Empty defaults to {@code Detail}. */
+  private String detailSheetTitle;
+
   /** Optional second sheet (e.g. by-party). Empty = omitted. */
   private String secondarySheetTitle;
 
   @Builder.Default private List<String> secondaryColumns = new ArrayList<>();
 
   @Builder.Default private List<List<String>> secondaryRows = new ArrayList<>();
+
+  /** Additional sheets after the secondary sheet (e.g. daily Sales). */
+  @Builder.Default private List<MisDocumentSheet> extraSheets = new ArrayList<>();
 }
