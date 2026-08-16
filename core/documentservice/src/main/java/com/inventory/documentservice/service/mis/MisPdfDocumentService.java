@@ -2,6 +2,8 @@ package com.inventory.documentservice.service.mis;
 
 import com.inventory.documentservice.rest.dto.mis.MisDocumentKpi;
 import com.inventory.documentservice.rest.dto.mis.MisTabularDocumentRequest;
+import com.inventory.documentservice.utils.constants.DocumentMetricsConstants;
+import com.inventory.metrics.MetricsWrapper;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import java.io.ByteArrayOutputStream;
 import java.util.List;
@@ -19,6 +21,7 @@ import org.thymeleaf.context.Context;
 public class MisPdfDocumentService {
 
   private final TemplateEngine templateEngine;
+  private final MetricsWrapper metrics;
 
   public byte[] generatePdf(MisTabularDocumentRequest request) {
     try {
@@ -72,6 +75,13 @@ public class MisPdfDocumentService {
       builder.withHtmlContent(html, null);
       builder.toStream(out);
       builder.run();
+      metrics.record(
+          DocumentMetricsConstants.GENERATED_TOTAL,
+          1,
+          "module",
+          DocumentMetricsConstants.MODULE,
+          "operation",
+          "mis_pdf");
       return out.toByteArray();
     }
   }

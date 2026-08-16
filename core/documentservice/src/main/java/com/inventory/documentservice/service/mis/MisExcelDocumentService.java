@@ -3,6 +3,8 @@ package com.inventory.documentservice.service.mis;
 import com.inventory.documentservice.rest.dto.mis.MisDocumentKpi;
 import com.inventory.documentservice.rest.dto.mis.MisDocumentSheet;
 import com.inventory.documentservice.rest.dto.mis.MisTabularDocumentRequest;
+import com.inventory.documentservice.utils.constants.DocumentMetricsConstants;
+import com.inventory.metrics.MetricsWrapper;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.List;
@@ -18,6 +20,7 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
@@ -26,6 +29,9 @@ import org.springframework.util.StringUtils;
 @Service
 @Slf4j
 public class MisExcelDocumentService {
+
+  @Autowired
+  private MetricsWrapper metrics;
 
   public byte[] generateExcel(MisTabularDocumentRequest request) {
     try (Workbook workbook = new XSSFWorkbook();
@@ -55,6 +61,13 @@ public class MisExcelDocumentService {
         }
       }
       workbook.write(out);
+      metrics.record(
+          DocumentMetricsConstants.GENERATED_TOTAL,
+          1,
+          "module",
+          DocumentMetricsConstants.MODULE,
+          "operation",
+          "mis_excel");
       return out.toByteArray();
     } catch (IOException e) {
       log.error("Failed to build MIS Excel: {}", e.getMessage(), e);

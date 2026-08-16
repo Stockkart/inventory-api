@@ -3,6 +3,8 @@ package com.inventory.taxation.service;
 import com.inventory.taxation.domain.gstr2.Gstr2ReportContext;
 import com.inventory.taxation.excel.Gstr2TabWriter;
 import com.inventory.taxation.excel.tabs.*;
+import com.inventory.taxation.utils.constants.TaxationMetricsConstants;
+import com.inventory.metrics.MetricsWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -23,6 +25,9 @@ public class Gstr2ReportService {
   @Autowired
   private Gstr2DataAggregator dataAggregator;
 
+  @Autowired
+  private MetricsWrapper metrics;
+
   private static final List<Gstr2TabWriter> TAB_WRITERS = List.of(
       new Gstr2B2bTabWriter(),
       new Gstr2B2burTabWriter(),
@@ -38,6 +43,7 @@ public class Gstr2ReportService {
   );
 
   public Gstr2ReportContext getReportData(String shopId, String period) {
+    recordReport();
     return dataAggregator.buildContext(shopId, period);
   }
 
@@ -51,5 +57,15 @@ public class Gstr2ReportService {
       workbook.write(out);
       return out.toByteArray();
     }
+  }
+
+  private void recordReport() {
+    metrics.record(
+        TaxationMetricsConstants.REPORTS_TOTAL,
+        1,
+        "module",
+        TaxationMetricsConstants.MODULE,
+        "operation",
+        "gstr2");
   }
 }

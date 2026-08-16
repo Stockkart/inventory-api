@@ -1,5 +1,9 @@
 package com.inventory.plan.rest.controller;
 
+
+import com.inventory.metrics.annotation.Latency;
+import com.inventory.metrics.annotation.RecordRequestRate;
+import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.plan.mapper.PlanMapper;
 import com.inventory.plan.rest.dto.request.AssignPlanRequest;
@@ -18,6 +22,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/plans")
 @Slf4j
+@Latency(module = "plan")
+@RecordRequestRate(module = "plan")
+@RecordStatusCodes(module = "plan")
 public class PaymentWebhookController {
 
   @Autowired

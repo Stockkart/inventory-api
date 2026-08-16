@@ -23,6 +23,8 @@ import com.inventory.plan.rest.dto.response.PlanCheckoutResponse;
 import com.inventory.plan.rest.dto.response.PlanResponse;
 import com.inventory.plan.rest.dto.response.VerifyPlanPaymentResponse;
 import com.inventory.plan.utils.constants.PlanPaymentConstants;
+import com.inventory.plan.utils.constants.PlanMetricsConstants;
+import com.inventory.metrics.MetricsWrapper;
 import com.inventory.plan.validation.PlanValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -56,6 +58,9 @@ public class PlanPaymentService {
 
   @Autowired
   private PaymentGatewayResolver paymentGatewayResolver;
+
+  @Autowired
+  private MetricsWrapper metrics;
 
   @Transactional(readOnly = true)
   public PaymentConfigResponse getPaymentConfig() {
@@ -117,6 +122,15 @@ public class PlanPaymentService {
           .build());
     }
 
+    metrics.record(
+        PlanMetricsConstants.PAYMENTS_TOTAL,
+        1,
+        "module",
+        PlanMetricsConstants.MODULE,
+        "operation",
+        "checkout",
+        "outcome",
+        "success");
     return response.build();
   }
 
@@ -150,10 +164,28 @@ public class PlanPaymentService {
     if (!verified.isValid()) {
       order.setStatus(PlanPaymentConstants.STATUS_FAILED);
       planPaymentOrderRepository.save(order);
+      metrics.record(
+          PlanMetricsConstants.PAYMENTS_TOTAL,
+          1,
+          "module",
+          PlanMetricsConstants.MODULE,
+          "operation",
+          "verify",
+          "outcome",
+          "error");
       throw new ValidationException("Payment signature verification failed");
     }
 
     PlanResponse plan = fulfillOrder(order, verified.getPaymentMethod(), request.getRazorpayPaymentId());
+    metrics.record(
+        PlanMetricsConstants.PAYMENTS_TOTAL,
+        1,
+        "module",
+        PlanMetricsConstants.MODULE,
+        "operation",
+        "verify",
+        "outcome",
+        "success");
     return VerifyPlanPaymentResponse.builder()
         .success(true)
         .orderId(order.getId())
@@ -193,6 +225,13 @@ public class PlanPaymentService {
     }
 
     fulfillOrder(order, result.getPaymentMethod(), result.getProviderPaymentId());
+    metrics.record(
+        PlanMetricsConstants.WEBHOOKS_TOTAL,
+        1,
+        "module",
+        PlanMetricsConstants.MODULE,
+        "outcome",
+        "success");
   }
 
   private PlanResponse fulfillOrder(PlanPaymentOrder order, String paymentMethod, String providerPaymentId) {

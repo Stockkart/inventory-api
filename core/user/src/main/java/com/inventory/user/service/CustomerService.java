@@ -12,6 +12,8 @@ import com.inventory.user.rest.dto.response.CustomerListResponse;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.user.utils.TextUtils;
 import com.inventory.user.validation.CustomerValidator;
+import com.inventory.metrics.MetricsWrapper;
+import com.inventory.user.utils.constants.UserMetricsConstants;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -42,9 +44,20 @@ public class CustomerService {
   @Autowired
   private CustomerValidator customerValidator;
 
+  @Autowired
+  private MetricsWrapper metrics;
+
 
   public CustomerDto createCustomerDto(String shopId, CreateCustomerRequest request) {
-    return customerMapper.toDto(findOrCreateCustomer(shopId, request));
+    CustomerDto dto = customerMapper.toDto(findOrCreateCustomer(shopId, request));
+    metrics.record(
+        UserMetricsConstants.CUSTOMERS_TOTAL,
+        1,
+        "module",
+        UserMetricsConstants.MODULE,
+        "operation",
+        "create");
+    return dto;
   }
 
   @Transactional(readOnly = true)
@@ -211,6 +224,13 @@ public class CustomerService {
     customerMapper.applyUpdate(request, customer);
     customer = customerRepository.save(customer);
     log.info("Updated customer with ID: {}", customer.getId());
+    metrics.record(
+        UserMetricsConstants.CUSTOMERS_TOTAL,
+        1,
+        "module",
+        UserMetricsConstants.MODULE,
+        "operation",
+        "update");
     return customerMapper.toDto(customer);
   }
 }

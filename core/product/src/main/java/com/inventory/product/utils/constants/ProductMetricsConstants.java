@@ -25,11 +25,11 @@ public final class ProductMetricsConstants {
 
   // Invoices
   public static final String INVOICES_GENERATED = "inventory_product_invoices_generated_total";
-
-  // Errors
-  public static final String EXCEPTIONS_TOTAL = "inventory_product_exceptions_total";
-
-  // External
-  public static final String EXTERNAL_CALLS_TOTAL = "inventory_product_external_calls_total";
-  public static final String EXTERNAL_FAILURES_TOTAL = "inventory_product_external_failures_total";
+  public static final String INVENTORY_CORRECTIONS = "inventory_product_inventory_corrections_total";
+  public static final String VENDOR_PURCHASES = "inventory_product_vendor_purchases_total";
+  public static final String VENDOR_RETURNS = "inventory_product_vendor_returns_total";
+  public static final String QUOTATIONS_TOTAL = "inventory_product_quotations_total";
+  public static final String CREDIT_NOTES_TOTAL = "inventory_product_credit_notes_total";
+  public static final String BARCODES_GENERATED = "inventory_product_barcodes_generated_total";
+  public static final String QR_TOKENS_TOTAL = "inventory_product_qr_tokens_total";
 }

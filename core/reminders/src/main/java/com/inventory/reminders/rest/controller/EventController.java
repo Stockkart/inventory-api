@@ -1,5 +1,9 @@
 package com.inventory.reminders.rest.controller;
 
+
+import com.inventory.metrics.annotation.Latency;
+import com.inventory.metrics.annotation.RecordRequestRate;
+import com.inventory.metrics.annotation.RecordStatusCodes;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -12,6 +16,9 @@ import com.inventory.reminders.validation.ReminderValidator;
 
 @RestController
 @RequestMapping("/api/v1/events")
+@Latency(module = "reminders")
+@RecordRequestRate(module = "reminders")
+@RecordStatusCodes(module = "reminders")
 public class EventController {
 
   @Autowired

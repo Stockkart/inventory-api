@@ -7,6 +7,8 @@ import com.inventory.product.domain.model.ShopInvoiceSettingsDocument;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.service.creditnote.CreditNoteDocumentAssembler;
 import com.inventory.product.service.creditnote.CreditNotePartyRole;
+import com.inventory.metrics.MetricsWrapper;
+import com.inventory.product.utils.constants.ProductMetricsConstants;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,15 +32,18 @@ public class CreditNoteService {
   private final InvoiceSettingsService invoiceSettingsService;
   private final DocumentService documentService;
   private final Map<CreditNotePartyRole, CreditNoteDocumentAssembler> assemblersByRole;
+  private final MetricsWrapper metrics;
 
   public CreditNoteService(
       ShopRepository shopRepository,
       InvoiceSettingsService invoiceSettingsService,
       DocumentService documentService,
-      List<CreditNoteDocumentAssembler> assemblers) {
+      List<CreditNoteDocumentAssembler> assemblers,
+      MetricsWrapper metrics) {
     this.shopRepository = shopRepository;
     this.invoiceSettingsService = invoiceSettingsService;
     this.documentService = documentService;
+    this.metrics = metrics;
     this.assemblersByRole = new EnumMap<>(CreditNotePartyRole.class);
     if (assemblers != null) {
       for (CreditNoteDocumentAssembler assembler : assemblers) {
@@ -78,6 +83,12 @@ public class CreditNoteService {
         StringUtils.hasText(printerType) ? printerType : settings.getDefaultPrinterType();
     request.setPrinterType(resolvedPrinter);
 
-    return documentService.generateCreditNote(request);
+    byte[] pdf = documentService.generateCreditNote(request);
+    metrics.record(
+        ProductMetricsConstants.CREDIT_NOTES_TOTAL,
+        1,
+        "module",
+        ProductMetricsConstants.MODULE);
+    return pdf;
   }
 }

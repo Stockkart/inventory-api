@@ -7,6 +7,8 @@ import com.inventory.common.exception.ValidationException;
 import com.inventory.analytics.mapper.CustomerAnalyticsMapper;
 import com.inventory.analytics.mapper.CustomerAnalyticsResponseParams;
 import com.inventory.analytics.utils.CustomerAnalyticsUtils;
+import com.inventory.analytics.utils.constants.AnalyticsMetricsConstants;
+import com.inventory.metrics.MetricsWrapper;
 import com.inventory.analytics.rest.dto.response.CustomerAnalyticsDto;
 import com.inventory.analytics.rest.dto.response.CustomerAnalyticsResponse;
 import com.inventory.analytics.rest.dto.response.CustomerSummaryDto;
@@ -34,6 +36,9 @@ public class CustomerAnalyticsService {
   @Autowired
   private CustomerAnalyticsMapper customerAnalyticsMapper;
 
+  @Autowired
+  private MetricsWrapper metrics;
+
   /**
    * Get comprehensive customer analytics.
    *
@@ -57,6 +62,14 @@ public class CustomerAnalyticsService {
           ErrorCode.UNAUTHORIZED,
           "User not authenticated or shop not found");
     }
+
+    metrics.record(
+        AnalyticsMetricsConstants.QUERIES_TOTAL,
+        1,
+        "module",
+        AnalyticsMetricsConstants.MODULE,
+        "operation",
+        "customer");
 
     try {
       // Set default values

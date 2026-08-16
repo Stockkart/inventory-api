@@ -6,6 +6,8 @@ import com.inventory.notifications.domain.model.MessageStatus;
 import com.inventory.notifications.domain.model.OutboundMessage;
 import com.inventory.notifications.domain.repository.OutboundMessageRepository;
 import com.inventory.notifications.template.EmailTemplateContent;
+import com.inventory.notifications.utils.constants.NotificationMetricsConstants;
+import com.inventory.metrics.MetricsWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Async;
@@ -25,6 +27,9 @@ public class MessagingService {
 
   @Autowired
   private OutboundMessageRepository outboundMessageRepository;
+
+  @Autowired
+  private MetricsWrapper metrics;
 
   /**
    * Enqueue an email using a template. Processed asynchronously by the queue processor.
@@ -59,8 +64,10 @@ public class MessagingService {
     try {
       OutboundMessage saved = outboundMessageRepository.save(message);
       log.debug("Enqueued email template={} to={} id={}", template, to, saved.getId());
+      recordEnqueued("email", "success");
     } catch (Exception e) {
       log.error("Failed to enqueue email to {}: {}", to, e.getMessage(), e);
+      recordEnqueued("email", "error");
     }
   }
 
@@ -88,8 +95,22 @@ public class MessagingService {
     try {
       OutboundMessage saved = outboundMessageRepository.save(message);
       log.debug("Enqueued email to={} id={}", to, saved.getId());
+      recordEnqueued("email", "success");
     } catch (Exception e) {
       log.error("Failed to enqueue email to {}: {}", to, e.getMessage(), e);
+      recordEnqueued("email", "error");
     }
+  }
+
+  private void recordEnqueued(String channel, String outcome) {
+    metrics.record(
+        NotificationMetricsConstants.ENQUEUED_TOTAL,
+        1,
+        "module",
+        NotificationMetricsConstants.MODULE,
+        "channel",
+        channel,
+        "outcome",
+        outcome);
   }
 }

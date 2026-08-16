@@ -18,6 +18,8 @@ import com.inventory.plan.service.ShopProvider.ShopInfo;
 import com.inventory.plan.utils.PlanUtils;
 import com.inventory.plan.utils.PlanUtils;
 import com.inventory.plan.validation.PlanValidator;
+import com.inventory.metrics.MetricsWrapper;
+import com.inventory.plan.utils.constants.PlanMetricsConstants;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -56,6 +58,9 @@ public class PlanService {
 
   @Autowired
   private UsageService usageService;
+
+  @Autowired
+  private MetricsWrapper metrics;
 
   /**
    * List all plans (public - can be called before login for pricing page).
@@ -98,6 +103,11 @@ public class PlanService {
     planTransactionRepository.save(tx);
 
     log.info("Assigned plan {} to shop {} until {} (tx: {})", plan.getPlanName(), shopId, expiryDate, tx.getId());
+    metrics.record(
+        PlanMetricsConstants.ASSIGNED_TOTAL,
+        1,
+        "module",
+        PlanMetricsConstants.MODULE);
     return planMapper.toResponse(plan);
   }
 

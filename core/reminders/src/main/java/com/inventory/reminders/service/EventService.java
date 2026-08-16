@@ -12,6 +12,8 @@ import com.inventory.reminders.mapper.ReminderMapper;
 import com.inventory.reminders.utils.EventUtils;
 import com.inventory.reminders.utils.SseEmitterUtils;
 import com.inventory.reminders.utils.constants.EventConstants;
+import com.inventory.reminders.utils.constants.ReminderMetricsConstants;
+import com.inventory.metrics.MetricsWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -46,6 +48,9 @@ public class EventService {
 
   @Autowired
   private EventMapper eventMapper;
+
+  @Autowired
+  private MetricsWrapper metrics;
 
   // support multiple tabs/devices per shop
   private final Map<String, List<SseEmitter>> emittersByShop = new ConcurrentHashMap<>();
@@ -325,8 +330,10 @@ public class EventService {
     for (Reminder r : dueReminders) {
       try {
         recordAndBroadcastReminderDue(r);
+        recordDispatch("success");
       } catch (Exception e) {
         log.error("Failed processing due reminder {}: {}", r.getId(), e.getMessage(), e);
+        recordDispatch("error");
       }
     }
   }
@@ -382,6 +389,7 @@ public class EventService {
 
         boolean delivered = attemptBroadcastAndUpdate(event, reminder);
         if (delivered) {
+          recordDispatch("success");
           try {
             reminder.setStatus(ReminderStatus.SENT);
             reminder.setUpdatedAt(Instant.now());
@@ -402,6 +410,7 @@ public class EventService {
         }
       } catch (Exception ex) {
         log.error("Failed retrying event {}: {}", event.getId(), ex.getMessage(), ex);
+        recordDispatch("error");
       }
     }
   }
@@ -441,5 +450,15 @@ public class EventService {
         removeEmitter(event.getShopId(), emitter);
       }
     }
+  }
+
+  private void recordDispatch(String outcome) {
+    metrics.record(
+        ReminderMetricsConstants.DISPATCH_TOTAL,
+        1,
+        "module",
+        ReminderMetricsConstants.MODULE,
+        "outcome",
+        outcome);
   }
 }

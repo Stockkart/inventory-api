@@ -15,6 +15,8 @@ import com.inventory.user.rest.dto.response.UserShopDto;
 import com.inventory.user.rest.dto.response.UserShopListResponse;
 import com.inventory.user.mapper.UserShopMembershipMapper;
 import com.inventory.user.validation.UserValidator;
+import com.inventory.metrics.MetricsWrapper;
+import com.inventory.user.utils.constants.UserMetricsConstants;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
@@ -50,6 +52,9 @@ public class UserShopMembershipService {
 
   @Autowired
   private UserValidator userValidator;
+
+  @Autowired
+  private MetricsWrapper metrics;
 
   /**
    * Check if user has access to a shop. Backward compatible: returns true if user has
@@ -158,6 +163,11 @@ public class UserShopMembershipService {
         .ifPresent(m -> account.setRole(m.getRole()));
     userAccountRepository.save(account);
     log.info("User {} switched active shop to {}", userId, shopId);
+    metrics.record(
+        UserMetricsConstants.SHOP_SWITCH,
+        1,
+        "module",
+        UserMetricsConstants.MODULE);
   }
 
   /**

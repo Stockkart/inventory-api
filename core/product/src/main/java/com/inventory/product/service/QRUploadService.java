@@ -14,6 +14,8 @@ import com.inventory.product.mapper.ParsedInventoryMapper;
 import com.inventory.product.mapper.UploadTokenMapper;
 import com.inventory.product.utils.UploadTokenUtil;
 import com.inventory.product.validation.UploadTokenValidator;
+import com.inventory.metrics.MetricsWrapper;
+import com.inventory.product.utils.constants.ProductMetricsConstants;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -56,6 +58,9 @@ public class QRUploadService {
   @Qualifier("ocrTaskExecutor")
   private Executor ocrTaskExecutor;
 
+  @Autowired
+  private MetricsWrapper metrics;
+
   /**
    * Create upload token for QR code pairing.
    * 
@@ -78,6 +83,13 @@ public class QRUploadService {
     CreateUploadTokenResponse response = uploadTokenMapper.toCreateUploadTokenResponse(uploadToken, uploadUrl);
     log.info("Created upload token: {} with URL: {}", token, uploadUrl);
 
+    metrics.record(
+        ProductMetricsConstants.QR_TOKENS_TOTAL,
+        1,
+        "module",
+        ProductMetricsConstants.MODULE,
+        "operation",
+        "create");
     return response;
   }
 
@@ -278,6 +290,13 @@ public class QRUploadService {
     uploadToken.setParsedInventoryId(parsedInventoryId);
     uploadTokenRepository.save(uploadToken);
     log.info("Marked token {} as completed with parsed inventory: {}", token, parsedInventoryId);
+    metrics.record(
+        ProductMetricsConstants.QR_TOKENS_TOTAL,
+        1,
+        "module",
+        ProductMetricsConstants.MODULE,
+        "operation",
+        "consume");
   }
 
   /**

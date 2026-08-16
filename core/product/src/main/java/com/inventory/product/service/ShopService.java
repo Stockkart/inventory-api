@@ -20,6 +20,8 @@ import com.inventory.product.validation.ShopValidator;
 import com.inventory.user.domain.model.UserRole;
 import com.inventory.user.domain.repository.UserAccountRepository;
 import com.inventory.user.service.UserShopMembershipService;
+import com.inventory.metrics.MetricsWrapper;
+import com.inventory.user.utils.constants.UserMetricsConstants;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
@@ -62,6 +64,9 @@ public class ShopService {
 
   @Autowired
   private VerticalCatalogService verticalCatalogService;
+
+  @Autowired
+  private MetricsWrapper metrics;
 
   @Transactional
   public ShopRegistrationResponse register(RegisterShopRequest request, String userId) {
@@ -113,6 +118,12 @@ public class ShopService {
       userAccountRepository.save(userAccount);
 
       log.info("Successfully registered shop with ID: {} and updated user account: {}", shop.getShopId(), userId);
+
+      metrics.record(
+          UserMetricsConstants.SHOPS_CREATED,
+          1,
+          "module",
+          UserMetricsConstants.MODULE);
 
       if (chartOfAccountsSeeder != null) {
         try {

@@ -14,6 +14,8 @@ import com.inventory.plan.payment.dto.VerifyPaymentResult;
 import com.inventory.plan.payment.dto.WebhookHandleCommand;
 import com.inventory.plan.payment.dto.WebhookHandleResult;
 import com.inventory.plan.utils.constants.PlanPaymentConstants;
+import com.inventory.plan.utils.constants.PlanMetricsConstants;
+import com.inventory.metrics.MetricsWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -29,14 +31,17 @@ public class RazorpayPaymentGateway implements PaymentGatewayPort {
   private final PaymentProperties paymentProperties;
   private final RazorpayApiClient razorpayApiClient;
   private final ObjectMapper objectMapper;
+  private final MetricsWrapper metrics;
 
   public RazorpayPaymentGateway(
       PaymentProperties paymentProperties,
       RazorpayApiClient razorpayApiClient,
-      ObjectMapper objectMapper) {
+      ObjectMapper objectMapper,
+      MetricsWrapper metrics) {
     this.paymentProperties = paymentProperties;
     this.razorpayApiClient = razorpayApiClient;
     this.objectMapper = objectMapper;
+    this.metrics = metrics;
   }
 
   @Override
@@ -57,18 +62,37 @@ public class RazorpayPaymentGateway implements PaymentGatewayPort {
     notes.put("internalOrderId", command.getInternalOrderId());
 
     try {
-      JsonNode response = razorpayApiClient.createOrder(
-          "plan_" + command.getInternalOrderId(),
-          amountPaise,
-          command.getCurrency(),
-          notes);
+      JsonNode response =
+          metrics.recordLatency(
+              PlanMetricsConstants.GATEWAY,
+              () -> {
+                try {
+                  return razorpayApiClient.createOrder(
+                      "plan_" + command.getInternalOrderId(),
+                      amountPaise,
+                      command.getCurrency(),
+                      notes);
+                } catch (java.io.IOException e) {
+                  throw new RuntimeException(e);
+                }
+              },
+              "module",
+              PlanMetricsConstants.MODULE,
+              "operation",
+              "create_order",
+              "provider",
+              "razorpay",
+              "outcome",
+              "success");
       return CreateCheckoutResult.builder()
           .providerOrderId(response.path("id").asText())
           .publicKey(paymentProperties.getRazorpay().getKeyId())
           .build();
     } catch (BaseException e) {
+      recordGateway("create_order", "error");
       throw e;
     } catch (Exception e) {
+      recordGateway("create_order", "error");
       log.error("Failed to create Razorpay order for internal order {}: {}", command.getInternalOrderId(), e.getMessage());
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Failed to create payment order");
     }
@@ -83,9 +107,11 @@ public class RazorpayPaymentGateway implements PaymentGatewayPort {
         command.getSignature(),
         keySecret);
     if (!valid) {
+      recordGateway("verify", "error");
       return VerifyPaymentResult.builder().valid(false).build();
     }
     String paymentMethod = fetchPaymentMethod(command.getProviderPaymentId());
+    recordGateway("verify", "success");
     return VerifyPaymentResult.builder()
         .valid(true)
         .paymentMethod(paymentMethod)
@@ -101,6 +127,7 @@ public class RazorpayPaymentGateway implements PaymentGatewayPort {
     String webhookSecret = paymentProperties.getRazorpay().getWebhookSecret();
     if (!RazorpaySignatureVerifier.verifyWebhookSignature(command.getRawBody(), signature, webhookSecret)) {
       log.warn("Invalid Razorpay webhook signature");
+      recordGateway("webhook", "error");
       return WebhookHandleResult.builder().processed(false).build();
     }
 
@@ -114,6 +141,7 @@ public class RazorpayPaymentGateway implements PaymentGatewayPort {
       if (paymentEntity.isMissingNode()) {
         return WebhookHandleResult.builder().processed(false).build();
       }
+      recordGateway("webhook", "success");
       return WebhookHandleResult.builder()
           .processed(true)
           .providerOrderId(textOrNull(paymentEntity.path("order_id")))
@@ -122,8 +150,23 @@ public class RazorpayPaymentGateway implements PaymentGatewayPort {
           .build();
     } catch (Exception e) {
       log.error("Failed to parse Razorpay webhook: {}", e.getMessage());
+      recordGateway("webhook", "error");
       return WebhookHandleResult.builder().processed(false).build();
     }
+  }
+
+  private void recordGateway(String operation, String outcome) {
+    metrics.record(
+        PlanMetricsConstants.GATEWAY,
+        1,
+        "module",
+        PlanMetricsConstants.MODULE,
+        "operation",
+        operation,
+        "provider",
+        "razorpay",
+        "outcome",
+        outcome);
   }
 
   private String fetchPaymentMethod(String paymentId) {

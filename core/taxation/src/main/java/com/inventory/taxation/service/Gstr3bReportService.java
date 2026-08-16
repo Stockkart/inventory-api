@@ -2,6 +2,8 @@ package com.inventory.taxation.service;
 
 import com.inventory.taxation.domain.gstr3b.Gstr3bReportContext;
 import com.inventory.taxation.excel.Gstr3bExcelWriter;
+import com.inventory.taxation.utils.constants.TaxationMetricsConstants;
+import com.inventory.metrics.MetricsWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -21,7 +23,11 @@ public class Gstr3bReportService {
   @Autowired
   private Gstr3bDataAggregator dataAggregator;
 
+  @Autowired
+  private MetricsWrapper metrics;
+
   public Gstr3bReportContext getReportData(String shopId, String period) {
+    recordReport();
     return dataAggregator.buildContext(shopId, period);
   }
 
@@ -33,5 +39,15 @@ public class Gstr3bReportService {
       workbook.write(out);
       return out.toByteArray();
     }
+  }
+
+  private void recordReport() {
+    metrics.record(
+        TaxationMetricsConstants.REPORTS_TOTAL,
+        1,
+        "module",
+        TaxationMetricsConstants.MODULE,
+        "operation",
+        "gstr3b");
   }
 }

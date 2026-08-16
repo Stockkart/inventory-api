@@ -8,6 +8,8 @@ import com.inventory.analytics.mapper.SalesAnalyticsMapper;
 import com.inventory.analytics.mapper.SalesAnalyticsResponseParams;
 import com.inventory.analytics.rest.dto.response.*;
 import com.inventory.analytics.utils.SalesAnalyticsUtils;
+import com.inventory.analytics.utils.constants.AnalyticsMetricsConstants;
+import com.inventory.metrics.MetricsWrapper;
 import com.inventory.product.domain.model.Purchase;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,6 +32,9 @@ public class SalesAnalyticsService {
 
   @Autowired
   private SalesAnalyticsMapper salesAnalyticsMapper;
+
+  @Autowired
+  private MetricsWrapper metrics;
 
   /**
    * Get sales analytics for a date range.
@@ -58,6 +63,14 @@ public class SalesAnalyticsService {
           ErrorCode.UNAUTHORIZED,
           "User not authenticated or shop not found");
     }
+
+    metrics.record(
+        AnalyticsMetricsConstants.QUERIES_TOTAL,
+        1,
+        "module",
+        AnalyticsMetricsConstants.MODULE,
+        "operation",
+        "sales");
 
     try {
       // Set default values

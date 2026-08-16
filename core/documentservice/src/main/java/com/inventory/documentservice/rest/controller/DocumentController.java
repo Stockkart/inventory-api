@@ -1,5 +1,9 @@
 package com.inventory.documentservice.rest.controller;
 
+
+import com.inventory.metrics.annotation.Latency;
+import com.inventory.metrics.annotation.RecordRequestRate;
+import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.documentservice.rest.dto.GenerateInvoiceRequest;
 import com.inventory.documentservice.service.DocumentService;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +22,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/documents")
 @Slf4j
+@Latency(module = "documentservice")
+@RecordRequestRate(module = "documentservice")
+@RecordStatusCodes(module = "documentservice")
 public class DocumentController {
 
   @Autowired

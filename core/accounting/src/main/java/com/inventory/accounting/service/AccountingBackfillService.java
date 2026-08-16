@@ -11,6 +11,8 @@ import com.inventory.accounting.domain.model.JournalEntry;
 import com.inventory.accounting.domain.model.JournalSource;
 import com.inventory.accounting.domain.repository.JournalEntryRepository;
 import com.inventory.accounting.domain.repository.LedgerEntryRepository;
+import com.inventory.accounting.utils.constants.AccountingMetricsConstants;
+import com.inventory.metrics.MetricsWrapper;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -57,6 +59,7 @@ public class AccountingBackfillService {
   private final JournalEntryRepository journalEntryRepository;
   private final LedgerEntryRepository ledgerEntryRepository;
   private final AccountService accountService;
+  private final MetricsWrapper metrics;
 
   public BackfillResult backfill(String shopId, String userId, LocalDate from, LocalDate to) {
     return backfill(shopId, userId, from, to, false);
@@ -305,6 +308,11 @@ public class AccountingBackfillService {
     if (force) {
       accountService.ensureSeeded(shopId);
     }
+    metrics.record(
+        AccountingMetricsConstants.BACKFILL_TOTAL,
+        1,
+        "module",
+        AccountingMetricsConstants.MODULE);
     return new BackfillResult(processed, posted, reposted, skipped, failed);
   }
 

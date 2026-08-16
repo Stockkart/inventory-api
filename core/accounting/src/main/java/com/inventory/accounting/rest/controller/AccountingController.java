@@ -1,5 +1,9 @@
 package com.inventory.accounting.rest.controller;
 
+
+import com.inventory.metrics.annotation.Latency;
+import com.inventory.metrics.annotation.RecordRequestRate;
+import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.accounting.api.AccountingFacade;
 import com.inventory.accounting.api.PostJournalLine;
 import com.inventory.accounting.api.PostJournalRequest;
@@ -57,6 +61,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/accounting")
 @RequiredArgsConstructor
+@Latency(module = "accounting")
+@RecordRequestRate(module = "accounting")
+@RecordStatusCodes(module = "accounting")
 public class AccountingController {
 
   private final AccountService accountService;

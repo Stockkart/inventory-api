@@ -1,5 +1,9 @@
 package com.inventory.analytics.mis.rest.controller;
 
+
+import com.inventory.metrics.annotation.Latency;
+import com.inventory.metrics.annotation.RecordRequestRate;
+import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.analytics.mis.rest.dto.MisStockReportResponse;
 import com.inventory.analytics.mis.service.StockMisService;
 import com.inventory.common.constants.ErrorCode;
@@ -19,6 +23,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/mis/stock")
 @RequiredArgsConstructor
+@Latency(module = "analytics")
+@RecordRequestRate(module = "analytics")
+@RecordStatusCodes(module = "analytics")
 public class StockMisController {
 
   private final StockMisService stockMisService;

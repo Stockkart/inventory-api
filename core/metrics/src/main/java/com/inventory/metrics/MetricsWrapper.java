@@ -75,30 +75,56 @@ public class MetricsWrapper {
   }
 
   /**
-   * Record latency with tags.
+   * Record latency with a single tag pair.
    */
   public <T> T recordLatency(String metricName, String tagKey, String tagValue, Supplier<T> supplier) {
+    return recordLatency(metricName, supplier, tagKey, tagValue);
+  }
+
+  /**
+   * Record latency with tags. Format: "key1", "value1", "key2", "value2".
+   */
+  public <T> T recordLatency(String metricName, Supplier<T> supplier, String... tags) {
     Timer.Sample sample = Timer.start(registry);
     try {
       return supplier.get();
     } finally {
-      sample.stop(timer(metricName, tagKey, tagValue));
+      sample.stop(timer(metricName, tags));
     }
   }
 
-  Timer timer(String name) {
-    return Timer.builder(name)
-        .description("API latency in seconds")
-        .publishPercentiles(DEFAULT_PERCENTILES)
-        .register(registry);
+  /**
+   * Record latency for void operations with tags.
+   */
+  public void recordLatency(String metricName, Runnable runnable, String... tags) {
+    recordLatency(
+        metricName,
+        () -> {
+          runnable.run();
+          return null;
+        },
+        tags);
   }
 
-  Timer timer(String name, String tagKey, String tagValue) {
-    return Timer.builder(name)
-        .description("API latency in seconds")
-        .tag(tagKey, tagValue != null ? tagValue : "unknown")
-        .publishPercentiles(DEFAULT_PERCENTILES)
-        .register(registry);
+  Timer timer(String name) {
+    return timer(name, new String[0]);
+  }
+
+  Timer timer(String name, String... tags) {
+    Timer.Builder builder =
+        Timer.builder(name)
+            .description("API latency in seconds")
+            .publishPercentileHistogram()
+            .publishPercentiles(DEFAULT_PERCENTILES);
+    if (tags != null && tags.length > 0) {
+      if (tags.length % 2 != 0) {
+        throw new IllegalArgumentException("Tags must be key-value pairs");
+      }
+      for (int i = 0; i < tags.length; i += 2) {
+        builder.tag(tags[i], tags[i + 1] != null ? tags[i + 1] : "unknown");
+      }
+    }
+    return builder.register(registry);
   }
 
   public MeterRegistry getRegistry() {

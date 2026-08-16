@@ -7,6 +7,8 @@ import com.inventory.common.exception.ValidationException;
 import com.inventory.analytics.mapper.InventoryAnalyticsMapper;
 import com.inventory.analytics.mapper.InventoryAnalyticsResponseParams;
 import com.inventory.analytics.utils.InventoryAnalyticsUtils;
+import com.inventory.analytics.utils.constants.AnalyticsMetricsConstants;
+import com.inventory.metrics.MetricsWrapper;
 import com.inventory.analytics.rest.dto.response.InventoryAnalyticsDto;
 import com.inventory.analytics.rest.dto.response.InventoryAnalyticsResponse;
 import com.inventory.analytics.rest.dto.response.InventorySummaryDto;
@@ -39,6 +41,9 @@ public class InventoryAnalyticsService {
   private InventoryRepository inventoryRepository;
 
   @Autowired
+  private MetricsWrapper metrics;
+
+  @Autowired
   private InventoryVerticalExpiryHandler inventoryVerticalExpiryHandler;
 
   /**
@@ -64,6 +69,14 @@ public class InventoryAnalyticsService {
           ErrorCode.UNAUTHORIZED,
           "User not authenticated or shop not found");
     }
+
+    metrics.record(
+        AnalyticsMetricsConstants.QUERIES_TOTAL,
+        1,
+        "module",
+        AnalyticsMetricsConstants.MODULE,
+        "operation",
+        "inventory");
 
     try {
       // Set defaults

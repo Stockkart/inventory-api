@@ -3,6 +3,8 @@ package com.inventory.documentservice.service;
 import com.inventory.documentservice.domain.DocumentTemplateFamily;
 import com.inventory.documentservice.domain.PrinterType;
 import com.inventory.documentservice.rest.dto.GenerateCreditNoteRequest;
+import com.inventory.documentservice.utils.constants.DocumentMetricsConstants;
+import com.inventory.metrics.MetricsWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -24,11 +26,22 @@ public class CreditNotePdfService {
   @Autowired
   private HtmlToPdfConverter htmlToPdfConverter;
 
+  @Autowired
+  private MetricsWrapper metrics;
+
   public byte[] generateCreditNotePdf(GenerateCreditNoteRequest request) {
     try {
       log.debug("Generating credit note PDF: {}", request != null ? request.getCreditNoteNo() : null);
       String html = renderCreditNoteHtml(request);
-      return htmlToPdfConverter.convert(html);
+      byte[] pdf = htmlToPdfConverter.convert(html);
+      metrics.record(
+          DocumentMetricsConstants.GENERATED_TOTAL,
+          1,
+          "module",
+          DocumentMetricsConstants.MODULE,
+          "operation",
+          "credit_note_pdf");
+      return pdf;
     } catch (Exception e) {
       log.error("Error generating credit note PDF: {}", e.getMessage(), e);
       throw new RuntimeException("Failed to generate credit note PDF", e);

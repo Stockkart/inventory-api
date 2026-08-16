@@ -4,8 +4,10 @@ import com.inventory.accounting.domain.model.Account;
 import com.inventory.accounting.domain.model.AccountType;
 import com.inventory.accounting.domain.model.NormalBalance;
 import com.inventory.accounting.domain.repository.AccountRepository;
+import com.inventory.accounting.utils.constants.AccountingMetricsConstants;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.metrics.MetricsWrapper;
 import java.time.Instant;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +25,7 @@ public class AccountService {
 
   private final AccountRepository accountRepository;
   private final ChartOfAccountsSeeder seeder;
+  private final MetricsWrapper metrics;
 
   @Transactional(readOnly = true)
   public List<Account> list(String shopId) {
@@ -96,7 +99,13 @@ public class AccountService {
     a.setActive(true);
     a.setCreatedAt(now);
     a.setUpdatedAt(now);
-    return accountRepository.save(a);
+    Account saved = accountRepository.save(a);
+    metrics.record(
+        AccountingMetricsConstants.ACCOUNTS_TOTAL,
+        1,
+        "module",
+        AccountingMetricsConstants.MODULE);
+    return saved;
   }
 
   @Transactional

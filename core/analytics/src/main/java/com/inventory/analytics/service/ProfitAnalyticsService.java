@@ -8,6 +8,8 @@ import com.inventory.analytics.mapper.ProfitAnalyticsMapper;
 import com.inventory.analytics.mapper.ProfitAnalyticsResponseParams;
 import com.inventory.analytics.utils.ProfitAnalyticsUtils;
 import com.inventory.analytics.utils.SalesAnalyticsUtils;
+import com.inventory.analytics.utils.constants.AnalyticsMetricsConstants;
+import com.inventory.metrics.MetricsWrapper;
 import com.inventory.analytics.rest.dto.response.ProfitAnalyticsResponse;
 import com.inventory.analytics.rest.dto.response.ProductProfitDto;
 import com.inventory.analytics.rest.dto.response.ProfitByGroupDto;
@@ -38,6 +40,9 @@ public class ProfitAnalyticsService {
   @Autowired
   private ProfitAnalyticsMapper profitAnalyticsMapper;
 
+  @Autowired
+  private MetricsWrapper metrics;
+
   /**
    * Get profit and margin analytics for a date range.
    *
@@ -63,6 +68,14 @@ public class ProfitAnalyticsService {
           ErrorCode.UNAUTHORIZED,
           "User not authenticated or shop not found");
     }
+
+    metrics.record(
+        AnalyticsMetricsConstants.QUERIES_TOTAL,
+        1,
+        "module",
+        AnalyticsMetricsConstants.MODULE,
+        "operation",
+        "profit");
 
     try {
       // Set default values

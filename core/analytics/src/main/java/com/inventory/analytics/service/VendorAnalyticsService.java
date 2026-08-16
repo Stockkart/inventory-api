@@ -8,6 +8,8 @@ import com.inventory.analytics.mapper.VendorAnalyticsMapper;
 import com.inventory.analytics.mapper.VendorAnalyticsResponseParams;
 import com.inventory.analytics.utils.VendorAnalyticsUtils;
 import com.inventory.analytics.utils.SalesAnalyticsUtils;
+import com.inventory.analytics.utils.constants.AnalyticsMetricsConstants;
+import com.inventory.metrics.MetricsWrapper;
 import com.inventory.analytics.rest.dto.response.VendorAnalyticsResponse;
 import com.inventory.analytics.rest.dto.response.VendorDependencyDto;
 import com.inventory.analytics.rest.dto.response.VendorRevenueDto;
@@ -50,6 +52,9 @@ public class VendorAnalyticsService {
   @Autowired
   private InventoryVerticalExtensionHandler inventoryVerticalExtensionHandler;
 
+  @Autowired
+  private MetricsWrapper metrics;
+
   /**
    * Get comprehensive vendor analytics.
    *
@@ -69,6 +74,14 @@ public class VendorAnalyticsService {
           ErrorCode.UNAUTHORIZED,
           "User not authenticated or shop not found");
     }
+
+    metrics.record(
+        AnalyticsMetricsConstants.QUERIES_TOTAL,
+        1,
+        "module",
+        AnalyticsMetricsConstants.MODULE,
+        "operation",
+        "vendor");
 
     try {
       // Set default values

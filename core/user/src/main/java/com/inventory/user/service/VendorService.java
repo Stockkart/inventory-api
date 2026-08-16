@@ -19,6 +19,8 @@ import com.inventory.user.rest.dto.response.VendorDto;
 import com.inventory.user.rest.dto.response.VendorListResponse;
 import com.inventory.user.mapper.VendorMapper;
 import com.inventory.user.validation.VendorValidator;
+import com.inventory.metrics.MetricsWrapper;
+import com.inventory.user.utils.constants.UserMetricsConstants;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
@@ -58,6 +60,9 @@ public class VendorService {
 
   @Autowired(required = false)
   private UserShopMembershipService membershipService;
+
+  @Autowired
+  private MetricsWrapper metrics;
 
   /**
    * Create a vendor and link it to a shop.
@@ -207,6 +212,13 @@ public class VendorService {
       CreateVendorResponse response = vendorMapper.toCreateResponse(vendor);
 
       log.info("Successfully created vendor with ID: {} for shop: {}", vendor.getId(), shopId);
+      metrics.record(
+          UserMetricsConstants.VENDORS_TOTAL,
+          1,
+          "module",
+          UserMetricsConstants.MODULE,
+          "operation",
+          "create");
       return response;
 
     } catch (ValidationException e) {
@@ -478,6 +490,13 @@ public class VendorService {
       vendor.setUpdatedAt(Instant.now());
       vendor = vendorRepository.save(vendor);
       log.info("Updated vendor with ID: {}", vendor.getId());
+      metrics.record(
+          UserMetricsConstants.VENDORS_TOTAL,
+          1,
+          "module",
+          UserMetricsConstants.MODULE,
+          "operation",
+          "update");
     }
     return vendorMapper.toDto(vendor);
   }

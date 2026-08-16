@@ -1,5 +1,9 @@
 package com.inventory.resource.rest.controller;
 
+
+import com.inventory.metrics.annotation.Latency;
+import com.inventory.metrics.annotation.RecordRequestRate;
+import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.resource.rest.dto.response.TutorialResourceResponse;
 import com.inventory.resource.service.TutorialResourceService;
@@ -15,6 +19,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/resources")
 @RequiredArgsConstructor
+@Latency(module = "resource")
+@RecordRequestRate(module = "resource")
+@RecordStatusCodes(module = "resource")
 public class TutorialResourceController {
 
   private final TutorialResourceService tutorialResourceService;

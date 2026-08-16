@@ -17,6 +17,8 @@ import com.inventory.product.rest.dto.response.BarcodeLabelsResponse;
 import com.inventory.product.rest.dto.response.BarcodePoolListResponse;
 import com.inventory.product.rest.dto.response.GenerateBarcodesResponse;
 import com.inventory.product.validation.ProductValidator;
+import com.inventory.metrics.MetricsWrapper;
+import com.inventory.product.utils.constants.ProductMetricsConstants;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
@@ -59,6 +61,9 @@ public class BarcodeService {
   @Autowired
   private ProductValidator productValidator;
 
+  @Autowired
+  private MetricsWrapper metrics;
+
   /**
    * Generate unique codes and store them as UNUSED pool rows (also used for count=1 at registration).
    */
@@ -87,6 +92,11 @@ public class BarcodeService {
       items.add(toPoolDto(pool));
     }
     log.info("Generated {} barcodes for shop {}", count, shopId);
+    metrics.record(
+        ProductMetricsConstants.BARCODES_GENERATED,
+        count,
+        "module",
+        ProductMetricsConstants.MODULE);
     return new GenerateBarcodesResponse(items);
   }
 

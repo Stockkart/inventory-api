@@ -1,0 +1,657 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "Bind at import to grafanacloud-myntrackofficial-prom",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "__requires": [
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "10.0.0"
+    },
+    {
+      "type": "datasource",
+      "id": "prometheus",
+      "name": "Prometheus",
+      "version": "1.0.0"
+    },
+    {
+      "type": "panel",
+      "id": "timeseries",
+      "name": "Time series",
+      "version": ""
+    }
+  ],
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "OCR",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "OCR parse rate by provider",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "paletteClassic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (provider, outcome) (rate(inventory_ocr_parse_total{service=\"inventory-api\", env=\"$env\"}[5m]))",
+          "legendFormat": "{{provider}} {{outcome}}",
+          "range": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "OCR parse p95",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "paletteClassic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "inventory_ocr_parse{service=\"inventory-api\", env=\"$env\", quantile=\"0.95\"}",
+          "legendFormat": "{{provider}}",
+          "range": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "OCR items",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "paletteClassic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (provider) (rate(inventory_ocr_items{service=\"inventory-api\", env=\"$env\"}[5m]))",
+          "legendFormat": "{{provider}}",
+          "range": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "row",
+      "title": "Razorpay",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      },
+      "panels": []
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Plan gateway operations",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 18
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "paletteClassic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (operation, outcome) (rate(inventory_plan_gateway{service=\"inventory-api\", env=\"$env\", provider=\"razorpay\"}[5m]))",
+          "legendFormat": "{{operation}} {{outcome}}",
+          "range": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Plan gateway p95",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 18
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "paletteClassic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "inventory_plan_gateway{service=\"inventory-api\", env=\"$env\", provider=\"razorpay\", quantile=\"0.95\"}",
+          "legendFormat": "{{operation}}",
+          "range": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Plan webhooks",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 26
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "paletteClassic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (outcome) (rate(inventory_plan_webhooks_total{service=\"inventory-api\", env=\"$env\"}[5m]))",
+          "legendFormat": "{{outcome}}",
+          "range": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "row",
+      "title": "Notifications",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 34
+      },
+      "panels": []
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Notification send failures",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 35
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "paletteClassic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (channel) (rate(inventory_notifications_sent_total{service=\"inventory-api\", env=\"$env\", outcome=\"error\"}[5m]))",
+          "legendFormat": "{{channel}} errors",
+          "range": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Notifications sent",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 35
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "paletteClassic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (channel, outcome) (rate(inventory_notifications_sent_total{service=\"inventory-api\", env=\"$env\"}[5m]))",
+          "legendFormat": "{{channel}} {{outcome}}",
+          "range": true,
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": [
+    "inventory-api",
+    "external"
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "env",
+        "label": "env",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "query": "label_values({service=\"inventory-api\"}, env)",
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": false,
+        "multi": false,
+        "current": {
+          "text": "prod",
+          "value": "prod"
+        }
+      }
+    ]
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "inventory-api / 04 external",
+  "uid": "inventory-api-04-external",
+  "version": 1,
+  "weekStart": ""
+}

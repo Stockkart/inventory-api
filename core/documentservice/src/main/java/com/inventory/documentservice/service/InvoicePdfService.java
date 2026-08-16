@@ -3,6 +3,8 @@ package com.inventory.documentservice.service;
 import com.inventory.documentservice.domain.DocumentTemplateFamily;
 import com.inventory.documentservice.domain.PrinterType;
 import com.inventory.documentservice.rest.dto.GenerateInvoiceRequest;
+import com.inventory.documentservice.utils.constants.DocumentMetricsConstants;
+import com.inventory.metrics.MetricsWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -28,6 +30,9 @@ public class InvoicePdfService {
   @Autowired
   private HtmlToPdfConverter htmlToPdfConverter;
 
+  @Autowired
+  private MetricsWrapper metrics;
+
   /**
    * Generate invoice PDF from purchase data using Thymeleaf template.
    *
@@ -38,7 +43,15 @@ public class InvoicePdfService {
     try {
       log.debug("Generating invoice PDF for invoice: {}", request.getInvoiceNo());
       String html = renderInvoiceHtml(request);
-      return htmlToPdfConverter.convert(html);
+      byte[] pdf = htmlToPdfConverter.convert(html);
+      metrics.record(
+          DocumentMetricsConstants.GENERATED_TOTAL,
+          1,
+          "module",
+          DocumentMetricsConstants.MODULE,
+          "operation",
+          "invoice_pdf");
+      return pdf;
     } catch (Exception e) {
       log.error("Error generating invoice PDF: {}", e.getMessage(), e);
       throw new RuntimeException("Failed to generate invoice PDF", e);
