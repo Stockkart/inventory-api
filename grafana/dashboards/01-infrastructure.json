@@ -42,7 +42,7 @@
     {
       "id": 1,
       "type": "row",
-      "title": "Runtime",
+      "title": "Memory (matches DigitalOcean RSS)",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -55,82 +55,15 @@
     {
       "id": 2,
       "type": "timeseries",
-      "title": "CPU usage",
+      "title": "Process RSS",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
+        "w": 8,
         "x": 0,
-        "y": 1
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "paletteClassic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "drawStyle": "line",
-            "fillOpacity": 8,
-            "gradientMode": "none",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            }
-          },
-          "unit": "percentunit"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "calcs": [
-            "mean",
-            "lastNotNull"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "editorMode": "code",
-          "expr": "process_cpu_usage{service=\"inventory-api\", env=\"$env\"}",
-          "legendFormat": "cpu",
-          "range": true,
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 3,
-      "type": "timeseries",
-      "title": "JVM heap used",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
         "y": 1
       },
       "fieldConfig": {
@@ -179,26 +112,38 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "jvm_memory_used_bytes{service=\"inventory-api\", env=\"$env\", area=\"heap\"}",
-          "legendFormat": "{{id}}",
+          "expr": "process_resident_memory_bytes{service=\"inventory-api\", env=\"$env\"}",
+          "legendFormat": "RSS",
           "range": true,
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "process_virtual_memory_bytes{service=\"inventory-api\", env=\"$env\"}",
+          "legendFormat": "virtual",
+          "range": true,
+          "refId": "B"
         }
-      ]
+      ],
+      "description": "RSS is what DigitalOcean shows as memory %. Needs API rebuild. Switch env to prod."
     },
     {
-      "id": 4,
+      "id": 3,
       "type": "timeseries",
-      "title": "GC pause",
+      "title": "JVM heap used / committed / max",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 9
+        "w": 8,
+        "x": 8,
+        "y": 1
       },
       "fieldConfig": {
         "defaults": {
@@ -220,7 +165,7 @@
               "mode": "none"
             }
           },
-          "unit": "s"
+          "unit": "bytes"
         },
         "overrides": []
       },
@@ -246,15 +191,265 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "rate(jvm_gc_pause_seconds_sum{service=\"inventory-api\", env=\"$env\"}[5m])",
-          "legendFormat": "{{action}}",
+          "expr": "sum(jvm_memory_used_bytes{service=\"inventory-api\", env=\"$env\", area=\"heap\"})",
+          "legendFormat": "used",
           "range": true,
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum(jvm_memory_committed_bytes{service=\"inventory-api\", env=\"$env\", area=\"heap\"})",
+          "legendFormat": "committed",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum(jvm_memory_max_bytes{service=\"inventory-api\", env=\"$env\", area=\"heap\"})",
+          "legendFormat": "max",
+          "range": true,
+          "refId": "C"
+        }
+      ],
+      "description": "Committed is reserved from the OS. Max is -XX:MaxRAMPercentage (75% of cgroup). If committed tracks toward max, heap pressure."
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "JVM non-heap (Metaspace / code)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "paletteClassic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "jvm_memory_used_bytes{service=\"inventory-api\", env=\"$env\", area=\"nonheap\"}",
+          "legendFormat": "{{id}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "description": "Metaspace/CodeHeap grow with classload and JIT. A climb that never drops is a classloader leak."
+    },
+    {
+      "id": 5,
+      "type": "row",
+      "title": "Runtime",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      },
+      "panels": []
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "CPU usage",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 10
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "paletteClassic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "process_cpu_usage{service=\"inventory-api\", env=\"$env\"}",
+          "legendFormat": "process",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "system_cpu_usage{service=\"inventory-api\", env=\"$env\"}",
+          "legendFormat": "system",
+          "range": true,
+          "refId": "B"
         }
       ]
     },
     {
-      "id": 5,
+      "id": 7,
+      "type": "timeseries",
+      "title": "Direct / mapped buffers",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 10
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "paletteClassic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "jvm_buffer_memory_used_bytes{service=\"inventory-api\", env=\"$env\"}",
+          "legendFormat": "{{id}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "description": "Netty/Mongo/NIO direct buffers sit outside the heap and still count toward RSS."
+    },
+    {
+      "id": 8,
       "type": "timeseries",
       "title": "JVM threads",
       "datasource": {
@@ -263,9 +458,9 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 9
+        "w": 8,
+        "x": 16,
+        "y": 10
       },
       "fieldConfig": {
         "defaults": {
@@ -313,15 +508,209 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "jvm_threads_live_threads{service=\"inventory-api\", env=\"$env\"}",
+          "expr": "jvm_threads_live_threads{service=\"inventory-api\", env=\"$env\"} or jvm_threads_live{service=\"inventory-api\", env=\"$env\"}",
           "legendFormat": "live",
           "range": true,
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "jvm_threads_daemon_threads{service=\"inventory-api\", env=\"$env\"} or jvm_threads_daemon{service=\"inventory-api\", env=\"$env\"}",
+          "legendFormat": "daemon",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "jvm_threads_peak_threads{service=\"inventory-api\", env=\"$env\"} or jvm_threads_peak{service=\"inventory-api\", env=\"$env\"}",
+          "legendFormat": "peak",
+          "range": true,
+          "refId": "C"
         }
-      ]
+      ],
+      "description": "Each thread costs ~1MB stack. A rising live count explains RSS growth with a stable heap."
     },
     {
-      "id": 6,
+      "id": 9,
+      "type": "row",
+      "title": "GC",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      },
+      "panels": []
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Old-gen live data",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 19
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "paletteClassic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "jvm_gc_live_data_size_bytes{service=\"inventory-api\", env=\"$env\"}",
+          "legendFormat": "live after GC",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "jvm_gc_max_data_size_bytes{service=\"inventory-api\", env=\"$env\"}",
+          "legendFormat": "old-gen max",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "description": "Live data after old-gen GC. If this ratchets up over hours, that is a heap leak (not just cache)."
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "GC allocation rate",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 19
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "paletteClassic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "unit": "Bps"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "rate(jvm_gc_memory_allocated_bytes{service=\"inventory-api\", env=\"$env\"}[5m]) or rate(jvm_gc_memory_allocated_bytes_total{service=\"inventory-api\", env=\"$env\"}[5m])",
+          "legendFormat": "allocated",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "rate(jvm_gc_memory_promoted_bytes{service=\"inventory-api\", env=\"$env\"}[5m]) or rate(jvm_gc_memory_promoted_bytes_total{service=\"inventory-api\", env=\"$env\"}[5m])",
+          "legendFormat": "promoted",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "description": "Young-gen allocation and promotion to old gen. High promote + climbing live data = leak or oversized working set."
+    },
+    {
+      "id": 12,
       "type": "row",
       "title": "Tomcat / executors",
       "collapsed": false,
@@ -329,12 +718,12 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 17
+        "y": 27
       },
       "panels": []
     },
     {
-      "id": 7,
+      "id": 13,
       "type": "timeseries",
       "title": "Tomcat threads",
       "datasource": {
@@ -345,7 +734,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 18
+        "y": 28
       },
       "fieldConfig": {
         "defaults": {
@@ -393,7 +782,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "tomcat_threads_current_threads{service=\"inventory-api\", env=\"$env\"}",
+          "expr": "tomcat_threads_current_threads{service=\"inventory-api\", env=\"$env\"} or tomcat_threads_current{service=\"inventory-api\", env=\"$env\"}",
           "legendFormat": "current",
           "range": true,
           "refId": "A"
@@ -401,7 +790,7 @@
       ]
     },
     {
-      "id": 8,
+      "id": 14,
       "type": "timeseries",
       "title": "Tomcat busy",
       "datasource": {
@@ -412,7 +801,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 18
+        "y": 28
       },
       "fieldConfig": {
         "defaults": {
@@ -460,7 +849,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "tomcat_threads_busy_threads{service=\"inventory-api\", env=\"$env\"}",
+          "expr": "tomcat_threads_busy_threads{service=\"inventory-api\", env=\"$env\"} or tomcat_threads_busy{service=\"inventory-api\", env=\"$env\"}",
           "legendFormat": "busy",
           "range": true,
           "refId": "A"
@@ -468,7 +857,7 @@
       ]
     },
     {
-      "id": 9,
+      "id": 15,
       "type": "timeseries",
       "title": "Executor pool size",
       "datasource": {
@@ -479,7 +868,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 18
+        "y": 28
       },
       "fieldConfig": {
         "defaults": {
@@ -535,7 +924,7 @@
       ]
     },
     {
-      "id": 10,
+      "id": 16,
       "type": "row",
       "title": "Mongo pool / disk",
       "collapsed": false,
@@ -543,12 +932,12 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 26
+        "y": 36
       },
       "panels": []
     },
     {
-      "id": 11,
+      "id": 17,
       "type": "timeseries",
       "title": "Mongo pool size",
       "datasource": {
@@ -559,7 +948,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 27
+        "y": 37
       },
       "fieldConfig": {
         "defaults": {
@@ -615,7 +1004,7 @@
       ]
     },
     {
-      "id": 12,
+      "id": 18,
       "type": "timeseries",
       "title": "Mongo checked out",
       "datasource": {
@@ -626,7 +1015,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 27
+        "y": 37
       },
       "fieldConfig": {
         "defaults": {
@@ -682,7 +1071,7 @@
       ]
     },
     {
-      "id": 13,
+      "id": 19,
       "type": "timeseries",
       "title": "Disk free (optional)",
       "datasource": {
@@ -693,7 +1082,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 27
+        "y": 37
       },
       "fieldConfig": {
         "defaults": {
@@ -747,6 +1136,98 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "id": 21,
+      "type": "row",
+      "title": "OS",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 45
+      },
+      "panels": []
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Open file descriptors",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 46
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "paletteClassic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "process_files_open_files{service=\"inventory-api\", env=\"$env\"}",
+          "legendFormat": "open",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "process_files_max_files{service=\"inventory-api\", env=\"$env\"}",
+          "legendFormat": "max",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "description": "Leaked sockets/files show as open FDs climbing toward max."
     }
   ],
   "refresh": "1m",
