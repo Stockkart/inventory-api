@@ -126,7 +126,7 @@ On **DigitalOcean App Platform** set:
 
 | Variable | Description |
 |----------|-------------|
-| `SPRING_PROFILES_ACTIVE` | `prod` (INFO logs) |
+| `SPRING_PROFILES_ACTIVE` | `prod` (INFO logs; sets `env=prod` on metrics/logs) |
 | `GRAFANA_CLOUD_OTLP_URL` | OTLP metrics URL from Grafana Cloud (…`/otlp/v1/metrics`) |
 | `GRAFANA_CLOUD_OTLP_USER` | Prometheus / OTLP instance user id |
 | `GRAFANA_CLOUD_LOKI_URL` | Loki push URL (`…/loki/api/v1/push`) |

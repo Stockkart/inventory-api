@@ -23,20 +23,20 @@ public class GrafanaCloudOtlpConfiguration {
   @Bean
   MeterRegistryCustomizer<MeterRegistry> grafanaCloudCommonTags(
       @Value("${spring.profiles.active:local}") String activeProfiles) {
-    String env = activeProfiles.contains(",") ? activeProfiles.split(",")[0] : activeProfiles;
-    if (!StringUtils.hasText(env)) {
-      env = "local";
-    }
-    String envTag = env;
-    return registry -> registry.config().commonTags("service", "inventory-api", "env", envTag);
+    String env = envLabel(activeProfiles);
+    return registry -> registry.config().commonTags("service", "inventory-api", "env", env);
   }
 
   @Bean
   @ConditionalOnExpression(
       "T(org.springframework.util.StringUtils).hasText('${grafana.cloud.otlp.url:}')")
-  OtlpMeterRegistry otlpMeterRegistry(GrafanaCloudProperties props, Clock clock) {
+  OtlpMeterRegistry otlpMeterRegistry(
+      GrafanaCloudProperties props,
+      Clock clock,
+      @Value("${spring.profiles.active:local}") String activeProfiles) {
     String user = props.getOtlp().getUser();
     String token = props.getApiToken();
+    String env = envLabel(activeProfiles);
     String basic =
         Base64.getEncoder()
             .encodeToString((user + ":" + token).getBytes(StandardCharsets.UTF_8));
@@ -54,7 +54,19 @@ public class GrafanaCloudOtlpConfiguration {
 
           @Override
           public Duration step() {
+            // Grafana Cloud Mimir: 75 req/s per tenant. 5s export + JVM/HTTP meters
+            // bursts that budget (HTTP 429 err-mimir-tenant-max-request-rate).
             return Duration.ofSeconds(60);
+          }
+
+          @Override
+          public int batchSize() {
+            return 10_000;
+          }
+
+          @Override
+          public Map<String, String> resourceAttributes() {
+            return Map.of("service.name", "inventory-api", "deployment.environment", env);
           }
 
           @Override
@@ -63,5 +75,14 @@ public class GrafanaCloudOtlpConfiguration {
           }
         };
     return new OtlpMeterRegistry(config, clock);
+  }
+
+  /** Loki/OTLP label; first profile only (commas break Loki streams). */
+  static String envLabel(String activeProfiles) {
+    if (!StringUtils.hasText(activeProfiles)) {
+      return "local";
+    }
+    String first = activeProfiles.trim().split(",")[0].trim();
+    return StringUtils.hasText(first) ? first : "local";
   }
 }

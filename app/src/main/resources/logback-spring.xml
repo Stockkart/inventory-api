@@ -4,6 +4,11 @@
     <springProperty name="LOKI_USER" source="grafana.cloud.loki.user" defaultValue=""/>
     <springProperty name="LOKI_TOKEN" source="grafana.cloud.api-token" defaultValue=""/>
     <springProperty name="APP_ENV" source="spring.profiles.active" defaultValue="local"/>
+    <if condition='property("APP_ENV") == null || property("APP_ENV").length() == 0'>
+        <then>
+            <property name="APP_ENV" value="local"/>
+        </then>
+    </if>
 
     <property name="JSON_PATTERN"
               value='{"timestamp":"%date{yyyy-MM-dd&apos;T&apos;HH:mm:ss.SSSZ}","level":"%level","thread":"%thread","logger":"%logger","message":"%msg","requestId":"%mdc{requestId}","shopId":"%mdc{shopId}","userId":"%mdc{userId}","traceId":"%mdc{traceId}","pluginId":"%mdc{pluginId}","exception":"%ex"}%n'/>
