@@ -14,6 +14,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 import org.springframework.util.StringUtils;
 
 @Configuration
@@ -28,6 +29,7 @@ public class GrafanaCloudOtlpConfiguration {
   }
 
   @Bean
+  @Profile("prod")
   @ConditionalOnExpression(
       "T(org.springframework.util.StringUtils).hasText('${grafana.cloud.otlp.url:}')")
   OtlpMeterRegistry otlpMeterRegistry(

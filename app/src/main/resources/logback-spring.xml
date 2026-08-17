@@ -69,18 +69,8 @@
 
     <springProfile name="!prod">
         <logger name="com.inventory" level="DEBUG"/>
-        <if condition='property("LOKI_URL").length() &gt; 8'>
-            <then>
-                <root level="DEBUG">
-                    <appender-ref ref="CONSOLE_JSON"/>
-                    <appender-ref ref="LOKI"/>
-                </root>
-            </then>
-            <else>
-                <root level="DEBUG">
-                    <appender-ref ref="CONSOLE_JSON"/>
-                </root>
-            </else>
-        </if>
+        <root level="DEBUG">
+            <appender-ref ref="CONSOLE_JSON"/>
+        </root>
     </springProfile>
 </configuration>
