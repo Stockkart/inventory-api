@@ -69,7 +69,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "paletteClassic"
+            "mode": "palette-classic-by-name"
           },
           "custom": {
             "axisBorderShow": false,
@@ -88,7 +88,38 @@
           },
           "unit": "bytes"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "RSS"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#5794F2"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "virtual"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#FF9830"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -148,7 +179,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "paletteClassic"
+            "mode": "palette-classic-by-name"
           },
           "custom": {
             "axisBorderShow": false,
@@ -167,7 +198,53 @@
           },
           "unit": "bytes"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "used"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#73BF69"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "committed"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#FF9830"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "max"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#F2495C"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -238,7 +315,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "paletteClassic"
+            "mode": "palette-classic-by-name"
           },
           "custom": {
             "axisBorderShow": false,
@@ -319,7 +396,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "paletteClassic"
+            "mode": "palette-classic-by-name"
           },
           "custom": {
             "axisBorderShow": false,
@@ -338,7 +415,38 @@
           },
           "unit": "percentunit"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "process"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#5794F2"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "system"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#FF9830"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -397,7 +505,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "paletteClassic"
+            "mode": "palette-classic-by-name"
           },
           "custom": {
             "axisBorderShow": false,
@@ -416,7 +524,53 @@
           },
           "unit": "bytes"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "direct"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#5794F2"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "mapped"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#73BF69"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "mapped - 'non-volatile memory'"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#B877D9"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -465,7 +619,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "paletteClassic"
+            "mode": "palette-classic-by-name"
           },
           "custom": {
             "axisBorderShow": false,
@@ -484,7 +638,53 @@
           },
           "unit": "short"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "live"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#73BF69"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "daemon"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#5794F2"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "peak"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#FF9830"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -568,7 +768,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "paletteClassic"
+            "mode": "palette-classic-by-name"
           },
           "custom": {
             "axisBorderShow": false,
@@ -587,7 +787,38 @@
           },
           "unit": "bytes"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "live after GC"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#73BF69"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "old-gen max"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#F2495C"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -647,7 +878,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "paletteClassic"
+            "mode": "palette-classic-by-name"
           },
           "custom": {
             "axisBorderShow": false,
@@ -666,7 +897,38 @@
           },
           "unit": "Bps"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "allocated"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#5794F2"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "promoted"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#B877D9"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -739,7 +1001,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "paletteClassic"
+            "mode": "palette-classic-by-name"
           },
           "custom": {
             "axisBorderShow": false,
@@ -806,7 +1068,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "paletteClassic"
+            "mode": "palette-classic-by-name"
           },
           "custom": {
             "axisBorderShow": false,
@@ -873,7 +1135,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "paletteClassic"
+            "mode": "palette-classic-by-name"
           },
           "custom": {
             "axisBorderShow": false,
@@ -953,7 +1215,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "paletteClassic"
+            "mode": "palette-classic-by-name"
           },
           "custom": {
             "axisBorderShow": false,
@@ -1020,7 +1282,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "paletteClassic"
+            "mode": "palette-classic-by-name"
           },
           "custom": {
             "axisBorderShow": false,
@@ -1087,7 +1349,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "paletteClassic"
+            "mode": "palette-classic-by-name"
           },
           "custom": {
             "axisBorderShow": false,
@@ -1167,7 +1429,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "paletteClassic"
+            "mode": "palette-classic-by-name"
           },
           "custom": {
             "axisBorderShow": false,
@@ -1186,7 +1448,38 @@
           },
           "unit": "short"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "open"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#5794F2"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "max"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#F2495C"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {

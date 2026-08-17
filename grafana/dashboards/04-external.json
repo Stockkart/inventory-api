@@ -69,7 +69,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "paletteClassic"
+            "mode": "palette-classic"
           },
           "custom": {
             "axisBorderShow": false,
@@ -88,7 +88,38 @@
           },
           "unit": "short"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "(?i).*\\b(error|fail|failed|failure)s?\\b.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#F2495C"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "(?i).*\\b(success|ok|succeeded)\\b.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#73BF69"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -136,7 +167,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "paletteClassic"
+            "mode": "palette-classic"
           },
           "custom": {
             "axisBorderShow": false,
@@ -155,7 +186,38 @@
           },
           "unit": "s"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "(?i).*\\b(error|fail|failed|failure)s?\\b.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#F2495C"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "(?i).*\\b(success|ok|succeeded)\\b.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#73BF69"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -203,7 +265,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "paletteClassic"
+            "mode": "palette-classic"
           },
           "custom": {
             "axisBorderShow": false,
@@ -222,7 +284,38 @@
           },
           "unit": "short"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "(?i).*\\b(error|fail|failed|failure)s?\\b.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#F2495C"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "(?i).*\\b(success|ok|succeeded)\\b.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#73BF69"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -283,7 +376,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "paletteClassic"
+            "mode": "palette-classic"
           },
           "custom": {
             "axisBorderShow": false,
@@ -302,7 +395,38 @@
           },
           "unit": "short"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "(?i).*\\b(error|fail|failed|failure)s?\\b.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#F2495C"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "(?i).*\\b(success|ok|succeeded)\\b.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#73BF69"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -350,7 +474,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "paletteClassic"
+            "mode": "palette-classic"
           },
           "custom": {
             "axisBorderShow": false,
@@ -369,7 +493,38 @@
           },
           "unit": "s"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "(?i).*\\b(error|fail|failed|failure)s?\\b.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#F2495C"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "(?i).*\\b(success|ok|succeeded)\\b.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#73BF69"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -417,7 +572,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "paletteClassic"
+            "mode": "palette-classic"
           },
           "custom": {
             "axisBorderShow": false,
@@ -436,7 +591,38 @@
           },
           "unit": "short"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "(?i).*\\b(error|fail|failed|failure)s?\\b.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#F2495C"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "(?i).*\\b(success|ok|succeeded)\\b.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#73BF69"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -497,7 +683,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "paletteClassic"
+            "mode": "palette-classic"
           },
           "custom": {
             "axisBorderShow": false,
@@ -516,7 +702,38 @@
           },
           "unit": "short"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "(?i).*\\b(error|fail|failed|failure)s?\\b.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#F2495C"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "(?i).*\\b(success|ok|succeeded)\\b.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#73BF69"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -564,7 +781,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "paletteClassic"
+            "mode": "palette-classic"
           },
           "custom": {
             "axisBorderShow": false,
@@ -583,7 +800,38 @@
           },
           "unit": "short"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "(?i).*\\b(error|fail|failed|failure)s?\\b.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#F2495C"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "(?i).*\\b(success|ok|succeeded)\\b.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#73BF69"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {

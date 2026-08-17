@@ -27,6 +27,12 @@
       "id": "timeseries",
       "name": "Time series",
       "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "stat",
+      "name": "Stat",
+      "version": ""
     }
   ],
   "annotations": {
@@ -54,56 +60,63 @@
     },
     {
       "id": 2,
-      "type": "timeseries",
-      "title": "Process uptime",
+      "type": "stat",
+      "title": "Process availability",
+      "description": "Average availability over the selected time range. 100% = a heartbeat every minute for the whole window.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
+        "w": 8,
         "x": 0,
         "y": 1
       },
       "fieldConfig": {
         "defaults": {
+          "decimals": 0,
+          "min": 0,
+          "max": 100,
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 99
+              },
+              {
+                "color": "green",
+                "value": 99.9
+              }
+            ]
+          },
           "color": {
-            "mode": "paletteClassic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "drawStyle": "line",
-            "fillOpacity": 8,
-            "gradientMode": "none",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            }
-          },
-          "unit": "s"
+            "mode": "thresholds"
+          }
         },
         "overrides": []
       },
       "options": {
-        "legend": {
+        "reduceOptions": {
           "calcs": [
-            "mean",
             "lastNotNull"
           ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
+          "fields": "",
+          "values": false
         },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
+        "orientation": "auto",
+        "textMode": "value",
+        "wideLayout": true,
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "showPercentChange": false
       },
       "targets": [
         {
@@ -112,10 +125,11 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "process_uptime_seconds{service=\"inventory-api\", env=\"$env\"}",
-          "legendFormat": "uptime",
-          "range": true,
-          "refId": "A"
+          "expr": "clamp_max((count_over_time(process_uptime_gauge_seconds{service=\"inventory-api\", env=\"$env\"}[$__range]) or count_over_time(process_uptime_seconds{service=\"inventory-api\", env=\"$env\"}[$__range]) or count_over_time(process_uptime{service=\"inventory-api\", env=\"$env\"}[$__range])) / ($__range_s / 60) * 100, 100)",
+          "legendFormat": "availability",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ]
     },
@@ -129,14 +143,14 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 12,
+        "w": 8,
+        "x": 8,
         "y": 1
       },
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "paletteClassic"
+            "mode": "palette-classic"
           },
           "custom": {
             "axisBorderShow": false,
@@ -155,7 +169,23 @@
           },
           "unit": "s"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ready"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#73BF69"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -179,8 +209,80 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "application_ready_time_seconds{service=\"inventory-api\", env=\"$env\"}",
+          "expr": "application_ready_gauge_seconds{service=\"inventory-api\", env=\"$env\"} or application_ready_time_seconds{service=\"inventory-api\", env=\"$env\"} or application_ready_time{service=\"inventory-api\", env=\"$env\"}",
           "legendFormat": "ready",
+          "range": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Downtime",
+      "description": "Percent of each 5-minute window with no heartbeat. 0% = up, 100% = no samples.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#F2495C"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "drawStyle": "line",
+            "fillOpacity": 20,
+            "gradientMode": "none",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "decimals": 0,
+          "min": 0,
+          "max": 100,
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "clamp_min(100 - clamp_max((count_over_time(process_uptime_gauge_seconds{service=\"inventory-api\", env=\"$env\"}[5m]) or count_over_time(process_uptime_seconds{service=\"inventory-api\", env=\"$env\"}[5m]) or count_over_time(process_uptime{service=\"inventory-api\", env=\"$env\"}[5m])) / 5 * 100, 100), 0)",
+          "legendFormat": "downtime",
           "range": true,
           "refId": "A"
         }
@@ -216,7 +318,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "paletteClassic"
+            "mode": "palette-classic"
           },
           "custom": {
             "axisBorderShow": false,
@@ -235,7 +337,23 @@
           },
           "unit": "short"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "errors/s"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#F2495C"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -270,6 +388,7 @@
       "id": 6,
       "type": "timeseries",
       "title": "HTTP 5xx by route",
+      "description": "Empty/zero means no HTTP 500s. Logback errors can spike on 4xx or background jobs without a 5xx.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -283,7 +402,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "paletteClassic"
+            "mode": "palette-classic"
           },
           "custom": {
             "axisBorderShow": false,
@@ -302,7 +421,38 @@
           },
           "unit": "short"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".* 5\\d\\d$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#F2495C"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".* 4\\d\\d$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#FF9830"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -326,7 +476,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum by (method, uri, status) (increase(inventory_api_requests_total{service=\"inventory-api\", env=\"$env\", uri=~\".+\", method!=\"OPTIONS\", status=~\"5..\"}[5m]))",
+          "expr": "sum by (method, uri, status) (increase(inventory_api_requests_total{service=\"inventory-api\", env=\"$env\", uri=~\".+\", method!=\"OPTIONS\", status=~\"5..\"}[5m])) or vector(0)",
           "legendFormat": "{{method}} {{uri}} {{status}}",
           "range": true,
           "refId": "A"
@@ -350,7 +500,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "paletteClassic"
+            "mode": "palette-classic"
           },
           "custom": {
             "axisBorderShow": false,
@@ -369,7 +519,23 @@
           },
           "unit": "short"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "mongo errors/s"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#FF9830"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
