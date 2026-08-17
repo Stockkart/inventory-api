@@ -296,7 +296,7 @@
           "refId": "C"
         }
       ],
-      "description": "Committed is reserved from the OS. Max is -XX:MaxRAMPercentage (75% of cgroup). If committed tracks toward max, heap pressure."
+      "description": "Used sawtooth is GC (normal). Committed is reserved from the OS; max is -XX:MaxRAMPercentage (50% of cgroup). If committed/RSS only rise and never fall, G1 is not uncommitting. If old-gen live data ratchets up, that is a leak."
     },
     {
       "id": 4,
