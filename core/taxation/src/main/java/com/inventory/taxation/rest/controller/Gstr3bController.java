@@ -1,5 +1,9 @@
 package com.inventory.taxation.rest.controller;
 
+
+import com.inventory.metrics.annotation.Latency;
+import com.inventory.metrics.annotation.RecordRequestRate;
+import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.common.exception.AuthenticationException;
@@ -26,6 +30,9 @@ import java.util.Locale;
 @RestController
 @RequestMapping("/api/v1/taxation/gstr3b")
 @Slf4j
+@Latency(module = "taxation")
+@RecordRequestRate(module = "taxation")
+@RecordStatusCodes(module = "taxation")
 public class Gstr3bController {
 
   @Autowired

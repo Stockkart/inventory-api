@@ -20,6 +20,8 @@ import com.inventory.user.rest.dto.response.ShopAccessResponse;
 import com.inventory.user.rest.dto.response.ShopMemberAccessDto;
 import com.inventory.user.rest.dto.response.ShopRbacAdminResponse;
 import com.inventory.user.validation.UserValidator;
+import com.inventory.metrics.MetricsWrapper;
+import com.inventory.user.utils.constants.UserMetricsConstants;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -77,6 +79,7 @@ public class RbacService {
   @Autowired private UserAccountRepository userAccountRepository;
   @Autowired private UserShopMembershipService membershipService;
   @Autowired private UserValidator userValidator;
+  @Autowired private MetricsWrapper metrics;
 
   @Transactional(readOnly = true)
   public ShopAccessResponse getEffectiveAccess(String userId, String shopId) {
@@ -128,7 +131,15 @@ public class RbacService {
     policy.setProductSearchEditMode(request.getProductSearchEditMode());
     policy.setUpdatedAt(Instant.now());
     policy.setUpdatedByUserId(ownerUserId);
-    return policyRepository.save(policy);
+    ShopRbacPolicyDocument saved = policyRepository.save(policy);
+    metrics.record(
+        UserMetricsConstants.RBAC_UPDATES_TOTAL,
+        1,
+        "module",
+        UserMetricsConstants.MODULE,
+        "operation",
+        "policy");
+    return saved;
   }
 
   public ShopMemberAccessDto updateMemberPermissions(
@@ -161,6 +172,13 @@ public class RbacService {
     syncProductSearchEditFlag(permissions, editMode);
     membership.setPermissions(permissions);
     membershipRepository.save(membership);
+    metrics.record(
+        UserMetricsConstants.RBAC_UPDATES_TOTAL,
+        1,
+        "module",
+        UserMetricsConstants.MODULE,
+        "operation",
+        "member");
 
     UserAccount account =
         userAccountRepository

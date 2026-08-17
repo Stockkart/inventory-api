@@ -1,5 +1,9 @@
 package com.inventory.pricing.rest.controller;
 
+
+import com.inventory.metrics.annotation.Latency;
+import com.inventory.metrics.annotation.RecordRequestRate;
+import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.pricing.rest.dto.request.BulkUpdateDefaultPriceRequest;
 import com.inventory.pricing.rest.dto.request.UpdateDefaultPriceRequest;
@@ -23,6 +27,9 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/v1/pricing")
 @Slf4j
+@Latency(module = "pricing")
+@RecordRequestRate(module = "pricing")
+@RecordStatusCodes(module = "pricing")
 public class PricingController {
 
   @Autowired

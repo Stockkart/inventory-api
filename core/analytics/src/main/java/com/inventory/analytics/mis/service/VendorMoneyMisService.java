@@ -11,6 +11,7 @@ import com.inventory.analytics.mis.support.MisMoneyTenderHelper;
 import com.inventory.analytics.mis.support.MisMoneyTenderHelper.TenderSplit;
 import com.inventory.analytics.mis.support.MisReportSupport;
 import com.inventory.analytics.mis.support.MisTabularDocumentFactory;
+import com.inventory.analytics.utils.constants.AnalyticsMetricsConstants;
 import com.inventory.credit.domain.model.CreditAccount;
 import com.inventory.credit.domain.model.CreditDirection;
 import com.inventory.credit.domain.model.CreditEntry;
@@ -19,6 +20,7 @@ import com.inventory.credit.domain.model.CreditPartyType;
 import com.inventory.credit.service.CreditService;
 import com.inventory.documentservice.rest.dto.mis.MisTabularDocumentRequest;
 import com.inventory.documentservice.service.DocumentService;
+import com.inventory.metrics.MetricsWrapper;
 import com.inventory.product.domain.model.VendorPurchaseInvoice;
 import com.inventory.product.domain.model.VendorPurchaseReturn;
 import com.inventory.product.service.MisProductQueryService;
@@ -52,6 +54,7 @@ public class VendorMoneyMisService {
   private final CreditService creditService;
   private final MisProductQueryService misProductQueryService;
   private final DocumentService documentService;
+  private final MetricsWrapper metrics;
 
   public MisMoneyReportResponse getReport(
       String shopId,
@@ -63,6 +66,13 @@ public class VendorMoneyMisService {
       String q,
       Integer page,
       Integer size) {
+    metrics.record(
+        AnalyticsMetricsConstants.MIS_REPORTS_TOTAL,
+        1,
+        "module",
+        AnalyticsMetricsConstants.MODULE,
+        "operation",
+        "vendor_money");
     BuiltReport built =
         build(shopId, fromIn, toIn, vendorId, txnTypesCsv, moneyFilterRaw, q);
     int p = MisReportSupport.safePage(page);

@@ -23,6 +23,8 @@ import com.inventory.user.rest.dto.response.SignupResponse;
 import com.inventory.user.validation.AuthValidator;
 import com.inventory.notifications.domain.model.EmailTemplate;
 import com.inventory.notifications.service.MessagingService;
+import com.inventory.metrics.MetricsWrapper;
+import com.inventory.user.utils.constants.UserMetricsConstants;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
@@ -64,6 +66,9 @@ public class AuthService {
 
   @Autowired(required = false)
   private MessagingService messagingService;
+
+  @Autowired
+  private MetricsWrapper metrics;
 
   @Value("${client.url:http://localhost:3000}")
   private String clientUrl;
@@ -148,16 +153,20 @@ public class AuthService {
       // Save account with new token
       userAccountRepository.save(account);
 
+      recordAuth("login", "success");
       return response;
 
     } catch (ValidationException | AuthenticationException e) {
       log.warn("Login failed: {}", e.getMessage());
+      recordAuth("login", "error");
       throw e;
     } catch (DataAccessException e) {
       log.error("Database error during login: {}", e.getMessage(), e);
+      recordAuth("login", "error");
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Error during login");
     } catch (Exception e) {
       log.error("Unexpected error during login: {}", e.getMessage(), e);
+      recordAuth("login", "error");
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
     }
   }
@@ -236,16 +245,20 @@ public class AuthService {
       // Save account with new token
       userAccountRepository.save(account);
 
+      recordAuth("signup", "success");
       return response;
 
     } catch (ValidationException e) {
       log.warn("Signup failed: {}", e.getMessage());
+      recordAuth("signup", "error");
       throw e;
     } catch (DataAccessException e) {
       log.error("Database error during signup: {}", e.getMessage(), e);
+      recordAuth("signup", "error");
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Error during signup");
     } catch (Exception e) {
       log.error("Unexpected error during signup: {}", e.getMessage(), e);
+      recordAuth("signup", "error");
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
     }
   }
@@ -274,11 +287,12 @@ public class AuthService {
 
       log.info("User logged out successfully: {}, deviceId: {}", account.getUserId(), removedDeviceId);
 
-      // Create logout response using mapper
+      recordAuth("logout", "success");
       return userMapper.toLogoutResponse(removedDeviceId);
 
     } catch (ValidationException | ResourceNotFoundException e) {
       log.warn("Logout failed: {}", e.getMessage());
+      recordAuth("logout", "error");
       throw e;
     } catch (DataAccessException e) {
       log.error("Database error during logout for userId {}: {}", userId, e.getMessage(), e);
@@ -301,6 +315,7 @@ public class AuthService {
     userAccountRepository.save(account);
 
     log.info("Password changed successfully for user: {}", account.getUserId());
+    recordAuth("reset", "success");
     return new ChangePasswordResponse("Password has been changed successfully.");
   }
 
@@ -353,6 +368,7 @@ public class AuthService {
     }
 
     log.info("Password reset token generated for user: {}", account.getUserId());
+    recordAuth("forgot", "success");
     return new ForgotPasswordResponse(
         "If an account exists with this email, you will receive a password reset link shortly.");
   }
@@ -384,7 +400,20 @@ public class AuthService {
     userAccountRepository.save(account);
 
     log.info("Password reset successfully for user: {}", account.getUserId());
+    recordAuth("reset", "success");
     return new ResetPasswordResponse("Your password has been reset successfully. You can now log in.");
+  }
+
+  private void recordAuth(String operation, String outcome) {
+    metrics.record(
+        UserMetricsConstants.AUTH_TOTAL,
+        1,
+        "module",
+        UserMetricsConstants.MODULE,
+        "operation",
+        operation,
+        "outcome",
+        outcome);
   }
 }
 

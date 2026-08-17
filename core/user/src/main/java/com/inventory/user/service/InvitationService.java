@@ -21,6 +21,8 @@ import com.inventory.user.rest.dto.response.ShopUserDto;
 import com.inventory.user.rest.dto.response.ShopUserListResponse;
 import com.inventory.user.mapper.InvitationMapper;
 import com.inventory.user.validation.InvitationValidator;
+import com.inventory.metrics.MetricsWrapper;
+import com.inventory.user.utils.constants.UserMetricsConstants;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
@@ -58,6 +60,9 @@ public class InvitationService {
 
   @Autowired
   private UserShopMembershipRepository membershipRepository;
+
+  @Autowired
+  private MetricsWrapper metrics;
 
   public SendInvitationResponse sendInvitation(String shopId, String inviterUserId, SendInvitationRequest request) {
     try {
@@ -110,6 +115,13 @@ public class InvitationService {
       log.info("Created invitation with ID: {} for user: {} to shop: {}",
           invitation.getInvitationId(), invitee.getUserId(), shopId);
 
+      metrics.record(
+          UserMetricsConstants.INVITATIONS_TOTAL,
+          1,
+          "module",
+          UserMetricsConstants.MODULE,
+          "operation",
+          "send");
       return invitationMapper.toSendResponse(invitation);
 
     } catch (ValidationException | ResourceNotFoundException | ResourceExistsException e) {
@@ -171,6 +183,13 @@ public class InvitationService {
       log.info("User {} accepted invitation {} and joined shop {}",
           userId, invitationId, invitation.getShopId());
 
+      metrics.record(
+          UserMetricsConstants.INVITATIONS_TOTAL,
+          1,
+          "module",
+          UserMetricsConstants.MODULE,
+          "operation",
+          "accept");
       // Get shop name from invitation (stored when invitation was created)
       String shopName = invitation.getShopName();
       if (shopName == null && shopServiceAdapter != null) {

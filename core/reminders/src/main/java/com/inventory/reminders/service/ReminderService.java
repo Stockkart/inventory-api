@@ -17,6 +17,8 @@ import com.inventory.reminders.domain.repository.ReminderRepository;
 import com.inventory.reminders.mapper.ReminderMapper;
 import com.inventory.reminders.utils.ReminderUtils;
 import com.inventory.reminders.validation.ReminderValidator;
+import com.inventory.metrics.MetricsWrapper;
+import com.inventory.reminders.utils.constants.ReminderMetricsConstants;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,6 +48,9 @@ public class ReminderService {
 
   @Autowired
   private InventoryAdapter inventoryAdapter;
+
+  @Autowired
+  private MetricsWrapper metrics;
 
   public ReminderExpiryBucketsResponse getExpiryBuckets(String shopId, Integer expiringSoonDays) {
     reminderValidator.validateShopId(shopId);
@@ -160,6 +165,7 @@ public class ReminderService {
     );
 
     reminderRepository.save(reminder);
+    recordMutation("create");
 
     log.info("Created {} reminder for inventoryId={} with reminderAt={} and endDate={}, notes={}",
       type, request.getInventoryId(), reminderAt, endDate, notes);
@@ -184,7 +190,7 @@ public class ReminderService {
 
     Reminder reminder = reminderMapper.toReminder(request);
     reminderRepository.save(reminder);
-
+    recordMutation("create");
     return reminderMapper.toResponse(reminder);
   }
 
@@ -206,12 +212,24 @@ public class ReminderService {
 
     reminderMapper.updateReminder(reminder, request);
     reminderRepository.save(reminder);
-
+    recordMutation("update");
     return reminderMapper.toResponse(reminder);
   }
 
   // DELETE
   public long delete(String id) {
-    return reminderRepository.deleteByIdReturningCount(id);
+    long deleted = reminderRepository.deleteByIdReturningCount(id);
+    recordMutation("delete");
+    return deleted;
+  }
+
+  private void recordMutation(String operation) {
+    metrics.record(
+        ReminderMetricsConstants.MUTATIONS_TOTAL,
+        1,
+        "module",
+        ReminderMetricsConstants.MODULE,
+        "operation",
+        operation);
   }
 }

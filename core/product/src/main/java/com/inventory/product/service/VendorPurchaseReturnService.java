@@ -24,6 +24,8 @@ import com.inventory.product.rest.dto.response.VendorPurchaseReturnLineSummaryDt
 import com.inventory.product.rest.dto.response.VendorPurchaseReturnSummaryDto;
 import com.inventory.product.validation.CheckoutValidator;
 import com.inventory.product.service.vertical.ShopCapabilityService;
+import com.inventory.metrics.MetricsWrapper;
+import com.inventory.product.utils.constants.ProductMetricsConstants;
 import com.inventory.user.domain.repository.VendorRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -91,6 +93,9 @@ public class VendorPurchaseReturnService {
 
   @Autowired
   private ShopCapabilityService shopCapabilityService;
+
+  @Autowired
+  private MetricsWrapper metrics;
 
   /**
    * Paginated supplier return history for the shop, newest first.
@@ -505,6 +510,11 @@ public class VendorPurchaseReturnService {
           invoice.getId(),
           shopId);
 
+      metrics.record(
+          ProductMetricsConstants.VENDOR_RETURNS,
+          1,
+          "module",
+          ProductMetricsConstants.MODULE);
       return new VendorPurchaseReturnResponse(
           record.getId(),
           supplierCn,

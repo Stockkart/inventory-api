@@ -1,5 +1,9 @@
 package com.inventory.credit.rest.controller;
 
+
+import com.inventory.metrics.annotation.Latency;
+import com.inventory.metrics.annotation.RecordRequestRate;
+import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.common.exception.AuthenticationException;
@@ -28,6 +32,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/credit")
 @RequiredArgsConstructor
+@Latency(module = "credit")
+@RecordRequestRate(module = "credit")
+@RecordStatusCodes(module = "credit")
 public class CreditController {
 
   private final CreditService creditService;

@@ -71,11 +71,6 @@ Optional (for AWS Textract):
 
 - `AWS_ACCESS_KEY`, `AWS_SECRET_ACCESS`, `AWS_REGION`
 
-Optional (Grafana Cloud + Alloy in **Docker** — see `docs/GRAFANA_CLOUD.md`):
-
-- `GCLOUD_RW_API_KEY`, `GCLOUD_HOSTED_METRICS_ID`, `GCLOUD_HOSTED_METRICS_URL`, `GCLOUD_HOSTED_LOGS_ID`, `GCLOUD_HOSTED_LOGS_URL`
-- `GCLOUD_FM_COLLECTOR_ID`, `LOGGING_FILE_NAME`
-
 ### 2. Run with Docker Compose
 
 Build and start the app (and image-preprocess if configured):
@@ -123,18 +118,22 @@ The app loads `.env` from the project root and exposes:
 - **Health:** http://localhost:8080/actuator/health  
 - **Prometheus:** http://localhost:8080/actuator/prometheus  
 
-### 5. Metrics with Prometheus & Grafana
+### Grafana Cloud (optional)
 
-When running with `docker compose up`, Prometheus and Grafana are started automatically:
+The API **pushes** metrics (OTLP) and INFO logs (Loki HTTP) to Grafana Cloud. Nothing extra runs on the app server. Leave the `GRAFANA_CLOUD_*` vars empty locally.
 
-| Service   | URL                    | Description                          |
-|-----------|------------------------|--------------------------------------|
-| Prometheus| http://localhost:9090  | Scrapes metrics from the app         |
-| Grafana   | http://localhost:3001  | Dashboards (login: `admin` / `admin`)|
+On **DigitalOcean App Platform** set:
 
-**Custom metric example:** Hit `GET http://localhost:8080/metrics-demo` to increment a counter. View it in Grafana under **Inventory API Overview**.
+| Variable | Description |
+|----------|-------------|
+| `SPRING_PROFILES_ACTIVE` | `prod` (INFO logs; sets `env=prod` on metrics/logs) |
+| `GRAFANA_CLOUD_OTLP_URL` | OTLP metrics URL from Grafana Cloud (…`/otlp/v1/metrics`) |
+| `GRAFANA_CLOUD_OTLP_USER` | Prometheus / OTLP instance user id |
+| `GRAFANA_CLOUD_LOKI_URL` | Loki push URL (`…/loki/api/v1/push`) |
+| `GRAFANA_CLOUD_LOKI_USER` | Loki instance user id |
+| `GRAFANA_CLOUD_API_TOKEN` | Access policy with metrics write + logs write (encrypted) |
 
-Set `GF_USERNAME` and `GF_PASSWORD` in `.env` to customize Grafana credentials (default: `admin`/`admin`).
+In Grafana Explore (Loki): `{service="inventory-api"} | json | shopId="..."` or `requestId="..."`. Dashboard refresh 60s. Responses include `X-Request-Id`.
 
 ---
 

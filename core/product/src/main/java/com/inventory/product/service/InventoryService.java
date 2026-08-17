@@ -449,6 +449,13 @@ public class InventoryService {
 
     pendingInvoice.setLines(invoiceLines);
     vendorPurchaseInvoiceRepository.save(pendingInvoice);
+    if (metrics != null) {
+      metrics.record(
+          ProductMetricsConstants.VENDOR_PURCHASES,
+          1,
+          "module",
+          ProductMetricsConstants.MODULE);
+    }
     String returnedInvoiceId = pendingInvoice.getId();
 
     log.info("Bulk creation completed: {} created", createdItems.size());

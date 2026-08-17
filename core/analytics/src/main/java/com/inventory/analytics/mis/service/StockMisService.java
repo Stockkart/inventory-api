@@ -6,8 +6,10 @@ import com.inventory.analytics.mis.rest.dto.MisStockSummaryDto;
 import com.inventory.analytics.mis.support.MisMoneyTenderHelper;
 import com.inventory.analytics.mis.support.MisReportSupport;
 import com.inventory.analytics.mis.support.MisTabularDocumentFactory;
+import com.inventory.analytics.utils.constants.AnalyticsMetricsConstants;
 import com.inventory.documentservice.rest.dto.mis.MisTabularDocumentRequest;
 import com.inventory.documentservice.service.DocumentService;
+import com.inventory.metrics.MetricsWrapper;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.service.MisProductQueryService;
 import java.math.BigDecimal;
@@ -28,6 +30,7 @@ public class StockMisService {
 
   private final MisProductQueryService misProductQueryService;
   private final DocumentService documentService;
+  private final MetricsWrapper metrics;
 
   public MisStockReportResponse getReport(
       String shopId,
@@ -36,6 +39,13 @@ public class StockMisService {
       Boolean deadStockOnly,
       Integer page,
       Integer size) {
+    metrics.record(
+        AnalyticsMetricsConstants.MIS_REPORTS_TOTAL,
+        1,
+        "module",
+        AnalyticsMetricsConstants.MODULE,
+        "operation",
+        "stock");
     BuiltReport built = build(shopId, q, lowStockOnly, deadStockOnly);
     int p = MisReportSupport.safePage(page);
     int s = MisReportSupport.safeSize(size);

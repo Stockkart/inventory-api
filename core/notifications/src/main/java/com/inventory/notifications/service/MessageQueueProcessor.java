@@ -8,6 +8,8 @@ import com.inventory.notifications.domain.model.MessageStatus;
 import com.inventory.notifications.domain.model.OutboundMessage;
 import com.inventory.notifications.domain.repository.OutboundMessageRepository;
 import com.inventory.notifications.utils.MessagingUtils;
+import com.inventory.notifications.utils.constants.NotificationMetricsConstants;
+import com.inventory.metrics.MetricsWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
@@ -28,6 +30,9 @@ public class MessageQueueProcessor {
 
   @Autowired(required = false)
   private List<ChannelAdapter> adapters;
+
+  @Autowired
+  private MetricsWrapper metrics;
 
   private static final long DEFAULT_DISPATCH_INTERVAL_MS = 15000L;
 
@@ -98,12 +103,15 @@ public class MessageQueueProcessor {
           msg.setErrorMessage(null);
           outboundMessageRepository.save(msg);
           log.info("Message {} sent successfully", msg.getId());
+          recordSent(msg.getChannel(), "success");
         } else {
           handleFailure(msg, result.getErrorMessage(), now);
+          recordSent(msg.getChannel(), "error");
         }
       } catch (Exception e) {
         log.error("Error processing message {}: {}", msg.getId(), e.getMessage(), e);
         handleFailure(msg, e.getMessage(), now);
+        recordSent(msg.getChannel(), "error");
       }
     }
   }
@@ -123,5 +131,18 @@ public class MessageQueueProcessor {
     }
 
     outboundMessageRepository.save(msg);
+  }
+
+  private void recordSent(MessageChannel channel, String outcome) {
+    String channelName = channel != null ? channel.name().toLowerCase() : "unknown";
+    metrics.record(
+        NotificationMetricsConstants.SENT_TOTAL,
+        1,
+        "module",
+        NotificationMetricsConstants.MODULE,
+        "channel",
+        channelName,
+        "outcome",
+        outcome);
   }
 }

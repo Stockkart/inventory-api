@@ -15,6 +15,8 @@ import com.inventory.product.rest.dto.response.InventoryCorrectionDto;
 import com.inventory.product.rest.dto.response.InventoryCorrectionLineDto;
 import com.inventory.product.rest.dto.response.InventoryCorrectionListResponse;
 import com.inventory.product.rest.dto.response.PageMeta;
+import com.inventory.metrics.MetricsWrapper;
+import com.inventory.product.utils.constants.ProductMetricsConstants;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
@@ -35,6 +37,7 @@ public class InventoryCorrectionService {
 
   @Autowired private InventoryCorrectionRepository inventoryCorrectionRepository;
   @Autowired private InventoryRepository inventoryRepository;
+  @Autowired private MetricsWrapper metrics;
 
   @Transactional
   public InventoryCorrectionDto createPending(
@@ -90,7 +93,15 @@ public class InventoryCorrectionService {
     correction.setCreatedByUserId(userId);
     correction.setLines(lines);
 
-    return toDto(inventoryCorrectionRepository.save(correction));
+    InventoryCorrection saved = inventoryCorrectionRepository.save(correction);
+    metrics.record(
+        ProductMetricsConstants.INVENTORY_CORRECTIONS,
+        1,
+        "module",
+        ProductMetricsConstants.MODULE,
+        "operation",
+        "create");
+    return toDto(saved);
   }
 
   @Transactional(readOnly = true)
@@ -150,7 +161,15 @@ public class InventoryCorrectionService {
 
     recalcCorrectionStatus(correction);
     correction.setUpdatedAt(Instant.now());
-    return toDto(inventoryCorrectionRepository.save(correction));
+    InventoryCorrection saved = inventoryCorrectionRepository.save(correction);
+    metrics.record(
+        ProductMetricsConstants.INVENTORY_CORRECTIONS,
+        1,
+        "module",
+        ProductMetricsConstants.MODULE,
+        "operation",
+        "approve");
+    return toDto(saved);
   }
 
   @Transactional

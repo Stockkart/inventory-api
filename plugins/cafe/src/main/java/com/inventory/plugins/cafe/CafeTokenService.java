@@ -1,5 +1,6 @@
 package com.inventory.plugins.cafe;
 
+import com.inventory.metrics.MetricsWrapper;
 import java.time.LocalDate;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
@@ -17,9 +18,11 @@ public class CafeTokenService {
   private static final String COUNTERS_COLLECTION = "cafe_token_counters";
 
   private final MongoTemplate mongoTemplate;
+  private final MetricsWrapper metrics;
 
-  public CafeTokenService(MongoTemplate mongoTemplate) {
+  public CafeTokenService(MongoTemplate mongoTemplate, MetricsWrapper metrics) {
     this.mongoTemplate = mongoTemplate;
+    this.metrics = metrics;
   }
 
   public String allocateToken(String shopId) {
@@ -45,6 +48,13 @@ public class CafeTokenService {
     int seq = counter != null ? counter.getInteger("nextSequence", 1) : 1;
     String tokenNo = String.valueOf(seq);
     log.debug("Allocated cafe token {} for shop {} on {}", tokenNo, shopId, businessDate);
+    metrics.record(
+        CafeMetricsConstants.TOKENS_TOTAL,
+        1,
+        "module",
+        CafeMetricsConstants.MODULE,
+        "operation",
+        "issue");
     return tokenNo;
   }
 }

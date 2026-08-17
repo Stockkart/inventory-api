@@ -291,9 +291,29 @@ public class CheckoutService {
       }
       if (requestedStatus == PurchaseStatus.COMPLETED && metrics != null) {
         BigDecimal grandTotal = purchase.getGrandTotal() != null ? purchase.getGrandTotal() : BigDecimal.ZERO;
-        metrics.record(ProductMetricsConstants.ORDERS_COMPLETED, 1, "module", ProductMetricsConstants.MODULE);
-        if (grandTotal.compareTo(BigDecimal.ZERO) > 0) {
-          metrics.record(ProductMetricsConstants.ORDERS_AMOUNT, grandTotal.doubleValue(), "module", ProductMetricsConstants.MODULE);
+        String vertical = checkoutVertical(shopId);
+        if (vertical != null) {
+          metrics.record(
+              ProductMetricsConstants.ORDERS_COMPLETED,
+              1,
+              "module",
+              ProductMetricsConstants.MODULE,
+              "vertical",
+              vertical);
+          if (grandTotal.compareTo(BigDecimal.ZERO) > 0) {
+            metrics.record(
+                ProductMetricsConstants.ORDERS_AMOUNT,
+                grandTotal.doubleValue(),
+                "module",
+                ProductMetricsConstants.MODULE,
+                "vertical",
+                vertical);
+          }
+        } else {
+          metrics.record(ProductMetricsConstants.ORDERS_COMPLETED, 1, "module", ProductMetricsConstants.MODULE);
+          if (grandTotal.compareTo(BigDecimal.ZERO) > 0) {
+            metrics.record(ProductMetricsConstants.ORDERS_AMOUNT, grandTotal.doubleValue(), "module", ProductMetricsConstants.MODULE);
+          }
         }
       }
 
@@ -2242,6 +2262,20 @@ public class CheckoutService {
     }
     if (newItem.getBaseQuantity() != null && newItem.getBaseQuantity() > 0) {
       mergedItems.add(newItem);
+    }
+  }
+
+  private static final Set<String> CHECKOUT_VERTICALS = Set.of("grocery", "cafe", "sports", "medical");
+
+  private String checkoutVertical(String shopId) {
+    try {
+      return shopRepository
+          .findById(shopId)
+          .map(Shop::getVerticalId)
+          .filter(CHECKOUT_VERTICALS::contains)
+          .orElse(null);
+    } catch (Exception ignored) {
+      return null;
     }
   }
 

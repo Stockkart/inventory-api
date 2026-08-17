@@ -41,6 +41,7 @@ public class LatencyAspect {
           .tag("endpoint", endpoint)
           .tag("module", module)
           .tag("method", method)
+          .publishPercentileHistogram()
           .publishPercentiles(PERCENTILES)
           .register(metrics.getRegistry()));
     }

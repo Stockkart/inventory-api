@@ -1,5 +1,9 @@
 package com.inventory.user.rest.controller;
 
+
+import com.inventory.metrics.annotation.Latency;
+import com.inventory.metrics.annotation.RecordRequestRate;
+import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.user.rest.dto.request.ChangePasswordRequest;
 import com.inventory.user.rest.dto.request.ForgotPasswordRequest;
@@ -27,6 +31,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/auth")
+@Latency(module = "user")
+@RecordRequestRate(module = "user")
+@RecordStatusCodes(module = "user")
 public class AuthController {
 
   @Autowired

@@ -1,5 +1,9 @@
 package com.inventory.plan.rest.controller;
 
+
+import com.inventory.metrics.annotation.Latency;
+import com.inventory.metrics.annotation.RecordRequestRate;
+import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.common.exception.AuthenticationException;
@@ -27,6 +31,9 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/plans/payment")
+@Latency(module = "plan")
+@RecordRequestRate(module = "plan")
+@RecordStatusCodes(module = "plan")
 public class PlanPaymentController {
 
   @Autowired

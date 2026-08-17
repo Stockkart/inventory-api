@@ -7,8 +7,10 @@ import com.inventory.analytics.mis.support.MisDateRangeHelper;
 import com.inventory.analytics.mis.support.MisMoneyTenderHelper;
 import com.inventory.analytics.mis.support.MisReportSupport;
 import com.inventory.analytics.mis.support.MisTabularDocumentFactory;
+import com.inventory.analytics.utils.constants.AnalyticsMetricsConstants;
 import com.inventory.documentservice.rest.dto.mis.MisTabularDocumentRequest;
 import com.inventory.documentservice.service.DocumentService;
+import com.inventory.metrics.MetricsWrapper;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.Refund;
 import com.inventory.product.service.MisProductQueryService;
@@ -37,6 +39,7 @@ public class SalesMisService {
 
   private final MisProductQueryService misProductQueryService;
   private final DocumentService documentService;
+  private final MetricsWrapper metrics;
 
   public MisSalesReportResponse getReport(
       String shopId,
@@ -47,6 +50,13 @@ public class SalesMisService {
       String q,
       Integer page,
       Integer size) {
+    metrics.record(
+        AnalyticsMetricsConstants.MIS_REPORTS_TOTAL,
+        1,
+        "module",
+        AnalyticsMetricsConstants.MODULE,
+        "operation",
+        "sales");
     BuiltReport built = build(shopId, fromIn, toIn, paymentMethod, customerId, q);
     int p = MisReportSupport.safePage(page);
     int s = MisReportSupport.safeSize(size);

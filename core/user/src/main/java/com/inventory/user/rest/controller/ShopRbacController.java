@@ -1,5 +1,9 @@
 package com.inventory.user.rest.controller;
 
+
+import com.inventory.metrics.annotation.Latency;
+import com.inventory.metrics.annotation.RecordRequestRate;
+import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.common.exception.AuthenticationException;
@@ -23,6 +27,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/shops")
+@Latency(module = "user")
+@RecordRequestRate(module = "user")
+@RecordStatusCodes(module = "user")
 public class ShopRbacController {
 
   @Autowired private RbacService rbacService;

@@ -1,5 +1,9 @@
 package com.inventory.analytics.rest.controller;
 
+
+import com.inventory.metrics.annotation.Latency;
+import com.inventory.metrics.annotation.RecordRequestRate;
+import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.common.exception.AuthenticationException;
@@ -22,6 +26,9 @@ import java.time.Instant;
 @RestController
 @RequestMapping("/api/v1/analytics/profit")
 @Slf4j
+@Latency(module = "analytics")
+@RecordRequestRate(module = "analytics")
+@RecordStatusCodes(module = "analytics")
 public class ProfitAnalyticsController {
 
   @Autowired

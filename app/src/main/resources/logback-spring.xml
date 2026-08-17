@@ -1,50 +1,76 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
-    <springProperty name="LOG_FILE" source="logging.file.name"/>
+    <springProperty name="LOKI_URL" source="grafana.cloud.loki.url" defaultValue=""/>
+    <springProperty name="LOKI_USER" source="grafana.cloud.loki.user" defaultValue=""/>
+    <springProperty name="LOKI_TOKEN" source="grafana.cloud.api-token" defaultValue=""/>
+    <springProperty name="APP_ENV" source="spring.profiles.active" defaultValue="local"/>
+    <if condition='property("APP_ENV") == null || property("APP_ENV").length() == 0'>
+        <then>
+            <property name="APP_ENV" value="local"/>
+        </then>
+    </if>
+
+    <property name="JSON_PATTERN"
+              value='{"timestamp":"%date{yyyy-MM-dd&apos;T&apos;HH:mm:ss.SSSZ}","level":"%level","thread":"%thread","logger":"%logger","message":"%msg","requestId":"%mdc{requestId}","shopId":"%mdc{shopId}","userId":"%mdc{userId}","exception":"%ex"}%n'/>
 
     <appender name="CONSOLE_JSON" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <pattern>{"timestamp": "%date{yyyy-MM-dd'T'HH:mm:ss.SSSZ}", "level": "%level", "thread": "%thread",
-                "logger": "%logger", "message": "%msg", "traceId": "%mdc{traceId}", "pluginId": "%mdc{pluginId}",
-                "exception": "%ex"}\n
-            </pattern>
+            <pattern>${JSON_PATTERN}</pattern>
         </encoder>
     </appender>
 
-    <logger name="com.inventory" level="DEBUG"/>
+    <if condition='property("LOKI_URL").length() &gt; 8'>
+        <then>
+            <appender name="LOKI" class="com.github.loki4j.logback.Loki4jAppender">
+                <http class="com.github.loki4j.logback.JavaHttpSender">
+                    <url>${LOKI_URL}</url>
+                    <auth>
+                        <username>${LOKI_USER}</username>
+                        <password>${LOKI_TOKEN}</password>
+                    </auth>
+                    <connectionTimeoutMs>5000</connectionTimeoutMs>
+                    <requestTimeoutMs>5000</requestTimeoutMs>
+                </http>
+                <format class="com.github.loki4j.logback.JsonEncoder">
+                    <label>
+                        <pattern>service=inventory-api,env=${APP_ENV},level=%level</pattern>
+                    </label>
+                    <message class="ch.qos.logback.classic.PatternLayout">
+                        <pattern>${JSON_PATTERN}</pattern>
+                    </message>
+                </format>
+                <batchMaxItems>100</batchMaxItems>
+                <batchTimeoutMs>10000</batchTimeoutMs>
+                <maxRetries>0</maxRetries>
+                <dropRateLimitedBatches>true</dropRateLimitedBatches>
+            </appender>
+        </then>
+    </if>
+
     <logger name="org.springframework" level="INFO"/>
     <logger name="org.mongodb.driver" level="WARN"/>
 
-    <root level="debug">
-        <appender-ref ref="CONSOLE_JSON"/>
-    </root>
+    <springProfile name="prod">
+        <logger name="com.inventory" level="INFO"/>
+        <if condition='property("LOKI_URL").length() &gt; 8'>
+            <then>
+                <root level="INFO">
+                    <appender-ref ref="CONSOLE_JSON"/>
+                    <appender-ref ref="LOKI"/>
+                </root>
+            </then>
+            <else>
+                <root level="INFO">
+                    <appender-ref ref="CONSOLE_JSON"/>
+                </root>
+            </else>
+        </if>
+    </springProfile>
 
-<!--    <if condition='isDefined("LOG_FILE") &amp;&amp; property("LOG_FILE").length() > 0'>-->
-<!--        <then>-->
-<!--            <appender name="FILE_JSON" class="ch.qos.logback.core.rolling.RollingFileAppender">-->
-<!--                <file>${LOG_FILE}</file>-->
-<!--                <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">-->
-<!--                    <fileNamePattern>${LOG_FILE}.%d{yyyy-MM-dd}.%i.gz</fileNamePattern>-->
-<!--                    <maxFileSize>50MB</maxFileSize>-->
-<!--                    <maxHistory>3</maxHistory>-->
-<!--                    <totalSizeCap>200MB</totalSizeCap>-->
-<!--                </rollingPolicy>-->
-<!--                <encoder>-->
-<!--                    <pattern>{"timestamp": "%date{yyyy-MM-dd'T'HH:mm:ss.SSSZ}", "level": "%level", "thread": "%thread",-->
-<!--                        "logger": "%logger", "message": "%msg", "traceId": "%mdc{traceId}", "pluginId": "%mdc{pluginId}",-->
-<!--                        "exception": "%ex"}\n-->
-<!--                    </pattern>-->
-<!--                </encoder>-->
-<!--            </appender>-->
-<!--            <root level="debug">-->
-<!--                <appender-ref ref="CONSOLE_JSON"/>-->
-<!--                <appender-ref ref="FILE_JSON"/>-->
-<!--            </root>-->
-<!--        </then>-->
-<!--        <else>-->
-<!--            <root level="debug">-->
-<!--                <appender-ref ref="CONSOLE_JSON"/>-->
-<!--            </root>-->
-<!--        </else>-->
-<!--    </if>-->
+    <springProfile name="!prod">
+        <logger name="com.inventory" level="DEBUG"/>
+        <root level="DEBUG">
+            <appender-ref ref="CONSOLE_JSON"/>
+        </root>
+    </springProfile>
 </configuration>

@@ -16,6 +16,8 @@ import com.inventory.credit.rest.dto.request.CreateCreditSettlementRequest;
 import com.inventory.credit.rest.dto.response.CreditAccountResponse;
 import com.inventory.credit.rest.dto.response.CreditEntriesPageResponse;
 import com.inventory.credit.rest.dto.response.CreditEntryResponse;
+import com.inventory.credit.utils.constants.CreditMetricsConstants;
+import com.inventory.metrics.MetricsWrapper;
 import com.inventory.user.domain.model.Customer;
 import com.inventory.user.domain.model.Vendor;
 import com.inventory.user.domain.repository.CustomerRepository;
@@ -43,10 +45,11 @@ public class CreditService {
   private final CreditEntryRepository creditEntryRepository;
   private final CustomerRepository customerRepository;
   private final VendorRepository vendorRepository;
+  private final MetricsWrapper metrics;
 
   @Transactional
   public CreditEntry createCharge(String shopId, String userId, CreateCreditChargeRequest body) {
-    return applyEntry(
+    CreditEntry entry = applyEntry(
         shopId,
         userId,
         body.getPartyType(),
@@ -63,6 +66,8 @@ public class CreditService {
         null,
         null,
         null);
+    recordEntry("charge");
+    return entry;
   }
 
   /**
@@ -105,7 +110,7 @@ public class CreditService {
   public CreditEntry createSettlement(
       String shopId, String userId, CreateCreditSettlementRequest body) {
     validateSettlementPaymentMethod(body.getPaymentMethod());
-    return applyEntry(
+    CreditEntry entry = applyEntry(
         shopId,
         userId,
         body.getPartyType(),
@@ -122,6 +127,8 @@ public class CreditService {
         normalize(body.getPaymentMethod()),
         normalize(body.getBankRef()),
         body.getTxnDate());
+    recordEntry("settlement");
+    return entry;
   }
 
   @Transactional(readOnly = true)
@@ -388,5 +395,15 @@ public class CreditService {
   private static String limit(String v, int max) {
     if (v == null) return null;
     return v.length() > max ? v.substring(0, max) : v;
+  }
+
+  private void recordEntry(String operation) {
+    metrics.record(
+        CreditMetricsConstants.ENTRIES_TOTAL,
+        1,
+        "module",
+        CreditMetricsConstants.MODULE,
+        "operation",
+        operation);
   }
 }

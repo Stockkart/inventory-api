@@ -23,6 +23,8 @@ import com.inventory.user.rest.dto.response.ProcessJoinRequestResponse;
 import com.inventory.user.rest.dto.response.SendJoinRequestResponse;
 import com.inventory.user.mapper.JoinRequestMapper;
 import com.inventory.user.validation.JoinRequestValidator;
+import com.inventory.metrics.MetricsWrapper;
+import com.inventory.user.utils.constants.UserMetricsConstants;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
@@ -57,6 +59,9 @@ public class JoinRequestService {
 
   @Autowired(required = false)
   private UserShopMembershipRepository membershipRepository;
+
+  @Autowired
+  private MetricsWrapper metrics;
 
   /**
    * Get shops owned by an email (for join-request flow: user enters owner email and selects a shop).
@@ -149,6 +154,13 @@ public class JoinRequestService {
       log.info("Created join request with ID: {} for user: {} to shop: {} (owner: {})",
           joinRequest.getRequestId(), userId, shopId, ownerEmail);
 
+      metrics.record(
+          UserMetricsConstants.JOIN_REQUESTS_TOTAL,
+          1,
+          "module",
+          UserMetricsConstants.MODULE,
+          "operation",
+          "send");
       return joinRequestMapper.toResponse(joinRequest);
 
     } catch (ValidationException | ResourceNotFoundException | ResourceExistsException e) {
@@ -282,6 +294,13 @@ public class JoinRequestService {
     log.info("Join request {} accepted. User {} added to shop {}",
         joinRequest.getRequestId(), user.getUserId(), shopId);
 
+    metrics.record(
+        UserMetricsConstants.JOIN_REQUESTS_TOTAL,
+        1,
+        "module",
+        UserMetricsConstants.MODULE,
+        "operation",
+        "accept");
     return joinRequestMapper.toProcessResponse(joinRequest, user, JoinRequestStatus.APPROVED.name(), "Join request accepted successfully");
   }
 
@@ -294,6 +313,13 @@ public class JoinRequestService {
 
     log.info("Join request {} rejected", joinRequest.getRequestId());
 
+    metrics.record(
+        UserMetricsConstants.JOIN_REQUESTS_TOTAL,
+        1,
+        "module",
+        UserMetricsConstants.MODULE,
+        "operation",
+        "reject");
     // Get user for response
     UserAccount user = userAccountRepository.findById(joinRequest.getUserId())
         .orElse(null);

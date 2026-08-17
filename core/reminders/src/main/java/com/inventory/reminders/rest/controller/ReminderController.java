@@ -1,5 +1,9 @@
 package com.inventory.reminders.rest.controller;
 
+
+import com.inventory.metrics.annotation.Latency;
+import com.inventory.metrics.annotation.RecordRequestRate;
+import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.reminders.rest.dto.request.CreateReminderRequest;
 import com.inventory.reminders.rest.dto.request.SnoozeReminderRequest;
@@ -18,6 +22,9 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/v1/reminders")
+@Latency(module = "reminders")
+@RecordRequestRate(module = "reminders")
+@RecordStatusCodes(module = "reminders")
 public class ReminderController {
 
   @Autowired

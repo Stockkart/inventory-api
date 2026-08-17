@@ -17,6 +17,8 @@ import com.inventory.product.rest.dto.response.QuotationListResponse;
 import com.inventory.product.rest.dto.response.QuotationSummaryDto;
 import com.inventory.product.util.PurchaseItemRefs;
 import com.inventory.product.service.vertical.QuotationCreateOrchestrator;
+import com.inventory.metrics.MetricsWrapper;
+import com.inventory.product.utils.constants.ProductMetricsConstants;
 import com.inventory.user.domain.model.Customer;
 import com.inventory.user.rest.dto.request.CreateCustomerRequest;
 import com.inventory.user.service.CustomerService;
@@ -46,6 +48,7 @@ public class QuotationService {
   private final PurchaseMapper purchaseMapper;
   private final CustomerService customerService;
   private final QuotationCreateOrchestrator quotationCreateOrchestrator;
+  private final MetricsWrapper metrics;
 
   @Transactional
   public QuotationListResponse listOpenQuotations(String userId, String shopId) {
@@ -109,6 +112,11 @@ public class QuotationService {
           .ifPresent(purchase::setTokenNo);
       purchase = purchaseRepository.save(purchase);
       log.info("Created quotation {} for shop {}", purchase.getId(), shopId);
+      metrics.record(
+          ProductMetricsConstants.QUOTATIONS_TOTAL,
+          1,
+          "module",
+          ProductMetricsConstants.MODULE);
       return purchaseMapper.toAddToCartResponse(purchase);
     } catch (DataAccessException e) {
       log.error("Database error creating quotation for shop {}", shopId, e);

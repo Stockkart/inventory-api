@@ -3,6 +3,8 @@ package com.inventory.taxation.service;
 import com.inventory.taxation.domain.gstr1.Gstr1ReportContext;
 import com.inventory.taxation.excel.Gstr1TabWriter;
 import com.inventory.taxation.excel.tabs.*;
+import com.inventory.taxation.utils.constants.TaxationMetricsConstants;
+import com.inventory.metrics.MetricsWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -26,6 +28,9 @@ public class Gstr1ReportService {
   @Autowired
   private Gstr1OfflinePortalJsonService gstr1OfflinePortalJsonService;
 
+  @Autowired
+  private MetricsWrapper metrics;
+
   private static final List<Gstr1TabWriter> TAB_WRITERS = List.of(
       new Gstr1B2bTabWriter(),
       new Gstr1B2clTabWriter(),
@@ -42,6 +47,7 @@ public class Gstr1ReportService {
   );
 
   public Gstr1ReportContext getReportData(String shopId, String period) {
+    recordReport();
     return dataAggregator.buildContext(shopId, period);
   }
 
@@ -61,5 +67,15 @@ public class Gstr1ReportService {
   public byte[] generateOfflinePortalJson(String shopId, String period) {
     Gstr1ReportContext context = dataAggregator.buildContext(shopId, period);
     return gstr1OfflinePortalJsonService.toJsonUtf8(context);
+  }
+
+  private void recordReport() {
+    metrics.record(
+        TaxationMetricsConstants.REPORTS_TOTAL,
+        1,
+        "module",
+        TaxationMetricsConstants.MODULE,
+        "operation",
+        "gstr1");
   }
 }

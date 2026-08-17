@@ -16,8 +16,10 @@ import com.inventory.accounting.domain.model.NormalBalance;
 import com.inventory.accounting.domain.model.PartyType;
 import com.inventory.accounting.domain.repository.JournalEntryRepository;
 import com.inventory.accounting.domain.repository.LedgerEntryRepository;
+import com.inventory.accounting.utils.constants.AccountingMetricsConstants;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.metrics.MetricsWrapper;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -54,6 +56,7 @@ public class AccountingPostingService {
   private final LedgerEntryRepository ledgerEntryRepository;
   private final AccountService accountService;
   private final JournalEntrySequenceService sequenceService;
+  private final MetricsWrapper metrics;
 
   /**
    * Optional plug-in tested with {@code @Autowired(required = false)} so callers without a clock
@@ -79,6 +82,7 @@ public class AccountingPostingService {
             sourceType,
             sourceId,
             shopId);
+        recordJournal("post");
         return existing.get();
       }
     }
@@ -155,14 +159,18 @@ public class AccountingPostingService {
       entry = journalEntryRepository.save(entry);
     } catch (DuplicateKeyException dup) {
       if (sourceType != null && sourceId != null) {
-        return journalEntryRepository
-            .findByShopIdAndSourceTypeAndSourceId(shopId, sourceType, sourceId)
-            .orElseThrow(() -> dup);
+        JournalEntry existingDup =
+            journalEntryRepository
+                .findByShopIdAndSourceTypeAndSourceId(shopId, sourceType, sourceId)
+                .orElseThrow(() -> dup);
+        recordJournal("post");
+        return existingDup;
       }
       throw dup;
     }
 
     persistLedger(entry, accountCache);
+    recordJournal("post");
     return entry;
   }
 
@@ -211,6 +219,7 @@ public class AccountingPostingService {
     original.setReversedByEntryId(reversal.getId());
     journalEntryRepository.save(original);
 
+    recordJournal("reverse");
     return reversal;
   }
 
@@ -320,5 +329,15 @@ public class AccountingPostingService {
 
   static PartyType safeParty(PartyType p) {
     return p == null ? PartyType.SHOP : p;
+  }
+
+  private void recordJournal(String operation) {
+    metrics.record(
+        AccountingMetricsConstants.JOURNALS_TOTAL,
+        1,
+        "module",
+        AccountingMetricsConstants.MODULE,
+        "operation",
+        operation);
   }
 }
