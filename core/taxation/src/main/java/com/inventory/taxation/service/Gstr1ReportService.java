@@ -31,19 +31,46 @@ public class Gstr1ReportService {
   @Autowired
   private MetricsWrapper metrics;
 
+  /**
+   * Every sheet of the GSTR-1 workbook, in the order the portal lists them.
+   *
+   * <p>The amendment tabs sit next to the tab they amend, and the e-commerce set
+   * follows the summaries, because that is the order the offline utility's own
+   * template uses. Tabs written by {@link Gstr1SchemaTabWriter} are the ones the
+   * platform holds no data for; they are present with their headers and no rows,
+   * which is what "nothing to declare this period" looks like to the portal.
+   */
   private static final List<Gstr1TabWriter> TAB_WRITERS = List.of(
       new Gstr1B2bTabWriter(),
+      Gstr1SchemaTabWriter.of("b2ba"),
       new Gstr1B2clTabWriter(),
+      Gstr1SchemaTabWriter.of("b2cla"),
       new Gstr1B2csTabWriter(),
+      Gstr1SchemaTabWriter.of("b2csa"),
       new Gstr1CdnrTabWriter(),
+      Gstr1SchemaTabWriter.of("cdnra"),
       new Gstr1CdnurTabWriter(),
+      Gstr1SchemaTabWriter.of("cdnura"),
       new Gstr1ExpTabWriter(),
+      Gstr1SchemaTabWriter.of("expa"),
       new Gstr1AtTabWriter(),
+      Gstr1SchemaTabWriter.of("ata"),
       new Gstr1AtadjTabWriter(),
+      Gstr1SchemaTabWriter.of("atadja"),
       new Gstr1ExempTabWriter(),
       new Gstr1HsnB2bTabWriter(),
       new Gstr1HsnB2cTabWriter(),
-      new Gstr1DocsTabWriter()
+      new Gstr1DocsTabWriter(),
+      Gstr1SchemaTabWriter.of("eco"),
+      Gstr1SchemaTabWriter.of("ecoa"),
+      Gstr1SchemaTabWriter.of("ecob2b"),
+      Gstr1SchemaTabWriter.of("ecourp2b"),
+      Gstr1SchemaTabWriter.of("ecob2c"),
+      Gstr1SchemaTabWriter.of("ecourp2c"),
+      Gstr1SchemaTabWriter.of("ecoab2b"),
+      Gstr1SchemaTabWriter.of("ecoab2c"),
+      Gstr1SchemaTabWriter.of("ecoaurp2b"),
+      Gstr1SchemaTabWriter.of("ecoaurp2c")
   );
 
   public Gstr1ReportContext getReportData(String shopId, String period) {
