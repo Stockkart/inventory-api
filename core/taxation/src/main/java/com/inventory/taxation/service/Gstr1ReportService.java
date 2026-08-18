@@ -36,41 +36,41 @@ public class Gstr1ReportService {
    *
    * <p>The amendment tabs sit next to the tab they amend, and the e-commerce set
    * follows the summaries, because that is the order the offline utility's own
-   * template uses. Tabs written by {@link Gstr1SchemaTabWriter} are the ones the
-   * platform holds no data for; they are present with their headers and no rows,
-   * which is what "nothing to declare this period" looks like to the portal.
+   * template uses. The amendment and e-commerce tabs are the ones the platform
+   * holds no data for; they are present with their headers and no rows, which is
+   * what "nothing to declare this period" looks like to the portal.
    */
   private static final List<Gstr1TabWriter> TAB_WRITERS = List.of(
       new Gstr1B2bTabWriter(),
-      Gstr1SchemaTabWriter.of("b2ba"),
+      new Gstr1B2baTabWriter(),
       new Gstr1B2clTabWriter(),
-      Gstr1SchemaTabWriter.of("b2cla"),
+      new Gstr1B2claTabWriter(),
       new Gstr1B2csTabWriter(),
-      Gstr1SchemaTabWriter.of("b2csa"),
+      new Gstr1B2csaTabWriter(),
       new Gstr1CdnrTabWriter(),
-      Gstr1SchemaTabWriter.of("cdnra"),
+      new Gstr1CdnraTabWriter(),
       new Gstr1CdnurTabWriter(),
-      Gstr1SchemaTabWriter.of("cdnura"),
+      new Gstr1CdnuraTabWriter(),
       new Gstr1ExpTabWriter(),
-      Gstr1SchemaTabWriter.of("expa"),
+      new Gstr1ExpaTabWriter(),
       new Gstr1AtTabWriter(),
-      Gstr1SchemaTabWriter.of("ata"),
+      new Gstr1AtaTabWriter(),
       new Gstr1AtadjTabWriter(),
-      Gstr1SchemaTabWriter.of("atadja"),
+      new Gstr1AtadjaTabWriter(),
       new Gstr1ExempTabWriter(),
       new Gstr1HsnB2bTabWriter(),
       new Gstr1HsnB2cTabWriter(),
       new Gstr1DocsTabWriter(),
-      Gstr1SchemaTabWriter.of("eco"),
-      Gstr1SchemaTabWriter.of("ecoa"),
-      Gstr1SchemaTabWriter.of("ecob2b"),
-      Gstr1SchemaTabWriter.of("ecourp2b"),
-      Gstr1SchemaTabWriter.of("ecob2c"),
-      Gstr1SchemaTabWriter.of("ecourp2c"),
-      Gstr1SchemaTabWriter.of("ecoab2b"),
-      Gstr1SchemaTabWriter.of("ecoab2c"),
-      Gstr1SchemaTabWriter.of("ecoaurp2b"),
-      Gstr1SchemaTabWriter.of("ecoaurp2c")
+      new Gstr1EcoTabWriter(),
+      new Gstr1EcoaTabWriter(),
+      new Gstr1Ecob2bTabWriter(),
+      new Gstr1Ecourp2bTabWriter(),
+      new Gstr1Ecob2cTabWriter(),
+      new Gstr1Ecourp2cTabWriter(),
+      new Gstr1Ecoab2bTabWriter(),
+      new Gstr1Ecoab2cTabWriter(),
+      new Gstr1Ecoaurp2bTabWriter(),
+      new Gstr1Ecoaurp2cTabWriter()
   );
 
   public Gstr1ReportContext getReportData(String shopId, String period) {
