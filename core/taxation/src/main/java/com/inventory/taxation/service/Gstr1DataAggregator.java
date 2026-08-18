@@ -13,6 +13,7 @@ import com.inventory.product.domain.repository.RefundRepository;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.taxation.domain.model.*;
 import com.inventory.taxation.domain.gstr1.Gstr1ReportContext;
+import com.inventory.taxation.utils.GstStateCode;
 import com.inventory.user.domain.model.Customer;
 import com.inventory.user.domain.repository.CustomerRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -91,8 +92,13 @@ public class Gstr1DataAggregator {
     Map<String, Inventory> inventoryMap = inventoryIds.isEmpty() ? Map.of()
         : inventoryRepository.findByIdIn(new ArrayList<>(inventoryIds)).stream().collect(Collectors.toMap(Inventory::getId, inv -> inv));
 
-    String placeOfSupply = shop.getLocation() != null && StringUtils.hasText(shop.getLocation().getState())
-        ? shop.getLocation().getState()
+    // The supplier's own state. It is the place of supply only for an unregistered
+    // buyer, where no recipient registration exists to point anywhere else; for a
+    // registered recipient the GSTIN decides, per line, below. Rendered as NN-Name
+    // because the portal rejects a bare state name on upload.
+    String sellerState = shop.getLocation() != null
+        && StringUtils.hasText(shop.getLocation().getState())
+        ? GstStateCode.format(shop.getLocation().getState())
         : "";
 
     Gstr1ReportContext.Gstr1ReportContextBuilder ctx = Gstr1ReportContext.builder()
@@ -141,7 +147,7 @@ public class Gstr1DataAggregator {
           .invoiceNo(invNo)
           .invoiceDate(invDate)
           .invoiceValue(invValue)
-          .placeOfSupply(placeOfSupply)
+          .placeOfSupply(GstStateCode.placeOfSupply(recipientGstin, sellerState))
           .reverseCharge("N")
           .applicableTaxPct(rateStr)
           .invoiceType("Regular B2B") // Regular
@@ -163,7 +169,7 @@ public class Gstr1DataAggregator {
           line.setSupplyType(SupplyType.B2CL);
           b2clLines.add(line);
         } else {
-          String key = "OE|" + placeOfSupply + "|" + rateStr;
+          String key = "OE|" + line.getPlaceOfSupply() + "|" + rateStr;
           line.setB2csType("OE");
           line.setSupplyType(SupplyType.B2CS);
           b2csAggregate.merge(key, line, this::mergeB2csLine);
@@ -217,7 +223,7 @@ public class Gstr1DataAggregator {
           .noteNumber(noteNumber)
           .noteDate(noteDate)
           .noteType("C")
-          .placeOfSupply(placeOfSupply)
+          .placeOfSupply(GstStateCode.placeOfSupply(recipientGstin, sellerState))
           .reverseCharge("N")
           .noteSupplyType("R")
           .noteValue(noteValue)
