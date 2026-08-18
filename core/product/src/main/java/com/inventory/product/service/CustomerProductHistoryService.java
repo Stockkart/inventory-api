@@ -2,6 +2,8 @@ package com.inventory.product.service;
 
 import com.inventory.common.exception.ValidationException;
 import com.inventory.pluginengine.ref.SellableRef;
+import com.inventory.product.domain.model.Inventory;
+import com.inventory.product.domain.model.Product;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.product.domain.model.enums.PurchaseStatus;
@@ -23,7 +25,9 @@ import org.springframework.util.StringUtils;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -67,11 +71,27 @@ public class CustomerProductHistoryService {
 
     int limit = clampLimit(limitPerRef);
     RefBuckets refBuckets = splitRefs(refs);
+
+    // What is being scanned, as products rather than as lots. A lot is one
+    // delivery and is replaced every time stock is received, so it cannot answer
+    // "has this customer bought this before" -- the question is about the
+    // medicine, not the box it arrived in.
+    Map<String, String> keyByRef = resolveProductKeys(shopId, refs, refBuckets);
+    Map<String, List<String>> refsByKey = new LinkedHashMap<>();
+    for (Map.Entry<String, String> entry : keyByRef.entrySet()) {
+      refsByKey.computeIfAbsent(entry.getValue(), k -> new ArrayList<>())
+          .add(entry.getKey());
+    }
+    Set<String> targetNames = keyByRef.values().stream()
+        .map(CustomerProductHistoryService::nameOfKey)
+        .collect(Collectors.toCollection(LinkedHashSet::new));
+
     List<Purchase> purchases = findRecentMatchingPurchases(
-        shopId, resolvedCustomerId, excludePurchaseId, refBuckets);
+        shopId, resolvedCustomerId, excludePurchaseId, refBuckets, targetNames);
 
     Map<String, List<CustomerProductSaleEntryDto>> buckets = initBuckets(refs);
     Set<String> refSet = new HashSet<>(refs);
+    Map<String, String> keyByLotId = new HashMap<>();
 
     for (Purchase purchase : purchases) {
       if (allBucketsFull(buckets, limit)) {
@@ -82,15 +102,13 @@ public class CustomerProductHistoryService {
         continue;
       }
       for (PurchaseItem item : purchase.getItems()) {
-        String matchedRef = matchSellableRef(item, refSet, refBuckets);
-        if (matchedRef == null) {
-          continue;
+        for (String matchedRef : matchRefs(shopId, item, refSet, refsByKey, keyByLotId)) {
+          List<CustomerProductSaleEntryDto> entries = buckets.get(matchedRef);
+          if (entries == null || entries.size() >= limit) {
+            continue;
+          }
+          entries.add(toEntry(purchase, item, soldAt));
         }
-        List<CustomerProductSaleEntryDto> entries = buckets.get(matchedRef);
-        if (entries.size() >= limit) {
-          continue;
-        }
-        entries.add(toEntry(purchase, item, soldAt));
       }
     }
 
@@ -144,7 +162,8 @@ public class CustomerProductHistoryService {
       String shopId,
       String customerId,
       String excludePurchaseId,
-      RefBuckets refBuckets) {
+      RefBuckets refBuckets,
+      Set<String> targetNames) {
 
     List<Criteria> itemMatchers = new ArrayList<>();
     if (!refBuckets.sellableRefs().isEmpty()) {
@@ -155,6 +174,12 @@ public class CustomerProductHistoryService {
     }
     if (!refBuckets.menuItemIds().isEmpty()) {
       itemMatchers.add(Criteria.where("items.menuItemId").in(refBuckets.menuItemIds()));
+    }
+    // Also fetch by product name. Without this the lot filter above excludes
+    // every earlier batch before Java ever sees it, so widening the match alone
+    // would change nothing: the rows would already be gone.
+    if (!targetNames.isEmpty()) {
+      itemMatchers.add(Criteria.where("items.name").in(targetNames));
     }
 
     Criteria base = Criteria.where("shopId").is(shopId)
@@ -194,27 +219,133 @@ public class CustomerProductHistoryService {
     return true;
   }
 
-  private static String matchSellableRef(PurchaseItem item, Set<String> refSet, RefBuckets refBuckets) {
+  /**
+   * A product identity as {@code normalizedName|companyName}.
+   *
+   * <p>Name and company, deliberately without baseUnit. The application's own
+   * product identity includes the unit, but a legacy import can record the same
+   * medicine under two units -- this shop has 142 names split across a {@code PCS}
+   * and a {@code PH} product, {@code PH} being the old system's catch-all for
+   * pieces. Those are one medicine to the person at the counter, and keying on
+   * name and company joins them back together.
+   */
+  private static String productKey(String name, String companyName) {
+    String normalizedName = name == null ? "" : name.trim().toLowerCase();
+    String company = companyName == null ? "" : companyName.trim().toLowerCase();
+    return normalizedName + "|" + company;
+  }
+
+  private static String nameOfKey(String key) {
+    int bar = key.indexOf('|');
+    return bar < 0 ? key : key.substring(0, bar);
+  }
+
+  /** The product identity behind each scanned ref. */
+  private Map<String, String> resolveProductKeys(
+      String shopId, List<String> refs, RefBuckets refBuckets) {
+    Map<String, String> keyByRef = new LinkedHashMap<>();
+    if (refBuckets.lotIds().isEmpty()) {
+      return keyByRef;
+    }
+    Map<String, String> productIdByLot = new HashMap<>();
+    for (Inventory lot : mongoTemplate.find(
+        new Query(Criteria.where("_id").in(refBuckets.lotIds())
+            .and("shopId").is(shopId)), Inventory.class)) {
+      if (StringUtils.hasText(lot.getProductId())) {
+        productIdByLot.put(lot.getId(), lot.getProductId());
+      }
+    }
+    Map<String, String> keyByProductId = loadProductKeys(
+        new HashSet<>(productIdByLot.values()));
+    for (String ref : refs) {
+      SellableRef parsed = SellableRef.parseLenient(ref);
+      if (parsed == null || !SellableRef.KIND_INVENTORY.equals(parsed.kind())) {
+        continue;
+      }
+      String key = keyByProductId.get(productIdByLot.get(parsed.id()));
+      if (key != null) {
+        keyByRef.put(ref, key);
+      }
+    }
+    return keyByRef;
+  }
+
+  private Map<String, String> loadProductKeys(Set<String> productIds) {
+    Map<String, String> out = new HashMap<>();
+    if (productIds.isEmpty()) {
+      return out;
+    }
+    for (Product product : mongoTemplate.find(
+        new Query(Criteria.where("_id").in(productIds)), Product.class)) {
+      String name = StringUtils.hasText(product.getNormalizedName())
+          ? product.getNormalizedName() : product.getName();
+      out.put(product.getId(), productKey(name, product.getCompanyName()));
+    }
+    return out;
+  }
+
+  /**
+   * Which of the scanned refs this sale line counts as history for.
+   *
+   * <p>Three ways in, narrowest first. An exact ref match is the same lot and
+   * needs no lookup. Otherwise the line's own lot is resolved to its product and
+   * compared on identity, which is what makes history survive a batch changing.
+   * Failing that the line's recorded product name is compared, which is the only
+   * route left for a sale whose lot no longer exists -- every migrated sale, and
+   * anything old enough that its stock has since been cleared.
+   */
+  private List<String> matchRefs(
+      String shopId,
+      PurchaseItem item,
+      Set<String> refSet,
+      Map<String, List<String>> refsByKey,
+      Map<String, String> keyByLotId) {
     PurchaseItemRefs.normalize(item);
+
     String sellableRef = item.getSellableRef();
     if (StringUtils.hasText(sellableRef) && refSet.contains(sellableRef)) {
-      return sellableRef;
+      return List.of(sellableRef);
     }
-    String legacyLot = item.getMongoInventoryId();
-    if (StringUtils.hasText(legacyLot)) {
-      String encoded = SellableRef.inventory(legacyLot).encode();
-      if (refSet.contains(encoded)) {
-        return encoded;
+
+    String lotId = lotIdOf(item);
+    if (StringUtils.hasText(lotId)) {
+      String key = keyByLotId.computeIfAbsent(lotId, id -> lookupKeyForLot(shopId, id));
+      if (StringUtils.hasText(key) && refsByKey.containsKey(key)) {
+        return refsByKey.get(key);
       }
     }
-    String legacyMenu = item.getMongoMenuItemId();
-    if (StringUtils.hasText(legacyMenu)) {
-      String encoded = SellableRef.menu(legacyMenu).encode();
-      if (refSet.contains(encoded)) {
-        return encoded;
+
+    String name = item.getName();
+    if (StringUtils.hasText(name)) {
+      String normalized = name.trim().toLowerCase();
+      for (Map.Entry<String, List<String>> entry : refsByKey.entrySet()) {
+        if (nameOfKey(entry.getKey()).equals(normalized)) {
+          return entry.getValue();
+        }
       }
     }
-    return null;
+    return List.of();
+  }
+
+  /** "" rather than null, so a lot that resolves to nothing is cached too. */
+  private String lookupKeyForLot(String shopId, String lotId) {
+    Inventory lot = mongoTemplate.findOne(
+        new Query(Criteria.where("_id").is(lotId).and("shopId").is(shopId)),
+        Inventory.class);
+    if (lot == null || !StringUtils.hasText(lot.getProductId())) {
+      return "";
+    }
+    return loadProductKeys(Set.of(lot.getProductId()))
+        .getOrDefault(lot.getProductId(), "");
+  }
+
+  private static String lotIdOf(PurchaseItem item) {
+    if (StringUtils.hasText(item.getMongoInventoryId())) {
+      return item.getMongoInventoryId();
+    }
+    SellableRef parsed = SellableRef.parseLenient(item.getSellableRef());
+    return parsed != null && SellableRef.KIND_INVENTORY.equals(parsed.kind())
+        ? parsed.id() : null;
   }
 
   private static CustomerProductSaleEntryDto toEntry(Purchase purchase, PurchaseItem item, Instant soldAt) {
