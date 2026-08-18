@@ -23,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -350,17 +351,30 @@ public class CustomerProductHistoryService {
 
   private static CustomerProductSaleEntryDto toEntry(Purchase purchase, PurchaseItem item, Instant soldAt) {
     BigDecimal quantity = item.getQuantity() != null ? item.getQuantity() : BigDecimal.ZERO;
-    BigDecimal price = item.getPriceToRetail() != null ? item.getPriceToRetail() : BigDecimal.ZERO;
+    BigDecimal listPrice = item.getPriceToRetail() != null
+        ? item.getPriceToRetail() : BigDecimal.ZERO;
     BigDecimal lineTotal = item.getTotalAmount();
     if (lineTotal == null) {
-      lineTotal = price.multiply(quantity);
+      lineTotal = listPrice.multiply(quantity);
     }
+
+    // What was charged, not what was listed. priceToRetail is the PTR the line
+    // started from; any discount or scheme applied at the counter lands in
+    // totalAmount and never touches it. Reporting the PTR made the hint state a
+    // price the customer was never charged -- two sales at 17 and 19 both read
+    // as 20, the list price -- which is worse than showing nothing, because the
+    // number looks authoritative while contradicting the invoice beside it.
+    BigDecimal chargedPerUnit = listPrice;
+    if (quantity.compareTo(BigDecimal.ZERO) > 0 && lineTotal.compareTo(BigDecimal.ZERO) > 0) {
+      chargedPerUnit = lineTotal.divide(quantity, 2, RoundingMode.HALF_UP);
+    }
+
     return new CustomerProductSaleEntryDto(
         soldAt,
         purchase.getInvoiceNo(),
         purchase.getId(),
         quantity,
-        price,
+        chargedPerUnit,
         lineTotal);
   }
 
