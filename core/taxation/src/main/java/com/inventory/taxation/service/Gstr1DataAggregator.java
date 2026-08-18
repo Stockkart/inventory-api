@@ -246,11 +246,17 @@ public class Gstr1DataAggregator {
 
     List<GstDocumentSummaryLine> docLines = new ArrayList<>();
     if (!invoiceSerialNos.isEmpty()) {
+      // A document series runs from its lowest number to its highest. These were
+      // taken as the first and last element of the list, which is the order the
+      // purchases came back from Mongo -- so the declared range depended on
+      // query order and could report a mid-series number as the start.
+      List<String> serials = new ArrayList<>(invoiceSerialNos);
+      Collections.sort(serials);
       docLines.add(GstDocumentSummaryLine.builder()
           .natureOfDocument("Invoices for outward supply")
-          .srNoFrom(invoiceSerialNos.get(0))
-          .srNoTo(invoiceSerialNos.get(invoiceSerialNos.size() - 1))
-          .totalNumber(invoiceSerialNos.size())
+          .srNoFrom(serials.get(0))
+          .srNoTo(serials.get(serials.size() - 1))
+          .totalNumber(serials.size())
           .cancelled(0)
           .build());
     }
