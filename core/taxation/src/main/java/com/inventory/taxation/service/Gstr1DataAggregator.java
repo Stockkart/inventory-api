@@ -11,8 +11,10 @@ import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.PurchaseRepository;
 import com.inventory.product.domain.repository.RefundRepository;
 import com.inventory.product.domain.repository.ShopRepository;
+import com.inventory.product.service.PackagingUnitCatalog;
 import com.inventory.taxation.domain.model.*;
 import com.inventory.taxation.domain.gstr1.Gstr1ReportContext;
+import com.inventory.taxation.utils.GstStateCode;
 import com.inventory.user.domain.model.Customer;
 import com.inventory.user.domain.repository.CustomerRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -35,6 +37,9 @@ public class Gstr1DataAggregator {
 
   private static final BigDecimal B2CL_THRESHOLD = new BigDecimal("250000");
   private static final int GSTIN_LENGTH = 15;
+
+  /** UQC used when the base unit is absent or is not a GST quantity code. */
+  private static final String FALLBACK_UQC = "OTH-OTHERS";
 
   @Autowired
   private PurchaseRepository purchaseRepository;
@@ -91,8 +96,13 @@ public class Gstr1DataAggregator {
     Map<String, Inventory> inventoryMap = inventoryIds.isEmpty() ? Map.of()
         : inventoryRepository.findByIdIn(new ArrayList<>(inventoryIds)).stream().collect(Collectors.toMap(Inventory::getId, inv -> inv));
 
-    String placeOfSupply = shop.getLocation() != null && StringUtils.hasText(shop.getLocation().getState())
-        ? shop.getLocation().getState()
+    // The supplier's own state. It is the place of supply only for an unregistered
+    // buyer, where no recipient registration exists to point anywhere else; for a
+    // registered recipient the GSTIN decides, per line, below. Rendered as NN-Name
+    // because the portal rejects a bare state name on upload.
+    String sellerState = shop.getLocation() != null
+        && StringUtils.hasText(shop.getLocation().getState())
+        ? GstStateCode.format(shop.getLocation().getState())
         : "";
 
     Gstr1ReportContext.Gstr1ReportContextBuilder ctx = Gstr1ReportContext.builder()
@@ -141,7 +151,7 @@ public class Gstr1DataAggregator {
           .invoiceNo(invNo)
           .invoiceDate(invDate)
           .invoiceValue(invValue)
-          .placeOfSupply(placeOfSupply)
+          .placeOfSupply(GstStateCode.placeOfSupply(recipientGstin, sellerState))
           .reverseCharge("N")
           .applicableTaxPct(rateStr)
           .invoiceType("Regular B2B") // Regular
@@ -163,7 +173,7 @@ public class Gstr1DataAggregator {
           line.setSupplyType(SupplyType.B2CL);
           b2clLines.add(line);
         } else {
-          String key = "OE|" + placeOfSupply + "|" + rateStr;
+          String key = "OE|" + line.getPlaceOfSupply() + "|" + rateStr;
           line.setB2csType("OE");
           line.setSupplyType(SupplyType.B2CS);
           b2csAggregate.merge(key, line, this::mergeB2csLine);
@@ -217,7 +227,7 @@ public class Gstr1DataAggregator {
           .noteNumber(noteNumber)
           .noteDate(noteDate)
           .noteType("C")
-          .placeOfSupply(placeOfSupply)
+          .placeOfSupply(GstStateCode.placeOfSupply(recipientGstin, sellerState))
           .reverseCharge("N")
           .noteSupplyType("R")
           .noteValue(noteValue)
@@ -236,11 +246,17 @@ public class Gstr1DataAggregator {
 
     List<GstDocumentSummaryLine> docLines = new ArrayList<>();
     if (!invoiceSerialNos.isEmpty()) {
+      // A document series runs from its lowest number to its highest. These were
+      // taken as the first and last element of the list, which is the order the
+      // purchases came back from Mongo -- so the declared range depended on
+      // query order and could report a mid-series number as the start.
+      List<String> serials = new ArrayList<>(invoiceSerialNos);
+      Collections.sort(serials);
       docLines.add(GstDocumentSummaryLine.builder()
           .natureOfDocument("Invoices for outward supply")
-          .srNoFrom(invoiceSerialNos.get(0))
-          .srNoTo(invoiceSerialNos.get(invoiceSerialNos.size() - 1))
-          .totalNumber(invoiceSerialNos.size())
+          .srNoFrom(serials.get(0))
+          .srNoTo(serials.get(serials.size() - 1))
+          .totalNumber(serials.size())
           .cancelled(0)
           .build());
     }
@@ -317,6 +333,27 @@ public class Gstr1DataAggregator {
         .build();
   }
 
+  /**
+   * The GST quantity code for a sale line, as {@code PCS-PIECES}.
+   *
+   * <p>A product's {@code baseUnit} is already a GST UQC — {@link PackagingUnitCatalog}
+   * is the same master the portal uses, and it holds both the code and its label —
+   * so the summary can report the real unit instead of a constant. The lot is
+   * preferred because its base unit is hydrated from the product; the sale line's
+   * own copy is the fallback for a lot that no longer exists.
+   */
+  static String resolveUqc(Inventory inv, PurchaseItem item) {
+    String baseUnit = inv != null && StringUtils.hasText(inv.getBaseUnit())
+        ? inv.getBaseUnit()
+        : (item != null ? item.getBaseUnit() : null);
+    if (!StringUtils.hasText(baseUnit)) {
+      return FALLBACK_UQC;
+    }
+    return PackagingUnitCatalog.find(baseUnit)
+        .map(def -> def.getUqc() + "-" + def.getLabel())
+        .orElse(FALLBACK_UQC);
+  }
+
   private void aggregateHsn(Purchase purchase, Map<String, Inventory> inventoryMap, boolean b2b,
                             Map<String, GstHsnLine> hsnMap) {
     if (purchase.getItems() == null) return;
@@ -324,6 +361,7 @@ public class Gstr1DataAggregator {
       Inventory inv = item.getInventoryId() != null ? inventoryMap.get(item.getInventoryId()) : null;
       String hsn = inv != null && StringUtils.hasText(inv.getHsn()) ? inv.getHsn() : "0";
       String description = inv != null ? inv.getDescription() : "";
+      String uqc = resolveUqc(inv, item);
       BigDecimal sgstVal = parseRate(item.getSgst());
       BigDecimal cgstVal = parseRate(item.getCgst());
       BigDecimal rate = sgstVal.add(cgstVal);
@@ -340,13 +378,17 @@ public class Gstr1DataAggregator {
       BigDecimal stateUtTaxAmount = taxableVal.multiply(sgstVal)
           .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
 
-      String key = hsn + "|" + rate;
+      // UQC belongs in the key. The GST HSN summary is reported per HSN, UQC and
+      // rate, and now that UQC varies per item, keying on HSN and rate alone
+      // would fold tablets and bottles of the same HSN into one row under
+      // whichever unit happened to be seen first.
+      String key = hsn + "|" + uqc + "|" + rate;
       GstHsnLine existing = hsnMap.get(key);
       if (existing == null) {
         existing = GstHsnLine.builder()
             .hsn(hsn)
             .description(description)
-            .uqc("OTH-OTHERS")
+            .uqc(uqc)
             .totalQuantity(qty)
             .totalValue(taxableVal)
             .rate(rate)

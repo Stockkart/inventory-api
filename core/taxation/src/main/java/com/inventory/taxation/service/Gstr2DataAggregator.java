@@ -9,6 +9,7 @@ import com.inventory.product.domain.repository.VendorPurchaseInvoiceRepository;
 import com.inventory.product.domain.repository.VendorPurchaseReturnRepository;
 import com.inventory.taxation.domain.gstr2.*;
 import com.inventory.taxation.domain.model.GstHsnLine;
+import com.inventory.taxation.utils.GstStateCode;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.user.domain.model.Vendor;
@@ -77,8 +78,12 @@ public class Gstr2DataAggregator {
       return buildEmptyContext(shopId, shop, period, year, month);
     }
 
-    String placeOfSupply = shop.getLocation() != null && StringUtils.hasText(shop.getLocation().getState())
-        ? shop.getLocation().getState()
+    // Inward supply: the recipient is this shop, so its own state is the place
+    // of supply and that part was already right. It was emitted as a bare name
+    // ("Bihar"), and the portal accepts only the code-prefixed form ("10-Bihar").
+    String placeOfSupply = shop.getLocation() != null
+        && StringUtils.hasText(shop.getLocation().getState())
+        ? GstStateCode.format(shop.getLocation().getState())
         : "";
 
     List<Gstr2CdnrLine> cdnrFromReturns = new ArrayList<>();
@@ -270,6 +275,16 @@ public class Gstr2DataAggregator {
         b2burLines.add(line);
       }
     }
+
+    // Oldest first. The lines come out in whatever order the inventory query
+    // returned, which is neither the order the invoices were received nor any
+    // order a reader can follow when reconciling against a supplier statement.
+    // Invoice number breaks ties so the sequence is stable between runs.
+    Comparator<LocalDate> byDate = Comparator.nullsLast(Comparator.naturalOrder());
+    b2bLines.sort(Comparator.comparing(Gstr2B2bLine::getInvoiceDate, byDate)
+        .thenComparing(l -> l.getInvoiceNo() == null ? "" : l.getInvoiceNo()));
+    b2burLines.sort(Comparator.comparing(Gstr2B2burLine::getInvoiceDate, byDate)
+        .thenComparing(l -> l.getInvoiceNo() == null ? "" : l.getInvoiceNo()));
 
     return Gstr2ReportContext.builder()
         .shopId(shopId)
