@@ -11,6 +11,7 @@ import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.PurchaseRepository;
 import com.inventory.product.domain.repository.RefundRepository;
 import com.inventory.product.domain.repository.ShopRepository;
+import com.inventory.product.service.PackagingUnitCatalog;
 import com.inventory.taxation.domain.model.*;
 import com.inventory.taxation.domain.gstr1.Gstr1ReportContext;
 import com.inventory.taxation.utils.GstStateCode;
@@ -36,6 +37,9 @@ public class Gstr1DataAggregator {
 
   private static final BigDecimal B2CL_THRESHOLD = new BigDecimal("250000");
   private static final int GSTIN_LENGTH = 15;
+
+  /** UQC used when the base unit is absent or is not a GST quantity code. */
+  private static final String FALLBACK_UQC = "OTH-OTHERS";
 
   @Autowired
   private PurchaseRepository purchaseRepository;
@@ -323,6 +327,27 @@ public class Gstr1DataAggregator {
         .build();
   }
 
+  /**
+   * The GST quantity code for a sale line, as {@code PCS-PIECES}.
+   *
+   * <p>A product's {@code baseUnit} is already a GST UQC — {@link PackagingUnitCatalog}
+   * is the same master the portal uses, and it holds both the code and its label —
+   * so the summary can report the real unit instead of a constant. The lot is
+   * preferred because its base unit is hydrated from the product; the sale line's
+   * own copy is the fallback for a lot that no longer exists.
+   */
+  static String resolveUqc(Inventory inv, PurchaseItem item) {
+    String baseUnit = inv != null && StringUtils.hasText(inv.getBaseUnit())
+        ? inv.getBaseUnit()
+        : (item != null ? item.getBaseUnit() : null);
+    if (!StringUtils.hasText(baseUnit)) {
+      return FALLBACK_UQC;
+    }
+    return PackagingUnitCatalog.find(baseUnit)
+        .map(def -> def.getUqc() + "-" + def.getLabel())
+        .orElse(FALLBACK_UQC);
+  }
+
   private void aggregateHsn(Purchase purchase, Map<String, Inventory> inventoryMap, boolean b2b,
                             Map<String, GstHsnLine> hsnMap) {
     if (purchase.getItems() == null) return;
@@ -330,6 +355,7 @@ public class Gstr1DataAggregator {
       Inventory inv = item.getInventoryId() != null ? inventoryMap.get(item.getInventoryId()) : null;
       String hsn = inv != null && StringUtils.hasText(inv.getHsn()) ? inv.getHsn() : "0";
       String description = inv != null ? inv.getDescription() : "";
+      String uqc = resolveUqc(inv, item);
       BigDecimal sgstVal = parseRate(item.getSgst());
       BigDecimal cgstVal = parseRate(item.getCgst());
       BigDecimal rate = sgstVal.add(cgstVal);
@@ -346,13 +372,17 @@ public class Gstr1DataAggregator {
       BigDecimal stateUtTaxAmount = taxableVal.multiply(sgstVal)
           .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
 
-      String key = hsn + "|" + rate;
+      // UQC belongs in the key. The GST HSN summary is reported per HSN, UQC and
+      // rate, and now that UQC varies per item, keying on HSN and rate alone
+      // would fold tablets and bottles of the same HSN into one row under
+      // whichever unit happened to be seen first.
+      String key = hsn + "|" + uqc + "|" + rate;
       GstHsnLine existing = hsnMap.get(key);
       if (existing == null) {
         existing = GstHsnLine.builder()
             .hsn(hsn)
             .description(description)
-            .uqc("OTH-OTHERS")
+            .uqc(uqc)
             .totalQuantity(qty)
             .totalValue(taxableVal)
             .rate(rate)
