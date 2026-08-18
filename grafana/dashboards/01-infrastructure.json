@@ -42,7 +42,7 @@
     {
       "id": 1,
       "type": "row",
-      "title": "Memory (matches DigitalOcean RSS)",
+      "title": "Memory (DigitalOcean cgroup)",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -55,7 +55,7 @@
     {
       "id": 2,
       "type": "timeseries",
-      "title": "Process RSS",
+      "title": "Memory % (DigitalOcean)",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -84,15 +84,37 @@
             "stacking": {
               "group": "A",
               "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "line"
             }
           },
-          "unit": "bytes"
+          "min": 0,
+          "max": 120,
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
+            ]
+          }
         },
         "overrides": [
           {
             "matcher": {
               "id": "byName",
-              "options": "RSS"
+              "options": "container (DO)"
             },
             "properties": [
               {
@@ -107,7 +129,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "virtual"
+              "options": "process RSS"
             },
             "properties": [
               {
@@ -115,6 +137,59 @@
                 "value": {
                   "mode": "fixed",
                   "fixedColor": "#FF9830"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [4, 4]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "used"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#73BF69"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "limit"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#F2495C"
                 }
               }
             ]
@@ -143,8 +218,8 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "process_resident_memory_bytes{service=\"inventory-api\", env=\"$env\"}",
-          "legendFormat": "RSS",
+          "expr": "100 * (container_memory_working_set_bytes{service=\"inventory-api\", env=\"$env\"} or container_memory_working_set{service=\"inventory-api\", env=\"$env\"}) / (container_memory_limit_bytes{service=\"inventory-api\", env=\"$env\"} or container_memory_limit{service=\"inventory-api\", env=\"$env\"})",
+          "legendFormat": "container (DO)",
           "range": true,
           "refId": "A"
         },
@@ -154,13 +229,35 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "process_virtual_memory_bytes{service=\"inventory-api\", env=\"$env\"}",
-          "legendFormat": "virtual",
+          "expr": "100 * process_resident_memory_bytes{service=\"inventory-api\", env=\"$env\"} / (container_memory_limit_bytes{service=\"inventory-api\", env=\"$env\"} or container_memory_limit{service=\"inventory-api\", env=\"$env\"})",
+          "legendFormat": "process RSS",
           "range": true,
           "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "container_memory_working_set_bytes{service=\"inventory-api\", env=\"$env\"} or container_memory_working_set{service=\"inventory-api\", env=\"$env\"}",
+          "legendFormat": "used",
+          "range": true,
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "container_memory_limit_bytes{service=\"inventory-api\", env=\"$env\"} or container_memory_limit{service=\"inventory-api\", env=\"$env\"}",
+          "legendFormat": "limit",
+          "range": true,
+          "refId": "D"
         }
       ],
-      "description": "RSS is what DigitalOcean shows as memory %. Needs API rebuild. Switch env to prod."
+      "description": "Same as DigitalOcean App Platform Memory %: cgroup working set / cgroup limit (512 MB). Process RSS can exceed 100% because it counts shared JDK mappings; it is not the OOM number. Needs API redeploy."
     },
     {
       "id": 3,
