@@ -1121,7 +1121,8 @@ public class CheckoutService {
 
   /**
    * Set purchase-level margin breakdown: totalCost, revenueBeforeTax, totalProfit, marginPercent.
-   * revenueBeforeTax = subTotal − additionalDiscountTotal; totalProfit = revenueBeforeTax − totalCost.
+   * revenueBeforeTax = subTotal − additionalDiscountTotal; totalProfit = revenueBeforeTax − totalCost;
+   * marginPercent = totalProfit ÷ totalCost × 100, i.e. markup on cost.
    */
   private void setPurchaseMarginDetails(Purchase purchase) {
     if (purchase == null || purchase.getItems() == null || purchase.getItems().isEmpty()) {
@@ -1140,9 +1141,15 @@ public class CheckoutService {
     purchase.setRevenueAfterTax(revenueAfterTax.setScale(2, RoundingMode.HALF_UP));
     BigDecimal totalProfit = revenueBeforeTax.subtract(totalCost).setScale(2, RoundingMode.HALF_UP);
     purchase.setTotalProfit(totalProfit);
-    if (revenueBeforeTax.compareTo(BigDecimal.ZERO) > 0) {
+    // Against cost, not revenue. Both are ordinary measures -- profit over
+    // revenue is margin, profit over cost is markup -- but the counter staff
+    // read this number against the one their previous system showed, which is
+    // markup. On a sale costing 368.22 and earning 30.01 the two read 7.5% and
+    // 8.15%, and a percentage that disagrees with the till they have used for
+    // years is not trusted, whichever definition is the tidier one.
+    if (totalCost.compareTo(BigDecimal.ZERO) > 0) {
       BigDecimal marginPercent = totalProfit.multiply(BigDecimal.valueOf(100))
-          .divide(revenueBeforeTax, 2, RoundingMode.HALF_UP);
+          .divide(totalCost, 2, RoundingMode.HALF_UP);
       purchase.setMarginPercent(marginPercent);
     } else {
       purchase.setMarginPercent(null);

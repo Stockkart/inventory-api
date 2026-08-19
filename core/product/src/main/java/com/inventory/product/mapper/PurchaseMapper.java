@@ -332,8 +332,11 @@ public abstract class PurchaseMapper {
     BigDecimal revenueBeforeTax = totalAmount.divide(taxMultiplier, 2, java.math.RoundingMode.HALF_UP);
     BigDecimal profit = revenueBeforeTax.subtract(costTotal).setScale(2, java.math.RoundingMode.HALF_UP);
     item.setProfit(profit);
-    if (revenueBeforeTax.compareTo(BigDecimal.ZERO) > 0) {
-      BigDecimal marginPercent = profit.multiply(BigDecimal.valueOf(100)).divide(revenueBeforeTax, 2, java.math.RoundingMode.HALF_UP);
+    // Against cost, matching the purchase-level figure in CheckoutService: a
+    // line and the bill it sits on must not measure the same thing two ways.
+    if (costTotal.compareTo(BigDecimal.ZERO) > 0) {
+      BigDecimal marginPercent = profit.multiply(BigDecimal.valueOf(100))
+          .divide(costTotal, 2, java.math.RoundingMode.HALF_UP);
       item.setMarginPercent(marginPercent);
     } else {
       item.setMarginPercent(null);

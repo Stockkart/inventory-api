@@ -32,7 +32,7 @@ public class AddToCartResponse {
   BigDecimal revenueBeforeTax; // Margin: subTotal − additionalDiscountTotal
   BigDecimal revenueAfterTax;  // Margin: grandTotal (total received including tax)
   BigDecimal totalProfit;     // Margin: revenueBeforeTax − totalCost
-  BigDecimal marginPercent;   // Margin: (totalProfit / revenueBeforeTax) × 100
+  BigDecimal marginPercent;   // Markup on cost: (totalProfit / totalCost) × 100
   PurchaseStatus status;
   String customerId;
   String customerName;
