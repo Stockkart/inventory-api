@@ -367,7 +367,13 @@ public class Gstr1DataAggregator {
       String hsn = StringUtils.hasText(item.getHsn())
           ? item.getHsn()
           : (inv != null && StringUtils.hasText(inv.getHsn()) ? inv.getHsn() : "0");
-      String description = inv != null ? inv.getDescription() : "";
+      // Same reasoning as the HSN above: the lot carried the description and a
+      // line can outlive its lot, so every such row was described as nothing.
+      // The line records what was sold, which is the description the summary
+      // wants.
+      String description = StringUtils.hasText(item.getName())
+          ? item.getName()
+          : (inv != null ? inv.getDescription() : "");
       String uqc = resolveUqc(inv, item);
       BigDecimal sgstVal = parseRate(item.getSgst());
       BigDecimal cgstVal = parseRate(item.getCgst());
