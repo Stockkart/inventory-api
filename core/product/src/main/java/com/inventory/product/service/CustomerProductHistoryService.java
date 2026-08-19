@@ -81,15 +81,24 @@ public class CustomerProductHistoryService {
     // delivery and is replaced every time stock is received, so it cannot answer
     // "has this customer bought this before" -- the question is about the
     // medicine, not the box it arrived in.
-    Map<String, String> keyByRef = resolveProductKeys(shopId, refs, refBuckets);
+    Map<String, String> storedNamesByKey = new LinkedHashMap<>();
+    Map<String, String> keyByRef = resolveProductKeys(shopId, refs, refBuckets,
+        storedNamesByKey);
     Map<String, List<String>> refsByKey = new LinkedHashMap<>();
     for (Map.Entry<String, String> entry : keyByRef.entrySet()) {
       refsByKey.computeIfAbsent(entry.getValue(), k -> new ArrayList<>())
           .add(entry.getKey());
     }
-    Set<String> targetNames = keyByRef.values().stream()
-        .map(CustomerProductHistoryService::nameOfKey)
-        .collect(Collectors.toCollection(LinkedHashSet::new));
+    // Names for the query, as the sale line stores them. The key is lower-cased
+    // for comparison, but items.name keeps the product's own casing and a Mongo
+    // $in is case sensitive -- querying with the lower-cased form matches nothing
+    // and the older batch is never fetched at all. Both forms are sent so a line
+    // written either way is found.
+    Set<String> targetNames = new LinkedHashSet<>();
+    for (String key : keyByRef.values()) {
+      targetNames.add(nameOfKey(key));
+    }
+    targetNames.addAll(storedNamesByKey.values());
 
     List<Purchase> purchases = findRecentMatchingPurchases(
         shopId, resolvedCustomerId, excludePurchaseId, refBuckets, targetNames);
@@ -220,7 +229,8 @@ public class CustomerProductHistoryService {
 
   /** The product identity behind each scanned ref. */
   private Map<String, String> resolveProductKeys(
-      String shopId, List<String> refs, RefBuckets refBuckets) {
+      String shopId, List<String> refs, RefBuckets refBuckets,
+      Map<String, String> storedNamesByKey) {
     Map<String, String> keyByRef = new LinkedHashMap<>();
     if (refBuckets.lotIds().isEmpty()) {
       return keyByRef;
@@ -233,7 +243,7 @@ public class CustomerProductHistoryService {
       }
     }
     Map<String, String> keyByProductId = loadProductKeys(
-        new HashSet<>(productIdByLot.values()));
+        new HashSet<>(productIdByLot.values()), storedNamesByKey);
     for (String ref : refs) {
       SellableRef parsed = SellableRef.parseLenient(ref);
       if (parsed == null || !SellableRef.KIND_INVENTORY.equals(parsed.kind())) {
@@ -247,7 +257,8 @@ public class CustomerProductHistoryService {
     return keyByRef;
   }
 
-  private Map<String, String> loadProductKeys(Set<String> productIds) {
+  private Map<String, String> loadProductKeys(
+      Set<String> productIds, Map<String, String> storedNamesByKey) {
     Map<String, String> out = new HashMap<>();
     if (productIds.isEmpty()) {
       return out;
@@ -255,7 +266,11 @@ public class CustomerProductHistoryService {
     for (Product product : productRepository.findAllById(productIds)) {
       String name = StringUtils.hasText(product.getNormalizedName())
           ? product.getNormalizedName() : product.getName();
-      out.put(product.getId(), productKey(name, product.getCompanyName()));
+      String key = productKey(name, product.getCompanyName());
+      out.put(product.getId(), key);
+      if (storedNamesByKey != null && StringUtils.hasText(product.getName())) {
+        storedNamesByKey.put(key, product.getName());
+      }
     }
     return out;
   }
@@ -308,7 +323,7 @@ public class CustomerProductHistoryService {
     return inventoryRepository.findByIdAndShopId(lotId, shopId)
         .map(Inventory::getProductId)
         .filter(StringUtils::hasText)
-        .map(productId -> loadProductKeys(Set.of(productId))
+        .map(productId -> loadProductKeys(Set.of(productId), null)
             .getOrDefault(productId, ""))
         .orElse("");
   }
