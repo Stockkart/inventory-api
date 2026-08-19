@@ -13,7 +13,8 @@ import java.util.List;
 import java.util.Optional;
 
 @Repository
-public interface PurchaseRepository extends MongoRepository<Purchase, String> {
+public interface PurchaseRepository
+    extends MongoRepository<Purchase, String>, PurchaseCustomRepository {
 
   Optional<Purchase> findByUserIdAndShopIdAndStatus(String userId, String shopId, PurchaseStatus status);
 

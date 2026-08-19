@@ -6,18 +6,16 @@ import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Product;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
-import com.inventory.product.domain.model.enums.PurchaseStatus;
 import com.inventory.product.rest.dto.response.CustomerProductHistoryGroupDto;
 import com.inventory.product.rest.dto.response.CustomerProductHistoryResponse;
 import com.inventory.product.rest.dto.response.CustomerProductSaleEntryDto;
+import com.inventory.product.domain.repository.InventoryRepository;
+import com.inventory.product.domain.repository.ProductRepository;
+import com.inventory.product.domain.repository.PurchaseRepository;
 import com.inventory.product.util.PurchaseItemRefs;
 import com.inventory.user.service.CustomerService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.Sort;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -47,7 +45,13 @@ public class CustomerProductHistoryService {
   private static final int MAX_PURCHASES_SCAN = 120;
 
   @Autowired
-  private MongoTemplate mongoTemplate;
+  private PurchaseRepository purchaseRepository;
+
+  @Autowired
+  private InventoryRepository inventoryRepository;
+
+  @Autowired
+  private ProductRepository productRepository;
 
   @Autowired
   private CustomerService customerService;
@@ -165,42 +169,15 @@ public class CustomerProductHistoryService {
       String excludePurchaseId,
       RefBuckets refBuckets,
       Set<String> targetNames) {
-
-    List<Criteria> itemMatchers = new ArrayList<>();
-    if (!refBuckets.sellableRefs().isEmpty()) {
-      itemMatchers.add(Criteria.where("items.sellableRef").in(refBuckets.sellableRefs()));
-    }
-    if (!refBuckets.lotIds().isEmpty()) {
-      itemMatchers.add(Criteria.where("items.inventoryId").in(refBuckets.lotIds()));
-    }
-    if (!refBuckets.menuItemIds().isEmpty()) {
-      itemMatchers.add(Criteria.where("items.menuItemId").in(refBuckets.menuItemIds()));
-    }
-    // Also fetch by product name. Without this the lot filter above excludes
-    // every earlier batch before Java ever sees it, so widening the match alone
-    // would change nothing: the rows would already be gone.
-    if (!targetNames.isEmpty()) {
-      itemMatchers.add(Criteria.where("items.name").in(targetNames));
-    }
-
-    Criteria base = Criteria.where("shopId").is(shopId)
-        .and("customerId").is(customerId)
-        .and("status").is(PurchaseStatus.COMPLETED);
-    if (StringUtils.hasText(excludePurchaseId)) {
-      base = base.and("_id").ne(excludePurchaseId.trim());
-    }
-
-    Criteria filter = base;
-    if (!itemMatchers.isEmpty()) {
-      filter = new Criteria().andOperator(
-          base,
-          new Criteria().orOperator(itemMatchers.toArray(new Criteria[0])));
-    }
-
-    Query query = new Query(filter)
-        .with(Sort.by(Sort.Direction.DESC, "soldAt"))
-        .limit(MAX_PURCHASES_SCAN);
-    return mongoTemplate.find(query, Purchase.class);
+    return purchaseRepository.findRecentForCustomerMatching(
+        shopId,
+        customerId,
+        excludePurchaseId,
+        refBuckets.sellableRefs(),
+        refBuckets.lotIds(),
+        refBuckets.menuItemIds(),
+        targetNames,
+        MAX_PURCHASES_SCAN);
   }
 
   private static Map<String, List<CustomerProductSaleEntryDto>> initBuckets(List<String> refs) {
@@ -249,9 +226,8 @@ public class CustomerProductHistoryService {
       return keyByRef;
     }
     Map<String, String> productIdByLot = new HashMap<>();
-    for (Inventory lot : mongoTemplate.find(
-        new Query(Criteria.where("_id").in(refBuckets.lotIds())
-            .and("shopId").is(shopId)), Inventory.class)) {
+    for (Inventory lot : inventoryRepository.findByIdInAndShopId(
+        refBuckets.lotIds(), shopId)) {
       if (StringUtils.hasText(lot.getProductId())) {
         productIdByLot.put(lot.getId(), lot.getProductId());
       }
@@ -276,8 +252,7 @@ public class CustomerProductHistoryService {
     if (productIds.isEmpty()) {
       return out;
     }
-    for (Product product : mongoTemplate.find(
-        new Query(Criteria.where("_id").in(productIds)), Product.class)) {
+    for (Product product : productRepository.findAllById(productIds)) {
       String name = StringUtils.hasText(product.getNormalizedName())
           ? product.getNormalizedName() : product.getName();
       out.put(product.getId(), productKey(name, product.getCompanyName()));
@@ -330,14 +305,12 @@ public class CustomerProductHistoryService {
 
   /** "" rather than null, so a lot that resolves to nothing is cached too. */
   private String lookupKeyForLot(String shopId, String lotId) {
-    Inventory lot = mongoTemplate.findOne(
-        new Query(Criteria.where("_id").is(lotId).and("shopId").is(shopId)),
-        Inventory.class);
-    if (lot == null || !StringUtils.hasText(lot.getProductId())) {
-      return "";
-    }
-    return loadProductKeys(Set.of(lot.getProductId()))
-        .getOrDefault(lot.getProductId(), "");
+    return inventoryRepository.findByIdAndShopId(lotId, shopId)
+        .map(Inventory::getProductId)
+        .filter(StringUtils::hasText)
+        .map(productId -> loadProductKeys(Set.of(productId))
+            .getOrDefault(productId, ""))
+        .orElse("");
   }
 
   private static String lotIdOf(PurchaseItem item) {
