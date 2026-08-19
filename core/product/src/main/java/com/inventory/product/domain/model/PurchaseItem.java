@@ -40,6 +40,15 @@ public class PurchaseItem {
   private String mongoMenuItemId;
 
   private String name;
+  /**
+   * HSN recorded on the line at sale time.
+   *
+   * <p>Normally the lot answers this, but a line can outlive its lot -- stock is
+   * consumed, and a migrated sale references a delivery that no longer exists.
+   * Where the source states the HSN, keeping it on the line means the tax
+   * summary does not depend on the lot still being there.
+   */
+  private String hsn;
   private BillingMode billingMode;
   private BigDecimal quantity;
   private String saleUnit;
