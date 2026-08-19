@@ -359,7 +359,14 @@ public class Gstr1DataAggregator {
     if (purchase.getItems() == null) return;
     for (PurchaseItem item : purchase.getItems()) {
       Inventory inv = item.getInventoryId() != null ? inventoryMap.get(item.getInventoryId()) : null;
-      String hsn = inv != null && StringUtils.hasText(inv.getHsn()) ? inv.getHsn() : "0";
+      // The line first, the lot second. A sale line can outlive the delivery it
+      // came from -- stock is consumed, and a migrated sale points at a lot that
+      // no longer exists -- and the lot was the only source, so every such line
+      // fell through to "0", which is not a valid HSN and which the portal
+      // rejects. Where the line states its own HSN, that is the authority.
+      String hsn = StringUtils.hasText(item.getHsn())
+          ? item.getHsn()
+          : (inv != null && StringUtils.hasText(inv.getHsn()) ? inv.getHsn() : "0");
       String description = inv != null ? inv.getDescription() : "";
       String uqc = resolveUqc(inv, item);
       BigDecimal sgstVal = parseRate(item.getSgst());
