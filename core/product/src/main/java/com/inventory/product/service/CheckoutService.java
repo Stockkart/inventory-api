@@ -566,16 +566,16 @@ public class CheckoutService {
    */
   private List<String> findCustomerIdsBySearchCriteria(String shopId, String customerEmail,
                                                        String customerPhone, String customerName,
-                                                       String customer) {
+                                                       String customerTerm) {
     Set<String> matchingCustomerIds = null;
 
     // A party is entered as its trading name and stored with its town appended,
     // so an exact name reaches almost none of them. This is the term the one
     // box on the screen sends, and it is matched as a substring.
-    if (StringUtils.hasText(customer)) {
+    if (StringUtils.hasText(customerTerm)) {
       Set<String> termMatches = new HashSet<>();
       for (com.inventory.user.domain.model.Customer match
-          : customerRepository.searchByQuery(customer.trim())) {
+          : customerRepository.searchByQuery(customerTerm.trim())) {
         if (shopCustomerRepository.existsByShopIdAndCustomerId(shopId, match.getId())) {
           termMatches.add(match.getId());
         }
