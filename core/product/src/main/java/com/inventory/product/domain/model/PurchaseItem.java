@@ -49,6 +49,23 @@ public class PurchaseItem {
    * summary does not depend on the lot still being there.
    */
   private String hsn;
+  /**
+   * Batch number, marketing company and expiry as printed on the sale.
+   *
+   * <p>The same reasoning as {@link #hsn}: the lot is normally the answer, but a
+   * line outlives its lot and these three are what a pharmacy invoice is read
+   * for -- a customer returning a strip is identified by its batch. Recording
+   * them on the line keeps a reprint faithful to what was handed over.
+   *
+   * <p>Expiry is held as printed rather than as a date. It is stated to the
+   * month, and parsing it into an instant would invent a day.
+   */
+  private String batchNo;
+
+  private String companyName;
+
+  private String expiryDate;
+
   private BillingMode billingMode;
   private BigDecimal quantity;
   private String saleUnit;

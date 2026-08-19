@@ -209,6 +209,9 @@ public class InvoiceService {
         // printed an empty HSN on a tax invoice. Where the line states its HSN,
         // that is what was charged and what belongs on the bill.
         invoiceItem.setHsn(purchaseItem.getHsn());
+        invoiceItem.setBatchNo(purchaseItem.getBatchNo());
+        invoiceItem.setCompanyName(purchaseItem.getCompanyName());
+        invoiceItem.setExpiryDate(purchaseItem.getExpiryDate());
 
         if (purchaseItem.getInventoryId() != null) {
           Optional<Inventory> inventoryOpt = inventoryRepository.findById(purchaseItem.getInventoryId());
@@ -220,8 +223,12 @@ public class InvoiceService {
             if (!StringUtils.hasText(invoiceItem.getHsn())) {
               invoiceItem.setHsn(inventory.getHsn());
             }
-            invoiceItem.setCompanyName(inventory.getCompanyName());
-            invoiceItem.setBatchNo(VerticalFieldsReader.batchNoFrom(extensionFields));
+            if (!StringUtils.hasText(invoiceItem.getCompanyName())) {
+              invoiceItem.setCompanyName(inventory.getCompanyName());
+            }
+            if (!StringUtils.hasText(invoiceItem.getBatchNo())) {
+              invoiceItem.setBatchNo(VerticalFieldsReader.batchNoFrom(extensionFields));
+            }
             if (inventory.getSchemeType() == SchemeType.PERCENTAGE
                 && inventory.getSchemePercentage() != null
                 && inventory.getReceivedCount() != null
@@ -235,7 +242,8 @@ public class InvoiceService {
             } else {
               invoiceItem.setScheme(inventory.getScheme());
             }
-            if (VerticalFieldsReader.expiryDateFrom(extensionFields) != null) {
+            if (!StringUtils.hasText(invoiceItem.getExpiryDate())
+                && VerticalFieldsReader.expiryDateFrom(extensionFields) != null) {
               LocalDateTime expiryDateTime =
                   LocalDateTime.ofInstant(
                       VerticalFieldsReader.expiryDateFrom(extensionFields),
