@@ -58,6 +58,8 @@ import org.springframework.util.StringUtils;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.HashMap;
@@ -70,6 +72,16 @@ import java.util.Set;
 @Slf4j
 @Transactional(readOnly = true)
 public class CheckoutService {
+
+  /**
+   * The zone a date typed into a filter is meant in.
+   *
+   * <p>Sales are stored as instants, and the shop reads and writes its dates in
+   * local time. Reading a filter date as UTC would move its edges by five and a
+   * half hours, so a sale cut in the evening would fall outside the day it was
+   * made on.
+   */
+  private static final ZoneId SALE_DATE_ZONE = ZoneId.of("Asia/Kolkata");
 
   @Autowired
   private PurchaseRepository purchaseRepository;
@@ -454,16 +466,22 @@ public class CheckoutService {
    *
    * @param page page number (1-based)
    * @param limit page size
-   * @param invoiceNo optional exact invoice number
+   * @param invoiceNo optional invoice number, matched as a substring
+   * @param soldFrom optional inclusive lower bound on the sale date
+   * @param soldTo optional inclusive upper bound on the sale date
    * @param customerEmail optional exact customer email
    * @param customerPhone optional exact customer phone
    * @param customerName optional exact customer name (case-insensitive)
+   * @param customer optional free text matched against a customer's name, phone,
+   *     email or address -- the single box the counter actually types into
    * @param httpRequest HTTP request containing shopId
    * @return PurchaseListResponse with paginated purchases
    */
   @Transactional(readOnly = true)
   public PurchaseListResponse searchPurchases(Integer page, Integer limit, String invoiceNo,
+                                              LocalDate soldFrom, LocalDate soldTo,
                                               String customerEmail, String customerPhone, String customerName,
+                                              String customer,
                                               HttpServletRequest httpRequest) {
     // Get shopId and userId from request attributes
     String shopId = (String) httpRequest.getAttribute("shopId");
@@ -490,12 +508,13 @@ public class CheckoutService {
       Pageable pageable = PageRequest.of(pageNumber, pageSize,
           withTieBreaker(Sort.by(Sort.Direction.DESC, "soldAt")));
 
-      Page<Purchase> purchasePage;
       List<String> customerIds = null;
 
       // If customer search criteria provided, find matching customer IDs first
-      if (StringUtils.hasText(customerEmail) || StringUtils.hasText(customerPhone) || StringUtils.hasText(customerName)) {
-        customerIds = findCustomerIdsBySearchCriteria(shopId, customerEmail, customerPhone, customerName);
+      if (StringUtils.hasText(customerEmail) || StringUtils.hasText(customerPhone)
+          || StringUtils.hasText(customerName) || StringUtils.hasText(customer)) {
+        customerIds = findCustomerIdsBySearchCriteria(
+            shopId, customerEmail, customerPhone, customerName, customer);
 
         if (customerIds.isEmpty()) {
           return purchaseMapper.toPurchaseListResponse(
@@ -503,56 +522,19 @@ public class CheckoutService {
         }
       }
 
-      // Create final reference for use in lambda expressions
-      final List<String> finalCustomerIds = customerIds;
-
-      // Search purchases based on criteria
-      if (StringUtils.hasText(invoiceNo) && finalCustomerIds != null && !finalCustomerIds.isEmpty()) {
-        // Search by both exact invoice number and customer IDs
-        List<Purchase> purchasesByInvoice = purchaseRepository.findByShopIdAndInvoiceNo(shopId, invoiceNo.trim());
-        // Filter by customerIds
-        List<Purchase> filteredPurchases = purchasesByInvoice.stream()
-            .filter(p -> finalCustomerIds.contains(p.getCustomerId()))
-            .collect(java.util.stream.Collectors.toList());
-        // Sort and paginate
-        filteredPurchases.sort((a, b) -> {
-          if (a.getSoldAt() == null && b.getSoldAt() == null) return 0;
-          if (a.getSoldAt() == null) return 1;
-          if (b.getSoldAt() == null) return -1;
-          return b.getSoldAt().compareTo(a.getSoldAt()); // Descending
-        });
-        int start = (int) pageable.getOffset();
-        int end = Math.min((start + pageable.getPageSize()), filteredPurchases.size());
-        List<Purchase> pagedPurchases = start < filteredPurchases.size() 
-            ? filteredPurchases.subList(start, end) 
-            : new ArrayList<>();
-        purchasePage = new org.springframework.data.domain.PageImpl<>(
-            pagedPurchases, pageable, filteredPurchases.size());
-      } else if (StringUtils.hasText(invoiceNo)) {
-        // Search by exact invoice number
-        List<Purchase> purchases = purchaseRepository.findByShopIdAndInvoiceNo(shopId, invoiceNo.trim());
-        // Sort by soldAt descending
-        purchases.sort((a, b) -> {
-          if (a.getSoldAt() == null && b.getSoldAt() == null) return 0;
-          if (a.getSoldAt() == null) return 1;
-          if (b.getSoldAt() == null) return -1;
-          return b.getSoldAt().compareTo(a.getSoldAt()); // Descending
-        });
-        // Convert to page
-        int start = (int) pageable.getOffset();
-        int end = Math.min((start + pageable.getPageSize()), purchases.size());
-        List<Purchase> pagedPurchases = start < purchases.size() 
-            ? purchases.subList(start, end) 
-            : new ArrayList<>();
-        purchasePage = new org.springframework.data.domain.PageImpl<>(
-            pagedPurchases, pageable, purchases.size());
-      } else if (finalCustomerIds != null && !finalCustomerIds.isEmpty()) {
-        // Search by customer IDs only
-        purchasePage = purchaseRepository.findByShopIdAndCustomerIdIn(shopId, finalCustomerIds, pageable);
-      } else {
-        // No search criteria, get all purchases for the shop
-        purchasePage = purchaseRepository.findByShopId(shopId, pageable);
-      }
+      // One query carrying every criterion, so the search reaches the whole
+      // history. Selecting on one field and sifting the rest in memory only
+      // finds what happens to fall in the page that was fetched.
+      Page<Purchase> purchasePage = purchaseRepository.search(
+          shopId,
+          invoiceNo,
+          soldFrom != null ? soldFrom.atStartOfDay(SALE_DATE_ZONE).toInstant() : null,
+          // The bound the caller gives is a day, and a day is inclusive: the
+          // query takes the start of the day after, so a sale at any hour of
+          // the last day is inside it.
+          soldTo != null ? soldTo.plusDays(1).atStartOfDay(SALE_DATE_ZONE).toInstant() : null,
+          customerIds,
+          pageable);
 
       List<PurchaseSummaryDto> purchaseDtos = purchasePage.getContent().stream()
           .map(purchaseMapper::toPurchaseSummaryDto)
@@ -583,8 +565,22 @@ public class CheckoutService {
    * When multiple criteria are provided, all of them must match the same customer (AND).
    */
   private List<String> findCustomerIdsBySearchCriteria(String shopId, String customerEmail,
-                                                       String customerPhone, String customerName) {
+                                                       String customerPhone, String customerName,
+                                                       String customerTerm) {
     Set<String> matchingCustomerIds = null;
+
+    // A party is entered as its trading name and stored with its town appended,
+    // so an exact name reaches almost none of them. This is the term the one
+    // box on the screen sends, and it is matched as a substring.
+    if (StringUtils.hasText(customerTerm)) {
+      Set<String> termMatches = new HashSet<>();
+      for (Customer match : customerRepository.searchByQuery(customerTerm.trim())) {
+        if (shopCustomerRepository.existsByShopIdAndCustomerId(shopId, match.getId())) {
+          termMatches.add(match.getId());
+        }
+      }
+      matchingCustomerIds = intersect(matchingCustomerIds, termMatches);
+    }
 
     // Exact email match (plus shop linkage)
     if (StringUtils.hasText(customerEmail)) {
