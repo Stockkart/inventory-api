@@ -2,6 +2,7 @@ package com.inventory.taxation.service;
 
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.VendorPurchaseInvoice;
+import com.inventory.product.domain.model.VendorPurchaseInvoiceLine;
 import com.inventory.product.domain.model.VendorPurchaseReturn;
 import com.inventory.product.domain.model.VendorPurchaseReturnItem;
 import com.inventory.product.domain.repository.InventoryRepository;
@@ -71,10 +72,22 @@ public class Gstr2DataAggregator {
     List<VendorPurchaseReturn> vendorReturns =
         vendorPurchaseReturnRepository.findByShopIdAndCreatedAtBetween(shopId, rangeStart, rangeEnd);
 
+    // The supplier's own invoices for the period, where the shop has them. They
+    // state what was bought; stock states what is left, and the two stop being
+    // the same figure the moment anything is sold. A month whose invoices are
+    // recorded is therefore reported from them and not from stock at all --
+    // mixing the two would count the same goods under both.
+    List<VendorPurchaseInvoice> purchaseInvoices =
+        vendorPurchaseInvoiceRepository.findByShopIdAndInvoiceDateBetween(
+                shopId, rangeStart, rangeEnd)
+            .stream()
+            .filter(this::statesItsAmounts)
+            .toList();
+
     List<Inventory> inventories = inventoryRepository.findByShopIdAndCreatedAtBetween(shopId, rangeStart, rangeEnd);
     inventories = inventories.stream().filter(inv -> inv.getVendorId() != null).toList();
 
-    if (inventories.isEmpty() && vendorReturns.isEmpty()) {
+    if (purchaseInvoices.isEmpty() && inventories.isEmpty() && vendorReturns.isEmpty()) {
       return buildEmptyContext(shopId, shop, period, year, month);
     }
 
@@ -89,6 +102,11 @@ public class Gstr2DataAggregator {
     List<Gstr2CdnrLine> cdnrFromReturns = new ArrayList<>();
     List<Gstr2CdnurLine> cdnurFromReturns = new ArrayList<>();
     appendVendorReturnCdnLines(shopId, vendorReturns, placeOfSupply, cdnrFromReturns, cdnurFromReturns);
+
+    if (!purchaseInvoices.isEmpty()) {
+      return buildFromPurchaseInvoices(shopId, shop, period, year, month,
+          purchaseInvoices, placeOfSupply, cdnrFromReturns, cdnurFromReturns);
+    }
 
     if (inventories.isEmpty()) {
       return Gstr2ReportContext.builder()
@@ -280,6 +298,201 @@ public class Gstr2DataAggregator {
     // returned, which is neither the order the invoices were received nor any
     // order a reader can follow when reconciling against a supplier statement.
     // Invoice number breaks ties so the sequence is stable between runs.
+    Comparator<LocalDate> byDate = Comparator.nullsLast(Comparator.naturalOrder());
+    b2bLines.sort(Comparator.comparing(Gstr2B2bLine::getInvoiceDate, byDate)
+        .thenComparing(l -> l.getInvoiceNo() == null ? "" : l.getInvoiceNo()));
+    b2burLines.sort(Comparator.comparing(Gstr2B2burLine::getInvoiceDate, byDate)
+        .thenComparing(l -> l.getInvoiceNo() == null ? "" : l.getInvoiceNo()));
+
+    return Gstr2ReportContext.builder()
+        .shopId(shopId)
+        .shopGstin(shop.getGstinNo() != null ? shop.getGstinNo() : "")
+        .period(period)
+        .year(year)
+        .month(month)
+        .b2bLines(b2bLines)
+        .b2burLines(b2burLines)
+        .impsLines(new ArrayList<>())
+        .impgLines(new ArrayList<>())
+        .cdnrLines(cdnrFromReturns)
+        .cdnurLines(cdnurFromReturns)
+        .atLines(new ArrayList<>())
+        .atadjLines(new ArrayList<>())
+        .exempLines(buildDefaultExempLines())
+        .itcrLines(new ArrayList<>())
+        .hsnLines(new ArrayList<>(hsnMap.values()))
+        .build();
+  }
+
+  /**
+   * Whether an invoice carries the amounts the return needs.
+   *
+   * <p>Invoices exist that were created only to give a stock lot a number to
+   * display, with no total and a placeholder line. Reporting from those would
+   * replace real figures with nothing, so they are left to the stock path.
+   */
+  private boolean statesItsAmounts(VendorPurchaseInvoice invoice) {
+    return invoice.getInvoiceTotal() != null
+        && invoice.getInvoiceTotal().compareTo(BigDecimal.ZERO) > 0
+        && invoice.getLines() != null
+        && invoice.getLines().stream().anyMatch(
+            line -> line.getTaxableValue() != null || line.getTotalAmount() != null);
+  }
+
+  /** A line's tax rate, from the rates the invoice recorded for it. */
+  private BigDecimal lineRate(VendorPurchaseInvoiceLine line) {
+    return parseRate(line.getSgst()).add(parseRate(line.getCgst()));
+  }
+
+  /**
+   * A line's value before tax, backed out of the tax-inclusive total when the
+   * invoice did not state it directly.
+   */
+  private BigDecimal lineTaxable(VendorPurchaseInvoiceLine line) {
+    if (line.getTaxableValue() != null) return line.getTaxableValue();
+    BigDecimal gross = line.getTotalAmount() != null ? line.getTotalAmount() : BigDecimal.ZERO;
+    BigDecimal rate = lineRate(line);
+    if (rate.compareTo(BigDecimal.ZERO) <= 0) return gross;
+    return gross.multiply(BigDecimal.valueOf(100))
+        .divide(BigDecimal.valueOf(100).add(rate), 2, RoundingMode.HALF_UP);
+  }
+
+  /**
+   * The inward return built from the supplier invoices themselves.
+   *
+   * <p>Reported per rate, as the portal expects: an invoice carrying goods at
+   * two rates is two rows, each with its own taxable value and tax, and the
+   * invoice value repeated on both because it belongs to the invoice rather
+   * than to a rate.
+   */
+  private Gstr2ReportContext buildFromPurchaseInvoices(
+      String shopId, Shop shop, String period, int year, int month,
+      List<VendorPurchaseInvoice> invoices, String placeOfSupply,
+      List<Gstr2CdnrLine> cdnrFromReturns, List<Gstr2CdnurLine> cdnurFromReturns) {
+
+    Set<String> vendorIds = invoices.stream()
+        .map(VendorPurchaseInvoice::getVendorId)
+        .filter(StringUtils::hasText)
+        .collect(Collectors.toSet());
+    Map<String, Vendor> vendorMap = vendorIds.isEmpty() ? Map.of()
+        : vendorRepository.findAllById(vendorIds).stream()
+            .collect(Collectors.toMap(Vendor::getId, v -> v));
+
+    List<Gstr2B2bLine> b2bLines = new ArrayList<>();
+    List<Gstr2B2burLine> b2burLines = new ArrayList<>();
+    Map<String, GstHsnLine> hsnMap = new LinkedHashMap<>();
+
+    for (VendorPurchaseInvoice invoice : invoices) {
+      Vendor vendor = invoice.getVendorId() != null
+          ? vendorMap.get(invoice.getVendorId()) : null;
+      boolean registered = vendor != null && StringUtils.hasText(vendor.getGstinUin());
+      String supplierGstin = registered ? vendor.getGstinUin() : "";
+      String supplierName = vendor == null ? "Unknown"
+          : (StringUtils.hasText(vendor.getCompanyName())
+              ? vendor.getCompanyName() : vendor.getName());
+      if (supplierName == null) supplierName = "Unknown";
+
+      LocalDate invoiceDate = invoice.getInvoiceDate() != null
+          ? LocalDateTime.ofInstant(invoice.getInvoiceDate(), ZoneId.systemDefault()).toLocalDate()
+          : LocalDate.now();
+      BigDecimal invoiceValue = invoice.getInvoiceTotal();
+
+      Map<String, BigDecimal[]> byRate = new LinkedHashMap<>();
+      for (VendorPurchaseInvoiceLine line : invoice.getLines()) {
+        BigDecimal rate = lineRate(line);
+        BigDecimal taxable = lineTaxable(line);
+        BigDecimal central = taxable.multiply(parseRate(line.getCgst()))
+            .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+        BigDecimal state = taxable.multiply(parseRate(line.getSgst()))
+            .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+
+        BigDecimal[] bucket = byRate.computeIfAbsent(
+            rate.stripTrailingZeros().toPlainString(),
+            key -> new BigDecimal[] {BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO});
+        bucket[0] = bucket[0].add(taxable);
+        bucket[1] = bucket[1].add(central);
+        bucket[2] = bucket[2].add(state);
+
+        String hsn = StringUtils.hasText(line.getHsn()) ? line.getHsn() : "0";
+        BigDecimal quantity = BigDecimal.valueOf(
+            line.getCount() != null ? line.getCount() : 0);
+        BigDecimal gross = line.getTotalAmount() != null
+            ? line.getTotalAmount() : taxable.add(central).add(state);
+        GstHsnLine row = hsnMap.get(hsn + "|" + rate);
+        if (row == null) {
+          hsnMap.put(hsn + "|" + rate, GstHsnLine.builder()
+              .hsn(hsn)
+              .description(hsn)
+              .uqc("OTH-OTHERS")
+              .totalQuantity(quantity)
+              // Tax inclusive, which is what the portal's own summary reports
+              // under this column and what the taxable column is measured
+              // against.
+              .totalValue(gross)
+              .rate(rate)
+              .taxableValue(taxable)
+              .integratedTaxAmount(BigDecimal.ZERO)
+              .centralTaxAmount(central)
+              .stateUtTaxAmount(state)
+              .cessAmount(BigDecimal.ZERO)
+              .b2b(registered)
+              .build());
+        } else {
+          row.setTotalQuantity(row.getTotalQuantity().add(quantity));
+          row.setTotalValue(row.getTotalValue().add(gross));
+          row.setTaxableValue(row.getTaxableValue().add(taxable));
+          row.setCentralTaxAmount(row.getCentralTaxAmount().add(central));
+          row.setStateUtTaxAmount(row.getStateUtTaxAmount().add(state));
+        }
+      }
+
+      for (Map.Entry<String, BigDecimal[]> entry : byRate.entrySet()) {
+        BigDecimal[] bucket = entry.getValue();
+        if (registered) {
+          b2bLines.add(Gstr2B2bLine.builder()
+              .supplierGstin(supplierGstin)
+              .invoiceNo(invoice.getInvoiceNo())
+              .invoiceDate(invoiceDate)
+              .invoiceValue(invoiceValue)
+              .placeOfSupply(placeOfSupply)
+              .reverseCharge("N")
+              .invoiceType("Regular")
+              .rate(parseRate(entry.getKey()))
+              .taxableValue(bucket[0])
+              .integratedTaxPaid(BigDecimal.ZERO)
+              .centralTaxPaid(bucket[1])
+              .stateUtTaxPaid(bucket[2])
+              .cessAmount(BigDecimal.ZERO)
+              .itcEligibility("Inputs")
+              .availedItcIntegrated(BigDecimal.ZERO)
+              .availedItcCentral(bucket[1])
+              .availedItcStateUt(bucket[2])
+              .availedItcCess(BigDecimal.ZERO)
+              .build());
+        } else {
+          b2burLines.add(Gstr2B2burLine.builder()
+              .supplierName(supplierName)
+              .invoiceNo(invoice.getInvoiceNo())
+              .invoiceDate(invoiceDate)
+              .invoiceValue(invoiceValue)
+              .placeOfSupply(placeOfSupply)
+              .supplyType("Intra State")
+              .rate(parseRate(entry.getKey()))
+              .taxableValue(bucket[0])
+              .integratedTaxPaid(BigDecimal.ZERO)
+              .centralTaxPaid(bucket[1])
+              .stateUtTaxPaid(bucket[2])
+              .cessAmount(BigDecimal.ZERO)
+              .itcEligibility("Inputs")
+              .availedItcIntegrated(BigDecimal.ZERO)
+              .availedItcCentral(bucket[1])
+              .availedItcStateUt(bucket[2])
+              .availedItcCess(BigDecimal.ZERO)
+              .build());
+        }
+      }
+    }
+
     Comparator<LocalDate> byDate = Comparator.nullsLast(Comparator.naturalOrder());
     b2bLines.sort(Comparator.comparing(Gstr2B2bLine::getInvoiceDate, byDate)
         .thenComparing(l -> l.getInvoiceNo() == null ? "" : l.getInvoiceNo()));
