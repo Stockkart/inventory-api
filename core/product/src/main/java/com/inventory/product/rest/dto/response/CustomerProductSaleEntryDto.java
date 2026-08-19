@@ -1,5 +1,6 @@
 package com.inventory.product.rest.dto.response;
 
+import com.inventory.product.domain.model.enums.SchemeType;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -17,4 +18,10 @@ public class CustomerProductSaleEntryDto {
   private BigDecimal quantity;
   private BigDecimal priceToRetail;
   private BigDecimal lineTotal;
+  /** Sale additional discount percent applied on the line (positive = discount). */
+  private BigDecimal saleAdditionalDiscount;
+  private SchemeType schemeType;
+  private Integer schemePayFor;
+  private Integer schemeFree;
+  private BigDecimal schemePercentage;
 }
