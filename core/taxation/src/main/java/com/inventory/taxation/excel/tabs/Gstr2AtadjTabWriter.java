@@ -14,7 +14,7 @@ public class Gstr2AtadjTabWriter implements Gstr2TabWriter {
 
   private static final String SHEET_NAME = "atadj";
   private static final List<String> HEADERS = Arrays.asList(
-      "Place of Supply", "Rate", "Gross Advance Paid to be Adjusted", "Cess Adjusted");
+      "Place Of Supply", "Supply Type", "Gross Advance Paid to be Adjusted", "Cess Adjusted");
 
   @Override
   public String getSheetName() {
