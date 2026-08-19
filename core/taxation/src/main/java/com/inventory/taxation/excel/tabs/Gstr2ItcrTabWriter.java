@@ -14,7 +14,7 @@ public class Gstr2ItcrTabWriter implements Gstr2TabWriter {
 
   private static final String SHEET_NAME = "itcr";
   private static final List<String> HEADERS = Arrays.asList(
-      "Description for reversal of ITC", "To be added or to be reduced from o",
+      "Description for reversal of ITC", "To be added or reduced from output liability",
       "ITC Integrated Tax Amount", "ITC Central Tax Amount", "ITC State/UT Tax Amount", "ITC Cess Amount");
 
   @Override

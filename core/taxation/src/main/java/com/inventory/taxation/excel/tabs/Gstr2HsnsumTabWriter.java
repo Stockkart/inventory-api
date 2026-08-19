@@ -15,7 +15,7 @@ public class Gstr2HsnsumTabWriter implements Gstr2TabWriter {
   private static final String SHEET_NAME = "hsnsum";
   private static final List<String> HEADERS = Arrays.asList(
       "HSN", "Description", "UQC", "Total Quantity", "Total Value", "Taxable Value",
-      "Integrated Tax Amount", "Central Tax Amount", "State/UT Tax", "Cess Amount");
+      "Integrated Tax Amount", "Central Tax Amount", "State/UT Tax Amount", "Cess Amount");
 
   @Override
   public String getSheetName() {
