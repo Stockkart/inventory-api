@@ -24,6 +24,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -202,6 +203,12 @@ public class InvoiceService {
         invoiceItem.setInventoryId(purchaseItem.getInventoryId());
         invoiceItem.setSchemePayFor(purchaseItem.getSchemePayFor());
         invoiceItem.setSchemeFree(purchaseItem.getSchemeFree());
+        // The line's own HSN, before the lot is consulted. Everything printed in
+        // the tax columns used to come from the lot alone, so a line whose lot is
+        // gone -- stock sold out, or a migrated sale that never pointed at one --
+        // printed an empty HSN on a tax invoice. Where the line states its HSN,
+        // that is what was charged and what belongs on the bill.
+        invoiceItem.setHsn(purchaseItem.getHsn());
 
         if (purchaseItem.getInventoryId() != null) {
           Optional<Inventory> inventoryOpt = inventoryRepository.findById(purchaseItem.getInventoryId());
@@ -210,7 +217,9 @@ public class InvoiceService {
             Map<String, Object> extensionFields =
                 inventoryVerticalExtensionHandler.loadExtensionFields(
                     inventory.getShopId(), inventory.getId());
-            invoiceItem.setHsn(inventory.getHsn());
+            if (!StringUtils.hasText(invoiceItem.getHsn())) {
+              invoiceItem.setHsn(inventory.getHsn());
+            }
             invoiceItem.setCompanyName(inventory.getCompanyName());
             invoiceItem.setBatchNo(VerticalFieldsReader.batchNoFrom(extensionFields));
             if (inventory.getSchemeType() == SchemeType.PERCENTAGE
