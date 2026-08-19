@@ -40,8 +40,7 @@ EXPOSE 8080
 
 # G1: small start, cap below cgroup so RSS (heap + metaspace + threads + native) fits.
 # Periodic concurrent GC uncommits idle heap back to the OS (otherwise committed/RSS only grow).
-# Override on DigitalOcean by setting JAVA_TOOL_OPTIONS. 512 MB droplets cannot hold this API
-# (idle RSS is already ~1 GiB locally); use ≥1 GB RAM in prod.
+# Override JAVA_TOOL_OPTIONS on the host if needed. Idle RSS is hundreds of MiB; use ≥1 GB RAM in prod.
 ENV JAVA_TOOL_OPTIONS="-XX:+UseG1GC -XX:MaxRAMPercentage=50.0 -XX:InitialRAMPercentage=5.0 -XX:MaxHeapFreeRatio=30 -XX:MinHeapFreeRatio=10 -XX:G1PeriodicGCInterval=15000 -XX:+G1PeriodicGCInvokesConcurrent"
 
 ENTRYPOINT ["java", "-jar", "app.jar"]

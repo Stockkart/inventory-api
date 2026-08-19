@@ -131,6 +131,7 @@ public class CheckoutController {
 
   /**
    * Prior completed sales of specific products to a customer (batched by sellableRef).
+   * Inventory lines are matched by catalog identity (name + company / productId), not only lot id.
    * Used at sell time to show purchase history hints on cart lines.
    */
   @GetMapping("/purchases/customer-product-history")

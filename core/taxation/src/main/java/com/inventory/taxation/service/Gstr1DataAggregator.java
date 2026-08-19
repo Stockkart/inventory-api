@@ -51,6 +51,8 @@ public class Gstr1DataAggregator {
   private CustomerRepository customerRepository;
   @Autowired
   private InventoryRepository inventoryRepository;
+  @Autowired
+  private HsnSacCatalog hsnSacCatalog;
 
   public Gstr1ReportContext buildContext(String shopId, String period) {
     Shop shop = shopRepository.findById(shopId)
@@ -367,13 +369,10 @@ public class Gstr1DataAggregator {
       String hsn = StringUtils.hasText(item.getHsn())
           ? item.getHsn()
           : (inv != null && StringUtils.hasText(inv.getHsn()) ? inv.getHsn() : "0");
-      // Same reasoning as the HSN above: the lot carried the description and a
-      // line can outlive its lot, so every such row was described as nothing.
-      // The line records what was sold, which is the description the summary
-      // wants.
-      String description = StringUtils.hasText(item.getName())
-          ? item.getName()
-          : (inv != null ? inv.getDescription() : "");
+      String description = hsnSacCatalog.descriptionFor(hsn).orElseGet(() ->
+          StringUtils.hasText(item.getName())
+              ? item.getName()
+              : (inv != null && inv.getDescription() != null ? inv.getDescription() : ""));
       String uqc = resolveUqc(inv, item);
       BigDecimal sgstVal = parseRate(item.getSgst());
       BigDecimal cgstVal = parseRate(item.getCgst());

@@ -2,9 +2,13 @@ package com.inventory.product.service;
 
 import com.inventory.common.exception.ValidationException;
 import com.inventory.pluginengine.ref.SellableRef;
+import com.inventory.product.domain.model.Inventory;
+import com.inventory.product.domain.model.Product;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.product.domain.model.enums.PurchaseStatus;
+import com.inventory.product.domain.repository.InventoryRepository;
+import com.inventory.product.domain.repository.ProductRepository;
 import com.inventory.product.rest.dto.response.CustomerProductHistoryGroupDto;
 import com.inventory.product.rest.dto.response.CustomerProductHistoryResponse;
 import com.inventory.product.rest.dto.response.CustomerProductSaleEntryDto;
@@ -23,11 +27,15 @@ import org.springframework.util.StringUtils;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Service
@@ -46,6 +54,12 @@ public class CustomerProductHistoryService {
 
   @Autowired
   private CustomerService customerService;
+
+  @Autowired
+  private InventoryRepository inventoryRepository;
+
+  @Autowired
+  private ProductRepository productRepository;
 
   public CustomerProductHistoryResponse getHistory(
       String shopId,
@@ -66,12 +80,12 @@ public class CustomerProductHistoryService {
     }
 
     int limit = clampLimit(limitPerRef);
-    RefBuckets refBuckets = splitRefs(refs);
+    MatchIndex matchIndex = buildMatchIndex(shopId, refs);
     List<Purchase> purchases = findRecentMatchingPurchases(
-        shopId, resolvedCustomerId, excludePurchaseId, refBuckets);
+        shopId, resolvedCustomerId, excludePurchaseId, matchIndex);
+    resolveUnknownLots(purchases, matchIndex);
 
     Map<String, List<CustomerProductSaleEntryDto>> buckets = initBuckets(refs);
-    Set<String> refSet = new HashSet<>(refs);
 
     for (Purchase purchase : purchases) {
       if (allBucketsFull(buckets, limit)) {
@@ -82,15 +96,13 @@ public class CustomerProductHistoryService {
         continue;
       }
       for (PurchaseItem item : purchase.getItems()) {
-        String matchedRef = matchSellableRef(item, refSet, refBuckets);
-        if (matchedRef == null) {
-          continue;
+        for (String matchedRef : matchIndex.matchRequestedRefs(item)) {
+          List<CustomerProductSaleEntryDto> entries = buckets.get(matchedRef);
+          if (entries == null || entries.size() >= limit) {
+            continue;
+          }
+          entries.add(toEntry(purchase, item, soldAt));
         }
-        List<CustomerProductSaleEntryDto> entries = buckets.get(matchedRef);
-        if (entries.size() >= limit) {
-          continue;
-        }
-        entries.add(toEntry(purchase, item, soldAt));
       }
     }
 
@@ -140,21 +152,134 @@ public class CustomerProductHistoryService {
     return Math.min(limitPerRef, MAX_LIMIT_PER_REF);
   }
 
+  private MatchIndex buildMatchIndex(String shopId, List<String> refs) {
+    MatchIndex index = new MatchIndex(refs);
+    List<String> inventoryIds = new ArrayList<>();
+    for (String ref : refs) {
+      SellableRef parsed = SellableRef.parseLenient(ref);
+      if (parsed == null) {
+        continue;
+      }
+      if (parsed.isMenu()) {
+        index.addMenuRef(parsed.id(), ref);
+      } else if (parsed.isInventory()) {
+        inventoryIds.add(parsed.id());
+        index.bindLotToRef(parsed.id(), ref);
+      }
+    }
+    if (inventoryIds.isEmpty()) {
+      return index;
+    }
+
+    Map<String, Inventory> byId = new HashMap<>();
+    for (Inventory inv : inventoryRepository.findByIdIn(inventoryIds)) {
+      if (inv != null && StringUtils.hasText(inv.getId())) {
+        byId.put(inv.getId(), inv);
+      }
+    }
+
+    Set<String> productIds = new LinkedHashSet<>();
+    for (String requestedRef : refs) {
+      SellableRef parsed = SellableRef.parseLenient(requestedRef);
+      if (parsed == null || !parsed.isInventory()) {
+        continue;
+      }
+      Inventory inv = byId.get(parsed.id());
+      String name = inv != null ? inv.getName() : null;
+      String company = inv != null ? inv.getCompanyName() : null;
+      String productId = inv != null ? inv.getProductId() : null;
+      CatalogIdentity identity = CatalogIdentity.from(productId, name, company);
+      index.bindIdentity(requestedRef, identity);
+      if (StringUtils.hasText(productId)) {
+        productIds.add(productId.trim());
+      }
+    }
+
+    expandProductIdsByNameAndCompany(shopId, index, productIds);
+
+    if (!productIds.isEmpty()) {
+      for (Inventory sibling : inventoryRepository.findByShopIdAndProductIdIn(shopId, productIds)) {
+        if (sibling == null || !StringUtils.hasText(sibling.getId())) {
+          continue;
+        }
+        index.bindSiblingLot(sibling);
+      }
+    }
+    return index;
+  }
+
+  /**
+   * Historical lines may point at lots that were not in the cart. If that lot still exists and
+   * belongs to a different company/name, skip name-only matching for it.
+   */
+  private void resolveUnknownLots(List<Purchase> purchases, MatchIndex matchIndex) {
+    Set<String> unknownLotIds = new LinkedHashSet<>();
+    for (Purchase purchase : purchases) {
+      if (purchase.getItems() == null) {
+        continue;
+      }
+      for (PurchaseItem item : purchase.getItems()) {
+        PurchaseItemRefs.normalize(item);
+        String lotId = PurchaseItemRefs.stockLotId(item);
+        if (StringUtils.hasText(lotId) && !matchIndex.knowsLot(lotId)) {
+          unknownLotIds.add(lotId);
+        }
+      }
+    }
+    if (unknownLotIds.isEmpty()) {
+      return;
+    }
+    for (Inventory inv : inventoryRepository.findByIdIn(new ArrayList<>(unknownLotIds))) {
+      if (inv == null || !StringUtils.hasText(inv.getId())) {
+        continue;
+      }
+      matchIndex.observeHistoricalLot(inv);
+    }
+  }
+
+  /**
+   * Same catalog product can be registered under more than one productId after identity forks;
+   * name + company is the shop-facing identity.
+   */
+  private void expandProductIdsByNameAndCompany(
+      String shopId, MatchIndex index, Set<String> productIds) {
+    Set<String> names = index.uniqueNormalizedNames();
+    if (names.isEmpty()) {
+      return;
+    }
+    for (String normalizedName : names) {
+      List<Product> candidates = productRepository.findByShopIdAndNormalizedName(shopId, normalizedName);
+      for (Product product : candidates) {
+        if (product == null || !StringUtils.hasText(product.getId())) {
+          continue;
+        }
+        CatalogIdentity catalog = CatalogIdentity.from(
+            product.getId(), product.getName(), product.getCompanyName());
+        if (index.matchesAnyIdentity(catalog)) {
+          productIds.add(product.getId());
+        }
+      }
+    }
+  }
+
   private List<Purchase> findRecentMatchingPurchases(
       String shopId,
       String customerId,
       String excludePurchaseId,
-      RefBuckets refBuckets) {
+      MatchIndex matchIndex) {
 
     List<Criteria> itemMatchers = new ArrayList<>();
-    if (!refBuckets.sellableRefs().isEmpty()) {
-      itemMatchers.add(Criteria.where("items.sellableRef").in(refBuckets.sellableRefs()));
+    if (!matchIndex.sellableRefsToQuery().isEmpty()) {
+      itemMatchers.add(Criteria.where("items.sellableRef").in(matchIndex.sellableRefsToQuery()));
     }
-    if (!refBuckets.lotIds().isEmpty()) {
-      itemMatchers.add(Criteria.where("items.inventoryId").in(refBuckets.lotIds()));
+    if (!matchIndex.lotIdsToQuery().isEmpty()) {
+      itemMatchers.add(Criteria.where("items.inventoryId").in(matchIndex.lotIdsToQuery()));
     }
-    if (!refBuckets.menuItemIds().isEmpty()) {
-      itemMatchers.add(Criteria.where("items.menuItemId").in(refBuckets.menuItemIds()));
+    if (!matchIndex.menuItemIds().isEmpty()) {
+      itemMatchers.add(Criteria.where("items.menuItemId").in(matchIndex.menuItemIds()));
+    }
+    for (String name : matchIndex.displayNames()) {
+      itemMatchers.add(Criteria.where("items.name").regex("^" + Pattern.quote(name) + "$", "i"));
     }
 
     Criteria base = Criteria.where("shopId").is(shopId)
@@ -194,29 +319,6 @@ public class CustomerProductHistoryService {
     return true;
   }
 
-  private static String matchSellableRef(PurchaseItem item, Set<String> refSet, RefBuckets refBuckets) {
-    PurchaseItemRefs.normalize(item);
-    String sellableRef = item.getSellableRef();
-    if (StringUtils.hasText(sellableRef) && refSet.contains(sellableRef)) {
-      return sellableRef;
-    }
-    String legacyLot = item.getMongoInventoryId();
-    if (StringUtils.hasText(legacyLot)) {
-      String encoded = SellableRef.inventory(legacyLot).encode();
-      if (refSet.contains(encoded)) {
-        return encoded;
-      }
-    }
-    String legacyMenu = item.getMongoMenuItemId();
-    if (StringUtils.hasText(legacyMenu)) {
-      String encoded = SellableRef.menu(legacyMenu).encode();
-      if (refSet.contains(encoded)) {
-        return encoded;
-      }
-    }
-    return null;
-  }
-
   private static CustomerProductSaleEntryDto toEntry(Purchase purchase, PurchaseItem item, Instant soldAt) {
     BigDecimal quantity = item.getQuantity() != null ? item.getQuantity() : BigDecimal.ZERO;
     BigDecimal price = item.getPriceToRetail() != null ? item.getPriceToRetail() : BigDecimal.ZERO;
@@ -230,7 +332,12 @@ public class CustomerProductHistoryService {
         purchase.getId(),
         quantity,
         price,
-        lineTotal);
+        lineTotal,
+        item.getSaleAdditionalDiscount(),
+        item.getSchemeType(),
+        item.getSchemePayFor(),
+        item.getSchemeFree(),
+        item.getSchemePercentage());
   }
 
   private static Instant resolveSoldAt(Purchase purchase) {
@@ -258,24 +365,198 @@ public class CustomerProductHistoryService {
     return new CustomerProductHistoryResponse(bySellableRef);
   }
 
-  private static RefBuckets splitRefs(List<String> refs) {
-    List<String> sellableRefs = new ArrayList<>();
-    List<String> lotIds = new ArrayList<>();
-    List<String> menuItemIds = new ArrayList<>();
-    for (String ref : refs) {
-      sellableRefs.add(ref);
-      SellableRef parsed = SellableRef.parseLenient(ref);
-      if (parsed == null) {
-        continue;
-      }
-      if (parsed.isInventory()) {
-        lotIds.add(parsed.id());
-      } else if (parsed.isMenu()) {
-        menuItemIds.add(parsed.id());
-      }
+  record CatalogIdentity(String productId, String normalizedName, String normalizedCompany, String displayName) {
+    static CatalogIdentity from(String productId, String name, String companyName) {
+      String display = StringUtils.hasText(name) ? name.trim() : null;
+      return new CatalogIdentity(
+          StringUtils.hasText(productId) ? productId.trim() : null,
+          normalizeKey(name),
+          normalizeKey(companyName),
+          display);
     }
-    return new RefBuckets(sellableRefs, lotIds, menuItemIds);
+
+    boolean sameProduct(CatalogIdentity other) {
+      if (other == null) {
+        return false;
+      }
+      if (StringUtils.hasText(productId) && productId.equals(other.productId)) {
+        return true;
+      }
+      return StringUtils.hasText(normalizedName)
+          && normalizedName.equals(other.normalizedName)
+          && normalizedCompany.equals(other.normalizedCompany);
+    }
+
+    boolean nameEquals(String rawName) {
+      return StringUtils.hasText(normalizedName) && normalizedName.equals(normalizeKey(rawName));
+    }
   }
 
-  private record RefBuckets(List<String> sellableRefs, List<String> lotIds, List<String> menuItemIds) {}
+  static String normalizeKey(String value) {
+    if (!StringUtils.hasText(value)) {
+      return "";
+    }
+    return value.trim().toLowerCase(Locale.ROOT);
+  }
+
+  /**
+   * Maps a historical purchase line back onto the current cart sellableRefs.
+   * Inventory lines match the current lot, sibling lots of the same catalog
+   * product, or the same product name + company (when the old lot is gone).
+   */
+  static final class MatchIndex {
+    private final Set<String> requestedRefs;
+    private final Map<String, String> menuIdToRef = new HashMap<>();
+    private final Map<String, Set<String>> lotIdToRefs = new HashMap<>();
+    private final Map<String, CatalogIdentity> refToIdentity = new LinkedHashMap<>();
+    private final Set<String> menuItemIds = new LinkedHashSet<>();
+    private final Set<String> sellableRefsToQuery = new LinkedHashSet<>();
+    private final Set<String> lotIdsToQuery = new LinkedHashSet<>();
+    private final Set<String> displayNames = new LinkedHashSet<>();
+    private final Set<String> conflictingLots = new HashSet<>();
+
+    MatchIndex(List<String> requestedRefs) {
+      this.requestedRefs = new LinkedHashSet<>(requestedRefs);
+      this.sellableRefsToQuery.addAll(requestedRefs);
+    }
+
+    void addMenuRef(String menuItemId, String requestedRef) {
+      menuIdToRef.put(menuItemId, requestedRef);
+      menuItemIds.add(menuItemId);
+    }
+
+    void bindLotToRef(String lotId, String requestedRef) {
+      lotIdToRefs.computeIfAbsent(lotId, key -> new LinkedHashSet<>()).add(requestedRef);
+      lotIdsToQuery.add(lotId);
+    }
+
+    void bindIdentity(String requestedRef, CatalogIdentity identity) {
+      refToIdentity.put(requestedRef, identity);
+      if (identity.displayName() != null) {
+        displayNames.add(identity.displayName());
+      }
+    }
+
+    void bindSiblingLot(Inventory sibling) {
+      CatalogIdentity siblingIdentity = CatalogIdentity.from(
+          sibling.getProductId(), sibling.getName(), sibling.getCompanyName());
+      for (Map.Entry<String, CatalogIdentity> entry : refToIdentity.entrySet()) {
+        if (entry.getValue().sameProduct(siblingIdentity)) {
+          bindLotToRef(sibling.getId(), entry.getKey());
+          sellableRefsToQuery.add(SellableRef.inventory(sibling.getId()).encode());
+        }
+      }
+    }
+
+    boolean matchesAnyIdentity(CatalogIdentity candidate) {
+      for (CatalogIdentity identity : refToIdentity.values()) {
+        if (identity.sameProduct(candidate)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    Set<String> uniqueNormalizedNames() {
+      Set<String> names = new LinkedHashSet<>();
+      for (CatalogIdentity identity : refToIdentity.values()) {
+        if (StringUtils.hasText(identity.normalizedName())) {
+          names.add(identity.normalizedName());
+        }
+      }
+      return names;
+    }
+
+    Set<String> sellableRefsToQuery() {
+      return sellableRefsToQuery;
+    }
+
+    boolean knowsLot(String lotId) {
+      return lotIdToRefs.containsKey(lotId) || conflictingLots.contains(lotId);
+    }
+
+    void observeHistoricalLot(Inventory inv) {
+      CatalogIdentity observed = CatalogIdentity.from(
+          inv.getProductId(), inv.getName(), inv.getCompanyName());
+      if (matchesAnyIdentity(observed)) {
+        bindSiblingLot(inv);
+        return;
+      }
+      conflictingLots.add(inv.getId());
+    }
+
+    Set<String> lotIdsToQuery() {
+      return lotIdsToQuery;
+    }
+
+    Set<String> menuItemIds() {
+      return menuItemIds;
+    }
+
+    Set<String> displayNames() {
+      return displayNames;
+    }
+
+    Set<String> matchRequestedRefs(PurchaseItem item) {
+      PurchaseItemRefs.normalize(item);
+      Set<String> matched = new LinkedHashSet<>();
+
+      String sellableRef = item.getSellableRef();
+      if (StringUtils.hasText(sellableRef) && requestedRefs.contains(sellableRef)) {
+        matched.add(sellableRef);
+      }
+
+      String lotId = PurchaseItemRefs.stockLotId(item);
+      if (StringUtils.hasText(lotId)) {
+        Set<String> byLot = lotIdToRefs.get(lotId);
+        if (byLot != null) {
+          matched.addAll(byLot);
+        }
+      }
+
+      String legacyMenu = item.getMongoMenuItemId();
+      if (StringUtils.hasText(legacyMenu) && menuIdToRef.containsKey(legacyMenu)) {
+        matched.add(menuIdToRef.get(legacyMenu));
+      }
+      SellableRef parsed = SellableRef.parseLenient(sellableRef);
+      if (parsed != null && parsed.isMenu() && menuIdToRef.containsKey(parsed.id())) {
+        matched.add(menuIdToRef.get(parsed.id()));
+      }
+
+      matched.addAll(matchByNameAndCompany(item));
+      return matched;
+    }
+
+    private Set<String> matchByNameAndCompany(PurchaseItem item) {
+      String lotId = PurchaseItemRefs.stockLotId(item);
+      if (StringUtils.hasText(lotId) && conflictingLots.contains(lotId)) {
+        return Set.of();
+      }
+      if (!StringUtils.hasText(item.getName())) {
+        return Set.of();
+      }
+      List<Map.Entry<String, CatalogIdentity>> nameHits = new ArrayList<>();
+      for (Map.Entry<String, CatalogIdentity> entry : refToIdentity.entrySet()) {
+        if (entry.getValue().nameEquals(item.getName())) {
+          nameHits.add(entry);
+        }
+      }
+      if (nameHits.isEmpty()) {
+        return Set.of();
+      }
+      Set<String> companies = new HashSet<>();
+      for (Map.Entry<String, CatalogIdentity> hit : nameHits) {
+        companies.add(hit.getValue().normalizedCompany());
+      }
+      // Ambiguous when the cart has the same name from more than one company.
+      if (companies.size() > 1) {
+        return Set.of();
+      }
+      Set<String> refs = new LinkedHashSet<>();
+      for (Map.Entry<String, CatalogIdentity> hit : nameHits) {
+        refs.add(hit.getKey());
+      }
+      return refs;
+    }
+  }
 }

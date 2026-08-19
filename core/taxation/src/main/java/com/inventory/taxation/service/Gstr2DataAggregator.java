@@ -49,6 +49,8 @@ public class Gstr2DataAggregator {
   private VendorPurchaseReturnRepository vendorPurchaseReturnRepository;
   @Autowired
   private VendorPurchaseInvoiceRepository vendorPurchaseInvoiceRepository;
+  @Autowired
+  private HsnSacCatalog hsnSacCatalog;
 
   public Gstr2ReportContext buildContext(String shopId, String period) {
     Shop shop = shopRepository.findById(shopId)
@@ -199,7 +201,8 @@ public class Gstr2DataAggregator {
         }
 
         String hsn = inv.getHsn() != null && !inv.getHsn().isBlank() ? inv.getHsn() : "0";
-        String desc = inv.getDescription() != null ? inv.getDescription() : (inv.getName() != null ? inv.getName() : "");
+        String desc = hsnSacCatalog.descriptionFor(hsn).orElseGet(() ->
+            inv.getDescription() != null ? inv.getDescription() : (inv.getName() != null ? inv.getName() : ""));
         String key = hsn + "|" + rate;
         GstHsnLine existing = hsnMap.get(key);
         if (existing == null) {
