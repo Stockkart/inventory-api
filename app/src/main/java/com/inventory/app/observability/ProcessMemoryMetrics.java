@@ -12,8 +12,8 @@ import java.nio.file.Paths;
 import org.springframework.stereotype.Component;
 
 /**
- * Process RSS plus Linux cgroup memory. DigitalOcean App Platform Memory % is cgroup working
- * set / cgroup limit, not {@code VmRSS} and not JVM heap used.
+ * Process RSS plus Linux cgroup memory. Host Memory % (DigitalOcean Insights, Lightsail,
+ * Docker) is anonymous cgroup RSS / RAM limit — not working set, not heap used.
  */
 @Component
 public class ProcessMemoryMetrics implements MeterBinder {
@@ -42,11 +42,15 @@ public class ProcessMemoryMetrics implements MeterBinder {
         .baseUnit("bytes")
         .register(registry);
     Gauge.builder("container.memory.working.set", this, ProcessMemoryMetrics::cgroupWorkingSetBytes)
-        .description("cgroup working set; DigitalOcean App Platform Memory % numerator")
+        .description("cgroup working set (typical host/container Memory % numerator)")
+        .baseUnit("bytes")
+        .register(registry);
+    Gauge.builder("container.memory.anon", this, ProcessMemoryMetrics::cgroupAnonBytes)
+        .description("cgroup anonymous RSS; matches typical host Memory % (excludes file cache)")
         .baseUnit("bytes")
         .register(registry);
     Gauge.builder("container.memory.limit", this, ProcessMemoryMetrics::cgroupLimitBytes)
-        .description("cgroup memory.max; DigitalOcean plan RAM")
+        .description("cgroup memory.max or JVM-detected container/host RAM")
         .baseUnit("bytes")
         .register(registry);
   }
@@ -85,12 +89,27 @@ public class ProcessMemoryMetrics implements MeterBinder {
     return snap.workingSetBytes;
   }
 
-  private double cgroupLimitBytes() {
+  private double cgroupAnonBytes() {
     CgroupMemory.Snapshot snap = snapshot();
-    if (snap == null || snap.limitBytes <= 0L) {
+    if (snap == null || snap.anonBytes <= 0L) {
       return Double.NaN;
     }
-    return snap.limitBytes;
+    return snap.anonBytes;
+  }
+
+  private double cgroupLimitBytes() {
+    CgroupMemory.Snapshot snap = snapshot();
+    if (snap != null && snap.limitBytes > 0L) {
+      return snap.limitBytes;
+    }
+    java.lang.management.OperatingSystemMXBean os = ManagementFactory.getOperatingSystemMXBean();
+    if (os instanceof OperatingSystemMXBean) {
+      long total = ((OperatingSystemMXBean) os).getTotalMemorySize();
+      if (total > 0L && total < (1L << 40)) {
+        return total;
+      }
+    }
+    return Double.NaN;
   }
 
   private CgroupMemory.Snapshot snapshot() {

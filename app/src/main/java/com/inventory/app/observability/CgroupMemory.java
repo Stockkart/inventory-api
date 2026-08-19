@@ -7,8 +7,7 @@ import java.nio.file.Paths;
 import java.util.List;
 
 /**
- * Linux cgroup memory — the same accounting DigitalOcean App Platform uses for Memory %.
- * Process {@code VmRSS} is higher because it counts shared file-backed mappings.
+ * Linux cgroup memory. Host Memory % is anonymous RSS / limit (not working set).
  */
 final class CgroupMemory {
 
@@ -18,11 +17,13 @@ final class CgroupMemory {
   static final class Snapshot {
     final long usageBytes;
     final long workingSetBytes;
+    final long anonBytes;
     final long limitBytes;
 
-    Snapshot(long usageBytes, long workingSetBytes, long limitBytes) {
+    Snapshot(long usageBytes, long workingSetBytes, long anonBytes, long limitBytes) {
       this.usageBytes = usageBytes;
       this.workingSetBytes = workingSetBytes;
+      this.anonBytes = anonBytes;
       this.limitBytes = limitBytes;
     }
   }
@@ -68,6 +69,18 @@ final class CgroupMemory {
     return 0L;
   }
 
+  static long anonBytes(String stat) {
+    long anon = parseStatCounter(stat, "anon");
+    if (anon > 0L) {
+      return anon;
+    }
+    long totalRss = parseStatCounter(stat, "total_rss");
+    if (totalRss > 0L) {
+      return totalRss;
+    }
+    return parseStatCounter(stat, "rss");
+  }
+
   static long workingSet(long usageBytes, String stat) {
     long inactive = parseStatCounter(stat, "total_inactive_file");
     if (inactive <= 0L) {
@@ -102,8 +115,9 @@ final class CgroupMemory {
       return null;
     }
     String stat = readString(dir.resolve("memory.stat"));
-    long limit = parseLimit(readString(dir.resolve("memory.max")));
-    return new Snapshot(usage.longValue(), workingSet(usage.longValue(), stat), limit);
+    long limit = readLimitWalking(dir, true);
+    return new Snapshot(
+        usage.longValue(), workingSet(usage.longValue(), stat), anonBytes(stat), limit);
   }
 
   private static Snapshot readV1(Path dir) {
@@ -112,8 +126,26 @@ final class CgroupMemory {
       return null;
     }
     String stat = readString(dir.resolve("memory.stat"));
-    long limit = parseLimit(readString(dir.resolve("memory.limit_in_bytes")));
-    return new Snapshot(usage.longValue(), workingSet(usage.longValue(), stat), limit);
+    long limit = readLimitWalking(dir, false);
+    return new Snapshot(
+        usage.longValue(), workingSet(usage.longValue(), stat), anonBytes(stat), limit);
+  }
+
+  /** Quota is often on a parent cgroup; inner memory.max is "max". */
+  private static long readLimitWalking(Path dir, boolean v2) {
+    Path cur = dir;
+    for (int i = 0; i < 8 && cur != null; i++) {
+      Path file = v2 ? cur.resolve("memory.max") : cur.resolve("memory.limit_in_bytes");
+      long limit = parseLimit(readString(file));
+      if (limit > 0L) {
+        return limit;
+      }
+      if (cur.equals(SYS_FS_CGROUP)) {
+        break;
+      }
+      cur = cur.getParent();
+    }
+    return 0L;
   }
 
   private static Path nestedCgroupDir() {

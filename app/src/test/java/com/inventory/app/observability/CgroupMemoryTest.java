@@ -19,6 +19,12 @@ class CgroupMemoryTest {
   }
 
   @Test
+  void anonBytesReadsV2AnonAndV1Rss() {
+    assertEquals(350L, CgroupMemory.anonBytes("anon 350\ninactive_file 100\n"));
+    assertEquals(200L, CgroupMemory.anonBytes("rss 200\ncache 50\n"));
+  }
+
+  @Test
   void parseLimitTreatsMaxAndHugeV1AsUnlimited() {
     assertEquals(0L, CgroupMemory.parseLimit("max"));
     assertEquals(0L, CgroupMemory.parseLimit("9223372036854771712"));
