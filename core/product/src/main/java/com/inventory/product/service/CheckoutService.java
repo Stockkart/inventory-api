@@ -486,8 +486,9 @@ public class CheckoutService {
         log.warn("Page size exceeded maximum, setting to 100");
       }
 
-      // Create Pageable with sorting by soldAt descending
-      Pageable pageable = PageRequest.of(pageNumber, pageSize, Sort.by(Sort.Direction.DESC, "soldAt"));
+      // Create Pageable with sorting by soldAt descending, id breaking the ties
+      Pageable pageable = PageRequest.of(pageNumber, pageSize,
+          withTieBreaker(Sort.by(Sort.Direction.DESC, "soldAt")));
 
       Page<Purchase> purchasePage;
       List<String> customerIds = null;
@@ -636,7 +637,7 @@ public class CheckoutService {
   private Sort parseSortOrder(String order) {
     if (order == null || order.trim().isEmpty()) {
       // Default: soldAt desc
-      return Sort.by(Sort.Direction.DESC, "soldAt");
+      return withTieBreaker(Sort.by(Sort.Direction.DESC, "soldAt"));
     }
 
     // Parse order string: "field:direction" or just "field" (defaults to desc)
@@ -658,10 +659,28 @@ public class CheckoutService {
     // Allowed fields: soldAt, grandTotal, invoiceNo
     if (!isValidSortField(field)) {
       log.warn("Invalid sort field: {}, using default (soldAt desc)", field);
-      return Sort.by(Sort.Direction.DESC, "soldAt");
+      return withTieBreaker(Sort.by(Sort.Direction.DESC, "soldAt"));
     }
 
-    return Sort.by(direction, field);
+    return withTieBreaker(Sort.by(direction, field));
+  }
+
+  /**
+   * The same sort, made a total order by appending the document id.
+   *
+   * <p>None of the sortable fields is unique. Sales are dated to the day they were
+   * made, so a shop that bills more than once a day has ties by ordinary use, and
+   * an imported history can put hundreds of sales on one timestamp. A page is a
+   * separate query, and among equal sort keys the database is free to return a
+   * different order each time -- so a tied document can land after the cursor on
+   * one page and before it on the next, appearing twice or not at all. Pagination
+   * skipped fifteen invoices of one shop's month and repeated seventeen others.
+   *
+   * <p>The id breaks every remaining tie, which makes the order the same for every
+   * page and every request.
+   */
+  private Sort withTieBreaker(Sort sort) {
+    return sort.and(Sort.by(Sort.Direction.DESC, "_id"));
   }
 
   private boolean isValidSortField(String field) {
