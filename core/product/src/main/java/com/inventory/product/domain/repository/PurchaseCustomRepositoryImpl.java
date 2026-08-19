@@ -25,7 +25,6 @@ public class PurchaseCustomRepositoryImpl implements PurchaseCustomRepository {
       String customerId,
       String excludePurchaseId,
       Collection<String> sellableRefs,
-      Collection<String> lotIds,
       Collection<String> menuItemIds,
       Collection<String> productNames,
       int limit) {
@@ -34,15 +33,11 @@ public class PurchaseCustomRepositoryImpl implements PurchaseCustomRepository {
     if (sellableRefs != null && !sellableRefs.isEmpty()) {
       itemMatchers.add(Criteria.where("items.sellableRef").in(sellableRefs));
     }
-    if (lotIds != null && !lotIds.isEmpty()) {
-      itemMatchers.add(Criteria.where("items.inventoryId").in(lotIds));
-    }
     if (menuItemIds != null && !menuItemIds.isEmpty()) {
       itemMatchers.add(Criteria.where("items.menuItemId").in(menuItemIds));
     }
-    // Matching by name as well is what reaches a sale whose lot no longer
-    // exists. Without it the lot criteria above exclude every earlier batch
-    // here, before any caller gets to compare products.
+    // The product name is what reaches a sale from an earlier batch, and the
+    // only thing that reaches one whose lot has since been consumed.
     if (productNames != null && !productNames.isEmpty()) {
       itemMatchers.add(Criteria.where("items.name").in(productNames));
     }

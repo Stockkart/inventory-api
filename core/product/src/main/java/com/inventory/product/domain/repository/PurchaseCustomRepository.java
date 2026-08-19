@@ -15,12 +15,15 @@ public interface PurchaseCustomRepository {
    * A customer's most recent completed purchases that mention any of the given
    * sale lines, newest first.
    *
-   * <p>The four identifying arguments are alternatives, not a conjunction: a
-   * purchase qualifies if it carries a matching {@code sellableRef}, a matching
-   * legacy {@code inventoryId} or {@code menuItemId}, or an item recorded under
-   * one of the product names. Which of them are populated depends on what is
-   * being scanned and on how old the sale is, so the criteria are assembled per
-   * call.
+   * <p>The identifying arguments are alternatives, not a conjunction: a purchase
+   * qualifies if it carries a matching {@code sellableRef}, a matching
+   * {@code menuItemId}, or an item recorded under one of the product names.
+   * Which of them are populated depends on what is being scanned, so the
+   * criteria are assembled per call.
+   *
+   * <p>Lots are deliberately absent. A lot is one delivery and is replaced
+   * whenever stock is received, so selecting on it returns only sales of the
+   * batch in hand and hides every earlier one.
    *
    * @param productNames matches items by recorded name, which is the only route
    *     to a sale whose lot no longer exists
@@ -32,7 +35,6 @@ public interface PurchaseCustomRepository {
       String customerId,
       String excludePurchaseId,
       Collection<String> sellableRefs,
-      Collection<String> lotIds,
       Collection<String> menuItemIds,
       Collection<String> productNames,
       int limit);

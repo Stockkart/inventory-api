@@ -17,11 +17,9 @@ public interface InventoryRepository extends MongoRepository<Inventory, String> 
 
   List<Inventory> findByIdIn(List<String> ids);
 
-  /** Lots of this shop by id, for resolving a sale line back to its product. */
+  /** Lots of this shop by id, for resolving a scanned ref to its product. */
   List<Inventory> findByIdInAndShopId(Collection<String> ids, String shopId);
 
-  /** One lot of this shop, for resolving a single sale line back to its product. */
-  Optional<Inventory> findByIdAndShopId(String id, String shopId);
 
   /** Rows not yet linked to a catalog product (used by the one-off product backfill). */
   List<Inventory> findByShopIdAndProductIdIsNull(String shopId);
