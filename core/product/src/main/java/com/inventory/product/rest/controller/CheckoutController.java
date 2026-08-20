@@ -138,6 +138,7 @@ public class CheckoutController {
   public ResponseEntity<ApiResponse<CustomerProductHistoryResponse>> getCustomerProductHistory(
       @RequestParam(required = false) String customerId,
       @RequestParam(required = false) String customerPhone,
+      @RequestParam(required = false) String customerName,
       @RequestParam String sellableRefs,
       @RequestParam(required = false, defaultValue = "3") Integer limit,
       @RequestParam(required = false) String excludePurchaseId,
@@ -149,7 +150,7 @@ public class CheckoutController {
         .toList();
     return ResponseEntity.ok(ApiResponse.success(
         customerProductHistoryService.getHistory(
-            shopId, customerId, customerPhone, refs, limit, excludePurchaseId)));
+            shopId, customerId, customerPhone, customerName, refs, limit, excludePurchaseId)));
   }
 }
 
