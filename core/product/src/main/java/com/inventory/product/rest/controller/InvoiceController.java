@@ -49,18 +49,21 @@ public class InvoiceController {
 
     log.info("Generating invoice PDF for purchase: {}, shop: {}, printerType: {}", purchaseId, shopId, printerType);
 
-    byte[] pdfBytes = invoiceService.generateInvoicePdf(purchaseId, shopId, printerType);
+    byte[] document = invoiceService.generateInvoicePdf(purchaseId, shopId, printerType);
 
-    String fileName = "invoice_" + purchaseId + ".pdf";
+    // A dot-matrix invoice is printer text, not a page. Labelling it a PDF
+    // would hand the browser a file no reader can open.
+    boolean asText = invoiceService.printsAsText(shopId, printerType);
+    String fileName = "invoice_" + purchaseId + (asText ? ".txt" : ".pdf");
 
     HttpHeaders headers = new HttpHeaders();
-    headers.setContentType(MediaType.APPLICATION_PDF);
+    headers.setContentType(asText ? MediaType.TEXT_PLAIN : MediaType.APPLICATION_PDF);
     headers.setContentDispositionFormData("attachment", fileName);
-    headers.setContentLength(pdfBytes.length);
+    headers.setContentLength(document.length);
 
     return ResponseEntity.ok()
         .headers(headers)
-        .body(pdfBytes);
+        .body(document);
   }
 }
 

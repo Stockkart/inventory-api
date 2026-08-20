@@ -100,11 +100,27 @@ public class InvoiceService {
             : settings.getDefaultPrinterType();
     request.setPrinterType(resolvedPrinter);
 
-    byte[] pdf = documentService.generateInvoice(request);
+    byte[] document = documentService.generateInvoice(request);
     if (metrics != null) {
       metrics.record(ProductMetricsConstants.INVOICES_GENERATED, 1, "module", ProductMetricsConstants.MODULE);
     }
-    return pdf;
+    return document;
+  }
+
+  /**
+   * Whether the invoice for this purchase is bound for a dot-matrix printer,
+   * and so comes back as printer text rather than a PDF.
+   *
+   * <p>The caller needs to know before it labels the response: text served as a
+   * PDF is a file no reader will open.
+   */
+  public boolean printsAsText(String shopId, String printerType) {
+    String resolved = printerType != null && !printerType.isBlank()
+        ? printerType
+        : invoiceSettingsService.getOrDefaultForShop(shopId).getDefaultPrinterType();
+    GenerateInvoiceRequest probe = new GenerateInvoiceRequest();
+    probe.setPrinterType(resolved);
+    return documentService.isDotMatrix(probe);
   }
 
   /**
