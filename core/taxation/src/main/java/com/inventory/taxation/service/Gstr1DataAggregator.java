@@ -403,7 +403,12 @@ public class Gstr1DataAggregator {
             .description(description)
             .uqc(uqc)
             .totalQuantity(qty)
-            .totalValue(taxableVal)
+            // Tax inclusive. The portal's own export reports this column above
+            // the taxable value beside it -- 151,797 against 144,568 for one
+            // HSN -- and reporting the taxable value twice makes the two
+            // columns say the same thing, which is the one thing this column
+            // cannot mean.
+            .totalValue(totalAmount)
             .rate(rate)
             .taxableValue(taxableVal)
             .integratedTaxAmount(BigDecimal.ZERO)
@@ -415,7 +420,7 @@ public class Gstr1DataAggregator {
         hsnMap.put(key, existing);
       } else {
         existing.setTotalQuantity(existing.getTotalQuantity().add(qty));
-        existing.setTotalValue(existing.getTotalValue().add(taxableVal));
+        existing.setTotalValue(existing.getTotalValue().add(totalAmount));
         existing.setTaxableValue(existing.getTaxableValue().add(taxableVal));
         existing.setCentralTaxAmount(existing.getCentralTaxAmount().add(centralTaxAmount));
         existing.setStateUtTaxAmount(existing.getStateUtTaxAmount().add(stateUtTaxAmount));
