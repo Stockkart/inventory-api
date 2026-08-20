@@ -75,20 +75,23 @@ public class InvoiceController {
   /**
    * The invoice for a dot-matrix printer.
    *
-   * <p>Plain characters by default, because that is how this is printed here:
-   * the file is downloaded, opened and sent through the Windows driver. Control
-   * codes only reach a printer when the bytes go to its port; sent through a
-   * driver they are not commands but characters, and the bill prints as the
-   * gibberish they decode to.
+   * <p>The ESC/P stream, to be sent to the printer's port rather than opened.
+   * The bill is 137 characters wide, which is 13.7 inches at the pitch a driver
+   * prints at and 8 inches in condensed -- and condensed is set by a control
+   * code, so the full layout only fits the paper when the codes reach the
+   * printer. They only do that going to the port: through a driver they are not
+   * commands but characters, which is how a bill comes out as gibberish.
    *
-   * <p>{@code ?raw=true} returns the ESC/P stream instead, for sending straight
-   * to the port. That is the only form in which the pitch codes do anything,
-   * and so the only form in which the full width fits the paper.
+   * <pre>copy /b invoice_&lt;id&gt;.prn PRN</pre>
+   *
+   * <p>{@code ?raw=false} returns the same layout as plain characters, for
+   * reading. It will not fit an 80-column printer, since nothing in it can ask
+   * for condensed.
    */
   @GetMapping("/{purchaseId}/dot-matrix")
   public ResponseEntity<byte[]> generateInvoiceDotMatrix(
       @PathVariable String purchaseId,
-      @RequestParam(required = false, defaultValue = "false") boolean raw,
+      @RequestParam(required = false, defaultValue = "true") boolean raw,
       HttpServletRequest httpRequest) {
 
     String shopId = (String) httpRequest.getAttribute("shopId");
