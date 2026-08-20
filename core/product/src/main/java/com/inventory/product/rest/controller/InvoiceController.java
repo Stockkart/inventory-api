@@ -73,42 +73,46 @@ public class InvoiceController {
   }
 
   /**
-   * The invoice as dot-matrix printer text.
+   * The invoice for a dot-matrix printer.
    *
-   * <p>The route the client has always called. It answered 404 because nothing
-   * served it: the only invoice route was the PDF one, so a shop set to print on
-   * a dot matrix could not print at all.
+   * <p>Plain characters by default, because that is how this is printed here:
+   * the file is downloaded, opened and sent through the Windows driver. Control
+   * codes only reach a printer when the bytes go to its port; sent through a
+   * driver they are not commands but characters, and the bill prints as the
+   * gibberish they decode to.
    *
-   * <p>It returns characters and ESC/P control codes, not a page. Send the body
-   * to the printer as it stands -- passing it through a page renderer would undo
-   * the point of it, which is that the layout is already in the printer's own
-   * grid.
-   *
-   * <p>Served as a printer file rather than as text. It begins with control
-   * bytes -- {@code 1B 40} to reset the printer, then the pitch -- and Windows
-   * hands a .txt to Notepad, which reads those two bytes as a UTF-16 character
-   * and every pair after them likewise, so the bill opens as a line of Chinese.
-   * The bytes are not text and saying so stops anything trying to decode them.
+   * <p>{@code ?raw=true} returns the ESC/P stream instead, for sending straight
+   * to the port. That is the only form in which the pitch codes do anything,
+   * and so the only form in which the full width fits the paper.
    */
   @GetMapping("/{purchaseId}/dot-matrix")
   public ResponseEntity<byte[]> generateInvoiceDotMatrix(
       @PathVariable String purchaseId,
+      @RequestParam(required = false, defaultValue = "false") boolean raw,
       HttpServletRequest httpRequest) {
 
     String shopId = (String) httpRequest.getAttribute("shopId");
-    log.info("Generating dot-matrix invoice for purchase: {}, shop: {}", purchaseId, shopId);
+    log.info("Generating dot-matrix invoice for purchase: {}, shop: {}, raw: {}",
+        purchaseId, shopId, raw);
 
-    byte[] text = invoiceService.generateInvoicePdf(
-        purchaseId, shopId, PrinterType.DOT_MATRIX.name());
+    byte[] body = raw
+        ? invoiceService.generateInvoicePdf(purchaseId, shopId, PrinterType.DOT_MATRIX.name())
+        : invoiceService.previewDotMatrix(purchaseId, shopId)
+            .getBytes(StandardCharsets.US_ASCII);
 
     HttpHeaders headers = new HttpHeaders();
-    headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
-    headers.setContentDispositionFormData("attachment", "invoice_" + purchaseId + ".prn");
-    headers.setContentLength(text.length);
+    // The charset is stated rather than left to be guessed. These are single
+    // bytes, and a reader that decides otherwise reads them two at a time.
+    headers.setContentType(raw
+        ? MediaType.APPLICATION_OCTET_STREAM
+        : new MediaType("text", "plain", StandardCharsets.US_ASCII));
+    headers.setContentDispositionFormData(
+        "attachment", "invoice_" + purchaseId + (raw ? ".prn" : ".txt"));
+    headers.setContentLength(body.length);
 
     return ResponseEntity.ok()
         .headers(headers)
-        .body(text);
+        .body(body);
   }
 
   /**
