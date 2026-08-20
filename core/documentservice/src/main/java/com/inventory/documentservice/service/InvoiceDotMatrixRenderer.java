@@ -57,6 +57,36 @@ public class InvoiceDotMatrixRenderer {
   private static final int TEXT_WIDTH = 96;
 
   public String render(GenerateInvoiceRequest request) {
+    return render(request, true);
+  }
+
+  /**
+   * The same bill, with the printer's control codes left out.
+   *
+   * <p>For reading on a screen. The codes are what make the layout fit the
+   * paper, so a printer needs them -- but they are not characters, and anything
+   * that shows the file as text reads them as though they were. Notepad takes
+   * the first two, {@code 1B 40}, for a single UTF-16 character and renders the
+   * whole bill as Chinese.
+   */
+  public String renderReadable(GenerateInvoiceRequest request) {
+    return render(request, false);
+  }
+
+  private String render(GenerateInvoiceRequest request, boolean withControlCodes) {
+    String printed = renderWithCodes(request);
+    if (withControlCodes) {
+      return printed;
+    }
+    // ESC W and ESC - take a further byte saying on or off; every other escape
+    // here is two bytes. Condensed and pitch are single bytes of their own.
+    return printed
+        .replaceAll("\\u001B[W\\-][\\u0000\\u0001]", "")
+        .replaceAll("\\u001B.", "")
+        .replaceAll("[\\u000E-\\u0012]", "");
+  }
+
+  private String renderWithCodes(GenerateInvoiceRequest request) {
     StringBuilder out = new StringBuilder();
     out.append(EscP.INIT);
 

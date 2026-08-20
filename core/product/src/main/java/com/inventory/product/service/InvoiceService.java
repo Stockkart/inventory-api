@@ -2,6 +2,7 @@ package com.inventory.product.service;
 
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.documentservice.domain.PrinterType;
 import com.inventory.documentservice.rest.dto.GenerateInvoiceRequest;
 import com.inventory.documentservice.rest.dto.InvoiceItem;
 import com.inventory.documentservice.service.DocumentService;
@@ -105,6 +106,28 @@ public class InvoiceService {
       metrics.record(ProductMetricsConstants.INVOICES_GENERATED, 1, "module", ProductMetricsConstants.MODULE);
     }
     return document;
+  }
+
+  /**
+   * The dot-matrix invoice as readable text, without the control codes.
+   *
+   * <p>What the printer needs and what a person can read are not the same file.
+   * The codes are what make the layout fit the paper, and they are not
+   * characters, so anything showing the file as text renders them as though
+   * they were.
+   */
+  public String previewDotMatrix(String purchaseId, String shopId) {
+    Purchase purchase = purchaseRepository.findById(purchaseId)
+        .orElseThrow(() -> new ResourceNotFoundException("Purchase", "id", purchaseId));
+    if (!shopId.equals(purchase.getShopId())) {
+      throw new ValidationException("Purchase does not belong to the specified shop");
+    }
+    Shop shop = shopRepository.findById(purchase.getShopId())
+        .orElseThrow(() -> new ResourceNotFoundException("Shop", "shopId", purchase.getShopId()));
+    var settings = invoiceSettingsService.getOrDefaultForShop(shopId);
+    GenerateInvoiceRequest request = buildGenerateInvoiceRequest(purchase, shop, settings);
+    request.setPrinterType(PrinterType.DOT_MATRIX.name());
+    return documentService.generateInvoiceReadableText(request);
   }
 
   /**

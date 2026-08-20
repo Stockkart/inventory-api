@@ -18,6 +18,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.nio.charset.StandardCharsets;
+
 /**
  * REST controller for invoice generation endpoints.
  */
@@ -52,13 +54,16 @@ public class InvoiceController {
 
     byte[] document = invoiceService.generateInvoicePdf(purchaseId, shopId, printerType);
 
-    // A dot-matrix invoice is printer text, not a page. Labelling it a PDF
-    // would hand the browser a file no reader can open.
-    boolean asText = invoiceService.printsAsText(shopId, printerType);
-    String fileName = "invoice_" + purchaseId + (asText ? ".txt" : ".pdf");
+    // A dot-matrix invoice is a printer file, not a page and not text: it
+    // begins with control bytes, which anything trying to decode it will read
+    // as characters. Labelling it a PDF would hand the browser a file no reader
+    // can open; labelling it text hands Windows one Notepad will mangle.
+    boolean forPrinter = invoiceService.printsAsText(shopId, printerType);
+    String fileName = "invoice_" + purchaseId + (forPrinter ? ".prn" : ".pdf");
 
     HttpHeaders headers = new HttpHeaders();
-    headers.setContentType(asText ? MediaType.TEXT_PLAIN : MediaType.APPLICATION_PDF);
+    headers.setContentType(
+        forPrinter ? MediaType.APPLICATION_OCTET_STREAM : MediaType.APPLICATION_PDF);
     headers.setContentDispositionFormData("attachment", fileName);
     headers.setContentLength(document.length);
 
@@ -78,6 +83,12 @@ public class InvoiceController {
    * to the printer as it stands -- passing it through a page renderer would undo
    * the point of it, which is that the layout is already in the printer's own
    * grid.
+   *
+   * <p>Served as a printer file rather than as text. It begins with control
+   * bytes -- {@code 1B 40} to reset the printer, then the pitch -- and Windows
+   * hands a .txt to Notepad, which reads those two bytes as a UTF-16 character
+   * and every pair after them likewise, so the bill opens as a line of Chinese.
+   * The bytes are not text and saying so stops anything trying to decode them.
    */
   @GetMapping("/{purchaseId}/dot-matrix")
   public ResponseEntity<byte[]> generateInvoiceDotMatrix(
@@ -91,13 +102,33 @@ public class InvoiceController {
         purchaseId, shopId, PrinterType.DOT_MATRIX.name());
 
     HttpHeaders headers = new HttpHeaders();
-    headers.setContentType(MediaType.TEXT_PLAIN);
-    headers.setContentDispositionFormData("attachment", "invoice_" + purchaseId + ".txt");
+    headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
+    headers.setContentDispositionFormData("attachment", "invoice_" + purchaseId + ".prn");
     headers.setContentLength(text.length);
 
     return ResponseEntity.ok()
         .headers(headers)
         .body(text);
+  }
+
+  /**
+   * The dot-matrix invoice as readable text, for looking at rather than
+   * printing.
+   *
+   * <p>Shown in the browser instead of downloaded, and with the control codes
+   * taken out: they are what fit the layout to the paper, but they are not
+   * characters, and a viewer that treats them as characters shows the bill as
+   * gibberish rather than as a bill.
+   */
+  @GetMapping(value = "/{purchaseId}/dot-matrix/preview", produces = MediaType.TEXT_PLAIN_VALUE)
+  public ResponseEntity<String> previewInvoiceDotMatrix(
+      @PathVariable String purchaseId,
+      HttpServletRequest httpRequest) {
+
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    return ResponseEntity.ok()
+        .contentType(new MediaType(MediaType.TEXT_PLAIN, StandardCharsets.UTF_8))
+        .body(invoiceService.previewDotMatrix(purchaseId, shopId));
   }
 }
 

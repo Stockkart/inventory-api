@@ -55,6 +55,14 @@ public class DocumentService {
     return invoicePdfService.generateInvoicePdf(request);
   }
 
+  /**
+   * The dot-matrix invoice without the printer's control codes, for reading on
+   * a screen rather than sending to a printer.
+   */
+  public String generateInvoiceReadableText(GenerateInvoiceRequest request) {
+    return dotMatrixRenderer.renderReadable(request);
+  }
+
   /** Whether this invoice is bound for a dot-matrix printer. */
   public boolean isDotMatrix(GenerateInvoiceRequest request) {
     return request != null
