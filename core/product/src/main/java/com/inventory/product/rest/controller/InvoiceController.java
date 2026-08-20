@@ -4,6 +4,7 @@ import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.metrics.annotation.Latency;
 import com.inventory.metrics.annotation.RecordRequestRate;
 import com.inventory.metrics.annotation.RecordStatusCodes;
+import com.inventory.documentservice.domain.PrinterType;
 import com.inventory.product.service.InvoiceService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -64,6 +65,39 @@ public class InvoiceController {
     return ResponseEntity.ok()
         .headers(headers)
         .body(document);
+  }
+
+  /**
+   * The invoice as dot-matrix printer text.
+   *
+   * <p>The route the client has always called. It answered 404 because nothing
+   * served it: the only invoice route was the PDF one, so a shop set to print on
+   * a dot matrix could not print at all.
+   *
+   * <p>It returns characters and ESC/P control codes, not a page. Send the body
+   * to the printer as it stands -- passing it through a page renderer would undo
+   * the point of it, which is that the layout is already in the printer's own
+   * grid.
+   */
+  @GetMapping("/{purchaseId}/dot-matrix")
+  public ResponseEntity<byte[]> generateInvoiceDotMatrix(
+      @PathVariable String purchaseId,
+      HttpServletRequest httpRequest) {
+
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    log.info("Generating dot-matrix invoice for purchase: {}, shop: {}", purchaseId, shopId);
+
+    byte[] text = invoiceService.generateInvoicePdf(
+        purchaseId, shopId, PrinterType.DOT_MATRIX.name());
+
+    HttpHeaders headers = new HttpHeaders();
+    headers.setContentType(MediaType.TEXT_PLAIN);
+    headers.setContentDispositionFormData("attachment", "invoice_" + purchaseId + ".txt");
+    headers.setContentLength(text.length);
+
+    return ResponseEntity.ok()
+        .headers(headers)
+        .body(text);
   }
 }
 
