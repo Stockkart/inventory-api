@@ -116,7 +116,6 @@ public class CheckoutController {
    * @param to optional inclusive last sale date (yyyy-MM-dd)
    * @param customerEmail optional exact customer email
    * @param customerPhone optional exact customer phone
-   * @param customerName optional exact customer name (case-insensitive)
    * @param customer optional free text matched against name, phone, email or address
    * @param httpRequest HTTP request containing shopId
    * @return list of purchases with pagination
@@ -132,12 +131,11 @@ public class CheckoutController {
       @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
       @RequestParam(required = false) String customerEmail,
       @RequestParam(required = false) String customerPhone,
-      @RequestParam(required = false) String customerName,
       @RequestParam(required = false) String customer,
       HttpServletRequest httpRequest) {
     return ResponseEntity.ok(ApiResponse.success(
         checkoutService.searchPurchases(page, limit, invoiceNo, from, to,
-            customerEmail, customerPhone, customerName, customer, httpRequest)));
+            customerEmail, customerPhone, customer, httpRequest)));
   }
 
   /**

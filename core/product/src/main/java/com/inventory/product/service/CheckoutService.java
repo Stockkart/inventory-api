@@ -471,16 +471,17 @@ public class CheckoutService {
    * @param soldTo optional inclusive upper bound on the sale date
    * @param customerEmail optional exact customer email
    * @param customerPhone optional exact customer phone
-   * @param customerName optional exact customer name (case-insensitive)
    * @param customer optional free text matched against a customer's name, phone,
-   *     email or address -- the single box the counter actually types into
+   *     email or address -- the single box the counter types into. It matches as
+   *     a substring, because a party is entered as its trading name and stored
+   *     with its town appended, so an exact name reaches almost none of them
    * @param httpRequest HTTP request containing shopId
    * @return PurchaseListResponse with paginated purchases
    */
   @Transactional(readOnly = true)
   public PurchaseListResponse searchPurchases(Integer page, Integer limit, String invoiceNo,
                                               LocalDate soldFrom, LocalDate soldTo,
-                                              String customerEmail, String customerPhone, String customerName,
+                                              String customerEmail, String customerPhone,
                                               String customer,
                                               HttpServletRequest httpRequest) {
     // Get shopId and userId from request attributes
@@ -490,8 +491,8 @@ public class CheckoutService {
     // Validate shopId and userId
     checkoutValidator.validateShopIdAndUserId(shopId, userId);
 
-    log.info("Searching purchases for shop: {}, user: {}, page: {}, limit: {}, invoiceNo: {}, customerEmail: {}, customerPhone: {}, customerName: {}",
-        shopId, userId, page, limit, invoiceNo, customerEmail, customerPhone, customerName);
+    log.info("Searching purchases for shop: {}, user: {}, page: {}, limit: {}, invoiceNo: {}, customerEmail: {}, customerPhone: {}, customer: {}",
+        shopId, userId, page, limit, invoiceNo, customerEmail, customerPhone, customer);
 
     try {
       // Set defaults
@@ -512,9 +513,9 @@ public class CheckoutService {
 
       // If customer search criteria provided, find matching customer IDs first
       if (StringUtils.hasText(customerEmail) || StringUtils.hasText(customerPhone)
-          || StringUtils.hasText(customerName) || StringUtils.hasText(customer)) {
+          || StringUtils.hasText(customer)) {
         customerIds = findCustomerIdsBySearchCriteria(
-            shopId, customerEmail, customerPhone, customerName, customer);
+            shopId, customerEmail, customerPhone, customer);
 
         if (customerIds.isEmpty()) {
           return purchaseMapper.toPurchaseListResponse(
@@ -561,11 +562,15 @@ public class CheckoutService {
   }
 
   /**
-   * Find customer IDs by exact criteria.
-   * When multiple criteria are provided, all of them must match the same customer (AND).
+   * The customers a search names, by whichever of the criteria were given.
+   *
+   * <p>Where more than one is given they must all match the same customer.
+   * Email and phone are matched exactly, since either identifies one customer;
+   * the free-text term is matched as a substring across name, phone, email and
+   * address, which is what the one box on the screen sends.
    */
   private List<String> findCustomerIdsBySearchCriteria(String shopId, String customerEmail,
-                                                       String customerPhone, String customerName,
+                                                       String customerPhone,
                                                        String customerTerm) {
     Set<String> matchingCustomerIds = null;
 
@@ -600,19 +605,6 @@ public class CheckoutService {
         phoneMatches.add(customer.getId());
       });
       matchingCustomerIds = intersect(matchingCustomerIds, phoneMatches);
-    }
-
-    // Exact name match (case-insensitive) + shop linkage
-    if (StringUtils.hasText(customerName)) {
-      Set<String> nameMatches = new HashSet<>();
-      List<com.inventory.user.domain.model.Customer> candidates =
-          customerRepository.findByNameIgnoreCase(customerName.trim());
-      for (com.inventory.user.domain.model.Customer customer : candidates) {
-        if (shopCustomerRepository.existsByShopIdAndCustomerId(shopId, customer.getId())) {
-          nameMatches.add(customer.getId());
-        }
-      }
-      matchingCustomerIds = intersect(matchingCustomerIds, nameMatches);
     }
 
     if (matchingCustomerIds == null || matchingCustomerIds.isEmpty()) {
