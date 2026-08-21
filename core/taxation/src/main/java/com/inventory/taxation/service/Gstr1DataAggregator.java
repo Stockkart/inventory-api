@@ -390,11 +390,17 @@ public class Gstr1DataAggregator {
       BigDecimal stateUtTaxAmount = taxableVal.multiply(sgstVal)
           .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
 
-      // UQC belongs in the key. The GST HSN summary is reported per HSN, UQC and
-      // rate, and now that UQC varies per item, keying on HSN and rate alone
-      // would fold tablets and bottles of the same HSN into one row under
-      // whichever unit happened to be seen first.
-      String key = hsn + "|" + uqc + "|" + rate;
+      // A row per HSN and rate, which is how the summary is read and how the
+      // portal's own export lays it out. UQC was in the key, which split one
+      // HSN across a row per pack unit -- pieces, packs and phials of the same
+      // goods -- where the return states one.
+      //
+      // The unit still has to be reported, and it is reported honestly: the
+      // real unit where every line of the row shares one, and OTH-OTHERS where
+      // they do not, since a row covering pieces and packs together is a row
+      // whose quantity is in no single unit. That is what OTH-OTHERS means, and
+      // it is what the shop's own filed returns carry for those rows.
+      String key = hsn + "|" + rate;
       GstHsnLine existing = hsnMap.get(key);
       if (existing == null) {
         existing = GstHsnLine.builder()
@@ -402,7 +408,12 @@ public class Gstr1DataAggregator {
             .description(description)
             .uqc(uqc)
             .totalQuantity(qty)
-            .totalValue(taxableVal)
+            // Tax inclusive. The portal's own export reports this column above
+            // the taxable value beside it -- 151,797 against 144,568 for one
+            // HSN -- and reporting the taxable value twice makes the two
+            // columns say the same thing, which is the one thing this column
+            // cannot mean.
+            .totalValue(totalAmount)
             .rate(rate)
             .taxableValue(taxableVal)
             .integratedTaxAmount(BigDecimal.ZERO)
@@ -413,8 +424,11 @@ public class Gstr1DataAggregator {
             .build();
         hsnMap.put(key, existing);
       } else {
+        if (!uqc.equals(existing.getUqc())) {
+          existing.setUqc(FALLBACK_UQC);
+        }
         existing.setTotalQuantity(existing.getTotalQuantity().add(qty));
-        existing.setTotalValue(existing.getTotalValue().add(taxableVal));
+        existing.setTotalValue(existing.getTotalValue().add(totalAmount));
         existing.setTaxableValue(existing.getTaxableValue().add(taxableVal));
         existing.setCentralTaxAmount(existing.getCentralTaxAmount().add(centralTaxAmount));
         existing.setStateUtTaxAmount(existing.getStateUtTaxAmount().add(stateUtTaxAmount));
