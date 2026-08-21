@@ -7,6 +7,7 @@ import com.inventory.product.domain.model.Product;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.product.domain.model.enums.PurchaseStatus;
+import com.inventory.user.domain.model.Customer;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.ProductRepository;
 import com.inventory.product.rest.dto.response.CustomerProductHistoryGroupDto;
@@ -34,6 +35,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -65,6 +67,7 @@ public class CustomerProductHistoryService {
       String shopId,
       String customerId,
       String customerPhone,
+      String customerName,
       List<String> sellableRefs,
       Integer limitPerRef,
       String excludePurchaseId) {
@@ -73,7 +76,8 @@ public class CustomerProductHistoryService {
       throw new ValidationException("shopId is required");
     }
 
-    String resolvedCustomerId = resolveCustomerId(shopId, customerId, customerPhone);
+    String resolvedCustomerId =
+        resolveCustomerId(shopId, customerId, customerPhone, customerName);
     List<String> refs = normalizeSellableRefs(sellableRefs);
     if (refs.isEmpty()) {
       return new CustomerProductHistoryResponse(Map.of());
@@ -109,16 +113,42 @@ public class CustomerProductHistoryService {
     return buildResponse(buckets);
   }
 
-  private String resolveCustomerId(String shopId, String customerId, String customerPhone) {
+  /**
+   * The customer whose history is wanted, identified by whichever of the three
+   * the caller has.
+   *
+   * <p>The phone used to be the only way in, and most customers do not have one:
+   * of one shop's thousand, six hundred have no phone recorded, and for every
+   * one of them the lookup failed outright -- so the screen reported every line
+   * as new to a customer who had been buying for three years.
+   *
+   * <p>The name is therefore accepted too. It identifies a customer less surely
+   * than an id, so it is only used when it decides the matter on its own; where
+   * several customers share a name the lookup fails rather than showing one
+   * shop another's history.
+   */
+  private String resolveCustomerId(
+      String shopId, String customerId, String customerPhone, String customerName) {
     if (StringUtils.hasText(customerId)) {
       return customerId.trim();
     }
-    if (!StringUtils.hasText(customerPhone)) {
-      throw new ValidationException("customerId or customerPhone is required");
+    if (StringUtils.hasText(customerPhone)) {
+      Optional<Customer> byPhone =
+          customerService.searchCustomerByPhone(customerPhone.trim(), shopId);
+      if (byPhone.isPresent()) {
+        return byPhone.get().getId();
+      }
+      if (!StringUtils.hasText(customerName)) {
+        throw new ValidationException("Customer not found for phone: " + customerPhone.trim());
+      }
     }
-    return customerService.searchCustomerByPhone(customerPhone.trim(), shopId)
-        .map(customer -> customer.getId())
-        .orElseThrow(() -> new ValidationException("Customer not found for phone: " + customerPhone.trim()));
+    if (!StringUtils.hasText(customerName)) {
+      throw new ValidationException("customerId, customerPhone or customerName is required");
+    }
+    return customerService.searchCustomerByName(customerName.trim(), shopId)
+        .map(Customer::getId)
+        .orElseThrow(() -> new ValidationException(
+            "No single customer matches the name: " + customerName.trim()));
   }
 
   private List<String> normalizeSellableRefs(List<String> sellableRefs) {

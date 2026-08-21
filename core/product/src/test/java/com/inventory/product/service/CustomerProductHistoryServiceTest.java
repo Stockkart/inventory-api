@@ -76,7 +76,7 @@ class CustomerProductHistoryServiceTest {
     when(mongoTemplate.find(any(Query.class), eq(Purchase.class))).thenReturn(List.of(past));
 
     CustomerProductHistoryResponse response = service.getHistory(
-        SHOP, CUSTOMER, null, List.of(SellableRef.inventory(CURRENT_LOT).encode()), 3, null);
+        SHOP, CUSTOMER, null, null, List.of(SellableRef.inventory(CURRENT_LOT).encode()), 3, null);
 
     CustomerProductSaleEntryDto entry = response.getBySellableRef()
         .get(SellableRef.inventory(CURRENT_LOT).encode())
@@ -96,7 +96,7 @@ class CustomerProductHistoryServiceTest {
     when(mongoTemplate.find(any(Query.class), eq(Purchase.class))).thenReturn(List.of(past));
 
     CustomerProductHistoryResponse response = service.getHistory(
-        SHOP, CUSTOMER, null, List.of(SellableRef.inventory(CURRENT_LOT).encode()), 3, null);
+        SHOP, CUSTOMER, null, null, List.of(SellableRef.inventory(CURRENT_LOT).encode()), 3, null);
 
     CustomerProductSaleEntryDto entry = response.getBySellableRef()
         .get(SellableRef.inventory(CURRENT_LOT).encode())
@@ -115,7 +115,7 @@ class CustomerProductHistoryServiceTest {
     when(mongoTemplate.find(any(Query.class), eq(Purchase.class))).thenReturn(List.of(past));
 
     CustomerProductHistoryResponse response = service.getHistory(
-        SHOP, CUSTOMER, null, List.of(SellableRef.inventory(CURRENT_LOT).encode()), 3, null);
+        SHOP, CUSTOMER, null, null, List.of(SellableRef.inventory(CURRENT_LOT).encode()), 3, null);
 
     assertNull(response.getBySellableRef()
         .get(SellableRef.inventory(CURRENT_LOT).encode())
