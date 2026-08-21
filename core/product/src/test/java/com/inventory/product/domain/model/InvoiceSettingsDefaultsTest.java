@@ -37,13 +37,17 @@ class InvoiceSettingsDefaultsTest {
   }
 
   @Test
-  void basicDefaultsHidePartyChildren() {
+  void basicDefaultsShowCorePartiesHideCompliance() {
     InvoiceFieldVisibility basic = InvoiceSettingsDefaults.basicFields();
-    assertFalse(basic.getShowShopName());
+    assertTrue(basic.getShowShopName());
+    assertTrue(basic.getShowShopAddress());
+    assertTrue(basic.getShowShopPhone());
     assertFalse(basic.getShowShopPan());
     assertFalse(basic.getShowShopDlNo());
     assertFalse(basic.getShowShopFssai());
-    assertFalse(basic.getShowCustomerName());
+    assertTrue(basic.getShowCustomerName());
+    assertTrue(basic.getShowCustomerAddress());
+    assertTrue(basic.getShowCustomerPhone());
     assertFalse(basic.getShowCustomerGstin());
     assertFalse(basic.getShowCustomerPan());
     assertFalse(basic.getShowCustomerDlNo());
@@ -78,10 +82,10 @@ class InvoiceSettingsDefaultsTest {
   }
 
   @Test
-  void basicDefaultsHideTaxAndParties() {
+  void basicDefaultsShowPartiesHideTax() {
     InvoiceFieldVisibility basic = InvoiceSettingsDefaults.basicFields();
-    assertFalse(basic.getShowSellerDetails());
-    assertFalse(basic.getShowBuyerDetails());
+    assertTrue(basic.getShowSellerDetails());
+    assertTrue(basic.getShowBuyerDetails());
     assertFalse(basic.getShowTaxDetails());
     assertFalse(basic.getShowShopGstin());
     assertEquals(true, basic.getShowBatch());
