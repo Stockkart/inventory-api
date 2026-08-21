@@ -2,6 +2,7 @@ package com.inventory.product.service;
 
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.documentservice.domain.PrinterType;
 import com.inventory.documentservice.rest.dto.GenerateInvoiceRequest;
 import com.inventory.documentservice.rest.dto.InvoiceItem;
 import com.inventory.documentservice.service.DocumentService;
@@ -100,11 +101,49 @@ public class InvoiceService {
             : settings.getDefaultPrinterType();
     request.setPrinterType(resolvedPrinter);
 
-    byte[] pdf = documentService.generateInvoice(request);
+    byte[] document = documentService.generateInvoice(request);
     if (metrics != null) {
       metrics.record(ProductMetricsConstants.INVOICES_GENERATED, 1, "module", ProductMetricsConstants.MODULE);
     }
-    return pdf;
+    return document;
+  }
+
+  /**
+   * The dot-matrix invoice as readable text, without the control codes.
+   *
+   * <p>What the printer needs and what a person can read are not the same file.
+   * The codes are what make the layout fit the paper, and they are not
+   * characters, so anything showing the file as text renders them as though
+   * they were.
+   */
+  public String previewDotMatrix(String purchaseId, String shopId) {
+    Purchase purchase = purchaseRepository.findById(purchaseId)
+        .orElseThrow(() -> new ResourceNotFoundException("Purchase", "id", purchaseId));
+    if (!shopId.equals(purchase.getShopId())) {
+      throw new ValidationException("Purchase does not belong to the specified shop");
+    }
+    Shop shop = shopRepository.findById(purchase.getShopId())
+        .orElseThrow(() -> new ResourceNotFoundException("Shop", "shopId", purchase.getShopId()));
+    var settings = invoiceSettingsService.getOrDefaultForShop(shopId);
+    GenerateInvoiceRequest request = buildGenerateInvoiceRequest(purchase, shop, settings);
+    request.setPrinterType(PrinterType.DOT_MATRIX.name());
+    return documentService.generateInvoiceReadableText(request);
+  }
+
+  /**
+   * Whether the invoice for this purchase is bound for a dot-matrix printer,
+   * and so comes back as printer text rather than a PDF.
+   *
+   * <p>The caller needs to know before it labels the response: text served as a
+   * PDF is a file no reader will open.
+   */
+  public boolean printsAsText(String shopId, String printerType) {
+    String resolved = printerType != null && !printerType.isBlank()
+        ? printerType
+        : invoiceSettingsService.getOrDefaultForShop(shopId).getDefaultPrinterType();
+    GenerateInvoiceRequest probe = new GenerateInvoiceRequest();
+    probe.setPrinterType(resolved);
+    return documentService.isDotMatrix(probe);
   }
 
   /**
