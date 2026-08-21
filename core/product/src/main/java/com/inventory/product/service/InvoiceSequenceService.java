@@ -30,6 +30,8 @@ public class InvoiceSequenceService {
   private static final int MAX_ATTEMPTS = 8;
   private static final String BASIC_PREFIX = "BSC-";
   private static final String BASIC_SEQUENCE_SUFFIX = ":BASIC";
+  private static final String ESTIMATE_PREFIX = "EST-";
+  private static final String ESTIMATE_SEQUENCE_SUFFIX = ":EST";
   private static final String CREDIT_NOTE_PREFIX = "CN-";
   private static final String CREDIT_NOTE_SEQUENCE_SUFFIX = ":CN";
   private static final String VENDOR_CN_PREFIX = "VCN-";
@@ -63,6 +65,11 @@ public class InvoiceSequenceService {
   public String getNextBasicInvoiceNo(String shopId) {
     String sequenceKey = shopId + BASIC_SEQUENCE_SUFFIX;
     return getNextFixedPrefixSequence(shopId, sequenceKey, BASIC_PREFIX);
+  }
+
+  public String getNextEstimateNo(String shopId) {
+    String sequenceKey = shopId + ESTIMATE_SEQUENCE_SUFFIX;
+    return getNextFixedPrefixSequence(shopId, sequenceKey, ESTIMATE_PREFIX);
   }
 
   public String getNextCreditNoteNo(String shopId) {

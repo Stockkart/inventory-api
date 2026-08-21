@@ -337,7 +337,7 @@
 </head>
 <body>
 <div class="invoice-container">
-  <div class="estimate-header" th:if="${billingMode == 'BASIC'}">Estimate</div>
+  <div class="estimate-header" th:if="${isEstimate}">Estimate</div>
   <!-- Header: Seller Info and Invoice Meta -->
   <div class="header-section" th:if="${showSellerDetails}">
     <div class="seller-info">
@@ -384,25 +384,15 @@
       <div><span th:if="${showCustomerGstin and customerGstin != null and customerGstin != ''}"><strong>GSTIN No.: </strong><span th:text="${customerGstin}"></span></span></div>
       <div><span th:if="${showCustomerPan and customerPan != null and customerPan != ''}"><strong>PAN No.: </strong><span th:text="${customerPan}"></span></span></div>
     </div>
-    <div class="notes-section" th:if="${billingMode != 'BASIC'}">
-      <div><strong th:text="${billingMode == 'BASIC' ? 'Challan No.' : 'Invoice NO.'}"></strong> <span th:text="${invoiceNo ?: ''}"></span></div>
+    <div class="notes-section" th:if="${isEstimate}">
+      <div><strong>Estimate No.</strong> <span th:text="${invoiceNo ?: ''}"></span></div>
       <div><strong>Date:</strong> <span th:text="${invoiceDate ?: ''}"></span></div>
       <div><strong>Time:</strong> <span th:text="${invoiceTime ?: ''}"></span></div>
     </div>
-    <div class="notes-section" th:if="${billingMode == 'BASIC'}">
-      <div class="basic-meta-row">
-        <div class="basic-meta-left">
-          <div><strong>Challan No.</strong> <span th:text="${invoiceNo ?: ''}"></span></div>
-          <div><strong>Date:</strong> <span th:text="${invoiceDate ?: ''}"></span></div>
-          <div><strong>Time:</strong> <span th:text="${invoiceTime ?: ''}"></span></div>
-        </div>
-        <div class="basic-meta-right">
-          <div th:if="${shopName != null and shopName != ''}">
-            <strong th:text="${shopName}"></strong>
-          </div>
-          <div th:if="${shopAddress != null and shopAddress != ''}" th:text="${shopAddress}"></div>
-        </div>
-      </div>
+    <div class="notes-section" th:if="${!isEstimate}">
+      <div><strong>Invoice NO.</strong> <span th:text="${invoiceNo ?: ''}"></span></div>
+      <div><strong>Date:</strong> <span th:text="${invoiceDate ?: ''}"></span></div>
+      <div><strong>Time:</strong> <span th:text="${invoiceTime ?: ''}"></span></div>
     </div>
   </div>
 
@@ -488,8 +478,8 @@
     </div>
   </div>
 
-  <!-- Terms and Conditions -->
-  <div class="terms-section" th:if="${billingMode != 'BASIC'}">
+  <!-- Terms and Conditions (tax invoices only — not on estimate / basic bill template) -->
+  <div class="terms-section" th:if="${!isEstimate}">
     <ol>
       <li>On the strength of Warranty obtained by us We hereby give this Warranty that the goods sold by us do not
         contravene the provisions of the Drugs Act 1940.

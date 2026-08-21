@@ -5,15 +5,20 @@ import com.inventory.metrics.annotation.Latency;
 import com.inventory.metrics.annotation.RecordRequestRate;
 import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.product.rest.dto.request.AddToCartRequest;
+import com.inventory.product.rest.dto.request.CreateEstimateRequest;
 import com.inventory.product.rest.dto.request.CreateQuotationRequest;
 import com.inventory.product.rest.dto.request.UpdatePurchaseStatusRequest;
 import com.inventory.product.rest.dto.response.AddToCartResponse;
 import com.inventory.product.rest.dto.response.CheckoutResponse;
+import com.inventory.product.rest.dto.response.ConvertEstimateResponse;
 import com.inventory.product.rest.dto.response.CustomerProductHistoryResponse;
+import com.inventory.product.rest.dto.response.EstimateListResponse;
 import com.inventory.product.rest.dto.response.PurchaseListResponse;
 import com.inventory.product.rest.dto.response.QuotationListResponse;
+import com.inventory.product.domain.model.enums.EstimateState;
 import com.inventory.product.service.CheckoutService;
 import com.inventory.product.service.CustomerProductHistoryService;
+import com.inventory.product.service.EstimateService;
 import com.inventory.product.service.QuotationService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,6 +50,9 @@ public class CheckoutController {
 
   @Autowired
   private QuotationService quotationService;
+
+  @Autowired
+  private EstimateService estimateService;
 
   @GetMapping("/cart")
   public ResponseEntity<ApiResponse<AddToCartResponse>> getCart(
@@ -79,6 +87,48 @@ public class CheckoutController {
     String shopId = (String) httpRequest.getAttribute("shopId");
     String userId = (String) httpRequest.getAttribute("userId");
     quotationService.cancelQuotation(purchaseId, userId, shopId);
+    return ResponseEntity.ok(ApiResponse.success(null));
+  }
+
+  @GetMapping("/estimates")
+  public ResponseEntity<ApiResponse<EstimateListResponse>> listEstimates(
+      @RequestParam(required = false) EstimateState state,
+      HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    return ResponseEntity.ok(ApiResponse.success(estimateService.listEstimates(shopId, state)));
+  }
+
+  @PostMapping("/estimates")
+  public ResponseEntity<ApiResponse<AddToCartResponse>> createEstimate(
+      @RequestBody CreateEstimateRequest request, HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    String userId = (String) httpRequest.getAttribute("userId");
+    return ResponseEntity.ok(
+        ApiResponse.success(estimateService.createEstimate(request, userId, shopId)));
+  }
+
+  @GetMapping("/estimates/{purchaseId}")
+  public ResponseEntity<ApiResponse<AddToCartResponse>> getEstimate(
+      @PathVariable String purchaseId, HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    return ResponseEntity.ok(ApiResponse.success(estimateService.getEstimate(purchaseId, shopId)));
+  }
+
+  @PostMapping("/estimates/{purchaseId}/convert")
+  public ResponseEntity<ApiResponse<ConvertEstimateResponse>> convertEstimate(
+      @PathVariable String purchaseId, HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    String userId = (String) httpRequest.getAttribute("userId");
+    return ResponseEntity.ok(
+        ApiResponse.success(estimateService.convertToSale(purchaseId, userId, shopId)));
+  }
+
+  @DeleteMapping("/estimates/{purchaseId}")
+  public ResponseEntity<ApiResponse<Void>> discardEstimate(
+      @PathVariable String purchaseId, HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    String userId = (String) httpRequest.getAttribute("userId");
+    estimateService.discardEstimate(purchaseId, userId, shopId);
     return ResponseEntity.ok(ApiResponse.success(null));
   }
 

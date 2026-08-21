@@ -4,9 +4,11 @@ import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.product.domain.model.DocumentTypes;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.product.domain.model.enums.BillingMode;
+import com.inventory.product.domain.model.enums.DocumentType;
 import com.inventory.product.domain.model.enums.PurchaseStatus;
 import com.inventory.product.domain.repository.PurchaseRepository;
 import com.inventory.product.mapper.PurchaseMapper;
@@ -55,6 +57,8 @@ public class QuotationService {
     List<Purchase> purchases =
         purchaseRepository.findByUserIdAndShopIdAndStatusOrderByUpdatedAtDesc(
             userId, shopId, PurchaseStatus.CREATED);
+    purchases =
+        purchases.stream().filter(DocumentTypes::isSaleDocument).toList();
     for (Purchase purchase : purchases) {
       if (!StringUtils.hasText(purchase.getTokenNo())) {
         quotationCreateOrchestrator
@@ -78,7 +82,9 @@ public class QuotationService {
         purchaseRepository
             .findByUserIdAndShopIdAndStatusOrderByUpdatedAtDesc(
                 userId, shopId, PurchaseStatus.CREATED)
-            .size();
+            .stream()
+            .filter(DocumentTypes::isSaleDocument)
+            .count();
     if (openCount >= MAX_OPEN_QUOTATIONS_PER_USER) {
       throw new ValidationException(
           "Maximum open quotations reached (" + MAX_OPEN_QUOTATIONS_PER_USER + "). Cancel one to continue.");
@@ -101,6 +107,7 @@ public class QuotationService {
               userId,
               customerId,
               BillingMode.REGULAR);
+      purchase.setDocumentType(DocumentType.SALE);
       purchase.setSaleAdditionalDiscountTotal(BigDecimal.ZERO);
       purchase.setSgstAmount(BigDecimal.ZERO);
       purchase.setCgstAmount(BigDecimal.ZERO);
@@ -134,6 +141,9 @@ public class QuotationService {
                 () ->
                     new ResourceNotFoundException(
                         "Quotation", "purchaseId", purchaseId));
+    if (DocumentTypes.isEstimate(purchase)) {
+      throw new ValidationException("Use discard estimate for estimate documents");
+    }
     if (purchase.getStatus() != PurchaseStatus.CREATED) {
       throw new ValidationException("Only open quotations can be cancelled");
     }
@@ -160,11 +170,29 @@ public class QuotationService {
     if (StringUtils.hasText(request.getPurchaseId())) {
       Purchase purchase =
           purchaseRepository
-              .findByIdAndUserIdAndShopId(request.getPurchaseId().trim(), userId, shopId)
+              .findById(request.getPurchaseId().trim())
               .orElseThrow(
                   () ->
                       new ResourceNotFoundException(
                           "Quotation", "purchaseId", request.getPurchaseId()));
+      if (!shopId.equals(purchase.getShopId())) {
+        throw new ValidationException("Document does not belong to the authenticated shop");
+      }
+      if (DocumentTypes.isEstimate(purchase)) {
+        if (purchase.getStatus() != PurchaseStatus.CREATED) {
+          throw new ValidationException(
+              "Cannot modify estimate in status " + purchase.getStatus());
+        }
+        if (purchase.getEstimateState()
+            != com.inventory.product.domain.model.enums.EstimateState.OPEN) {
+          throw new ValidationException(
+              "Cannot modify estimate in state " + purchase.getEstimateState());
+        }
+        return purchase;
+      }
+      if (!userId.equals(purchase.getUserId())) {
+        throw new ValidationException("Quotation does not belong to the authenticated user");
+      }
       if (purchase.getStatus() != PurchaseStatus.CREATED) {
         throw new ValidationException(
             "Cannot modify quotation in status " + purchase.getStatus());
@@ -174,10 +202,13 @@ public class QuotationService {
     List<Purchase> open =
         purchaseRepository.findByUserIdAndShopIdAndStatusOrderByUpdatedAtDesc(
             userId, shopId, PurchaseStatus.CREATED);
-    return open.isEmpty() ? null : open.get(0);
+    return open.stream()
+        .filter(DocumentTypes::isSaleDocument)
+        .findFirst()
+        .orElse(null);
   }
 
-  /** Sum of base quantities reserved in other open quotations for the shop. */
+  /** Sum of base quantities reserved in other open SALE quotations for the shop. Estimates do not reserve. */
   @Transactional(readOnly = true)
   public Map<String, Integer> quotedBaseQuantitiesByLot(String shopId, String excludePurchaseId) {
     List<Purchase> open =
@@ -185,6 +216,9 @@ public class QuotationService {
     Map<String, Integer> reserved = new HashMap<>();
     for (Purchase purchase : open) {
       if (excludePurchaseId != null && excludePurchaseId.equals(purchase.getId())) {
+        continue;
+      }
+      if (DocumentTypes.isEstimate(purchase)) {
         continue;
       }
       if (purchase.getItems() == null) {
@@ -211,26 +245,41 @@ public class QuotationService {
     Optional<Purchase> pending =
         purchaseRepository.findByUserIdAndShopIdAndStatus(
             userId, shopId, PurchaseStatus.PENDING);
-    if (pending.isPresent()) {
+    if (pending.isPresent() && DocumentTypes.isSaleDocument(pending.get())) {
       return Optional.of(purchaseMapper.toAddToCartResponse(pending.get()));
     }
     List<Purchase> created =
         purchaseRepository.findByUserIdAndShopIdAndStatusOrderByUpdatedAtDesc(
             userId, shopId, PurchaseStatus.CREATED);
-    if (created.isEmpty()) {
-      return Optional.empty();
-    }
-    return Optional.of(purchaseMapper.toAddToCartResponse(created.get(0)));
+    return created.stream()
+        .filter(DocumentTypes::isSaleDocument)
+        .findFirst()
+        .map(purchaseMapper::toAddToCartResponse);
   }
 
   private Purchase loadOpenOrPendingQuotation(String purchaseId, String userId, String shopId) {
     Purchase purchase =
         purchaseRepository
-            .findByIdAndUserIdAndShopId(purchaseId, userId, shopId)
+            .findById(purchaseId)
             .orElseThrow(
                 () ->
                     new ResourceNotFoundException(
                         "Quotation", "purchaseId", purchaseId));
+    if (!shopId.equals(purchase.getShopId())) {
+      throw new ValidationException("Document does not belong to the authenticated shop");
+    }
+    if (DocumentTypes.isEstimate(purchase)) {
+      // Estimates are shop-scoped; any shop user may load for print / edit (when OPEN).
+      if (purchase.getStatus() != PurchaseStatus.CREATED
+          && purchase.getStatus() != PurchaseStatus.CANCELLED) {
+        throw new ValidationException(
+            "Estimate is not available (status: " + purchase.getStatus() + ")");
+      }
+      return purchase;
+    }
+    if (!userId.equals(purchase.getUserId())) {
+      throw new ValidationException("Quotation does not belong to the authenticated user");
+    }
     if (purchase.getStatus() != PurchaseStatus.CREATED
         && purchase.getStatus() != PurchaseStatus.PENDING) {
       throw new ValidationException(
