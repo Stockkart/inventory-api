@@ -63,8 +63,8 @@ public class Gstr2ReportResponse {
     r.setPeriod(ctx.getPeriod());
     r.setYear(ctx.getYear());
     r.setMonth(ctx.getMonth());
-    r.setB2b(Gstr2TabDto.from(ctx.getB2bLines(), Gstr2B2bLineDto::from));
-    r.setB2bur(Gstr2TabDto.from(ctx.getB2burLines(), Gstr2B2burLineDto::from));
+    r.setB2b(Gstr2TabDto.fromB2b(ctx.getB2bLines()));
+    r.setB2bur(Gstr2TabDto.fromB2bur(ctx.getB2burLines()));
     r.setImps(Gstr2TabDto.from(ctx.getImpsLines(), Gstr2ImpsLineDto::from));
     r.setImpg(Gstr2TabDto.from(ctx.getImpgLines(), Gstr2ImpgLineDto::from));
     r.setCdnr(Gstr2TabDto.from(ctx.getCdnrLines(), Gstr2CdnrLineDto::from));
@@ -82,15 +82,43 @@ public class Gstr2ReportResponse {
   @AllArgsConstructor
   public static class Gstr2TabDto<T> {
     private List<T> lines;
+    /** Null on a tab the portal does not head with figures. */
+    private Gstr2SummaryDto summary;
+
+    public Gstr2TabDto(List<T> lines) {
+      this(lines, null);
+    }
 
     public static <S, T> Gstr2TabDto<T> from(List<S> lines, java.util.function.Function<S, T> mapper) {
       if (lines == null) return new Gstr2TabDto<>(List.of());
       return new Gstr2TabDto<>(lines.stream().map(mapper).collect(Collectors.toList()));
     }
 
+    public static Gstr2TabDto<Gstr2B2bLineDto> fromB2b(List<Gstr2B2bLine> lines) {
+      if (lines == null || lines.isEmpty()) {
+        return new Gstr2TabDto<>(List.of(), Gstr2Summaries.empty());
+      }
+      return new Gstr2TabDto<>(
+          lines.stream().map(Gstr2B2bLineDto::from).collect(Collectors.toList()),
+          Gstr2Summaries.ofB2b(lines));
+    }
+
+    public static Gstr2TabDto<Gstr2B2burLineDto> fromB2bur(List<Gstr2B2burLine> lines) {
+      if (lines == null || lines.isEmpty()) {
+        return new Gstr2TabDto<>(List.of(), Gstr2Summaries.empty());
+      }
+      return new Gstr2TabDto<>(
+          lines.stream().map(Gstr2B2burLineDto::from).collect(Collectors.toList()),
+          Gstr2Summaries.ofB2bur(lines));
+    }
+
     public static Gstr2TabDto<Gstr2HsnLineDto> fromHsn(List<com.inventory.taxation.domain.model.GstHsnLine> lines) {
-      if (lines == null) return new Gstr2TabDto<>(List.of());
-      return new Gstr2TabDto<>(lines.stream().map(Gstr2HsnLineDto::from).collect(Collectors.toList()));
+      if (lines == null || lines.isEmpty()) {
+        return new Gstr2TabDto<>(List.of(), Gstr2Summaries.empty());
+      }
+      return new Gstr2TabDto<>(
+          lines.stream().map(Gstr2HsnLineDto::from).collect(Collectors.toList()),
+          Gstr2Summaries.ofHsn(lines));
     }
   }
 }
