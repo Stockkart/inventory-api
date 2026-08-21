@@ -31,20 +31,38 @@ public final class InvoiceSettingsDefaults {
     return v;
   }
 
-  /** Estimate / BASIC — hide tax and party compliance details. */
+  /** Estimate / basic-bill template — shared by BASIC bills and Scan & Sell estimates. */
   public static InvoiceFieldVisibility basicFields() {
     InvoiceFieldVisibility v = new InvoiceFieldVisibility();
-    v.setShowSellerDetails(false);
-    applyPartyChildren(v, false);
-    v.setShowBuyerDetails(false);
+    // Parties: shop + customer identity on by default; compliance optional
+    v.setShowSellerDetails(true);
+    v.setShowShopName(true);
+    v.setShowShopAddress(true);
+    v.setShowShopTagline(false);
+    v.setShowShopPhone(true);
+    v.setShowShopEmail(false);
+    v.setShowShopGstin(false);
+    v.setShowShopPan(false);
+    v.setShowShopDlNo(false);
+    v.setShowShopFssai(false);
+    v.setShowBuyerDetails(true);
+    v.setShowCustomerName(true);
+    v.setShowCustomerAddress(true);
+    v.setShowCustomerPhone(true);
+    v.setShowCustomerEmail(false);
+    v.setShowCustomerGstin(false);
+    v.setShowCustomerPan(false);
+    v.setShowCustomerDlNo(false);
+    // Quotes hide payment at print time for DocumentType.ESTIMATE; BASIC completed bills may show it
     v.setShowPaymentMethod(true);
+    // Tax is forced off for BASIC billing; REGULAR estimates force tax on in InvoiceService
     v.setShowTaxDetails(false);
     v.setShowAmountInWords(true);
     v.setShowAmountSaved(true);
     v.setShowAdditionalDiscount(true);
     v.setShowHsn(false);
     v.setShowMfg(false);
-    v.setShowExpiry(false);
+    v.setShowExpiry(true);
     v.setShowBatch(true);
     v.setShowMrp(true);
     v.setShowScheme(false);

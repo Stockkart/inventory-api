@@ -17,6 +17,11 @@ public class GenerateInvoiceRequest {
   private String invoiceTime;
   private String billingMode;
   /**
+   * {@code SALE} or {@code ESTIMATE}. When ESTIMATE, templates show Estimate header even for
+   * REGULAR (taxed) billing.
+   */
+  private String documentType;
+  /**
    * Printer layout: {@code NORMAL}, {@code DOT_MATRIX}, or {@code THERMAL_3INCH}.
    * Resolved via {@link com.inventory.documentservice.domain.PrinterType}.
    */

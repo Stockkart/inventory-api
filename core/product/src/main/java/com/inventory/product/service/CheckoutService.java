@@ -8,7 +8,9 @@ import com.inventory.common.exception.ValidationException;
 import com.inventory.common.util.TxnIdGenerator;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.AvailableUnit;
+import com.inventory.product.domain.model.DocumentTypes;
 import com.inventory.product.domain.model.enums.BillingMode;
+import com.inventory.product.domain.model.enums.DocumentType;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.product.domain.model.enums.PurchaseStatus;
@@ -244,6 +246,11 @@ public class CheckoutService {
       // Verify purchase belongs to the user's shop
       if (!shopId.equals(purchase.getShopId()) || !userId.equals(purchase.getUserId())) {
         throw new ValidationException("Purchase does not belong to the authenticated user's shop");
+      }
+
+      if (DocumentTypes.isEstimate(purchase)) {
+        throw new ValidationException(
+            "Estimates cannot be checked out. Convert the estimate to an invoice first.");
       }
 
       // Validate status transition
@@ -1194,6 +1201,7 @@ public class CheckoutService {
       );
       // Invoice number is assigned only when purchase is completed (avoids wasting sequence on cart changes)
       // Set tax amounts, additional discount, and customerName
+      purchase.setDocumentType(DocumentType.SALE);
       purchase.setSgstAmount(taxResult.getSgstAmount());
       purchase.setCgstAmount(taxResult.getCgstAmount());
       purchase.setSaleAdditionalDiscountTotal(additionalDiscountTotal);

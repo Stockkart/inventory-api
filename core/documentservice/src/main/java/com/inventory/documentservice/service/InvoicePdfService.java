@@ -77,6 +77,12 @@ public class InvoicePdfService {
     context.setVariable("invoiceDate", request.getInvoiceDate() != null ? request.getInvoiceDate() : formatDate(request.getSoldAt()));
     context.setVariable("invoiceTime", request.getInvoiceTime() != null ? request.getInvoiceTime() : formatTime(request.getSoldAt()));
     context.setVariable("billingMode", request.getBillingMode() != null ? request.getBillingMode() : "REGULAR");
+    String documentType = request.getDocumentType() != null ? request.getDocumentType() : "SALE";
+    String billingMode = request.getBillingMode() != null ? request.getBillingMode() : "REGULAR";
+    boolean isEstimate =
+        "ESTIMATE".equalsIgnoreCase(documentType) || "BASIC".equalsIgnoreCase(billingMode);
+    context.setVariable("documentType", documentType);
+    context.setVariable("isEstimate", isEstimate);
     context.setVariable("showSellerDetails", visible(request.getShowSellerDetails()));
     context.setVariable("showShopName", visible(request.getShowShopName()));
     context.setVariable("showShopAddress", visible(request.getShowShopAddress()));

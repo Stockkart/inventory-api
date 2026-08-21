@@ -1,6 +1,8 @@
 package com.inventory.product.domain.repository;
 
 import com.inventory.product.domain.model.Purchase;
+import com.inventory.product.domain.model.enums.DocumentType;
+import com.inventory.product.domain.model.enums.EstimateState;
 import com.inventory.product.domain.model.enums.PurchaseStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -21,6 +23,12 @@ public interface PurchaseRepository extends MongoRepository<Purchase, String> {
       String userId, String shopId, PurchaseStatus status);
 
   List<Purchase> findByShopIdAndStatus(String shopId, PurchaseStatus status);
+
+  List<Purchase> findByShopIdAndDocumentTypeOrderByUpdatedAtDesc(
+      String shopId, DocumentType documentType);
+
+  List<Purchase> findByShopIdAndDocumentTypeAndEstimateStateOrderByUpdatedAtDesc(
+      String shopId, DocumentType documentType, EstimateState estimateState);
 
   Optional<Purchase> findByIdAndUserIdAndShopId(String id, String userId, String shopId);
 

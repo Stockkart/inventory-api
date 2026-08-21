@@ -1,6 +1,8 @@
 package com.inventory.product.domain.model;
 
 import com.inventory.product.domain.model.enums.BillingMode;
+import com.inventory.product.domain.model.enums.DocumentType;
+import com.inventory.product.domain.model.enums.EstimateState;
 import com.inventory.product.domain.model.enums.PurchaseStatus;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -34,6 +36,19 @@ public class Purchase {
   private String invoiceNo;
   private String businessType;
   private BillingMode billingMode;
+  /**
+   * SALE (default / legacy null) vs ESTIMATE. Orthogonal to {@link #billingMode} and {@link
+   * #status}.
+   */
+  private DocumentType documentType;
+  /** Only set when {@link #documentType} is ESTIMATE. */
+  private EstimateState estimateState;
+  /** Assigned estimate series number (e.g. EST-00012); independent of invoiceNo. */
+  private String estimateNo;
+  /** Set when this estimate was converted into a sale cart/invoice. */
+  private String convertedToPurchaseId;
+  /** On a SALE cart created from an estimate — points back to the source estimate. */
+  private String sourceEstimateId;
   private String userId;
   private String shopId;
   private List<PurchaseItem> items;

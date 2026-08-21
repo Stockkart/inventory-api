@@ -28,6 +28,7 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -118,15 +119,40 @@ public class InvoiceService {
     GenerateInvoiceRequest request = new GenerateInvoiceRequest();
     BillingMode billingMode = purchase.getBillingMode() != null ? purchase.getBillingMode() : BillingMode.REGULAR;
     request.setBillingMode(billingMode.name());
+    boolean isEstimateDoc =
+        purchase.getDocumentType()
+            == com.inventory.product.domain.model.enums.DocumentType.ESTIMATE;
+    // Estimate chrome: Scan & Sell estimates OR BASIC bills — same template settings
+    boolean estimateChrome = isEstimateDoc || billingMode == BillingMode.BASIC;
+    request.setDocumentType(estimateChrome ? "ESTIMATE" : "SALE");
 
-    var fields = invoiceSettingsService.fieldsForMode(settings, billingMode);
+    var fields =
+        estimateChrome
+            ? invoiceSettingsService.fieldsForMode(settings, BillingMode.BASIC)
+            : invoiceSettingsService.fieldsForMode(settings, billingMode);
     invoiceSettingsService.applyVisibility(request, fields);
     request.setFooterNote(settings.getFooterNote() != null ? settings.getFooterNote() : "");
+    if (estimateChrome) {
+      // Shared estimate template: tax only when the bill's products are REGULAR (GST)
+      request.setShowTaxDetails(billingMode == BillingMode.REGULAR);
+    }
+    if (isEstimateDoc) {
+      // Open quotes never show payment — BASIC completed sales still honor settings
+      request.setShowPaymentMethod(false);
+    }
 
-    // Invoice basic info
-    request.setInvoiceNo(purchase.getInvoiceNo() != null ? purchase.getInvoiceNo() : "");
-    if (purchase.getSoldAt() != null) {
-      LocalDateTime soldAt = LocalDateTime.ofInstant(purchase.getSoldAt(), ZoneId.of("Asia/Kolkata"));
+    // Invoice / estimate number
+    if (isEstimateDoc && StringUtils.hasText(purchase.getEstimateNo())) {
+      request.setInvoiceNo(purchase.getEstimateNo());
+    } else {
+      request.setInvoiceNo(purchase.getInvoiceNo() != null ? purchase.getInvoiceNo() : "");
+    }
+    Instant dateSource =
+        purchase.getSoldAt() != null
+            ? purchase.getSoldAt()
+            : (purchase.getUpdatedAt() != null ? purchase.getUpdatedAt() : purchase.getCreatedAt());
+    if (dateSource != null) {
+      LocalDateTime soldAt = LocalDateTime.ofInstant(dateSource, ZoneId.of("Asia/Kolkata"));
       request.setInvoiceDate(soldAt.format(DateTimeFormatter.ofPattern("dd-MM-yyyy")));
       request.setInvoiceTime(soldAt.format(DateTimeFormatter.ofPattern("hh:mm a")));
     }

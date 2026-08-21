@@ -2,7 +2,7 @@
 <html xmlns:th="http://www.thymeleaf.org">
 <head>
   <meta charset="UTF-8"/>
-  <title th:text="${billingMode == 'BASIC' ? 'Estimate' : 'Tax Invoice'}">Tax Invoice</title>
+  <title th:text="${isEstimate ? 'Estimate' : 'Tax Invoice'}">Tax Invoice</title>
   <style>
     /* ~75mm thermal receipt — bold type for legible thermal output */
     @page {
@@ -132,7 +132,7 @@
       <div class="shop-line" th:if="${showShopFssai and shopFssai != null && !shopFssai.isEmpty()}">FSSAI: <span th:text="${shopFssai}">-</span></div>
       <div class="shop-line" th:if="${showShopTagline and shopTagline != null && !shopTagline.isEmpty()}" th:text="${shopTagline}">Tagline</div>
     </div>
-    <div th:if="${!showSellerDetails && billingMode == 'BASIC' && shopAddress != null && !shopAddress.isEmpty()}"
+    <div th:if="${!showSellerDetails && isEstimate && shopAddress != null && !shopAddress.isEmpty()}"
          class="shop-line" th:text="${shopAddress}">Address</div>
   </div>
 
@@ -141,7 +141,7 @@
   <!-- Invoice meta: number left, datetime right -->
   <div class="row meta-row">
     <div class="left">
-      <span th:text="${billingMode == 'BASIC' ? 'Challan No' : 'Invoice No'}">Invoice No</span>:
+      <span th:text="${isEstimate ? 'Estimate No' : 'Invoice No'}">Invoice No</span>:
       <span th:text="${invoiceNo}">INV</span>
     </div>
     <div class="right">

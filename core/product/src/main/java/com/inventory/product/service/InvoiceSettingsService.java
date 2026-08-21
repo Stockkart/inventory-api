@@ -195,10 +195,19 @@ public class InvoiceSettingsService {
     String printerType = resolvePreviewPrinter(request);
 
     ShopInvoiceSettingsDocument draft = draftFromPreview(shopId, request);
-    InvoiceFieldVisibility fields = fieldsForMode(draft, mode);
+    // Estimate tab (BASIC) always uses the estimate template field set + estimate chrome
+    boolean estimatePreview = mode == BillingMode.BASIC;
+    InvoiceFieldVisibility fields =
+        estimatePreview
+            ? fieldsForMode(draft, BillingMode.BASIC)
+            : fieldsForMode(draft, mode);
 
-    GenerateInvoiceRequest invoice = buildSampleInvoice(shop, mode);
+    GenerateInvoiceRequest invoice = buildSampleInvoice(shop, mode, estimatePreview);
     applyVisibility(invoice, fields);
+    if (estimatePreview) {
+      invoice.setDocumentType("ESTIMATE");
+      invoice.setShowTaxDetails(false);
+    }
     invoice.setFooterNote(draft.getFooterNote() != null ? draft.getFooterNote() : "");
     invoice.setPrinterType(printerType);
 
@@ -299,10 +308,20 @@ public class InvoiceSettingsService {
   }
 
   GenerateInvoiceRequest buildSampleInvoice(Shop shop, BillingMode billingMode) {
+    return buildSampleInvoice(shop, billingMode, billingMode == BillingMode.BASIC);
+  }
+
+  GenerateInvoiceRequest buildSampleInvoice(
+      Shop shop, BillingMode billingMode, boolean estimateChrome) {
     GenerateInvoiceRequest request = new GenerateInvoiceRequest();
     boolean basic = billingMode == BillingMode.BASIC;
     request.setBillingMode(billingMode.name());
-    request.setInvoiceNo(basic ? "BSC-00001" : "INV-00001");
+    request.setDocumentType(estimateChrome ? "ESTIMATE" : "SALE");
+    if (estimateChrome) {
+      request.setInvoiceNo("EST-00001");
+    } else {
+      request.setInvoiceNo(basic ? "BSC-00001" : "INV-00001");
+    }
 
     LocalDateTime now = LocalDateTime.now(IST);
     request.setInvoiceDate(now.format(DateTimeFormatter.ofPattern("dd-MM-yyyy")));

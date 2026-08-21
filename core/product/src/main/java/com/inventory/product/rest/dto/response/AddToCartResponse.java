@@ -43,5 +43,12 @@ public class AddToCartResponse {
   String customerDlNo;
   String customerPan;
   String paymentMethod;
+  /** SALE (default) or ESTIMATE. */
+  com.inventory.product.domain.model.enums.DocumentType documentType;
+  /** Present when documentType is ESTIMATE. */
+  com.inventory.product.domain.model.enums.EstimateState estimateState;
+  String estimateNo;
+  String convertedToPurchaseId;
+  String sourceEstimateId;
 }
 
