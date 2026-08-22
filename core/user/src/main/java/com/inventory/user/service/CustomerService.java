@@ -26,6 +26,7 @@ import org.springframework.util.StringUtils;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 @Service
 @Slf4j
@@ -61,22 +62,34 @@ public class CustomerService {
   }
 
   @Transactional(readOnly = true)
-  public CustomerDto searchCustomer(String shopId, String phone, String email) {
+  public CustomerDto searchCustomer(String shopId, String phone, String email, String name) {
     customerValidator.validateShopId(shopId);
-    customerValidator.validateCustomerSearchParams(phone, email);
+    customerValidator.validateCustomerSearchParams(phone, email, name);
 
     String normalizedPhone = TextUtils.trimToNull(phone);
     String normalizedEmail = TextUtils.trimToNull(email);
-    boolean searchByPhone = StringUtils.hasText(normalizedPhone);
-    String searchValue = searchByPhone ? normalizedPhone : normalizedEmail;
+    String normalizedName = TextUtils.trimToNull(name);
 
-    Customer customer = (searchByPhone
-        ? searchCustomerByPhone(normalizedPhone, shopId)
-        : searchCustomerByEmail(normalizedEmail, shopId))
-        .orElseThrow(() -> new ResourceNotFoundException(
-            "Customer",
-            searchByPhone ? "phone" : "email",
-            "No customer found with " + (searchByPhone ? "phone " : "email ") + searchValue + " for shop " + shopId));
+    String field;
+    String searchValue;
+    Optional<Customer> found;
+    if (StringUtils.hasText(normalizedPhone)) {
+      field = "phone";
+      searchValue = normalizedPhone;
+      found = searchCustomerByPhone(normalizedPhone, shopId);
+    } else if (StringUtils.hasText(normalizedEmail)) {
+      field = "email";
+      searchValue = normalizedEmail;
+      found = searchCustomerByEmail(normalizedEmail, shopId);
+    } else {
+      field = "name";
+      searchValue = normalizedName;
+      found = searchCustomerByName(normalizedName, shopId);
+    }
+
+    Customer customer = found.orElseThrow(() -> new ResourceNotFoundException(
+        "Customer", field,
+        "No customer found with " + field + " " + searchValue + " for shop " + shopId));
 
     return customerMapper.toDto(customer);
   }
@@ -132,6 +145,34 @@ public class CustomerService {
   }
 
   @Transactional(readOnly = true)
+  /**
+   * The shop's customer with this name, or empty when the name does not decide it.
+   *
+   * <p>Names are compared with case and spacing ignored. A party master pads the
+   * town out with spaces -- {@code ABID MEDICAL HALL             BARACHATTI} --
+   * so a name typed at the counter matches nothing when compared literally.
+   *
+   * <p>Several customers can share a name: three shops here trade as AGARWAL
+   * MEDICAL HALL in three towns. Where that happens the name has not identified
+   * anyone and this returns empty rather than picking one, since attributing a
+   * sale or a history to the wrong shop is worse than finding nothing.
+   */
+  public Optional<Customer> searchCustomerByName(String name, String shopId) {
+    String wanted = collapseSpaces(name);
+    if (!StringUtils.hasText(wanted)) {
+      return Optional.empty();
+    }
+    List<Customer> fits = customerRepository.searchByQuery(Pattern.quote(name.trim())).stream()
+        .filter(c -> wanted.equalsIgnoreCase(collapseSpaces(c.getName())))
+        .filter(c -> shopCustomerRepository.existsByShopIdAndCustomerId(shopId, c.getId()))
+        .toList();
+    return fits.size() == 1 ? Optional.of(fits.get(0)) : Optional.empty();
+  }
+
+  private static String collapseSpaces(String value) {
+    return value == null ? "" : value.trim().replaceAll("\\s+", " ");
+  }
+
   public Optional<Customer> searchCustomerByPhone(String phone, String shopId) {
     return customerRepository.findByPhone(phone.trim())
         .filter(c -> shopCustomerRepository.existsByShopIdAndCustomerId(shopId, c.getId()));

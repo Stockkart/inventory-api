@@ -136,9 +136,6 @@ public class Gstr1DataAggregator {
       String recipientGstin = customer != null && customer.getGstin() != null ? customer.getGstin() : "";
 
       BigDecimal invValue = purchase.getGrandTotal() != null ? purchase.getGrandTotal() : BigDecimal.ZERO;
-      BigDecimal taxableVal = purchase.getRevenueBeforeTax() != null ? purchase.getRevenueBeforeTax() : BigDecimal.ZERO;
-      String rateStr = getApplicableRateFromPurchase(purchase);
-      BigDecimal rate = parseRate(rateStr);
 
       LocalDate invDate = purchase.getSoldAt() != null
           ? LocalDateTime.ofInstant(purchase.getSoldAt(), ZoneId.systemDefault()).toLocalDate()
@@ -147,41 +144,46 @@ public class Gstr1DataAggregator {
 
       String invNo = purchase.getInvoiceNo() != null ? purchase.getInvoiceNo() : ("INV-" + purchase.getId());
 
-      GstInvoiceLine line = GstInvoiceLine.builder()
-          .recipientGstin(recipientGstin)
-          .receiverName(receiverName)
-          .invoiceNo(invNo)
-          .invoiceDate(invDate)
-          .invoiceValue(invValue)
-          .placeOfSupply(GstStateCode.placeOfSupply(recipientGstin, sellerState))
-          .reverseCharge("N")
-          .applicableTaxPct(rateStr)
-          .invoiceType("Regular B2B") // Regular
-          .ecommerceGstin("")
-          .rate(rate)
-          .taxableValue(taxableVal)
-          .cessAmount(BigDecimal.ZERO)
-          .integratedTaxAmount(BigDecimal.ZERO)
-          .centralTaxAmount(purchase.getCgstAmount() != null ? purchase.getCgstAmount() : BigDecimal.ZERO)
-          .stateTaxAmount(purchase.getSgstAmount() != null ? purchase.getSgstAmount() : BigDecimal.ZERO)
-          .build();
+      // One row per rate the invoice carries. The invoice value is repeated on
+      // each, which is how the portal's own export reads: it is a property of
+      // the invoice, not of the rate, and splitting it would misstate both rows.
+      for (RateShare share : splitByRate(purchase)) {
+        GstInvoiceLine line = GstInvoiceLine.builder()
+            .recipientGstin(recipientGstin)
+            .receiverName(receiverName)
+            .invoiceNo(invNo)
+            .invoiceDate(invDate)
+            .invoiceValue(invValue)
+            .placeOfSupply(GstStateCode.placeOfSupply(recipientGstin, sellerState))
+            .reverseCharge("N")
+            .applicableTaxPct(share.rate)
+            .invoiceType("Regular B2B") // Regular
+            .ecommerceGstin("")
+            .rate(parseRate(share.rate))
+            .taxableValue(share.taxableValue)
+            .cessAmount(BigDecimal.ZERO)
+            .integratedTaxAmount(BigDecimal.ZERO)
+            .centralTaxAmount(share.centralTax)
+            .stateTaxAmount(share.stateTax)
+            .build();
 
-      if (b2b) {
-        line.setSupplyType(SupplyType.B2B);
-        b2bLines.add(line);
-        aggregateHsn(purchase, inventoryMap, true, hsnB2bMap);
-      } else {
-        if (invValue.compareTo(B2CL_THRESHOLD) >= 0) {
+        if (b2b) {
+          line.setSupplyType(SupplyType.B2B);
+          b2bLines.add(line);
+        } else if (invValue.compareTo(B2CL_THRESHOLD) >= 0) {
           line.setSupplyType(SupplyType.B2CL);
           b2clLines.add(line);
         } else {
-          String key = "OE|" + line.getPlaceOfSupply() + "|" + rateStr;
+          String key = "OE|" + line.getPlaceOfSupply() + "|" + share.rate;
           line.setB2csType("OE");
           line.setSupplyType(SupplyType.B2CS);
           b2csAggregate.merge(key, line, this::mergeB2csLine);
         }
-        aggregateHsn(purchase, inventoryMap, false, hsnB2cMap);
       }
+
+      // The HSN summary is per line already, so it is built once per invoice
+      // however many rates the invoice carries.
+      aggregateHsn(purchase, inventoryMap, b2b, b2b ? hsnB2bMap : hsnB2cMap);
 
       invoiceSerialNos.add(invNo);
     }
@@ -212,7 +214,7 @@ public class Gstr1DataAggregator {
           taxableVal = purchase.getRevenueBeforeTax().multiply(ratio).setScale(2, RoundingMode.HALF_UP);
         }
       }
-      String rateStr = purchase != null ? getApplicableRateFromPurchase(purchase) : "0";
+      String rateStr = purchase != null ? dominantRate(purchase) : "0";
       BigDecimal rate = parseRate(rateStr);
 
       LocalDate noteDate = refund.getCreatedAt() != null
@@ -303,12 +305,86 @@ public class Gstr1DataAggregator {
     return mode == BillingMode.REGULAR;
   }
 
-  private String getApplicableRateFromPurchase(Purchase purchase) {
-    if (purchase.getItems() == null || purchase.getItems().isEmpty()) return "0";
-    PurchaseItem first = purchase.getItems().get(0);
-    BigDecimal sgstVal = parseRate(first.getSgst());
-    BigDecimal cgstVal = parseRate(first.getCgst());
-    return sgstVal.add(cgstVal).stripTrailingZeros().toPlainString();
+  /** One rate's share of an invoice: what it was charged on and the tax it bore. */
+  private static final class RateShare {
+    private final String rate;
+    private BigDecimal taxableValue = BigDecimal.ZERO;
+    private BigDecimal centralTax = BigDecimal.ZERO;
+    private BigDecimal stateTax = BigDecimal.ZERO;
+
+    private RateShare(String rate) {
+      this.rate = rate;
+    }
+  }
+
+  /**
+   * An invoice broken into one entry per tax rate it carries, in the order the
+   * rates first appear on it.
+   *
+   * <p>GSTR-1 is reported per rate, not per invoice: an invoice carrying goods at
+   * 5% and at 18% is two rows, each with its own taxable value and tax. Reporting
+   * such an invoice under a single rate misstates the tax on everything charged
+   * at the other -- in either direction, and on this shop's August it moved
+   * ~6,700 rupees of 18% supplies into the 5% bucket, understating the liability.
+   *
+   * <p>An invoice with no lines keeps its purchase-level totals under rate 0, so
+   * it is still reported rather than silently dropped.
+   */
+  private List<RateShare> splitByRate(Purchase purchase) {
+    Map<String, RateShare> shares = new LinkedHashMap<>();
+    if (purchase.getItems() != null) {
+      for (PurchaseItem item : purchase.getItems()) {
+        BigDecimal cgstVal = parseRate(item.getCgst());
+        BigDecimal sgstVal = parseRate(item.getSgst());
+        BigDecimal rate = cgstVal.add(sgstVal);
+        String rateStr = rate.stripTrailingZeros().toPlainString();
+
+        // The line total is tax inclusive, the same assumption the HSN summary
+        // makes, so the taxable value is backed out of it rather than added to.
+        BigDecimal gross = item.getTotalAmount() != null
+            ? item.getTotalAmount() : BigDecimal.ZERO;
+        BigDecimal taxable = gross;
+        if (rate.compareTo(BigDecimal.ZERO) > 0) {
+          taxable = gross.multiply(BigDecimal.valueOf(100))
+              .divide(BigDecimal.valueOf(100).add(rate), 2, RoundingMode.HALF_UP);
+        }
+
+        RateShare share = shares.computeIfAbsent(rateStr, RateShare::new);
+        share.taxableValue = share.taxableValue.add(taxable);
+        share.centralTax = share.centralTax.add(
+            taxable.multiply(cgstVal).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP));
+        share.stateTax = share.stateTax.add(
+            taxable.multiply(sgstVal).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP));
+      }
+    }
+    if (shares.isEmpty()) {
+      RateShare only = new RateShare("0");
+      only.taxableValue = purchase.getRevenueBeforeTax() != null
+          ? purchase.getRevenueBeforeTax() : BigDecimal.ZERO;
+      only.centralTax = purchase.getCgstAmount() != null
+          ? purchase.getCgstAmount() : BigDecimal.ZERO;
+      only.stateTax = purchase.getSgstAmount() != null
+          ? purchase.getSgstAmount() : BigDecimal.ZERO;
+      shares.put("0", only);
+    }
+    return new ArrayList<>(shares.values());
+  }
+
+  /**
+   * The single rate to report a credit note under: the one carrying most of the
+   * original invoice's taxable value.
+   *
+   * <p>A note states one amount against the whole invoice, so splitting it
+   * across rates would mean apportioning a figure the note does not break down.
+   * Where an invoice carries more than one rate the note is reported under the
+   * larger, which is the closer of the two available answers -- previously it
+   * was reported under whichever rate happened to appear on the first line.
+   */
+  private String dominantRate(Purchase purchase) {
+    return splitByRate(purchase).stream()
+        .max(Comparator.comparing(share -> share.taxableValue))
+        .map(share -> share.rate)
+        .orElse("0");
   }
 
   private BigDecimal parseRate(String rateStr) {
