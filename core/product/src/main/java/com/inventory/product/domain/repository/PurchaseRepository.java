@@ -13,8 +13,7 @@ import java.util.List;
 import java.util.Optional;
 
 @Repository
-public interface PurchaseRepository
-    extends MongoRepository<Purchase, String>, PurchaseCustomRepository {
+public interface PurchaseRepository extends MongoRepository<Purchase, String> {
 
   Optional<Purchase> findByUserIdAndShopIdAndStatus(String userId, String shopId, PurchaseStatus status);
 
@@ -126,5 +125,42 @@ public interface PurchaseRepository
         .filter(no -> no != null && !no.isBlank())
         .toList();
   }
+
+  /**
+   * A page of the shop's sales narrowed by any combination of invoice number,
+   * date and customer.
+   *
+   * <p>Every criterion is optional, and a null one has to leave the query as
+   * though it were not there. A plain clause cannot do that -- {@code $regex}
+   * rejects a null outright, and {@code $in} rejects anything but an array, both
+   * at parse time, so an {@code $or} guard beside them does not save it. Written
+   * as an aggregation expression they are evaluated rather than matched, and a
+   * null guard short-circuits before the operator is reached.
+   *
+   * <p>{@code $ifNull} covers the sales that have no invoice number -- an open
+   * or cancelled cart -- which a regex could otherwise never match, and which
+   * belong in an unfiltered list.
+   *
+   * @param invoiceNo matched as a case-insensitive substring; quote it if it may
+   *     contain a regex character
+   * @param soldFrom inclusive lower bound on {@code soldAt}
+   * @param soldTo exclusive upper bound, so a caller passing the day after
+   *     covers the whole of the last day
+   * @param customerIds restricts to these customers when given
+   */
+  @Query("{ 'shopId': ?0, $expr: { $and: ["
+      + "  { $or: [ { $eq: [?1, null] }, { $regexMatch: {"
+      + "      input: { $ifNull: ['$invoiceNo', ''] }, regex: ?1, options: 'i' } } ] },"
+      + "  { $or: [ { $eq: [?2, null] }, { $gte: ['$soldAt', ?2] } ] },"
+      + "  { $or: [ { $eq: [?3, null] }, { $lt:  ['$soldAt', ?3] } ] },"
+      + "  { $or: [ { $eq: [?4, null] }, { $in:  ['$customerId', ?4] } ] }"
+      + "] } }")
+  Page<Purchase> search(
+      String shopId,
+      String invoiceNo,
+      Instant soldFrom,
+      Instant soldTo,
+      Collection<String> customerIds,
+      Pageable pageable);
 }
 
