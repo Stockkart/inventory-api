@@ -27,12 +27,14 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @RestController
@@ -154,15 +156,14 @@ public class CheckoutController {
   }
 
   /**
-   * Search purchases with pagination and exact customer matching.
-   * All provided customer fields are combined with AND semantics.
+   * Search sales by invoice number, date range and customer, paginated.
    *
    * @param page page number (1-based, optional, default: 1)
    * @param limit page size (optional, default: 20, max: 100)
-   * @param invoiceNo optional exact invoice number
-   * @param customerEmail optional exact customer email
-   * @param customerPhone optional exact customer phone
-   * @param customerName optional exact customer name (case-insensitive)
+   * @param invoiceNo optional invoice number, matched as a substring
+   * @param from optional inclusive first sale date (yyyy-MM-dd)
+   * @param to optional inclusive last sale date (yyyy-MM-dd)
+   * @param customer optional free text matched against name, phone, email or address
    * @param httpRequest HTTP request containing shopId
    * @return list of purchases with pagination
    */
@@ -171,17 +172,19 @@ public class CheckoutController {
       @RequestParam(required = false) Integer page,
       @RequestParam(required = false) Integer limit,
       @RequestParam(required = false) String invoiceNo,
-      @RequestParam(required = false) String customerEmail,
-      @RequestParam(required = false) String customerPhone,
-      @RequestParam(required = false) String customerName,
+      @RequestParam(required = false)
+      @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+      @RequestParam(required = false)
+      @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+      @RequestParam(required = false) String customer,
       HttpServletRequest httpRequest) {
     return ResponseEntity.ok(ApiResponse.success(
-        checkoutService.searchPurchases(page, limit, invoiceNo, customerEmail, customerPhone, customerName, httpRequest)));
+        checkoutService.searchPurchases(page, limit, invoiceNo, from, to,
+            customer, httpRequest)));
   }
 
   /**
    * Prior completed sales of specific products to a customer (batched by sellableRef).
-   * Inventory lines are matched by catalog identity (name + company / productId), not only lot id.
    * Used at sell time to show purchase history hints on cart lines.
    */
   @GetMapping("/purchases/customer-product-history")
