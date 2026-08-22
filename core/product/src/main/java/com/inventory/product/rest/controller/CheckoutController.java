@@ -106,16 +106,13 @@ public class CheckoutController {
   }
 
   /**
-   * Search purchases with pagination and exact customer matching.
-   * All provided customer fields are combined with AND semantics.
+   * Search sales by invoice number, date range and customer, paginated.
    *
    * @param page page number (1-based, optional, default: 1)
    * @param limit page size (optional, default: 20, max: 100)
    * @param invoiceNo optional invoice number, matched as a substring
    * @param from optional inclusive first sale date (yyyy-MM-dd)
    * @param to optional inclusive last sale date (yyyy-MM-dd)
-   * @param customerEmail optional exact customer email
-   * @param customerPhone optional exact customer phone
    * @param customer optional free text matched against name, phone, email or address
    * @param httpRequest HTTP request containing shopId
    * @return list of purchases with pagination
@@ -129,13 +126,11 @@ public class CheckoutController {
       @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
       @RequestParam(required = false)
       @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
-      @RequestParam(required = false) String customerEmail,
-      @RequestParam(required = false) String customerPhone,
       @RequestParam(required = false) String customer,
       HttpServletRequest httpRequest) {
     return ResponseEntity.ok(ApiResponse.success(
         checkoutService.searchPurchases(page, limit, invoiceNo, from, to,
-            customerEmail, customerPhone, customer, httpRequest)));
+            customer, httpRequest)));
   }
 
   /**

@@ -469,8 +469,6 @@ public class CheckoutService {
    * @param invoiceNo optional invoice number, matched as a substring
    * @param soldFrom optional inclusive lower bound on the sale date
    * @param soldTo optional inclusive upper bound on the sale date
-   * @param customerEmail optional exact customer email
-   * @param customerPhone optional exact customer phone
    * @param customer optional free text matched against a customer's name, phone,
    *     email or address -- the single box the counter types into. It matches as
    *     a substring, because a party is entered as its trading name and stored
@@ -481,7 +479,6 @@ public class CheckoutService {
   @Transactional(readOnly = true)
   public PurchaseListResponse searchPurchases(Integer page, Integer limit, String invoiceNo,
                                               LocalDate soldFrom, LocalDate soldTo,
-                                              String customerEmail, String customerPhone,
                                               String customer,
                                               HttpServletRequest httpRequest) {
     // Get shopId and userId from request attributes
@@ -491,8 +488,8 @@ public class CheckoutService {
     // Validate shopId and userId
     checkoutValidator.validateShopIdAndUserId(shopId, userId);
 
-    log.info("Searching purchases for shop: {}, user: {}, page: {}, limit: {}, invoiceNo: {}, customerEmail: {}, customerPhone: {}, customer: {}",
-        shopId, userId, page, limit, invoiceNo, customerEmail, customerPhone, customer);
+    log.info("Searching purchases for shop: {}, user: {}, page: {}, limit: {}, invoiceNo: {}, customer: {}",
+        shopId, userId, page, limit, invoiceNo, customer);
 
     try {
       // Set defaults
@@ -512,10 +509,8 @@ public class CheckoutService {
       List<String> customerIds = null;
 
       // If customer search criteria provided, find matching customer IDs first
-      if (StringUtils.hasText(customerEmail) || StringUtils.hasText(customerPhone)
-          || StringUtils.hasText(customer)) {
-        customerIds = findCustomerIdsBySearchCriteria(
-            shopId, customerEmail, customerPhone, customer);
+      if (StringUtils.hasText(customer)) {
+        customerIds = findCustomerIdsMatching(shopId, customer);
 
         if (customerIds.isEmpty()) {
           return purchaseMapper.toPurchaseListResponse(
@@ -562,64 +557,28 @@ public class CheckoutService {
   }
 
   /**
-   * The customers a search names, by whichever of the criteria were given.
+   * The shop's customers matching a search term.
    *
-   * <p>Where more than one is given they must all match the same customer.
-   * Email and phone are matched exactly, since either identifies one customer;
-   * the free-text term is matched as a substring across name, phone, email and
-   * address, which is what the one box on the screen sends.
+   * <p>One term, matched as a substring across name, phone, email and address,
+   * because that is what the one box on the screen sends and the person typing
+   * into it should not have to say which of the four they are holding.
+   *
+   * <p>A substring rather than an exact match: a party is entered as its trading
+   * name and stored with its town appended, so ABID MEDICAL HALL never equals
+   * ABID MEDICAL HALL BARACHATTI and an exact comparison reaches almost none of
+   * them.
    */
-  private List<String> findCustomerIdsBySearchCriteria(String shopId, String customerEmail,
-                                                       String customerPhone,
-                                                       String customerTerm) {
-    Set<String> matchingCustomerIds = null;
-
-    // A party is entered as its trading name and stored with its town appended,
-    // so an exact name reaches almost none of them. This is the term the one
-    // box on the screen sends, and it is matched as a substring.
-    if (StringUtils.hasText(customerTerm)) {
-      Set<String> termMatches = new HashSet<>();
-      for (Customer match : customerRepository.searchByQuery(customerTerm.trim())) {
-        if (shopCustomerRepository.existsByShopIdAndCustomerId(shopId, match.getId())) {
-          termMatches.add(match.getId());
-        }
-      }
-      matchingCustomerIds = intersect(matchingCustomerIds, termMatches);
-    }
-
-    // Exact email match (plus shop linkage)
-    if (StringUtils.hasText(customerEmail)) {
-      Set<String> emailMatches = new HashSet<>();
-      customerRepository.findByEmail(customerEmail.trim()).ifPresent(customer -> {
-        if (shopCustomerRepository.existsByShopIdAndCustomerId(shopId, customer.getId())) {
-          emailMatches.add(customer.getId());
-        }
-      });
-      matchingCustomerIds = intersect(matchingCustomerIds, emailMatches);
-    }
-
-    // Exact phone match (plus shop linkage)
-    if (StringUtils.hasText(customerPhone)) {
-      Set<String> phoneMatches = new HashSet<>();
-      customerService.searchCustomerByPhone(customerPhone.trim(), shopId).ifPresent(customer -> {
-        phoneMatches.add(customer.getId());
-      });
-      matchingCustomerIds = intersect(matchingCustomerIds, phoneMatches);
-    }
-
-    if (matchingCustomerIds == null || matchingCustomerIds.isEmpty()) {
+  private List<String> findCustomerIdsMatching(String shopId, String term) {
+    if (!StringUtils.hasText(term)) {
       return List.of();
     }
-
-    return new ArrayList<>(matchingCustomerIds);
-  }
-
-  private Set<String> intersect(Set<String> existing, Set<String> incoming) {
-    if (existing == null) {
-      return new HashSet<>(incoming);
+    Set<String> matched = new HashSet<>();
+    for (Customer candidate : customerRepository.searchByQuery(term.trim())) {
+      if (shopCustomerRepository.existsByShopIdAndCustomerId(shopId, candidate.getId())) {
+        matched.add(candidate.getId());
+      }
     }
-    existing.retainAll(incoming);
-    return existing;
+    return new ArrayList<>(matched);
   }
 
   private Sort parseSortOrder(String order) {
