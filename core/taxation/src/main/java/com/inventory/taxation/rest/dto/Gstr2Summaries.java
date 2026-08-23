@@ -3,7 +3,7 @@ package com.inventory.taxation.rest.dto;
 import com.inventory.taxation.domain.gstr2.Gstr2B2bLine;
 import com.inventory.taxation.domain.gstr2.Gstr2B2burLine;
 import com.inventory.taxation.domain.model.GstHsnLine;
-import com.inventory.taxation.summary.GstTotals;
+import com.inventory.taxation.utils.helper.GstTotals;
 
 import java.math.BigDecimal;
 import java.util.List;

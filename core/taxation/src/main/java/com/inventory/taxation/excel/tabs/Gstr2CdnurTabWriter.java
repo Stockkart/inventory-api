@@ -4,7 +4,7 @@ import com.inventory.taxation.domain.gstr2.Gstr2CdnurLine;
 import com.inventory.taxation.domain.gstr2.Gstr2ReportContext;
 import com.inventory.taxation.excel.Gstr2TabWriter;
 import com.inventory.taxation.excel.PoiHelper;
-import com.inventory.taxation.summary.GstTotals;
+import com.inventory.taxation.utils.helper.GstTotals;
 import org.apache.poi.ss.usermodel.*;
 
 import java.math.BigDecimal;
