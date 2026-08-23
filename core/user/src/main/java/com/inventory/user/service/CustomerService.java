@@ -375,4 +375,22 @@ public class CustomerService {
         "update");
     return customerMapper.toDto(customer);
   }
+
+  /** Shop-scoped customer ids whose name, phone, email, GST, PAN, or DL match {@code query}. */
+  @Transactional(readOnly = true)
+  public List<String> findShopCustomerIdsMatchingQuery(String shopId, String query) {
+    if (!StringUtils.hasText(query)) {
+      return List.of();
+    }
+    List<String> shopCustomerIds =
+        shopCustomerRepository.findByShopId(shopId).stream().map(ShopCustomer::getCustomerId).toList();
+    if (shopCustomerIds.isEmpty()) {
+      return List.of();
+    }
+    return customerRepository.searchByQuery(query.trim()).stream()
+        .filter(c -> shopCustomerIds.contains(c.getId()))
+        .filter(c -> !c.isGeneralCustomer())
+        .map(Customer::getId)
+        .toList();
+  }
 }

@@ -95,9 +95,13 @@ public class CheckoutController {
   @GetMapping("/estimates")
   public ResponseEntity<ApiResponse<EstimateListResponse>> listEstimates(
       @RequestParam(required = false) EstimateState state,
+      @RequestParam(required = false) String q,
+      @RequestParam(required = false) Integer page,
+      @RequestParam(required = false) Integer size,
       HttpServletRequest httpRequest) {
     String shopId = (String) httpRequest.getAttribute("shopId");
-    return ResponseEntity.ok(ApiResponse.success(estimateService.listEstimates(shopId, state)));
+    return ResponseEntity.ok(
+        ApiResponse.success(estimateService.listEstimates(shopId, state, q, page, size)));
   }
 
   @PostMapping("/estimates")
