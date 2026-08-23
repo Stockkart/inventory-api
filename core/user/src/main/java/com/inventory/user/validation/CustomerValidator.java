@@ -1,5 +1,6 @@
 package com.inventory.user.validation;
 
+import com.inventory.user.domain.model.enums.CustomerPartyType;
 import com.inventory.user.rest.dto.request.CreateCustomerRequest;
 import com.inventory.user.rest.dto.request.UpdateCustomerRequest;
 import com.inventory.common.exception.ValidationException;
@@ -28,6 +29,17 @@ public class CustomerValidator {
     if (!StringUtils.hasText(request.getName()) || request.getName().trim().isEmpty()) {
       throw new ValidationException("Customer name is required");
     }
+    if (!hasUniqueIdentifier(request.getPhone(), request.getEmail(), request.getGstin(), request.getPan(), request.getDlNo())) {
+      throw new ValidationException(
+          "A unique customer requires phone, email, GSTIN, PAN, or DL. Name and address alone use the general customer.");
+    }
+    CustomerPartyType partyType =
+        request.getPartyType() != null ? request.getPartyType() : CustomerPartyType.CONSUMER;
+    if (partyType != CustomerPartyType.CONSUMER
+        && !hasUniqueIdentifier(request.getPhone(), request.getEmail(), request.getGstin(), request.getPan(), request.getDlNo())) {
+      throw new ValidationException(
+          "Retailer, distributor, and wholesaler customers require phone, email, GSTIN, PAN, or DL");
+    }
   }
 
   public void validateUpdateRequest(UpdateCustomerRequest request) {
@@ -52,5 +64,14 @@ public class CustomerValidator {
     if (limit != null && (limit <= 0 || limit > 100)) {
       throw new ValidationException("Limit must be between 1 and 100");
     }
+  }
+
+  public static boolean hasUniqueIdentifier(
+      String phone, String email, String gstin, String pan, String dlNo) {
+    return StringUtils.hasText(phone)
+        || StringUtils.hasText(email)
+        || StringUtils.hasText(gstin)
+        || StringUtils.hasText(pan)
+        || StringUtils.hasText(dlNo);
   }
 }

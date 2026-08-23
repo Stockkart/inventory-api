@@ -16,6 +16,8 @@ public class AddToCartRequest {
   private Boolean createNewQuotation;
   private List<CartItem> items;
   // Customer info (optional)
+  /** When set and linked to the shop, preferred over find-or-create. */
+  private String customerId;
   private String customerName;
   private String customerAddress;
   private String customerPhone;
@@ -23,6 +25,8 @@ public class AddToCartRequest {
   private String customerGstin; // Optional: Customer GSTIN
   private String customerDlNo; // Optional: Customer D.L No.
   private String customerPan; // Optional: Customer PAN
+  /** CONSUMER | RETAILER | DISTRIBUTOR | WHOLESALER */
+  private String customerPartyType;
   /** Optional: links party to a registered StockKart user (same user id as UserAccount). */
   private String customerUserId;
 

@@ -22,7 +22,6 @@ import com.inventory.product.service.vertical.QuotationCreateOrchestrator;
 import com.inventory.metrics.MetricsWrapper;
 import com.inventory.product.utils.constants.ProductMetricsConstants;
 import com.inventory.user.domain.model.Customer;
-import com.inventory.user.rest.dto.request.CreateCustomerRequest;
 import com.inventory.user.service.CustomerService;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -297,9 +296,11 @@ public class QuotationService {
       var customerOpt = customerService.getCustomerById(purchase.getCustomerId());
       if (customerOpt.isPresent()) {
         Customer customer = customerOpt.get();
-        phone = customer.getPhone();
-        if (!StringUtils.hasText(name)) {
-          name = customer.getName();
+        if (!customer.isGeneralCustomer()) {
+          phone = customer.getPhone();
+          if (!StringUtils.hasText(name)) {
+            name = customer.getName();
+          }
         }
       }
     }
@@ -307,7 +308,7 @@ public class QuotationService {
       name = phone;
     }
     if (!StringUtils.hasText(name)) {
-      name = "Quotation";
+      name = "Walk-in";
     }
     return new QuotationSummaryDto(
         purchase.getId(),
@@ -334,6 +335,7 @@ public class QuotationService {
   private AddToCartRequest toAddToCartRequest(CreateQuotationRequest request) {
     AddToCartRequest cartRequest = new AddToCartRequest();
     cartRequest.setBusinessType(request.getBusinessType());
+    cartRequest.setCustomerId(request.getCustomerId());
     cartRequest.setCustomerName(request.getCustomerName());
     cartRequest.setCustomerAddress(request.getCustomerAddress());
     cartRequest.setCustomerPhone(request.getCustomerPhone());
@@ -341,49 +343,19 @@ public class QuotationService {
     cartRequest.setCustomerGstin(request.getCustomerGstin());
     cartRequest.setCustomerDlNo(request.getCustomerDlNo());
     cartRequest.setCustomerPan(request.getCustomerPan());
+    cartRequest.setCustomerPartyType(request.getCustomerPartyType());
     cartRequest.setCustomerUserId(request.getCustomerUserId());
     cartRequest.setItems(List.of());
     return cartRequest;
   }
 
   private String resolveCustomerId(String shopId, AddToCartRequest request) {
-    boolean hasPhone = StringUtils.hasText(request.getCustomerPhone());
-    boolean hasEmail = StringUtils.hasText(request.getCustomerEmail());
-    boolean hasName = StringUtils.hasText(request.getCustomerName());
-
-    if ((hasPhone || hasEmail) && hasName) {
-      CreateCustomerRequest createCustomerRequest = new CreateCustomerRequest();
-      createCustomerRequest.setName(request.getCustomerName());
-      createCustomerRequest.setPhone(request.getCustomerPhone());
-      createCustomerRequest.setAddress(request.getCustomerAddress());
-      createCustomerRequest.setEmail(request.getCustomerEmail());
-      createCustomerRequest.setGstin(request.getCustomerGstin());
-      createCustomerRequest.setDlNo(request.getCustomerDlNo());
-      createCustomerRequest.setPan(request.getCustomerPan());
-      Customer customer = customerService.findOrCreateCustomer(shopId, createCustomerRequest);
-      if (customer != null) {
-        return customer.getId();
-      }
-    }
-    if (hasPhone) {
-      return customerService
-          .searchCustomerByPhone(request.getCustomerPhone().trim(), shopId)
-          .map(Customer::getId)
-          .orElse(null);
-    }
-    return null;
+    return customerService.resolvePurchaseCustomerId(
+        shopId, request.getCustomerId(), PurchaseCustomerRequests.fromCart(request));
   }
 
   private String resolveCustomerName(String customerId, AddToCartRequest request) {
-    if (customerId == null
-        && StringUtils.hasText(request.getCustomerName())
-        && !StringUtils.hasText(request.getCustomerPhone())) {
-      return request.getCustomerName().trim();
-    }
-    if (customerId == null && StringUtils.hasText(request.getCustomerPhone())) {
-      return request.getCustomerPhone().trim();
-    }
-    return null;
+    return PurchaseCustomerRequests.displayNameOverlay(customerId, request);
   }
 
   private static int baseQuantityOrZero(PurchaseItem item) {

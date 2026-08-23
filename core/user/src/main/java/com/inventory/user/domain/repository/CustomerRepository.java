@@ -11,50 +11,31 @@ import java.util.Optional;
 @Repository
 public interface CustomerRepository extends MongoRepository<Customer, String> {
 
-  /**
-   * Find a customer by phone.
-   *
-   * @param phone the phone number
-   * @return an Optional containing the customer if found, empty otherwise
-   */
   Optional<Customer> findByPhone(String phone);
 
-  /**
-   * Find a customer by email.
-   *
-   * @param email the email address
-   * @return an Optional containing the customer if found, empty otherwise
-   */
   Optional<Customer> findByEmail(String email);
 
-  /**
-   * Find all customers linked to a user account.
-   *
-   * @param userId the user account ID
-   * @return list of customers linked to the user
-   */
+  Optional<Customer> findByGstin(String gstin);
+
+  Optional<Customer> findByPan(String pan);
+
+  Optional<Customer> findByDlNo(String dlNo);
+
   List<Customer> findByUserId(String userId);
 
-  /**
-   * Find customers by exact name match (case-insensitive).
-   *
-   * @param name customer name
-   * @return list of matching customers
-   */
   List<Customer> findByNameIgnoreCase(String name);
 
   /**
-   * Search customers by query (name, phone, email, or address).
-   *
-   * @param query the search query
-   * @return list of matching customers
+   * Keyword search across identity and contact fields (excludes filtering general — done in service).
    */
   @Query("{ $or: [ " +
       "{ 'name': { $regex: ?0, $options: 'i' } }, " +
       "{ 'phone': { $regex: ?0, $options: 'i' } }, " +
       "{ 'email': { $regex: ?0, $options: 'i' } }, " +
-      "{ 'address': { $regex: ?0, $options: 'i' } } " +
+      "{ 'address': { $regex: ?0, $options: 'i' } }, " +
+      "{ 'gstin': { $regex: ?0, $options: 'i' } }, " +
+      "{ 'pan': { $regex: ?0, $options: 'i' } }, " +
+      "{ 'dlNo': { $regex: ?0, $options: 'i' } } " +
       "] }")
   List<Customer> searchByQuery(String query);
 }
-
