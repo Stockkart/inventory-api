@@ -1,6 +1,7 @@
 package com.inventory.taxation.rest.dto;
 
 import com.inventory.taxation.domain.model.GstRefundLine;
+import com.inventory.taxation.utils.helper.GstTotals;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -20,13 +21,10 @@ public class GstCdnurTabDto {
     if (lines == null || lines.isEmpty()) {
       return new GstCdnurTabDto(new GstCdnurSummaryDto(0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO), List.of());
     }
-    int noOfNotes = lines.size();
-    BigDecimal totalNoteValue = lines.stream().map(GstRefundLine::getNoteValue)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalTaxableValue = lines.stream().map(GstRefundLine::getTaxableValue)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalCess = lines.stream().map(GstRefundLine::getCessAmount)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
+    int noOfNotes = GstTotals.countDistinct(lines, GstRefundLine::getNoteNumber);
+    BigDecimal totalNoteValue = GstTotals.sum(lines, GstRefundLine::getNoteValue);
+    BigDecimal totalTaxableValue = GstTotals.sum(lines, GstRefundLine::getTaxableValue);
+    BigDecimal totalCess = GstTotals.sum(lines, GstRefundLine::getCessAmount);
     return new GstCdnurTabDto(new GstCdnurSummaryDto(noOfNotes, totalNoteValue, totalTaxableValue, totalCess), lines);
   }
 }

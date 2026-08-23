@@ -4,6 +4,7 @@ import com.inventory.taxation.domain.gstr2.Gstr2AtadjLine;
 import com.inventory.taxation.domain.gstr2.Gstr2ReportContext;
 import com.inventory.taxation.excel.Gstr2TabWriter;
 import com.inventory.taxation.excel.PoiHelper;
+import com.inventory.taxation.utils.helper.GstTotals;
 import org.apache.poi.ss.usermodel.*;
 
 import java.math.BigDecimal;
@@ -27,10 +28,8 @@ public class Gstr2AtadjTabWriter implements Gstr2TabWriter {
     CellStyle headerStyle = PoiHelper.headerStyle(workbook);
     List<Gstr2AtadjLine> lines = context.getAtadjLines();
 
-    BigDecimal totalAdjusted = lines.stream().map(Gstr2AtadjLine::getGrossAdvanceToBeAdjusted)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalCess = lines.stream().map(Gstr2AtadjLine::getCessAdjusted)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
+    BigDecimal totalAdjusted = GstTotals.sum(lines, Gstr2AtadjLine::getGrossAdvanceToBeAdjusted);
+    BigDecimal totalCess = GstTotals.sum(lines, Gstr2AtadjLine::getCessAdjusted);
 
     int rowNum = 0;
     sheet.createRow(rowNum++).createCell(0).setCellValue("Summary For Adjustment of advance t");

@@ -4,6 +4,7 @@ import com.inventory.taxation.domain.gstr1.Gstr1ReportContext;
 import com.inventory.taxation.domain.model.GstInvoiceLine;
 import com.inventory.taxation.excel.Gstr1TabWriter;
 import com.inventory.taxation.excel.PoiHelper;
+import com.inventory.taxation.utils.helper.GstTotals;
 import org.apache.poi.ss.usermodel.*;
 
 import java.math.BigDecimal;
@@ -29,15 +30,11 @@ public class Gstr1B2bTabWriter implements Gstr1TabWriter {
     CellStyle headerStyle = PoiHelper.headerStyle(workbook);
 
     List<GstInvoiceLine> lines = context.getB2bLines();
-    int noOfRecipients = (int) lines.stream().map(GstInvoiceLine::getRecipientGstin)
-        .filter(g -> g != null && !g.isBlank()).distinct().count();
-    int noOfInvoices = lines.size();
-    BigDecimal totalInvoiceValue = lines.stream().map(GstInvoiceLine::getInvoiceValue)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal taxableValue = lines.stream().map(GstInvoiceLine::getTaxableValue)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal cessAmount = lines.stream().map(GstInvoiceLine::getCessAmount)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
+    int noOfRecipients = GstTotals.countDistinct(lines, GstInvoiceLine::getRecipientGstin);
+    int noOfInvoices = GstTotals.countDistinct(lines, GstInvoiceLine::getInvoiceNo);
+    BigDecimal totalInvoiceValue = GstTotals.sum(lines, GstInvoiceLine::getInvoiceValue);
+    BigDecimal taxableValue = GstTotals.sum(lines, GstInvoiceLine::getTaxableValue);
+    BigDecimal cessAmount = GstTotals.sum(lines, GstInvoiceLine::getCessAmount);
 
     int rowNum = 0;
     Row titleRow = sheet.createRow(rowNum++);

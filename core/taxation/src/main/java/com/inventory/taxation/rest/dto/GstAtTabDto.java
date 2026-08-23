@@ -1,6 +1,7 @@
 package com.inventory.taxation.rest.dto;
 
 import com.inventory.taxation.domain.model.GstAdvanceLine;
+import com.inventory.taxation.utils.helper.GstTotals;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -20,10 +21,8 @@ public class GstAtTabDto {
     if (lines == null || lines.isEmpty()) {
       return new GstAtTabDto(new GstAtSummaryDto(BigDecimal.ZERO, BigDecimal.ZERO), List.of());
     }
-    BigDecimal totalAdvance = lines.stream().map(GstAdvanceLine::getGrossAdvanceReceivedOrAdjusted)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalCess = lines.stream().map(GstAdvanceLine::getCessAmount)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
+    BigDecimal totalAdvance = GstTotals.sum(lines, GstAdvanceLine::getGrossAdvanceReceivedOrAdjusted);
+    BigDecimal totalCess = GstTotals.sum(lines, GstAdvanceLine::getCessAmount);
     return new GstAtTabDto(new GstAtSummaryDto(totalAdvance, totalCess), lines);
   }
 }

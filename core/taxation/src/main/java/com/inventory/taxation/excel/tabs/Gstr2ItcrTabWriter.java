@@ -4,6 +4,7 @@ import com.inventory.taxation.domain.gstr2.Gstr2ItcrLine;
 import com.inventory.taxation.domain.gstr2.Gstr2ReportContext;
 import com.inventory.taxation.excel.Gstr2TabWriter;
 import com.inventory.taxation.excel.PoiHelper;
+import com.inventory.taxation.utils.helper.GstTotals;
 import org.apache.poi.ss.usermodel.*;
 
 import java.math.BigDecimal;
@@ -28,14 +29,10 @@ public class Gstr2ItcrTabWriter implements Gstr2TabWriter {
     CellStyle headerStyle = PoiHelper.headerStyle(workbook);
     List<Gstr2ItcrLine> lines = context.getItcrLines();
 
-    BigDecimal totalIgst = lines.stream().map(Gstr2ItcrLine::getItcIntegratedTaxAmount)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalCgst = lines.stream().map(Gstr2ItcrLine::getItcCentralTaxAmount)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalSgst = lines.stream().map(Gstr2ItcrLine::getItcStateUtTaxAmount)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalCess = lines.stream().map(Gstr2ItcrLine::getItcCessAmount)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
+    BigDecimal totalIgst = GstTotals.sum(lines, Gstr2ItcrLine::getItcIntegratedTaxAmount);
+    BigDecimal totalCgst = GstTotals.sum(lines, Gstr2ItcrLine::getItcCentralTaxAmount);
+    BigDecimal totalSgst = GstTotals.sum(lines, Gstr2ItcrLine::getItcStateUtTaxAmount);
+    BigDecimal totalCess = GstTotals.sum(lines, Gstr2ItcrLine::getItcCessAmount);
 
     int rowNum = 0;
     sheet.createRow(rowNum++).createCell(0).setCellValue("Summary Input Tax credit Reversal/R");

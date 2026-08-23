@@ -4,6 +4,7 @@ import com.inventory.taxation.domain.gstr2.Gstr2AtLine;
 import com.inventory.taxation.domain.gstr2.Gstr2ReportContext;
 import com.inventory.taxation.excel.Gstr2TabWriter;
 import com.inventory.taxation.excel.PoiHelper;
+import com.inventory.taxation.utils.helper.GstTotals;
 import org.apache.poi.ss.usermodel.*;
 
 import java.math.BigDecimal;
@@ -27,10 +28,8 @@ public class Gstr2AtTabWriter implements Gstr2TabWriter {
     CellStyle headerStyle = PoiHelper.headerStyle(workbook);
     List<Gstr2AtLine> lines = context.getAtLines();
 
-    BigDecimal totalAdvance = lines.stream().map(Gstr2AtLine::getGrossAdvancePaid)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalCess = lines.stream().map(Gstr2AtLine::getCessAmount)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
+    BigDecimal totalAdvance = GstTotals.sum(lines, Gstr2AtLine::getGrossAdvancePaid);
+    BigDecimal totalCess = GstTotals.sum(lines, Gstr2AtLine::getCessAmount);
 
     int rowNum = 0;
     sheet.createRow(rowNum++).createCell(0).setCellValue("Summary For  Tax Liability on Advan");

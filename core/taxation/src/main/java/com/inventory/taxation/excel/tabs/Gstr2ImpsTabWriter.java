@@ -4,6 +4,7 @@ import com.inventory.taxation.domain.gstr2.Gstr2ImpsLine;
 import com.inventory.taxation.domain.gstr2.Gstr2ReportContext;
 import com.inventory.taxation.excel.Gstr2TabWriter;
 import com.inventory.taxation.excel.PoiHelper;
+import com.inventory.taxation.utils.helper.GstTotals;
 import org.apache.poi.ss.usermodel.*;
 
 import java.math.BigDecimal;
@@ -28,19 +29,13 @@ public class Gstr2ImpsTabWriter implements Gstr2TabWriter {
     CellStyle headerStyle = PoiHelper.headerStyle(workbook);
     List<Gstr2ImpsLine> lines = context.getImpsLines();
 
-    int noOfInvoices = lines.size();
-    BigDecimal totalInvValue = lines.stream().map(Gstr2ImpsLine::getInvoiceValue)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalTaxable = lines.stream().map(Gstr2ImpsLine::getTaxableValue)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalIgst = lines.stream().map(Gstr2ImpsLine::getIntegratedTaxPaid)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalCess = lines.stream().map(Gstr2ImpsLine::getCessPaid)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal availedIgst = lines.stream().map(Gstr2ImpsLine::getAvailedItcIntegrated)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal availedCess = lines.stream().map(Gstr2ImpsLine::getAvailedItcCess)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
+    int noOfInvoices = GstTotals.countDistinct(lines, Gstr2ImpsLine::getInvoiceNo);
+    BigDecimal totalInvValue = GstTotals.sum(lines, Gstr2ImpsLine::getInvoiceValue);
+    BigDecimal totalTaxable = GstTotals.sum(lines, Gstr2ImpsLine::getTaxableValue);
+    BigDecimal totalIgst = GstTotals.sum(lines, Gstr2ImpsLine::getIntegratedTaxPaid);
+    BigDecimal totalCess = GstTotals.sum(lines, Gstr2ImpsLine::getCessPaid);
+    BigDecimal availedIgst = GstTotals.sum(lines, Gstr2ImpsLine::getAvailedItcIntegrated);
+    BigDecimal availedCess = GstTotals.sum(lines, Gstr2ImpsLine::getAvailedItcCess);
 
     int rowNum = 0;
     sheet.createRow(rowNum++).createCell(0).setCellValue("Summary of IMPS (4C)");

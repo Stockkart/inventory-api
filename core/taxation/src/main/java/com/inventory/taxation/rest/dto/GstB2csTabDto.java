@@ -1,6 +1,7 @@
 package com.inventory.taxation.rest.dto;
 
 import com.inventory.taxation.domain.model.GstInvoiceLine;
+import com.inventory.taxation.utils.helper.GstTotals;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -20,10 +21,8 @@ public class GstB2csTabDto {
     if (lines == null || lines.isEmpty()) {
       return new GstB2csTabDto(new GstB2csSummaryDto(BigDecimal.ZERO, BigDecimal.ZERO), List.of());
     }
-    BigDecimal totalTaxableValue = lines.stream().map(GstInvoiceLine::getTaxableValue)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalCess = lines.stream().map(GstInvoiceLine::getCessAmount)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
+    BigDecimal totalTaxableValue = GstTotals.sum(lines, GstInvoiceLine::getTaxableValue);
+    BigDecimal totalCess = GstTotals.sum(lines, GstInvoiceLine::getCessAmount);
     return new GstB2csTabDto(new GstB2csSummaryDto(totalTaxableValue, totalCess), GstB2csLineDto.fromList(lines));
   }
 }

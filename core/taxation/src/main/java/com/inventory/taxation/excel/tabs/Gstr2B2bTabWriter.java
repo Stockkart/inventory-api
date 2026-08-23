@@ -4,6 +4,7 @@ import com.inventory.taxation.domain.gstr2.Gstr2B2bLine;
 import com.inventory.taxation.domain.gstr2.Gstr2ReportContext;
 import com.inventory.taxation.excel.Gstr2TabWriter;
 import com.inventory.taxation.excel.PoiHelper;
+import com.inventory.taxation.utils.helper.GstTotals;
 import org.apache.poi.ss.usermodel.*;
 
 import java.math.BigDecimal;
@@ -30,29 +31,18 @@ public class Gstr2B2bTabWriter implements Gstr2TabWriter {
     CellStyle headerStyle = PoiHelper.headerStyle(workbook);
     List<Gstr2B2bLine> lines = context.getB2bLines();
 
-    int noOfSuppliers = (int) lines.stream().map(Gstr2B2bLine::getSupplierGstin)
-        .filter(g -> g != null && !g.isBlank()).distinct().count();
-    int noOfInvoices = lines.size();
-    BigDecimal totalInvValue = lines.stream().map(Gstr2B2bLine::getInvoiceValue)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalTaxable = lines.stream().map(Gstr2B2bLine::getTaxableValue)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalIgst = lines.stream().map(Gstr2B2bLine::getIntegratedTaxPaid)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalCgst = lines.stream().map(Gstr2B2bLine::getCentralTaxPaid)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalSgst = lines.stream().map(Gstr2B2bLine::getStateUtTaxPaid)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalCess = lines.stream().map(Gstr2B2bLine::getCessAmount)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal availedIgst = lines.stream().map(Gstr2B2bLine::getAvailedItcIntegrated)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal availedCgst = lines.stream().map(Gstr2B2bLine::getAvailedItcCentral)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal availedSgst = lines.stream().map(Gstr2B2bLine::getAvailedItcStateUt)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal availedCess = lines.stream().map(Gstr2B2bLine::getAvailedItcCess)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
+    int noOfSuppliers = GstTotals.countDistinct(lines, Gstr2B2bLine::getSupplierGstin);
+    int noOfInvoices = GstTotals.countDistinct(lines, Gstr2B2bLine::getInvoiceNo);
+    BigDecimal totalInvValue = GstTotals.sumPerDistinct(lines, Gstr2B2bLine::getInvoiceNo, Gstr2B2bLine::getInvoiceValue);
+    BigDecimal totalTaxable = GstTotals.sum(lines, Gstr2B2bLine::getTaxableValue);
+    BigDecimal totalIgst = GstTotals.sum(lines, Gstr2B2bLine::getIntegratedTaxPaid);
+    BigDecimal totalCgst = GstTotals.sum(lines, Gstr2B2bLine::getCentralTaxPaid);
+    BigDecimal totalSgst = GstTotals.sum(lines, Gstr2B2bLine::getStateUtTaxPaid);
+    BigDecimal totalCess = GstTotals.sum(lines, Gstr2B2bLine::getCessAmount);
+    BigDecimal availedIgst = GstTotals.sum(lines, Gstr2B2bLine::getAvailedItcIntegrated);
+    BigDecimal availedCgst = GstTotals.sum(lines, Gstr2B2bLine::getAvailedItcCentral);
+    BigDecimal availedSgst = GstTotals.sum(lines, Gstr2B2bLine::getAvailedItcStateUt);
+    BigDecimal availedCess = GstTotals.sum(lines, Gstr2B2bLine::getAvailedItcCess);
 
     int rowNum = 0;
     sheet.createRow(rowNum++).createCell(0).setCellValue("Summary Of Supplies From Registered");

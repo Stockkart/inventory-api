@@ -1,6 +1,7 @@
 package com.inventory.taxation.rest.dto;
 
 import com.inventory.taxation.domain.model.GstHsnLine;
+import com.inventory.taxation.utils.helper.GstTotals;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -20,19 +21,13 @@ public class GstHsnTabDto {
     if (lines == null || lines.isEmpty()) {
       return new GstHsnTabDto(new GstHsnSummaryDto(0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO), List.of());
     }
-    int noOfHsn = lines.size();
-    BigDecimal totalValue = lines.stream().map(GstHsnLine::getTotalValue)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalTaxableValue = lines.stream().map(GstHsnLine::getTaxableValue)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalIntegratedTax = lines.stream().map(GstHsnLine::getIntegratedTaxAmount)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalCentralTax = lines.stream().map(GstHsnLine::getCentralTaxAmount)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalStateUtTax = lines.stream().map(GstHsnLine::getStateUtTaxAmount)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalCess = lines.stream().map(GstHsnLine::getCessAmount)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
+    int noOfHsn = GstTotals.countDistinct(lines, GstHsnLine::getHsn);
+    BigDecimal totalValue = GstTotals.sum(lines, GstHsnLine::getTotalValue);
+    BigDecimal totalTaxableValue = GstTotals.sum(lines, GstHsnLine::getTaxableValue);
+    BigDecimal totalIntegratedTax = GstTotals.sum(lines, GstHsnLine::getIntegratedTaxAmount);
+    BigDecimal totalCentralTax = GstTotals.sum(lines, GstHsnLine::getCentralTaxAmount);
+    BigDecimal totalStateUtTax = GstTotals.sum(lines, GstHsnLine::getStateUtTaxAmount);
+    BigDecimal totalCess = GstTotals.sum(lines, GstHsnLine::getCessAmount);
     return new GstHsnTabDto(new GstHsnSummaryDto(noOfHsn, totalValue, totalTaxableValue, totalIntegratedTax, totalCentralTax, totalStateUtTax, totalCess), lines);
   }
 }

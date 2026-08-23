@@ -1,6 +1,7 @@
 package com.inventory.taxation.rest.dto;
 
 import com.inventory.taxation.domain.model.GstRefundLine;
+import com.inventory.taxation.utils.helper.GstTotals;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -20,15 +21,11 @@ public class GstCdnrTabDto {
     if (lines == null || lines.isEmpty()) {
       return new GstCdnrTabDto(new GstCdnrSummaryDto(0, 0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO), List.of());
     }
-    int noOfRecipients = (int) lines.stream().map(GstRefundLine::getRecipientGstin)
-        .filter(g -> g != null && !g.isBlank()).distinct().count();
-    int noOfNotes = lines.size();
-    BigDecimal totalNoteValue = lines.stream().map(GstRefundLine::getNoteValue)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalTaxableValue = lines.stream().map(GstRefundLine::getTaxableValue)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalCess = lines.stream().map(GstRefundLine::getCessAmount)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
+    int noOfRecipients = GstTotals.countDistinct(lines, GstRefundLine::getRecipientGstin);
+    int noOfNotes = GstTotals.countDistinct(lines, GstRefundLine::getNoteNumber);
+    BigDecimal totalNoteValue = GstTotals.sum(lines, GstRefundLine::getNoteValue);
+    BigDecimal totalTaxableValue = GstTotals.sum(lines, GstRefundLine::getTaxableValue);
+    BigDecimal totalCess = GstTotals.sum(lines, GstRefundLine::getCessAmount);
     return new GstCdnrTabDto(new GstCdnrSummaryDto(noOfRecipients, noOfNotes, totalNoteValue, totalTaxableValue, totalCess), lines);
   }
 }

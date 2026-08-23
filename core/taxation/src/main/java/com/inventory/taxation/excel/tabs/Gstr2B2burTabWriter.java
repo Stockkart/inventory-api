@@ -4,6 +4,7 @@ import com.inventory.taxation.domain.gstr2.Gstr2B2burLine;
 import com.inventory.taxation.domain.gstr2.Gstr2ReportContext;
 import com.inventory.taxation.excel.Gstr2TabWriter;
 import com.inventory.taxation.excel.PoiHelper;
+import com.inventory.taxation.utils.helper.GstTotals;
 import org.apache.poi.ss.usermodel.*;
 
 import java.math.BigDecimal;
@@ -29,19 +30,13 @@ public class Gstr2B2burTabWriter implements Gstr2TabWriter {
     CellStyle headerStyle = PoiHelper.headerStyle(workbook);
     List<Gstr2B2burLine> lines = context.getB2burLines();
 
-    int noOfInvoices = lines.size();
-    BigDecimal totalInvValue = lines.stream().map(Gstr2B2burLine::getInvoiceValue)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalTaxable = lines.stream().map(Gstr2B2burLine::getTaxableValue)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalIgst = lines.stream().map(Gstr2B2burLine::getIntegratedTaxPaid)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalCgst = lines.stream().map(Gstr2B2burLine::getCentralTaxPaid)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalSgst = lines.stream().map(Gstr2B2burLine::getStateUtTaxPaid)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalCess = lines.stream().map(Gstr2B2burLine::getCessAmount)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
+    int noOfInvoices = GstTotals.countDistinct(lines, Gstr2B2burLine::getInvoiceNo);
+    BigDecimal totalInvValue = GstTotals.sumPerDistinct(lines, Gstr2B2burLine::getInvoiceNo, Gstr2B2burLine::getInvoiceValue);
+    BigDecimal totalTaxable = GstTotals.sum(lines, Gstr2B2burLine::getTaxableValue);
+    BigDecimal totalIgst = GstTotals.sum(lines, Gstr2B2burLine::getIntegratedTaxPaid);
+    BigDecimal totalCgst = GstTotals.sum(lines, Gstr2B2burLine::getCentralTaxPaid);
+    BigDecimal totalSgst = GstTotals.sum(lines, Gstr2B2burLine::getStateUtTaxPaid);
+    BigDecimal totalCess = GstTotals.sum(lines, Gstr2B2burLine::getCessAmount);
 
     int rowNum = 0;
     sheet.createRow(rowNum++).createCell(0).setCellValue("Summary Of Supplies From Unregister");

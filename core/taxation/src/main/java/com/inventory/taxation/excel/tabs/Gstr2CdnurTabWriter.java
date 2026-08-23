@@ -4,6 +4,7 @@ import com.inventory.taxation.domain.gstr2.Gstr2CdnurLine;
 import com.inventory.taxation.domain.gstr2.Gstr2ReportContext;
 import com.inventory.taxation.excel.Gstr2TabWriter;
 import com.inventory.taxation.excel.PoiHelper;
+import com.inventory.taxation.utils.helper.GstTotals;
 import org.apache.poi.ss.usermodel.*;
 
 import java.math.BigDecimal;
@@ -31,13 +32,10 @@ public class Gstr2CdnurTabWriter implements Gstr2TabWriter {
     CellStyle headerStyle = PoiHelper.headerStyle(workbook);
     List<Gstr2CdnurLine> lines = context.getCdnurLines();
 
-    int noOfNotes = lines.size();
-    BigDecimal totalNoteValue = lines.stream().map(Gstr2CdnurLine::getNoteValue)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalTaxable = lines.stream().map(Gstr2CdnurLine::getTaxableValue)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalCess = lines.stream().map(Gstr2CdnurLine::getCessPaid)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
+    int noOfNotes = GstTotals.countDistinct(lines, Gstr2CdnurLine::getNoteNumber);
+    BigDecimal totalNoteValue = GstTotals.sum(lines, Gstr2CdnurLine::getNoteValue);
+    BigDecimal totalTaxable = GstTotals.sum(lines, Gstr2CdnurLine::getTaxableValue);
+    BigDecimal totalCess = GstTotals.sum(lines, Gstr2CdnurLine::getCessPaid);
 
     int rowNum = 0;
     sheet.createRow(rowNum++).createCell(0).setCellValue("Summary For CDNUR(6C)");
