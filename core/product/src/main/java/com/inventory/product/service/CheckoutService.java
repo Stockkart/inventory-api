@@ -167,13 +167,7 @@ public class CheckoutService {
 
       // Get or create customer and get customerId/customerName
       String customerId = getOrCreateCustomerId(shopId, request);
-      String customerName = null;
-      // If only customer name provided (no phone), store it directly
-      if (customerId == null && StringUtils.hasText(request.getCustomerName()) && !StringUtils.hasText(request.getCustomerPhone())) {
-        customerName = request.getCustomerName().trim();
-      } else if (customerId == null && StringUtils.hasText(request.getCustomerPhone()) && !StringUtils.hasText(request.getCustomerName())) {
-        customerName = request.getCustomerPhone().trim();
-      }
+      String customerName = PurchaseCustomerRequests.displayNameOverlay(customerId, request);
 
       // Process new items
       List<PurchaseItem> newItems = processCartItems(request.getItems(), shopId);
@@ -1176,39 +1170,8 @@ public class CheckoutService {
    * - If customer phone or email is present, find or create customer and optionally link to StockKart user
    */
   private String getOrCreateCustomerId(String shopId, AddToCartRequest request) {
-    // Need at least phone or email plus name to create/link customer
-    boolean hasPhone = StringUtils.hasText(request.getCustomerPhone());
-    boolean hasEmail = StringUtils.hasText(request.getCustomerEmail());
-    boolean hasName = StringUtils.hasText(request.getCustomerName());
-
-    if ((hasPhone || hasEmail) && hasName) {
-      CreateCustomerRequest createCustomerRequest = new CreateCustomerRequest();
-      createCustomerRequest.setName(request.getCustomerName());
-      createCustomerRequest.setPhone(request.getCustomerPhone());
-      createCustomerRequest.setAddress(request.getCustomerAddress());
-      createCustomerRequest.setEmail(request.getCustomerEmail());
-      createCustomerRequest.setGstin(request.getCustomerGstin());
-      createCustomerRequest.setDlNo(request.getCustomerDlNo());
-      createCustomerRequest.setPan(request.getCustomerPan());
-
-      Customer customer = customerService.findOrCreateCustomer(
-          shopId,
-          createCustomerRequest
-      );
-      if (customer != null) {
-        log.debug("Found/created customer with ID: {} for shop: {}", customer.getId(), shopId);
-        return customer.getId();
-      }
-    } else if (hasPhone) {
-      return customerService
-          .searchCustomerByPhone(request.getCustomerPhone().trim(), shopId)
-          .map(Customer::getId)
-          .orElse(null);
-    } else if (hasName) {
-      log.debug("Only customer name provided (no phone/email), not creating customer record");
-    }
-
-    return null;
+    return customerService.resolvePurchaseCustomerId(
+        shopId, request.getCustomerId(), PurchaseCustomerRequests.fromCart(request));
   }
 
   private Purchase updateCart(Purchase existingCart, List<PurchaseItem> newItems, String businessType,
@@ -1426,12 +1389,11 @@ public class CheckoutService {
       }
       existingCart.setBillingMode(billingMode);
 
-      // Update customer ID and customerName
+      // Update customer ID and bill-level display name (clear when walk-in / general)
       existingCart.setCustomerId(customerId);
       if (StringUtils.hasText(customerName)) {
-        existingCart.setCustomerName(customerName);
-      } else if (customerId == null) {
-        // If customerId is null and no customerName provided, clear customerName
+        existingCart.setCustomerName(customerName.trim());
+      } else {
         existingCart.setCustomerName(null);
       }
 

@@ -2,6 +2,7 @@ package com.inventory.user.mapper;
 
 import com.inventory.user.domain.model.Customer;
 import com.inventory.user.domain.model.ShopCustomer;
+import com.inventory.user.domain.model.enums.CustomerPartyType;
 import com.inventory.user.rest.dto.request.CreateCustomerRequest;
 import com.inventory.user.rest.dto.request.UpdateCustomerRequest;
 import com.inventory.user.rest.dto.response.CustomerDto;
@@ -27,6 +28,12 @@ public interface CustomerMapper {
     if (gstin != null && gstin.length() >= 12) {
       dto.setPanNo(gstin.substring(2, 12));
     }
+    if (dto.getPartyType() == null) {
+      dto.setPartyType(CustomerPartyType.CONSUMER);
+    }
+    if (dto.getIsGeneral() == null) {
+      dto.setIsGeneral(Boolean.FALSE);
+    }
   }
 
   default Customer toCustomer(CreateCustomerRequest request) {
@@ -41,6 +48,9 @@ public interface CustomerMapper {
     c.setGstin(TextUtils.trimToNull(request.getGstin()));
     c.setDlNo(TextUtils.trimToNull(request.getDlNo()));
     c.setPan(TextUtils.trimToNull(request.getPan()));
+    c.setPartyType(
+        request.getPartyType() != null ? request.getPartyType() : CustomerPartyType.CONSUMER);
+    c.setIsGeneral(false);
     Instant now = Instant.now();
     c.setCreatedAt(now);
     c.setUpdatedAt(now);
@@ -72,21 +82,41 @@ public interface CustomerMapper {
     if (request.getPan() != null) {
       customer.setPan(TextUtils.trimToNull(request.getPan()));
     }
+    if (request.getPartyType() != null) {
+      customer.setPartyType(request.getPartyType());
+    }
     customer.setUpdatedAt(Instant.now());
   }
 
-  /** Apply create request fields to an existing customer (e.g. when reusing by phone/email). */
+  /** Apply create request fields to an existing customer (e.g. when reusing by unique key). */
   default void applyCreateRequest(CreateCustomerRequest request, @MappingTarget Customer customer) {
-    if (request == null) {
+    if (request == null || customer.isGeneralCustomer()) {
       return;
     }
-    customer.setName(TextUtils.trimToNull(request.getName()));
-    customer.setPhone(TextUtils.trimToNull(request.getPhone()));
-    customer.setEmail(TextUtils.trimToNull(request.getEmail()));
-    customer.setAddress(TextUtils.trimToNull(request.getAddress()));
-    customer.setGstin(TextUtils.trimToNull(request.getGstin()));
-    customer.setDlNo(TextUtils.trimToNull(request.getDlNo()));
-    customer.setPan(TextUtils.trimToNull(request.getPan()));
+    if (TextUtils.trimToNull(request.getName()) != null) {
+      customer.setName(TextUtils.trimToNull(request.getName()));
+    }
+    if (TextUtils.trimToNull(request.getPhone()) != null) {
+      customer.setPhone(TextUtils.trimToNull(request.getPhone()));
+    }
+    if (TextUtils.trimToNull(request.getEmail()) != null) {
+      customer.setEmail(TextUtils.trimToNull(request.getEmail()));
+    }
+    if (TextUtils.trimToNull(request.getAddress()) != null) {
+      customer.setAddress(TextUtils.trimToNull(request.getAddress()));
+    }
+    if (TextUtils.trimToNull(request.getGstin()) != null) {
+      customer.setGstin(TextUtils.trimToNull(request.getGstin()));
+    }
+    if (TextUtils.trimToNull(request.getDlNo()) != null) {
+      customer.setDlNo(TextUtils.trimToNull(request.getDlNo()));
+    }
+    if (TextUtils.trimToNull(request.getPan()) != null) {
+      customer.setPan(TextUtils.trimToNull(request.getPan()));
+    }
+    if (request.getPartyType() != null) {
+      customer.setPartyType(request.getPartyType());
+    }
     customer.setUpdatedAt(Instant.now());
   }
 

@@ -6,6 +6,7 @@ import lombok.Data;
 public class CreateQuotationRequest {
 
   private String businessType;
+  private String customerId;
   private String customerName;
   private String customerAddress;
   private String customerPhone;
@@ -13,5 +14,6 @@ public class CreateQuotationRequest {
   private String customerGstin;
   private String customerDlNo;
   private String customerPan;
+  private String customerPartyType;
   private String customerUserId;
 }

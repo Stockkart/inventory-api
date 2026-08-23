@@ -1,5 +1,6 @@
 package com.inventory.user.rest.dto.response;
 
+import com.inventory.user.domain.model.enums.CustomerPartyType;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -22,6 +23,9 @@ public class CustomerDto {
   private String panNo;
   /** Optional. Set when customer is linked to a registered user. */
   private String userId;
+  private CustomerPartyType partyType;
+  /** True for the shop walk-in / name-address-only placeholder. */
+  private Boolean isGeneral;
   private Instant createdAt;
   private Instant updatedAt;
 }

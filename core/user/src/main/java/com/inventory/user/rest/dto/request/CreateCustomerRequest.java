@@ -1,5 +1,6 @@
 package com.inventory.user.rest.dto.request;
 
+import com.inventory.user.domain.model.enums.CustomerPartyType;
 import lombok.Data;
 
 @Data
@@ -11,4 +12,6 @@ public class CreateCustomerRequest {
   private String gstin;
   private String dlNo;
   private String pan;
+  /** Defaults to CONSUMER when omitted. */
+  private CustomerPartyType partyType;
 }
