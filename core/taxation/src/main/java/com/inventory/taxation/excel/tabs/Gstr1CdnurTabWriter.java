@@ -26,7 +26,11 @@ public class Gstr1CdnurTabWriter implements Gstr1TabWriter {
     Sheet sheet = workbook.createSheet(SHEET_NAME);
     CellStyle headerStyle = PoiHelper.headerStyle(workbook);
     java.util.List<GstRefundLine> lines = context.getCdnurLines();
-    int noOfNotes = lines.size();
+    int noOfNotes = (int) lines.stream()
+        .map(GstRefundLine::getNoteNumber)
+        .filter(v -> v != null && !v.isBlank())
+        .distinct()
+        .count();
     java.math.BigDecimal totalNoteValue = lines.stream().map(GstRefundLine::getNoteValue).filter(v -> v != null).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
     java.math.BigDecimal totalTaxableValue = lines.stream().map(GstRefundLine::getTaxableValue).filter(v -> v != null).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
     java.math.BigDecimal totalCess = lines.stream().map(GstRefundLine::getCessAmount).filter(v -> v != null).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);

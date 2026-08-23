@@ -29,7 +29,11 @@ public class Gstr2ImpgTabWriter implements Gstr2TabWriter {
     CellStyle headerStyle = PoiHelper.headerStyle(workbook);
     List<Gstr2ImpgLine> lines = context.getImpgLines();
 
-    int noOfBills = lines.size();
+    int noOfBills = (int) lines.stream()
+        .map(Gstr2ImpgLine::getBillOfEntryNo)
+        .filter(v -> v != null && !v.isBlank())
+        .distinct()
+        .count();
     BigDecimal totalBoEValue = lines.stream().map(Gstr2ImpgLine::getBillOfEntryValue)
         .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
     BigDecimal totalTaxable = lines.stream().map(Gstr2ImpgLine::getTaxableValue)

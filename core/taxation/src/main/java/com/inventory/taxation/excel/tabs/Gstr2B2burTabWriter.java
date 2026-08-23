@@ -9,6 +9,7 @@ import org.apache.poi.ss.usermodel.*;
 import java.math.BigDecimal;
 import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 public class Gstr2B2burTabWriter implements Gstr2TabWriter {
 
@@ -29,9 +30,16 @@ public class Gstr2B2burTabWriter implements Gstr2TabWriter {
     CellStyle headerStyle = PoiHelper.headerStyle(workbook);
     List<Gstr2B2burLine> lines = context.getB2burLines();
 
-    int noOfInvoices = lines.size();
-    BigDecimal totalInvValue = lines.stream().map(Gstr2B2burLine::getInvoiceValue)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
+    int noOfInvoices = (int) lines.stream()
+        .map(Gstr2B2burLine::getInvoiceNo)
+        .filter(v -> v != null && !v.isBlank())
+        .distinct()
+        .count();
+    BigDecimal totalInvValue = lines.stream()
+        .filter(l -> l.getInvoiceNo() != null && l.getInvoiceValue() != null)
+        .collect(Collectors.toMap(Gstr2B2burLine::getInvoiceNo, Gstr2B2burLine::getInvoiceValue, (a, b) -> a))
+        .values().stream()
+        .reduce(BigDecimal.ZERO, BigDecimal::add);
     BigDecimal totalTaxable = lines.stream().map(Gstr2B2burLine::getTaxableValue)
         .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
     BigDecimal totalIgst = lines.stream().map(Gstr2B2burLine::getIntegratedTaxPaid)

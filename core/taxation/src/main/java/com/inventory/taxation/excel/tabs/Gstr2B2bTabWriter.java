@@ -9,6 +9,7 @@ import org.apache.poi.ss.usermodel.*;
 import java.math.BigDecimal;
 import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 public class Gstr2B2bTabWriter implements Gstr2TabWriter {
 
@@ -32,9 +33,16 @@ public class Gstr2B2bTabWriter implements Gstr2TabWriter {
 
     int noOfSuppliers = (int) lines.stream().map(Gstr2B2bLine::getSupplierGstin)
         .filter(g -> g != null && !g.isBlank()).distinct().count();
-    int noOfInvoices = lines.size();
-    BigDecimal totalInvValue = lines.stream().map(Gstr2B2bLine::getInvoiceValue)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
+    int noOfInvoices = (int) lines.stream()
+        .map(Gstr2B2bLine::getInvoiceNo)
+        .filter(v -> v != null && !v.isBlank())
+        .distinct()
+        .count();
+    BigDecimal totalInvValue = lines.stream()
+        .filter(l -> l.getInvoiceNo() != null && l.getInvoiceValue() != null)
+        .collect(Collectors.toMap(Gstr2B2bLine::getInvoiceNo, Gstr2B2bLine::getInvoiceValue, (a, b) -> a))
+        .values().stream()
+        .reduce(BigDecimal.ZERO, BigDecimal::add);
     BigDecimal totalTaxable = lines.stream().map(Gstr2B2bLine::getTaxableValue)
         .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
     BigDecimal totalIgst = lines.stream().map(Gstr2B2bLine::getIntegratedTaxPaid)

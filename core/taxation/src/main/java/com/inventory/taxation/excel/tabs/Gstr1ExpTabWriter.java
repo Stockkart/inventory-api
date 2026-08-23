@@ -26,7 +26,11 @@ public class Gstr1ExpTabWriter implements Gstr1TabWriter {
     Sheet sheet = workbook.createSheet(SHEET_NAME);
     CellStyle headerStyle = PoiHelper.headerStyle(workbook);
     java.util.List<GstInvoiceLine> lines = context.getExpLines();
-    int noOfInvoices = lines.size();
+    int noOfInvoices = (int) lines.stream()
+        .map(GstInvoiceLine::getInvoiceNo)
+        .filter(v -> v != null && !v.isBlank())
+        .distinct()
+        .count();
     java.math.BigDecimal totalInvValue = lines.stream().map(GstInvoiceLine::getInvoiceValue).filter(v -> v != null).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
     long noOfShippingBills = lines.stream().map(GstInvoiceLine::getShippingBillNo).filter(s -> s != null && !s.isBlank()).distinct().count();
     java.math.BigDecimal totalTaxableValue = lines.stream().map(GstInvoiceLine::getTaxableValue).filter(v -> v != null).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);

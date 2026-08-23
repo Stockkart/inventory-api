@@ -20,7 +20,11 @@ public class GstCdnurTabDto {
     if (lines == null || lines.isEmpty()) {
       return new GstCdnurTabDto(new GstCdnurSummaryDto(0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO), List.of());
     }
-    int noOfNotes = lines.size();
+    int noOfNotes = (int) lines.stream()
+        .map(GstRefundLine::getNoteNumber)
+        .filter(v -> v != null && !v.isBlank())
+        .distinct()
+        .count();
     BigDecimal totalNoteValue = lines.stream().map(GstRefundLine::getNoteValue)
         .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
     BigDecimal totalTaxableValue = lines.stream().map(GstRefundLine::getTaxableValue)

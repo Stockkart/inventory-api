@@ -31,7 +31,11 @@ public class Gstr1B2bTabWriter implements Gstr1TabWriter {
     List<GstInvoiceLine> lines = context.getB2bLines();
     int noOfRecipients = (int) lines.stream().map(GstInvoiceLine::getRecipientGstin)
         .filter(g -> g != null && !g.isBlank()).distinct().count();
-    int noOfInvoices = lines.size();
+    int noOfInvoices = (int) lines.stream()
+        .map(GstInvoiceLine::getInvoiceNo)
+        .filter(v -> v != null && !v.isBlank())
+        .distinct()
+        .count();
     BigDecimal totalInvoiceValue = lines.stream().map(GstInvoiceLine::getInvoiceValue)
         .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
     BigDecimal taxableValue = lines.stream().map(GstInvoiceLine::getTaxableValue)

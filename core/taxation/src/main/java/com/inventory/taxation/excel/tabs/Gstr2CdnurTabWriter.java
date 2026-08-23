@@ -31,7 +31,11 @@ public class Gstr2CdnurTabWriter implements Gstr2TabWriter {
     CellStyle headerStyle = PoiHelper.headerStyle(workbook);
     List<Gstr2CdnurLine> lines = context.getCdnurLines();
 
-    int noOfNotes = lines.size();
+    int noOfNotes = (int) lines.stream()
+        .map(Gstr2CdnurLine::getNoteNumber)
+        .filter(v -> v != null && !v.isBlank())
+        .distinct()
+        .count();
     BigDecimal totalNoteValue = lines.stream().map(Gstr2CdnurLine::getNoteValue)
         .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
     BigDecimal totalTaxable = lines.stream().map(Gstr2CdnurLine::getTaxableValue)

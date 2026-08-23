@@ -26,7 +26,11 @@ public class Gstr1B2clTabWriter implements Gstr1TabWriter {
     Sheet sheet = workbook.createSheet(SHEET_NAME);
     CellStyle headerStyle = PoiHelper.headerStyle(workbook);
     java.util.List<GstInvoiceLine> lines = context.getB2clLines();
-    int noOfInvoices = lines.size();
+    int noOfInvoices = (int) lines.stream()
+        .map(GstInvoiceLine::getInvoiceNo)
+        .filter(v -> v != null && !v.isBlank())
+        .distinct()
+        .count();
     java.math.BigDecimal totalInvValue = lines.stream().map(GstInvoiceLine::getInvoiceValue).filter(v -> v != null).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
     java.math.BigDecimal totalTaxableValue = lines.stream().map(GstInvoiceLine::getTaxableValue).filter(v -> v != null).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
     java.math.BigDecimal totalCess = lines.stream().map(GstInvoiceLine::getCessAmount).filter(v -> v != null).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);

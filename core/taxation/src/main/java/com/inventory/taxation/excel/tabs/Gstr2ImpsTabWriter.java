@@ -28,7 +28,11 @@ public class Gstr2ImpsTabWriter implements Gstr2TabWriter {
     CellStyle headerStyle = PoiHelper.headerStyle(workbook);
     List<Gstr2ImpsLine> lines = context.getImpsLines();
 
-    int noOfInvoices = lines.size();
+    int noOfInvoices = (int) lines.stream()
+        .map(Gstr2ImpsLine::getInvoiceNo)
+        .filter(v -> v != null && !v.isBlank())
+        .distinct()
+        .count();
     BigDecimal totalInvValue = lines.stream().map(Gstr2ImpsLine::getInvoiceValue)
         .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
     BigDecimal totalTaxable = lines.stream().map(Gstr2ImpsLine::getTaxableValue)

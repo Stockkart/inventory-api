@@ -20,7 +20,11 @@ public class GstB2clTabDto {
     if (lines == null || lines.isEmpty()) {
       return new GstB2clTabDto(new GstB2clSummaryDto(0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO), List.of());
     }
-    int noOfInvoices = lines.size();
+    int noOfInvoices = (int) lines.stream()
+        .map(GstInvoiceLine::getInvoiceNo)
+        .filter(v -> v != null && !v.isBlank())
+        .distinct()
+        .count();
     BigDecimal totalInvoiceValue = lines.stream().map(GstInvoiceLine::getInvoiceValue)
         .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
     BigDecimal totalTaxableValue = lines.stream().map(GstInvoiceLine::getTaxableValue)

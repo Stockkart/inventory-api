@@ -22,7 +22,11 @@ public class GstCdnrTabDto {
     }
     int noOfRecipients = (int) lines.stream().map(GstRefundLine::getRecipientGstin)
         .filter(g -> g != null && !g.isBlank()).distinct().count();
-    int noOfNotes = lines.size();
+    int noOfNotes = (int) lines.stream()
+        .map(GstRefundLine::getNoteNumber)
+        .filter(v -> v != null && !v.isBlank())
+        .distinct()
+        .count();
     BigDecimal totalNoteValue = lines.stream().map(GstRefundLine::getNoteValue)
         .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
     BigDecimal totalTaxableValue = lines.stream().map(GstRefundLine::getTaxableValue)

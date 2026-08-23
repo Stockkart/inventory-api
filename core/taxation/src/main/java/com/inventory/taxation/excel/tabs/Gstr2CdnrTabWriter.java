@@ -33,7 +33,11 @@ public class Gstr2CdnrTabWriter implements Gstr2TabWriter {
 
     int noOfSuppliers = (int) lines.stream().map(Gstr2CdnrLine::getSupplierGstin)
         .filter(g -> g != null && !g.isBlank()).distinct().count();
-    int noOfNotes = lines.size();
+    int noOfNotes = (int) lines.stream()
+        .map(Gstr2CdnrLine::getNoteNumber)
+        .filter(v -> v != null && !v.isBlank())
+        .distinct()
+        .count();
     BigDecimal totalNoteValue = lines.stream().map(Gstr2CdnrLine::getNoteValue)
         .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
     BigDecimal totalTaxable = lines.stream().map(Gstr2CdnrLine::getTaxableValue)

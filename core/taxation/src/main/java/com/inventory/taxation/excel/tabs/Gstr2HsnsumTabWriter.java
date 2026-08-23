@@ -28,7 +28,11 @@ public class Gstr2HsnsumTabWriter implements Gstr2TabWriter {
     CellStyle headerStyle = PoiHelper.headerStyle(workbook);
     List<GstHsnLine> lines = context.getHsnLines();
 
-    int noOfHsn = lines.size();
+    int noOfHsn = (int) lines.stream()
+        .map(GstHsnLine::getHsn)
+        .filter(v -> v != null && !v.isBlank())
+        .distinct()
+        .count();
     BigDecimal totalValue = lines.stream().map(GstHsnLine::getTotalValue)
         .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
     BigDecimal totalTaxable = lines.stream().map(GstHsnLine::getTaxableValue)

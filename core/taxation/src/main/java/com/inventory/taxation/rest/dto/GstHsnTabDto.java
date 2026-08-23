@@ -20,7 +20,11 @@ public class GstHsnTabDto {
     if (lines == null || lines.isEmpty()) {
       return new GstHsnTabDto(new GstHsnSummaryDto(0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO), List.of());
     }
-    int noOfHsn = lines.size();
+    int noOfHsn = (int) lines.stream()
+        .map(GstHsnLine::getHsn)
+        .filter(v -> v != null && !v.isBlank())
+        .distinct()
+        .count();
     BigDecimal totalValue = lines.stream().map(GstHsnLine::getTotalValue)
         .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
     BigDecimal totalTaxableValue = lines.stream().map(GstHsnLine::getTaxableValue)

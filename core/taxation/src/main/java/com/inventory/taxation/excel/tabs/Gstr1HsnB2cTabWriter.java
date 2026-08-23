@@ -26,7 +26,11 @@ public class Gstr1HsnB2cTabWriter implements Gstr1TabWriter {
     Sheet sheet = workbook.createSheet(SHEET_NAME);
     CellStyle headerStyle = PoiHelper.headerStyle(workbook);
     java.util.List<GstHsnLine> lines = context.getHsnB2cLines();
-    int noOfHsn = lines.size();
+    int noOfHsn = (int) lines.stream()
+        .map(GstHsnLine::getHsn)
+        .filter(v -> v != null && !v.isBlank())
+        .distinct()
+        .count();
     java.math.BigDecimal totalValue = lines.stream().map(GstHsnLine::getTotalValue).filter(v -> v != null).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
     java.math.BigDecimal totalTaxableValue = lines.stream().map(GstHsnLine::getTaxableValue).filter(v -> v != null).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
     java.math.BigDecimal totalIntegratedTax = lines.stream().map(GstHsnLine::getIntegratedTaxAmount).filter(v -> v != null).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
