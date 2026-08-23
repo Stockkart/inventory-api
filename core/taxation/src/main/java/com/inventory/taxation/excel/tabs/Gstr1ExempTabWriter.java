@@ -4,6 +4,7 @@ import com.inventory.taxation.domain.gstr1.Gstr1ReportContext;
 import com.inventory.taxation.domain.model.GstExemptLine;
 import com.inventory.taxation.excel.Gstr1TabWriter;
 import com.inventory.taxation.excel.PoiHelper;
+import com.inventory.taxation.summary.GstTotals;
 import org.apache.poi.ss.usermodel.*;
 
 import java.util.Arrays;
@@ -25,9 +26,9 @@ public class Gstr1ExempTabWriter implements Gstr1TabWriter {
     Sheet sheet = workbook.createSheet(SHEET_NAME);
     CellStyle headerStyle = PoiHelper.headerStyle(workbook);
     java.util.List<GstExemptLine> lines = context.getExempLines();
-    java.math.BigDecimal totalNil = lines.stream().map(GstExemptLine::getNilRatedSupplies).filter(v -> v != null).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
-    java.math.BigDecimal totalExempted = lines.stream().map(GstExemptLine::getExemptedOtherThanNilOrNonGst).filter(v -> v != null).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
-    java.math.BigDecimal totalNonGst = lines.stream().map(GstExemptLine::getNonGstSupplies).filter(v -> v != null).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+    java.math.BigDecimal totalNil = GstTotals.sum(lines, GstExemptLine::getNilRatedSupplies);
+    java.math.BigDecimal totalExempted = GstTotals.sum(lines, GstExemptLine::getExemptedOtherThanNilOrNonGst);
+    java.math.BigDecimal totalNonGst = GstTotals.sum(lines, GstExemptLine::getNonGstSupplies);
     int rowNum = 0;
     sheet.createRow(rowNum++).createCell(0).setCellValue("Summary For Nil rated, exempted and non GST outward supplies (8)");
     Row sh = sheet.createRow(rowNum++);

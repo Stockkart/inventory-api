@@ -4,6 +4,7 @@ import com.inventory.taxation.domain.gstr1.Gstr1ReportContext;
 import com.inventory.taxation.domain.model.GstAdvanceLine;
 import com.inventory.taxation.excel.Gstr1TabWriter;
 import com.inventory.taxation.excel.PoiHelper;
+import com.inventory.taxation.summary.GstTotals;
 import org.apache.poi.ss.usermodel.*;
 
 import java.util.Arrays;
@@ -25,8 +26,8 @@ public class Gstr1AtadjTabWriter implements Gstr1TabWriter {
     Sheet sheet = workbook.createSheet(SHEET_NAME);
     CellStyle headerStyle = PoiHelper.headerStyle(workbook);
     java.util.List<GstAdvanceLine> lines = context.getAtadjLines();
-    java.math.BigDecimal totalAdjusted = lines.stream().map(GstAdvanceLine::getGrossAdvanceReceivedOrAdjusted).filter(v -> v != null).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
-    java.math.BigDecimal totalCess = lines.stream().map(GstAdvanceLine::getCessAmount).filter(v -> v != null).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+    java.math.BigDecimal totalAdjusted = GstTotals.sum(lines, GstAdvanceLine::getGrossAdvanceReceivedOrAdjusted);
+    java.math.BigDecimal totalCess = GstTotals.sum(lines, GstAdvanceLine::getCessAmount);
     int rowNum = 0;
     sheet.createRow(rowNum++).createCell(0).setCellValue("Summary For Advance Adjusted(11B)");
     Row sh = sheet.createRow(rowNum++);

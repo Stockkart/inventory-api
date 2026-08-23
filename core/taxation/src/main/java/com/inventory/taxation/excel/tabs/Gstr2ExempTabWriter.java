@@ -4,6 +4,7 @@ import com.inventory.taxation.domain.gstr2.Gstr2ExempLine;
 import com.inventory.taxation.domain.gstr2.Gstr2ReportContext;
 import com.inventory.taxation.excel.Gstr2TabWriter;
 import com.inventory.taxation.excel.PoiHelper;
+import com.inventory.taxation.summary.GstTotals;
 import org.apache.poi.ss.usermodel.*;
 
 import java.math.BigDecimal;
@@ -28,14 +29,10 @@ public class Gstr2ExempTabWriter implements Gstr2TabWriter {
     CellStyle headerStyle = PoiHelper.headerStyle(workbook);
     List<Gstr2ExempLine> lines = context.getExempLines();
 
-    BigDecimal totalComp = lines.stream().map(Gstr2ExempLine::getCompositionTaxablePerson)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalNil = lines.stream().map(Gstr2ExempLine::getNilRatedSupplies)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalExempt = lines.stream().map(Gstr2ExempLine::getExemptedOtherThanNilOrNonGst)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalNonGst = lines.stream().map(Gstr2ExempLine::getNonGstSupplies)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
+    BigDecimal totalComp = GstTotals.sum(lines, Gstr2ExempLine::getCompositionTaxablePerson);
+    BigDecimal totalNil = GstTotals.sum(lines, Gstr2ExempLine::getNilRatedSupplies);
+    BigDecimal totalExempt = GstTotals.sum(lines, Gstr2ExempLine::getExemptedOtherThanNilOrNonGst);
+    BigDecimal totalNonGst = GstTotals.sum(lines, Gstr2ExempLine::getNonGstSupplies);
 
     int rowNum = 0;
     sheet.createRow(rowNum++).createCell(0).setCellValue("Summary For Composition, Nil rated, ");

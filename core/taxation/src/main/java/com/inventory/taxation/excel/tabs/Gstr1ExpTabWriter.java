@@ -4,6 +4,7 @@ import com.inventory.taxation.domain.gstr1.Gstr1ReportContext;
 import com.inventory.taxation.domain.model.GstInvoiceLine;
 import com.inventory.taxation.excel.Gstr1TabWriter;
 import com.inventory.taxation.excel.PoiHelper;
+import com.inventory.taxation.summary.GstTotals;
 import org.apache.poi.ss.usermodel.*;
 
 import java.util.Arrays;
@@ -26,14 +27,10 @@ public class Gstr1ExpTabWriter implements Gstr1TabWriter {
     Sheet sheet = workbook.createSheet(SHEET_NAME);
     CellStyle headerStyle = PoiHelper.headerStyle(workbook);
     java.util.List<GstInvoiceLine> lines = context.getExpLines();
-    int noOfInvoices = (int) lines.stream()
-        .map(GstInvoiceLine::getInvoiceNo)
-        .filter(v -> v != null && !v.isBlank())
-        .distinct()
-        .count();
-    java.math.BigDecimal totalInvValue = lines.stream().map(GstInvoiceLine::getInvoiceValue).filter(v -> v != null).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
-    long noOfShippingBills = lines.stream().map(GstInvoiceLine::getShippingBillNo).filter(s -> s != null && !s.isBlank()).distinct().count();
-    java.math.BigDecimal totalTaxableValue = lines.stream().map(GstInvoiceLine::getTaxableValue).filter(v -> v != null).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+    int noOfInvoices = GstTotals.countDistinct(lines, GstInvoiceLine::getInvoiceNo);
+    java.math.BigDecimal totalInvValue = GstTotals.sum(lines, GstInvoiceLine::getInvoiceValue);
+    long noOfShippingBills = GstTotals.countDistinct(lines, GstInvoiceLine::getShippingBillNo);
+    java.math.BigDecimal totalTaxableValue = GstTotals.sum(lines, GstInvoiceLine::getTaxableValue);
     int rowNum = 0;
     sheet.createRow(rowNum++).createCell(0).setCellValue("Summary For EXP(6)");
     Row sh = sheet.createRow(rowNum++);

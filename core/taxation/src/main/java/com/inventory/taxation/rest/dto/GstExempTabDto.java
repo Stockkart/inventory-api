@@ -1,6 +1,7 @@
 package com.inventory.taxation.rest.dto;
 
 import com.inventory.taxation.domain.model.GstExemptLine;
+import com.inventory.taxation.summary.GstTotals;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -20,12 +21,9 @@ public class GstExempTabDto {
     if (lines == null || lines.isEmpty()) {
       return new GstExempTabDto(new GstExempSummaryDto(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO), List.of());
     }
-    BigDecimal totalNilRated = lines.stream().map(GstExemptLine::getNilRatedSupplies)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalExempted = lines.stream().map(GstExemptLine::getExemptedOtherThanNilOrNonGst)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalNonGst = lines.stream().map(GstExemptLine::getNonGstSupplies)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
+    BigDecimal totalNilRated = GstTotals.sum(lines, GstExemptLine::getNilRatedSupplies);
+    BigDecimal totalExempted = GstTotals.sum(lines, GstExemptLine::getExemptedOtherThanNilOrNonGst);
+    BigDecimal totalNonGst = GstTotals.sum(lines, GstExemptLine::getNonGstSupplies);
     return new GstExempTabDto(new GstExempSummaryDto(totalNilRated, totalExempted, totalNonGst), lines);
   }
 }

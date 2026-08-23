@@ -1,6 +1,7 @@
 package com.inventory.taxation.rest.dto;
 
 import com.inventory.taxation.domain.model.GstInvoiceLine;
+import com.inventory.taxation.summary.GstTotals;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -20,17 +21,10 @@ public class GstExpTabDto {
     if (lines == null || lines.isEmpty()) {
       return new GstExpTabDto(new GstExpSummaryDto(0, BigDecimal.ZERO, 0, BigDecimal.ZERO), List.of());
     }
-    int noOfInvoices = (int) lines.stream()
-        .map(GstInvoiceLine::getInvoiceNo)
-        .filter(v -> v != null && !v.isBlank())
-        .distinct()
-        .count();
-    BigDecimal totalInvoiceValue = lines.stream().map(GstInvoiceLine::getInvoiceValue)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    long noOfShippingBills = lines.stream().map(GstInvoiceLine::getShippingBillNo)
-        .filter(s -> s != null && !s.isBlank()).distinct().count();
-    BigDecimal totalTaxableValue = lines.stream().map(GstInvoiceLine::getTaxableValue)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
+    int noOfInvoices = GstTotals.countDistinct(lines, GstInvoiceLine::getInvoiceNo);
+    BigDecimal totalInvoiceValue = GstTotals.sum(lines, GstInvoiceLine::getInvoiceValue);
+    long noOfShippingBills = GstTotals.countDistinct(lines, GstInvoiceLine::getShippingBillNo);
+    BigDecimal totalTaxableValue = GstTotals.sum(lines, GstInvoiceLine::getTaxableValue);
     return new GstExpTabDto(new GstExpSummaryDto(noOfInvoices, totalInvoiceValue, (int) noOfShippingBills, totalTaxableValue), lines);
   }
 }

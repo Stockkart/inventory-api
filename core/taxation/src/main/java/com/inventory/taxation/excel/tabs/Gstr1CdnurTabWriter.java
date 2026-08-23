@@ -4,6 +4,7 @@ import com.inventory.taxation.domain.gstr1.Gstr1ReportContext;
 import com.inventory.taxation.domain.model.GstRefundLine;
 import com.inventory.taxation.excel.Gstr1TabWriter;
 import com.inventory.taxation.excel.PoiHelper;
+import com.inventory.taxation.summary.GstTotals;
 import org.apache.poi.ss.usermodel.*;
 
 import java.util.Arrays;
@@ -26,14 +27,10 @@ public class Gstr1CdnurTabWriter implements Gstr1TabWriter {
     Sheet sheet = workbook.createSheet(SHEET_NAME);
     CellStyle headerStyle = PoiHelper.headerStyle(workbook);
     java.util.List<GstRefundLine> lines = context.getCdnurLines();
-    int noOfNotes = (int) lines.stream()
-        .map(GstRefundLine::getNoteNumber)
-        .filter(v -> v != null && !v.isBlank())
-        .distinct()
-        .count();
-    java.math.BigDecimal totalNoteValue = lines.stream().map(GstRefundLine::getNoteValue).filter(v -> v != null).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
-    java.math.BigDecimal totalTaxableValue = lines.stream().map(GstRefundLine::getTaxableValue).filter(v -> v != null).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
-    java.math.BigDecimal totalCess = lines.stream().map(GstRefundLine::getCessAmount).filter(v -> v != null).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+    int noOfNotes = GstTotals.countDistinct(lines, GstRefundLine::getNoteNumber);
+    java.math.BigDecimal totalNoteValue = GstTotals.sum(lines, GstRefundLine::getNoteValue);
+    java.math.BigDecimal totalTaxableValue = GstTotals.sum(lines, GstRefundLine::getTaxableValue);
+    java.math.BigDecimal totalCess = GstTotals.sum(lines, GstRefundLine::getCessAmount);
     int rowNum = 0;
     sheet.createRow(rowNum++).createCell(0).setCellValue("Summary For CDNUR(9B)");
     Row sh = sheet.createRow(rowNum++);

@@ -1,13 +1,13 @@
 package com.inventory.taxation.rest.dto;
 
 import com.inventory.taxation.domain.model.GstInvoiceLine;
+import com.inventory.taxation.summary.GstTotals;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * B2B/SEZ/DE tab with summary and line items.
@@ -27,28 +27,11 @@ public class GstB2bSezDeTabDto {
           List.of());
     }
 
-    long noOfRecipients = lines.stream()
-        .map(GstInvoiceLine::getRecipientGstin)
-        .filter(g -> g != null && !g.isBlank())
-        .distinct()
-        .count();
-    int noOfInvoices = (int) lines.stream()
-        .map(GstInvoiceLine::getInvoiceNo)
-        .filter(v -> v != null && !v.isBlank())
-        .distinct()
-        .count();
-    BigDecimal totalInvoiceValue = lines.stream()
-        .map(GstInvoiceLine::getInvoiceValue)
-        .filter(v -> v != null)
-        .reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal taxableValue = lines.stream()
-        .map(GstInvoiceLine::getTaxableValue)
-        .filter(v -> v != null)
-        .reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal cessAmount = lines.stream()
-        .map(GstInvoiceLine::getCessAmount)
-        .filter(v -> v != null)
-        .reduce(BigDecimal.ZERO, BigDecimal::add);
+    long noOfRecipients = GstTotals.countDistinct(lines, GstInvoiceLine::getRecipientGstin);
+    int noOfInvoices = GstTotals.countDistinct(lines, GstInvoiceLine::getInvoiceNo);
+    BigDecimal totalInvoiceValue = GstTotals.sum(lines, GstInvoiceLine::getInvoiceValue);
+    BigDecimal taxableValue = GstTotals.sum(lines, GstInvoiceLine::getTaxableValue);
+    BigDecimal cessAmount = GstTotals.sum(lines, GstInvoiceLine::getCessAmount);
 
     GstB2bSummaryDto summary = new GstB2bSummaryDto(
         (int) noOfRecipients,

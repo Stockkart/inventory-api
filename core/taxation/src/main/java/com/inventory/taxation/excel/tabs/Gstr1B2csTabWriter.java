@@ -4,6 +4,7 @@ import com.inventory.taxation.domain.gstr1.Gstr1ReportContext;
 import com.inventory.taxation.domain.model.GstInvoiceLine;
 import com.inventory.taxation.excel.Gstr1TabWriter;
 import com.inventory.taxation.excel.PoiHelper;
+import com.inventory.taxation.summary.GstTotals;
 import org.apache.poi.ss.usermodel.*;
 
 import java.util.Arrays;
@@ -25,8 +26,8 @@ public class Gstr1B2csTabWriter implements Gstr1TabWriter {
     Sheet sheet = workbook.createSheet(SHEET_NAME);
     CellStyle headerStyle = PoiHelper.headerStyle(workbook);
     java.util.List<GstInvoiceLine> lines = context.getB2csLines();
-    java.math.BigDecimal totalTaxableValue = lines.stream().map(GstInvoiceLine::getTaxableValue).filter(v -> v != null).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
-    java.math.BigDecimal totalCess = lines.stream().map(GstInvoiceLine::getCessAmount).filter(v -> v != null).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+    java.math.BigDecimal totalTaxableValue = GstTotals.sum(lines, GstInvoiceLine::getTaxableValue);
+    java.math.BigDecimal totalCess = GstTotals.sum(lines, GstInvoiceLine::getCessAmount);
     int rowNum = 0;
     sheet.createRow(rowNum++).createCell(0).setCellValue("Summary For B2CS(" + lines.size() + ")");
     Row sh = sheet.createRow(rowNum++);

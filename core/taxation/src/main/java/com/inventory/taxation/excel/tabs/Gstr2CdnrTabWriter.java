@@ -4,6 +4,7 @@ import com.inventory.taxation.domain.gstr2.Gstr2CdnrLine;
 import com.inventory.taxation.domain.gstr2.Gstr2ReportContext;
 import com.inventory.taxation.excel.Gstr2TabWriter;
 import com.inventory.taxation.excel.PoiHelper;
+import com.inventory.taxation.summary.GstTotals;
 import org.apache.poi.ss.usermodel.*;
 
 import java.math.BigDecimal;
@@ -31,27 +32,15 @@ public class Gstr2CdnrTabWriter implements Gstr2TabWriter {
     CellStyle headerStyle = PoiHelper.headerStyle(workbook);
     List<Gstr2CdnrLine> lines = context.getCdnrLines();
 
-    int noOfSuppliers = (int) lines.stream().map(Gstr2CdnrLine::getSupplierGstin)
-        .filter(g -> g != null && !g.isBlank()).distinct().count();
-    int noOfNotes = (int) lines.stream()
-        .map(Gstr2CdnrLine::getNoteNumber)
-        .filter(v -> v != null && !v.isBlank())
-        .distinct()
-        .count();
-    BigDecimal totalNoteValue = lines.stream().map(Gstr2CdnrLine::getNoteValue)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalTaxable = lines.stream().map(Gstr2CdnrLine::getTaxableValue)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalIgst = lines.stream().map(Gstr2CdnrLine::getIntegratedTaxPaid)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalCgst = lines.stream().map(Gstr2CdnrLine::getCentralTaxPaid)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalSgst = lines.stream().map(Gstr2CdnrLine::getStateUtTaxPaid)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalCess = lines.stream().map(Gstr2CdnrLine::getCessPaid)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal availedIgst = lines.stream().map(Gstr2CdnrLine::getAvailedItcIntegrated)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
+    int noOfSuppliers = GstTotals.countDistinct(lines, Gstr2CdnrLine::getSupplierGstin);
+    int noOfNotes = GstTotals.countDistinct(lines, Gstr2CdnrLine::getNoteNumber);
+    BigDecimal totalNoteValue = GstTotals.sum(lines, Gstr2CdnrLine::getNoteValue);
+    BigDecimal totalTaxable = GstTotals.sum(lines, Gstr2CdnrLine::getTaxableValue);
+    BigDecimal totalIgst = GstTotals.sum(lines, Gstr2CdnrLine::getIntegratedTaxPaid);
+    BigDecimal totalCgst = GstTotals.sum(lines, Gstr2CdnrLine::getCentralTaxPaid);
+    BigDecimal totalSgst = GstTotals.sum(lines, Gstr2CdnrLine::getStateUtTaxPaid);
+    BigDecimal totalCess = GstTotals.sum(lines, Gstr2CdnrLine::getCessPaid);
+    BigDecimal availedIgst = GstTotals.sum(lines, Gstr2CdnrLine::getAvailedItcIntegrated);
 
     int rowNum = 0;
     sheet.createRow(rowNum++).createCell(0).setCellValue("Summary For CDNR(6C)");

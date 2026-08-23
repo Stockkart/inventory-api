@@ -4,6 +4,7 @@ import com.inventory.taxation.domain.model.GstHsnLine;
 import com.inventory.taxation.domain.gstr2.Gstr2ReportContext;
 import com.inventory.taxation.excel.Gstr2TabWriter;
 import com.inventory.taxation.excel.PoiHelper;
+import com.inventory.taxation.summary.GstTotals;
 import org.apache.poi.ss.usermodel.*;
 
 import java.math.BigDecimal;
@@ -28,23 +29,13 @@ public class Gstr2HsnsumTabWriter implements Gstr2TabWriter {
     CellStyle headerStyle = PoiHelper.headerStyle(workbook);
     List<GstHsnLine> lines = context.getHsnLines();
 
-    int noOfHsn = (int) lines.stream()
-        .map(GstHsnLine::getHsn)
-        .filter(v -> v != null && !v.isBlank())
-        .distinct()
-        .count();
-    BigDecimal totalValue = lines.stream().map(GstHsnLine::getTotalValue)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalTaxable = lines.stream().map(GstHsnLine::getTaxableValue)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalIgst = lines.stream().map(GstHsnLine::getIntegratedTaxAmount)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalCgst = lines.stream().map(GstHsnLine::getCentralTaxAmount)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalSgst = lines.stream().map(GstHsnLine::getStateUtTaxAmount)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    BigDecimal totalCess = lines.stream().map(GstHsnLine::getCessAmount)
-        .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
+    int noOfHsn = GstTotals.countDistinct(lines, GstHsnLine::getHsn);
+    BigDecimal totalValue = GstTotals.sum(lines, GstHsnLine::getTotalValue);
+    BigDecimal totalTaxable = GstTotals.sum(lines, GstHsnLine::getTaxableValue);
+    BigDecimal totalIgst = GstTotals.sum(lines, GstHsnLine::getIntegratedTaxAmount);
+    BigDecimal totalCgst = GstTotals.sum(lines, GstHsnLine::getCentralTaxAmount);
+    BigDecimal totalSgst = GstTotals.sum(lines, GstHsnLine::getStateUtTaxAmount);
+    BigDecimal totalCess = GstTotals.sum(lines, GstHsnLine::getCessAmount);
 
     int rowNum = 0;
     sheet.createRow(rowNum++).createCell(0).setCellValue("Summary For HSN(13)");
