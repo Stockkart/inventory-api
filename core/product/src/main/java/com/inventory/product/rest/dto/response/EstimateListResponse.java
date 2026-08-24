@@ -10,4 +10,8 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class EstimateListResponse {
   private List<EstimateSummaryDto> estimates;
+  private int page;
+  private int size;
+  private long total;
+  private int totalPages;
 }

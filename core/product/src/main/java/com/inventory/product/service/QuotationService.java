@@ -241,11 +241,14 @@ public class QuotationService {
 
   @Transactional(readOnly = true)
   public Optional<AddToCartResponse> findLegacyActiveCart(String userId, String shopId) {
-    Optional<Purchase> pending =
-        purchaseRepository.findByUserIdAndShopIdAndStatus(
+    // List query — Optional findByStatus throws if more than one PENDING checkout exists.
+    List<Purchase> pending =
+        purchaseRepository.findByUserIdAndShopIdAndStatusOrderByUpdatedAtDesc(
             userId, shopId, PurchaseStatus.PENDING);
-    if (pending.isPresent() && DocumentTypes.isSaleDocument(pending.get())) {
-      return Optional.of(purchaseMapper.toAddToCartResponse(pending.get()));
+    Optional<Purchase> pendingSale =
+        pending.stream().filter(DocumentTypes::isSaleDocument).findFirst();
+    if (pendingSale.isPresent()) {
+      return pendingSale.map(purchaseMapper::toAddToCartResponse);
     }
     List<Purchase> created =
         purchaseRepository.findByUserIdAndShopIdAndStatusOrderByUpdatedAtDesc(
