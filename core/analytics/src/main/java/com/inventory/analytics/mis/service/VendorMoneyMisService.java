@@ -158,7 +158,7 @@ public class VendorMoneyMisService {
         StringUtils.hasText(vendorIdFilter) ? vendorIdFilter.trim() : null;
 
     Instant fromInst = MisDateRangeHelper.startOfDay(from);
-    Instant toInst = MisDateRangeHelper.endOfDay(to);
+    Instant toInst = MisDateRangeHelper.startOfNextDay(to);
 
     List<CreditAccount> accounts =
         creditService.listAccountsByPartyType(shopId, CreditPartyType.VENDOR);

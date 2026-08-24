@@ -72,11 +72,16 @@ public class Gstr2DataAggregator {
     }
 
     Instant rangeStart = LocalDate.of(year, month, 1).atStartOfDay(ZoneId.systemDefault()).toInstant();
+    // Exclusive: the first instant of the next month is not part of this one.
+    // It used to be that instant less a nanosecond, which a BSON date cannot
+    // hold -- it truncates to the millisecond and the comparison then dropped
+    // the last millisecond of the month as well.
     Instant rangeEnd = LocalDate.of(year, month, 1).plusMonths(1)
-        .atStartOfDay(ZoneId.systemDefault()).toInstant().minusNanos(1);
+        .atStartOfDay(ZoneId.systemDefault()).toInstant();
 
     List<VendorPurchaseReturn> vendorReturns =
-        vendorPurchaseReturnRepository.findByShopIdAndCreatedAtBetween(shopId, rangeStart, rangeEnd);
+        vendorPurchaseReturnRepository.findByShopIdAndCreatedAtInPeriod(
+                shopId, rangeStart, rangeEnd);
 
     // The supplier's own invoices for the period, where the shop has them. They
     // state what was bought; stock states what is left, and the two stop being
@@ -84,13 +89,14 @@ public class Gstr2DataAggregator {
     // recorded is therefore reported from them and not from stock at all --
     // mixing the two would count the same goods under both.
     List<VendorPurchaseInvoice> purchaseInvoices =
-        vendorPurchaseInvoiceRepository.findByShopIdAndInvoiceDateBetween(
+        vendorPurchaseInvoiceRepository.findByShopIdAndInvoiceDateInPeriod(
                 shopId, rangeStart, rangeEnd)
             .stream()
             .filter(this::statesItsAmounts)
             .toList();
 
-    List<Inventory> inventories = inventoryRepository.findByShopIdAndCreatedAtBetween(shopId, rangeStart, rangeEnd);
+    List<Inventory> inventories = inventoryRepository.findByShopIdAndCreatedAtInPeriod(
+            shopId, rangeStart, rangeEnd);
     inventories = inventories.stream().filter(inv -> inv.getVendorId() != null).toList();
 
     if (purchaseInvoices.isEmpty() && inventories.isEmpty() && vendorReturns.isEmpty()) {
@@ -332,20 +338,32 @@ public class Gstr2DataAggregator {
   }
 
   /**
-   * Whether an invoice carries the amounts the return needs.
+   * Whether an invoice says enough to be reported.
    *
-   * <p>Invoices exist that were created only to give a stock lot a number to
-   * display, with no total and a placeholder line. Reporting from those would
-   * replace real figures with nothing, so they are left to the stock path.
+   * <p>What it must say is what the return is built from, and that is its lines:
+   * every figure reported comes from a count times a cost, and {@link
+   * #taxableByLine} already falls back to those when no subtotal was stated. The
+   * header totals were gating a report they are not the source of, so an invoice
+   * that stated its goods but never captured a total was dropped whole -- on one
+   * shop that was three of August's twenty-six, and every purchase before April
+   * 2026.
    */
   private boolean statesItsAmounts(VendorPurchaseInvoice invoice) {
-    return invoice.getInvoiceTotal() != null
-        && invoice.getInvoiceTotal().compareTo(BigDecimal.ZERO) > 0
-        && invoice.getLineSubTotal() != null
-        && invoice.getLineSubTotal().compareTo(BigDecimal.ZERO) > 0
-        && invoice.getLines() != null
-        && invoice.getLines().stream().anyMatch(
-            line -> line.getCount() != null && line.getCostPrice() != null);
+    boolean stated = invoice.getLines() != null
+        && invoice.getLines().stream().anyMatch(this::statesItsAmount);
+    if (!stated) {
+      log.warn("GSTR-2 leaves out purchase invoice {} ({}): no line states both a count "
+          + "and a cost price", invoice.getInvoiceNo(), invoice.getId());
+    }
+    return stated;
+  }
+
+  /** A line states its amount when it says how many, and at what each cost. */
+  private boolean statesItsAmount(VendorPurchaseInvoiceLine line) {
+    return line.getCount() != null
+        && line.getCount() > 0
+        && line.getCostPrice() != null
+        && line.getCostPrice().compareTo(BigDecimal.ZERO) > 0;
   }
 
   /**
@@ -465,8 +483,6 @@ public class Gstr2DataAggregator {
       LocalDate invoiceDate = invoice.getInvoiceDate() != null
           ? LocalDateTime.ofInstant(invoice.getInvoiceDate(), ZoneId.systemDefault()).toLocalDate()
           : LocalDate.now();
-      BigDecimal invoiceValue = invoice.getInvoiceTotal();
-
       boolean interstate = StringUtils.hasText(shopState)
           && StringUtils.hasText(supplierGstin)
           && !supplierGstin.startsWith(shopState);
@@ -531,6 +547,19 @@ public class Gstr2DataAggregator {
           row.setCentralTaxAmount(row.getCentralTaxAmount().add(central));
           row.setStateUtTaxAmount(row.getStateUtTaxAmount().add(state));
           row.setIntegratedTaxAmount(row.getIntegratedTaxAmount().add(integrated));
+        }
+      }
+
+      // An invoice is worth what it says it is worth, where it says so. The ones
+      // that never captured a header are worth what their own rows come to, so
+      // the value stamped on each row is the sum of every row's taxable value
+      // and tax -- which is what the header would have stated.
+      BigDecimal invoiceValue = invoice.getInvoiceTotal();
+      if (invoiceValue == null) {
+        invoiceValue = BigDecimal.ZERO;
+        for (BigDecimal[] bucket : byRate.values()) {
+          invoiceValue = invoiceValue
+              .add(bucket[0]).add(bucket[1]).add(bucket[2]).add(bucket[3]);
         }
       }
 

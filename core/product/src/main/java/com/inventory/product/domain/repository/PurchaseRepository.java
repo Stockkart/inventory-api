@@ -91,23 +91,28 @@ public interface PurchaseRepository extends MongoRepository<Purchase, String> {
    * Find purchases by shop ID and sold-at date range (inclusive).
    * Used for GSTR-1 and other period-based reports.
    */
-  List<Purchase> findByShopIdAndSoldAtBetween(String shopId, Instant start, Instant end);
+  @Query("{ 'shopId': ?0, 'soldAt': { '$gte': ?1, '$lt': ?2 } }")
+  List<Purchase> findByShopIdAndSoldAtInPeriod(
+      String shopId, Instant startInclusive, Instant endExclusive);
 
   /**
    * Find completed purchases by shop ID and sold-at date range (inclusive).
    * Used for GSTR-1 so only invoiced sales are included.
    */
-  List<Purchase> findByShopIdAndStatusAndSoldAtBetween(String shopId, PurchaseStatus status, Instant start, Instant end);
+  @Query("{ 'shopId': ?0, 'status': ?1, 'soldAt': { '$gte': ?2, '$lt': ?3 } }")
+  List<Purchase> findByShopIdAndStatusAndSoldAtInPeriod(
+      String shopId, PurchaseStatus status, Instant startInclusive, Instant endExclusive);
 
   /**
    * Find completed purchases in a period: soldAt in range, or updatedAt in range (e.g. completed in period).
    * Ensures purchases completed in the period are included even if soldAt was never set or is from cart-creation.
    */
   @Query("{ 'shopId': ?0, 'status': ?1, '$or': [ "
-      + "{ 'soldAt': { '$gte': ?2, '$lte': ?3 } }, "
-      + "{ 'updatedAt': { '$gte': ?2, '$lte': ?3 } } "
+      + "{ 'soldAt': { '$gte': ?2, '$lt': ?3 } }, "
+      + "{ 'updatedAt': { '$gte': ?2, '$lt': ?3 } } "
       + "] }")
-  List<Purchase> findCompletedPurchasesInPeriod(String shopId, PurchaseStatus status, Instant rangeStart, Instant rangeEnd);
+  List<Purchase> findCompletedPurchasesInPeriod(
+      String shopId, PurchaseStatus status, Instant startInclusive, Instant endExclusive);
 
   /**
    * True if the shop has at least one completed REGULAR (or legacy null-mode) sale with an invoice
