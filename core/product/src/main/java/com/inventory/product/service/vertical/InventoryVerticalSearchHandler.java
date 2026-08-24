@@ -11,17 +11,21 @@ import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Product;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.repository.InventoryRepository;
-import com.inventory.product.domain.repository.ProductRepository;
 import com.inventory.product.domain.repository.ShopRepository;
+import com.inventory.product.utils.InventoryFreeTextSearch;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -35,34 +39,97 @@ public class InventoryVerticalSearchHandler {
   private final PluginRegistry pluginRegistry;
   private final SchemaLoader schemaLoader;
   private final InventoryRepository inventoryRepository;
-  private final ProductRepository productRepository;
+  private final MongoTemplate mongoTemplate;
 
   public InventoryVerticalSearchHandler(
       ShopRepository shopRepository,
       PluginRegistry pluginRegistry,
       SchemaLoader schemaLoader,
       InventoryRepository inventoryRepository,
-      ProductRepository productRepository) {
+      MongoTemplate mongoTemplate) {
     this.shopRepository = shopRepository;
     this.pluginRegistry = pluginRegistry;
     this.schemaLoader = schemaLoader;
     this.inventoryRepository = inventoryRepository;
-    this.productRepository = productRepository;
+    this.mongoTemplate = mongoTemplate;
   }
 
   /**
-   * Text search over catalog identity. Identity now lives on {@code product}, so match products
-   * first, then load this shop's inventory rows for those products.
+   * Free-text search: substring on name / company / location; prefix on barcode / HSN / batch.
    */
   private List<Inventory> searchInventoryByText(String shopId, String q) {
-    List<String> productIds = productRepository.findMatchingIdsByShopIdAndQuery(shopId, q).stream()
-        .map(Product::getId)
-        .filter(StringUtils::hasText)
-        .collect(Collectors.toList());
-    if (productIds.isEmpty()) {
+    String query = q.trim();
+    String contains = InventoryFreeTextSearch.containsPattern(query);
+    List<String> identifierTokens = InventoryFreeTextSearch.identifierTokens(query);
+    List<Criteria> identifierPrefix = new ArrayList<>();
+    for (String token : identifierTokens) {
+      String prefix = InventoryFreeTextSearch.prefixPattern(token);
+      identifierPrefix.add(Criteria.where("barcode").regex(prefix, "i"));
+      identifierPrefix.add(Criteria.where("hsn").regex(prefix, "i"));
+    }
+
+    Set<String> productIds = new LinkedHashSet<>();
+    List<Criteria> productOr = new ArrayList<>();
+    productOr.add(Criteria.where("name").regex(contains, "i"));
+    productOr.add(Criteria.where("companyName").regex(contains, "i"));
+    productOr.addAll(identifierPrefix);
+    Query productQuery =
+        Query.query(
+            new Criteria()
+                .andOperator(
+                    Criteria.where("shopId").is(shopId),
+                    new Criteria().orOperator(productOr.toArray(Criteria[]::new))));
+    productQuery.fields().include("_id");
+    productQuery.limit(500);
+    for (Product product : mongoTemplate.find(productQuery, Product.class)) {
+      if (StringUtils.hasText(product.getId())) {
+        productIds.add(product.getId());
+      }
+    }
+
+    Set<String> inventoryIds = new LinkedHashSet<>();
+    if (!productIds.isEmpty()) {
+      for (Inventory inv : inventoryRepository.findByShopIdAndProductIdIn(shopId, productIds)) {
+        if (inv != null && StringUtils.hasText(inv.getId())) {
+          inventoryIds.add(inv.getId());
+        }
+      }
+    }
+
+    List<Criteria> lotOr = new ArrayList<>();
+    lotOr.add(Criteria.where("location").regex(contains, "i"));
+    for (String token : identifierTokens) {
+      lotOr.add(Criteria.where("batchNo").regex(InventoryFreeTextSearch.prefixPattern(token), "i"));
+    }
+    Query lotQuery =
+        Query.query(
+            new Criteria()
+                .andOperator(
+                    Criteria.where("shopId").is(shopId),
+                    new Criteria().orOperator(lotOr.toArray(Criteria[]::new))));
+    lotQuery.fields().include("_id");
+    lotQuery.limit(500);
+    for (Inventory inv : mongoTemplate.find(lotQuery, Inventory.class)) {
+      if (inv != null && StringUtils.hasText(inv.getId())) {
+        inventoryIds.add(inv.getId());
+      }
+    }
+
+    Shop shop = shopRepository.findById(shopId).orElse(null);
+    if (shop != null && StringUtils.hasText(shop.getVerticalId())) {
+      Optional<InventorySearchProvider> provider =
+          pluginRegistry.find(shop.getVerticalId()).flatMap(p -> p.getSearchProvider());
+      if (provider.isPresent()) {
+        for (String token : identifierTokens) {
+          inventoryIds.addAll(provider.get().findInventoryIdsByBatchPrefix(shopId, token));
+        }
+      }
+    }
+
+    if (inventoryIds.isEmpty()) {
       return List.of();
     }
-    return inventoryRepository.findByShopIdAndProductIdIn(shopId, productIds);
+    return loadInventoriesOrdered(shopId, new ArrayList<>(inventoryIds));
   }
 
   /**
