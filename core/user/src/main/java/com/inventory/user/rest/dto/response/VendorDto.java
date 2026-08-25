@@ -18,6 +18,7 @@ public class VendorDto {
   private String companyName;
   private String businessType;
   private String gstinUin;
+  private String dlNo;
   /** Optional. Set when vendor is linked to a registered user. */
   private String userId;
   private Instant createdAt;
