@@ -109,6 +109,38 @@ public class InvoiceService {
   }
 
   /**
+   * Render the invoice as fixed-width plain text for the dot matrix print bridge.
+   *
+   * @param purchaseId the purchase ID
+   * @param shopId the shop ID for validation
+   * @return 80-column plain text
+   */
+  public String generateInvoiceText(String purchaseId, String shopId) {
+    log.info("Generating invoice text for purchase: {}, shop: {}", purchaseId, shopId);
+
+    Purchase purchase = purchaseRepository.findById(purchaseId)
+        .orElseThrow(() -> new ResourceNotFoundException("Purchase", "id", purchaseId));
+
+    if (!shopId.equals(purchase.getShopId())) {
+      throw new ValidationException("Purchase does not belong to the specified shop");
+    }
+
+    Shop shop = shopRepository.findById(purchase.getShopId())
+        .orElseThrow(() -> new ResourceNotFoundException("Shop", "shopId", purchase.getShopId()));
+
+    var settings = invoiceSettingsService.getOrDefaultForShop(shopId);
+    GenerateInvoiceRequest request = buildGenerateInvoiceRequest(purchase, shop, settings);
+    request.setPrinterType("DOT_MATRIX");
+
+    String text = documentService.generateInvoiceText(request);
+    if (metrics != null) {
+      metrics.record(
+          ProductMetricsConstants.INVOICES_GENERATED, 1, "module", ProductMetricsConstants.MODULE);
+    }
+    return text;
+  }
+
+  /**
    * Build GenerateInvoiceRequest from Purchase, Shop, and shop invoice settings.
    * Visibility flags control template display; data is always populated when available.
    */
