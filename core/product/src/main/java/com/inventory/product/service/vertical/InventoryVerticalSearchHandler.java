@@ -13,6 +13,7 @@ import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.utils.InventoryFreeTextSearch;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -23,6 +24,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -150,7 +153,7 @@ public class InventoryVerticalSearchHandler {
             inv ->
                 inv != null
                     && inv.getCurrentCount() != null
-                    && inv.getCurrentCount().compareTo(java.math.BigDecimal.ZERO) > 0)
+                    && inv.getCurrentCount().compareTo(BigDecimal.ZERO) > 0)
         .toList();
   }
 
@@ -292,17 +295,13 @@ public class InventoryVerticalSearchHandler {
     int effectiveLimit = limit > 0 ? limit : 50;
     if (!StringUtils.hasText(q)) {
       int page = effectiveLimit > 0 ? skip / effectiveLimit : 0;
-      org.springframework.data.domain.PageRequest pageRequest =
-          org.springframework.data.domain.PageRequest.of(
-              page,
-              effectiveLimit,
-              org.springframework.data.domain.Sort.by(
-                  org.springframework.data.domain.Sort.Direction.DESC, "createdAt"));
+      PageRequest pageRequest =
+          PageRequest.of(page, effectiveLimit, Sort.by(Sort.Direction.DESC, "createdAt"));
       List<Inventory> pageItems =
           includeZeroStock
               ? inventoryRepository.findByShopId(shopId, pageRequest)
               : inventoryRepository.findByShopIdAndCurrentCountGreaterThan(
-                  shopId, java.math.BigDecimal.ZERO, pageRequest);
+                  shopId, BigDecimal.ZERO, pageRequest);
       return new VerticalSearchPage(pageItems, null);
     }
     List<Inventory> matches = searchInventoryByText(shopId, q.trim(), includeZeroStock);

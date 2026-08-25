@@ -935,7 +935,7 @@ public class InventoryService {
           includeZeroStock
               ? inventoryRepository.countByShopId(shopId)
               : inventoryRepository.countByShopIdAndCurrentCountGreaterThan(
-                  shopId, java.math.BigDecimal.ZERO);
+                  shopId, BigDecimal.ZERO);
       int totalPages = (int) Math.ceil((double) totalItems / effectiveSize);
 
       PageMeta pageMeta = new PageMeta(page, effectiveSize, totalItems, totalPages);
