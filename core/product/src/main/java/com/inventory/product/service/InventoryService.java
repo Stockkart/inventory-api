@@ -911,6 +911,13 @@ public class InventoryService {
   }
 
   public InventoryListResponse list(String shopId, int page, int size) {
+    return list(shopId, page, size, true);
+  }
+
+  /**
+   * @param includeZeroStock when false, sold-out lots are left out of the page and of the total.
+   */
+  public InventoryListResponse list(String shopId, int page, int size, boolean includeZeroStock) {
     try {
       inventoryValidator.validateShopId(shopId);
 
@@ -919,12 +926,16 @@ public class InventoryService {
 
       InventoryVerticalSearchHandler.VerticalSearchPage searchPage =
           inventoryVerticalSearchHandler.listPage(
-              shopId, null, effectiveSize, page * effectiveSize);
+              shopId, null, effectiveSize, page * effectiveSize, includeZeroStock);
 
       List<InventorySummaryDto> summaries =
           toSummariesWithExtensions(shopId, searchPage.items());
 
-      long totalItems = inventoryRepository.countByShopId(shopId);
+      long totalItems =
+          includeZeroStock
+              ? inventoryRepository.countByShopId(shopId)
+              : inventoryRepository.countByShopIdAndCurrentCountGreaterThan(
+                  shopId, java.math.BigDecimal.ZERO);
       int totalPages = (int) Math.ceil((double) totalItems / effectiveSize);
 
       PageMeta pageMeta = new PageMeta(page, effectiveSize, totalItems, totalPages);
@@ -951,7 +962,8 @@ public class InventoryService {
         parsed.fieldFilters(),
         parsed.sort(),
         parsed.limit(),
-        parsed.cursor());
+        parsed.cursor(),
+        parsed.includeZeroStock());
   }
 
   public InventoryListResponse search(
@@ -961,6 +973,21 @@ public class InventoryService {
       String sort,
       Integer limit,
       String cursor) {
+    return search(shopId, query, filters, sort, limit, cursor, true);
+  }
+
+  /**
+   * @param includeZeroStock when false, sold-out lots are left out of the results. Scan &amp; Sell
+   *     and Product Search pass false so the counter is not offered stock that cannot be sold.
+   */
+  public InventoryListResponse search(
+      String shopId,
+      String query,
+      Map<String, String> filters,
+      String sort,
+      Integer limit,
+      String cursor,
+      boolean includeZeroStock) {
     try {
       inventoryValidator.validateShopId(shopId);
       boolean hasQuery = StringUtils.hasText(query);
@@ -970,12 +997,13 @@ public class InventoryService {
       }
 
       log.debug(
-          "Searching inventory for shop: {} q={} filters={} sort={} cursor={}",
+          "Searching inventory for shop: {} q={} filters={} sort={} cursor={} includeZeroStock={}",
           shopId,
           query,
           filters,
           sort,
-          cursor);
+          cursor,
+          includeZeroStock);
 
       int effectiveLimit = limit != null && limit > 0 ? Math.min(limit, 200) : 50;
       InventoryVerticalSearchHandler.VerticalSearchPage searchPage =
@@ -986,7 +1014,8 @@ public class InventoryService {
               sort,
               effectiveLimit,
               cursor,
-              0);
+              0,
+              includeZeroStock);
 
       List<InventorySummaryDto> summaries =
           toSummariesWithExtensions(shopId, searchPage.items());
