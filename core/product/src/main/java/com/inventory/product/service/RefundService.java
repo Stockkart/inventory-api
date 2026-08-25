@@ -757,13 +757,16 @@ public class RefundService {
     purchaseRepository.findById(refund.getPurchaseId()).ifPresent(purchase -> {
       dto.setInvoiceNo(purchase.getInvoiceNo());
       dto.setCustomerId(purchase.getCustomerId());
-      dto.setCustomerName(purchase.getCustomerName());
+      dto.setCustomerName(PurchaseCustomerRequests.sanitizedDisplayName(purchase.getCustomerName()));
 
-      // If customerId exists, fetch customer details
       if (StringUtils.hasText(purchase.getCustomerId())) {
         customerService.getCustomerById(purchase.getCustomerId()).ifPresent(customer -> {
+          if (customer.isGeneralCustomer()) {
+            return;
+          }
           dto.setCustomerPhone(customer.getPhone());
-          dto.setCustomerName(customer.getName());
+          String overlay = PurchaseCustomerRequests.sanitizedDisplayName(purchase.getCustomerName());
+          dto.setCustomerName(overlay != null ? overlay : customer.getName());
           dto.setCustomerEmail(customer.getEmail());
         });
       }
