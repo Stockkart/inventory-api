@@ -20,7 +20,10 @@
         font-size: 11px;
         color: #000;
         background: #ffffff;
-        padding: 15px;
+        /* The page has no margin of its own, so this padding is the whole gap between the
+           paper edge and the invoice border. Keep it at the sides and bottom; at the top it
+           only pushed the bill down the sheet. */
+        padding: 2px 15px 15px;
         line-height: 1.4;
     }
 
@@ -28,7 +31,8 @@
         max-width: 100%;
         margin: 0 auto;
         border: 1px solid #000;
-        padding: 10px;
+        /* Tight above the shop name and below the signatures; the sides keep their room. */
+        padding: 4px 10px;
     }
 
     /* Header Section */
@@ -257,7 +261,8 @@
 
     /* Terms Section */
     .terms-section {
-        margin-bottom: 10px;
+        /* The gap down to the signature rule is set once, on .signature-box. */
+        margin-bottom: 0;
         font-size: 9px;
         line-height: 1.5;
     }
@@ -275,7 +280,7 @@
     .footer-section {
         display: table;
         width: 100%;
-        margin-top: 15px;
+        margin-top: 0;
     }
 
     .signature-left {
@@ -295,14 +300,17 @@
     .signature-box {
         border-top: 1px solid #000;
         padding-top: 5px;
-        margin-top: 40px;
+        /* Whole gap from the terms above down to the rule: 10px here plus the 3px and 5px the
+           last list item and the list itself already carry, which do not collapse through the
+           table cell. */
+        margin-top: 10px;
         text-align: center;
         font-size: 10px;
     }
 
     .signature-label {
         font-weight: 600;
-        margin-top: 30px;
+        margin-top: 4px;
     }
 
     .footer-note {
@@ -426,7 +434,7 @@
         <td th:if="${showBatch}" th:text="${item.batchNo ?: ''}"></td>
         <td class="text-right" th:if="${showMrp}" th:text="${#numbers.formatDecimal(item.maximumRetailPrice, 1, 2)}"></td>
         <td class="text-right" th:text="${#numbers.formatDecimal(item.priceToRetail, 1, 2)}"></td>
-        <td th:if="${showScheme}" th:text="${item.schemePayFor != null and item.schemeFree != null ? item.schemePayFor + '+' + item.schemeFree : (item.scheme != null ? item.scheme : '')}"></td>
+        <td th:if="${showScheme}" th:text="${item.schemePercentage != null ? item.schemePercentage + '%' : (item.schemePayFor != null and item.schemeFree != null ? item.schemePayFor + '+' + item.schemeFree : (item.scheme != null ? item.scheme : ''))}"></td>
         <td class="text-right" th:if="${showLineDiscount}" th:text="${item.saleAdditionalDiscount != null ? #numbers.formatDecimal(item.saleAdditionalDiscount, 1, 2) : '0.00'}"></td>
         <td class="text-right" th:if="${showTaxDetails}" th:text="${item.cgst != null and item.cgst != '' ? item.cgst : #numbers.formatDecimal(cgstPercent, 1, 2)}"></td>
         <td class="text-right" th:if="${showTaxDetails}" th:text="${item.sgst != null and item.sgst != '' ? item.sgst : #numbers.formatDecimal(sgstPercent, 1, 2)}"></td>
@@ -490,16 +498,16 @@
 
   <!-- Footer: Signatures -->
   <div class="footer-section" th:if="${showSignatures}">
-    <div class="signature-left" th:if="${showSellerDetails}">
+    <div class="signature-left" th:if="${showBuyerDetails}">
       <div class="signature-box">
-        <div style="margin-bottom: 30px;"><span th:text="${shopName ?: ''}"></span></div>
-        <div class="signature-label">Authorised Signatory</div>
+        <div style="margin-bottom: 4px;">Received By</div>
+        <div class="signature-label">Customer Signature</div>
       </div>
     </div>
-    <div class="signature-right" th:if="${showBuyerDetails}">
+    <div class="signature-right" th:if="${showSellerDetails}">
       <div class="signature-box">
-        <div style="margin-bottom: 30px;">Received By</div>
-        <div class="signature-label">Customer Signature</div>
+        <div style="margin-bottom: 4px;"><span th:text="${shopName ?: ''}"></span></div>
+        <div class="signature-label">Authorised Signatory</div>
       </div>
     </div>
   </div>
