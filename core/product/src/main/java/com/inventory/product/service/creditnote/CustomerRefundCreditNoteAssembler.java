@@ -14,6 +14,7 @@ import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.PurchaseRepository;
 import com.inventory.product.domain.repository.RefundRepository;
+import com.inventory.product.service.PurchaseCustomerRequests;
 import com.inventory.product.service.vertical.InventoryVerticalExtensionHandler;
 import com.inventory.product.utils.AmountToWordsConverter;
 import com.inventory.user.domain.model.Customer;
@@ -151,6 +152,14 @@ public class CustomerRefundCreditNoteAssembler implements CreditNoteDocumentAsse
       Optional<Customer> customerOpt = customerService.getCustomerById(customerId);
       if (customerOpt.isPresent()) {
         Customer customer = customerOpt.get();
+        if (customer.isGeneralCustomer()) {
+          String overlay =
+              purchase != null
+                  ? PurchaseCustomerRequests.sanitizedDisplayName(purchase.getCustomerName())
+                  : null;
+          request.setPartyName(overlay != null ? overlay : "Walk-in customer");
+          return;
+        }
         request.setPartyName(customer.getName());
         request.setPartyAddress(customer.getAddress());
         request.setPartyDlNo(customer.getDlNo());
@@ -161,8 +170,8 @@ public class CustomerRefundCreditNoteAssembler implements CreditNoteDocumentAsse
         return;
       }
     }
-    if (purchase != null && StringUtils.hasText(purchase.getCustomerName())) {
-      request.setPartyName(purchase.getCustomerName());
+    if (purchase != null && PurchaseCustomerRequests.sanitizedDisplayName(purchase.getCustomerName()) != null) {
+      request.setPartyName(PurchaseCustomerRequests.sanitizedDisplayName(purchase.getCustomerName()));
     } else {
       request.setPartyName("Walk-in customer");
     }

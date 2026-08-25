@@ -319,7 +319,7 @@ public class EstimateService {
     int itemCount = purchase.getItems() != null ? purchase.getItems().size() : 0;
     String phone = null;
     String email = null;
-    String name = purchase.getCustomerName();
+    String name = PurchaseCustomerRequests.sanitizedDisplayName(purchase.getCustomerName());
     if (StringUtils.hasText(purchase.getCustomerId())) {
       var customerOpt = customerService.getCustomerById(purchase.getCustomerId());
       if (customerOpt.isPresent()) {

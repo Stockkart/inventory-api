@@ -200,16 +200,26 @@ public class InvoiceService {
       Optional<Customer> customerOpt = customerService.getCustomerById(purchase.getCustomerId());
       if (customerOpt.isPresent()) {
         Customer customer = customerOpt.get();
-        request.setCustomerName(customer.getName());
-        request.setCustomerAddress(customer.getAddress());
-        request.setCustomerDlNo(customer.getDlNo());
-        request.setCustomerGstin(customer.getGstin());
-        request.setCustomerPan(customer.getPan());
-        request.setCustomerPhone(customer.getPhone());
-        request.setCustomerEmail(customer.getEmail());
+        if (customer.isGeneralCustomer()) {
+          String overlay = PurchaseCustomerRequests.sanitizedDisplayName(purchase.getCustomerName());
+          if (overlay != null) {
+            request.setCustomerName(overlay);
+          }
+        } else {
+          request.setCustomerName(customer.getName());
+          request.setCustomerAddress(customer.getAddress());
+          request.setCustomerDlNo(customer.getDlNo());
+          request.setCustomerGstin(customer.getGstin());
+          request.setCustomerPan(customer.getPan());
+          request.setCustomerPhone(customer.getPhone());
+          request.setCustomerEmail(customer.getEmail());
+        }
       }
     } else if (purchase.getCustomerName() != null && !purchase.getCustomerName().isEmpty()) {
-      request.setCustomerName(purchase.getCustomerName());
+      String overlay = PurchaseCustomerRequests.sanitizedDisplayName(purchase.getCustomerName());
+      if (overlay != null) {
+        request.setCustomerName(overlay);
+      }
     }
 
     List<InvoiceItem> invoiceItems = new ArrayList<>();
