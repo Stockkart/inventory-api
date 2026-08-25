@@ -50,4 +50,25 @@ final class PurchaseCustomerRequests {
     }
     return null;
   }
+
+  /**
+   * True when the payload is meant to set or clear the cart customer. Item-only upserts omit these
+   * fields and must not replace an existing customer with General Customer.
+   */
+  static boolean hasCustomerPatch(AddToCartRequest request) {
+    if (request == null) {
+      return false;
+    }
+    if (request.getCustomerId() != null) {
+      return true;
+    }
+    return StringUtils.hasText(request.getCustomerName())
+        || StringUtils.hasText(request.getCustomerPhone())
+        || StringUtils.hasText(request.getCustomerEmail())
+        || StringUtils.hasText(request.getCustomerAddress())
+        || StringUtils.hasText(request.getCustomerGstin())
+        || StringUtils.hasText(request.getCustomerDlNo())
+        || StringUtils.hasText(request.getCustomerPan())
+        || StringUtils.hasText(request.getCustomerPartyType());
+  }
 }

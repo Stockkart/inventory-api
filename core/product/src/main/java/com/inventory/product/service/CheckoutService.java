@@ -165,9 +165,15 @@ public class CheckoutService {
     try {
       Purchase existingCart = quotationService.resolveTargetCart(request, userId, shopId);
 
-      // Get or create customer and get customerId/customerName
-      String customerId = getOrCreateCustomerId(shopId, request);
-      String customerName = PurchaseCustomerRequests.displayNameOverlay(customerId, request);
+      String customerId;
+      String customerName;
+      if (existingCart != null && !PurchaseCustomerRequests.hasCustomerPatch(request)) {
+        customerId = existingCart.getCustomerId();
+        customerName = existingCart.getCustomerName();
+      } else {
+        customerId = getOrCreateCustomerId(shopId, request);
+        customerName = PurchaseCustomerRequests.displayNameOverlay(customerId, request);
+      }
 
       // Process new items
       List<PurchaseItem> newItems = processCartItems(request.getItems(), shopId);
