@@ -239,7 +239,7 @@ public class InvoiceTextRenderer {
   }
 
   private static String pad(String raw, int width, boolean rightAlign) {
-    String value = nullToEmpty(raw);
+    String value = clean(raw);
     if (value.length() > width) {
       return value.substring(0, width);
     }
@@ -248,11 +248,46 @@ public class InvoiceTextRenderer {
   }
 
   private static String twoColumn(String left, String right) {
-    String l = nullToEmpty(left);
-    String r = nullToEmpty(right);
+    String l = clean(left);
+    String r = clean(right);
     int gap = Math.max(1, LINE_WIDTH - l.length() - r.length());
     String line = l + " ".repeat(gap) + r;
     return line.length() > LINE_WIDTH ? line.substring(0, LINE_WIDTH) : line;
+  }
+
+  /**
+   * Sanitises a field for placement into a fixed-width cell, regardless of which caller supplied
+   * it: control characters (CR, LF, tab, ...) become a space so they cannot be mistaken for line
+   * structure downstream, then every remaining non-printable-ASCII character is folded to {@code
+   * '?'} so Java's column count agrees with the Go encoder's rune-based fold and count.
+   *
+   * <p>Order matters: control characters are neutralised to spaces first so a bare newline never
+   * reaches the fold step and gets turned into {@code '?'} instead of whitespace.
+   */
+  private static String clean(String raw) {
+    return foldNonAscii(sanitizeControlChars(nullToEmpty(raw)));
+  }
+
+  /** Replaces CR, LF and every other C0/DEL control character with a single space. */
+  private static String sanitizeControlChars(String value) {
+    StringBuilder sb = new StringBuilder(value.length());
+    for (int i = 0; i < value.length(); i++) {
+      char c = value.charAt(i);
+      sb.append(c < 0x20 || c == 0x7F ? ' ' : c);
+    }
+    return sb.toString();
+  }
+
+  /**
+   * Folds every character outside printable ASCII (0x20-0x7E) to {@code '?'}, matching the Go
+   * encoder's fold. Iterates by code point so an astral-plane character (2 UTF-16 code units in
+   * Java, 1 rune in Go) collapses to a single {@code '?'} instead of two, keeping Java's {@link
+   * String#length()} equal to the Go encoder's rune count for the same text.
+   */
+  private static String foldNonAscii(String value) {
+    StringBuilder sb = new StringBuilder(value.length());
+    value.codePoints().forEach(cp -> sb.append(cp >= 0x20 && cp <= 0x7E ? (char) cp : '?'));
+    return sb.toString();
   }
 
   private static void addCentredIfPresent(List<String> out, String raw) {
@@ -274,7 +309,10 @@ public class InvoiceTextRenderer {
     }
     StringBuilder current = new StringBuilder();
     for (String token : value.split("\\s+")) {
-      String word = token;
+      // Fold after splitting on whitespace: \s+ already consumes CR/LF/tab as separators, so
+      // folding here only ever touches non-whitespace characters (e.g. emoji) and cannot turn a
+      // newline into a literal '?' that would then fail to split.
+      String word = foldNonAscii(token);
       while (word.length() > LINE_WIDTH) {
         if (current.length() > 0) {
           lines.add(current.toString());

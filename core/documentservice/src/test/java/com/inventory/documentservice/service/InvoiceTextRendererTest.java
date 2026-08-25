@@ -65,6 +65,46 @@ class InvoiceTextRendererTest {
   }
 
   @Test
+  void controlCharactersInFieldsAreNeutralisedAndCannotSplitALine() {
+    GenerateInvoiceRequest clean = request();
+    int cleanLineCount = renderer.render(clean).split("\n", -1).length;
+
+    // Every field the finding calls out as unsanitised and unwrapped, each carrying a CR, LF or
+    // tab in the middle. None of these route through wrap(), which happens to be safe already.
+    GenerateInvoiceRequest r = request();
+    r.setInvoiceNo("INV\n001");
+    r.setInvoiceDate("24-08\r2026");
+    r.setInvoiceTime("07:15\tPM");
+    r.setCustomerName("Ramesh\nKumar");
+    r.setCustomerPhone("9123\r456780");
+    r.setShopName("SHARDA\nMEDICALS");
+    r.setItems(List.of(item("PARA\nCETAMOL", "B1\r2345", "12\n2027")));
+
+    String out = renderer.render(r);
+
+    assertTrue(out.chars().noneMatch(c -> c < 32 && c != '\n'),
+        "control characters embedded in fields must not leak into the rendered text");
+    assertEquals(cleanLineCount, out.split("\n", -1).length,
+        "an embedded CR/LF must not add a physical line and break the column layout");
+  }
+
+  @Test
+  void emojiInCustomerNameFoldsToQuestionMarkAndKeepsRuneCountAtLineWidth() {
+    // An astral-plane character (e.g. an emoji copied from a phone contact) is 2 UTF-16 code
+    // units in Java but 1 rune in the Go encoder. Without folding, Java's String.length() over-
+    // counts it by one, so a line Java measures as LINE_WIDTH prints one column short on paper.
+    GenerateInvoiceRequest r = request();
+    r.setCustomerName("Ramesh 😀 Kumar");
+    String row = renderer.render(r).lines()
+        .filter(l -> l.contains("Customer")).findFirst().orElseThrow();
+
+    assertFalse(row.chars().anyMatch(c -> c < 0x20 || c > 0x7E),
+        "non-ASCII characters such as an emoji must be folded to '?' before reaching the page");
+    assertEquals(InvoiceTextRenderer.LINE_WIDTH, row.codePointCount(0, row.length()),
+        "line must be exactly LINE_WIDTH runes, matching what the Go encoder will print");
+  }
+
+  @Test
   void particularsColumnIsTwentyFourWhenAllColumnsEnabled() {
     String header = headerRow(renderer.render(request()));
     assertEquals(InvoiceTextRenderer.LINE_WIDTH, header.length(), "header must fill the line");
