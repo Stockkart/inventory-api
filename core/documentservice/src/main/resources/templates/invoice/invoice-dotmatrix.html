@@ -100,7 +100,7 @@
             <div th:text="${it.name}">Item</div>
             <div class="muted" th:if="${showHsn && it.hsn != null}">HSN: <span th:text="${it.hsn}">-</span></div>
           </td>
-          <td th:text="${it.quantity}">1</td>
+          <td th:text="${it.quantityLabel}">1</td>
           <td th:if="${showMrp}" th:text="${it.maximumRetailPrice}">0</td>
           <td th:text="${it.priceToRetail}">0</td>
           <td th:if="${showLineDiscount}" th:text="${it.discount != null ? it.discount : 0}">0</td>

@@ -105,7 +105,8 @@ public class InventoryController {
   public ResponseEntity<ApiResponse<InventoryListResponse>> list(
     HttpServletRequest httpRequest,
     @RequestParam(defaultValue = "0") int page,
-    @RequestParam(defaultValue = "10") int size
+    @RequestParam(defaultValue = "10") int size,
+    @RequestParam(defaultValue = "true") boolean includeZeroStock
   ) {
     // Get shopId from request attributes to ensure user can only access their shop's inventory
     String shopId = (String) httpRequest.getAttribute("shopId");
@@ -116,7 +117,8 @@ public class InventoryController {
         "Unauthorized access to shop inventory");
     }
 
-    return ResponseEntity.ok(ApiResponse.success(inventoryService.list(shopId, page, size)));
+    return ResponseEntity.ok(
+        ApiResponse.success(inventoryService.list(shopId, page, size, includeZeroStock)));
   }
 
   @GetMapping("/search")

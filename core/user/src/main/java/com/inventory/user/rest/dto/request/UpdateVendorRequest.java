@@ -11,4 +11,5 @@ public class UpdateVendorRequest {
   private String companyName;
   private String businessType;
   private String gstinUin;
+  private String dlNo;
 }

@@ -1,6 +1,7 @@
 package com.inventory.product.utils;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -36,5 +37,20 @@ class InventorySearchQueryParserTest {
             Map.of("q", "dolo", "cursor", "abc123", "limit", "10"));
     assertEquals("abc123", parsed.cursor());
     assertEquals(10, parsed.limit());
+  }
+
+  @Test
+  void parse_includeZeroStockDefaultsToTrue() {
+    InventorySearchQueryParser.Parsed parsed =
+        InventorySearchQueryParser.parse(Map.of("q", "dolo"));
+    assertTrue(parsed.includeZeroStock());
+  }
+
+  @Test
+  void parse_includeZeroStockFalseIsHonouredAndNotTreatedAsAFieldFilter() {
+    InventorySearchQueryParser.Parsed parsed =
+        InventorySearchQueryParser.parse(Map.of("q", "dolo", "includeZeroStock", "false"));
+    assertFalse(parsed.includeZeroStock());
+    assertTrue(parsed.fieldFilters().isEmpty());
   }
 }

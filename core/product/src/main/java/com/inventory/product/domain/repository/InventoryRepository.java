@@ -7,6 +7,7 @@ import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.data.mongodb.repository.Query;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -23,6 +24,10 @@ public interface InventoryRepository extends MongoRepository<Inventory, String> 
 
   List<Inventory> findByShopId(String shopId, Pageable pageable);
 
+  /** In-stock lots only; used when a selling screen asks to leave sold-out lots out. */
+  List<Inventory> findByShopIdAndCurrentCountGreaterThan(
+      String shopId, BigDecimal threshold, Pageable pageable);
+
   List<Inventory> findByShopId(String shopId);
 
   /**
@@ -34,6 +39,8 @@ public interface InventoryRepository extends MongoRepository<Inventory, String> 
   List<Inventory> findByLotId(String lotId);
 
   long countByShopId(String shopId);
+
+  long countByShopIdAndCurrentCountGreaterThan(String shopId, BigDecimal threshold);
 
   @Aggregation(pipeline = {
     "{ $match: { 'shopId': ?0, 'lotId': { $exists: true, $ne: null } } }",

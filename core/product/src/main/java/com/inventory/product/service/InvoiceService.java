@@ -239,6 +239,14 @@ public class InvoiceService {
         invoiceItem.setInventoryId(purchaseItem.getInventoryId());
         invoiceItem.setSchemePayFor(purchaseItem.getSchemePayFor());
         invoiceItem.setSchemeFree(purchaseItem.getSchemeFree());
+        // A percentage scheme on the line normalises pay-for/free away, so without this the
+        // SCHEME column had nothing to print and fell through to the lot - which a line with no
+        // inventoryId does not have either, leaving the column blank on a sale that had a scheme.
+        if (purchaseItem.getSchemeType() == SchemeType.PERCENTAGE
+            && purchaseItem.getSchemePercentage() != null
+            && purchaseItem.getSchemePercentage().signum() > 0) {
+          invoiceItem.setSchemePercentage(purchaseItem.getSchemePercentage());
+        }
         // The line's own HSN, before the lot is consulted. Everything printed in
         // the tax columns used to come from the lot alone, so a line whose lot is
         // gone -- stock sold out, or a migrated sale that never pointed at one --
