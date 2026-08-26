@@ -335,7 +335,7 @@
       </thead>
       <tbody>
       <tr th:each="item : ${items}">
-        <td th:text="${item.quantity}"></td>
+        <td th:text="${item.quantityLabel}"></td>
         <td class="text-left product-name" th:text="${item.name}"></td>
         <td th:if="${showHsn}" th:text="${item.hsn ?: ''}"></td>
         <td th:if="${showMfg}" th:text="${item.companyName ?: ''}"></td>
