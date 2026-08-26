@@ -24,11 +24,20 @@ import com.inventory.user.service.CustomerService;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.dao.DataAccessException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -43,30 +52,72 @@ import org.springframework.util.StringUtils;
 public class EstimateService {
 
   private static final int MAX_OPEN_ESTIMATES_PER_SHOP = 100;
+  private static final int DEFAULT_LIST_SIZE = 20;
+  private static final int MAX_LIST_SIZE = 100;
 
   private final PurchaseRepository purchaseRepository;
   private final PurchaseMapper purchaseMapper;
   private final CustomerService customerService;
   private final InvoiceSequenceService invoiceSequenceService;
+  private final MongoTemplate mongoTemplate;
 
   @Transactional(readOnly = true)
   public EstimateListResponse listEstimates(String shopId, EstimateState stateFilter) {
-    List<Purchase> purchases;
-    if (stateFilter != null) {
-      purchases =
-          purchaseRepository.findByShopIdAndDocumentTypeAndEstimateStateOrderByUpdatedAtDesc(
-              shopId, DocumentType.ESTIMATE, stateFilter);
+    return listEstimates(shopId, stateFilter, null, 0, MAX_OPEN_ESTIMATES_PER_SHOP);
+  }
+
+  @Transactional(readOnly = true)
+  public EstimateListResponse listEstimates(
+      String shopId, EstimateState stateFilter, String query, Integer page, Integer size) {
+    int pageNum = page != null && page >= 0 ? page : 0;
+    int pageSize =
+        size != null && size > 0 ? Math.min(size, MAX_LIST_SIZE) : DEFAULT_LIST_SIZE;
+    Pageable pageable = PageRequest.of(pageNum, pageSize, Sort.by(Sort.Direction.DESC, "updatedAt"));
+    Page<Purchase> result;
+    if (StringUtils.hasText(query)) {
+      result = searchEstimates(shopId, stateFilter, query.trim(), pageable);
+    } else if (stateFilter != null) {
+      result =
+          purchaseRepository.findByShopIdAndDocumentTypeAndEstimateState(
+              shopId, DocumentType.ESTIMATE, stateFilter, pageable);
     } else {
-      purchases =
-          purchaseRepository.findByShopIdAndDocumentTypeOrderByUpdatedAtDesc(
-              shopId, DocumentType.ESTIMATE);
+      result =
+          purchaseRepository.findByShopIdAndDocumentTypeAndEstimateStateNot(
+              shopId, DocumentType.ESTIMATE, EstimateState.DISCARDED, pageable);
     }
-    List<EstimateSummaryDto> summaries =
-        purchases.stream()
-            .filter(p -> p.getEstimateState() != EstimateState.DISCARDED)
-            .map(this::toSummary)
-            .toList();
-    return new EstimateListResponse(summaries);
+    List<EstimateSummaryDto> summaries = result.getContent().stream().map(this::toSummary).toList();
+    return new EstimateListResponse(
+        summaries, result.getNumber(), result.getSize(), result.getTotalElements(), result.getTotalPages());
+  }
+
+  private Page<Purchase> searchEstimates(
+      String shopId, EstimateState stateFilter, String query, Pageable pageable) {
+    String regex = escapeMongoRegex(query);
+    List<String> customerIds = customerService.findShopCustomerIdsMatchingQuery(shopId, query);
+    Collection<String> idsForIn = customerIds.isEmpty() ? List.of("__none__") : customerIds;
+    long total = mongoTemplate.count(new Query(estimateSearchCriteria(shopId, stateFilter, regex, idsForIn)), Purchase.class);
+    List<Purchase> content =
+        mongoTemplate.find(
+            new Query(estimateSearchCriteria(shopId, stateFilter, regex, idsForIn)).with(pageable),
+            Purchase.class);
+    return new PageImpl<>(content, pageable, total);
+  }
+
+  private static Criteria estimateSearchCriteria(
+      String shopId, EstimateState stateFilter, String regex, Collection<String> customerIds) {
+    Criteria scope = Criteria.where("shopId").is(shopId).and("documentType").is(DocumentType.ESTIMATE);
+    if (stateFilter != null) {
+      scope = scope.and("estimateState").is(stateFilter);
+    } else {
+      scope = scope.and("estimateState").ne(EstimateState.DISCARDED);
+    }
+    Criteria textMatch =
+        new Criteria()
+            .orOperator(
+                Criteria.where("estimateNo").regex(regex, "i"),
+                Criteria.where("customerName").regex(regex, "i"),
+                Criteria.where("customerId").in(customerIds));
+    return new Criteria().andOperator(scope, textMatch);
   }
 
   @Transactional
@@ -260,16 +311,22 @@ public class EstimateService {
     return purchase;
   }
 
+  private static String escapeMongoRegex(String raw) {
+    return raw.replaceAll("([\\\\.^$|?*+()\\[\\]{}])", "\\\\$1");
+  }
+
   private EstimateSummaryDto toSummary(Purchase purchase) {
     int itemCount = purchase.getItems() != null ? purchase.getItems().size() : 0;
     String phone = null;
-    String name = purchase.getCustomerName();
+    String email = null;
+    String name = PurchaseCustomerRequests.sanitizedDisplayName(purchase.getCustomerName());
     if (StringUtils.hasText(purchase.getCustomerId())) {
       var customerOpt = customerService.getCustomerById(purchase.getCustomerId());
       if (customerOpt.isPresent()) {
         Customer customer = customerOpt.get();
         if (!customer.isGeneralCustomer()) {
           phone = customer.getPhone();
+          email = customer.getEmail();
           if (!StringUtils.hasText(name)) {
             name = customer.getName();
           }
@@ -291,6 +348,7 @@ public class EstimateService {
         purchase.getCustomerId(),
         name,
         phone,
+        email,
         itemCount,
         purchase.getGrandTotal() != null ? purchase.getGrandTotal() : BigDecimal.ZERO,
         purchase.getConvertedToPurchaseId(),

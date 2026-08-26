@@ -21,6 +21,7 @@ public class EstimateSummaryDto {
   private String customerId;
   private String customerName;
   private String customerPhone;
+  private String customerEmail;
   private int itemCount;
   private BigDecimal grandTotal;
   private String convertedToPurchaseId;

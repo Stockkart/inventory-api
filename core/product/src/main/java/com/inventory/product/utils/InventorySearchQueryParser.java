@@ -9,21 +9,29 @@ import org.springframework.util.StringUtils;
 public final class InventorySearchQueryParser {
 
   private static final Set<String> RESERVED =
-      Set.of("q", "sort", "limit", "cursor", "page", "size");
+      Set.of("q", "sort", "limit", "cursor", "page", "size", "includeZeroStock");
 
   private InventorySearchQueryParser() {}
 
   public record Parsed(
-      String q, String sort, Integer limit, Map<String, String> fieldFilters, String cursor) {}
+      String q,
+      String sort,
+      Integer limit,
+      Map<String, String> fieldFilters,
+      String cursor,
+      boolean includeZeroStock) {}
 
   public static Parsed parse(Map<String, String> query) {
     if (query == null || query.isEmpty()) {
-      return new Parsed(null, null, null, Map.of(), null);
+      return new Parsed(null, null, null, Map.of(), null, true);
     }
 
     String sort = trimToNull(query.get("sort"));
     Integer limit = parsePositiveInt(query.get("limit"));
     String cursor = trimToNull(query.get("cursor"));
+    // Sold-out lots stay in the results unless the caller asks otherwise: stock
+    // correction and pricing screens exist to work on them.
+    boolean includeZeroStock = !"false".equalsIgnoreCase(trimToNull(query.get("includeZeroStock")));
 
     String rawQ = trimToNull(query.get("q"));
     Map<String, String> fieldFilters = new LinkedHashMap<>();
@@ -45,7 +53,7 @@ public final class InventorySearchQueryParser {
       fieldFilters.putAll(unified.fieldFilters());
     }
 
-    return new Parsed(q, sort, limit, fieldFilters, cursor);
+    return new Parsed(q, sort, limit, fieldFilters, cursor, includeZeroStock);
   }
 
   private static String trimToNull(String value) {

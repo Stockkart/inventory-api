@@ -165,9 +165,15 @@ public class CheckoutService {
     try {
       Purchase existingCart = quotationService.resolveTargetCart(request, userId, shopId);
 
-      // Get or create customer and get customerId/customerName
-      String customerId = getOrCreateCustomerId(shopId, request);
-      String customerName = PurchaseCustomerRequests.displayNameOverlay(customerId, request);
+      String customerId;
+      String customerName;
+      if (existingCart != null && !PurchaseCustomerRequests.hasCustomerPatch(request)) {
+        customerId = existingCart.getCustomerId();
+        customerName = existingCart.getCustomerName();
+      } else {
+        customerId = getOrCreateCustomerId(shopId, request);
+        customerName = PurchaseCustomerRequests.displayNameOverlay(customerId, request);
+      }
 
       // Process new items
       List<PurchaseItem> newItems = processCartItems(request.getItems(), shopId);
@@ -1283,9 +1289,8 @@ public class CheckoutService {
                 .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", existingLotId));
             int existingBaseQuantity = getBaseQuantityOrFallback(existingItem);
             int incomingBaseQuantity = getBaseQuantityOrFallback(newItem);
-            int newBaseQuantity = isAbsoluteQuantityUpdate(newItem, inventory)
-                ? incomingBaseQuantity
-                : existingBaseQuantity + incomingBaseQuantity;
+            // FE always sends add/subtract deltas (including typed qty and +/-). Never replace.
+            int newBaseQuantity = existingBaseQuantity + incomingBaseQuantity;
 
             // Case 3: If negative value is more negative or equal to current item quantity, remove the item
             if (newBaseQuantity <= 0) {
@@ -1472,18 +1477,15 @@ public class CheckoutService {
         boolean unitChanged = existingItem != null
             && existingSaleUnit != null
             && !existingSaleUnit.equals(incomingSaleUnit);
-        boolean absoluteUpdate = isAbsoluteQuantityUpdate(newItem, inventory);
 
         int finalBaseQuantity;
         if (existingItem == null) {
           finalBaseQuantity = addingBaseQuantity;
-        } else if (absoluteUpdate || unitChanged) {
+        } else if (unitChanged) {
           int requestedBase = addingBaseQuantity > 0 ? addingBaseQuantity : currentCartBaseQuantity;
-          if (unitChanged) {
-            int targetFactor = getConversionFactorToBase(inventory, incomingSaleUnit);
-            if (targetFactor > 1) {
-              requestedBase = (requestedBase / targetFactor) * targetFactor;
-            }
+          int targetFactor = getConversionFactorToBase(inventory, incomingSaleUnit);
+          if (targetFactor > 1) {
+            requestedBase = (requestedBase / targetFactor) * targetFactor;
           }
           finalBaseQuantity = requestedBase;
         } else {
@@ -1675,23 +1677,6 @@ public class CheckoutService {
       return item.getSaleUnit().trim().toUpperCase();
     }
     return normalizeSaleUnit(null, inventory);
-  }
-
-  /**
-   * Full-cart sync (unit change, qty input) sends absolute base quantities; +/- buttons send single-step deltas.
-   */
-  private boolean isAbsoluteQuantityUpdate(PurchaseItem newItem, Inventory inventory) {
-    int baseQty = Math.abs(getBaseQuantityOrFallback(newItem));
-    if (baseQty <= 0) {
-      return false;
-    }
-    String saleUnit = resolvePurchaseItemSaleUnit(newItem, inventory);
-    int factor = getConversionFactorToBase(inventory, saleUnit);
-    int displayQty = 0;
-    if (newItem.getQuantity() != null) {
-      displayQty = Math.abs(newItem.getQuantity().setScale(0, RoundingMode.HALF_UP).intValue());
-    }
-    return displayQty > 1 || baseQty > Math.max(1, factor);
   }
 
   private int getCurrentBaseCount(Inventory inventory) {

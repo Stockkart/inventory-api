@@ -18,6 +18,7 @@ import com.inventory.product.rest.dto.response.PurchaseListResponse;
 import com.inventory.product.rest.dto.response.PurchaseSummaryDto;
 import com.inventory.product.rest.dto.response.SaleStatusResponse;
 import com.inventory.product.util.PurchaseItemRefs;
+import com.inventory.product.service.PurchaseCustomerRequests;
 import com.inventory.user.service.CustomerService;
 import org.mapstruct.AfterMapping;
 import org.mapstruct.Mapper;
@@ -552,19 +553,14 @@ public abstract class PurchaseMapper {
 
   @AfterMapping
   protected void populateCustomerDetails(@MappingTarget AddToCartResponse response, Purchase purchase) {
-    // If customerId exists, fetch customer details
-    if (purchase.getCustomerId() != null && !purchase.getCustomerId().trim().isEmpty()) {
-      customerService.getCustomerById(purchase.getCustomerId()).ifPresent(customer -> {
-        response.setCustomerName(customer.getName());
-        response.setCustomerAddress(customer.getAddress());
-        response.setCustomerPhone(customer.getPhone());
-        response.setCustomerGstin(customer.getGstin());
-        response.setCustomerDlNo(customer.getDlNo());
-        response.setCustomerPan(customer.getPan());
-      });
-    } else if (purchase.getCustomerName() != null && !purchase.getCustomerName().trim().isEmpty()) {
-      applyStoredCustomerLabel(purchase.getCustomerName().trim(), response::setCustomerName, response::setCustomerPhone);
-    }
+    applyLinkedCustomerDisplay(
+        purchase,
+        response::setCustomerName,
+        response::setCustomerPhone,
+        response::setCustomerAddress,
+        response::setCustomerGstin,
+        response::setCustomerDlNo,
+        response::setCustomerPan);
   }
 
   @AfterMapping
@@ -610,16 +606,14 @@ public abstract class PurchaseMapper {
 
   @AfterMapping
   protected void populateCustomerDetails(@MappingTarget CheckoutResponse response, Purchase purchase) {
-    // If customerId exists, fetch customer details
-    if (purchase.getCustomerId() != null && !purchase.getCustomerId().trim().isEmpty()) {
-      customerService.getCustomerById(purchase.getCustomerId()).ifPresent(customer -> {
-        response.setCustomerName(customer.getName());
-        response.setCustomerAddress(customer.getAddress());
-        response.setCustomerPhone(customer.getPhone());
-      });
-    } else if (purchase.getCustomerName() != null && !purchase.getCustomerName().trim().isEmpty()) {
-      applyStoredCustomerLabel(purchase.getCustomerName().trim(), response::setCustomerName, response::setCustomerPhone);
-    }
+    applyLinkedCustomerDisplay(
+        purchase,
+        response::setCustomerName,
+        response::setCustomerPhone,
+        response::setCustomerAddress,
+        null,
+        null,
+        null);
   }
 
   // Method to map Purchase to PurchaseSummaryDto
@@ -648,15 +642,56 @@ public abstract class PurchaseMapper {
 
   @AfterMapping
   protected void populateCustomerDetails(@MappingTarget PurchaseSummaryDto dto, Purchase purchase) {
-    // If customerId exists, fetch customer details
+    applyLinkedCustomerDisplay(
+        purchase,
+        dto::setCustomerName,
+        dto::setCustomerPhone,
+        dto::setCustomerAddress,
+        null,
+        null,
+        null);
+  }
+
+  /**
+   * CRM identity stays on {@code customerId} (including General Customer for walk-in). API display
+   * name prefers the purchase overlay so the UI never shows "General Customer".
+   */
+  private void applyLinkedCustomerDisplay(
+      Purchase purchase,
+      java.util.function.Consumer<String> setName,
+      java.util.function.Consumer<String> setPhone,
+      java.util.function.Consumer<String> setAddress,
+      java.util.function.Consumer<String> setGstin,
+      java.util.function.Consumer<String> setDlNo,
+      java.util.function.Consumer<String> setPan) {
+    String overlay = PurchaseCustomerRequests.sanitizedDisplayName(purchase.getCustomerName());
     if (purchase.getCustomerId() != null && !purchase.getCustomerId().trim().isEmpty()) {
-      customerService.getCustomerById(purchase.getCustomerId()).ifPresent(customer -> {
-        dto.setCustomerName(customer.getName());
-        dto.setCustomerAddress(customer.getAddress());
-        dto.setCustomerPhone(customer.getPhone());
-      });
-    } else if (purchase.getCustomerName() != null && !purchase.getCustomerName().trim().isEmpty()) {
-      applyStoredCustomerLabel(purchase.getCustomerName().trim(), dto::setCustomerName, dto::setCustomerPhone);
+      var found = customerService.getCustomerById(purchase.getCustomerId());
+      if (found.isPresent()) {
+        var customer = found.get();
+        if (customer.isGeneralCustomer()) {
+          if (overlay != null) {
+            applyStoredCustomerLabel(overlay, setName, setPhone);
+          }
+          return;
+        }
+        setName.accept(overlay != null ? overlay : customer.getName());
+        setPhone.accept(customer.getPhone());
+        setAddress.accept(customer.getAddress());
+        if (setGstin != null) {
+          setGstin.accept(customer.getGstin());
+        }
+        if (setDlNo != null) {
+          setDlNo.accept(customer.getDlNo());
+        }
+        if (setPan != null) {
+          setPan.accept(customer.getPan());
+        }
+        return;
+      }
+    }
+    if (overlay != null) {
+      applyStoredCustomerLabel(overlay, setName, setPhone);
     }
   }
 

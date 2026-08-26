@@ -246,16 +246,26 @@ public class InvoiceService {
       Optional<Customer> customerOpt = customerService.getCustomerById(purchase.getCustomerId());
       if (customerOpt.isPresent()) {
         Customer customer = customerOpt.get();
-        request.setCustomerName(customer.getName());
-        request.setCustomerAddress(customer.getAddress());
-        request.setCustomerDlNo(customer.getDlNo());
-        request.setCustomerGstin(customer.getGstin());
-        request.setCustomerPan(customer.getPan());
-        request.setCustomerPhone(customer.getPhone());
-        request.setCustomerEmail(customer.getEmail());
+        if (customer.isGeneralCustomer()) {
+          String overlay = PurchaseCustomerRequests.sanitizedDisplayName(purchase.getCustomerName());
+          if (overlay != null) {
+            request.setCustomerName(overlay);
+          }
+        } else {
+          request.setCustomerName(customer.getName());
+          request.setCustomerAddress(customer.getAddress());
+          request.setCustomerDlNo(customer.getDlNo());
+          request.setCustomerGstin(customer.getGstin());
+          request.setCustomerPan(customer.getPan());
+          request.setCustomerPhone(customer.getPhone());
+          request.setCustomerEmail(customer.getEmail());
+        }
       }
     } else if (purchase.getCustomerName() != null && !purchase.getCustomerName().isEmpty()) {
-      request.setCustomerName(purchase.getCustomerName());
+      String overlay = PurchaseCustomerRequests.sanitizedDisplayName(purchase.getCustomerName());
+      if (overlay != null) {
+        request.setCustomerName(overlay);
+      }
     }
 
     List<InvoiceItem> invoiceItems = new ArrayList<>();
@@ -275,6 +285,14 @@ public class InvoiceService {
         invoiceItem.setInventoryId(purchaseItem.getInventoryId());
         invoiceItem.setSchemePayFor(purchaseItem.getSchemePayFor());
         invoiceItem.setSchemeFree(purchaseItem.getSchemeFree());
+        // A percentage scheme on the line normalises pay-for/free away, so without this the
+        // SCHEME column had nothing to print and fell through to the lot - which a line with no
+        // inventoryId does not have either, leaving the column blank on a sale that had a scheme.
+        if (purchaseItem.getSchemeType() == SchemeType.PERCENTAGE
+            && purchaseItem.getSchemePercentage() != null
+            && purchaseItem.getSchemePercentage().signum() > 0) {
+          invoiceItem.setSchemePercentage(purchaseItem.getSchemePercentage());
+        }
         // The line's own HSN, before the lot is consulted. Everything printed in
         // the tax columns used to come from the lot alone, so a line whose lot is
         // gone -- stock sold out, or a migrated sale that never pointed at one --

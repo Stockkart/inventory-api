@@ -110,6 +110,10 @@ public class VendorService {
         existingVendor.setGstinUin(StringUtils.hasText(vendor.getGstinUin()) ? vendor.getGstinUin().trim() : null);
         updated = true;
       }
+      if (vendor.getDlNo() != null && !vendor.getDlNo().equals(existingVendor.getDlNo())) {
+        existingVendor.setDlNo(StringUtils.hasText(vendor.getDlNo()) ? vendor.getDlNo().trim() : null);
+        updated = true;
+      }
       if (vendor.getUserId() != null && !vendor.getUserId().equals(existingVendor.getUserId())) {
         existingVendor.setUserId(StringUtils.hasText(vendor.getUserId()) ? vendor.getUserId().trim() : null);
         updated = true;
@@ -482,6 +486,13 @@ public class VendorService {
       String gstin = request.getGstinUin().trim();
       if (!gstin.equals(vendor.getGstinUin() != null ? vendor.getGstinUin() : "")) {
         vendor.setGstinUin(StringUtils.hasText(gstin) ? gstin : null);
+        updated = true;
+      }
+    }
+    if (request.getDlNo() != null) {
+      String dlNo = request.getDlNo().trim();
+      if (!dlNo.equals(vendor.getDlNo() != null ? vendor.getDlNo() : "")) {
+        vendor.setDlNo(StringUtils.hasText(dlNo) ? dlNo : null);
         updated = true;
       }
     }
