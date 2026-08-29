@@ -17,6 +17,8 @@ public class PricingResponse {
   private String shopId;
   private BigDecimal maximumRetailPrice;
   private BigDecimal costPrice;
+  /** Landed cost per unit after purchase scheme and additional discount. */
+  private BigDecimal effectiveCostPrice;
   private BigDecimal priceToRetail;
   private List<Rate> rates;
   private String defaultRate;

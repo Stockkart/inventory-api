@@ -113,6 +113,12 @@ public class Inventory {
   private BigDecimal maximumRetailPrice;
   @Transient
   private BigDecimal costPrice;
+  /**
+   * Landed cost per unit from Pricing: costPrice after purchase scheme and additional discount.
+   * Use this, not costPrice, for anything that measures margin or stock value.
+   */
+  @Transient
+  private BigDecimal effectiveCostPrice;
   /** Original Price to Retail (PTR). Immutable base from pricing. */
   @Transient
   private BigDecimal priceToRetail;
@@ -134,5 +140,13 @@ public class Inventory {
   private String cgst;
   private Instant createdAt;
   private Instant updatedAt;
+
+  /**
+   * Cost to value this item at: the landed cost when known, otherwise the entered cost.
+   * The fallback covers items read without pricing enrichment.
+   */
+  public BigDecimal costForValuation() {
+    return effectiveCostPrice != null ? effectiveCostPrice : costPrice;
+  }
 }
 

@@ -58,6 +58,7 @@ public class PricingService {
     pricingPolicyPort.validateAndNormalizeCreate(request);
     Pricing pricing = pricingMapper.toEntity(request);
     pricingPolicyPort.normalizeEntity(pricing, request.getVerticalId());
+    pricing.setEffectiveCostPrice(PricingUtils.computeEffectiveCostPrice(pricing));
     pricing = pricingRepository.save(pricing);
     log.debug("Created pricing with id: {}", pricing.getId());
     return pricing;
@@ -159,6 +160,7 @@ public class PricingService {
       pricingValidator.validateUpdateRequest(request);
 
       pricingMapper.updateEntity(request, pricing);
+      pricing.setEffectiveCostPrice(PricingUtils.computeEffectiveCostPrice(pricing));
       pricing = pricingRepository.save(pricing);
 
       log.debug("Updated pricing: {}", pricingId);

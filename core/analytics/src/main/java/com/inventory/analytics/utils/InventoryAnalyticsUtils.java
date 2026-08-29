@@ -134,7 +134,7 @@ public class InventoryAnalyticsUtils {
           }
           dto.setIsDeadStock(isDeadStock);
 
-          BigDecimal costPrice = inv.getCostPrice() != null ? inv.getCostPrice() : BigDecimal.ZERO;
+          BigDecimal costPrice = inv.costForValuation() != null ? inv.costForValuation() : BigDecimal.ZERO;
           BigDecimal priceToRetail = inv.getSellingPrice() != null ? inv.getSellingPrice()
               : (inv.getPriceToRetail() != null ? inv.getPriceToRetail() : BigDecimal.ZERO);
           BigDecimal costValue = costPrice.multiply(BigDecimal.valueOf(current));

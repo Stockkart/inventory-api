@@ -15,4 +15,7 @@ public final class PricingConstants {
 
   /** Rate key for cost price. */
   public static final String DEFAULT_RATE_COST_PRICE = "costPrice";
+
+  /** Scheme type where the discount is expressed as a percentage rather than free units. */
+  public static final String SCHEME_TYPE_PERCENTAGE = "PERCENTAGE";
 }

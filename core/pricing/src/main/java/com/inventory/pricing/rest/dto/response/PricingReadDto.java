@@ -14,6 +14,7 @@ import java.util.List;
 public class PricingReadDto {
   private BigDecimal maximumRetailPrice;
   private BigDecimal costPrice;
+  private BigDecimal effectiveCostPrice;
   private BigDecimal priceToRetail;
   private List<RateDto> rates;
   private String defaultRate;
@@ -33,5 +34,25 @@ public class PricingReadDto {
 
   public BigDecimal getEffectivePrice() {
     return PricingUtils.resolveEffectivePriceFromReadDto(this);
+  }
+
+  /**
+   * Landed cost per unit. Records written before effectiveCostPrice existed have it derived on the
+   * fly, so historical margins read correctly without a backfill.
+   */
+  public BigDecimal resolveEffectiveCostPrice() {
+    if (effectiveCostPrice != null) {
+      return effectiveCostPrice;
+    }
+    return PricingUtils.computeEffectiveCostPrice(
+        costPrice,
+        purchaseAdditionalDiscount,
+        purchaseScheme == null
+            ? null
+            : new com.inventory.pricing.domain.model.Scheme(
+                purchaseScheme.getSchemeType(),
+                purchaseScheme.getSchemePayFor(),
+                purchaseScheme.getSchemeFree(),
+                purchaseScheme.getSchemePercentage()));
   }
 }
