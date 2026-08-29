@@ -4,22 +4,26 @@
   <meta charset="UTF-8"/>
   <title th:text="${isEstimate ? 'Estimate' : 'Tax Invoice'}">Tax Invoice</title>
   <style>
-    /* ~75mm thermal receipt — bold type for legible thermal output */
+    /* 72mm thermal receipt - bold type for legible thermal output.
+       An 80mm roll prints 72mm wide, which is the page Chrome offers for these
+       machines. Sized at 75mm the sheet was three millimetres wider than the paper
+       and the printer dropped the overhang, taking the right of the Amount column
+       with it. */
     @page {
-      size: 75mm 600mm;
-      margin: 2mm 2.5mm;
+      size: 72mm 600mm;
+      margin: 2mm 1.5mm;
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       /* Proportional sans, the way a till receipt actually reads. Courier at 700 across
-         every element made the roll look like a code listing and cost width no 70mm
+         every element made the roll look like a code listing and cost width no thermal
          receipt can spare. Bold is left to the elements that ask for it. */
       font-family: Arial, Helvetica, "Liberation Sans", sans-serif;
       font-size: 10px;
       font-weight: 400;
       color: #000;
       line-height: 1.35;
-      width: 70mm;
+      width: 69mm;
     }
     /* Bold only where a till receipt actually carries it: the shop's name, the column
        headers, the field labels and the closing total. Everything else reads lighter,
