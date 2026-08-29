@@ -96,7 +96,7 @@ public class InvoiceTextRenderer {
   private static final List<String> DRUG_ACT_TERMS = List.of(
       "1. On the strength of Warranty obtained by us We hereby give this Warranty that the goods "
           + "sold by us do not contravene the provisions of the Drugs Act 1940.",
-      "2. Price charged excess due to oversight may be reffered to us for rectificaton.");
+      "2. Price charged excess due to oversight may be referred to us for rectification.");
 
   /**
    * The item columns, mirroring the template's widths (42/10/12/12/12/12 of the table). MRP and
