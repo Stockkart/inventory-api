@@ -557,9 +557,17 @@ public class InvoiceTextRenderer {
       columns.add(new Column("MRP", 9, true, i -> money(i.getMaximumRetailPrice())));
     }
     columns.add(new Column("Rate", 9, true, i -> money(i.getPriceToRetail())));
+    if (visible(r.getShowScheme())) {
+      columns.add(new Column("Sch", 5, true, InvoiceTextRenderer::schemeLabel));
+    }
     if (visible(r.getShowLineDiscount())) {
-      columns.add(new Column("Disc", 8, true,
-          i -> i.getDiscount() != null ? money(i.getDiscount()) : "0"));
+      // The rate the operator applied, not its rupee value. getDiscount() holds
+      // (MRP - rate) x quantity, so a line at 206.25 sold for 157.16 printed 49.09 under a
+      // heading that reads as a percentage - the same figure the totals already carry.
+      columns.add(new Column("Disc%", 6, true,
+          i -> i.getSaleAdditionalDiscount() != null
+              ? money(i.getSaleAdditionalDiscount())
+              : "0"));
     }
     columns.add(new Column("Amt", 10, true, i -> money(i.getTotalAmount())));
     return columns;
