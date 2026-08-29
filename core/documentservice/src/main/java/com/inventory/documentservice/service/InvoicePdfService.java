@@ -33,6 +33,9 @@ public class InvoicePdfService {
   @Autowired
   private MetricsWrapper metrics;
 
+  @Autowired
+  private InvoiceTextRenderer invoiceTextRenderer;
+
   /**
    * Generate invoice PDF from purchase data using Thymeleaf template.
    *
@@ -62,11 +65,41 @@ public class InvoicePdfService {
    * Render the same Thymeleaf invoice markup used for PDFs (for live HTML preview).
    */
   public String renderInvoiceHtml(GenerateInvoiceRequest request) {
-    Context context = prepareTemplateContext(request);
     PrinterType printerType = PrinterType.from(request.getPrinterType());
+    if (printerType == PrinterType.DOT_MATRIX) {
+      // Preview the very characters the printer will receive. Rendering dot matrix from its own
+      // Thymeleaf template meant the preview and the paper were two implementations of one
+      // layout, free to disagree - and they did, on whether the shop block appears at all.
+      return dotMatrixPreviewHtml(invoiceTextRenderer.render(request));
+    }
+    Context context = prepareTemplateContext(request);
     String templateName = printerType.getTemplateName(DocumentTemplateFamily.INVOICE);
     log.debug("Rendering invoice HTML with printer type {} → template {}", printerType, templateName);
     return templateEngine.process(templateName, context);
+  }
+
+  /** Wraps rendered invoice text in the smallest page that shows it at a fixed pitch. */
+  private static String dotMatrixPreviewHtml(String text) {
+    return "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"/>"
+        + "<style>body{margin:0;padding:12px;background:#fff;}"
+        + "pre{font-family:'Courier New',Courier,monospace;font-size:13px;line-height:1.25;"
+        + "white-space:pre;margin:0;color:#000;}"
+        + ".sm{font-size:7px;}</style></head><body><pre>"
+        + showEmphasis(escapeHtml(text))
+        + "</pre></body></html>";
+  }
+
+  private static String escapeHtml(String raw) {
+    return raw.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+  }
+
+  /** The printer's emphasis codes have no width; the preview shows them as the bold they are. */
+  private static String showEmphasis(String escaped) {
+    return escaped
+        .replace(InvoiceTextRenderer.BOLD_ON, "<b>")
+        .replace(InvoiceTextRenderer.BOLD_OFF, "</b>")
+        .replace(InvoiceTextRenderer.CONDENSED_ON, "<span class=\"sm\">")
+        .replace(InvoiceTextRenderer.CONDENSED_OFF, "</span>");
   }
 
   private Context prepareTemplateContext(GenerateInvoiceRequest request) {

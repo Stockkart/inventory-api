@@ -11,16 +11,28 @@
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      font-family: "Courier New", Courier, monospace;
-      font-size: 9px;
-      font-weight: 700;
+      /* Proportional sans, the way a till receipt actually reads. Courier at 700 across
+         every element made the roll look like a code listing and cost width no 70mm
+         receipt can spare. Bold is left to the elements that ask for it. */
+      font-family: Arial, Helvetica, "Liberation Sans", sans-serif;
+      font-size: 10px;
+      font-weight: 400;
       color: #000;
-      line-height: 1.3;
+      line-height: 1.35;
       width: 70mm;
     }
-    body, body * {
-      font-weight: 700 !important;
+    /* Bold only where a till receipt actually carries it: the shop's name, the column
+       headers, the field labels and the closing total. Everything else reads lighter,
+       which is what makes the roll legible rather than uniformly heavy. */
+    .shop-name,
+    .col-head,
+    .label,
+    .grand,
+    .item-title,
+    strong {
+      font-weight: 700;
     }
+
     .center { text-align: center; }
     .right { text-align: right; }
     .shop-name {
@@ -115,6 +127,14 @@
       font-size: 8px;
       text-align: center;
     }
+
+    /* Who made the bill, set to read as the amount-in-words line does: same size,
+       same centring, so the foot of the slip is one voice rather than two. */
+    .maker-credit {
+      margin-top: 4px;
+      font-size: 8px;
+      text-align: center;
+    }
   </style>
 </head>
 <body>
@@ -148,6 +168,10 @@
       <span th:text="${invoiceDate}">DD-MM-YYYY</span>
       <span th:text="${invoiceTime}">TIME</span>
     </div>
+  </div>
+
+  <div class="row meta-row" th:if="${showPaymentMethod and paymentMethod != null && !paymentMethod.isEmpty()}">
+    <div class="left">Pay: <span th:text="${paymentMethod}">CASH</span></div>
   </div>
 
   <!-- Bill to -->
@@ -265,6 +289,8 @@
     <div th:if="${showAmountInWords && amountInWords != null && !amountInWords.isEmpty()}" th:text="${amountInWords}">Amount in words</div>
     <div th:if="${footerNote != null && !footerNote.isEmpty()}" th:text="${footerNote}">Thank you</div>
   </div>
+
+  <div class="maker-credit" th:if="${!isEstimate}">stockkart.co.in | for all kind of shops | call: 9828606899</div>
 
 </body>
 </html>

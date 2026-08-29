@@ -28,10 +28,75 @@ public class InvoiceTextRenderer {
   /** Invoice width in characters. 80 columns at 10 CPI is 8 inches. */
   public static final int LINE_WIDTH = 80;
 
+  /**
+   * The tax invoice prints condensed, at fifteen characters to the inch.
+   *
+   * <p>Its thirteen columns need eighty-five characters before the product name gets one, so at
+   * ten CPI the grid cannot be drawn and the least load-bearing columns were being dropped. Eight
+   * inches at fifteen CPI is a hundred and twenty, which fits every column with room for a
+   * readable name.
+   *
+   * <p>The bridge must be set to fifteen CPI, or condensed, for this to land: the printer is told
+   * nothing about width by the text itself, and a hundred and twenty characters sent at ten CPI
+   * wraps every line. The estimate stays at eighty, where it fits comfortably.
+   */
+  public static final int TAX_LINE_WIDTH = 120;
+
   /** Half the width, for the two-column header the template lays out as a table row. */
   private static final int HALF = LINE_WIDTH / 2;
 
   private static final String RULE = "-".repeat(LINE_WIDTH);
+
+  /** Widths of the tax invoice's three party columns: buyer, its tax ids, the document. */
+  private static final int TAX_LEFT = 32;
+
+  private static final int TAX_MIDDLE = 24;
+
+  /** The totals block on a tax invoice: label then figure, right against the margin. */
+  private static final int TAX_TOTAL_LABEL = 20;
+
+  private static final int TAX_TOTAL_VALUE = 12;
+
+  /** Least load-bearing first: what gets dropped so the product name stays readable. */
+  private static final List<String> TAX_COLUMN_SACRIFICE_ORDER =
+      List.of("CGST", "SGST", "MFG", "SCH", "EXP", "HSN", "M.R.P.");
+
+  /** A product name narrower than this is not worth printing. */
+  private static final int TAX_NAME_MIN = 20;
+
+  /**
+   * ESC/P emphasised mode on and off. The printer draws these lines twice, which is the only
+   * bold a text-mode printer has; the preview turns the same pair into markup. Centring happens
+   * before they are added, so they never count towards the width.
+   */
+  public static final String BOLD_ON = "\u001B\u0045";
+
+  public static final String BOLD_OFF = "\u001B\u0046";
+
+  private static String bold(String line) {
+    return BOLD_ON + line + BOLD_OFF;
+  }
+
+  /**
+   * ESC/P condensed pitch on and off - 17.1 characters to the inch instead of 10. The smallest
+   * type the printer has, which is what a maker's credit line should be set in.
+   */
+  public static final String CONDENSED_ON = "\u000F";
+
+  public static final String CONDENSED_OFF = "\u0012";
+
+  private static String condensed(String line) {
+    return CONDENSED_ON + line + CONDENSED_OFF;
+  }
+
+  /** Who made the bill. Tax invoices only: an estimate is a quote, not a document of record. */
+  private static final String MAKER_CREDIT = "stockkart.co.in | for all kind of shops | call: 9828606899";
+
+  /** The warranty wording a drug bill carries, as invoice.html prints it. */
+  private static final List<String> DRUG_ACT_TERMS = List.of(
+      "1. On the strength of Warranty obtained by us We hereby give this Warranty that the goods "
+          + "sold by us do not contravene the provisions of the Drugs Act 1940.",
+      "2. Price charged excess due to oversight may be reffered to us for rectificaton.");
 
   /**
    * The item columns, mirroring the template's widths (42/10/12/12/12/12 of the table). MRP and
@@ -44,14 +109,372 @@ public class InvoiceTextRenderer {
     List<String> out = new ArrayList<>();
     boolean estimate = isEstimate(request);
 
-    appendTitle(out, estimate);
-    appendPartiesRow(out, request, estimate);
-    appendBuyer(out, request);
+    if (!estimate) {
+      // A tax invoice follows the trade layout: a centred shop masthead, the buyer and the
+      // document facing each other, then one line per item carrying every column. The estimate
+      // keeps the plainer two-column form below.
+      appendTaxInvoice(out, request);
+      return finish(out);
+    }
+
+    appendMasthead(out, request, "ESTIMATE", LINE_WIDTH);
+    appendEstimateParties(out, request);
     appendItems(out, request);
     appendTotals(out, request);
     appendFooter(out, request);
 
-    return String.join("\n", out) + "\n";
+    return finish(out);
+  }
+
+  /** Trailing padding is invisible on screen and wasted carriage travel on paper; trim it. */
+  private static String finish(List<String> out) {
+    List<String> trimmed = new ArrayList<>(out.size());
+    for (String line : out) {
+      trimmed.add(line.stripTrailing());
+    }
+    return String.join("\n", trimmed) + "\n";
+  }
+
+  /**
+   * Buyer down the left, the estimate's own details opposite. They used to stack, which cost
+   * four lines and a blank on a page where vertical space is the scarce thing.
+   *
+   * The customer's name carries no "Buyer:" label: it sits at the head of its own block, and
+   * the line beneath it already reads "Ph:", so nothing is ambiguous without it.
+   */
+  private void appendEstimateParties(List<String> out, GenerateInvoiceRequest r) {
+    List<String> right = new ArrayList<>();
+    right.add((isEstimate(r) ? "Estimate No. " : "Invoice: ") + nullToEmpty(r.getInvoiceNo()));
+    right.add("Date: " + join(" ", r.getInvoiceDate(), r.getInvoiceTime()));
+    if (visible(r.getShowPaymentMethod()) && present(r.getPaymentMethod())) {
+      right.add("Pay: " + r.getPaymentMethod());
+    }
+
+    List<String> left = new ArrayList<>();
+    if (visible(r.getShowBuyerDetails())) {
+      if (visible(r.getShowCustomerName()) && present(r.getCustomerName())) {
+        left.addAll(wrap(r.getCustomerName().trim(), HALF));
+      }
+      addIf(left, visible(r.getShowCustomerPhone()), r.getCustomerPhone(), "Ph: ");
+      addIf(left, visible(r.getShowCustomerEmail()), r.getCustomerEmail(), "Email: ");
+      addIf(left, visible(r.getShowCustomerAddress()), r.getCustomerAddress(), "Addr: ");
+      addIf(left, visible(r.getShowCustomerGstin()), r.getCustomerGstin(), "GSTIN: ");
+      addIf(left, visible(r.getShowCustomerPan()), r.getCustomerPan(), "PAN: ");
+      addIf(left, visible(r.getShowCustomerDlNo()), r.getCustomerDlNo(), "D.L. No.: ");
+    }
+
+    for (int i = 0; i < Math.max(left.size(), right.size()); i++) {
+      out.add(twoColumn(i < left.size() ? left.get(i) : "", i < right.size() ? right.get(i) : ""));
+    }
+    out.add("");
+  }
+
+  // ------------------------------------------------------------ tax invoice
+
+  private void appendTaxInvoice(List<String> out, GenerateInvoiceRequest r) {
+    appendMasthead(out, r, "TAX INVOICE", TAX_LINE_WIDTH);
+    appendTaxParties(out, r);
+    appendTaxItems(out, r);
+    appendTaxTotals(out, r);
+    appendTaxFooter(out, r);
+  }
+
+  /** Centred shop block: title, name, address, licences, contact, then the stockist line. */
+  private void appendMasthead(
+      List<String> out, GenerateInvoiceRequest r, String title, int width) {
+    out.add(bold(centre(title, width)));
+    if (visible(r.getShowSellerDetails())) {
+      if (visible(r.getShowShopName())) {
+        out.add(bold(centre(nullToEmpty(r.getShopName()).toUpperCase(), width)));
+      }
+      addCentred(out, visible(r.getShowShopAddress()), r.getShopAddress(), null, width);
+
+      List<String> licences = new ArrayList<>();
+      addPart(licences, visible(r.getShowShopDlNo()), r.getShopDlNo(), "D.L.No.: ");
+      addPart(licences, visible(r.getShowShopFssai()), r.getShopFssai(), "FSSAI: ");
+      addCentred(out, true, String.join("  ", licences), null, width);
+
+      addCentred(out, visible(r.getShowShopGstin()), r.getShopGstin(), "GST NO.: ", width);
+      addCentred(out, visible(r.getShowShopPan()), r.getShopPan(), "PAN: ", width);
+
+      List<String> contact = new ArrayList<>();
+      addPart(contact, visible(r.getShowShopPhone()), r.getShopPhone(), "Phone: ");
+      addPart(contact, visible(r.getShowShopEmail()), r.getShopEmail(), "E-Mail: ");
+      addCentred(out, true, String.join("  ", contact), null, width);
+
+      if (visible(r.getShowShopTagline()) && present(r.getShopTagline())) {
+        out.add(rule(width));
+        for (String line : wrap(r.getShopTagline(), width)) {
+          out.add(line);
+        }
+      }
+    }
+    out.add(rule(width));
+  }
+
+  /** Buyer on the left, its tax identifiers in the middle, the document's own details right. */
+  private void appendTaxParties(List<String> out, GenerateInvoiceRequest r) {
+    List<String> left = new ArrayList<>();
+    List<String> middle = new ArrayList<>();
+    if (visible(r.getShowBuyerDetails())) {
+      if (visible(r.getShowCustomerName())) {
+        left.addAll(wrap("M/s. " + nullToEmpty(r.getCustomerName()), TAX_LEFT));
+      }
+      addWrapped(left, visible(r.getShowCustomerAddress()), r.getCustomerAddress(), null, TAX_LEFT);
+      addWrapped(left, visible(r.getShowCustomerPhone()), r.getCustomerPhone(), "Ph: ", TAX_LEFT);
+      addWrapped(middle, visible(r.getShowCustomerDlNo()), r.getCustomerDlNo(),
+          "D.L.NO.: ", TAX_MIDDLE);
+      addWrapped(middle, visible(r.getShowCustomerGstin()), r.getCustomerGstin(),
+          "GSTIN: ", TAX_MIDDLE);
+      addWrapped(middle, visible(r.getShowCustomerPan()), r.getCustomerPan(),
+          "PAN No.: ", TAX_MIDDLE);
+    }
+
+    List<String> right = new ArrayList<>();
+    right.add("Inv.No.: " + nullToEmpty(r.getInvoiceNo()));
+    if (present(r.getInvoiceDate())) {
+      right.add("DATE   : " + r.getInvoiceDate());
+    }
+    if (present(r.getInvoiceTime())) {
+      right.add("TIME   : " + r.getInvoiceTime());
+    }
+    if (visible(r.getShowPaymentMethod()) && present(r.getPaymentMethod())) {
+      right.add("PAY    : " + r.getPaymentMethod());
+    }
+
+    // The document column is pushed as a block to the right margin - each line indented by the
+    // same amount - so its labels stay in one line with each other while the column ends flush
+    // rather than short of the rules.
+    int rightWidth = TAX_LINE_WIDTH - TAX_LEFT - TAX_MIDDLE - 2;
+    int longest = right.stream().mapToInt(String::length).max().orElse(0);
+    int indent = Math.max(0, rightWidth - longest);
+
+    int rows = Math.max(left.size(), Math.max(middle.size(), right.size()));
+    for (int i = 0; i < rows; i++) {
+      String l = i < left.size() ? left.get(i) : "";
+      String m = i < middle.size() ? middle.get(i) : "";
+      String rr = i < right.size() ? " ".repeat(indent) + right.get(i) : "";
+      out.add(pad(l, TAX_LEFT, false) + " " + pad(m, TAX_MIDDLE, false) + " "
+          + pad(rr, rightWidth, false));
+    }
+    out.add(rule(TAX_LINE_WIDTH));
+  }
+
+  /**
+   * One line per item, every column on it. The columns are sized to the full width so a name
+   * that would not fit is truncated rather than wrapped: a second line under an item breaks the
+   * grid a trade bill is read down.
+   */
+  private void appendTaxItems(List<String> out, GenerateInvoiceRequest r) {
+    List<Column> columns = buildTaxColumns(r);
+    int flex = flexWidth(columns, TAX_LINE_WIDTH);
+    out.add(renderRow(columns, flex, Column::header));
+    out.add(rule(TAX_LINE_WIDTH));
+
+    List<InvoiceItem> items = r.getItems() != null ? r.getItems() : List.of();
+    for (InvoiceItem item : items) {
+      out.add(renderRow(columns, flex, c -> c.value().apply(item)));
+      out.add(rule(TAX_LINE_WIDTH));
+    }
+    if (items.isEmpty()) {
+      out.add(rule(TAX_LINE_WIDTH));
+    }
+    out.add("NO OF ITEMS : " + items.size());
+  }
+
+  /**
+   * The columns that fit. Eleven of them plus a product name do not go into eighty characters,
+   * so a column that no item on this bill fills is left out, and if the name is still too narrow
+   * to read, the least load-bearing columns are dropped in turn. What survives is always a
+   * single line per item: a name wrapped onto a second line breaks the grid the bill is read
+   * down. A wider carriage (condensed print) would keep every column; this is the honest fit at
+   * eighty.
+   */
+  private List<Column> buildTaxColumns(GenerateInvoiceRequest r) {
+    List<InvoiceItem> items = r.getItems() != null ? r.getItems() : List.of();
+    List<Column> columns = new ArrayList<>();
+    columns.add(new Column("QTY", 4, true, i -> quantity(i.getQuantity())));
+    columns.add(new Column("PRODUCTS", -1, false, i -> nullToEmpty(i.getName())));
+    addTaxColumn(columns, items, visible(r.getShowHsn()),
+        new Column("HSN", 8, false, i -> nullToEmpty(i.getHsn())));
+    addTaxColumn(columns, items, visible(r.getShowMfg()),
+        new Column("MFG", 12, false, i -> nullToEmpty(i.getCompanyName())));
+    addTaxColumn(columns, items, visible(r.getShowExpiry()),
+        new Column("EXP", 5, false, i -> nullToEmpty(i.getExpiryDate())));
+    addTaxColumn(columns, items, visible(r.getShowBatch()),
+        new Column("BATCH", 8, false, i -> nullToEmpty(i.getBatchNo())));
+    addTaxColumn(columns, items, visible(r.getShowMrp()),
+        new Column("M.R.P.", 7, true, i -> money(i.getMaximumRetailPrice())));
+    columns.add(new Column("RATE", 7, true, i -> money(i.getPriceToRetail())));
+    addTaxColumn(columns, items, visible(r.getShowScheme()),
+        new Column("SCH", 4, true, InvoiceTextRenderer::schemeLabel));
+    addTaxColumn(columns, items, visible(r.getShowLineDiscount()),
+        new Column("DIS%", 5, true, i ->
+            i.getSaleAdditionalDiscount() != null ? money(i.getSaleAdditionalDiscount()) : ""));
+    addTaxColumn(columns, items, visible(r.getShowTaxDetails()),
+        new Column("CGST", 5, true, i -> rate(i.getCgst())));
+    addTaxColumn(columns, items, visible(r.getShowTaxDetails()),
+        new Column("SGST", 5, true, i -> rate(i.getSgst())));
+    columns.add(new Column("AMOUNT", 9, true, i -> money(i.getTotalAmount())));
+
+    for (String sacrifice : TAX_COLUMN_SACRIFICE_ORDER) {
+      if (flexWidth(columns, TAX_LINE_WIDTH) >= TAX_NAME_MIN) {
+        break;
+      }
+      columns.removeIf(c -> c.header().equals(sacrifice));
+    }
+    return columns;
+  }
+
+  /** Keeps a column only when the switch is on and at least one item has something to put in it. */
+  private static void addTaxColumn(
+      List<Column> columns, List<InvoiceItem> items, boolean shown, Column column) {
+    if (!shown) {
+      return;
+    }
+    boolean anyValue = items.stream().anyMatch(i -> present(column.value().apply(i)));
+    if (anyValue || items.isEmpty()) {
+      columns.add(column);
+    }
+  }
+
+  /** A per-line tax rate as the bill states it: 2.5, not 2.50, and blank when unset. */
+  private static String rate(String raw) {
+    if (!present(raw)) {
+      return "";
+    }
+    try {
+      return quantity(new BigDecimal(raw.trim()));
+    } catch (NumberFormatException e) {
+      return raw.trim();
+    }
+  }
+
+  /** The scheme as the bill states it: a percentage, a pay-for/free pair, or nothing. */
+  private static String schemeLabel(InvoiceItem i) {
+    if (i.getSchemePercentage() != null) {
+      return quantity(i.getSchemePercentage()) + "%";
+    }
+    if (i.getSchemePayFor() != null && i.getSchemeFree() != null) {
+      return i.getSchemePayFor() + "+" + i.getSchemeFree();
+    }
+    return i.getScheme() != null ? String.valueOf(i.getScheme()) : "";
+  }
+
+  /**
+   * The totals column a trade bill carries: gross, the discount taken off it, each tax added
+   * back, the rounding, then the net. Sits against the right margin under the item grid.
+   */
+  private void appendTaxTotals(List<String> out, GenerateInvoiceRequest r) {
+    out.add("");
+    out.add(taxTotalRow("TOTAL AMOUNT", r.getSubTotal()));
+    if (visible(r.getShowAdditionalDiscount()) && isPositive(r.getSaleAdditionalDiscountTotal())) {
+      out.add(taxTotalRow("Less Discount", r.getSaleAdditionalDiscountTotal()));
+    }
+    if (visible(r.getShowTaxDetails())) {
+      if (isPositive(r.getSgstAmount())) {
+        out.add(taxTotalRow("Add SGST", r.getSgstAmount()));
+      }
+      if (isPositive(r.getCgstAmount())) {
+        out.add(taxTotalRow("Add CGST", r.getCgstAmount()));
+      }
+    }
+    if (isPositive(r.getRoundOff())) {
+      out.add(taxTotalRow("Less Roundoff", r.getRoundOff()));
+    }
+    // Savings reads opposite the totals block rather than as one more line inside it, where it
+    // competed with NET AMOUNT for the eye. The left of this row is empty on a trade bill.
+    String netRow = taxTotalRow("NET AMOUNT", r.getGrandTotal());
+    if (visible(r.getShowAmountSaved()) && isPositive(r.getTotalAmountSaved())) {
+      out.add(overlayLeft(netRow, "AMOUNT SAVED  " + money(r.getTotalAmountSaved())));
+    } else {
+      out.add(netRow);
+    }
+  }
+
+  /**
+   * Writes text into the left of a line that is already laid out on the right.
+   *
+   * <p>The totals block is built as full-width strings padded from the left, so there is no
+   * column to write into - the space is real characters. Overwrite them in place, and leave the
+   * line untouched if the two would collide.
+   */
+  private static String overlayLeft(String line, String left) {
+    String text = clean(left);
+    if (text.isEmpty() || text.length() + 2 > line.length()) {
+      return line;
+    }
+    String tail = line.substring(text.length());
+    // Only safe where the row's own text has not reached: anything else would be overwritten.
+    if (!tail.isBlank() && !line.substring(0, text.length() + 2).isBlank()) {
+      return line;
+    }
+    return text + line.substring(text.length());
+  }
+
+  /** Label and figure kept together in a block on the right, not spread across the page. */
+  private static String taxTotalRow(String label, BigDecimal amount) {
+    String value = money(amount);
+    String block = pad(label, TAX_TOTAL_LABEL, false) + pad(value, TAX_TOTAL_VALUE, true);
+    return " ".repeat(Math.max(0, TAX_LINE_WIDTH - block.length())) + block;
+  }
+
+  private void appendTaxFooter(List<String> out, GenerateInvoiceRequest r) {
+    if (visible(r.getShowAmountInWords()) && present(r.getAmountInWords())) {
+      out.add("");
+      for (String line : wrap("Rs. " + r.getAmountInWords(), TAX_LINE_WIDTH)) {
+        out.add(line);
+      }
+    }
+    out.add(rule(TAX_LINE_WIDTH));
+    for (String term : DRUG_ACT_TERMS) {
+      out.addAll(wrap(term, TAX_LINE_WIDTH));
+    }
+    if (present(r.getFooterNote())) {
+      for (String line : wrap(r.getFooterNote(), TAX_LINE_WIDTH)) {
+        out.add(line);
+      }
+    }
+    if (visible(r.getShowSignatures())) {
+      out.add("");
+      String shop = visible(r.getShowSellerDetails()) && present(r.getShopName())
+          ? "For, " + r.getShopName().toUpperCase()
+          : "";
+      out.add(twoColumn("E.& O.E.", shop, TAX_LINE_WIDTH));
+      out.add("");
+      out.add("");
+      out.add(twoColumn("Received By", "Authorised Signatory", TAX_LINE_WIDTH));
+    }
+    out.add("");
+    // Plain text, bottom left. The condensed markers are SI and DC2, and the print
+    // bridge folds every byte outside printable ASCII to '?', so wrapping this line
+    // in them printed "?stockkart...?" on paper rather than shrinking it.
+    out.add(MAKER_CREDIT);
+  }
+
+  /** Centres "prefix + value" when shown and present, wrapping to the page. */
+  private static void addCentred(
+      List<String> out, boolean shown, String value, String prefix, int width) {
+    if (!shown || !present(value)) {
+      return;
+    }
+    for (String line : wrap((prefix == null ? "" : prefix) + value.trim(), width)) {
+      out.add(centre(line, width));
+    }
+  }
+
+  private static void addPart(List<String> parts, boolean shown, String value, String prefix) {
+    if (shown && present(value)) {
+      parts.add(prefix + value.trim());
+    }
+  }
+
+  private static void addWrapped(
+      List<String> lines, boolean shown, String value, String prefix, int width) {
+    if (!shown || !present(value)) {
+      return;
+    }
+    lines.addAll(wrap((prefix == null ? "" : prefix) + value.trim(), width));
   }
 
   // ----------------------------------------------------------------- header
@@ -69,19 +492,23 @@ public class InvoiceTextRenderer {
    * right. Rendered here by laying both columns out independently and pairing them line by line,
    * so a long address wrapping on the right cannot push the left column down.
    */
-  private void appendPartiesRow(List<String> out, GenerateInvoiceRequest r, boolean estimate) {
+  private void appendPartiesRow(List<String> out, GenerateInvoiceRequest r) {
     List<String> left = new ArrayList<>();
-    left.add((estimate ? "Estimate No. " : "Invoice: ") + nullToEmpty(r.getInvoiceNo()));
+    left.add((isEstimate(r) ? "Estimate No. " : "Invoice: ") + nullToEmpty(r.getInvoiceNo()));
     left.add("Date: " + join(" ", r.getInvoiceDate(), r.getInvoiceTime()));
     if (visible(r.getShowPaymentMethod()) && present(r.getPaymentMethod())) {
       left.add("Pay: " + r.getPaymentMethod());
     }
 
+    // Every seller line sits behind the seller-details switch, and each line behind its own,
+    // exactly as invoice.html gates them. Printing the name when the switch was off - and the
+    // address too on an estimate - made the switch read backwards: turning it on emptied the
+    // block, because the individual lines underneath were still off.
     List<String> right = new ArrayList<>();
-    if (!visible(r.getShowSellerDetails()) || visible(r.getShowShopName())) {
-      right.addAll(wrap(nullToEmpty(r.getShopName()).toUpperCase(), HALF));
-    }
     if (visible(r.getShowSellerDetails())) {
+      if (visible(r.getShowShopName())) {
+        right.addAll(wrap(nullToEmpty(r.getShopName()).toUpperCase(), HALF));
+      }
       addIf(right, visible(r.getShowShopAddress()), r.getShopAddress(), null);
       addIf(right, visible(r.getShowShopPhone()), r.getShopPhone(), "Ph: ");
       addIf(right, visible(r.getShowShopEmail()), r.getShopEmail(), "Email: ");
@@ -90,9 +517,6 @@ public class InvoiceTextRenderer {
       addIf(right, visible(r.getShowShopDlNo()), r.getShopDlNo(), "D.L. No.: ");
       addIf(right, visible(r.getShowShopFssai()), r.getShopFssai(), "FSSAI: ");
       addIf(right, visible(r.getShowShopTagline()), r.getShopTagline(), null);
-    } else if (estimate) {
-      // The template shows the address on an estimate even with seller details off.
-      addIf(right, true, r.getShopAddress(), null);
     }
 
     for (int i = 0; i < Math.max(left.size(), right.size()); i++) {
@@ -100,27 +524,6 @@ public class InvoiceTextRenderer {
       String rr = i < right.size() ? right.get(i) : "";
       out.add(twoColumn(l, rr));
     }
-    out.add("");
-  }
-
-  private void appendBuyer(List<String> out, GenerateInvoiceRequest r) {
-    if (!visible(r.getShowBuyerDetails())) {
-      return;
-    }
-    List<String> lines = new ArrayList<>();
-    if (visible(r.getShowCustomerName())) {
-      lines.add("Buyer: " + nullToEmpty(r.getCustomerName()));
-    }
-    addIf(lines, visible(r.getShowCustomerPhone()), r.getCustomerPhone(), "Ph: ");
-    addIf(lines, visible(r.getShowCustomerEmail()), r.getCustomerEmail(), "Email: ");
-    addIf(lines, visible(r.getShowCustomerAddress()), r.getCustomerAddress(), "Addr: ");
-    addIf(lines, visible(r.getShowCustomerGstin()), r.getCustomerGstin(), "GSTIN: ");
-    addIf(lines, visible(r.getShowCustomerPan()), r.getCustomerPan(), "PAN: ");
-    addIf(lines, visible(r.getShowCustomerDlNo()), r.getCustomerDlNo(), "D.L. No.: ");
-    if (lines.isEmpty()) {
-      return;
-    }
-    out.addAll(lines);
     out.add("");
   }
 
@@ -135,12 +538,15 @@ public class InvoiceTextRenderer {
     List<InvoiceItem> items = r.getItems() != null ? r.getItems() : List.of();
     for (InvoiceItem item : items) {
       out.add(renderRow(columns, flex, c -> c.value().apply(item)));
-      // The template hangs HSN under the item name as a second line in the same cell.
       if (visible(r.getShowHsn()) && present(item.getHsn())) {
         out.add("  HSN: " + item.getHsn());
       }
+      // A rule under each item, so one line cannot be read across into the next.
+      out.add(RULE);
     }
-    out.add(RULE);
+    if (items.isEmpty()) {
+      out.add(RULE);
+    }
   }
 
   private List<Column> buildColumns(GenerateInvoiceRequest r) {
@@ -163,6 +569,12 @@ public class InvoiceTextRenderer {
   private int flexWidth(List<Column> columns) {
     int fixed = columns.stream().filter(c -> c.width() > 0).mapToInt(Column::width).sum();
     return LINE_WIDTH - fixed - (columns.size() - 1);
+  }
+
+  /** The flexible column's share of a page of the given width. */
+  private int flexWidth(List<Column> columns, int width) {
+    int fixed = columns.stream().filter(c -> c.width() > 0).mapToInt(Column::width).sum();
+    return width - fixed - (columns.size() - 1);
   }
 
   private String renderRow(List<Column> columns, int flex, Function<Column, String> cell) {
@@ -190,9 +602,11 @@ public class InvoiceTextRenderer {
       out.add(totalRow("Tax", r.getTaxTotal()));
     }
     out.add(totalRow("Net Amount", r.getGrandTotal()));
-    if (visible(r.getShowAmountSaved())) {
-      BigDecimal saved = r.getTotalAmountSaved() != null ? r.getTotalAmountSaved() : BigDecimal.ZERO;
-      out.add(totalRow("AMOUNT SAVED", saved));
+    // Out of the totals stack, as on the A4 bill. There is no empty left column to move into
+    // here - these rows span the page - so it stands on its own line beneath instead.
+    if (visible(r.getShowAmountSaved()) && isPositive(r.getTotalAmountSaved())) {
+      out.add("");
+      out.add("AMOUNT SAVED  " + money(r.getTotalAmountSaved()));
     }
   }
 
@@ -259,12 +673,39 @@ public class InvoiceTextRenderer {
     return rightAlign ? filler + value : value + filler;
   }
 
+  private static String rule(int width) {
+    return "-".repeat(width);
+  }
+
+  private static String centre(String raw, int width) {
+    String value = clean(raw);
+    if (value.length() >= width) {
+      return value.substring(0, width);
+    }
+    return " ".repeat((width - value.length()) / 2) + value;
+  }
+
   private static String centre(String raw) {
     String value = clean(raw);
     if (value.length() >= LINE_WIDTH) {
       return value.substring(0, LINE_WIDTH);
     }
     return " ".repeat((LINE_WIDTH - value.length()) / 2) + value;
+  }
+
+  private static String twoColumn(String left, String right, int width) {
+    String l = clean(left);
+    String r = clean(right);
+    int half = width / 2;
+    if (l.length() > half) {
+      l = l.substring(0, half);
+    }
+    if (r.length() > width - half) {
+      r = r.substring(0, width - half);
+    }
+    int gap = Math.max(1, width - l.length() - r.length());
+    String line = l + " ".repeat(gap) + r;
+    return line.length() > width ? line.substring(0, width) : line;
   }
 
   private static String twoColumn(String left, String right) {
