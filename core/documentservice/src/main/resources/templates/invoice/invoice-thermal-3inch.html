@@ -15,19 +15,21 @@
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      /* Proportional sans, the way a till receipt actually reads. Courier at 700 across
-         every element made the roll look like a code listing and cost width no thermal
-         receipt can spare. Bold is left to the elements that ask for it. */
+      /* Proportional sans, the way a till receipt actually reads. Courier made the roll
+         look like a code listing and cost width no thermal receipt can spare. */
       font-family: Arial, Helvetica, "Liberation Sans", sans-serif;
       font-size: 10px;
-      font-weight: 400;
+      /* Chrome rasterises this page and sends it as an image, so the printer's own
+         Font A never runs. A 400-weight stem at this size is about one dot on a 203dpi
+         head, and a thermal head under-burns single-dot lines - the address and item
+         rows came off the roll faint and broken while the bold totals stayed crisp.
+         700 puts two dots behind every stroke. */
+      font-weight: 700;
       color: #000;
       line-height: 1.35;
       width: 69mm;
     }
-    /* Bold only where a till receipt actually carries it: the shop's name, the column
-       headers, the field labels and the closing total. Everything else reads lighter,
-       which is what makes the roll legible rather than uniformly heavy. */
+    /* Kept so these still carry weight if the body rule is ever lightened again. */
     .shop-name,
     .col-head,
     .label,
