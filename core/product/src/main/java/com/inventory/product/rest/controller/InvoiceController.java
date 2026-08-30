@@ -6,7 +6,6 @@ import com.inventory.metrics.annotation.RecordRequestRate;
 import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.product.service.InvoiceService;
 import jakarta.servlet.http.HttpServletRequest;
-import java.nio.charset.StandardCharsets;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
@@ -62,28 +61,6 @@ public class InvoiceController {
     return ResponseEntity.ok()
         .headers(headers)
         .body(pdfBytes);
-  }
-
-  /**
-   * Render the invoice as 80-column plain text for the dot matrix print bridge.
-   *
-   * @param purchaseId the purchase ID
-   * @param httpRequest HTTP request
-   * @return fixed-width plain text
-   */
-  @GetMapping(value = "/{purchaseId}/dot-matrix", produces = "text/plain;charset=UTF-8")
-  public ResponseEntity<String> generateInvoiceDotMatrixText(
-      @PathVariable String purchaseId, HttpServletRequest httpRequest) {
-
-    String shopId = (String) httpRequest.getAttribute("shopId");
-
-    log.info("Generating dot matrix invoice text for purchase: {}, shop: {}", purchaseId, shopId);
-
-    String text = invoiceService.generateInvoiceText(purchaseId, shopId);
-
-    return ResponseEntity.ok()
-        .contentType(new MediaType(MediaType.TEXT_PLAIN, StandardCharsets.UTF_8))
-        .body(text);
   }
 }
 
