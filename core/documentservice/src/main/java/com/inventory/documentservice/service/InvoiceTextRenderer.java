@@ -36,11 +36,13 @@ public class InvoiceTextRenderer {
    * inches at fifteen CPI is a hundred and twenty, which fits every column with room for a
    * readable name.
    *
-   * <p>The bridge must be set to fifteen CPI, or condensed, for this to land: the printer is told
-   * nothing about width by the text itself, and a hundred and twenty characters sent at ten CPI
-   * wraps every line. The estimate stays at eighty, where it fits comfortably.
+   * <p>A hundred and thirty-five characters is twenty-three centimetres at fifteen CPI, the
+   * carriage these bills are printed on. The bridge must be set to that pitch and to a matching
+   * column count for this to land: the printer is told nothing about width by the text itself, so
+   * at ten CPI every line wraps, and a bridge still truncating at eighty cuts the totals and the
+   * right of the item grid off the paper. The estimate stays at eighty, where it fits comfortably.
    */
-  public static final int TAX_LINE_WIDTH = 120;
+  public static final int TAX_LINE_WIDTH = 135;
 
   /** Half the width, for the two-column header the template lays out as a table row. */
   private static final int HALF = LINE_WIDTH / 2;
