@@ -6,6 +6,7 @@ import com.inventory.documentservice.rest.dto.GenerateInvoiceRequest;
 import com.inventory.documentservice.rest.dto.InvoiceItem;
 import com.inventory.documentservice.service.DocumentService;
 import com.inventory.product.domain.model.Inventory;
+import com.inventory.product.domain.model.ShopInvoiceSettingsDocument;
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
@@ -152,7 +153,7 @@ public class InvoiceService {
   private record PurchaseInvoiceContext(
       Purchase purchase,
       Shop shop,
-      com.inventory.product.domain.model.ShopInvoiceSettingsDocument settings) {}
+      ShopInvoiceSettingsDocument settings) {}
 
   /**
    * Build GenerateInvoiceRequest from Purchase, Shop, and shop invoice settings.
@@ -161,7 +162,7 @@ public class InvoiceService {
   private GenerateInvoiceRequest buildGenerateInvoiceRequest(
       Purchase purchase,
       Shop shop,
-      com.inventory.product.domain.model.ShopInvoiceSettingsDocument settings) {
+      ShopInvoiceSettingsDocument settings) {
     GenerateInvoiceRequest request = new GenerateInvoiceRequest();
     BillingMode billingMode = purchase.getBillingMode() != null ? purchase.getBillingMode() : BillingMode.REGULAR;
     request.setBillingMode(billingMode.name());
