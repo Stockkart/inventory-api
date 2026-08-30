@@ -4,10 +4,12 @@ import com.inventory.pricing.rest.dto.response.PricingReadDto;
 import com.inventory.pricing.rest.dto.response.RateDto;
 import com.inventory.pricing.domain.model.Pricing;
 import com.inventory.pricing.domain.model.Rate;
+import com.inventory.pricing.domain.model.Scheme;
 import com.inventory.pricing.utils.constants.PricingConstants;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.List;
 
 /**
@@ -73,6 +75,57 @@ public final class PricingUtils {
           .orElse(p.getPriceToRetail());
     }
     return p.getPriceToRetail();
+  }
+
+  /**
+   * Landed cost per unit after the vendor's purchase scheme and additional discount.
+   * FIXED_UNITS "8+2" means 10 units received for the price of 8, so per-unit cost is 8/10 of the
+   * entered cost. PERCENTAGE is a straight price reduction. Both factors multiply, so order is
+   * irrelevant. Kept at 4 decimals: rounding per unit before multiplying by quantity loses money
+   * on large lines.
+   */
+  public static BigDecimal computeEffectiveCostPrice(
+      BigDecimal costPrice, BigDecimal purchaseAdditionalDiscount, Scheme purchaseScheme) {
+    if (costPrice == null) {
+      return null;
+    }
+    BigDecimal effective = costPrice;
+
+    if (purchaseScheme != null) {
+      if (PricingConstants.SCHEME_TYPE_PERCENTAGE.equalsIgnoreCase(purchaseScheme.getSchemeType())) {
+        BigDecimal pct = purchaseScheme.getSchemePercentage();
+        if (pct != null && pct.signum() > 0 && pct.compareTo(BigDecimal.valueOf(100)) < 0) {
+          effective = effective.multiply(
+              BigDecimal.ONE.subtract(pct.divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP)));
+        }
+      } else {
+        Integer payFor = purchaseScheme.getSchemePayFor();
+        Integer free = purchaseScheme.getSchemeFree();
+        if (payFor != null && payFor > 0 && free != null && free >= 0) {
+          effective = effective.multiply(BigDecimal.valueOf(payFor))
+              .divide(BigDecimal.valueOf(payFor + (long) free), 6, RoundingMode.HALF_UP);
+        }
+      }
+    }
+
+    if (purchaseAdditionalDiscount != null && purchaseAdditionalDiscount.signum() != 0) {
+      effective = effective.multiply(BigDecimal.ONE.subtract(
+          purchaseAdditionalDiscount.divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP)));
+    }
+
+    if (effective.signum() < 0) {
+      effective = BigDecimal.ZERO;
+    }
+    return effective.setScale(4, RoundingMode.HALF_UP);
+  }
+
+  /** Landed cost for a pricing record, falling back to the entered cost when nothing reduces it. */
+  public static BigDecimal computeEffectiveCostPrice(Pricing p) {
+    if (p == null) {
+      return null;
+    }
+    return computeEffectiveCostPrice(
+        p.getCostPrice(), p.getPurchaseAdditionalDiscount(), p.getPurchaseScheme());
   }
 
   /**

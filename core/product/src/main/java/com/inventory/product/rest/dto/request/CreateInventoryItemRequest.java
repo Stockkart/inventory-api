@@ -66,7 +66,7 @@ public class CreateInventoryItemRequest {
   private Integer schemePayFor;
   private Integer schemeFree;
   private BigDecimal schemePercentage;
-  /** Purchase (from vendor) - for comparison at sale. Read-only during sale. */
+  /** Purchase (from vendor). Read-only during sale; feeds the landed cost used for margin. */
   private SchemeType purchaseSchemeType;
   private Integer purchaseSchemePayFor;
   private Integer purchaseSchemeFree;

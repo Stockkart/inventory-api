@@ -298,14 +298,16 @@ public abstract class PurchaseMapper {
 
   /**
    * Compute and set margin breakdown on a purchase item: costTotal, profit, marginPercent.
-   * Uses costPrice × billableQty for cost; revenue before tax = totalAmount / (1 + tax rates); profit = revenue − cost.
+   * costPrice here is the landed cost from CheckoutService, and it is multiplied by the full
+   * quantity, not the billable one: units given away under a sale scheme still cost us money.
+   * Revenue before tax = totalAmount / (1 + tax rates); profit = revenue − cost.
    */
   public void enrichPurchaseItemMargin(PurchaseItem item) {
     if (item == null || item.getCostPrice() == null) {
       return;
     }
-    BigDecimal billableQty = item.getQuantity() != null ? item.getQuantity() : BigDecimal.ZERO;
-    BigDecimal costTotal = item.getCostPrice().multiply(billableQty).setScale(2, java.math.RoundingMode.HALF_UP);
+    BigDecimal quantity = item.getQuantity() != null ? item.getQuantity() : BigDecimal.ZERO;
+    BigDecimal costTotal = item.getCostPrice().multiply(quantity).setScale(2, java.math.RoundingMode.HALF_UP);
     item.setCostTotal(costTotal);
 
     BigDecimal totalAmount = item.getTotalAmount();

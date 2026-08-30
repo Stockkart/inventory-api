@@ -28,8 +28,14 @@ public class Pricing {
   /** Maximum Retail Price (MRP) */
   private BigDecimal maximumRetailPrice;
 
-  /** Cost Price (CP) */
+  /** Cost Price (CP) as entered on the vendor invoice, before scheme and additional discount. */
   private BigDecimal costPrice;
+
+  /**
+   * Landed cost per unit: costPrice after purchaseScheme and purchaseAdditionalDiscount.
+   * Derived on save; this is the figure margin must be measured against.
+   */
+  private BigDecimal effectiveCostPrice;
 
   /** Price to Retail (PTR). Immutable after creation. Base price when defaultRate is "priceToRetail". */
   private BigDecimal priceToRetail;
@@ -49,10 +55,10 @@ public class Pricing {
   /** Additional discount percentage (-100 to 100; negative = markup) - sale default */
   private BigDecimal saleAdditionalDiscount;
 
-  /** Purchase add. discount % from vendor - for comparison at sale, no calculation */
+  /** Purchase add. discount % from vendor. Feeds effectiveCostPrice. */
   private BigDecimal purchaseAdditionalDiscount;
 
-  /** Purchase scheme/deal from vendor - for comparison at sale */
+  /** Purchase scheme/deal from vendor. Feeds effectiveCostPrice. */
   private Scheme purchaseScheme;
 
   /** Sale scheme/deal (e.g. 7+1). FIXED_UNITS or PERCENTAGE. */

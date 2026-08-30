@@ -32,6 +32,8 @@ public class InventorySummaryDto {
   String companyName;
   BigDecimal maximumRetailPrice;
   BigDecimal costPrice;
+  /** Landed cost per unit after purchase scheme and additional discount. */
+  BigDecimal effectiveCostPrice;
   /** Original Price to Retail (PTR). */
   BigDecimal priceToRetail;
   /** Effective selling price (from defaultRate). */

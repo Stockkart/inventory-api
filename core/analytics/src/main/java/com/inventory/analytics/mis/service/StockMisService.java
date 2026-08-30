@@ -144,7 +144,7 @@ public class StockMisService {
   private static MisStockRowDto toRow(Inventory inv) {
     BigDecimal onHand = qty(inv.getCurrentCount(), inv.getCurrentBaseCount());
     BigDecimal sold = qty(inv.getSoldCount(), inv.getSoldBaseCount());
-    BigDecimal cost = MisMoneyTenderHelper.nz(inv.getCostPrice());
+    BigDecimal cost = MisMoneyTenderHelper.nz(inv.costForValuation());
     BigDecimal sell =
         MisMoneyTenderHelper.nz(
             inv.getSellingPrice() != null ? inv.getSellingPrice() : inv.getPriceToRetail());

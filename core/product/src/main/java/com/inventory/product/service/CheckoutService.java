@@ -817,7 +817,7 @@ public class CheckoutService {
           CheckoutUtils.applyItemTaxMode(purchaseItem, itemBillingMode);
           CheckoutUtils.normalizeSchemeFields(purchaseItem);
           BigDecimal sellingPrice = inventory.getSellingPrice() != null ? inventory.getSellingPrice() : inventory.getPriceToRetail();
-          BigDecimal costPrice = inventory.getCostPrice();
+          BigDecimal costPrice = inventory.costForValuation();
           purchaseItem.setQuantity(toSaleQuantityDecimal(Math.abs(baseQuantity), factor));
           purchaseItem.setMaximumRetailPrice(maximumRetailPrice);
           purchaseItem.setPriceToRetail(sellingPrice);
@@ -1227,7 +1227,7 @@ public class CheckoutService {
                   existingItem.getMaximumRetailPrice(),
                   newItem.getMaximumRetailPrice(),
                   priceToRetail);
-              BigDecimal costPrice = inventory.getCostPrice();
+              BigDecimal costPrice = inventory.costForValuation();
               BigDecimal unitPrice = priceToRetail != null ? priceToRetail : BigDecimal.ZERO;
               BigDecimal perUnitDiscount = maximumRetailPrice.subtract(unitPrice);
 
@@ -1310,7 +1310,7 @@ public class CheckoutService {
                 existingItem.getMaximumRetailPrice(),
                 newItem.getMaximumRetailPrice(),
                 priceToRetail);
-            BigDecimal costPrice = inventory.getCostPrice();
+            BigDecimal costPrice = inventory.costForValuation();
             BigDecimal newQuantity = toSaleQuantityDecimal(newBaseQuantity, saleUnitFactor);
             BigDecimal unitPrice = priceToRetail != null ? priceToRetail : BigDecimal.ZERO;
             BigDecimal perUnitDiscount = maximumRetailPrice.subtract(unitPrice);

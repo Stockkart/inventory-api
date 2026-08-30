@@ -118,12 +118,13 @@ public class InventoryPricingReadHandler {
         && saleScheme == null && purchaseScheme == null) {
       return null;
     }
-    return new PricingReadDto(mrp, cost, ptr, null, null, ptr, discount, null, purchaseScheme, saleScheme, sgst, cgst);
+    return new PricingReadDto(mrp, cost, null, ptr, null, null, ptr, discount, null, purchaseScheme, saleScheme, sgst, cgst);
   }
 
   private void applyPricing(Inventory inv, PricingReadDto p) {
     inv.setMaximumRetailPrice(p.getMaximumRetailPrice());
     inv.setCostPrice(p.getCostPrice());
+    inv.setEffectiveCostPrice(p.resolveEffectiveCostPrice());
     inv.setRates(p.getRates());
     inv.setDefaultRate(StringUtils.hasText(p.getDefaultRate())
         ? p.getDefaultRate()

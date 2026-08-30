@@ -78,7 +78,7 @@ public class VendorAnalyticsUtils {
       Integer received = getReceivedBaseCount(inventory);
       Integer sold = getSoldBaseCount(inventory);
       Integer current = getCurrentBaseCount(inventory);
-      BigDecimal costPrice = inventory.getCostPrice() != null ? inventory.getCostPrice() : BigDecimal.ZERO;
+      BigDecimal costPrice = inventory.costForValuation() != null ? inventory.costForValuation() : BigDecimal.ZERO;
 
       data.totalInventoryReceived += received;
       data.totalQuantitySold += sold;
@@ -197,7 +197,7 @@ public class VendorAnalyticsUtils {
           Integer quantity = getBaseQuantity(item);
           BigDecimal pricingQuantity = getPricingQuantity(item);
           BigDecimal priceToRetail = item.getPriceToRetail() != null ? item.getPriceToRetail() : BigDecimal.ZERO;
-          BigDecimal costPrice = inv.getCostPrice() != null ? inv.getCostPrice() : BigDecimal.ZERO;
+          BigDecimal costPrice = inv.costForValuation() != null ? inv.costForValuation() : BigDecimal.ZERO;
 
           BigDecimal itemRevenue = priceToRetail.multiply(pricingQuantity);
           BigDecimal itemCost = costPrice.multiply(pricingQuantity);
@@ -284,7 +284,7 @@ public class VendorAnalyticsUtils {
       Integer received = getReceivedBaseCount(inventory);
       Integer sold = getSoldBaseCount(inventory);
       Integer current = getCurrentBaseCount(inventory);
-      BigDecimal costPrice = inventory.getCostPrice() != null ? inventory.getCostPrice() : BigDecimal.ZERO;
+      BigDecimal costPrice = inventory.costForValuation() != null ? inventory.costForValuation() : BigDecimal.ZERO;
 
       // Calculate days in stock
       if (inventory.getReceivedDate() != null) {
@@ -429,7 +429,7 @@ public class VendorAnalyticsUtils {
 
       Integer received = getReceivedBaseCount(inventory);
       Integer current = getCurrentBaseCount(inventory);
-      BigDecimal costPrice = inventory.getCostPrice() != null ? inventory.getCostPrice() : BigDecimal.ZERO;
+      BigDecimal costPrice = inventory.costForValuation() != null ? inventory.costForValuation() : BigDecimal.ZERO;
 
       data.totalReceived += received;
 
@@ -481,7 +481,7 @@ public class VendorAnalyticsUtils {
     BigDecimal totalInventoryValue = allInventories.stream()
         .map(inv -> {
           Integer current = getCurrentBaseCount(inv);
-          BigDecimal costPrice = inv.getCostPrice() != null ? inv.getCostPrice() : BigDecimal.ZERO;
+          BigDecimal costPrice = inv.costForValuation() != null ? inv.costForValuation() : BigDecimal.ZERO;
           return costPrice.multiply(BigDecimal.valueOf(current));
         })
         .reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -508,7 +508,7 @@ public class VendorAnalyticsUtils {
               .filter(inv -> revenue.getVendorId().equals(inv.getVendorId()))
               .map(inv -> {
                 Integer current = getCurrentBaseCount(inv);
-                BigDecimal costPrice = inv.getCostPrice() != null ? inv.getCostPrice() : BigDecimal.ZERO;
+                BigDecimal costPrice = inv.costForValuation() != null ? inv.costForValuation() : BigDecimal.ZERO;
                 return costPrice.multiply(BigDecimal.valueOf(current));
               })
               .reduce(BigDecimal.ZERO, BigDecimal::add);

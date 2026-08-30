@@ -45,8 +45,12 @@ public interface PricingMapper {
   @Mapping(target = "shopId", ignore = true)
   @Mapping(target = "createdAt", ignore = true)
   @Mapping(target = "updatedAt", expression = "java(java.time.Instant.now())")
-  @Mapping(target = "purchaseScheme", expression = "java(toScheme(request.getPurchaseScheme()))")
-  @Mapping(target = "saleScheme", expression = "java(toScheme(request.getSaleScheme()))")
+  // Schemes are kept when absent from the request, matching every other field here. Clearing one
+  // on a partial update would quietly change the landed cost that margin is measured against.
+  @Mapping(target = "purchaseScheme",
+      expression = "java(request.getPurchaseScheme() == null ? pricing.getPurchaseScheme() : toScheme(request.getPurchaseScheme()))")
+  @Mapping(target = "saleScheme",
+      expression = "java(request.getSaleScheme() == null ? pricing.getSaleScheme() : toScheme(request.getSaleScheme()))")
   @Mapping(target = "sellingPrice", source = "sellingPrice")
   void updateEntity(UpdatePricingRequest request, @MappingTarget Pricing pricing);
 
@@ -82,6 +86,7 @@ public interface PricingMapper {
 
   @Mapping(target = "maximumRetailPrice", source = "maximumRetailPrice")
   @Mapping(target = "costPrice", source = "costPrice")
+  @Mapping(target = "effectiveCostPrice", source = "effectiveCostPrice")
   @Mapping(target = "priceToRetail", source = "priceToRetail")
   @Mapping(target = "rates", source = "rates")
   @Mapping(target = "defaultRate", source = "defaultRate")

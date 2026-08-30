@@ -119,7 +119,7 @@ public class VendorAnalyticsService {
       BigDecimal totalInventoryValue = allInventories.stream()
           .map(inv -> {
             Integer current = getCurrentBaseCount(inv);
-            BigDecimal costPrice = inv.getCostPrice() != null ? inv.getCostPrice() : BigDecimal.ZERO;
+            BigDecimal costPrice = inv.costForValuation() != null ? inv.costForValuation() : BigDecimal.ZERO;
             return costPrice.multiply(BigDecimal.valueOf(current));
           })
           .reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -141,7 +141,7 @@ public class VendorAnalyticsService {
               })
           .map(inv -> {
             Integer current = getCurrentBaseCount(inv);
-            BigDecimal costPrice = inv.getCostPrice() != null ? inv.getCostPrice() : BigDecimal.ZERO;
+            BigDecimal costPrice = inv.costForValuation() != null ? inv.costForValuation() : BigDecimal.ZERO;
             return costPrice.multiply(BigDecimal.valueOf(current));
           })
           .reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -149,7 +149,7 @@ public class VendorAnalyticsService {
       BigDecimal totalUnsoldStockValue = allInventories.stream()
           .map(inv -> {
             Integer current = getCurrentBaseCount(inv);
-            BigDecimal costPrice = inv.getCostPrice() != null ? inv.getCostPrice() : BigDecimal.ZERO;
+            BigDecimal costPrice = inv.costForValuation() != null ? inv.costForValuation() : BigDecimal.ZERO;
             return costPrice.multiply(BigDecimal.valueOf(current));
           })
           .reduce(BigDecimal.ZERO, BigDecimal::add);
