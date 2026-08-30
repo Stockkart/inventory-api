@@ -418,6 +418,42 @@ public class Gstr2DataAggregator {
             .collect(Collectors.toMap(Pricing::getId, pricing -> pricing));
   }
 
+  /**
+   * The state the shop supplies from, as a two-digit code.
+   *
+   * <p>Its GSTIN carries the code it registered under, which is the authority on
+   * the question. A shop below the registration threshold has none, and is then
+   * placed by the state on its address.
+   */
+  private String shopState(Shop shop) {
+    String fromGstin = GstStateCode.codeFromGstin(shop.getGstinNo());
+    if (StringUtils.hasText(fromGstin)) {
+      return fromGstin;
+    }
+    return shop.getLocation() == null ? ""
+        : GstStateCode.codeFromName(shop.getLocation().getState());
+  }
+
+  /**
+   * The state a supplier supplies from, as a two-digit code.
+   *
+   * <p>A registered supplier is placed by their GSTIN. An unregistered one has no
+   * GSTIN to read -- which is the whole reason they are reported on b2bur rather
+   * than b2b -- so they are placed by the state named on their address. Reading
+   * the state from the GSTIN alone left every b2bur line saying "Intra State",
+   * because the only suppliers that sheet carries are the ones with no GSTIN.
+   *
+   * <p>Empty when neither says: an unplaceable supplier is treated as local,
+   * which is what the far more common case actually is.
+   */
+  private String supplierState(Vendor vendor, String supplierGstin) {
+    String fromGstin = GstStateCode.codeFromGstin(supplierGstin);
+    if (StringUtils.hasText(fromGstin)) {
+      return fromGstin;
+    }
+    return vendor == null ? "" : GstStateCode.codeFromAddress(vendor.getAddress());
+  }
+
   /** The tax the goods on this line attract, read from what they were priced at. */
   private BigDecimal rateOf(Pricing pricing) {
     return pricing == null ? BigDecimal.ZERO
@@ -452,11 +488,10 @@ public class Gstr2DataAggregator {
     Map<String, Product> productMap = productsOf(purchasedLots);
     Map<String, Pricing> pricingMap = pricingOf(purchasedLots);
 
-    // Inward supply from another state is taxed as IGST rather than split in two.
-    // The supplier's own GSTIN says where it is, and its first two digits are the
-    // state; the shop's says the same of itself.
-    String shopState = StringUtils.hasText(shop.getGstinNo()) && shop.getGstinNo().length() >= 2
-        ? shop.getGstinNo().substring(0, 2) : "";
+    // Inward supply from another state is taxed as IGST rather than split in two,
+    // so both ends have to be placed. The shop is placed by its own GSTIN, and by
+    // its address where it has not registered one.
+    String shopState = shopState(shop);
 
     Set<String> vendorIds = invoices.stream()
         .map(VendorPurchaseInvoice::getVendorId)
@@ -483,9 +518,10 @@ public class Gstr2DataAggregator {
       LocalDate invoiceDate = invoice.getInvoiceDate() != null
           ? LocalDateTime.ofInstant(invoice.getInvoiceDate(), ZoneId.systemDefault()).toLocalDate()
           : LocalDate.now();
+      String supplierState = supplierState(vendor, supplierGstin);
       boolean interstate = StringUtils.hasText(shopState)
-          && StringUtils.hasText(supplierGstin)
-          && !supplierGstin.startsWith(shopState);
+          && StringUtils.hasText(supplierState)
+          && !supplierState.equals(shopState);
 
       List<BigDecimal> taxableByLine = taxableByLine(invoice);
       Map<String, BigDecimal[]> byRate = new LinkedHashMap<>();
