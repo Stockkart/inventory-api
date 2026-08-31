@@ -134,6 +134,27 @@ public class InvoiceService {
    * @throws ResourceNotFoundException if the purchase or shop cannot be found
    * @throws ValidationException if the purchase does not belong to {@code shopId}
    */
+  /**
+   * How the goods are packed, as a trade bill's PACK column states it.
+   *
+   * <p>Built from the pack the stock was registered in: a hundred and twenty pieces to a box
+   * reads "1X120", two hundred millilitres to a bottle "1X200 ML". The unit is stated only when
+   * it is a measure - a count of pieces is what "1X120" already means, and printing "1X120 PCS"
+   * spends four characters of a column the bill can barely afford.
+   */
+  private static String packLabel(Inventory inventory) {
+    if (inventory.getUnitConversions() == null
+        || inventory.getUnitConversions().getFactor() == null) {
+      return null;
+    }
+    String label = "1X" + inventory.getUnitConversions().getFactor();
+    String base = inventory.getBaseUnit();
+    if (StringUtils.hasText(base) && !"PCS".equalsIgnoreCase(base.trim())) {
+      label = label + " " + base.trim().toUpperCase();
+    }
+    return label;
+  }
+
   private PurchaseInvoiceContext loadAndValidate(String purchaseId, String shopId) {
     Purchase purchase = purchaseRepository.findById(purchaseId)
         .orElseThrow(() -> new ResourceNotFoundException("Purchase", "id", purchaseId));
@@ -320,6 +341,7 @@ public class InvoiceService {
             if (!StringUtils.hasText(invoiceItem.getBatchNo())) {
               invoiceItem.setBatchNo(VerticalFieldsReader.batchNoFrom(extensionFields));
             }
+            invoiceItem.setPack(packLabel(inventory));
             if (inventory.getSchemeType() == SchemeType.PERCENTAGE
                 && inventory.getSchemePercentage() != null
                 && inventory.getReceivedCount() != null

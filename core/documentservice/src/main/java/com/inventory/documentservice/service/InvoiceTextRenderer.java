@@ -64,7 +64,7 @@ public class InvoiceTextRenderer {
 
   /** Least load-bearing first: what gets dropped so the product name stays readable. */
   private static final List<String> TAX_COLUMN_SACRIFICE_ORDER =
-      List.of("CGST", "SGST", "MFG/MKD.", "SCHEME", "Exp.Dt", "HSN/SAC", "M.R.P.");
+      List.of("CGST", "SGST", "MFG/MKD.", "SCHEME", "PACK.", "Exp.Dt", "HSN/SAC", "M.R.P.");
 
   /** A product name narrower than this is not worth printing. */
   private static final int TAX_NAME_MIN = 20;
@@ -222,7 +222,7 @@ public class InvoiceTextRenderer {
     }
     if (visible(r.getShowSellerDetails())) {
       if (visible(r.getShowShopName())) {
-        out.add(bold(centre(nullToEmpty(r.getShopName()).toUpperCase(), width)));
+        out.add(BOLD_ON + centreWide(nullToEmpty(r.getShopName()).toUpperCase(), width) + BOLD_OFF);
       }
       addCentred(out, visible(r.getShowShopAddress()), r.getShopAddress(), null, width);
 
@@ -308,12 +308,12 @@ public class InvoiceTextRenderer {
   private void appendTaxItems(List<String> out, GenerateInvoiceRequest r) {
     List<Column> columns = buildTaxColumns(r);
     int flex = flexWidth(columns, TAX_LINE_WIDTH);
-    out.add(renderRow(columns, flex, Column::header, " "));
+    out.add(renderRow(columns, flex, Column::header, ":"));
     out.add(rule(TAX_LINE_WIDTH));
 
     List<InvoiceItem> items = r.getItems() != null ? r.getItems() : List.of();
     for (InvoiceItem item : items) {
-      out.add(renderRow(columns, flex, c -> c.value().apply(item), " "));
+      out.add(renderRow(columns, flex, c -> c.value().apply(item), ":"));
       out.add(rule(TAX_LINE_WIDTH));
     }
     if (items.isEmpty()) {
@@ -336,6 +336,7 @@ public class InvoiceTextRenderer {
     // Headings and order as the trade bill sets them. There is no PACK column: the pack size
     // is not a field of its own here, it is written into the product name.
     columns.add(new Column("QTY.", 4, true, i -> quantity(i.getQuantity())));
+    columns.add(new Column("PACK.", 8, false, i -> nullToEmpty(i.getPack())));
     columns.add(new Column("PRODUCTS", -1, false, i -> nullToEmpty(i.getName())));
     addTaxColumn(columns, items, visible(r.getShowHsn()),
         new Column("HSN/SAC", 9, false, i -> nullToEmpty(i.getHsn())));
