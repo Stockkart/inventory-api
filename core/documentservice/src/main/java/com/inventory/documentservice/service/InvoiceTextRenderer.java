@@ -655,11 +655,19 @@ public class InvoiceTextRenderer {
     }
   }
 
+  /** Prefixes the words with Rs. unless they already say so, so it cannot read "Rs. Rs.". */
+  private static String rupees(String words) {
+    String trimmed = words.trim();
+    return trimmed.toUpperCase().startsWith("RS") ? trimmed : "Rs. " + trimmed;
+  }
+
   private void appendFooter(List<String> out, GenerateInvoiceRequest r) {
+    // Left, against the margin, and read as a sum of money: the trade bill sets the amount in
+    // words as a sentence at the foot of the page, not as a centred caption.
     if (visible(r.getShowAmountInWords()) && present(r.getAmountInWords())) {
       out.add("");
-      for (String line : wrap(r.getAmountInWords(), LINE_WIDTH)) {
-        out.add(centre(line));
+      for (String line : wrap(rupees(r.getAmountInWords()), LINE_WIDTH)) {
+        out.add(line);
       }
     }
     if (present(r.getFooterNote())) {
