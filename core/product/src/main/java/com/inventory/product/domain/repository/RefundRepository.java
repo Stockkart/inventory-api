@@ -4,6 +4,7 @@ import com.inventory.product.domain.model.Refund;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.MongoRepository;
+import org.springframework.data.mongodb.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
@@ -54,5 +55,9 @@ public interface RefundRepository extends MongoRepository<Refund, String> {
    * Used for GSTR-1 CDNR/CDNUR and other period-based reports.
    */
   List<Refund> findByShopIdAndCreatedAtBetween(String shopId, Instant start, Instant end);
+
+  /** Sales returns on or after an instant, for rolling live stock counters backwards. */
+  @Query("{ 'shopId': ?0, 'createdAt': { '$gte': ?1 } }")
+  List<Refund> findByShopIdAndCreatedAtFrom(String shopId, Instant startInclusive);
 }
 
