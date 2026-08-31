@@ -49,7 +49,7 @@ public class DotMatrixInvoicePreviewRenderer implements InvoicePreviewRenderer {
    * dropped them.
    */
   private static String previewHtml(String text) {
-    int widest = text.lines().mapToInt(line -> measured(line).length()).max().orElse(0);
+    int widest = text.lines().mapToInt(DotMatrixInvoicePreviewRenderer::measured).max().orElse(0);
     double fontPx =
         PREVIEW_BASE_FONT_PX * PREVIEW_BASE_COLUMNS / Math.max(PREVIEW_BASE_COLUMNS, widest);
     return "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"/>"
@@ -57,18 +57,42 @@ public class DotMatrixInvoicePreviewRenderer implements InvoicePreviewRenderer {
         + "pre{font-family:'Courier New',Courier,monospace;font-size:"
         + String.format(Locale.ROOT, "%.2f", fontPx) + "px;line-height:1.25;"
         + "white-space:pre;margin:0;color:#000;}"
-        + ".sm{font-size:7px;}</style></head><body><pre>"
+        + ".sm{font-size:7px;}"
+        // Double width, not double height: the printer stretches the glyph sideways only.
+        + ".wide{display:inline-block;transform:scaleX(2);transform-origin:left;"
+        + "letter-spacing:0;}</style></head><body><pre>"
         + showEmphasis(escapeHtml(text))
         + "</pre></body></html>";
   }
 
-  /** The line as the printer sees it: emphasis codes occupy no columns. */
-  private static String measured(String line) {
-    return line
-        .replace(InvoiceTextRenderer.BOLD_ON, "")
-        .replace(InvoiceTextRenderer.BOLD_OFF, "")
-        .replace(InvoiceTextRenderer.CONDENSED_ON, "")
-        .replace(InvoiceTextRenderer.CONDENSED_OFF, "");
+  /**
+   * The line's width in printing columns. Emphasis codes occupy none, and a double-width run
+   * occupies two columns per character, which is what decides how wide the page must be.
+   */
+  private static int measured(String line) {
+    int width = 0;
+    boolean wide = false;
+    for (int i = 0; i < line.length(); i++) {
+      char c = line.charAt(i);
+      if (c == 0x1B && i + 1 < line.length()
+          && (line.charAt(i + 1) == 'E' || line.charAt(i + 1) == 'F')) {
+        i++;
+        continue;
+      }
+      if (c == 0x0E) {
+        wide = true;
+        continue;
+      }
+      if (c == 0x14) {
+        wide = false;
+        continue;
+      }
+      if (c == 0x0F || c == 0x12) {
+        continue;
+      }
+      width += wide ? 2 : 1;
+    }
+    return width;
   }
 
   private static String escapeHtml(String raw) {
@@ -81,6 +105,8 @@ public class DotMatrixInvoicePreviewRenderer implements InvoicePreviewRenderer {
         .replace(InvoiceTextRenderer.BOLD_ON, "<b>")
         .replace(InvoiceTextRenderer.BOLD_OFF, "</b>")
         .replace(InvoiceTextRenderer.CONDENSED_ON, "<span class=\"sm\">")
-        .replace(InvoiceTextRenderer.CONDENSED_OFF, "</span>");
+        .replace(InvoiceTextRenderer.CONDENSED_OFF, "</span>")
+        .replace(InvoiceTextRenderer.DOUBLE_ON, "<span class=\"wide\">")
+        .replace(InvoiceTextRenderer.DOUBLE_OFF, "</span>");
   }
 }

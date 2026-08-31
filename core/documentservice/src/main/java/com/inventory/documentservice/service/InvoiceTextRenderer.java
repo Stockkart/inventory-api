@@ -49,6 +49,9 @@ public class InvoiceTextRenderer {
 
   private static final String RULE = "-".repeat(LINE_WIDTH);
 
+  /** Closes the item grid and separates it from the totals, as the reference bill does. */
+  private static final String DOUBLE_RULE = "=".repeat(LINE_WIDTH);
+
   /** Widths of the tax invoice's three party columns: buyer, its tax ids, the document. */
   private static final int TAX_LEFT = 32;
 
@@ -89,6 +92,32 @@ public class InvoiceTextRenderer {
 
   private static String condensed(String line) {
     return CONDENSED_ON + line + CONDENSED_OFF;
+  }
+
+  /**
+   * ESC/P double-width on and off. Every character between them is drawn twice as wide, so it
+   * occupies two printing columns rather than one - which is what the eye reads as a bigger
+   * character on a printer that has one type size.
+   */
+  public static final String DOUBLE_ON = "\u000E";
+
+  public static final String DOUBLE_OFF = "\u0014";
+
+  private static String doubleWide(String line) {
+    return DOUBLE_ON + line + DOUBLE_OFF;
+  }
+
+  /**
+   * Centres text that will print at double width.
+   *
+   * <p>The padding is computed against twice the text's length, because that is the room it
+   * takes on paper. Centring it by its character count would sit it a quarter of the page to
+   * the left of where it lands.
+   */
+  private static String centreWide(String text, int width) {
+    int printed = text.length() * 2;
+    int left = Math.max(0, (width - printed) / 2);
+    return " ".repeat(left) + doubleWide(text);
   }
 
   /** Who made the bill. Tax invoices only: an estimate is a quote, not a document of record. */
@@ -184,7 +213,8 @@ public class InvoiceTextRenderer {
   /** Centred shop block: title, name, address, licences, contact, then the stockist line. */
   private void appendMasthead(
       List<String> out, GenerateInvoiceRequest r, String title, int width) {
-    out.add(bold(centre(title, width)));
+    // The title is the one thing read from across a counter, so it prints at double width.
+    out.add(BOLD_ON + centreWide(title, width) + BOLD_OFF);
     if (visible(r.getShowSellerDetails())) {
       if (visible(r.getShowShopName())) {
         out.add(bold(centre(nullToEmpty(r.getShopName()).toUpperCase(), width)));
@@ -270,12 +300,12 @@ public class InvoiceTextRenderer {
   private void appendTaxItems(List<String> out, GenerateInvoiceRequest r) {
     List<Column> columns = buildTaxColumns(r);
     int flex = flexWidth(columns, TAX_LINE_WIDTH);
-    out.add(renderRow(columns, flex, Column::header));
+    out.add(renderRow(columns, flex, Column::header, " "));
     out.add(rule(TAX_LINE_WIDTH));
 
     List<InvoiceItem> items = r.getItems() != null ? r.getItems() : List.of();
     for (InvoiceItem item : items) {
-      out.add(renderRow(columns, flex, c -> c.value().apply(item)));
+      out.add(renderRow(columns, flex, c -> c.value().apply(item), " "));
       out.add(rule(TAX_LINE_WIDTH));
     }
     if (items.isEmpty()) {
@@ -534,12 +564,12 @@ public class InvoiceTextRenderer {
   private void appendItems(List<String> out, GenerateInvoiceRequest r) {
     List<Column> columns = buildColumns(r);
     int flex = flexWidth(columns);
-    out.add(renderRow(columns, flex, Column::header));
+    out.add(renderRow(columns, flex, Column::header, ":"));
     out.add(RULE);
 
     List<InvoiceItem> items = r.getItems() != null ? r.getItems() : List.of();
     for (InvoiceItem item : items) {
-      out.add(renderRow(columns, flex, c -> c.value().apply(item)));
+      out.add(renderRow(columns, flex, c -> c.value().apply(item), ":"));
       if (visible(r.getShowHsn()) && present(item.getHsn())) {
         out.add("  HSN: " + item.getHsn());
       }
@@ -549,6 +579,9 @@ public class InvoiceTextRenderer {
     if (items.isEmpty()) {
       out.add(RULE);
     }
+    // What the counter checks the bag against before handing it over.
+    out.add("NO OF ITEMS : " + items.size());
+    out.add(DOUBLE_RULE);
   }
 
   private List<Column> buildColumns(GenerateInvoiceRequest r) {
@@ -587,13 +620,16 @@ public class InvoiceTextRenderer {
     return width - fixed - (columns.size() - 1);
   }
 
-  private String renderRow(List<Column> columns, int flex, Function<Column, String> cell) {
+  private String renderRow(
+      List<Column> columns, int flex, Function<Column, String> cell, String separator) {
     List<String> cells = new ArrayList<>();
     for (Column column : columns) {
       int width = column.width() > 0 ? column.width() : flex;
       cells.add(pad(cell.apply(column), width, column.rightAlign()));
     }
-    return String.join(" ", cells);
+    // The separator replaces the space between columns rather than adding to it, so every
+    // column keeps the width it was given whichever one is used.
+    return String.join(separator, cells);
   }
 
   // ----------------------------------------------------------------- totals
@@ -603,19 +639,18 @@ public class InvoiceTextRenderer {
    * and no per-rate tax table: tax is a single line, shown only when tax details are on.
    */
   private void appendTotals(List<String> out, GenerateInvoiceRequest r) {
-    out.add(totalRow("Total Amount", r.getSubTotal()));
+    out.add(totalRow("TOTAL AMOUNT", r.getSubTotal()));
     BigDecimal additional = r.getSaleAdditionalDiscountTotal();
     if (visible(r.getShowAdditionalDiscount()) && isPositive(additional)) {
-      out.add(totalRow("Additional Discount", additional));
+      out.add(totalRow("Less Discount", additional));
     }
     if (visible(r.getShowTaxDetails())) {
-      out.add(totalRow("Tax", r.getTaxTotal()));
+      out.add(totalRow("Add Tax", r.getTaxTotal()));
     }
-    out.add(totalRow("Net Amount", r.getGrandTotal()));
-    // Out of the totals stack, as on the A4 bill. There is no empty left column to move into
-    // here - these rows span the page - so it stands on its own line beneath instead.
+    out.add(netAmountRow("NET AMOUNT", r.getGrandTotal()));
+    // Out of the totals stack, as on the A4 bill, and now in the left column those rows
+    // vacated when they moved to the right of the page.
     if (visible(r.getShowAmountSaved()) && isPositive(r.getTotalAmountSaved())) {
-      out.add("");
       out.add("AMOUNT SAVED  " + money(r.getTotalAmountSaved()));
     }
   }
@@ -642,11 +677,31 @@ public class InvoiceTextRenderer {
         || "BASIC".equalsIgnoreCase(r.getBillingMode());
   }
 
+  /**
+   * Where the totals block begins. It sits in the right half of the page, under the amount
+   * column it totals, rather than spanning the full width with the label adrift on the far
+   * left of its own figure.
+   */
+  private static final int TOTALS_INDENT = 40;
+
   private static String totalRow(String label, BigDecimal amount) {
-    // Label left, amount hard against the right margin, as the template's totals table does.
     String value = money(amount);
-    int gap = Math.max(1, LINE_WIDTH - label.length() - value.length());
-    return label + " ".repeat(gap) + value;
+    int gap = Math.max(1, LINE_WIDTH - TOTALS_INDENT - label.length() - value.length());
+    return " ".repeat(TOTALS_INDENT) + label + " ".repeat(gap) + value;
+  }
+
+  /**
+   * The closing figure, at double width and emphasised.
+   *
+   * <p>The gap is measured against twice the value's length, since each of its characters
+   * occupies two printing columns; measuring it by character count would push the figure off
+   * the right margin by half its own width.
+   */
+  private static String netAmountRow(String label, BigDecimal amount) {
+    String value = money(amount);
+    int gap = Math.max(1, LINE_WIDTH - TOTALS_INDENT - label.length() - value.length() * 2);
+    return " ".repeat(TOTALS_INDENT) + BOLD_ON + label + " ".repeat(gap)
+        + doubleWide(value) + BOLD_OFF;
   }
 
   /** Adds "prefix + value" when the flag is on and the value is present, as the template gates. */
