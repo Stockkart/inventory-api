@@ -64,7 +64,7 @@ public class InvoiceTextRenderer {
 
   /** Least load-bearing first: what gets dropped so the product name stays readable. */
   private static final List<String> TAX_COLUMN_SACRIFICE_ORDER =
-      List.of("CGST", "SGST", "MFG", "SCH", "EXP", "HSN", "M.R.P.");
+      List.of("CGST", "SGST", "MFG/MKD.", "SCHEME", "Exp.Dt", "HSN/SAC", "M.R.P.");
 
   /** A product name narrower than this is not worth printing. */
   private static final int TAX_NAME_MIN = 20;
@@ -259,6 +259,9 @@ public class InvoiceTextRenderer {
       }
       addWrapped(left, visible(r.getShowCustomerAddress()), r.getCustomerAddress(), null, TAX_LEFT);
       addWrapped(left, visible(r.getShowCustomerPhone()), r.getCustomerPhone(), "Ph: ", TAX_LEFT);
+      // The place of supply, which decides whether the tax splits into SGST and CGST or falls
+      // wholly to IGST, so a trade bill states it beside the buyer it applies to.
+      addWrapped(left, true, r.getPlaceOfSupply(), "State Code: ", TAX_LEFT);
       addWrapped(middle, visible(r.getShowCustomerDlNo()), r.getCustomerDlNo(),
           "D.L.NO.: ", TAX_MIDDLE);
       addWrapped(middle, visible(r.getShowCustomerGstin()), r.getCustomerGstin(),
@@ -330,29 +333,31 @@ public class InvoiceTextRenderer {
   private List<Column> buildTaxColumns(GenerateInvoiceRequest r) {
     List<InvoiceItem> items = r.getItems() != null ? r.getItems() : List.of();
     List<Column> columns = new ArrayList<>();
-    columns.add(new Column("QTY", 4, true, i -> quantity(i.getQuantity())));
+    // Headings and order as the trade bill sets them. There is no PACK column: the pack size
+    // is not a field of its own here, it is written into the product name.
+    columns.add(new Column("QTY.", 4, true, i -> quantity(i.getQuantity())));
     columns.add(new Column("PRODUCTS", -1, false, i -> nullToEmpty(i.getName())));
     addTaxColumn(columns, items, visible(r.getShowHsn()),
-        new Column("HSN", 8, false, i -> nullToEmpty(i.getHsn())));
+        new Column("HSN/SAC", 9, false, i -> nullToEmpty(i.getHsn())));
     addTaxColumn(columns, items, visible(r.getShowMfg()),
-        new Column("MFG", 12, false, i -> nullToEmpty(i.getCompanyName())));
+        new Column("MFG/MKD.", 9, false, i -> nullToEmpty(i.getCompanyName())));
     addTaxColumn(columns, items, visible(r.getShowExpiry()),
-        new Column("EXP", 5, false, i -> nullToEmpty(i.getExpiryDate())));
+        new Column("Exp.Dt", 6, false, i -> nullToEmpty(i.getExpiryDate())));
     addTaxColumn(columns, items, visible(r.getShowBatch()),
-        new Column("BATCH", 8, false, i -> nullToEmpty(i.getBatchNo())));
+        new Column("BATCH No.", 10, false, i -> nullToEmpty(i.getBatchNo())));
     addTaxColumn(columns, items, visible(r.getShowMrp()),
-        new Column("M.R.P.", 7, true, i -> money(i.getMaximumRetailPrice())));
-    columns.add(new Column("RATE", 7, true, i -> money(i.getPriceToRetail())));
+        new Column("M.R.P.", 8, true, i -> money(i.getMaximumRetailPrice())));
+    columns.add(new Column("RATE", 8, true, i -> money(i.getPriceToRetail())));
     addTaxColumn(columns, items, visible(r.getShowScheme()),
-        new Column("SCH", 4, true, InvoiceTextRenderer::schemeLabel));
+        new Column("SCHEME", 7, true, InvoiceTextRenderer::schemeLabel));
     addTaxColumn(columns, items, visible(r.getShowLineDiscount()),
-        new Column("DIS%", 5, true, i ->
+        new Column("DISC%", 6, true, i ->
             i.getSaleAdditionalDiscount() != null ? money(i.getSaleAdditionalDiscount()) : ""));
     addTaxColumn(columns, items, visible(r.getShowTaxDetails()),
-        new Column("CGST", 5, true, i -> rate(i.getCgst())));
-    addTaxColumn(columns, items, visible(r.getShowTaxDetails()),
         new Column("SGST", 5, true, i -> rate(i.getSgst())));
-    columns.add(new Column("AMOUNT", 9, true, i -> money(i.getTotalAmount())));
+    addTaxColumn(columns, items, visible(r.getShowTaxDetails()),
+        new Column("CGST", 5, true, i -> rate(i.getCgst())));
+    columns.add(new Column("AMOUNT", 10, true, i -> money(i.getTotalAmount())));
 
     for (String sacrifice : TAX_COLUMN_SACRIFICE_ORDER) {
       if (flexWidth(columns, TAX_LINE_WIDTH) >= TAX_NAME_MIN) {
@@ -363,14 +368,17 @@ public class InvoiceTextRenderer {
     return columns;
   }
 
-  /** Keeps a column only when the switch is on and at least one item has something to put in it. */
+  /**
+   * Keeps a column when its switch is on.
+   *
+   * <p>The switch decides, not the data. Dropping a column because no item on this particular
+   * bill filled it meant the grid changed shape from one bill to the next, and a shop that had
+   * turned Scheme on saw no Scheme column at all on a bill where nothing carried one - which
+   * reads as the setting being ignored rather than as an empty column.
+   */
   private static void addTaxColumn(
       List<Column> columns, List<InvoiceItem> items, boolean shown, Column column) {
-    if (!shown) {
-      return;
-    }
-    boolean anyValue = items.stream().anyMatch(i -> present(column.value().apply(i)));
-    if (anyValue || items.isEmpty()) {
+    if (shown) {
       columns.add(column);
     }
   }
@@ -402,6 +410,26 @@ public class InvoiceTextRenderer {
    * The totals column a trade bill carries: gross, the discount taken off it, each tax added
    * back, the rounding, then the net. Sits against the right margin under the item grid.
    */
+  /**
+   * The closing figure of the tax bill, emphasised and at double width.
+   *
+   * <p>Measured against twice the value's length, since each of its characters occupies two
+   * printing columns.
+   */
+  private static String taxNetRow(String label, BigDecimal amount) {
+    String value = money(amount);
+    // The label keeps the width the other rows give it, so the column of labels stays straight;
+    // only the figure is set wide, and it still ends on the right margin.
+    int printed = TAX_TOTAL_LABEL + value.length() * 2;
+    return " ".repeat(Math.max(0, TAX_LINE_WIDTH - printed))
+        + BOLD_ON + pad(label, TAX_TOTAL_LABEL, false) + doubleWide(value) + BOLD_OFF;
+  }
+
+  /** "Add SGST 2.5 %", so the rate charged is stated beside the amount it produced. */
+  private static String taxLabel(String label, BigDecimal percent) {
+    return percent == null ? label : label + " " + quantity(percent) + " %";
+  }
+
   private void appendTaxTotals(List<String> out, GenerateInvoiceRequest r) {
     out.add("");
     out.add(taxTotalRow("TOTAL AMOUNT", r.getSubTotal()));
@@ -410,10 +438,10 @@ public class InvoiceTextRenderer {
     }
     if (visible(r.getShowTaxDetails())) {
       if (isPositive(r.getSgstAmount())) {
-        out.add(taxTotalRow("Add SGST", r.getSgstAmount()));
+        out.add(taxTotalRow(taxLabel("Add SGST", r.getSgstPercent()), r.getSgstAmount()));
       }
       if (isPositive(r.getCgstAmount())) {
-        out.add(taxTotalRow("Add CGST", r.getCgstAmount()));
+        out.add(taxTotalRow(taxLabel("Add CGST", r.getCgstPercent()), r.getCgstAmount()));
       }
     }
     if (isPositive(r.getRoundOff())) {
@@ -421,7 +449,7 @@ public class InvoiceTextRenderer {
     }
     // Savings reads opposite the totals block rather than as one more line inside it, where it
     // competed with NET AMOUNT for the eye. The left of this row is empty on a trade bill.
-    String netRow = taxTotalRow("NET AMOUNT", r.getGrandTotal());
+    String netRow = taxNetRow("NET AMOUNT", r.getGrandTotal());
     if (visible(r.getShowAmountSaved()) && isPositive(r.getTotalAmountSaved())) {
       out.add(overlayLeft(netRow, "AMOUNT SAVED  " + money(r.getTotalAmountSaved())));
     } else {
@@ -456,7 +484,28 @@ public class InvoiceTextRenderer {
     return " ".repeat(Math.max(0, TAX_LINE_WIDTH - block.length())) + block;
   }
 
+  /**
+   * The one-line GST working: what was taxed, at what rates, and what each half came to.
+   *
+   * <p>A trade bill states this so the figures in the totals can be checked without a
+   * calculator, and so the return can be filled from the bill itself.
+   */
+  private void appendGstSummary(List<String> out, GenerateInvoiceRequest r) {
+    if (!visible(r.getShowTaxDetails())
+        || !isPositive(r.getSgstAmount()) && !isPositive(r.getCgstAmount())) {
+      return;
+    }
+    BigDecimal taxable = r.getSubTotal() == null ? BigDecimal.ZERO : r.getSubTotal();
+    if (isPositive(r.getSaleAdditionalDiscountTotal())) {
+      taxable = taxable.subtract(r.getSaleAdditionalDiscountTotal());
+    }
+    out.add("GST=" + money(taxable)
+        + "*" + quantity(r.getSgstPercent()) + "*" + quantity(r.getCgstPercent()) + "%="
+        + money(r.getSgstAmount()) + "SGST+" + money(r.getCgstAmount()) + "CGST.");
+  }
+
   private void appendTaxFooter(List<String> out, GenerateInvoiceRequest r) {
+    appendGstSummary(out, r);
     if (visible(r.getShowAmountInWords()) && present(r.getAmountInWords())) {
       out.add("");
       for (String line : wrap("Rs. " + r.getAmountInWords(), TAX_LINE_WIDTH)) {
@@ -466,6 +515,12 @@ public class InvoiceTextRenderer {
     out.add(rule(TAX_LINE_WIDTH));
     for (String term : DRUG_ACT_TERMS) {
       out.addAll(wrap(term, TAX_LINE_WIDTH));
+    }
+    // Named from the place of supply rather than assumed: a bill that claims the wrong
+    // jurisdiction is worse than one that claims none.
+    if (present(r.getPlaceOfSupply())) {
+      out.addAll(wrap("3. All subject to " + r.getPlaceOfSupply().trim().toUpperCase()
+          + " Jurisdiction only.", TAX_LINE_WIDTH));
     }
     if (present(r.getFooterNote())) {
       for (String line : wrap(r.getFooterNote(), TAX_LINE_WIDTH)) {
