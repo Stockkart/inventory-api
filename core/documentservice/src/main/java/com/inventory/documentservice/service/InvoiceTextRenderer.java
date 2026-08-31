@@ -203,7 +203,7 @@ public class InvoiceTextRenderer {
   // ------------------------------------------------------------ tax invoice
 
   private void appendTaxInvoice(List<String> out, GenerateInvoiceRequest r) {
-    appendMasthead(out, r, "TAX INVOICE", TAX_LINE_WIDTH);
+    appendMasthead(out, r, null, TAX_LINE_WIDTH);
     appendTaxParties(out, r);
     appendTaxItems(out, r);
     appendTaxTotals(out, r);
@@ -214,7 +214,12 @@ public class InvoiceTextRenderer {
   private void appendMasthead(
       List<String> out, GenerateInvoiceRequest r, String title, int width) {
     // The title is the one thing read from across a counter, so it prints at double width.
-    out.add(BOLD_ON + centreWide(title, width) + BOLD_OFF);
+    // A null title means the document names itself well enough without one: the tax invoice
+    // carries GSTIN, HSN and a tax table, and the word above them said nothing the shop's own
+    // masthead did not.
+    if (title != null) {
+      out.add(BOLD_ON + centreWide(title, width) + BOLD_OFF);
+    }
     if (visible(r.getShowSellerDetails())) {
       if (visible(r.getShowShopName())) {
         out.add(bold(centre(nullToEmpty(r.getShopName()).toUpperCase(), width)));
