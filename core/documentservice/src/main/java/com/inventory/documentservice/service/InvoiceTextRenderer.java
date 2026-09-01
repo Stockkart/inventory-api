@@ -114,6 +114,31 @@ public class InvoiceTextRenderer {
    * takes on paper. Centring it by its character count would sit it a quarter of the page to
    * the left of where it lands.
    */
+  /**
+   * Opens a space between every character, so a name reads as a masthead rather than a word.
+   *
+   * <p>The gap between words has to grow with it. Spacing the letters alone leaves the same
+   * single space between "KUBER" and "PHARMA" as between its letters, and the whole name reads
+   * as one word.
+   */
+  private static String letterSpaced(String text) {
+    List<String> words = new ArrayList<>();
+    for (String word : text.trim().split("\\s+")) {
+      if (word.isEmpty()) {
+        continue;
+      }
+      StringBuilder spaced = new StringBuilder(word.length() * 2);
+      for (int i = 0; i < word.length(); i++) {
+        if (i > 0) {
+          spaced.append(' ');
+        }
+        spaced.append(word.charAt(i));
+      }
+      words.add(spaced.toString());
+    }
+    return String.join("   ", words);
+  }
+
   private static String centreWide(String text, int width) {
     int printed = text.length() * 2;
     int left = Math.max(0, (width - printed) / 2);
@@ -222,7 +247,14 @@ public class InvoiceTextRenderer {
     }
     if (visible(r.getShowSellerDetails())) {
       if (visible(r.getShowShopName())) {
-        out.add(BOLD_ON + centreWide(nullToEmpty(r.getShopName()).toUpperCase(), width) + BOLD_OFF);
+        // Letter-spaced as well as double-width. A text-mode printer has one type size, so the
+        // only ways to make a name read larger are to widen its characters and to open the
+        // space between them; the trade bills set their masthead both ways.
+        out.add(BOLD_ON
+            + centreWide(letterSpaced(nullToEmpty(r.getShopName()).toUpperCase()), width)
+            + BOLD_OFF);
+        // The name needs air under it, or it reads as the first line of the address.
+        out.add("");
       }
       addCentred(out, visible(r.getShowShopAddress()), r.getShopAddress(), null, width);
 
