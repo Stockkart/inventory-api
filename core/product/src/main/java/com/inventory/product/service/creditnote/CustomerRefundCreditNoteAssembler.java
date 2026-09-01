@@ -157,7 +157,7 @@ public class CustomerRefundCreditNoteAssembler implements CreditNoteDocumentAsse
               purchase != null
                   ? PurchaseCustomerRequests.sanitizedDisplayName(purchase.getCustomerName())
                   : null;
-          request.setPartyName(overlay != null ? overlay : "Walk-in customer");
+          request.setPartyName(overlay != null ? overlay : CustomerService.GUEST_CUSTOMER_DISPLAY_NAME);
           return;
         }
         request.setPartyName(customer.getName());
@@ -173,7 +173,7 @@ public class CustomerRefundCreditNoteAssembler implements CreditNoteDocumentAsse
     if (purchase != null && PurchaseCustomerRequests.sanitizedDisplayName(purchase.getCustomerName()) != null) {
       request.setPartyName(PurchaseCustomerRequests.sanitizedDisplayName(purchase.getCustomerName()));
     } else {
-      request.setPartyName("Walk-in customer");
+      request.setPartyName(CustomerService.GUEST_CUSTOMER_DISPLAY_NAME);
     }
   }
 

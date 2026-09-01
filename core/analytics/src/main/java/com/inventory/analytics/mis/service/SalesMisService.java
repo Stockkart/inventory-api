@@ -14,6 +14,7 @@ import com.inventory.metrics.MetricsWrapper;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.Refund;
 import com.inventory.product.service.MisProductQueryService;
+import com.inventory.user.service.CustomerService;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
@@ -314,7 +315,7 @@ public class SalesMisService {
     if (StringUtils.hasText(sale.getCustomerName())) {
       return sale.getCustomerName().trim();
     }
-    return "Walk-in";
+    return CustomerService.GUEST_CUSTOMER_DISPLAY_NAME;
   }
 
   private static String trim(String s) {

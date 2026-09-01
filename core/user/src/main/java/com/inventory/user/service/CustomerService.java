@@ -37,6 +37,9 @@ public class CustomerService {
 
   public static final String GENERAL_CUSTOMER_NAME = "General Customer";
 
+  /** User-facing label when no named customer is on the bill. */
+  public static final String GUEST_CUSTOMER_DISPLAY_NAME = "Guest";
+
   @Autowired
   private CustomerRepository customerRepository;
 
