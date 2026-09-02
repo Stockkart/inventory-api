@@ -963,7 +963,8 @@ public class InventoryService {
         parsed.sort(),
         parsed.limit(),
         parsed.cursor(),
-        parsed.includeZeroStock());
+        parsed.includeZeroStock(),
+        parsed.page());
   }
 
   public InventoryListResponse search(
@@ -973,7 +974,7 @@ public class InventoryService {
       String sort,
       Integer limit,
       String cursor) {
-    return search(shopId, query, filters, sort, limit, cursor, true);
+    return search(shopId, query, filters, sort, limit, cursor, true, 0);
   }
 
   /**
@@ -988,6 +989,18 @@ public class InventoryService {
       Integer limit,
       String cursor,
       boolean includeZeroStock) {
+    return search(shopId, query, filters, sort, limit, cursor, includeZeroStock, 0);
+  }
+
+  public InventoryListResponse search(
+      String shopId,
+      String query,
+      Map<String, String> filters,
+      String sort,
+      Integer limit,
+      String cursor,
+      boolean includeZeroStock,
+      int page) {
     try {
       inventoryValidator.validateShopId(shopId);
       boolean hasQuery = StringUtils.hasText(query);
@@ -1006,6 +1019,8 @@ public class InventoryService {
           includeZeroStock);
 
       int effectiveLimit = limit != null && limit > 0 ? Math.min(limit, 200) : 50;
+      int pageNum = Math.max(page, 0);
+      int skip = pageNum * effectiveLimit;
       InventoryVerticalSearchHandler.VerticalSearchPage searchPage =
           inventoryVerticalSearchHandler.searchPage(
               shopId,
@@ -1014,13 +1029,18 @@ public class InventoryService {
               sort,
               effectiveLimit,
               cursor,
-              0,
+              skip,
               includeZeroStock);
 
       List<InventorySummaryDto> summaries =
           toSummariesWithExtensions(shopId, searchPage.items());
 
-      InventoryListResponse response = inventoryMapper.toInventoryListResponse(summaries);
+      long totalItems = searchPage.totalMatched();
+      int totalPages =
+          totalItems > 0 ? (int) Math.ceil((double) totalItems / effectiveLimit) : 0;
+      PageMeta pageMeta = new PageMeta(pageNum, effectiveLimit, totalItems, totalPages);
+
+      InventoryListResponse response = inventoryMapper.toInventoryListResponse(summaries, pageMeta);
       if (StringUtils.hasText(searchPage.nextCursor())) {
         response.setMeta(Map.of("nextCursor", searchPage.nextCursor()));
       }

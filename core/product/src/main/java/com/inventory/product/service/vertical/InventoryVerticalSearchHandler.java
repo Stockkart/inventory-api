@@ -14,7 +14,9 @@ import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.utils.InventoryFreeTextSearch;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -36,25 +38,28 @@ import org.springframework.util.StringUtils;
 @Slf4j
 public class InventoryVerticalSearchHandler {
 
-  public record VerticalSearchPage(List<Inventory> items, String nextCursor) {}
+  public record VerticalSearchPage(List<Inventory> items, String nextCursor, long totalMatched) {}
 
   private final ShopRepository shopRepository;
   private final PluginRegistry pluginRegistry;
   private final SchemaLoader schemaLoader;
   private final InventoryRepository inventoryRepository;
   private final MongoTemplate mongoTemplate;
+  private final InventoryVerticalExtensionHandler extensionHandler;
 
   public InventoryVerticalSearchHandler(
       ShopRepository shopRepository,
       PluginRegistry pluginRegistry,
       SchemaLoader schemaLoader,
       InventoryRepository inventoryRepository,
-      MongoTemplate mongoTemplate) {
+      MongoTemplate mongoTemplate,
+      InventoryVerticalExtensionHandler extensionHandler) {
     this.shopRepository = shopRepository;
     this.pluginRegistry = pluginRegistry;
     this.schemaLoader = schemaLoader;
     this.inventoryRepository = inventoryRepository;
     this.mongoTemplate = mongoTemplate;
+    this.extensionHandler = extensionHandler;
   }
 
   /**
@@ -185,52 +190,82 @@ public class InventoryVerticalSearchHandler {
       int skip,
       boolean includeZeroStock) {
     Shop shop = shopRepository.findById(shopId).orElse(null);
+    boolean hasQuery = StringUtils.hasText(q);
+    boolean hasFilters = filters != null && !filters.isEmpty();
+
     if (shop == null || !StringUtils.hasText(shop.getVerticalId())) {
-      return textOnlyCorePage(shopId, q, limit, skip, includeZeroStock);
+      return textOnlyCorePage(shopId, q, sort, limit, skip, includeZeroStock, null);
     }
 
     validateFilters(shop, filters);
 
+    // Free-text q: product + inventory union is the source of truth. Extension rows are optional
+    // enrichment (mergeSummaries); never require inventory_ext_* for a lot to appear in results.
+    if (hasQuery && !hasFilters) {
+      return textOnlyCorePage(shopId, q, sort, limit, skip, includeZeroStock, shop);
+    }
+
     Optional<InventorySearchProvider> providerOpt =
         pluginRegistry.find(shop.getVerticalId()).flatMap(p -> p.getSearchProvider());
     if (providerOpt.isEmpty()) {
-      return textOnlyCorePage(shopId, q, limit, skip, includeZeroStock);
+      return textOnlyCorePage(shopId, q, sort, limit, skip, includeZeroStock, shop);
     }
 
-    // With a text query the stock gate is already applied here, so the extension query is
-    // restricted to in-stock ids and its limit fills a whole page. Filter-only searches have no id
-    // restriction, so those pages are trimmed after loading and can come back short.
+    return extensionFilteredSearchPage(
+        shop,
+        shopId,
+        q,
+        filters,
+        sort,
+        limit,
+        cursor,
+        skip,
+        includeZeroStock,
+        providerOpt.get());
+  }
+
+  /**
+   * Extension-indexed search for explicit vertical filters (expiry window, batchNo equals, …).
+   * Optional {@code q} narrows candidates via {@link #searchInventoryByText} first.
+   */
+  private VerticalSearchPage extensionFilteredSearchPage(
+      Shop shop,
+      String shopId,
+      String q,
+      Map<String, String> filters,
+      String sort,
+      int limit,
+      String cursor,
+      int skip,
+      boolean includeZeroStock,
+      InventorySearchProvider provider) {
     Set<String> restrictIds = resolveRestrictInventoryIds(shopId, q, includeZeroStock);
     if (restrictIds != null && restrictIds.isEmpty()) {
-      return new VerticalSearchPage(List.of(), null);
+      return new VerticalSearchPage(List.of(), null, 0);
     }
 
     InventorySearchResult result =
-        providerOpt
-            .get()
-            .search(
-                shopId,
-                InventorySearchQuery.builder()
-                    .filters(filters != null ? filters : Map.of())
-                    .sort(sort)
-                    .limit(limit)
-                    .cursor(cursor)
-                    .skip(skip)
-                    .restrictInventoryIds(restrictIds)
-                    .schema(schemaLoader.load(shop.getVerticalId(), shop.getPluginVersion()))
-                    .build());
+        provider.search(
+            shopId,
+            InventorySearchQuery.builder()
+                .filters(filters != null ? filters : Map.of())
+                .sort(sort)
+                .limit(limit)
+                .cursor(cursor)
+                .skip(skip)
+                .restrictInventoryIds(restrictIds)
+                .schema(schemaLoader.load(shop.getVerticalId(), shop.getPluginVersion()))
+                .build());
 
     List<String> extensionIds =
         result.getInventoryIds() != null ? result.getInventoryIds() : List.of();
-    List<Inventory> items = inStockOnly(loadInventoriesOrdered(shopId, extensionIds), includeZeroStock);
+    List<Inventory> items =
+        inStockOnly(loadInventoriesOrdered(shopId, extensionIds), includeZeroStock);
     boolean noFilters = filters == null || filters.isEmpty();
-    // Extension docs can point at missing inventory (orphans). Offset pages then under-fill
-    // (e.g. page 0 → 1 row, page 2 → 50). Fall back when nothing loads, or when an unfiltered
-    // page lost rows to orphans — skip on extension ≠ skip on inventory.
     boolean orphanedPage =
         includeZeroStock && !extensionIds.isEmpty() && items.size() < extensionIds.size();
     if (items.isEmpty() || (orphanedPage && noFilters)) {
-      if (noFilters) {
+      if (noFilters && StringUtils.hasText(q)) {
         log.warn(
             "[inventory-search] extension search returned {} ids but only {} loadable for shop {} "
                 + "(q={}); falling back to core inventory",
@@ -238,10 +273,14 @@ public class InventoryVerticalSearchHandler {
             items.size(),
             shopId,
             q);
-        return textOnlyCorePage(shopId, q, limit, skip, includeZeroStock);
+        return textOnlyCorePage(shopId, q, sort, limit, skip, includeZeroStock, shop);
       }
     }
-    return new VerticalSearchPage(items, result.getNextCursor());
+    long totalMatched =
+        restrictIds != null
+            ? restrictIds.size()
+            : Math.max(result.getTotalMatched(), items.size());
+    return new VerticalSearchPage(items, result.getNextCursor(), totalMatched);
   }
 
   /**
@@ -255,7 +294,8 @@ public class InventoryVerticalSearchHandler {
 
   public VerticalSearchPage listPage(
       String shopId, String sort, int limit, int skip, boolean includeZeroStock) {
-    return textOnlyCorePage(shopId, null, limit, skip, includeZeroStock);
+    Shop shop = shopRepository.findById(shopId).orElse(null);
+    return textOnlyCorePage(shopId, null, sort, limit, skip, includeZeroStock, shop);
   }
 
   private Set<String> resolveRestrictInventoryIds(
@@ -291,7 +331,13 @@ public class InventoryVerticalSearchHandler {
   }
 
   private VerticalSearchPage textOnlyCorePage(
-      String shopId, String q, int limit, int skip, boolean includeZeroStock) {
+      String shopId,
+      String q,
+      String sort,
+      int limit,
+      int skip,
+      boolean includeZeroStock,
+      Shop shop) {
     int effectiveLimit = limit > 0 ? limit : 50;
     if (!StringUtils.hasText(q)) {
       int page = effectiveLimit > 0 ? skip / effectiveLimit : 0;
@@ -302,15 +348,73 @@ public class InventoryVerticalSearchHandler {
               ? inventoryRepository.findByShopId(shopId, pageRequest)
               : inventoryRepository.findByShopIdAndCurrentCountGreaterThan(
                   shopId, BigDecimal.ZERO, pageRequest);
-      return new VerticalSearchPage(pageItems, null);
+      return new VerticalSearchPage(pageItems, null, pageItems.size());
     }
     List<Inventory> matches = searchInventoryByText(shopId, q.trim(), includeZeroStock);
+    if (shop != null && StringUtils.hasText(sort)) {
+      matches = sortTextMatchesByExtensionField(shopId, matches, sort);
+    }
+    long totalMatched = matches.size();
     int from = Math.max(skip, 0);
     if (from >= matches.size()) {
-      return new VerticalSearchPage(List.of(), null);
+      return new VerticalSearchPage(List.of(), null, totalMatched);
     }
     int to = Math.min(from + effectiveLimit, matches.size());
-    return new VerticalSearchPage(matches.subList(from, to), null);
+    return new VerticalSearchPage(matches.subList(from, to), null, totalMatched);
+  }
+
+  /**
+   * Sorts text-search hits by an optional extension field (e.g. {@code expiryDate:asc}). Lots
+   * without an extension row sort last on ascending date sorts.
+   */
+  private List<Inventory> sortTextMatchesByExtensionField(
+      String shopId, List<Inventory> matches, String sort) {
+    if (matches == null || matches.size() <= 1 || !StringUtils.hasText(sort)) {
+      return matches;
+    }
+    String[] parts = sort.trim().split(":", 2);
+    String field = parts[0].trim();
+    if (!StringUtils.hasText(field)) {
+      return matches;
+    }
+    boolean ascending = parts.length < 2 || "asc".equalsIgnoreCase(parts[1].trim());
+
+    List<String> ids = matches.stream().map(Inventory::getId).filter(StringUtils::hasText).toList();
+    Map<String, Map<String, Object>> extensionByInventoryId =
+        extensionHandler.loadExtensionFieldsBatch(shopId, ids);
+
+    Comparator<Inventory> comparator =
+        (left, right) -> {
+          Object leftValue =
+              extensionByInventoryId.getOrDefault(left.getId(), Map.of()).get(field);
+          Object rightValue =
+              extensionByInventoryId.getOrDefault(right.getId(), Map.of()).get(field);
+          int compared = compareExtensionSortValues(leftValue, rightValue);
+          return ascending ? compared : -compared;
+        };
+    return matches.stream().sorted(comparator).toList();
+  }
+
+  private static int compareExtensionSortValues(Object left, Object right) {
+    if (left == null && right == null) {
+      return 0;
+    }
+    if (left == null) {
+      return 1;
+    }
+    if (right == null) {
+      return -1;
+    }
+    if (left instanceof Instant leftInstant && right instanceof Instant rightInstant) {
+      return leftInstant.compareTo(rightInstant);
+    }
+    if (left instanceof Comparable<?> leftComparable
+        && right instanceof Comparable<?> rightComparable) {
+      @SuppressWarnings("unchecked")
+      Comparable<Object> comparableLeft = (Comparable<Object>) leftComparable;
+      return comparableLeft.compareTo(rightComparable);
+    }
+    return String.valueOf(left).compareToIgnoreCase(String.valueOf(right));
   }
 
   private void validateFilters(Shop shop, Map<String, String> filters) {

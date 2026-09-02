@@ -19,16 +19,21 @@ public final class InventorySearchQueryParser {
       Integer limit,
       Map<String, String> fieldFilters,
       String cursor,
-      boolean includeZeroStock) {}
+      boolean includeZeroStock,
+      Integer page) {}
 
   public static Parsed parse(Map<String, String> query) {
     if (query == null || query.isEmpty()) {
-      return new Parsed(null, null, null, Map.of(), null, true);
+      return new Parsed(null, null, null, Map.of(), null, true, 0);
     }
 
     String sort = trimToNull(query.get("sort"));
     Integer limit = parsePositiveInt(query.get("limit"));
+    if (limit == null) {
+      limit = parsePositiveInt(query.get("size"));
+    }
     String cursor = trimToNull(query.get("cursor"));
+    Integer page = parseNonNegativeInt(query.get("page"));
     // Sold-out lots stay in the results unless the caller asks otherwise: stock
     // correction and pricing screens exist to work on them.
     boolean includeZeroStock = !"false".equalsIgnoreCase(trimToNull(query.get("includeZeroStock")));
@@ -53,7 +58,7 @@ public final class InventorySearchQueryParser {
       fieldFilters.putAll(unified.fieldFilters());
     }
 
-    return new Parsed(q, sort, limit, fieldFilters, cursor, includeZeroStock);
+    return new Parsed(q, sort, limit, fieldFilters, cursor, includeZeroStock, page != null ? page : 0);
   }
 
   private static String trimToNull(String value) {
@@ -70,6 +75,18 @@ public final class InventorySearchQueryParser {
     try {
       int n = Integer.parseInt(raw.trim());
       return n > 0 ? n : null;
+    } catch (NumberFormatException e) {
+      return null;
+    }
+  }
+
+  private static Integer parseNonNegativeInt(String raw) {
+    if (!StringUtils.hasText(raw)) {
+      return null;
+    }
+    try {
+      int n = Integer.parseInt(raw.trim());
+      return n >= 0 ? n : null;
     } catch (NumberFormatException e) {
       return null;
     }

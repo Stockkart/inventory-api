@@ -311,7 +311,7 @@ public class QuotationService {
       name = phone;
     }
     if (!StringUtils.hasText(name)) {
-      name = "Walk-in";
+      name = CustomerService.GUEST_CUSTOMER_DISPLAY_NAME;
     }
     return new QuotationSummaryDto(
         purchase.getId(),
