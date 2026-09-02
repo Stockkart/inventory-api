@@ -44,7 +44,7 @@ public class InvoiceTextRenderer {
    *
    * <p>The estimate stays at eighty, where it fits at ten CPI and is larger still.
    */
-  public static final int TAX_LINE_WIDTH = 108;
+  public static final int TAX_LINE_WIDTH = 96;
 
   /** Half the width, for the two-column header the template lays out as a table row. */
   private static final int HALF = LINE_WIDTH / 2;
@@ -65,14 +65,21 @@ public class InvoiceTextRenderer {
   private static final int TAX_TOTAL_VALUE = 12;
 
   /** Least load-bearing first: what gets dropped so the product name stays readable. */
+  /**
+   * Which columns give way when the page is too narrow, in order.
+   *
+   * <p>SGST and CGST are not on the list. They used to head it, so the first thing a narrow
+   * page dropped was the tax the invoice exists to state - a document that is not a tax invoice
+   * without them. Presentation goes first, then the fields a buyer can look up elsewhere.
+   */
   private static final List<String> TAX_COLUMN_SACRIFICE_ORDER =
-      List.of("CGST", "SGST", "MFG/MKD.", "SCHEME", "PACK.", "Exp.Dt", "HSN/SAC", "M.R.P.");
+      List.of("MFG/MKD.", "PACK.", "SCHEME", "Exp.Dt", "M.R.P.", "HSN/SAC");
 
   /** A product name narrower than this is not worth printing. */
-  // Sixteen is what the trade bill gives a product name once every other column is sized to
-  // its content. Holding out for twenty forced SGST and CGST off the page instead - columns a
-  // tax invoice cannot do without.
-  private static final int TAX_NAME_MIN = 16;
+  // Thirteen is what is left for a product name at eight inches once the tax columns are kept.
+  // It is short, and it is the price of printing at twelve CPI rather than condensed: the
+  // alternative is type the shop cannot read.
+  private static final int TAX_NAME_MIN = 13;
 
   /**
    * ESC/P emphasised mode on and off. The printer draws these lines twice, which is the only
