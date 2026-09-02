@@ -44,7 +44,7 @@ public class InvoiceTextRenderer {
    *
    * <p>The estimate stays at eighty, where it fits at ten CPI and is larger still.
    */
-  public static final int TAX_LINE_WIDTH = 96;
+  public static final int TAX_LINE_WIDTH = 137;
 
   /** Half the width, for the two-column header the template lays out as a table row. */
   private static final int HALF = LINE_WIDTH / 2;
@@ -76,10 +76,9 @@ public class InvoiceTextRenderer {
       List.of("MFG/MKD.", "PACK.", "SCHEME", "Exp.Dt", "M.R.P.", "HSN/SAC");
 
   /** A product name narrower than this is not worth printing. */
-  // Thirteen is what is left for a product name at eight inches once the tax columns are kept.
-  // It is short, and it is the price of printing at twelve CPI rather than condensed: the
-  // alternative is type the shop cannot read.
-  private static final int TAX_NAME_MIN = 13;
+  // Twenty, which condensed leaves room for. The reference bill gives its product column
+  // twenty-eight.
+  private static final int TAX_NAME_MIN = 20;
 
   /**
    * ESC/P emphasised mode on and off. The printer draws these lines twice, which is the only
@@ -379,8 +378,8 @@ public class InvoiceTextRenderer {
     List<Column> columns = new ArrayList<>();
     // Headings and order as the trade bill sets them. There is no PACK column: the pack size
     // is not a field of its own here, it is written into the product name.
-    columns.add(new Column("QTY.", 4, true, i -> quantity(i.getQuantity())));
-    columns.add(new Column("PACK.", 5, false, i -> nullToEmpty(i.getPack())));
+    columns.add(new Column("QTY.", 8, true, i -> quantity(i.getQuantity())));
+    columns.add(new Column("PACK.", 6, false, i -> nullToEmpty(i.getPack())));
     columns.add(new Column("PRODUCTS", -1, false, i -> nullToEmpty(i.getName())));
     addTaxColumn(columns, items, visible(r.getShowHsn()),
         new Column("HSN/SAC", 8, false, i -> nullToEmpty(i.getHsn())));
@@ -389,20 +388,20 @@ public class InvoiceTextRenderer {
     addTaxColumn(columns, items, visible(r.getShowExpiry()),
         new Column("Exp.Dt", 6, false, i -> nullToEmpty(i.getExpiryDate())));
     addTaxColumn(columns, items, visible(r.getShowBatch()),
-        new Column("BATCH No.", 8, false, i -> nullToEmpty(i.getBatchNo())));
+        new Column("BATCH No.", 12, false, i -> nullToEmpty(i.getBatchNo())));
     addTaxColumn(columns, items, visible(r.getShowMrp()),
-        new Column("M.R.P.", 7, true, i -> money(i.getMaximumRetailPrice())));
-    columns.add(new Column("RATE", 7, true, i -> money(i.getPriceToRetail())));
+        new Column("M.R.P.", 9, true, i -> money(i.getMaximumRetailPrice())));
+    columns.add(new Column("RATE", 8, true, i -> money(i.getPriceToRetail())));
     addTaxColumn(columns, items, visible(r.getShowScheme()),
-        new Column("SCHEME", 5, true, InvoiceTextRenderer::schemeLabel));
+        new Column("SCHEME", 6, true, InvoiceTextRenderer::schemeLabel));
     addTaxColumn(columns, items, visible(r.getShowLineDiscount()),
-        new Column("DISC%", 5, true, i ->
+        new Column("DIS%", 5, true, i ->
             i.getSaleAdditionalDiscount() != null ? money(i.getSaleAdditionalDiscount()) : ""));
     addTaxColumn(columns, items, visible(r.getShowTaxDetails()),
         new Column("SGST", 4, true, i -> rate(i.getSgst())));
     addTaxColumn(columns, items, visible(r.getShowTaxDetails()),
         new Column("CGST", 4, true, i -> rate(i.getCgst())));
-    columns.add(new Column("AMOUNT", 8, true, i -> money(i.getTotalAmount())));
+    columns.add(new Column("AMOUNT", 10, true, i -> money(i.getTotalAmount())));
 
     for (String sacrifice : TAX_COLUMN_SACRIFICE_ORDER) {
       if (flexWidth(columns, TAX_LINE_WIDTH) >= TAX_NAME_MIN) {
