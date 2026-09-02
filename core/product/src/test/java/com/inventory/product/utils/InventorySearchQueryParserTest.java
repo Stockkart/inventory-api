@@ -53,4 +53,14 @@ class InventorySearchQueryParserTest {
     assertFalse(parsed.includeZeroStock());
     assertTrue(parsed.fieldFilters().isEmpty());
   }
+
+  @Test
+  void parse_pageParam() {
+    InventorySearchQueryParser.Parsed parsed =
+        InventorySearchQueryParser.parse(
+            Map.of("q", "baby", "limit", "10", "page", "2"));
+    assertEquals("baby", parsed.q());
+    assertEquals(10, parsed.limit());
+    assertEquals(2, parsed.page());
+  }
 }
