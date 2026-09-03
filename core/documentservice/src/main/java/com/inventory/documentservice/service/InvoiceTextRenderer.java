@@ -46,6 +46,32 @@ public class InvoiceTextRenderer {
    */
   public static final int TAX_LINE_WIDTH = 137;
 
+  /** What the tax bill calls itself, above the shop's own masthead. */
+  private static final String TAX_TITLE = "TAX INVOICE";
+
+  /**
+   * The grid's own characters, as the trade bill draws them: a bar between columns, a cross
+   * where a bar meets a rule.
+   *
+   * <p>The colon that stood between columns before read as punctuation inside the values - a
+   * batch number and the rate beside it ran together - where a bar reads as the edge of a
+   * column and nothing else.
+   */
+  private static final String GRID_BAR = "|";
+
+  private static final String GRID_CORNER = "+";
+
+  /**
+   * Columns kept clear at the right of the totals block.
+   *
+   * <p>NET AMOUNT is set double width, and a double-width glyph that would end flush against
+   * the right margin does not fit there: the printer wrapped it, so a lone huge "0" printed on
+   * the line below and the bill read "210.0". Ending the block short of the margin leaves that
+   * glyph somewhere to land. The whole block is pulled in, not just the net row, so the figures
+   * stay in one column.
+   */
+  private static final int TAX_TOTALS_RIGHT_MARGIN = 2;
+
   /** Half the width, for the two-column header the template lays out as a table row. */
   private static final int HALF = LINE_WIDTH / 2;
 
@@ -239,7 +265,10 @@ public class InvoiceTextRenderer {
   // ------------------------------------------------------------ tax invoice
 
   private void appendTaxInvoice(List<String> out, GenerateInvoiceRequest r) {
-    appendMasthead(out, r, null, TAX_LINE_WIDTH);
+    // The trade bill names itself above the shop, and the shop asked for the same. It was
+    // dropped once on the argument that GSTIN, HSN and a tax table said it well enough; the
+    // counter reads the words, not the columns.
+    appendMasthead(out, r, TAX_TITLE, TAX_LINE_WIDTH);
     appendTaxParties(out, r);
     appendTaxItems(out, r);
     appendTaxTotals(out, r);
@@ -340,7 +369,8 @@ public class InvoiceTextRenderer {
       out.add(pad(l, TAX_LEFT, false) + " " + pad(m, TAX_MIDDLE, false) + " "
           + pad(rr, rightWidth, false));
     }
-    out.add(rule(TAX_LINE_WIDTH));
+    // No rule closes this block: the grid below opens with one of its own, and two full-width
+    // rules on consecutive lines read as a mistake and cost a line the page cannot spare.
   }
 
   /**
@@ -350,19 +380,56 @@ public class InvoiceTextRenderer {
    */
   private void appendTaxItems(List<String> out, GenerateInvoiceRequest r) {
     List<Column> columns = buildTaxColumns(r);
-    int flex = flexWidth(columns, TAX_LINE_WIDTH);
-    out.add(renderRow(columns, flex, Column::header, ":"));
-    out.add(rule(TAX_LINE_WIDTH));
+    int flex = taxFlexWidth(columns);
+    String columnRule = columnRule(columns, flex);
+
+    out.add(columnRule);
+    out.add(borderedRow(columns, flex, Column::header));
+    out.add(columnRule);
 
     List<InvoiceItem> items = r.getItems() != null ? r.getItems() : List.of();
     for (InvoiceItem item : items) {
-      out.add(renderRow(columns, flex, c -> c.value().apply(item), ":"));
-      out.add(rule(TAX_LINE_WIDTH));
+      out.add(borderedRow(columns, flex, c -> c.value().apply(item)));
     }
-    if (items.isEmpty()) {
-      out.add(rule(TAX_LINE_WIDTH));
-    }
+    // One rule closes the grid rather than one per row. A rule between every item doubled the
+    // height of the grid, and the trade bill it is compared against rules the head and the
+    // foot only.
+    out.add(columnRule);
     out.add("NO OF ITEMS : " + items.size());
+  }
+
+  /**
+   * The flexible column's share once the bars are paid for.
+   *
+   * <p>A bordered grid carries one bar between each pair of columns and one at each end, so it
+   * spends {@code columns + 1} characters on structure where the old colon-separated grid spent
+   * {@code columns - 1}. The product name absorbs the difference, so the grid still ends exactly
+   * on the right margin.
+   */
+  private int taxFlexWidth(List<Column> columns) {
+    int fixed = columns.stream().filter(c -> c.width() > 0).mapToInt(Column::width).sum();
+    return TAX_LINE_WIDTH - fixed - (columns.size() + 1);
+  }
+
+  /**
+   * The rule that closes a bordered grid: dashes across each column, a cross at every bar.
+   *
+   * <p>Drawn from the same widths as the rows themselves, so the crosses land on the bars
+   * rather than near them - a plain row of dashes leaves the eye to guess where a column ends,
+   * which is the thing a trade bill's grid exists to answer.
+   */
+  private String columnRule(List<Column> columns, int flex) {
+    StringBuilder out = new StringBuilder(TAX_LINE_WIDTH);
+    out.append(GRID_CORNER);
+    for (Column column : columns) {
+      out.append("-".repeat(column.width() > 0 ? column.width() : flex)).append(GRID_CORNER);
+    }
+    return out.toString();
+  }
+
+  /** One grid row, every column boxed in by bars. */
+  private String borderedRow(List<Column> columns, int flex, Function<Column, String> cell) {
+    return GRID_BAR + renderRow(columns, flex, cell, GRID_BAR) + GRID_BAR;
   }
 
   /**
@@ -404,7 +471,7 @@ public class InvoiceTextRenderer {
     columns.add(new Column("AMOUNT", 10, true, i -> money(i.getTotalAmount())));
 
     for (String sacrifice : TAX_COLUMN_SACRIFICE_ORDER) {
-      if (flexWidth(columns, TAX_LINE_WIDTH) >= TAX_NAME_MIN) {
+      if (taxFlexWidth(columns) >= TAX_NAME_MIN) {
         break;
       }
       columns.removeIf(c -> c.header().equals(sacrifice));
@@ -464,7 +531,7 @@ public class InvoiceTextRenderer {
     String value = money(amount);
     // The label keeps the width the other rows give it, so the column of labels stays straight;
     // only the figure is set wide, and it still ends on the right margin.
-    int printed = TAX_TOTAL_LABEL + value.length() * 2;
+    int printed = TAX_TOTAL_LABEL + value.length() * 2 + TAX_TOTALS_RIGHT_MARGIN;
     return " ".repeat(Math.max(0, TAX_LINE_WIDTH - printed))
         + BOLD_ON + pad(label, TAX_TOTAL_LABEL, false) + doubleWide(value) + BOLD_OFF;
   }
@@ -475,7 +542,6 @@ public class InvoiceTextRenderer {
   }
 
   private void appendTaxTotals(List<String> out, GenerateInvoiceRequest r) {
-    out.add("");
     out.add(taxTotalRow("TOTAL AMOUNT", r.getSubTotal()));
     if (visible(r.getShowAdditionalDiscount()) && isPositive(r.getSaleAdditionalDiscountTotal())) {
       out.add(taxTotalRow("Less Discount", r.getSaleAdditionalDiscountTotal()));
@@ -525,7 +591,8 @@ public class InvoiceTextRenderer {
   private static String taxTotalRow(String label, BigDecimal amount) {
     String value = money(amount);
     String block = pad(label, TAX_TOTAL_LABEL, false) + pad(value, TAX_TOTAL_VALUE, true);
-    return " ".repeat(Math.max(0, TAX_LINE_WIDTH - block.length())) + block;
+    return " ".repeat(Math.max(0, TAX_LINE_WIDTH - block.length() - TAX_TOTALS_RIGHT_MARGIN))
+        + block;
   }
 
   /**
@@ -551,7 +618,6 @@ public class InvoiceTextRenderer {
   private void appendTaxFooter(List<String> out, GenerateInvoiceRequest r) {
     appendGstSummary(out, r);
     if (visible(r.getShowAmountInWords()) && present(r.getAmountInWords())) {
-      out.add("");
       for (String line : wrap("Rs. " + r.getAmountInWords(), TAX_LINE_WIDTH)) {
         out.add(line);
       }
@@ -581,7 +647,6 @@ public class InvoiceTextRenderer {
       out.add("");
       out.add(twoColumn("Received By", "Authorised Signatory", TAX_LINE_WIDTH));
     }
-    out.add("");
     // Plain text, bottom left. The condensed markers are SI and DC2, and the print
     // bridge folds every byte outside printable ASCII to '?', so wrapping this line
     // in them printed "?stockkart...?" on paper rather than shrinking it.
