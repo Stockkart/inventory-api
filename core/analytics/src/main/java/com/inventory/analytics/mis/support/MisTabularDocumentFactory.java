@@ -1,5 +1,7 @@
 package com.inventory.analytics.mis.support;
 
+import com.inventory.analytics.mis.rest.dto.MisBankSummaryRowDto;
+import com.inventory.analytics.mis.rest.dto.MisBankSummaryTotalsDto;
 import com.inventory.analytics.mis.rest.dto.MisMoneyPartySummaryDto;
 import com.inventory.analytics.mis.rest.dto.MisMoneyRowDto;
 import com.inventory.analytics.mis.rest.dto.MisMoneySummaryDto;
@@ -10,6 +12,8 @@ import com.inventory.analytics.mis.rest.dto.MisStockSummaryDto;
 import com.inventory.documentservice.rest.dto.mis.MisDocumentKpi;
 import com.inventory.documentservice.rest.dto.mis.MisDocumentSheet;
 import com.inventory.documentservice.rest.dto.mis.MisTabularDocumentRequest;
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -295,5 +299,84 @@ public final class MisTabularDocumentFactory {
 
   private static String nullToEmpty(String s) {
     return s != null ? s : "";
+  }
+
+  /**
+   * Company-wise opening / purchase / sale / closing stock value.
+   *
+   * <p>The adjustment column is only emitted when something actually moved through it, so
+   * the ordinary export keeps the four columns the shop's old report printed. TOTAL rides
+   * along as a final ordinary row, since the payload has no notion of a total.
+   */
+  public static MisTabularDocumentRequest bankSummaryReport(
+      String title,
+      String shopName,
+      LocalDateTime generatedAt,
+      LocalDate from,
+      LocalDate to,
+      MisBankSummaryTotalsDto totals,
+      List<MisBankSummaryRowDto> rows,
+      boolean includeAdjustment) {
+
+    List<MisDocumentKpi> kpis = new ArrayList<>();
+    if (totals != null) {
+      kpis.add(kpi("Companies", String.valueOf(totals.getCompanyCount())));
+      kpis.add(kpi("Opening", MisReportSupport.rupee(totals.getOpening())));
+      kpis.add(kpi("Purchase", MisReportSupport.rupee(totals.getPurchase())));
+      kpis.add(kpi("Sale", MisReportSupport.rupee(totals.getSale())));
+      if (includeAdjustment) {
+        kpis.add(kpi("Adjustment", MisReportSupport.rupee(totals.getAdjustment())));
+      }
+      kpis.add(kpi("Closing", MisReportSupport.rupee(totals.getClosing())));
+    }
+
+    List<String> columns = new ArrayList<>(List.of("Company", "Opening", "Purchase", "Sale"));
+    if (includeAdjustment) {
+      columns.add("Adjustment");
+    }
+    columns.add("Closing");
+
+    List<List<String>> table = new ArrayList<>();
+    if (rows != null) {
+      for (MisBankSummaryRowDto r : rows) {
+        table.add(bankSummaryRow(nullToEmpty(r.getCompany()), r.getOpening(), r.getPurchase(),
+            r.getSale(), r.getAdjustment(), r.getClosing(), includeAdjustment));
+      }
+    }
+    if (totals != null) {
+      table.add(bankSummaryRow("TOTAL", totals.getOpening(), totals.getPurchase(),
+          totals.getSale(), totals.getAdjustment(), totals.getClosing(), includeAdjustment));
+    }
+
+    return MisTabularDocumentRequest.builder()
+        .title(title)
+        .shopName(shopName)
+        .periodLabel(MisReportSupport.formatDate(from) + " - " + MisReportSupport.formatDate(to))
+        .generatedAtLabel(generatedAt != null ? TS.format(generatedAt) : "")
+        .kpis(kpis)
+        .columns(columns)
+        .rows(table)
+        .detailSheetTitle("Bank Summary")
+        .build();
+  }
+
+  private static List<String> bankSummaryRow(
+      String label,
+      BigDecimal opening,
+      BigDecimal purchase,
+      BigDecimal sale,
+      BigDecimal adjustment,
+      BigDecimal closing,
+      boolean includeAdjustment) {
+    List<String> cells = new ArrayList<>();
+    cells.add(label);
+    cells.add(MisReportSupport.rupee(opening));
+    cells.add(MisReportSupport.rupee(purchase));
+    cells.add(MisReportSupport.rupee(sale));
+    if (includeAdjustment) {
+      cells.add(MisReportSupport.rupee(adjustment));
+    }
+    cells.add(MisReportSupport.rupee(closing));
+    return cells;
   }
 }

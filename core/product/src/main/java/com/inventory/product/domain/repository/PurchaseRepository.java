@@ -105,6 +105,11 @@ public interface PurchaseRepository extends MongoRepository<Purchase, String> {
    */
   List<Purchase> findByShopIdAndStatusAndSoldAtBetween(String shopId, PurchaseStatus status, Instant start, Instant end);
 
+  /** Completed sales on or after an instant, for rolling live stock counters backwards. */
+  @Query("{ 'shopId': ?0, 'status': ?1, 'soldAt': { '$gte': ?2 } }")
+  List<Purchase> findByShopIdAndStatusAndSoldAtFrom(
+      String shopId, PurchaseStatus status, Instant startInclusive);
+
   /**
    * Find completed purchases in a period: soldAt in range, or updatedAt in range (e.g. completed in period).
    * Ensures purchases completed in the period are included even if soldAt was never set or is from cart-creation.

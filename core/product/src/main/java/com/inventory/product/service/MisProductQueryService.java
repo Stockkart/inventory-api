@@ -1,14 +1,18 @@
 package com.inventory.product.service;
 
 import com.inventory.product.domain.model.Inventory;
+import com.inventory.product.domain.model.InventoryCorrection;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.Refund;
+import com.inventory.product.domain.model.StockPeriodSnapshot;
 import com.inventory.product.domain.model.VendorPurchaseInvoice;
 import com.inventory.product.domain.model.VendorPurchaseReturn;
 import com.inventory.product.domain.model.enums.PurchaseStatus;
+import com.inventory.product.domain.repository.InventoryCorrectionRepository;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.PurchaseRepository;
 import com.inventory.product.domain.repository.RefundRepository;
+import com.inventory.product.domain.repository.StockPeriodSnapshotRepository;
 import com.inventory.product.domain.repository.VendorPurchaseInvoiceRepository;
 import com.inventory.product.domain.repository.VendorPurchaseReturnRepository;
 import com.inventory.user.domain.model.Customer;
@@ -16,6 +20,7 @@ import com.inventory.user.domain.model.Vendor;
 import com.inventory.user.domain.repository.CustomerRepository;
 import com.inventory.user.domain.repository.VendorRepository;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -40,6 +45,8 @@ public class MisProductQueryService {
   private final PurchaseRepository purchaseRepository;
   private final RefundRepository refundRepository;
   private final InventoryRepository inventoryRepository;
+  private final InventoryCorrectionRepository inventoryCorrectionRepository;
+  private final StockPeriodSnapshotRepository stockPeriodSnapshotRepository;
   private final VendorRepository vendorRepository;
   private final CustomerRepository customerRepository;
 
@@ -108,5 +115,42 @@ public class MisProductQueryService {
               }
             });
     return out;
+  }
+
+  // --- Bank Summary: movements on or after an instant, for rolling live stock
+  // counters backwards to a period start, and the frozen period closes ---
+
+  public List<VendorPurchaseInvoice> findVendorInvoicesFrom(String shopId, Instant fromInclusive) {
+    return vendorPurchaseInvoiceRepository.findByShopIdAndInvoiceDateFrom(shopId, fromInclusive);
+  }
+
+  public List<Purchase> findCompletedSalesFrom(String shopId, Instant fromInclusive) {
+    return purchaseRepository.findByShopIdAndStatusAndSoldAtFrom(
+        shopId, PurchaseStatus.COMPLETED, fromInclusive);
+  }
+
+  public List<Refund> findRefundsFrom(String shopId, Instant fromInclusive) {
+    return refundRepository.findByShopIdAndCreatedAtFrom(shopId, fromInclusive);
+  }
+
+  public List<VendorPurchaseReturn> findVendorReturnsFrom(String shopId, Instant fromInclusive) {
+    return vendorPurchaseReturnRepository.findByShopIdAndCreatedAtFrom(shopId, fromInclusive);
+  }
+
+  /**
+   * Every correction for the shop. A stock adjustment is dated by its line's
+   * {@code processedAt}, which is nested inside an array, so callers filter lines
+   * themselves rather than pushing an array match into Mongo.
+   */
+  public List<InventoryCorrection> findAllCorrections(String shopId) {
+    return inventoryCorrectionRepository.findByShopId(shopId);
+  }
+
+  public Optional<StockPeriodSnapshot> findSnapshot(String shopId, LocalDate periodEnd) {
+    return stockPeriodSnapshotRepository.findByShopIdAndPeriodEnd(shopId, periodEnd);
+  }
+
+  public StockPeriodSnapshot saveSnapshot(StockPeriodSnapshot snapshot) {
+    return stockPeriodSnapshotRepository.save(snapshot);
   }
 }
