@@ -84,7 +84,19 @@ public interface InventoryRepository extends MongoRepository<Inventory, String> 
    * Find inventories by shop and created-at date range (inclusive).
    * Used for GSTR-2 inward supply reporting (inventory received in period).
    */
-  List<Inventory> findByShopIdAndCreatedAtBetween(String shopId, Instant start, Instant end);
+  /**
+   * Half-open period: the first instant counts, the last does not.
+   *
+   * <p>Spelt as a query rather than derived from the name, because a derived
+   * method cannot put two conditions on one property -- Spring Data raises
+   * {@code InvalidMongoDbApiUsageException} at the first call. Derived {@code
+   * Between} would compile, but it is exclusive at both ends on MongoDB, and
+   * these timestamps are dates far more often than times, so anything stamped
+   * midnight on the 1st fell outside its own month.
+   */
+  @Query("{ 'shopId': ?0, 'createdAt': { '$gte': ?1, '$lt': ?2 } }")
+  List<Inventory> findByShopIdAndCreatedAtInPeriod(
+      String shopId, Instant startInclusive, Instant endExclusive);
 
   /**
    * Check if a lotId exists for a given shop.

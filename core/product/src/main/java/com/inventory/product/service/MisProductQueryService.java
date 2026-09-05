@@ -44,9 +44,9 @@ public class MisProductQueryService {
   private final CustomerRepository customerRepository;
 
   public List<VendorPurchaseInvoice> findVendorInvoicesByInvoiceDate(
-      String shopId, Instant fromInclusive, Instant toInclusive) {
-    return vendorPurchaseInvoiceRepository.findByShopIdAndInvoiceDateBetween(
-        shopId, fromInclusive, toInclusive);
+      String shopId, Instant fromInclusive, Instant toExclusive) {
+    return vendorPurchaseInvoiceRepository.findByShopIdAndInvoiceDateInPeriod(
+        shopId, fromInclusive, toExclusive);
   }
 
   public List<VendorPurchaseInvoice> findAllVendorInvoices(String shopId) {
@@ -58,20 +58,21 @@ public class MisProductQueryService {
   }
 
   public List<VendorPurchaseReturn> findVendorReturnsByCreatedAt(
-      String shopId, Instant fromInclusive, Instant toInclusive) {
-    return vendorPurchaseReturnRepository.findByShopIdAndCreatedAtBetween(
-        shopId, fromInclusive, toInclusive);
+      String shopId, Instant fromInclusive, Instant toExclusive) {
+    return vendorPurchaseReturnRepository.findByShopIdAndCreatedAtInPeriod(
+        shopId, fromInclusive, toExclusive);
   }
 
   public List<Purchase> findCompletedSalesBySoldAt(
-      String shopId, Instant fromInclusive, Instant toInclusive) {
-    return purchaseRepository.findByShopIdAndStatusAndSoldAtBetween(
-        shopId, PurchaseStatus.COMPLETED, fromInclusive, toInclusive);
+      String shopId, Instant fromInclusive, Instant toExclusive) {
+    return purchaseRepository.findByShopIdAndStatusAndSoldAtInPeriod(
+        shopId, PurchaseStatus.COMPLETED, fromInclusive, toExclusive);
   }
 
   public List<Refund> findRefundsByCreatedAt(
-      String shopId, Instant fromInclusive, Instant toInclusive) {
-    return refundRepository.findByShopIdAndCreatedAtBetween(shopId, fromInclusive, toInclusive);
+      String shopId, Instant fromInclusive, Instant toExclusive) {
+    return refundRepository.findByShopIdAndCreatedAtInPeriod(
+        shopId, fromInclusive, toExclusive);
   }
 
   public List<Inventory> findAllInventory(String shopId) {

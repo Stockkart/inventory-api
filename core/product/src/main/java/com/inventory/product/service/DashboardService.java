@@ -300,9 +300,9 @@ public class DashboardService {
       Instant endOfDay = date.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant();
 
       List<Purchase> dayPurchases = completedPurchases.stream()
-          .filter(p -> p.getSoldAt() != null && 
-                       p.getSoldAt().isAfter(startOfDay) && 
-                       p.getSoldAt().isBefore(endOfDay))
+          .filter(p -> p.getSoldAt() != null
+                       && !p.getSoldAt().isBefore(startOfDay)
+                       && p.getSoldAt().isBefore(endOfDay))
           .toList();
 
       BigDecimal dayRevenue = dayPurchases.stream()
