@@ -289,10 +289,98 @@ public class Gstr1DataAggregator {
 
     ctx.atLines(new ArrayList<>());
     ctx.atadjLines(new ArrayList<>());
-    ctx.exempLines(new ArrayList<>());
+    ctx.exempLines(buildExemptLines(purchases, customerMap, sellerState));
     ctx.expLines(new ArrayList<>());
 
     return ctx.build();
+  }
+
+  /**
+   * The four nil-rated / exempt / non-GST rows of the exemp tab.
+   *
+   * <p>The tab was previously left empty, so a return declared none of these
+   * categories at all rather than declaring them as nil. The portal expects the
+   * four rows to be present whatever their values, and a shop that does sell
+   * zero-rated goods was silently under-reporting.
+   *
+   * <p>A supply belongs here when it carries no GST. It is placed by two axes
+   * the platform does know: whether the recipient is registered, from their
+   * GSTIN, and whether the supply crossed a state border, from that GSTIN's
+   * state code against the seller's.
+   *
+   * <p>All of it lands in the nil-rated column. GST distinguishes nil-rated from
+   * exempt from non-GST, but the platform records only that tax is zero -- there
+   * is no field saying which of the three a product is. Splitting them would
+   * mean guessing, so the other two columns stay zero until a product carries
+   * that classification.
+   */
+  private List<GstExemptLine> buildExemptLines(
+      List<Purchase> purchases, Map<String, Customer> customerMap, String sellerState) {
+    // sellerState arrives already formatted as NN-Name, so the code is its
+    // prefix; fall back to looking the name up for a value that predates that.
+    String sellerCode = GstStateCode.codeFromName(stripStateCode(sellerState));
+
+    BigDecimal interRegistered = BigDecimal.ZERO;
+    BigDecimal intraRegistered = BigDecimal.ZERO;
+    BigDecimal interUnregistered = BigDecimal.ZERO;
+    BigDecimal intraUnregistered = BigDecimal.ZERO;
+
+    for (Purchase purchase : purchases) {
+      BigDecimal rate = parseRate(getApplicableRateFromPurchase(purchase));
+      if (rate.compareTo(BigDecimal.ZERO) > 0) {
+        continue;
+      }
+      BigDecimal taxable = purchase.getRevenueBeforeTax() != null
+          ? purchase.getRevenueBeforeTax() : BigDecimal.ZERO;
+      Customer customer = purchase.getCustomerId() != null
+          ? customerMap.get(purchase.getCustomerId()) : null;
+      boolean registered = isRegisteredRecipient(customer);
+
+      String recipientCode = customer != null
+          ? GstStateCode.codeFromGstin(customer.getGstin()) : "";
+      // Without a recipient state code there is nothing to compare, and an
+      // unregistered counter sale is by definition made where the shop stands,
+      // so treat it as intra-state rather than assume a border was crossed.
+      boolean interState = StringUtils.hasText(recipientCode)
+          && StringUtils.hasText(sellerCode)
+          && !recipientCode.equals(sellerCode);
+
+      if (registered) {
+        if (interState) {
+          interRegistered = interRegistered.add(taxable);
+        } else {
+          intraRegistered = intraRegistered.add(taxable);
+        }
+      } else if (interState) {
+        interUnregistered = interUnregistered.add(taxable);
+      } else {
+        intraUnregistered = intraUnregistered.add(taxable);
+      }
+    }
+
+    return List.of(
+        exemptLine("Inter-State supplies to registered persons", interRegistered),
+        exemptLine("Intra-State supplies to registered persons", intraRegistered),
+        exemptLine("Inter-State supplies to unregistered persons", interUnregistered),
+        exemptLine("Intra-State supplies to unregistered persons", intraUnregistered));
+  }
+
+  private GstExemptLine exemptLine(String description, BigDecimal nilRated) {
+    return GstExemptLine.builder()
+        .description(description)
+        .nilRatedSupplies(nilRated)
+        .exemptedOtherThanNilOrNonGst(BigDecimal.ZERO)
+        .nonGstSupplies(BigDecimal.ZERO)
+        .build();
+  }
+
+  /** "10-Bihar" -> "Bihar"; a bare name is returned unchanged. */
+  private static String stripStateCode(String placeOfSupply) {
+    if (!StringUtils.hasText(placeOfSupply)) {
+      return "";
+    }
+    int dash = placeOfSupply.indexOf('-');
+    return dash == 2 ? placeOfSupply.substring(dash + 1) : placeOfSupply;
   }
 
   private boolean isRegisteredRecipient(Customer customer) {

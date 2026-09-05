@@ -331,7 +331,7 @@ public class Gstr2DataAggregator {
         .cdnurLines(cdnurFromReturns)
         .atLines(new ArrayList<>())
         .atadjLines(new ArrayList<>())
-        .exempLines(buildDefaultExempLines())
+        .exempLines(buildExemptLines(inventories, pricingMap, vendorMap, placeOfSupply))
         .itcrLines(new ArrayList<>())
         .hsnLines(new ArrayList<>(hsnMap.values()))
         .build();
@@ -693,23 +693,78 @@ public class Gstr2DataAggregator {
         .build();
   }
 
+  /** The two rows with nothing in them, for a period that received no stock. */
   private List<Gstr2ExempLine> buildDefaultExempLines() {
-    return List.of(
-        Gstr2ExempLine.builder()
-            .description("Inter-State supplies")
-            .compositionTaxablePerson(BigDecimal.ZERO)
-            .nilRatedSupplies(BigDecimal.ZERO)
-            .exemptedOtherThanNilOrNonGst(BigDecimal.ZERO)
-            .nonGstSupplies(BigDecimal.ZERO)
-            .build(),
-        Gstr2ExempLine.builder()
-            .description("Intra-State supplies")
-            .compositionTaxablePerson(BigDecimal.ZERO)
-            .nilRatedSupplies(BigDecimal.ZERO)
-            .exemptedOtherThanNilOrNonGst(BigDecimal.ZERO)
-            .nonGstSupplies(BigDecimal.ZERO)
-            .build()
-    );
+    return buildExemptLines(List.of(), Map.of(), Map.of(), "");
+  }
+
+  /**
+   * Nil-rated / exempt / non-GST inward supplies, split inter- and intra-state.
+   *
+   * <p>These two rows were previously hardcoded to zero regardless of what the
+   * shop actually received, so a period containing zero-rated purchases reported
+   * none. They are now summed from the stock received in the period, at cost,
+   * for lots whose pricing carries no GST.
+   *
+   * <p>Everything lands in the nil-rated column: GST separates nil-rated from
+   * exempt from non-GST, but the platform records only that tax is zero and has
+   * no field saying which of the three applies. The composition column stays
+   * zero for the same reason -- nothing marks a vendor as a composition dealer.
+   */
+  private List<Gstr2ExempLine> buildExemptLines(
+      List<Inventory> inventories, Map<String, Pricing> pricingMap,
+      Map<String, Vendor> vendorMap, String sellerState) {
+    String sellerCode = GstStateCode.codeFromName(stripStateCode(sellerState));
+    BigDecimal inter = BigDecimal.ZERO;
+    BigDecimal intra = BigDecimal.ZERO;
+
+    for (Inventory inv : inventories) {
+      Pricing pricing = inv.getPricingId() != null ? pricingMap.get(inv.getPricingId()) : null;
+      BigDecimal rate = parseRate(pricing != null ? pricing.getSgst() : null)
+          .add(parseRate(pricing != null ? pricing.getCgst() : null));
+      if (rate.compareTo(BigDecimal.ZERO) > 0) {
+        continue;
+      }
+      BigDecimal cost = pricing != null && pricing.getCostPrice() != null
+          ? pricing.getCostPrice() : BigDecimal.ZERO;
+      int count = inv.getReceivedBaseCount() != null ? inv.getReceivedBaseCount() : 0;
+      BigDecimal value = cost.multiply(BigDecimal.valueOf(count));
+
+      Vendor vendor = inv.getVendorId() != null ? vendorMap.get(inv.getVendorId()) : null;
+      String supplierCode = vendor != null
+          ? GstStateCode.codeFromGstin(vendor.getGstinUin()) : "";
+      boolean interState = StringUtils.hasText(supplierCode)
+          && StringUtils.hasText(sellerCode)
+          && !supplierCode.equals(sellerCode);
+
+      if (interState) {
+        inter = inter.add(value);
+      } else {
+        intra = intra.add(value);
+      }
+    }
+
+    return List.of(exemptLine("Inter-State supplies", inter),
+        exemptLine("Intra-State supplies", intra));
+  }
+
+  private Gstr2ExempLine exemptLine(String description, BigDecimal nilRated) {
+    return Gstr2ExempLine.builder()
+        .description(description)
+        .compositionTaxablePerson(BigDecimal.ZERO)
+        .nilRatedSupplies(nilRated)
+        .exemptedOtherThanNilOrNonGst(BigDecimal.ZERO)
+        .nonGstSupplies(BigDecimal.ZERO)
+        .build();
+  }
+
+  /** "10-Bihar" -> "Bihar"; a bare name is returned unchanged. */
+  private static String stripStateCode(String placeOfSupply) {
+    if (!StringUtils.hasText(placeOfSupply)) {
+      return "";
+    }
+    int dash = placeOfSupply.indexOf('-');
+    return dash == 2 ? placeOfSupply.substring(dash + 1) : placeOfSupply;
   }
 
   /**
