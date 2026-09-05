@@ -11,6 +11,9 @@ public class InvoiceItem {
   private BigDecimal quantity;
   private String name;
   private String hsn;
+
+  /** How the goods are packed, as the trade bill's PACK column states it: "1X120", "1X200 ML". */
+  private String pack;
   private String companyName;
   private String expiryDate;
   private String batchNo;
