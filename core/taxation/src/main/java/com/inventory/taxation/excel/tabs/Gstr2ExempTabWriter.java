@@ -15,8 +15,8 @@ public class Gstr2ExempTabWriter implements Gstr2TabWriter {
 
   private static final String SHEET_NAME = "exemp";
   private static final List<String> HEADERS = Arrays.asList(
-      "Description", "Composition Taxable Person", "Nil Rated Supplies",
-      "Exempted (other than nil rated/non ", "Non-GST supplies");
+      "Description", "Composition taxable person", "Nil Rated Supplies",
+      "Exempted (other than nil rated/non GST supply )", "Non-GST supplies");
 
   @Override
   public String getSheetName() {

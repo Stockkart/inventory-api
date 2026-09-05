@@ -15,9 +15,9 @@ public class Gstr2B2bTabWriter implements Gstr2TabWriter {
 
   private static final String SHEET_NAME = "b2b";
   private static final List<String> HEADERS = Arrays.asList(
-      "GSTIN/UIN of Recipient", "Invoice Number", "Invoice date", "Invoice Value", "Place Of Supply",
+      "GSTIN of Supplier", "Invoice Number", "Invoice date", "Invoice Value", "Place Of Supply",
       "Reverse Charge", "Invoice Type", "Rate", "Taxable Value", "Integrated Tax Paid", "Central Tax Paid",
-      "State/UT Tax Paid", "Cess Amount", "Eligibility for ITC", "Availed ITC Integrated Tax",
+      "State/UT Tax Paid", "Cess Paid", "Eligibility For ITC", "Availed ITC Integrated Tax",
       "Availed ITC Central Tax", "Availed ITC State/UT Tax", "Availed ITC Cess");
 
   @Override
