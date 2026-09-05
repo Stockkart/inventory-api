@@ -152,6 +152,9 @@ public class InventoryService {
   @Autowired
   private com.inventory.pricing.domain.repository.PricingRepository pricingRepository;
 
+  @Autowired
+  private QuotationService quotationService;
+
   /**
    * Parse invoice image and extract inventory items using OCR.
    * Validates the image file and converts parsed items to CreateInventoryItemRequest format.
@@ -1560,7 +1563,62 @@ public class InventoryService {
             .map(this::enrichPackagingOnSummary)
             .toList();
     inventoryVerticalExtensionHandler.mergeSummaries(shopId, inventories, summaries);
+    applyAvailableStockToSummaries(shopId, summaries);
     return summaries;
+  }
+
+  /** Subtract open sale quotation reservations so sell/search shows shop-wide available stock. */
+  private void applyAvailableStockToSummaries(
+      String shopId, List<InventorySummaryDto> summaries) {
+    if (summaries == null || summaries.isEmpty()) {
+      return;
+    }
+    Map<String, Integer> reservedByLot =
+        quotationService.quotedBaseQuantitiesByLot(shopId, null);
+    for (InventorySummaryDto summary : summaries) {
+      if (summary == null || !StringUtils.hasText(summary.getId())) {
+        continue;
+      }
+      int currentBase = resolveSummaryCurrentBaseCount(summary);
+      int reserved = reservedByLot.getOrDefault(summary.getId().trim(), 0);
+      int availableBase = Math.max(0, currentBase - reserved);
+      summary.setAvailableBaseCount(availableBase);
+      summary.setAvailableCount(baseToDisplayCount(availableBase, summary));
+    }
+  }
+
+  private int resolveSummaryCurrentBaseCount(InventorySummaryDto summary) {
+    if (summary.getCurrentBaseCount() != null) {
+      return summary.getCurrentBaseCount();
+    }
+    if (summary.getCurrentCount() == null) {
+      return 0;
+    }
+    int factor = resolveSummaryDisplayToBaseFactor(summary);
+    return summary.getCurrentCount()
+        .multiply(BigDecimal.valueOf(factor))
+        .setScale(0, RoundingMode.HALF_UP)
+        .intValue();
+  }
+
+  private int resolveSummaryDisplayToBaseFactor(InventorySummaryDto summary) {
+    UnitConversion conversion = summary.getUnitConversions();
+    if (conversion != null && conversion.getFactor() != null && conversion.getFactor() > 0) {
+      return conversion.getFactor();
+    }
+    if (summary.getUnitsPerPack() != null && summary.getUnitsPerPack() > 0) {
+      return summary.getUnitsPerPack();
+    }
+    return 1;
+  }
+
+  private BigDecimal baseToDisplayCount(int baseCount, InventorySummaryDto summary) {
+    int factor = resolveSummaryDisplayToBaseFactor(summary);
+    if (factor <= 1) {
+      return BigDecimal.valueOf(baseCount);
+    }
+    return BigDecimal.valueOf(baseCount)
+        .divide(BigDecimal.valueOf(factor), 3, RoundingMode.HALF_UP);
   }
 
   private List<InventorySummaryDto> sortSummariesByExpirySoonest(
