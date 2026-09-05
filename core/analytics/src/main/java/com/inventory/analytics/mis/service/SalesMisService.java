@@ -139,7 +139,7 @@ public class SalesMisService {
       to = swap;
     }
     Instant fromInst = MisDateRangeHelper.startOfDay(from);
-    Instant toInst = MisDateRangeHelper.endOfDay(to);
+    Instant toInst = MisDateRangeHelper.startOfNextDay(to);
 
     String methodFilter =
         StringUtils.hasText(paymentMethodFilter)

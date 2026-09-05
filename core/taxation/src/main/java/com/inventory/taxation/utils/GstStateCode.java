@@ -1,6 +1,8 @@
 package com.inventory.taxation.utils;
 
+import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.springframework.util.StringUtils;
@@ -21,6 +23,8 @@ public final class GstStateCode {
 
   private static final Map<String, String> BY_CODE = new LinkedHashMap<>();
   private static final Map<String, String> CODE_BY_NAME = new LinkedHashMap<>();
+  /** Names against codes, longest name first, for reading a state out of an address. */
+  private static final List<Map.Entry<String, String>> NAMES_LONGEST_FIRST;
 
   static {
     put("01", "Jammu and Kashmir");
@@ -61,6 +65,14 @@ public final class GstStateCode {
     put("38", "Ladakh");
     put("97", "Other Territory");
     put("99", "Centre Jurisdiction");
+
+    // "Other Territory" and "Centre Jurisdiction" are not places anyone writes
+    // in an address, and matching them would only produce false readings.
+    NAMES_LONGEST_FIRST = CODE_BY_NAME.entrySet().stream()
+        .filter(entry -> !"97".equals(entry.getValue()) && !"99".equals(entry.getValue()))
+        .sorted(Comparator.comparingInt((Map.Entry<String, String> e) -> e.getKey().length())
+            .reversed())
+        .toList();
   }
 
   private GstStateCode() {}
@@ -85,6 +97,48 @@ public final class GstStateCode {
       return "";
     }
     return CODE_BY_NAME.getOrDefault(stateName.trim().toUpperCase(), "");
+  }
+
+  /**
+   * The state named somewhere inside a written address, or empty when none is.
+   *
+   * <p>An unregistered supplier has no GSTIN to read a state out of, and the
+   * vendor record holds its address as one written line rather than as fields.
+   * The state is therefore found by looking for one of the names in it.
+   *
+   * <p>Longer names are tried first, so an address ending "Daman and Diu" is not
+   * claimed by a shorter name it contains, and each is matched on word
+   * boundaries, so a town called Goalpara is not read as Goa.
+   */
+  public static String codeFromAddress(String address) {
+    if (!StringUtils.hasText(address)) {
+      return "";
+    }
+    String haystack = address.toUpperCase();
+    for (Map.Entry<String, String> entry : NAMES_LONGEST_FIRST) {
+      if (namedIn(haystack, entry.getKey())) {
+        return entry.getValue();
+      }
+    }
+    return "";
+  }
+
+  /** Whether the address says this name as a word, rather than inside a longer one. */
+  private static boolean namedIn(String haystack, String name) {
+    int from = 0;
+    while (true) {
+      int at = haystack.indexOf(name, from);
+      if (at < 0) {
+        return false;
+      }
+      int after = at + name.length();
+      boolean startsWord = at == 0 || !Character.isLetter(haystack.charAt(at - 1));
+      boolean endsWord = after == haystack.length() || !Character.isLetter(haystack.charAt(after));
+      if (startsWord && endsWord) {
+        return true;
+      }
+      from = at + 1;
+    }
   }
 
   /**

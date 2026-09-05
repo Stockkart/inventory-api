@@ -69,7 +69,9 @@ public class Gstr1DataAggregator {
     }
 
     Instant rangeStart = LocalDate.of(year, month, 1).atStartOfDay(ZoneId.systemDefault()).toInstant();
-    Instant rangeEnd = LocalDate.of(year, month, 1).plusMonths(1).atStartOfDay(ZoneId.systemDefault()).toInstant().minusNanos(1);
+    // Exclusive: the first instant of the next month is not part of this one.
+    Instant rangeEnd = LocalDate.of(year, month, 1).plusMonths(1)
+        .atStartOfDay(ZoneId.systemDefault()).toInstant();
 
     // Include completed purchases with soldAt in period, or with soldAt null but updatedAt in period (legacy/completion date)
     List<Purchase> purchases = purchaseRepository.findCompletedPurchasesInPeriod(
@@ -78,7 +80,8 @@ public class Gstr1DataAggregator {
         .filter(this::isRegularBillingMode)
         .toList();
 
-    List<Refund> refunds = refundRepository.findByShopIdAndCreatedAtBetween(shopId, rangeStart, rangeEnd);
+    List<Refund> refunds = refundRepository.findByShopIdAndCreatedAtInPeriod(
+            shopId, rangeStart, rangeEnd);
 
     Set<String> customerIds = purchases.stream()
         .map(Purchase::getCustomerId)
