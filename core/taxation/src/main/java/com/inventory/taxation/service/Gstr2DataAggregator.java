@@ -2,6 +2,8 @@ package com.inventory.taxation.service;
 
 import com.inventory.common.exception.GstConfigurationException;
 import com.inventory.common.tax.GstMath;
+import com.inventory.product.tax.PurchaseTaxBasis;
+import com.inventory.product.tax.PurchaseTaxBasisResolver;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Product;
 import com.inventory.product.domain.model.VendorPurchaseInvoice;
@@ -386,32 +388,11 @@ public class Gstr2DataAggregator {
    * takes the remainder. The invoice then totals exactly what it says it does,
    * and only the split between its lines is arithmetic.
    */
-  private List<BigDecimal> taxableByLine(VendorPurchaseInvoice invoice) {
-    List<VendorPurchaseInvoiceLine> lines = invoice.getLines();
-    List<BigDecimal> raw = new ArrayList<>(lines.size());
-    BigDecimal sum = BigDecimal.ZERO;
-    for (VendorPurchaseInvoiceLine line : lines) {
-      BigDecimal value = line.getCostPrice() == null || line.getCount() == null
-          ? BigDecimal.ZERO
-          : line.getCostPrice().multiply(BigDecimal.valueOf(line.getCount()))
-              .setScale(2, RoundingMode.HALF_UP);
-      raw.add(value);
-      sum = sum.add(value);
-    }
-    BigDecimal stated = invoice.getLineSubTotal();
-    if (stated == null || sum.compareTo(BigDecimal.ZERO) <= 0) {
-      return raw;
-    }
-    List<BigDecimal> scaled = new ArrayList<>(raw.size());
-    BigDecimal running = BigDecimal.ZERO;
-    for (BigDecimal value : raw) {
-      BigDecimal share = value.multiply(stated).divide(sum, 2, RoundingMode.HALF_UP);
-      scaled.add(share);
-      running = running.add(share);
-    }
-    int last = scaled.size() - 1;
-    scaled.set(last, scaled.get(last).add(stated.subtract(running)));
-    return scaled;
+  /** The pricing behind an invoice line, reached through the lot the line was stocked into. */
+  private Pricing pricingOfLine(
+      String inventoryId, Map<String, Inventory> lotMap, Map<String, Pricing> pricingMap) {
+    Inventory lot = lotMap.get(inventoryId);
+    return lot == null ? null : pricingMap.get(lot.getPricingId());
   }
 
   private Map<String, Product> productsOf(List<Inventory> lots) {
@@ -535,23 +516,31 @@ public class Gstr2DataAggregator {
           && StringUtils.hasText(supplierState)
           && !supplierState.equals(shopState);
 
-      List<BigDecimal> taxableByLine = taxableByLine(invoice);
+      // What the invoice is worth for tax, and how far that answer can be trusted. The header is
+      // used where it proves itself, and where it does not the resolver says so rather than
+      // quietly reporting a figure the bill does not support.
+      PurchaseTaxBasis taxBasis = PurchaseTaxBasisResolver.resolve(
+          invoice, inventoryId -> pricingOfLine(inventoryId, lotMap, pricingMap),
+          invoice.getTaxTreatment(), interstate);
+      if (taxBasis.verdict() != PurchaseTaxBasis.Verdict.OK) {
+        log.warn("GSTR-2 {}: invoice {} reports {} -- stated subtotal {}, tax {}; "
+                + "resolved taxable {}, tax {}",
+            shopId, invoice.getInvoiceNo(), taxBasis.verdict(), invoice.getLineSubTotal(),
+            invoice.getTaxTotal(), taxBasis.totalTaxable(), taxBasis.totalTax());
+      }
+
       Map<String, BigDecimal[]> byRate = new LinkedHashMap<>();
       for (int i = 0; i < invoice.getLines().size(); i++) {
         VendorPurchaseInvoiceLine line = invoice.getLines().get(i);
         Inventory lot = lotMap.get(line.getInventoryId());
         Product product = lot == null ? null : productMap.get(lot.getProductId());
-        Pricing pricing = lot == null ? null : pricingMap.get(lot.getPricingId());
-        BigDecimal rate = rateOf(pricing);
-        BigDecimal taxable = taxableByLine.get(i);
-        GstMath.IntraStateTax halves =
-            interstate ? new GstMath.IntraStateTax(BigDecimal.ZERO, BigDecimal.ZERO)
-                : GstMath.splitIntraState(taxable, rate);
-        BigDecimal integrated =
-            interstate ? GstMath.taxOnExclusive(taxable, rate) : BigDecimal.ZERO;
-        BigDecimal central = halves.centralTax();
-        BigDecimal state = halves.stateTax();
-        BigDecimal tax = interstate ? integrated : halves.total();
+        PurchaseTaxBasis.Line resolved = taxBasis.lines().get(i);
+        BigDecimal rate = resolved.ratePct();
+        BigDecimal taxable = resolved.taxable();
+        BigDecimal integrated = resolved.integratedTax();
+        BigDecimal central = resolved.centralTax();
+        BigDecimal state = resolved.stateTax();
+        BigDecimal tax = resolved.tax();
 
         BigDecimal[] bucket = byRate.computeIfAbsent(
             rate.stripTrailingZeros().toPlainString(),
