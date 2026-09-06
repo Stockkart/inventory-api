@@ -1,5 +1,6 @@
 package com.inventory.taxation.service;
 
+import com.inventory.common.tax.GstMath;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.PurchaseItem;
@@ -346,18 +347,12 @@ public class Gstr1DataAggregator {
         // makes, so the taxable value is backed out of it rather than added to.
         BigDecimal gross = item.getTotalAmount() != null
             ? item.getTotalAmount() : BigDecimal.ZERO;
-        BigDecimal taxable = gross;
-        if (rate.compareTo(BigDecimal.ZERO) > 0) {
-          taxable = gross.multiply(BigDecimal.valueOf(100))
-              .divide(BigDecimal.valueOf(100).add(rate), 2, RoundingMode.HALF_UP);
-        }
+        BigDecimal taxable = GstMath.extractFromInclusive(gross, rate).taxable();
 
         RateShare share = shares.computeIfAbsent(rateStr, RateShare::new);
         share.taxableValue = share.taxableValue.add(taxable);
-        share.centralTax = share.centralTax.add(
-            taxable.multiply(cgstVal).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP));
-        share.stateTax = share.stateTax.add(
-            taxable.multiply(sgstVal).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP));
+        share.centralTax = share.centralTax.add(GstMath.taxOnExclusive(taxable, cgstVal));
+        share.stateTax = share.stateTax.add(GstMath.taxOnExclusive(taxable, sgstVal));
       }
     }
     if (shares.isEmpty()) {
@@ -391,12 +386,7 @@ public class Gstr1DataAggregator {
   }
 
   private BigDecimal parseRate(String rateStr) {
-    if (!StringUtils.hasText(rateStr)) return BigDecimal.ZERO;
-    try {
-      return new BigDecimal(rateStr.trim());
-    } catch (NumberFormatException e) {
-      return BigDecimal.ZERO;
-    }
+    return GstMath.parseRatePct(rateStr);
   }
 
   private GstInvoiceLine mergeB2csLine(GstInvoiceLine a, GstInvoiceLine b) {
@@ -458,16 +448,10 @@ public class Gstr1DataAggregator {
       BigDecimal rate = sgstVal.add(cgstVal);
       BigDecimal qty = item.getQuantity() != null ? item.getQuantity() : BigDecimal.ONE;
       BigDecimal totalAmount = item.getTotalAmount() != null ? item.getTotalAmount() : BigDecimal.ZERO;
-      BigDecimal taxableVal = totalAmount;
-      if (rate.compareTo(BigDecimal.ZERO) > 0) {
-        // rate is already sgst+cgst (e.g. 18 for 9%+9%)
-        taxableVal = totalAmount.multiply(BigDecimal.valueOf(100))
-            .divide(BigDecimal.valueOf(100).add(rate), 2, RoundingMode.HALF_UP);
-      }
-      BigDecimal centralTaxAmount = taxableVal.multiply(cgstVal)
-          .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
-      BigDecimal stateUtTaxAmount = taxableVal.multiply(sgstVal)
-          .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+      // rate is already sgst+cgst (e.g. 18 for 9%+9%)
+      BigDecimal taxableVal = GstMath.extractFromInclusive(totalAmount, rate).taxable();
+      BigDecimal centralTaxAmount = GstMath.taxOnExclusive(taxableVal, cgstVal);
+      BigDecimal stateUtTaxAmount = GstMath.taxOnExclusive(taxableVal, sgstVal);
 
       // A row per HSN and rate, which is how the summary is read and how the
       // portal's own export lays it out. UQC was in the key, which split one

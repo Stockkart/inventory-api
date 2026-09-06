@@ -1,5 +1,7 @@
 package com.inventory.taxation.service;
 
+import com.inventory.common.exception.GstConfigurationException;
+import com.inventory.common.tax.GstMath;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Product;
 import com.inventory.product.domain.model.VendorPurchaseInvoice;
@@ -106,10 +108,20 @@ public class Gstr2DataAggregator {
     // Inward supply: the recipient is this shop, so its own state is the place
     // of supply and that part was already right. It was emitted as a bare name
     // ("Bihar"), and the portal accepts only the code-prefixed form ("10-Bihar").
-    String placeOfSupply = shop.getLocation() != null
-        && StringUtils.hasText(shop.getLocation().getState())
-        ? GstStateCode.format(shop.getLocation().getState())
-        : "";
+    //
+    // Read through shopState so the GSTIN answers first and the address second.
+    // Reading the address alone left a shop that has a GSTIN but no address on
+    // record emitting an empty place of supply, while the interstate test a few
+    // lines down -- which does read the GSTIN -- worked. The two disagreeing is
+    // what produced a return with local tax heads on an interstate invoice.
+    String shopState = shopState(shop);
+    if (!StringUtils.hasText(shopState)) {
+      throw new GstConfigurationException(
+          "Shop state is not configured. Set the shop GSTIN or the state on its address before "
+              + "generating GST returns -- without it an interstate purchase cannot be told from "
+              + "a local one, and the return would claim the wrong tax heads.");
+    }
+    String placeOfSupply = GstStateCode.format(shopState);
 
     List<Gstr2CdnrLine> cdnrFromReturns = new ArrayList<>();
     List<Gstr2CdnurLine> cdnurFromReturns = new ArrayList<>();
@@ -214,8 +226,8 @@ public class Gstr2DataAggregator {
         int qty = inv.getReceivedBaseCount() != null ? inv.getReceivedBaseCount() : 1;
         if (qty <= 0) qty = 1;
         BigDecimal taxableVal = costPrice.multiply(BigDecimal.valueOf(qty)).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal cgstAmt = taxableVal.multiply(cgstRate).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
-        BigDecimal sgstAmt = taxableVal.multiply(sgstRate).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+        BigDecimal cgstAmt = GstMath.taxOnExclusive(taxableVal, cgstRate);
+        BigDecimal sgstAmt = GstMath.taxOnExclusive(taxableVal, sgstRate);
         BigDecimal invValue = taxableVal.add(cgstAmt).add(sgstAmt);
 
         totalInvoiceValue = totalInvoiceValue.add(invValue);
@@ -532,16 +544,14 @@ public class Gstr2DataAggregator {
         Pricing pricing = lot == null ? null : pricingMap.get(lot.getPricingId());
         BigDecimal rate = rateOf(pricing);
         BigDecimal taxable = taxableByLine.get(i);
-        // Halving the tax would hand the odd paisa to one side; an intra-state
-        // purchase is taxed at half the rate twice, and the two are equal.
-        BigDecimal half = rate.divide(BigDecimal.valueOf(2), 4, RoundingMode.HALF_UP);
-        BigDecimal integrated = interstate
-            ? taxable.multiply(rate).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP)
-            : BigDecimal.ZERO;
-        BigDecimal central = interstate ? BigDecimal.ZERO
-            : taxable.multiply(half).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
-        BigDecimal state = central;
-        BigDecimal tax = interstate ? integrated : central.add(state);
+        GstMath.IntraStateTax halves =
+            interstate ? new GstMath.IntraStateTax(BigDecimal.ZERO, BigDecimal.ZERO)
+                : GstMath.splitIntraState(taxable, rate);
+        BigDecimal integrated =
+            interstate ? GstMath.taxOnExclusive(taxable, rate) : BigDecimal.ZERO;
+        BigDecimal central = halves.centralTax();
+        BigDecimal state = halves.stateTax();
+        BigDecimal tax = interstate ? integrated : halves.total();
 
         BigDecimal[] bucket = byRate.computeIfAbsent(
             rate.stripTrailingZeros().toPlainString(),
@@ -738,12 +748,7 @@ public class Gstr2DataAggregator {
   }
 
   private BigDecimal parseRate(String rateStr) {
-    if (!StringUtils.hasText(rateStr)) return BigDecimal.ZERO;
-    try {
-      return new BigDecimal(rateStr.trim());
-    } catch (NumberFormatException e) {
-      return BigDecimal.ZERO;
-    }
+    return GstMath.parseRatePct(rateStr);
   }
 
   /**

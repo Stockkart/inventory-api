@@ -1,5 +1,6 @@
 package com.inventory.product.service;
 
+import com.inventory.common.tax.GstMath;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
@@ -751,16 +752,7 @@ public class InventoryService {
 
   /** Parses a shop's percentage field ({@code "9"}, {@code "9.00"}, {@code "9%"}). */
   private static BigDecimal parsePercentage(String raw) {
-    if (raw == null) return BigDecimal.ZERO;
-    String t = raw.trim();
-    if (t.isEmpty()) return BigDecimal.ZERO;
-    if (t.endsWith("%")) t = t.substring(0, t.length() - 1).trim();
-    try {
-      BigDecimal v = new BigDecimal(t);
-      return v.signum() < 0 ? BigDecimal.ZERO : v;
-    } catch (NumberFormatException ex) {
-      return BigDecimal.ZERO;
-    }
+    return GstMath.parseRatePct(raw);
   }
 
   /** Per-invoice CGST / SGST slice. IGST is wired in once the invoice carries a place-of-supply. */

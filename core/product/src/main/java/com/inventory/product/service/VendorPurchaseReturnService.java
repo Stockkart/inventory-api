@@ -1,5 +1,6 @@
 package com.inventory.product.service;
 
+import com.inventory.common.tax.GstMath;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
@@ -739,13 +740,6 @@ public class VendorPurchaseReturnService {
   }
 
   private BigDecimal parseRatePct(String s) {
-    if (!StringUtils.hasText(s)) {
-      return BigDecimal.ZERO;
-    }
-    try {
-      return new BigDecimal(s.trim());
-    } catch (NumberFormatException e) {
-      return BigDecimal.ZERO;
-    }
+    return GstMath.parseRatePct(s);
   }
 }
