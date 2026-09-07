@@ -4,6 +4,7 @@ import com.inventory.product.domain.model.VendorPurchaseInvoice;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.MongoRepository;
+import org.springframework.data.mongodb.repository.Query;
 
 import java.time.Instant;
 import java.util.Optional;
@@ -17,8 +18,10 @@ public interface VendorPurchaseInvoiceRepository extends MongoRepository<VendorP
   Page<VendorPurchaseInvoice> findByShopId(String shopId, Pageable pageable);
   List<VendorPurchaseInvoice> findByShopId(String shopId);
 
-  List<VendorPurchaseInvoice> findByShopIdAndInvoiceDateBetween(
-      String shopId, Instant startInclusive, Instant endInclusive);
+  /** Half-open: start counts, end does not. See {@link InventoryRepository}. */
+  @Query("{ 'shopId': ?0, 'invoiceDate': { '$gte': ?1, '$lt': ?2 } }")
+  List<VendorPurchaseInvoice> findByShopIdAndInvoiceDateInPeriod(
+      String shopId, Instant startInclusive, Instant endExclusive);
 
   Optional<VendorPurchaseInvoice> findByIdAndShopId(String id, String shopId);
 

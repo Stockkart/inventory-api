@@ -1,5 +1,7 @@
 package com.inventory.taxation.service;
 
+import com.inventory.common.exception.GstConfigurationException;
+import com.inventory.common.tax.GstMath;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.PurchaseItem;
@@ -14,7 +16,7 @@ import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.service.PackagingUnitCatalog;
 import com.inventory.taxation.domain.model.*;
 import com.inventory.taxation.domain.gstr1.Gstr1ReportContext;
-import com.inventory.taxation.utils.GstStateCode;
+import com.inventory.common.tax.GstStateCode;
 import com.inventory.user.domain.model.Customer;
 import com.inventory.user.domain.repository.CustomerRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -69,7 +71,9 @@ public class Gstr1DataAggregator {
     }
 
     Instant rangeStart = LocalDate.of(year, month, 1).atStartOfDay(ZoneId.systemDefault()).toInstant();
-    Instant rangeEnd = LocalDate.of(year, month, 1).plusMonths(1).atStartOfDay(ZoneId.systemDefault()).toInstant().minusNanos(1);
+    // Exclusive: the first instant of the next month is not part of this one.
+    Instant rangeEnd = LocalDate.of(year, month, 1).plusMonths(1)
+        .atStartOfDay(ZoneId.systemDefault()).toInstant();
 
     // Include completed purchases with soldAt in period, or with soldAt null but updatedAt in period (legacy/completion date)
     List<Purchase> purchases = purchaseRepository.findCompletedPurchasesInPeriod(
@@ -78,7 +82,8 @@ public class Gstr1DataAggregator {
         .filter(this::isRegularBillingMode)
         .toList();
 
-    List<Refund> refunds = refundRepository.findByShopIdAndCreatedAtBetween(shopId, rangeStart, rangeEnd);
+    List<Refund> refunds = refundRepository.findByShopIdAndCreatedAtInPeriod(
+            shopId, rangeStart, rangeEnd);
 
     Set<String> customerIds = purchases.stream()
         .map(Purchase::getCustomerId)
@@ -102,10 +107,19 @@ public class Gstr1DataAggregator {
     // buyer, where no recipient registration exists to point anywhere else; for a
     // registered recipient the GSTIN decides, per line, below. Rendered as NN-Name
     // because the portal rejects a bare state name on upload.
-    String sellerState = shop.getLocation() != null
-        && StringUtils.hasText(shop.getLocation().getState())
-        ? GstStateCode.format(shop.getLocation().getState())
-        : "";
+    //
+    // Read from the GSTIN first: it is what the shop registered under, and reading
+    // the address alone left a shop that has a GSTIN but no address on record
+    // unable to place itself at all.
+    String shopStateCode = GstStateCode.shopState(shop.getGstinNo(),
+        shop.getLocation() != null ? shop.getLocation().getState() : null);
+    if (!StringUtils.hasText(shopStateCode)) {
+      throw new GstConfigurationException(
+          "Shop state is not configured. Set the shop GSTIN or the state on its address before "
+              + "generating GST returns -- without it a supply to another state cannot be told "
+              + "from a local one, and the return would claim the wrong tax heads.");
+    }
+    String sellerState = GstStateCode.format(shopStateCode);
 
     Gstr1ReportContext.Gstr1ReportContextBuilder ctx = Gstr1ReportContext.builder()
         .shopId(shopId)
@@ -135,6 +149,18 @@ public class Gstr1DataAggregator {
       if (receiverName == null) receiverName = "";
       String recipientGstin = customer != null && customer.getGstin() != null ? customer.getGstin() : "";
 
+      // What the invoice charged, not what it should have charged. A supply crossing a state
+      // border is taxed as IGST rather than split in two, and checkout decides that at the
+      // moment of sale and records it here.
+      //
+      // Reading it back rather than working it out again is the whole point. A customer's
+      // registration can change and a bill already handed over cannot, so deriving it at filing
+      // time would report a sale as interstate while the paper in the customer's file says CGST
+      // and SGST -- correct in law and useless to a customer who can only claim what their copy
+      // states. Sales made before this was recorded were billed as local supplies whatever the
+      // customer's state, and are reported the way they were billed.
+      boolean interstate = Boolean.TRUE.equals(purchase.getInterstate());
+
       BigDecimal invValue = purchase.getGrandTotal() != null ? purchase.getGrandTotal() : BigDecimal.ZERO;
 
       LocalDate invDate = purchase.getSoldAt() != null
@@ -147,7 +173,7 @@ public class Gstr1DataAggregator {
       // One row per rate the invoice carries. The invoice value is repeated on
       // each, which is how the portal's own export reads: it is a property of
       // the invoice, not of the rate, and splitting it would misstate both rows.
-      for (RateShare share : splitByRate(purchase)) {
+      for (RateShare share : splitByRate(purchase, interstate)) {
         GstInvoiceLine line = GstInvoiceLine.builder()
             .recipientGstin(recipientGstin)
             .receiverName(receiverName)
@@ -162,7 +188,7 @@ public class Gstr1DataAggregator {
             .rate(parseRate(share.rate))
             .taxableValue(share.taxableValue)
             .cessAmount(BigDecimal.ZERO)
-            .integratedTaxAmount(BigDecimal.ZERO)
+            .integratedTaxAmount(share.integratedTax)
             .centralTaxAmount(share.centralTax)
             .stateTaxAmount(share.stateTax)
             .build();
@@ -170,7 +196,12 @@ public class Gstr1DataAggregator {
         if (b2b) {
           line.setSupplyType(SupplyType.B2B);
           b2bLines.add(line);
-        } else if (invValue.compareTo(B2CL_THRESHOLD) >= 0) {
+        } else if (invValue.compareTo(B2CL_THRESHOLD) >= 0
+            && (purchase.getInterstate() == null || interstate)) {
+          // B2CL is a large supply to an unregistered buyer in another state; a local one of the
+          // same size belongs on b2cs. Sales made before the supply type was recorded cannot be
+          // told apart, so they keep the routing they have always had rather than moving between
+          // sheets of a return that has already been filed.
           line.setSupplyType(SupplyType.B2CL);
           b2clLines.add(line);
         } else {
@@ -183,7 +214,7 @@ public class Gstr1DataAggregator {
 
       // The HSN summary is per line already, so it is built once per invoice
       // however many rates the invoice carries.
-      aggregateHsn(purchase, inventoryMap, b2b, b2b ? hsnB2bMap : hsnB2cMap);
+      aggregateHsn(purchase, inventoryMap, b2b, interstate, b2b ? hsnB2bMap : hsnB2cMap);
 
       invoiceSerialNos.add(invNo);
     }
@@ -311,6 +342,7 @@ public class Gstr1DataAggregator {
     private BigDecimal taxableValue = BigDecimal.ZERO;
     private BigDecimal centralTax = BigDecimal.ZERO;
     private BigDecimal stateTax = BigDecimal.ZERO;
+    private BigDecimal integratedTax = BigDecimal.ZERO;
 
     private RateShare(String rate) {
       this.rate = rate;
@@ -330,7 +362,7 @@ public class Gstr1DataAggregator {
    * <p>An invoice with no lines keeps its purchase-level totals under rate 0, so
    * it is still reported rather than silently dropped.
    */
-  private List<RateShare> splitByRate(Purchase purchase) {
+  private List<RateShare> splitByRate(Purchase purchase, boolean interstate) {
     Map<String, RateShare> shares = new LinkedHashMap<>();
     if (purchase.getItems() != null) {
       for (PurchaseItem item : purchase.getItems()) {
@@ -343,28 +375,36 @@ public class Gstr1DataAggregator {
         // makes, so the taxable value is backed out of it rather than added to.
         BigDecimal gross = item.getTotalAmount() != null
             ? item.getTotalAmount() : BigDecimal.ZERO;
-        BigDecimal taxable = gross;
-        if (rate.compareTo(BigDecimal.ZERO) > 0) {
-          taxable = gross.multiply(BigDecimal.valueOf(100))
-              .divide(BigDecimal.valueOf(100).add(rate), 2, RoundingMode.HALF_UP);
-        }
+        BigDecimal taxable = GstMath.extractFromInclusive(gross, rate).taxable();
 
         RateShare share = shares.computeIfAbsent(rateStr, RateShare::new);
         share.taxableValue = share.taxableValue.add(taxable);
-        share.centralTax = share.centralTax.add(
-            taxable.multiply(cgstVal).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP));
-        share.stateTax = share.stateTax.add(
-            taxable.multiply(sgstVal).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP));
+        if (interstate) {
+          // The whole rate goes to IGST. Taking it from the summed rate rather than
+          // from cgst and sgst separately also survives a line that recorded the
+          // whole rate in one of the two, which is the shape a hand-corrected sale
+          // takes and which would otherwise report half the tax.
+          share.integratedTax = share.integratedTax.add(GstMath.taxOnExclusive(taxable, rate));
+        } else {
+          share.centralTax = share.centralTax.add(GstMath.taxOnExclusive(taxable, cgstVal));
+          share.stateTax = share.stateTax.add(GstMath.taxOnExclusive(taxable, sgstVal));
+        }
       }
     }
     if (shares.isEmpty()) {
       RateShare only = new RateShare("0");
       only.taxableValue = purchase.getRevenueBeforeTax() != null
           ? purchase.getRevenueBeforeTax() : BigDecimal.ZERO;
-      only.centralTax = purchase.getCgstAmount() != null
+      BigDecimal cgstAmount = purchase.getCgstAmount() != null
           ? purchase.getCgstAmount() : BigDecimal.ZERO;
-      only.stateTax = purchase.getSgstAmount() != null
+      BigDecimal sgstAmount = purchase.getSgstAmount() != null
           ? purchase.getSgstAmount() : BigDecimal.ZERO;
+      if (interstate) {
+        only.integratedTax = cgstAmount.add(sgstAmount);
+      } else {
+        only.centralTax = cgstAmount;
+        only.stateTax = sgstAmount;
+      }
       shares.put("0", only);
     }
     return new ArrayList<>(shares.values());
@@ -381,19 +421,14 @@ public class Gstr1DataAggregator {
    * was reported under whichever rate happened to appear on the first line.
    */
   private String dominantRate(Purchase purchase) {
-    return splitByRate(purchase).stream()
+    return splitByRate(purchase, false).stream()
         .max(Comparator.comparing(share -> share.taxableValue))
         .map(share -> share.rate)
         .orElse("0");
   }
 
   private BigDecimal parseRate(String rateStr) {
-    if (!StringUtils.hasText(rateStr)) return BigDecimal.ZERO;
-    try {
-      return new BigDecimal(rateStr.trim());
-    } catch (NumberFormatException e) {
-      return BigDecimal.ZERO;
-    }
+    return GstMath.parseRatePct(rateStr);
   }
 
   private GstInvoiceLine mergeB2csLine(GstInvoiceLine a, GstInvoiceLine b) {
@@ -433,7 +468,7 @@ public class Gstr1DataAggregator {
   }
 
   private void aggregateHsn(Purchase purchase, Map<String, Inventory> inventoryMap, boolean b2b,
-                            Map<String, GstHsnLine> hsnMap) {
+                            boolean interstate, Map<String, GstHsnLine> hsnMap) {
     if (purchase.getItems() == null) return;
     for (PurchaseItem item : purchase.getItems()) {
       Inventory inv = item.getInventoryId() != null ? inventoryMap.get(item.getInventoryId()) : null;
@@ -455,16 +490,14 @@ public class Gstr1DataAggregator {
       BigDecimal rate = sgstVal.add(cgstVal);
       BigDecimal qty = item.getQuantity() != null ? item.getQuantity() : BigDecimal.ONE;
       BigDecimal totalAmount = item.getTotalAmount() != null ? item.getTotalAmount() : BigDecimal.ZERO;
-      BigDecimal taxableVal = totalAmount;
-      if (rate.compareTo(BigDecimal.ZERO) > 0) {
-        // rate is already sgst+cgst (e.g. 18 for 9%+9%)
-        taxableVal = totalAmount.multiply(BigDecimal.valueOf(100))
-            .divide(BigDecimal.valueOf(100).add(rate), 2, RoundingMode.HALF_UP);
-      }
-      BigDecimal centralTaxAmount = taxableVal.multiply(cgstVal)
-          .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
-      BigDecimal stateUtTaxAmount = taxableVal.multiply(sgstVal)
-          .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+      // rate is already sgst+cgst (e.g. 18 for 9%+9%)
+      BigDecimal taxableVal = GstMath.extractFromInclusive(totalAmount, rate).taxable();
+      BigDecimal integratedTaxAmount =
+          interstate ? GstMath.taxOnExclusive(taxableVal, rate) : BigDecimal.ZERO;
+      BigDecimal centralTaxAmount =
+          interstate ? BigDecimal.ZERO : GstMath.taxOnExclusive(taxableVal, cgstVal);
+      BigDecimal stateUtTaxAmount =
+          interstate ? BigDecimal.ZERO : GstMath.taxOnExclusive(taxableVal, sgstVal);
 
       // A row per HSN and rate, which is how the summary is read and how the
       // portal's own export lays it out. UQC was in the key, which split one
@@ -492,7 +525,7 @@ public class Gstr1DataAggregator {
             .totalValue(totalAmount)
             .rate(rate)
             .taxableValue(taxableVal)
-            .integratedTaxAmount(BigDecimal.ZERO)
+            .integratedTaxAmount(integratedTaxAmount)
             .centralTaxAmount(centralTaxAmount)
             .stateUtTaxAmount(stateUtTaxAmount)
             .cessAmount(BigDecimal.ZERO)
@@ -506,6 +539,8 @@ public class Gstr1DataAggregator {
         existing.setTotalQuantity(existing.getTotalQuantity().add(qty));
         existing.setTotalValue(existing.getTotalValue().add(totalAmount));
         existing.setTaxableValue(existing.getTaxableValue().add(taxableVal));
+        existing.setIntegratedTaxAmount(
+            existing.getIntegratedTaxAmount().add(integratedTaxAmount));
         existing.setCentralTaxAmount(existing.getCentralTaxAmount().add(centralTaxAmount));
         existing.setStateUtTaxAmount(existing.getStateUtTaxAmount().add(stateUtTaxAmount));
       }

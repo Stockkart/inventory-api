@@ -35,8 +35,15 @@ public final class MisDateRangeHelper {
     return date.atStartOfDay(zone()).toInstant();
   }
 
-  public static Instant endOfDay(LocalDate date) {
-    return date.atTime(LocalTime.MAX).atZone(zone()).toInstant();
+  /**
+   * The instant the day after this one begins, for a half-open range.
+   *
+   * <p>This was the end of the day itself, {@link LocalTime#MAX} -- a value a
+   * BSON date cannot hold, since it truncates to the millisecond, and one the
+   * queries then compared exclusively anyway.
+   */
+  public static Instant startOfNextDay(LocalDate date) {
+    return date.plusDays(1).atStartOfDay(zone()).toInstant();
   }
 
   public static LocalDate toLocalDate(Instant instant) {

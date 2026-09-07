@@ -114,6 +114,11 @@ public class VendorService {
         existingVendor.setDlNo(StringUtils.hasText(vendor.getDlNo()) ? vendor.getDlNo().trim() : null);
         updated = true;
       }
+      if (vendor.getDefaultTaxTreatment() != null
+          && vendor.getDefaultTaxTreatment() != existingVendor.getDefaultTaxTreatment()) {
+        existingVendor.setDefaultTaxTreatment(vendor.getDefaultTaxTreatment());
+        updated = true;
+      }
       if (vendor.getUserId() != null && !vendor.getUserId().equals(existingVendor.getUserId())) {
         existingVendor.setUserId(StringUtils.hasText(vendor.getUserId()) ? vendor.getUserId().trim() : null);
         updated = true;

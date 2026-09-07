@@ -48,6 +48,9 @@ public class InventorySummaryDto {
   Integer soldBaseCount;
   BigDecimal currentCount;
   Integer currentBaseCount;
+  /** Physical stock minus quantities reserved in open sale quotations (shop-wide). */
+  BigDecimal availableCount;
+  Integer availableBaseCount;
   String baseUnit;
   /** Same as baseUnit; GST UQC for invoices / GSTR-1. */
   String uqc;

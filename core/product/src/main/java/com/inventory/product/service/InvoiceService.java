@@ -384,6 +384,7 @@ public class InvoiceService {
     request.setSaleAdditionalDiscountTotal(purchase.getSaleAdditionalDiscountTotal() != null ? purchase.getSaleAdditionalDiscountTotal() : BigDecimal.ZERO);
     request.setSgstAmount(purchase.getSgstAmount() != null ? purchase.getSgstAmount() : BigDecimal.ZERO);
     request.setCgstAmount(purchase.getCgstAmount() != null ? purchase.getCgstAmount() : BigDecimal.ZERO);
+    request.setIgstAmount(purchase.getIgstAmount() != null ? purchase.getIgstAmount() : BigDecimal.ZERO);
 
     if (!invoiceItems.isEmpty()) {
       InvoiceItem firstItem = invoiceItems.get(0);
@@ -408,6 +409,16 @@ public class InvoiceService {
     } else {
       request.setSgstPercent(BigDecimal.valueOf(2.5));
       request.setCgstPercent(BigDecimal.valueOf(2.5));
+    }
+
+    // On an interstate supply the whole rate is charged once as IGST rather than as two halves,
+    // so the printed rate is the two added back together -- 5%, not 2.5% twice.
+    if (Boolean.TRUE.equals(purchase.getInterstate())) {
+      BigDecimal sgstPct = request.getSgstPercent() != null
+          ? request.getSgstPercent() : BigDecimal.ZERO;
+      BigDecimal cgstPct = request.getCgstPercent() != null
+          ? request.getCgstPercent() : BigDecimal.ZERO;
+      request.setIgstPercent(sgstPct.add(cgstPct));
     }
 
     request.setTaxTotal(purchase.getTaxTotal() != null ? purchase.getTaxTotal() : BigDecimal.ZERO);

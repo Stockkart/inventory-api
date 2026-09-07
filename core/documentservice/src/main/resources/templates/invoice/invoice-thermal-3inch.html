@@ -262,6 +262,10 @@
       <td class="label">CGST @ <span th:text="${#numbers.formatDecimal(cgstPercent, 1, 2)}">2.50</span>%</td>
       <td class="value">Rs. <span th:text="${#numbers.formatDecimal(cgstAmount, 1, 2)}">0.00</span></td>
     </tr>
+    <tr th:if="${igstAmount != null && igstAmount.compareTo(T(java.math.BigDecimal).ZERO) > 0}">
+      <td class="label">IGST @ <span th:text="${#numbers.formatDecimal(igstPercent, 1, 2)}">5.00</span>%</td>
+      <td class="value">Rs. <span th:text="${#numbers.formatDecimal(igstAmount, 1, 2)}">0.00</span></td>
+    </tr>
     <tr th:if="${sgstAmount != null && sgstAmount.compareTo(T(java.math.BigDecimal).ZERO) > 0}">
       <td class="label">SGST @ <span th:text="${#numbers.formatDecimal(sgstPercent, 1, 2)}">2.50</span>%</td>
       <td class="value">Rs. <span th:text="${#numbers.formatDecimal(sgstAmount, 1, 2)}">0.00</span></td>

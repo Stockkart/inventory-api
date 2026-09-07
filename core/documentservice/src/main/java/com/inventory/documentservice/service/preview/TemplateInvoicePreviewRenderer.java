@@ -134,6 +134,10 @@ public class TemplateInvoicePreviewRenderer implements InvoicePreviewRenderer {
     context.setVariable("sgstAmount", request.getSgstAmount() != null ? request.getSgstAmount() : BigDecimal.ZERO);
     context.setVariable("cgstAmount", request.getCgstAmount() != null ? request.getCgstAmount() : BigDecimal.ZERO);
     context.setVariable("sgstPercent", request.getSgstPercent() != null ? request.getSgstPercent() : BigDecimal.valueOf(2.5));
+    context.setVariable("igstAmount",
+        request.getIgstAmount() != null ? request.getIgstAmount() : BigDecimal.ZERO);
+    context.setVariable("igstPercent",
+        request.getIgstPercent() != null ? request.getIgstPercent() : BigDecimal.ZERO);
     context.setVariable("cgstPercent", request.getCgstPercent() != null ? request.getCgstPercent() : BigDecimal.valueOf(2.5));
     context.setVariable("taxTotal", taxTotal);
     context.setVariable("taxableAmount", grandTotal.subtract(taxTotal).max(BigDecimal.ZERO));
