@@ -983,19 +983,27 @@ public class CheckoutService {
   /**
    * Whether a sale leaves the state the shop is registered in.
    *
-   * <p>Both ends are placed by GSTIN where there is one, and the shop falls back to its address.
-   * Anything unplaceable is treated as local: that is the far more common case, and reporting a
-   * supply as interstate on a guess would put the tax under a head the customer cannot claim.
+   * <p>A registered buyer is placed by their GSTIN, which is the authority. An unregistered one
+   * has none, and is placed by the address the shop holds for them -- an interstate supply is
+   * interstate whether or not the buyer is registered, and the tax is due under IGST either way.
+   *
+   * <p>Anything unplaceable is treated as local. That is the far more common case -- a walk-in
+   * with no address on record is standing in the shop -- and reporting a supply as interstate on
+   * a guess would charge the customer under a head that does not apply to them.
    */
   private boolean isInterstateSale(String shopId, String customerId) {
     if (!StringUtils.hasText(customerId)) {
       return false;
     }
     try {
-      String customerGstin = customerRepository.findById(customerId.trim())
-          .map(Customer::getGstin)
-          .orElse(null);
-      String customerState = GstStateCode.codeFromGstin(customerGstin);
+      Customer customer = customerRepository.findById(customerId.trim()).orElse(null);
+      if (customer == null) {
+        return false;
+      }
+      String customerState = GstStateCode.codeFromGstin(customer.getGstin());
+      if (!StringUtils.hasText(customerState)) {
+        customerState = GstStateCode.codeFromAddress(customer.getAddress());
+      }
       if (!StringUtils.hasText(customerState)) {
         return false;
       }
