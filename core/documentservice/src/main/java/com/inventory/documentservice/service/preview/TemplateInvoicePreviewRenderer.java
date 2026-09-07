@@ -89,6 +89,7 @@ public class TemplateInvoicePreviewRenderer implements InvoicePreviewRenderer {
     context.setVariable(
         "showAdditionalDiscount",
         request.getShowAdditionalDiscount() == null || request.getShowAdditionalDiscount());
+    context.setVariable("showPack", request.getShowPack() == null || request.getShowPack());
     context.setVariable("showHsn", request.getShowHsn() == null || request.getShowHsn());
     context.setVariable("showMfg", request.getShowMfg() == null || request.getShowMfg());
     context.setVariable("showExpiry", request.getShowExpiry() == null || request.getShowExpiry());
