@@ -15,7 +15,7 @@ import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.service.PackagingUnitCatalog;
 import com.inventory.taxation.domain.model.*;
 import com.inventory.taxation.domain.gstr1.Gstr1ReportContext;
-import com.inventory.taxation.utils.GstStateCode;
+import com.inventory.common.tax.GstStateCode;
 import com.inventory.user.domain.model.Customer;
 import com.inventory.user.domain.repository.CustomerRepository;
 import lombok.extern.slf4j.Slf4j;
