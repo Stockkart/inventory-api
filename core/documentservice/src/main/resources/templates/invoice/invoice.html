@@ -438,7 +438,7 @@
       <thead>
       <tr>
         <th style="width: 4%;">QTY</th>
-        <th style="width: 6%;">PACK.</th>
+        <th style="width: 6%;" th:if="${showPack}">PACK.</th>
         <th style="width: 18%;">PRODUCTS</th>
         <th style="width: 8%;" th:if="${showHsn}">HSN</th>
         <th style="width: 8%;" th:if="${showMfg}">MFG/MKT</th>
@@ -457,7 +457,7 @@
       <tbody>
       <tr th:each="item : ${items}">
         <td th:text="${item.quantityLabel}"></td>
-        <td th:text="${item.pack ?: ''}"></td>
+        <td th:if="${showPack}" th:text="${item.pack ?: ''}"></td>
         <td class="text-left product-name" th:text="${item.name}"></td>
         <td th:if="${showHsn}" th:text="${item.hsn ?: ''}"></td>
         <td th:if="${showMfg}" th:text="${item.companyName ?: ''}"></td>

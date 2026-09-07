@@ -138,6 +138,7 @@ public class InvoiceSettingsService {
     request.setShowAmountInWords(Boolean.TRUE.equals(fields.getShowAmountInWords()));
     request.setShowAmountSaved(Boolean.TRUE.equals(fields.getShowAmountSaved()));
     request.setShowAdditionalDiscount(Boolean.TRUE.equals(fields.getShowAdditionalDiscount()));
+    request.setShowPack(Boolean.TRUE.equals(fields.getShowPack()));
     request.setShowHsn(Boolean.TRUE.equals(fields.getShowHsn()));
     request.setShowMfg(Boolean.TRUE.equals(fields.getShowMfg()));
     request.setShowExpiry(Boolean.TRUE.equals(fields.getShowExpiry()));
@@ -176,6 +177,7 @@ public class InvoiceSettingsService {
     request.setShowPaymentMethod(Boolean.TRUE.equals(fields.getShowPaymentMethod()));
     request.setShowTaxDetails(Boolean.TRUE.equals(fields.getShowTaxDetails()));
     request.setShowAmountInWords(Boolean.TRUE.equals(fields.getShowAmountInWords()));
+    request.setShowPack(Boolean.TRUE.equals(fields.getShowPack()));
     request.setShowHsn(Boolean.TRUE.equals(fields.getShowHsn()));
     request.setShowMfg(Boolean.TRUE.equals(fields.getShowMfg()));
     request.setShowBatch(Boolean.TRUE.equals(fields.getShowBatch()));
