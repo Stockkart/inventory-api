@@ -49,7 +49,8 @@ public class TemplateInvoicePreviewRenderer implements InvoicePreviewRenderer {
     return templateEngine.process(templateName, context);
   }
 
-  private Context prepareTemplateContext(GenerateInvoiceRequest request) {
+  /** Package-private so a test can read back what the templates are given. */
+  Context prepareTemplateContext(GenerateInvoiceRequest request) {
     Context context = new Context();
 
     // Basic invoice data
