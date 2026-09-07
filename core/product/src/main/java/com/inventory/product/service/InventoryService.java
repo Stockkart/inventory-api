@@ -1,6 +1,7 @@
 package com.inventory.product.service;
 
 import com.inventory.common.tax.GstMath;
+import com.inventory.common.tax.GstStateCode;
 import com.inventory.common.tax.PurchaseTaxTreatment;
 import com.inventory.product.tax.PurchaseTaxBasisResolver;
 import com.inventory.product.tax.HsnRateConsistency;
@@ -638,9 +639,17 @@ public class InventoryService {
     // each {@link VendorPurchaseInvoiceLine} points to an inventory item whose {@code pricing}
     // doc carries the actual cgst / sgst rates. We compute CGST and SGST amounts per line and
     // sum them, falling back to shop-level rates only when an inventory or pricing lookup is
-    // missing. IGST is intentionally always zero here — interstate tax will be wired in once
-    // the FE captures a place-of-supply / interstate flag on the invoice.
-    GstSplit gst = splitTaxByLines(shopId, inv, taxTotal);
+    // missing.
+    //
+    // A supplier in another state charges IGST instead, and the whole tax goes to that one head.
+    // The books have to agree with the return: GSTR-2 places this purchase by the supplier's own
+    // GSTIN, and posting it to the local heads would leave the ledger claiming credit under two
+    // heads the return does not.
+    boolean interstate = isInterstatePurchase(shopId, vendorId);
+    GstSplit gst =
+        interstate ? new GstSplit(BigDecimal.ZERO, BigDecimal.ZERO)
+            : splitTaxByLines(shopId, inv, taxTotal);
+    BigDecimal inputIgst = interstate ? taxTotal : BigDecimal.ZERO;
     String paymentMethod = normalizePaymentMethod(inv.getPaymentMethod());
     com.inventory.accounting.api.VendorPurchaseInvoicePostingRequest req =
         com.inventory.accounting.api.VendorPurchaseInvoicePostingRequest.builder()
@@ -652,6 +661,7 @@ public class InventoryService {
             .goodsValue(goodsValue)
             .inputCgst(gst.cgst())
             .inputSgst(gst.sgst())
+            .inputIgst(inputIgst)
             .shippingCharge(nz(inv.getShippingCharge()))
             .otherCharges(nz(inv.getOtherCharges()))
             .roundOff(nz(inv.getRoundOff()))
@@ -957,6 +967,39 @@ public class InventoryService {
   /** Parses a shop's percentage field ({@code "9"}, {@code "9.00"}, {@code "9%"}). */
   private static BigDecimal parsePercentage(String raw) {
     return GstMath.parseRatePct(raw);
+  }
+
+  /**
+   * Whether goods came from a supplier in another state.
+   *
+   * <p>Placed the same way GSTR-2 places them, so the ledger and the return cannot disagree: the
+   * supplier by their own GSTIN, the shop by its GSTIN and then its address. Anything unplaceable
+   * is local, which is the far more common case and the safer of the two errors -- credit under
+   * the wrong local head is a reclassification, credit claimed on an interstate supply that never
+   * happened is not.
+   */
+  private boolean isInterstatePurchase(String shopId, String vendorId) {
+    if (!StringUtils.hasText(vendorId)) {
+      return false;
+    }
+    try {
+      String supplierState = vendorRepository.findById(vendorId.trim())
+          .map(Vendor::getGstinUin)
+          .map(GstStateCode::codeFromGstin)
+          .orElse("");
+      if (!StringUtils.hasText(supplierState)) {
+        return false;
+      }
+      String shopState = shopRepository.findById(shopId)
+          .map(shop -> GstStateCode.shopState(shop.getGstinNo(),
+              shop.getLocation() != null ? shop.getLocation().getState() : null))
+          .orElse("");
+      return StringUtils.hasText(shopState) && !shopState.equals(supplierState);
+    } catch (RuntimeException e) {
+      log.warn("Could not place the purchase for interstate tax (shop {}, vendor {}); "
+          + "treating it as local", shopId, vendorId, e);
+      return false;
+    }
   }
 
   /** Per-invoice CGST / SGST slice. IGST is wired in once the invoice carries a place-of-supply. */
