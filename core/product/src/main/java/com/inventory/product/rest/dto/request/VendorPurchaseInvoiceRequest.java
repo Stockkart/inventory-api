@@ -1,5 +1,6 @@
 package com.inventory.product.rest.dto.request;
 
+import com.inventory.product.tax.PurchaseTaxTreatment;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -25,4 +26,12 @@ public class VendorPurchaseInvoiceRequest {
   private String paymentMethod;
   /** Optional paid-now amount for split credit purchases. */
   private BigDecimal paidAmount;
+  /**
+   * Whether the line amounts on this bill already include GST.
+   *
+   * <p>INCLUSIVE for a supplier who bills at MRP, EXCLUSIVE for one who quotes a rate and adds
+   * the tax. Omitted means EXCLUSIVE, which is what every path assumed before the distinction
+   * was recorded.
+   */
+  private PurchaseTaxTreatment taxTreatment;
 }

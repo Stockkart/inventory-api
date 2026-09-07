@@ -51,6 +51,19 @@ public class VendorPurchaseInvoice {
    * figures do not move.
    */
   private PurchaseTaxTreatment taxTreatment;
+
+  // --- What the lines say, kept beside what the operator typed ---------------
+  // The stated header above is never overwritten: it is what the person holding
+  // the bill read off it, and a machine that quietly replaces it destroys the
+  // one record of what the paper said. These are the second opinion, and the
+  // verdict is how far the two agree.
+
+  /** Taxable value the lines come to once resolved. */
+  private BigDecimal computedLineSubTotal;
+  /** Tax the lines come to at their own rates. */
+  private BigDecimal computedTaxTotal;
+  /** OK | MISSING | MISMATCH | RATE_CONFLICT -- see {@code PurchaseTaxBasis.Verdict}. */
+  private String headerReconciliation;
   /**
    * True when invoice number was generated (AUTO-*) because the user did not enter one.
    * User-entered invoices are non-synthetic.
