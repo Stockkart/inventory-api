@@ -1,6 +1,9 @@
 package com.inventory.product.service;
 
+import com.inventory.product.tax.PurchaseTaxBasisResolver;
+import com.inventory.common.tax.GstStateCode;
 import com.inventory.common.tax.GstMath;
+import com.inventory.user.domain.model.Vendor;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
@@ -82,6 +85,9 @@ public class VendorPurchaseReturnService {
 
   @Autowired
   private VendorRepository vendorRepository;
+
+  @Autowired
+  private com.inventory.product.domain.repository.ShopRepository shopRepository;
 
   @Autowired
   private MongoTemplate mongoTemplate;
@@ -369,13 +375,19 @@ public class VendorPurchaseReturnService {
                 "Vendor invoice not found: " + request.getVendorPurchaseInvoiceId()));
 
     Set<String> allowedInventoryIdsOnInvoice = new HashSet<>();
+    Map<String, VendorPurchaseInvoiceLine> invoiceLinesByInventoryId = new HashMap<>();
     if (invoice.getLines() != null) {
       for (VendorPurchaseInvoiceLine line : invoice.getLines()) {
         if (StringUtils.hasText(line.getInventoryId())) {
           allowedInventoryIdsOnInvoice.add(line.getInventoryId());
+          invoiceLinesByInventoryId.put(line.getInventoryId(), line);
         }
       }
     }
+
+    // The credit note follows the purchase: goods that came from another state were taxed under
+    // IGST, and returning them reverses that credit off the same head.
+    boolean interstateReturn = isInterstateVendor(shopId, invoice.getVendorId());
 
     Set<String> seenIds = new HashSet<>();
     for (VendorPurchaseReturnRequest.Item it : request.getItems()) {
@@ -434,31 +446,44 @@ public class VendorPurchaseReturnService {
             StringUtils.hasText(inventory.getPricingId())
                 ? pricingRepository.findById(inventory.getPricingId()).orElse(null)
                 : null;
-        BigDecimal costPrice =
-            pricing != null && pricing.getCostPrice() != null
-                ? pricing.getCostPrice()
-                : BigDecimal.ZERO;
-        String sgstStr =
-            pricing != null && StringUtils.hasText(pricing.getSgst()) ? pricing.getSgst() : "0";
-        String cgstStr =
-            pricing != null && StringUtils.hasText(pricing.getCgst()) ? pricing.getCgst() : "0";
-        BigDecimal sgstRate = parseRatePct(sgstStr);
-        BigDecimal cgstRate = parseRatePct(cgstStr);
+        VendorPurchaseInvoiceLine originalLine = invoiceLinesByInventoryId.get(
+            payload.getInventoryId());
+
+        // What the purchase was taxed on, not what the price list says. A credit note reverses a
+        // purchase, so it has to reverse the figure that purchase was actually recorded at --
+        // after the bill's scheme and discount, and with the tax taken out where the supplier
+        // billed at MRP. Reading costPrice raw and adding tax on top credited the supplier for
+        // more than was ever paid them: on a scheme-discounted inclusive bill, by over a third.
+        BigDecimal rate = originalLine != null && originalLine.getGstRatePct() != null
+            ? originalLine.getGstRatePct()
+            : GstMath.parseRatePct(pricing != null ? pricing.getSgst() : null)
+                .add(GstMath.parseRatePct(pricing != null ? pricing.getCgst() : null));
+
+        BigDecimal unitTaxable = unitTaxableFromInvoiceLine(originalLine);
+        if (unitTaxable == null) {
+          // Recorded before the invoice carried its own tax analysis; derive it the same way
+          // registration would have.
+          unitTaxable = PurchaseTaxBasisResolver.unitTaxable(
+              pricing, invoice.getTaxTreatment(), rate);
+        }
 
         // Cost on pricing / vendor bill is per display (invoice) unit, not per base unit.
         // Match purchase valuation: taxable = unitCost × quantity returned in those same units.
         BigDecimal displayQtyReturned = toDisplayQuantity(qtyBase, inventory);
         BigDecimal taxableVal =
-            costPrice.multiply(displayQtyReturned).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal cgstAmt =
-            taxableVal
-                .multiply(cgstRate)
-                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
-        BigDecimal sgstAmt =
-            taxableVal
-                .multiply(sgstRate)
-                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
-        BigDecimal lineTotal = taxableVal.add(cgstAmt).add(sgstAmt).setScale(2, RoundingMode.HALF_UP);
+            unitTaxable.multiply(displayQtyReturned).setScale(2, RoundingMode.HALF_UP);
+
+        // Credited under the head the purchase was charged under -- the return reverses that
+        // credit, and it has to come off the same account it went onto.
+        BigDecimal igstAmt = interstateReturn
+            ? GstMath.taxOnExclusive(taxableVal, rate) : BigDecimal.ZERO;
+        GstMath.IntraStateTax halves = interstateReturn
+            ? new GstMath.IntraStateTax(BigDecimal.ZERO, BigDecimal.ZERO)
+            : GstMath.splitIntraState(taxableVal, rate);
+        BigDecimal cgstAmt = halves.centralTax();
+        BigDecimal sgstAmt = halves.stateTax();
+        BigDecimal lineTotal =
+            taxableVal.add(cgstAmt).add(sgstAmt).add(igstAmt).setScale(2, RoundingMode.HALF_UP);
 
         reduceInventoryForVendorReturn(inventory, qtyBase, shopId);
 
@@ -468,6 +493,7 @@ public class VendorPurchaseReturnService {
         lineItem.setTaxableValue(taxableVal);
         lineItem.setCentralTaxAmount(cgstAmt);
         lineItem.setStateUtTaxAmount(sgstAmt);
+        lineItem.setIntegratedTaxAmount(igstAmt);
         lineItem.setLineNoteValue(lineTotal);
         aggregates.put(payload.getInventoryId(), lineItem);
         totalReturnAmount = totalReturnAmount.add(lineTotal);
@@ -547,18 +573,21 @@ public class VendorPurchaseReturnService {
     BigDecimal goods = BigDecimal.ZERO;
     BigDecimal cgst = BigDecimal.ZERO;
     BigDecimal sgst = BigDecimal.ZERO;
+    BigDecimal igst = BigDecimal.ZERO;
     if (record.getItems() != null) {
       for (VendorPurchaseReturnItem line : record.getItems()) {
         goods = goods.add(nz(line.getTaxableValue()));
         cgst = cgst.add(nz(line.getCentralTaxAmount()));
         sgst = sgst.add(nz(line.getStateUtTaxAmount()));
+        igst = igst.add(nz(line.getIntegratedTaxAmount()));
       }
     }
     goods = goods.setScale(2, RoundingMode.HALF_UP);
     cgst = cgst.setScale(2, RoundingMode.HALF_UP);
     sgst = sgst.setScale(2, RoundingMode.HALF_UP);
+    igst = igst.setScale(2, RoundingMode.HALF_UP);
     BigDecimal returnTotal = nz(record.getReturnAmount()).setScale(2, RoundingMode.HALF_UP);
-    BigDecimal preRound = goods.add(cgst).add(sgst).setScale(2, RoundingMode.HALF_UP);
+    BigDecimal preRound = goods.add(cgst).add(sgst).add(igst).setScale(2, RoundingMode.HALF_UP);
     BigDecimal roundOff = returnTotal.subtract(preRound).setScale(4, RoundingMode.HALF_UP);
 
     String vendorId = invoice.getVendorId();
@@ -593,6 +622,7 @@ public class VendorPurchaseReturnService {
               .goodsValue(goods)
               .inputCgst(cgst)
               .inputSgst(sgst)
+              .inputIgst(igst)
               .returnTotal(returnTotal)
               .roundOff(roundOff)
               .refundCash(refundCash)
@@ -737,6 +767,51 @@ public class VendorPurchaseReturnService {
       return 1;
     }
     return c.getFactor();
+  }
+
+  /**
+   * The taxable value of one unit, as the invoice recorded it.
+   *
+   * <p>Null where the line predates the invoice carrying its own tax analysis, or states no
+   * quantity to divide by -- the caller then derives it from pricing instead.
+   */
+  private BigDecimal unitTaxableFromInvoiceLine(VendorPurchaseInvoiceLine line) {
+    if (line == null || line.getTaxableValue() == null || line.getCount() == null
+        || line.getCount() <= 0) {
+      return null;
+    }
+    return line.getTaxableValue()
+        .divide(BigDecimal.valueOf(line.getCount()), 4, RoundingMode.HALF_UP);
+  }
+
+  /**
+   * Whether a supplier is in another state, placed the same way the purchase and the return are.
+   *
+   * <p>Unplaceable is local, matching the purchase side: a credit reversed off the wrong local
+   * head is a reclassification, one reversed off IGST that was never claimed is not.
+   */
+  private boolean isInterstateVendor(String shopId, String vendorId) {
+    if (!StringUtils.hasText(vendorId)) {
+      return false;
+    }
+    try {
+      String supplierState = vendorRepository.findById(vendorId.trim())
+          .map(Vendor::getGstinUin)
+          .map(GstStateCode::codeFromGstin)
+          .orElse("");
+      if (!StringUtils.hasText(supplierState)) {
+        return false;
+      }
+      String shopState = shopRepository.findById(shopId)
+          .map(shop -> GstStateCode.shopState(shop.getGstinNo(),
+              shop.getLocation() != null ? shop.getLocation().getState() : null))
+          .orElse("");
+      return StringUtils.hasText(shopState) && !shopState.equals(supplierState);
+    } catch (RuntimeException e) {
+      log.warn("Could not place the vendor for interstate tax (shop {}, vendor {}); "
+          + "treating the return as local", shopId, vendorId, e);
+      return false;
+    }
   }
 
   private BigDecimal parseRatePct(String s) {
