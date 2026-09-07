@@ -1,5 +1,6 @@
 package com.inventory.product.domain.model;
 
+import com.inventory.product.tax.PurchaseTaxTreatment;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -42,6 +43,14 @@ public class VendorPurchaseInvoice {
   private BigDecimal invoiceTotal;
   private String paymentMethod;
   private BigDecimal paidAmount;
+  /**
+   * Whether the line amounts on this bill already contain GST.
+   *
+   * <p>Null on every invoice recorded before the distinction was captured, and read as
+   * {@code EXCLUSIVE} — the assumption those documents were written under, so their reported
+   * figures do not move.
+   */
+  private PurchaseTaxTreatment taxTreatment;
   /**
    * True when invoice number was generated (AUTO-*) because the user did not enter one.
    * User-entered invoices are non-synthetic.
