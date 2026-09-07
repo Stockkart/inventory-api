@@ -1,4 +1,4 @@
-package com.inventory.product.tax;
+package com.inventory.common.tax;
 
 /**
  * Whether the amounts on a supplier's bill already contain GST.

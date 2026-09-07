@@ -6,6 +6,7 @@ import com.inventory.common.exception.AuthenticationException;
 import com.inventory.metrics.annotation.Latency;
 import com.inventory.metrics.annotation.RecordRequestRate;
 import com.inventory.metrics.annotation.RecordStatusCodes;
+import com.inventory.product.rest.dto.request.AmendVendorPurchaseInvoiceRequest;
 import com.inventory.product.rest.dto.response.VendorPurchaseInvoiceDetailDto;
 import com.inventory.product.rest.dto.response.VendorPurchaseInvoiceListResponse;
 import com.inventory.product.service.VendorPurchaseInvoiceService;
@@ -16,7 +17,9 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -45,6 +48,28 @@ public class VendorPurchaseInvoiceController {
     }
     return ResponseEntity.ok(
         ApiResponse.success(vendorPurchaseInvoiceService.list(shopId, page, size, q)));
+  }
+
+  /**
+   * Corrects an invoice header against the paper bill.
+   *
+   * <p>Header only. The lines record what the stock was made from and are not amendable here.
+   */
+  @PatchMapping(value = "/{id}", consumes = MediaType.APPLICATION_JSON_VALUE,
+      produces = MediaType.APPLICATION_JSON_VALUE)
+  public ResponseEntity<ApiResponse<VendorPurchaseInvoiceDetailDto>> amendHeader(
+      @PathVariable String id,
+      @RequestBody AmendVendorPurchaseInvoiceRequest request,
+      HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    String userId = (String) httpRequest.getAttribute("userId");
+    if (StringUtils.isEmpty(shopId)) {
+      throw new AuthenticationException(
+          ErrorCode.UNAUTHORIZED, "User not authenticated or shop not found");
+    }
+    return ResponseEntity.ok(
+        ApiResponse.success(
+            vendorPurchaseInvoiceService.amendHeader(id, shopId, userId, request)));
   }
 
   @GetMapping(value = "/{id}", produces = MediaType.APPLICATION_JSON_VALUE)

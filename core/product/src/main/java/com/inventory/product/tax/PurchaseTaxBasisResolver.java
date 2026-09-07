@@ -1,6 +1,7 @@
 package com.inventory.product.tax;
 
 import com.inventory.common.tax.GstMath;
+import com.inventory.common.tax.PurchaseTaxTreatment;
 import com.inventory.pricing.domain.model.Pricing;
 import com.inventory.pricing.domain.model.Scheme;
 import com.inventory.pricing.utils.constants.PricingConstants;

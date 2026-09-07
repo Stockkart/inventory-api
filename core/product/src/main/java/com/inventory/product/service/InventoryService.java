@@ -2,6 +2,7 @@ package com.inventory.product.service;
 
 import com.inventory.common.tax.GstMath;
 import com.inventory.product.tax.PurchaseTaxBasisResolver;
+import com.inventory.product.tax.HsnRateConsistency;
 import com.inventory.product.tax.PurchaseTaxBasis;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
@@ -155,6 +156,12 @@ public class InventoryService {
 
   @Autowired
   private com.inventory.pricing.domain.repository.PricingRepository pricingRepository;
+
+  @Autowired
+  private HsnRateConsistency hsnRateConsistency;
+
+  @Autowired
+  private com.inventory.product.domain.repository.ProductRepository productRepository;
 
   @Autowired
   private QuotationService quotationService;
@@ -416,7 +423,15 @@ public class InventoryService {
       pendingInvoice.setInvoiceTotal(invReq.getInvoiceTotal());
       pendingInvoice.setPaymentMethod(invReq.getPaymentMethod());
       pendingInvoice.setPaidAmount(invReq.getPaidAmount());
-      pendingInvoice.setTaxTreatment(invReq.getTaxTreatment());
+      // The bill decides; the vendor answers when the bill did not. A supplier's billing
+      // convention is a property of their software rather than of any one invoice, so asking on
+      // every bill from the same vendor would be asking a question already answered.
+      pendingInvoice.setTaxTreatment(
+          invReq.getTaxTreatment() != null
+              ? invReq.getTaxTreatment()
+              : vendorRepository.findById(bulkRequest.getVendorId())
+                  .map(Vendor::getDefaultTaxTreatment)
+                  .orElse(null));
     }
 
     try {
@@ -458,6 +473,7 @@ public class InventoryService {
 
     pendingInvoice.setLines(invoiceLines);
     recordResolvedTax(pendingInvoice);
+    List<String> rateWarnings = checkHsnRates(pendingInvoice, shopId);
     vendorPurchaseInvoiceRepository.save(pendingInvoice);
     if (metrics != null) {
       metrics.record(
@@ -501,6 +517,9 @@ public class InventoryService {
     out.setHeaderReconciliation(pendingInvoice.getHeaderReconciliation());
     out.setComputedLineSubTotal(pendingInvoice.getComputedLineSubTotal());
     out.setComputedTaxTotal(pendingInvoice.getComputedTaxTotal());
+    if (!rateWarnings.isEmpty()) {
+      out.setRateWarnings(rateWarnings);
+    }
     out.setItemErrors(null);
     out.setCreditEntryId(creditEntryId);
     return out;
@@ -760,6 +779,38 @@ public class InventoryService {
     return new GstSplit(
         total.subtract(half).setScale(4, RoundingMode.HALF_UP),
         half.setScale(4, RoundingMode.HALF_UP));
+  }
+
+  /**
+   * Warns where a line's GST rate disagrees with the rest of the catalogue under its HSN.
+   *
+   * <p>Separate from the header check, because it catches what the header cannot. An invoice
+   * priced entirely at the wrong slab reconciles with itself perfectly -- subtotal, tax and total
+   * all agree -- and is wrong all the same. The only evidence against it is that the same goods
+   * are recorded at a different rate elsewhere in the shop.
+   */
+  private List<String> checkHsnRates(VendorPurchaseInvoice invoice, String shopId) {
+    List<String> warnings = new ArrayList<>();
+    try {
+      for (VendorPurchaseInvoiceLine line : invoice.getLines()) {
+        if (!StringUtils.hasText(line.getInventoryId()) || line.getGstRatePct() == null) continue;
+        inventoryRepository.findById(line.getInventoryId())
+            .filter(lot -> StringUtils.hasText(lot.getProductId()))
+            .flatMap(lot -> productRepository.findById(lot.getProductId()))
+            .ifPresent((com.inventory.product.domain.model.Product product) ->
+                hsnRateConsistency.check(shopId, product.getHsn(), line.getGstRatePct())
+                    .ifPresent(conflict -> {
+                      String message = conflict.describe(
+                          StringUtils.hasText(line.getName()) ? line.getName() : product.getName());
+                      warnings.add(message);
+                      log.warn("Invoice {} (shop {}): {}", invoice.getInvoiceNo(), shopId, message);
+                    }));
+      }
+    } catch (RuntimeException e) {
+      log.warn("HSN rate check failed for invoice {} (shop {})",
+          invoice.getInvoiceNo(), shopId, e);
+    }
+    return warnings;
   }
 
   /**

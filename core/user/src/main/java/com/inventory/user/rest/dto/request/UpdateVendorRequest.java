@@ -1,5 +1,6 @@
 package com.inventory.user.rest.dto.request;
 
+import com.inventory.common.tax.PurchaseTaxTreatment;
 import lombok.Data;
 
 @Data
@@ -12,4 +13,6 @@ public class UpdateVendorRequest {
   private String businessType;
   private String gstinUin;
   private String dlNo;
+  /** INCLUSIVE when this supplier bills at MRP with GST inside the line amount. */
+  private PurchaseTaxTreatment defaultTaxTreatment;
 }
