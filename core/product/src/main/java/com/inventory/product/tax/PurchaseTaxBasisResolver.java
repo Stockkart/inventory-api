@@ -92,7 +92,10 @@ public final class PurchaseTaxBasisResolver {
       }
     }
 
-    BigDecimal statedSubTotal = invoice.getLineSubTotal();
+    // A bill-level trade discount reduces what the tax is due on, so the header's taxable value
+    // is its subtotal net of it. Some suppliers state the subtotal gross and put the discount on
+    // its own line; taxing the gross there overstates the credit by the discount.
+    BigDecimal statedSubTotal = netOfOverallDiscount(invoice);
     BigDecimal statedTax = invoice.getTaxTotal();
     BigDecimal grossSum = sum(gross);
 
@@ -288,6 +291,26 @@ public final class PurchaseTaxBasisResolver {
           additional.divide(BigDecimal.valueOf(100))));
     }
     return cost.setScale(4, RoundingMode.HALF_UP);
+  }
+
+  /**
+   * The header's taxable value: its stated subtotal less any bill-level discount.
+   *
+   * <p>Returns null when no subtotal is stated, which is what sends the resolver down to the line
+   * basis. A discount larger than the subtotal is ignored rather than producing a negative
+   * taxable value -- that is a data error, and the rungs below are a better answer than a
+   * negative credit.
+   */
+  private static BigDecimal netOfOverallDiscount(VendorPurchaseInvoice invoice) {
+    BigDecimal subTotal = invoice.getLineSubTotal();
+    if (subTotal == null) {
+      return null;
+    }
+    BigDecimal discount = invoice.getOverallDiscount();
+    if (discount == null || discount.signum() <= 0 || discount.compareTo(subTotal) >= 0) {
+      return subTotal;
+    }
+    return subTotal.subtract(discount);
   }
 
   private static BigDecimal rateOf(Pricing pricing) {
