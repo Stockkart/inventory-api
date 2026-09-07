@@ -257,6 +257,27 @@ public final class PurchaseTaxBasisResolver {
   }
 
   /**
+   * What one unit of a lot is worth for tax, from its pricing alone.
+   *
+   * <p>The fallback for a line recorded before the taxable value was persisted on it. It applies
+   * the price reductions GST recognises and, where the supplier billed at MRP, takes the tax back
+   * out -- the two things a raw {@code costPrice} does not account for, and between them worth
+   * more than a third of the figure on a scheme-discounted inclusive bill.
+   */
+  public static BigDecimal unitTaxable(Pricing pricing, PurchaseTaxTreatment treatment,
+      BigDecimal ratePct) {
+    BigDecimal cost = discountedUnitCost(pricing);
+    if (cost == null) {
+      cost = pricing != null && pricing.getCostPrice() != null
+          ? pricing.getCostPrice() : BigDecimal.ZERO;
+    }
+    if (PurchaseTaxTreatment.orDefault(treatment) == PurchaseTaxTreatment.INCLUSIVE) {
+      return GstMath.extractFromInclusive(cost, ratePct).taxable();
+    }
+    return cost;
+  }
+
+  /**
    * Unit cost after the price reductions that GST recognises — and only those.
    *
    * <p>Deliberately not {@link PricingUtils#computeEffectiveCostPrice}, which is the landed cost:
