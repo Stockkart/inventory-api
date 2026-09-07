@@ -2016,7 +2016,11 @@ public class CheckoutService {
 
     BigDecimal cgst = nzMoney(purchase.getCgstAmount());
     BigDecimal sgst = nzMoney(purchase.getSgstAmount());
-    BigDecimal taxBeforeRound = revenue.add(cgst).add(sgst);
+    // An interstate sale carries its tax under IGST alone, so the books have to say so too.
+    // Posting it to the local heads would leave the ledger claiming a liability the return does
+    // not declare, and the two have to agree at filing.
+    BigDecimal igst = nzMoney(purchase.getIgstAmount());
+    BigDecimal taxBeforeRound = revenue.add(cgst).add(sgst).add(igst);
     BigDecimal roundOff = saleTotal.subtract(taxBeforeRound).setScale(4, RoundingMode.HALF_UP);
 
     SalePaymentBreakdown payment =
@@ -2042,6 +2046,7 @@ public class CheckoutService {
             .taxableRevenue(revenue)
             .outputCgst(cgst)
             .outputSgst(sgst)
+            .outputIgst(igst)
             .saleTotal(saleTotal)
             .paidCash(payment.cash())
             .paidOnline(payment.online())
