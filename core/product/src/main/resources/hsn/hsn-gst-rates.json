@@ -1,0 +1,131 @@
+{
+  "_readme": [
+    "GST rate per HSN, used to catch a product priced at a rate that HSN never carries.",
+    "",
+    "An HSN does not fix a single rate -- one heading can legitimately span two. An entry here says",
+    "what a rate normally is, not what it must be, and a shop already applying another rate under",
+    "the same HSN is left alone.",
+    "",
+    "source=catalogue-unanimous means the rate was taken from a shop's own records because every",
+    "product it holds under that HSN agreed. It is evidence, not authority: if the rate was keyed",
+    "wrong the first time and copied since, the agreement is unanimous and wrong. Such an entry only",
+    "confirms what the shop already believes, so it never contradicts a catalogue that agrees with",
+    "itself.",
+    "",
+    "source=verified means someone checked the entry against the GST schedule. Only a verified entry",
+    "can overrule a shop, which is what catches a rate that is wrong everywhere. Verify before",
+    "promoting: a shop's own consensus is exactly what cannot be trusted here."
+  ],
+  "rates": {
+    "21069099": {
+      "ratePct": 5.0,
+      "source": "catalogue-unanimous",
+      "agreeingProducts": 6
+    },
+    "3004": {
+      "ratePct": 5.0,
+      "source": "catalogue-unanimous",
+      "agreeingProducts": 9
+    },
+    "30041030": {
+      "ratePct": 5.0,
+      "source": "catalogue-unanimous",
+      "agreeingProducts": 3
+    },
+    "30042019": {
+      "ratePct": 5.0,
+      "source": "catalogue-unanimous",
+      "agreeingProducts": 3
+    },
+    "30042064": {
+      "ratePct": 5.0,
+      "source": "catalogue-unanimous",
+      "agreeingProducts": 3
+    },
+    "30044040": {
+      "ratePct": 5.0,
+      "source": "catalogue-unanimous",
+      "agreeingProducts": 3
+    },
+    "30045010": {
+      "ratePct": 5.0,
+      "source": "catalogue-unanimous",
+      "agreeingProducts": 3
+    },
+    "30045090": {
+      "ratePct": 5.0,
+      "source": "catalogue-unanimous",
+      "agreeingProducts": 3
+    },
+    "30049011": {
+      "ratePct": 5.0,
+      "source": "catalogue-unanimous",
+      "agreeingProducts": 178
+    },
+    "30049029": {
+      "ratePct": 5.0,
+      "source": "catalogue-unanimous",
+      "agreeingProducts": 4
+    },
+    "30049031": {
+      "ratePct": 5.0,
+      "source": "catalogue-unanimous",
+      "agreeingProducts": 4
+    },
+    "30049034": {
+      "ratePct": 5.0,
+      "source": "catalogue-unanimous",
+      "agreeingProducts": 4
+    },
+    "30049036": {
+      "ratePct": 5.0,
+      "source": "catalogue-unanimous",
+      "agreeingProducts": 11
+    },
+    "30049066": {
+      "ratePct": 5.0,
+      "source": "catalogue-unanimous",
+      "agreeingProducts": 4
+    },
+    "30049099": {
+      "ratePct": 5.0,
+      "source": "catalogue-unanimous",
+      "agreeingProducts": 41
+    },
+    "33049120": {
+      "ratePct": 5.0,
+      "source": "catalogue-unanimous",
+      "agreeingProducts": 8
+    },
+    "33049910": {
+      "ratePct": 18.0,
+      "source": "catalogue-unanimous",
+      "agreeingProducts": 7
+    },
+    "33049930": {
+      "ratePct": 18.0,
+      "source": "catalogue-unanimous",
+      "agreeingProducts": 11
+    },
+    "33051090": {
+      "ratePct": 5.0,
+      "source": "catalogue-unanimous",
+      "agreeingProducts": 4
+    },
+    "33061020": {
+      "ratePct": 5.0,
+      "source": "catalogue-unanimous",
+      "agreeingProducts": 6
+    },
+    "34011110": {
+      "ratePct": 5.0,
+      "source": "catalogue-unanimous",
+      "agreeingProducts": 6
+    },
+    "96190030": {
+      "ratePct": 5.0,
+      "source": "catalogue-unanimous",
+      "agreeingProducts": 8
+    }
+  }
+}

@@ -1,7 +1,9 @@
 package com.inventory.product.service;
 
 import com.inventory.common.tax.GstMath;
+import com.inventory.common.tax.PurchaseTaxTreatment;
 import com.inventory.product.tax.PurchaseTaxBasisResolver;
+import com.inventory.product.tax.HsnRateConsistency;
 import com.inventory.product.tax.PurchaseTaxBasis;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
@@ -155,6 +157,12 @@ public class InventoryService {
 
   @Autowired
   private com.inventory.pricing.domain.repository.PricingRepository pricingRepository;
+
+  @Autowired
+  private HsnRateConsistency hsnRateConsistency;
+
+  @Autowired
+  private com.inventory.product.domain.repository.ProductRepository productRepository;
 
   @Autowired
   private QuotationService quotationService;
@@ -416,7 +424,15 @@ public class InventoryService {
       pendingInvoice.setInvoiceTotal(invReq.getInvoiceTotal());
       pendingInvoice.setPaymentMethod(invReq.getPaymentMethod());
       pendingInvoice.setPaidAmount(invReq.getPaidAmount());
-      pendingInvoice.setTaxTreatment(invReq.getTaxTreatment());
+      // The bill decides; the vendor answers when the bill did not. A supplier's billing
+      // convention is a property of their software rather than of any one invoice, so asking on
+      // every bill from the same vendor would be asking a question already answered.
+      pendingInvoice.setTaxTreatment(
+          invReq.getTaxTreatment() != null
+              ? invReq.getTaxTreatment()
+              : vendorRepository.findById(bulkRequest.getVendorId())
+                  .map(Vendor::getDefaultTaxTreatment)
+                  .orElse(null));
     }
 
     try {
@@ -458,6 +474,8 @@ public class InventoryService {
 
     pendingInvoice.setLines(invoiceLines);
     recordResolvedTax(pendingInvoice);
+    rememberVendorTaxTreatment(bulkRequest.getVendorId(), invReq);
+    List<String> rateWarnings = checkHsnRates(pendingInvoice, shopId);
     vendorPurchaseInvoiceRepository.save(pendingInvoice);
     if (metrics != null) {
       metrics.record(
@@ -501,6 +519,9 @@ public class InventoryService {
     out.setHeaderReconciliation(pendingInvoice.getHeaderReconciliation());
     out.setComputedLineSubTotal(pendingInvoice.getComputedLineSubTotal());
     out.setComputedTaxTotal(pendingInvoice.getComputedTaxTotal());
+    if (!rateWarnings.isEmpty()) {
+      out.setRateWarnings(rateWarnings);
+    }
     out.setItemErrors(null);
     out.setCreditEntryId(creditEntryId);
     return out;
@@ -763,6 +784,38 @@ public class InventoryService {
   }
 
   /**
+   * Warns where a line's GST rate disagrees with the rest of the catalogue under its HSN.
+   *
+   * <p>Separate from the header check, because it catches what the header cannot. An invoice
+   * priced entirely at the wrong slab reconciles with itself perfectly -- subtotal, tax and total
+   * all agree -- and is wrong all the same. The only evidence against it is that the same goods
+   * are recorded at a different rate elsewhere in the shop.
+   */
+  private List<String> checkHsnRates(VendorPurchaseInvoice invoice, String shopId) {
+    List<String> warnings = new ArrayList<>();
+    try {
+      for (VendorPurchaseInvoiceLine line : invoice.getLines()) {
+        if (!StringUtils.hasText(line.getInventoryId()) || line.getGstRatePct() == null) continue;
+        inventoryRepository.findById(line.getInventoryId())
+            .filter(lot -> StringUtils.hasText(lot.getProductId()))
+            .flatMap(lot -> productRepository.findById(lot.getProductId()))
+            .ifPresent((com.inventory.product.domain.model.Product product) ->
+                hsnRateConsistency.check(shopId, product.getHsn(), line.getGstRatePct())
+                    .ifPresent(conflict -> {
+                      String message = conflict.describe(
+                          StringUtils.hasText(line.getName()) ? line.getName() : product.getName());
+                      warnings.add(message);
+                      log.warn("Invoice {} (shop {}): {}", invoice.getInvoiceNo(), shopId, message);
+                    }));
+      }
+    } catch (RuntimeException e) {
+      log.warn("HSN rate check failed for invoice {} (shop {})",
+          invoice.getInvoiceNo(), shopId, e);
+    }
+    return warnings;
+  }
+
+  /**
    * Rejects an invoice header that cannot describe a real bill.
    *
    * <p>Deliberately narrow. A header that merely disagrees with its lines is recorded and
@@ -795,6 +848,47 @@ public class InventoryService {
   private void rejectIfNegative(Set<String> errors, String label, BigDecimal value) {
     if (value != null && value.signum() < 0) {
       errors.add(label + " cannot be negative");
+    }
+  }
+
+  /**
+   * Remembers how a supplier bills, from the bill in front of the operator.
+   *
+   * <p>The question can only be answered with an invoice in hand -- whether the printed line
+   * amount already contains the tax is a fact about the paper, not something anyone knows while
+   * typing a supplier's phone number into a form. So it is asked where it is answerable, at stock
+   * in, and kept for next time.
+   *
+   * <p>The latest answer wins. A supplier that changes how it bills is telling us so through its
+   * bills, and an operator correcting the choice on today's invoice means the stored one was
+   * wrong; either way the newer answer came from someone looking at a real document. Only an
+   * explicit choice is recorded -- leaving the field on "as this vendor usually bills" says
+   * nothing new and overwrites nothing.
+   *
+   * <p>Never fatal. The stock is registered and the invoice is right regardless; failing to
+   * remember only means being asked again next time.
+   */
+  private void rememberVendorTaxTreatment(String vendorId, VendorPurchaseInvoiceRequest invReq) {
+    if (invReq == null || invReq.getTaxTreatment() == null || !StringUtils.hasText(vendorId)) {
+      return;
+    }
+    try {
+      vendorRepository.findById(vendorId.trim()).ifPresent(vendor -> {
+        PurchaseTaxTreatment stated = invReq.getTaxTreatment();
+        if (stated == vendor.getDefaultTaxTreatment()) {
+          return;
+        }
+        PurchaseTaxTreatment previous = vendor.getDefaultTaxTreatment();
+        vendor.setDefaultTaxTreatment(stated);
+        vendor.setUpdatedAt(Instant.now());
+        vendorRepository.save(vendor);
+        log.info("Vendor {} now bills {} (was {}), learnt from invoice {}",
+            vendor.getName(), stated, previous == null ? "unrecorded" : previous,
+            invReq.getInvoiceNo());
+      });
+    } catch (RuntimeException e) {
+      log.warn("Could not record how vendor {} bills; it will be asked again next time",
+          vendorId, e);
     }
   }
 
