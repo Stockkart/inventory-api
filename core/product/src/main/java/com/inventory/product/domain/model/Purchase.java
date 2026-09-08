@@ -56,6 +56,20 @@ public class Purchase {
   private BigDecimal taxTotal;
   private BigDecimal sgstAmount; // Calculated SGST amount
   private BigDecimal cgstAmount; // Calculated CGST amount
+  /** IGST, charged instead of SGST + CGST when the supply crosses a state border. */
+  private BigDecimal igstAmount;
+  /**
+   * Whether this sale was billed as an interstate supply.
+   *
+   * <p>Recorded at checkout rather than worked out again at filing time, because the return has
+   * to say what the invoice said. The customer's registration can change, and a bill already
+   * handed over cannot; re-deriving this later would report one thing while the paper in the
+   * customer's file says another.
+   *
+   * <p>Null on every sale made before this was captured. Those were billed as local supplies
+   * whatever their customer's state, and are reported the way they were billed.
+   */
+  private Boolean interstate;
   private BigDecimal discountTotal;
   private BigDecimal saleAdditionalDiscountTotal;
   private BigDecimal grandTotal;

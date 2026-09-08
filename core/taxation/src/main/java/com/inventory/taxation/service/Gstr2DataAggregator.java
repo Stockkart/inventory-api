@@ -16,7 +16,7 @@ import com.inventory.product.domain.repository.VendorPurchaseInvoiceRepository;
 import com.inventory.product.domain.repository.VendorPurchaseReturnRepository;
 import com.inventory.taxation.domain.gstr2.*;
 import com.inventory.taxation.domain.model.GstHsnLine;
-import com.inventory.taxation.utils.GstStateCode;
+import com.inventory.common.tax.GstStateCode;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.user.domain.model.Vendor;

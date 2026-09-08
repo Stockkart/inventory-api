@@ -1,4 +1,4 @@
-package com.inventory.taxation.utils;
+package com.inventory.common.tax;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
