@@ -196,7 +196,12 @@ public class Gstr1DataAggregator {
         if (b2b) {
           line.setSupplyType(SupplyType.B2B);
           b2bLines.add(line);
-        } else if (invValue.compareTo(B2CL_THRESHOLD) >= 0) {
+        } else if (invValue.compareTo(B2CL_THRESHOLD) >= 0
+            && (purchase.getInterstate() == null || interstate)) {
+          // B2CL is a large supply to an unregistered buyer in another state; a local one of the
+          // same size belongs on b2cs. Sales made before the supply type was recorded cannot be
+          // told apart, so they keep the routing they have always had rather than moving between
+          // sheets of a return that has already been filed.
           line.setSupplyType(SupplyType.B2CL);
           b2clLines.add(line);
         } else {
