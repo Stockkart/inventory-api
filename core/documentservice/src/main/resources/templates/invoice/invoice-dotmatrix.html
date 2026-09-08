@@ -122,7 +122,9 @@
           <td class="right" th:text="${additionalDiscountTotal}">0</td>
         </tr>
         <tr th:if="${showTaxDetails}">
-          <td>Tax</td>
+          <!-- Named rather than a bare "Tax": on an interstate supply the customer claims the
+               credit under IGST, and a row that does not say so leaves them guessing. -->
+          <td th:text="${igstAmount != null && igstAmount.compareTo(T(java.math.BigDecimal).ZERO) > 0 ? 'IGST' : 'Tax'}">Tax</td>
           <td class="right" th:text="${taxTotal}">0</td>
         </tr>
         <tr>

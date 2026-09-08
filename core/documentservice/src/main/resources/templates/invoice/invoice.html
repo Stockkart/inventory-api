@@ -419,8 +419,9 @@
         <th style="width: 7%;">RATE</th>
         <th style="width: 5%;" th:if="${showScheme}">SCHEME</th>
         <th style="width: 5%;" th:if="${showLineDiscount}">DIS</th>
-        <th style="width: 5%;" th:if="${showTaxDetails}">CGST%</th>
-        <th style="width: 5%;" th:if="${showTaxDetails}">SGST%</th>
+        <th style="width: 5%;" th:if="${showTaxDetails and !(igstAmount != null and igstAmount > 0)}">CGST%</th>
+        <th style="width: 5%;" th:if="${showTaxDetails and !(igstAmount != null and igstAmount > 0)}">SGST%</th>
+        <th style="width: 5%;" th:if="${showTaxDetails and igstAmount != null && igstAmount > 0}">IGST%</th>
         <th style="width: 14%;">AMOUNT</th>
       </tr>
       </thead>
@@ -436,8 +437,9 @@
         <td class="text-right" th:text="${#numbers.formatDecimal(item.priceToRetail, 1, 2)}"></td>
         <td th:if="${showScheme}" th:text="${item.schemePercentage != null ? item.schemePercentage + '%' : (item.schemePayFor != null and item.schemeFree != null ? item.schemePayFor + '+' + item.schemeFree : (item.scheme != null ? item.scheme : ''))}"></td>
         <td class="text-right" th:if="${showLineDiscount}" th:text="${item.saleAdditionalDiscount != null ? #numbers.formatDecimal(item.saleAdditionalDiscount, 1, 2) : '0.00'}"></td>
-        <td class="text-right" th:if="${showTaxDetails}" th:text="${item.cgst != null and item.cgst != '' ? item.cgst : #numbers.formatDecimal(cgstPercent, 1, 2)}"></td>
-        <td class="text-right" th:if="${showTaxDetails}" th:text="${item.sgst != null and item.sgst != '' ? item.sgst : #numbers.formatDecimal(sgstPercent, 1, 2)}"></td>
+        <td class="text-right" th:if="${showTaxDetails and !(igstAmount != null and igstAmount > 0)}" th:text="${item.cgst != null and item.cgst != '' ? item.cgst : #numbers.formatDecimal(cgstPercent, 1, 2)}"></td>
+        <td class="text-right" th:if="${showTaxDetails and !(igstAmount != null and igstAmount > 0)}" th:text="${item.sgst != null and item.sgst != '' ? item.sgst : #numbers.formatDecimal(sgstPercent, 1, 2)}"></td>
+        <td class="text-right" th:if="${showTaxDetails and igstAmount != null && igstAmount > 0}" th:text="${#numbers.formatDecimal(igstPercent, 1, 2)}"></td>
         <td class="text-right" th:text="${item.totalAmount != null ? #numbers.formatDecimal(item.totalAmount, 1, 2) : #numbers.formatDecimal(item.priceToRetail * item.quantity, 1, 2)}"></td>
       </tr>
       </tbody>
@@ -473,6 +475,13 @@
         <tr th:if="${showTaxDetails and cgstAmount != null && cgstAmount > 0}">
           <td>CGST <span th:text="${cgstPercent ?: ''}"></span> %</td>
           <td th:text="${#numbers.formatDecimal(cgstAmount, 1, 2)}"></td>
+        </tr>
+        <!-- An interstate supply is taxed once at the full rate. It is never printed alongside
+             SGST and CGST: the tax went to one head or the other two, and the customer claims
+             the credit under whichever this invoice states. -->
+        <tr th:if="${showTaxDetails and igstAmount != null && igstAmount > 0}">
+          <td>IGST <span th:text="${igstPercent ?: ''}"></span> %</td>
+          <td th:text="${#numbers.formatDecimal(igstAmount, 1, 2)}"></td>
         </tr>
         <tr class="net-amount">
           <td>Net Amount</td>
