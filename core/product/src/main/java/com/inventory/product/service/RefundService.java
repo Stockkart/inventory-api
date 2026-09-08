@@ -231,6 +231,15 @@ public class RefundService {
         domainItem.setSgstAmount(amounts.sgst());
         domainItem.setCogsAmount(amounts.cogs());
         domainItem.setLineReturnTotal(amounts.lineTotal());
+        // The note states the supply it credits in the invoice's own terms.
+        domainItem.setMaximumRetailPrice(purchaseItem.getMaximumRetailPrice());
+        domainItem.setSaleAdditionalDiscount(purchaseItem.getSaleAdditionalDiscount());
+        domainItem.setSgst(purchaseItem.getSgst());
+        domainItem.setCgst(purchaseItem.getCgst());
+        domainItem.setSchemeType(purchaseItem.getSchemeType());
+        domainItem.setSchemePayFor(purchaseItem.getSchemePayFor());
+        domainItem.setSchemeFree(purchaseItem.getSchemeFree());
+        domainItem.setSchemePercentage(purchaseItem.getSchemePercentage());
         domainRefundItems.add(domainItem);
         lineAmounts.add(amounts);
       }
@@ -783,12 +792,24 @@ public class RefundService {
   }
 
   private RefundSummaryItemDto toRefundSummaryItemDto(RefundItem item) {
-    return new RefundSummaryItemDto(
-        item.getInventoryId(),
-        item.getName(),
-        item.getQuantity(),
-        item.getPriceToRetail(),
-        item.getItemRefundAmount());
+    RefundSummaryItemDto dto = new RefundSummaryItemDto();
+    dto.setInventoryId(item.getInventoryId());
+    dto.setName(item.getName());
+    dto.setQuantity(item.getQuantity());
+    dto.setPriceToRetail(item.getPriceToRetail());
+    dto.setItemRefundAmount(item.getItemRefundAmount());
+    dto.setMaximumRetailPrice(item.getMaximumRetailPrice());
+    dto.setSaleAdditionalDiscount(item.getSaleAdditionalDiscount());
+    dto.setSgst(item.getSgst());
+    dto.setCgst(item.getCgst());
+    dto.setSchemeType(item.getSchemeType() != null ? item.getSchemeType().name() : null);
+    dto.setSchemePayFor(item.getSchemePayFor());
+    dto.setSchemeFree(item.getSchemeFree());
+    dto.setSchemePercentage(item.getSchemePercentage());
+    dto.setTaxableValue(item.getTaxableValue());
+    dto.setCgstAmount(item.getCgstAmount());
+    dto.setSgstAmount(item.getSgstAmount());
+    return dto;
   }
 }
 

@@ -3,6 +3,7 @@ package com.inventory.product.service;
 import com.inventory.product.tax.PurchaseTaxBasisResolver;
 import com.inventory.common.tax.GstStateCode;
 import com.inventory.common.tax.GstMath;
+import com.inventory.pricing.domain.model.Scheme;
 import com.inventory.user.domain.model.Vendor;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
@@ -295,9 +296,11 @@ public class VendorPurchaseReturnService {
           inventoryId.isEmpty() ? null : inventoryByIdForLines.get(inventoryId);
       InvoiceLineExtras extras = invoiceLineExtras(inv, inventoryId);
       String productName =
-          invRec != null && StringUtils.hasText(invRec.getName())
-              ? invRec.getName().trim()
-              : (extras.name != null ? extras.name : null);
+          StringUtils.hasText(it.getName())
+              ? it.getName().trim()
+              : (invRec != null && StringUtils.hasText(invRec.getName())
+                  ? invRec.getName().trim()
+                  : (extras.name != null ? extras.name : null));
       String barcode =
           invRec != null && StringUtils.hasText(invRec.getBarcode())
               ? invRec.getBarcode().trim()
@@ -321,7 +324,19 @@ public class VendorPurchaseReturnService {
               .taxableValue(it.getTaxableValue())
               .centralGstAmount(it.getCentralTaxAmount())
               .stateGstAmount(it.getStateUtTaxAmount())
+              .integratedGstAmount(it.getIntegratedTaxAmount())
               .lineNoteValue(it.getLineNoteValue())
+              // Restated from the note itself where it has them; older notes recorded only a
+              // quantity and an amount, and read as they always did.
+              .costPrice(it.getCostPrice())
+              .priceToRetail(it.getPriceToRetail())
+              .maximumRetailPrice(it.getMaximumRetailPrice())
+              .gstRatePct(it.getGstRatePct())
+              .purchaseSchemeType(it.getPurchaseSchemeType())
+              .purchaseSchemePayFor(it.getPurchaseSchemePayFor())
+              .purchaseSchemeFree(it.getPurchaseSchemeFree())
+              .purchaseSchemePercentage(it.getPurchaseSchemePercentage())
+              .purchaseAdditionalDiscount(it.getPurchaseAdditionalDiscount())
               .build());
     }
     return list;
@@ -495,6 +510,26 @@ public class VendorPurchaseReturnService {
         lineItem.setStateUtTaxAmount(sgstAmt);
         lineItem.setIntegratedTaxAmount(igstAmt);
         lineItem.setLineNoteValue(lineTotal);
+        // Restate the purchase in its own terms, so the note can be read against the bill it
+        // reverses without going back to the invoice for every field.
+        lineItem.setName(originalLine != null ? originalLine.getName() : null);
+        lineItem.setDisplayQuantityReturned(displayQtyReturned);
+        lineItem.setGstRatePct(rate);
+        if (originalLine != null) {
+          lineItem.setCostPrice(originalLine.getCostPrice());
+          lineItem.setPriceToRetail(originalLine.getPriceToRetail());
+        }
+        if (pricing != null) {
+          lineItem.setMaximumRetailPrice(pricing.getMaximumRetailPrice());
+          lineItem.setPurchaseAdditionalDiscount(pricing.getPurchaseAdditionalDiscount());
+          Scheme purchaseScheme = pricing.getPurchaseScheme();
+          if (purchaseScheme != null) {
+            lineItem.setPurchaseSchemeType(purchaseScheme.getSchemeType());
+            lineItem.setPurchaseSchemePayFor(purchaseScheme.getSchemePayFor());
+            lineItem.setPurchaseSchemeFree(purchaseScheme.getSchemeFree());
+            lineItem.setPurchaseSchemePercentage(purchaseScheme.getSchemePercentage());
+          }
+        }
         aggregates.put(payload.getInventoryId(), lineItem);
         totalReturnAmount = totalReturnAmount.add(lineTotal);
       }
