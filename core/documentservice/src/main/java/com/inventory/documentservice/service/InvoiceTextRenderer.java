@@ -271,13 +271,17 @@ public class InvoiceTextRenderer {
     // dropped once on the argument that GSTIN, HSN and a tax table said it well enough; the
     // counter reads the words, not the columns.
     //
-    // Letter-spaced and emphasised, but not set double width, and so written here rather than
-    // handed to appendMasthead like the estimate's title. The shop's name on the line below is
-    // double width; with the title double width too the printer put the two on top of each
-    // other, and the masthead read "K U B EAR INPOMCA R M A". One double-width line per
-    // masthead is the shape that has printed correctly all along, and spacing the letters is
-    // what makes a title read as one without it.
-    out.add(BOLD_ON + centre(letterSpaced(TAX_TITLE), TAX_LINE_WIDTH) + BOLD_OFF);
+    // Set exactly as the shop's name below it: emphasised, letter-spaced and double width. The
+    // two are read together from across a counter and a title in smaller type than the name
+    // under it reads as a caption on the name rather than as the document's own heading.
+    //
+    // The blank line between them is load-bearing, not decorative. Printed on consecutive
+    // lines the two came out on top of one another - the masthead read
+    // "K U B EAR INPOMCA R M A" - because this printer will not carry double width across the
+    // break between two such lines. An ordinary line between gives it somewhere to land, and
+    // it is the space the shop asked for anyway.
+    out.add(BOLD_ON + centreWide(letterSpaced(TAX_TITLE), TAX_LINE_WIDTH) + BOLD_OFF);
+    out.add("");
     appendMasthead(out, sellerOf(r), null, TAX_LINE_WIDTH);
     appendTaxParties(out, r);
     appendTaxItems(out, r);
