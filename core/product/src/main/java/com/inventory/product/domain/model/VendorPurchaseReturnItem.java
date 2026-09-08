@@ -24,5 +24,7 @@ public class VendorPurchaseReturnItem {
 
   private BigDecimal centralTaxAmount;
   private BigDecimal stateUtTaxAmount;
+  /** IGST, credited instead of the two halves when the supplier is in another state. */
+  private BigDecimal integratedTaxAmount;
   private BigDecimal lineNoteValue;
 }
