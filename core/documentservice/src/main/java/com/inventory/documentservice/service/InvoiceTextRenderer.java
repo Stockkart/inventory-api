@@ -7,6 +7,7 @@ import com.inventory.documentservice.rest.dto.InvoiceItem;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.Objects;
 import java.util.List;
 import java.util.function.Function;
 import org.springframework.stereotype.Service;
@@ -813,10 +814,16 @@ public class InvoiceTextRenderer {
   /**
    * The returned goods, in the invoice's own grid.
    *
-   * <p>A returned line carries no MRP, no scheme and no discount - it is priced at what it was
-   * billed at - so those columns are absent rather than empty. What it does carry that the
-   * invoice states differently is the taxable value, which is the figure the tax is worked from
-   * and the one a return is checked against.
+   * <p>A note is filed by restating the transaction it reverses, so it carries what that
+   * document stated: the MRP, the scheme and the discount the goods were billed under. Those
+   * were once absent here because the note did not record them; it does now, and a note that
+   * states less than the bill it reverses cannot be read against it.
+   *
+   * <p>Each is drawn only where a line actually carries it, so a note recorded before they were
+   * kept prints the grid it always printed rather than a row of dashes.
+   *
+   * <p>What it carries that the invoice states differently is the taxable value, which is the
+   * figure the tax is worked from and the one a return is checked against.
    */
   private void appendNoteItems(List<String> out, GenerateCreditNoteRequest r) {
     List<Column<CreditNoteItem>> columns = buildNoteColumns(r);
@@ -849,14 +856,51 @@ public class InvoiceTextRenderer {
     if (visible(r.getShowBatch())) {
       columns.add(new Column<>("BATCH No.", 12, false, i -> nullToEmpty(i.getBatchNo())));
     }
-    columns.add(new Column<>("RATE", 9, true, i -> money(i.getUnitPrice())));
+    if (anyNote(r, i -> i.getMaximumRetailPrice() != null)) {
+      columns.add(new Column<>("M.R.P.", 9, true, i -> money(i.getMaximumRetailPrice())));
+    }
+    // The same column carries different things: what the customer was charged, or what the
+    // supplier charged us. A debit note printing a selling price would state a figure that
+    // supplier never quoted.
+    boolean vendor = isVendorNote(r);
+    columns.add(new Column<>(vendor ? "COST" : "RATE", 9, true, i -> money(i.getUnitPrice())));
+    if (vendor && anyNote(r, i -> i.getPriceToRetail() != null)) {
+      columns.add(new Column<>("PTR", 8, true, i -> money(i.getPriceToRetail())));
+    }
+    if (anyNote(r, i -> i.getSchemeLabel() != null)) {
+      columns.add(new Column<>("SCHEME", 6, true, i -> nullToEmpty(i.getSchemeLabel())));
+    }
+    if (anyNote(r, i -> i.getDiscountPercent() != null)) {
+      columns.add(new Column<>("DIS%", 5, true, i -> percent(i.getDiscountPercent())));
+    }
     columns.add(new Column<>("TAXABLE", 11, true, i -> money(i.getTaxableValue())));
     if (visible(r.getShowTaxDetails())) {
-      columns.add(new Column<>("SGST", 4, true, i -> rate(i.getSgst())));
-      columns.add(new Column<>("CGST", 4, true, i -> rate(i.getCgst())));
+      // An interstate note reverses IGST, and states that head instead of the two halves.
+      if (anyNote(r, i -> i.getIgstAmount() != null && i.getIgstAmount().signum() > 0)) {
+        columns.add(new Column<>("IGST", 5, true, i -> percent(i.getGstPercent())));
+      } else {
+        columns.add(new Column<>("SGST", 4, true, i -> rate(i.getSgst())));
+        columns.add(new Column<>("CGST", 4, true, i -> rate(i.getCgst())));
+      }
     }
     columns.add(new Column<>("AMOUNT", 11, true, i -> money(i.getLineTotal())));
     return columns;
+  }
+
+  /**
+   * Whether any line on the note carries a given term.
+   *
+   * <p>A column nothing fills is a column of dashes taking width from the product name, which is
+   * the one column on this grid that is always short of it.
+   */
+  private static boolean anyNote(
+      GenerateCreditNoteRequest r, java.util.function.Predicate<CreditNoteItem> has) {
+    return r.getItems() != null && r.getItems().stream().filter(Objects::nonNull).anyMatch(has);
+  }
+
+  /** A percentage as it was entered, without the trailing zeros a money format would add. */
+  private static String percent(java.math.BigDecimal value) {
+    return value == null ? "" : value.stripTrailingZeros().toPlainString();
   }
 
   private int noteFlexWidth(List<Column<CreditNoteItem>> columns) {
