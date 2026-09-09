@@ -203,10 +203,15 @@ public class VendorReturnCreditNoteAssembler implements CreditNoteDocumentAssemb
         name = invId != null ? invId : "Item";
       }
       item.setName(name);
+      // The quantity a bill is read in, which is the invoice's own unit rather than the
+      // smallest stock unit. A note stating 168 tablets against an invoice that sold 1 pack
+      // reverses the same goods and cannot be matched against it.
       item.setQuantity(
-          line.getBaseQuantityReturned() != null
-              ? BigDecimal.valueOf(line.getBaseQuantityReturned())
-              : BigDecimal.ZERO);
+          line.getDisplayQuantityReturned() != null
+              ? line.getDisplayQuantityReturned()
+              : (line.getBaseQuantityReturned() != null
+                  ? BigDecimal.valueOf(line.getBaseQuantityReturned())
+                  : BigDecimal.ZERO));
       item.setTaxableValue(line.getTaxableValue());
       item.setCgstAmount(line.getCentralTaxAmount());
       item.setSgstAmount(line.getStateUtTaxAmount());
@@ -220,13 +225,50 @@ public class VendorReturnCreditNoteAssembler implements CreditNoteDocumentAssemb
         item.setHsn(inventory.getHsn());
         item.setCompanyName(inventory.getCompanyName());
       }
-      if (item.getQuantity().signum() > 0 && item.getLineTotal() != null) {
+      // Restate the purchase in its own terms. The cost as billed, not the line total divided
+      // by quantity: dividing back gave a figure that appears on no document, and on a bill
+      // carrying a scheme or a discount it matched neither the invoice nor the goods.
+      item.setUnitPrice(line.getCostPrice());
+      item.setPriceToRetail(line.getPriceToRetail());
+      item.setMaximumRetailPrice(line.getMaximumRetailPrice());
+      item.setDiscountPercent(line.getPurchaseAdditionalDiscount());
+      item.setSchemeLabel(
+          purchaseSchemeLabel(
+              line.getPurchaseSchemeType(), line.getPurchaseSchemePercentage(),
+              line.getPurchaseSchemePayFor(), line.getPurchaseSchemeFree()));
+      item.setIgstAmount(line.getIntegratedTaxAmount());
+      if (line.getGstRatePct() != null) {
+        item.setGstPercent(line.getGstRatePct());
+      }
+      // Older notes kept neither a cost nor a rate, and a note has to state something per
+      // unit; the line total over the quantity is the only figure they hold.
+      if (item.getUnitPrice() == null
+          && item.getQuantity().signum() > 0
+          && item.getLineTotal() != null) {
         item.setUnitPrice(
             item.getLineTotal().divide(item.getQuantity(), 2, RoundingMode.HALF_UP));
       }
       out.add(item);
     }
     return out;
+  }
+
+  /**
+   * The scheme the goods were bought on, worded for print.
+   *
+   * <p>The purchase-side deal, not the sale-side one. They are different agreements on the same
+   * goods, and a note reversing a purchase must state the terms agreed with that supplier.
+   */
+  private static String purchaseSchemeLabel(
+      String schemeType, BigDecimal percentage, Integer payFor, Integer free) {
+    if ("PERCENTAGE".equalsIgnoreCase(schemeType) && percentage != null
+        && percentage.signum() > 0) {
+      return percentage.stripTrailingZeros().toPlainString() + "%";
+    }
+    if (payFor != null && free != null) {
+      return payFor + "+" + free;
+    }
+    return null;
   }
 
   private static BigDecimal nz(BigDecimal v) {
