@@ -322,15 +322,23 @@
     <table class="items-table">
       <thead>
       <tr>
-        <th style="width: 6%;">QTY</th>
-        <th style="width: 28%;">PRODUCTS</th>
-        <th style="width: 10%;" th:if="${showHsn}">HSN</th>
-        <th style="width: 10%;" th:if="${showMfg}">MFG/MKT</th>
-        <th style="width: 8%;" th:if="${showBatch}">BATCH</th>
-        <th style="width: 10%;">RATE</th>
-        <th style="width: 8%;" th:if="${showTaxDetails}">CGST%</th>
-        <th style="width: 8%;" th:if="${showTaxDetails}">SGST%</th>
-        <th style="width: 14%;">AMOUNT</th>
+        <th style="width: 5%;">QTY</th>
+        <th style="width: 22%;">PRODUCTS</th>
+        <th style="width: 8%;" th:if="${showHsn}">HSN</th>
+        <th style="width: 8%;" th:if="${showMfg}">MFG/MKT</th>
+        <th style="width: 7%;" th:if="${showBatch}">BATCH</th>
+        <th style="width: 7%;">M.R.P.</th>
+        <!-- The same column means different things on the two documents: what the customer was
+             charged, or what the supplier charged us. Naming it after the role keeps a debit
+             note from stating a selling price the supplier never quoted. -->
+        <th style="width: 7%;" th:text="${vendorNote} ? 'COST' : 'RATE'">RATE</th>
+        <th style="width: 6%;" th:if="${vendorNote}">PTR</th>
+        <th style="width: 6%;">DIS%</th>
+        <th style="width: 7%;">SCHEME</th>
+        <th style="width: 6%;" th:if="${showTaxDetails and !anyIgst}">CGST%</th>
+        <th style="width: 6%;" th:if="${showTaxDetails and !anyIgst}">SGST%</th>
+        <th style="width: 6%;" th:if="${showTaxDetails and anyIgst}">IGST%</th>
+        <th style="width: 12%;">AMOUNT</th>
       </tr>
       </thead>
       <tbody>
@@ -340,9 +348,14 @@
         <td th:if="${showHsn}" th:text="${item.hsn ?: ''}"></td>
         <td th:if="${showMfg}" th:text="${item.companyName ?: ''}"></td>
         <td th:if="${showBatch}" th:text="${item.batchNo ?: ''}"></td>
+        <td class="text-right" th:text="${item.maximumRetailPrice != null ? #numbers.formatDecimal(item.maximumRetailPrice, 1, 2) : '-'}"></td>
         <td class="text-right" th:text="${item.unitPrice != null ? #numbers.formatDecimal(item.unitPrice, 1, 2) : '0.00'}"></td>
-        <td class="text-right" th:if="${showTaxDetails}" th:text="${item.cgst != null and item.cgst != '' ? item.cgst : #numbers.formatDecimal(cgstPercent, 1, 2)}"></td>
-        <td class="text-right" th:if="${showTaxDetails}" th:text="${item.sgst != null and item.sgst != '' ? item.sgst : #numbers.formatDecimal(sgstPercent, 1, 2)}"></td>
+        <td class="text-right" th:if="${vendorNote}" th:text="${item.priceToRetail != null ? #numbers.formatDecimal(item.priceToRetail, 1, 2) : '-'}"></td>
+        <td class="text-right" th:text="${item.discountPercent != null ? #numbers.formatDecimal(item.discountPercent, 1, 2) : '-'}"></td>
+        <td class="text-right" th:text="${item.schemeLabel ?: '-'}"></td>
+        <td class="text-right" th:if="${showTaxDetails and !anyIgst}" th:text="${item.cgst != null and item.cgst != '' ? item.cgst : #numbers.formatDecimal(cgstPercent, 1, 2)}"></td>
+        <td class="text-right" th:if="${showTaxDetails and !anyIgst}" th:text="${item.sgst != null and item.sgst != '' ? item.sgst : #numbers.formatDecimal(sgstPercent, 1, 2)}"></td>
+        <td class="text-right" th:if="${showTaxDetails and anyIgst}" th:text="${item.gstPercent != null ? #numbers.formatDecimal(item.gstPercent, 1, 2) : '-'}"></td>
         <td class="text-right" th:text="${item.lineTotal != null ? #numbers.formatDecimal(item.lineTotal, 1, 2) : '0.00'}"></td>
       </tr>
       </tbody>
@@ -373,6 +386,11 @@
         <tr th:if="${showTaxDetails and cgstAmount != null && cgstAmount > 0}">
           <td>CGST <span th:text="${cgstPercent ?: ''}"></span> %</td>
           <td th:text="${#numbers.formatDecimal(cgstAmount, 1, 2)}"></td>
+        </tr>
+        <!-- An interstate supply is credited under IGST alone, never beside the two halves. -->
+        <tr th:if="${showTaxDetails and igstAmount != null && igstAmount > 0}">
+          <td>IGST <span th:text="${igstPercent ?: ''}"></span> %</td>
+          <td th:text="${#numbers.formatDecimal(igstAmount, 1, 2)}"></td>
         </tr>
         <tr th:if="${roundOff != null && roundOff != 0}">
           <td>Round Off</td>

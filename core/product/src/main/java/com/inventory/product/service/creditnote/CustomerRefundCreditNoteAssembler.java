@@ -3,6 +3,7 @@ package com.inventory.product.service.creditnote;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.documentservice.rest.dto.CreditNoteItem;
+import com.inventory.product.domain.model.enums.SchemeType;
 import com.inventory.documentservice.rest.dto.GenerateCreditNoteRequest;
 import com.inventory.pluginengine.VerticalFieldsReader;
 import com.inventory.product.domain.model.Purchase;
@@ -201,6 +202,16 @@ public class CustomerRefundCreditNoteAssembler implements CreditNoteDocumentAsse
       item.setTaxableValue(line.getTaxableValue());
       item.setCgstAmount(line.getCgstAmount());
       item.setSgstAmount(line.getSgstAmount());
+      // Restate the sale in its own terms. Snapshotted onto the refund when it was taken, so a
+      // note printed years later still shows what the customer was actually billed.
+      item.setMaximumRetailPrice(line.getMaximumRetailPrice());
+      item.setDiscountPercent(line.getSaleAdditionalDiscount());
+      item.setSchemeLabel(
+          saleSchemeLabel(
+              line.getSchemeType(), line.getSchemePercentage(),
+              line.getSchemePayFor(), line.getSchemeFree()));
+      item.setCgst(line.getCgst());
+      item.setSgst(line.getSgst());
 
       if (StringUtils.hasText(line.getInventoryId())) {
         inventoryRepository
@@ -219,6 +230,25 @@ public class CustomerRefundCreditNoteAssembler implements CreditNoteDocumentAsse
       out.add(item);
     }
     return out;
+  }
+
+  /**
+   * The sale scheme as billed, worded for print.
+   *
+   * <p>A percentage, or a pay-for/free pair, or nothing. Worded here rather than in the template
+   * because a debit note reads the purchase-side fields for the same column, and a template
+   * choosing between them would have to know which document it is rendering.
+   */
+  private static String saleSchemeLabel(
+      SchemeType schemeType, BigDecimal percentage, Integer payFor, Integer free) {
+    if (schemeType == SchemeType.PERCENTAGE && percentage != null
+        && percentage.signum() > 0) {
+      return percentage.stripTrailingZeros().toPlainString() + "%";
+    }
+    if (payFor != null && free != null) {
+      return payFor + "+" + free;
+    }
+    return null;
   }
 
   private static void applyTaxPercents(GenerateCreditNoteRequest request, List<CreditNoteItem> items) {

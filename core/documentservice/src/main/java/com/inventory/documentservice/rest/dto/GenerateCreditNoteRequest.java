@@ -78,6 +78,9 @@ public class GenerateCreditNoteRequest {
   private BigDecimal sgstAmount;
   private BigDecimal cgstAmount;
   private BigDecimal sgstPercent;
+  /** IGST on an interstate note, and the rate it was charged at. */
+  private BigDecimal igstAmount;
+  private BigDecimal igstPercent;
   private BigDecimal cgstPercent;
   private BigDecimal taxTotal;
   private BigDecimal roundOff;

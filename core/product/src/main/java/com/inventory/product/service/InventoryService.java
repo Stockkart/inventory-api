@@ -2,6 +2,7 @@ package com.inventory.product.service;
 
 import com.inventory.common.tax.GstMath;
 import com.inventory.common.tax.GstStateCode;
+import com.inventory.common.tax.PurchaseTaxTreatment;
 import com.inventory.product.tax.PurchaseTaxBasisResolver;
 import com.inventory.product.tax.HsnRateConsistency;
 import com.inventory.product.tax.PurchaseTaxBasis;
@@ -474,6 +475,7 @@ public class InventoryService {
 
     pendingInvoice.setLines(invoiceLines);
     recordResolvedTax(pendingInvoice);
+    rememberVendorTaxTreatment(bulkRequest.getVendorId(), invReq);
     List<String> rateWarnings = checkHsnRates(pendingInvoice, shopId);
     vendorPurchaseInvoiceRepository.save(pendingInvoice);
     if (metrics != null) {
@@ -856,6 +858,47 @@ public class InventoryService {
   private void rejectIfNegative(Set<String> errors, String label, BigDecimal value) {
     if (value != null && value.signum() < 0) {
       errors.add(label + " cannot be negative");
+    }
+  }
+
+  /**
+   * Remembers how a supplier bills, from the bill in front of the operator.
+   *
+   * <p>The question can only be answered with an invoice in hand -- whether the printed line
+   * amount already contains the tax is a fact about the paper, not something anyone knows while
+   * typing a supplier's phone number into a form. So it is asked where it is answerable, at stock
+   * in, and kept for next time.
+   *
+   * <p>The latest answer wins. A supplier that changes how it bills is telling us so through its
+   * bills, and an operator correcting the choice on today's invoice means the stored one was
+   * wrong; either way the newer answer came from someone looking at a real document. Only an
+   * explicit choice is recorded -- leaving the field on "as this vendor usually bills" says
+   * nothing new and overwrites nothing.
+   *
+   * <p>Never fatal. The stock is registered and the invoice is right regardless; failing to
+   * remember only means being asked again next time.
+   */
+  private void rememberVendorTaxTreatment(String vendorId, VendorPurchaseInvoiceRequest invReq) {
+    if (invReq == null || invReq.getTaxTreatment() == null || !StringUtils.hasText(vendorId)) {
+      return;
+    }
+    try {
+      vendorRepository.findById(vendorId.trim()).ifPresent(vendor -> {
+        PurchaseTaxTreatment stated = invReq.getTaxTreatment();
+        if (stated == vendor.getDefaultTaxTreatment()) {
+          return;
+        }
+        PurchaseTaxTreatment previous = vendor.getDefaultTaxTreatment();
+        vendor.setDefaultTaxTreatment(stated);
+        vendor.setUpdatedAt(Instant.now());
+        vendorRepository.save(vendor);
+        log.info("Vendor {} now bills {} (was {}), learnt from invoice {}",
+            vendor.getName(), stated, previous == null ? "unrecorded" : previous,
+            invReq.getInvoiceNo());
+      });
+    } catch (RuntimeException e) {
+      log.warn("Could not record how vendor {} bills; it will be asked again next time",
+          vendorId, e);
     }
   }
 

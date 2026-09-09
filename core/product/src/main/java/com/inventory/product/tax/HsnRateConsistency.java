@@ -24,11 +24,14 @@ import java.util.stream.Collectors;
 /**
  * Checks a product's GST rate against what the rest of the shop's catalogue says about its HSN.
  *
- * <p>Goods under one HSN attract one rate. Where a shop's own records disagree about that, one of
- * them is wrong, and this finds which is the odd one out. It is deliberately built on the shop's
- * own data rather than a rate table: a wrong rate keyed once is a slip, and the twenty products
- * already recorded correctly under that HSN are the best evidence available of what the right
- * answer is.
+ * <p>An HSN does not fix a single rate -- one heading can legitimately span two, and several in
+ * this trade do. So the question asked here is narrower and answerable: is this a rate the shop
+ * has never once used under this HSN? A rate the shop already applies there is left alone however
+ * many products carry the other one, because both may well be right.
+ *
+ * <p>It is deliberately built on the shop's own data rather than a rate table: a wrong rate keyed
+ * once is a slip, and the products already recorded under that HSN are the best evidence
+ * available of which rates belong there.
  *
  * <p>This is the class of error nothing else catches. A header that agrees with a wrong rate
  * reconciles perfectly -- the invoice adds up, the total matches the bill, and the tax is still
@@ -40,7 +43,7 @@ import java.util.stream.Collectors;
 public class HsnRateConsistency {
 
   /**
-   * How many other products must agree before their rate is treated as the shop's answer.
+   * How many other products must agree before their rate is treated as established for this HSN.
    *
    * <p>Two, because one other product is just as likely to be the mistake. It stays quiet rather
    * than guess -- a warning that fires on thin evidence is one operators learn to dismiss.
@@ -107,7 +110,8 @@ public class HsnRateConsistency {
       if (byRate.isEmpty()) {
         return Optional.empty();
       }
-      // Any agreement at all settles it: the rate given is one the shop already uses here.
+      // Any agreement at all settles it: the rate given is one the shop already uses under this
+      // HSN, and an HSN spanning two rates is ordinary rather than suspect.
       for (BigDecimal seen : byRate.keySet()) {
         if (seen.compareTo(ratePct) == 0) {
           return Optional.empty();
