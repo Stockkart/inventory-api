@@ -89,10 +89,16 @@
     <table>
       <thead>
         <tr>
-          <th style="width: 48%;">Item</th>
-          <th style="width: 12%;">Qty</th>
-          <th style="width: 16%;">Rate</th>
-          <th style="width: 24%;" class="right">Amt</th>
+          <!-- Column widths copied from the invoice's dot-matrix layout rather than chosen
+               afresh. It is the same 80-column carriage and the same paper, and this printer has
+               a history of creeping out of alignment; a note that lines up with the bill it
+               reverses is also easier to read against it. -->
+          <th style="width: 42%;">Item</th>
+          <th style="width: 10%;">Qty</th>
+          <th style="width: 12%;" th:if="${showMrp}">MRP</th>
+          <th style="width: 12%;" th:text="${vendorNote} ? 'Cost' : 'Rate'">Rate</th>
+          <th style="width: 12%;" th:if="${showLineDiscount}">Disc</th>
+          <th style="width: 12%;" class="right">Amt</th>
         </tr>
       </thead>
       <tbody>
@@ -100,9 +106,14 @@
           <td>
             <div th:text="${it.name}">Item</div>
             <div class="muted" th:if="${showHsn && it.hsn != null}">HSN: <span th:text="${it.hsn}">-</span></div>
+            <!-- The scheme rides under the name rather than taking a column of its own: six
+                 columns is what this width holds, and a deal reads fine as a note on the line. -->
+            <div class="muted" th:if="${it.schemeLabel != null}">Scheme: <span th:text="${it.schemeLabel}">-</span></div>
           </td>
           <td th:text="${it.quantity}">1</td>
+          <td th:if="${showMrp}" th:text="${it.maximumRetailPrice}">0</td>
           <td th:text="${it.unitPrice}">0</td>
+          <td th:if="${showLineDiscount}" th:text="${it.discountPercent}">0</td>
           <td class="right" th:text="${it.lineTotal}">0</td>
         </tr>
       </tbody>
@@ -117,7 +128,9 @@
           <td class="right" th:text="${taxableTotal}">0</td>
         </tr>
         <tr th:if="${showTaxDetails}">
-          <td>Tax</td>
+          <!-- Named, because a customer or supplier reading this needs to know which head the
+               credit reverses -- an interstate note reverses IGST. -->
+          <td th:text="${anyIgst} ? 'IGST' : 'Tax'">Tax</td>
           <td class="right" th:text="${taxTotal}">0</td>
         </tr>
         <tr>
