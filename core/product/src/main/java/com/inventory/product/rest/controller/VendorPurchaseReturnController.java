@@ -14,6 +14,7 @@ import com.inventory.product.service.VendorPurchaseReturnService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import java.nio.charset.StandardCharsets;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -102,5 +103,27 @@ public class VendorPurchaseReturnController {
     headers.setContentLength(pdfBytes.length);
 
     return ResponseEntity.ok().headers(headers).body(pdfBytes);
+  }
+
+  /**
+   * Render the vendor debit note as condensed plain text for the dot matrix print bridge.
+   *
+   * <p>Same document as the customer credit note, titled for the other side of the counter - see
+   * CreditNoteService.
+   */
+  @GetMapping(value = "/{returnId}/dot-matrix", produces = "text/plain;charset=UTF-8")
+  public ResponseEntity<String> generateDebitNoteDotMatrixText(
+      @PathVariable String returnId, HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    if (!StringUtils.hasText(shopId)) {
+      throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "Shop context required");
+    }
+    log.info("Generating dot matrix debit note text for return={}, shop={}", returnId, shopId);
+
+    String text = creditNoteService.generateVendorCreditNoteText(returnId, shopId);
+
+    return ResponseEntity.ok()
+        .contentType(new MediaType(MediaType.TEXT_PLAIN, StandardCharsets.UTF_8))
+        .body(text);
   }
 }

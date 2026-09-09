@@ -62,6 +62,22 @@ public class DocumentService {
     return invoiceTextRenderer.render(request);
   }
 
+  /**
+   * Render a credit or debit note as fixed-width plain text for dot matrix printers.
+   *
+   * <p>Which of the two it is comes from the note's own party role, so there is one method here
+   * rather than two - see {@link InvoiceTextRenderer#render(GenerateCreditNoteRequest)}.
+   *
+   * @param request the note generation request
+   * @return condensed fixed-width plain text, newline separated, with no page control
+   */
+  public String generateCreditNoteText(GenerateCreditNoteRequest request) {
+    log.info(
+        "Generating credit note text for note: {}",
+        request != null ? request.getCreditNoteNo() : null);
+    return invoiceTextRenderer.render(request);
+  }
+
   /** Generate credit-note PDF (customer or vendor). */
   public byte[] generateCreditNote(GenerateCreditNoteRequest request) {
     log.info(
