@@ -82,10 +82,25 @@ public class InvoiceTextRenderer {
   /** Closes the item grid and separates it from the totals, as the reference bill does. */
   private static final String DOUBLE_RULE = "=".repeat(LINE_WIDTH);
 
-  /** Widths of the tax invoice's three party columns: buyer, its tax ids, the document. */
-  private static final int TAX_LEFT = 32;
+  /**
+   * Widths of the tax invoice's three party columns: buyer, its tax ids, the document.
+   *
+   * <p>The middle column is sized to hold the longest thing it carries on one line, and placed
+   * so that it sits in the centre of the page. It used to be twenty-four wide, which is one
+   * short of "D.L.NO.: BR-GYU-172016/17": the number wrapped onto a line of its own and every
+   * value below it fell a line out of step with the buyer beside it, so the column read as
+   * neither aligned nor centred.
+   *
+   * <p>The room came from the document column, which was seventy-nine wide to hold about twenty
+   * characters. It is pushed to the right margin as a block (see appendTaxParties), so what it
+   * did not use was empty page between the two.
+   *
+   * <p>45 + 1 + 44 + 1 + 46 = 137, and the middle column spans columns 47 to 90 - centred on a
+   * page whose middle is 69.
+   */
+  private static final int TAX_LEFT = 45;
 
-  private static final int TAX_MIDDLE = 24;
+  private static final int TAX_MIDDLE = 44;
 
   /** The totals block on a tax invoice: label then figure, right against the margin. */
   private static final int TAX_TOTAL_LABEL = 20;
