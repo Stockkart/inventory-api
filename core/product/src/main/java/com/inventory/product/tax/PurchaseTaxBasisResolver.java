@@ -100,6 +100,37 @@ public final class PurchaseTaxBasisResolver {
     BigDecimal statedTax = invoice.getTaxTotal();
     BigDecimal grossSum = sum(gross);
 
+    // 0. A bill whose amounts already contain the tax is read line by line, never by
+    //    apportioning its header.
+    //
+    //    Pro-rating splits a stated taxable value between lines in proportion to what they are
+    //    worth gross. On a bill carrying one rate that is exact. On a bill carrying two it is
+    //    not: an 18% line's gross holds proportionally more tax than a 5% line's, so weighting
+    //    by gross hands the higher-rated class more taxable value than it has, and the tax comes
+    //    out over. On one PARAS invoice here that was 891.99 against the 874.78 printed on it.
+    //
+    //    Taking each line's own amount and removing the tax at that line's own rate needs no
+    //    apportioning at all.
+    if (PurchaseTaxTreatment.orDefault(treatment) == PurchaseTaxTreatment.INCLUSIVE) {
+      List<BigDecimal> amounts = new ArrayList<>(lines.size());
+      for (int i = 0; i < lines.size(); i++) {
+        amounts.add(landed.get(i) != null ? landed.get(i) : gross.get(i));
+      }
+      PurchaseTaxBasis.Verdict verdict = PurchaseTaxBasis.Verdict.MISSING;
+      if (statedSubTotal != null) {
+        BigDecimal extracted = BigDecimal.ZERO;
+        for (int i = 0; i < amounts.size(); i++) {
+          extracted = extracted.add(
+              GstMath.extractFromInclusive(amounts.get(i), rates.get(i)).taxable());
+        }
+        verdict = within(extracted, statedSubTotal, statedSubTotal)
+            ? PurchaseTaxBasis.Verdict.OK
+            : PurchaseTaxBasis.Verdict.MISMATCH;
+      }
+      return basis(amounts, rates, PurchaseTaxBasis.Source.INCLUSIVE_EXTRACTED,
+          treatment, interstate, verdict);
+    }
+
     // 1. A header that agrees with itself. The operator read the supplier's totals off the paper,
     //    and the line rates confirm them, so the figures are used as stated.
     if (statedSubTotal != null && statedTax != null && grossSum.signum() > 0) {
