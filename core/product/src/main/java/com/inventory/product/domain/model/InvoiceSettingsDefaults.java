@@ -20,6 +20,7 @@ public final class InvoiceSettingsDefaults {
     v.setShowAmountInWords(true);
     v.setShowAmountSaved(true);
     v.setShowAdditionalDiscount(true);
+    v.setShowPack(true);
     v.setShowHsn(true);
     v.setShowMfg(true);
     v.setShowExpiry(true);
@@ -60,6 +61,7 @@ public final class InvoiceSettingsDefaults {
     v.setShowAmountInWords(true);
     v.setShowAmountSaved(true);
     v.setShowAdditionalDiscount(true);
+    v.setShowPack(true);
     v.setShowHsn(false);
     v.setShowMfg(false);
     v.setShowExpiry(true);
@@ -124,6 +126,9 @@ public final class InvoiceSettingsDefaults {
     if (stored.getShowAdditionalDiscount() != null) {
       base.setShowAdditionalDiscount(stored.getShowAdditionalDiscount());
     }
+    if (stored.getShowPack() != null) {
+      base.setShowPack(stored.getShowPack());
+    }
     if (stored.getShowHsn() != null) {
       base.setShowHsn(stored.getShowHsn());
     }
@@ -179,6 +184,7 @@ public final class InvoiceSettingsDefaults {
     v.setShowAmountInWords(src.getShowAmountInWords());
     v.setShowAmountSaved(src.getShowAmountSaved());
     v.setShowAdditionalDiscount(src.getShowAdditionalDiscount());
+    v.setShowPack(src.getShowPack());
     v.setShowHsn(src.getShowHsn());
     v.setShowMfg(src.getShowMfg());
     v.setShowExpiry(src.getShowExpiry());

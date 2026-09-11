@@ -501,7 +501,8 @@ public class InvoiceTextRenderer {
     // Headings and order as the trade bill sets them. There is no PACK column: the pack size
     // is not a field of its own here, it is written into the product name.
     columns.add(new Column<>("QTY.", 8, true, i -> quantity(i.getQuantity())));
-    columns.add(new Column<>("PACK.", 6, false, i -> nullToEmpty(i.getPack())));
+    addTaxColumn(columns, items, visible(r.getShowPack()),
+        new Column<>("PACK.", 6, false, i -> nullToEmpty(i.getPack())));
     columns.add(new Column<>("PRODUCTS", -1, false, i -> nullToEmpty(i.getName())));
     addTaxColumn(columns, items, visible(r.getShowHsn()),
         new Column<>("HSN/SAC", 8, false, i -> nullToEmpty(i.getHsn())));
