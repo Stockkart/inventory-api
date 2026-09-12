@@ -193,8 +193,8 @@ public class EstimateService {
   }
 
   /**
-   * Locks the estimate as CONVERTED and clones lines into a new SALE quotation (CREATED). The sale
-   * cart soft-reserves stock like any other open quotation.
+   * Locks the estimate as CONVERTED and clones lines into a new SALE quotation (CREATED).
+   * Soft-reservation moves with the sale cart; the converted estimate no longer reserves.
    */
   @Transactional
   public ConvertEstimateResponse convertToSale(String estimateId, String userId, String shopId) {
