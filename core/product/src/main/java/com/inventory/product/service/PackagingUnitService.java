@@ -56,14 +56,10 @@ public class PackagingUnitService {
     if (unitsPerPack == null || unitsPerPack <= 0) {
       return null;
     }
-    String packUqc = def.getDefaultPackUqc();
-    if (!StringUtils.hasText(packUqc)) {
-      packUqc = "PAC";
-    }
-    if (packUqc.equalsIgnoreCase(normalizeUqc(baseUnitUqc))) {
+    if (!packsIntoAnotherUnit(def, baseUnitUqc)) {
       return null;
     }
-    return new UnitConversion(packUqc.trim().toUpperCase(), unitsPerPack);
+    return new UnitConversion(resolvePackUqc(def), unitsPerPack);
   }
 
   public void validateBaseUnit(String baseUnit) {
@@ -78,7 +74,14 @@ public class PackagingUnitService {
     if (def.isAllowsUnitsPerPack()) {
       // PACK_ONLY (e.g. MLT/BTL) needs a pack factor. FRACTIONAL_BASE (e.g. PCS/TBS)
       // treats packaging as optional — "1 × 1 PCS" means loose pieces, no pack conversion.
-      boolean packFactorRequired = def.getSellUnitRule() == SellUnitRule.PACK_ONLY;
+      // A PACK_ONLY unit that packs into something else needs the factor: MLT is sold as
+      // bottles, and "how many ml in the bottle" has to be answered or a sale cannot be
+      // converted to base units. A unit whose pack is itself -- TUB, BTL, CAN, DRM -- has no
+      // second number to give: a tube is a tube, so one base unit is one pack. Demanding one
+      // left a real product with nothing valid to enter. buildUnitConversion above already
+      // drew this distinction; the check simply had not.
+      boolean packFactorRequired =
+          def.getSellUnitRule() == SellUnitRule.PACK_ONLY && packsIntoAnotherUnit(def, baseUnitUqc);
       if (packFactorRequired && (unitsPerPack == null || unitsPerPack <= 0)) {
         throw new ValidationException(
             "unitsPerPack is required and must be > 0 for UQC " + def.getUqc()
@@ -176,6 +179,17 @@ public class PackagingUnitService {
     dto.setRegistrationHint(d.getRegistrationHint());
     dto.setSellHint(d.getSellHint());
     return dto;
+  }
+
+  /** The pack this unit sells in, defaulting to PAC when the catalogue names none. */
+  private static String resolvePackUqc(PackagingUnitDefinition def) {
+    String packUqc = def.getDefaultPackUqc();
+    return StringUtils.hasText(packUqc) ? packUqc.trim().toUpperCase() : "PAC";
+  }
+
+  /** False when the pack is the base unit itself, so there is no conversion to state. */
+  private static boolean packsIntoAnotherUnit(PackagingUnitDefinition def, String baseUnitUqc) {
+    return !resolvePackUqc(def).equalsIgnoreCase(normalizeUqc(baseUnitUqc));
   }
 
   public static String normalizeUqc(String uqc) {
