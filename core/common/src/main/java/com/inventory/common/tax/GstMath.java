@@ -60,7 +60,7 @@ public final class GstMath {
    * report that fails to generate at all. A negative rate is clamped to zero — it has no meaning
    * and would otherwise produce a negative credit.
    */
-  public static BigDecimal parseRatePct(String raw) {
+  public static BigDecimal parseGstRate(String raw) {
     if (raw == null) return BigDecimal.ZERO;
     String trimmed = raw.trim();
     if (trimmed.isEmpty()) return BigDecimal.ZERO;

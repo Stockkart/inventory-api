@@ -752,7 +752,7 @@ public class InventoryService {
 
   /** Parses a shop's percentage field ({@code "9"}, {@code "9.00"}, {@code "9%"}). */
   private static BigDecimal parsePercentage(String raw) {
-    return GstMath.parseRatePct(raw);
+    return GstMath.parseGstRate(raw);
   }
 
   /** Per-invoice CGST / SGST slice. IGST is wired in once the invoice carries a place-of-supply. */

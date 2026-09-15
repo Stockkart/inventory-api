@@ -737,7 +737,7 @@ public class Gstr2DataAggregator {
   }
 
   private BigDecimal parseRate(String rateStr) {
-    return GstMath.parseRatePct(rateStr);
+    return GstMath.parseGstRate(rateStr);
   }
 
   /**

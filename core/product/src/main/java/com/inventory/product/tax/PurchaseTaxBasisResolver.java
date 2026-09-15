@@ -315,7 +315,7 @@ public final class PurchaseTaxBasisResolver {
 
   private static BigDecimal rateOf(Pricing pricing) {
     return pricing == null ? BigDecimal.ZERO
-        : GstMath.parseRatePct(pricing.getSgst()).add(GstMath.parseRatePct(pricing.getCgst()));
+        : GstMath.parseGstRate(pricing.getSgst()).add(GstMath.parseGstRate(pricing.getCgst()));
   }
 
   private static BigDecimal sum(List<BigDecimal> values) {

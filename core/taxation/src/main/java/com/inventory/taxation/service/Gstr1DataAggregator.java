@@ -386,7 +386,7 @@ public class Gstr1DataAggregator {
   }
 
   private BigDecimal parseRate(String rateStr) {
-    return GstMath.parseRatePct(rateStr);
+    return GstMath.parseGstRate(rateStr);
   }
 
   private GstInvoiceLine mergeB2csLine(GstInvoiceLine a, GstInvoiceLine b) {
