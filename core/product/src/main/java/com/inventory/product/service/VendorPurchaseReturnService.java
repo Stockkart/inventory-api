@@ -1,5 +1,6 @@
 package com.inventory.product.service;
 
+import com.inventory.common.tax.GstMath;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
@@ -441,8 +442,8 @@ public class VendorPurchaseReturnService {
             pricing != null && StringUtils.hasText(pricing.getSgst()) ? pricing.getSgst() : "0";
         String cgstStr =
             pricing != null && StringUtils.hasText(pricing.getCgst()) ? pricing.getCgst() : "0";
-        BigDecimal sgstRate = parseRatePct(sgstStr);
-        BigDecimal cgstRate = parseRatePct(cgstStr);
+        BigDecimal sgstRate = parseGstRate(sgstStr);
+        BigDecimal cgstRate = parseGstRate(cgstStr);
 
         // Cost on pricing / vendor bill is per display (invoice) unit, not per base unit.
         // Match purchase valuation: taxable = unitCost × quantity returned in those same units.
@@ -738,14 +739,7 @@ public class VendorPurchaseReturnService {
     return c.getFactor();
   }
 
-  private BigDecimal parseRatePct(String s) {
-    if (!StringUtils.hasText(s)) {
-      return BigDecimal.ZERO;
-    }
-    try {
-      return new BigDecimal(s.trim());
-    } catch (NumberFormatException e) {
-      return BigDecimal.ZERO;
-    }
+  private BigDecimal parseGstRate(String s) {
+    return GstMath.parseGstRate(s);
   }
 }
