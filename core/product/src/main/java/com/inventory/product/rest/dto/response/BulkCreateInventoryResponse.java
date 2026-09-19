@@ -63,5 +63,13 @@ public class BulkCreateInventoryResponse {
    * perfectly against its own bill and is still wrong. Advisory; nothing is blocked.
    */
   private List<String> rateWarnings;
+
+  /**
+   * Advisory per-item notes about lines that were created anyway — today, a cost that is not
+   * below the price the line will sell at. Nothing here failed; the goods arrived and are
+   * recorded. Raised on the response so the operator can settle it while the bill is still in
+   * hand rather than discovering it in the cart weeks later.
+   */
+  private List<String> itemWarnings;
 }
 
