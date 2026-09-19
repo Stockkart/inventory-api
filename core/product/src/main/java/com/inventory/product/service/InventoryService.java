@@ -28,6 +28,7 @@ import com.inventory.product.rest.dto.request.CreateInventoryItemRequest;
 import com.inventory.product.rest.dto.request.CreateInventoryRequest;
 import com.inventory.product.rest.dto.request.UpdateInventoryRequest;
 import com.inventory.product.rest.dto.response.BulkCreateInventoryResponse;
+import com.inventory.product.utils.CostPriceSanity;
 import com.inventory.product.rest.dto.response.InventoryDetailResponse;
 import com.inventory.product.rest.dto.response.InventoryExpiryBucketsResponse;
 import com.inventory.product.rest.dto.response.InventoryListResponse;
@@ -429,7 +430,15 @@ public class InventoryService {
         bulkRequest.getVendorId());
 
     List<VendorPurchaseInvoiceLine> invoiceLines = new ArrayList<>();
+    List<String> itemWarnings = new ArrayList<>();
     for (CreateInventoryItemRequest itemRequest : itemRequests) {
+      CostPriceSanity.check(
+              itemRequest.getName(),
+              itemRequest.getCostPrice(),
+              itemRequest.getSellingPrice() != null
+                  ? itemRequest.getSellingPrice()
+                  : itemRequest.getPriceToRetail())
+          .ifPresent(itemWarnings::add);
       CreateInventoryRequest fullRequest =
           inventoryMapper.toCreateInventoryRequest(
               itemRequest, bulkRequest.getVendorId(), registrationId);
@@ -489,6 +498,7 @@ public class InventoryService {
         inventoryMapper.toBulkCreateInventoryResponse(
             createdItems, 0, returnedInvoiceId);
     out.setItemErrors(null);
+    out.setItemWarnings(itemWarnings.isEmpty() ? null : itemWarnings);
     out.setCreditEntryId(creditEntryId);
     return out;
   }
