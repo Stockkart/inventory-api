@@ -17,8 +17,15 @@ db.cafe_order_punches.createIndex({ shopId: 1, orderId: 1 }, { name: "shop_order
 db.cafe_kots.createIndex({ shopId: 1, orderId: 1 }, { name: "shop_order" });
 db.cafe_kots.createIndex({ shopId: 1, punchId: 1 }, { name: "shop_punch" });
 
+// Partial, never sparse: a compound sparse index skips a document only when every indexed field
+// is missing. With shopId always present, sparse would index every unsettled order under
+// purchaseId: null and a shop could hold only one open table at a time.
 db.cafe_orders.createIndex(
   { shopId: 1, purchaseId: 1 },
-  { unique: true, sparse: true, name: "shop_purchase_unique" }
+  {
+    unique: true,
+    partialFilterExpression: { purchaseId: { $type: "string" } },
+    name: "shop_purchase_unique"
+  }
 );
 db.cafe_orders.createIndex({ shopId: 1, status: 1 }, { name: "shop_status" });

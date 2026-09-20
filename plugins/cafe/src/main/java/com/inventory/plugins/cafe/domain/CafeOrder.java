@@ -18,11 +18,14 @@ import org.springframework.data.mongodb.core.mapping.Document;
 @Document(collection = "cafe_orders")
 @CompoundIndexes({
   @CompoundIndex(name = "shop_status", def = "{'shopId': 1, 'status': 1}"),
+  // Partial, never sparse. A compound sparse index skips a document only when every indexed field
+  // is missing, so with shopId always present every unsettled order would be indexed under
+  // purchaseId: null — and a shop could hold only one open table at a time.
   @CompoundIndex(
       name = "shop_purchase_unique",
       def = "{'shopId': 1, 'purchaseId': 1}",
       unique = true,
-      sparse = true)
+      partialFilter = "{'purchaseId': {'$type': 'string'}}")
 })
 public class CafeOrder {
 
