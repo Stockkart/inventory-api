@@ -5,6 +5,8 @@ import com.inventory.pluginengine.order.KotView;
 import com.inventory.pluginengine.order.RunningOrderLineView;
 import com.inventory.pluginengine.order.RunningOrderView;
 import com.inventory.plugins.cafe.domain.CafeKot;
+import com.inventory.plugins.cafe.domain.CafeKotLine;
+import com.inventory.plugins.cafe.domain.CafeOrderLine;
 import com.inventory.plugins.cafe.domain.CafeOrder;
 import java.util.List;
 
@@ -66,6 +68,29 @@ final class CafeOrderMapper {
                             .build())
                 .toList())
         .build();
+  }
+
+  /**
+   * Views for specific order lines, taking name/note from the ticket snapshot where possible so a
+   * slip shows what the kitchen was actually handed rather than a later edit.
+   */
+  static List<KotLineView> toKotLineViews(CafeKot kot, List<CafeOrderLine> lines) {
+    return lines.stream()
+        .map(
+            line -> {
+              CafeKotLine snapshot =
+                  kot.getLines().stream()
+                      .filter(l -> l.getLineId() != null && l.getLineId().equals(line.getLineId()))
+                      .findFirst()
+                      .orElse(null);
+              return KotLineView.builder()
+                  .lineId(line.getLineId())
+                  .name(snapshot != null ? snapshot.getName() : line.getName())
+                  .quantity(snapshot != null ? snapshot.getQuantity() : line.getQuantity())
+                  .note(snapshot != null ? snapshot.getNote() : line.getNote())
+                  .build();
+            })
+        .toList();
   }
 
   static List<KotView> toKotViews(List<CafeKot> kots) {

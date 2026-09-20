@@ -10,6 +10,7 @@ import com.inventory.pluginengine.order.PunchCommand;
 import com.inventory.pluginengine.order.PunchLine;
 import com.inventory.pluginengine.order.RunningOrderStore;
 import com.inventory.pluginengine.order.RunningOrderView;
+import com.inventory.pluginengine.order.VoidResult;
 import com.inventory.pluginengine.ref.SellableRef;
 import com.inventory.plugins.cafe.domain.CafeKot;
 import com.inventory.plugins.cafe.domain.CafeKotLine;
@@ -217,7 +218,7 @@ public class CafeRunningOrderStore implements RunningOrderStore {
   }
 
   @Override
-  public KotView voidLines(
+  public VoidResult voidLines(
       String shopId, String userId, String kotId, List<String> lineIds, String reason) {
     if (lineIds == null || lineIds.isEmpty()) {
       throw new ValidationException("At least one lineId is required");
@@ -235,7 +236,7 @@ public class CafeRunningOrderStore implements RunningOrderStore {
     CafeOrder order = requireOpenOrder(shopId, kot.getOrderId());
 
     // Resolve every line before mutating any of them: without transactions, a half-applied void
-    // would leave the order inconsistent with the slip the kitchen receives.
+    // would leave the order disagreeing with the slip the kitchen was handed.
     List<CafeOrderLine> targets = new ArrayList<>();
     for (String lineId : lineIds) {
       CafeOrderLine line =
@@ -249,9 +250,17 @@ public class CafeRunningOrderStore implements RunningOrderStore {
       }
       targets.add(line);
     }
-    targets.forEach(line -> line.setStatus(CafeLineStatus.VOIDED));
 
-    order.setUpdatedAt(Instant.now());
+    String batchId = UUID.randomUUID().toString();
+    Instant now = Instant.now();
+    for (CafeOrderLine line : targets) {
+      line.setStatus(CafeLineStatus.VOIDED);
+      line.setVoidBatchId(batchId);
+      line.setVoidReason(reason.trim());
+      line.setVoidedBy(userId);
+      line.setVoidedAt(now);
+    }
+    order.setUpdatedAt(now);
     order.setUpdatedBy(userId);
     orderRepository.save(order);
 
@@ -261,11 +270,50 @@ public class CafeRunningOrderStore implements RunningOrderStore {
             .allMatch(l -> l.getStatus() == CafeLineStatus.VOIDED);
     kot.setVoidReason(reason.trim());
     kot.setVoidedBy(userId);
-    kot.setVoidedAt(Instant.now());
+    kot.setVoidedAt(now);
     if (allVoided) {
       kot.setStatus(CafeKotStatus.VOIDED);
     }
-    return CafeOrderMapper.toView(kotRepository.save(kot));
+    CafeKot savedKot = kotRepository.save(kot);
+
+    return VoidResult.builder()
+        .kot(CafeOrderMapper.toView(savedKot))
+        .voidBatchId(batchId)
+        .reason(reason.trim())
+        .voidedLines(CafeOrderMapper.toKotLineViews(savedKot, targets))
+        .ticketFullyVoided(allVoided)
+        .build();
+  }
+
+  @Override
+  public Optional<VoidResult> findVoidBatch(String shopId, String kotId, String voidBatchId) {
+    CafeKot kot = kotRepository.findByIdAndShopId(kotId, shopId).orElse(null);
+    if (kot == null) {
+      return Optional.empty();
+    }
+    CafeOrder order = orderRepository.findByIdAndShopId(kot.getOrderId(), shopId).orElse(null);
+    if (order == null) {
+      return Optional.empty();
+    }
+    List<CafeOrderLine> inBatch =
+        order.getLines().stream()
+            .filter(l -> voidBatchId.equals(l.getVoidBatchId()) && kotId.equals(l.getKotId()))
+            .toList();
+    if (inBatch.isEmpty()) {
+      return Optional.empty();
+    }
+    boolean allVoided =
+        order.getLines().stream()
+            .filter(l -> kotId.equals(l.getKotId()))
+            .allMatch(l -> l.getStatus() == CafeLineStatus.VOIDED);
+    return Optional.of(
+        VoidResult.builder()
+            .kot(CafeOrderMapper.toView(kot))
+            .voidBatchId(voidBatchId)
+            .reason(inBatch.get(0).getVoidReason())
+            .voidedLines(CafeOrderMapper.toKotLineViews(kot, inBatch))
+            .ticketFullyVoided(allVoided)
+            .build());
   }
 
   @Override

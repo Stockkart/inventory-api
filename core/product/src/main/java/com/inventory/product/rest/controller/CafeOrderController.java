@@ -7,6 +7,7 @@ import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.pluginengine.order.KotView;
 import com.inventory.pluginengine.order.PunchLine;
 import com.inventory.pluginengine.order.RunningOrderView;
+import com.inventory.pluginengine.order.VoidResult;
 import com.inventory.product.rest.dto.request.CancelCafeOrderRequest;
 import com.inventory.product.rest.dto.request.OpenCafeOrderRequest;
 import com.inventory.product.rest.dto.request.PunchKotRequest;
@@ -113,8 +114,19 @@ public class CafeOrderController {
   }
 
   /** Returns JSON; the cancellation slip is fetched from /kots/{kotId}/document. */
+  /** The slip for one past void operation, so a jammed printer does not force a full reprint. */
+  @GetMapping("/kots/{kotId}/voids/{voidBatchId}/document")
+  public ResponseEntity<byte[]> voidSlip(
+      @PathVariable String kotId,
+      @PathVariable String voidBatchId,
+      HttpServletRequest httpRequest) {
+    return pdf(
+        cafeOrderService.voidSlip(shopId(httpRequest), kotId, voidBatchId),
+        "kot_" + kotId + "_void_" + voidBatchId + ".pdf");
+  }
+
   @PostMapping("/kots/{kotId}/void")
-  public ResponseEntity<ApiResponse<KotView>> voidLines(
+  public ResponseEntity<ApiResponse<VoidResult>> voidLines(
       @PathVariable String kotId,
       @RequestBody VoidKotRequest request,
       HttpServletRequest httpRequest) {

@@ -43,8 +43,11 @@ public interface RunningOrderStore {
    * Void named lines on a ticket. Voiding every line of a ticket marks the ticket itself VOIDED;
    * voiding a subset leaves it ISSUED.
    */
-  KotView voidLines(
+  VoidResult voidLines(
       String shopId, String userId, String kotId, List<String> lineIds, String reason);
+
+  /** Re-fetch a past void operation, so its slip can be reprinted without reprinting the ticket. */
+  Optional<VoidResult> findVoidBatch(String shopId, String kotId, String voidBatchId);
 
   KotView markReprinted(String shopId, String kotId);
 

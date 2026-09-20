@@ -22,4 +22,14 @@ public class CafeOrderLine {
 
   private String kotId;
   private CafeLineStatus status;
+
+  /**
+   * Which void operation killed this line. The cancellation slip is built from a batch, not from
+   * "everything voided so far", so voiding A then B yields two slips naming A and B separately.
+   */
+  private String voidBatchId;
+
+  private String voidReason;
+  private String voidedBy;
+  private java.time.Instant voidedAt;
 }

@@ -17,9 +17,11 @@ import com.inventory.documentservice.rest.dto.GenerateKotRequest;
 import com.inventory.documentservice.service.KotPdfService;
 import com.inventory.pluginengine.PluginRegistry;
 import com.inventory.pluginengine.VerticalPlugin;
+import com.inventory.pluginengine.order.KotLineView;
 import com.inventory.pluginengine.order.KotView;
 import com.inventory.pluginengine.order.RunningOrderLineView;
 import com.inventory.pluginengine.order.RunningOrderStore;
+import com.inventory.pluginengine.order.VoidResult;
 import com.inventory.pluginengine.order.RunningOrderView;
 import com.inventory.product.rest.dto.request.AddToCartRequest;
 import com.inventory.product.rest.dto.request.UpdatePurchaseStatusRequest;
@@ -244,6 +246,83 @@ class CafeOrderServiceTest {
         ValidationException.class,
         () -> service.settle("shop-1", "user-1", "order-1", "RESTAURANT", "CASH", httpRequest));
     verify(checkoutService, never()).addToCart(any(), any());
+  }
+
+  private void voidBatchIs(String batchId, boolean full, String... names) {
+    List<KotLineView> lines =
+        java.util.Arrays.stream(names)
+            .map(n -> KotLineView.builder().lineId(n).name(n).quantity(1).build())
+            .toList();
+    when(store.findVoidBatch("shop-1", "kot-1", batchId))
+        .thenReturn(
+            Optional.of(
+                VoidResult.builder()
+                    .kot(KotView.builder().kotId("kot-1").orderId("order-1")
+                        .status(full ? "VOIDED" : "ISSUED").lines(List.of()).build())
+                    .voidBatchId(batchId)
+                    .reason("customer changed mind")
+                    .voidedLines(lines)
+                    .ticketFullyVoided(full)
+                    .build()));
+    when(store.findOrder("shop-1", "order-1")).thenReturn(Optional.of(order("OPEN", null)));
+  }
+
+  private GenerateKotRequest renderedSlip() {
+    ArgumentCaptor<GenerateKotRequest> captor = ArgumentCaptor.forClass(GenerateKotRequest.class);
+    verify(kotPdfService).generateKotPdf(captor.capture());
+    return captor.getValue();
+  }
+
+  @Test
+  void aPartialVoidSlipIsStampedPartialAndListsOnlyTheVoidedLines() {
+    voidBatchIs("batch-1", false, "Burger");
+
+    service.voidSlip("shop-1", "kot-1", "batch-1");
+
+    GenerateKotRequest slip = renderedSlip();
+    assertEquals(KotStamp.PARTIAL_CANCELLATION, slip.getStamp());
+    assertEquals(List.of("Burger"), slip.getItems().stream().map(i -> i.getName()).toList());
+    assertEquals("customer changed mind", slip.getVoidReason());
+  }
+
+  @Test
+  void theSlipThatClosesATicketIsStampedCancelledAndNamesEveryLineOnIt() {
+    // Batch killed only Fries, but it was the last active line, so the ticket is dead. The slip
+    // names the whole ticket rather than assuming the kitchen still holds the earlier slip.
+    when(store.findVoidBatch("shop-1", "kot-1", "batch-2"))
+        .thenReturn(
+            Optional.of(
+                VoidResult.builder()
+                    .kot(
+                        KotView.builder().kotId("kot-1").orderId("order-1").status("VOIDED")
+                            .lines(
+                                List.of(
+                                    KotLineView.builder().lineId("a").name("Burger").quantity(1).build(),
+                                    KotLineView.builder().lineId("b").name("Fries").quantity(1).build()))
+                            .build())
+                    .voidBatchId("batch-2")
+                    .reason("table left")
+                    .voidedLines(
+                        List.of(KotLineView.builder().lineId("b").name("Fries").quantity(1).build()))
+                    .ticketFullyVoided(true)
+                    .build()));
+    when(store.findOrder("shop-1", "order-1")).thenReturn(Optional.of(order("OPEN", null)));
+
+    service.voidSlip("shop-1", "kot-1", "batch-2");
+
+    GenerateKotRequest slip = renderedSlip();
+    assertEquals(KotStamp.CANCELLED, slip.getStamp());
+    assertEquals(List.of("Burger", "Fries"), slip.getItems().stream().map(i -> i.getName()).toList());
+  }
+
+  @Test
+  void anUnknownVoidBatchIsNotFoundAndRendersNothing() {
+    when(store.findVoidBatch("shop-1", "kot-1", "nope")).thenReturn(Optional.empty());
+
+    assertThrows(
+        com.inventory.common.exception.ResourceNotFoundException.class,
+        () -> service.voidSlip("shop-1", "kot-1", "nope"));
+    verify(kotPdfService, never()).generateKotPdf(any());
   }
 
   @Test

@@ -69,7 +69,9 @@ public class KotPdfService {
     context.setVariable("stewardName", request.getStewardName());
     context.setVariable("items", request.getItems() != null ? request.getItems() : List.of());
     KotStamp stamp = request.getStamp() != null ? request.getStamp() : KotStamp.NONE;
+    // Two variables on purpose: the template branches on the stable name, prints the label.
     context.setVariable("stamp", stamp.name());
+    context.setVariable("stampLabel", stamp.getLabel());
     context.setVariable("voidReason", request.getVoidReason());
 
     String template = DocumentTemplateFamily.KOT.templateFor(PrinterType.THERMAL_3INCH);

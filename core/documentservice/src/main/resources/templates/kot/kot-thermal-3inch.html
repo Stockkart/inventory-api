@@ -42,12 +42,13 @@
        an undeclared entity aborts the whole render. No other template here uses one either.
        This applies inside comments too - the parser reads them before CSS does. */
     .gap { padding-left: 4mm; }
+    .cancel-head { font-size: 13px; letter-spacing: 1px; margin-bottom: 2px; }
   </style>
 </head>
 <body>
   <div class="center dept" th:text="${department}">KITCHEN</div>
 
-  <div class="center stamp" th:if="${stamp != 'NONE'}" th:text="${stamp}">REPRINT</div>
+  <div class="center stamp" th:if="${stamp != 'NONE'}" th:text="${stampLabel}">REPRINT</div>
 
   <hr class="line"/>
 
@@ -66,6 +67,10 @@
   </div>
 
   <hr class="line"/>
+
+  <div class="center cancel-head" th:if="${stamp == 'PARTIAL_CANCELLATION' or stamp == 'CANCELLED'}">
+    DO NOT MAKE
+  </div>
 
   <div th:each="item : ${items}" class="item">
     <div class="item-main">

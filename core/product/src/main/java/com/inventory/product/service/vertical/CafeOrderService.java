@@ -7,12 +7,14 @@ import com.inventory.documentservice.rest.dto.GenerateKotRequest;
 import com.inventory.documentservice.rest.dto.KotItem;
 import com.inventory.documentservice.service.KotPdfService;
 import com.inventory.pluginengine.PluginRegistry;
+import com.inventory.pluginengine.order.KotLineView;
 import com.inventory.pluginengine.order.KotView;
 import com.inventory.pluginengine.order.PunchCommand;
 import com.inventory.pluginengine.order.PunchLine;
 import com.inventory.pluginengine.order.RunningOrderLineView;
 import com.inventory.pluginengine.order.RunningOrderStore;
 import com.inventory.pluginengine.order.RunningOrderView;
+import com.inventory.pluginengine.order.VoidResult;
 import com.inventory.product.domain.model.enums.PurchaseStatus;
 import com.inventory.product.rest.dto.request.AddToCartRequest;
 import com.inventory.product.rest.dto.request.UpdatePurchaseStatusRequest;
@@ -111,10 +113,25 @@ public class CafeOrderService {
     return kotPdfService.generateKotPdf(toDocumentRequest(shopId, kot, KotStamp.REPRINT));
   }
 
-  public KotView voidLines(
+  public VoidResult voidLines(
       String shopId, String userId, String kotId, List<String> lineIds, String reason) {
     rbacService.requireModule(userId, shopId, RbacService.MODULE_KOT_VOID);
     return store().voidLines(shopId, userId, kotId, lineIds, reason);
+  }
+
+  /**
+   * The slip for one void operation.
+   *
+   * <p>A partial cancellation lists only the lines that operation killed — never the whole ticket.
+   * Reprinting the full ticket would read to a kitchen as a fresh order for the lines that still
+   * stand.
+   */
+  public byte[] voidSlip(String shopId, String kotId, String voidBatchId) {
+    VoidResult batch =
+        store()
+            .findVoidBatch(shopId, kotId, voidBatchId)
+            .orElseThrow(() -> new ResourceNotFoundException("VoidBatch", "id", voidBatchId));
+    return kotPdfService.generateKotPdf(toSlipRequest(shopId, batch));
   }
 
   public RunningOrderView cancel(String shopId, String userId, String orderId, String reason) {
@@ -193,6 +210,33 @@ public class CafeOrderService {
     request.setStatus(status);
     request.setPaymentMethod(paymentMethod);
     checkoutService.updatePurchaseStatus(request, httpRequest);
+  }
+
+  private GenerateKotRequest toSlipRequest(String shopId, VoidResult batch) {
+    KotView kot = batch.getKot();
+    GenerateKotRequest request =
+        toDocumentRequest(
+            shopId,
+            kot,
+            batch.isTicketFullyVoided() ? KotStamp.CANCELLED : KotStamp.PARTIAL_CANCELLATION);
+    request.setVoidReason(batch.getReason());
+    // A partial slip names only what this operation killed. The slip that closes the ticket names
+    // every line on it: "this whole ticket is dead" must not depend on the kitchen still holding
+    // the earlier slips.
+    List<KotLineView> lines =
+        batch.isTicketFullyVoided() ? kot.getLines() : batch.getVoidedLines();
+    request.setItems(
+        lines.stream()
+            .map(
+                line -> {
+                  KotItem item = new KotItem();
+                  item.setName(line.getName());
+                  item.setQuantity(line.getQuantity());
+                  item.setNote(line.getNote());
+                  return item;
+                })
+            .toList());
+    return request;
   }
 
   private List<AddToCartRequest.CartItem> toCartItems(RunningOrderView order) {

@@ -136,6 +136,25 @@ class KotPdfServiceTest {
   }
 
   @Test
+  void partialCancellationIsStampedAndWarnsTheKitchen() {
+    GenerateKotRequest r = request(KotStamp.PARTIAL_CANCELLATION);
+    r.setVoidReason("customer changed mind");
+
+    String html = service.renderKotHtml(r);
+
+    assertTrue(html.contains("PARTIAL CANCELLATION"), html);
+    assertFalse(html.contains("PARTIAL_CANCELLATION"), "enum name must not reach paper");
+    assertTrue(html.contains("DO NOT MAKE"), html);
+    assertTrue(html.contains("customer changed mind"), html);
+  }
+
+  @Test
+  void aNormalTicketNeverWarnsTheKitchenOff() {
+    assertFalse(service.renderKotHtml(request(KotStamp.NONE)).contains("DO NOT MAKE"));
+    assertFalse(service.renderKotHtml(request(KotStamp.REPRINT)).contains("DO NOT MAKE"));
+  }
+
+  @Test
   void producesPdfBytes() {
     byte[] pdf = service.generateKotPdf(request(KotStamp.NONE));
 

@@ -11,7 +11,7 @@ import static org.mockito.Mockito.when;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.pluginengine.integration.ShopMenuLookup;
-import com.inventory.pluginengine.order.KotView;
+import com.inventory.pluginengine.order.VoidResult;
 import com.inventory.plugins.cafe.domain.CafeKot;
 import com.inventory.plugins.cafe.domain.CafeKotLine;
 import com.inventory.plugins.cafe.domain.CafeKotStatus;
@@ -89,28 +89,28 @@ class CafeRunningOrderStoreVoidTest {
 
   @Test
   void voidingSomeLinesLeavesTicketIssued() {
-    KotView view = store.voidLines("shop-1", "user-1", "kot-1", List.of("l1"), "wrong dish");
+    VoidResult result = store.voidLines("shop-1", "user-1", "kot-1", List.of("l1"), "wrong dish");
 
-    assertEquals("ISSUED", view.getStatus());
+    assertEquals("ISSUED", result.getKot().getStatus());
     assertEquals(CafeLineStatus.VOIDED, order.getLines().get(0).getStatus());
     assertEquals(CafeLineStatus.ACTIVE, order.getLines().get(1).getStatus());
   }
 
   @Test
   void voidingEveryLineVoidsTheTicket() {
-    KotView view = store.voidLines("shop-1", "user-1", "kot-1", List.of("l1", "l2"), "table left");
+    VoidResult result = store.voidLines("shop-1", "user-1", "kot-1", List.of("l1", "l2"), "table left");
 
-    assertEquals("VOIDED", view.getStatus());
-    assertEquals("table left", view.getVoidReason());
+    assertEquals("VOIDED", result.getKot().getStatus());
+    assertEquals("table left", result.getReason());
   }
 
   @Test
   void voidingTheLastRemainingActiveLineVoidsTheTicket() {
     store.voidLines("shop-1", "user-1", "kot-1", List.of("l1"), "first");
 
-    KotView view = store.voidLines("shop-1", "user-1", "kot-1", List.of("l2"), "second");
+    VoidResult result = store.voidLines("shop-1", "user-1", "kot-1", List.of("l2"), "second");
 
-    assertEquals("VOIDED", view.getStatus());
+    assertEquals("VOIDED", result.getKot().getStatus());
   }
 
   @Test
@@ -167,6 +167,46 @@ class CafeRunningOrderStoreVoidTest {
     assertThrows(
         ResourceNotFoundException.class,
         () -> store.voidLines("shop-1", "user-1", "kot-x", List.of("l1"), "reason"));
+  }
+
+  @Test
+  void aPartialVoidReportsOnlyItsOwnLinesAndDoesNotCloseTheTicket() {
+    VoidResult result =
+        store.voidLines("shop-1", "user-1", "kot-1", List.of("l1"), "dropped on floor");
+
+    assertEquals("ISSUED", result.getKot().getStatus());
+    assertEquals(false, result.isTicketFullyVoided());
+    assertEquals(List.of("l1"), result.getVoidedLines().stream().map(l -> l.getLineId()).toList());
+  }
+
+  @Test
+  void twoVoidsProduceTwoDistinctBatchesEachNamingOnlyItsOwnLine() {
+    VoidResult first = store.voidLines("shop-1", "user-1", "kot-1", List.of("l1"), "first");
+    VoidResult second = store.voidLines("shop-1", "user-1", "kot-1", List.of("l2"), "second");
+
+    // The second slip must not re-list l1; a document derived from current state would.
+    assertEquals(List.of("l1"), first.getVoidedLines().stream().map(l -> l.getLineId()).toList());
+    assertEquals(List.of("l2"), second.getVoidedLines().stream().map(l -> l.getLineId()).toList());
+    org.junit.jupiter.api.Assertions.assertNotEquals(
+        first.getVoidBatchId(), second.getVoidBatchId());
+    assertEquals(true, second.isTicketFullyVoided());
+  }
+
+  @Test
+  void aVoidBatchCanBeRefetchedForAReprintOfTheSlip() {
+    VoidResult first = store.voidLines("shop-1", "user-1", "kot-1", List.of("l1"), "spilled");
+
+    VoidResult again =
+        store.findVoidBatch("shop-1", "kot-1", first.getVoidBatchId()).orElseThrow();
+
+    assertEquals("spilled", again.getReason());
+    assertEquals(List.of("l1"), again.getVoidedLines().stream().map(l -> l.getLineId()).toList());
+  }
+
+  @Test
+  void anUnknownVoidBatchIsEmpty() {
+    org.junit.jupiter.api.Assertions.assertTrue(
+        store.findVoidBatch("shop-1", "kot-1", "no-such-batch").isEmpty());
   }
 
   @Test
