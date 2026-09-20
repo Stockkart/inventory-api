@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8"/>
+  <title>KOT</title>
+  <style>
+    /* ~75mm thermal roll. Bold throughout: thermal output fades, and a cook reads this at arm's
+       length on a hot pass. Nothing commercial appears here by design. */
+    @page {
+      size: 75mm 600mm;
+      margin: 2mm 2.5mm;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: "Courier New", Courier, monospace;
+      font-size: 10px;
+      font-weight: 700;
+      color: #000;
+      line-height: 1.35;
+      width: 70mm;
+    }
+    body, body * { font-weight: 700 !important; }
+    .center { text-align: center; }
+    .dept { font-size: 17px; letter-spacing: 1px; margin-bottom: 2px; }
+    .stamp {
+      font-size: 15px;
+      letter-spacing: 2px;
+      margin: 3px 0;
+      border: 2px solid #000;
+      padding: 2px 0;
+    }
+    .line { border: none; border-top: 1px solid #000; margin: 4px 0; }
+    .meta { font-size: 10px; }
+    .meta .big { font-size: 13px; }
+    .item { margin-top: 6px; }
+    .item-main { font-size: 15px; }
+    /* Notes print larger than the meta block: a missed "no onion" is the whole reason
+       this field exists. */
+    .item-note { font-size: 12px; padding-left: 5mm; }
+    .reason { font-size: 11px; margin-top: 5px; }
+    /* Spacing is CSS, never a named HTML entity: OpenHTMLToPDF parses the template as XML, and
+       an undeclared entity aborts the whole render. No other template here uses one either.
+       This applies inside comments too - the parser reads them before CSS does. */
+    .gap { padding-left: 4mm; }
+  </style>
+</head>
+<body>
+  <div class="center dept" th:text="${department}">KITCHEN</div>
+
+  <div class="center stamp" th:if="${stamp != 'NONE'}" th:text="${stamp}">REPRINT</div>
+
+  <hr class="line"/>
+
+  <div class="meta">
+    <div class="big">
+      KOT <span th:text="${kotNo}">41</span>
+      <span class="gap">Round <span th:text="${roundNo}">1</span></span>
+    </div>
+    <div th:if="${tableLabel}" class="big">Table <span th:text="${tableLabel}">T4</span></div>
+    <div th:if="${tokenNo}" class="big">Token <span th:text="${tokenNo}">12</span></div>
+    <div>
+      Order <span th:text="${orderNo}">7</span>
+      <span class="gap" th:text="${printedAt}">20/09 14:05</span>
+    </div>
+    <div th:if="${stewardName}" th:text="'By ' + ${stewardName}">By Asha</div>
+  </div>
+
+  <hr class="line"/>
+
+  <div th:each="item : ${items}" class="item">
+    <div class="item-main">
+      <span th:text="${item.quantity}">2</span> x <span th:text="${item.name}">Biryani</span>
+    </div>
+    <div class="item-note" th:if="${item.note}" th:text="'** ' + ${item.note}">** no onion</div>
+  </div>
+
+  <hr class="line"/>
+
+  <div class="reason" th:if="${voidReason}" th:text="'Reason: ' + ${voidReason}">Reason: table left</div>
+</body>
+</html>
