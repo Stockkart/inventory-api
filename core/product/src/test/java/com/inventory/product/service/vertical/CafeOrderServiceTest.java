@@ -23,6 +23,7 @@ import com.inventory.pluginengine.order.RunningOrderStore;
 import com.inventory.pluginengine.order.RunningOrderView;
 import com.inventory.product.rest.dto.request.AddToCartRequest;
 import com.inventory.product.rest.dto.request.UpdatePurchaseStatusRequest;
+import com.inventory.product.domain.model.enums.PurchaseStatus;
 import com.inventory.product.rest.dto.response.AddToCartResponse;
 import com.inventory.product.service.CheckoutService;
 import com.inventory.user.service.RbacService;
@@ -88,6 +89,66 @@ class CafeOrderServiceTest {
     AddToCartResponse cart = new AddToCartResponse();
     cart.setPurchaseId(purchaseId);
     when(checkoutService.addToCart(any(AddToCartRequest.class), any())).thenReturn(cart);
+    cartHasStatus(purchaseId, PurchaseStatus.CREATED);
+  }
+
+  private void cartHasStatus(String purchaseId, PurchaseStatus status) {
+    AddToCartResponse view = new AddToCartResponse();
+    view.setPurchaseId(purchaseId);
+    view.setStatus(status);
+    when(checkoutService.getCart(any(), org.mockito.ArgumentMatchers.eq(purchaseId)))
+        .thenReturn(view);
+  }
+
+  private List<PurchaseStatus> statusesRequested() {
+    ArgumentCaptor<UpdatePurchaseStatusRequest> captor =
+        ArgumentCaptor.forClass(UpdatePurchaseStatusRequest.class);
+    verify(checkoutService, org.mockito.Mockito.atLeastOnce())
+        .updatePurchaseStatus(captor.capture(), any());
+    return captor.getAllValues().stream().map(UpdatePurchaseStatusRequest::getStatus).toList();
+  }
+
+  @Test
+  void settleWalksTheRealStatusMachineCreatedThenPendingThenCompleted() {
+    when(store.findOrder("shop-1", "order-1")).thenReturn(Optional.of(order("OPEN", null)));
+    cartIsCreatedAs("purchase-1");
+    when(store.bindPurchase("shop-1", "order-1", "purchase-1"))
+        .thenReturn(order("OPEN", "purchase-1"));
+    when(store.markBilled("shop-1", "user-1", "order-1"))
+        .thenReturn(order("BILLED", "purchase-1"));
+
+    service.settle("shop-1", "user-1", "order-1", "cafe", "CASH", httpRequest);
+
+    // CheckoutValidator permits only CREATED -> PENDING -> COMPLETED; skipping PENDING is rejected.
+    assertEquals(
+        List.of(PurchaseStatus.PENDING, PurchaseStatus.COMPLETED), statusesRequested());
+  }
+
+  @Test
+  void settleResumingAPendingCartDoesNotRepeatThePendingStep() {
+    when(store.findOrder("shop-1", "order-1"))
+        .thenReturn(Optional.of(order("OPEN", "purchase-1")));
+    cartHasStatus("purchase-1", PurchaseStatus.PENDING);
+    when(store.markBilled("shop-1", "user-1", "order-1"))
+        .thenReturn(order("BILLED", "purchase-1"));
+
+    service.settle("shop-1", "user-1", "order-1", "cafe", "CASH", httpRequest);
+
+    assertEquals(List.of(PurchaseStatus.COMPLETED), statusesRequested());
+  }
+
+  @Test
+  void settleFindingAnAlreadyCompletedPurchaseOnlyMarksTheOrderBilled() {
+    when(store.findOrder("shop-1", "order-1"))
+        .thenReturn(Optional.of(order("OPEN", "purchase-1")));
+    cartHasStatus("purchase-1", PurchaseStatus.COMPLETED);
+    when(store.markBilled("shop-1", "user-1", "order-1"))
+        .thenReturn(order("BILLED", "purchase-1"));
+
+    service.settle("shop-1", "user-1", "order-1", "cafe", "CASH", httpRequest);
+
+    verify(checkoutService, never()).updatePurchaseStatus(any(), any());
+    verify(store).markBilled("shop-1", "user-1", "order-1");
   }
 
   @Test
@@ -123,7 +184,8 @@ class CafeOrderServiceTest {
     // before binding would orphan a paid Purchase.
     org.mockito.InOrder inOrder = org.mockito.Mockito.inOrder(store, checkoutService);
     inOrder.verify(store).bindPurchase("shop-1", "order-1", "purchase-1");
-    inOrder.verify(checkoutService).updatePurchaseStatus(any(), any());
+    inOrder.verify(checkoutService, org.mockito.Mockito.atLeastOnce())
+        .updatePurchaseStatus(any(), any());
   }
 
   @Test
@@ -143,6 +205,7 @@ class CafeOrderServiceTest {
   void settleResumesWhenCartAlreadyExists() {
     when(store.findOrder("shop-1", "order-1"))
         .thenReturn(Optional.of(order("OPEN", "purchase-1")));
+    cartHasStatus("purchase-1", PurchaseStatus.PENDING);
     when(store.markBilled("shop-1", "user-1", "order-1"))
         .thenReturn(order("BILLED", "purchase-1"));
 

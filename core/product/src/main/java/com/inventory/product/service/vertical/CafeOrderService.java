@@ -167,13 +167,32 @@ public class CafeOrderService {
       log.info("Resuming settlement of order {} against existing cart {}", orderId, purchaseId);
     }
 
-    UpdatePurchaseStatusRequest complete = new UpdatePurchaseStatusRequest();
-    complete.setPurchaseId(purchaseId);
-    complete.setStatus(PurchaseStatus.COMPLETED);
-    complete.setPaymentMethod(paymentMethod);
-    checkoutService.updatePurchaseStatus(complete, httpRequest);
+    // Checkout is three-phase, not two: CheckoutValidator allows only
+    // CREATED -> PENDING -> COMPLETED. Drive the purchase from wherever it actually is, so a
+    // retry that finds it already PENDING (or COMPLETED) does not attempt an illegal transition.
+    PurchaseStatus current = checkoutService.getCart(httpRequest, purchaseId).getStatus();
+    if (current != PurchaseStatus.COMPLETED) {
+      if (current == PurchaseStatus.CREATED) {
+        advance(purchaseId, PurchaseStatus.PENDING, paymentMethod, httpRequest);
+      }
+      advance(purchaseId, PurchaseStatus.COMPLETED, paymentMethod, httpRequest);
+    } else {
+      log.info("Purchase {} is already COMPLETED; only marking order {} billed", purchaseId, orderId);
+    }
 
     return store().markBilled(shopId, userId, orderId);
+  }
+
+  private void advance(
+      String purchaseId,
+      PurchaseStatus status,
+      String paymentMethod,
+      HttpServletRequest httpRequest) {
+    UpdatePurchaseStatusRequest request = new UpdatePurchaseStatusRequest();
+    request.setPurchaseId(purchaseId);
+    request.setStatus(status);
+    request.setPaymentMethod(paymentMethod);
+    checkoutService.updatePurchaseStatus(request, httpRequest);
   }
 
   private List<AddToCartRequest.CartItem> toCartItems(RunningOrderView order) {
