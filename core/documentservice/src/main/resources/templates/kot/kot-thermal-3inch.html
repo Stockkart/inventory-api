@@ -3,13 +3,17 @@
 <head>
   <meta charset="UTF-8"/>
   <title>KOT</title>
+  <style th:inline="text">
+    /* The page is sized to the content by KotPdfService, because a roll has no page: a fixed
+       height either clips a long ticket or feeds blank paper after a short one. */
+    @page {
+      size: 75mm [[${pageHeightMm}]]mm;
+      margin: 2mm 2.5mm;
+    }
+  </style>
   <style>
     /* ~75mm thermal roll. Bold throughout: thermal output fades, and a cook reads this at arm's
        length on a hot pass. Nothing commercial appears here by design. */
-    @page {
-      size: 75mm 600mm;
-      margin: 2mm 2.5mm;
-    }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: "Courier New", Courier, monospace;

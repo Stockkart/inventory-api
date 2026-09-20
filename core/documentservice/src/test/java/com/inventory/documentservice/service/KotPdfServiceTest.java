@@ -1,5 +1,6 @@
 package com.inventory.documentservice.service;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -152,6 +153,54 @@ class KotPdfServiceTest {
   void aNormalTicketNeverWarnsTheKitchenOff() {
     assertFalse(service.renderKotHtml(request(KotStamp.NONE)).contains("DO NOT MAKE"));
     assertFalse(service.renderKotHtml(request(KotStamp.REPRINT)).contains("DO NOT MAKE"));
+  }
+
+  private static float pageHeightMm(byte[] pdf) throws Exception {
+    try (org.apache.pdfbox.pdmodel.PDDocument doc =
+        org.apache.pdfbox.pdmodel.PDDocument.load(pdf)) {
+      float points = doc.getPage(0).getMediaBox().getHeight();
+      return points * 25.4f / 72f;
+    }
+  }
+
+  private GenerateKotRequest withItems(int count) {
+    GenerateKotRequest r = request(KotStamp.NONE);
+    java.util.List<KotItem> items = new java.util.ArrayList<>();
+    for (int i = 0; i < count; i++) {
+      KotItem it = new KotItem();
+      it.setName("Item " + i);
+      it.setQuantity(1);
+      items.add(it);
+    }
+    r.setItems(items);
+    return r;
+  }
+
+  @Test
+  void aShortTicketDoesNotWasteHalfAMetreOfRoll() throws Exception {
+    float mm = pageHeightMm(service.generateKotPdf(withItems(1)));
+
+    // The old fixed 600mm page fed roughly 55cm of blank paper per ticket.
+    assertTrue(mm < 120f, "one-item ticket page was " + mm + "mm");
+  }
+
+  @Test
+  void thePageGrowsWithTheNumberOfItems() throws Exception {
+    float small = pageHeightMm(service.generateKotPdf(withItems(1)));
+    float large = pageHeightMm(service.generateKotPdf(withItems(25)));
+
+    assertTrue(large > small, "25 items (" + large + "mm) should exceed 1 item (" + small + "mm)");
+  }
+
+  @Test
+  void aLongTicketStillFitsOnOnePage() throws Exception {
+    byte[] pdf = service.generateKotPdf(withItems(40));
+
+    try (org.apache.pdfbox.pdmodel.PDDocument doc =
+        org.apache.pdfbox.pdmodel.PDDocument.load(pdf)) {
+      // A page break mid-ticket would split one order across two slips.
+      assertEquals(1, doc.getNumberOfPages());
+    }
   }
 
   @Test

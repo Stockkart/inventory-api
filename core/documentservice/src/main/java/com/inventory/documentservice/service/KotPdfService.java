@@ -25,6 +25,10 @@ import org.thymeleaf.context.Context;
 @Slf4j
 public class KotPdfService {
 
+  private static final float PROBE_MM = 600f;
+  private static final float TAIL_MM = 8f;
+  private static final float MIN_PAGE_MM = 40f;
+
   private final TemplateEngine templateEngine;
   private final HtmlToPdfConverter htmlToPdfConverter;
   private final MetricsWrapper metrics;
@@ -40,7 +44,12 @@ public class KotPdfService {
 
   public byte[] generateKotPdf(GenerateKotRequest request) {
     try {
-      byte[] pdf = htmlToPdfConverter.convert(renderKotHtml(request));
+      // Two passes: lay the ticket out on a page tall enough that nothing paginates, measure what
+      // it actually needs, then render it on a page that size. A roll has no page, so a fixed
+      // height either clips a long ticket or feeds half a metre of blank paper after a short one.
+      float contentMm = htmlToPdfConverter.measureContentHeightMm(renderKotHtml(request, PROBE_MM));
+      float pageMm = Math.min(PROBE_MM, Math.max(MIN_PAGE_MM, contentMm + TAIL_MM));
+      byte[] pdf = htmlToPdfConverter.convert(renderKotHtml(request, pageMm));
       metrics.record(
           DocumentMetricsConstants.GENERATED_TOTAL,
           1,
@@ -57,6 +66,10 @@ public class KotPdfService {
 
   /** Kept public for preview and tests, matching InvoicePdfService. */
   public String renderKotHtml(GenerateKotRequest request) {
+    return renderKotHtml(request, PROBE_MM);
+  }
+
+  private String renderKotHtml(GenerateKotRequest request, float pageHeightMm) {
     Context context = new Context();
     context.setVariable("kotNo", request.getKotNo());
     context.setVariable("orderNo", request.getOrderNo());
@@ -73,6 +86,7 @@ public class KotPdfService {
     context.setVariable("stamp", stamp.name());
     context.setVariable("stampLabel", stamp.getLabel());
     context.setVariable("voidReason", request.getVoidReason());
+    context.setVariable("pageHeightMm", String.format(java.util.Locale.ROOT, "%.1f", pageHeightMm));
 
     String template = DocumentTemplateFamily.KOT.templateFor(PrinterType.THERMAL_3INCH);
     log.debug("Rendering KOT {} for {} with stamp {}", request.getKotNo(), request.getDepartment(), stamp);
