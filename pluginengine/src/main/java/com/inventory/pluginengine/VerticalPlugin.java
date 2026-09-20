@@ -5,6 +5,7 @@ import com.inventory.pluginengine.cart.CartLineContributor;
 import com.inventory.pluginengine.cart.CheckoutCompletionHandler;
 import com.inventory.pluginengine.cart.QuotationCreateHandler;
 import com.inventory.pluginengine.menu.MenuVerticalValidator;
+import com.inventory.pluginengine.order.RunningOrderStore;
 import com.inventory.pluginengine.pricing.VerticalPricingPolicy;
 import java.util.Optional;
 
@@ -48,6 +49,11 @@ public interface VerticalPlugin {
   }
 
   default Optional<VerticalUiContributor> getUiContributor() {
+    return Optional.empty();
+  }
+
+  /** Running orders and kitchen tickets. Empty for verticals that bill in a single shot. */
+  default Optional<RunningOrderStore> getRunningOrderStore() {
     return Optional.empty();
   }
 
