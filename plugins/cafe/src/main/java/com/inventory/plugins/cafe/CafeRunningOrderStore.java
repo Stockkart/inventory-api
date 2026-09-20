@@ -213,34 +213,128 @@ public class CafeRunningOrderStore implements RunningOrderStore {
 
   @Override
   public Optional<KotView> findKot(String shopId, String kotId) {
-    throw new UnsupportedOperationException("Implemented in Task 6");
+    return kotRepository.findByIdAndShopId(kotId, shopId).map(CafeOrderMapper::toView);
   }
 
   @Override
   public KotView voidLines(
       String shopId, String userId, String kotId, List<String> lineIds, String reason) {
-    throw new UnsupportedOperationException("Implemented in Task 6");
+    if (lineIds == null || lineIds.isEmpty()) {
+      throw new ValidationException("At least one lineId is required");
+    }
+    if (!StringUtils.hasText(reason)) {
+      throw new ValidationException("A void reason is required");
+    }
+    CafeKot kot =
+        kotRepository
+            .findByIdAndShopId(kotId, shopId)
+            .orElseThrow(() -> new ResourceNotFoundException("CafeKot", "id", kotId));
+    if (kot.getStatus() == CafeKotStatus.VOIDED) {
+      throw new ValidationException("KOT is already voided");
+    }
+    CafeOrder order = requireOpenOrder(shopId, kot.getOrderId());
+
+    // Resolve every line before mutating any of them: without transactions, a half-applied void
+    // would leave the order inconsistent with the slip the kitchen receives.
+    List<CafeOrderLine> targets = new ArrayList<>();
+    for (String lineId : lineIds) {
+      CafeOrderLine line =
+          order.getLines().stream()
+              .filter(l -> lineId.equals(l.getLineId()) && kotId.equals(l.getKotId()))
+              .findFirst()
+              .orElseThrow(
+                  () -> new ValidationException("Line " + lineId + " does not belong to " + kotId));
+      if (line.getStatus() != CafeLineStatus.ACTIVE) {
+        throw new ValidationException("Line " + lineId + " is already voided");
+      }
+      targets.add(line);
+    }
+    targets.forEach(line -> line.setStatus(CafeLineStatus.VOIDED));
+
+    order.setUpdatedAt(Instant.now());
+    order.setUpdatedBy(userId);
+    orderRepository.save(order);
+
+    boolean allVoided =
+        order.getLines().stream()
+            .filter(l -> kotId.equals(l.getKotId()))
+            .allMatch(l -> l.getStatus() == CafeLineStatus.VOIDED);
+    kot.setVoidReason(reason.trim());
+    kot.setVoidedBy(userId);
+    kot.setVoidedAt(Instant.now());
+    if (allVoided) {
+      kot.setStatus(CafeKotStatus.VOIDED);
+    }
+    return CafeOrderMapper.toView(kotRepository.save(kot));
   }
 
   @Override
   public KotView markReprinted(String shopId, String kotId) {
-    throw new UnsupportedOperationException("Implemented in Task 6");
+    CafeKot kot =
+        kotRepository
+            .findByIdAndShopId(kotId, shopId)
+            .orElseThrow(() -> new ResourceNotFoundException("CafeKot", "id", kotId));
+    if (kot.getStatus() == CafeKotStatus.VOIDED) {
+      throw new ValidationException("A voided KOT cannot be reprinted");
+    }
+    kot.setReprintCount(kot.getReprintCount() == null ? 1 : kot.getReprintCount() + 1);
+    return CafeOrderMapper.toView(kotRepository.save(kot));
   }
 
   @Override
   public RunningOrderView bindPurchase(String shopId, String orderId, String purchaseId) {
-    throw new UnsupportedOperationException("Implemented in Task 6");
+    if (!StringUtils.hasText(purchaseId)) {
+      throw new ValidationException("purchaseId is required");
+    }
+    CafeOrder order = requireOpenOrder(shopId, orderId);
+    if (StringUtils.hasText(order.getPurchaseId())
+        && !order.getPurchaseId().equals(purchaseId)) {
+      throw new ValidationException(
+          "Order is already bound to purchase " + order.getPurchaseId());
+    }
+    order.setPurchaseId(purchaseId);
+    order.setUpdatedAt(Instant.now());
+    return CafeOrderMapper.toView(orderRepository.save(order));
   }
 
   @Override
   public RunningOrderView markBilled(String shopId, String userId, String orderId) {
-    throw new UnsupportedOperationException("Implemented in Task 6");
+    CafeOrder order = requireOpenOrder(shopId, orderId);
+    order.setStatus(CafeOrderStatus.BILLED);
+    order.setUpdatedAt(Instant.now());
+    order.setUpdatedBy(userId);
+    return CafeOrderMapper.toView(orderRepository.save(order));
   }
 
   @Override
   public RunningOrderView cancelOrder(
       String shopId, String userId, String orderId, String reason) {
-    throw new UnsupportedOperationException("Implemented in Task 6");
+    if (!StringUtils.hasText(reason)) {
+      throw new ValidationException("A cancellation reason is required");
+    }
+    CafeOrder order = requireOpenOrder(shopId, orderId);
+
+    order.getLines().stream()
+        .filter(l -> l.getStatus() == CafeLineStatus.ACTIVE)
+        .forEach(l -> l.setStatus(CafeLineStatus.VOIDED));
+    order.setStatus(CafeOrderStatus.CANCELLED);
+    order.setCancelReason(reason.trim());
+    order.setUpdatedAt(Instant.now());
+    order.setUpdatedBy(userId);
+    orderRepository.save(order);
+
+    for (CafeKot kot : kotRepository.findByShopIdAndOrderId(shopId, orderId)) {
+      // A ticket the kitchen was already told to drop does not get a second slip.
+      if (kot.getStatus() == CafeKotStatus.VOIDED) {
+        continue;
+      }
+      kot.setStatus(CafeKotStatus.VOIDED);
+      kot.setVoidReason(reason.trim());
+      kot.setVoidedBy(userId);
+      kot.setVoidedAt(Instant.now());
+      kotRepository.save(kot);
+    }
+    return CafeOrderMapper.toView(order);
   }
 
   private CafeOrder requireOpenOrder(String shopId, String orderId) {

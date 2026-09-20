@@ -10,6 +10,7 @@ import com.inventory.pluginengine.cart.CartLineContributor;
 import com.inventory.pluginengine.cart.CheckoutCompletionHandler;
 import com.inventory.pluginengine.cart.QuotationCreateHandler;
 import com.inventory.pluginengine.menu.MenuVerticalValidator;
+import com.inventory.pluginengine.order.RunningOrderStore;
 import com.inventory.pluginengine.pricing.VerticalPricingPolicy;
 import com.inventory.plugins.cafe.repository.CafeInventoryExtensionRepository;
 import java.util.Optional;
@@ -27,6 +28,7 @@ public class CafePlugin extends ConfiguredVerticalPlugin {
   private final CafeCheckoutCompletionHandler checkoutCompletionHandler;
   private final CafeQuotationCreateHandler quotationCreateHandler;
   private final CafePricingPolicy cafePricingPolicy;
+  private final CafeRunningOrderStore runningOrderStore;
 
   public CafePlugin(
       CafeVerticalProperties properties,
@@ -37,7 +39,8 @@ public class CafePlugin extends ConfiguredVerticalPlugin {
       CafeMenuCartLineContributor menuCartLineContributor,
       CafeCheckoutCompletionHandler checkoutCompletionHandler,
       CafeQuotationCreateHandler quotationCreateHandler,
-      CafePricingPolicy cafePricingPolicy) {
+      CafePricingPolicy cafePricingPolicy,
+      CafeRunningOrderStore runningOrderStore) {
     super(properties.getId(), properties.getVersion());
     this.inventoryValidator = new SchemaDrivenInventoryValidator(properties.getId());
     this.extensionRepository = extensionRepository;
@@ -48,6 +51,7 @@ public class CafePlugin extends ConfiguredVerticalPlugin {
     this.checkoutCompletionHandler = checkoutCompletionHandler;
     this.quotationCreateHandler = quotationCreateHandler;
     this.cafePricingPolicy = cafePricingPolicy;
+    this.runningOrderStore = runningOrderStore;
   }
 
   @Override
@@ -93,5 +97,10 @@ public class CafePlugin extends ConfiguredVerticalPlugin {
   @Override
   public Optional<VerticalPricingPolicy> getPricingPolicy() {
     return Optional.of(cafePricingPolicy);
+  }
+
+  @Override
+  public Optional<RunningOrderStore> getRunningOrderStore() {
+    return Optional.of(runningOrderStore);
   }
 }
