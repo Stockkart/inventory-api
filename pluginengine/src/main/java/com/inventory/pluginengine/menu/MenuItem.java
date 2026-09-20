@@ -14,4 +14,10 @@ public class MenuItem {
   private Boolean available;
   private String cgst;
   private String sgst;
+
+  /**
+   * Kitchen routing department. Null means {@link MenuDepartments#DEFAULT}. Resolved at punch
+   * time and then frozen onto the order line and ticket.
+   */
+  private String department;
 }
