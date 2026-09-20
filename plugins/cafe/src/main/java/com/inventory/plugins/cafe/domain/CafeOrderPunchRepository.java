@@ -1,6 +1,5 @@
-package com.inventory.plugins.cafe.repository;
+package com.inventory.plugins.cafe.domain;
 
-import com.inventory.plugins.cafe.domain.CafeOrderPunch;
 import java.util.Optional;
 import org.springframework.data.mongodb.repository.MongoRepository;
 
