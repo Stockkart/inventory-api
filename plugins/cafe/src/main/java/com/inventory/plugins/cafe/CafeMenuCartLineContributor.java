@@ -100,6 +100,7 @@ public class CafeMenuCartLineContributor implements CartLineContributor {
           .baseQuantity(qty)
           .unitFactor(1)
           .department(MenuDepartments.resolve(menuItem.getDepartment()))
+          .note(normalizeNote(input.getNote()))
           .build();
     }
 
@@ -132,7 +133,17 @@ public class CafeMenuCartLineContributor implements CartLineContributor {
         .cgst(cgst)
         .sgst(sgst)
         .department(MenuDepartments.resolve(menuItem.getDepartment()))
+        .note(normalizeNote(input.getNote()))
         .build();
+  }
+
+  /** Blank or whitespace-only becomes null — an empty instruction line is noise on a ticket. */
+  private static String normalizeNote(String note) {
+    if (note == null) {
+      return null;
+    }
+    String trimmed = note.trim();
+    return trimmed.isEmpty() ? null : trimmed;
   }
 
   private CartLineSnapshot buildInventoryLine(

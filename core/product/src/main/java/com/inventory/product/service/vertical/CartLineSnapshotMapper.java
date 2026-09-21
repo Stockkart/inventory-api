@@ -33,6 +33,7 @@ public class CartLineSnapshotMapper {
     item.setPackUnitUqc(snapshot.getPackUnitUqc());
     item.setBaseQuantity(snapshot.getBaseQuantity());
     item.setDepartment(snapshot.getDepartment());
+    item.setNote(snapshot.getNote());
     item.setUnitFactor(snapshot.getUnitFactor() != null ? snapshot.getUnitFactor() : 1);
     item.setMaximumRetailPrice(snapshot.getMaximumRetailPrice());
     item.setPriceToRetail(snapshot.getPriceToRetail());

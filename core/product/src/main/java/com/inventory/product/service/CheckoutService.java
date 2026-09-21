@@ -2145,6 +2145,7 @@ public class CheckoutService {
         .quantity(item.getQuantity())
         .baseQuantity(item.getBaseQuantity())
         .unit(item.getUnit())
+        .note(item.getNote())
         .priceToRetail(item.getPriceToRetail())
         .saleAdditionalDiscount(item.getSaleAdditionalDiscount())
         .schemeType(item.getSchemeType() != null ? item.getSchemeType().name() : null)

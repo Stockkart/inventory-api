@@ -39,4 +39,22 @@ class CartLineSnapshotMapperTest {
 
     assertNull(item.getDepartment());
   }
+
+  @Test
+  void noteSurvivesTheCopyToPurchaseItem() {
+    CartLineSnapshot snapshot = CartLineSnapshot.builder().note("no onion").build();
+
+    PurchaseItem item = mapper.toPurchaseItem(snapshot);
+
+    assertEquals("no onion", item.getNote());
+  }
+
+  @Test
+  void nullNoteMapsToNullRatherThanThrowing() {
+    CartLineSnapshot snapshot = CartLineSnapshot.builder().note(null).build();
+
+    PurchaseItem item = mapper.toPurchaseItem(snapshot);
+
+    assertNull(item.getNote());
+  }
 }
