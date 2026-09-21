@@ -64,8 +64,8 @@
     <div th:if="${tableLabel}" class="big">Table <span th:text="${tableLabel}">T4</span></div>
     <div th:if="${tokenNo}" class="big">Token <span th:text="${tokenNo}">12</span></div>
     <div>
-      Order <span th:text="${orderNo}">7</span>
-      <span class="gap" th:text="${printedAt}">20/09 14:05</span>
+      <span th:if="${orderNo}">Order <span th:text="${orderNo}">7</span></span>
+      <span th:classappend="${orderNo} ? 'gap' : _" th:text="${printedAt}">20/09 14:05</span>
     </div>
     <div th:if="${stewardName}" th:text="'By ' + ${stewardName}">By Asha</div>
   </div>
