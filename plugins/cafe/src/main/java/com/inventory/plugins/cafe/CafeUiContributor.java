@@ -43,6 +43,13 @@ public class CafeUiContributor implements VerticalUiContributor {
                     .id("menu-sell")
                     .label("Sell")
                     .path("/dashboard/menu-sell")
+                    .build(),
+                // The cafe sidebar is contributed by the backend, not by the frontend plugin's
+                // nav.ts — without this entry the running-order screen has no way in.
+                NavItemDef.builder()
+                    .id("cafe-orders")
+                    .label("Orders")
+                    .path("/dashboard/cafe-orders")
                     .build()))
         .features(
             FeatureFlags.builder()
