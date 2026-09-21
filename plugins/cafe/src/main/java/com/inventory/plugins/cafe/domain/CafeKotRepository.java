@@ -8,8 +8,6 @@ public interface CafeKotRepository extends MongoRepository<CafeKot, String> {
 
   Optional<CafeKot> findByIdAndShopId(String id, String shopId);
 
-  List<CafeKot> findByShopIdAndOrderId(String shopId, String orderId);
-
   List<CafeKot> findByShopIdAndPunchId(String shopId, String punchId);
 
   /** Used when redriving a punch that was claimed but never finished. */

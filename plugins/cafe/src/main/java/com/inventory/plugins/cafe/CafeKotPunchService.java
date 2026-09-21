@@ -224,7 +224,7 @@ public class CafeKotPunchService {
                 CafeKot fresh = new CafeKot();
                 fresh.setId(k);
                 fresh.setShopId(shopId);
-                fresh.setOrderId(purchaseId);
+                fresh.setPurchaseId(purchaseId);
                 fresh.setDepartment(department);
                 fresh.setKind(kind);
                 fresh.setRoundNo(roundNo);

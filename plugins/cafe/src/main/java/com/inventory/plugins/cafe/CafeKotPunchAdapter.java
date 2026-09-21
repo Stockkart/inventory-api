@@ -47,7 +47,7 @@ public class CafeKotPunchAdapter implements CafeKotPunchPort {
     return CafeKotTicket.builder()
         .kotId(kot.getId())
         .shopId(kot.getShopId())
-        .purchaseId(kot.getOrderId())
+        .purchaseId(kot.getPurchaseId())
         .kotNo(kot.getKotNo())
         .department(kot.getDepartment())
         .roundNo(kot.getRoundNo())

@@ -48,8 +48,6 @@ public class RbacService {
   public static final String MODULE_MARKETING = "marketing";
   public static final String MODULE_PAYMENT_PLAN = "paymentPlan";
   public static final String MODULE_PRODUCT_SEARCH_EDIT = "productSearchEdit";
-  /** Voiding a kitchen ticket or cancelling a running order. Withheld from cashiers. */
-  public static final String MODULE_KOT_VOID = "kotVoid";
 
   public static final String TEAM_MANAGE_INVITATIONS = "manageInvitations";
   public static final String TEAM_MANAGE_JOIN_REQUESTS = "manageJoinRequests";
@@ -440,7 +438,6 @@ public class RbacService {
     modules.put(MODULE_STOCK_CORRECTION, fullStaff && !cashier);
     modules.put(MODULE_MARKETING, fullStaff && !cashier);
     modules.put(MODULE_PAYMENT_PLAN, fullStaff && !cashier);
-    modules.put(MODULE_KOT_VOID, fullStaff && !cashier);
     modules.put(MODULE_PRODUCT_SEARCH_EDIT, false);
     return modules;
   }

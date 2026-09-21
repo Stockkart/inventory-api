@@ -19,7 +19,6 @@ import org.springframework.data.mongodb.core.mapping.Document;
 @Data
 @Document(collection = "cafe_kots")
 @CompoundIndexes({
-  @CompoundIndex(name = "shop_order", def = "{'shopId': 1, 'orderId': 1}"),
   @CompoundIndex(name = "shop_punch", def = "{'shopId': 1, 'punchId': 1}")
 })
 public class CafeKot {
@@ -28,7 +27,7 @@ public class CafeKot {
 
   @Indexed private String shopId;
 
-  private String orderId;
+  private String purchaseId;
   private Integer kotNo;
   private String department;
 

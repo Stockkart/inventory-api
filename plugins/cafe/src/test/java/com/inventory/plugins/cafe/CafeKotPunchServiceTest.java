@@ -147,7 +147,7 @@ class CafeKotPunchServiceTest {
     assertEquals(CafeKotKind.ISSUE, kitchen.getKind());
     assertEquals(CafeKotStatus.ISSUED, kitchen.getStatus());
     assertEquals("punch-1", kitchen.getPunchId());
-    assertEquals("p1", kitchen.getOrderId());
+    assertEquals("p1", kitchen.getPurchaseId());
     assertEquals("shop-1", kitchen.getShopId());
     assertEquals(LocalDate.now().toString(), kitchen.getBusinessDate());
     assertEquals(7, kitchen.getKotNo());
