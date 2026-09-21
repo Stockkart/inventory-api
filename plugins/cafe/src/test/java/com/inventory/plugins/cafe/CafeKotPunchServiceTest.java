@@ -118,6 +118,13 @@ class CafeKotPunchServiceTest {
     return (Update) update.getValue();
   }
 
+  /** The query markComplete matched the punch subdocument by, so a caller can assert its shop scoping. */
+  private Query capturedPurchaseUpdateQuery() {
+    ArgumentCaptor<Query> query = ArgumentCaptor.forClass(Query.class);
+    verify(mongoTemplate).updateFirst(query.capture(), any(UpdateDefinition.class), eq("purchases"));
+    return query.getValue();
+  }
+
   // ------------------------------------------------------------------- tests
 
   @Test
@@ -158,6 +165,10 @@ class CafeKotPunchServiceTest {
     assertEquals(
         List.of("punch-1:KITCHEN:ISSUE", "punch-1:BAR:ISSUE"),
         set.get("cafeKotPunches.$.kotIds"));
+
+    // markComplete's own match is shop-scoped too, not just the initial punch lookup: the query
+    // captured by capturedPurchaseUpdate() above is otherwise verified only with any(Query.class).
+    assertEquals("shop-1", capturedPurchaseUpdateQuery().getQueryObject().get("shopId"));
   }
 
   @Test
@@ -235,6 +246,38 @@ class CafeKotPunchServiceTest {
         List.of("punch-1:KITCHEN:ISSUE", "punch-1:BAR:ISSUE"), set.get("cafeKotPunches.$.kotIds"));
     assertEquals("COMPLETE", set.get("cafeKotPunches.$.status"));
     assertEquals(1, kots.size(), "only the ticket written here is returned when the rest are absent");
+  }
+
+  @Test
+  void aCrashAfterSaveButBeforeMarkCompleteKeepsTheSurvivingTicketsNumber() {
+    // The exact window this task exists for: an earlier attempt's saveAll (:162) landed the
+    // KITCHEN ticket in the repository, but the process died before markComplete (:174) ever
+    // recorded it in kotIds. kotIds is therefore still empty on this replay, even though the
+    // ticket — with a kotNo already printed and in the kitchen's hands — exists.
+    Document kitchen = delta("menu:m1", "Biryani", "KITCHEN", 2);
+    Document bar = delta("menu:m2", "Coke", "BAR", 1);
+    purchaseHasPunch(punchDoc("PENDING_KOT_CREATION", List.of(kitchen, bar), List.of()));
+    CafeKot alreadySaved = new CafeKot();
+    alreadySaved.setId("punch-1:KITCHEN:ISSUE");
+    alreadySaved.setKotNo(42);
+    when(kotRepository.findByShopIdAndPunchId("shop-1", "punch-1")).thenReturn(List.of(alreadySaved));
+
+    List<CafeKot> kots = service.punch("shop-1", "user-1", "p1", "key-1");
+
+    // Only the genuinely missing BAR ticket is (re)saved, and only it burns a sequence number.
+    // If the fix regresses to trusting kotIds alone, this would instead re-save KITCHEN too and
+    // allocate a second, fresh kotNo for it.
+    assertEquals(List.of("punch-1:BAR:ISSUE"), newlyCreatedKotIds());
+    verify(sequenceService, times(1))
+        .allocate(eq("shop-1"), any(LocalDate.class), eq(CafeSequenceSeries.KOT));
+
+    CafeKot kitchenTicket =
+        kots.stream()
+            .filter(k -> k.getId().equals("punch-1:KITCHEN:ISSUE"))
+            .findFirst()
+            .orElseThrow();
+    assertEquals(
+        42, kitchenTicket.getKotNo(), "the surviving ticket keeps the number already on paper");
   }
 
   @Test

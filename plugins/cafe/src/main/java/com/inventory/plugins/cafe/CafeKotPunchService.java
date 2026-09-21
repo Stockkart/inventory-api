@@ -150,7 +150,16 @@ public class CafeKotPunchService {
     String punchId = punch.getString("punchId");
     List<CafeKot> desired = tickets(shopId, userId, purchaseId, purchase, punch);
 
+    // `punch.kotIds` alone is not proof of what is missing: an attempt can die after saveAll (:162
+    // as was) but before markComplete, leaving kotIds empty while the ticket already sits in the
+    // repository. Trusting kotIds alone there would re-allocate a kotNo for a ticket that already
+    // has one and saveAll would overwrite the stored document, renumbering paper a cook is already
+    // holding. So the actual repository contents for this punch are the source of truth for what
+    // exists; kotIds is consulted too only because it can name tickets a stale read might miss.
+    List<CafeKot> existing = kotRepository.findByShopIdAndPunchId(shopId, punchId);
     Set<String> alreadyWritten = new LinkedHashSet<>(stringList(punch, "kotIds"));
+    existing.forEach(k -> alreadyWritten.add(k.getId()));
+
     List<CafeKot> missing = desired.stream().filter(k -> !alreadyWritten.contains(k.getId())).toList();
 
     for (CafeKot kot : missing) {
@@ -177,7 +186,7 @@ public class CafeKotPunchService {
       return created;
     }
     Map<String, CafeKot> byId = new LinkedHashMap<>();
-    kotRepository.findByShopIdAndPunchId(shopId, punchId).forEach(k -> byId.put(k.getId(), k));
+    existing.forEach(k -> byId.put(k.getId(), k));
     created.forEach(k -> byId.put(k.getId(), k));
     return kotIds.stream().map(byId::get).filter(Objects::nonNull).toList();
   }
@@ -249,11 +258,7 @@ public class CafeKotPunchService {
                 .is(shopId)
                 .and(PUNCHES + ".punchId")
                 .is(punchId));
-    Update update =
-        new Update()
-            .set(PUNCHES + ".$.status", COMPLETE)
-            .set(PUNCHES + ".$.kotIds", kotIds)
-            .set(PUNCHES + ".$.completedAt", Instant.now());
+    Update update = new Update().set(PUNCHES + ".$.status", COMPLETE).set(PUNCHES + ".$.kotIds", kotIds);
     mongoTemplate.updateFirst(query, update, PURCHASES);
   }
 
@@ -286,7 +291,11 @@ public class CafeKotPunchService {
         return i + 1;
       }
     }
-    return punches.size();
+    // The caller always passes the punchId of a punch it just read off this very purchase
+    // document, so it must be found above. Silently falling back to punches.size() would hand out
+    // a duplicate round number instead of surfacing the inconsistency.
+    throw new IllegalStateException(
+        "Punch " + punchId + " is not among the punches on purchase " + purchase.get("_id"));
   }
 
   @SuppressWarnings("unchecked")
@@ -309,6 +318,11 @@ public class CafeKotPunchService {
 
   /** Mongo returns whatever numeric width the pipeline produced; an Integer is not guaranteed. */
   private static int intValue(Object raw) {
-    return raw instanceof Number number ? number.intValue() : 0;
+    if (raw instanceof Number number) {
+      return number.intValue();
+    }
+    // $subtract always yields a number, so this is unreachable today; but a malformed delta
+    // quantity must fail loudly rather than be silently treated as zero and dropped.
+    throw new IllegalStateException("Cafe KOT delta quantity is not a number: " + raw);
   }
 }
