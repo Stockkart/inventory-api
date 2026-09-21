@@ -198,6 +198,13 @@ public class CafeCartPuncher {
                 .append("as", "line")
                 .append("in", reconciledLine));
 
+    // Keep everything EXCEPT the lines at zero on both counts. The second $eq is, today, implied
+    // by the first: the $map above has just set kotPunchedQuantity to $ifNull(baseQuantity, 0), so
+    // a line with base 0 necessarily has punched 0. It stays because it states the condition the
+    // spec actually names rather than a consequence of the stage above it — if that $map ever
+    // advances lines by anything other than their own baseQuantity, a one-clause guard would
+    // quietly start deleting lines that still owe the kitchen a cancellation, while this one would
+    // not.
     Document keep =
         new Document(
             "$not",

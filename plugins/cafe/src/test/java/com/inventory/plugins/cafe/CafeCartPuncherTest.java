@@ -216,33 +216,54 @@ class CafeCartPuncherTest {
     assertEquals(List.of(), punch.get("kotIds"));
   }
 
+  /**
+   * Operand order is exactly as load-bearing as stage order, so it is asserted positionally rather
+   * than by substring. Swapping to {@code punched - base} leaves every substring of a contains-based
+   * assertion intact while negating every delta: a punch of two samosas would reach the kitchen as a
+   * cancellation of two.
+   */
   @Test
-  void deltaIsBaseMinusPunchedNullSafeAndFilteredToNonZero() {
+  void deltaIsBaseMinusPunchedInThatOrderAndNullSafeOnBothSides() {
     stub(new Document("_id", "pur-1"));
 
-    String deltas = appendedPunch(capturePipeline()).get("deltas", Document.class).toJson();
+    Document quantity = mappedDelta(capturePipeline()).get("quantity", Document.class);
+    List<?> operands = quantity.get("$subtract", List.class);
 
-    assertTrue(deltas.contains("$subtract"), deltas);
-    assertTrue(deltas.contains("$$line.baseQuantity"), deltas);
-    assertTrue(deltas.contains("$$line.kotPunchedQuantity"), deltas);
-    // null-safe on the punched side — a never-punched line must read as 0, not null
-    assertTrue(deltas.contains("$ifNull"), deltas);
-    // only the lines that actually moved reach the kitchen
-    assertTrue(deltas.contains("$filter"), deltas);
-    assertTrue(deltas.contains("$ne"), deltas);
+    assertEquals(2, operands.size(), quantity.toJson());
+    assertEquals(
+        new Document("$ifNull", List.of("$$line.baseQuantity", 0)),
+        operands.get(0),
+        "the MINUEND must be baseQuantity; reversed, every delta reaches the kitchen negated");
+    assertEquals(
+        new Document("$ifNull", List.of("$$line.kotPunchedQuantity", 0)),
+        operands.get(1),
+        "the SUBTRAHEND must be kotPunchedQuantity; reversed, every delta reaches the kitchen "
+            + "negated");
+  }
+
+  /** Only the lines that actually moved reach the kitchen — and a cancellation still counts. */
+  @Test
+  void deltasAreFilteredToExactlyTheLinesThatMoved() {
+    stub(new Document("_id", "pur-1"));
+
+    Document filter =
+        appendedPunch(capturePipeline())
+            .get("deltas", Document.class)
+            .get("$filter", Document.class);
+
+    assertEquals("delta", filter.get("as"));
+    // $ne and not, say, $gt: a negative delta is a cancellation the kitchen must still be told of.
+    assertEquals(
+        new Document("$ne", List.of("$$delta.quantity", 0)),
+        filter.get("cond"),
+        "a zero delta is noise, but a negative one is a cancellation and must survive");
   }
 
   @Test
   void deltaCarriesEverythingTicketCreationNeedsSoThereIsNoSecondLookup() {
     stub(new Document("_id", "pur-1"));
 
-    Document deltas = appendedPunch(capturePipeline()).get("deltas", Document.class);
-    Document mapped =
-        deltas
-            .get("$filter", Document.class)
-            .get("input", Document.class)
-            .get("$map", Document.class)
-            .get("in", Document.class);
+    Document mapped = mappedDelta(capturePipeline());
 
     assertEquals("$$line.sellableRef", mapped.get("sellableRef"));
     assertEquals("$$line.name", mapped.get("name"));
@@ -261,17 +282,73 @@ class CafeCartPuncherTest {
     assertTrue(json.contains("cafeKotPunches"), json);
   }
 
+  /**
+   * Every line's own baseQuantity, merged in rather than rebuilt: a PurchaseItem carries some forty
+   * pricing/tax/scheme fields that a rebuilt document would silently drop.
+   */
   @Test
-  void reconcileAdvancesEveryLineToItsOwnBaseQuantityAndDropsTheEmptyOnes() {
+  void reconcileAdvancesEveryLineToItsOwnBaseQuantity() {
     stub(new Document("_id", "pur-1"));
 
-    String items = stageSetting(capturePipeline(), "items").toJson();
+    Document map =
+        stageSetting(capturePipeline(), "items")
+            .get("$filter", Document.class)
+            .get("input", Document.class)
+            .get("$map", Document.class);
 
-    assertTrue(items.contains("kotPunchedQuantity"), items);
-    assertTrue(items.contains("$$line.baseQuantity"), items);
-    assertTrue(items.contains("$mergeObjects"), items);
-    // a line left at base 0 / punched 0 is dead weight and must go
-    assertTrue(items.contains("$filter"), items);
+    assertEquals("line", map.get("as"));
+    assertEquals(
+        new Document(
+            "$mergeObjects",
+            List.of(
+                "$$line",
+                new Document(
+                    "kotPunchedQuantity",
+                    new Document("$ifNull", List.of("$$line.baseQuantity", 0))))),
+        map.get("in"),
+        "each line must advance to ITS OWN baseQuantity, keeping all its other fields");
+  }
+
+  /**
+   * The sweep condition is asserted in full, not merely shown to exist. A {@code cond} that is
+   * inverted, or that drops everything, permanently deletes cart lines — some of which may still
+   * owe the kitchen a cancellation — and a test that only checks a {@code $filter} is present would
+   * pass against every one of those.
+   */
+  @Test
+  void onlyTheLinesEmptyOnBothCountsAreSweptAway() {
+    stub(new Document("_id", "pur-1"));
+
+    Document filter = stageSetting(capturePipeline(), "items").get("$filter", Document.class);
+
+    assertEquals("line", filter.get("as"));
+    assertEquals(
+        new Document(
+            "$not",
+            List.of(
+                new Document(
+                    "$and",
+                    List.of(
+                        new Document(
+                            "$eq",
+                            List.of(new Document("$ifNull", List.of("$$line.baseQuantity", 0)), 0)),
+                        new Document(
+                            "$eq",
+                            List.of(
+                                new Document("$ifNull", List.of("$$line.kotPunchedQuantity", 0)),
+                                0)))))),
+        filter.get("cond"),
+        "KEEP every line except the ones at zero on both counts; inverted, this deletes the cart");
+  }
+
+  /** The per-line delta expression, i.e. the {@code in} of the deltas' inner {@code $map}. */
+  private Document mappedDelta(List<Document> pipeline) {
+    return appendedPunch(pipeline)
+        .get("deltas", Document.class)
+        .get("$filter", Document.class)
+        .get("input", Document.class)
+        .get("$map", Document.class)
+        .get("in", Document.class);
   }
 
   @SuppressWarnings("unchecked")
