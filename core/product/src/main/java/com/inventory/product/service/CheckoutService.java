@@ -2162,7 +2162,7 @@ public class CheckoutService {
     return PurchaseItemRefs.lineKey(item);
   }
 
-  private void mergeMenuCartLine(List<PurchaseItem> mergedItems, PurchaseItem newItem) {
+  void mergeMenuCartLine(List<PurchaseItem> mergedItems, PurchaseItem newItem) {
     for (int i = 0; i < mergedItems.size(); i++) {
       PurchaseItem existing = mergedItems.get(i);
       if (!sameCartLine(existing, newItem)) {
@@ -2172,6 +2172,17 @@ public class CheckoutService {
       int addQty = newItem.getBaseQuantity() != null ? newItem.getBaseQuantity() : 0;
       int combined = existingQty + addQty;
       if (combined <= 0) {
+        int punched =
+            existing.getKotPunchedQuantity() != null ? existing.getKotPunchedQuantity() : 0;
+        if (punched > 0) {
+          // The kitchen has this food. Deleting the line would destroy the only record
+          // from which its cancellation can be computed, so keep it at zero until a punch
+          // reconciles it.
+          existing.setBaseQuantity(0);
+          existing.setQuantity(BigDecimal.ZERO);
+          existing.setTotalAmount(BigDecimal.ZERO);
+          return;
+        }
         mergedItems.remove(i);
         return;
       }
