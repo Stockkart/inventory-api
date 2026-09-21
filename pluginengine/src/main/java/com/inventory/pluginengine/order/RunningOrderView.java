@@ -23,5 +23,9 @@ public class RunningOrderView {
   private String status;
   private String purchaseId;
   private String businessDate;
+
+  /** How many rounds have been punched. Counted by the backend; never derived client-side. */
+  private Integer roundsPunched;
+
   private List<RunningOrderLineView> lines;
 }

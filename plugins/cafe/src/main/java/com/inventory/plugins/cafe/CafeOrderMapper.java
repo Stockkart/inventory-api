@@ -16,6 +16,10 @@ final class CafeOrderMapper {
   private CafeOrderMapper() {}
 
   static RunningOrderView toView(CafeOrder order) {
+    return toView(order, 0);
+  }
+
+  static RunningOrderView toView(CafeOrder order, int roundsPunched) {
     return RunningOrderView.builder()
         .orderId(order.getId())
         .shopId(order.getShopId())
@@ -26,6 +30,7 @@ final class CafeOrderMapper {
         .status(order.getStatus() != null ? order.getStatus().name() : null)
         .purchaseId(order.getPurchaseId())
         .businessDate(order.getBusinessDate())
+        .roundsPunched(roundsPunched)
         .lines(
             order.getLines().stream()
                 .map(

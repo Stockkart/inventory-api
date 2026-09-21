@@ -32,6 +32,7 @@ class CafeRunningOrderStoreVoidTest {
 
   private CafeOrderRepository orderRepository;
   private CafeKotRepository kotRepository;
+  private CafeOrderPunchRepository punchRepository;
   private CafeRunningOrderStore store;
   private CafeOrder order;
   private CafeKot kot;
@@ -40,11 +41,12 @@ class CafeRunningOrderStoreVoidTest {
   void setUp() {
     orderRepository = mock(CafeOrderRepository.class);
     kotRepository = mock(CafeKotRepository.class);
+    punchRepository = mock(CafeOrderPunchRepository.class);
     store =
         new CafeRunningOrderStore(
             orderRepository,
             kotRepository,
-            mock(CafeOrderPunchRepository.class),
+            punchRepository,
             mock(CafeSequenceService.class),
             mock(ShopMenuLookup.class));
 
@@ -291,5 +293,12 @@ class CafeRunningOrderStoreVoidTest {
     store.markBilled("shop-1", "user-1", "order-1");
     assertThrows(
         ValidationException.class, () -> store.markBilled("shop-1", "user-1", "order-1"));
+  }
+
+  @Test
+  void anOrderViewReportsHowManyRoundsHaveBeenPunched() {
+    when(punchRepository.countByShopIdAndOrderId("shop-1", "order-1")).thenReturn(3L);
+
+    assertEquals(3, store.findOrder("shop-1", "order-1").orElseThrow().getRoundsPunched());
   }
 }

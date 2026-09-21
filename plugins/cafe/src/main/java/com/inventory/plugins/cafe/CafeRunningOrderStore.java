@@ -102,7 +102,9 @@ public class CafeRunningOrderStore implements RunningOrderStore {
 
   @Override
   public Optional<RunningOrderView> findOrder(String shopId, String orderId) {
-    return orderRepository.findByIdAndShopId(orderId, shopId).map(CafeOrderMapper::toView);
+    return orderRepository
+        .findByIdAndShopId(orderId, shopId)
+        .map(o -> CafeOrderMapper.toView(o, (int) punchRepository.countByShopIdAndOrderId(shopId, o.getId())));
   }
 
   @Override
@@ -110,7 +112,7 @@ public class CafeRunningOrderStore implements RunningOrderStore {
     return orderRepository
         .findByShopIdAndStatusOrderByOrderNoDesc(shopId, CafeOrderStatus.OPEN)
         .stream()
-        .map(CafeOrderMapper::toView)
+        .map(o -> CafeOrderMapper.toView(o, (int) punchRepository.countByShopIdAndOrderId(shopId, o.getId())))
         .toList();
   }
 
