@@ -81,6 +81,9 @@ public class PurchaseItem {
    */
   private Integer kotPunchedQuantity;
 
+  /** Kitchen station, resolved and frozen when the line was added. */
+  private String department;
+
   private Integer unitFactor;
   private List<AvailableUnit> availableUnits;
   private BigDecimal maximumRetailPrice;

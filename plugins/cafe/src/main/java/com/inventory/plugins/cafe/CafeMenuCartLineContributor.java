@@ -13,6 +13,7 @@ import com.inventory.pluginengine.cart.CartSellMode;
 import com.inventory.pluginengine.integration.InventoryCartLookup;
 import com.inventory.pluginengine.integration.InventoryLineSnapshot;
 import com.inventory.pluginengine.integration.ShopMenuLookup;
+import com.inventory.pluginengine.menu.MenuDepartments;
 import com.inventory.pluginengine.menu.MenuItem;
 import com.inventory.pluginengine.ref.SellableRef;
 import com.inventory.plugins.cafe.repository.CafeInventoryExtensionRepository;
@@ -98,6 +99,7 @@ public class CafeMenuCartLineContributor implements CartLineContributor {
           .saleUnit("PCS")
           .baseQuantity(qty)
           .unitFactor(1)
+          .department(MenuDepartments.resolve(menuItem.getDepartment()))
           .build();
     }
 
@@ -129,6 +131,7 @@ public class CafeMenuCartLineContributor implements CartLineContributor {
         .totalAmount(total)
         .cgst(cgst)
         .sgst(sgst)
+        .department(MenuDepartments.resolve(menuItem.getDepartment()))
         .build();
   }
 

@@ -22,6 +22,9 @@ public class CartLineSnapshot {
   private Integer baseQuantity;
   private Integer unitFactor;
 
+  /** Kitchen station, resolved and frozen when the line was added (cafe only). */
+  private String department;
+
   private BigDecimal maximumRetailPrice;
   private BigDecimal priceToRetail;
   private BigDecimal discount;
