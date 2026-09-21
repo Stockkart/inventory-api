@@ -9,6 +9,7 @@ import com.inventory.pluginengine.capabilities.VerticalUiContributor;
 import com.inventory.pluginengine.cart.CartLineContributor;
 import com.inventory.pluginengine.cart.CheckoutCompletionHandler;
 import com.inventory.pluginengine.cart.QuotationCreateHandler;
+import com.inventory.pluginengine.kot.CafeKotPunchPort;
 import com.inventory.pluginengine.menu.MenuVerticalValidator;
 import com.inventory.pluginengine.order.RunningOrderStore;
 import com.inventory.pluginengine.pricing.VerticalPricingPolicy;
@@ -29,6 +30,7 @@ public class CafePlugin extends ConfiguredVerticalPlugin {
   private final CafeQuotationCreateHandler quotationCreateHandler;
   private final CafePricingPolicy cafePricingPolicy;
   private final CafeRunningOrderStore runningOrderStore;
+  private final CafeKotPunchAdapter kotPunchAdapter;
 
   public CafePlugin(
       CafeVerticalProperties properties,
@@ -40,7 +42,8 @@ public class CafePlugin extends ConfiguredVerticalPlugin {
       CafeCheckoutCompletionHandler checkoutCompletionHandler,
       CafeQuotationCreateHandler quotationCreateHandler,
       CafePricingPolicy cafePricingPolicy,
-      CafeRunningOrderStore runningOrderStore) {
+      CafeRunningOrderStore runningOrderStore,
+      CafeKotPunchAdapter kotPunchAdapter) {
     super(properties.getId(), properties.getVersion());
     this.inventoryValidator = new SchemaDrivenInventoryValidator(properties.getId());
     this.extensionRepository = extensionRepository;
@@ -52,6 +55,7 @@ public class CafePlugin extends ConfiguredVerticalPlugin {
     this.quotationCreateHandler = quotationCreateHandler;
     this.cafePricingPolicy = cafePricingPolicy;
     this.runningOrderStore = runningOrderStore;
+    this.kotPunchAdapter = kotPunchAdapter;
   }
 
   @Override
@@ -102,5 +106,10 @@ public class CafePlugin extends ConfiguredVerticalPlugin {
   @Override
   public Optional<RunningOrderStore> getRunningOrderStore() {
     return Optional.of(runningOrderStore);
+  }
+
+  @Override
+  public Optional<CafeKotPunchPort> getCafeKotPunchPort() {
+    return Optional.of(kotPunchAdapter);
   }
 }

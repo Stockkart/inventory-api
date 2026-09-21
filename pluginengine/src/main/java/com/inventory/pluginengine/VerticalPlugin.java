@@ -4,6 +4,7 @@ import com.inventory.pluginengine.capabilities.VerticalUiContributor;
 import com.inventory.pluginengine.cart.CartLineContributor;
 import com.inventory.pluginengine.cart.CheckoutCompletionHandler;
 import com.inventory.pluginengine.cart.QuotationCreateHandler;
+import com.inventory.pluginengine.kot.CafeKotPunchPort;
 import com.inventory.pluginengine.menu.MenuVerticalValidator;
 import com.inventory.pluginengine.order.RunningOrderStore;
 import com.inventory.pluginengine.pricing.VerticalPricingPolicy;
@@ -58,6 +59,11 @@ public interface VerticalPlugin {
   }
 
   default Optional<VerticalPricingPolicy> getPricingPolicy() {
+    return Optional.empty();
+  }
+
+  /** Punches a cafe cart into kitchen tickets. Empty for verticals with no kitchen. */
+  default Optional<CafeKotPunchPort> getCafeKotPunchPort() {
     return Optional.empty();
   }
 }
