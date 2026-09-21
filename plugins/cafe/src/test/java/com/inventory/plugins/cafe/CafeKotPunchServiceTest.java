@@ -88,6 +88,20 @@ class CafeKotPunchServiceTest {
     return new Document("_id", "p1").append("shopId", "shop-1").append("cafeKotPunches", punches);
   }
 
+  private static Document dineInPurchase(List<Document> punches, String tableLabel, String tokenNo) {
+    return purchase(punches).append("tableLabel", tableLabel).append("tokenNo", tokenNo);
+  }
+
+  /** Like {@link #purchaseGainsPunchOnClaim} but the cart carries a table and a token. */
+  private void dineInPurchaseGainsPunchOnClaim(Document appended, String tableLabel, String tokenNo) {
+    when(mongoTemplate.findOne(any(Query.class), eq(Document.class), eq("purchases")))
+        .thenReturn(
+            dineInPurchase(List.of(), tableLabel, tokenNo),
+            dineInPurchase(List.of(appended), tableLabel, tokenNo));
+    when(puncher.claimAndReconcile(any(), any(), any(), any(), any()))
+        .thenReturn(Optional.of(dineInPurchase(List.of(), tableLabel, tokenNo)));
+  }
+
   /** Every read of the purchase in this test sees exactly this punch already on the cart. */
   private void purchaseHasPunch(Document punch) {
     when(mongoTemplate.findOne(any(Query.class), eq(Document.class), eq("purchases")))
@@ -169,6 +183,23 @@ class CafeKotPunchServiceTest {
     // markComplete's own match is shop-scoped too, not just the initial punch lookup: the query
     // captured by capturedPurchaseUpdate() above is otherwise verified only with any(Query.class).
     assertEquals("shop-1", capturedPurchaseUpdateQuery().getQueryObject().get("shopId"));
+  }
+
+  @Test
+  void aDineInCartsTicketCarriesItsTableAndToken() {
+    dineInPurchaseGainsPunchOnClaim(
+        punchDoc(
+            "PENDING_KOT_CREATION",
+            List.of(delta("menu:m1", "Biryani", "KITCHEN", 2)),
+            List.of()),
+        "T4",
+        "12");
+
+    List<CafeKot> kots = service.punch("shop-1", "user-1", "p1", "key-1");
+
+    assertEquals(1, kots.size());
+    assertEquals("T4", kots.get(0).getTableLabel());
+    assertEquals("12", kots.get(0).getTokenNo());
   }
 
   @Test

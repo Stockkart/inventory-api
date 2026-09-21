@@ -229,6 +229,8 @@ public class CafeKotPunchService {
                 fresh.setKind(kind);
                 fresh.setRoundNo(roundNo);
                 fresh.setStatus(CafeKotStatus.ISSUED);
+                fresh.setTableLabel(purchase.getString("tableLabel"));
+                fresh.setTokenNo(purchase.getString("tokenNo"));
                 fresh.setPunchId(punchId);
                 fresh.setBusinessDate(businessDate);
                 fresh.setCreatedAt(now);

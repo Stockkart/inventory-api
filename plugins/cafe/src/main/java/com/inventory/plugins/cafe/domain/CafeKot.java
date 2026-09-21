@@ -43,6 +43,13 @@ public class CafeKot {
 
   private Integer roundNo;
   private CafeKotStatus status;
+
+  /** Dine-in table the cart was punched for, frozen from the purchase. Free text; no registry. */
+  private String tableLabel;
+
+  /** Daily order token the cart was punched for, frozen from the purchase. */
+  private String tokenNo;
+
   private List<CafeKotLine> lines = new ArrayList<>();
   private String voidReason;
   private String voidedBy;

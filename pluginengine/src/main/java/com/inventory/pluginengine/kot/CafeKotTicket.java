@@ -22,6 +22,19 @@ public class CafeKotTicket {
   /** {@code ISSUE} or {@code CANCEL} — literal, mirroring the cafe-side {@code CafeKotKind}. */
   private String kind;
 
+  /**
+   * {@code ISSUED} or {@code VOIDED} — literal, mirroring the cafe-side {@code CafeKotStatus}.
+   * Tickets written before {@code kind} existed carry this instead: a ticket voided by the retired
+   * running-order path has {@code kind == null} and {@code status == "VOIDED"}.
+   */
+  private String status;
+
+  /** Dine-in table, free text. Null for tickets with no table (e.g. counter/takeaway). */
+  private String tableLabel;
+
+  /** Daily order token. Null when the cart carries none. */
+  private String tokenNo;
+
   private String businessDate;
   private List<CafeKotTicketLine> lines;
 }

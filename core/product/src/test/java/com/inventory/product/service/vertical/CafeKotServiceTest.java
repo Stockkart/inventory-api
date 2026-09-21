@@ -87,6 +87,46 @@ class CafeKotServiceTest {
   }
 
   @Test
+  void documentCarriesTableAndTokenForADineInPunch() {
+    CafeKotTicket ticket =
+        CafeKotTicket.builder()
+            .kotId("k1")
+            .shopId("s1")
+            .kind("ISSUE")
+            .kotNo(41)
+            .department("KITCHEN")
+            .roundNo(1)
+            .tableLabel("T4")
+            .tokenNo("12")
+            .lines(List.of(CafeKotTicketLine.builder().name("Tea").quantity(2).build()))
+            .build();
+    when(port.findKot("s1", "k1")).thenReturn(Optional.of(ticket));
+    when(kotPdfService.generateKotPdf(any())).thenReturn(new byte[] {1});
+
+    service.kotDocument("s1", "k1");
+
+    ArgumentCaptor<GenerateKotRequest> captor = ArgumentCaptor.forClass(GenerateKotRequest.class);
+    verify(kotPdfService).generateKotPdf(captor.capture());
+    assertEquals("T4", captor.getValue().getTableLabel());
+    assertEquals("12", captor.getValue().getTokenNo());
+  }
+
+  @Test
+  void documentRendersCancelledForALegacyVoidedTicketWithNoKind() {
+    // The running-order path this ticket predates set no `kind`; only `status` says VOIDED.
+    CafeKotTicket ticket =
+        CafeKotTicket.builder().kotId("k3").shopId("s1").status("VOIDED").lines(List.of()).build();
+    when(port.findKot("s1", "k3")).thenReturn(Optional.of(ticket));
+    when(kotPdfService.generateKotPdf(any())).thenReturn(new byte[] {1});
+
+    service.kotDocument("s1", "k3");
+
+    ArgumentCaptor<GenerateKotRequest> captor = ArgumentCaptor.forClass(GenerateKotRequest.class);
+    verify(kotPdfService).generateKotPdf(captor.capture());
+    assertEquals(KotStamp.CANCELLED, captor.getValue().getStamp());
+  }
+
+  @Test
   void documentRendersCancelledForCancel() {
     CafeKotTicket ticket =
         CafeKotTicket.builder().kotId("k2").shopId("s1").kind("CANCEL").lines(List.of()).build();

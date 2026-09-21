@@ -64,8 +64,18 @@ public class CafeKotService {
         port()
             .findKot(shopId, kotId)
             .orElseThrow(() -> new ResourceNotFoundException("CafeKot", "id", kotId));
-    KotStamp stamp = "CANCEL".equals(ticket.getKind()) ? KotStamp.CANCELLED : KotStamp.NONE;
+    KotStamp stamp = isCancelled(ticket) ? KotStamp.CANCELLED : KotStamp.NONE;
     return kotPdfService.generateKotPdf(toDocumentRequest(ticket, stamp));
+  }
+
+  /**
+   * A ticket cancels if its {@code kind} says so — or, for a ticket written before {@code kind}
+   * existed (the retired running-order path, which left {@code kind == null}), if its {@code
+   * status} says VOIDED. Either signal alone is enough: a legacy voided ticket must never render
+   * unstamped.
+   */
+  private static boolean isCancelled(CafeKotTicket ticket) {
+    return "CANCEL".equals(ticket.getKind()) || "VOIDED".equals(ticket.getStatus());
   }
 
   private GenerateKotRequest toDocumentRequest(CafeKotTicket ticket, KotStamp stamp) {
@@ -73,6 +83,8 @@ public class CafeKotService {
     request.setKotNo(ticket.getKotNo());
     request.setDepartment(ticket.getDepartment());
     request.setRoundNo(ticket.getRoundNo());
+    request.setTableLabel(ticket.getTableLabel());
+    request.setTokenNo(ticket.getTokenNo());
     request.setPrintedAt(LocalDateTime.now().format(PRINTED_AT));
     request.setStamp(stamp);
     request.setItems(

@@ -52,6 +52,9 @@ public class CafeKotPunchAdapter implements CafeKotPunchPort {
         .department(kot.getDepartment())
         .roundNo(kot.getRoundNo())
         .kind(kot.getKind() == null ? null : kot.getKind().name())
+        .status(kot.getStatus() == null ? null : kot.getStatus().name())
+        .tableLabel(kot.getTableLabel())
+        .tokenNo(kot.getTokenNo())
         .businessDate(kot.getBusinessDate())
         .lines(kot.getLines() == null ? List.of() : kot.getLines().stream().map(CafeKotPunchAdapter::toLine).toList())
         .build();
