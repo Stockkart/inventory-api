@@ -72,6 +72,15 @@ public class PurchaseItem {
   private String baseUnit;
   private String packUnitUqc;
   private Integer baseQuantity;
+
+  /**
+   * Quantity currently reconciled with the kitchen.
+   *
+   * <p>Null for every vertical except cafe, and for cafe lines that have never been punched.
+   * The delta a punch sends is {@code baseQuantity - kotPunchedQuantity}.
+   */
+  private Integer kotPunchedQuantity;
+
   private Integer unitFactor;
   private List<AvailableUnit> availableUnits;
   private BigDecimal maximumRetailPrice;
