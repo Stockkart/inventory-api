@@ -31,6 +31,17 @@ public class CafeKot {
   private String orderId;
   private Integer kotNo;
   private String department;
+
+  /**
+   * Whether this ticket sends food or stops it. Null on tickets written by the running-order path,
+   * which are all ISSUE by construction.
+   *
+   * <p>This is the cafe-side carrier of the {@code KotStamp} distinction: {@code KotStamp} lives in
+   * {@code core/documentservice}, which this module does not depend on, so the printing side maps
+   * {@link CafeKotKind#CANCEL} to {@code KotStamp.CANCELLED}.
+   */
+  private CafeKotKind kind;
+
   private Integer roundNo;
   private CafeKotStatus status;
   private List<CafeKotLine> lines = new ArrayList<>();
