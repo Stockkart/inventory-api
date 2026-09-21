@@ -145,10 +145,17 @@ public final class PurchaseTaxBasisResolver {
       //    trustworthy half -- a supplier prints it, and it is the figure the credit is claimed
       //    on -- so the taxable value is recovered from it rather than from the subtotal, which
       //    is where a gross-for-net transcription lands.
+      //    Except where the tax is demonstrably the one taken on the wrong figure. A bill with a
+      //    discount on the whole invoice is taxed on what is left after it; tax worked out on the
+      //    amount before the discount is high by the discount at that rate, and recovering a
+      //    taxable value from it puts the discount back -- the error the subtotal does not carry,
+      //    because the subtotal came from the lines. Where the stated tax is what the pre-discount
+      //    subtotal would bear, the subtotal is the half that survives and is used instead.
       Set<BigDecimal> distinctRates = distinct(rates);
       if (distinctRates.size() == 1) {
         BigDecimal rate = distinctRates.iterator().next();
-        if (rate.signum() > 0 && statedTax.signum() > 0) {
+        if (rate.signum() > 0 && statedTax.signum() > 0
+            && !taxWasTakenBeforeTheDiscount(invoice, statedSubTotal, statedTax, rate)) {
           BigDecimal derived = money(
               statedTax.multiply(BigDecimal.valueOf(100))
                   .divide(rate, 2, RoundingMode.HALF_UP));
@@ -240,6 +247,29 @@ public final class PurchaseTaxBasisResolver {
    * <p>Relative to the invoice, because a rupee's drift on a lakh is rounding and a rupee's drift
    * on fifty is a mistake.
    */
+  /**
+   * Whether the stated tax is the tax the invoice would bear before its overall discount.
+   *
+   * <p>Only ever true on a bill that records such a discount. It identifies the one way the stated
+   * tax is wrong while the stated subtotal is right: the tax was worked out on the amounts before
+   * the discount came off them. An invoice whose tax agrees with its own net subtotal, or that has
+   * no discount to have missed, is untouched -- including the gross-for-net transcription this
+   * rung exists for, whose tax matches the taxable value it should have been given.
+   */
+  private static boolean taxWasTakenBeforeTheDiscount(
+      VendorPurchaseInvoice invoice, BigDecimal statedSubTotal, BigDecimal statedTax,
+      BigDecimal rate) {
+    BigDecimal discount = invoice.getOverallDiscount();
+    if (discount == null || discount.signum() <= 0) {
+      return false;
+    }
+    BigDecimal beforeDiscount = statedSubTotal.add(discount);
+    // Judged against the tax rather than the subtotal: the claim being tested is that the stated
+    // tax *is* the pre-discount tax, so it has to hold closely, not merely to half a percent of a
+    // much larger number.
+    return within(GstMath.taxOnExclusive(beforeDiscount, rate), statedTax, statedTax);
+  }
+
   private static boolean within(BigDecimal implied, BigDecimal stated, BigDecimal subTotal) {
     BigDecimal allowed = subTotal.abs().multiply(RELATIVE_TOLERANCE);
     if (allowed.compareTo(ABSOLUTE_TOLERANCE) < 0) {
