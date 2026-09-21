@@ -11,17 +11,15 @@ import java.util.Optional;
 import org.springframework.stereotype.Component;
 
 /**
- * Adapts {@link CafeKotPunchService} to {@link CafeKotPunchPort}: the only thing {@code
- * core/product} is allowed to see of the cafe cart-punch flow.
+ * Adapts {@link CafeKotRepository} to {@link CafeKotPunchPort}: the only thing {@code
+ * core/product} is allowed to see of a cafe kitchen ticket, so it can render its document.
  */
 @Component
-public class CafeKotPunchAdapter implements CafeKotPunchPort {
+public class CafeKotDocumentAdapter implements CafeKotPunchPort {
 
-  private final CafeKotPunchService punchService;
   private final CafeKotRepository kotRepository;
 
-  public CafeKotPunchAdapter(CafeKotPunchService punchService, CafeKotRepository kotRepository) {
-    this.punchService = punchService;
+  public CafeKotDocumentAdapter(CafeKotRepository kotRepository) {
     this.kotRepository = kotRepository;
   }
 
@@ -31,16 +29,8 @@ public class CafeKotPunchAdapter implements CafeKotPunchPort {
   }
 
   @Override
-  public List<CafeKotTicket> punch(
-      String shopId, String userId, String purchaseId, String idempotencyKey) {
-    return punchService.punch(shopId, userId, purchaseId, idempotencyKey).stream()
-        .map(CafeKotPunchAdapter::toTicket)
-        .toList();
-  }
-
-  @Override
   public Optional<CafeKotTicket> findKot(String shopId, String kotId) {
-    return kotRepository.findByIdAndShopId(kotId, shopId).map(CafeKotPunchAdapter::toTicket);
+    return kotRepository.findByIdAndShopId(kotId, shopId).map(CafeKotDocumentAdapter::toTicket);
   }
 
   private static CafeKotTicket toTicket(CafeKot kot) {
@@ -56,7 +46,10 @@ public class CafeKotPunchAdapter implements CafeKotPunchPort {
         .tableLabel(kot.getTableLabel())
         .tokenNo(kot.getTokenNo())
         .businessDate(kot.getBusinessDate())
-        .lines(kot.getLines() == null ? List.of() : kot.getLines().stream().map(CafeKotPunchAdapter::toLine).toList())
+        .lines(
+            kot.getLines() == null
+                ? List.of()
+                : kot.getLines().stream().map(CafeKotDocumentAdapter::toLine).toList())
         .build();
   }
 

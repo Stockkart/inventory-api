@@ -14,16 +14,13 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 
 /**
- * Cafe cart-punch orchestration: turns a reconciled cart into kitchen tickets and renders one
- * ticket's document.
+ * Renders a cafe kitchen ticket's document.
  *
- * <p>This service creates and returns tickets. It never prints — the frontend fetches the
- * document and does that.
+ * <p>This service never prints — the frontend fetches the document and does that.
  *
- * <p>The punch entities live in the cafe plugin and are reached through {@link CafeKotPunchPort},
+ * <p>The ticket entities live in the cafe plugin and are reached through {@link CafeKotPunchPort},
  * which {@code core/product} does not implement. This class adds the one thing the plugin cannot
  * see: PDF rendering, because {@code plugins/cafe} does not depend on {@code core/documentservice}.
  */
@@ -47,15 +44,6 @@ public class CafeKotService {
         .getCafeKotPunchPort()
         .orElseThrow(
             () -> new ValidationException("This shop's vertical does not support kitchen tickets"));
-  }
-
-  /** Punches the cart into kitchen tickets, or replays what an earlier attempt already created. */
-  public List<CafeKotTicket> punch(
-      String shopId, String userId, String purchaseId, String idempotencyKey) {
-    if (!StringUtils.hasText(idempotencyKey)) {
-      throw new ValidationException("Idempotency-Key is required when punching a cart");
-    }
-    return port().punch(shopId, userId, purchaseId, idempotencyKey);
   }
 
   /** The ticket's document. Renders unstamped for an issued ticket, CANCELLED for a voided one. */

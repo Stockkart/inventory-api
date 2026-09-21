@@ -56,7 +56,7 @@ public interface VerticalPlugin {
     return Optional.empty();
   }
 
-  /** Punches a cafe cart into kitchen tickets. Empty for verticals with no kitchen. */
+  /** Reads back cafe kitchen tickets. Empty for verticals with no kitchen. */
   default Optional<CafeKotPunchPort> getCafeKotPunchPort() {
     return Optional.empty();
   }

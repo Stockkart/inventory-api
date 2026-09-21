@@ -74,12 +74,11 @@ public class PurchaseItem {
   private Integer baseQuantity;
 
   /**
-   * Quantity currently reconciled with the kitchen.
+   * Quantity handed to the kitchen at flush.
    *
-   * <p>Null for every vertical except cafe, and for cafe lines that have never been punched.
-   * The delta a punch sends is {@code baseQuantity - kotPunchedQuantity}.
+   * <p>Null for every vertical except cafe, and for cafe lines that have never been sent.
    */
-  private Integer kotPunchedQuantity;
+  private Integer kotSentQuantity;
 
   /** Kitchen station, resolved and frozen when the line was added. */
   private String department;

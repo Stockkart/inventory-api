@@ -28,7 +28,7 @@ public class CafePlugin extends ConfiguredVerticalPlugin {
   private final CafeCheckoutCompletionHandler checkoutCompletionHandler;
   private final CafeQuotationCreateHandler quotationCreateHandler;
   private final CafePricingPolicy cafePricingPolicy;
-  private final CafeKotPunchAdapter kotPunchAdapter;
+  private final CafeKotDocumentAdapter kotDocumentAdapter;
 
   public CafePlugin(
       CafeVerticalProperties properties,
@@ -40,7 +40,7 @@ public class CafePlugin extends ConfiguredVerticalPlugin {
       CafeCheckoutCompletionHandler checkoutCompletionHandler,
       CafeQuotationCreateHandler quotationCreateHandler,
       CafePricingPolicy cafePricingPolicy,
-      CafeKotPunchAdapter kotPunchAdapter) {
+      CafeKotDocumentAdapter kotDocumentAdapter) {
     super(properties.getId(), properties.getVersion());
     this.inventoryValidator = new SchemaDrivenInventoryValidator(properties.getId());
     this.extensionRepository = extensionRepository;
@@ -51,7 +51,7 @@ public class CafePlugin extends ConfiguredVerticalPlugin {
     this.checkoutCompletionHandler = checkoutCompletionHandler;
     this.quotationCreateHandler = quotationCreateHandler;
     this.cafePricingPolicy = cafePricingPolicy;
-    this.kotPunchAdapter = kotPunchAdapter;
+    this.kotDocumentAdapter = kotDocumentAdapter;
   }
 
   @Override
@@ -101,6 +101,6 @@ public class CafePlugin extends ConfiguredVerticalPlugin {
 
   @Override
   public Optional<CafeKotPunchPort> getCafeKotPunchPort() {
-    return Optional.of(kotPunchAdapter);
+    return Optional.of(kotDocumentAdapter);
   }
 }

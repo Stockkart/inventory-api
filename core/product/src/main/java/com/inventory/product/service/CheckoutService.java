@@ -2173,12 +2173,12 @@ public class CheckoutService {
       int addQty = newItem.getBaseQuantity() != null ? newItem.getBaseQuantity() : 0;
       int combined = existingQty + addQty;
       if (combined <= 0) {
-        int punched =
-            existing.getKotPunchedQuantity() != null ? existing.getKotPunchedQuantity() : 0;
-        if (punched > 0) {
+        int sent =
+            existing.getKotSentQuantity() != null ? existing.getKotSentQuantity() : 0;
+        if (sent > 0) {
           // The kitchen has this food. Deleting the line would destroy the only record
-          // from which its cancellation can be computed, so keep it at zero until a punch
-          // reconciles it.
+          // from which its cancellation can be computed, so keep it at zero until the
+          // cancellation is issued.
           existing.setBaseQuantity(0);
           existing.setQuantity(BigDecimal.ZERO);
           existing.setTotalAmount(BigDecimal.ZERO);

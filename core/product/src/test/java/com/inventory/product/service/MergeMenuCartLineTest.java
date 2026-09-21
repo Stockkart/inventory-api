@@ -35,7 +35,7 @@ class MergeMenuCartLineTest {
     PurchaseItem item = new PurchaseItem();
     item.setSellableRef(ref);
     item.setBaseQuantity(baseQuantity);
-    item.setKotPunchedQuantity(punched);
+    item.setKotSentQuantity(punched);
     return item;
   }
 
@@ -57,7 +57,7 @@ class MergeMenuCartLineTest {
     // Deleting it would strand the kitchen with 3 portions nobody will bill or cancel.
     assertEquals(1, cart.size());
     assertEquals(0, cart.get(0).getBaseQuantity());
-    assertEquals(3, cart.get(0).getKotPunchedQuantity());
+    assertEquals(3, cart.get(0).getKotSentQuantity());
   }
 
   @Test
@@ -67,7 +67,7 @@ class MergeMenuCartLineTest {
     checkoutService.mergeMenuCartLine(cart, line("menu:m1", -2, null));
 
     assertEquals(1, cart.get(0).getBaseQuantity());
-    assertEquals(3, cart.get(0).getKotPunchedQuantity());
+    assertEquals(3, cart.get(0).getKotSentQuantity());
   }
 
   @Test

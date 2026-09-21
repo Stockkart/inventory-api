@@ -4,12 +4,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.inventory.common.exception.ResourceNotFoundException;
-import com.inventory.common.exception.ValidationException;
 import com.inventory.documentservice.domain.KotStamp;
 import com.inventory.documentservice.rest.dto.GenerateKotRequest;
 import com.inventory.documentservice.service.KotPdfService;
@@ -41,25 +39,6 @@ class CafeKotServiceTest {
     when(registry.require("cafe")).thenReturn(plugin);
 
     service = new CafeKotService(registry, kotPdfService);
-  }
-
-  @Test
-  void punchReturnsCreatedTickets() {
-    CafeKotTicket ticket = CafeKotTicket.builder().kotId("k1").shopId("s1").build();
-    when(port.punch("s1", "u1", "p1", "idem-1")).thenReturn(List.of(ticket));
-
-    List<CafeKotTicket> result = service.punch("s1", "u1", "p1", "idem-1");
-
-    assertEquals(1, result.size());
-    assertEquals("k1", result.get(0).getKotId());
-    verify(port).punch("s1", "u1", "p1", "idem-1");
-  }
-
-  @Test
-  void punchRejectsBlankIdempotencyKey() {
-    assertThrows(ValidationException.class, () -> service.punch("s1", "u1", "p1", "  "));
-    assertThrows(ValidationException.class, () -> service.punch("s1", "u1", "p1", null));
-    verify(port, never()).punch(any(), any(), any(), any());
   }
 
   @Test

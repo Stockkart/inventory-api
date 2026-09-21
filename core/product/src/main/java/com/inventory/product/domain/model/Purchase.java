@@ -88,10 +88,6 @@ public class Purchase {
   /** Dine-in table, free text. There is no table registry. */
   private String tableLabel;
 
-  /** Cafe kitchen punches against this cart. Embedded so a punch and the line
-   *  advance it caused are written by one atomic operation. */
-  private List<CafeKotPunch> cafeKotPunches = new ArrayList<>();
-
   private Instant createdAt;
   private Instant updatedAt;
 }
