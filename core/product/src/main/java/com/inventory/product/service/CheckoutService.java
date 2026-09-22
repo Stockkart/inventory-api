@@ -40,6 +40,7 @@ import com.inventory.pluginengine.cart.CartBuildContext;
 import com.inventory.pluginengine.cart.CartLineContributor;
 import com.inventory.pluginengine.cart.CartLineInput;
 import com.inventory.pluginengine.cart.CartLineRefs;
+import com.inventory.pluginengine.cart.CartLineReductionPort;
 import com.inventory.pluginengine.ref.SellableRef;
 import com.inventory.product.service.vertical.CartContributorResolver;
 import com.inventory.product.service.vertical.CartLineSnapshotMapper;
@@ -70,6 +71,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
+import java.nio.charset.StandardCharsets;
 
 @Service
 @Slf4j
@@ -136,6 +139,15 @@ public class CheckoutService {
 
   @Autowired(required = false)
   private com.inventory.accounting.api.AccountingFacade accountingFacade;
+
+  /**
+   * Empty for a build with no vertical wired to receive it -- only {@code plugins/cafe}
+   * implements this today. Optional the same way the collaborators above are: a unit test that
+   * builds a bare {@code CheckoutService} leaves it null, and {@link
+   * #notifyLineReductions} treats that as nothing to tell.
+   */
+  @Autowired(required = false)
+  private CartLineReductionPort cartLineReductionPort;
 
   @Autowired
   private CartContributorResolver cartContributorResolver;
@@ -1254,10 +1266,16 @@ public class CheckoutService {
     try {
       // Merge items - if same inventoryId exists, update quantity; otherwise add new
       List<PurchaseItem> mergedItems = new ArrayList<>(existingCart.getItems() != null ? existingCart.getItems() : new ArrayList<>());
+      // Reductions mergeMenuCartLine owed a kitchen notification for, told about once this
+      // request's write has landed -- see notifyLineReductions.
+      List<MenuLineReduction> menuLineReductions = new ArrayList<>();
 
       for (PurchaseItem newItem : newItems) {
         if (PurchaseItemRefs.isMenuLine(newItem)) {
-          mergeMenuCartLine(mergedItems, newItem);
+          MenuLineReduction reduction = mergeMenuCartLine(mergedItems, newItem);
+          if (reduction != null) {
+            menuLineReductions.add(reduction);
+          }
           continue;
         }
         boolean found = false;
@@ -1480,6 +1498,15 @@ public class CheckoutService {
       // If cart is empty after updates, we can either delete it or keep it with empty items
       // For now, we'll keep it with empty items (status remains CREATED)
       // You can add logic here to delete the cart if needed
+
+      // Tell the kitchen before the write lands, not after: the idempotency key and the
+      // quantities are both derived from the pre-mutation read above, so if this throws, nothing
+      // below has been written either, and an identical retry of this same request reproduces
+      // the same key and resumes cleanly -- see notifyLineReductions and cancelIdempotencyKey.
+      // A build with nothing wired for it, or a request that reduced nothing owed anywhere, is a
+      // no-op.
+      notifyLineReductions(
+          existingCart.getShopId(), existingCart.getUserId(), existingCart.getId(), menuLineReductions);
 
       // Write what this request changed, field by field and line by line -- never the whole
       // document. A full replace here writes items as this request read them several inventory
@@ -2237,7 +2264,28 @@ public class CheckoutService {
     return PurchaseItemRefs.lineKey(item);
   }
 
-  void mergeMenuCartLine(List<PurchaseItem> mergedItems, PurchaseItem newItem) {
+  /**
+   * A cart line was reduced below what the kitchen was already sent, or removed outright.
+   *
+   * <p>Carries only what {@link CartLineReductionPort} needs; {@code lineRef} is null exactly
+   * when there is nothing to notify -- a line with no {@code lineRef} at all (every grocery,
+   * medical and sports line, and a cafe line with none of the cafe fields) or a cafe line the
+   * kitchen never saw ({@code kotSentQuantity} null or zero).
+   */
+  record MenuLineReduction(String lineRef, int fromQty, int toQty) {}
+
+  private static MenuLineReduction reductionOwedFor(PurchaseItem existing, int fromQty, int toQty) {
+    if (!StringUtils.hasText(existing.getLineRef())) {
+      return null;
+    }
+    Integer sent = existing.getKotSentQuantity();
+    if (sent == null || sent <= 0) {
+      return null;
+    }
+    return new MenuLineReduction(existing.getLineRef(), fromQty, toQty);
+  }
+
+  MenuLineReduction mergeMenuCartLine(List<PurchaseItem> mergedItems, PurchaseItem newItem) {
     for (int i = 0; i < mergedItems.size(); i++) {
       PurchaseItem existing = mergedItems.get(i);
       if (!sameCartLine(existing, newItem)) {
@@ -2246,20 +2294,25 @@ public class CheckoutService {
       int existingQty = existing.getBaseQuantity() != null ? existing.getBaseQuantity() : 0;
       int addQty = newItem.getBaseQuantity() != null ? newItem.getBaseQuantity() : 0;
       int combined = existingQty + addQty;
+      // Computed before the line is mutated below, from the quantity as it stood when this
+      // request started -- a raise (addQty >= 0) never owes anything, per the cancellation
+      // design: the extra is unsent and goes through a new KOT round, not a takeback.
+      MenuLineReduction reduction =
+          addQty < 0 ? reductionOwedFor(existing, existingQty, Math.max(combined, 0)) : null;
       if (combined <= 0) {
         int sent =
             existing.getKotSentQuantity() != null ? existing.getKotSentQuantity() : 0;
         if (sent > 0) {
           // The kitchen has this food. Deleting the line would destroy the only record
           // from which its cancellation can be computed, so keep it at zero until the
-          // cancellation is issued.
+          // cancellation is issued -- the caller does that once this cart write lands.
           existing.setBaseQuantity(0);
           existing.setQuantity(BigDecimal.ZERO);
           existing.setTotalAmount(BigDecimal.ZERO);
-          return;
+          return reduction;
         }
         mergedItems.remove(i);
-        return;
+        return reduction;
       }
       existing.setBaseQuantity(combined);
       existing.setQuantity(BigDecimal.valueOf(combined));
@@ -2272,11 +2325,58 @@ public class CheckoutService {
       }
       purchaseMapper.enrichPurchaseItemMargin(existing);
       mergedItems.set(i, existing);
-      return;
+      return reduction;
     }
     if (newItem.getBaseQuantity() != null && newItem.getBaseQuantity() > 0) {
       mergedItems.add(newItem);
     }
+    return null;
+  }
+
+  /**
+   * Tells {@link #cartLineReductionPort}, if this build has one, about every reduction {@link
+   * #mergeMenuCartLine} owed a notification for -- called only after the write that stores those
+   * reductions has landed, so a retry after a failure here starts from the state this request
+   * already produced.
+   *
+   * <p>A no-op for a build with nothing wired ({@code cartLineReductionPort == null}, true for
+   * every unit test that builds a bare {@code CheckoutService}) and for a request that reduced
+   * nothing owed to anywhere -- an empty list for every grocery, medical and sports request, and
+   * for a cafe request that never touched a sent line.
+   */
+  private void notifyLineReductions(
+      String shopId, String userId, String purchaseId, List<MenuLineReduction> reductions) {
+    if (cartLineReductionPort == null || reductions.isEmpty()) {
+      return;
+    }
+    for (MenuLineReduction reduction : reductions) {
+      String idempotencyKey =
+          cancelIdempotencyKey(purchaseId, reduction.lineRef(), reduction.fromQty(), reduction.toQty());
+      cartLineReductionPort.lineReduced(
+          shopId,
+          userId,
+          purchaseId,
+          reduction.lineRef(),
+          reduction.fromQty(),
+          reduction.toQty(),
+          idempotencyKey);
+    }
+  }
+
+  /**
+   * Stable for one logical edit -- the same {@code purchaseId}, {@code lineRef}, {@code fromQty}
+   * and {@code toQty} always derive the same key, rather than a fresh random one being minted
+   * per attempt. Two concurrent requests racing from the same starting point, or one request
+   * retried after this call failed, collapse onto the same key instead of each withdrawing its
+   * own share from the kitchen -- see {@code CafeKotCancelService}'s javadoc for what a random
+   * key per attempt cost the previous round.
+   *
+   * <p>Package-private, not private, so a test can pin the derivation by name without driving a
+   * whole cart update to reach it.
+   */
+  static String cancelIdempotencyKey(String purchaseId, String lineRef, int fromQty, int toQty) {
+    String basis = purchaseId + ' ' + lineRef + ' ' + fromQty + ' ' + toQty;
+    return "cafe-cancel:" + UUID.nameUUIDFromBytes(basis.getBytes(StandardCharsets.UTF_8));
   }
 
   private static final Set<String> CHECKOUT_VERTICALS = Set.of("grocery", "cafe", "sports", "medical");
