@@ -88,6 +88,13 @@ public class Purchase {
   /** Dine-in table, free text. There is no table registry. */
   private String tableLabel;
 
+  /**
+   * Cancellations owed to the kitchen for this bill's lines, one entry per {@code
+   * CafeKotCancelService.cancel} call. Written by {@code plugins/cafe} as raw BSON; see {@link
+   * CafeKotCancel} for why and for the idempotency shape.
+   */
+  private List<CafeKotCancel> cafeKotCancels;
+
   private Instant createdAt;
   private Instant updatedAt;
 }
