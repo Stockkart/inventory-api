@@ -19,7 +19,8 @@ import org.springframework.data.mongodb.core.mapping.Document;
 @Data
 @Document(collection = "cafe_kots")
 @CompoundIndexes({
-  @CompoundIndex(name = "shop_punch", def = "{'shopId': 1, 'punchId': 1}")
+  @CompoundIndex(name = "shop_punch", def = "{'shopId': 1, 'punchId': 1}"),
+  @CompoundIndex(name = "shop_flush", def = "{'shopId': 1, 'flushId': 1}")
 })
 public class CafeKot {
 
@@ -61,6 +62,18 @@ public class CafeKot {
    * creates one ticket per department, so a key on this document could not be unique across them.
    */
   private String punchId;
+
+  /**
+   * The flush that produced this ticket. Idempotency lives on the flush record written onto the
+   * tab, never here: one flush creates one ticket per department, so a unique key on this document
+   * could not be unique across them.
+   *
+   * <p>It is also the first segment of the ticket's {@code _id}
+   * ({@code {flushId}:{department}:{kind}}), which is what makes ticket creation idempotent by
+   * construction — and what lets a recovery ask the repository which tickets this flush already
+   * wrote <b>before</b> it allocates a single {@code kotNo}.
+   */
+  private String flushId;
 
   private String businessDate;
   private Instant createdAt;
