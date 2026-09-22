@@ -23,6 +23,21 @@ public class PurchaseItem {
   /** Canonical line identity: {@code inventory:lotId} or {@code menu:itemId}. */
   private String sellableRef;
 
+  /**
+   * Stable identity of <i>this</i> line, distinct from {@link #sellableRef}, which names only
+   * what is being sold.
+   *
+   * <p>Nothing writes it today: the retired cafe tab/flush carried it over from the tab line a
+   * round was composed as, and the Sell cart merges its own lines by {@code sellableRef}. It
+   * stays mapped and stays the most specific of {@code PurchaseTargetedWriter}'s line identities
+   * because bills written before that retirement still carry it, and because a bill can
+   * legitimately hold two lines with the same {@code sellableRef} — "2x Tea, no sugar" and "1x
+   * Tea, extra hot" — which must stay separately addressable: a targeted write aimed at one of
+   * them must not requantify the other, whose {@code kotSentQuantity} is what the kitchen has.
+   * Null on every line written since.
+   */
+  private String lineRef;
+
   /** Optional stock target when sale consumes inventory (e.g. cafe direct). */
   private String stockRef;
 
@@ -72,6 +87,23 @@ public class PurchaseItem {
   private String baseUnit;
   private String packUnitUqc;
   private Integer baseQuantity;
+
+  /**
+   * Quantity the kitchen has been sent.
+   *
+   * <p>Null for every vertical except cafe, and for cafe lines that have never been sent. The
+   * delta a punch sends is {@code baseQuantity - kotSentQuantity}: everything on a cart that has
+   * never been punched, and only the newly added quantity on a later press. A reduction that
+   * takes the line below this decrements it again, by exactly what was cancelled to the kitchen.
+   */
+  private Integer kotSentQuantity;
+
+  /** Kitchen station, resolved and frozen when the line was added. */
+  private String department;
+
+  /** Preparation instruction for the kitchen, e.g. "no onion". Never blank — blank means null. */
+  private String note;
+
   private Integer unitFactor;
   private List<AvailableUnit> availableUnits;
   private BigDecimal maximumRetailPrice;
