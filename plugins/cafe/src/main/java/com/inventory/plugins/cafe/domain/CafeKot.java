@@ -19,9 +19,9 @@ import org.springframework.data.mongodb.core.mapping.Document;
 @Document(collection = "cafe_kots")
 // One index, and it is the one scripts/cafe-kot-indexes.mongodb.js creates. shopId needs none
 // of its own: the two queries on this collection are findByIdAndShopId, served by _id, and
-// findByShopIdAndFlushId, served by this -- of which shopId is the prefix.
+// findByShopIdAndPunchId, served by this -- of which shopId is the prefix.
 @CompoundIndexes({
-  @CompoundIndex(name = "shop_flush", def = "{'shopId': 1, 'flushId': 1}")
+  @CompoundIndex(name = "shop_punch", def = "{'shopId': 1, 'punchId': 1}")
 })
 public class CafeKot {
 
@@ -56,16 +56,20 @@ public class CafeKot {
   private Integer reprintCount = 0;
 
   /**
-   * The flush that produced this ticket. Idempotency lives on the flush record written onto the
-   * tab, never here: one flush creates one ticket per department, so a unique key on this document
-   * could not be unique across them.
+   * The operation that produced this ticket: a punch's {@code punchId}, or — since one cancel
+   * targets exactly one line and therefore exactly one station — a {@code CafeKotCancelService}
+   * cancel's {@code cancelId}, which reuses this field rather than duplicating it.
+   *
+   * <p>Idempotency lives on the punch record embedded on the {@code Purchase}, never here: one
+   * punch creates one ticket per department, so a unique key on this document could not be unique
+   * across them.
    *
    * <p>It is also the first segment of the ticket's {@code _id}
-   * ({@code {flushId}:{department}:{kind}}), which is what makes ticket creation idempotent by
-   * construction — and what lets a recovery ask the repository which tickets this flush already
+   * ({@code {punchId}:{department}:{kind}}), which is what makes ticket creation idempotent by
+   * construction — and what lets a recovery ask the repository which tickets this punch already
    * wrote <b>before</b> it allocates a single {@code kotNo}.
    */
-  private String flushId;
+  private String punchId;
 
   private String businessDate;
   private Instant createdAt;

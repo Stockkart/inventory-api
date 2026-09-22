@@ -14,9 +14,14 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 /**
- * Renders a cafe kitchen ticket's document, and reprints one.
+ * Cafe cart-punch orchestration: turns the Sell cart's unsent quantity into kitchen tickets,
+ * renders one ticket's document, and reprints one.
+ *
+ * <p>This service creates and returns tickets. It never prints — the frontend fetches the
+ * document and does that.
  *
  * <p>This service never prints — the frontend fetches the document and does that.
  *
@@ -44,6 +49,21 @@ public class CafeKotService {
         .getCafeKotPort()
         .orElseThrow(
             () -> new ValidationException("This shop's vertical does not support kitchen tickets"));
+  }
+
+  /**
+   * Punches the cart into kitchen tickets, or replays what an earlier attempt already created.
+   *
+   * <p>What reaches the kitchen is {@code baseQuantity - kotSentQuantity} per line: every line of
+   * a cart that has never been punched, and only the newly added quantity on a later press. A
+   * press with nothing new returns an empty list and creates no ticket.
+   */
+  public List<CafeKotTicket> punch(
+      String shopId, String userId, String purchaseId, String idempotencyKey) {
+    if (!StringUtils.hasText(idempotencyKey)) {
+      throw new ValidationException("Idempotency-Key is required when punching a cart");
+    }
+    return port().punch(shopId, userId, purchaseId, idempotencyKey);
   }
 
   /**

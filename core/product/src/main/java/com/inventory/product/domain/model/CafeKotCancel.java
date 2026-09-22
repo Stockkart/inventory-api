@@ -17,7 +17,7 @@ import lombok.NoArgsConstructor;
  *
  * <p>Idempotency follows the flush's shape exactly: {@link #cancelId} is generated once, before
  * the record is first written PENDING, and is reused verbatim as the produced {@code CafeKot}'s
- * {@code flushId} — which is also the first segment of that ticket's {@code _id}. A crash between
+ * {@code punchId} — which is also the first segment of that ticket's {@code _id}. A crash between
  * this record landing and the ticket being written is recovered by retrying with the same {@link
  * #idempotencyKey}: the record is found, still PENDING, and the same {@link #cancelId} is used
  * again, so rewriting the ticket is a no-op rather than a duplicate.

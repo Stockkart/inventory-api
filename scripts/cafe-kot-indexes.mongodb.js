@@ -23,11 +23,5 @@ db.cafe_sequences.createIndex(
   { unique: true, name: "shop_date_series_unique" }
 );
 
-// A flush creates one ticket per department, so the flush id is not unique across them.
-db.cafe_kots.createIndex({ shopId: 1, flushId: 1 }, { name: "shop_flush" });
-
-// Open tabs are listed per cashier, newest first.
-db.cafe_tabs.createIndex(
-  { shopId: 1, userId: 1, status: 1, createdAt: -1 },
-  { name: "shop_user_status_created" }
-);
+// A punch creates one ticket per department, so the punch id is not unique across them.
+db.cafe_kots.createIndex({ shopId: 1, punchId: 1 }, { name: "shop_punch" });

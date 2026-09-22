@@ -96,16 +96,38 @@ public class Purchase {
   private List<CafeKotCancel> cafeKotCancels;
 
   /**
-   * The cafe flushes this bill has already absorbed, in the order it absorbed them — written by
-   * {@code plugins/cafe}'s {@code CafeFlushService} as raw BSON, exactly as {@link
-   * #cafeKotCancels} is, because that module cannot depend on this one.
+   * Cafe kitchen punches against this cart, in the order they were pressed.
    *
-   * <p>It must be a mapped property and not merely a key the raw {@code Update} invents: {@code
-   * MongoRepository.save} is a full-document replace, so an unmapped array is silently dropped by
-   * every ordinary save of this document — add-to-cart, the quotation token backfill, checkout
-   * completion. Two things rest on it surviving: the append's {@code $ne} idempotency (a bill that
-   * forgot a flush absorbs it twice), and a ticket's round number, which is this list's index of
-   * the flush plus one (a forgotten list prints "Round 1" twice for one token).
+   * <p>Embedded, and written by {@code plugins/cafe}'s {@code CafeCartPuncher} as raw BSON, so
+   * that a punch and the line advance it caused are one atomic operation: there is no
+   * {@code MongoTransactionManager} here, and a crash between two writes would advance the lines
+   * while losing the deltas forever.
+   *
+   * <p>It must be a mapped property and not merely a key the raw pipeline invents, for the same
+   * reason {@link #cafeKotCancels} must be: {@code MongoRepository.save} is a full-document
+   * replace, so an unmapped array is silently dropped by every ordinary save of this document.
+   * Three things rest on it surviving: the claim's {@code $ne} idempotency, a replay's deltas
+   * (which are read off this record, never off the already-advanced lines), and a ticket's round
+   * number, which is this list's index of the punch plus one.
+   *
+   * <p>Left null rather than initialised to an empty list, as {@link #cafeKotCancels} is: a
+   * grocery, medical or sports bill should carry no cafe key at all.
+   */
+  private List<CafeKotPunch> cafeKotPunches;
+
+  /**
+   * The cafe flushes this bill has already absorbed, in the order it absorbed them.
+   *
+   * <p><b>Dormant.</b> Its only writer was {@code plugins/cafe}'s {@code CafeFlushService}, and
+   * the tab/flush subsystem it belonged to is retired: kitchen orders are composed on the Sell
+   * cart and sent as a punch delta, which appends to {@link #cafeKotPunches} instead. Nothing
+   * writes this list any more, and on a punched bill it stays absent.
+   *
+   * <p>It stays mapped because {@link com.inventory.product.service.PurchaseTargetedWriter} still
+   * guards its money-bearing writes on the value it read here — an equality that, with no writer,
+   * can no longer refuse anything, but which is the seam a future concurrent appender to this bill
+   * would be wired through. Bills written before the retirement still carry the array, and an
+   * unmapped key is silently dropped by every full-document {@code save}.
    */
   private List<String> cafeFlushIds;
 

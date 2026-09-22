@@ -28,11 +28,11 @@ import org.springframework.util.StringUtils;
  *
  * <p><b>Why.</b> {@code PurchaseRepository.save(purchase)} replaces the whole document with a
  * snapshot this request read some time ago, across several inventory and stock round-trips.
- * Anything another writer put on the bill in that window is deleted by it: a cafe tab's flush
- * appending a round and its {@code cafeFlushIds} entry, a {@code cafeKotCancels} push, an
- * {@code items.$.kotSentQuantity} decrement. For a flush that means lines whose tickets are
- * already in the kitchen vanishing from the bill — the food is cooked and nothing records it,
- * and with {@code cafeFlushIds} gone the tab that flushed is stranded too.
+ * Anything another writer put on the bill in that window is deleted by it: a cafe punch
+ * appending to {@code cafeKotPunches} and advancing {@code items.$.kotSentQuantity}, a
+ * {@code cafeKotCancels} push, an {@code items.$.kotSentQuantity} decrement. For a punch that
+ * means lines whose tickets are already in the kitchen losing the only record of what was sent —
+ * the food is cooked, and the next press of Print KOT sends it to the kitchen a second time.
  *
  * <p><b>How.</b> The caller takes a {@link #snapshot(Purchase) pre-image} of the document before
  * it mutates anything — exactly the BSON {@code save} would have written at that moment — and
@@ -125,7 +125,9 @@ public class PurchaseTargetedWriter {
     if (!changed) {
       return 1L;
     }
-    // Guarded on the cafeFlushIds this settlement read. The money fields are not in this update --
+    // Guarded on the cafeFlushIds this settlement read -- dormant since the tab/flush subsystem
+    // was retired (nothing writes that array any more), kept as the seam a future concurrent
+    // appender to this bill is wired through. The money fields are not in this update --
     // this request did not change them -- but a flush landing between the read and here recomputes
     // them, and the payment split, ledger, credit entries and printed response were all derived
     // from the smaller in-memory total. Rather than stamp COMPLETED over a bill whose stored total

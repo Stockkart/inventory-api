@@ -283,9 +283,9 @@ public class CheckoutService {
               "No purchase found with ID " + request.getPurchaseId()));
       // The pre-image, for the same reason as the cart path: settlement changes the status, the
       // invoice number and the payment split, and nothing else. Writing the whole document would
-      // additionally delete a round a tab flushed onto this bill while it was being settled --
-      // food already cooking, erased and unpaid, with the cafeFlushIds entry that would let the
-      // tab retry erased along with it.
+      // additionally delete what a punch recorded on this bill while it was being settled -- the
+      // cafeKotPunches entry a retry reads its deltas off, and the advanced kotSentQuantity that
+      // stops the next press of Print KOT re-sending food already cooking.
       Document purchaseBeforeStatusChange = purchaseTargetedWriter.snapshot(purchase);
 
       // Verify purchase belongs to the user's shop

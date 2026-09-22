@@ -9,7 +9,7 @@ package com.inventory.plugins.cafe.domain;
  * {@code KotStamp.CANCELLED} by whichever module renders the paper and can see both.
  *
  * <p>It is also the last segment of a KOT's {@code _id}
- * ({@code {flushId or cancelId}:{department}:{kind}}), which is what makes ticket creation
+ * ({@code {punchId or cancelId}:{department}:{kind}}), which is what makes ticket creation
  * idempotent by construction.
  */
 public enum CafeKotKind {

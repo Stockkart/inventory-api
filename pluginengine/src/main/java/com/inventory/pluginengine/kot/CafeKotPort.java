@@ -4,59 +4,37 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Composes and sends cafe kitchen tickets. Implementations own their own schema. Core
- * orchestration talks only to this interface, because core modules cannot see plugin domain
- * classes — the same arrangement as {@link com.inventory.pluginengine.cart.CartLineContributor}
- * and {@link com.inventory.pluginengine.cart.CheckoutCompletionHandler}.
+ * Punches a cafe cart into kitchen tickets, cancels what a cashier takes back off it, and reads
+ * one ticket back. Implementations own their own schema. Core orchestration talks only to this
+ * interface, because core modules cannot see plugin domain classes — the same arrangement as
+ * {@link com.inventory.pluginengine.cart.CartLineContributor} and
+ * {@link com.inventory.pluginengine.cart.CheckoutCompletionHandler}.
  *
- * <p>Deliberately narrow: tab composition, one flush to the kitchen and a bill, cancellation of
- * an already-sent line, reprint, and reading back one ticket to render it. It is not a general
- * running-order capability — see the retired {@code RunningOrderStore} for what that looked like
- * and why it is gone. Renamed from {@code CafeKotPunchPort}: nothing punches any more — a tab is
- * composed separately and flushed, with no delta to reconcile against a cart.
+ * <p>Deliberately narrow: the punch, cancellation of an already-sent line, reprint, and reading
+ * back one ticket to render it. It is not a general running-order capability — see the retired
+ * {@code RunningOrderStore} for what that looked like and why it is gone. There is no tab
+ * vocabulary here: the Sell cart <i>is</i> the running order, and a punch sends the difference
+ * between it and what the kitchen already has.
+ *
+ * <p><strong>There are no MongoDB transactions in this codebase.</strong> {@link #punch} must be
+ * safe to retry; it must not depend on multi-document atomicity.
  */
 public interface CafeKotPort {
 
   String getVerticalId();
 
+  /**
+   * Punches the cart, or finishes a punch an earlier attempt left half-done.
+   *
+   * <p>Idempotent on {@code (shopId, idempotencyKey)}: a replayed punch with the same key returns
+   * the original tickets and creates nothing new.
+   *
+   * @return the tickets this punch stands for; empty when the cart owed the kitchen nothing.
+   */
+  List<CafeKotTicket> punch(String shopId, String userId, String purchaseId, String idempotencyKey);
+
   /** Scoped by shop: a request for another shop's ticket resolves to nothing. */
   Optional<CafeKotTicket> findKot(String shopId, String kotId);
-
-  /** This cashier's open tabs only — never another cashier's, even in the same shop. */
-  List<CafeKotTab> listTabs(String shopId, String userId);
-
-  /** Opens a new, empty tab for this cashier. */
-  CafeKotTab openTab(String shopId, String userId);
-
-  /**
-   * Adds a line to an open tab, or updates one already on it.
-   *
-   * @param lineRef null to add a new line for {@code sellableRef}; an existing line's ref to
-   *     update its quantity and/or note instead — the frozen department never changes.
-   */
-  CafeKotTab upsertTabLine(
-      String shopId,
-      String userId,
-      String tabId,
-      String lineRef,
-      String sellableRef,
-      int quantity,
-      String note);
-
-  CafeKotTab removeTabLine(String shopId, String userId, String tabId, String lineRef);
-
-  /** The only way a tab leaves the open state. */
-  void closeTab(String shopId, String userId, String tabId);
-
-  /**
-   * Sends a tab's unsent lines to the kitchen and onto a bill, or finishes a flush an earlier
-   * attempt left half-done.
-   *
-   * @param targetPurchaseId the open bill to append to; null asks for a new one.
-   * @return the tickets this idempotency key stands for.
-   */
-  List<CafeKotTicket> flush(
-      String shopId, String userId, String tabId, String targetPurchaseId, String idempotencyKey);
 
   /**
    * Tells the kitchen to stop making part of an already-sent bill line.

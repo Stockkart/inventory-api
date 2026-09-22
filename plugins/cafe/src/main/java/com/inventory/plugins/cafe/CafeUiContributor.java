@@ -43,11 +43,6 @@ public class CafeUiContributor implements VerticalUiContributor {
                     .id("menu-sell")
                     .label("Sell")
                     .path("/dashboard/menu-sell")
-                    .build(),
-                NavItemDef.builder()
-                    .id("cafe-kot")
-                    .label("KOT")
-                    .path("/dashboard/cafe-kot")
                     .build()))
         .features(
             FeatureFlags.builder()

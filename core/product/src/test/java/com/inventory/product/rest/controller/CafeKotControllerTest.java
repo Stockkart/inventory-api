@@ -11,13 +11,16 @@ import static org.mockito.Mockito.when;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.product.service.vertical.CafeKotService;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Pins the tenant guarantee the document endpoint depends on structurally (no {@code
- * @RequestBody} carrying a shopId) but does not otherwise verify: shopId is read only from the
- * request attribute the auth interceptor sets, never anything the caller sent.
+ * Pins the tenant guarantee the punch and document endpoints depend on structurally (no {@code
+ * @RequestBody} carrying a shopId) but do not otherwise verify: shopId and userId are read only
+ * from the request attributes the auth interceptor sets, never anything the caller sent. A future
+ * body field named shopId would break this with a green suite unless something here calls out what
+ * the controller actually passes to the service.
  */
 class CafeKotControllerTest {
 
@@ -32,6 +35,28 @@ class CafeKotControllerTest {
     httpRequest = mock(HttpServletRequest.class);
     when(httpRequest.getAttribute("shopId")).thenReturn("shop-1");
     when(httpRequest.getAttribute("userId")).thenReturn("user-1");
+  }
+
+  @Test
+  void punchUsesShopIdAndUserIdFromRequestAttributes() {
+    when(cafeKotService.punch("shop-1", "user-1", "p1", "idem-1")).thenReturn(List.of());
+
+    controller.punch("p1", "idem-1", httpRequest);
+
+    verify(cafeKotService).punch("shop-1", "user-1", "p1", "idem-1");
+  }
+
+  /**
+   * A missing header arrives as null because {@code required = false}; the punch is rejected here
+   * rather than being let through to the service, exactly as reprint is — this is the call that
+   * reaches a kitchen.
+   */
+  @Test
+  void punchWithNoIdempotencyKeyHeaderIsRejectedBeforeTheService() {
+    assertThrows(ValidationException.class, () -> controller.punch("p1", null, httpRequest));
+    assertThrows(ValidationException.class, () -> controller.punch("p1", "  ", httpRequest));
+
+    verify(cafeKotService, never()).punch(any(), any(), any(), any());
   }
 
   @Test

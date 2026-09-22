@@ -87,9 +87,12 @@ public class PurchaseItem {
   private Integer baseQuantity;
 
   /**
-   * Quantity handed to the kitchen at flush.
+   * Quantity the kitchen has been sent.
    *
-   * <p>Null for every vertical except cafe, and for cafe lines that have never been sent.
+   * <p>Null for every vertical except cafe, and for cafe lines that have never been sent. The
+   * delta a punch sends is {@code baseQuantity - kotSentQuantity}: everything on a cart that has
+   * never been punched, and only the newly added quantity on a later press. A reduction that
+   * takes the line below this decrements it again, by exactly what was cancelled to the kitchen.
    */
   private Integer kotSentQuantity;
 

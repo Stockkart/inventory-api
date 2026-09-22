@@ -25,29 +25,35 @@ import org.springframework.util.StringUtils;
 /**
  * Tells the kitchen to stop making something.
  *
- * <p>A bill line arrives already sent: {@code kotSentQuantity} equals its quantity, because the
- * Sell screen never issues to the kitchen — only the KOT tab screen does, via {@link
- * CafeFlushService}. The Sell screen only ever withdraws. Reducing a line below {@code
- * kotSentQuantity} owes the kitchen a cancellation for the difference; removing it owes one for
- * the whole remainder. Raising a quantity owes nothing — the extra is unsent and goes through a
- * new tab round. This is the only remaining delta in the feature, and it is negative-only, so the
- * ticket this service writes always carries an absolute, positive quantity.
+ * <p>The Sell cart is the running order and Print KOT sends its delta, so a line the kitchen has
+ * seen carries that much in {@code kotSentQuantity} (see {@link CafeCartPuncher}). Reducing such
+ * a line below {@code kotSentQuantity} owes the kitchen a cancellation for the difference;
+ * removing it owes one for the whole remainder. Raising a quantity owes nothing — the extra is
+ * unsent and reaches the kitchen on the next punch. A withdrawal is negative-only, so the ticket
+ * this service writes always carries an absolute, positive quantity.
  *
- * <p><b>The shape mirrors {@link CafeFlushService} deliberately, not by coincidence.</b> There is
- * no {@code MongoTransactionManager} in this codebase and a cancellation touches two documents
+ * <p>This is the eager half of the same rule {@link CafeCartPuncher}'s pipeline expresses: the
+ * checkout path calls it through {@code CartLineReductionPort} the moment a cashier takes
+ * something off the cart, so the kitchen hears about a withdrawal without waiting for the next
+ * press of Print KOT. It decrements the line's {@code kotSentQuantity} by exactly what it
+ * cancelled, which is what keeps the punch's {@code baseQuantity - kotSentQuantity} delta at zero
+ * for that line afterwards rather than cancelling it a second time.
+ *
+ * <p><b>The shape mirrors {@link CafeKotPunchService} deliberately, not by coincidence.</b> There
+ * is no {@code MongoTransactionManager} in this codebase and a cancellation touches two documents
  * (the bill and the ticket collection), so the same discipline applies: a small idempotent record
  * — {@code Purchase.cafeKotCancels[]} — is written PENDING before the ticket, and only the ticket
- * actually landing lets it become COMPLETE. Unlike the flush, both the claim and the "append" live
- * on the very same document (the bill), so the claim needs no self-referential aggregation
- * pipeline: a plain {@code $push} guarded by the same {@code $ne} idempotency clause the flush
- * uses is enough. The produced ticket's {@code _id} is {@code {cancelId}:{department}:CANCEL},
- * exactly the flush's {@code {flushId}:{department}:ISSUE} shape, and — because one cancel call
- * targets exactly one line and therefore exactly one station — the {@code flushId} field on {@link
- * CafeKot} is reused rather than duplicated with a second field of the same purpose: it holds
- * whichever operation produced the ticket, a flush's id or a cancel's.
+ * actually landing lets it become COMPLETE. Unlike the punch, the claim needs no self-referential
+ * aggregation pipeline — it reconciles no lines against a cart, only one named line — so a plain
+ * {@code $push} guarded by the same {@code $ne} idempotency clause the punch uses is enough. The
+ * produced ticket's {@code _id} is {@code {cancelId}:{department}:CANCEL}, exactly the punch's
+ * {@code {punchId}:{department}:ISSUE} shape, and — because one cancel call targets exactly one
+ * line and therefore exactly one station — the {@code punchId} field on {@link CafeKot} is reused
+ * rather than duplicated with a second field of the same purpose: it holds whichever operation
+ * produced the ticket, a punch's id or a cancel's.
  *
  * <p>The bill is a {@code Purchase} in {@code core/product}, which {@code plugins/cafe} does not
- * depend on and must not. As {@link CafeFlushService} does, the document is reached as a raw
+ * depend on and must not. As {@link CafeKotPunchService} does, the document is reached as a raw
  * {@link Document} through {@link MongoTemplate}.
  *
  * <p><b>The stamp.</b> A ticket this service writes always has {@code kind == CANCEL}. Rendering
@@ -117,7 +123,7 @@ public class CafeKotCancelService {
       return resume(shopId, purchaseId, idempotencyKey);
     }
 
-    // The flush's invariant, and for the same reason: a bill that still owes the kitchen an
+    // The punch's invariant, and for the same reason: a bill that still owes the kitchen an
     // earlier cancel has that one finished first. Without this, a PENDING record under a
     // DIFFERENT key is invisible -- the check above recognises only this exact key -- and nothing
     // in the system would ever look at it again: there is no sweep and no redrive. Its
@@ -166,7 +172,7 @@ public class CafeKotCancelService {
             .append("createdAt", Instant.now());
 
     // The idempotency lives in this query clause, not an index — a unique multikey index would
-    // not stop a second push into the same document's array, same reasoning as the flush's claim.
+    // not stop a second push into the same document's array, same reasoning as the punch's claim.
     // A bill with no cafeKotCancels array yet still matches: $ne against an absent field is true.
     //
     // That alone only guards exact-key replay. Two concurrent callers with DIFFERENT keys — a
@@ -185,11 +191,11 @@ public class CafeKotCancelService {
                 .is(shopId)
                 .and(CANCELS + ".idempotencyKey")
                 .ne(idempotencyKey)
-                // The flush's PENDING clause, on the same document rather than on a tab: a bill
-                // that still owes the kitchen a cancel is never claimed out from under it. The
-                // sweep above finishes any such record before we get here; this clause is what
-                // makes that check hold across the gap between its read and this write, exactly
-                // as CafeTabFlusher's pendingFlush.status clause does for a flush. $ne on an
+                // The punch's PENDING clause, on the same document: a bill that still owes the
+                // kitchen a cancel is never claimed out from under it. The sweep above finishes
+                // any such record before we get here; this clause is what makes that check hold
+                // across the gap between its read and this write, exactly as the punch record's
+                // own PENDING_KOT_CREATION status does for a punch. $ne on an
                 // array means "no element has this value", and it matches a bill with no
                 // cafeKotCancels at all, which is the ordinary case.
                 .and(CANCELS + ".status")
@@ -227,7 +233,7 @@ public class CafeKotCancelService {
 
   /**
    * Finishes every cancel this bill still owes the kitchen before a new one may claim — the
-   * flush's "finish the older one first" step, which the cancel path used not to have.
+   * punch's "finish the older one first" step, which the cancel path used not to have.
    *
    * <p>Each one is finished by the same {@link #finish} a resume uses, so it is idempotent: a
    * ticket a previous attempt already wrote is found and re-used rather than renumbered, and the
@@ -269,7 +275,7 @@ public class CafeKotCancelService {
 
     if (STATUS_COMPLETE.equals(record.getString("status"))) {
       List<CafeKot> done =
-          cafeKotRepository.findByShopIdAndFlushId(shopId, record.getString("cancelId"));
+          cafeKotRepository.findByShopIdAndPunchId(shopId, record.getString("cancelId"));
       log.info(
           "Replayed complete cafe cancel {} on shop {}: {} ticket(s)",
           record.getString("cancelId"),
@@ -289,14 +295,14 @@ public class CafeKotCancelService {
   /**
    * Writes the ticket this cancel is missing, then marks the record COMPLETE. A no-op ticket
    * write when a previous attempt already wrote it — the repository lookup runs before any save
-   * or sequence allocation, exactly as the flush's does, so a recovery never renumbers or
+   * or sequence allocation, exactly as the punch's does, so a recovery never renumbers or
    * duplicates a ticket a cook may already be holding.
    */
   private List<CafeKot> finish(String shopId, Document bill, Document record) {
     String cancelId = record.getString("cancelId");
     String purchaseId = String.valueOf(bill.get("_id"));
 
-    List<CafeKot> existing = cafeKotRepository.findByShopIdAndFlushId(shopId, cancelId);
+    List<CafeKot> existing = cafeKotRepository.findByShopIdAndPunchId(shopId, cancelId);
     if (!existing.isEmpty()) {
       markComplete(shopId, purchaseId, cancelId);
       return existing;
@@ -323,7 +329,7 @@ public class CafeKotCancelService {
     kot.setTableLabel(bill.getString("tableLabel"));
     kot.setTokenNo(bill.getString("tokenNo"));
     // Reused, not duplicated: see the class javadoc.
-    kot.setFlushId(cancelId);
+    kot.setPunchId(cancelId);
     kot.setBusinessDate(LocalDate.now().toString());
     kot.setCreatedAt(Instant.now());
     kot.setCreatedBy(record.getString("createdBy"));

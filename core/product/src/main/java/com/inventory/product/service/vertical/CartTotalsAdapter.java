@@ -20,8 +20,13 @@ import org.springframework.util.StringUtils;
 
 /**
  * The one implementation of {@link CartTotalsPort}: it hands the request straight to the
- * arithmetic the add-to-cart path uses, so a bill a cafe flush appended to carries exactly the
+ * arithmetic the add-to-cart path uses, so a bill a plugin appended to carries exactly the
  * numbers the next add-to-cart would compute for the same lines.
+ *
+ * <p>No plugin calls it today. Its caller was the retired tab flush, which appended priced lines
+ * to a bill behind the checkout path; a punch appends no lines — the Sell cart already holds
+ * them, and the add-to-cart path has already totalled them — so it needs no recompute. Kept
+ * because it is the only correct way for a future appender to repair the money it displaces.
  *
  * <p>Only an open cart is recomputed. A bill that has since been COMPLETED has an invoice number
  * and a settled amount against it, and recomputing that from lines would rewrite a document the
@@ -29,11 +34,12 @@ import org.springframework.util.StringUtils;
  *
  * <p><b>Why the write is a targeted {@code $set} and not {@code save(cart)}.</b> The arithmetic
  * runs on a snapshot read a moment earlier. Saving the whole document would write {@code items}
- * as <i>this</i> caller read them, and anything another writer appended in between — a second
- * tab's flush onto the same bill, a {@code cafeKotCancels} push, an {@code items.$.kotSentQuantity}
- * decrement, an ordinary add-to-cart from the Sell screen — would be deleted by it. That is a lost
- * update, and for a flush it means lines whose tickets are already in the kitchen vanishing from
- * the bill: the cook makes the food and nothing records it. Being <i>mapped</i> stops those fields
+ * as <i>this</i> caller read them, and anything another writer appended in between — a
+ * {@code cafeKotPunches} append, a {@code cafeKotCancels} push, an
+ * {@code items.$.kotSentQuantity} advance or decrement, an ordinary add-to-cart from the Sell
+ * screen — would be deleted by it. That is a lost update, and for a punch it means the record of
+ * what the kitchen was already sent vanishing from the bill: the next press of Print KOT sends
+ * the same food again. Being <i>mapped</i> stops those fields
  * being silently dropped when something else saves the document; it does nothing about this.
  *
  * <p>So only the money fields are written, by field, under a query that still requires the cart to

@@ -9,8 +9,8 @@ public interface CafeKotRepository extends MongoRepository<CafeKot, String> {
   Optional<CafeKot> findByIdAndShopId(String id, String shopId);
 
   /**
-   * Every ticket this flush has already written. The source of truth for what a recovery must
+   * Every ticket this punch (or cancel) has already written. The source of truth for what a recovery must
    * <b>not</b> renumber: a {@code kotNo} on paper in a kitchen has to stay valid.
    */
-  List<CafeKot> findByShopIdAndFlushId(String shopId, String flushId);
+  List<CafeKot> findByShopIdAndPunchId(String shopId, String punchId);
 }

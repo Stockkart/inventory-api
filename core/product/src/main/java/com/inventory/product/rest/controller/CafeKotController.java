@@ -1,11 +1,14 @@
 package com.inventory.product.rest.controller;
 
+import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.metrics.annotation.Latency;
 import com.inventory.metrics.annotation.RecordRequestRate;
 import com.inventory.metrics.annotation.RecordStatusCodes;
+import com.inventory.pluginengine.kot.CafeKotTicket;
 import com.inventory.product.service.vertical.CafeKotService;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.List;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -18,11 +21,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Cafe kitchen ticket documents, and reprint.
+ * Cafe cart punches, kitchen ticket documents, and reprint.
  *
- * <p>shopId comes from request attributes set by the authentication interceptor, never from the
- * body. This controller renders a ticket's document — it does not print; the frontend fetches the
- * document and prints it. Reprint stamps the slip and bumps a count; it does not print either.
+ * <p>shopId and userId come from request attributes set by the authentication interceptor, never
+ * from the body. This controller creates and returns tickets — it does not print; the frontend
+ * fetches the document and prints it. Reprint stamps the slip and bumps a count; it does not
+ * print either.
  */
 @RestController
 @Latency(module = "product")
@@ -35,6 +39,26 @@ public class CafeKotController {
 
   public CafeKotController(CafeKotService cafeKotService) {
     this.cafeKotService = cafeKotService;
+  }
+
+  /**
+   * Punches the cart: the Sell screen's Print KOT. Sends the difference between the cart and what
+   * the kitchen already has, so a fresh cart sends everything and a later press sends only what
+   * was added since.
+   *
+   * <p>The {@code Idempotency-Key} header is required and rejected here, before the service is
+   * touched — this is the call that reaches a kitchen.
+   */
+  @PostMapping("/purchases/{purchaseId}/kots")
+  public ResponseEntity<ApiResponse<List<CafeKotTicket>>> punch(
+      @PathVariable String purchaseId,
+      @RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey,
+      HttpServletRequest httpRequest) {
+    requireIdempotencyKey(idempotencyKey);
+    return ResponseEntity.ok(
+        ApiResponse.success(
+            cafeKotService.punch(
+                shopId(httpRequest), userId(httpRequest), purchaseId, idempotencyKey)));
   }
 
   @GetMapping("/kots/{kotId}/document")
@@ -79,5 +103,9 @@ public class CafeKotController {
 
   private static String shopId(HttpServletRequest httpRequest) {
     return (String) httpRequest.getAttribute("shopId");
+  }
+
+  private static String userId(HttpServletRequest httpRequest) {
+    return (String) httpRequest.getAttribute("userId");
   }
 }

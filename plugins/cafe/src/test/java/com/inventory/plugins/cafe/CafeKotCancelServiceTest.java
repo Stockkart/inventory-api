@@ -40,7 +40,7 @@ import org.springframework.data.mongodb.core.query.UpdateDefinition;
  * {@code kotSentQuantity} owes a cancellation for the difference; removing it owes one for the
  * whole remainder; raising owes nothing; a line the kitchen never saw owes nothing.
  *
- * <p>The MongoTemplate is faked, not stubbed, for the same reason {@code CafeFlushServiceTest}
+ * <p>The MongoTemplate is faked, not stubbed, for the same reason {@code CafeKotPunchServiceTest}
  * fakes it: the claim's query shape — the {@code $ne} idempotency guard — is the correctness. A
  * stub that always "succeeds" would pass with that clause deleted.
  */
@@ -69,13 +69,13 @@ class CafeKotCancelServiceTest {
     kotRepository = mock(CafeKotRepository.class);
     sequenceService = mock(CafeSequenceService.class);
 
-    when(kotRepository.findByShopIdAndFlushId(anyString(), anyString()))
+    when(kotRepository.findByShopIdAndPunchId(anyString(), anyString()))
         .thenAnswer(
             invocation -> {
               String shopId = invocation.getArgument(0);
               String cancelId = invocation.getArgument(1);
               return kotStore.values().stream()
-                  .filter(k -> shopId.equals(k.getShopId()) && cancelId.equals(k.getFlushId()))
+                  .filter(k -> shopId.equals(k.getShopId()) && cancelId.equals(k.getPunchId()))
                   .toList();
             });
     when(kotRepository.save(any()))
@@ -285,7 +285,7 @@ class CafeKotCancelServiceTest {
   @Test
   void aCancelClaimIsRefusedWhileTheBillStillOwesAnEarlierOne() {
     // The clause, not the sweep: a PENDING record appearing between the sweep's read and the
-    // claim must still refuse it, exactly as CafeTabFlusher's pendingFlush.status clause does.
+    // claim must still refuse it, exactly as the punch record's PENDING_KOT_CREATION status does.
     fake.bill(billLine(5, "KITCHEN", null));
     fake.cancelsOf(BILL_ID)
         .add(
