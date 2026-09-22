@@ -1072,6 +1072,38 @@ public class CheckoutService {
         .setScale(2, RoundingMode.HALF_UP);
   }
 
+  /**
+   * Stores {@code items} on the cart and recomputes every money field from them — line totals
+   * first, then subtotal, tax, discounts, grand total and the margin breakdown.
+   *
+   * <p>Extracted from {@code updateCart}, which is the only path that had it, so that a vertical
+   * appending lines outside the add-to-cart path can reach the identical arithmetic through
+   * {@link com.inventory.product.service.vertical.CartTotalsAdapter}. Identical matters: a cafe
+   * flush that computed its own totals differently would make the bill's number change the moment
+   * the cashier added anything in Sell.
+   */
+  public void applyCartTotals(Purchase cart, List<PurchaseItem> items, BillingMode billingMode) {
+    recalculateLineTotalsForBillingMode(items, billingMode);
+    cart.setItems(items);
+    BigDecimal newSubTotal = calculateSubtotal(items);
+    cart.setSubTotal(newSubTotal);
+
+    TaxCalculationResult taxResult = calculateTax(items, cart.getShopId(), billingMode);
+    cart.setTaxTotal(taxResult.getTaxTotal());
+    cart.setSgstAmount(taxResult.getSgstAmount());
+    cart.setCgstAmount(taxResult.getCgstAmount());
+
+    BigDecimal discountTotal = calculateTotalDiscount(items);
+    BigDecimal additionalDiscountTotal = calculateAdditionalDiscountTotal(items);
+    cart.setDiscountTotal(discountTotal);
+    cart.setSaleAdditionalDiscountTotal(additionalDiscountTotal);
+    BigDecimal calculatedTotal = newSubTotal
+        .add(taxResult.getTaxTotal())
+        .subtract(additionalDiscountTotal);
+    cart.setGrandTotal(roundOffToWholeRupee(calculatedTotal));
+    setPurchaseMarginDetails(cart);
+  }
+
   private void recalculateLineTotalsForBillingMode(List<PurchaseItem> items, BillingMode billingMode) {
     if (items == null || items.isEmpty()) {
       return;
@@ -1406,25 +1438,7 @@ public class CheckoutService {
       existingCart.setUpdatedAt(Instant.now());
 
       // Recalculate totals
-      recalculateLineTotalsForBillingMode(mergedItems, billingMode);
-      existingCart.setItems(mergedItems);
-      BigDecimal newSubTotal = calculateSubtotal(mergedItems);
-      existingCart.setSubTotal(newSubTotal);
-      
-      TaxCalculationResult taxResult = calculateTax(mergedItems, existingCart.getShopId(), billingMode);
-      existingCart.setTaxTotal(taxResult.getTaxTotal());
-      existingCart.setSgstAmount(taxResult.getSgstAmount());
-      existingCart.setCgstAmount(taxResult.getCgstAmount());
-      
-      BigDecimal discountTotal = calculateTotalDiscount(mergedItems);
-      BigDecimal additionalDiscountTotal = calculateAdditionalDiscountTotal(mergedItems);
-      existingCart.setDiscountTotal(discountTotal);
-      existingCart.setSaleAdditionalDiscountTotal(additionalDiscountTotal);
-      BigDecimal calculatedTotal = newSubTotal
-          .add(taxResult.getTaxTotal())
-          .subtract(additionalDiscountTotal);
-      existingCart.setGrandTotal(roundOffToWholeRupee(calculatedTotal));
-      setPurchaseMarginDetails(existingCart);
+      applyCartTotals(existingCart, mergedItems, billingMode);
 
       // If cart is empty after updates, we can either delete it or keep it with empty items
       // For now, we'll keep it with empty items (status remains CREATED)

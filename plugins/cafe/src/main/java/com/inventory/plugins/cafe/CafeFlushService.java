@@ -2,7 +2,12 @@ package com.inventory.plugins.cafe;
 
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.pluginengine.cart.CartLineAmountCalculator;
+import com.inventory.pluginengine.cart.CartTotalsPort;
+import com.inventory.pluginengine.integration.ShopMenuLookup;
 import com.inventory.pluginengine.menu.MenuDepartments;
+import com.inventory.pluginengine.menu.MenuItem;
+import com.inventory.pluginengine.ref.SellableRef;
 import com.inventory.plugins.cafe.domain.CafeFlushStatus;
 import com.inventory.plugins.cafe.domain.CafeKot;
 import com.inventory.plugins.cafe.domain.CafeKotKind;
@@ -10,6 +15,7 @@ import com.inventory.plugins.cafe.domain.CafeKotLine;
 import com.inventory.plugins.cafe.domain.CafeKotRepository;
 import com.inventory.plugins.cafe.domain.CafeKotStatus;
 import com.inventory.plugins.cafe.domain.CafePendingFlush;
+import com.inventory.plugins.cafe.domain.CafeRecentFlush;
 import com.inventory.plugins.cafe.domain.CafeTab;
 import com.inventory.plugins.cafe.domain.CafeTabLine;
 import com.inventory.plugins.cafe.domain.CafeTabRepository;
@@ -44,7 +50,10 @@ import org.springframework.util.StringUtils;
  *   <li><b>Claim</b> — {@link CafeTabFlusher}, one {@code findAndModify}: the tab's lines move into
  *       a {@code pendingFlush} record and the tab is left empty.
  *   <li><b>Append</b> the claimed lines to the target bill, idempotent on {@code flushId}: the bill
- *       records which flushes it has absorbed and the query refuses one it already holds.
+ *       records which flushes it has absorbed and the query refuses one it already holds. The
+ *       lines are priced as the add-to-cart path prices them, and the bill's totals are then
+ *       recomputed from what it now holds — a raw {@code $push} moves no money on its own, and
+ *       checkout settles against the bill's <i>stored</i> {@code grandTotal}.
  *   <li><b>Create tickets</b>, {@code _id = {flushId}:{department}:ISSUE}, after filtering the
  *       desired set against what the repository already holds for this flush.
  *   <li><b>Mark</b> the flush COMPLETE.
@@ -87,12 +96,17 @@ public class CafeFlushService {
   /** {@code PurchaseItem.sellMode} for a menu line. */
   private static final String SELL_MODE_MENU = "menu";
 
+  /** A menu item is sold by the piece, as {@code CafeMenuCartLineContributor} also has it. */
+  private static final String SALE_UNIT_PCS = "PCS";
+
   private final MongoTemplate mongoTemplate;
   private final CafeTabFlusher flusher;
   private final CafeTabRepository cafeTabRepository;
   private final CafeKotRepository cafeKotRepository;
   private final CafeSequenceService cafeSequenceService;
   private final CafeTokenService cafeTokenService;
+  private final ShopMenuLookup shopMenuLookup;
+  private final CartTotalsPort cartTotalsPort;
 
   public CafeFlushService(
       MongoTemplate mongoTemplate,
@@ -100,13 +114,17 @@ public class CafeFlushService {
       CafeTabRepository cafeTabRepository,
       CafeKotRepository cafeKotRepository,
       CafeSequenceService cafeSequenceService,
-      CafeTokenService cafeTokenService) {
+      CafeTokenService cafeTokenService,
+      ShopMenuLookup shopMenuLookup,
+      CartTotalsPort cartTotalsPort) {
     this.mongoTemplate = mongoTemplate;
     this.flusher = flusher;
     this.cafeTabRepository = cafeTabRepository;
     this.cafeKotRepository = cafeKotRepository;
     this.cafeSequenceService = cafeSequenceService;
     this.cafeTokenService = cafeTokenService;
+    this.shopMenuLookup = shopMenuLookup;
+    this.cartTotalsPort = cartTotalsPort;
   }
 
   /**
@@ -138,6 +156,27 @@ public class CafeFlushService {
     boolean isReplayOfRecorded =
         recorded != null && idempotencyKey.equals(recorded.getIdempotencyKey());
 
+    // A key from a flush or two ago, replayed: the client parks its key in sessionStorage, so it
+    // outlives the component that issued it and can arrive after two more flushes have moved
+    // pendingFlush on. Answering it with the tickets it created is the contract; claiming under
+    // it would send a round the caller never composed and hand back tickets for something else.
+    if (!isReplayOfRecorded) {
+      Optional<CafeRecentFlush> stale = recentFlush(tab, idempotencyKey);
+      if (stale.isPresent()) {
+        String staleFlushId = stale.get().getFlushId();
+        List<CafeKot> done = cafeKotRepository.findByShopIdAndFlushId(shopId, staleFlushId);
+        log.warn(
+            "Stale cafe flush key {} on tab {} in shop {}: returning flush {}'s {} ticket(s), "
+                + "claiming nothing",
+            idempotencyKey,
+            tabId,
+            shopId,
+            staleFlushId,
+            done.size());
+        return done;
+      }
+    }
+
     // The invariant, enforced before anything can overwrite the record: a tab that still owes an
     // earlier flush is finished first. The claim's $ne would happily replace a PENDING record
     // belonging to a different key, and that record is the only evidence those lines exist.
@@ -150,7 +189,9 @@ public class CafeFlushService {
       finish(shopId, userId, tab, recorded);
     }
 
-    if (!isReplayOfRecorded && tab.getLines().isEmpty()) {
+    // Null as well as empty: the claim pipeline uses $ifNull for this same field because a tab
+    // document need not carry a lines array at all, and reading it here must be as forgiving.
+    if (!isReplayOfRecorded && (tab.getLines() == null || tab.getLines().isEmpty())) {
       throw new ValidationException("Tab has nothing unsent to send to the kitchen");
     }
 
@@ -192,8 +233,15 @@ public class CafeFlushService {
     CafePendingFlush pending = tab.getPendingFlush();
 
     if (pending == null || !idempotencyKey.equals(pending.getIdempotencyKey())) {
+      Optional<CafeRecentFlush> stale = recentFlush(tab, idempotencyKey);
+      if (stale.isPresent()) {
+        // The key won a claim once, and later flushes have moved pendingFlush past it.
+        return cafeKotRepository.findByShopIdAndFlushId(shopId, stale.get().getFlushId());
+      }
       // The tab exists, the claim did not land, and no flush on it carries this key: nothing was
-      // claimed, so nothing is owed and the caller may safely retry.
+      // claimed, so nothing is owed and the caller may safely retry. This is also where a flush
+      // refused by the PENDING clause lands — another flush is in flight and owes the kitchen
+      // lines, and these were never taken from the tab, so a retry is exactly right.
       log.warn(
           "Cafe flush of tab {} in shop {} with key {} claimed nothing and left no record",
           tabId,
@@ -229,11 +277,17 @@ public class CafeFlushService {
     String target = pending.getTargetPurchaseId();
     List<CafeTabLine> lines = pending.getLines() == null ? List.of() : pending.getLines();
 
-    // Step 2 — append, idempotent on flushId.
+    // Step 2 — append, idempotent on flushId, and then the money the append moved.
     if (target.equals(newBillId(flushId))) {
       ensureNewBill(shopId, userId, target);
     }
     append(shopId, target, flushId, lines);
+    // The append is a raw $push and touches no total. Nothing downstream repairs that: checkout
+    // completion reads the STORED grandTotal, so without this the bill settles for what it held
+    // before the round was added — zero, on a bill the round opened. Idempotent by construction:
+    // it recomputes from whatever lines the bill now holds, so a retry that appended nothing
+    // recomputes the same numbers.
+    cartTotalsPort.recalculateTotals(shopId, target);
     Document bill = requirePurchase(shopId, target);
 
     // Step 3 — tickets.
@@ -271,6 +325,16 @@ public class CafeFlushService {
             .setOnInsert("valid", true)
             .setOnInsert("items", List.of())
             .setOnInsert(FLUSH_IDS, List.of())
+            // Every money field ZERO, exactly as QuotationService.createQuotation opens a bill.
+            // Null would read as a blank rate column in Sell and, in the window between this
+            // insert and the append's recompute, would make an open bill with no total at all.
+            .setOnInsert("subTotal", BigDecimal.ZERO)
+            .setOnInsert("taxTotal", BigDecimal.ZERO)
+            .setOnInsert("sgstAmount", BigDecimal.ZERO)
+            .setOnInsert("cgstAmount", BigDecimal.ZERO)
+            .setOnInsert("discountTotal", BigDecimal.ZERO)
+            .setOnInsert("saleAdditionalDiscountTotal", BigDecimal.ZERO)
+            .setOnInsert("grandTotal", BigDecimal.ZERO)
             // The bill's own token, from the scope the bill has always allocated under — never the
             // tab's, which numbers a different thing.
             .setOnInsert("tokenNo", cafeTokenService.allocateToken(shopId))
@@ -298,7 +362,7 @@ public class CafeFlushService {
                 .and(FLUSH_IDS)
                 .ne(flushId));
 
-    List<Document> billLines = lines.stream().map(CafeFlushService::billLine).toList();
+    List<Document> billLines = lines.stream().map(line -> billLine(shopId, line)).toList();
     Update update =
         new Update()
             .push("items", new Document("$each", billLines))
@@ -316,26 +380,84 @@ public class CafeFlushService {
   }
 
   /**
-   * One bill line per claimed tab line.
+   * One bill line per claimed tab line, priced.
    *
    * <p>{@code kotSentQuantity} equals the quantity because these lines arrive already sent: this is
    * the flush that hands them to the kitchen, so there is never a moment when the bill holds them
    * unsent. {@code department} and {@code note} ride along because a later reduction of this line
    * owes the kitchen a cancellation, and it has to know which station to tell.
    *
-   * <p>Pricing is deliberately absent: the money on a cart line is the checkout path's arithmetic,
-   * and it lives in {@code core/product} where this module cannot reach.
+   * <p>{@code lineRef} is carried over from the tab line, and is the line's identity where {@code
+   * sellableRef} is only the identity of what is being sold. Two lines of "menu:tea" — one no
+   * sugar, one extra hot — are composed separately, are never merged by the tab or by the {@code
+   * $push} above, and whoever later reduces the second of them must be able to say which one it
+   * was. Addressing by {@code sellableRef} would cancel the first line's note and quantity.
+   *
+   * <p><b>The money.</b> Nothing downstream computes it: checkout completion reads the stored
+   * {@code grandTotal}, and the tax pass skips a line whose price fields are null — so a line
+   * written without a price is a line the shop gives away. It is taken from exactly where {@link
+   * CafeMenuCartLineContributor#buildMenuLine} takes it, through the same {@code pluginengine}
+   * collaborators: {@link ShopMenuLookup} for the price and the rates, {@link
+   * CartLineAmountCalculator} for the line total, and the same {@code saleUnit}/{@code
+   * unitFactor}/{@code billingMode}/{@code discount} defaults. Going anywhere else for it would
+   * make a flushed line and an added-in-Sell line of the same item disagree.
+   *
+   * <p>A menu item that has since been deleted is priced at nothing and logged loudly rather than
+   * throwing: these lines have already been claimed, and a throw here would strand the tab with a
+   * PENDING flush no retry could ever finish, owing a kitchen that was never told.
    */
-  private static Document billLine(CafeTabLine line) {
+  private Document billLine(String shopId, CafeTabLine line) {
     int quantity = line.getQuantity() == null ? 0 : line.getQuantity();
-    return new Document("sellableRef", line.getSellableRef())
-        .append("sellMode", SELL_MODE_MENU)
-        .append("name", line.getName())
-        .append("quantity", BigDecimal.valueOf(quantity))
-        .append("baseQuantity", quantity)
-        .append("kotSentQuantity", quantity)
-        .append("department", MenuDepartments.resolve(line.getDepartment()))
-        .append("note", line.getNote());
+    Document billLine =
+        new Document("sellableRef", line.getSellableRef())
+            .append("lineRef", line.getLineRef())
+            .append("sellMode", SELL_MODE_MENU)
+            .append("name", line.getName())
+            .append("billingMode", BILLING_MODE_REGULAR)
+            .append("quantity", BigDecimal.valueOf(quantity))
+            .append("saleUnit", SALE_UNIT_PCS)
+            .append("baseQuantity", quantity)
+            .append("unitFactor", 1)
+            .append("kotSentQuantity", quantity)
+            .append("department", MenuDepartments.resolve(line.getDepartment()))
+            .append("note", line.getNote());
+
+    MenuItem menuItem = findMenuItem(shopId, line);
+    if (menuItem == null) {
+      log.error(
+          "Cafe flush priced line {} ({}) at nothing: no menu item for {} in shop {}",
+          line.getLineRef(),
+          line.getName(),
+          line.getSellableRef(),
+          shopId);
+      return billLine;
+    }
+
+    BigDecimal unitPrice = menuItem.getSellingPrice();
+    String cgst = menuItem.getCgst();
+    String sgst = menuItem.getSgst();
+    BigDecimal billableQty = BigDecimal.valueOf(quantity);
+    // No discount is composable on a tab, so the additional discount is null here by
+    // construction — the argument is kept explicit to match the contributor's call exactly.
+    BigDecimal totalAmount =
+        CartLineAmountCalculator.lineTotal(unitPrice, null, billableQty, cgst, sgst);
+
+    return billLine
+        .append("maximumRetailPrice", unitPrice)
+        .append("priceToRetail", unitPrice)
+        .append("discount", BigDecimal.ZERO)
+        .append("totalAmount", totalAmount)
+        .append("cgst", cgst)
+        .append("sgst", sgst);
+  }
+
+  /** The menu item behind a tab line, or null when the ref is unparseable or the item is gone. */
+  private MenuItem findMenuItem(String shopId, CafeTabLine line) {
+    SellableRef ref = SellableRef.parseLenient(line.getSellableRef());
+    if (ref == null || !ref.isMenu()) {
+      return null;
+    }
+    return shopMenuLookup.findMenuItem(shopId, ref.id()).orElse(null);
   }
 
   // ------------------------------------------------------------------ step 3
@@ -390,8 +512,9 @@ public class CafeFlushService {
    *
    * <p>The {@code _id} is {@code {flushId}:{department}:ISSUE}, which is what makes writing one
    * twice a replacement rather than a duplicate. The department is the one frozen onto the line
-   * when it was added and is used as it stands — resolving it again could route a live order to a
-   * station the menu has since been edited to name.
+   * when it was added; {@code MenuDepartments.resolve} is applied to it, which only trims and
+   * upper-cases — the menu is never consulted again, so a station renamed since the order was
+   * composed cannot reroute a live ticket.
    */
   private static List<CafeKot> desiredTickets(
       String shopId, String userId, Document bill, String flushId, List<CafeTabLine> lines) {
@@ -476,7 +599,19 @@ public class CafeFlushService {
                 .and("pendingFlush.flushId")
                 .is(flushId));
     Update update = new Update().set("pendingFlush.status", CafeFlushStatus.COMPLETE.name());
-    mongoTemplate.updateFirst(query, update, TABS);
+    long matched = mongoTemplate.updateFirst(query, update, TABS).getMatchedCount();
+    if (matched == 0) {
+      // The one situation in which the invariant is already broken: this flush's record is no
+      // longer on the tab, so somebody replaced it while the work was in flight. The work itself
+      // landed — the lines are on the bill and the tickets are written — but the tab now carries
+      // a record that nothing will complete. Discarding this result would hide it entirely.
+      log.warn(
+          "Cafe flush {} found no record to complete on tab {} in shop {}: its pendingFlush was "
+              + "replaced while the flush was in flight",
+          flushId,
+          tabId,
+          shopId);
+    }
   }
 
   // ----------------------------------------------------------------- helpers
@@ -484,6 +619,18 @@ public class CafeFlushService {
   /** A new bill's id, derived from the flush that asked for it so a retry cannot open a second. */
   private static String newBillId(String flushId) {
     return "cafe-flush-" + flushId;
+  }
+
+  /** This tab's record of an earlier claim under {@code idempotencyKey}, if it still remembers. */
+  private static Optional<CafeRecentFlush> recentFlush(CafeTab tab, String idempotencyKey) {
+    List<CafeRecentFlush> recent = tab.getRecentFlushKeys();
+    if (recent == null) {
+      return Optional.empty();
+    }
+    return recent.stream()
+        .filter(entry -> idempotencyKey.equals(entry.getIdempotencyKey()))
+        .filter(entry -> StringUtils.hasText(entry.getFlushId()))
+        .findFirst();
   }
 
   private CafeTab requireTab(String shopId, String userId, String tabId) {

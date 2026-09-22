@@ -62,6 +62,58 @@ class CafeTabFlusherTest {
   }
 
   @Test
+  void theClaimQueryRefusesATabThatStillOwesAPendingFlush() {
+    flusher.claim(SHOP_ID, USER_ID, TAB_ID, "flush-1", "idem-1", "bill-1");
+
+    Document statusClause =
+        assertInstanceOf(
+            Document.class,
+            capturedQuery().get("pendingFlush.status"),
+            "refusing an owed tab is a clause in the claim, not a check above it: between a read "
+                + "and a claim another key can record a PENDING flush");
+    assertEquals(
+        CafeFlushStatus.PENDING.name(),
+        statusClause.get("$ne"),
+        "$ne also matches a tab with no pendingFlush at all, which is the ordinary case");
+  }
+
+  @Test
+  void theClaimQueryRefusesAKeyTheTabHasEverBeenClaimedUnder() {
+    flusher.claim(SHOP_ID, USER_ID, TAB_ID, "flush-1", "idem-1", "bill-1");
+
+    Document recentClause =
+        assertInstanceOf(
+            Document.class,
+            capturedQuery().get("recentFlushKeys.idempotencyKey"),
+            "pendingFlush remembers only the latest key; a client parks its own for longer");
+    assertEquals(List.of("idem-1"), recentClause.get("$nin"));
+  }
+
+  @Test
+  void theClaimRemembersTheKeyItWonUnder_bounded() {
+    flusher.claim(SHOP_ID, USER_ID, TAB_ID, "flush-1", "idem-1", "bill-1");
+
+    Document emptyStage = (Document) capturedPipeline().get(1).get("$set");
+    Document slice =
+        assertInstanceOf(Document.class, emptyStage.get("recentFlushKeys"), "$slice bounds it");
+    List<?> args = (List<?>) slice.get("$slice");
+    assertEquals(
+        -CafeTabFlusher.RECENT_FLUSH_KEYS_KEPT,
+        args.get(1),
+        "a negative count keeps the newest few; the write bounds the array, not a cleanup job");
+    Document concat = (Document) args.get(0);
+    List<?> parts = (List<?>) concat.get("$concatArrays");
+    assertEquals(
+        new Document("$ifNull", List.of("$recentFlushKeys", List.of())),
+        parts.get(0),
+        "a tab that has never been claimed appends onto an empty array");
+    assertEquals(
+        List.of(new Document("idempotencyKey", "idem-1").append("flushId", "flush-1")),
+        parts.get(1),
+        "the key and the flush it produced, so a stale replay can be answered with its tickets");
+  }
+
+  @Test
   void theClaimEmptiesTheLinesAndWritesTheRecoveryLog() {
     flusher.claim(SHOP_ID, USER_ID, TAB_ID, "flush-1", "idem-1", "bill-1");
 

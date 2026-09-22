@@ -95,6 +95,20 @@ public class Purchase {
    */
   private List<CafeKotCancel> cafeKotCancels;
 
+  /**
+   * The cafe flushes this bill has already absorbed, in the order it absorbed them — written by
+   * {@code plugins/cafe}'s {@code CafeFlushService} as raw BSON, exactly as {@link
+   * #cafeKotCancels} is, because that module cannot depend on this one.
+   *
+   * <p>It must be a mapped property and not merely a key the raw {@code Update} invents: {@code
+   * MongoRepository.save} is a full-document replace, so an unmapped array is silently dropped by
+   * every ordinary save of this document — add-to-cart, the quotation token backfill, checkout
+   * completion. Two things rest on it surviving: the append's {@code $ne} idempotency (a bill that
+   * forgot a flush absorbs it twice), and a ticket's round number, which is this list's index of
+   * the flush plus one (a forgotten list prints "Round 1" twice for one token).
+   */
+  private List<String> cafeFlushIds;
+
   private Instant createdAt;
   private Instant updatedAt;
 }

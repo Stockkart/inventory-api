@@ -45,6 +45,14 @@ public class CafeTabFlusher {
 
   static final String COLLECTION = "cafe_tabs";
 
+  /**
+   * How many recent idempotency keys a tab remembers. Enough to cover a client whose parked key
+   * is a round or two behind; small enough that a tab open all evening does not grow an audit
+   * log. The array is trimmed by the claim itself, with {@code $slice}, so it is bounded by the
+   * write rather than by anybody remembering to prune it.
+   */
+  static final int RECENT_FLUSH_KEYS_KEPT = 10;
+
   private final MongoTemplate mongoTemplate;
 
   public CafeTabFlusher(MongoTemplate mongoTemplate) {
@@ -77,7 +85,21 @@ public class CafeTabFlusher {
                 .is(userId)
                 // The idempotency. Not an index: see the class javadoc.
                 .and("pendingFlush.idempotencyKey")
-                .ne(idempotencyKey));
+                .ne(idempotencyKey)
+                // A tab that still owes an earlier flush is never claimed out from under it.
+                // The $ne above excludes only THIS key, so a different key would otherwise match
+                // a tab carrying somebody else's PENDING record and overwrite it — taking an
+                // empty pre-image and erasing the only evidence those lines are owed to a
+                // kitchen that has not been told. The caller finishes the older flush first;
+                // this clause is what makes that check hold across the gap between its read and
+                // its claim. $ne also matches a document with no pendingFlush at all, which is
+                // the ordinary case.
+                .and("pendingFlush.status")
+                .ne(CafeFlushStatus.PENDING.name())
+                // A key this tab has already been claimed under never claims again, however far
+                // back it was — pendingFlush remembers only the latest. See CafeRecentFlush.
+                .and("recentFlushKeys.idempotencyKey")
+                .nin(idempotencyKey));
 
     // A two-stage aggregation-pipeline update, because stage 1 has to read a field of the very
     // document it is updating. Pipeline stages run in sequence, so the order below is
@@ -89,7 +111,7 @@ public class CafeTabFlusher {
                 // Stage 1 FIRST, while `lines` still holds what the kitchen is owed.
                 stage(recordPendingFlushStage(flushId, idempotencyKey, targetPurchaseId)),
                 // Stage 2 second: only now may the tab be emptied.
-                stage(emptyLinesStage())));
+                stage(emptyLinesStage(flushId, idempotencyKey))));
 
     CafeTab preImage =
         mongoTemplate.findAndModify(
@@ -135,11 +157,29 @@ public class CafeTabFlusher {
     return new Document("$set", new Document("pendingFlush", pendingFlush));
   }
 
-  /** Stage 2 — the tab holds only unsent items, and these have just been claimed. */
-  private static Document emptyLinesStage() {
+  /**
+   * Stage 2 — the tab holds only unsent items, and these have just been claimed.
+   *
+   * <p>The same stage remembers the key, because the claim is the only moment at which a key is
+   * known to have won: appending it to {@code recentFlushKeys} here means a stale retry of it is
+   * refused by the query above however many flushes later it arrives. {@code $slice} with a
+   * negative count keeps the newest {@link #RECENT_FLUSH_KEYS_KEPT} and drops the rest, so the
+   * write bounds the array rather than a cleanup job.
+   */
+  private static Document emptyLinesStage(String flushId, String idempotencyKey) {
+    Document entry = new Document("idempotencyKey", idempotencyKey).append("flushId", flushId);
+    Document appended =
+        new Document(
+            "$concatArrays",
+            List.of(
+                new Document("$ifNull", List.of("$recentFlushKeys", List.of())),
+                List.of(entry)));
     return new Document(
         "$set",
         new Document("lines", List.of())
+            .append(
+                "recentFlushKeys",
+                new Document("$slice", List.of(appended, -RECENT_FLUSH_KEYS_KEPT)))
             .append("updatedAt", Date.from(Instant.now())));
   }
 }

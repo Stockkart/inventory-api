@@ -23,6 +23,19 @@ public class PurchaseItem {
   /** Canonical line identity: {@code inventory:lotId} or {@code menu:itemId}. */
   private String sellableRef;
 
+  /**
+   * Stable identity of <i>this</i> line, distinct from {@link #sellableRef}, which names only
+   * what is being sold.
+   *
+   * <p>Set by {@code plugins/cafe}'s flush, which carries it over from the tab line it was
+   * composed as. A cafe bill can legitimately hold two lines with the same {@code sellableRef} —
+   * "2x Tea, no sugar" and "1x Tea, extra hot" are composed separately, are never merged by the
+   * tab or by the flush's {@code $push}, and must stay separately addressable: whoever reduces
+   * the second of them owes the kitchen a cancellation for that line's note and sent quantity,
+   * not for the first line's. Null on every line no cafe flush produced.
+   */
+  private String lineRef;
+
   /** Optional stock target when sale consumes inventory (e.g. cafe direct). */
   private String stockRef;
 

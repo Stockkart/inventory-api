@@ -41,6 +41,13 @@ public class CafeTab {
   /** Null until a flush claims this tab's lines (Task 3). */
   private CafePendingFlush pendingFlush;
 
+  /**
+   * The last few idempotency keys this tab has been claimed under, newest last, each with the
+   * flush it produced. Written by the claim; see {@link CafeRecentFlush} for why the single key
+   * on {@link #pendingFlush} is not enough.
+   */
+  private List<CafeRecentFlush> recentFlushKeys = new ArrayList<>();
+
   private Instant createdAt;
   private Instant updatedAt;
 }
