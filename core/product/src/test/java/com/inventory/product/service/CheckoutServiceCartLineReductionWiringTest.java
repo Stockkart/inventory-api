@@ -2,6 +2,8 @@ package com.inventory.product.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -26,6 +28,7 @@ import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.bson.Document;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -131,6 +134,77 @@ class CheckoutServiceCartLineReductionWiringTest {
         keys.getAllValues().get(0),
         keys.getAllValues().get(1),
         "5->3 and 3->2 are different edits and must not share a key");
+  }
+
+  // ------------------------- B6: the fall-back replace and the cancel it just made
+
+  @Test
+  void theFullSaveFallbackDoesNotRevertTheCancelThisRequestJustMade() {
+    // A legacy line with no identity of any kind forces the fall-back to the full-document
+    // replace. The cancel the same request issued a few lines earlier wrote cafeKotCancels and
+    // decremented items.$.kotSentQuantity straight into Mongo; neither is on the in-memory cart,
+    // so the replace used to write both back out -- deterministically, with no second writer
+    // anywhere near it. The kitchen stops cooking and the bill says it was never told.
+    Purchase bill = openBill();
+    bill.getItems().add(menuLine("a1", "menu:tea", "Tea", 3, 3));
+    PurchaseItem legacy = new PurchaseItem();
+    legacy.setName("Something sold before any of these refs existed");
+    legacy.setBaseQuantity(1);
+    legacy.setQuantity(BigDecimal.ONE);
+    legacy.setPriceToRetail(BigDecimal.TEN);
+    legacy.setTotalAmount(BigDecimal.TEN);
+    bill.getItems().add(legacy);
+    Purchase cart = purchases.seed(bill);
+
+    // What CafeKotCancelService does when the port is called: both writes land on the stored
+    // document, and nothing about them reaches the cart in memory.
+    theCancelLandsInMongoWhenTheKitchenIsTold();
+
+    checkoutService.updateCart(
+        cart,
+        purchases.stored(BILL_ID),
+        List.of(decrementLine("menu:tea", -2)),
+        null,
+        null,
+        null,
+        BillingMode.REGULAR);
+
+    assertTrue(purchases.fullReplaceUsed(), "the line with no identity forces the replace");
+    Purchase after = purchases.read(BILL_ID);
+    assertNotNull(
+        after.getCafeKotCancels(), "the cancellation owed to the kitchen is still on the bill");
+    assertEquals(1, after.getCafeKotCancels().size());
+    assertEquals(
+        1,
+        after.getItems().stream()
+            .filter(item -> "a1".equals(item.getLineRef()))
+            .findFirst()
+            .orElseThrow()
+            .getKotSentQuantity(),
+        "and the kitchen's decrement is not written back to what the cart read");
+  }
+
+  private void theCancelLandsInMongoWhenTheKitchenIsTold() {
+    org.mockito.Mockito.doAnswer(
+            invocation -> {
+              purchases.mutateStored(
+                  BILL_ID,
+                  stored -> {
+                    stored.getList("items", Document.class).get(0).put("kotSentQuantity", 1);
+                    stored.put(
+                        "cafeKotCancels",
+                        new ArrayList<>(
+                            List.of(
+                                new Document("cancelId", "cancel-1")
+                                    .append("lineRef", "a1")
+                                    .append("quantity", 2)
+                                    .append("status", "COMPLETE"))));
+                  });
+              return null;
+            })
+        .when(port)
+        .lineReduced(
+            anyString(), anyString(), anyString(), anyString(), anyInt(), anyInt(), anyString());
   }
 
   // ------------------------------------------------------------------- helpers

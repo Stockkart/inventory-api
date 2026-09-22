@@ -7,7 +7,6 @@ import lombok.Data;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.index.CompoundIndexes;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 /**
@@ -18,15 +17,17 @@ import org.springframework.data.mongodb.core.mapping.Document;
  */
 @Data
 @Document(collection = "cafe_kots")
+// One index, and it is the one scripts/cafe-kot-indexes.mongodb.js creates. shopId needs none
+// of its own: the two queries on this collection are findByIdAndShopId, served by _id, and
+// findByShopIdAndFlushId, served by this -- of which shopId is the prefix.
 @CompoundIndexes({
-  @CompoundIndex(name = "shop_punch", def = "{'shopId': 1, 'punchId': 1}"),
   @CompoundIndex(name = "shop_flush", def = "{'shopId': 1, 'flushId': 1}")
 })
 public class CafeKot {
 
   @Id private String id;
 
-  @Indexed private String shopId;
+  private String shopId;
 
   private String purchaseId;
   private Integer kotNo;
@@ -52,16 +53,7 @@ public class CafeKot {
   private String tokenNo;
 
   private List<CafeKotLine> lines = new ArrayList<>();
-  private String voidReason;
-  private String voidedBy;
-  private Instant voidedAt;
   private Integer reprintCount = 0;
-
-  /**
-   * The punch that produced this ticket. Idempotency lives on the punch, never here: one punch
-   * creates one ticket per department, so a key on this document could not be unique across them.
-   */
-  private String punchId;
 
   /**
    * The flush that produced this ticket. Idempotency lives on the flush record written onto the

@@ -30,7 +30,16 @@ public class CafeKotCancel {
   private String cancelId;
   private String idempotencyKey;
 
-  /** The bill line this cancellation targets — {@code PurchaseItem.sellableRef}. */
+  /**
+   * The bill line this cancellation targets: {@code PurchaseItem.lineRef}, which names <i>this
+   * line</i> and nothing else.
+   *
+   * <p><b>Not {@code sellableRef}.</b> A cafe bill can hold two lines for the same sellable — the
+   * round the kitchen is already cooking and the cashier's own addition beside it — and
+   * cancelling by what is being sold rather than by which line withdraws from whichever of them
+   * matched first. That is the identity defect the last fix round removed; a reader who restores
+   * the old wording reintroduces it.
+   */
   private String lineRef;
 
   /** Absolute quantity owed to the kitchen as a cancellation. Never negative. */

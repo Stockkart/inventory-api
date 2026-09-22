@@ -94,10 +94,11 @@ class CafeKotServiceTest {
   }
 
   @Test
-  void documentRendersCancelledForALegacyVoidedTicketWithNoKind() {
-    // The running-order path this ticket predates set no `kind`; only `status` says VOIDED.
+  void kindIsTheOnlyThingThatDecidesTheCancelledStamp() {
+    // No legacy branch in the document path, as the spec requires: a ticket with no kind renders
+    // unstamped whatever its status says, and nothing on this branch writes any other status.
     CafeKotTicket ticket =
-        CafeKotTicket.builder().kotId("k3").shopId("s1").status("VOIDED").lines(List.of()).build();
+        CafeKotTicket.builder().kotId("k3").shopId("s1").status("ISSUED").lines(List.of()).build();
     when(port.findKot("s1", "k3")).thenReturn(Optional.of(ticket));
     when(kotPdfService.generateKotPdf(any())).thenReturn(new byte[] {1});
 
@@ -105,7 +106,7 @@ class CafeKotServiceTest {
 
     ArgumentCaptor<GenerateKotRequest> captor = ArgumentCaptor.forClass(GenerateKotRequest.class);
     verify(kotPdfService).generateKotPdf(captor.capture());
-    assertEquals(KotStamp.CANCELLED, captor.getValue().getStamp());
+    assertEquals(KotStamp.NONE, captor.getValue().getStamp());
   }
 
   @Test

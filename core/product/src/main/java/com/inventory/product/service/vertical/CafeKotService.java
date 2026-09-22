@@ -75,13 +75,15 @@ public class CafeKotService {
   }
 
   /**
-   * A ticket cancels if its {@code kind} says so — or, for a ticket written before {@code kind}
-   * existed (the retired running-order path, which left {@code kind == null}), if its {@code
-   * status} says VOIDED. Either signal alone is enough: a legacy voided ticket must never render
-   * unstamped.
+   * A ticket cancels if its {@code kind} says so, and that is the whole rule — no legacy branch
+   * in the document path, as the spec requires.
+   *
+   * <p>There used to be a second clause for {@code status == "VOIDED"}, left by the retired
+   * running-order path. Nothing on this branch writes that status: the only thing that stops food
+   * is {@code CafeKotCancelService}, and every ticket it writes carries {@code kind == CANCEL}.
    */
   private static boolean isCancelled(CafeKotTicket ticket) {
-    return "CANCEL".equals(ticket.getKind()) || "VOIDED".equals(ticket.getStatus());
+    return "CANCEL".equals(ticket.getKind());
   }
 
   private GenerateKotRequest toDocumentRequest(CafeKotTicket ticket, KotStamp stamp) {

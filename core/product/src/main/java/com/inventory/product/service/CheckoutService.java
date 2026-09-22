@@ -1562,6 +1562,12 @@ public class CheckoutService {
                 + "falling back to a full-document save",
             existingCart.getId(),
             existingCart.getShopId());
+        // The cancellations this very request just issued are in Mongo and on nothing in memory:
+        // notifyLineReductions pushes cafeKotCancels and decrements items.$.kotSentQuantity
+        // directly on the stored document, above, and the in-memory cart has never seen either.
+        // A full replace from that cart writes both back out -- the kitchen has been told to stop
+        // and the bill says it never was -- with no concurrency needed to reach it.
+        carryKitchenStateOntoTheReplace(existingCart, menuLineReductions);
         return purchaseRepository.save(existingCart);
       }
       return existingCart;
@@ -1573,6 +1579,41 @@ public class CheckoutService {
       log.error("Unexpected error while updating cart: {}", existingCart.getId(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
           "Error updating cart: " + e.getMessage(), e);
+    }
+  }
+
+  /**
+   * Copies the kitchen-side state off the stored document onto the cart about to replace it: the
+   * {@code cafeKotCancels} array and each line's {@code kotSentQuantity}.
+   *
+   * <p>Only for the fall-back path, and only when this request issued a cancellation. It does not
+   * make the replace safe -- anything else another writer did is still lost, which is why the
+   * fall-back is logged -- but it stops the one loss that needs no concurrency at all: this
+   * request reverting its own cancel a few lines after making it.
+   */
+  private void carryKitchenStateOntoTheReplace(
+      Purchase cart, List<MenuLineReduction> reductions) {
+    if (reductions.isEmpty() || cart.getId() == null) {
+      return;
+    }
+    Purchase stored = purchaseRepository.findById(cart.getId()).orElse(null);
+    if (stored == null || !cart.getShopId().equals(stored.getShopId())) {
+      return;
+    }
+    cart.setCafeKotCancels(stored.getCafeKotCancels());
+    if (cart.getItems() == null || stored.getItems() == null) {
+      return;
+    }
+    Map<String, Integer> sentByLineRef = new HashMap<>();
+    for (PurchaseItem line : stored.getItems()) {
+      if (StringUtils.hasText(line.getLineRef())) {
+        sentByLineRef.put(line.getLineRef(), line.getKotSentQuantity());
+      }
+    }
+    for (PurchaseItem line : cart.getItems()) {
+      if (StringUtils.hasText(line.getLineRef()) && sentByLineRef.containsKey(line.getLineRef())) {
+        line.setKotSentQuantity(sentByLineRef.get(line.getLineRef()));
+      }
     }
   }
 
@@ -2423,9 +2464,18 @@ public class CheckoutService {
 
   /**
    * Tells {@link #cartLineReductionPort}, if this build has one, about every reduction {@link
-   * #mergeMenuCartLine} owed a notification for -- called only after the write that stores those
-   * reductions has landed, so a retry after a failure here starts from the state this request
-   * already produced.
+   * #mergeMenuCartLine} owed a notification for.
+   *
+   * <p><b>Called BEFORE the cart write, not after, and the trade is real.</b> The idempotency key
+   * and the quantities are derived from the pre-mutation read, so a failure here has written
+   * nothing at all and an identical retry of the same request reproduces the same key and resumes
+   * cleanly. The price is the other order of failure: if the cancel succeeds and the cart write
+   * then fails, the kitchen has stopped cooking food the bill still charges for. A retry heals
+   * that -- the key is stable, so the cancel replays as a no-op and only the cart write is redone
+   * -- but a cashier who walks away instead leaves the customer billed for food nobody made.
+   * Calling after the write inverts it: the bill would be right and the kitchen would never be
+   * told, which is food cooked, served to nobody and not paid for, and no retry reaches it
+   * because the request already returned 200.
    *
    * <p>A silent no-op only for a request that reduced nothing owed anywhere -- an empty list for
    * every grocery, medical and sports request, and for a cafe request that never touched a sent

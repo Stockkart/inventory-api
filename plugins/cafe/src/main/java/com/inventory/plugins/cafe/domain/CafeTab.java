@@ -21,8 +21,13 @@ import org.springframework.data.mongodb.core.mapping.Document;
  */
 @Data
 @Document(collection = "cafe_tabs")
+// The index scripts/cafe-kot-indexes.mongodb.js creates, named and defined the same way. The
+// createdAt suffix is what serves the "newest first" listing; a shopId/userId/status index
+// beside it would be a prefix duplicate of this one.
 @CompoundIndexes({
-  @CompoundIndex(name = "shop_user_status", def = "{'shopId': 1, 'userId': 1, 'status': 1}")
+  @CompoundIndex(
+      name = "shop_user_status_created",
+      def = "{'shopId': 1, 'userId': 1, 'status': 1, 'createdAt': -1}")
 })
 public class CafeTab {
 

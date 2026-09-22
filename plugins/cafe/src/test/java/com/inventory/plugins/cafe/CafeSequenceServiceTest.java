@@ -53,18 +53,19 @@ class CafeSequenceServiceTest {
     stubCounter(null);
 
     assertEquals(
-        1, service.allocate("shop-1", LocalDate.of(2026, 9, 20), CafeSequenceSeries.ORDER));
+        1, service.allocate("shop-1", LocalDate.of(2026, 9, 20), CafeSequenceSeries.KOT));
   }
 
   @Test
-  void orderAndKotSeriesAreKeyedSeparately() {
+  void theCounterIsKeyedByShopDateAndSeries() {
+    // The series discriminator stays in the key even with one series, so a second counter can be
+    // added later without migrating the collection's unique index.
     stubCounter(new Document("nextSequence", 1));
     ArgumentCaptor<Query> query = ArgumentCaptor.forClass(Query.class);
 
-    service.allocate("shop-1", LocalDate.of(2026, 9, 20), CafeSequenceSeries.ORDER);
     service.allocate("shop-1", LocalDate.of(2026, 9, 20), CafeSequenceSeries.KOT);
 
-    verify(mongoTemplate, org.mockito.Mockito.times(2))
+    verify(mongoTemplate)
         .findAndModify(
             query.capture(),
             any(Update.class),
@@ -72,10 +73,10 @@ class CafeSequenceServiceTest {
             eq(Document.class),
             eq("cafe_sequences"));
 
-    String first = query.getAllValues().get(0).getQueryObject().toJson();
-    String second = query.getAllValues().get(1).getQueryObject().toJson();
-    assertTrue(first.contains("ORDER"), first);
-    assertTrue(second.contains("KOT"), second);
+    String keyed = query.getValue().getQueryObject().toJson();
+    assertTrue(keyed.contains("shop-1"), keyed);
+    assertTrue(keyed.contains("2026-09-20"), keyed);
+    assertTrue(keyed.contains("KOT"), keyed);
   }
 
   @Test

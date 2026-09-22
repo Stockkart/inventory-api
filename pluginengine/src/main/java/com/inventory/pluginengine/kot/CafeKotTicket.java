@@ -23,9 +23,8 @@ public class CafeKotTicket {
   private String kind;
 
   /**
-   * {@code ISSUED} or {@code VOIDED} — literal, mirroring the cafe-side {@code CafeKotStatus}.
-   * Tickets written before {@code kind} existed carry this instead: a ticket voided by the retired
-   * running-order path has {@code kind == null} and {@code status == "VOIDED"}.
+   * {@code ISSUED} — literal, mirroring the cafe-side {@code CafeKotStatus}, which has no other
+   * constant. Whether a ticket sends food or stops it is {@link #kind}, never this.
    */
   private String status;
 
