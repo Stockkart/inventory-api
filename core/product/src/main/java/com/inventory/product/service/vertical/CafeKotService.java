@@ -47,12 +47,21 @@ public class CafeKotService {
   }
 
   /**
-   * Re-issues an already-issued ticket for the frontend to fetch and print again. Creates no new
-   * ticket; the caller ({@link com.inventory.product.rest.controller.CafeKotController}) has
-   * already rejected a blank {@code Idempotency-Key} before this is reached.
+   * Re-issues an already-issued ticket's document for the frontend to fetch and print again.
+   * Bumps the ticket's {@code reprintCount} through the port; creates no new ticket. The caller
+   * ({@link com.inventory.product.rest.controller.CafeKotController}) has already rejected a
+   * blank {@code Idempotency-Key} before this is reached.
+   *
+   * <p>Renders {@code REPRINT} so a cook cannot mistake the slip for a second order — unless the
+   * ticket is already cancelled, in which case it renders {@code CANCELLED} still: that is already
+   * unmistakable, and stamping {@code REPRINT} over it would read as a fresh order for a dead
+   * ticket, while a second {@code CANCELLED}-of-{@code CANCELLED} stamp would read as a second,
+   * unrelated cancellation.
    */
-  public CafeKotTicket reprint(String shopId, String kotId, String idempotencyKey) {
-    return port().reprint(shopId, kotId, idempotencyKey);
+  public byte[] reprint(String shopId, String kotId, String idempotencyKey) {
+    CafeKotTicket ticket = port().reprint(shopId, kotId, idempotencyKey);
+    KotStamp stamp = isCancelled(ticket) ? KotStamp.CANCELLED : KotStamp.REPRINT;
+    return kotPdfService.generateKotPdf(toDocumentRequest(ticket, stamp));
   }
 
   /** The ticket's document. Renders unstamped for an issued ticket, CANCELLED for a voided one. */

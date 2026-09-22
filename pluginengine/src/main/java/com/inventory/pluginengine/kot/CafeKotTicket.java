@@ -36,5 +36,9 @@ public class CafeKotTicket {
   private String tokenNo;
 
   private String businessDate;
+
+  /** How many times this ticket has been reprinted. Zero for a ticket never reprinted. */
+  private Integer reprintCount;
+
   private List<CafeKotTicketLine> lines;
 }

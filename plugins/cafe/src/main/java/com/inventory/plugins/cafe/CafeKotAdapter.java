@@ -171,6 +171,7 @@ public class CafeKotAdapter implements CafeKotPort {
         .tableLabel(kot.getTableLabel())
         .tokenNo(kot.getTokenNo())
         .businessDate(kot.getBusinessDate())
+        .reprintCount(kot.getReprintCount())
         .lines(
             kot.getLines() == null
                 ? List.of()

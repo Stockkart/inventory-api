@@ -9,7 +9,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.inventory.common.exception.ValidationException;
-import com.inventory.pluginengine.kot.CafeKotTicket;
 import com.inventory.product.service.vertical.CafeKotService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.BeforeEach;
@@ -48,12 +47,12 @@ class CafeKotControllerTest {
 
   @Test
   void reprintUsesShopIdFromRequestAttributes() {
-    CafeKotTicket ticket = CafeKotTicket.builder().kotId("k1").shopId("shop-1").build();
-    when(cafeKotService.reprint("shop-1", "k1", "idem-1")).thenReturn(ticket);
+    byte[] pdf = {4, 5, 6};
+    when(cafeKotService.reprint("shop-1", "k1", "idem-1")).thenReturn(pdf);
 
     var response = controller.reprint("k1", "idem-1", httpRequest);
 
-    assertEquals(ticket, response.getBody().getData());
+    assertEquals(pdf.length, response.getBody().length);
     verify(cafeKotService).reprint("shop-1", "k1", "idem-1");
   }
 

@@ -82,6 +82,9 @@ class KotPdfServiceTest {
 
     assertFalse(html.contains("REPRINT"), html);
     assertFalse(html.contains("CANCELLED"), html);
+    // The stamp block itself must be guarded, not just empty of text: an unconditional div with a
+    // blank label is exactly the defect that shipped a bare "Order" line before (a967c9d).
+    assertFalse(html.contains("class=\"center stamp\""), html);
   }
 
   @Test
