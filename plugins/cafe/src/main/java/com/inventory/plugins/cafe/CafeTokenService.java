@@ -39,6 +39,23 @@ public class CafeTokenService {
     return allocateToken(shopId, SCOPE_BILL);
   }
 
+  /**
+   * Matches this scope's counter row.
+   *
+   * <p>Counter rows written before scoping existed carry no {@code scope} field, and a Mongo
+   * equality match does not match a missing field. Without this, the first bill allocation after
+   * the scoped code ships misses today's row, the upsert inserts a fresh one, and the sequence
+   * restarts at 1 — two tables holding token "1" on the same day. A row with no scope is the
+   * bill's, because the bill was the only thing that ever allocated one.
+   */
+  private static Criteria scopeMatches(String scope) {
+    if (!SCOPE_BILL.equals(scope)) {
+      return Criteria.where("scope").is(scope);
+    }
+    return new Criteria()
+        .orOperator(Criteria.where("scope").is(SCOPE_BILL), Criteria.where("scope").exists(false));
+  }
+
   public String allocateToken(String shopId, String scope) {
     LocalDate businessDate = LocalDate.now();
     Query query =
@@ -47,8 +64,7 @@ public class CafeTokenService {
                 .is(shopId)
                 .and("businessDate")
                 .is(businessDate.toString())
-                .and("scope")
-                .is(scope));
+                .andOperator(scopeMatches(scope)));
     Update update =
         new Update()
             .inc("nextSequence", 1)
