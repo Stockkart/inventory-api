@@ -85,6 +85,10 @@ public class CafeTabService {
    * Adds one line to an open tab. The department is resolved from the menu item and frozen onto
    * the line now, the same way {@code CafeMenuCartLineContributor} freezes it onto a cart line —
    * a later menu edit must not reroute an order already composed.
+   *
+   * <p>The price and the two GST rates are frozen with it, and for the same reason: this is the
+   * moment the customer is quoted. The flush then bills what was quoted, whatever has happened to
+   * the menu in between — a re-price, or the item being deleted outright. See {@link CafeTabLine}.
    */
   public CafeTab addLine(
       String shopId, String userId, String tabId, String sellableRef, int quantity, String note) {
@@ -109,13 +113,19 @@ public class CafeTabService {
     line.setQuantity(quantity);
     line.setNote(normalizeNote(note));
     line.setDepartment(MenuDepartments.resolve(menuItem.getDepartment()));
+    line.setPrice(menuItem.getSellingPrice());
+    line.setCgst(menuItem.getCgst());
+    line.setSgst(menuItem.getSgst());
 
     tab.getLines().add(line);
     tab.setUpdatedAt(Instant.now());
     return cafeTabRepository.save(tab);
   }
 
-  /** Updates the quantity and/or note of an existing line. The frozen department never changes. */
+  /**
+   * Updates the quantity and/or note of an existing line. The frozen department never changes, and
+   * neither does the frozen price: the customer was quoted it when the line was composed.
+   */
   public CafeTab updateLine(
       String shopId, String userId, String tabId, String lineRef, Integer quantity, String note) {
     CafeTab tab = loadOpenTab(shopId, userId, tabId);

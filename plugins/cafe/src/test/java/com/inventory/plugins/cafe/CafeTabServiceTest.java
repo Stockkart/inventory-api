@@ -14,9 +14,12 @@ import static org.mockito.Mockito.when;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.pluginengine.integration.ShopMenuLookup;
+import com.inventory.pluginengine.menu.MenuItem;
 import com.inventory.plugins.cafe.domain.CafeTab;
+import com.inventory.plugins.cafe.domain.CafeTabLine;
 import com.inventory.plugins.cafe.domain.CafeTabRepository;
 import com.inventory.plugins.cafe.domain.CafeTabStatus;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -141,6 +144,46 @@ class CafeTabServiceTest {
     assertThrows(
         ResourceNotFoundException.class, () -> service.close(SHOP_ID, USER_ID, "tab-2"));
     verify(cafeTabRepository).findByIdAndShopIdAndUserId("tab-2", SHOP_ID, USER_ID);
+  }
+
+  @Test
+  void aComposedLineFreezesThePriceTheCustomerWasQuoted() {
+    CafeTab tab = new CafeTab();
+    tab.setId("tab-1");
+    tab.setShopId(SHOP_ID);
+    tab.setUserId(USER_ID);
+    tab.setStatus(CafeTabStatus.OPEN);
+    tab.setLines(new ArrayList<>());
+    when(cafeTabRepository.findByIdAndShopIdAndUserId("tab-1", SHOP_ID, USER_ID))
+        .thenReturn(Optional.of(tab));
+
+    MenuItem tea = new MenuItem();
+    tea.setId("tea");
+    tea.setName("Tea");
+    tea.setSellingPrice(new BigDecimal("30.00"));
+    tea.setCgst("2.5");
+    tea.setSgst("2.5");
+    tea.setDepartment("kitchen");
+    when(shopMenuLookup.findMenuItem(SHOP_ID, "tea")).thenReturn(Optional.of(tea));
+
+    service.addLine(SHOP_ID, USER_ID, "tab-1", "menu:tea", 2, null);
+
+    CafeTabLine line = tab.getLines().get(0);
+    assertEquals(new BigDecimal("30.00"), line.getPrice(), "what the customer was quoted");
+    assertEquals("2.5", line.getCgst());
+    assertEquals("2.5", line.getSgst());
+    assertEquals("KITCHEN", line.getDepartment(), "and the station, as before");
+
+    // The menu moves on mid-round.
+    tea.setSellingPrice(new BigDecimal("50.00"));
+    assertEquals(
+        new BigDecimal("30.00"),
+        tab.getLines().get(0).getPrice(),
+        "the composed line is not re-priced under the customer");
+
+    service.updateLine(SHOP_ID, USER_ID, "tab-1", line.getLineRef(), 3, null);
+    assertEquals(new BigDecimal("30.00"), line.getPrice(), "nor by editing the quantity");
+    assertEquals(3, line.getQuantity());
   }
 
   @Test

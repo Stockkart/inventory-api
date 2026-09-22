@@ -46,12 +46,21 @@ public class CafeTabFlusher {
   static final String COLLECTION = "cafe_tabs";
 
   /**
-   * How many recent idempotency keys a tab remembers. Enough to cover a client whose parked key
-   * is a round or two behind; small enough that a tab open all evening does not grow an audit
-   * log. The array is trimmed by the claim itself, with {@code $slice}, so it is bounded by the
-   * write rather than by anybody remembering to prune it.
+   * How many recent idempotency keys a tab remembers, and so how many further rounds a parked key
+   * survives before the tab forgets that it won a claim once. Forgetting is not harmless: a key
+   * the tab no longer remembers passes the {@code $nin} again and claims a round the caller never
+   * composed, which is the mis-timed send this record exists to prevent.
+   *
+   * <p>Ten was one evening on a busy table — the client parks its key in {@code sessionStorage},
+   * where it outlives ten rounds easily. The bound is now the tab's whole life instead: a tab is
+   * opened for one party and closed when they leave, and a hundred rounds to one table in one
+   * sitting does not happen. A key is a short string; a hundred of them are a few kilobytes in a
+   * document whose limit is sixteen megabytes.
+   *
+   * <p>The array is still trimmed by the claim itself, with {@code $slice}, so it stays bounded by
+   * the write rather than by anybody remembering to prune it.
    */
-  static final int RECENT_FLUSH_KEYS_KEPT = 10;
+  static final int RECENT_FLUSH_KEYS_KEPT = 100;
 
   private final MongoTemplate mongoTemplate;
 

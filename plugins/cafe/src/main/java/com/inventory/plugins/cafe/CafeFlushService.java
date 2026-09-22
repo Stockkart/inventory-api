@@ -281,6 +281,7 @@ public class CafeFlushService {
     if (target.equals(newBillId(flushId))) {
       ensureNewBill(shopId, userId, target);
     }
+    target = retargetIfSettled(shopId, userId, tab, pending, target);
     append(shopId, target, flushId, lines);
     // The append is a raw $push and touches no total. Nothing downstream repairs that: checkout
     // completion reads the STORED grandTotal, so without this the bill settles for what it held
@@ -299,6 +300,80 @@ public class CafeFlushService {
   }
 
   // ------------------------------------------------------------------ step 2
+
+  /**
+   * Moves this flush to a bill of its own when the one it was aimed at has since been settled.
+   *
+   * <p>A bill that is no longer CREATED has an invoice number and money taken against it, and its
+   * totals are frozen at what was settled — {@link CartTotalsPort} will not recompute them, and
+   * rightly. Appending to it anyway lands priced lines on a closed invoice that contribute to no
+   * total: free food, and a settled document quietly changed after the fact. That is what the
+   * table having paid and closed while a retry was still in flight looks like.
+   *
+   * <p>Refusing is not available: the lines are already claimed, so a throw would strand the tab
+   * owing a kitchen that was never told. So the round goes onto a new bill instead, the same one
+   * a flush with no target would have opened — derived from the flush id, so every retry derives
+   * the same bill rather than opening another. The tab's record is moved with it, and the party
+   * has a second bill for the round they ordered after settling the first, which is what happened.
+   *
+   * @return the bill to append to: the original one, or the new one this flush now owns.
+   */
+  private String retargetIfSettled(
+      String shopId, String userId, CafeTab tab, CafePendingFlush pending, String target) {
+
+    String flushId = pending.getFlushId();
+    Document bill =
+        mongoTemplate.findOne(
+            Query.query(Criteria.where("_id").is(target).and("shopId").is(shopId)),
+            Document.class,
+            PURCHASES);
+    if (bill == null) {
+      // Not this method's business: the append will match nothing and requirePurchase throws.
+      return target;
+    }
+    String status = bill.getString("status");
+    if (status == null || STATUS_CREATED.equals(status)) {
+      return target;
+    }
+    List<?> absorbed = (List<?>) bill.get(FLUSH_IDS);
+    if (absorbed != null && absorbed.contains(flushId)) {
+      // The lines are already on it and were priced into the total it settled for. Nothing to
+      // move; the append is a no-op and the rest of the flush finishes against this bill.
+      return target;
+    }
+
+    String fresh = newBillId(flushId);
+    if (fresh.equals(target)) {
+      // The bill this flush opened for itself was settled before the flush could append to it.
+      // There is no second bill to derive, and inventing one from a fresh id would make a retry
+      // open another. Nothing here is safe, and saying so beats writing onto a paid invoice.
+      throw new ValidationException(
+          "Bill " + target + " was settled while flush " + flushId + " was in flight");
+    }
+
+    log.warn(
+        "Bill {} in shop {} is {}; moving cafe flush {} onto its own bill {}",
+        target,
+        shopId,
+        status,
+        flushId,
+        fresh);
+    ensureNewBill(shopId, userId, fresh);
+    // Recorded before the append, so a retry reads the new target off the tab rather than
+    // rediscovering it. The id is derived from the flush either way, so the two agree.
+    mongoTemplate.updateFirst(
+        Query.query(
+            Criteria.where("_id")
+                .is(tab.getId())
+                .and("shopId")
+                .is(shopId)
+                .and("pendingFlush.flushId")
+                .is(flushId)),
+        new Update().set("pendingFlush.targetPurchaseId", fresh),
+        TABS);
+    pending.setTargetPurchaseId(fresh);
+    return fresh;
+  }
 
   /**
    * Creates the bill this flush asked for, if it is not already there.
@@ -393,18 +468,22 @@ public class CafeFlushService {
    * $push} above, and whoever later reduces the second of them must be able to say which one it
    * was. Addressing by {@code sellableRef} would cancel the first line's note and quantity.
    *
-   * <p><b>The money.</b> Nothing downstream computes it: checkout completion reads the stored
-   * {@code grandTotal}, and the tax pass skips a line whose price fields are null — so a line
-   * written without a price is a line the shop gives away. It is taken from exactly where {@link
-   * CafeMenuCartLineContributor#buildMenuLine} takes it, through the same {@code pluginengine}
-   * collaborators: {@link ShopMenuLookup} for the price and the rates, {@link
-   * CartLineAmountCalculator} for the line total, and the same {@code saleUnit}/{@code
-   * unitFactor}/{@code billingMode}/{@code discount} defaults. Going anywhere else for it would
-   * make a flushed line and an added-in-Sell line of the same item disagree.
+   * <p><b>The money, and where it comes from.</b> Nothing downstream computes it: checkout
+   * completion reads the stored {@code grandTotal}, and a line written without a price is a line
+   * the shop gives away. It comes off the <b>tab line</b>, frozen there when the line was composed
+   * and the customer was quoted — see {@link CafeTabLine}. The menu is not consulted again, so an
+   * item deleted between composing and sending cannot make the round free, and one re-priced in
+   * between cannot bill the round at a rate nobody was quoted. The {@code saleUnit}/{@code
+   * unitFactor}/{@code billingMode}/{@code discount} defaults still match {@link
+   * CafeMenuCartLineContributor#buildMenuLine} exactly, because a flushed line and an added-in-Sell
+   * line of the same item must not disagree.
    *
-   * <p>A menu item that has since been deleted is priced at nothing and logged loudly rather than
-   * throwing: these lines have already been claimed, and a throw here would strand the tab with a
-   * PENDING flush no retry could ever finish, owing a kitchen that was never told.
+   * <p>The menu lookup survives only as a fallback for a line composed before the price was frozen
+   * — one already sitting on a tab, or inside a PENDING flush, when this version deployed. The
+   * ERROR below is what is left when even that finds nothing, and for a line composed by this
+   * version it is unreachable. It still does not throw: these lines are already claimed, and a
+   * throw here would strand the tab with a PENDING flush no retry could ever finish, owing a
+   * kitchen that was never told.
    */
   private Document billLine(String shopId, CafeTabLine line) {
     int quantity = line.getQuantity() == null ? 0 : line.getQuantity();
@@ -422,10 +501,11 @@ public class CafeFlushService {
             .append("department", MenuDepartments.resolve(line.getDepartment()))
             .append("note", line.getNote());
 
-    MenuItem menuItem = findMenuItem(shopId, line);
-    if (menuItem == null) {
+    CafeTabLine priced = pricedLine(shopId, line);
+    if (priced == null || priced.getPrice() == null) {
       log.error(
-          "Cafe flush priced line {} ({}) at nothing: no menu item for {} in shop {}",
+          "Cafe flush priced line {} ({}) at nothing: no frozen price and no menu item for {} "
+              + "in shop {}",
           line.getLineRef(),
           line.getName(),
           line.getSellableRef(),
@@ -433,14 +513,21 @@ public class CafeFlushService {
       return billLine;
     }
 
-    BigDecimal unitPrice = menuItem.getSellingPrice();
-    String cgst = menuItem.getCgst();
-    String sgst = menuItem.getSgst();
+    BigDecimal unitPrice = priced.getPrice();
+    String cgst = priced.getCgst();
+    String sgst = priced.getSgst();
     BigDecimal billableQty = BigDecimal.valueOf(quantity);
     // No discount is composable on a tab, so the additional discount is null here by
     // construction — the argument is kept explicit to match the contributor's call exactly.
+    //
+    // The rates are NOT passed to the calculator, and that is not an oversight. A menu line's
+    // maximumRetailPrice is its selling price, which core reads as "selling at MRP" — so the
+    // bill's own arithmetic treats the menu price as tax-inclusive and adds nothing on top
+    // (CheckoutUtils.isSellingAtMrp, CheckoutService.calculateTax). Adding tax here would print a
+    // line total the bill's stored grandTotal contradicts. The rates still ride onto the line:
+    // they are what the menu charged, and the cancel path and the tax view both read them.
     BigDecimal totalAmount =
-        CartLineAmountCalculator.lineTotal(unitPrice, null, billableQty, cgst, sgst);
+        CartLineAmountCalculator.lineTotal(unitPrice, null, billableQty, null, null);
 
     return billLine
         .append("maximumRetailPrice", unitPrice)
@@ -449,6 +536,31 @@ public class CafeFlushService {
         .append("totalAmount", totalAmount)
         .append("cgst", cgst)
         .append("sgst", sgst);
+  }
+
+  /**
+   * The line's own frozen price, or a menu lookup for a line composed before prices were frozen.
+   *
+   * @return a line carrying a price, or null when neither source has one.
+   */
+  private CafeTabLine pricedLine(String shopId, CafeTabLine line) {
+    if (line.getPrice() != null) {
+      return line;
+    }
+    MenuItem menuItem = findMenuItem(shopId, line);
+    if (menuItem == null) {
+      return null;
+    }
+    log.warn(
+        "Cafe tab line {} ({}) carries no frozen price; falling back to today's menu for {}",
+        line.getLineRef(),
+        line.getName(),
+        line.getSellableRef());
+    CafeTabLine fallback = new CafeTabLine();
+    fallback.setPrice(menuItem.getSellingPrice());
+    fallback.setCgst(menuItem.getCgst());
+    fallback.setSgst(menuItem.getSgst());
+    return fallback;
   }
 
   /** The menu item behind a tab line, or null when the ref is unparseable or the item is gone. */

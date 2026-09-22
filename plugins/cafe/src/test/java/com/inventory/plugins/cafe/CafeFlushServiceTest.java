@@ -314,7 +314,7 @@ class CafeFlushServiceTest {
   // ------------------------------------------------- what actually lands on the bill
 
   @Test
-  void flushedLinesCarryTheMenusPriceAndTaxOntoTheBill() {
+  void flushedLinesCarryTheQuotedPriceAndRatesOntoTheBill() {
     fake.tab = openTabWithLines();
     fake.purchase(BILL_ID, null);
 
@@ -323,12 +323,16 @@ class CafeFlushServiceTest {
     Document tea = fake.items(BILL_ID).get(0);
     assertEquals(new BigDecimal("2"), tea.get("quantity"), "two teas, not an unpriced zero");
     assertEquals(2, tea.get("baseQuantity"));
-    assertEquals(new BigDecimal("30.00"), tea.get("priceToRetail"), "the menu's selling price");
+    assertEquals(new BigDecimal("30.00"), tea.get("priceToRetail"), "the price the tab froze");
     assertEquals(new BigDecimal("30.00"), tea.get("maximumRetailPrice"));
     assertEquals("2.5", tea.get("cgst"));
     assertEquals("2.5", tea.get("sgst"));
-    // 30.00 x 2 = 60.00, plus 2.5% CGST and 2.5% SGST = 63.00. The shop is paid for the round.
-    assertEquals(new BigDecimal("63.00"), tea.get("totalAmount"));
+    // 30.00 x 2 = 60.00. No tax on top: a menu line's maximumRetailPrice IS its selling price,
+    // which core reads as selling at MRP, so the bill's own arithmetic treats the menu price as
+    // tax-inclusive (CheckoutUtils.isSellingAtMrp). This is the number the bill's grandTotal is
+    // built from, and the number the old full-document save wrote back over the line a moment
+    // after the append; writing anything else here prints a line the bill's total contradicts.
+    assertEquals(new BigDecimal("60.00"), tea.get("totalAmount"));
     assertEquals(BigDecimal.ZERO, tea.get("discount"));
     assertEquals("PCS", tea.get("saleUnit"));
     assertEquals(1, tea.get("unitFactor"));
@@ -336,7 +340,59 @@ class CafeFlushServiceTest {
 
     Document beer = fake.items(BILL_ID).get(1);
     assertEquals(new BigDecimal("120.00"), beer.get("priceToRetail"));
-    assertEquals(new BigDecimal("120.00"), beer.get("totalAmount"), "no rate, no tax added");
+    assertEquals(new BigDecimal("120.00"), beer.get("totalAmount"));
+  }
+
+  @Test
+  void aMenuItemDeletedAfterTheRoundWasComposedStillBillsAtWhatWasQuoted() {
+    fake.tab = openTabWithLines();
+    fake.purchase(BILL_ID, null);
+    // The manager deletes Tea from the menu while the round sits on the tab.
+    when(menuLookup.findMenuItem(anyString(), eq("tea"))).thenReturn(Optional.empty());
+
+    service.flush(SHOP_ID, USER_ID, TAB_ID, BILL_ID, KEY);
+
+    Document tea = fake.items(BILL_ID).get(0);
+    assertEquals(
+        new BigDecimal("30.00"),
+        tea.get("priceToRetail"),
+        "the frozen price, not nothing: a line priced at zero is food served free");
+    assertEquals(new BigDecimal("60.00"), tea.get("totalAmount"));
+    assertEquals("2.5", tea.get("cgst"), "and the rates it was quoted with");
+  }
+
+  @Test
+  void aMidRoundRepriceBillsTheRateTheCustomerWasQuoted() {
+    fake.tab = openTabWithLines();
+    fake.purchase(BILL_ID, null);
+    // Tea goes up to 50.00 between the round being composed and it being sent.
+    when(menuLookup.findMenuItem(anyString(), eq("tea")))
+        .thenReturn(Optional.of(menuItem("tea", "Tea", "50.00", "2.5", "2.5")));
+
+    service.flush(SHOP_ID, USER_ID, TAB_ID, BILL_ID, KEY);
+
+    Document tea = fake.items(BILL_ID).get(0);
+    assertEquals(
+        new BigDecimal("30.00"),
+        tea.get("priceToRetail"),
+        "the customer is billed what they were quoted, not tonight's new rate");
+    assertEquals(new BigDecimal("60.00"), tea.get("totalAmount"));
+  }
+
+  @Test
+  void aLineComposedBeforePricesWereFrozenFallsBackToTheMenu() {
+    CafeTab tab = baseTab();
+    // A tab line already on disk when this version deployed: no price, no rates.
+    tab.setLines(
+        new ArrayList<>(List.of(line("l1", "Tea", 2, "KITCHEN", null, null, null, null))));
+    fake.tab = tab;
+    fake.purchase(BILL_ID, null);
+
+    service.flush(SHOP_ID, USER_ID, TAB_ID, BILL_ID, KEY);
+
+    Document tea = fake.items(BILL_ID).get(0);
+    assertEquals(new BigDecimal("30.00"), tea.get("priceToRetail"), "today's menu, for a line that froze none");
+    assertEquals(new BigDecimal("60.00"), tea.get("totalAmount"));
   }
 
   @Test
@@ -424,6 +480,31 @@ class CafeFlushServiceTest {
         2,
         second.get(0).getRoundNo(),
         "the round is the flush's position on the bill; a forgotten list prints Round 1 twice");
+  }
+
+  @Test
+  void aRetriedAppendOntoASettledBillLandsOnABillOfItsOwn() {
+    String flushId = "flush-1";
+    // The claim landed and the attempt crashed. Before the retry, the party settled and left.
+    fake.tab = tabWithPendingFlush(flushId, CafeFlushStatus.PENDING, claimedLines());
+    fake.purchase(BILL_ID, null);
+    fake.settle(BILL_ID);
+
+    List<CafeKot> tickets = service.flush(SHOP_ID, USER_ID, TAB_ID, BILL_ID, KEY);
+
+    String fresh = "cafe-flush-" + flushId;
+    assertTrue(
+        fake.items(BILL_ID).isEmpty(),
+        "nothing is added to a settled invoice, where it would contribute to no total");
+    assertNotNull(fake.purchases.get(fresh), "the round gets a bill of its own");
+    assertEquals(2, fake.items(fresh).size(), "and both claimed lines are on it");
+    assertEquals(
+        fresh,
+        fake.tab.getPendingFlush().getTargetPurchaseId(),
+        "the tab's record moves with it, so a further retry lands in the same place");
+    assertEquals(2, tickets.size(), "the kitchen is still told");
+    assertEquals(fresh, tickets.get(0).getPurchaseId(), "against the bill that now holds the food");
+    assertEquals(CafeFlushStatus.COMPLETE, fake.tab.getPendingFlush().getStatus());
   }
 
   // ---------------------------------------------------------- one tab, two keys
@@ -558,8 +639,30 @@ class CafeFlushServiceTest {
     return new ArrayList<>(List.of(line("l1", "Tea", 2, "KITCHEN", "no onion"), line("l2", "Beer", 1, "BAR", null)));
   }
 
+  /** A line as {@code CafeTabService.addLine} composes it: the price frozen on with the rest. */
   private static CafeTabLine line(
       String lineRef, String name, int quantity, String department, String note) {
+    MenuItem quoted = MENU.get(name.toLowerCase());
+    return line(
+        lineRef,
+        name,
+        quantity,
+        department,
+        note,
+        quoted.getSellingPrice(),
+        quoted.getCgst(),
+        quoted.getSgst());
+  }
+
+  private static CafeTabLine line(
+      String lineRef,
+      String name,
+      int quantity,
+      String department,
+      String note,
+      BigDecimal price,
+      String cgst,
+      String sgst) {
     CafeTabLine line = new CafeTabLine();
     line.setLineRef(lineRef);
     line.setSellableRef("menu:" + name.toLowerCase());
@@ -567,6 +670,9 @@ class CafeFlushServiceTest {
     line.setQuantity(quantity);
     line.setDepartment(department);
     line.setNote(note);
+    line.setPrice(price);
+    line.setCgst(cgst);
+    line.setSgst(sgst);
     return line;
   }
 
@@ -655,6 +761,7 @@ class CafeFlushServiceTest {
               .append("shopId", SHOP_ID)
               .append("userId", USER_ID)
               .append("tokenNo", "7")
+              .append("status", "CREATED")
               .append("items", new ArrayList<Document>())
               .append("cafeFlushIds", new ArrayList<String>());
       if (absorbedFlushId != null) {
@@ -662,6 +769,11 @@ class CafeFlushServiceTest {
         appendCount++;
       }
       purchases.put(id, doc);
+    }
+
+    /** The party paid and left: an invoice number against it and its totals frozen. */
+    void settle(String id) {
+      purchases.get(id).put("status", "COMPLETED");
     }
 
     Document onlyPurchase() {
@@ -866,6 +978,20 @@ class CafeFlushServiceTest {
     }
 
     private UpdateResult markComplete(Query query, UpdateDefinition update) {
+      Document written = (Document) update.getUpdateObject().get("$set");
+      if (written != null && written.containsKey("pendingFlush.targetPurchaseId")) {
+        // The retarget, not the completion: a different write to the same collection.
+        if (tab != null
+            && tab.getPendingFlush() != null
+            && matches(
+                query.getQueryObject().get("pendingFlush.flushId"),
+                tab.getPendingFlush().getFlushId())) {
+          tab.getPendingFlush()
+              .setTargetPurchaseId(written.getString("pendingFlush.targetPurchaseId"));
+          return UpdateResult.acknowledged(1, 1L, null);
+        }
+        return UpdateResult.acknowledged(0, 0L, null);
+      }
       if (beforeMarkComplete != null) {
         Consumer<FakeMongo> hook = beforeMarkComplete;
         beforeMarkComplete = null;
