@@ -38,7 +38,12 @@ import org.springframework.test.util.ReflectionTestUtils;
  *
  * <p>Reverting the write in {@code updateCart} to {@code purchaseRepository.save(existingCart)}
  * fails {@link #anAddToCartDoesNotDeleteLinesAFlushAppendedConcurrently} and
- * {@link #aConcurrentCancelAndKotDecrementSurviveAnAddToCart} by name.
+ * {@link #aConcurrentCancelAndKotDecrementSurviveAnAddToCart} by name. Reverting the
+ * {@code lineRef: {$exists: false}} clause in {@code PurchaseTargetedWriter.identityCondition}
+ * fails {@link #editingASellScreenLineDoesNotRequantifyTheFlushedRoundBesideIt} and
+ * {@link #removingASellScreenLineDoesNotPullTheFlushedRoundWithIt}; reverting the statement order
+ * to {@code $set}, {@code $pull}, {@code $push} fails
+ * {@link #theLinesAreWrittenBeforeTheTotalThatCountsThem}.
  */
 class CheckoutServiceCartWriteTest {
 
@@ -150,6 +155,115 @@ class CheckoutServiceCartWriteTest {
     }
   }
 
+  @Test
+  void editingASellScreenLineDoesNotRequantifyTheFlushedRoundBesideIt() {
+    // The state a cafe bill reaches on its own: a Sell-screen Tea, which carries no lineRef
+    // because only a flush sets one, sitting beside a Tea the kitchen is already cooking, which a
+    // flush $pushed as raw BSON so nothing ever merged the two. Their pairing keys differ
+    // ("ref:menu:tea" and "line:L2"), so there is no duplicate and no fallback — and an array
+    // filter of {sellableRef: "menu:tea"} alone matches both of them.
+    Purchase bill = openBill();
+    bill.getItems().add(menuLine(null, "menu:tea", "Tea", 1, "30.00"));
+    PurchaseItem flushed = menuLine("L2", "menu:tea", "Tea", 2, "30.00");
+    flushed.setKotSentQuantity(2);
+    bill.getItems().add(flushed);
+    Purchase cart = purchases.seed(bill);
+    Document before = purchases.stored(BILL_ID);
+
+    // The cashier takes their own Tea from one to five. Nothing about the flushed round changed.
+    Purchase result =
+        checkoutService.updateCart(
+            cart,
+            before,
+            List.of(menuLine(null, "menu:tea", "Tea", 4, "30.00")),
+            null,
+            null,
+            null,
+            BillingMode.REGULAR);
+
+    List<PurchaseItem> stored = purchases.read(BILL_ID).getItems();
+    assertEquals(2, stored.size());
+    assertEquals(5, stored.get(0).getBaseQuantity(), "the cashier's own line takes the edit");
+    assertEquals(
+        2,
+        stored.get(1).getBaseQuantity(),
+        "and the round already in the kitchen keeps the quantity the ticket was written for");
+    assertEquals(
+        2, stored.get(1).getKotSentQuantity(), "so the bill still agrees with what was sent");
+    assertEquals(
+        new BigDecimal("60.00"),
+        stored.get(1).getTotalAmount(),
+        "and the flushed line's money is untouched, so the bill matches its own grandTotal");
+    assertFalse(purchases.fullReplaceUsed());
+    assertEquals(purchases.write(result), purchases.stored(BILL_ID));
+  }
+
+  @Test
+  void removingASellScreenLineDoesNotPullTheFlushedRoundWithIt() {
+    // The same mismatch on the $pull side: the condition a removed line is matched by must not
+    // also describe the flushed line sharing its sellableRef.
+    Purchase bill = openBill();
+    bill.getItems().add(menuLine(null, "menu:tea", "Tea", 1, "30.00"));
+    PurchaseItem flushed = menuLine("L2", "menu:tea", "Tea", 2, "30.00");
+    flushed.setKotSentQuantity(2);
+    bill.getItems().add(flushed);
+    Purchase cart = purchases.seed(bill);
+    Document before = purchases.stored(BILL_ID);
+
+    Purchase result =
+        checkoutService.updateCart(
+            cart,
+            before,
+            List.of(menuLine(null, "menu:tea", "Tea", -1, "30.00")),
+            null,
+            null,
+            null,
+            BillingMode.REGULAR);
+
+    List<PurchaseItem> stored = purchases.read(BILL_ID).getItems();
+    assertEquals(1, stored.size(), "only the cashier's own line leaves the bill");
+    assertEquals("L2", stored.get(0).getLineRef(), "the round in the kitchen is still billed");
+    assertEquals(2, stored.get(0).getBaseQuantity());
+    assertFalse(purchases.fullReplaceUsed());
+    assertEquals(purchases.write(result), purchases.stored(BILL_ID));
+  }
+
+  // ------------------------------------------- the order the statements are issued in
+
+  @Test
+  void theLinesAreWrittenBeforeTheTotalThatCountsThem() {
+    // Three statements, no transaction to wrap them in, so the order is the whole guarantee. A
+    // failure after the total has been committed but before the line it counts leaves a bill
+    // whose stored grandTotal exceeds the sum of its lines — and settlement reads the stored
+    // total, so the customer pays for an item that is not on the invoice. Pushing first inverts
+    // that: what is left behind is a line not yet counted, which under-invoices visible goods.
+    Purchase bill = billWithTea();
+    bill.getItems().add(menuLine("b1", "menu:beer", "Beer", 1, "120.00"));
+    Purchase cart = purchases.seed(bill);
+    Document before = purchases.stored(BILL_ID);
+
+    checkoutService.updateCart(
+        cart,
+        before,
+        List.of(
+            menuLine("c1", "menu:coke", "Coke", 1, "50.00"),
+            menuLine("b1", "menu:beer", "Beer", -1, "120.00")),
+        null,
+        null,
+        null,
+        BillingMode.REGULAR);
+
+    List<String> operators = purchases.statements().stream().map(CheckoutServiceCartWriteTest::operatorOf).toList();
+    assertEquals(
+        List.of("$push", "$set", "$pull"),
+        operators,
+        "lines in, then the total, then lines out");
+    Document totals = (Document) purchases.statements().get(1).get("$set");
+    assertTrue(
+        totals.containsKey("grandTotal"),
+        "the middle statement is the one carrying the money, so it must follow the $push");
+  }
+
   // --------------------------------------------- unchanged for an uncontended cart
 
   @Test
@@ -253,7 +367,57 @@ class CheckoutServiceCartWriteTest {
   // ---------------------------------------------------------------- settlement
 
   @Test
-  void settlingABillDoesNotDeleteARoundFlushedWhileItWasSettled() {
+  void settlingABillDoesNotDeleteTheKitchenWorkDoneOnItsLinesMeanwhile() {
+    Purchase seeded = openBill();
+    PurchaseItem tea = menuLine("a1", "menu:tea", "Tea", 2, "30.00");
+    tea.setKotSentQuantity(2);
+    seeded.getItems().add(tea);
+    seeded.setCafeFlushIds(new ArrayList<>(List.of("flush-1")));
+    Purchase purchase = purchases.seed(seeded);
+
+    PurchaseTargetedWriter writer = new PurchaseTargetedWriter(purchases.mongoTemplate());
+    Document before = writer.snapshot(purchase);
+
+    // The cancel path landing mid-settlement: it touches the lines but absorbs no new flush, so
+    // there is no total this settlement did not see and the settlement is right to proceed.
+    purchases.interleave(
+        () ->
+            purchases.mutateStored(
+                BILL_ID,
+                stored -> {
+                  stored.getList("items", Document.class).get(0).put("kotSentQuantity", 1);
+                  stored.put(
+                      "cafeKotCancels",
+                      new ArrayList<>(
+                          List.of(new Document("cancelId", "cancel-1").append("quantity", 1))));
+                }));
+
+    // What updatePurchaseStatus does on completion: the status, the invoice number, the sale date.
+    purchase.setStatus(PurchaseStatus.COMPLETED);
+    purchase.setInvoiceNo("INV-0001");
+    purchase.setPaymentMethod("CASH");
+    purchase.setSoldAt(Instant.now());
+    purchase.setUpdatedAt(Instant.now());
+    assertEquals(1L, writer.writeChangedFields(SHOP_ID, purchase, before));
+
+    Purchase after = purchases.read(BILL_ID);
+    assertEquals(PurchaseStatus.COMPLETED, after.getStatus());
+    assertEquals("INV-0001", after.getInvoiceNo(), "the invoice number is issued once and stored");
+    assertEquals(
+        1,
+        after.getItems().get(0).getKotSentQuantity(),
+        "the kitchen's decrement is not undone by the settlement");
+    assertNotNull(after.getCafeKotCancels(), "nor is the cancellation owed to the kitchen");
+  }
+
+  @Test
+  void aFlushLandingUnderASettlementMakesItFailLoudlyInsteadOfStampingAStaleTotal() {
+    // storeTotals recomputes the money fields when a flush lands on a CREATED bill, but this
+    // settlement's payment split, ledger, credit entry and printed response were all derived from
+    // the total it read before that. Its own update does not carry grandTotal — it did not change
+    // it — so without a guard it would happily stamp COMPLETED onto a bill whose stored total no
+    // longer equals cash + online + credit. Guarded on the cafeFlushIds it read, it matches
+    // nothing instead, and the caller logs that.
     Purchase seeded = openBill();
     seeded.getItems().add(menuLine("a1", "menu:tea", "Tea", 2, "30.00"));
     seeded.setCafeFlushIds(new ArrayList<>(List.of("flush-1")));
@@ -273,21 +437,24 @@ class CheckoutServiceCartWriteTest {
                   stored.getList("cafeFlushIds", String.class).add("flush-2");
                 }));
 
-    // What updatePurchaseStatus does on completion: the status, the invoice number, the sale date.
     purchase.setStatus(PurchaseStatus.COMPLETED);
     purchase.setInvoiceNo("INV-0001");
     purchase.setPaymentMethod("CASH");
     purchase.setSoldAt(Instant.now());
     purchase.setUpdatedAt(Instant.now());
-    writer.writeChangedFields(SHOP_ID, purchase, before);
+
+    assertEquals(
+        0L,
+        writer.writeChangedFields(SHOP_ID, purchase, before),
+        "the settlement matched nothing, which updatePurchaseStatus logs");
 
     Purchase after = purchases.read(BILL_ID);
-    assertEquals(PurchaseStatus.COMPLETED, after.getStatus());
-    assertEquals("INV-0001", after.getInvoiceNo(), "the invoice number is issued once and stored");
+    assertEquals(
+        PurchaseStatus.CREATED, after.getStatus(), "the bill is not settled on a total it never saw");
     assertEquals(
         List.of("a1", "b1"),
         after.getItems().stream().map(PurchaseItem::getLineRef).toList(),
-        "the round flushed during settlement is still on the bill rather than erased");
+        "and the flushed round is still on the bill, not erased by a settlement that failed");
     assertEquals(List.of("flush-1", "flush-2"), after.getCafeFlushIds());
   }
 
@@ -329,6 +496,16 @@ class CheckoutServiceCartWriteTest {
 
     assertEquals(purchases.write(result), purchases.stored(BILL_ID));
     assertFalse(purchases.fullReplaceUsed());
+  }
+
+  /** The single update operator a statement uses; these are never mixed in one statement. */
+  private static String operatorOf(Document statement) {
+    for (java.util.Map.Entry<String, Object> entry : statement.entrySet()) {
+      if (entry.getValue() instanceof Document body && !body.isEmpty()) {
+        return entry.getKey();
+      }
+    }
+    return "";
   }
 
   private static Purchase billWithTea() {

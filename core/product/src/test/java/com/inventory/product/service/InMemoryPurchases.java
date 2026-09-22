@@ -190,7 +190,7 @@ class InMemoryPurchases {
     fireHook();
     Document criteria = query.getQueryObject();
     Document target = documents.get(criteria.getString("_id"));
-    if (target == null || !Objects.equals(criteria.get("shopId"), target.get("shopId"))) {
+    if (target == null || !matchesQuery(target, criteria)) {
       return UpdateResult.acknowledged(0, 0L, null);
     }
     Document operations = update.getUpdateObject();
@@ -211,6 +211,23 @@ class InMemoryPurchases {
     section(operations, "$push").forEach((path, value) -> push(target, path, value));
     section(operations, "$pull").forEach((path, value) -> pull(target, path, value));
     return UpdateResult.acknowledged(1, 1L, null);
+  }
+
+  /**
+   * Every clause of the query but {@code _id}, as equality against the stored document. The
+   * writer scopes each write by {@code shopId} and guards the settlement write on the
+   * {@code cafeFlushIds} it read, and a guard that the store ignored would prove nothing.
+   */
+  private static boolean matchesQuery(Document target, Document criteria) {
+    for (Map.Entry<String, Object> clause : criteria.entrySet()) {
+      if ("_id".equals(clause.getKey())) {
+        continue;
+      }
+      if (!Objects.equals(clause.getValue(), target.get(clause.getKey()))) {
+        return false;
+      }
+    }
+    return true;
   }
 
   private static Document section(Document operations, String operator) {
@@ -258,11 +275,24 @@ class InMemoryPurchases {
     }
     for (Map.Entry<String, Object> clause : filter.entrySet()) {
       String field = clause.getKey().substring(identifier.length() + 1);
-      if (!Objects.equals(line.get(field), clause.getValue())) {
+      if (!matchesClause(line, field, clause.getValue())) {
         return false;
       }
     }
     return true;
+  }
+
+  /**
+   * One element predicate: equality, or {@code {$exists: <bool>}}. The writer addresses a line
+   * that has no {@code lineRef} by its refs <i>and</i> {@code lineRef: {$exists: false}}, which is
+   * the only thing separating a Sell-screen line from a flushed line for the same sellable — so
+   * the store has to honour it or the test would pass on a filter the server rejects.
+   */
+  private static boolean matchesClause(Document line, String field, Object expected) {
+    if (expected instanceof Document predicate && predicate.containsKey("$exists")) {
+      return line.containsKey(field) == Boolean.TRUE.equals(predicate.get("$exists"));
+    }
+    return Objects.equals(line.get(field), expected);
   }
 
   @SuppressWarnings("unchecked")
@@ -310,7 +340,7 @@ class InMemoryPurchases {
         element -> {
           Document line = (Document) element;
           return clauses.entrySet().stream()
-              .allMatch(clause -> Objects.equals(line.get(clause.getKey()), clause.getValue()));
+              .allMatch(clause -> matchesClause(line, clause.getKey(), clause.getValue()));
         });
   }
 

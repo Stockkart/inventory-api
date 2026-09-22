@@ -2339,14 +2339,31 @@ public class CheckoutService {
    * reductions has landed, so a retry after a failure here starts from the state this request
    * already produced.
    *
-   * <p>A no-op for a build with nothing wired ({@code cartLineReductionPort == null}, true for
-   * every unit test that builds a bare {@code CheckoutService}) and for a request that reduced
-   * nothing owed to anywhere -- an empty list for every grocery, medical and sports request, and
-   * for a cafe request that never touched a sent line.
+   * <p>A silent no-op only for a request that reduced nothing owed anywhere -- an empty list for
+   * every grocery, medical and sports request, and for a cafe request that never touched a sent
+   * line. A build with nothing wired ({@code cartLineReductionPort == null}, true for every unit
+   * test that builds a bare {@code CheckoutService}) still cannot notify, but it no longer does
+   * so quietly: a reduction that had somewhere to go and found nothing is logged at ERROR.
    */
   private void notifyLineReductions(
       String shopId, String userId, String purchaseId, List<MenuLineReduction> reductions) {
-    if (cartLineReductionPort == null || reductions.isEmpty()) {
+    if (reductions.isEmpty()) {
+      return;
+    }
+    if (cartLineReductionPort == null) {
+      // A reduction is only ever owed for a cafe line the kitchen has already been sent, so
+      // reaching here in a cafe deployment means the wiring is broken and the kitchen is simply
+      // not being told: food cooked, thrown away, and nobody informed. Refusing the edit would
+      // punish every build that legitimately has no port -- every unit test, and every
+      // non-cafe-plugin deployment, which cannot produce a reduction in the first place -- so it
+      // is loud rather than fatal, and it names the lines so the tickets can be pulled by hand.
+      log.error(
+          "No CartLineReductionPort is wired, so {} reduced line(s) on bill {} in shop {} were "
+              + "never told to the kitchen: {}",
+          reductions.size(),
+          purchaseId,
+          shopId,
+          reductions.stream().map(MenuLineReduction::lineRef).toList());
       return;
     }
     for (MenuLineReduction reduction : reductions) {
