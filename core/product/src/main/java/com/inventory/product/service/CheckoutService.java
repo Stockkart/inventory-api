@@ -47,6 +47,7 @@ import com.inventory.product.service.vertical.CheckoutCompletionOrchestrator;
 import com.inventory.product.validation.CheckoutValidator;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.bson.Document;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.domain.Page;
@@ -148,6 +149,14 @@ public class CheckoutService {
   @Autowired
   private QuotationService quotationService;
 
+  /**
+   * Writes a purchase by the fields that changed instead of replacing the document. See
+   * {@link PurchaseTargetedWriter} for why every save on this path is a lost update waiting for a
+   * cafe flush to land in the gap.
+   */
+  @Autowired
+  private PurchaseTargetedWriter purchaseTargetedWriter;
+
   @Transactional
   public AddToCartResponse addToCart(AddToCartRequest request, HttpServletRequest httpRequest) {
     // Get shopId and userId from request attributes (set by AuthenticationInterceptor)
@@ -164,6 +173,12 @@ public class CheckoutService {
 
     try {
       Purchase existingCart = quotationService.resolveTargetCart(request, userId, shopId);
+      // The pre-image, taken before anything in this request touches the cart: the difference
+      // between it and the cart at the end is what this request actually changed, and only that
+      // is written. See PurchaseTargetedWriter for why the alternative -- save(existingCart) --
+      // deletes a round another tab flushed onto the same bill in the meantime.
+      Document cartBeforeUpdate =
+          existingCart == null ? null : purchaseTargetedWriter.snapshot(existingCart);
 
       String customerId;
       String customerName;
@@ -190,7 +205,7 @@ public class CheckoutService {
       if (existingCart != null) {
         // Update existing cart - merge items (including quantity-0 update-only items)
         log.info("Updating existing cart with ID: {}", existingCart.getId());
-        purchase = updateCart(existingCart, newItems, request.getBusinessType(), customerId, customerName, cartBillingMode);
+        purchase = updateCart(existingCart, cartBeforeUpdate, newItems, request.getBusinessType(), customerId, customerName, cartBillingMode);
         if (metrics != null) {
           metrics.record(ProductMetricsConstants.CART_UPDATED, 1, "module", ProductMetricsConstants.MODULE);
         }
@@ -254,6 +269,12 @@ public class CheckoutService {
       Purchase purchase = purchaseRepository.findById(request.getPurchaseId())
           .orElseThrow(() -> new ResourceNotFoundException("Purchase", "id",
               "No purchase found with ID " + request.getPurchaseId()));
+      // The pre-image, for the same reason as the cart path: settlement changes the status, the
+      // invoice number and the payment split, and nothing else. Writing the whole document would
+      // additionally delete a round a tab flushed onto this bill while it was being settled --
+      // food already cooking, erased and unpaid, with the cafeFlushIds entry that would let the
+      // tab retry erased along with it.
+      Document purchaseBeforeStatusChange = purchaseTargetedWriter.snapshot(purchase);
 
       // Verify purchase belongs to the user's shop
       if (!shopId.equals(purchase.getShopId()) || !userId.equals(purchase.getUserId())) {
@@ -302,7 +323,14 @@ public class CheckoutService {
         applyPaymentSplitToPurchase(purchase, request);
       }
       purchase.setUpdatedAt(Instant.now());
-      purchase = purchaseRepository.save(purchase);
+      // Only the fields this settlement changed. The invoice number and the stock decrement are
+      // decided above and are unaffected by how the document is stored -- a targeted write issues
+      // neither of them a second time -- but items is left entirely alone, so a concurrently
+      // flushed round stays on the bill instead of being deleted by the settlement.
+      if (purchaseTargetedWriter.writeChangedFields(shopId, purchase, purchaseBeforeStatusChange)
+          == 0) {
+        log.warn("Purchase {} in shop {} was gone when its status was written", purchase.getId(), shopId);
+      }
 
       // Record billing usage after successful completion
       if (requestedStatus == PurchaseStatus.COMPLETED && usageService != null) {
@@ -352,8 +380,12 @@ public class CheckoutService {
                 result -> {
                   response.setTokenNo(result.getTokenNo());
                   if (StringUtils.hasText(result.getTokenNo())) {
+                    // One field. A replace here would delete, at the very last step of the sale,
+                    // whatever landed on the bill during the rest of the settlement.
+                    Document beforeToken = purchaseTargetedWriter.snapshot(completedPurchase);
                     completedPurchase.setTokenNo(result.getTokenNo());
-                    purchaseRepository.save(completedPurchase);
+                    purchaseTargetedWriter.writeChangedFields(
+                        shopId, completedPurchase, beforeToken);
                   }
                 });
       }
@@ -1212,7 +1244,12 @@ public class CheckoutService {
         shopId, request.getCustomerId(), PurchaseCustomerRequests.fromCart(request));
   }
 
-  private Purchase updateCart(Purchase existingCart, List<PurchaseItem> newItems, String businessType,
+  /**
+   * Package-private, not private, so {@code CheckoutServiceCartWriteTest} can drive the merge and
+   * the write directly -- the same reason {@link #mergeMenuCartLine} is. {@code cartBeforeUpdate}
+   * is the document as it stood before this request touched it; see {@link PurchaseTargetedWriter}.
+   */
+  Purchase updateCart(Purchase existingCart, Document cartBeforeUpdate, List<PurchaseItem> newItems, String businessType,
                               String customerId, String customerName, BillingMode billingMode) {
     try {
       // Merge items - if same inventoryId exists, update quantity; otherwise add new
@@ -1444,7 +1481,30 @@ public class CheckoutService {
       // For now, we'll keep it with empty items (status remains CREATED)
       // You can add logic here to delete the cart if needed
 
-      return purchaseRepository.save(existingCart);
+      // Write what this request changed, field by field and line by line -- never the whole
+      // document. A full replace here writes items as this request read them several inventory
+      // round-trips ago, so a round a cafe tab flushed onto the same bill in the meantime, its
+      // cafeKotCancels and its kotSentQuantity are all deleted: the kitchen is cooking food the
+      // bill no longer knows about. Nothing about what the cart computes changes; only how it is
+      // stored.
+      // No pre-image means no way to tell what this request changed, so there is nothing to aim
+      // a targeted write with. The caller always supplies one for an existing cart; this is only
+      // the guard that keeps a future caller from silently re-pushing every line it read.
+      if (cartBeforeUpdate == null
+          || !purchaseTargetedWriter.writeChangedCart(
+              existingCart.getShopId(), existingCart, cartBeforeUpdate)) {
+        // Either that, or the lines cannot be told apart -- two of them share an identity, or one
+        // has none at all -- so no targeted write can aim at the right one. The full replace is
+        // what this path has always done; it is still a lost update if something writes
+        // concurrently, and the warning is there so that a cart which lands here is visible.
+        log.warn(
+            "Cart {} in shop {} has lines that cannot be addressed individually; "
+                + "falling back to a full-document save",
+            existingCart.getId(),
+            existingCart.getShopId());
+        return purchaseRepository.save(existingCart);
+      }
+      return existingCart;
     } catch (DataAccessException e) {
       log.error("Database error while updating cart: {}", existingCart.getId(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
