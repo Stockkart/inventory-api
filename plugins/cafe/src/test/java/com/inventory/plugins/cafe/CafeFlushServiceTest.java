@@ -507,6 +507,50 @@ class CafeFlushServiceTest {
     assertEquals(CafeFlushStatus.COMPLETE, fake.tab.getPendingFlush().getStatus());
   }
 
+  @Test
+  void aBillSettledWhileItsOwnFlushWasStillInFlightNeverWedgesTheTab() {
+    // The crash window this covers: ensureNewBill ran (the flush's own derived bill exists, open,
+    // zero total) but the append never did. The cashier, seeing an empty open bill, tidies it
+    // away — settling or cancelling it either leaves status != CREATED. Retargeting onto that
+    // SAME derived id (the old behaviour) finds it settled again and throws; with the claim
+    // already having emptied the tab's lines and CafeTabFlusher refusing any further claim while
+    // pendingFlush stays PENDING, that throw would strand this tab forever. It must instead reach
+    // a second bill of its own.
+    String flushId = "flush-1";
+    String fresh = "cafe-flush-" + flushId;
+    CafeTab tab = baseTab();
+    tab.setLines(new ArrayList<>());
+    CafePendingFlush pending = new CafePendingFlush();
+    pending.setFlushId(flushId);
+    pending.setIdempotencyKey(KEY);
+    pending.setLines(claimedLines());
+    pending.setTargetPurchaseId(fresh);
+    pending.setStatus(CafeFlushStatus.PENDING);
+    tab.setPendingFlush(pending);
+    fake.tab = tab;
+    fake.purchase(fresh, null);
+    fake.settle(fresh);
+
+    List<CafeKot> tickets = service.flush(SHOP_ID, USER_ID, TAB_ID, fresh, KEY);
+
+    String secondGeneration = fresh + "-r2";
+    assertTrue(
+        fake.items(fresh).isEmpty(), "nothing is added to the settled bill it opened for itself");
+    assertNotNull(
+        fake.purchases.get(secondGeneration), "a further bill of its own, not a repeated throw");
+    assertEquals(2, fake.items(secondGeneration).size(), "and both claimed lines reach it");
+    assertEquals(
+        secondGeneration,
+        fake.tab.getPendingFlush().getTargetPurchaseId(),
+        "the tab's record moves with it");
+    assertEquals(2, tickets.size(), "the kitchen is told: the tab is never wedged");
+    assertEquals(CafeFlushStatus.COMPLETE, fake.tab.getPendingFlush().getStatus());
+
+    // Retrying with the same key once more must be a harmless replay, not another claim attempt.
+    List<CafeKot> replayed = service.flush(SHOP_ID, USER_ID, TAB_ID, secondGeneration, KEY);
+    assertEquals(ids(tickets), ids(replayed), "the replay returns the same tickets, not new ones");
+  }
+
   // ---------------------------------------------------------- one tab, two keys
 
   @Test

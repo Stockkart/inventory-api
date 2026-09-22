@@ -311,10 +311,18 @@ public class CafeFlushService {
    * table having paid and closed while a retry was still in flight looks like.
    *
    * <p>Refusing is not available: the lines are already claimed, so a throw would strand the tab
-   * owing a kitchen that was never told. So the round goes onto a new bill instead, the same one
-   * a flush with no target would have opened — derived from the flush id, so every retry derives
-   * the same bill rather than opening another. The tab's record is moved with it, and the party
-   * has a second bill for the round they ordered after settling the first, which is what happened.
+   * owing a kitchen that was never told — permanently, since {@link CafeTabFlusher} refuses any
+   * further claim while {@code pendingFlush} stays PENDING, and every retry would re-enter this
+   * same throw. So the round always goes onto a bill of its own instead. The first fallback is the
+   * one a flush with no target would have opened — derived from the flush id, so every retry
+   * derives the same bill rather than opening another. If even THAT bill was settled out from
+   * under a crashed attempt (the empty bill {@link #ensureNewBill} created, tidied away by the
+   * cashier before the retry appended to it), the next generation — {@code -r2}, then {@code -r3},
+   * and so on — is tried instead; each is still derived deterministically from the flush id and
+   * how many generations came before it, so two retries never diverge onto different bills, and
+   * the walk forward always finds a bill nobody has settled yet. The tab's record moves with
+   * whichever bill wins, and the party ends up with a second (or third...) bill for the round they
+   * ordered after settling the one before it, which is what happened.
    *
    * @return the bill to append to: the original one, or the new one this flush now owns.
    */
@@ -322,42 +330,55 @@ public class CafeFlushService {
       String shopId, String userId, CafeTab tab, CafePendingFlush pending, String target) {
 
     String flushId = pending.getFlushId();
-    Document bill =
-        mongoTemplate.findOne(
-            Query.query(Criteria.where("_id").is(target).and("shopId").is(shopId)),
-            Document.class,
-            PURCHASES);
-    if (bill == null) {
-      // Not this method's business: the append will match nothing and requirePurchase throws.
-      return target;
-    }
-    String status = bill.getString("status");
-    if (status == null || STATUS_CREATED.equals(status)) {
-      return target;
-    }
-    List<?> absorbed = (List<?>) bill.get(FLUSH_IDS);
-    if (absorbed != null && absorbed.contains(flushId)) {
-      // The lines are already on it and were priced into the total it settled for. Nothing to
-      // move; the append is a no-op and the rest of the flush finishes against this bill.
-      return target;
-    }
+    String candidate = target;
+    while (true) {
+      Document bill =
+          mongoTemplate.findOne(
+              Query.query(Criteria.where("_id").is(candidate).and("shopId").is(shopId)),
+              Document.class,
+              PURCHASES);
+      if (bill == null) {
+        // Not this method's business, when this is the caller's original target: the append will
+        // match nothing and requirePurchase throws. When it is a generation this method chose
+        // itself, it is simply not created yet — settle that below.
+        if (candidate.equals(target)) {
+          return candidate;
+        }
+        return moveTo(shopId, userId, tab, flushId, pending, candidate);
+      }
+      String status = bill.getString("status");
+      if (status == null || STATUS_CREATED.equals(status)) {
+        return candidate.equals(target) ? candidate : moveTo(shopId, userId, tab, flushId, pending, candidate);
+      }
+      List<?> absorbed = (List<?>) bill.get(FLUSH_IDS);
+      if (absorbed != null && absorbed.contains(flushId)) {
+        // The lines are already on it and were priced into the total it settled for. Nothing to
+        // move; the append is a no-op and the rest of the flush finishes against this bill.
+        return candidate.equals(target) ? candidate : moveTo(shopId, userId, tab, flushId, pending, candidate);
+      }
 
-    String fresh = newBillId(flushId);
-    if (fresh.equals(target)) {
-      // The bill this flush opened for itself was settled before the flush could append to it.
-      // There is no second bill to derive, and inventing one from a fresh id would make a retry
-      // open another. Nothing here is safe, and saying so beats writing onto a paid invoice.
-      throw new ValidationException(
-          "Bill " + target + " was settled while flush " + flushId + " was in flight");
+      // This candidate is settled (or cancelled) without holding this flush. Walk forward to the
+      // next generation and try again — never throw, and never reuse a bill already ruled out.
+      String next = nextGeneration(candidate, flushId);
+      log.warn(
+          "Bill {} in shop {} is {}; moving cafe flush {} onto bill {}",
+          candidate,
+          shopId,
+          status,
+          flushId,
+          next);
+      candidate = next;
     }
+  }
 
-    log.warn(
-        "Bill {} in shop {} is {}; moving cafe flush {} onto its own bill {}",
-        target,
-        shopId,
-        status,
-        flushId,
-        fresh);
+  /** Creates {@code fresh} if needed, records it on the tab, and returns it as the new target. */
+  private String moveTo(
+      String shopId,
+      String userId,
+      CafeTab tab,
+      String flushId,
+      CafePendingFlush pending,
+      String fresh) {
     ensureNewBill(shopId, userId, fresh);
     // Recorded before the append, so a retry reads the new target off the tab rather than
     // rediscovering it. The id is derived from the flush either way, so the two agree.
@@ -373,6 +394,29 @@ public class CafeFlushService {
         TABS);
     pending.setTargetPurchaseId(fresh);
     return fresh;
+  }
+
+  /**
+   * The next bill this flush has not yet tried, deterministic from {@code current} alone so that
+   * two independent retries walking the same settled chain always agree on where to go next.
+   *
+   * <p>Generation 1 is {@link #newBillId}; generation N &gt; 1 is that id with {@code -rN}
+   * appended. A {@code current} outside this scheme — the caller's own {@code targetPurchaseId} —
+   * falls back to generation 1, exactly as the single-fallback version of this method always did.
+   */
+  private static String nextGeneration(String current, String flushId) {
+    String base = newBillId(flushId);
+    int generation = 1;
+    if (current.equals(base)) {
+      generation = 2;
+    } else if (current.startsWith(base + "-r")) {
+      try {
+        generation = Integer.parseInt(current.substring((base + "-r").length())) + 1;
+      } catch (NumberFormatException e) {
+        generation = 2;
+      }
+    }
+    return generation <= 1 ? base : base + "-r" + generation;
   }
 
   /**

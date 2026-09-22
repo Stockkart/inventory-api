@@ -47,9 +47,9 @@ public class CafeKotService {
   }
 
   /**
-   * Sends an already-issued ticket to the printer again. Creates no new ticket; the caller
-   * ({@link com.inventory.product.rest.controller.CafeKotController}) has already rejected a
-   * blank {@code Idempotency-Key} before this is reached.
+   * Re-issues an already-issued ticket for the frontend to fetch and print again. Creates no new
+   * ticket; the caller ({@link com.inventory.product.rest.controller.CafeKotController}) has
+   * already rejected a blank {@code Idempotency-Key} before this is reached.
    */
   public CafeKotTicket reprint(String shopId, String kotId, String idempotencyKey) {
     return port().reprint(shopId, kotId, idempotencyKey);

@@ -61,9 +61,10 @@ class CafeKotTabServiceTest {
   }
 
   @Test
-  void anotherCashiersTabIsNotFound() {
-    // The port owns this scoping (findByIdAndShopIdAndUserId); the service just relays whatever
-    // it throws, so a mismatched userId resolves the same as an absent tab.
+  void removeLineRelaysThePortsNotFound() {
+    // The port owns the scoping (findByIdAndShopIdAndUserId); the service just relays whatever
+    // it throws, so a mismatched userId resolves the same as an absent tab. Real scoping coverage
+    // lives with the plugin-side repository, not here.
     when(port.removeTabLine("s1", "u1", "someone-elses-tab", "line1"))
         .thenThrow(new ResourceNotFoundException("CafeTab", "tabId", "someone-elses-tab"));
 
