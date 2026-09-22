@@ -26,6 +26,13 @@ import org.springframework.stereotype.Service;
  * {@code shopId}; a hard cap of {@value #MAX_OPEN_TABS_PER_USER} open per user, enforced at
  * creation and evicting nothing; no expiry, no TTL, no scheduled cleanup, no auto-close on date
  * rollover; ends only by an explicit close.
+ *
+ * <p><b>Every edit here is a targeted write</b>, through {@link CafeTabTargetedWriter}, and never
+ * {@code save(tab)}. The tab document is shared with {@link CafeTabFlusher}'s claim, which writes
+ * the {@code pendingFlush} record that is the only evidence a round has been taken off the tab
+ * and is owed to a kitchen not yet told. A full-document replace from a snapshot read before the
+ * claim puts the claimed lines back and deletes that record, re-arming the round for a second
+ * send. See the writer's javadoc for the whole sequence.
  */
 @Service
 @Slf4j
@@ -39,14 +46,17 @@ public class CafeTabService {
   private final CafeTabRepository cafeTabRepository;
   private final CafeTokenService cafeTokenService;
   private final ShopMenuLookup shopMenuLookup;
+  private final CafeTabTargetedWriter cafeTabTargetedWriter;
 
   public CafeTabService(
       CafeTabRepository cafeTabRepository,
       CafeTokenService cafeTokenService,
-      ShopMenuLookup shopMenuLookup) {
+      ShopMenuLookup shopMenuLookup,
+      CafeTabTargetedWriter cafeTabTargetedWriter) {
     this.cafeTabRepository = cafeTabRepository;
     this.cafeTokenService = cafeTokenService;
     this.shopMenuLookup = shopMenuLookup;
+    this.cafeTabTargetedWriter = cafeTabTargetedWriter;
   }
 
   /** Opens a new tab for this cashier, failing rather than evicting when the cap is reached. */
@@ -117,9 +127,14 @@ public class CafeTabService {
     line.setCgst(menuItem.getCgst());
     line.setSgst(menuItem.getSgst());
 
-    tab.getLines().add(line);
-    tab.setUpdatedAt(Instant.now());
-    return cafeTabRepository.save(tab);
+    // $push, never a replace of the document this snapshot came from: see
+    // CafeTabTargetedWriter. A flush claiming the tab while this item was being composed keeps
+    // its pendingFlush record and its emptied lines; this line lands on top of them.
+    return applied(
+        shopId,
+        userId,
+        tabId,
+        cafeTabTargetedWriter.appendLine(shopId, userId, tabId, line));
   }
 
   /**
@@ -129,37 +144,54 @@ public class CafeTabService {
   public CafeTab updateLine(
       String shopId, String userId, String tabId, String lineRef, Integer quantity, String note) {
     CafeTab tab = loadOpenTab(shopId, userId, tabId);
-    CafeTabLine line = findLine(tab, lineRef);
-    if (quantity != null) {
-      if (quantity <= 0) {
-        throw new ValidationException("Quantity must be positive");
-      }
-      line.setQuantity(quantity);
+    findLine(tab, lineRef);
+    if (quantity != null && quantity <= 0) {
+      throw new ValidationException("Quantity must be positive");
     }
-    if (note != null) {
-      line.setNote(normalizeNote(note));
-    }
-    tab.setUpdatedAt(Instant.now());
-    return cafeTabRepository.save(tab);
+    // The one line, by lineRef, through an array filter -- so a round claimed for the kitchen
+    // between the read above and this write is not restored by the edit.
+    long matched =
+        cafeTabTargetedWriter.updateLine(
+            shopId, userId, tabId, lineRef, quantity, note != null, normalizeNote(note));
+    return applied(shopId, userId, tabId, matched);
   }
 
   public CafeTab removeLine(String shopId, String userId, String tabId, String lineRef) {
     CafeTab tab = loadOpenTab(shopId, userId, tabId);
-    boolean removed = tab.getLines().removeIf(line -> lineRef.equals(line.getLineRef()));
-    if (!removed) {
+    boolean present = tab.getLines().stream().anyMatch(line -> lineRef.equals(line.getLineRef()));
+    if (!present) {
       throw new ResourceNotFoundException("CafeTabLine", "lineRef", lineRef);
     }
-    tab.setUpdatedAt(Instant.now());
-    return cafeTabRepository.save(tab);
+    // $pull of that one element. If a flush claimed the line in the meantime there is nothing
+    // left to pull, and the tab is returned as it now stands rather than being rewound to the
+    // snapshot this request read.
+    return applied(
+        shopId, userId, tabId, cafeTabTargetedWriter.removeLine(shopId, userId, tabId, lineRef));
   }
 
   /** The only way a tab leaves the open state. */
   public void close(String shopId, String userId, String tabId) {
-    CafeTab tab = loadOpenTab(shopId, userId, tabId);
-    tab.setStatus(CafeTabStatus.CLOSED);
-    tab.setUpdatedAt(Instant.now());
-    cafeTabRepository.save(tab);
+    loadOpenTab(shopId, userId, tabId);
+    // Only status and updatedAt. A tab closed while it still owes the kitchen a flush keeps its
+    // pendingFlush record, so the resume path can still finish it.
+    if (cafeTabTargetedWriter.close(shopId, userId, tabId) == 0) {
+      throw new ValidationException("Tab is no longer open");
+    }
     log.info("Closed cafe tab {} for shop {} user {}", tabId, shopId, userId);
+  }
+
+  /**
+   * The tab as it now stands, read back after a targeted write rather than reconstructed from the
+   * snapshot the write was computed from -- which is the whole point: whatever else landed on the
+   * document in between belongs in the answer.
+   */
+  private CafeTab applied(String shopId, String userId, String tabId, long matched) {
+    if (matched == 0) {
+      throw new ValidationException("Tab is no longer open");
+    }
+    return cafeTabRepository
+        .findByIdAndShopIdAndUserId(tabId, shopId, userId)
+        .orElseThrow(() -> new ResourceNotFoundException("CafeTab", "tabId", tabId));
   }
 
   private CafeTab loadOpenTab(String shopId, String userId, String tabId) {

@@ -341,7 +341,27 @@ public class CheckoutService {
       // flushed round stays on the bill instead of being deleted by the settlement.
       if (purchaseTargetedWriter.writeChangedFields(shopId, purchase, purchaseBeforeStatusChange)
           == 0) {
-        log.warn("Purchase {} in shop {} was gone when its status was written", purchase.getId(), shopId);
+        // Zero is not a warning. It means this settlement wrote NOTHING: the guard refused it
+        // because the bill changed underneath -- for a cafe bill, a tab flushed a round onto it
+        // between the read at the top of this method and here, so the stored total is no longer
+        // the total this settlement priced, split into payments and is about to post -- or the
+        // bill is gone, which is just as fatal.
+        //
+        // Everything already done above is recoverable by a retry: the stock decrement and the
+        // invoice number are re-derived from the reloaded bill, and no money has been taken yet.
+        // Everything below is not: billing usage, the ledger, the credit entry and the printed
+        // receipt would all be posted against a document still CREATED, with no invoiceNo, still
+        // in the open-bill strip -- and therefore settleable a second time, decrementing stock
+        // again and burning a second invoice number on top of this attempt's accounting.
+        // So the request fails here, at the last point where failing is cheap.
+        log.error(
+            "Settlement of purchase {} in shop {} was refused: the bill changed underneath it "
+                + "(a round was flushed onto it, or it is gone) after its total was computed",
+            purchase.getId(),
+            shopId);
+        throw new ValidationException(
+            "This bill changed while it was being settled - a new round was added to it. "
+                + "Nothing has been charged. Reload the bill and settle it again.");
       }
 
       // Record billing usage after successful completion
@@ -1517,9 +1537,22 @@ public class CheckoutService {
       // No pre-image means no way to tell what this request changed, so there is nothing to aim
       // a targeted write with. The caller always supplies one for an existing cart; this is only
       // the guard that keeps a future caller from silently re-pushing every line it read.
-      if (cartBeforeUpdate == null
-          || !purchaseTargetedWriter.writeChangedCart(
-              existingCart.getShopId(), existingCart, cartBeforeUpdate)) {
+      PurchaseTargetedWriter.CartWrite written =
+          cartBeforeUpdate == null
+              ? PurchaseTargetedWriter.CartWrite.UNADDRESSABLE
+              : purchaseTargetedWriter.writeCart(
+                  existingCart.getShopId(), existingCart, cartBeforeUpdate);
+      if (written == PurchaseTargetedWriter.CartWrite.TOTALS_REFUSED) {
+        // A flush landed on this bill while the cart was being merged, so the total computed
+        // above excludes a round that is on the bill and cooking. The lines this request changed
+        // are stored; only the money was refused. Recompute it from what the bill now holds --
+        // the same arithmetic on a fresh read -- rather than leave a grandTotal that gives the
+        // round away.
+        recomputeTotalsAfterConcurrentAppend(
+            existingCart.getShopId(), existingCart.getId(), billingMode);
+        return existingCart;
+      }
+      if (written == PurchaseTargetedWriter.CartWrite.UNADDRESSABLE) {
         // Either that, or the lines cannot be told apart -- two of them share an identity, or one
         // has none at all -- so no targeted write can aim at the right one. The full replace is
         // what this path has always done; it is still a lost update if something writes
@@ -1541,6 +1574,61 @@ public class CheckoutService {
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
           "Error updating cart: " + e.getMessage(), e);
     }
+  }
+
+  /** How many times a refused total is recomputed before the repair is left to the next write. */
+  private static final int TOTALS_RECOMPUTE_ATTEMPTS = 3;
+
+  /**
+   * Recomputes a cart's money from the lines the bill now holds, after a concurrent flush made
+   * this request's own totals stale.
+   *
+   * <p>The same arithmetic {@code CartTotalsAdapter} runs for a flush, on a fresh read, written
+   * through the same guarded targeted write — so a second flush landing during the repair refuses
+   * this write too and the loop reads again rather than storing a number that is stale a second
+   * time. Bounded, because the flush that keeps winning is itself recomputing the totals: giving
+   * up leaves the flush's number, which counts every line on the bill including the ones this
+   * request just stored.
+   *
+   * <p>Only an open cart: a bill that settled in the meantime has an invoice number and money
+   * taken against the total it settled for, and that is not a number to recompute.
+   */
+  private void recomputeTotalsAfterConcurrentAppend(
+      String shopId, String purchaseId, BillingMode billingMode) {
+    for (int attempt = 1; attempt <= TOTALS_RECOMPUTE_ATTEMPTS; attempt++) {
+      Purchase fresh = purchaseRepository.findById(purchaseId).orElse(null);
+      if (fresh == null || !shopId.equals(fresh.getShopId())) {
+        log.error("No cart {} in shop {} to recompute refused totals for", purchaseId, shopId);
+        return;
+      }
+      if (fresh.getStatus() != null && fresh.getStatus() != PurchaseStatus.CREATED) {
+        log.warn(
+            "Cart {} in shop {} is {}, not an open cart; its refused totals are left as settled",
+            purchaseId,
+            shopId,
+            fresh.getStatus());
+        return;
+      }
+      Document beforeRecompute = purchaseTargetedWriter.snapshot(fresh);
+      List<PurchaseItem> lines =
+          fresh.getItems() == null ? new ArrayList<>() : new ArrayList<>(fresh.getItems());
+      applyCartTotals(fresh, lines, CheckoutUtils.normalizeBillingMode(billingMode));
+      fresh.setUpdatedAt(Instant.now());
+      if (purchaseTargetedWriter.writeChangedFields(shopId, fresh, beforeRecompute) > 0) {
+        log.info(
+            "Recomputed cart {} in shop {} after a concurrent flush: grandTotal {}",
+            purchaseId,
+            shopId,
+            fresh.getGrandTotal());
+        return;
+      }
+    }
+    log.error(
+        "Cart {} in shop {} could not be recomputed in {} attempts; its totals are whatever the "
+            + "flush that kept winning last computed",
+        purchaseId,
+        shopId,
+        TOTALS_RECOMPUTE_ATTEMPTS);
   }
 
   private void validateStockAvailabilityForCartUpdate(Purchase existingCart, List<PurchaseItem> newItems, String shopId) {

@@ -43,7 +43,10 @@ import org.springframework.test.util.ReflectionTestUtils;
  * fails {@link #editingASellScreenLineDoesNotRequantifyTheFlushedRoundBesideIt} and
  * {@link #removingASellScreenLineDoesNotPullTheFlushedRoundWithIt}; reverting the statement order
  * to {@code $set}, {@code $pull}, {@code $push} fails
- * {@link #theLinesAreWrittenBeforeTheTotalThatCountsThem}.
+ * {@link #theLinesAreWrittenBeforeTheTotalThatCountsThem}. Removing the {@code cafeFlushIds}
+ * guard from the totals statement in {@code PurchaseTargetedWriter.writeCart}, or the recompute
+ * {@code updateCart} answers a refused total with, fails
+ * {@link #anAddToCartDoesNotGiveAwayTheRoundAFlushAppendedConcurrently}.
  */
 class CheckoutServiceCartWriteTest {
 
@@ -138,6 +141,68 @@ class CheckoutServiceCartWriteTest {
         "and the kitchen's decrement is not undone by it");
     assertNotNull(after.getCafeKotCancels(), "the cancellation owed to the kitchen is still there");
     assertEquals(1, after.getCafeKotCancels().size());
+  }
+
+  // -------------------------------------------------- B3: the money it derived
+
+  @Test
+  void anAddToCartDoesNotGiveAwayTheRoundAFlushAppendedConcurrently() {
+    // The writer protected `items` already. It did not protect the money DERIVED from items: the
+    // add-to-cart's grandTotal is arithmetic over the lines as it read them, and $setting it
+    // after a flush appended a round puts the bill back to a total that excludes food already
+    // cooking. Nothing recomputed it until somebody happened to add another item, so the shop
+    // simply gave the round away.
+    Purchase seeded = openBill();
+    seeded.getItems().add(menuLine("a1", "menu:tea", "Tea", 2, "30.00"));
+    seeded.setCafeFlushIds(new ArrayList<>(List.of("flush-1")));
+    seeded.setGrandTotal(new BigDecimal("60.00"));
+    Purchase cart = purchases.seed(seeded);
+    // The pre-image as the request actually read it, taken before the interleaving writer runs --
+    // purchases.stored() hands back the live document, which the flush below mutates in place.
+    Document before = new PurchaseTargetedWriter(purchases.mongoTemplate()).snapshot(cart);
+
+    // A tab flushes a round onto the same bill: the lines, its flush id, and the totals it
+    // recomputed to include them, exactly as CartTotalsAdapter stores them.
+    purchases.interleave(
+        () ->
+            purchases.mutateStored(
+                BILL_ID,
+                stored -> {
+                  PurchaseItem beer = menuLine("b1", "menu:beer", "Beer", 1, "120.00");
+                  Document beerDoc = new Document();
+                  purchases.converter().write(beer, beerDoc);
+                  stored.getList("items", Document.class).add(beerDoc);
+                  stored.getList("cafeFlushIds", String.class).add("flush-2");
+                  stored.put("grandTotal", new org.bson.types.Decimal128(new BigDecimal("180.00")));
+                }));
+
+    checkoutService.updateCart(
+        cart,
+        before,
+        List.of(menuLine("c1", "menu:coke", "Coke", 1, "50.00")),
+        null,
+        null,
+        null,
+        BillingMode.REGULAR);
+
+    Purchase after = purchases.read(BILL_ID);
+    assertEquals(
+        List.of("a1", "b1", "c1"),
+        after.getItems().stream().map(PurchaseItem::getLineRef).toList(),
+        "all three lines are on the bill");
+
+    // What the same arithmetic makes of the lines the bill now holds — the number settlement
+    // will read. Before the guard this was 110.00: tea and coke, with the flushed beer dropped.
+    Purchase recomputed = purchases.read(BILL_ID);
+    checkoutService.applyCartTotals(
+        recomputed, new ArrayList<>(recomputed.getItems()), BillingMode.REGULAR);
+    assertEquals(
+        recomputed.getGrandTotal(),
+        after.getGrandTotal(),
+        "the stored total counts the flushed round, not just what this request read");
+    assertTrue(
+        after.getGrandTotal().compareTo(new BigDecimal("170.00")) > 0,
+        "and it is not the pre-flush total: " + after.getGrandTotal());
   }
 
   @Test
@@ -255,13 +320,21 @@ class CheckoutServiceCartWriteTest {
 
     List<String> operators = purchases.statements().stream().map(CheckoutServiceCartWriteTest::operatorOf).toList();
     assertEquals(
-        List.of("$push", "$set", "$pull"),
+        List.of("$push", "$set", "$set", "$pull"),
         operators,
-        "lines in, then the total, then lines out");
-    Document totals = (Document) purchases.statements().get(1).get("$set");
+        "lines in, then the line edits, then the total, then lines out");
+    // Two $set statements rather than one: a line edit is aimed at a named line and is right
+    // whatever else landed on the bill, while the money is arithmetic over every line and is
+    // guarded on the cafeFlushIds this request read. Only the second of them may be refused, and
+    // splitting them is what keeps a refused total from taking the line edits down with it.
+    Document lineEdits = (Document) purchases.statements().get(1).get("$set");
+    assertFalse(
+        lineEdits.containsKey("grandTotal"),
+        "the line edits carry no money");
+    Document totals = (Document) purchases.statements().get(2).get("$set");
     assertTrue(
         totals.containsKey("grandTotal"),
-        "the middle statement is the one carrying the money, so it must follow the $push");
+        "the money statement follows the $push and precedes the $pull");
   }
 
   // --------------------------------------------- unchanged for an uncontended cart

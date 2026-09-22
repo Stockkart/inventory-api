@@ -117,6 +117,16 @@ public class CafeKotCancelService {
       return resume(shopId, purchaseId, idempotencyKey);
     }
 
+    // The flush's invariant, and for the same reason: a bill that still owes the kitchen an
+    // earlier cancel has that one finished first. Without this, a PENDING record under a
+    // DIFFERENT key is invisible -- the check above recognises only this exact key -- and nothing
+    // in the system would ever look at it again: there is no sweep and no redrive. Its
+    // kotSentQuantity has already been decremented, so the withdrawal it stands for is taken off
+    // the bill and never told to the kitchen. That is the stranded sequence: reduce 5 -> 3 claims
+    // and decrements but dies before its ticket; the cashier reduces to 2 instead of retrying;
+    // 3 are withdrawn from the bill and the kitchen hears about 1.
+    bill = finishStrandedCancels(shopId, purchaseId, bill);
+
     Document item = requireItem(bill, lineRef);
 
     int kotSentQuantity = intField(item, "kotSentQuantity");
@@ -175,6 +185,15 @@ public class CafeKotCancelService {
                 .is(shopId)
                 .and(CANCELS + ".idempotencyKey")
                 .ne(idempotencyKey)
+                // The flush's PENDING clause, on the same document rather than on a tab: a bill
+                // that still owes the kitchen a cancel is never claimed out from under it. The
+                // sweep above finishes any such record before we get here; this clause is what
+                // makes that check hold across the gap between its read and this write, exactly
+                // as CafeTabFlusher's pendingFlush.status clause does for a flush. $ne on an
+                // array means "no element has this value", and it matches a bill with no
+                // cafeKotCancels at all, which is the ordinary case.
+                .and(CANCELS + ".status")
+                .ne(STATUS_PENDING)
                 .and("items")
                 .elemMatch(
                     Criteria.where("lineRef")
@@ -204,6 +223,38 @@ public class CafeKotCancelService {
         shopId,
         quantity);
     return finish(shopId, bill, record);
+  }
+
+  /**
+   * Finishes every cancel this bill still owes the kitchen before a new one may claim — the
+   * flush's "finish the older one first" step, which the cancel path used not to have.
+   *
+   * <p>Each one is finished by the same {@link #finish} a resume uses, so it is idempotent: a
+   * ticket a previous attempt already wrote is found and re-used rather than renumbered, and the
+   * record is marked COMPLETE only by the work having been done. The bill is re-read afterwards
+   * so the claim that follows is computed against the document as it now stands, not as it was
+   * before the sweep.
+   *
+   * @return the bill to carry on with — re-read when anything was finished, the same one when
+   *     there was nothing owed.
+   */
+  private Document finishStrandedCancels(String shopId, String purchaseId, Document bill) {
+    List<Document> stranded =
+        cancelsOf(bill).stream()
+            .filter(record -> STATUS_PENDING.equals(record.getString("status")))
+            .toList();
+    if (stranded.isEmpty()) {
+      return bill;
+    }
+    for (Document record : stranded) {
+      log.warn(
+          "Bill {} in shop {} still owes cancel {}; finishing it before claiming another",
+          purchaseId,
+          shopId,
+          record.getString("cancelId"));
+      finish(shopId, bill, record);
+    }
+    return requirePurchase(shopId, purchaseId);
   }
 
   /** Disambiguates an unclaimed write by reading the bill, rather than by guessing. */

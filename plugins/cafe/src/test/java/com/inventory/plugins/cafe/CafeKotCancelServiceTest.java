@@ -247,6 +247,77 @@ class CafeKotCancelServiceTest {
 
   // ------------------------------------------------------------------ helpers
 
+  // ------------------------------------------- B4: a cancel stranded PENDING
+
+  @Test
+  void aStrandedPendingCancelIsFinishedByTheNextCancelOnTheBill() {
+    // The cashier reduces 5 to 3. K1 claims: it pushes its PENDING record and decrements
+    // kotSentQuantity 5 -> 3, then dies before its ticket. The cart write never ran, so the bill
+    // still reads 5 to the cashier.
+    fake.bill(billLine(5, "KITCHEN", "no onion"));
+    failTheNextTicketWrite();
+    assertThrows(
+        IllegalStateException.class,
+        () -> service.cancel(SHOP_ID, USER_ID, BILL_ID, LINE_REF, 5, 3, "k1"));
+    assertEquals("PENDING", fake.cancelsOf(BILL_ID).get(0).getString("status"));
+    assertTrue(kotStore.isEmpty(), "nothing reached the kitchen for K1");
+
+    // The cashier does not retry; they reduce again, to 2. The bill now reads sent = 3.
+    List<CafeKot> produced = service.cancel(SHOP_ID, USER_ID, BILL_ID, LINE_REF, 5, 2, "k2");
+
+    // Both records are finished, and the kitchen has been told about every unit withdrawn.
+    assertEquals(
+        List.of("COMPLETE", "COMPLETE"),
+        fake.cancelsOf(BILL_ID).stream().map(r -> r.getString("status")).toList(),
+        "no cancel is left PENDING with nothing in the system that will ever look at it");
+    assertEquals(2, kotStore.size(), "the stranded round's ticket reached the kitchen too");
+    int toldToTheKitchen =
+        kotStore.values().stream()
+            .mapToInt(kot -> kot.getLines().get(0).getQuantity())
+            .sum();
+    assertEquals(
+        3,
+        toldToTheKitchen,
+        "5 sent, 2 left on the bill: the kitchen is told about all three withdrawn");
+    assertEquals(1, produced.size(), "this call's own ticket is what it returns");
+  }
+
+  @Test
+  void aCancelClaimIsRefusedWhileTheBillStillOwesAnEarlierOne() {
+    // The clause, not the sweep: a PENDING record appearing between the sweep's read and the
+    // claim must still refuse it, exactly as CafeTabFlusher's pendingFlush.status clause does.
+    fake.bill(billLine(5, "KITCHEN", null));
+    fake.cancelsOf(BILL_ID)
+        .add(
+            new Document("cancelId", "stranded")
+                .append("idempotencyKey", "k0")
+                .append("status", "PENDING"));
+    fake.forceNextFindOneToReturn(
+        new Document("_id", BILL_ID)
+            .append("shopId", SHOP_ID)
+            .append("items", new ArrayList<>(List.of(billLine(5, "KITCHEN", null))))
+            .append("cafeKotCancels", new ArrayList<Document>()));
+
+    assertThrows(
+        ValidationException.class,
+        () -> service.cancel(SHOP_ID, USER_ID, BILL_ID, LINE_REF, 5, 2, "k2"));
+    assertEquals(
+        1, fake.cancelsOf(BILL_ID).size(), "nothing was claimed over the record that is owed");
+  }
+
+  /** The ticket write failing once: the crash that leaves a claimed cancel PENDING. */
+  private void failTheNextTicketWrite() {
+    org.mockito.Mockito.doThrow(new IllegalStateException("kitchen printer service is down"))
+        .doAnswer(
+            invocation -> {
+              CafeKot kot = invocation.getArgument(0);
+              kotStore.put(kot.getId(), kot);
+              return kot;
+            })
+        .when(kotRepository)
+        .save(any());
+  }
+
   private static Document billLine(int kotSentQuantity, String department, String note) {
     return billLine(LINE_REF, "menu:tea", kotSentQuantity, department, note);
   }
@@ -382,6 +453,18 @@ class CafeKotCancelServiceTest {
               .anyMatch(r -> key.equals(r.getString("idempotencyKey")));
       if (alreadyClaimed) {
         return com.mongodb.client.result.UpdateResult.acknowledged(0, 0L, null);
+      }
+
+      // The PENDING clause: $ne against an array field means "no element has this value", so a
+      // bill that still owes the kitchen a cancel under ANY key refuses the claim.
+      if (q.get("cafeKotCancels.status") instanceof Document statusNe
+          && statusNe.containsKey("$ne")) {
+        boolean owesOne =
+            cancelsOf(q.getString("_id")).stream()
+                .anyMatch(r -> Objects.equals(statusNe.get("$ne"), r.getString("status")));
+        if (owesOne) {
+          return com.mongodb.client.result.UpdateResult.acknowledged(0, 0L, null);
+        }
       }
 
       Document itemsClause = (Document) q.get("items");

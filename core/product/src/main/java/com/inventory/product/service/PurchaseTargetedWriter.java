@@ -59,9 +59,10 @@ import org.springframework.util.StringUtils;
  * quantity leave whichever wrote last, as the replace did — but nothing is lost.
  *
  * <p>{@code $set} on {@code items.$[…]}, {@code $pull} on {@code items} and {@code $push} on
- * {@code items} conflict on the same path and cannot share one update, so a cart write is up to
- * three statements, and there is no {@code MongoTransactionManager} to wrap them in. They are
- * issued {@code $push}, then {@code $set}, then {@code $pull}, and that order is the whole of the
+ * {@code items} conflict on the same path and cannot share one update, so a cart write is several
+ * statements, and there is no {@code MongoTransactionManager} to wrap them in. They are issued
+ * {@code $push}, then the line edits, then the scalars and the money, then {@code $pull}, and that
+ * order is the whole of the
  * guarantee: a failure part way through leaves the bill <i>over-itemised</i> — a line on it that
  * the stored {@code grandTotal} does not yet include — never <i>over-totalled</i>. Settlement
  * reads the stored total, so an over-totalled bill charges the customer for an item that is not
@@ -136,25 +137,50 @@ public class PurchaseTargetedWriter {
   }
 
   /**
+   * What a cart write actually did, for a caller that has to react to more than "it worked".
+   *
+   * <ul>
+   *   <li>{@link #WRITTEN} — everything this request changed is stored.
+   *   <li>{@link #TOTALS_REFUSED} — the lines are stored, the money is not. A flush landed under
+   *       this request between its read and its write, so the totals it computed exclude a round
+   *       that is now on the bill and already in the kitchen. The caller must recompute from the
+   *       stored lines; storing the stale total would give that round away.
+   *   <li>{@link #UNADDRESSABLE} — the lines cannot be told apart, so nothing was written and the
+   *       caller must fall back to the full replace.
+   * </ul>
+   */
+  public enum CartWrite {
+    WRITTEN,
+    TOTALS_REFUSED,
+    UNADDRESSABLE
+  }
+
+  /**
    * Writes everything a cart update changed: the scalars, and the lines one by one.
    *
    * @return {@code false} when the lines cannot be addressed individually — duplicate or missing
    *     line identity — in which case the caller must fall back to the full replace rather than
    *     write something it cannot aim. Callers should log that fall-back: it is the one path on
-   *     which a concurrent append can still be lost.
+   *     which a concurrent append can still be lost. A caller that can repair a stale total
+   *     should use {@link #writeCart} instead, which says whether the money landed.
    */
   public boolean writeChangedCart(String shopId, Purchase after, Document before) {
+    return writeCart(shopId, after, before) != CartWrite.UNADDRESSABLE;
+  }
+
+  /** As {@link #writeChangedCart}, but distinguishes a refused total from a written one. */
+  public CartWrite writeCart(String shopId, Purchase after, Document before) {
     Document afterDoc = snapshot(after);
     String billId = after.getId();
     Map<String, Document> beforeLines = byIdentity(before.getList(ITEMS, Document.class), billId, shopId);
     Map<String, Document> afterLines = byIdentity(afterDoc.getList(ITEMS, Document.class), billId, shopId);
     if (beforeLines == null || afterLines == null) {
-      return false;
+      return CartWrite.UNADDRESSABLE;
     }
 
-    // Every statement is built before any of them is issued. A `return false` below means the
-    // caller falls back to the full replace, and it must find the document exactly as it was --
-    // a half-applied targeted write underneath a replace is worse than either alone.
+    // Every statement is built before any of them is issued. An UNADDRESSABLE return below means
+    // the caller falls back to the full replace, and it must find the document exactly as it was
+    // -- a half-applied targeted write underneath a replace is worse than either alone.
 
     // Lines this request added, appended in their merged order. $push, not a replace of the
     // array, so a round another tab flushed in the meantime is still there.
@@ -165,14 +191,19 @@ public class PurchaseTargetedWriter {
       }
       PurchaseItem line = lineOf(after, key);
       if (line == null) {
-        return false;
+        return CartWrite.UNADDRESSABLE;
       }
       added.add(line);
     }
 
-    // The scalars, plus the sub-fields of lines that are on both images.
-    Update fieldUpdate = new Update();
-    collectScalarChanges(before, afterDoc, after, fieldUpdate);
+    // The scalars -- the money among them -- and the sub-fields of lines on both images, in two
+    // separate statements. They are separate because only one of them may be refused: see the
+    // guard at the bottom. A line edit is aimed at one named line and is right whatever else
+    // landed on the bill; a total is arithmetic over ALL the lines and is wrong the moment
+    // another writer adds one.
+    Update scalarUpdate = new Update();
+    collectScalarChanges(before, afterDoc, after, scalarUpdate);
+    Update lineUpdate = new Update();
     List<Criteria> arrayFilters = new ArrayList<>();
     for (Map.Entry<String, Document> entry : beforeLines.entrySet()) {
       Document afterLine = afterLines.get(entry.getKey());
@@ -183,21 +214,21 @@ public class PurchaseTargetedWriter {
       String identifier = "f" + arrayFilters.size();
       Criteria filter = identityCriteria(beforeLine, identifier + ".");
       if (filter == null) {
-        return false;
+        return CartWrite.UNADDRESSABLE;
       }
       String placeholder = ITEMS + ".$[" + identifier + "].";
       PurchaseItem line = lineOf(after, entry.getKey());
       if (line == null) {
-        return false;
+        return CartWrite.UNADDRESSABLE;
       }
       PersistentPropertyAccessor<?> accessor = accessorFor(PurchaseItem.class, line);
       boolean lineChanged =
-          collectChanges(beforeLine, afterLine, PurchaseItem.class, accessor, placeholder, fieldUpdate);
+          collectChanges(beforeLine, afterLine, PurchaseItem.class, accessor, placeholder, lineUpdate);
       if (lineChanged) {
         arrayFilters.add(filter);
       }
     }
-    arrayFilters.forEach(fieldUpdate::filterArray);
+    arrayFilters.forEach(lineUpdate::filterArray);
 
     // Lines this request removed. Separate because $pull and $set on items.$[...] conflict on the
     // same path, and one statement per line because $pull matches an element by a condition on
@@ -209,12 +240,13 @@ public class PurchaseTargetedWriter {
       }
       Document condition = identityCondition(entry.getValue());
       if (condition == null) {
-        return false;
+        return CartWrite.UNADDRESSABLE;
       }
       removed.add(condition);
     }
 
-    // $push first, $set second, $pull last. These are three independent statements -- there is no
+    // $push first, the line edits, then the scalars and the money, $pull last. These are
+    // independent statements -- there is no
     // MongoTransactionManager here -- so the order decides what a failure between them leaves
     // behind. Totals last-but-one and lines first means a bill that stops half way is
     // over-itemised (a line present that the stored total does not include) rather than
@@ -226,18 +258,42 @@ public class PurchaseTargetedWriter {
     if (!added.isEmpty() && apply(shopId, billId, new Update().push(ITEMS).each(added.toArray())) == 0) {
       log.error("Cart {} in shop {} was gone when {} added line(s) were pushed", billId, shopId, added.size());
     }
-    if (hasOperations(fieldUpdate)) {
-      if (apply(shopId, billId, fieldUpdate) == 0) {
-        log.error("Cart {} in shop {} was gone when its fields and totals were written", billId, shopId);
-        return true;
-      }
+    // The line edits, unguarded: each one is aimed at a named line by an array filter, so it
+    // cannot touch a round somebody else flushed and stays correct whatever landed alongside it.
+    if (hasOperations(lineUpdate) && apply(shopId, billId, lineUpdate) == 0) {
+      log.error("Cart {} in shop {} was gone when its line edits were written", billId, shopId);
+    }
+    CartWrite outcome = CartWrite.WRITTEN;
+    if (hasOperations(scalarUpdate)
+        && apply(
+                shopId,
+                billId,
+                scalarUpdate,
+                new Document(CAFE_FLUSH_IDS, before.get(CAFE_FLUSH_IDS)))
+            == 0) {
+      // Guarded on the cafeFlushIds this request read, for the same reason the settlement write
+      // is -- and it matters more here, because this update DOES carry the money. grandTotal is
+      // arithmetic over the lines as this request read them; a flush appending a round in that
+      // window recomputes it to include the round, and storing this snapshot's number would put
+      // it back, silently giving the round away on a bill whose tickets are already in the
+      // kitchen. Nothing else recomputes until someone happens to add another item.
+      // The lines are already stored, so the bill is over-itemised rather than over-totalled --
+      // the safe half of the trade the statement order is built around -- and the caller is told
+      // to recompute from what the bill now holds. For grocery, medical and sports the guard is
+      // `cafeFlushIds: null` matching an absent field: it can never refuse them.
+      log.error(
+          "Cart {} in shop {} took a flushed round between its read and its write; its totals "
+              + "were refused and must be recomputed from the stored lines",
+          billId,
+          shopId);
+      outcome = CartWrite.TOTALS_REFUSED;
     }
     for (Document condition : removed) {
       if (apply(shopId, billId, new Update().pull(ITEMS, condition)) == 0) {
         log.error("Cart {} in shop {} was gone when line {} was pulled", billId, shopId, condition.toJson());
       }
     }
-    return true;
+    return outcome;
   }
 
   // ----------------------------------------------------------------- the diff
