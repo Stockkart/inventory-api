@@ -12,7 +12,7 @@ import java.util.Optional;
 import org.springframework.stereotype.Component;
 
 /**
- * Adapts the cafe plugin's punch, cancel and ticket services to {@link CafeKotPort}: the only
+ * Adapts the cafe plugin's punch and ticket services to {@link CafeKotPort}: the only
  * view of a cafe kitchen ticket that {@code core/product} is allowed to see.
  */
 @Component
@@ -20,15 +20,10 @@ public class CafeKotAdapter implements CafeKotPort {
 
   private final CafeKotRepository kotRepository;
   private final CafeKotPunchService punchService;
-  private final CafeKotCancelService cafeKotCancelService;
 
-  public CafeKotAdapter(
-      CafeKotRepository kotRepository,
-      CafeKotPunchService punchService,
-      CafeKotCancelService cafeKotCancelService) {
+  public CafeKotAdapter(CafeKotRepository kotRepository, CafeKotPunchService punchService) {
     this.kotRepository = kotRepository;
     this.punchService = punchService;
-    this.cafeKotCancelService = cafeKotCancelService;
   }
 
   @Override
@@ -49,26 +44,10 @@ public class CafeKotAdapter implements CafeKotPort {
     return kotRepository.findByIdAndShopId(kotId, shopId).map(CafeKotAdapter::toTicket);
   }
 
-  @Override
-  public List<CafeKotTicket> cancel(
-      String shopId,
-      String userId,
-      String purchaseId,
-      String lineRef,
-      int fromQty,
-      int toQty,
-      String idempotencyKey) {
-    return cafeKotCancelService
-        .cancel(shopId, userId, purchaseId, lineRef, fromQty, toQty, idempotencyKey)
-        .stream()
-        .map(CafeKotAdapter::toTicket)
-        .toList();
-  }
-
   /**
    * Bumps {@code reprintCount} on an already-issued ticket and returns it, creating no new
    * ticket. The stamp a reprinted slip renders with is {@code core/product}'s concern
-   * ({@code CafeKotService}), the same way it already decides {@code CANCELLED} for a cancel.
+   * ({@code CafeKotService}), the same way it decides {@code CANCELLED} for a CANCEL ticket.
    */
   @Override
   public CafeKotTicket reprint(String shopId, String kotId, String idempotencyKey) {

@@ -42,38 +42,38 @@ class PurchaseCafeFieldMappingTest {
   }
 
   @Test
-  void cafeFlushIdsSurvivesAnOrdinarySaveOfTheBill() {
-    Document stored = new Document("_id", "bill-1").append("shopId", "shop-1");
-    stored.append("cafeFlushIds", List.of("flush-1", "flush-2"));
-
-    Document rewritten = roundTrip(stored);
-
-    assertEquals(
-        List.of("flush-1", "flush-2"),
-        rewritten.get("cafeFlushIds"),
-        "the bill's record of the flushes it absorbed: without it the append's $ne idempotency "
-            + "cannot hold and a ticket's round number is derived from an empty list");
-  }
-
-  @Test
-  void cafeKotCancelsSurvivesTheSameRoundTrip() {
-    Document cancel =
-        new Document("cancelId", "cancel-1")
+  void cafeKotPunchesSurvivesAnOrdinarySaveOfTheBill() {
+    Document punch =
+        new Document("punchId", "punch-1")
             .append("idempotencyKey", "idem-1")
-            .append("lineRef", "line-1")
-            .append("quantity", 2)
-            .append("status", "PENDING");
+            .append("status", "PENDING_KOT_CREATION")
+            .append("kotIds", List.of("punch-1:KITCHEN:ISSUE"))
+            .append(
+                "deltas",
+                List.of(
+                    new Document("sellableRef", "menu:tea")
+                        .append("name", "Tea")
+                        .append("quantity", 2)));
     Document stored =
         new Document("_id", "bill-1")
             .append("shopId", "shop-1")
-            .append("cafeKotCancels", List.of(cancel));
+            .append("cafeKotPunches", List.of(punch));
 
     Document rewritten = roundTrip(stored);
 
-    List<?> cancels = (List<?>) rewritten.get("cafeKotCancels");
-    assertNotNull(cancels, "the cancellations owed to the kitchen are mapped the same way");
-    assertEquals(1, cancels.size());
-    assertEquals("cancel-1", ((Document) cancels.get(0)).get("cancelId"));
+    List<?> punches = (List<?>) rewritten.get("cafeKotPunches");
+    assertNotNull(
+        punches,
+        "the bill's record of what the kitchen was sent: without it the claim's $ne idempotency "
+            + "cannot hold, a replay has no deltas to finish from, and a ticket's round number is "
+            + "derived from an empty list");
+    assertEquals(1, punches.size());
+    Document rewrittenPunch = (Document) punches.get(0);
+    assertEquals("punch-1", rewrittenPunch.get("punchId"));
+    assertEquals(
+        2,
+        ((Document) ((List<?>) rewrittenPunch.get("deltas")).get(0)).get("quantity"),
+        "including the delta a cancellation is computed from");
   }
 
   @Test

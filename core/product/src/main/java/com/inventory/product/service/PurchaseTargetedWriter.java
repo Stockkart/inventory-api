@@ -23,14 +23,13 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 /**
- * Writes a {@link Purchase} the way {@code CartTotalsAdapter.storeTotals} does — named fields
- * through {@code updateFirst}, never a full-document replace.
+ * Writes a {@link Purchase} through named fields and {@code updateFirst}, never a
+ * full-document replace.
  *
  * <p><b>Why.</b> {@code PurchaseRepository.save(purchase)} replaces the whole document with a
  * snapshot this request read some time ago, across several inventory and stock round-trips.
  * Anything another writer put on the bill in that window is deleted by it: a cafe punch
- * appending to {@code cafeKotPunches} and advancing {@code items.$.kotSentQuantity}, a
- * {@code cafeKotCancels} push, an {@code items.$.kotSentQuantity} decrement. For a punch that
+ * appending to {@code cafeKotPunches} and advancing {@code items.$.kotSentQuantity}. For a punch that
  * means lines whose tickets are already in the kitchen losing the only record of what was sent —
  * the food is cooked, and the next press of Print KOT sends it to the kitchen a second time.
  *
@@ -48,8 +47,9 @@ import org.springframework.util.StringUtils;
  * two lines with the same {@code sellableRef} — otherwise the normalized sellable ref), and each
  * pairing yields only the sub-fields that differ, addressed as {@code items.$[f0].<field>} under
  * an array filter on that identity. So reducing a line's quantity writes that line's quantity and
- * nothing else: its {@code kotSentQuantity}, which belongs to the cancel path, is left where the
- * cancel path put it. Lines only in the post-image are {@code $push}ed; lines only in the
+ * nothing else: its {@code kotSentQuantity}, which belongs to the punch, is left where the punch
+ * put it -- which is exactly what lets the next punch compute the cancellation. Lines only in the
+ * post-image are {@code $push}ed; lines only in the
  * pre-image are {@code $pull}ed.
  *
  * <p>There is no {@code MongoTransactionManager} in this codebase, so an optimistic
@@ -77,7 +77,11 @@ public class PurchaseTargetedWriter {
   private static final String ID = "_id";
   private static final String CLASS = "_class";
   private static final String EXISTS = "$exists";
-  private static final String CAFE_FLUSH_IDS = "cafeFlushIds";
+  /**
+   * The money field a settlement is about to stamp COMPLETED over. See {@link
+   * #writeChangedFields} for why the settlement write is guarded on the value it read here.
+   */
+  private static final String GRAND_TOTAL = "grandTotal";
 
   /**
    * Line identity fields, most specific first. {@code lineRef} names <i>this</i> line;
@@ -125,17 +129,18 @@ public class PurchaseTargetedWriter {
     if (!changed) {
       return 1L;
     }
-    // Guarded on the cafeFlushIds this settlement read -- dormant since the tab/flush subsystem
-    // was retired (nothing writes that array any more), kept as the seam a future concurrent
-    // appender to this bill is wired through. The money fields are not in this update --
-    // this request did not change them -- but a flush landing between the read and here recomputes
-    // them, and the payment split, ledger, credit entries and printed response were all derived
-    // from the smaller in-memory total. Rather than stamp COMPLETED over a bill whose stored total
-    // no longer matches the money taken, the write matches nothing and the caller says so out
-    // loud. Equality on the array as it was read: a flush always pushes its id, so it is the one
-    // field that reliably marks "something landed under me". No other vertical ever has it, so
-    // for grocery, medical and sports this is `cafeFlushIds: null` matching an absent field.
-    return apply(shopId, after.getId(), update, new Document(CAFE_FLUSH_IDS, before.get(CAFE_FLUSH_IDS)));
+    // Guarded on the grandTotal this settlement read. The money fields are not in this update
+    // -- this request did not change them -- but the payment split, ledger, credit entries and
+    // printed response were all derived from the total as it was read. If something recomputed
+    // that total in the meantime, stamping COMPLETED over the bill would settle it for a number
+    // the money taken no longer matches, so the write matches nothing and the caller says so out
+    // loud. This used to be guarded on `cafeFlushIds`, the array the retired tab/flush subsystem
+    // pushed to; with that gone the guard names the field it was always really protecting, which
+    // needs no vertical of its own -- a grocery, medical or sports bill whose total nobody
+    // touched matches on equality exactly as before, and the cafe punch, which never writes
+    // grandTotal, cannot refuse a settlement it has no quarrel with.
+    return apply(
+        shopId, after.getId(), update, new Document(GRAND_TOTAL, before.get(GRAND_TOTAL)));
   }
 
   /**
@@ -143,17 +148,12 @@ public class PurchaseTargetedWriter {
    *
    * <ul>
    *   <li>{@link #WRITTEN} — everything this request changed is stored.
-   *   <li>{@link #TOTALS_REFUSED} — the lines are stored, the money is not. A flush landed under
-   *       this request between its read and its write, so the totals it computed exclude a round
-   *       that is now on the bill and already in the kitchen. The caller must recompute from the
-   *       stored lines; storing the stale total would give that round away.
    *   <li>{@link #UNADDRESSABLE} — the lines cannot be told apart, so nothing was written and the
    *       caller must fall back to the full replace.
    * </ul>
    */
   public enum CartWrite {
     WRITTEN,
-    TOTALS_REFUSED,
     UNADDRESSABLE
   }
 
@@ -163,14 +163,13 @@ public class PurchaseTargetedWriter {
    * @return {@code false} when the lines cannot be addressed individually — duplicate or missing
    *     line identity — in which case the caller must fall back to the full replace rather than
    *     write something it cannot aim. Callers should log that fall-back: it is the one path on
-   *     which a concurrent append can still be lost. A caller that can repair a stale total
-   *     should use {@link #writeCart} instead, which says whether the money landed.
+   *     which a concurrent append can still be lost.
    */
   public boolean writeChangedCart(String shopId, Purchase after, Document before) {
     return writeCart(shopId, after, before) != CartWrite.UNADDRESSABLE;
   }
 
-  /** As {@link #writeChangedCart}, but distinguishes a refused total from a written one. */
+  /** As {@link #writeChangedCart}, but names what the write did rather than only whether it aimed. */
   public CartWrite writeCart(String shopId, Purchase after, Document before) {
     Document afterDoc = snapshot(after);
     String billId = after.getId();
@@ -199,10 +198,9 @@ public class PurchaseTargetedWriter {
     }
 
     // The scalars -- the money among them -- and the sub-fields of lines on both images, in two
-    // separate statements. They are separate because only one of them may be refused: see the
-    // guard at the bottom. A line edit is aimed at one named line and is right whatever else
-    // landed on the bill; a total is arithmetic over ALL the lines and is wrong the moment
-    // another writer adds one.
+    // separate statements: $set on items.$[...] and $set on a top-level field can share an
+    // update, but keeping them apart is what lets the statement order below hold (lines before
+    // the total that counts them).
     Update scalarUpdate = new Update();
     collectScalarChanges(before, afterDoc, after, scalarUpdate);
     Update lineUpdate = new Update();
@@ -265,37 +263,22 @@ public class PurchaseTargetedWriter {
     if (hasOperations(lineUpdate) && apply(shopId, billId, lineUpdate) == 0) {
       log.error("Cart {} in shop {} was gone when its line edits were written", billId, shopId);
     }
-    CartWrite outcome = CartWrite.WRITTEN;
-    if (hasOperations(scalarUpdate)
-        && apply(
-                shopId,
-                billId,
-                scalarUpdate,
-                new Document(CAFE_FLUSH_IDS, before.get(CAFE_FLUSH_IDS)))
-            == 0) {
-      // Guarded on the cafeFlushIds this request read, for the same reason the settlement write
-      // is -- and it matters more here, because this update DOES carry the money. grandTotal is
-      // arithmetic over the lines as this request read them; a flush appending a round in that
-      // window recomputes it to include the round, and storing this snapshot's number would put
-      // it back, silently giving the round away on a bill whose tickets are already in the
-      // kitchen. Nothing else recomputes until someone happens to add another item.
-      // The lines are already stored, so the bill is over-itemised rather than over-totalled --
-      // the safe half of the trade the statement order is built around -- and the caller is told
-      // to recompute from what the bill now holds. For grocery, medical and sports the guard is
-      // `cafeFlushIds: null` matching an absent field: it can never refuse them.
-      log.error(
-          "Cart {} in shop {} took a flushed round between its read and its write; its totals "
-              + "were refused and must be recomputed from the stored lines",
-          billId,
-          shopId);
-      outcome = CartWrite.TOTALS_REFUSED;
+    // The scalars and the money, unguarded. This write used to be conditional on the
+    // `cafeFlushIds` the request read, because a flush could append a whole round to the bill
+    // between the read and here and recompute the total to include it; storing this snapshot's
+    // number would then have given that round away. The flush is gone, and the one writer that
+    // can now land on a cart under a cashier -- the punch -- changes `cafeKotPunches` and
+    // `items.$.kotSentQuantity` and never a money field, so there is no total for it to make
+    // stale. Two cart writes racing leave whichever wrote last, exactly as the full replace did.
+    if (hasOperations(scalarUpdate) && apply(shopId, billId, scalarUpdate) == 0) {
+      log.error("Cart {} in shop {} was gone when its scalars were written", billId, shopId);
     }
     for (Document condition : removed) {
       if (apply(shopId, billId, new Update().pull(ITEMS, condition)) == 0) {
         log.error("Cart {} in shop {} was gone when line {} was pulled", billId, shopId, condition.toJson());
       }
     }
-    return outcome;
+    return CartWrite.WRITTEN;
   }
 
   // ----------------------------------------------------------------- the diff

@@ -216,7 +216,7 @@ class InMemoryPurchases {
   /**
    * Every clause of the query but {@code _id}, as equality against the stored document. The
    * writer scopes each write by {@code shopId} and guards the settlement write on the
-   * {@code cafeFlushIds} it read, and a guard that the store ignored would prove nothing.
+   * {@code grandTotal} it read, and a guard that the store ignored would prove nothing.
    */
   private static boolean matchesQuery(Document target, Document criteria) {
     for (Map.Entry<String, Object> clause : criteria.entrySet()) {

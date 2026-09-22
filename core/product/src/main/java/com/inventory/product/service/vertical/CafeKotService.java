@@ -100,7 +100,7 @@ public class CafeKotService {
    *
    * <p>There used to be a second clause for {@code status == "VOIDED"}, left by the retired
    * running-order path. Nothing on this branch writes that status: the only thing that stops food
-   * is {@code CafeKotCancelService}, and every ticket it writes carries {@code kind == CANCEL}.
+   * is a punch's negative delta, and every ticket that carries one has {@code kind == CANCEL}.
    */
   private static boolean isCancelled(CafeKotTicket ticket) {
     return "CANCEL".equals(ticket.getKind());

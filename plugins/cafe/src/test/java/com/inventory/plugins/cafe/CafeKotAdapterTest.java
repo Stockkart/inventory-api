@@ -29,15 +29,13 @@ class CafeKotAdapterTest {
 
   private CafeKotRepository kotRepository;
   private CafeKotPunchService punchService;
-  private CafeKotCancelService cancelService;
   private CafeKotAdapter adapter;
 
   @BeforeEach
   void setUp() {
     kotRepository = mock(CafeKotRepository.class);
     punchService = mock(CafeKotPunchService.class);
-    cancelService = mock(CafeKotCancelService.class);
-    adapter = new CafeKotAdapter(kotRepository, punchService, cancelService);
+    adapter = new CafeKotAdapter(kotRepository, punchService);
   }
 
   private static CafeKot kot() {
@@ -108,14 +106,14 @@ class CafeKotAdapterTest {
   }
 
   @Test
-  void cancelDelegatesToTheCancelService() {
+  void aCancelTicketFromAPunchIsAdaptedLikeAnyOther() {
+    // There is no cancel call on the port any more: a CANCEL slip is a ticket the punch produced
+    // from a negative delta, and it reaches core through punch() like every other ticket.
     CafeKot cancel = kot();
     cancel.setKind(CafeKotKind.CANCEL);
-    when(cancelService.cancel("shop-1", "user-1", "p1", "a1", 3, 1, "idem-1"))
-        .thenReturn(List.of(cancel));
+    when(punchService.punch("shop-1", "user-1", "p1", "idem-1")).thenReturn(List.of(cancel));
 
-    List<CafeKotTicket> tickets =
-        adapter.cancel("shop-1", "user-1", "p1", "a1", 3, 1, "idem-1");
+    List<CafeKotTicket> tickets = adapter.punch("shop-1", "user-1", "p1", "idem-1");
 
     assertEquals(List.of("CANCEL"), tickets.stream().map(CafeKotTicket::getKind).toList());
   }

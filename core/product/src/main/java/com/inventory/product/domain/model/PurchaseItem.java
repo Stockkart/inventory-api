@@ -27,12 +27,14 @@ public class PurchaseItem {
    * Stable identity of <i>this</i> line, distinct from {@link #sellableRef}, which names only
    * what is being sold.
    *
-   * <p>Set by {@code plugins/cafe}'s flush, which carries it over from the tab line it was
-   * composed as. A cafe bill can legitimately hold two lines with the same {@code sellableRef} —
-   * "2x Tea, no sugar" and "1x Tea, extra hot" are composed separately, are never merged by the
-   * tab or by the flush's {@code $push}, and must stay separately addressable: whoever reduces
-   * the second of them owes the kitchen a cancellation for that line's note and sent quantity,
-   * not for the first line's. Null on every line no cafe flush produced.
+   * <p>Nothing writes it today: the retired cafe tab/flush carried it over from the tab line a
+   * round was composed as, and the Sell cart merges its own lines by {@code sellableRef}. It
+   * stays mapped and stays the most specific of {@code PurchaseTargetedWriter}'s line identities
+   * because bills written before that retirement still carry it, and because a bill can
+   * legitimately hold two lines with the same {@code sellableRef} — "2x Tea, no sugar" and "1x
+   * Tea, extra hot" — which must stay separately addressable: a targeted write aimed at one of
+   * them must not requantify the other, whose {@code kotSentQuantity} is what the kitchen has.
+   * Null on every line written since.
    */
   private String lineRef;
 

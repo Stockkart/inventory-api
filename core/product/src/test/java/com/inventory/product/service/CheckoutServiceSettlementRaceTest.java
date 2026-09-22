@@ -37,15 +37,16 @@ import org.springframework.test.util.ReflectionTestUtils;
  * B1: what {@code CheckoutService.updatePurchaseStatus} does when its guarded settlement write
  * matches nothing.
  *
- * <p>The write is guarded on the {@code cafeFlushIds} the settlement read, so a tab flushing a
- * round onto the bill between that read and the write makes it match 0. By that point the stock
+ * <p>The write is guarded on the {@code grandTotal} the settlement read, so anything that
+ * recomputes the bill's money between that read and the write makes it match 0. By that point the stock
  * has been decremented, an invoice number has been consumed and a txnId minted — but no money has
  * moved: the billing usage, the ledger, the credit entry and the receipt all come after. A 0 that
  * is only logged leaves every one of those posted against a document still {@code CREATED} with
  * no {@code invoiceNo}, still in the open-bill strip, and settleable a second time.
  *
  * <p>So a 0 aborts the request. Reverting the abort in {@code updatePurchaseStatus} to the
- * {@code log.warn} it used to be fails {@link #aFlushLandingMidSettlementAbortsBeforeAnyMoneyMoves}
+ * {@code log.warn} it used to be fails
+ * {@link #aRepricedBillMidSettlementAbortsBeforeAnyMoneyMoves}
  * and {@link #anAbortedSettlementLeavesTheBillOpenAndUnnumbered} by name.
  *
  * <p>{@link #anUncontendedSettlementStillCompletes} is the other half: this is the shared checkout
@@ -91,9 +92,9 @@ class CheckoutServiceSettlementRaceTest {
   }
 
   @Test
-  void aFlushLandingMidSettlementAbortsBeforeAnyMoneyMoves() {
+  void aRepricedBillMidSettlementAbortsBeforeAnyMoneyMoves() {
     purchases.seed(cafeBill());
-    flushARoundOntoTheBillDuringTheSettlementWrite();
+    repriceTheBillDuringTheSettlementWrite();
 
     ValidationException refused =
         assertThrows(ValidationException.class, () -> settle(PurchaseStatus.COMPLETED));
@@ -112,7 +113,7 @@ class CheckoutServiceSettlementRaceTest {
   @Test
   void anAbortedSettlementLeavesTheBillOpenAndUnnumbered() {
     purchases.seed(cafeBill());
-    flushARoundOntoTheBillDuringTheSettlementWrite();
+    repriceTheBillDuringTheSettlementWrite();
 
     assertThrows(ValidationException.class, () -> settle(PurchaseStatus.COMPLETED));
 
@@ -125,7 +126,7 @@ class CheckoutServiceSettlementRaceTest {
     assertEquals(
         List.of("a1", "b1"),
         stored.getItems().stream().map(PurchaseItem::getLineRef).toList(),
-        "the flushed round is still on the bill for the retry to price");
+        "the line added under it is still on the bill for the retry to price");
   }
 
   @Test
@@ -141,11 +142,10 @@ class CheckoutServiceSettlementRaceTest {
   }
 
   @Test
-  void aGroceryBillCannotBeRefusedByTheCafeGuard() {
-    // No cafeFlushIds on the document at all, and nothing in grocery, medical or sports can ever
-    // put one there: the guard is `cafeFlushIds: null` against an absent field, which matches.
+  void aBillNobodyRepricedSettlesWhateverItsVertical() {
+    // The guard names no vertical: a grocery, medical or sports bill whose total nobody touched
+    // matches on equality exactly as a cafe one does.
     Purchase grocery = cafeBill();
-    grocery.setCafeFlushIds(null);
     grocery.getItems().get(0).setSellMode("retail");
     grocery.getItems().get(0).setSellableRef(null);
     purchases.seed(grocery);
@@ -157,8 +157,8 @@ class CheckoutServiceSettlementRaceTest {
 
   // ------------------------------------------------------------------- helpers
 
-  /** A second tab's round landing on the bill in the window the settlement write is guarded on. */
-  private void flushARoundOntoTheBillDuringTheSettlementWrite() {
+  /** The bill's money recomputed in the window the settlement write is guarded on. */
+  private void repriceTheBillDuringTheSettlementWrite() {
     purchases.interleave(
         () ->
             purchases.mutateStored(
@@ -172,7 +172,8 @@ class CheckoutServiceSettlementRaceTest {
                               .append("sellMode", "menu")
                               .append("name", "Beer")
                               .append("baseQuantity", 1));
-                  stored.getList("cafeFlushIds", String.class).add("flush-2");
+                  stored.put(
+                      "grandTotal", new org.bson.types.Decimal128(new BigDecimal("180.00")));
                 }));
   }
 
@@ -195,7 +196,7 @@ class CheckoutServiceSettlementRaceTest {
     return http;
   }
 
-  /** An open cafe bill with one flushed round already on it. */
+  /** An open cafe bill with one line already on it. */
   private static Purchase cafeBill() {
     Purchase bill = new Purchase();
     bill.setId(BILL_ID);
@@ -205,7 +206,6 @@ class CheckoutServiceSettlementRaceTest {
     // CREATED -> COMPLETED is not a transition the validator allows.
     bill.setStatus(PurchaseStatus.PENDING);
     bill.setBillingMode(BillingMode.REGULAR);
-    bill.setCafeFlushIds(new ArrayList<>(List.of("flush-1")));
     bill.setGrandTotal(new BigDecimal("60.00"));
     bill.setCreatedAt(Instant.now());
     bill.setUpdatedAt(Instant.now());

@@ -40,7 +40,6 @@ import com.inventory.pluginengine.cart.CartBuildContext;
 import com.inventory.pluginengine.cart.CartLineContributor;
 import com.inventory.pluginengine.cart.CartLineInput;
 import com.inventory.pluginengine.cart.CartLineRefs;
-import com.inventory.pluginengine.cart.CartLineReductionPort;
 import com.inventory.pluginengine.ref.SellableRef;
 import com.inventory.product.service.vertical.CartContributorResolver;
 import com.inventory.product.service.vertical.CartLineSnapshotMapper;
@@ -139,15 +138,6 @@ public class CheckoutService {
 
   @Autowired(required = false)
   private com.inventory.accounting.api.AccountingFacade accountingFacade;
-
-  /**
-   * Empty for a build with no vertical wired to receive it -- only {@code plugins/cafe}
-   * implements this today. Optional the same way the collaborators above are: a unit test that
-   * builds a bare {@code CheckoutService} leaves it null, and {@link
-   * #notifyLineReductions} treats that as nothing to tell.
-   */
-  @Autowired(required = false)
-  private CartLineReductionPort cartLineReductionPort;
 
   @Autowired
   private CartContributorResolver cartContributorResolver;
@@ -1140,11 +1130,10 @@ public class CheckoutService {
    * Stores {@code items} on the cart and recomputes every money field from them — line totals
    * first, then subtotal, tax, discounts, grand total and the margin breakdown.
    *
-   * <p>Extracted from {@code updateCart}, which is the only path that had it, so that a vertical
-   * appending lines outside the add-to-cart path can reach the identical arithmetic through
-   * {@link com.inventory.product.service.vertical.CartTotalsAdapter}. Identical matters: a cafe
-   * flush that computed its own totals differently would make the bill's number change the moment
-   * the cashier added anything in Sell.
+   * <p>Extracted from {@code updateCart}, which is the only path that had it, so that any other
+   * path onto the same bill can reach the identical arithmetic rather than a second copy of it:
+   * a writer that computed its own totals differently would make the bill's number change the
+   * moment the cashier added anything in Sell.
    */
   public void applyCartTotals(Purchase cart, List<PurchaseItem> items, BillingMode billingMode) {
     recalculateLineTotalsForBillingMode(items, billingMode);
@@ -1286,16 +1275,10 @@ public class CheckoutService {
     try {
       // Merge items - if same inventoryId exists, update quantity; otherwise add new
       List<PurchaseItem> mergedItems = new ArrayList<>(existingCart.getItems() != null ? existingCart.getItems() : new ArrayList<>());
-      // Reductions mergeMenuCartLine owed a kitchen notification for, told about once this
-      // request's write has landed -- see notifyLineReductions.
-      List<MenuLineReduction> menuLineReductions = new ArrayList<>();
 
       for (PurchaseItem newItem : newItems) {
         if (PurchaseItemRefs.isMenuLine(newItem)) {
-          MenuLineReduction reduction = mergeMenuCartLine(mergedItems, newItem);
-          if (reduction != null) {
-            menuLineReductions.add(reduction);
-          }
+          mergeMenuCartLine(mergedItems, newItem);
           continue;
         }
         boolean found = false;
@@ -1519,21 +1502,17 @@ public class CheckoutService {
       // For now, we'll keep it with empty items (status remains CREATED)
       // You can add logic here to delete the cart if needed
 
-      // Tell the kitchen before the write lands, not after: the idempotency key and the
-      // quantities are both derived from the pre-mutation read above, so if this throws, nothing
-      // below has been written either, and an identical retry of this same request reproduces
-      // the same key and resumes cleanly -- see notifyLineReductions and cancelIdempotencyKey.
-      // A build with nothing wired for it, or a request that reduced nothing owed anywhere, is a
-      // no-op.
-      notifyLineReductions(
-          existingCart.getShopId(), existingCart.getUserId(), existingCart.getId(), menuLineReductions);
+      // Nothing is told to the kitchen here. A line reduced below what the kitchen already has
+      // stays on the cart at quantity zero (see mergeMenuCartLine), and the next press of Print
+      // KOT computes a negative delta for it and issues the CANCEL slip. One path, the punch's,
+      // rather than an eager cancel racing it through kotSentQuantity.
 
       // Write what this request changed, field by field and line by line -- never the whole
       // document. A full replace here writes items as this request read them several inventory
-      // round-trips ago, so a round a cafe tab flushed onto the same bill in the meantime, its
-      // cafeKotCancels and its kotSentQuantity are all deleted: the kitchen is cooking food the
-      // bill no longer knows about. Nothing about what the cart computes changes; only how it is
-      // stored.
+      // round-trips ago, so a punch that landed on the same bill in the meantime -- its
+      // cafeKotPunches record and the kotSentQuantity it advanced -- is deleted: the kitchen is
+      // cooking food the bill no longer knows was sent, and the next press sends it again.
+      // Nothing about what the cart computes changes; only how it is stored.
       // No pre-image means no way to tell what this request changed, so there is nothing to aim
       // a targeted write with. The caller always supplies one for an existing cart; this is only
       // the guard that keeps a future caller from silently re-pushing every line it read.
@@ -1542,16 +1521,6 @@ public class CheckoutService {
               ? PurchaseTargetedWriter.CartWrite.UNADDRESSABLE
               : purchaseTargetedWriter.writeCart(
                   existingCart.getShopId(), existingCart, cartBeforeUpdate);
-      if (written == PurchaseTargetedWriter.CartWrite.TOTALS_REFUSED) {
-        // A flush landed on this bill while the cart was being merged, so the total computed
-        // above excludes a round that is on the bill and cooking. The lines this request changed
-        // are stored; only the money was refused. Recompute it from what the bill now holds --
-        // the same arithmetic on a fresh read -- rather than leave a grandTotal that gives the
-        // round away.
-        recomputeTotalsAfterConcurrentAppend(
-            existingCart.getShopId(), existingCart.getId(), billingMode);
-        return existingCart;
-      }
       if (written == PurchaseTargetedWriter.CartWrite.UNADDRESSABLE) {
         // Either that, or the lines cannot be told apart -- two of them share an identity, or one
         // has none at all -- so no targeted write can aim at the right one. The full replace is
@@ -1562,12 +1531,6 @@ public class CheckoutService {
                 + "falling back to a full-document save",
             existingCart.getId(),
             existingCart.getShopId());
-        // The cancellations this very request just issued are in Mongo and on nothing in memory:
-        // notifyLineReductions pushes cafeKotCancels and decrements items.$.kotSentQuantity
-        // directly on the stored document, above, and the in-memory cart has never seen either.
-        // A full replace from that cart writes both back out -- the kitchen has been told to stop
-        // and the bill says it never was -- with no concurrency needed to reach it.
-        carryKitchenStateOntoTheReplace(existingCart, menuLineReductions);
         return purchaseRepository.save(existingCart);
       }
       return existingCart;
@@ -1580,96 +1543,6 @@ public class CheckoutService {
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
           "Error updating cart: " + e.getMessage(), e);
     }
-  }
-
-  /**
-   * Copies the kitchen-side state off the stored document onto the cart about to replace it: the
-   * {@code cafeKotCancels} array and each line's {@code kotSentQuantity}.
-   *
-   * <p>Only for the fall-back path, and only when this request issued a cancellation. It does not
-   * make the replace safe -- anything else another writer did is still lost, which is why the
-   * fall-back is logged -- but it stops the one loss that needs no concurrency at all: this
-   * request reverting its own cancel a few lines after making it.
-   */
-  private void carryKitchenStateOntoTheReplace(
-      Purchase cart, List<MenuLineReduction> reductions) {
-    if (reductions.isEmpty() || cart.getId() == null) {
-      return;
-    }
-    Purchase stored = purchaseRepository.findById(cart.getId()).orElse(null);
-    if (stored == null || !cart.getShopId().equals(stored.getShopId())) {
-      return;
-    }
-    cart.setCafeKotCancels(stored.getCafeKotCancels());
-    if (cart.getItems() == null || stored.getItems() == null) {
-      return;
-    }
-    Map<String, Integer> sentByLineRef = new HashMap<>();
-    for (PurchaseItem line : stored.getItems()) {
-      if (StringUtils.hasText(line.getLineRef())) {
-        sentByLineRef.put(line.getLineRef(), line.getKotSentQuantity());
-      }
-    }
-    for (PurchaseItem line : cart.getItems()) {
-      if (StringUtils.hasText(line.getLineRef()) && sentByLineRef.containsKey(line.getLineRef())) {
-        line.setKotSentQuantity(sentByLineRef.get(line.getLineRef()));
-      }
-    }
-  }
-
-  /** How many times a refused total is recomputed before the repair is left to the next write. */
-  private static final int TOTALS_RECOMPUTE_ATTEMPTS = 3;
-
-  /**
-   * Recomputes a cart's money from the lines the bill now holds, after a concurrent flush made
-   * this request's own totals stale.
-   *
-   * <p>The same arithmetic {@code CartTotalsAdapter} runs for a flush, on a fresh read, written
-   * through the same guarded targeted write — so a second flush landing during the repair refuses
-   * this write too and the loop reads again rather than storing a number that is stale a second
-   * time. Bounded, because the flush that keeps winning is itself recomputing the totals: giving
-   * up leaves the flush's number, which counts every line on the bill including the ones this
-   * request just stored.
-   *
-   * <p>Only an open cart: a bill that settled in the meantime has an invoice number and money
-   * taken against the total it settled for, and that is not a number to recompute.
-   */
-  private void recomputeTotalsAfterConcurrentAppend(
-      String shopId, String purchaseId, BillingMode billingMode) {
-    for (int attempt = 1; attempt <= TOTALS_RECOMPUTE_ATTEMPTS; attempt++) {
-      Purchase fresh = purchaseRepository.findById(purchaseId).orElse(null);
-      if (fresh == null || !shopId.equals(fresh.getShopId())) {
-        log.error("No cart {} in shop {} to recompute refused totals for", purchaseId, shopId);
-        return;
-      }
-      if (fresh.getStatus() != null && fresh.getStatus() != PurchaseStatus.CREATED) {
-        log.warn(
-            "Cart {} in shop {} is {}, not an open cart; its refused totals are left as settled",
-            purchaseId,
-            shopId,
-            fresh.getStatus());
-        return;
-      }
-      Document beforeRecompute = purchaseTargetedWriter.snapshot(fresh);
-      List<PurchaseItem> lines =
-          fresh.getItems() == null ? new ArrayList<>() : new ArrayList<>(fresh.getItems());
-      applyCartTotals(fresh, lines, CheckoutUtils.normalizeBillingMode(billingMode));
-      fresh.setUpdatedAt(Instant.now());
-      if (purchaseTargetedWriter.writeChangedFields(shopId, fresh, beforeRecompute) > 0) {
-        log.info(
-            "Recomputed cart {} in shop {} after a concurrent flush: grandTotal {}",
-            purchaseId,
-            shopId,
-            fresh.getGrandTotal());
-        return;
-      }
-    }
-    log.error(
-        "Cart {} in shop {} could not be recomputed in {} attempts; its totals are whatever the "
-            + "flush that kept winning last computed",
-        purchaseId,
-        shopId,
-        TOTALS_RECOMPUTE_ATTEMPTS);
   }
 
   private void validateStockAvailabilityForCartUpdate(Purchase existingCart, List<PurchaseItem> newItems, String shopId) {
@@ -2394,27 +2267,15 @@ public class CheckoutService {
   }
 
   /**
-   * A cart line was reduced below what the kitchen was already sent, or removed outright.
+   * Folds one menu line into the cart.
    *
-   * <p>Carries only what {@link CartLineReductionPort} needs; {@code lineRef} is null exactly
-   * when there is nothing to notify -- a line with no {@code lineRef} at all (every grocery,
-   * medical and sports line, and a cafe line with none of the cafe fields) or a cafe line the
-   * kitchen never saw ({@code kotSentQuantity} null or zero).
+   * <p>Nothing is told to the kitchen from here. A reduction reaches it as the negative delta of
+   * the next punch, computed from {@code baseQuantity - kotSentQuantity} on the stored line -- so
+   * a line reduced to zero is kept on the cart at zero rather than removed, because deleting it
+   * would destroy the only record from which that cancellation can be computed. The punch drops
+   * it once it has been cancelled.
    */
-  record MenuLineReduction(String lineRef, int fromQty, int toQty) {}
-
-  private static MenuLineReduction reductionOwedFor(PurchaseItem existing, int fromQty, int toQty) {
-    if (!StringUtils.hasText(existing.getLineRef())) {
-      return null;
-    }
-    Integer sent = existing.getKotSentQuantity();
-    if (sent == null || sent <= 0) {
-      return null;
-    }
-    return new MenuLineReduction(existing.getLineRef(), fromQty, toQty);
-  }
-
-  MenuLineReduction mergeMenuCartLine(List<PurchaseItem> mergedItems, PurchaseItem newItem) {
+  void mergeMenuCartLine(List<PurchaseItem> mergedItems, PurchaseItem newItem) {
     for (int i = 0; i < mergedItems.size(); i++) {
       PurchaseItem existing = mergedItems.get(i);
       if (!sameCartLine(existing, newItem)) {
@@ -2423,25 +2284,20 @@ public class CheckoutService {
       int existingQty = existing.getBaseQuantity() != null ? existing.getBaseQuantity() : 0;
       int addQty = newItem.getBaseQuantity() != null ? newItem.getBaseQuantity() : 0;
       int combined = existingQty + addQty;
-      // Computed before the line is mutated below, from the quantity as it stood when this
-      // request started -- a raise (addQty >= 0) never owes anything, per the cancellation
-      // design: the extra is unsent and goes through a new KOT round, not a takeback.
-      MenuLineReduction reduction =
-          addQty < 0 ? reductionOwedFor(existing, existingQty, Math.max(combined, 0)) : null;
       if (combined <= 0) {
         int sent =
             existing.getKotSentQuantity() != null ? existing.getKotSentQuantity() : 0;
         if (sent > 0) {
-          // The kitchen has this food. Deleting the line would destroy the only record
-          // from which its cancellation can be computed, so keep it at zero until the
-          // cancellation is issued -- the caller does that once this cart write lands.
+          // The kitchen has this food. Deleting the line would destroy the only record from
+          // which its cancellation can be computed, so keep it at zero until the next punch
+          // sends the negative delta and sweeps it away.
           existing.setBaseQuantity(0);
           existing.setQuantity(BigDecimal.ZERO);
           existing.setTotalAmount(BigDecimal.ZERO);
-          return reduction;
+          return;
         }
         mergedItems.remove(i);
-        return reduction;
+        return;
       }
       existing.setBaseQuantity(combined);
       existing.setQuantity(BigDecimal.valueOf(combined));
@@ -2454,84 +2310,11 @@ public class CheckoutService {
       }
       purchaseMapper.enrichPurchaseItemMargin(existing);
       mergedItems.set(i, existing);
-      return reduction;
+      return;
     }
     if (newItem.getBaseQuantity() != null && newItem.getBaseQuantity() > 0) {
       mergedItems.add(newItem);
     }
-    return null;
-  }
-
-  /**
-   * Tells {@link #cartLineReductionPort}, if this build has one, about every reduction {@link
-   * #mergeMenuCartLine} owed a notification for.
-   *
-   * <p><b>Called BEFORE the cart write, not after, and the trade is real.</b> The idempotency key
-   * and the quantities are derived from the pre-mutation read, so a failure here has written
-   * nothing at all and an identical retry of the same request reproduces the same key and resumes
-   * cleanly. The price is the other order of failure: if the cancel succeeds and the cart write
-   * then fails, the kitchen has stopped cooking food the bill still charges for. A retry heals
-   * that -- the key is stable, so the cancel replays as a no-op and only the cart write is redone
-   * -- but a cashier who walks away instead leaves the customer billed for food nobody made.
-   * Calling after the write inverts it: the bill would be right and the kitchen would never be
-   * told, which is food cooked, served to nobody and not paid for, and no retry reaches it
-   * because the request already returned 200.
-   *
-   * <p>A silent no-op only for a request that reduced nothing owed anywhere -- an empty list for
-   * every grocery, medical and sports request, and for a cafe request that never touched a sent
-   * line. A build with nothing wired ({@code cartLineReductionPort == null}, true for every unit
-   * test that builds a bare {@code CheckoutService}) still cannot notify, but it no longer does
-   * so quietly: a reduction that had somewhere to go and found nothing is logged at ERROR.
-   */
-  private void notifyLineReductions(
-      String shopId, String userId, String purchaseId, List<MenuLineReduction> reductions) {
-    if (reductions.isEmpty()) {
-      return;
-    }
-    if (cartLineReductionPort == null) {
-      // A reduction is only ever owed for a cafe line the kitchen has already been sent, so
-      // reaching here in a cafe deployment means the wiring is broken and the kitchen is simply
-      // not being told: food cooked, thrown away, and nobody informed. Refusing the edit would
-      // punish every build that legitimately has no port -- every unit test, and every
-      // non-cafe-plugin deployment, which cannot produce a reduction in the first place -- so it
-      // is loud rather than fatal, and it names the lines so the tickets can be pulled by hand.
-      log.error(
-          "No CartLineReductionPort is wired, so {} reduced line(s) on bill {} in shop {} were "
-              + "never told to the kitchen: {}",
-          reductions.size(),
-          purchaseId,
-          shopId,
-          reductions.stream().map(MenuLineReduction::lineRef).toList());
-      return;
-    }
-    for (MenuLineReduction reduction : reductions) {
-      String idempotencyKey =
-          cancelIdempotencyKey(purchaseId, reduction.lineRef(), reduction.fromQty(), reduction.toQty());
-      cartLineReductionPort.lineReduced(
-          shopId,
-          userId,
-          purchaseId,
-          reduction.lineRef(),
-          reduction.fromQty(),
-          reduction.toQty(),
-          idempotencyKey);
-    }
-  }
-
-  /**
-   * Stable for one logical edit -- the same {@code purchaseId}, {@code lineRef}, {@code fromQty}
-   * and {@code toQty} always derive the same key, rather than a fresh random one being minted
-   * per attempt. Two concurrent requests racing from the same starting point, or one request
-   * retried after this call failed, collapse onto the same key instead of each withdrawing its
-   * own share from the kitchen -- see {@code CafeKotCancelService}'s javadoc for what a random
-   * key per attempt cost the previous round.
-   *
-   * <p>Package-private, not private, so a test can pin the derivation by name without driving a
-   * whole cart update to reach it.
-   */
-  static String cancelIdempotencyKey(String purchaseId, String lineRef, int fromQty, int toQty) {
-    String basis = purchaseId + ' ' + lineRef + ' ' + fromQty + ' ' + toQty;
-    return "cafe-cancel:" + UUID.nameUUIDFromBytes(basis.getBytes(StandardCharsets.UTF_8));
   }
 
   private static final Set<String> CHECKOUT_VERTICALS = Set.of("grocery", "cafe", "sports", "medical");

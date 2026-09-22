@@ -37,16 +37,13 @@ import org.springframework.test.util.ReflectionTestUtils;
  * the exact document the replace produced.
  *
  * <p>Reverting the write in {@code updateCart} to {@code purchaseRepository.save(existingCart)}
- * fails {@link #anAddToCartDoesNotDeleteLinesAFlushAppendedConcurrently} and
- * {@link #aConcurrentCancelAndKotDecrementSurviveAnAddToCart} by name. Reverting the
+ * fails {@link #anAddToCartDoesNotDeleteWhatAPunchWroteConcurrently} and
+ * {@link #aConcurrentPunchsKotSentQuantitySurvivesAReduction} by name. Reverting the
  * {@code lineRef: {$exists: false}} clause in {@code PurchaseTargetedWriter.identityCondition}
- * fails {@link #editingASellScreenLineDoesNotRequantifyTheFlushedRoundBesideIt} and
- * {@link #removingASellScreenLineDoesNotPullTheFlushedRoundWithIt}; reverting the statement order
+ * fails {@link #editingASellScreenLineDoesNotRequantifyThePunchedRoundBesideIt} and
+ * {@link #removingASellScreenLineDoesNotPullThePunchedRoundWithIt}; reverting the statement order
  * to {@code $set}, {@code $pull}, {@code $push} fails
- * {@link #theLinesAreWrittenBeforeTheTotalThatCountsThem}. Removing the {@code cafeFlushIds}
- * guard from the totals statement in {@code PurchaseTargetedWriter.writeCart}, or the recompute
- * {@code updateCart} answers a refused total with, fails
- * {@link #anAddToCartDoesNotGiveAwayTheRoundAFlushAppendedConcurrently}.
+ * {@link #theLinesAreWrittenBeforeTheTotalThatCountsThem}.
  */
 class CheckoutServiceCartWriteTest {
 
@@ -74,59 +71,63 @@ class CheckoutServiceCartWriteTest {
   // ------------------------------------------------------------ the lost update
 
   @Test
-  void anAddToCartDoesNotDeleteLinesAFlushAppendedConcurrently() {
+  void anAddToCartDoesNotDeleteWhatAPunchWroteConcurrently() {
     Purchase seeded = openBill();
-    seeded.getItems().add(menuLine("a1", "menu:tea", "Tea", 2, "30.00"));
-    seeded.setCafeFlushIds(new ArrayList<>(List.of("flush-1")));
+    PurchaseItem tea = menuLine("a1", "menu:tea", "Tea", 2, "30.00");
+    seeded.getItems().add(tea);
     Purchase cart = purchases.seed(seeded);
 
-    // A second tab flushes a round onto bill 7 while the cashier's Coke is being merged: lines
-    // pushed, and the flush id pushed with them in the same statement.
+    // Print KOT is pressed on another terminal while the cashier's Coke is being merged: the
+    // punch appends to cafeKotPunches and advances the tea line's kotSentQuantity, both as raw
+    // BSON, in one findAndModify. A full replace from the cart read above deletes both -- the
+    // tea is in the kitchen and the bill says it never was, so the next press sends it again.
     purchases.interleave(
         () ->
             purchases.mutateStored(
                 BILL_ID,
                 stored -> {
-                  stored
-                      .getList("items", Document.class)
-                      .add(storedLine("b1", "menu:beer", "Beer", 1));
-                  stored.getList("cafeFlushIds", String.class).add("flush-2");
+                  stored.getList("items", Document.class).get(0).put("kotSentQuantity", 2);
+                  stored.put(
+                      "cafeKotPunches",
+                      new ArrayList<>(
+                          List.of(
+                              new Document("punchId", "punch-1")
+                                  .append("idempotencyKey", "idem-1")
+                                  .append("status", "COMPLETE"))));
                 }));
 
     addToCart(cart, menuLine("c1", "menu:coke", "Coke", 1, "50.00"));
 
     Purchase after = purchases.read(BILL_ID);
     assertEquals(
-        List.of("a1", "b1", "c1"),
+        List.of("a1", "c1"),
         after.getItems().stream().map(PurchaseItem::getLineRef).toList(),
-        "the flushed round is on the bill: the kitchen is already cooking it");
+        "both lines are on the bill");
     assertEquals(
-        List.of("flush-1", "flush-2"),
-        after.getCafeFlushIds(),
-        "and the bill still records absorbing that flush, so the tab is not stranded");
+        2,
+        after.getItems().get(0).getKotSentQuantity(),
+        "the tea the kitchen is cooking still records having been sent");
+    assertNotNull(after.getCafeKotPunches(), "and the punch that sent it is still on the bill");
+    assertEquals(1, after.getCafeKotPunches().size());
   }
 
   @Test
-  void aConcurrentCancelAndKotDecrementSurviveAnAddToCart() {
+  void aConcurrentPunchsKotSentQuantitySurvivesAReduction() {
+    // The single cancellation path, end to end on the core side: the kitchen has three teas, the
+    // cashier takes two off, and what must survive the cart write is kotSentQuantity == 3 beside
+    // baseQuantity == 1. That pair IS the cancellation -- the next punch computes 1 - 3 = -2 and
+    // issues the CANCEL slip. A cart write that pushed its own kotSentQuantity back over it
+    // would erase the only record the cancellation can be derived from.
     Purchase seeded = openBill();
     PurchaseItem tea = menuLine("a1", "menu:tea", "Tea", 3, "30.00");
-    tea.setKotSentQuantity(3);
     seeded.getItems().add(tea);
     Purchase cart = purchases.seed(seeded);
 
-    // The cancel path, landing on the very line this request is reducing: a cafeKotCancels push
-    // and an items.$.kotSentQuantity decrement.
     purchases.interleave(
         () ->
             purchases.mutateStored(
                 BILL_ID,
-                stored -> {
-                  stored.getList("items", Document.class).get(0).put("kotSentQuantity", 1);
-                  stored.put(
-                      "cafeKotCancels",
-                      new ArrayList<>(
-                          List.of(new Document("cancelId", "cancel-1").append("quantity", 2))));
-                }));
+                stored -> stored.getList("items", Document.class).get(0).put("kotSentQuantity", 3)));
 
     // The cashier takes two teas off the bill.
     addToCart(cart, menuLine("a1", "menu:tea", "Tea", -2, "30.00"));
@@ -136,73 +137,47 @@ class CheckoutServiceCartWriteTest {
     assertEquals(
         1, after.getItems().get(0).getBaseQuantity(), "the cashier's reduction is stored");
     assertEquals(
-        1,
+        3,
         after.getItems().get(0).getKotSentQuantity(),
-        "and the kitchen's decrement is not undone by it");
-    assertNotNull(after.getCafeKotCancels(), "the cancellation owed to the kitchen is still there");
-    assertEquals(1, after.getCafeKotCancels().size());
+        "and what the kitchen was sent is untouched, so the next punch owes it a CANCEL of 2");
   }
 
-  // -------------------------------------------------- B3: the money it derived
-
   @Test
-  void anAddToCartDoesNotGiveAwayTheRoundAFlushAppendedConcurrently() {
-    // The writer protected `items` already. It did not protect the money DERIVED from items: the
-    // add-to-cart's grandTotal is arithmetic over the lines as it read them, and $setting it
-    // after a flush appended a round puts the bill back to a total that excludes food already
-    // cooking. Nothing recomputed it until somebody happened to add another item, so the shop
-    // simply gave the round away.
+  void aLineReducedToNothingStaysOnTheCartAtZeroSoThePunchCanCancelIt() {
+    // Removing the line outright would delete the kotSentQuantity the cancellation is computed
+    // from: the kitchen would keep cooking food nothing on the bill remembers ordering. The
+    // punch sweeps the zeroed line away itself, once it has recorded the negative delta.
     Purchase seeded = openBill();
-    seeded.getItems().add(menuLine("a1", "menu:tea", "Tea", 2, "30.00"));
-    seeded.setCafeFlushIds(new ArrayList<>(List.of("flush-1")));
-    seeded.setGrandTotal(new BigDecimal("60.00"));
+    PurchaseItem tea = menuLine("a1", "menu:tea", "Tea", 2, "30.00");
+    tea.setKotSentQuantity(2);
+    seeded.getItems().add(tea);
     Purchase cart = purchases.seed(seeded);
-    // The pre-image as the request actually read it, taken before the interleaving writer runs --
-    // purchases.stored() hands back the live document, which the flush below mutates in place.
-    Document before = new PurchaseTargetedWriter(purchases.mongoTemplate()).snapshot(cart);
 
-    // A tab flushes a round onto the same bill: the lines, its flush id, and the totals it
-    // recomputed to include them, exactly as CartTotalsAdapter stores them.
-    purchases.interleave(
-        () ->
-            purchases.mutateStored(
-                BILL_ID,
-                stored -> {
-                  PurchaseItem beer = menuLine("b1", "menu:beer", "Beer", 1, "120.00");
-                  Document beerDoc = new Document();
-                  purchases.converter().write(beer, beerDoc);
-                  stored.getList("items", Document.class).add(beerDoc);
-                  stored.getList("cafeFlushIds", String.class).add("flush-2");
-                  stored.put("grandTotal", new org.bson.types.Decimal128(new BigDecimal("180.00")));
-                }));
-
-    checkoutService.updateCart(
-        cart,
-        before,
-        List.of(menuLine("c1", "menu:coke", "Coke", 1, "50.00")),
-        null,
-        null,
-        null,
-        BillingMode.REGULAR);
+    addToCart(cart, menuLine("a1", "menu:tea", "Tea", -2, "30.00"));
 
     Purchase after = purchases.read(BILL_ID);
+    assertEquals(1, after.getItems().size(), "the line is kept, not pulled");
+    assertEquals(0, after.getItems().get(0).getBaseQuantity());
     assertEquals(
-        List.of("a1", "b1", "c1"),
-        after.getItems().stream().map(PurchaseItem::getLineRef).toList(),
-        "all three lines are on the bill");
+        2,
+        after.getItems().get(0).getKotSentQuantity(),
+        "so 0 - 2 is the CANCEL the next press of Print KOT sends");
+    assertEquals(
+        0,
+        BigDecimal.ZERO.compareTo(after.getItems().get(0).getTotalAmount()),
+        "and the zeroed line is charged nothing");
+  }
 
-    // What the same arithmetic makes of the lines the bill now holds — the number settlement
-    // will read. Before the guard this was 110.00: tea and coke, with the flushed beer dropped.
-    Purchase recomputed = purchases.read(BILL_ID);
-    checkoutService.applyCartTotals(
-        recomputed, new ArrayList<>(recomputed.getItems()), BillingMode.REGULAR);
-    assertEquals(
-        recomputed.getGrandTotal(),
-        after.getGrandTotal(),
-        "the stored total counts the flushed round, not just what this request read");
-    assertTrue(
-        after.getGrandTotal().compareTo(new BigDecimal("170.00")) > 0,
-        "and it is not the pre-flush total: " + after.getGrandTotal());
+  @Test
+  void anUnsentLineReducedToNothingIsRemovedOutright() {
+    // Nothing was ever sent, so nothing is owed and the line has no reason to linger at zero.
+    Purchase seeded = openBill();
+    seeded.getItems().add(menuLine("a1", "menu:tea", "Tea", 2, "30.00"));
+    Purchase cart = purchases.seed(seeded);
+
+    addToCart(cart, menuLine("a1", "menu:tea", "Tea", -2, "30.00"));
+
+    assertTrue(purchases.read(BILL_ID).getItems().isEmpty());
   }
 
   @Test
@@ -221,21 +196,21 @@ class CheckoutServiceCartWriteTest {
   }
 
   @Test
-  void editingASellScreenLineDoesNotRequantifyTheFlushedRoundBesideIt() {
-    // The state a cafe bill reaches on its own: a Sell-screen Tea, which carries no lineRef
-    // because only a flush sets one, sitting beside a Tea the kitchen is already cooking, which a
-    // flush $pushed as raw BSON so nothing ever merged the two. Their pairing keys differ
+  void editingASellScreenLineDoesNotRequantifyThePunchedRoundBesideIt() {
+    // A Sell-screen Tea with no lineRef, sitting beside a Tea the kitchen is already cooking that
+    // carries one -- the shape every bill written before the punch subsystem has, and the reason
+    // lineRef is still the most specific line identity. Their pairing keys differ
     // ("ref:menu:tea" and "line:L2"), so there is no duplicate and no fallback — and an array
     // filter of {sellableRef: "menu:tea"} alone matches both of them.
     Purchase bill = openBill();
     bill.getItems().add(menuLine(null, "menu:tea", "Tea", 1, "30.00"));
-    PurchaseItem flushed = menuLine("L2", "menu:tea", "Tea", 2, "30.00");
-    flushed.setKotSentQuantity(2);
-    bill.getItems().add(flushed);
+    PurchaseItem sent = menuLine("L2", "menu:tea", "Tea", 2, "30.00");
+    sent.setKotSentQuantity(2);
+    bill.getItems().add(sent);
     Purchase cart = purchases.seed(bill);
     Document before = purchases.stored(BILL_ID);
 
-    // The cashier takes their own Tea from one to five. Nothing about the flushed round changed.
+    // The cashier takes their own Tea from one to five. Nothing about the sent round changed.
     Purchase result =
         checkoutService.updateCart(
             cart,
@@ -258,20 +233,20 @@ class CheckoutServiceCartWriteTest {
     assertEquals(
         new BigDecimal("60.00"),
         stored.get(1).getTotalAmount(),
-        "and the flushed line's money is untouched, so the bill matches its own grandTotal");
+        "and the sent line's money is untouched, so the bill matches its own grandTotal");
     assertFalse(purchases.fullReplaceUsed());
     assertEquals(purchases.write(result), purchases.stored(BILL_ID));
   }
 
   @Test
-  void removingASellScreenLineDoesNotPullTheFlushedRoundWithIt() {
+  void removingASellScreenLineDoesNotPullThePunchedRoundWithIt() {
     // The same mismatch on the $pull side: the condition a removed line is matched by must not
-    // also describe the flushed line sharing its sellableRef.
+    // also describe the sent line sharing its sellableRef.
     Purchase bill = openBill();
     bill.getItems().add(menuLine(null, "menu:tea", "Tea", 1, "30.00"));
-    PurchaseItem flushed = menuLine("L2", "menu:tea", "Tea", 2, "30.00");
-    flushed.setKotSentQuantity(2);
-    bill.getItems().add(flushed);
+    PurchaseItem sent = menuLine("L2", "menu:tea", "Tea", 2, "30.00");
+    sent.setKotSentQuantity(2);
+    bill.getItems().add(sent);
     Purchase cart = purchases.seed(bill);
     Document before = purchases.stored(BILL_ID);
 
@@ -324,9 +299,8 @@ class CheckoutServiceCartWriteTest {
         operators,
         "lines in, then the line edits, then the total, then lines out");
     // Two $set statements rather than one: a line edit is aimed at a named line and is right
-    // whatever else landed on the bill, while the money is arithmetic over every line and is
-    // guarded on the cafeFlushIds this request read. Only the second of them may be refused, and
-    // splitting them is what keeps a refused total from taking the line edits down with it.
+    // whatever else landed on the bill, while the money is arithmetic over every line. Keeping
+    // them apart is what lets the total be issued after the lines it counts.
     Document lineEdits = (Document) purchases.statements().get(1).get("$set");
     assertFalse(
         lineEdits.containsKey("grandTotal"),
@@ -388,8 +362,8 @@ class CheckoutServiceCartWriteTest {
   @Test
   void aLineWithNoneOfTheCafeFieldsIsStoredIdentically() {
     // A line carrying none of the cafe fields, as every grocery, medical and sports line is: no
-    // lineRef, no kotSentQuantity, and no cafeFlushIds on the bill. It is addressed by its
-    // sellableRef instead, and the stored document must be what it always was.
+    // lineRef and no kotSentQuantity. It is addressed by its sellableRef instead, and the stored
+    // document must be what it always was.
     Purchase bill = openBill();
     PurchaseItem soap = menuLine(null, "menu:soap", "Soap", 2, "45.00");
     bill.getItems().add(soap);
@@ -443,26 +417,25 @@ class CheckoutServiceCartWriteTest {
   void settlingABillDoesNotDeleteTheKitchenWorkDoneOnItsLinesMeanwhile() {
     Purchase seeded = openBill();
     PurchaseItem tea = menuLine("a1", "menu:tea", "Tea", 2, "30.00");
-    tea.setKotSentQuantity(2);
     seeded.getItems().add(tea);
-    seeded.setCafeFlushIds(new ArrayList<>(List.of("flush-1")));
     Purchase purchase = purchases.seed(seeded);
 
     PurchaseTargetedWriter writer = new PurchaseTargetedWriter(purchases.mongoTemplate());
     Document before = writer.snapshot(purchase);
 
-    // The cancel path landing mid-settlement: it touches the lines but absorbs no new flush, so
-    // there is no total this settlement did not see and the settlement is right to proceed.
+    // A punch landing mid-settlement: it advances the lines and appends its record, but it does
+    // not touch the money, so there is no total this settlement did not see and it is right to
+    // proceed.
     purchases.interleave(
         () ->
             purchases.mutateStored(
                 BILL_ID,
                 stored -> {
-                  stored.getList("items", Document.class).get(0).put("kotSentQuantity", 1);
+                  stored.getList("items", Document.class).get(0).put("kotSentQuantity", 2);
                   stored.put(
-                      "cafeKotCancels",
+                      "cafeKotPunches",
                       new ArrayList<>(
-                          List.of(new Document("cancelId", "cancel-1").append("quantity", 1))));
+                          List.of(new Document("punchId", "punch-1").append("status", "COMPLETE"))));
                 }));
 
     // What updatePurchaseStatus does on completion: the status, the invoice number, the sale date.
@@ -477,23 +450,23 @@ class CheckoutServiceCartWriteTest {
     assertEquals(PurchaseStatus.COMPLETED, after.getStatus());
     assertEquals("INV-0001", after.getInvoiceNo(), "the invoice number is issued once and stored");
     assertEquals(
-        1,
+        2,
         after.getItems().get(0).getKotSentQuantity(),
-        "the kitchen's decrement is not undone by the settlement");
-    assertNotNull(after.getCafeKotCancels(), "nor is the cancellation owed to the kitchen");
+        "the punch's advance is not undone by the settlement");
+    assertNotNull(after.getCafeKotPunches(), "nor is the punch record itself");
   }
 
   @Test
-  void aFlushLandingUnderASettlementMakesItFailLoudlyInsteadOfStampingAStaleTotal() {
-    // storeTotals recomputes the money fields when a flush lands on a CREATED bill, but this
-    // settlement's payment split, ledger, credit entry and printed response were all derived from
-    // the total it read before that. Its own update does not carry grandTotal — it did not change
-    // it — so without a guard it would happily stamp COMPLETED onto a bill whose stored total no
-    // longer equals cash + online + credit. Guarded on the cafeFlushIds it read, it matches
-    // nothing instead, and the caller logs that.
+  void aRecomputedTotalUnderASettlementMakesItFailLoudlyInsteadOfStampingAStaleOne() {
+    // This settlement's payment split, ledger, credit entry and printed response were all derived
+    // from the total it read. Its own update does not carry grandTotal — it did not change it —
+    // so without a guard it would happily stamp COMPLETED onto a bill whose stored total no
+    // longer equals cash + online + credit. Guarded on the grandTotal it read, it matches nothing
+    // instead, and the caller logs that. (The guard used to name cafeFlushIds, the array the
+    // retired flush pushed to; it now names the field it was always protecting.)
     Purchase seeded = openBill();
     seeded.getItems().add(menuLine("a1", "menu:tea", "Tea", 2, "30.00"));
-    seeded.setCafeFlushIds(new ArrayList<>(List.of("flush-1")));
+    seeded.setGrandTotal(new BigDecimal("60.00"));
     Purchase purchase = purchases.seed(seeded);
 
     PurchaseTargetedWriter writer = new PurchaseTargetedWriter(purchases.mongoTemplate());
@@ -507,7 +480,8 @@ class CheckoutServiceCartWriteTest {
                   stored
                       .getList("items", Document.class)
                       .add(storedLine("b1", "menu:beer", "Beer", 1));
-                  stored.getList("cafeFlushIds", String.class).add("flush-2");
+                  stored.put(
+                      "grandTotal", new org.bson.types.Decimal128(new BigDecimal("180.00")));
                 }));
 
     purchase.setStatus(PurchaseStatus.COMPLETED);
@@ -527,8 +501,8 @@ class CheckoutServiceCartWriteTest {
     assertEquals(
         List.of("a1", "b1"),
         after.getItems().stream().map(PurchaseItem::getLineRef).toList(),
-        "and the flushed round is still on the bill, not erased by a settlement that failed");
-    assertEquals(List.of("flush-1", "flush-2"), after.getCafeFlushIds());
+        "and the line added under it is still on the bill, not erased by a settlement that failed");
+    assertEquals(new BigDecimal("180.00"), after.getGrandTotal());
   }
 
   @Test
