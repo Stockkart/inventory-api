@@ -5,6 +5,7 @@ import com.inventory.common.exception.ValidationException;
 import com.inventory.pluginengine.PluginRegistry;
 import com.inventory.pluginengine.VerticalPlugin;
 import com.inventory.pluginengine.menu.MenuItem;
+import com.inventory.pluginengine.menu.MenuRates;
 import com.inventory.pluginengine.menu.MenuSection;
 import com.inventory.pluginengine.menu.MenuSellMode;
 import com.inventory.pluginengine.menu.MenuVerticalValidator;
@@ -202,9 +203,15 @@ public class ShopMenuService {
       }
       if (section.getItems() != null) {
         for (MenuItem item : section.getItems()) {
-          if (item != null && !StringUtils.hasText(item.getId())) {
+          if (item == null) {
+            continue;
+          }
+          if (!StringUtils.hasText(item.getId())) {
             item.setId(UUID.randomUUID().toString());
           }
+          // Freezes a slug onto each new portion and drops a sellingPrice the portions replaced.
+          // Before validation, so the validator sees the document as it will be stored.
+          MenuRates.normalize(item);
         }
       }
       out.add(section);

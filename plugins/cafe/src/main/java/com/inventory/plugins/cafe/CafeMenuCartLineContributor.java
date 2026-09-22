@@ -15,6 +15,8 @@ import com.inventory.pluginengine.integration.InventoryLineSnapshot;
 import com.inventory.pluginengine.integration.ShopMenuLookup;
 import com.inventory.pluginengine.menu.MenuDepartments;
 import com.inventory.pluginengine.menu.MenuItem;
+import com.inventory.pluginengine.menu.MenuRate;
+import com.inventory.pluginengine.menu.MenuRates;
 import com.inventory.pluginengine.ref.SellableRef;
 import com.inventory.plugins.cafe.repository.CafeInventoryExtensionRepository;
 import java.math.BigDecimal;
@@ -50,7 +52,7 @@ public class CafeMenuCartLineContributor implements CartLineContributor {
       throw new ValidationException("At least one cart item is required");
     }
     for (CartLineInput item : items) {
-      SellableRef ref = CartLineRefs.parseRequired(item);
+      SellableRef ref = parseRef(item);
       if (!ref.isMenu() && !ref.isInventory()) {
         throw new ValidationException(
             "Cafe cart lines must use menu: or inventory: sellableRef");
@@ -67,7 +69,7 @@ public class CafeMenuCartLineContributor implements CartLineContributor {
     String shopId = context.getShopId();
     List<CartLineSnapshot> out = new ArrayList<>();
     for (CartLineInput input : items) {
-      SellableRef sellable = CartLineRefs.parseRequired(input);
+      SellableRef sellable = parseRef(input);
       int qty = input.getQuantity();
       if (sellable.isMenu()) {
         out.add(buildMenuLine(shopId, sellable, input, qty));
@@ -76,6 +78,30 @@ public class CafeMenuCartLineContributor implements CartLineContributor {
       }
     }
     return out;
+  }
+
+  /**
+   * A malformed ref is the cashier's request, not a server fault: it must come back as a 400 that
+   * names what was wrong, rather than the 500 an unhandled {@link IllegalArgumentException}
+   * becomes. What it must never do is parse into a different portion than the one asked for,
+   * which is {@link SellableRef#parse}'s job to refuse.
+   */
+  private static SellableRef parseRef(CartLineInput input) {
+    try {
+      return CartLineRefs.parseRequired(input);
+    } catch (IllegalArgumentException ex) {
+      throw new ValidationException(ex.getMessage());
+    }
+  }
+
+  /**
+   * The line's display name: the dish on an unportioned item, {@code Butter Chicken (Half)} on a
+   * portion. Snapshotted onto the cart line, so the kitchen ticket reads
+   * {@code 1 x Butter Chicken (Half)} with no template change, and the invoice keeps that wording
+   * however the menu is edited afterwards.
+   */
+  private static String displayName(MenuItem menuItem, MenuRate rate) {
+    return rate == null ? menuItem.getName() : menuItem.getName() + " (" + rate.getName() + ")";
   }
 
   private CartLineSnapshot buildMenuLine(
@@ -90,10 +116,15 @@ public class CafeMenuCartLineContributor implements CartLineContributor {
                         "MenuItem", "sellableRef", sellable.encode()));
 
     if (qty < 0) {
+      // A takeback names a line that is already on the bill, matched by this very ref. It must
+      // stay possible after the portion has been deleted from the menu -- refusing here would
+      // leave a cashier unable to remove a line they can see -- so the portion is resolved only
+      // to label the snapshot, never required.
+      MenuRate removed = MenuRates.findById(menuItem, sellable.variant()).orElse(null);
       return CartLineSnapshot.builder()
           .sellableRef(sellable.encode())
           .sellMode(CartSellMode.MENU)
-          .name(menuItem.getName())
+          .name(displayName(menuItem, removed))
           .billingMode("REGULAR")
           .quantity(BigDecimal.valueOf(qty))
           .saleUnit("PCS")
@@ -108,7 +139,10 @@ public class CafeMenuCartLineContributor implements CartLineContributor {
       throw new ValidationException("Menu item is not available: " + menuItem.getName());
     }
 
-    BigDecimal unitPrice = menuItem.getSellingPrice();
+    MenuRate rate = resolveRate(menuItem, sellable);
+    // Always from the menu, never from the request: a client that could name the price could buy
+    // a Full portion for the price of a Qtr.
+    BigDecimal unitPrice = rate != null ? rate.getPrice() : menuItem.getSellingPrice();
     String cgst = menuItem.getCgst();
     String sgst = menuItem.getSgst();
     BigDecimal billableQty = BigDecimal.valueOf(qty);
@@ -119,7 +153,7 @@ public class CafeMenuCartLineContributor implements CartLineContributor {
     return CartLineSnapshot.builder()
         .sellableRef(sellable.encode())
         .sellMode(CartSellMode.MENU)
-        .name(menuItem.getName())
+        .name(displayName(menuItem, rate))
         .billingMode("REGULAR")
         .quantity(billableQty)
         .saleUnit("PCS")
@@ -135,6 +169,40 @@ public class CafeMenuCartLineContributor implements CartLineContributor {
         .department(MenuDepartments.resolve(menuItem.getDepartment()))
         .note(normalizeNote(input.getNote()))
         .build();
+  }
+
+  /**
+   * The portion this sale is for, or null for an item that has none.
+   *
+   * <p>Three cases, and the two refusals are the point of it: a portioned item whose ref names no
+   * portion cannot be priced at all, and a ref naming a portion the item does not have must not
+   * fall back to the first one -- selling a different portion than the one the guest asked for is
+   * worse than refusing the sale, and it is what a deleted portion would otherwise do silently.
+   */
+  private static MenuRate resolveRate(MenuItem menuItem, SellableRef sellable) {
+    if (!MenuRates.isPortioned(menuItem)) {
+      if (sellable.hasVariant()) {
+        // The item's portions were all removed since this screen was loaded. Pricing it from the
+        // single price under a portion name the menu no longer has is the same silent mis-sale as
+        // falling back to the first rate.
+        throw new ValidationException(
+            "No portion \"" + sellable.variant() + "\" on " + menuItem.getName()
+                + " any more; reload the menu");
+      }
+      return null;
+    }
+    if (!sellable.hasVariant()) {
+      throw new ValidationException("Choose a portion for " + menuItem.getName());
+    }
+    return MenuRates.findById(menuItem, sellable.variant())
+        .orElseThrow(
+            () ->
+                new ValidationException(
+                    "No portion \""
+                        + sellable.variant()
+                        + "\" on "
+                        + menuItem.getName()
+                        + " any more; reload the menu"));
   }
 
   /** Blank or whitespace-only becomes null — an empty instruction line is noise on a ticket. */
