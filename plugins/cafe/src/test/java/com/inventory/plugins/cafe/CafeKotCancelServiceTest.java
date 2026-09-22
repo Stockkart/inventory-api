@@ -3,6 +3,7 @@ package com.inventory.plugins.cafe;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -13,8 +14,11 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.inventory.common.exception.ResourceNotFoundException;
+import com.inventory.common.exception.ValidationException;
 import com.inventory.plugins.cafe.domain.CafeKot;
 import com.inventory.plugins.cafe.domain.CafeKotKind;
+import com.inventory.plugins.cafe.domain.CafeKotLine;
 import com.inventory.plugins.cafe.domain.CafeKotRepository;
 import com.inventory.plugins.cafe.domain.CafeKotStatus;
 import java.time.LocalDate;
@@ -173,10 +177,84 @@ class CafeKotCancelServiceTest {
     assertTrue(result.get(0).getId().contains(":BAR:CANCEL"));
   }
 
+  @Test
+  void twoLinesSharingASellableRefCancelIndependentlyByLineRef() {
+    // "2x Tea, no sugar" and "1x Tea, extra hot": same sellableRef, different lineRef and note.
+    // Reducing the SECOND line must withdraw the second line's note and quantity, never the
+    // first's — the exact break finding 1 describes.
+    Document noSugar = billLine("line-1", "menu:tea", 2, "BAR", "no sugar");
+    Document extraHot = billLine("line-2", "menu:tea", 1, "BAR", "extra hot");
+    fake.bill(List.of(noSugar, extraHot));
+
+    List<CafeKot> result = service.cancel(SHOP_ID, USER_ID, BILL_ID, "line-2", 1, 0, KEY);
+
+    assertEquals(1, result.size());
+    CafeKotLine line = result.get(0).getLines().get(0);
+    assertEquals(1, line.getQuantity(), "the second line's quantity, not the first's");
+    assertEquals("extra hot", line.getNote(), "the second line's note, not the first's");
+    assertEquals("line-2", line.getLineId());
+  }
+
+  @Test
+  void aLineRefNotOnTheBillIsAnExplicitError() {
+    fake.bill(billLine(5, "KITCHEN", null));
+
+    assertThrows(
+        ResourceNotFoundException.class,
+        () -> service.cancel(SHOP_ID, USER_ID, BILL_ID, "no-such-line", 5, 2, KEY));
+  }
+
+  @Test
+  void reducingToExactlyTheSentQuantityCancelsNothing() {
+    // Sent 3, reduced to exactly 3: delta == 0. Must not produce a spurious zero-quantity ticket.
+    fake.bill(billLine(3, "KITCHEN", null));
+
+    List<CafeKot> result = service.cancel(SHOP_ID, USER_ID, BILL_ID, LINE_REF, 3, 3, KEY);
+
+    assertTrue(result.isEmpty(), "delta == 0 owes nothing");
+    verify(kotRepository, never()).save(any());
+    assertTrue(fake.cancelsOf(BILL_ID).isEmpty(), "nothing is even claimed");
+  }
+
+  @Test
+  void concurrentCancelsWithDifferentKeysDoNotBothSucceedFromAStaleRead() {
+    // Sent 5. Two callers both read the bill while it still shows kotSentQuantity == 5 — a
+    // genuine race, modelled here by forcing the SECOND service-level read (the second caller's
+    // own requirePurchase) to see the pre-mutation document even though, by then, the first
+    // caller's claim has already landed and moved the live line to kotSentQuantity == 2. Both
+    // reduce with DIFFERENT idempotency keys. The first must win; the second — computed off a
+    // read taken before the first landed — must fail rather than push a second ticket that
+    // together over-cancels beyond what was ever sent.
+    fake.bill(billLine(5, "KITCHEN", "no onion"));
+    Document preRaceSnapshot = fake.snapshot(BILL_ID);
+
+    List<CafeKot> first = service.cancel(SHOP_ID, USER_ID, BILL_ID, LINE_REF, 5, 2, "key-a");
+    assertEquals(1, first.size());
+    assertEquals(3, first.get(0).getLines().get(0).getQuantity());
+
+    // The second caller's own read of the bill (its requirePurchase) is forced to the snapshot
+    // taken before the first call ran — what it would have seen had it truly raced the first.
+    fake.forceNextFindOneToReturn(preRaceSnapshot);
+
+    assertThrows(
+        ValidationException.class,
+        () -> service.cancel(SHOP_ID, USER_ID, BILL_ID, LINE_REF, 5, 1, "key-b"),
+        "a second writer working off the same stale read must fail and retry, not double-cancel");
+
+    assertEquals(1, kotStore.size(), "only the winning claim ever produced a ticket");
+    assertEquals(1, fake.cancelsOf(BILL_ID).size());
+  }
+
   // ------------------------------------------------------------------ helpers
 
   private static Document billLine(int kotSentQuantity, String department, String note) {
-    return new Document("sellableRef", LINE_REF)
+    return billLine(LINE_REF, "menu:tea", kotSentQuantity, department, note);
+  }
+
+  private static Document billLine(
+      String lineRef, String sellableRef, int kotSentQuantity, String department, String note) {
+    return new Document("sellableRef", sellableRef)
+        .append("lineRef", lineRef)
         .append("name", "Tea")
         .append("quantity", kotSentQuantity)
         .append("baseQuantity", kotSentQuantity)
@@ -195,12 +273,16 @@ class CafeKotCancelServiceTest {
     private int claimAttempts;
 
     void bill(Document line) {
+      bill(List.of(line));
+    }
+
+    void bill(List<Document> lines) {
       Document doc =
           new Document("_id", BILL_ID)
               .append("shopId", SHOP_ID)
               .append("tableLabel", "T3")
               .append("tokenNo", "7")
-              .append("items", new ArrayList<>(List.of(line)))
+              .append("items", new ArrayList<>(lines))
               .append("cafeKotCancels", new ArrayList<Document>());
       purchases.put(BILL_ID, doc);
     }
@@ -210,6 +292,40 @@ class CafeKotCancelServiceTest {
       return (List<Document>) purchases.get(purchaseId).get("cafeKotCancels");
     }
 
+    /** A deep copy, frozen at this instant — used to hand a later reader a pre-race view. */
+    Document snapshot(String purchaseId) {
+      return deepCopy(purchases.get(purchaseId));
+    }
+
+    private Document forcedRead;
+
+    /** The very next {@code findOne} call returns this document instead of the live one. */
+    void forceNextFindOneToReturn(Document doc) {
+      this.forcedRead = doc;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Document deepCopy(Document doc) {
+      Document copy = new Document();
+      doc.forEach((k, v) -> copy.put(k, deepCopyValue(v)));
+      return copy;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Object deepCopyValue(Object v) {
+      if (v instanceof Document d) {
+        return deepCopy(d);
+      }
+      if (v instanceof List<?> list) {
+        List<Object> out = new ArrayList<>();
+        for (Object o : list) {
+          out.add(deepCopyValue(o));
+        }
+        return out;
+      }
+      return v;
+    }
+
     @SuppressWarnings("unchecked")
     MongoTemplate template() {
       MongoTemplate template = mock(MongoTemplate.class);
@@ -217,6 +333,11 @@ class CafeKotCancelServiceTest {
       when(template.findOne(any(Query.class), eq(Document.class), eq(PURCHASES)))
           .thenAnswer(
               invocation -> {
+                if (forcedRead != null) {
+                  Document forced = forcedRead;
+                  forcedRead = null;
+                  return forced;
+                }
                 Document q = ((Query) invocation.getArgument(0)).getQueryObject();
                 Document found = purchases.get(q.getString("_id"));
                 return found != null && SHOP_ID.equals(found.getString("shopId")) ? found : null;
@@ -251,7 +372,8 @@ class CafeKotCancelServiceTest {
         return com.mongodb.client.result.UpdateResult.acknowledged(0, 0L, null);
       }
 
-      // The claim: $ne-guarded push of a new cancel record.
+      // The claim: $ne-guarded push of a new cancel record, plus an elemMatch on the target
+      // line's observed lineRef + kotSentQuantity — the concurrency guard from finding 2.
       claimAttempts++;
       Object clause = q.get("cafeKotCancels.idempotencyKey");
       String key = clause instanceof Document ne ? (String) ne.get("$ne") : (String) clause;
@@ -261,13 +383,41 @@ class CafeKotCancelServiceTest {
       if (alreadyClaimed) {
         return com.mongodb.client.result.UpdateResult.acknowledged(0, 0L, null);
       }
+
+      Document itemsClause = (Document) q.get("items");
+      Document matchedItem = null;
+      if (itemsClause != null && itemsClause.get("$elemMatch") instanceof Document elemMatch) {
+        String wantLineRef = elemMatch.getString("lineRef");
+        Number wantSentQty = (Number) elemMatch.get("kotSentQuantity");
+        for (Document item : itemsOf(q.getString("_id"))) {
+          if (wantLineRef.equals(item.getString("lineRef"))
+              && wantSentQty.intValue() == item.getInteger("kotSentQuantity")) {
+            matchedItem = item;
+            break;
+          }
+        }
+        if (matchedItem == null) {
+          // Stale read: the line's kotSentQuantity has moved since it was observed. The claim
+          // does not match, exactly like a real elemMatch would refuse the whole query.
+          return com.mongodb.client.result.UpdateResult.acknowledged(0, 0L, null);
+        }
+      }
+
       if (push != null) {
         Document record = (Document) push.get("cafeKotCancels");
         if (record != null) {
           cancelsOf(q.getString("_id")).add(record);
         }
       }
+      if (set != null && matchedItem != null && set.containsKey("items.$.kotSentQuantity")) {
+        matchedItem.put("kotSentQuantity", set.get("items.$.kotSentQuantity"));
+      }
       return com.mongodb.client.result.UpdateResult.acknowledged(1, 1L, null);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Document> itemsOf(String purchaseId) {
+      return (List<Document>) purchases.get(purchaseId).get("items");
     }
 
     private String asString(Object clause) {

@@ -107,6 +107,16 @@ public class CafeKotCancelService {
     }
 
     Document bill = requirePurchase(shopId, purchaseId);
+
+    // Replay of an exact key is answered from the record, never recomputed. The claim below
+    // mutates the line's kotSentQuantity on success (see the claim's own comment), so a second
+    // look at the live line under the SAME key could compute a different — even zero — delta and
+    // wrongly conclude nothing is owed. Checking the key first keeps replay exact regardless of
+    // what has happened to the line since.
+    if (findCancelRecord(bill, idempotencyKey).isPresent()) {
+      return resume(shopId, purchaseId, idempotencyKey);
+    }
+
     Document item = requireItem(bill, lineRef);
 
     int kotSentQuantity = intField(item, "kotSentQuantity");
@@ -148,6 +158,15 @@ public class CafeKotCancelService {
     // The idempotency lives in this query clause, not an index — a unique multikey index would
     // not stop a second push into the same document's array, same reasoning as the flush's claim.
     // A bill with no cafeKotCancels array yet still matches: $ne against an absent field is true.
+    //
+    // That alone only guards exact-key replay. Two concurrent callers with DIFFERENT keys — a
+    // retried request that regenerated its key, or two staff edits racing — would both read the
+    // same kotSentQuantity above and both match this query, both pushing a ticket and together
+    // over-cancelling. So the claim also requires the line's kotSentQuantity to still be what was
+    // just read: elemMatch on lineRef + kotSentQuantity. A concurrent winner's claim (below)
+    // changes that value, so a second, stale writer's claim query no longer matches its item and
+    // fails — landing in resume(), which throws for an unrecognised key rather than silently
+    // treating "someone else's write" as "my own already-claimed write".
     Query claimQuery =
         Query.query(
             Criteria.where("_id")
@@ -155,13 +174,25 @@ public class CafeKotCancelService {
                 .and("shopId")
                 .is(shopId)
                 .and(CANCELS + ".idempotencyKey")
-                .ne(idempotencyKey));
-    Update update = new Update().push(CANCELS, record).set("updatedAt", Instant.now());
+                .ne(idempotencyKey)
+                .and("items")
+                .elemMatch(
+                    Criteria.where("lineRef")
+                        .is(lineRef)
+                        .and("kotSentQuantity")
+                        .is(kotSentQuantity)));
+    Update update =
+        new Update()
+            .push(CANCELS, record)
+            .set("items.$.kotSentQuantity", kotSentQuantity - quantity)
+            .set("updatedAt", Instant.now());
 
     long matched = mongoTemplate.updateFirst(claimQuery, update, PURCHASES).getMatchedCount();
     if (matched == 0) {
-      // Either this key already claimed (the normal recovery case) or the bill vanished under us.
-      // requirePurchase, inside resume, throws on the second.
+      // Either this key already claimed (the normal recovery case), the line's kotSentQuantity
+      // moved under us (a concurrent claim won; the caller must re-read and retry), or the bill
+      // vanished. requirePurchase, inside resume, throws on the last; an unrecognised key throws
+      // on the middle one too — there is nothing to replay, only a stale read to redo.
       return resume(shopId, purchaseId, idempotencyKey);
     }
 
@@ -283,9 +314,9 @@ public class CafeKotCancelService {
 
   private static Document requireItem(Document bill, String lineRef) {
     return itemsOf(bill).stream()
-        .filter(i -> lineRef.equals(i.getString("sellableRef")))
+        .filter(i -> lineRef.equals(i.getString("lineRef")))
         .findFirst()
-        .orElseThrow(() -> new ResourceNotFoundException("PurchaseItem", "sellableRef", lineRef));
+        .orElseThrow(() -> new ResourceNotFoundException("PurchaseItem", "lineRef", lineRef));
   }
 
   @SuppressWarnings("unchecked")
