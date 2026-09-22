@@ -1,10 +1,15 @@
 package com.inventory.product.rest.controller;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.inventory.common.exception.ValidationException;
+import com.inventory.pluginengine.kot.CafeKotTicket;
 import com.inventory.product.service.vertical.CafeKotService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,5 +44,28 @@ class CafeKotControllerTest {
 
     assertEquals(pdf.length, response.getBody().length);
     verify(cafeKotService).kotDocument("shop-1", "k1");
+  }
+
+  @Test
+  void reprintUsesShopIdFromRequestAttributes() {
+    CafeKotTicket ticket = CafeKotTicket.builder().kotId("k1").shopId("shop-1").build();
+    when(cafeKotService.reprint("shop-1", "k1", "idem-1")).thenReturn(ticket);
+
+    var response = controller.reprint("k1", "idem-1", httpRequest);
+
+    assertEquals(ticket, response.getBody().getData());
+    verify(cafeKotService).reprint("shop-1", "k1", "idem-1");
+  }
+
+  @Test
+  void reprintRejectsABlankIdempotencyKeyBeforeTouchingTheService() {
+    assertThrows(ValidationException.class, () -> controller.reprint("k1", "  ", httpRequest));
+    verify(cafeKotService, never()).reprint(any(), any(), any());
+  }
+
+  @Test
+  void reprintRejectsAMissingIdempotencyKeyBeforeTouchingTheService() {
+    assertThrows(ValidationException.class, () -> controller.reprint("k1", null, httpRequest));
+    verify(cafeKotService, never()).reprint(any(), any(), any());
   }
 }

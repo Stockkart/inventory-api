@@ -9,7 +9,7 @@ import com.inventory.pluginengine.capabilities.VerticalUiContributor;
 import com.inventory.pluginengine.cart.CartLineContributor;
 import com.inventory.pluginengine.cart.CheckoutCompletionHandler;
 import com.inventory.pluginengine.cart.QuotationCreateHandler;
-import com.inventory.pluginengine.kot.CafeKotPunchPort;
+import com.inventory.pluginengine.kot.CafeKotPort;
 import com.inventory.pluginengine.menu.MenuVerticalValidator;
 import com.inventory.pluginengine.pricing.VerticalPricingPolicy;
 import com.inventory.plugins.cafe.repository.CafeInventoryExtensionRepository;
@@ -28,7 +28,7 @@ public class CafePlugin extends ConfiguredVerticalPlugin {
   private final CafeCheckoutCompletionHandler checkoutCompletionHandler;
   private final CafeQuotationCreateHandler quotationCreateHandler;
   private final CafePricingPolicy cafePricingPolicy;
-  private final CafeKotDocumentAdapter kotDocumentAdapter;
+  private final CafeKotAdapter kotAdapter;
 
   public CafePlugin(
       CafeVerticalProperties properties,
@@ -40,7 +40,7 @@ public class CafePlugin extends ConfiguredVerticalPlugin {
       CafeCheckoutCompletionHandler checkoutCompletionHandler,
       CafeQuotationCreateHandler quotationCreateHandler,
       CafePricingPolicy cafePricingPolicy,
-      CafeKotDocumentAdapter kotDocumentAdapter) {
+      CafeKotAdapter kotAdapter) {
     super(properties.getId(), properties.getVersion());
     this.inventoryValidator = new SchemaDrivenInventoryValidator(properties.getId());
     this.extensionRepository = extensionRepository;
@@ -51,7 +51,7 @@ public class CafePlugin extends ConfiguredVerticalPlugin {
     this.checkoutCompletionHandler = checkoutCompletionHandler;
     this.quotationCreateHandler = quotationCreateHandler;
     this.cafePricingPolicy = cafePricingPolicy;
-    this.kotDocumentAdapter = kotDocumentAdapter;
+    this.kotAdapter = kotAdapter;
   }
 
   @Override
@@ -100,7 +100,7 @@ public class CafePlugin extends ConfiguredVerticalPlugin {
   }
 
   @Override
-  public Optional<CafeKotPunchPort> getCafeKotPunchPort() {
-    return Optional.of(kotDocumentAdapter);
+  public Optional<CafeKotPort> getCafeKotPort() {
+    return Optional.of(kotAdapter);
   }
 }

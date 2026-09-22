@@ -13,7 +13,7 @@ import com.inventory.documentservice.rest.dto.GenerateKotRequest;
 import com.inventory.documentservice.service.KotPdfService;
 import com.inventory.pluginengine.PluginRegistry;
 import com.inventory.pluginengine.VerticalPlugin;
-import com.inventory.pluginengine.kot.CafeKotPunchPort;
+import com.inventory.pluginengine.kot.CafeKotPort;
 import com.inventory.pluginengine.kot.CafeKotTicket;
 import com.inventory.pluginengine.kot.CafeKotTicketLine;
 import java.util.List;
@@ -24,18 +24,18 @@ import org.mockito.ArgumentCaptor;
 
 class CafeKotServiceTest {
 
-  private CafeKotPunchPort port;
+  private CafeKotPort port;
   private KotPdfService kotPdfService;
   private CafeKotService service;
 
   @BeforeEach
   void setUp() {
-    port = mock(CafeKotPunchPort.class);
+    port = mock(CafeKotPort.class);
     kotPdfService = mock(KotPdfService.class);
 
     PluginRegistry registry = mock(PluginRegistry.class);
     VerticalPlugin plugin = mock(VerticalPlugin.class);
-    when(plugin.getCafeKotPunchPort()).thenReturn(Optional.of(port));
+    when(plugin.getCafeKotPort()).thenReturn(Optional.of(port));
     when(registry.require("cafe")).thenReturn(plugin);
 
     service = new CafeKotService(registry, kotPdfService);
@@ -132,5 +132,24 @@ class CafeKotServiceTest {
 
     assertThrows(ResourceNotFoundException.class, () -> service.kotDocument("other-shop", "k1"));
     verify(port).findKot("other-shop", "k1");
+  }
+
+  @Test
+  void reprintDelegatesToThePort() {
+    CafeKotTicket ticket = CafeKotTicket.builder().kotId("k1").shopId("s1").build();
+    when(port.reprint("s1", "k1", "idem-1")).thenReturn(ticket);
+
+    CafeKotTicket result = service.reprint("s1", "k1", "idem-1");
+
+    assertEquals(ticket, result);
+    verify(port).reprint("s1", "k1", "idem-1");
+  }
+
+  @Test
+  void reprintOfAnUnknownTicketIsResourceNotFound() {
+    when(port.reprint("s1", "missing", "idem-1"))
+        .thenThrow(new ResourceNotFoundException("CafeKot", "id", "missing"));
+
+    assertThrows(ResourceNotFoundException.class, () -> service.reprint("s1", "missing", "idem-1"));
   }
 }

@@ -7,7 +7,7 @@ import com.inventory.documentservice.rest.dto.GenerateKotRequest;
 import com.inventory.documentservice.rest.dto.KotItem;
 import com.inventory.documentservice.service.KotPdfService;
 import com.inventory.pluginengine.PluginRegistry;
-import com.inventory.pluginengine.kot.CafeKotPunchPort;
+import com.inventory.pluginengine.kot.CafeKotPort;
 import com.inventory.pluginengine.kot.CafeKotTicket;
 import com.inventory.pluginengine.kot.CafeKotTicketLine;
 import java.time.LocalDateTime;
@@ -16,11 +16,11 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 
 /**
- * Renders a cafe kitchen ticket's document.
+ * Renders a cafe kitchen ticket's document, and reprints one.
  *
  * <p>This service never prints — the frontend fetches the document and does that.
  *
- * <p>The ticket entities live in the cafe plugin and are reached through {@link CafeKotPunchPort},
+ * <p>The ticket entities live in the cafe plugin and are reached through {@link CafeKotPort},
  * which {@code core/product} does not implement. This class adds the one thing the plugin cannot
  * see: PDF rendering, because {@code plugins/cafe} does not depend on {@code core/documentservice}.
  */
@@ -38,12 +38,21 @@ public class CafeKotService {
     this.kotPdfService = kotPdfService;
   }
 
-  private CafeKotPunchPort port() {
+  private CafeKotPort port() {
     return pluginRegistry
         .require(VERTICAL_ID)
-        .getCafeKotPunchPort()
+        .getCafeKotPort()
         .orElseThrow(
             () -> new ValidationException("This shop's vertical does not support kitchen tickets"));
+  }
+
+  /**
+   * Sends an already-issued ticket to the printer again. Creates no new ticket; the caller
+   * ({@link com.inventory.product.rest.controller.CafeKotController}) has already rejected a
+   * blank {@code Idempotency-Key} before this is reached.
+   */
+  public CafeKotTicket reprint(String shopId, String kotId, String idempotencyKey) {
+    return port().reprint(shopId, kotId, idempotencyKey);
   }
 
   /** The ticket's document. Renders unstamped for an issued ticket, CANCELLED for a voided one. */
