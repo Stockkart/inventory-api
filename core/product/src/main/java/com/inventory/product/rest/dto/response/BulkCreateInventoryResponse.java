@@ -35,5 +35,25 @@ public class BulkCreateInventoryResponse {
 
   /** Per-item failure messages when {@link #totalFailed} &gt; 0 (product name + reason). */
   private List<String> itemErrors;
+
+  /**
+   * How the invoice header the operator typed compares to what its lines come to.
+   *
+   * <p>{@code OK} when the two agree. {@code MISSING} when no header was given, {@code MISMATCH}
+   * when the stated subtotal and tax do not agree at the line rates, and {@code RATE_CONFLICT}
+   * when the tax stated implies a GST slab none of the goods are priced at -- which is a product
+   * on the wrong rate rather than a mis-typed total.
+   *
+   * <p>Advisory. The stock is registered either way, and the invoice keeps the header as typed;
+   * this is here so the client can put the discrepancy in front of the person still holding the
+   * bill, which is the only moment it is cheap to settle. Null when no invoice header was sent.
+   */
+  private String headerReconciliation;
+
+  /** Taxable value the lines resolve to, for showing beside the typed subtotal. */
+  private java.math.BigDecimal computedLineSubTotal;
+
+  /** Tax the lines resolve to at their own rates, for showing beside the typed tax. */
+  private java.math.BigDecimal computedTaxTotal;
 }
 

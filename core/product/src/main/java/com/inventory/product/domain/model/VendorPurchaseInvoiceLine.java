@@ -31,4 +31,21 @@ public class VendorPurchaseInvoiceLine {
    */
   private String inventoryId;
 
+  // --- Tax as resolved when the invoice was recorded -------------------------
+  // Written once, at registration, so every reader agrees on what this line was
+  // worth for tax. They were each deriving it instead -- the return from the
+  // invoice header, the journal entry from raw cost, the credit note from the
+  // pricing record -- and the three did not have to agree, because nothing made
+  // them. Null on any line recorded before this was captured, which sends the
+  // reader back to deriving it.
+
+  /** Value the tax is charged on, after discounts and after any inclusive tax was taken out. */
+  private BigDecimal taxableValue;
+  /** Total GST rate on the line (sgst + cgst, or the igst rate -- the same number). */
+  private BigDecimal gstRatePct;
+  private BigDecimal centralTax;
+  private BigDecimal stateTax;
+  private BigDecimal integratedTax;
+  /** Which rung of the basis ladder produced {@link #taxableValue}. */
+  private String taxBasisSource;
 }
