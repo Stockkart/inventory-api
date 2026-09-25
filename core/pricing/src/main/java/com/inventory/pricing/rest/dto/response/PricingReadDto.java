@@ -37,14 +37,20 @@ public class PricingReadDto {
   }
 
   /**
-   * Landed cost per unit. Records written before effectiveCostPrice existed have it derived on the
-   * fly, so historical margins read correctly without a backfill.
+   * Landed cost per unit: the cost after the vendor's purchase scheme and additional discount.
+   *
+   * <p>Derived from those fields whenever they are there to derive from, and only then falling
+   * back to the stored {@code effectiveCostPrice}. The stored figure is a cache of this same
+   * arithmetic, so the two agree on every record written through pricing -- but a cache that wins
+   * over its own inputs is silently wrong everywhere at once when the two ever part, and a landed
+   * cost is read by margin, stock valuation and COGS alike. Deriving makes the inputs the answer
+   * and the cache the fallback, which is the way round that cannot go stale.
+   *
+   * <p>The fallback still matters: a record with no cost price has nothing to derive from, and one
+   * written before this field existed has nothing stored. Both are answered correctly here.
    */
   public BigDecimal resolveEffectiveCostPrice() {
-    if (effectiveCostPrice != null) {
-      return effectiveCostPrice;
-    }
-    return PricingUtils.computeEffectiveCostPrice(
+    BigDecimal derived = PricingUtils.computeEffectiveCostPrice(
         costPrice,
         purchaseAdditionalDiscount,
         purchaseScheme == null
@@ -54,5 +60,6 @@ public class PricingReadDto {
                 purchaseScheme.getSchemePayFor(),
                 purchaseScheme.getSchemeFree(),
                 purchaseScheme.getSchemePercentage()));
+    return derived != null ? derived : effectiveCostPrice;
   }
 }
