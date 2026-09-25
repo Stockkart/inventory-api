@@ -32,14 +32,16 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Collections;
-import java.util.HashMap;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.ArrayList;
 import java.util.regex.Pattern;
+import java.util.function.Function;
 import java.util.regex.PatternSyntaxException;
 import java.util.stream.Collectors;
 
@@ -193,65 +195,138 @@ public class VendorPurchaseInvoiceService {
     }
   }
 
+  /**
+   * Purchase bills are dated on the shop's clock, as sales are (see {@code CheckoutService}). A
+   * filter day read in UTC would move its edges by five and a half hours.
+   */
+  private static final ZoneId BILL_DATE_ZONE = ZoneId.of("Asia/Kolkata");
+
+  /** Stand-ins for a missing bound, so the period query always has two edges. */
+  private static final Instant OPEN_START = Instant.EPOCH;
+  private static final Instant OPEN_END = Instant.parse("9999-12-31T00:00:00Z");
+
   public VendorPurchaseInvoiceListResponse list(String shopId, int page, int size, String query) {
-    if (query != null && !query.trim().isEmpty()) {
-      Pattern pattern;
-      try {
-        pattern =
-            Pattern.compile(
-                query.trim(), Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
-      } catch (PatternSyntaxException e) {
-        throw new ValidationException(
-            "Invalid search pattern (regular expression): " + e.getDescription());
-      }
-      List<VendorPurchaseInvoice> all = vendorPurchaseInvoiceRepository.findByShopId(shopId);
+    return list(shopId, page, size, query, null, null, null, null);
+  }
+
+  /**
+   * Lists a shop's purchase bills, newest first, with every criterion applied before paging.
+   *
+   * <p>{@code query} is tried against the invoice number, the vendor name and each line's name and
+   * barcode, and any one of them may match. {@code invoiceNo} and {@code vendor} each match their
+   * own field only, and every criterion given must hold. {@code from} and {@code to} are days on
+   * the bill, both inclusive.
+   *
+   * <p>With a date bound the bills are ordered by the date on the bill, not by when they were
+   * entered: a range asks about when goods were bought, and a bill keyed in late belongs where its
+   * date puts it.
+   */
+  public VendorPurchaseInvoiceListResponse list(
+      String shopId,
+      int page,
+      int size,
+      String query,
+      String invoiceNo,
+      String vendor,
+      LocalDate from,
+      LocalDate to) {
+    if (from != null && to != null && from.isAfter(to)) {
+      throw new ValidationException("The From date is after the To date");
+    }
+    Pattern anyField = compileSearch(query);
+    Pattern invoiceNoPattern = compileSearch(invoiceNo);
+    Pattern vendorPattern = compileSearch(vendor);
+    Instant start = from != null ? from.atStartOfDay(BILL_DATE_ZONE).toInstant() : null;
+    // A day bound is inclusive, so the period runs to the start of the day after.
+    Instant end = to != null ? to.plusDays(1).atStartOfDay(BILL_DATE_ZONE).toInstant() : null;
+    boolean byBillDate = start != null || end != null;
+
+    if (anyField == null && invoiceNoPattern == null && vendorPattern == null) {
+      Page<VendorPurchaseInvoice> p =
+          byBillDate
+              ? vendorPurchaseInvoiceRepository.findByShopIdAndInvoiceDateInPeriod(
+                  shopId,
+                  start != null ? start : OPEN_START,
+                  end != null ? end : OPEN_END,
+                  PageRequest.of(
+                      page, size, Sort.by(Sort.Order.desc("invoiceDate"), Sort.Order.desc("id"))))
+              : vendorPurchaseInvoiceRepository.findByShopId(
+                  shopId,
+                  PageRequest.of(
+                      page, size, Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id"))));
       Map<String, String> vendorNameById =
           loadVendorNames(
-              all.stream().map(VendorPurchaseInvoice::getVendorId).collect(Collectors.toSet()));
-      List<VendorPurchaseInvoice> filtered = new ArrayList<>();
-      for (VendorPurchaseInvoice inv : all) {
-        if (matchesInvoiceSearch(inv, pattern, vendorNameById)) {
-          filtered.add(inv);
-        }
-      }
-      filtered.sort(
-          (a, b) -> {
-            if (a.getCreatedAt() == null && b.getCreatedAt() == null) return 0;
-            if (a.getCreatedAt() == null) return 1;
-            if (b.getCreatedAt() == null) return -1;
-            int cmp = b.getCreatedAt().compareTo(a.getCreatedAt());
-            if (cmp != 0) return cmp;
-            String aId = a.getId() != null ? a.getId() : "";
-            String bId = b.getId() != null ? b.getId() : "";
-            return bId.compareTo(aId);
-          });
-      int from = Math.min(page * size, filtered.size());
-      int to = Math.min(from + size, filtered.size());
-      List<VendorPurchaseInvoice> slice = filtered.subList(from, to);
+              p.getContent().stream()
+                  .map(VendorPurchaseInvoice::getVendorId)
+                  .collect(Collectors.toSet()));
       List<VendorPurchaseInvoiceSummaryDto> summaries =
-          slice.stream().map((e) -> toSummary(e, vendorNameById)).collect(Collectors.toList());
-      int totalPages = size <= 0 ? 1 : (int) Math.ceil((double) filtered.size() / size);
-      return new VendorPurchaseInvoiceListResponse(
-          summaries, new PageMeta(page, size, filtered.size(), totalPages));
+          p.getContent().stream()
+              .map((e) -> toSummary(e, vendorNameById))
+              .collect(Collectors.toList());
+      PageMeta meta = new PageMeta(page, size, p.getTotalElements(), p.getTotalPages());
+      return new VendorPurchaseInvoiceListResponse(summaries, meta);
     }
 
-    PageRequest pageable =
-        PageRequest.of(
-            page,
-            size,
-            Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id")));
-    Page<VendorPurchaseInvoice> p =
-        vendorPurchaseInvoiceRepository.findByShopId(shopId, pageable);
+    // The patterns are regular expressions, and a vendor is matched by name, which lives in
+    // another collection, so the text criteria are applied here over the whole shop.
+    List<VendorPurchaseInvoice> all = vendorPurchaseInvoiceRepository.findByShopId(shopId);
     Map<String, String> vendorNameById =
         loadVendorNames(
-            p.getContent().stream().map(VendorPurchaseInvoice::getVendorId).collect(Collectors.toSet()));
+            all.stream().map(VendorPurchaseInvoice::getVendorId).collect(Collectors.toSet()));
+    List<VendorPurchaseInvoice> filtered = new ArrayList<>();
+    for (VendorPurchaseInvoice inv : all) {
+      if (byBillDate && !inPeriod(inv.getInvoiceDate(), start, end)) {
+        continue;
+      }
+      if (anyField != null && !matchesInvoiceSearch(inv, anyField, vendorNameById)) {
+        continue;
+      }
+      if (invoiceNoPattern != null && !regexFind(invoiceNoPattern, inv.getInvoiceNo())) {
+        continue;
+      }
+      if (vendorPattern != null
+          && !regexFind(vendorPattern, resolveVendorName(inv.getVendorId(), vendorNameById))) {
+        continue;
+      }
+      filtered.add(inv);
+    }
+    Function<VendorPurchaseInvoice, Instant> sortKey =
+        byBillDate ? VendorPurchaseInvoice::getInvoiceDate : VendorPurchaseInvoice::getCreatedAt;
+    filtered.sort(
+        Comparator.comparing(sortKey, Comparator.nullsLast(Comparator.<Instant>reverseOrder()))
+            .thenComparing(
+                (VendorPurchaseInvoice inv) -> inv.getId() != null ? inv.getId() : "",
+                Comparator.reverseOrder()));
+    int fromIndex = Math.min(page * size, filtered.size());
+    int toIndex = Math.min(fromIndex + size, filtered.size());
     List<VendorPurchaseInvoiceSummaryDto> summaries =
-        p.getContent().stream()
+        filtered.subList(fromIndex, toIndex).stream()
             .map((e) -> toSummary(e, vendorNameById))
             .collect(Collectors.toList());
-    PageMeta meta =
-        new PageMeta(page, size, p.getTotalElements(), p.getTotalPages());
-    return new VendorPurchaseInvoiceListResponse(summaries, meta);
+    int totalPages = size <= 0 ? 1 : (int) Math.ceil((double) filtered.size() / size);
+    return new VendorPurchaseInvoiceListResponse(
+        summaries, new PageMeta(page, size, filtered.size(), totalPages));
+  }
+
+  /** Null for a blank pattern, which filters nothing. */
+  private static Pattern compileSearch(String pattern) {
+    if (pattern == null || pattern.trim().isEmpty()) {
+      return null;
+    }
+    try {
+      return Pattern.compile(pattern.trim(), Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+    } catch (PatternSyntaxException e) {
+      throw new ValidationException(
+          "Invalid search pattern (regular expression): " + e.getDescription());
+    }
+  }
+
+  /** Half-open, as the repository query is. A bill with no date is in no period. */
+  private static boolean inPeriod(Instant at, Instant start, Instant end) {
+    if (at == null) {
+      return false;
+    }
+    return (start == null || !at.isBefore(start)) && (end == null || at.isBefore(end));
   }
 
   public VendorPurchaseInvoiceDetailDto getById(String id, String shopId) {

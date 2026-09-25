@@ -11,8 +11,10 @@ import com.inventory.product.rest.dto.response.VendorPurchaseInvoiceDetailDto;
 import com.inventory.product.rest.dto.response.VendorPurchaseInvoiceListResponse;
 import com.inventory.product.service.VendorPurchaseInvoiceService;
 import jakarta.servlet.http.HttpServletRequest;
+import java.time.LocalDate;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
@@ -40,14 +42,20 @@ public class VendorPurchaseInvoiceController {
       HttpServletRequest httpRequest,
       @RequestParam(defaultValue = "0") int page,
       @RequestParam(defaultValue = "20") int size,
-      @RequestParam(required = false, name = "q") String q) {
+      @RequestParam(required = false, name = "q") String q,
+      @RequestParam(required = false) String invoiceNo,
+      @RequestParam(required = false) String vendor,
+      @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+      @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
     String shopId = (String) httpRequest.getAttribute("shopId");
     if (StringUtils.isEmpty(shopId)) {
       throw new AuthenticationException(
           ErrorCode.UNAUTHORIZED, "User not authenticated or shop not found");
     }
     return ResponseEntity.ok(
-        ApiResponse.success(vendorPurchaseInvoiceService.list(shopId, page, size, q)));
+        ApiResponse.success(
+            vendorPurchaseInvoiceService.list(
+                shopId, page, size, q, invoiceNo, vendor, from, to)));
   }
 
   /**
