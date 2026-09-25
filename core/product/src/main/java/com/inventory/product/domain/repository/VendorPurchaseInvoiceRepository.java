@@ -23,6 +23,11 @@ public interface VendorPurchaseInvoiceRepository extends MongoRepository<VendorP
   List<VendorPurchaseInvoice> findByShopIdAndInvoiceDateInPeriod(
       String shopId, Instant startInclusive, Instant endExclusive);
 
+  /** The same half-open period, one page at a time. */
+  @Query("{ 'shopId': ?0, 'invoiceDate': { '$gte': ?1, '$lt': ?2 } }")
+  Page<VendorPurchaseInvoice> findByShopIdAndInvoiceDateInPeriod(
+      String shopId, Instant startInclusive, Instant endExclusive, Pageable pageable);
+
   Optional<VendorPurchaseInvoice> findByIdAndShopId(String id, String shopId);
 
   List<VendorPurchaseInvoice> findByShopIdAndInvoiceNo(String shopId, String invoiceNo);
