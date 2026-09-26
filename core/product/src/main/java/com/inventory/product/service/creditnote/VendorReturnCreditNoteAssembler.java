@@ -199,6 +199,9 @@ public class VendorReturnCreditNoteAssembler implements CreditNoteDocumentAssemb
         name = inventory.getName().trim();
       } else if (invoiceLine != null && StringUtils.hasText(invoiceLine.getName())) {
         name = invoiceLine.getName().trim();
+      } else if (StringUtils.hasText(line.getName())) {
+        // A line with no lot behind it still names its goods; the note must not print "Item".
+        name = line.getName().trim();
       } else {
         name = invId != null ? invId : "Item";
       }
