@@ -224,6 +224,7 @@ public class VendorReturnCreditNoteAssembler implements CreditNoteDocumentAssemb
       if (inventory != null) {
         item.setHsn(inventory.getHsn());
         item.setCompanyName(inventory.getCompanyName());
+        requestSupport.applyBatchAndExpiry(item, inventory);
       }
       // Restate the purchase in its own terms. The cost as billed, not the line total divided
       // by quantity: dividing back gave a figure that appears on no document, and on a bill

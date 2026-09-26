@@ -117,6 +117,7 @@ public class CreditNotePdfService {
     context.setVariable("showHsn", request.getShowHsn() == null || request.getShowHsn());
     context.setVariable("showMfg", request.getShowMfg() == null || request.getShowMfg());
     context.setVariable("showBatch", request.getShowBatch() == null || request.getShowBatch());
+    context.setVariable("showExpiry", request.getShowExpiry() == null || request.getShowExpiry());
     context.setVariable(
         "showSignatures", request.getShowSignatures() == null || request.getShowSignatures());
     context.setVariable("paymentMethod", request.getPaymentMethod());

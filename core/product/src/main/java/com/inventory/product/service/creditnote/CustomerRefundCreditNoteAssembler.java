@@ -5,7 +5,6 @@ import com.inventory.common.exception.ValidationException;
 import com.inventory.documentservice.rest.dto.CreditNoteItem;
 import com.inventory.product.domain.model.enums.SchemeType;
 import com.inventory.documentservice.rest.dto.GenerateCreditNoteRequest;
-import com.inventory.pluginengine.VerticalFieldsReader;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.Refund;
 import com.inventory.product.domain.model.RefundItem;
@@ -16,7 +15,6 @@ import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.PurchaseRepository;
 import com.inventory.product.domain.repository.RefundRepository;
 import com.inventory.product.service.PurchaseCustomerRequests;
-import com.inventory.product.service.vertical.InventoryVerticalExtensionHandler;
 import com.inventory.product.utils.AmountToWordsConverter;
 import com.inventory.user.domain.model.Customer;
 import com.inventory.user.service.CustomerService;
@@ -30,7 +28,6 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -45,7 +42,6 @@ public class CustomerRefundCreditNoteAssembler implements CreditNoteDocumentAsse
   private final PurchaseRepository purchaseRepository;
   private final InventoryRepository inventoryRepository;
   private final CustomerService customerService;
-  private final InventoryVerticalExtensionHandler inventoryVerticalExtensionHandler;
   private final CreditNoteRequestSupport requestSupport;
 
   public CustomerRefundCreditNoteAssembler(
@@ -53,13 +49,11 @@ public class CustomerRefundCreditNoteAssembler implements CreditNoteDocumentAsse
       PurchaseRepository purchaseRepository,
       InventoryRepository inventoryRepository,
       CustomerService customerService,
-      InventoryVerticalExtensionHandler inventoryVerticalExtensionHandler,
       CreditNoteRequestSupport requestSupport) {
     this.refundRepository = refundRepository;
     this.purchaseRepository = purchaseRepository;
     this.inventoryRepository = inventoryRepository;
     this.customerService = customerService;
-    this.inventoryVerticalExtensionHandler = inventoryVerticalExtensionHandler;
     this.requestSupport = requestSupport;
   }
 
@@ -220,10 +214,7 @@ public class CustomerRefundCreditNoteAssembler implements CreditNoteDocumentAsse
                 inv -> {
                   item.setHsn(inv.getHsn());
                   item.setCompanyName(inv.getCompanyName());
-                  Map<String, Object> extensionFields =
-                      inventoryVerticalExtensionHandler.loadExtensionFields(
-                          inv.getShopId(), inv.getId());
-                  item.setBatchNo(VerticalFieldsReader.batchNoFrom(extensionFields));
+                  requestSupport.applyBatchAndExpiry(item, inv);
                 });
       }
       item.setGstPercent(sumAmountsAsPercent(item.getCgst(), item.getSgst()));
