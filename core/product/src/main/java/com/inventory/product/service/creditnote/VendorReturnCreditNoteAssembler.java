@@ -199,6 +199,9 @@ public class VendorReturnCreditNoteAssembler implements CreditNoteDocumentAssemb
         name = inventory.getName().trim();
       } else if (invoiceLine != null && StringUtils.hasText(invoiceLine.getName())) {
         name = invoiceLine.getName().trim();
+      } else if (StringUtils.hasText(line.getName())) {
+        // A line with no lot behind it still names its goods; the note must not print "Item".
+        name = line.getName().trim();
       } else {
         name = invId != null ? invId : "Item";
       }
@@ -224,6 +227,7 @@ public class VendorReturnCreditNoteAssembler implements CreditNoteDocumentAssemb
       if (inventory != null) {
         item.setHsn(inventory.getHsn());
         item.setCompanyName(inventory.getCompanyName());
+        requestSupport.applyBatchAndExpiry(item, inventory);
       }
       // Restate the purchase in its own terms. The cost as billed, not the line total divided
       // by quantity: dividing back gave a figure that appears on no document, and on a bill
