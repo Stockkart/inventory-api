@@ -323,10 +323,11 @@
       <thead>
       <tr>
         <th style="width: 5%;">QTY</th>
-        <th style="width: 22%;">PRODUCTS</th>
+        <th style="width: 18%;">PRODUCTS</th>
         <th style="width: 8%;" th:if="${showHsn}">HSN</th>
         <th style="width: 8%;" th:if="${showMfg}">MFG/MKT</th>
         <th style="width: 7%;" th:if="${showBatch}">BATCH</th>
+        <th style="width: 5%;" th:if="${showExpiry}">EXP.</th>
         <th style="width: 7%;">M.R.P.</th>
         <!-- The same column means different things on the two documents: what the customer was
              charged, or what the supplier charged us. Naming it after the role keeps a debit
@@ -348,6 +349,7 @@
         <td th:if="${showHsn}" th:text="${item.hsn ?: ''}"></td>
         <td th:if="${showMfg}" th:text="${item.companyName ?: ''}"></td>
         <td th:if="${showBatch}" th:text="${item.batchNo ?: ''}"></td>
+        <td th:if="${showExpiry}" th:text="${item.expiryDate ?: ''}"></td>
         <td class="text-right" th:text="${item.maximumRetailPrice != null ? #numbers.formatDecimal(item.maximumRetailPrice, 1, 2) : '-'}"></td>
         <td class="text-right" th:text="${item.unitPrice != null ? #numbers.formatDecimal(item.unitPrice, 1, 2) : '0.00'}"></td>
         <td class="text-right" th:if="${vendorNote}" th:text="${item.priceToRetail != null ? #numbers.formatDecimal(item.priceToRetail, 1, 2) : '-'}"></td>
