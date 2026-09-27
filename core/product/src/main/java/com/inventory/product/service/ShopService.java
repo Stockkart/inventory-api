@@ -8,6 +8,8 @@ import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceExistsException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.plan.service.referral.ReferralAttributionService;
+import com.inventory.plan.utils.ReferralCodes;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.rest.dto.request.RegisterShopRequest;
@@ -29,6 +31,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.dao.DataAccessException;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -81,6 +84,10 @@ public class ShopService {
   @Autowired
   private AuditService auditService;
 
+  @Autowired
+  @Lazy
+  private ReferralAttributionService referralAttributionService;
+
   @Transactional
   public ShopRegistrationResponse register(RegisterShopRequest request, String userId) {
     try {
@@ -117,8 +124,10 @@ public class ShopService {
       shop.setPlanId(null); // Trial: no plan purchased yet
       shop.setPlanExpiryDate(Instant.now().plus(trialDays, ChronoUnit.DAYS)); // trial from config
 
+      referralAttributionService.checkReferral(request.getReferredByCode(), request.getReferredByName());
+
       // Save shop first
-      shop = shopRepository.save(shop);
+      shop = saveWithNewReferralCode(shop);
 
       // Add membership (multi-shop)
       membershipService.addMembership(userId, shop.getShopId(), UserRole.OWNER,
@@ -137,6 +146,13 @@ public class ShopService {
           1,
           "module",
           UserMetricsConstants.MODULE);
+
+      try {
+        referralAttributionService.attribute(
+            shop.getShopId(), userId, request.getReferredByCode(), request.getReferredByName());
+      } catch (Exception ex) {
+        log.error("Failed to record referral attribution for shop {}: {}", shop.getShopId(), ex.getMessage(), ex);
+      }
 
       if (chartOfAccountsSeeder != null) {
         try {
@@ -162,6 +178,37 @@ public class ShopService {
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
     }
   }
+
+  /** Inserts the shop with a fresh referral code, drawing a new one if the code is already taken. */
+  private Shop saveWithNewReferralCode(Shop shop) {
+    for (int attempt = 1; ; attempt++) {
+      shop.setReferralCode(ReferralCodes.generate());
+      try {
+        return shopRepository.save(shop);
+      } catch (DuplicateKeyException e) {
+        if (attempt >= ReferralCodes.MAX_ATTEMPTS || !String.valueOf(e.getMessage()).contains("referralCode")) {
+          throw e;
+        }
+        log.warn("Referral code collision on attempt {}; retrying", attempt);
+      }
+    }
+  }
+
+  public Optional<ShopReferralInfo> findReferralShopByCode(String referralCode) {
+    return shopRepository.findByReferralCode(referralCode).map(ShopService::toReferralInfo);
+  }
+
+  public Optional<ShopReferralInfo> getReferralShop(String shopId) {
+    return shopRepository.findById(shopId).map(ShopService::toReferralInfo);
+  }
+
+  private static ShopReferralInfo toReferralInfo(Shop shop) {
+    return new ShopReferralInfo(
+        shop.getShopId(), shop.getName(), shop.getReferralCode(), shop.getContactEmail(), shop.getContactPhone());
+  }
+
+  public record ShopReferralInfo(
+      String shopId, String name, String referralCode, String contactEmail, String contactPhone) {}
 
   @Transactional
   public ShopApprovalResponse approve(String shopId, ShopApprovalRequest request, String actorUserId) {

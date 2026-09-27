@@ -23,5 +23,9 @@ public class RegisterShopRequest {
   private ShopType shopType;
   /** Optional: medical (default), sports, … — server validates against registered verticals. */
   private String verticalId;
+  /** Optional: referral code of the shop that referred this one. Must exist when given. */
+  private String referredByCode;
+  /** Optional: who referred this shop, in the owner's words. Never resolves a reward on its own. */
+  private String referredByName;
 }
 

@@ -17,6 +17,7 @@ public enum ErrorCode {
   METHOD_NOT_ALLOWED(1005, "Method not allowed", HttpStatus.METHOD_NOT_ALLOWED),
   VALIDATION_ERROR(1006, "Validation error", HttpStatus.BAD_REQUEST),
   DUPLICATE_RESOURCE(1007, "Resource already exists", HttpStatus.CONFLICT),
+  TOO_MANY_REQUESTS(1008, "Too many requests, try again shortly", HttpStatus.TOO_MANY_REQUESTS),
 
   // Business errors (2000-2999)
   BUSINESS_VALIDATION_ERROR(2000, "Business validation error", HttpStatus.BAD_REQUEST),

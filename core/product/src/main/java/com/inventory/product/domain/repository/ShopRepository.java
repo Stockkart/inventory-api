@@ -57,5 +57,7 @@ public interface ShopRepository extends MongoRepository<Shop, String> {
    * @return true if a shop with the given admin email exists, false otherwise
    */
   boolean existsByInitialAdminEmail(String email);
+
+  Optional<Shop> findByReferralCode(String referralCode);
 }
 
