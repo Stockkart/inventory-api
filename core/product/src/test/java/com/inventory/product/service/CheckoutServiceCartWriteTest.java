@@ -3,11 +3,13 @@ package com.inventory.product.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.inventory.common.exception.ValidationException;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.product.domain.model.Shop;
@@ -386,29 +388,30 @@ class CheckoutServiceCartWriteTest {
   }
 
   @Test
-  void twoLinesThatCannotBeToldApartFallBackToTheFullReplaceRatherThanAimAtNothing() {
+  void twoLinesThatCannotBeToldApartAreRefusedRatherThanReplaced() {
     // Two lines with the same sellableRef and no lineRef between them. Nothing addresses one and
-    // not the other, so a targeted write would hit whichever it found first.
+    // not the other, so a targeted write would hit whichever it found first. A full replace would
+    // also wipe a punch that landed on this bill, so the update is refused and the document stays.
     Purchase bill = openBill();
     bill.getItems().add(menuLine(null, "menu:tea", "Tea", 2, "30.00"));
     bill.getItems().add(menuLine(null, "menu:tea", "Tea, extra hot", 1, "30.00"));
     Purchase cart = purchases.seed(bill);
     Document before = purchases.stored(BILL_ID);
 
-    Purchase result =
-        checkoutService.updateCart(
-            cart,
-            before,
-            List.of(menuLine("c1", "menu:coke", "Coke", 1, "50.00")),
-            null,
-            null,
-            null,
-            BillingMode.REGULAR);
+    assertThrows(
+        ValidationException.class,
+        () ->
+            checkoutService.updateCart(
+                cart,
+                before,
+                List.of(menuLine("c1", "menu:coke", "Coke", 1, "50.00")),
+                null,
+                null,
+                null,
+                BillingMode.REGULAR));
 
-    assertTrue(
-        purchases.fullReplaceUsed(),
-        "a line with no identity cannot be aimed at, so the old write is used rather than a wrong one");
-    assertEquals(purchases.write(result), purchases.stored(BILL_ID));
+    assertFalse(purchases.fullReplaceUsed());
+    assertEquals(before, purchases.stored(BILL_ID));
   }
 
   // ---------------------------------------------------------------- settlement
