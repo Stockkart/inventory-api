@@ -17,6 +17,8 @@ public interface ReferralRewardRepository extends MongoRepository<ReferralReward
 
   List<ReferralReward> findByReferrerShopIdOrderByCreatedAtDesc(String referrerShopId, Pageable page);
 
+  List<ReferralReward> findByStatusOrderByCreatedAtDesc(ReferralRewardStatus status, Pageable page);
+
   long countByReferrerShopIdAndStatusInAndCreatedAtAfter(
       String referrerShopId, Collection<ReferralRewardStatus> statuses, Instant after);
 
