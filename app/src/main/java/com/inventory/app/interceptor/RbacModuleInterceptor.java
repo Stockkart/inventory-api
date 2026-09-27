@@ -25,6 +25,7 @@ public class RbacModuleInterceptor implements HandlerInterceptor {
           Pattern.compile("/api/v1/shops/[a-fA-F0-9]{24}/rbac(/.*)?"),
           Pattern.compile("/api/v1/plans$"),
           Pattern.compile("/api/v1/plans/[a-fA-F0-9]{24}$"),
+          Pattern.compile("/api/v1/plans/addons$"),
           Pattern.compile("/api/v1/plans/shop/status"),
           Pattern.compile("/api/v1/plans/payment/config"),
           Pattern.compile("/api/v1/plans/payment/webhook/.*"));

@@ -29,5 +29,9 @@ public class ShopEntitlementsResponse {
   private Integer userCount;
   private Integer ocrLimit;
   private Integer ocrUsed;
+  /** Purchased scan credits left; used after the monthly quota. */
+  private Integer ocrTopUpRemaining;
+  /** Codes of live add-ons (OCR top-ups excluded). */
+  private List<String> addOns;
   private Instant expiresAt;
 }

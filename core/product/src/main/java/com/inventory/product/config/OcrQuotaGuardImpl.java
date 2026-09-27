@@ -2,7 +2,7 @@ package com.inventory.product.config;
 
 import com.inventory.ocr.service.OcrQuotaGuard;
 import com.inventory.plan.service.EntitlementGuard;
-import com.inventory.plan.service.UsageService;
+import com.inventory.plan.service.OcrMeteringService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -16,7 +16,7 @@ public class OcrQuotaGuardImpl implements OcrQuotaGuard {
   private EntitlementGuard entitlementGuard;
 
   @Autowired
-  private UsageService usageService;
+  private OcrMeteringService ocrMeteringService;
 
   @Override
   public void requireUnit(String shopId) {
@@ -25,6 +25,6 @@ public class OcrQuotaGuardImpl implements OcrQuotaGuard {
 
   @Override
   public void recordUnit(String shopId) {
-    usageService.recordOcrUsage(shopId);
+    ocrMeteringService.recordUnit(shopId);
   }
 }

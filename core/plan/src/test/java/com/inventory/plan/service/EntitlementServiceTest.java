@@ -6,17 +6,21 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.inventory.common.entitlement.PlanFeature;
+import com.inventory.plan.domain.model.AddOnGrantType;
 import com.inventory.plan.domain.model.EntitlementSource;
 import com.inventory.plan.domain.model.Plan;
 import com.inventory.plan.domain.model.ShopEntitlements;
+import com.inventory.plan.domain.model.ShopAddOn;
 import com.inventory.plan.domain.model.ShopSubscription;
 import com.inventory.plan.domain.model.SubscriptionStatus;
 import com.inventory.plan.domain.repository.PlanRepository;
+import com.inventory.plan.domain.repository.ShopAddOnRepository;
 import com.inventory.plan.domain.repository.ShopSubscriptionRepository;
 import com.inventory.plan.service.ShopProvider.ShopInfo;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
@@ -42,6 +46,9 @@ class EntitlementServiceTest {
 
   @Mock
   private EffectivePlanResolver effectivePlanResolver;
+
+  @Mock
+  private ShopAddOnRepository shopAddOnRepository;
 
   @InjectMocks
   private EntitlementService service;
@@ -125,6 +132,25 @@ class EntitlementServiceTest {
   }
 
   @Test
+  void liveAddOnsAddFeaturesAndSeatsButExpiredOnesAndCreditsDoNot() {
+    subscription("pro", SubscriptionStatus.ACTIVE, NOW.plusSeconds(3600));
+    when(planRepository.findById("pro")).thenReturn(Optional.of(
+        plan("pro", "PROFESSIONAL", Set.of(PlanFeature.ACCOUNTING), 3, 500)));
+    when(shopAddOnRepository.findByShopId("shop-1")).thenReturn(List.of(
+        addOn("MARKETING_MODULE", AddOnGrantType.FEATURE, PlanFeature.MARKETING, 1, NOW.plusSeconds(60)),
+        addOn("ADDITIONAL_USER", AddOnGrantType.SEATS, null, 2, NOW.plusSeconds(60)),
+        addOn("SALARY_MODULE", AddOnGrantType.FEATURE, PlanFeature.SALARY, 1, NOW.minusSeconds(1)),
+        addOn("OCR_TOPUP_500", AddOnGrantType.OCR_CREDITS, null, 500, null)));
+
+    ShopEntitlements result = service.resolve("shop-1");
+
+    assertThat(result.features()).containsExactlyInAnyOrder(PlanFeature.ACCOUNTING, PlanFeature.MARKETING);
+    assertThat(result.userLimit()).isEqualTo(5);
+    assertThat(result.ocrLimit()).isEqualTo(500);
+    assertThat(result.addOnCodes()).containsExactlyInAnyOrder("MARKETING_MODULE", "ADDITIONAL_USER");
+  }
+
+  @Test
   void cachesUntilTtlOrInvalidation() {
     subscription("pro", SubscriptionStatus.ACTIVE, NOW.plusSeconds(3600));
     when(planRepository.findById("pro")).thenReturn(Optional.of(plan("pro", "PROFESSIONAL", Set.of(), 5, 10)));
@@ -140,6 +166,11 @@ class EntitlementServiceTest {
     service.clock = Clock.fixed(NOW.plusSeconds(service.cacheTtlSeconds), ZoneOffset.UTC);
     service.resolve("shop-1");
     verify(shopSubscriptionRepository, times(3)).findById("shop-1");
+  }
+
+  private static ShopAddOn addOn(String code, AddOnGrantType type, PlanFeature feature, int granted, Instant expiresAt) {
+    return ShopAddOn.builder().shopId("shop-1").addOnCode(code).grantType(type).grantsFeature(feature)
+        .quantity(1).grantedQuantity(granted).expiresAt(expiresAt).build();
   }
 
   private void subscription(String planId, SubscriptionStatus status, Instant expiresAt) {

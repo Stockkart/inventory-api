@@ -140,6 +140,23 @@ public class UsageService {
         Usage.class);
   }
 
+  /**
+   * Counts one scan against the included quota only if the quota has room, in one conditional
+   * write. Returns false when this month's included scans are used up.
+   */
+  public boolean recordIncludedOcrUnit(String shopId, int monthlyLimit) {
+    if (monthlyLimit <= 0) {
+      return false;
+    }
+    Usage usage = getOrCreateCurrentMonthUsage(shopId);
+    Query query = new Query(Criteria.where("_id").is(usage.getId()).orOperator(
+        Criteria.where("ocrUsed").lt(monthlyLimit),
+        Criteria.where("ocrUsed").is(null)));
+    return mongoTemplate.updateFirst(query,
+        new Update().inc("ocrUsed", 1).set("updatedAt", Instant.now()),
+        Usage.class).getModifiedCount() == 1;
+  }
+
   private void purgeOldUsage(String shopId) {
     List<Usage> usages = usageRepository.findByShopIdOrderByMonthDesc(shopId, PageRequest.of(0, 100));
     if (usages.size() > PlanConstants.MAX_USAGE_MONTHS_RETAINED) {

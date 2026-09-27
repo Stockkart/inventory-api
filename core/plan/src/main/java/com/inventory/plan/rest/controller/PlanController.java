@@ -9,12 +9,16 @@ import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.common.exception.AuthenticationException;
 import com.inventory.plan.rest.dto.request.AssignPlanRequest;
 import com.inventory.plan.rest.dto.request.RecordUsageRequest;
+import com.inventory.plan.rest.dto.response.AddOnResponse;
 import com.inventory.plan.rest.dto.response.PlanResponse;
 import com.inventory.plan.rest.dto.response.PlanTransactionResponse;
+import com.inventory.plan.rest.dto.response.ShopAddOnResponse;
 import com.inventory.plan.rest.dto.response.ShopEntitlementsResponse;
 import com.inventory.plan.rest.dto.response.ShopPlanStatusResponse;
 import com.inventory.plan.rest.dto.response.UsageResponse;
+import com.inventory.plan.service.AddOnCatalogueService;
 import com.inventory.plan.service.EntitlementGuard;
+import com.inventory.plan.service.ShopAddOnService;
 import com.inventory.plan.service.PlanService;
 import com.inventory.plan.service.UsageService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -47,9 +51,20 @@ public class PlanController {
   @Autowired
   private EntitlementGuard entitlementGuard;
 
+  @Autowired
+  private AddOnCatalogueService addOnCatalogueService;
+
+  @Autowired
+  private ShopAddOnService shopAddOnService;
+
   @GetMapping
   public ResponseEntity<ApiResponse<List<PlanResponse>>> listPlans() {
     return ResponseEntity.ok(ApiResponse.success(planService.listPlans()));
+  }
+
+  @GetMapping("/addons")
+  public ResponseEntity<ApiResponse<List<AddOnResponse>>> listAddOns() {
+    return ResponseEntity.ok(ApiResponse.success(addOnCatalogueService.listActive()));
   }
 
   @GetMapping("/{planId}")
@@ -67,6 +82,12 @@ public class PlanController {
   public ResponseEntity<ApiResponse<ShopEntitlementsResponse>> getShopEntitlements(HttpServletRequest httpRequest) {
     String shopId = getShopId(httpRequest);
     return ResponseEntity.ok(ApiResponse.success(entitlementGuard.describe(shopId)));
+  }
+
+  @GetMapping("/shop/addons")
+  public ResponseEntity<ApiResponse<List<ShopAddOnResponse>>> getShopAddOns(HttpServletRequest httpRequest) {
+    String shopId = getShopId(httpRequest);
+    return ResponseEntity.ok(ApiResponse.success(shopAddOnService.describe(shopId)));
   }
 
   @GetMapping("/shop/{shopId}/suggested")
