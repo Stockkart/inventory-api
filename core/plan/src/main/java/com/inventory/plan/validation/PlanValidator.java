@@ -8,6 +8,7 @@ import com.inventory.plan.rest.dto.request.AssignPlanRequest;
 import com.inventory.plan.rest.dto.request.CreatePlanCheckoutRequest;
 import com.inventory.plan.rest.dto.request.RecordUsageRequest;
 import com.inventory.plan.rest.dto.request.VerifyPlanPaymentRequest;
+import com.inventory.plan.utils.constants.PlanPaymentConstants;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -69,8 +70,11 @@ public class PlanValidator {
     if (request == null || !StringUtils.hasText(request.getPlanId())) {
       throw new ValidationException("Plan ID is required");
     }
-    if (request.getDurationMonths() != null && request.getDurationMonths() < 1) {
-      throw new ValidationException("Duration must be at least 1 month");
+    // Checkout charges one annual price, so any other duration would grant time that wasn't paid for.
+    if (request.getDurationMonths() != null
+        && request.getDurationMonths() != PlanPaymentConstants.DEFAULT_CHECKOUT_DURATION_MONTHS) {
+      throw new ValidationException("Plans are sold yearly; duration must be "
+          + PlanPaymentConstants.DEFAULT_CHECKOUT_DURATION_MONTHS + " months");
     }
   }
 
