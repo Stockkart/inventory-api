@@ -4,6 +4,8 @@ import com.inventory.plan.domain.model.Plan;
 import com.inventory.plan.domain.model.Usage;
 import com.inventory.plan.rest.dto.request.AssignPlanRequest;
 import com.inventory.plan.rest.dto.request.PaymentWebhookPayload;
+import com.inventory.plan.rest.dto.request.PlanAdminRequest;
+import com.inventory.plan.rest.dto.response.AdminPlanResponse;
 import com.inventory.plan.rest.dto.response.PlanResponse;
 import com.inventory.plan.rest.dto.response.ShopPlanStatusResponse;
 import com.inventory.plan.rest.dto.response.UsageResponse;
@@ -21,6 +23,14 @@ public interface PlanMapper {
 
   @Mapping(target = "listPrice", expression = "java(PlanUtils.listPrice(plan))")
   PlanResponse toResponse(Plan plan);
+
+  @Mapping(target = "listPrice", expression = "java(PlanUtils.listPrice(plan))")
+  @Mapping(target = "active", expression = "java(!Boolean.FALSE.equals(plan.getActive()))")
+  AdminPlanResponse toAdminResponse(Plan plan);
+
+  @Mapping(target = "id", ignore = true)
+  @Mapping(target = "active", constant = "true")
+  Plan toEntity(PlanAdminRequest request);
 
   UsageResponse toUsageResponse(Usage usage);
 
