@@ -13,5 +13,7 @@ public class VerifyPlanPaymentResponse {
 
   private boolean success;
   private String orderId;
+  /** Order status after verification; FULFILLING or PAID means the plan is still being applied. */
+  private String status;
   private PlanResponse plan;
 }

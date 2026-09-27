@@ -34,6 +34,7 @@ public enum ErrorCode {
   // Order related errors (5000-5999)
   ORDER_NOT_FOUND(5000, "Order not found", HttpStatus.NOT_FOUND),
   INVALID_ORDER_STATUS(5001, "Invalid order status", HttpStatus.BAD_REQUEST),
+  IDEMPOTENCY_KEY_REUSED(5002, "Idempotency key was already used for a different request", HttpStatus.CONFLICT),
 
   // Plan / subscription errors (6000-6999)
   PLAN_EXPIRED(6000, "Plan or trial has expired", HttpStatus.PAYMENT_REQUIRED),

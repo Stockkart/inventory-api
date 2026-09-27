@@ -2,6 +2,7 @@ package com.inventory.plan.service;
 
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.plan.domain.model.Plan;
+import com.inventory.plan.domain.model.PlanPaymentOrder;
 import com.inventory.plan.domain.model.PlanTransaction;
 import com.inventory.plan.domain.model.Usage;
 import com.inventory.plan.domain.repository.PlanRepository;
@@ -116,6 +117,41 @@ public class PlanService {
         "module",
         PlanMetricsConstants.MODULE);
     return planMapper.toResponse(plan);
+  }
+
+  /**
+   * Grants the plan an order paid for. Idempotent: an order that already has its transaction is
+   * not granted again, so a retried fulfilment cannot extend the term twice.
+   */
+  public void grantForOrder(PlanPaymentOrder order) {
+    if (planTransactionRepository.existsByPaymentOrderId(order.getId())) {
+      log.info("Plan for order {} already granted", order.getId());
+      return;
+    }
+    if (shopProvider == null) {
+      throw new ResourceNotFoundException("Shop", "id", order.getShopId());
+    }
+    shopProvider.getShop(order.getShopId())
+        .orElseThrow(() -> new ResourceNotFoundException("Shop", "id", order.getShopId()));
+    Plan plan = planRepository.findById(order.getPlanId())
+        .orElseThrow(() -> new ResourceNotFoundException("Plan", "id", order.getPlanId()));
+
+    Instant termStartsAt = Instant.now();
+    int durationMonths = order.getDurationMonths() != null ? order.getDurationMonths() : 1;
+    Instant termEndsAt = PlanUtils.plusMonths(termStartsAt, durationMonths);
+    shopProvider.updatePlan(order.getShopId(), plan.getId(), termEndsAt);
+    syncSubscription(new ShopInfo(order.getShopId(), plan.getId(), termEndsAt), order.getId());
+
+    PlanTransaction tx = planTransactionMapper.toTransaction(order, plan, termStartsAt, termEndsAt);
+    planTransactionRepository.save(tx);
+
+    log.info("Granted plan {} to shop {} until {} for order {}",
+        plan.getPlanName(), order.getShopId(), termEndsAt, order.getId());
+    metrics.record(
+        PlanMetricsConstants.ASSIGNED_TOTAL,
+        1,
+        "module",
+        PlanMetricsConstants.MODULE);
   }
 
   /**
