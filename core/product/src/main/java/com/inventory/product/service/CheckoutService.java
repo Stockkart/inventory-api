@@ -1522,18 +1522,20 @@ public class CheckoutService {
               : purchaseTargetedWriter.writeCart(
                   existingCart.getShopId(), existingCart, cartBeforeUpdate);
       if (written == PurchaseTargetedWriter.CartWrite.UNADDRESSABLE) {
-        // Either that, or the lines cannot be told apart -- two of them share an identity, or one
-        // has none at all -- so no targeted write can aim at the right one. The full replace is
-        // what this path has always done; it is still a lost update if something writes
-        // concurrently, and the warning is there so that a cart which lands here is visible.
+        // Lines that share an identity, or have none, cannot be aimed at. A full-document save
+        // would write items as this request read them and wipe cafeKotPunches / kotSentQuantity
+        // a punch stored in the meantime. Refuse instead of replacing the bill.
         log.warn(
             "Cart {} in shop {} has lines that cannot be addressed individually; "
-                + "falling back to a full-document save",
+                + "refusing the update",
             existingCart.getId(),
             existingCart.getShopId());
-        return purchaseRepository.save(existingCart);
+        throw new ValidationException(
+            "This cart has lines that cannot be updated individually. Refresh and try again.");
       }
       return existingCart;
+    } catch (ValidationException e) {
+      throw e;
     } catch (DataAccessException e) {
       log.error("Database error while updating cart: {}", existingCart.getId(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,

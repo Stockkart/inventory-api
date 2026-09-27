@@ -148,8 +148,9 @@ public class PurchaseTargetedWriter {
    *
    * <ul>
    *   <li>{@link #WRITTEN} — everything this request changed is stored.
-   *   <li>{@link #UNADDRESSABLE} — the lines cannot be told apart, so nothing was written and the
-   *       caller must fall back to the full replace.
+   *   <li>{@link #UNADDRESSABLE} — the lines cannot be told apart, so nothing was written. The
+   *       caller must refuse the update. A full-document save would replace {@code cafeKotPunches}
+   *       and {@code kotSentQuantity} with a stale snapshot.
    * </ul>
    */
   public enum CartWrite {
@@ -161,9 +162,9 @@ public class PurchaseTargetedWriter {
    * Writes everything a cart update changed: the scalars, and the lines one by one.
    *
    * @return {@code false} when the lines cannot be addressed individually — duplicate or missing
-   *     line identity — in which case the caller must fall back to the full replace rather than
-   *     write something it cannot aim. Callers should log that fall-back: it is the one path on
-   *     which a concurrent append can still be lost.
+   *     line identity — in which case nothing was written. The caller must refuse the update. A
+   *     full-document save here is a lost update: it replaces punch records and
+   *     {@code kotSentQuantity} with the snapshot this request read.
    */
   public boolean writeChangedCart(String shopId, Purchase after, Document before) {
     return writeCart(shopId, after, before) != CartWrite.UNADDRESSABLE;
@@ -180,8 +181,9 @@ public class PurchaseTargetedWriter {
     }
 
     // Every statement is built before any of them is issued. An UNADDRESSABLE return below means
-    // the caller falls back to the full replace, and it must find the document exactly as it was
-    // -- a half-applied targeted write underneath a replace is worse than either alone.
+    // nothing has been written and the caller refuses the update. A half-applied targeted write
+    // underneath a later replace is worse than either alone, and a full-document save is not a
+    // fallback: it would erase a concurrent punch.
 
     // Lines this request added, appended in their merged order. $push, not a replace of the
     // array, so a round another tab flushed in the meantime is still there.
@@ -355,8 +357,7 @@ public class PurchaseTargetedWriter {
       if (byKey.put(key, line) != null) {
         // The colliding key, not just the fact of a collision: without it this line is
         // unactionable in production -- there is no way to tell which of the bill's lines to look
-        // at, and the fallback that follows is the one path a concurrent append can still be
-        // lost on.
+        // at. Nothing is written; the caller refuses the cart update.
         log.warn("Cart {} in shop {} has two lines sharing the identity {}", billId, shopId, key);
         return null;
       }
