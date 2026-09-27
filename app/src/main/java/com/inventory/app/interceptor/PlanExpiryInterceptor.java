@@ -25,6 +25,7 @@ public class PlanExpiryInterceptor implements HandlerInterceptor {
 
   private static final List<String> ALLOWED_PREFIXES = List.of(
       "/api/v1/plans",
+      "/api/v1/referrals",
       "/api/v1/auth/",
       "/api/v1/users/me/shops",
       "/api/v1/users/me/active-shop",

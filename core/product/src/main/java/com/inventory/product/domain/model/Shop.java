@@ -47,5 +47,7 @@ public class Shop {
   private String verticalId;
   /** Pinned vertical schema version (semver), e.g. 1.0.0. Selects row in vertical_schemas. */
   private String pluginVersion;
+  /** Stable, unique, upper-case code other shops enter at registration, e.g. SK-AB2CD3. */
+  private String referralCode;
 }
 
