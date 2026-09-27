@@ -26,4 +26,10 @@ public interface ReferralRewardRepository extends MongoRepository<ReferralReward
       Collection<ReferralRewardStatus> statuses, Instant holdUntil, Pageable page);
 
   List<ReferralReward> findByStatusAndUpdatedAtBefore(ReferralRewardStatus status, Instant before, Pageable page);
+
+  List<ReferralReward> findByCreatedAtGreaterThanEqualAndCreatedAtLessThan(Instant from, Instant to);
+
+  List<ReferralReward> findByCreditedAtGreaterThanEqualAndCreditedAtLessThan(Instant from, Instant to);
+
+  List<ReferralReward> findByClawedBackAtGreaterThanEqualAndClawedBackAtLessThan(Instant from, Instant to);
 }

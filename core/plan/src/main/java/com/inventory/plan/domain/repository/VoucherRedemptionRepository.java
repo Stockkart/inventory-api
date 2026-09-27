@@ -1,6 +1,8 @@
 package com.inventory.plan.domain.repository;
 
 import com.inventory.plan.domain.model.VoucherRedemption;
+import com.inventory.plan.domain.model.VoucherRedemptionStatus;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Sort;
@@ -17,4 +19,7 @@ public interface VoucherRedemptionRepository extends MongoRepository<VoucherRede
   boolean existsByVoucherCodeAndShopIdAndHoldsSlotTrue(String voucherCode, String shopId);
 
   List<VoucherRedemption> findByVoucherId(String voucherId, Sort sort);
+
+  List<VoucherRedemption> findByStatusAndRedeemedAtGreaterThanEqualAndRedeemedAtLessThan(
+      VoucherRedemptionStatus status, Instant from, Instant to);
 }
