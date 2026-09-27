@@ -43,7 +43,7 @@ class PlanOrderControllerTest {
   @Test
   void quoteContract() throws Exception {
     ArgumentCaptor<QuoteRequest> captor = ArgumentCaptor.forClass(QuoteRequest.class);
-    when(orderPricingService.quote(captor.capture())).thenReturn(QuoteResponse.builder()
+    when(orderPricingService.quote(org.mockito.ArgumentMatchers.any(), captor.capture())).thenReturn(QuoteResponse.builder()
         .items(List.of(QuoteResponse.QuoteItem.builder()
             .type("PLAN").code("PROFESSIONAL").name("Professional").quantity(1)
             .unitPrice(new BigDecimal("9999")).discount(BigDecimal.ZERO)

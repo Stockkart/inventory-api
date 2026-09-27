@@ -75,7 +75,7 @@ class PlanPaymentServiceCheckoutTest {
   void setUp() {
     service.clock = Clock.fixed(NOW, ZoneOffset.UTC);
     when(planRepository.findByCode("GROWTH")).thenReturn(Optional.of(plan));
-    when(pricing.price(eq(plan), any())).thenReturn(cart());
+    when(pricing.price(eq(plan), any(), eq("shop-1"))).thenReturn(cart());
     when(gatewayResolver.resolve()).thenReturn(gateway);
     when(gatewayResolver.activePublicKey()).thenReturn("rzp_key");
     when(gateway.providerId()).thenReturn(PlanPaymentConstants.PROVIDER_RAZORPAY);
