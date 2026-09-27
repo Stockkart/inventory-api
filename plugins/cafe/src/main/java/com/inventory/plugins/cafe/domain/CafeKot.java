@@ -56,6 +56,13 @@ public class CafeKot {
   private Integer reprintCount = 0;
 
   /**
+   * The {@code Idempotency-Key} of the last reprint that bumped {@link #reprintCount}. A retry of
+   * that same key is a replay and must not increment again. Punch idempotency stays on the
+   * purchase; this field is only the reprint stamp.
+   */
+  private String reprintIdempotencyKey;
+
+  /**
    * The operation that produced this ticket: the {@code punchId} of the punch whose deltas it
    * carries. An ISSUE and a CANCEL slip from the same punch share it, and are told apart by
    * {@code kind} — which is also what makes the ticket id {@code punchId:department:kind}

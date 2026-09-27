@@ -1,6 +1,5 @@
 package com.inventory.plugins.cafe;
 
-import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.pluginengine.kot.CafeKotPort;
 import com.inventory.pluginengine.kot.CafeKotTicket;
 import com.inventory.pluginengine.kot.CafeKotTicketLine;
@@ -20,10 +19,15 @@ public class CafeKotAdapter implements CafeKotPort {
 
   private final CafeKotRepository kotRepository;
   private final CafeKotPunchService punchService;
+  private final CafeKotReprintService reprintService;
 
-  public CafeKotAdapter(CafeKotRepository kotRepository, CafeKotPunchService punchService) {
+  public CafeKotAdapter(
+      CafeKotRepository kotRepository,
+      CafeKotPunchService punchService,
+      CafeKotReprintService reprintService) {
     this.kotRepository = kotRepository;
     this.punchService = punchService;
+    this.reprintService = reprintService;
   }
 
   @Override
@@ -45,19 +49,14 @@ public class CafeKotAdapter implements CafeKotPort {
   }
 
   /**
-   * Bumps {@code reprintCount} on an already-issued ticket and returns it, creating no new
-   * ticket. The stamp a reprinted slip renders with is {@code core/product}'s concern
+   * Returns the ticket after a field-level reprint bump. Creates no new ticket. A replay of the
+   * same idempotency key does not increment again — that lives in {@link CafeKotReprintService}.
+   * The stamp a reprinted slip renders with is {@code core/product}'s concern
    * ({@code CafeKotService}), the same way it decides {@code CANCELLED} for a CANCEL ticket.
    */
   @Override
   public CafeKotTicket reprint(String shopId, String kotId, String idempotencyKey) {
-    CafeKot kot =
-        kotRepository
-            .findByIdAndShopId(kotId, shopId)
-            .orElseThrow(() -> new ResourceNotFoundException("CafeKot", "id", kotId));
-    kot.setReprintCount(kot.getReprintCount() == null ? 1 : kot.getReprintCount() + 1);
-    CafeKot saved = kotRepository.save(kot);
-    return toTicket(saved);
+    return toTicket(reprintService.reprint(shopId, kotId, idempotencyKey));
   }
 
   private static CafeKotTicket toTicket(CafeKot kot) {
