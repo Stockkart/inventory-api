@@ -67,6 +67,20 @@ public class CafeKotService {
   }
 
   /**
+   * Every kitchen ticket this bill has issued, newest first.
+   *
+   * <p>Feeds the Sell screen's "Sent rounds" list, which is the counter's only way back to a
+   * round the kitchen never received. No document is rendered here: the list names the rounds so
+   * the cashier can pick one, and only pressing Reprint on it puts paper in a kitchen.
+   */
+  public List<CafeKotTicket> listKots(String shopId, String purchaseId) {
+    if (!StringUtils.hasText(purchaseId)) {
+      throw new ValidationException("purchaseId is required");
+    }
+    return port().listKots(shopId, purchaseId);
+  }
+
+  /**
    * Re-issues an already-issued ticket's document for the frontend to fetch and print again.
    * Bumps the ticket's {@code reprintCount} through the port; creates no new ticket. The caller
    * ({@link com.inventory.product.rest.controller.CafeKotController}) has already rejected a

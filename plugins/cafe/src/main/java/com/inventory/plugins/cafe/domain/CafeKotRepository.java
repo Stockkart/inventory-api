@@ -13,4 +13,10 @@ public interface CafeKotRepository extends MongoRepository<CafeKot, String> {
    * <b>not</b> renumber: a {@code kotNo} on paper in a kitchen has to stay valid.
    */
   List<CafeKot> findByShopIdAndPunchId(String shopId, String punchId);
+
+  /**
+   * Every ticket a bill has issued, newest first -- what the counter reads to reprint a round the
+   * kitchen never got. Shop is part of the query, not a filter applied afterwards.
+   */
+  List<CafeKot> findByShopIdAndPurchaseIdOrderByCreatedAtDesc(String shopId, String purchaseId);
 }

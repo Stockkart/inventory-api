@@ -48,6 +48,13 @@ public class CafeKotAdapter implements CafeKotPort {
     return kotRepository.findByIdAndShopId(kotId, shopId).map(CafeKotAdapter::toTicket);
   }
 
+  @Override
+  public List<CafeKotTicket> listKots(String shopId, String purchaseId) {
+    return kotRepository.findByShopIdAndPurchaseIdOrderByCreatedAtDesc(shopId, purchaseId).stream()
+        .map(CafeKotAdapter::toTicket)
+        .toList();
+  }
+
   /**
    * Returns the ticket after a field-level reprint bump. Creates no new ticket. A replay of the
    * same idempotency key does not increment again — that lives in {@link CafeKotReprintService}.
@@ -73,6 +80,7 @@ public class CafeKotAdapter implements CafeKotPort {
         .tokenNo(kot.getTokenNo())
         .businessDate(kot.getBusinessDate())
         .reprintCount(kot.getReprintCount())
+        .createdAt(kot.getCreatedAt())
         .lines(
             kot.getLines() == null
                 ? List.of()
