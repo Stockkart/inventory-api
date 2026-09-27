@@ -30,4 +30,6 @@ public class PlanResponse {
   private Integer ocrLimit;
   private Set<PlanFeature> features;
   private String badge;
+  /** Struck-through anchor shown beside arcPrice. Display only: never charged. Null on legacy plans. */
+  private BigDecimal listPrice;
 }
