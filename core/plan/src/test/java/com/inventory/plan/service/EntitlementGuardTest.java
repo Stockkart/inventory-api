@@ -34,6 +34,9 @@ class EntitlementGuardTest {
   @Mock
   private EffectivePlanResolver effectivePlanResolver;
 
+  @Mock
+  private ShopAddOnService shopAddOnService;
+
   @InjectMocks
   private EntitlementGuard guard;
 
@@ -107,6 +110,18 @@ class EntitlementGuardTest {
   }
 
   @Test
+  void purchasedScanCreditsAllowScanningPastTheMonthlyQuota() {
+    guard.mode = EntitlementEnforcementMode.ENFORCE;
+    when(entitlementService.resolve("shop-1")).thenReturn(starter(Set.of(), null, 3));
+    Usage usage = new Usage();
+    usage.setOcrUsed(3);
+    when(usageService.getOrCreateCurrentMonthUsage("shop-1")).thenReturn(usage);
+    when(shopAddOnService.ocrCreditsRemaining("shop-1")).thenReturn(40);
+
+    assertThatCode(() -> guard.requireOcrUnit("shop-1")).doesNotThrowAnyException();
+  }
+
+  @Test
   void nullLimitsAreUnlimited() {
     guard.mode = EntitlementEnforcementMode.ENFORCE;
     when(entitlementService.resolve("shop-1")).thenReturn(starter(Set.of(), null, null));
@@ -119,6 +134,6 @@ class EntitlementGuardTest {
 
   private static ShopEntitlements starter(Set<PlanFeature> features, Integer userLimit, Integer ocrLimit) {
     return new ShopEntitlements("shop-1", "starter", "STARTER", EntitlementSource.TRIAL,
-        features, userLimit, ocrLimit, null);
+        features, userLimit, ocrLimit, null, Set.of());
   }
 }

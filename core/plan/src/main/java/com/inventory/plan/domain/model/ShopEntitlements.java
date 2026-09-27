@@ -17,12 +17,26 @@ public record ShopEntitlements(
     Set<PlanFeature> features,
     Integer userLimit,
     Integer ocrLimit,
-    Instant expiresAt) {
+    Instant expiresAt,
+    Set<String> addOnCodes) {
 
   public ShopEntitlements {
     features = features == null || features.isEmpty()
         ? Set.of()
         : Set.copyOf(EnumSet.copyOf(features));
+    addOnCodes = addOnCodes == null ? Set.of() : Set.copyOf(addOnCodes);
+  }
+
+  /** Plan entitlements plus live add-ons: features are the union, seats are added (§9). */
+  public ShopEntitlements withAddOns(Set<PlanFeature> addOnFeatures, int extraSeats, Set<String> codes) {
+    if (codes.isEmpty()) {
+      return this;
+    }
+    Set<PlanFeature> union = EnumSet.noneOf(PlanFeature.class);
+    union.addAll(features);
+    union.addAll(addOnFeatures);
+    return new ShopEntitlements(shopId, planId, planCode, source, union,
+        userLimit == null ? null : userLimit + extraSeats, ocrLimit, expiresAt, codes);
   }
 
   public boolean allows(PlanFeature feature) {

@@ -15,4 +15,7 @@ public final class PlanCatalogueConstants {
 
   /** Classpath location of the catalogue seed. */
   public static final String SEED_RESOURCE = "classpath:plan-catalogue.json";
+
+  /** Classpath location of the add-on catalogue seed. */
+  public static final String ADDON_SEED_RESOURCE = "classpath:addon-catalogue.json";
 }
