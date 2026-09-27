@@ -2,14 +2,11 @@ package com.inventory.plan.mapper;
 
 import com.inventory.plan.domain.model.Plan;
 import com.inventory.plan.domain.model.Usage;
-import com.inventory.plan.rest.dto.request.AssignPlanRequest;
-import com.inventory.plan.rest.dto.request.PaymentWebhookPayload;
 import com.inventory.plan.rest.dto.request.PlanAdminRequest;
 import com.inventory.plan.rest.dto.response.AdminPlanResponse;
 import com.inventory.plan.rest.dto.response.PlanResponse;
 import com.inventory.plan.rest.dto.response.ShopPlanStatusResponse;
 import com.inventory.plan.rest.dto.response.UsageResponse;
-import com.inventory.plan.utils.constants.PlanConstants;
 import com.inventory.plan.validation.PlanValidator.LimitReachedResult;
 import com.inventory.plan.utils.PlanUtils;
 import org.mapstruct.Mapper;
@@ -33,15 +30,6 @@ public interface PlanMapper {
   Plan toEntity(PlanAdminRequest request);
 
   UsageResponse toUsageResponse(Usage usage);
-
-  default AssignPlanRequest toAssignPlanRequest(PaymentWebhookPayload payload) {
-    if (payload == null) return null;
-    AssignPlanRequest req = new AssignPlanRequest();
-    req.setPlanId(payload.getPlanId());
-    req.setDurationMonths(payload.getDurationMonths() != null ? payload.getDurationMonths() : PlanConstants.WEBHOOK_DEFAULT_DURATION_MONTHS);
-    req.setPaymentMethod(payload.getPaymentMethod() != null ? payload.getPaymentMethod() : PlanConstants.DEFAULT_PAYMENT_METHOD);
-    return req;
-  }
 
   default ShopPlanStatusResponse toShopPlanStatusResponse(
       String shopId,
