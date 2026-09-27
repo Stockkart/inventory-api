@@ -15,6 +15,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 
 @Data
@@ -83,6 +84,30 @@ public class Purchase {
   private String customerName; // Used when only name is provided without phone
   /** Daily order token (cafe vertical). */
   private String tokenNo;
+
+  /** Dine-in table, free text. There is no table registry. */
+  private String tableLabel;
+
+  /**
+   * Cafe kitchen punches against this cart, in the order they were pressed.
+   *
+   * <p>Embedded, and written by {@code plugins/cafe}'s {@code CafeCartPuncher} as raw BSON, so
+   * that a punch and the line advance it caused are one atomic operation: there is no
+   * {@code MongoTransactionManager} here, and a crash between two writes would advance the lines
+   * while losing the deltas forever.
+   *
+   * <p>It must be a mapped property and not merely a key the raw pipeline invents: {@code
+   * MongoRepository.save} is a full-document replace, so an unmapped array is silently dropped by
+   * every ordinary save of this document. Three things rest on it surviving: the claim's {@code
+   * $ne} idempotency, a replay's deltas (which are read off this record, never off the
+   * already-advanced lines), and a ticket's round number, which is this list's index of the punch
+   * plus one.
+   *
+   * <p>Left null rather than initialised to an empty list: a grocery, medical or sports bill
+   * should carry no cafe key at all.
+   */
+  private List<CafeKotPunch> cafeKotPunches;
+
   private Instant createdAt;
   private Instant updatedAt;
 }

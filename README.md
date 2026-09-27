@@ -226,7 +226,19 @@ Shops are bound to a **vertical** (`Shop.verticalId` + `Shop.pluginVersion`). Fi
 
 **Frontend (inventory-platform):** consumes schema APIs for onboarding, product registration, scan-sell, product search (cursor pagination), and reminders expiry buckets — see architecture doc § Implementation status.
 
-**Remaining:** M8 core field strip migration; scan-sell detail modal schema columns; apparel/cafe vertical (Phase 5); import mappers + widgets (Phase 6).
+**Remaining:** M8 core field strip migration; scan-sell detail modal schema columns; apparel vertical (Phase 5); import mappers + widgets (Phase 6).
+
+### Cafe kitchen tickets
+
+Cafe KOT lives in `plugins/cafe` and crosses into `core/product` only through `pluginengine` (`CafeKotPort`). The Sell screen punches a cart; the server owns the delta. Reprint is a field-level update of `reprintCount` plus `reprintIdempotencyKey` — a replay of the same key does not bump the count, and the ticket is never written with `MongoRepository.save`.
+
+Deploy **before** the app: `scripts/cafe-kot-indexes.mongodb.js` (KOT indexes, and stamps legacy `cafe_token_counters` rows with `scope: BILL`).
+
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /api/v1/cafe/purchases/{purchaseId}/kots` | Punch the cart. Requires `Idempotency-Key`. No body. |
+| `GET /api/v1/cafe/kots/{kotId}/document` | Thermal PDF for a ticket. |
+| `POST /api/v1/cafe/kots/{kotId}/reprint` | Reprint stamp. Requires `Idempotency-Key`. Same key is a no-op bump. |
 
 ### Build commands
 
