@@ -1,5 +1,6 @@
 package com.inventory.user.service;
 
+import com.inventory.common.exception.EntitlementException;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceExistsException;
@@ -47,6 +48,9 @@ public class JoinRequestService {
 
   @Autowired(required = false)
   private ShopServiceAdapter shopServiceAdapter;
+
+  @Autowired(required = false)
+  private SeatLimitGuard seatLimitGuard;
 
   @Autowired
   private JoinRequestMapper joinRequestMapper;
@@ -163,7 +167,7 @@ public class JoinRequestService {
           "send");
       return joinRequestMapper.toResponse(joinRequest);
 
-    } catch (ValidationException | ResourceNotFoundException | ResourceExistsException e) {
+    } catch (ValidationException | ResourceNotFoundException | ResourceExistsException | EntitlementException e) {
       log.warn("Failed to create join request: {}", e.getMessage());
       throw e;
     } catch (DataAccessException e) {
@@ -246,7 +250,7 @@ public class JoinRequestService {
         return rejectJoinRequest(joinRequest, ownerUserId);
       }
 
-    } catch (ValidationException | ResourceNotFoundException | ResourceExistsException e) {
+    } catch (ValidationException | ResourceNotFoundException | ResourceExistsException | EntitlementException e) {
       log.warn("Failed to process join request: {}", e.getMessage());
       throw e;
     } catch (DataAccessException e) {
@@ -269,6 +273,10 @@ public class JoinRequestService {
     }
     if (membershipService == null && user.getShopId() != null && !user.getShopId().trim().isEmpty()) {
       throw new ResourceExistsException("User already belongs to a shop");
+    }
+
+    if (seatLimitGuard != null) {
+      seatLimitGuard.requireSeat(shopId);
     }
 
     log.info("Accepting join request {} for user {} to shop {}",

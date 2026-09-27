@@ -65,6 +65,9 @@ public class PlanService {
   @Autowired
   private MetricsWrapper metrics;
 
+  @Autowired
+  private ShopSubscriptionService shopSubscriptionService;
+
   /**
    * List all plans (public - can be called before login for pricing page).
    */
@@ -101,6 +104,7 @@ public class PlanService {
     int durationMonths = request.getDurationMonths() != null ? request.getDurationMonths() : 1;
     Instant expiryDate = PlanUtils.plusMonths(Instant.now(), durationMonths);
     shopProvider.updatePlan(shopId, plan.getId(), expiryDate);
+    syncSubscription(new ShopInfo(shopId, plan.getId(), expiryDate), request.getPaymentOrderId());
 
     PlanTransaction tx = planTransactionMapper.toTransaction(shopId, plan, request);
     planTransactionRepository.save(tx);
@@ -131,6 +135,7 @@ public class PlanService {
   @Transactional(readOnly = true)
   public ShopPlanStatusResponse getShopPlanStatus(String shopId) {
     ShopInfo shopInfo = getShopInfo(shopId);
+    syncSubscription(shopInfo, null);
 
     Plan plan = null;
     if (shopInfo.planId() != null && !shopInfo.planId().isBlank()) {
@@ -164,6 +169,18 @@ public class PlanService {
         suggestedPlan,
         limits,
         userLimitReached);
+  }
+
+  /**
+   * Shop fields remain authoritative until read paths move to ShopSubscription, so a failed sync
+   * must not fail the caller; the next sync or the backfill repairs it.
+   */
+  private void syncSubscription(ShopInfo shopInfo, String sourceOrderId) {
+    try {
+      shopSubscriptionService.sync(shopInfo, sourceOrderId);
+    } catch (RuntimeException e) {
+      log.warn("Shop subscription sync failed for shop {}: {}", shopInfo.shopId(), e.getMessage());
+    }
   }
 
   private ShopInfo getShopInfo(String shopId) {

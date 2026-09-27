@@ -30,6 +30,8 @@ public class Usage {
   private Integer billCountUsed;
   private Integer smsUsed;
   private Integer whatsappUsed;
+  /** Invoices scanned from the plan's monthly OCR quota. Purchased top-ups are tracked elsewhere. */
+  private Integer ocrUsed;
   private Instant createdAt;
   private Instant updatedAt;
 }

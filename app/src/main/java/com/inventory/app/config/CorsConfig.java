@@ -1,6 +1,7 @@
 package com.inventory.app.config;
 
 import com.inventory.app.interceptor.AuthenticationInterceptor;
+import com.inventory.app.interceptor.EntitlementInterceptor;
 import com.inventory.app.interceptor.PlanExpiryInterceptor;
 import com.inventory.app.interceptor.PlatformRoleInterceptor;
 import com.inventory.app.interceptor.RbacModuleInterceptor;
@@ -28,6 +29,9 @@ public class CorsConfig implements WebMvcConfigurer {
 
   @Autowired
   private PlatformRoleInterceptor platformRoleInterceptor;
+
+  @Autowired
+  private EntitlementInterceptor entitlementInterceptor;
 
   @Override
   public void addCorsMappings(CorsRegistry registry) {
@@ -101,6 +105,10 @@ public class CorsConfig implements WebMvcConfigurer {
             "/api/product/",
             "/m/**"
         );
+
+    registry.addInterceptor(entitlementInterceptor)
+        .addPathPatterns("/api/**")
+        .excludePathPatterns(PlatformRoleInterceptor.ADMIN_PATH_PATTERNS);
   }
 }
 

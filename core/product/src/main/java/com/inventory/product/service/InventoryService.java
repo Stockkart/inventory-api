@@ -109,6 +109,9 @@ public class InventoryService {
   @Autowired
   private InvoiceParserService invoiceParserService;
 
+  @Autowired(required = false)
+  private com.inventory.ocr.service.OcrQuotaGuard ocrQuotaGuard;
+
   @Autowired
   private ParsedInventoryMapper parsedInventoryMapper;
 
@@ -225,6 +228,11 @@ public class InventoryService {
       }
     }
 
+    boolean metered = ocrQuotaGuard != null && StringUtils.hasText(shopId);
+    if (metered) {
+      ocrQuotaGuard.requireUnit(shopId);
+    }
+
     InvoicePricingLayout layout = resolveInvoicePricingLayout(shopId);
     log.info("Processing invoice parsing for {} image(s) shopId={} layout={}",
         imageBytesList.size(), shopId, layout);
@@ -244,6 +252,9 @@ public class InventoryService {
 
     log.info("Multi-image invoice parse done: {} image(s), {} total line item(s)",
         imageBytesList.size(), mergedItems.size());
+    if (metered) {
+      ocrQuotaGuard.recordUnit(shopId);
+    }
     return parsedInventoryMapper.toParsedInventoryListResponse(mergedItems, vendorInvoice);
   }
 

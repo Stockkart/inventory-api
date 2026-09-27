@@ -1,6 +1,8 @@
 package com.inventory.credit.rest.controller;
 
 
+import com.inventory.common.entitlement.PlanFeature;
+import com.inventory.common.entitlement.RequiresEntitlement;
 import com.inventory.metrics.annotation.Latency;
 import com.inventory.metrics.annotation.RecordRequestRate;
 import com.inventory.metrics.annotation.RecordStatusCodes;
@@ -35,6 +37,7 @@ import org.springframework.web.bind.annotation.RestController;
 @Latency(module = "credit")
 @RecordRequestRate(module = "credit")
 @RecordStatusCodes(module = "credit")
+@RequiresEntitlement(PlanFeature.CREDIT_BALANCE)
 public class CreditController {
 
   private final CreditService creditService;
