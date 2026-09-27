@@ -57,6 +57,11 @@ public class PaymentOrderStatusMigration {
         .on("status", Sort.Direction.ASC)
         .on("claimedAt", Sort.Direction.ASC)
         .named("status_claimedAt"));
+    orders.ensureIndex(new Index()
+        .on("provider", Sort.Direction.ASC)
+        .on("providerPaymentId", Sort.Direction.ASC)
+        .partial(PartialIndexFilter.of(Criteria.where("providerPaymentId").exists(true)))
+        .named("provider_paymentId"));
     mongoTemplate.indexOps(PlanTransaction.class).ensureIndex(new Index()
         .on("paymentOrderId", Sort.Direction.ASC)
         .named("paymentOrderId"));

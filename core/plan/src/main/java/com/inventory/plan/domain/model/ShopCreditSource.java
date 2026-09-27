@@ -10,5 +10,8 @@ public enum ShopCreditSource {
   /** The order was paid: reserved credit is spent. */
   ORDER_REDEMPTION,
   MANUAL_ADJUSTMENT,
-  CLAWBACK
+  /** A credited referral reward taken back after the referee's refund; any shortfall becomes outstanding. */
+  CLAWBACK,
+  /** Wallet credit spent on an order that was later refunded, returned to the wallet. */
+  ORDER_REFUND
 }

@@ -60,4 +60,12 @@ public class PlanPaymentOrder {
   private Instant updatedAt;
   private Instant paidAt;
   private Instant fulfilledAt;
+  /** Sum of distinct gateway refunds seen; a partial refund leaves the order's grants in place. */
+  private BigDecimal refundedAmount;
+  /** Gateway refund ids already counted into refundedAmount. */
+  private List<String> refundIds;
+  private Instant refundedAt;
+  private RefundSource refundSource;
+  private String refundReason;
+  private String refundedByUserId;
 }

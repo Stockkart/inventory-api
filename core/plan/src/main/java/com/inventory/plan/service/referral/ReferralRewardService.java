@@ -54,6 +54,7 @@ public class ReferralRewardService {
   private static final Set<ReferralRewardStatus> RELEASABLE =
       EnumSet.of(ReferralRewardStatus.PENDING, ReferralRewardStatus.APPROVED);
   private static final int LIST_LIMIT = 100;
+  private static final int REVERSE_ATTEMPTS = 5;
 
   @Autowired
   private ReferralRewardRepository rewardRepository;
@@ -194,6 +195,61 @@ public class ReferralRewardService {
     Query crediting = new Query(Criteria.where("_id").is(reward.getId()).and("status").is(ReferralRewardStatus.CREDITING));
     Update update = new Update().set("status", ReferralRewardStatus.CREDITED).set("creditedAt", now).set("updatedAt", now);
     return mongoTemplate.updateFirst(crediting, update, ReferralReward.class).getModifiedCount() > 0;
+  }
+
+  /**
+   * Undoes the reward for a refunded order (§24): PENDING or APPROVED → VOID; CREDITED → CLAWED_BACK
+   * with a wallet clawback. A reward being credited right now is finished first, then clawed back, so
+   * a refund racing the hold-release job always ends with the money taken back.
+   */
+  public Optional<ReferralReward> reverseForOrder(String orderId, String reason, String actorUserId) {
+    for (int attempt = 0; attempt < REVERSE_ATTEMPTS; attempt++) {
+      Optional<ReferralReward> found = rewardRepository.findByOrderId(orderId);
+      if (found.isEmpty()) {
+        return Optional.empty();
+      }
+      ReferralReward reward = found.get();
+      switch (reward.getStatus()) {
+        case VOID, CLAWED_BACK -> {
+          return found;
+        }
+        case PENDING, APPROVED -> {
+          Optional<ReferralReward> voided = voidReward(reward.getId(), RELEASABLE, reason);
+          if (voided.isPresent()) {
+            return voided;
+          }
+        }
+        case CREDITING -> finishCredit(reward);
+        case CREDITED -> {
+          walletService.clawback(reward.getReferrerShopId(), reward.getRewardAmount(), reward.getId(),
+              "Referral reward reversed: " + reason, actorUserId);
+          Optional<ReferralReward> clawedBack = transition(reward.getId(), ReferralRewardStatus.CREDITED,
+              new Update().set("status", ReferralRewardStatus.CLAWED_BACK).set("clawedBackAt", clock.instant())
+                  .set("voidReason", reason));
+          if (clawedBack.isPresent()) {
+            return clawedBack;
+          }
+        }
+      }
+    }
+    throw new IllegalStateException("Referral reward for order " + orderId + " kept changing; retry the refund");
+  }
+
+  /** PENDING or APPROVED (or the given statuses) → VOID. Empty if it was in none of them. */
+  Optional<ReferralReward> voidReward(String rewardId, Set<ReferralRewardStatus> from, String reason) {
+    Instant now = clock.instant();
+    Query query = new Query(Criteria.where("_id").is(rewardId).and("status").in(from));
+    Update update = new Update().set("status", ReferralRewardStatus.VOID).set("voidReason", reason)
+        .set("voidedAt", now).set("updatedAt", now);
+    return Optional.ofNullable(mongoTemplate.findAndModify(query, update,
+        FindAndModifyOptions.options().returnNew(true), ReferralReward.class));
+  }
+
+  private Optional<ReferralReward> transition(String rewardId, ReferralRewardStatus from, Update update) {
+    Query query = new Query(Criteria.where("_id").is(rewardId).and("status").is(from));
+    update.set("updatedAt", clock.instant());
+    return Optional.ofNullable(mongoTemplate.findAndModify(query, update,
+        FindAndModifyOptions.options().returnNew(true), ReferralReward.class));
   }
 
   public ReferralRewardsResponse listForReferrer(String shopId) {

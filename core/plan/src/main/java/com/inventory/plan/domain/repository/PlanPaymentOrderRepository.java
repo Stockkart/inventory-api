@@ -13,5 +13,7 @@ public interface PlanPaymentOrderRepository extends MongoRepository<PlanPaymentO
 
   Optional<PlanPaymentOrder> findByProviderAndProviderOrderId(String provider, String providerOrderId);
 
+  Optional<PlanPaymentOrder> findByProviderAndProviderPaymentId(String provider, String providerPaymentId);
+
   Optional<PlanPaymentOrder> findByShopIdAndIdempotencyKey(String shopId, String idempotencyKey);
 }
