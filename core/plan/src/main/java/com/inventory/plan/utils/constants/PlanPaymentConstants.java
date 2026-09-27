@@ -7,6 +7,9 @@ public final class PlanPaymentConstants {
   private PlanPaymentConstants() {}
 
   public static final String PROVIDER_RAZORPAY = "razorpay";
+  /** Orders the wallet pays in full; no gateway is involved. */
+  public static final String PROVIDER_WALLET = "wallet";
+  public static final String PAYMENT_METHOD_WALLET = "WALLET";
 
   /** Order written, reservations taken. */
   public static final String STATUS_CREATED = "CREATED";

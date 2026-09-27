@@ -121,10 +121,12 @@ public class PlanPaymentService {
     }
     PricedCart cart = orderPricingService.price(plan, request, shopId);
 
-    PaymentGatewayPort gateway = paymentGatewayResolver.resolve();
+    boolean walletPaysAll = cart.grandTotal().signum() == 0;
+    PaymentGatewayPort gateway = walletPaysAll ? null : paymentGatewayResolver.resolve();
+    String provider = walletPaysAll ? PlanPaymentConstants.PROVIDER_WALLET : gateway.providerId();
     PlanPaymentOrder order;
     try {
-      order = planPaymentOrderRepository.insert(newOrder(shopId, cart, gateway.providerId(), key, requestHash));
+      order = planPaymentOrderRepository.insert(newOrder(shopId, cart, provider, key, requestHash));
     } catch (DuplicateKeyException e) {
       PlanPaymentOrder raced = planPaymentOrderRepository.findByShopIdAndIdempotencyKey(shopId, key)
           .orElseThrow(() -> e);
@@ -138,6 +140,9 @@ public class PlanPaymentService {
       throw e;
     }
 
+    if (walletPaysAll) {
+      return checkoutResponse(payFromWallet(order));
+    }
     PlanCheckoutResponse response = openWithGateway(order, gateway);
     recordPayment("checkout", "success");
     return response;
@@ -223,12 +228,23 @@ public class PlanPaymentService {
     return fulfilmentService.fulfil(orderId);
   }
 
+  /** An order with nothing left to charge: the wallet reservation is the payment. */
+  private PlanPaymentOrder payFromWallet(PlanPaymentOrder order) {
+    PlanPaymentOrder fulfilled = payAndFulfil(order.getId(), null, PlanPaymentConstants.PAYMENT_METHOD_WALLET);
+    recordPayment("checkout", "wallet");
+    return fulfilled;
+  }
+
   private PlanCheckoutResponse replay(PlanPaymentOrder order, String requestHash) {
     if (order.getRequestHash() != null && !order.getRequestHash().equals(requestHash)) {
       throw new BaseException(ErrorCode.IDEMPOTENCY_KEY_REUSED,
           "This " + PlanPaymentConstants.IDEMPOTENCY_KEY_HEADER + " was already used for a different cart");
     }
     String status = order.getStatus();
+    if (PlanPaymentConstants.PROVIDER_WALLET.equals(order.getProvider())
+        && PlanPaymentConstants.OPEN_STATUSES.contains(status)) {
+      return checkoutResponse(payFromWallet(order));
+    }
     if (PlanPaymentConstants.STATUS_CREATED.equals(status) && order.getProviderOrderId() == null) {
       return openWithGateway(order, paymentGatewayResolver.resolve());
     }

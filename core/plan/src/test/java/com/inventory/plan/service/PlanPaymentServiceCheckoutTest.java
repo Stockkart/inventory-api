@@ -172,6 +172,29 @@ class PlanPaymentServiceCheckoutTest {
     verify(reservations).release(any());
   }
 
+  @Test
+  void anOrderTheWalletPaysInFullSkipsTheGatewayAndFulfils() {
+    OrderLine line = OrderLine.builder().type("PLAN").code("GROWTH").quantity(1).unitPrice(new BigDecimal("9999"))
+        .discount(BigDecimal.ZERO).lineTotal(new BigDecimal("9999")).walletCredit(new BigDecimal("9999")).build();
+    when(pricing.price(eq(plan), any(), eq("shop-1"))).thenReturn(new PricedCart(plan, List.of(line),
+        new BigDecimal("9999"), BigDecimal.ZERO, new BigDecimal("9999"), BigDecimal.ZERO, 12));
+    PlanPaymentOrder fulfilled = pending();
+    fulfilled.setProvider(PlanPaymentConstants.PROVIDER_WALLET);
+    fulfilled.setStatus(PlanPaymentConstants.STATUS_FULFILLED);
+    when(fulfilmentService.fulfil("order-1")).thenReturn(fulfilled);
+
+    PlanCheckoutResponse response = service.createCheckout("shop-1", request(), "key-1");
+
+    ArgumentCaptor<PlanPaymentOrder> inserted = ArgumentCaptor.forClass(PlanPaymentOrder.class);
+    verify(orderRepository).insert(inserted.capture());
+    assertThat(inserted.getValue().getProvider()).isEqualTo(PlanPaymentConstants.PROVIDER_WALLET);
+    verify(reservations).reserve(any(), any());
+    verify(stateService).markPaid(eq("order-1"), eq(null), eq(PlanPaymentConstants.PAYMENT_METHOD_WALLET), any());
+    verify(gateway, never()).createCheckout(any());
+    assertThat(response.getStatus()).isEqualTo(PlanPaymentConstants.STATUS_FULFILLED);
+    assertThat(response.getRazorpay()).isNull();
+  }
+
   private String hash() {
     CreatePlanCheckoutRequest request = request();
     request.setDurationMonths(12);
