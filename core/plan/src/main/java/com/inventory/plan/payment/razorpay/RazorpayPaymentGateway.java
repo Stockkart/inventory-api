@@ -134,16 +134,26 @@ public class RazorpayPaymentGateway implements PaymentGatewayPort {
     try {
       JsonNode root = objectMapper.readTree(command.getRawBody());
       String event = root.path("event").asText();
+      JsonNode payload = root.path("payload");
+      JsonNode paymentEntity = payload.path("payment").path("entity");
+      if ("refund.processed".equals(event)) {
+        return refundEvent(WebhookHandleResult.EventType.REFUND_PROCESSED,
+            payload.path("refund").path("entity"), paymentEntity);
+      }
+      if ("payment.dispute.lost".equals(event)) {
+        return refundEvent(WebhookHandleResult.EventType.DISPUTE_LOST,
+            payload.path("dispute").path("entity"), paymentEntity);
+      }
       if (!"payment.captured".equals(event) && !"order.paid".equals(event)) {
         return WebhookHandleResult.builder().processed(false).build();
       }
-      JsonNode paymentEntity = root.path("payload").path("payment").path("entity");
       if (paymentEntity.isMissingNode()) {
         return WebhookHandleResult.builder().processed(false).build();
       }
       recordGateway("webhook", "success");
       return WebhookHandleResult.builder()
           .processed(true)
+          .eventType(WebhookHandleResult.EventType.PAYMENT_CAPTURED)
           .providerOrderId(textOrNull(paymentEntity.path("order_id")))
           .providerPaymentId(textOrNull(paymentEntity.path("id")))
           .paymentMethod(paymentEntity.path("method").asText("razorpay"))
@@ -153,6 +163,43 @@ public class RazorpayPaymentGateway implements PaymentGatewayPort {
       recordGateway("webhook", "error");
       return WebhookHandleResult.builder().processed(false).build();
     }
+  }
+
+  /** Refund and dispute entities both carry {@code id}, {@code payment_id} and {@code amount} in paise. */
+  private WebhookHandleResult refundEvent(WebhookHandleResult.EventType type, JsonNode entity, JsonNode paymentEntity) {
+    String paymentId = textOrNull(entity.path("payment_id"));
+    if (entity.isMissingNode() || paymentId == null || !entity.path("amount").isNumber()) {
+      return WebhookHandleResult.builder().processed(false).build();
+    }
+    recordGateway("webhook", "success");
+    return WebhookHandleResult.builder()
+        .processed(true)
+        .eventType(type)
+        .providerPaymentId(paymentId)
+        .providerOrderId(textOrNull(paymentEntity.path("order_id")))
+        .providerRefundId(textOrNull(entity.path("id")))
+        .amount(fromPaise(entity.path("amount").asLong()))
+        .build();
+  }
+
+  @Override
+  public String refund(String providerPaymentId, BigDecimal amount, Map<String, String> notes) {
+    try {
+      JsonNode response = razorpayApiClient.refundPayment(providerPaymentId, toPaise(amount), notes);
+      recordGateway("refund", "success");
+      return response.path("id").asText();
+    } catch (BaseException e) {
+      recordGateway("refund", "error");
+      throw e;
+    } catch (Exception e) {
+      recordGateway("refund", "error");
+      log.error("Failed to refund Razorpay payment {}: {}", providerPaymentId, e.getMessage());
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Failed to refund the payment");
+    }
+  }
+
+  private static BigDecimal fromPaise(long paise) {
+    return BigDecimal.valueOf(paise).movePointLeft(2);
   }
 
   private void recordGateway(String operation, String outcome) {

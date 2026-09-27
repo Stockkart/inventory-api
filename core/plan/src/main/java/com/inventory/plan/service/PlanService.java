@@ -28,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import org.springframework.data.domain.Sort;
@@ -68,6 +69,9 @@ public class PlanService {
 
   @Autowired
   private ShopSubscriptionService shopSubscriptionService;
+
+  @Autowired
+  private EntitlementService entitlementService;
 
   /**
    * List all plans (public - can be called before login for pricing page).
@@ -152,6 +156,42 @@ public class PlanService {
         1,
         "module",
         PlanMetricsConstants.MODULE);
+  }
+
+  /**
+   * Takes back the term a refunded order granted. If the shop still holds that term, it falls back to
+   * the latest earlier term that has not ended or been refunded, else its plan expires now. A later
+   * purchase that replaced the term is left alone. Safe to repeat.
+   */
+  public void revokeForOrder(PlanPaymentOrder order) {
+    Optional<PlanTransaction> granted = planTransactionRepository.findFirstByPaymentOrderId(order.getId());
+    if (granted.isEmpty() || granted.get().getRefundedAt() != null) {
+      return;
+    }
+    PlanTransaction tx = granted.get();
+    Instant now = Instant.now();
+    ShopInfo shop = getShopInfo(order.getShopId());
+    if (Objects.equals(shop.planId(), tx.getPlanId()) && Objects.equals(shop.planExpiryDate(), tx.getTermEndsAt())) {
+      Optional<PlanTransaction> previous = planTransactionRepository
+          .findByShopId(order.getShopId(), Sort.by(Sort.Direction.DESC, "createdAt")).stream()
+          .filter(t -> !t.getId().equals(tx.getId()))
+          .filter(t -> t.getRefundedAt() == null)
+          .filter(t -> t.getCreatedAt() != null && tx.getCreatedAt() != null && t.getCreatedAt().isBefore(tx.getCreatedAt()))
+          .filter(t -> t.getTermEndsAt() != null && t.getTermEndsAt().isAfter(now))
+          .findFirst();
+      String planId = previous.map(PlanTransaction::getPlanId).orElse(tx.getPlanId());
+      Instant expiry = previous.map(PlanTransaction::getTermEndsAt).orElse(now);
+      shopProvider.updatePlan(order.getShopId(), planId, expiry);
+      syncSubscription(new ShopInfo(order.getShopId(), planId, expiry),
+          previous.map(PlanTransaction::getPaymentOrderId).orElse(null));
+      log.info("Revoked plan term of order {} for shop {}; plan {} until {}", order.getId(), order.getShopId(),
+          planId, expiry);
+    } else {
+      log.info("Order {} term was already replaced for shop {}; plan left as is", order.getId(), order.getShopId());
+    }
+    tx.setRefundedAt(now);
+    planTransactionRepository.save(tx);
+    entitlementService.invalidate(order.getShopId());
   }
 
   /**

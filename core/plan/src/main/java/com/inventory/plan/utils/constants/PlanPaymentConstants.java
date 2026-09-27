@@ -27,6 +27,8 @@ public final class PlanPaymentConstants {
   /** Paid but not granted. Needs an operator; never cleared silently. */
   public static final String STATUS_FULFILMENT_FAILED = "FULFILMENT_FAILED";
   public static final String STATUS_CANCELLED = "CANCELLED";
+  /** Paid, then refunded in full (gateway refund, lost dispute, or admin); grants reversed. */
+  public static final String STATUS_REFUNDED = "REFUNDED";
   /** Pre-state-machine name for PAYMENT_FAILED; migrated on startup. */
   public static final String LEGACY_STATUS_FAILED = "FAILED";
 
@@ -38,6 +40,12 @@ public final class PlanPaymentConstants {
   /** Payment confirmed, whatever happened after. */
   public static final List<String> PAID_STATUSES =
       List.of(STATUS_PAID, STATUS_FULFILLING, STATUS_FULFILLED, STATUS_FULFILMENT_FAILED);
+  /**
+   * May move to REFUNDED. FULFILLING is left out: a running fulfilment could grant after the reversal,
+   * so the refund waits for it (the gateway retries its webhook).
+   */
+  public static final List<String> REFUNDABLE_STATUSES =
+      List.of(STATUS_PAID, STATUS_FULFILLED, STATUS_FULFILMENT_FAILED);
 
   /** Idempotency-Key header on checkout. */
   public static final String IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";

@@ -48,6 +48,15 @@ public record WalletBalances(BigDecimal available, BigDecimal reserved, BigDecim
     return Optional.of(new WalletBalances(available, reserved.subtract(amount), outstanding).settleThenAdd(amount));
   }
 
+  /**
+   * Takes money back from what is available only; reserved credit belongs to in-flight orders. The
+   * part not covered becomes outstanding, so the balance never goes negative (§27.4).
+   */
+  public WalletBalances clawback(BigDecimal amount) {
+    BigDecimal taken = available.min(amount);
+    return new WalletBalances(available.subtract(taken), reserved, outstanding.add(amount.subtract(taken)));
+  }
+
   /** New money in; any outstanding clawback is paid off first. */
   public WalletBalances credit(BigDecimal amount) {
     return settleThenAdd(amount);

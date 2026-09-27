@@ -1,7 +1,9 @@
 package com.inventory.plan.service.order;
 
 import com.inventory.plan.domain.model.PlanPaymentOrder;
+import com.inventory.plan.domain.model.RefundSource;
 import com.inventory.plan.utils.constants.PlanPaymentConstants;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -114,6 +116,33 @@ public class PaymentOrderStateService {
     }
     return mongoTemplate.updateFirst(byIdAndStatus(id, PlanPaymentConstants.OPEN_STATUSES), update,
         PlanPaymentOrder.class).getModifiedCount() > 0;
+  }
+
+  /**
+   * Counts a gateway refund into refundedAmount, once per refund id. Returns the updated order, or
+   * empty when that refund was already counted.
+   */
+  public Optional<PlanPaymentOrder> recordGatewayRefund(String id, String refundId, BigDecimal amount, Instant now) {
+    Query query = new Query(Criteria.where("_id").is(id).and("refundIds").ne(refundId));
+    Update update = new Update()
+        .inc("refundedAmount", amount)
+        .addToSet("refundIds", refundId)
+        .set("updatedAt", now);
+    return Optional.ofNullable(mongoTemplate.findAndModify(query, update, returnNew(), PlanPaymentOrder.class));
+  }
+
+  /** A refundable order → REFUNDED. Empty when it is not refundable (or already refunded). */
+  public Optional<PlanPaymentOrder> markRefunded(String id, RefundSource source, String reason,
+      String actorUserId, Instant now) {
+    Update update = new Update()
+        .set("status", PlanPaymentConstants.STATUS_REFUNDED)
+        .set("refundedAt", now)
+        .set("refundSource", source)
+        .set("refundReason", reason)
+        .set("refundedByUserId", actorUserId)
+        .set("updatedAt", now);
+    return Optional.ofNullable(mongoTemplate.findAndModify(
+        byIdAndStatus(id, PlanPaymentConstants.REFUNDABLE_STATUSES), update, returnNew(), PlanPaymentOrder.class));
   }
 
   /** Open orders past their expiry. Orders from before expiresAt existed use createdAt + ttl. */
