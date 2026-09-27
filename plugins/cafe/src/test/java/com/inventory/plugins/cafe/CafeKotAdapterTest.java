@@ -3,6 +3,7 @@ package com.inventory.plugins.cafe;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -29,13 +30,15 @@ class CafeKotAdapterTest {
 
   private CafeKotRepository kotRepository;
   private CafeKotPunchService punchService;
+  private CafeKotReprintService reprintService;
   private CafeKotAdapter adapter;
 
   @BeforeEach
   void setUp() {
     kotRepository = mock(CafeKotRepository.class);
     punchService = mock(CafeKotPunchService.class);
-    adapter = new CafeKotAdapter(kotRepository, punchService);
+    reprintService = mock(CafeKotReprintService.class);
+    adapter = new CafeKotAdapter(kotRepository, punchService, reprintService);
   }
 
   private static CafeKot kot() {
@@ -119,16 +122,16 @@ class CafeKotAdapterTest {
   }
 
   @Test
-  void reprintBumpsTheCountAndCreatesNoNewTicket() {
+  void reprintDelegatesTheBumpAndCreatesNoNewTicket() {
     CafeKot stored = kot();
-    stored.setReprintCount(1);
-    when(kotRepository.findByIdAndShopId("k1", "shop-1")).thenReturn(Optional.of(stored));
-    when(kotRepository.save(stored)).thenReturn(stored);
+    stored.setReprintCount(2);
+    when(reprintService.reprint("shop-1", "k1", "idem-1")).thenReturn(stored);
 
     CafeKotTicket ticket = adapter.reprint("shop-1", "k1", "idem-1");
 
     assertEquals("k1", ticket.getKotId(), "the same ticket, never a new one");
     assertEquals(2, ticket.getReprintCount());
-    verify(kotRepository).save(stored);
+    verify(reprintService).reprint("shop-1", "k1", "idem-1");
+    verify(kotRepository, never()).save(stored);
   }
 }
