@@ -64,8 +64,10 @@ public class ShopController {
 
   @PostMapping("/admin/shops/{shopId}/approve")
   public ResponseEntity<ApiResponse<ShopApprovalResponse>> approve(@PathVariable String shopId,
-                                                                   @RequestBody ShopApprovalRequest request) {
-    return ResponseEntity.ok(ApiResponse.success(shopService.approve(shopId, request)));
+                                                                   @RequestBody ShopApprovalRequest request,
+                                                                   HttpServletRequest httpRequest) {
+    String actorUserId = (String) httpRequest.getAttribute("userId");
+    return ResponseEntity.ok(ApiResponse.success(shopService.approve(shopId, request, actorUserId)));
   }
 
   @GetMapping("/active-shop")
