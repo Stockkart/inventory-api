@@ -60,10 +60,10 @@ public class PlanService {
   private UsageService usageService;
 
   @Autowired
-  private ShopSubscriptionService shopSubscriptionService;
+  private MetricsWrapper metrics;
 
   @Autowired
-  private MetricsWrapper metrics;
+  private ShopSubscriptionService shopSubscriptionService;
 
   /**
    * List all plans (public - can be called before login for pricing page).
