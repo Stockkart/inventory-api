@@ -49,6 +49,9 @@ public class UsageService {
   @Autowired
   private UsageMapper usageMapper;
 
+  @Autowired
+  private EffectivePlanResolver effectivePlanResolver;
+
   public String getCurrentMonthKey() {
     return PlanUtils.getCurrentMonthKey();
   }
@@ -143,11 +146,6 @@ public class UsageService {
   }
 
   private Plan resolveEffectivePlan(ShopInfo shopInfo) {
-    if (shopInfo.planId() != null && !shopInfo.planId().isBlank()) {
-      return planRepository.findById(shopInfo.planId())
-          .orElseThrow(() -> new ResourceNotFoundException("Plan", "id", shopInfo.planId()));
-    }
-    return planRepository.findByPlanName("Base")
-        .orElseThrow(() -> new ResourceNotFoundException("Plan", "name", "Base"));
+    return effectivePlanResolver.resolve(shopInfo.planId());
   }
 }
