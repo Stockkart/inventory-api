@@ -13,6 +13,7 @@ import com.inventory.plugins.cafe.domain.CafeKotKind;
 import com.inventory.plugins.cafe.domain.CafeKotLine;
 import com.inventory.plugins.cafe.domain.CafeKotRepository;
 import com.inventory.plugins.cafe.domain.CafeKotStatus;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -133,5 +134,63 @@ class CafeKotAdapterTest {
     assertEquals(2, ticket.getReprintCount());
     verify(reprintService).reprint("shop-1", "k1", "idem-1");
     verify(kotRepository, never()).save(stored);
+  }
+
+  @Test
+  void listKotsReadsTheBillScopedByShopAndNewestFirst() {
+    CafeKot older = kot();
+    older.setId("k-old");
+    older.setKotNo(40);
+    older.setCreatedAt(Instant.parse("2026-09-21T13:00:00Z"));
+    CafeKot newer = kot();
+    newer.setId("k-new");
+    newer.setKotNo(41);
+    newer.setCreatedAt(Instant.parse("2026-09-21T13:10:00Z"));
+    // The repository derives the ordering; this pins that the adapter asks for the ordered finder
+    // and hands it through untouched rather than re-sorting (or worse, not sorting) in Java.
+    when(kotRepository.findByShopIdAndPurchaseIdOrderByCreatedAtDesc("shop-1", "p1"))
+        .thenReturn(List.of(newer, older));
+
+    List<CafeKotTicket> tickets = adapter.listKots("shop-1", "p1");
+
+    assertEquals(List.of("k-new", "k-old"), tickets.stream().map(CafeKotTicket::getKotId).toList());
+    verify(kotRepository).findByShopIdAndPurchaseIdOrderByCreatedAtDesc("shop-1", "p1");
+  }
+
+  @Test
+  void listKotsCarriesCreatedAtSoTheCounterCanSayWhichRound() {
+    CafeKot kot = kot();
+    kot.setCreatedAt(Instant.parse("2026-09-21T13:10:00Z"));
+    when(kotRepository.findByShopIdAndPurchaseIdOrderByCreatedAtDesc("shop-1", "p1"))
+        .thenReturn(List.of(kot));
+
+    CafeKotTicket ticket = adapter.listKots("shop-1", "p1").get(0);
+
+    assertEquals(Instant.parse("2026-09-21T13:10:00Z"), ticket.getCreatedAt());
+    assertEquals(Integer.valueOf(41), ticket.getKotNo());
+  }
+
+  @Test
+  void listKotsForAnotherShopsBillResolvesToNothing() {
+    // The shop is part of the query, not a filter applied to the result, so there is no window in
+    // which another tenant's tickets are in hand at all.
+    when(kotRepository.findByShopIdAndPurchaseIdOrderByCreatedAtDesc("shop-2", "p1"))
+        .thenReturn(List.of());
+
+    assertTrue(adapter.listKots("shop-2", "p1").isEmpty());
+  }
+
+  @Test
+  void listKotsNeverBumpsAReprintCount() {
+    when(kotRepository.findByShopIdAndPurchaseIdOrderByCreatedAtDesc("shop-1", "p1"))
+        .thenReturn(List.of(kot()));
+
+    adapter.listKots("shop-1", "p1");
+
+    // Listing is what the cashier does while deciding. Only pressing Reprint may stamp a slip or
+    // move a count.
+    verify(reprintService, never()).reprint(org.mockito.ArgumentMatchers.anyString(),
+        org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString());
+    verify(kotRepository, never()).save(org.mockito.ArgumentMatchers.any(CafeKot.class));
   }
 }

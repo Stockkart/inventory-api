@@ -39,5 +39,12 @@ public class CafeKotTicket {
   /** How many times this ticket has been reprinted. Zero for a ticket never reprinted. */
   private Integer reprintCount;
 
+  /**
+   * When the ticket was written. The Sell screen's "Sent rounds" list orders by it and shows it,
+   * because a cook asking about a missed slip says "the one from ten minutes ago" at least as
+   * often as they say a KOT number.
+   */
+  private java.time.Instant createdAt;
+
   private List<CafeKotTicketLine> lines;
 }

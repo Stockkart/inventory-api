@@ -61,6 +61,20 @@ public class CafeKotController {
                 shopId(httpRequest), userId(httpRequest), purchaseId, idempotencyKey)));
   }
 
+  /**
+   * Every kitchen ticket this bill has issued, newest first — the Sell screen's "Sent rounds".
+   *
+   * <p>No {@code Idempotency-Key}: this reads, it does not reach a kitchen. Punching again cannot
+   * stand in for it, because a cart with nothing new owes the kitchen nothing and correctly
+   * creates no ticket.
+   */
+  @GetMapping("/purchases/{purchaseId}/kots")
+  public ResponseEntity<ApiResponse<List<CafeKotTicket>>> listKots(
+      @PathVariable String purchaseId, HttpServletRequest httpRequest) {
+    return ResponseEntity.ok(
+        ApiResponse.success(cafeKotService.listKots(shopId(httpRequest), purchaseId)));
+  }
+
   @GetMapping("/kots/{kotId}/document")
   public ResponseEntity<byte[]> kotDocument(
       @PathVariable String kotId, HttpServletRequest httpRequest) {

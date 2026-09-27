@@ -36,6 +36,18 @@ public interface CafeKotPort {
   /** Scoped by shop: a request for another shop's ticket resolves to nothing. */
   Optional<CafeKotTicket> findKot(String shopId, String kotId);
 
+  /**
+   * Every ticket this bill has issued, newest first.
+   *
+   * <p>Read-only, and the only way the counter can reach a round it has already sent: the Sell
+   * screen's ticket list is component state that dies when the bar unmounts, so without this a
+   * slip lost in the kitchen has no recovery path. Punching again cannot serve that purpose --
+   * the delta is zero and correctly creates nothing.
+   *
+   * <p>Scoped by shop: another shop's bill resolves to an empty list, never to its tickets.
+   */
+  List<CafeKotTicket> listKots(String shopId, String purchaseId);
+
   /** Re-issues an already-issued ticket for the frontend to fetch and print again. Creates no new ticket. */
   CafeKotTicket reprint(String shopId, String kotId, String idempotencyKey);
 }
