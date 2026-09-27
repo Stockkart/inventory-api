@@ -14,6 +14,7 @@ import com.inventory.plan.exception.VoucherRejectedException;
 import com.inventory.plan.rest.dto.request.QuoteRequest;
 import com.inventory.plan.rest.dto.response.QuoteResponse;
 import com.inventory.plan.service.voucher.VoucherService;
+import com.inventory.plan.service.wallet.WalletService;
 import com.inventory.plan.utils.constants.PlanPaymentConstants;
 import com.inventory.plan.utils.constants.PricingConstants;
 import java.math.BigDecimal;
@@ -45,6 +46,9 @@ public class OrderPricingService {
 
   @Autowired
   private VoucherService voucherService;
+
+  @Autowired
+  private WalletService walletService;
 
   /** {@code shopId} is needed only to check vouchers the shop may use. */
   public QuoteResponse quote(String shopId, QuoteRequest request) {
@@ -87,10 +91,32 @@ public class OrderPricingService {
     BigDecimal subtotal = sum(items.stream().map(line -> line.getUnitPrice()
         .multiply(BigDecimal.valueOf(line.getQuantity()))).toList());
     BigDecimal discountTotal = sum(items.stream().map(OrderLine::getDiscount).toList());
-    // No wallet exists yet; applyWalletCredit is accepted so the request shape is final.
-    BigDecimal walletCredit = BigDecimal.ZERO;
+    BigDecimal walletCredit = Boolean.TRUE.equals(request.getApplyWalletCredit()) && StringUtils.hasText(shopId)
+        ? applyWallet(items, walletService.available(shopId))
+        : BigDecimal.ZERO;
     return new PricedCart(plan, List.copyOf(items), subtotal, discountTotal, walletCredit,
         subtotal.subtract(discountTotal).subtract(walletCredit), durationMonths);
+  }
+
+  /**
+   * Spends the balance line by line after vouchers (§24): the plan line first, then add-ons. OCR
+   * top-ups are never paid from the wallet. Only reads the balance; checkout reserves it.
+   */
+  static BigDecimal applyWallet(List<OrderLine> items, BigDecimal available) {
+    BigDecimal remaining = available == null ? BigDecimal.ZERO : available.max(BigDecimal.ZERO);
+    BigDecimal applied = BigDecimal.ZERO;
+    for (OrderLine line : items) {
+      if (PricingConstants.ITEM_TYPE_OCR_TOPUP.equals(line.getType()) || remaining.signum() <= 0) {
+        continue;
+      }
+      BigDecimal take = remaining.min(line.getLineTotal());
+      if (take.signum() > 0) {
+        line.setWalletCredit(take);
+        remaining = remaining.subtract(take);
+        applied = applied.add(take);
+      }
+    }
+    return applied;
   }
 
   /**
@@ -248,6 +274,7 @@ public class OrderPricingService {
         .lineTotal(line.getLineTotal())
         .itemSource(line.getItemSource())
         .voucherCode(line.getVoucherCode())
+        .walletCredit(line.getWalletCredit())
         .build();
   }
 
