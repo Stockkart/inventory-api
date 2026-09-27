@@ -62,6 +62,9 @@ public class PlanPaymentService {
   @Autowired
   private MetricsWrapper metrics;
 
+  @Autowired
+  private OrderPricingService orderPricingService;
+
   @Transactional(readOnly = true)
   public PaymentConfigResponse getPaymentConfig() {
     return PaymentConfigResponse.builder()
@@ -80,7 +83,7 @@ public class PlanPaymentService {
     int durationMonths = request.getDurationMonths() != null
         ? request.getDurationMonths()
         : PlanPaymentConstants.DEFAULT_CHECKOUT_DURATION_MONTHS;
-    BigDecimal amount = planAmount(plan);
+    BigDecimal amount = orderPricingService.planPrice(plan);
     PaymentGatewayPort gateway = paymentGatewayResolver.resolve();
 
     PlanPaymentOrder order = new PlanPaymentOrder();
@@ -265,9 +268,5 @@ public class PlanPaymentService {
 
     log.info("Fulfilled plan payment order {} for shop {}", order.getId(), order.getShopId());
     return assigned;
-  }
-
-  private static BigDecimal planAmount(Plan plan) {
-    return plan.getArcPrice() != null ? plan.getArcPrice() : plan.getPrice();
   }
 }
