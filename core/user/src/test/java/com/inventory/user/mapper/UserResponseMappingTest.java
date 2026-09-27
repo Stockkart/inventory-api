@@ -20,6 +20,16 @@ class UserResponseMappingTest {
   }
 
   @Test
+  void loginCarriesPlatformRoles() {
+    UserAccount admin = new UserAccount();
+    admin.setUserId("u1");
+    admin.setPlatformRoles(Set.of(PlatformRole.PLATFORM_ADMIN));
+
+    assertThat(UserMapper.INSTANCE.toUserSummary(admin).getPlatformRoles())
+        .containsExactly(PlatformRole.PLATFORM_ADMIN);
+  }
+
+  @Test
   void ordinaryUsersHaveNone() {
     UserAccount user = new UserAccount();
     user.setUserId("u2");
