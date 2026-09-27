@@ -1,12 +1,16 @@
 package com.inventory.plan.domain.model;
 
+import com.inventory.common.entitlement.PlanFeature;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.Field;
 
 import java.math.BigDecimal;
+import java.util.Set;
 
 /**
  * Plan master entity. Plans form a linked list via linkedId pointing to the next higher plan.
@@ -39,4 +43,22 @@ public class Plan {
   /** ID of the next higher plan (upsell target). Null for top plan. */
   private String linkedId;
   private String bestFor; // e.g. "Small businesses with limited billing"
+
+  /** Stable catalogue key, e.g. STARTER. Null on legacy rows. */
+  @Indexed(unique = true, sparse = true)
+  private String code;
+  /** Pricing-page position, ascending. Null sorts after ordered plans. */
+  private Integer displayOrder;
+  /** False hides the plan from the catalogue. Null is treated as active so legacy rows stay visible. */
+  private Boolean active;
+  /** OCR invoices included per month. Null = not metered. */
+  private Integer ocrLimit;
+  /**
+   * Gated capabilities this plan includes. Stored as "entitlements" because some environments hold
+   * rows whose "features" field is a list of display objects.
+   */
+  @Field("entitlements")
+  private Set<PlanFeature> features;
+  /** Marketing highlight such as MOST_POPULAR. Null = no badge. */
+  private String badge;
 }

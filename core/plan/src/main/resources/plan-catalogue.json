@@ -1,0 +1,49 @@
+[
+  {
+    "code": "STARTER",
+    "planName": "Starter",
+    "displayOrder": 1,
+    "price": 0,
+    "arcPrice": 6999,
+    "userLimit": 2,
+    "ocrLimit": 100,
+    "bestFor": "Small shops",
+    "features": []
+  },
+  {
+    "code": "PROFESSIONAL",
+    "planName": "Professional",
+    "displayOrder": 2,
+    "price": 0,
+    "arcPrice": 9999,
+    "userLimit": 3,
+    "ocrLimit": 500,
+    "bestFor": "Growing businesses",
+    "badge": "MOST_POPULAR",
+    "features": [
+      "CREDIT_BALANCE",
+      "ACCOUNTING",
+      "BARCODE_GENERATOR",
+      "LOW_STOCK_NOTIFICATION"
+    ]
+  },
+  {
+    "code": "ENTERPRISE",
+    "planName": "Enterprise",
+    "displayOrder": 3,
+    "price": 0,
+    "arcPrice": 12999,
+    "ocrLimit": 2000,
+    "bestFor": "Medium & large businesses",
+    "features": [
+      "CREDIT_BALANCE",
+      "ACCOUNTING",
+      "BARCODE_GENERATOR",
+      "LOW_STOCK_NOTIFICATION",
+      "MARKETING",
+      "SALARY",
+      "BIOMETRIC_ATTENDANCE",
+      "ADVANCED_ACCESS_CONTROL"
+    ]
+  }
+]

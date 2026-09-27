@@ -1,10 +1,12 @@
 package com.inventory.plan.rest.dto.response;
 
+import com.inventory.common.entitlement.PlanFeature;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.util.Set;
 
 @Data
 @NoArgsConstructor
@@ -23,4 +25,9 @@ public class PlanResponse {
   private boolean unlimited;
   private String linkedId;
   private String bestFor;
+  private String code;
+  private Integer displayOrder;
+  private Integer ocrLimit;
+  private Set<PlanFeature> features;
+  private String badge;
 }

@@ -60,6 +60,9 @@ public class PlanService {
   private UsageService usageService;
 
   @Autowired
+  private EffectivePlanResolver effectivePlanResolver;
+
+  @Autowired
   private MetricsWrapper metrics;
 
   /**
@@ -67,7 +70,7 @@ public class PlanService {
    */
   @Transactional(readOnly = true)
   public List<PlanResponse> listPlans() {
-    return planRepository.findAllByOrderByPriceAsc().stream()
+    return effectivePlanResolver.activeCatalogue().stream()
         .map(planMapper::toResponse)
         .collect(Collectors.toList());
   }
@@ -137,9 +140,7 @@ public class PlanService {
     boolean planExpired = PlanUtils.isExpired(shopInfo.planExpiryDate());
     boolean trialExpired = trial && planExpired;
 
-    Plan effectivePlan = plan != null ? plan
-        : planRepository.findByPlanName("Base")
-            .orElseThrow(() -> new ResourceNotFoundException("Plan", "name", "Base"));
+    Plan effectivePlan = plan != null ? plan : effectivePlanResolver.trialPlan();
     Usage usage = usageService.getOrCreateCurrentMonthUsage(shopId);
     UsageResponse usageResponse = planMapper.toUsageResponse(usage);
 
@@ -188,7 +189,7 @@ public class PlanService {
       current = planRepository.findById(shopInfo.planId()).orElse(null);
     }
     if (current == null) {
-      current = planRepository.findAllByOrderByPriceAsc().stream().findFirst().orElse(null);
+      current = effectivePlanResolver.findTrialPlan().orElse(null);
     }
     if (current != null && current.getLinkedId() != null) {
       Optional<Plan> next = planRepository.findById(current.getLinkedId());
