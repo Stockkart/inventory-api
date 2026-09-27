@@ -12,6 +12,8 @@ public interface ApiErrorMapper {
   @Mapping(target = "message", source = "message")
   @Mapping(target = "status", source = "status")
   @Mapping(target = "errors", source = "errors")
+  @Mapping(target = "code", ignore = true)
+  @Mapping(target = "details", ignore = true)
   ApiError toApiError(String message, int status, Map<String, String[]> errors);
 
   default ApiError toApiError(String message, int status) {

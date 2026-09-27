@@ -37,6 +37,9 @@ public class ShopSubscriptionService {
   @Autowired
   private MongoTemplate mongoTemplate;
 
+  @Autowired
+  private EntitlementService entitlementService;
+
   /**
    * Auto index creation is off in this application, so the sweep index is created here.
    */
@@ -71,7 +74,9 @@ public class ShopSubscriptionService {
       subscription.setSourceOrderId(sourceOrderId);
     }
     subscription.setUpdatedAt(now);
-    return shopSubscriptionRepository.save(subscription);
+    ShopSubscription saved = shopSubscriptionRepository.save(subscription);
+    entitlementService.invalidate(shop.shopId());
+    return saved;
   }
 
   /**
@@ -84,6 +89,7 @@ public class ShopSubscriptionService {
     long expired = mongoTemplate.updateMulti(query, update, ShopSubscription.class).getModifiedCount();
     if (expired > 0) {
       log.info("Expired {} shop subscription(s)", expired);
+      entitlementService.invalidateAll();
     }
     return expired;
   }

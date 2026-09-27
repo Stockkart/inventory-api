@@ -17,6 +17,10 @@ import com.inventory.user.service.UserShopMembershipService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -51,6 +55,9 @@ public class UsageService {
 
   @Autowired
   private EffectivePlanResolver effectivePlanResolver;
+
+  @Autowired
+  private MongoTemplate mongoTemplate;
 
   public String getCurrentMonthKey() {
     return PlanUtils.getCurrentMonthKey();
@@ -119,6 +126,18 @@ public class UsageService {
 
     purgeOldUsage(shopId);
     return planMapper.toUsageResponse(usage);
+  }
+
+  /**
+   * Counts one scanned invoice against this month's included OCR quota. Atomic, so concurrent
+   * scans are all counted.
+   */
+  public void recordOcrUsage(String shopId) {
+    Usage usage = getOrCreateCurrentMonthUsage(shopId);
+    mongoTemplate.updateFirst(
+        new Query(Criteria.where("_id").is(usage.getId())),
+        new Update().inc("ocrUsed", 1).set("updatedAt", Instant.now()),
+        Usage.class);
   }
 
   private void purgeOldUsage(String shopId) {

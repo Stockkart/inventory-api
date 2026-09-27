@@ -39,6 +39,9 @@ class ShopSubscriptionServiceTest {
   @Mock
   private MongoTemplate mongoTemplate;
 
+  @Mock
+  private EntitlementService entitlementService;
+
   @InjectMocks
   private ShopSubscriptionService service;
 
@@ -87,6 +90,7 @@ class ShopSubscriptionServiceTest {
     assertThat(service.sync(new ShopInfo("shop-1", "plan-1", FUTURE), null)).isSameAs(current);
     assertThat(service.sync(new ShopInfo("shop-1", "plan-1", FUTURE), "order-1")).isSameAs(current);
     verify(repository, never()).save(any());
+    verify(entitlementService, never()).invalidate(any());
   }
 
   @Test
@@ -104,6 +108,7 @@ class ShopSubscriptionServiceTest {
     assertThat(saved.getExpiresAt()).isEqualTo(FUTURE);
     assertThat(saved.getSourceOrderId()).isEqualTo("order-2");
     assertThat(saved.getCreatedAt()).isEqualTo(createdAt);
+    verify(entitlementService).invalidate("shop-1");
   }
 
   @Test
@@ -124,6 +129,7 @@ class ShopSubscriptionServiceTest {
         .thenReturn(UpdateResult.acknowledged(3, 3L, null));
 
     assertThat(service.expireLapsed(NOW)).isEqualTo(3);
+    verify(entitlementService).invalidateAll();
 
     ArgumentCaptor<Query> query = ArgumentCaptor.forClass(Query.class);
     ArgumentCaptor<Update> update = ArgumentCaptor.forClass(Update.class);
