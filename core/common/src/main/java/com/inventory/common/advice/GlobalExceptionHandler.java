@@ -5,7 +5,7 @@ import com.inventory.common.dto.response.ApiError;
 import com.inventory.common.dto.response.ApiErrorMapper;
 import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.common.exception.BaseException;
-import com.inventory.common.exception.EntitlementException;
+import com.inventory.common.exception.DetailedException;
 import com.inventory.common.exception.ValidationException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
@@ -45,9 +45,9 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     log.error("Business exception: {}", ex.getMessage(), ex);
     ErrorCode errorCode = ex.getErrorCode();
     ApiError apiError = apiErrorMapper.toApiError(ex.getMessage(), errorCode.getHttpStatus().value());
-    if (ex instanceof EntitlementException entitlementException) {
+    if (ex instanceof DetailedException detailed) {
       apiError.setCode(errorCode.name());
-      apiError.setDetails(entitlementException.getDetails());
+      apiError.setDetails(detailed.getDetails());
     }
     ApiResponse<ApiError> response = ApiResponse.error(ex.getMessage());
     response.setData(apiError);

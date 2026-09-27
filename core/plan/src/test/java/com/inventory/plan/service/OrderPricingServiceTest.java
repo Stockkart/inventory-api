@@ -13,10 +13,15 @@ import com.inventory.common.exception.ValidationException;
 import com.inventory.common.entitlement.PlanFeature;
 import com.inventory.plan.domain.model.AddOn;
 import com.inventory.plan.domain.model.AddOnGrantType;
+import com.inventory.plan.domain.model.AddOnVoucher;
 import com.inventory.plan.domain.model.Plan;
+import com.inventory.plan.domain.model.VoucherRejection;
+import com.inventory.plan.domain.model.VoucherType;
 import com.inventory.plan.domain.repository.PlanRepository;
+import com.inventory.plan.exception.VoucherRejectedException;
 import com.inventory.plan.rest.dto.request.QuoteRequest;
 import com.inventory.plan.rest.dto.response.QuoteResponse;
+import com.inventory.plan.service.voucher.VoucherService;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.List;
@@ -38,6 +43,9 @@ class OrderPricingServiceTest {
   @Mock
   private AddOnCatalogueService addOnCatalogue;
 
+  @Mock
+  private VoucherService voucherService;
+
   @InjectMocks
   private OrderPricingService pricing;
 
@@ -45,7 +53,7 @@ class OrderPricingServiceTest {
   void pricesPlanAtItsYearlyPrice() {
     when(planRepository.findByCode("PROFESSIONAL")).thenReturn(Optional.of(plan("PROFESSIONAL", "9999", null)));
 
-    QuoteResponse quote = pricing.quote(request("PROFESSIONAL"));
+    QuoteResponse quote = pricing.quote("shop-1", request("PROFESSIONAL"));
 
     assertThat(quote.getItems()).singleElement().satisfies(item -> {
       assertThat(item.getType()).isEqualTo("PLAN");
@@ -71,7 +79,7 @@ class OrderPricingServiceTest {
   void normalisesPlanCode() {
     when(planRepository.findByCode("STARTER")).thenReturn(Optional.of(plan("STARTER", "6999", null)));
 
-    assertThat(pricing.quote(request("  starter ")).getGrandTotal()).isEqualByComparingTo("6999");
+    assertThat(pricing.quote("shop-1", request("  starter ")).getGrandTotal()).isEqualByComparingTo("6999");
   }
 
   @Test
@@ -86,7 +94,7 @@ class OrderPricingServiceTest {
   void unknownPlanIsNotFound() {
     when(planRepository.findByCode("GOLD")).thenReturn(Optional.empty());
 
-    assertThatThrownBy(() -> pricing.quote(request("GOLD"))).isInstanceOf(ResourceNotFoundException.class);
+    assertThatThrownBy(() -> pricing.quote("shop-1", request("GOLD"))).isInstanceOf(ResourceNotFoundException.class);
   }
 
   @Test
@@ -95,24 +103,24 @@ class OrderPricingServiceTest {
     retired.setActive(false);
     when(planRepository.findByCode("STARTER")).thenReturn(Optional.of(retired));
 
-    assertThatThrownBy(() -> pricing.quote(request("STARTER"))).isInstanceOf(ResourceNotFoundException.class);
+    assertThatThrownBy(() -> pricing.quote("shop-1", request("STARTER"))).isInstanceOf(ResourceNotFoundException.class);
   }
 
   @Test
   void unpricedPlanIsNotForSale() {
     when(planRepository.findByCode("FREE")).thenReturn(Optional.of(plan("FREE", null, "0")));
 
-    assertThatThrownBy(() -> pricing.quote(request("FREE"))).isInstanceOf(ValidationException.class);
+    assertThatThrownBy(() -> pricing.quote("shop-1", request("FREE"))).isInstanceOf(ValidationException.class);
   }
 
   @Test
   void rejectsMissingPlanCodeAndNonYearlyDuration() {
-    assertThatThrownBy(() -> pricing.quote(request(" "))).isInstanceOf(ValidationException.class);
-    assertThatThrownBy(() -> pricing.quote(null)).isInstanceOf(ValidationException.class);
+    assertThatThrownBy(() -> pricing.quote("shop-1", request(" "))).isInstanceOf(ValidationException.class);
+    assertThatThrownBy(() -> pricing.quote("shop-1", null)).isInstanceOf(ValidationException.class);
 
     QuoteRequest twoYears = request("PROFESSIONAL");
     twoYears.setDurationMonths(24);
-    assertThatThrownBy(() -> pricing.quote(twoYears)).isInstanceOf(ValidationException.class);
+    assertThatThrownBy(() -> pricing.quote("shop-1", twoYears)).isInstanceOf(ValidationException.class);
     verify(planRepository, never()).findByCode(anyString());
   }
 
@@ -129,7 +137,7 @@ class OrderPricingServiceTest {
         new QuoteRequest.AddOnLine("ADDITIONAL_USER", 2),
         new QuoteRequest.AddOnLine("OCR_TOPUP_500", 1)));
 
-    QuoteResponse quote = pricing.quote(request);
+    QuoteResponse quote = pricing.quote("shop-1", request);
 
     assertThat(quote.getItems()).extracting(QuoteResponse.QuoteItem::getType)
         .containsExactly("PLAN", "ADDON", "ADDON", "OCR_TOPUP");
@@ -151,22 +159,22 @@ class OrderPricingServiceTest {
     when(addOnCatalogue.byCode(org.mockito.ArgumentMatchers.anyCollection())).thenReturn(Map.of(
         "ACCOUNTING", accounting, "MARKETING_MODULE", marketing, "SALARY_MODULE", hidden, "ADDITIONAL_USER", seats));
 
-    assertThatThrownBy(() -> pricing.quote(withAddOn("ACCOUNTING", 1)))
+    assertThatThrownBy(() -> pricing.quote("shop-1", withAddOn("ACCOUNTING", 1)))
         .isInstanceOf(ValidationException.class).hasMessageContaining("already includes");
-    assertThatThrownBy(() -> pricing.quote(withAddOn("MARKETING_MODULE", 2)))
+    assertThatThrownBy(() -> pricing.quote("shop-1", withAddOn("MARKETING_MODULE", 2)))
         .isInstanceOf(ValidationException.class).hasMessageContaining("once per order");
-    assertThatThrownBy(() -> pricing.quote(withAddOn("ADDITIONAL_USER", 6)))
+    assertThatThrownBy(() -> pricing.quote("shop-1", withAddOn("ADDITIONAL_USER", 6)))
         .isInstanceOf(ValidationException.class).hasMessageContaining("At most 5");
-    assertThatThrownBy(() -> pricing.quote(withAddOn("ADDITIONAL_USER", 0)))
+    assertThatThrownBy(() -> pricing.quote("shop-1", withAddOn("ADDITIONAL_USER", 0)))
         .isInstanceOf(ValidationException.class);
-    assertThatThrownBy(() -> pricing.quote(withAddOn("SALARY_MODULE", 1)))
+    assertThatThrownBy(() -> pricing.quote("shop-1", withAddOn("SALARY_MODULE", 1)))
         .isInstanceOf(ResourceNotFoundException.class);
-    assertThatThrownBy(() -> pricing.quote(withAddOn("NOPE", 1)))
+    assertThatThrownBy(() -> pricing.quote("shop-1", withAddOn("NOPE", 1)))
         .isInstanceOf(ResourceNotFoundException.class);
 
     QuoteRequest repeated = request("PROFESSIONAL");
     repeated.setAddOns(List.of(new QuoteRequest.AddOnLine("ADDITIONAL_USER", 1), new QuoteRequest.AddOnLine("additional_user", 1)));
-    assertThatThrownBy(() -> pricing.quote(repeated)).hasMessageContaining("more than once");
+    assertThatThrownBy(() -> pricing.quote("shop-1", repeated)).hasMessageContaining("more than once");
   }
 
   @Test
@@ -179,14 +187,111 @@ class OrderPricingServiceTest {
     QuoteRequest request = request("ENTERPRISE");
     request.setAddOns(List.of(new QuoteRequest.AddOnLine("ADDITIONAL_USER", 1)));
 
-    assertThatThrownBy(() -> pricing.quote(request)).hasMessageContaining("unlimited users");
+    assertThatThrownBy(() -> pricing.quote("shop-1", request)).hasMessageContaining("unlimited users");
   }
 
   @Test
-  void rejectsVouchersUntilTheyExist() {
-    QuoteRequest withVoucher = request("PROFESSIONAL");
-    withVoucher.setVoucherCodes(List.of("MKT-9F3K2P"));
-    assertThatThrownBy(() -> pricing.quote(withVoucher)).isInstanceOf(ValidationException.class);
+  void freeVoucherForAnAddOnNotInTheCartAddsAZeroLine() {
+    proWithMarketingAddOn();
+    when(voucherService.requireUsable("MKT-9F3K2P", "shop-1")).thenReturn(voucher("MKT-9F3K2P", VoucherType.FREE_ADDON, null));
+    QuoteRequest request = request("PROFESSIONAL");
+    request.setVoucherCodes(List.of("mkt-9f3k2p"));
+
+    QuoteResponse quote = pricing.quote("shop-1", request);
+
+    assertThat(quote.getItems()).hasSize(2);
+    QuoteResponse.QuoteItem line = quote.getItems().get(1);
+    assertThat(line.getItemSource()).isEqualTo("VOUCHER");
+    assertThat(line.getVoucherCode()).isEqualTo("MKT-9F3K2P");
+    assertThat(line.getDiscount()).isEqualByComparingTo("1999");
+    assertThat(line.getLineTotal()).isEqualByComparingTo("0");
+    assertThat(quote.getSubtotal()).isEqualByComparingTo("11998");
+    assertThat(quote.getDiscountTotal()).isEqualByComparingTo("1999");
+    assertThat(quote.getGrandTotal()).isEqualByComparingTo("9999");
+  }
+
+  @Test
+  void freeVoucherForASelectedAddOnZeroesThatLineAndKeepsItManual() {
+    proWithMarketingAddOn();
+    when(voucherService.requireUsable("MKT-9F3K2P", "shop-1")).thenReturn(voucher("MKT-9F3K2P", VoucherType.FREE_ADDON, null));
+    QuoteRequest request = withAddOn("MARKETING_MODULE", 1);
+    request.setVoucherCodes(List.of("MKT-9F3K2P"));
+
+    QuoteResponse quote = pricing.quote("shop-1", request);
+
+    assertThat(quote.getItems()).hasSize(2);
+    assertThat(quote.getItems().get(1).getItemSource()).isEqualTo("MANUAL");
+    assertThat(quote.getItems().get(1).getLineTotal()).isEqualByComparingTo("0");
+    assertThat(quote.getGrandTotal()).isEqualByComparingTo("9999");
+  }
+
+  @Test
+  void percentAndFlatVouchersDiscountTheLine() {
+    proWithMarketingAddOn();
+    when(voucherService.requireUsable("MKT-HALF", "shop-1"))
+        .thenReturn(voucher("MKT-HALF", VoucherType.PERCENT_OFF, new BigDecimal("50")));
+    QuoteRequest request = request("PROFESSIONAL");
+    request.setVoucherCodes(List.of("MKT-HALF"));
+
+    assertThat(pricing.quote("shop-1", request).getGrandTotal()).isEqualByComparingTo("10998.50");
+
+    when(voucherService.requireUsable("MKT-FLAT", "shop-1"))
+        .thenReturn(voucher("MKT-FLAT", VoucherType.FLAT_OFF, new BigDecimal("5000")));
+    request.setVoucherCodes(List.of("MKT-FLAT"));
+    assertThat(pricing.quote("shop-1", request).getGrandTotal()).isEqualByComparingTo("9999");
+  }
+
+  @Test
+  void voucherRejectionsAreTyped() {
+    Plan pro = plan("PROFESSIONAL", "9999", null);
+    pro.setFeatures(Set.of(PlanFeature.MARKETING));
+    when(planRepository.findByCode("PROFESSIONAL")).thenReturn(Optional.of(pro));
+    when(addOnCatalogue.byCode(List.of("MARKETING_MODULE"))).thenReturn(Map.of("MARKETING_MODULE",
+        addOn("MARKETING_MODULE", "1999", AddOnGrantType.FEATURE, PlanFeature.MARKETING, false, null)));
+    when(voucherService.requireUsable("MKT-9F3K2P", "shop-1")).thenReturn(voucher("MKT-9F3K2P", VoucherType.FREE_ADDON, null));
+    QuoteRequest request = request("PROFESSIONAL");
+    request.setVoucherCodes(List.of("MKT-9F3K2P"));
+
+    assertThatThrownBy(() -> pricing.quote("shop-1", request))
+        .isInstanceOfSatisfying(VoucherRejectedException.class,
+            e -> assertThat(e.getReason()).isEqualTo(VoucherRejection.NOT_APPLICABLE_TO_CART));
+  }
+
+  @Test
+  void oneVoucherPerLine() {
+    proWithMarketingAddOn();
+    when(voucherService.requireUsable("MKT-A", "shop-1")).thenReturn(voucher("MKT-A", VoucherType.FREE_ADDON, null));
+    when(voucherService.requireUsable("MKT-B", "shop-1")).thenReturn(voucher("MKT-B", VoucherType.FREE_ADDON, null));
+    QuoteRequest request = request("PROFESSIONAL");
+    request.setVoucherCodes(List.of("MKT-A", "MKT-B"));
+
+    assertThatThrownBy(() -> pricing.quote("shop-1", request))
+        .isInstanceOfSatisfying(VoucherRejectedException.class,
+            e -> assertThat(e.getReason()).isEqualTo(VoucherRejection.NOT_APPLICABLE_TO_CART));
+  }
+
+  @Test
+  void vouchersNeedAShopAndDistinctCodes() {
+    when(planRepository.findByCode("PROFESSIONAL")).thenReturn(Optional.of(plan("PROFESSIONAL", "9999", null)));
+    QuoteRequest request = request("PROFESSIONAL");
+    request.setVoucherCodes(List.of("MKT-A"));
+    assertThatThrownBy(() -> pricing.quote(null, request)).isInstanceOf(ValidationException.class);
+
+    request.setVoucherCodes(List.of("MKT-A", "mkt-a"));
+    assertThatThrownBy(() -> pricing.quote("shop-1", request)).hasMessageContaining("more than once");
+  }
+
+  private void proWithMarketingAddOn() {
+    when(planRepository.findByCode("PROFESSIONAL")).thenReturn(Optional.of(plan("PROFESSIONAL", "9999", null)));
+    AddOn marketing = addOn("MARKETING_MODULE", "1999", AddOnGrantType.FEATURE, PlanFeature.MARKETING, false, null);
+    org.mockito.Mockito.lenient().when(addOnCatalogue.byCode(List.of("MARKETING_MODULE")))
+        .thenReturn(Map.of("MARKETING_MODULE", marketing));
+    org.mockito.Mockito.lenient().when(addOnCatalogue.byCode(Set.of("MARKETING_MODULE")))
+        .thenReturn(Map.of("MARKETING_MODULE", marketing));
+  }
+
+  private static AddOnVoucher voucher(String code, VoucherType type, BigDecimal value) {
+    return AddOnVoucher.builder().code(code).addOnCode("MARKETING_MODULE").type(type).value(value).quantity(1).build();
   }
 
   private static QuoteRequest withAddOn(String code, int quantity) {
@@ -207,7 +312,7 @@ class OrderPricingServiceTest {
     QuoteRequest request = request("PROFESSIONAL");
     request.setApplyWalletCredit(true);
 
-    QuoteResponse quote = pricing.quote(request);
+    QuoteResponse quote = pricing.quote("shop-1", request);
 
     assertThat(quote.getWalletCredit()).isEqualByComparingTo("0");
     assertThat(quote.getGrandTotal()).isEqualByComparingTo("9999");
@@ -217,7 +322,7 @@ class OrderPricingServiceTest {
   void quotingOnlyReads() {
     when(planRepository.findByCode("PROFESSIONAL")).thenReturn(Optional.of(plan("PROFESSIONAL", "9999", null)));
 
-    pricing.quote(request("PROFESSIONAL"));
+    pricing.quote("shop-1", request("PROFESSIONAL"));
 
     verify(planRepository).findByCode("PROFESSIONAL");
     verifyNoMoreInteractions(planRepository);

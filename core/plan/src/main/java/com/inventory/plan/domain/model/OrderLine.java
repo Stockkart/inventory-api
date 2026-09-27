@@ -27,4 +27,6 @@ public class OrderLine {
   private BigDecimal lineTotal;
   /** MANUAL, or VOUCHER when a voucher added the line. */
   private String itemSource;
+  /** Voucher that added or discounted this line; one voucher per line. */
+  private String voucherCode;
 }

@@ -4,31 +4,31 @@ import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.metrics.annotation.Latency;
 import com.inventory.metrics.annotation.RecordRequestRate;
 import com.inventory.metrics.annotation.RecordStatusCodes;
-import com.inventory.plan.rest.dto.request.QuoteRequest;
-import com.inventory.plan.rest.dto.response.QuoteResponse;
-import com.inventory.plan.service.OrderPricingService;
+import com.inventory.plan.rest.dto.response.VoucherCheckResponse;
+import com.inventory.plan.service.voucher.VoucherService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/v1/plans/orders")
+@RequestMapping("/api/v1/plans/vouchers")
 @Latency(module = "plan")
 @RecordRequestRate(module = "plan")
 @RecordStatusCodes(module = "plan")
-public class PlanOrderController {
+public class VoucherController {
 
   @Autowired
-  private OrderPricingService orderPricingService;
+  private VoucherService voucherService;
 
-  @PostMapping("/quote")
-  public ResponseEntity<ApiResponse<QuoteResponse>> quote(
-      @RequestBody QuoteRequest request, HttpServletRequest httpRequest) {
+  /** Lightweight "is this code real" check. Consumes nothing; the quote prices the cart. */
+  @GetMapping("/validate")
+  public ResponseEntity<ApiResponse<VoucherCheckResponse>> validate(
+      @RequestParam String code, HttpServletRequest httpRequest) {
     String shopId = (String) httpRequest.getAttribute("shopId");
-    return ResponseEntity.ok(ApiResponse.success(orderPricingService.quote(shopId, request)));
+    return ResponseEntity.ok(ApiResponse.success(voucherService.check(code, shopId)));
   }
 }
