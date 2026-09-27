@@ -2,7 +2,9 @@ package com.inventory.plan.service;
 
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.plan.domain.model.OrderLine;
 import com.inventory.plan.domain.model.Plan;
+import com.inventory.plan.domain.model.PricedCart;
 import com.inventory.plan.domain.repository.PlanRepository;
 import com.inventory.plan.rest.dto.request.QuoteRequest;
 import com.inventory.plan.rest.dto.response.QuoteResponse;
@@ -31,24 +33,26 @@ public class OrderPricingService {
     if (request == null || !StringUtils.hasText(request.getPlanCode())) {
       throw new ValidationException("planCode is required");
     }
-    int durationMonths = resolveDuration(request.getDurationMonths());
-    if (!CollectionUtils.isEmpty(request.getAddOns())) {
-      throw new ValidationException("Add-ons are not available yet");
-    }
-    if (!CollectionUtils.isEmpty(request.getVoucherCodes())) {
-      throw new ValidationException("Vouchers are not available yet");
-    }
-
+    checkCart(request);
     String planCode = request.getPlanCode().trim().toUpperCase(Locale.ROOT);
     Plan plan = planRepository.findByCode(planCode)
         .filter(EffectivePlanResolver::isActive)
         .orElseThrow(() -> new ResourceNotFoundException("Plan", "code", planCode));
+    return toQuote(price(plan, request));
+  }
+
+  /**
+   * Prices a cart for an already-resolved plan. Checkout calls this with the plan it will sell, so
+   * the charge is exactly what a quote for the same cart shows.
+   */
+  public PricedCart price(Plan plan, QuoteRequest request) {
+    int durationMonths = checkCart(request);
 
     BigDecimal unitPrice = planPrice(plan);
     if (unitPrice == null || unitPrice.signum() <= 0) {
-      throw new ValidationException("Plan " + plan.getCode() + " is not for sale");
+      throw new ValidationException("Plan " + plan.getPlanName() + " is not for sale");
     }
-    QuoteResponse.QuoteItem planLine = QuoteResponse.QuoteItem.builder()
+    OrderLine planLine = OrderLine.builder()
         .type(PricingConstants.ITEM_TYPE_PLAN)
         .code(plan.getCode())
         .name(plan.getPlanName())
@@ -59,31 +63,60 @@ public class OrderPricingService {
         .itemSource(PricingConstants.ITEM_SOURCE_MANUAL)
         .build();
 
-    List<QuoteResponse.QuoteItem> items = List.of(planLine);
-    BigDecimal subtotal = sum(items.stream().map(QuoteResponse.QuoteItem::getLineTotal).toList());
-    BigDecimal discountTotal = sum(items.stream().map(QuoteResponse.QuoteItem::getDiscount).toList());
+    List<OrderLine> items = List.of(planLine);
+    BigDecimal subtotal = sum(items.stream().map(OrderLine::getLineTotal).toList());
+    BigDecimal discountTotal = sum(items.stream().map(OrderLine::getDiscount).toList());
     // No wallet exists yet; applyWalletCredit is accepted so the request shape is final.
     BigDecimal walletCredit = BigDecimal.ZERO;
+    return new PricedCart(plan, items, subtotal, discountTotal, walletCredit,
+        subtotal.subtract(discountTotal).subtract(walletCredit), durationMonths);
+  }
 
+  /** Yearly price of a plan. Checkout charges exactly this, so a quote and its checkout agree. */
+  public BigDecimal planPrice(Plan plan) {
+    return plan.getArcPrice() != null ? plan.getArcPrice() : plan.getPrice();
+  }
+
+  private static QuoteResponse toQuote(PricedCart cart) {
     Instant now = Instant.now();
     return QuoteResponse.builder()
-        .items(items)
-        .subtotal(subtotal)
-        .discountTotal(discountTotal)
-        .walletCredit(walletCredit)
+        .items(cart.items().stream().map(OrderPricingService::toQuoteItem).toList())
+        .subtotal(cart.subtotal())
+        .discountTotal(cart.discountTotal())
+        .walletCredit(cart.walletCredit())
         .taxInclusive(true)
-        .grandTotal(subtotal.subtract(discountTotal).subtract(walletCredit))
+        .grandTotal(cart.grandTotal())
         .currency(PlanPaymentConstants.CURRENCY_INR)
-        .durationMonths(durationMonths)
+        .durationMonths(cart.durationMonths())
         .pricingVersion(PricingConstants.PRICING_VERSION)
         .quotedAt(now)
         .expiresAt(now.plus(PricingConstants.QUOTE_TTL))
         .build();
   }
 
-  /** Yearly price of a plan. Checkout charges exactly this, so a quote and its checkout agree. */
-  public BigDecimal planPrice(Plan plan) {
-    return plan.getArcPrice() != null ? plan.getArcPrice() : plan.getPrice();
+  static QuoteResponse.QuoteItem toQuoteItem(OrderLine line) {
+    return QuoteResponse.QuoteItem.builder()
+        .type(line.getType())
+        .code(line.getCode())
+        .name(line.getName())
+        .quantity(line.getQuantity())
+        .unitPrice(line.getUnitPrice())
+        .discount(line.getDiscount())
+        .lineTotal(line.getLineTotal())
+        .itemSource(line.getItemSource())
+        .build();
+  }
+
+  /** Rejects carts that cannot be priced whatever the plan; returns the duration. */
+  private static int checkCart(QuoteRequest request) {
+    int durationMonths = resolveDuration(request.getDurationMonths());
+    if (!CollectionUtils.isEmpty(request.getAddOns())) {
+      throw new ValidationException("Add-ons are not available yet");
+    }
+    if (!CollectionUtils.isEmpty(request.getVoucherCodes())) {
+      throw new ValidationException("Vouchers are not available yet");
+    }
+    return durationMonths;
   }
 
   private static int resolveDuration(Integer requested) {

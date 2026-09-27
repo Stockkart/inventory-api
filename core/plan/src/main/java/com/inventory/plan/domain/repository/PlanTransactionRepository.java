@@ -8,4 +8,6 @@ import org.springframework.data.mongodb.repository.MongoRepository;
 public interface PlanTransactionRepository extends MongoRepository<PlanTransaction, String> {
 
   List<PlanTransaction> findByShopId(String shopId, Sort sort);
+
+  boolean existsByPaymentOrderId(String paymentOrderId);
 }

@@ -9,6 +9,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 
 /**
  * Records plan payment transactions when a shop subscribes to a plan.
@@ -35,4 +36,13 @@ public class PlanTransaction {
   private String provider;
   private String providerPaymentId;
   private String providerOrderId;
+  /** Catalogue code of the plan bought; null for legacy plans. */
+  private String planCode;
+  /** Pricing snapshot copied from the order. */
+  private List<OrderLine> items;
+  private BigDecimal subtotal;
+  private BigDecimal discountTotal;
+  private BigDecimal walletCredit;
+  private Instant termStartsAt;
+  private Instant termEndsAt;
 }

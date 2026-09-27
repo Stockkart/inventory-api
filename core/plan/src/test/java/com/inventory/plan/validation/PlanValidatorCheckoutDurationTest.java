@@ -15,16 +15,34 @@ class PlanValidatorCheckoutDurationTest {
 
   @Test
   void acceptsYearlyAndOmittedDuration() {
-    assertThatCode(() -> validator.validateCreateCheckoutRequest("shop-1", request(12)))
+    assertThatCode(() -> validator.validateCreateCheckoutRequest("shop-1", request(12), null))
         .doesNotThrowAnyException();
-    assertThatCode(() -> validator.validateCreateCheckoutRequest("shop-1", request(null)))
+    assertThatCode(() -> validator.validateCreateCheckoutRequest("shop-1", request(null), null))
         .doesNotThrowAnyException();
   }
 
   @ParameterizedTest
   @ValueSource(ints = {0, 1, 6, 24, 120})
   void rejectsDurationsTheAnnualPriceDoesNotCover(int months) {
-    assertThatThrownBy(() -> validator.validateCreateCheckoutRequest("shop-1", request(months)))
+    assertThatThrownBy(() -> validator.validateCreateCheckoutRequest("shop-1", request(months), null))
+        .isInstanceOf(ValidationException.class);
+  }
+
+  @Test
+  void acceptsPlanCodeInsteadOfPlanId() {
+    CreatePlanCheckoutRequest request = new CreatePlanCheckoutRequest();
+    request.setPlanCode("GROWTH");
+    assertThatCode(() -> validator.validateCreateCheckoutRequest("shop-1", request, "key-1"))
+        .doesNotThrowAnyException();
+  }
+
+  @Test
+  void rejectsMissingPlanAndBadIdempotencyKeys() {
+    assertThatThrownBy(() -> validator.validateCreateCheckoutRequest("shop-1", new CreatePlanCheckoutRequest(), null))
+        .isInstanceOf(ValidationException.class);
+    assertThatThrownBy(() -> validator.validateCreateCheckoutRequest("shop-1", request(null), " "))
+        .isInstanceOf(ValidationException.class);
+    assertThatThrownBy(() -> validator.validateCreateCheckoutRequest("shop-1", request(null), "k".repeat(101)))
         .isInstanceOf(ValidationException.class);
   }
 

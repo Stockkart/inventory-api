@@ -63,12 +63,18 @@ public class PlanValidator {
     }
   }
 
-  public void validateCreateCheckoutRequest(String shopId, CreatePlanCheckoutRequest request) {
+  public void validateCreateCheckoutRequest(String shopId, CreatePlanCheckoutRequest request, String idempotencyKey) {
     if (!StringUtils.hasText(shopId)) {
       throw new ValidationException("Shop ID is required");
     }
-    if (request == null || !StringUtils.hasText(request.getPlanId())) {
-      throw new ValidationException("Plan ID is required");
+    if (request == null
+        || (!StringUtils.hasText(request.getPlanCode()) && !StringUtils.hasText(request.getPlanId()))) {
+      throw new ValidationException("Plan code or plan ID is required");
+    }
+    if (idempotencyKey != null
+        && (idempotencyKey.isBlank() || idempotencyKey.length() > PlanPaymentConstants.MAX_IDEMPOTENCY_KEY_LENGTH)) {
+      throw new ValidationException(PlanPaymentConstants.IDEMPOTENCY_KEY_HEADER + " must be 1 to "
+          + PlanPaymentConstants.MAX_IDEMPOTENCY_KEY_LENGTH + " characters");
     }
     // Checkout charges one annual price, so any other duration would grant time that wasn't paid for.
     if (request.getDurationMonths() != null
