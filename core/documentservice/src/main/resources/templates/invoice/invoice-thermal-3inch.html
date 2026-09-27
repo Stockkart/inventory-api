@@ -4,23 +4,41 @@
   <meta charset="UTF-8"/>
   <title th:text="${isEstimate ? 'Estimate' : 'Tax Invoice'}">Tax Invoice</title>
   <style>
-    /* ~75mm thermal receipt — bold type for legible thermal output */
+    /* 72mm thermal receipt - bold type for legible thermal output.
+       An 80mm roll prints 72mm wide, which is the page Chrome offers for these
+       machines. Sized at 75mm the sheet was three millimetres wider than the paper
+       and the printer dropped the overhang, taking the right of the Amount column
+       with it. */
     @page {
-      size: 75mm 600mm;
-      margin: 2mm 2.5mm;
+      size: 72mm 600mm;
+      margin: 2mm 1.5mm;
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      font-family: "Courier New", Courier, monospace;
-      font-size: 9px;
+      /* Proportional sans, the way a till receipt actually reads. Courier made the roll
+         look like a code listing and cost width no thermal receipt can spare. */
+      font-family: Arial, Helvetica, "Liberation Sans", sans-serif;
+      font-size: 10px;
+      /* Chrome rasterises this page and sends it as an image, so the printer's own
+         Font A never runs. A 400-weight stem at this size is about one dot on a 203dpi
+         head, and a thermal head under-burns single-dot lines - the address and item
+         rows came off the roll faint and broken while the bold totals stayed crisp.
+         700 puts two dots behind every stroke. */
       font-weight: 700;
       color: #000;
-      line-height: 1.3;
-      width: 70mm;
+      line-height: 1.35;
+      width: 69mm;
     }
-    body, body * {
-      font-weight: 700 !important;
+    /* Kept so these still carry weight if the body rule is ever lightened again. */
+    .shop-name,
+    .col-head,
+    .label,
+    .grand,
+    .item-title,
+    strong {
+      font-weight: 700;
     }
+
     .center { text-align: center; }
     .right { text-align: right; }
     .shop-name {
@@ -115,6 +133,14 @@
       font-size: 8px;
       text-align: center;
     }
+
+    /* Who made the bill, set to read as the amount-in-words line does: same size,
+       same centring, so the foot of the slip is one voice rather than two. */
+    .maker-credit {
+      margin-top: 4px;
+      font-size: 8px;
+      text-align: center;
+    }
   </style>
 </head>
 <body>
@@ -148,6 +174,10 @@
       <span th:text="${invoiceDate}">DD-MM-YYYY</span>
       <span th:text="${invoiceTime}">TIME</span>
     </div>
+  </div>
+
+  <div class="row meta-row" th:if="${showPaymentMethod and paymentMethod != null && !paymentMethod.isEmpty()}">
+    <div class="left">Pay: <span th:text="${paymentMethod}">CASH</span></div>
   </div>
 
   <!-- Bill to -->
@@ -265,6 +295,8 @@
     <div th:if="${showAmountInWords && amountInWords != null && !amountInWords.isEmpty()}" th:text="${amountInWords}">Amount in words</div>
     <div th:if="${footerNote != null && !footerNote.isEmpty()}" th:text="${footerNote}">Thank you</div>
   </div>
+
+  <div class="maker-credit" th:if="${!isEstimate}">stockkart.co.in | for all kind of shops | call: 9828606899</div>
 
 </body>
 </html>
