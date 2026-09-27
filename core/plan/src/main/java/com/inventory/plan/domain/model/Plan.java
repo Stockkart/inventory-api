@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.Field;
 
 import java.math.BigDecimal;
 import java.util.Set;
@@ -52,7 +53,11 @@ public class Plan {
   private Boolean active;
   /** OCR invoices included per month. Null = not metered. */
   private Integer ocrLimit;
-  /** Gated capabilities this plan includes. */
+  /**
+   * Gated capabilities this plan includes. Stored as "entitlements" because some environments hold
+   * rows whose "features" field is a list of display objects.
+   */
+  @Field("entitlements")
   private Set<PlanFeature> features;
   /** Marketing highlight such as MOST_POPULAR. Null = no badge. */
   private String badge;
