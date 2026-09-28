@@ -1,9 +1,9 @@
 package com.inventory.app.config;
 
+import com.inventory.app.interceptor.AdminAuthenticationInterceptor;
 import com.inventory.app.interceptor.AuthenticationInterceptor;
 import com.inventory.app.interceptor.EntitlementInterceptor;
 import com.inventory.app.interceptor.PlanExpiryInterceptor;
-import com.inventory.app.interceptor.PlatformRoleInterceptor;
 import com.inventory.app.interceptor.RbacModuleInterceptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -18,6 +18,10 @@ public class CorsConfig implements WebMvcConfigurer {
   @Value("${client.url}")
   private String crossOriginUrl;
 
+  /** Origin of the admin app; admin paths accept only this origin. Empty blocks cross-origin admin calls. */
+  @Value("${admin.client.url:}")
+  private String adminOriginUrl;
+
   @Autowired
   private AuthenticationInterceptor authenticationInterceptor;
 
@@ -28,13 +32,23 @@ public class CorsConfig implements WebMvcConfigurer {
   private RbacModuleInterceptor rbacModuleInterceptor;
 
   @Autowired
-  private PlatformRoleInterceptor platformRoleInterceptor;
+  private AdminAuthenticationInterceptor adminAuthenticationInterceptor;
 
   @Autowired
   private EntitlementInterceptor entitlementInterceptor;
 
   @Override
   public void addCorsMappings(CorsRegistry registry) {
+    // Registered first: the first matching mapping wins.
+    for (String adminPath : AdminAuthenticationInterceptor.ADMIN_PATH_PATTERNS) {
+      registry.addMapping(adminPath)
+          .allowedOrigins(adminOriginUrl.isBlank() ? new String[0] : new String[] {adminOriginUrl})
+          .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
+          .allowedHeaders("*")
+          .allowCredentials(true)
+          .maxAge(3600);
+    }
+
     registry.addMapping("/api/**")
         .allowedOrigins(crossOriginUrl)
         .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
@@ -59,8 +73,13 @@ public class CorsConfig implements WebMvcConfigurer {
 
   @Override
   public void addInterceptors(InterceptorRegistry registry) {
+    registry.addInterceptor(adminAuthenticationInterceptor)
+        .addPathPatterns(AdminAuthenticationInterceptor.ADMIN_PATH_PATTERNS)
+        .excludePathPatterns(AdminAuthenticationInterceptor.LOGIN_PATH);
+
     registry.addInterceptor(authenticationInterceptor)
         .addPathPatterns("/api/**", "/admin/**")
+        .excludePathPatterns(AdminAuthenticationInterceptor.ADMIN_PATH_PATTERNS)
         .excludePathPatterns(
             "/api/v1/auth/login",
             "/api/v1/auth/signup",
@@ -73,12 +92,9 @@ public class CorsConfig implements WebMvcConfigurer {
             "/m/**" // Exclude mobile upload endpoints from authentication
         );
 
-    registry.addInterceptor(platformRoleInterceptor)
-        .addPathPatterns(PlatformRoleInterceptor.ADMIN_PATH_PATTERNS);
-
     registry.addInterceptor(rbacModuleInterceptor)
         .addPathPatterns("/api/**")
-        .excludePathPatterns(PlatformRoleInterceptor.ADMIN_PATH_PATTERNS)
+        .excludePathPatterns(AdminAuthenticationInterceptor.ADMIN_PATH_PATTERNS)
         .excludePathPatterns(
             "/api/v1/auth/login",
             "/api/v1/auth/signup",
@@ -93,7 +109,7 @@ public class CorsConfig implements WebMvcConfigurer {
 
     registry.addInterceptor(planExpiryInterceptor)
         .addPathPatterns("/api/**")
-        .excludePathPatterns(PlatformRoleInterceptor.ADMIN_PATH_PATTERNS)
+        .excludePathPatterns(AdminAuthenticationInterceptor.ADMIN_PATH_PATTERNS)
         .excludePathPatterns(
             "/api/v1/auth/login",
             "/api/v1/auth/signup",
@@ -108,7 +124,7 @@ public class CorsConfig implements WebMvcConfigurer {
 
     registry.addInterceptor(entitlementInterceptor)
         .addPathPatterns("/api/**")
-        .excludePathPatterns(PlatformRoleInterceptor.ADMIN_PATH_PATTERNS);
+        .excludePathPatterns(AdminAuthenticationInterceptor.ADMIN_PATH_PATTERNS);
   }
 }
 

@@ -10,7 +10,6 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 
 @Data
 @NoArgsConstructor
@@ -36,12 +35,6 @@ public class UserAccount {
   private String passwordResetToken;
   /** Expiry time for password reset token */
   private Instant passwordResetTokenExpiresAt;
-  /** Platform-wide roles; null or empty for ordinary shop users. */
-  private Set<PlatformRole> platformRoles;
-
-  public boolean hasPlatformRole(PlatformRole role) {
-    return platformRoles != null && platformRoles.contains(role);
-  }
 
   public List<UserToken> getTokens() {
     if (tokens == null) {

@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Platform admins only: PlatformRoleInterceptor guards /api/v1/admin/**. */
+/** Admins only: AdminAuthenticationInterceptor guards /api/v1/admin/**. */
 @RestController
 @RequestMapping("/api/v1/admin/plan-orders")
 @Latency(module = "plan")
@@ -37,6 +37,6 @@ public class PlanOrderAdminController {
       @PathVariable String id, @RequestBody PlanOrderRefundRequest request, HttpServletRequest httpRequest) {
     boolean issueGatewayRefund = request.getIssueGatewayRefund() == null || request.getIssueGatewayRefund();
     return ResponseEntity.ok(ApiResponse.success(mapper.toResponse(orderRefundService.refundByAdmin(
-        id, request.getReason(), issueGatewayRefund, (String) httpRequest.getAttribute("userId")))));
+        id, request.getReason(), issueGatewayRefund, (String) httpRequest.getAttribute("adminId")))));
   }
 }

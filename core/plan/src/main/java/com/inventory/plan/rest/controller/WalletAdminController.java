@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Platform admins only: PlatformRoleInterceptor guards /api/v1/admin/**. */
+/** Admins only: AdminAuthenticationInterceptor guards /api/v1/admin/**. */
 @RestController
 @RequestMapping("/api/v1/admin/wallets")
 @Latency(module = "plan")
@@ -37,6 +37,6 @@ public class WalletAdminController {
   public ResponseEntity<ApiResponse<WalletResponse>> adjust(
       @PathVariable String shopId, @RequestBody WalletAdjustmentRequest request, HttpServletRequest httpRequest) {
     return ResponseEntity.ok(ApiResponse.success(
-        adminService.adjustWallet(shopId, request, (String) httpRequest.getAttribute("userId"))));
+        adminService.adjustWallet(shopId, request, (String) httpRequest.getAttribute("adminId"))));
   }
 }
