@@ -43,8 +43,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 /**
- * Estimate documents: printable quotes that do not soft-reserve stock and convert one-way into a
- * SALE cart for checkout.
+ * Estimate documents: printable quotes that soft-reserve stock while OPEN, lock for print, and
+ * convert one-way into a SALE cart when lines are invoice-eligible.
  */
 @Service
 @Slf4j
@@ -60,6 +60,7 @@ public class EstimateService {
   private final CustomerService customerService;
   private final InvoiceSequenceService invoiceSequenceService;
   private final MongoTemplate mongoTemplate;
+  private final com.inventory.product.service.estimate.EstimateInventoryPolicy estimateInventoryPolicy;
 
   @Transactional(readOnly = true)
   public EstimateListResponse listEstimates(String shopId, EstimateState stateFilter) {
@@ -192,20 +193,29 @@ public class EstimateService {
     log.info("Discarded estimate {} for shop {}", purchaseId, shopId);
   }
 
+  /** Finalize an OPEN estimate for print. Locked estimates are no longer editable. */
+  @Transactional
+  public AddToCartResponse lockEstimate(String purchaseId, String userId, String shopId) {
+    Purchase purchase = loadEstimate(purchaseId, shopId);
+    estimateInventoryPolicy.assertLockable(purchase);
+    purchase.setEstimateState(EstimateState.LOCKED);
+    purchase.setLockedAt(Instant.now());
+    purchase.setLockedByUserId(userId);
+    purchase.setUpdatedAt(Instant.now());
+    purchase = purchaseRepository.save(purchase);
+    log.info("Locked estimate {} ({}) for shop {}", purchase.getId(), purchase.getEstimateNo(), shopId);
+    return purchaseMapper.toAddToCartResponse(purchase);
+  }
+
   /**
    * Locks the estimate as CONVERTED and clones lines into a new SALE quotation (CREATED).
    * Soft-reservation moves with the sale cart; the converted estimate no longer reserves.
+   * Allowed from OPEN or LOCKED when no estimate-only (BASIC) lines are present.
    */
   @Transactional
   public ConvertEstimateResponse convertToSale(String estimateId, String userId, String shopId) {
     Purchase estimate = loadEstimate(estimateId, shopId);
-    if (estimate.getEstimateState() != EstimateState.OPEN) {
-      throw new ValidationException(
-          "Only open estimates can be converted (state: " + estimate.getEstimateState() + ")");
-    }
-    if (estimate.getItems() == null || estimate.getItems().isEmpty()) {
-      throw new ValidationException("Cannot convert an empty estimate");
-    }
+    estimateInventoryPolicy.assertConvertibleToSale(estimate);
 
     long openSales =
         purchaseRepository
@@ -245,10 +255,7 @@ public class EstimateService {
     if (!DocumentTypes.isEstimate(purchase)) {
       return;
     }
-    if (purchase.getEstimateState() != EstimateState.OPEN) {
-      throw new ValidationException(
-          "Cannot modify estimate in state " + purchase.getEstimateState());
-    }
+    estimateInventoryPolicy.assertEditable(purchase);
   }
 
   private Purchase cloneAsSaleCart(Purchase estimate, String userId) {

@@ -210,7 +210,8 @@ public class QuotationService {
 
   /**
    * Sum of base quantities soft-reserved in other open documents for the shop: CREATED sale
-   * quotations and OPEN estimates. Converted/discarded estimates and menu lines do not reserve.
+   * quotations and OPEN/LOCKED estimates. Converted/discarded estimates and menu lines do not
+   * reserve.
    */
   @Transactional(readOnly = true)
   public Map<String, Integer> quotedBaseQuantitiesByLot(String shopId, String excludePurchaseId) {
@@ -221,9 +222,11 @@ public class QuotationService {
       if (excludePurchaseId != null && excludePurchaseId.equals(purchase.getId())) {
         continue;
       }
-      if (DocumentTypes.isEstimate(purchase)
-          && purchase.getEstimateState() != EstimateState.OPEN) {
-        continue;
+      if (DocumentTypes.isEstimate(purchase)) {
+        EstimateState state = purchase.getEstimateState();
+        if (state != EstimateState.OPEN && state != EstimateState.LOCKED) {
+          continue;
+        }
       }
       if (purchase.getItems() == null) {
         continue;

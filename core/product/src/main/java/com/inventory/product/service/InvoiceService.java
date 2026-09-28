@@ -6,6 +6,7 @@ import com.inventory.documentservice.rest.dto.GenerateInvoiceRequest;
 import com.inventory.documentservice.rest.dto.InvoiceItem;
 import com.inventory.documentservice.service.DocumentService;
 import com.inventory.product.domain.model.Inventory;
+import com.inventory.product.domain.model.DocumentTypes;
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
@@ -15,6 +16,7 @@ import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.PurchaseRepository;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.pluginengine.VerticalFieldsReader;
+import com.inventory.product.service.estimate.EstimateInventoryPolicy;
 import com.inventory.product.service.vertical.InventoryVerticalExtensionHandler;
 import com.inventory.product.utils.constants.ProductMetricsConstants;
 import com.inventory.product.utils.AmountToWordsConverter;
@@ -67,6 +69,9 @@ public class InvoiceService {
   @Autowired
   private InvoiceSettingsService invoiceSettingsService;
 
+  @Autowired
+  private EstimateInventoryPolicy estimateInventoryPolicy;
+
   @Autowired(required = false)
   private com.inventory.metrics.MetricsWrapper metrics;
 
@@ -87,6 +92,10 @@ public class InvoiceService {
 
     if (!shopId.equals(purchase.getShopId())) {
       throw new ValidationException("Purchase does not belong to the specified shop");
+    }
+
+    if (DocumentTypes.isEstimate(purchase)) {
+      estimateInventoryPolicy.assertPrintable(purchase);
     }
 
     Shop shop = shopRepository.findById(purchase.getShopId())
