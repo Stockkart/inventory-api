@@ -75,22 +75,24 @@ While `mustChangePassword` is true, every admin endpoint except `me`, `change-pa
 | `GET /` | All admins, newest first. Never includes password or lockout fields |
 | `POST / {email, name}` | Creates an admin with a generated temporary password (16 characters). Returns the admin and `temporaryPassword` once. Duplicate email: 400 |
 | `PATCH /{id}/active {active, reason}` | Cannot disable yourself or the last active admin. Disabling deletes that admin's sessions |
-| `POST /{id}/reset-password {reason}` | New temporary password returned once; sets `mustChangePassword`; deletes that admin's sessions; clears lockout |
+| `POST /{id}/reset-password {reason}` | New temporary password returned once; sets `mustChangePassword`; deletes that admin's sessions; clears lockout. Not allowed on yourself (use change-password) |
 
 Every create, enable/disable and reset writes an audit entry (`targetType` `ADMIN_USER`,
 `source` `ADMIN_UI`). Audit entries never contain passwords or hashes.
 
 ### Request authentication
 
-- New `AdminAuthenticationInterceptor` on `/api/v1/admin/**`, excluding
+- New `AdminAuthenticationInterceptor` on `/api/v1/admin/**` and the shop-approval endpoint
+  `/api/v1/shops/admin/**`, excluding
   `/api/v1/admin/auth/login`. It reads the bearer token, looks up the session by hash, rejects
   missing, expired or unknown sessions and inactive admins with 401, applies the
   password-change rule, and sets request attributes `adminId` and `adminUser`.
-- `AuthenticationInterceptor` (shop users) no longer runs on `/api/v1/admin/**`. A shop token
+- `AuthenticationInterceptor` (shop users) no longer runs on those paths. A shop token
   sent to an admin path fails the admin lookup: 401. An admin token sent to a shop path fails
   the shop lookup: 401.
-- `PlatformRoleInterceptor` is removed. The unused `/api/v1/shops/admin/**` pattern goes with it.
-- Existing admin controllers (MIS, referrals, wallets, vouchers, campaigns, plans, add-ons) read
+- `PlatformRoleInterceptor` is removed.
+- Existing admin controllers (MIS, referrals, wallets, vouchers, campaigns, plans, add-ons, shop
+  approval) read
   the actor from `adminId` instead of `userId`. Their behaviour is otherwise unchanged.
 
 ### Startup
