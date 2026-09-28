@@ -861,6 +861,8 @@ public class InventoryService {
       // Resolve catalog identity: reuse selected product, fork on identity edit, else match/create.
       inventory.setProductId(
           productService.resolveForRegistration(request.getProductId(), inventory, shopId));
+      // Reads hydrate packaging from the product, so base counts must use the product's factor.
+      adoptProductPackaging(inventory, shopId);
 
       int billQty = request.getCount() != null ? request.getCount() : 0;
       boolean useNewFixedUnits = request.getSchemePayFor() != null || request.getSchemeFree() != null;
@@ -1470,6 +1472,7 @@ public class InventoryService {
       }
 
       inventoryVerticalValidationHandler.validateUpdate(shopId, inventory, request);
+      int previousPackFactor = LotPackaging.factor(inventory.getUnitConversions());
 
       // Product details - only update when provided
       if (request.getBarcode() != null) inventory.setBarcode(request.getBarcode());
@@ -1517,10 +1520,23 @@ public class InventoryService {
             normalizeUnitName(inventory.getBaseUnit())));
       }
 
+      boolean packagingRequested =
+          request.getBaseUnit() != null || request.getUnitConversions() != null;
+      int requestedPackFactor = LotPackaging.factor(inventory.getUnitConversions());
+      if (packagingRequested && requestedPackFactor != previousPackFactor) {
+        assertPackFactorChangeAllowed(inventory, shopId, requestedPackFactor);
+      }
+
       // Identity edits are not persisted on the inventory doc; re-resolve the catalog product so an
       // identity change forks/links a new product while unchanged identity keeps the same one.
       inventory.setProductId(
           productService.resolveForRegistration(inventory.getProductId(), inventory, shopId));
+      adoptProductPackaging(inventory, shopId);
+      int newPackFactor = LotPackaging.factor(inventory.getUnitConversions());
+      if (newPackFactor != previousPackFactor) {
+        assertLotStockUntouched(inventory, shopId);
+        rebaseCountsFromDisplay(inventory, newPackFactor);
+      }
 
       // Update updatedAt timestamp
       inventory.setUpdatedAt(Instant.now());
@@ -1724,6 +1740,67 @@ public class InventoryService {
         .multiply(BigDecimal.valueOf(factor))
         .setScale(0, RoundingMode.HALF_UP)
         .intValue();
+  }
+
+  /**
+   * Make the lot's packaging match its catalog product. A barcode already owned by a product is
+   * reused as-is, so the request's packaging can differ from what every later read will show.
+   */
+  private void adoptProductPackaging(Inventory inventory, String shopId) {
+    productService.findInShop(shopId, inventory.getProductId()).ifPresent(product -> {
+      if (LotPackaging.factor(product.getUnitConversions())
+          != LotPackaging.factor(inventory.getUnitConversions())) {
+        log.warn(
+            "Lot packaging {} differs from product {} packaging {} in shop {}; using the product's",
+            LotPackaging.describe(inventory.getBaseUnit(), inventory.getUnitConversions()),
+            product.getId(),
+            LotPackaging.describe(product.getBaseUnit(), product.getUnitConversions()),
+            shopId);
+      }
+      inventory.setBaseUnit(product.getBaseUnit());
+      inventory.setUnitConversions(product.getUnitConversions());
+    });
+  }
+
+  /**
+   * Runs before product resolution so a rejected edit never forks a product. Packaging lives on
+   * the product, so a barcode-owned product's pack factor can't be changed from a single lot.
+   */
+  private void assertPackFactorChangeAllowed(
+      Inventory inventory, String shopId, int requestedPackFactor) {
+    productService.findBarcodeOwner(shopId, inventory.getBarcode()).ifPresent(owner -> {
+      if (LotPackaging.factor(owner.getUnitConversions()) != requestedPackFactor) {
+        throw new ValidationException(
+            "Packaging for barcode " + owner.getBarcode() + " is "
+                + LotPackaging.describe(owner.getBaseUnit(), owner.getUnitConversions())
+                + " and is shared by every lot of this product, so it can't be changed from one lot");
+      }
+    });
+    assertLotStockUntouched(inventory, shopId);
+  }
+
+  /**
+   * Sale, refund and return lines store base quantities, so a lot's base counts can only be
+   * re-derived while nothing references them.
+   */
+  private void assertLotStockUntouched(Inventory inventory, String shopId) {
+    int sold = inventory.getSoldBaseCount() != null ? inventory.getSoldBaseCount() : 0;
+    boolean moved = sold > 0
+        || !java.util.Objects.equals(inventory.getCurrentBaseCount(), inventory.getReceivedBaseCount());
+    int reserved = quotationService
+        .quotedBaseQuantitiesByLot(shopId, null)
+        .getOrDefault(inventory.getId(), 0);
+    if (moved || reserved > 0) {
+      throw new ValidationException(
+          "Packaging can't be changed on a lot that already has sales, returns or open quotations;"
+              + " register the stock as a new lot instead");
+    }
+  }
+
+  private void rebaseCountsFromDisplay(Inventory inventory, int packFactor) {
+    inventory.setReceivedBaseCount(LotPackaging.toBase(inventory.getReceivedCount(), packFactor));
+    inventory.setCurrentBaseCount(LotPackaging.toBase(inventory.getCurrentCount(), packFactor));
+    inventory.setSoldBaseCount(LotPackaging.toBase(inventory.getSoldCount(), packFactor));
   }
 
   private int toBaseQuantityFromDisplay(int displayQuantity, Inventory inventory) {

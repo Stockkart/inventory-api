@@ -64,6 +64,29 @@ public class ProductService {
     return toSuggestion(product);
   }
 
+  @Transactional(readOnly = true)
+  public Optional<Product> findInShop(String shopId, String productId) {
+    if (!StringUtils.hasText(shopId) || !StringUtils.hasText(productId)) {
+      return Optional.empty();
+    }
+    return productRepository.findByIdAndShopId(productId.trim(), shopId);
+  }
+
+  /** The shop product that owns this barcode, if any (barcodes are unique per shop). */
+  @Transactional(readOnly = true)
+  public Optional<Product> findBarcodeOwner(String shopId, String barcode) {
+    String normalized = productValidator.normalizeBarcode(barcode);
+    if (!StringUtils.hasText(shopId) || normalized == null) {
+      return Optional.empty();
+    }
+    return productRepository.findByShopIdAndBarcode(shopId, normalized);
+  }
+
+  @Transactional(readOnly = true)
+  public Optional<ProductSuggestionDto> suggestionByBarcode(String shopId, String barcode) {
+    return findBarcodeOwner(shopId, barcode).map(ProductService::toSuggestion);
+  }
+
   /**
    * Resolve the {@link Product} for a registration line and return its id.
    *

@@ -46,6 +46,19 @@ public class ProductController {
     return ResponseEntity.ok(ApiResponse.success(productService.suggest(shopId, q)));
   }
 
+  /**
+   * Exact barcode owner, or {@code null}. Stock-in with an owned barcode always joins that product
+   * and takes its packaging, so registration uses this to lock the pack factor.
+   */
+  @GetMapping("/by-barcode")
+  public ResponseEntity<ApiResponse<ProductSuggestionDto>> getByBarcode(
+      @RequestParam("code") String code,
+      HttpServletRequest httpRequest) {
+    String shopId = requireShopId(httpRequest);
+    return ResponseEntity.ok(
+        ApiResponse.success(productService.suggestionByBarcode(shopId, code).orElse(null)));
+  }
+
   /** Full catalog identity for a selected product (prefill source). */
   @GetMapping("/{id}")
   public ResponseEntity<ApiResponse<ProductSuggestionDto>> getById(
