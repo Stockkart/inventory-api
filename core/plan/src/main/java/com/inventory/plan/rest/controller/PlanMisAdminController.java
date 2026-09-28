@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Platform admins only: PlatformRoleInterceptor guards /api/v1/admin/**. */
+/** Admins only: AdminAuthenticationInterceptor guards /api/v1/admin/**. */
 @RestController
 @RequestMapping("/api/v1/admin/mis")
 @Latency(module = "plan")
