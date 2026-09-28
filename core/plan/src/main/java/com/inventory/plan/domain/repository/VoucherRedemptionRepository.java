@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.repository.MongoRepository;
+import org.springframework.data.mongodb.repository.Query;
 import org.springframework.stereotype.Repository;
 
 @Repository
@@ -20,6 +21,7 @@ public interface VoucherRedemptionRepository extends MongoRepository<VoucherRede
 
   List<VoucherRedemption> findByVoucherId(String voucherId, Sort sort);
 
+  @Query("{ 'status': ?0, 'redeemedAt': { $gte: ?1, $lt: ?2 } }")
   List<VoucherRedemption> findByStatusAndRedeemedAtGreaterThanEqualAndRedeemedAtLessThan(
       VoucherRedemptionStatus status, Instant from, Instant to);
 }

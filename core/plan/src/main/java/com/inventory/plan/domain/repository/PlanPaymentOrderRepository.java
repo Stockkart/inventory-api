@@ -23,9 +23,11 @@ public interface PlanPaymentOrderRepository extends MongoRepository<PlanPaymentO
 
   Optional<PlanPaymentOrder> findByShopIdAndIdempotencyKey(String shopId, String idempotencyKey);
 
+  @Query("{ 'status': { $in: ?0 }, 'paidAt': { $gte: ?1, $lt: ?2 } }")
   List<PlanPaymentOrder> findByStatusInAndPaidAtGreaterThanEqualAndPaidAtLessThan(
       Collection<String> statuses, Instant from, Instant to);
 
+  @Query("{ 'refundedAt': { $gte: ?0, $lt: ?1 } }")
   List<PlanPaymentOrder> findByRefundedAtGreaterThanEqualAndRefundedAtLessThan(Instant from, Instant to);
 
   /** Paid orders of these shops from before {@code before}; orders older than paidAt count by createdAt. */
