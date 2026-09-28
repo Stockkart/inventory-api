@@ -1524,7 +1524,8 @@ public class InventoryService {
           request.getBaseUnit() != null || request.getUnitConversions() != null;
       int requestedPackFactor = LotPackaging.factor(inventory.getUnitConversions());
       if (packagingRequested && requestedPackFactor != previousPackFactor) {
-        assertPackFactorChangeAllowed(inventory, shopId, requestedPackFactor);
+        // Before product resolution, so a rejected edit never forks a product.
+        assertLotStockUntouched(inventory, shopId);
       }
 
       // Identity edits are not persisted on the inventory doc; re-resolve the catalog product so an
@@ -1743,8 +1744,8 @@ public class InventoryService {
   }
 
   /**
-   * Make the lot's packaging match its catalog product. A barcode already owned by a product is
-   * reused as-is, so the request's packaging can differ from what every later read will show.
+   * Make the lot's packaging match its catalog product, since every read hydrates packaging from
+   * the product. Identity matching includes the pack factor, so a mismatch is not expected.
    */
   private void adoptProductPackaging(Inventory inventory, String shopId) {
     productService.findInShop(shopId, inventory.getProductId()).ifPresent(product -> {
@@ -1760,23 +1761,6 @@ public class InventoryService {
       inventory.setBaseUnit(product.getBaseUnit());
       inventory.setUnitConversions(product.getUnitConversions());
     });
-  }
-
-  /**
-   * Runs before product resolution so a rejected edit never forks a product. Packaging lives on
-   * the product, so a barcode-owned product's pack factor can't be changed from a single lot.
-   */
-  private void assertPackFactorChangeAllowed(
-      Inventory inventory, String shopId, int requestedPackFactor) {
-    productService.findBarcodeOwner(shopId, inventory.getBarcode()).ifPresent(owner -> {
-      if (LotPackaging.factor(owner.getUnitConversions()) != requestedPackFactor) {
-        throw new ValidationException(
-            "Packaging for barcode " + owner.getBarcode() + " is "
-                + LotPackaging.describe(owner.getBaseUnit(), owner.getUnitConversions())
-                + " and is shared by every lot of this product, so it can't be changed from one lot");
-      }
-    });
-    assertLotStockUntouched(inventory, shopId);
   }
 
   /**
