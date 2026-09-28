@@ -128,6 +128,48 @@ public class ProductService {
   }
 
   /**
+   * Resolve the {@link Product} for a deliberate catalog edit and return its id.
+   *
+   * <p>{@link #resolveForRegistration} answers a different question -- which product did this
+   * delivery bring in? -- so there a known barcode wins and the name on the vendor's bill is
+   * ignored, because vendors spell things their own way and their paperwork should not rewrite
+   * the shop's catalog. An edit is the opposite: someone changed the name on purpose. Comparing
+   * identity first means the new name reaches the catalog instead of being dropped by the barcode
+   * lookup, and renaming the owning product in place keeps every lot of it in step. Forking here
+   * would move the edited lot to the new name and strand the rest on the old one.
+   */
+  public String resolveForEdit(String currentProductId, Inventory inventory, String shopId) {
+    normalizeInventoryBarcode(inventory);
+    productValidator.validateBarcode(inventory.getBarcode());
+
+    Product existing = StringUtils.hasText(currentProductId)
+        ? productRepository.findByIdAndShopId(currentProductId.trim(), shopId).orElse(null)
+        : null;
+    if (existing == null) {
+      return resolveForRegistration(currentProductId, inventory, shopId);
+    }
+
+    Product candidate = fromInventory(inventory, shopId);
+    if (identityMatches(existing, candidate)) {
+      return existing.getId();
+    }
+
+    // The shop already stocks what this edit describes: join that product rather than duplicate it.
+    Product twin = findByIdentity(candidate, shopId);
+    if (twin != null && !twin.getId().equals(existing.getId())) {
+      return twin.getId();
+    }
+
+    assertBarcodeAvailable(shopId, candidate.getBarcode(), existing.getId());
+    applyIdentity(existing, candidate);
+    existing.setUpdatedAt(Instant.now());
+    productRepository.save(existing);
+    barcodeService.claimPoolForProduct(shopId, existing.getId(), existing.getBarcode());
+    log.info("Product identity edited in place for {} in shop {}", existing.getId(), shopId);
+    return existing.getId();
+  }
+
+  /**
    * Set barcode on an existing product without forking. Used by pool attach and regenerate.
    */
   public Product updateBarcodeInPlace(String productId, String shopId, String barcode) {
@@ -201,6 +243,21 @@ public class ProductService {
     Product candidateNorm = copyIdentity(candidate);
     return identityKey(withoutBarcode).equals(identityKey(candidateNorm))
         && !java.util.Objects.equals(nz(existing.getBarcode()), nz(candidate.getBarcode()));
+  }
+
+  /** Write a candidate's catalog identity onto the product that owns it. */
+  private static void applyIdentity(Product target, Product candidate) {
+    target.setName(candidate.getName());
+    target.setNormalizedName(candidate.getNormalizedName());
+    target.setDescription(candidate.getDescription());
+    target.setCompanyName(candidate.getCompanyName());
+    target.setBusinessType(candidate.getBusinessType());
+    target.setItemType(candidate.getItemType());
+    target.setItemTypeDegree(candidate.getItemTypeDegree());
+    target.setBaseUnit(candidate.getBaseUnit());
+    target.setUnitConversions(candidate.getUnitConversions());
+    target.setHsn(candidate.getHsn());
+    target.setBarcode(candidate.getBarcode());
   }
 
   private static Product copyIdentity(Product src) {

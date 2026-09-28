@@ -1496,10 +1496,12 @@ public class InventoryService {
             normalizeUnitName(inventory.getBaseUnit())));
       }
 
-      // Identity edits are not persisted on the inventory doc; re-resolve the catalog product so an
-      // identity change forks/links a new product while unchanged identity keeps the same one.
+      // Identity edits are not persisted on the inventory doc; re-resolve the catalog product.
+      // resolveForEdit, not resolveForRegistration: an edit means someone changed the name on
+      // purpose, so it renames the owning product rather than letting the barcode lookup discard
+      // the change or forking a second product and stranding this product's other lots.
       inventory.setProductId(
-          productService.resolveForRegistration(inventory.getProductId(), inventory, shopId));
+          productService.resolveForEdit(inventory.getProductId(), inventory, shopId));
 
       // Update updatedAt timestamp
       inventory.setUpdatedAt(Instant.now());
