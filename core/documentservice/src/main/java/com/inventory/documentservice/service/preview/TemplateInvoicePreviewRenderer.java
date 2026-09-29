@@ -3,11 +3,13 @@ package com.inventory.documentservice.service.preview;
 import com.inventory.documentservice.domain.DocumentTemplateFamily;
 import com.inventory.documentservice.domain.PrinterType;
 import com.inventory.documentservice.rest.dto.GenerateInvoiceRequest;
+import com.inventory.documentservice.rest.dto.InvoiceTaxRateRow;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -142,7 +144,13 @@ public class TemplateInvoicePreviewRenderer implements InvoicePreviewRenderer {
         request.getIgstPercent() != null ? request.getIgstPercent() : BigDecimal.ZERO);
     context.setVariable("cgstPercent", request.getCgstPercent() != null ? request.getCgstPercent() : BigDecimal.valueOf(2.5));
     context.setVariable("taxTotal", taxTotal);
-    context.setVariable("taxableAmount", grandTotal.subtract(taxTotal).max(BigDecimal.ZERO));
+    // With per-rate rows the taxable value is theirs, so the round-off printed beneath it is not
+    // also folded into it; without them it is what is left of the total once tax is taken out.
+    List<InvoiceTaxRateRow> taxRateRows = request.getTaxRateRows() != null ? request.getTaxRateRows() : List.of();
+    context.setVariable("taxableAmount", taxRateRows.isEmpty()
+        ? grandTotal.subtract(taxTotal).max(BigDecimal.ZERO)
+        : taxRateRows.stream().map(InvoiceTaxRateRow::getTaxableValue).reduce(BigDecimal.ZERO, BigDecimal::add));
+    context.setVariable("taxRateRows", taxRateRows);
     context.setVariable("roundOff", request.getRoundOff() != null ? request.getRoundOff() : BigDecimal.ZERO);
     context.setVariable("grandTotal", grandTotal);
     context.setVariable("totalMRPAmount", request.getTotalMRPAmount() != null ? request.getTotalMRPAmount() : BigDecimal.ZERO);
