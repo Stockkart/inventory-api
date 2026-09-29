@@ -91,9 +91,19 @@ public class Gstr1OfflinePortalJsonService {
     for (Map.Entry<String, List<GstInvoiceLine>> e : grouped.entrySet()) {
       Gstr1PortalReturnDto.B2bByCtinDto ctinBlock = new Gstr1PortalReturnDto.B2bByCtinDto();
       ctinBlock.setCtin(e.getKey());
+      // An invoice carrying goods at two rates is two lines here, and the portal
+      // wants it as one invoice holding two items. Emitting a line as an invoice
+      // apiece repeated the number, which the portal rejects outright:
+      // "Duplicate Invoice number found in payload."
+      Map<String, List<GstInvoiceLine>> byInvoice = e.getValue().stream()
+          .collect(Collectors.groupingBy(
+              l -> trimOrEmpty(l.getInvoiceNo()),
+              LinkedHashMap::new,
+              Collectors.toList()));
+
       List<Gstr1PortalReturnDto.B2bInvoiceDto> invoices = new ArrayList<>();
-      for (GstInvoiceLine line : e.getValue()) {
-        invoices.add(toB2bInvoice(line, sellerState));
+      for (List<GstInvoiceLine> linesOfOneInvoice : byInvoice.values()) {
+        invoices.add(toB2bInvoice(linesOfOneInvoice, sellerState));
       }
       ctinBlock.setInv(invoices);
       out.add(ctinBlock);
@@ -101,33 +111,64 @@ public class Gstr1OfflinePortalJsonService {
     return out;
   }
 
-  private Gstr1PortalReturnDto.B2bInvoiceDto toB2bInvoice(GstInvoiceLine line, String sellerState) {
-    String pos = resolvePos(line.getRecipientGstin(), line.getPlaceOfSupply(), sellerState);
+  /**
+   * One invoice, holding an item for every rate it carries.
+   *
+   * <p>The header belongs to the invoice, so it is read off the first line: the
+   * number, the date, the place of supply and the value are the same on all of
+   * them, the value in particular being the invoice's own total rather than
+   * anything to sum. Only the items differ, one per rate.
+   */
+  private Gstr1PortalReturnDto.B2bInvoiceDto toB2bInvoice(
+      List<GstInvoiceLine> linesOfOneInvoice, String sellerState) {
+    GstInvoiceLine head = linesOfOneInvoice.get(0);
+    String pos = resolvePos(head.getRecipientGstin(), head.getPlaceOfSupply(), sellerState);
     boolean interstate = interstate(pos, sellerState);
 
-    Gstr1PortalReturnDto.ItemDetDto det = buildItemDet(
-        interstate,
-        line.getTaxableValue(),
-        nz(line.getRate()),
-        nz(line.getIntegratedTaxAmount()),
-        nz(line.getCentralTaxAmount()),
-        nz(line.getStateTaxAmount()),
-        nz(line.getCessAmount()));
+    // Two lines at one rate would repeat an item number inside the invoice, which
+    // the portal rejects the same way it rejects a repeated invoice number. They
+    // are the one invoice at the one rate, so they are added together.
+    Map<Integer, GstInvoiceLine> byRate = new LinkedHashMap<>();
+    for (GstInvoiceLine line : linesOfOneInvoice) {
+      byRate.merge(slabLineNum(line.getRate()), line, this::addTaxes);
+    }
 
-    List<Gstr1PortalReturnDto.B2bLineItemDto> items = List.of(Gstr1PortalReturnDto.B2bLineItemDto.builder()
-        .num(slabLineNum(line.getRate()))
-        .itmDet(det)
-        .build());
+    List<Gstr1PortalReturnDto.B2bLineItemDto> items = new ArrayList<>();
+    for (Map.Entry<Integer, GstInvoiceLine> entry : byRate.entrySet()) {
+      GstInvoiceLine line = entry.getValue();
+      items.add(Gstr1PortalReturnDto.B2bLineItemDto.builder()
+          .num(entry.getKey())
+          .itmDet(buildItemDet(
+              interstate,
+              line.getTaxableValue(),
+              nz(line.getRate()),
+              nz(line.getIntegratedTaxAmount()),
+              nz(line.getCentralTaxAmount()),
+              nz(line.getStateTaxAmount()),
+              nz(line.getCessAmount())))
+          .build());
+    }
 
     return Gstr1PortalReturnDto.B2bInvoiceDto.builder()
-        .inum(trimOrEmpty(line.getInvoiceNo()))
-        .idt(line.getInvoiceDate() != null ? line.getInvoiceDate().format(INV_DATE) : "")
-        .val(d(line.getInvoiceValue()))
+        .inum(trimOrEmpty(head.getInvoiceNo()))
+        .idt(head.getInvoiceDate() != null ? head.getInvoiceDate().format(INV_DATE) : "")
+        .val(d(head.getInvoiceValue()))
         .pos(pos)
-        .rchrg(trimOrBlank(line.getReverseCharge(), "N"))
-        .invTyp(mapInvTypAbbrev(line.getInvoiceType()))
-        .itms(new ArrayList<>(items))
+        .rchrg(trimOrBlank(head.getReverseCharge(), "N"))
+        .invTyp(mapInvTypAbbrev(head.getInvoiceType()))
+        .itms(items)
         .build();
+  }
+
+  /** Two lines of one invoice at one rate, as the single item they amount to. */
+  private GstInvoiceLine addTaxes(GstInvoiceLine into, GstInvoiceLine more) {
+    into.setTaxableValue(nz(into.getTaxableValue()).add(nz(more.getTaxableValue())));
+    into.setIntegratedTaxAmount(
+        nz(into.getIntegratedTaxAmount()).add(nz(more.getIntegratedTaxAmount())));
+    into.setCentralTaxAmount(nz(into.getCentralTaxAmount()).add(nz(more.getCentralTaxAmount())));
+    into.setStateTaxAmount(nz(into.getStateTaxAmount()).add(nz(more.getStateTaxAmount())));
+    into.setCessAmount(nz(into.getCessAmount()).add(nz(more.getCessAmount())));
+    return into;
   }
 
   private Gstr1PortalReturnDto.ItemDetDto buildItemDet(boolean interstate,
