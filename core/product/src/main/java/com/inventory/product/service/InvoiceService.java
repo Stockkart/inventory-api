@@ -21,7 +21,7 @@ import com.inventory.product.service.estimate.EstimateInventoryPolicy;
 import com.inventory.product.service.vertical.InventoryVerticalExtensionHandler;
 import com.inventory.product.utils.constants.ProductMetricsConstants;
 import com.inventory.product.utils.AmountToWordsConverter;
-import com.inventory.product.utils.CheckoutUtils;
+import com.inventory.product.utils.SaleTaxBreakdown;
 import com.inventory.user.domain.model.Customer;
 import com.inventory.user.service.CustomerService;
 import lombok.extern.slf4j.Slf4j;
@@ -37,7 +37,6 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -235,7 +234,6 @@ public class InvoiceService {
     }
 
     List<InvoiceItem> invoiceItems = new ArrayList<>();
-    InvoiceFooter footer = new InvoiceFooter();
     if (purchase.getItems() != null) {
       for (PurchaseItem purchaseItem : purchase.getItems()) {
         InvoiceItem invoiceItem = new InvoiceItem();
@@ -245,10 +243,7 @@ public class InvoiceService {
         // A line sold at MRP prints its rate with the GST inside it taken out, as every other
         // line's rate already is: the RATE column is the taxable price, and the GST is stated
         // beneath the lines rather than left hidden in the rate.
-        invoiceItem.setPriceToRetail(CheckoutUtils.isSellingAtMrp(purchaseItem)
-            ? taxablePrice(purchaseItem.getPriceToRetail(), CheckoutUtils.combinedGstRate(purchaseItem))
-            : purchaseItem.getPriceToRetail());
-        footer.add(purchaseItem);
+        invoiceItem.setPriceToRetail(SaleTaxBreakdown.taxableRate(purchaseItem));
         invoiceItem.setDiscount(purchaseItem.getDiscount());
         invoiceItem.setSaleAdditionalDiscount(purchaseItem.getSaleAdditionalDiscount());
         invoiceItem.setTotalAmount(purchaseItem.getTotalAmount());
@@ -335,18 +330,20 @@ public class InvoiceService {
     request.setSgstAmount(purchase.getSgstAmount() != null ? purchase.getSgstAmount() : BigDecimal.ZERO);
     request.setCgstAmount(purchase.getCgstAmount() != null ? purchase.getCgstAmount() : BigDecimal.ZERO);
     request.setTaxTotal(purchase.getTaxTotal() != null ? purchase.getTaxTotal() : BigDecimal.ZERO);
-    if (footer.isUsable()) {
-      footer.split();
-      // The footer is worked from the lines, the way GSTR-1 reads the same sale, rather than
-      // copied from the header. Bills saved before tax was taken out of MRP carry a header that
-      // states no tax on those lines and a subtotal that still holds it; the lines do not.
-      request.setSubTotal(footer.gross);
-      request.setSaleAdditionalDiscountTotal(footer.gross.subtract(footer.taxable));
-      request.setTaxRateRows(new ArrayList<>(footer.rows.values()));
-      request.setSgstAmount(footer.sgst);
-      request.setCgstAmount(footer.cgst);
-      request.setTaxTotal(footer.sgst.add(footer.cgst));
-    }
+    // The footer is worked from the lines, the way GSTR-1 reads the same sale, rather than
+    // copied from the header. Bills saved before tax was taken out of MRP carry a header that
+    // states no tax on those lines and a subtotal that still holds it; the lines do not.
+    SaleTaxBreakdown.of(purchase).ifPresent(summary -> {
+      request.setSubTotal(summary.getSubTotal());
+      request.setSaleAdditionalDiscountTotal(summary.getAdditionalDiscount());
+      request.setTaxRateRows(summary.getRates().stream()
+          .map(row -> new InvoiceTaxRateRow(row.getCgstPercent(), row.getSgstPercent(),
+              row.getTaxableValue(), row.getCgstAmount(), row.getSgstAmount()))
+          .toList());
+      request.setSgstAmount(summary.getSgstTotal());
+      request.setCgstAmount(summary.getCgstTotal());
+      request.setTaxTotal(summary.getSgstTotal().add(summary.getCgstTotal()));
+    });
 
     if (!invoiceItems.isEmpty()) {
       InvoiceItem firstItem = invoiceItems.get(0);
@@ -388,85 +385,6 @@ public class InvoiceService {
     request.setSoldAt(purchase.getSoldAt());
 
     return request;
-  }
-
-  private static BigDecimal taxablePrice(BigDecimal price, BigDecimal gstRate) {
-    if (price == null || gstRate.signum() <= 0) {
-      return price;
-    }
-    return price.multiply(BigDecimal.valueOf(100))
-        .divide(BigDecimal.valueOf(100).add(gstRate), 2, RoundingMode.HALF_UP);
-  }
-
-  /**
-   * The invoice footer, added up line by line: the value before the additional discount, the
-   * taxable value after it, and the CGST and SGST at each rate.
-   *
-   * <p>A line's amount includes its GST, so its taxable value is the amount with that GST taken
-   * out at the line's own rate, and its tax is the rest. That holds for a line priced before tax,
-   * where the GST was added to reach the amount, and for one sold at MRP, where it was already
-   * inside it.
-   */
-  static final class InvoiceFooter {
-    final Map<String, InvoiceTaxRateRow> rows = new LinkedHashMap<>();
-    BigDecimal gross = BigDecimal.ZERO;
-    BigDecimal taxable = BigDecimal.ZERO;
-    BigDecimal cgst = BigDecimal.ZERO;
-    BigDecimal sgst = BigDecimal.ZERO;
-    private boolean everyLineHasAmount = true;
-
-    void add(PurchaseItem item) {
-      if (item.getTotalAmount() == null) {
-        everyLineHasAmount = false;
-        return;
-      }
-      BigDecimal amount = item.getTotalAmount();
-      BigDecimal cgstPct = parseTaxRate(item.getCgst());
-      BigDecimal sgstPct = parseTaxRate(item.getSgst());
-      BigDecimal rate = cgstPct.add(sgstPct);
-      BigDecimal lineTaxable = rate.signum() > 0
-          ? amount.multiply(BigDecimal.valueOf(100)).divide(BigDecimal.valueOf(100).add(rate), 2, RoundingMode.HALF_UP)
-          : amount;
-      // At the price as printed in the RATE column, so Total Amount is that column times quantity.
-      gross = gross.add(CheckoutUtils.getTaxablePricePerUnit(item).setScale(2, RoundingMode.HALF_UP)
-          .multiply(CheckoutUtils.getBillableQuantityAsDecimal(item))
-          .setScale(2, RoundingMode.HALF_UP));
-      taxable = taxable.add(lineTaxable);
-      if (rate.signum() <= 0) {
-        return;
-      }
-      BigDecimal lineTax = amount.subtract(lineTaxable);
-      // Keyed on the rate's value, not its spelling: "9" and "9.00" are one rate.
-      String key = cgstPct.stripTrailingZeros().toPlainString() + "|" + sgstPct.stripTrailingZeros().toPlainString();
-      InvoiceTaxRateRow row = rows.computeIfAbsent(key, k -> new InvoiceTaxRateRow(
-          cgstPct, sgstPct, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO));
-      row.setTaxableValue(row.getTaxableValue().add(lineTaxable));
-      // The row's whole tax is held in CGST until the row is split, once, below.
-      row.setCgstAmount(row.getCgstAmount().add(lineTax));
-    }
-
-    /**
-     * Splits each row's tax into CGST and SGST. Done once per row rather than per line: rounding
-     * each line's half up and giving SGST the remainder drifts the two apart by a paisa a line.
-     */
-    void split() {
-      cgst = BigDecimal.ZERO;
-      sgst = BigDecimal.ZERO;
-      for (InvoiceTaxRateRow row : rows.values()) {
-        BigDecimal tax = row.getCgstAmount().add(row.getSgstAmount());
-        BigDecimal rate = row.getCgstPercent().add(row.getSgstPercent());
-        BigDecimal rowCgst = tax.multiply(row.getCgstPercent()).divide(rate, 2, RoundingMode.HALF_UP);
-        row.setCgstAmount(rowCgst);
-        row.setSgstAmount(tax.subtract(rowCgst));
-        cgst = cgst.add(row.getCgstAmount());
-        sgst = sgst.add(row.getSgstAmount());
-      }
-    }
-
-    /** Only a bill whose every line states its amount, and that charges some tax, is worked from its lines. */
-    boolean isUsable() {
-      return everyLineHasAmount && !rows.isEmpty();
-    }
   }
 
   private static BigDecimal sumTaxRates(String cgst, String sgst) {
