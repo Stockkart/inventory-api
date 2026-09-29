@@ -2,9 +2,11 @@ package com.inventory.product.domain.model.enums;
 
 /** Lifecycle for {@link DocumentType#ESTIMATE} documents only. */
 public enum EstimateState {
-  /** Editable; may be printed and converted. */
+  /** Editable draft; soft-reserves stock. */
   OPEN,
-  /** Locked after convert-to-invoice; reprint only. */
+  /** Finalized quote; printable; convert rules depend on line inventory mode. */
+  LOCKED,
+  /** Converted to a sale cart; reprint only. */
   CONVERTED,
   /** User discarded; not convertible. */
   DISCARDED
