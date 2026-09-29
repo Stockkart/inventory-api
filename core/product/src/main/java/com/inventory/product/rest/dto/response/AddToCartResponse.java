@@ -28,6 +28,7 @@ public class AddToCartResponse {
   BigDecimal discountTotal;
   BigDecimal saleAdditionalDiscountTotal; // Total additional discount amount
   BigDecimal grandTotal;
+  SaleTaxSummaryDto taxSummary; // Totals as the invoice states them, GST per rate; null when no line is taxed
   BigDecimal totalCost;       // Margin: total cost (inventory cost × quantities)
   BigDecimal revenueBeforeTax; // Margin: subTotal − additionalDiscountTotal
   BigDecimal revenueAfterTax;  // Margin: grandTotal (total received including tax)

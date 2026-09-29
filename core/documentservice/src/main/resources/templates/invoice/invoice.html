@@ -466,13 +466,33 @@
           <td>Additional Discount</td>
           <td th:text="${#numbers.formatDecimal(additionalDiscountTotal, 1, 2)}"></td>
         </tr>
-        <tr th:if="${showTaxDetails and sgstAmount != null && sgstAmount > 0}">
+        <!-- One SGST and one CGST row per rate. A single pair could name only one rate and was
+             labelled with the first line's, so 9% tax on a mixed bill printed as "2.5 %". -->
+        <tr th:if="${showTaxDetails and !#lists.isEmpty(taxRateRows)}">
+          <td>Taxable Value</td>
+          <td th:text="${#numbers.formatDecimal(taxableAmount, 1, 2)}"></td>
+        </tr>
+        <th:block th:if="${showTaxDetails}" th:each="row : ${taxRateRows}">
+          <tr>
+            <td>SGST <span th:text="${row.sgstPercent.stripTrailingZeros().toPlainString()}"></span> %</td>
+            <td th:text="${#numbers.formatDecimal(row.sgstAmount, 1, 2)}"></td>
+          </tr>
+          <tr>
+            <td>CGST <span th:text="${row.cgstPercent.stripTrailingZeros().toPlainString()}"></span> %</td>
+            <td th:text="${#numbers.formatDecimal(row.cgstAmount, 1, 2)}"></td>
+          </tr>
+        </th:block>
+        <tr th:if="${showTaxDetails and #lists.isEmpty(taxRateRows) and sgstAmount != null && sgstAmount > 0}">
           <td>SGST <span th:text="${sgstPercent ?: ''}"></span> %</td>
           <td th:text="${#numbers.formatDecimal(sgstAmount, 1, 2)}"></td>
         </tr>
-        <tr th:if="${showTaxDetails and cgstAmount != null && cgstAmount > 0}">
+        <tr th:if="${showTaxDetails and #lists.isEmpty(taxRateRows) and cgstAmount != null && cgstAmount > 0}">
           <td>CGST <span th:text="${cgstPercent ?: ''}"></span> %</td>
           <td th:text="${#numbers.formatDecimal(cgstAmount, 1, 2)}"></td>
+        </tr>
+        <tr th:if="${showTaxDetails and !#lists.isEmpty(taxRateRows) and roundOff != null and roundOff != 0}">
+          <td>Round Off</td>
+          <td th:text="${#numbers.formatDecimal(roundOff, 1, 2)}"></td>
         </tr>
         <tr class="net-amount">
           <td>Net Amount</td>
