@@ -77,6 +77,31 @@ class InvoiceFooterTest {
   }
 
   @Test
+  void everyGstSlabGetsItsOwnRowAtItsOwnRate() {
+    // Nothing is tied to 2.5% or 9%: each rate a line carries becomes its own row, and each
+    // row's tax is taken out of its lines' amounts at that rate. 1000 taxable at every slab.
+    String[][] slabs = {{"0.125", "1002.50"}, {"0.75", "1015.00"}, {"1.5", "1030.00"},
+        {"2.5", "1050.00"}, {"6", "1120.00"}, {"9", "1180.00"}, {"14", "1280.00"}};
+    PurchaseItem[] lines = new PurchaseItem[slabs.length];
+    for (int i = 0; i < slabs.length; i++) {
+      lines[i] = line("1", "5000", "1000", "0", slabs[i][0], slabs[i][1]);
+    }
+    InvoiceService.InvoiceFooter footer = footerOf(lines);
+
+    assertEquals(slabs.length, footer.rows.size());
+    for (String[] slab : slabs) {
+      BigDecimal half = new BigDecimal(slab[0]);
+      InvoiceTaxRateRow row = footer.rows.values().stream()
+          .filter(r -> r.getCgstPercent().compareTo(half) == 0)
+          .findFirst().orElseThrow();
+      assertEquals(0, row.getTaxableValue().compareTo(new BigDecimal("1000.00")), slab[0]);
+      BigDecimal expectedHalf = new BigDecimal("10").multiply(half).setScale(2, java.math.RoundingMode.HALF_UP);
+      assertEquals(expectedHalf, row.getCgstAmount(), "CGST at " + slab[0]);
+      assertEquals(new BigDecimal(slab[1]).subtract(new BigDecimal("1000")).subtract(expectedHalf), row.getSgstAmount(), "SGST at " + slab[0]);
+    }
+  }
+
+  @Test
   void rateSpelledTwoWaysIsOneRow() {
     InvoiceService.InvoiceFooter footer = footerOf(
         line("2", "501", "501", "25", "9.00", "751.50"),
