@@ -101,7 +101,7 @@ public class StockEntryEstimateService {
     if (draft.getState() == StockEntryEstimateState.CONVERTED) {
       throw new ValidationException("Converted stock-entry estimates cannot be discarded");
     }
-    if (draft.getState() == StockEntryEstimateState.LOCKED) {
+    if (draft.getState() == StockEntryEstimateState.LOCKED && !isAwaitingConversion(draft)) {
       throw new ValidationException(
           "Locked stock-entry estimates already created inventory and cannot be discarded");
     }
@@ -114,7 +114,11 @@ public class StockEntryEstimateService {
   }
 
   /**
-   * Creates BASIC inventory lots (estimate-only sell) from the draft and marks it LOCKED.
+   * Freezes an OPEN draft as LOCKED.
+   *
+   * <p>BASIC drafts create estimate-only inventory lots here. REGULAR drafts create nothing:
+   * they wait for Product Entry to register them (with payment), which posts credit and
+   * accounting and then calls {@link #markConverted}.
    */
   @Transactional
   public StockEntryEstimateResponse lock(String id, String userId, String shopId) {
@@ -126,10 +130,23 @@ public class StockEntryEstimateService {
     if (draft.getLines() == null || draft.getLines().isEmpty()) {
       throw new ValidationException("Cannot lock an empty stock-entry estimate");
     }
-    // Vendor is optional for no-tax (BASIC) locks; required when the draft carries tax.
-    if (linesHaveTaxableFields(draft.getLines()) && !StringUtils.hasText(draft.getVendorId())) {
+    boolean taxable = linesHaveTaxableFields(draft.getLines());
+    if (taxable && !StringUtils.hasText(draft.getVendorId())) {
       throw new ValidationException(
           "Vendor is required before locking an estimate with taxable fields");
+    }
+
+    if (taxable) {
+      draft.setState(StockEntryEstimateState.LOCKED);
+      draft.setLockedAt(Instant.now());
+      draft.setLockedByUserId(userId);
+      draft.setUpdatedAt(Instant.now());
+      draft = stockEntryEstimateRepository.save(draft);
+      log.info(
+          "Locked stock-entry estimate {} for conversion (no inventory yet) for shop {}",
+          draft.getId(),
+          shopId);
+      return toResponse(draft);
     }
 
     BulkCreateInventoryRequest bulk = toBulkCreateRequest(draft, BillingMode.BASIC);
@@ -156,16 +173,20 @@ public class StockEntryEstimateService {
   }
 
   /**
-   * Marks an OPEN draft CONVERTED after Product Entry saved REGULAR stock with this estimate as
-   * source. Does not create inventory itself.
+   * Marks a draft CONVERTED after Product Entry saved REGULAR stock with this estimate as
+   * source. Accepts OPEN drafts and LOCKED drafts still awaiting conversion. Does not create
+   * inventory itself.
    */
   @Transactional
   public StockEntryEstimateResponse markConverted(
       String id, String vendorPurchaseInvoiceId, String shopId) {
     StockEntryEstimate draft = load(id, shopId);
-    if (draft.getState() != StockEntryEstimateState.OPEN) {
+    boolean convertible =
+        draft.getState() == StockEntryEstimateState.OPEN || isAwaitingConversion(draft);
+    if (!convertible) {
       throw new ValidationException(
-          "Only open stock-entry estimates can be marked converted (state: "
+          "Only open or locked-for-conversion stock-entry estimates can be marked converted"
+              + " (state: "
               + draft.getState()
               + ")");
     }
@@ -314,6 +335,12 @@ public class StockEntryEstimateService {
     }
   }
 
+  /** LOCKED without inventory: a REGULAR draft frozen until Product Entry registers it. */
+  private static boolean isAwaitingConversion(StockEntryEstimate draft) {
+    return draft.getState() == StockEntryEstimateState.LOCKED
+        && !StringUtils.hasText(draft.getVendorPurchaseInvoiceId());
+  }
+
   /** True when any line is REGULAR or carries SGST/CGST — vendor required to lock. */
   private static boolean linesHaveTaxableFields(List<StockEntryEstimateLine> lines) {
     if (lines == null || lines.isEmpty()) {
@@ -352,7 +379,9 @@ public class StockEntryEstimateService {
         count,
         draft.getInvoiceTotal(),
         draft.getUpdatedAt(),
-        draft.getCreatedAt());
+        draft.getCreatedAt(),
+        linesHaveTaxableFields(draft.getLines()),
+        isAwaitingConversion(draft));
   }
 
   private StockEntryEstimateResponse toResponse(StockEntryEstimate draft) {

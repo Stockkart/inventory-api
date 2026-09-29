@@ -31,5 +31,9 @@ public class StockEntryEstimateListResponse {
     private BigDecimal invoiceTotal;
     private Instant updatedAt;
     private Instant createdAt;
+    /** Any line carries HSN-rate fields (REGULAR); lock freezes instead of creating stock. */
+    private boolean taxable;
+    /** LOCKED REGULAR draft with no inventory yet — open in Product Entry to register. */
+    private boolean awaitingConversion;
   }
 }
