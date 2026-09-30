@@ -2,6 +2,7 @@ package com.inventory.documentservice.service;
 
 import com.inventory.documentservice.rest.dto.GenerateInvoiceRequest;
 import com.inventory.documentservice.rest.dto.InvoiceItem;
+import com.inventory.documentservice.rest.dto.InvoiceTaxRateRow;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
@@ -544,6 +545,10 @@ public class InvoiceTextRenderer {
         + BOLD_ON + pad(label, TAX_TOTAL_LABEL, false) + doubleWide(value) + BOLD_OFF;
   }
 
+  private static List<InvoiceTaxRateRow> taxRateRows(GenerateInvoiceRequest r) {
+    return r.getTaxRateRows() == null ? List.of() : r.getTaxRateRows();
+  }
+
   /** "Add SGST 2.5 %", so the rate charged is stated beside the amount it produced. */
   private static String taxLabel(String label, BigDecimal percent) {
     return percent == null ? label : label + " " + quantity(percent) + " %";
@@ -555,15 +560,35 @@ public class InvoiceTextRenderer {
       out.add(taxTotalRow("Less Discount", r.getSaleAdditionalDiscountTotal()));
     }
     if (visible(r.getShowTaxDetails())) {
-      if (isPositive(r.getSgstAmount())) {
-        out.add(taxTotalRow(taxLabel("Add SGST", r.getSgstPercent()), r.getSgstAmount()));
+      // One SGST and one CGST row per rate. A single pair could name only one rate and took the
+      // first line's, so 9% tax on a mixed bill printed as "Add SGST 2.5 %".
+      List<InvoiceTaxRateRow> rows = taxRateRows(r);
+      if (!rows.isEmpty()) {
+        for (InvoiceTaxRateRow row : rows) {
+          out.add(taxTotalRow(taxLabel("Add SGST", row.getSgstPercent()), row.getSgstAmount()));
+          out.add(taxTotalRow(taxLabel("Add CGST", row.getCgstPercent()), row.getCgstAmount()));
+        }
+      } else {
+        if (isPositive(r.getSgstAmount())) {
+          out.add(taxTotalRow(taxLabel("Add SGST", r.getSgstPercent()), r.getSgstAmount()));
+        }
+        if (isPositive(r.getCgstAmount())) {
+          out.add(taxTotalRow(taxLabel("Add CGST", r.getCgstPercent()), r.getCgstAmount()));
+        }
       }
-      if (isPositive(r.getCgstAmount())) {
-        out.add(taxTotalRow(taxLabel("Add CGST", r.getCgstPercent()), r.getCgstAmount()));
+      // An interstate bill carries its whole tax as IGST, with nothing under SGST or CGST; left
+      // out, the bill printed no tax at all.
+      if (isPositive(r.getIgstAmount())) {
+        out.add(taxTotalRow(taxLabel("Add IGST", r.getIgstPercent()), r.getIgstAmount()));
       }
     }
+    // Round-off is net amount less everything above it: positive is added to reach the net
+    // amount, negative taken off. It printed "Less" beside a figure that had been added, and a
+    // negative one not at all.
     if (isPositive(r.getRoundOff())) {
-      out.add(taxTotalRow("Less Roundoff", r.getRoundOff()));
+      out.add(taxTotalRow("Add Roundoff", r.getRoundOff()));
+    } else if (r.getRoundOff() != null && r.getRoundOff().signum() < 0) {
+      out.add(taxTotalRow("Less Roundoff", r.getRoundOff().negate()));
     }
     // Savings reads opposite the totals block rather than as one more line inside it, where it
     // competed with NET AMOUNT for the eye. The left of this row is empty on a trade bill.
@@ -610,8 +635,20 @@ public class InvoiceTextRenderer {
    * calculator, and so the return can be filled from the bill itself.
    */
   private void appendGstSummary(List<String> out, GenerateInvoiceRequest r) {
-    if (!visible(r.getShowTaxDetails())
-        || !isPositive(r.getSgstAmount()) && !isPositive(r.getCgstAmount())) {
+    if (!visible(r.getShowTaxDetails())) {
+      return;
+    }
+    // With per-rate rows, one working line per rate, each on that rate's own taxable value.
+    List<InvoiceTaxRateRow> rows = taxRateRows(r);
+    if (!rows.isEmpty()) {
+      for (InvoiceTaxRateRow row : rows) {
+        out.add("GST=" + money(row.getTaxableValue())
+            + "*" + quantity(row.getSgstPercent()) + "*" + quantity(row.getCgstPercent()) + "%="
+            + money(row.getSgstAmount()) + "SGST+" + money(row.getCgstAmount()) + "CGST.");
+      }
+      return;
+    }
+    if (!isPositive(r.getSgstAmount()) && !isPositive(r.getCgstAmount())) {
       return;
     }
     BigDecimal taxable = r.getSubTotal() == null ? BigDecimal.ZERO : r.getSubTotal();
