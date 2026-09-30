@@ -1,9 +1,9 @@
 package com.inventory.taxation.service;
 
 import com.inventory.common.exception.GstConfigurationException;
-import com.inventory.common.tax.GstMath;
-import com.inventory.product.tax.PurchaseTaxBasis;
-import com.inventory.product.tax.PurchaseTaxBasisResolver;
+import com.inventory.common.util.GstMath;
+import com.inventory.product.utils.PurchaseTaxBasis;
+import com.inventory.product.utils.PurchaseTaxBasisResolver;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Product;
 import com.inventory.product.domain.model.VendorPurchaseInvoice;

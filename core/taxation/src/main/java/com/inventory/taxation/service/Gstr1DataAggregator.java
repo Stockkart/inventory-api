@@ -1,6 +1,6 @@
 package com.inventory.taxation.service;
 
-import com.inventory.common.tax.GstMath;
+import com.inventory.common.util.GstMath;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.PurchaseItem;

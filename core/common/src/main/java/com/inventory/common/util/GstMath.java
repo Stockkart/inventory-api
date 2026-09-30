@@ -1,4 +1,4 @@
-package com.inventory.common.tax;
+package com.inventory.common.util;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;

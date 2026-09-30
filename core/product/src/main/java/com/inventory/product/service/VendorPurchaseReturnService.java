@@ -1,6 +1,6 @@
 package com.inventory.product.service;
 
-import com.inventory.common.tax.GstMath;
+import com.inventory.common.util.GstMath;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;

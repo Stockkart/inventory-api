@@ -1,4 +1,4 @@
-package com.inventory.product.tax;
+package com.inventory.product.utils;
 
 import java.math.BigDecimal;
 import java.util.List;

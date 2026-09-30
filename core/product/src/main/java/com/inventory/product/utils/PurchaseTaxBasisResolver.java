@@ -1,11 +1,12 @@
-package com.inventory.product.tax;
+package com.inventory.product.utils;
 
-import com.inventory.common.tax.GstMath;
+import com.inventory.common.util.GstMath;
 import com.inventory.pricing.domain.model.Pricing;
 import com.inventory.pricing.domain.model.Scheme;
 import com.inventory.pricing.utils.constants.PricingConstants;
 import com.inventory.product.domain.model.VendorPurchaseInvoice;
 import com.inventory.product.domain.model.VendorPurchaseInvoiceLine;
+import com.inventory.product.domain.model.enums.PurchaseTaxTreatment;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -258,7 +259,7 @@ public final class PurchaseTaxBasisResolver {
   /**
    * Unit cost after the price reductions that GST recognises — and only those.
    *
-   * <p>Deliberately not {@link PricingUtils#computeEffectiveCostPrice}, which is the landed cost:
+   * <p>Deliberately not {@link com.inventory.pricing.utils.PricingUtils#computeEffectiveCostPrice}, which is the landed cost:
    * it also dilutes the price by free goods, so a "19+1" bonus makes each unit held cost a
    * twentieth less. That is the right basis for valuation and margin, and the wrong one for tax.
    * A supplier who ships twenty and charges for nineteen has charged for nineteen; the taxable
