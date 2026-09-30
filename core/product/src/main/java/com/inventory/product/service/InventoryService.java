@@ -339,14 +339,20 @@ public class InventoryService {
   public BulkCreateInventoryResponse bulkCreate(BulkCreateInventoryRequest bulkRequest, String userId, String shopId) {
     List<InventoryReceiptResponse> createdItems = new ArrayList<>();
 
-    if (!StringUtils.hasText(bulkRequest.getVendorId())) {
-      throw new ValidationException("Vendor is required for bulk inventory registration");
-    }
-    validateVendorId(bulkRequest.getVendorId(), shopId);
-
     List<CreateInventoryItemRequest> itemRequests = bulkRequest.getItems();
     if (itemRequests == null || itemRequests.isEmpty()) {
       throw new ValidationException("At least one product is required for bulk registration");
+    }
+
+    boolean allBasic =
+        itemRequests.stream().allMatch(item -> item.getBillingMode() == BillingMode.BASIC);
+
+    boolean hasVendor = StringUtils.hasText(bulkRequest.getVendorId());
+    if (hasVendor) {
+      validateVendorId(bulkRequest.getVendorId(), shopId);
+    } else if (!allBasic) {
+      // Estimate lock may omit vendor; only BASIC (estimate-only) lots are allowed without one.
+      throw new ValidationException("Vendor is required for bulk inventory registration");
     }
 
     List<String> validationErrors = new ArrayList<>();
@@ -390,8 +396,9 @@ public class InventoryService {
 
     if (userInvoice) {
       String normalizedNo = invReq.getInvoiceNo().trim();
-      if (vendorPurchaseInvoiceRepository.existsByShopIdAndVendorIdAndInvoiceNo(
-          shopId, bulkRequest.getVendorId(), normalizedNo)) {
+      if (hasVendor
+          && vendorPurchaseInvoiceRepository.existsByShopIdAndVendorIdAndInvoiceNo(
+              shopId, bulkRequest.getVendorId(), normalizedNo)) {
         throw new ValidationException(
             "An invoice with this number already exists for this vendor");
       }
@@ -465,10 +472,13 @@ public class InventoryService {
     log.info("Bulk creation completed: {} created", createdItems.size());
 
     String creditEntryId = null;
-    var invOpt = vendorPurchaseInvoiceRepository.findById(returnedInvoiceId);
-    if (invOpt.isPresent()) {
-      VendorPurchaseInvoice persistedInvoice = invOpt.get();
-      creditEntryId = postCreditAndAccountingForVendorInvoice(persistedInvoice, shopId, userId);
+    // BASIC (estimate-only) stock-in never posts credit or accounting — REGULAR bulk create does.
+    if (!allBasic) {
+      var invOpt = vendorPurchaseInvoiceRepository.findById(returnedInvoiceId);
+      if (invOpt.isPresent()) {
+        VendorPurchaseInvoice persistedInvoice = invOpt.get();
+        creditEntryId = postCreditAndAccountingForVendorInvoice(persistedInvoice, shopId, userId);
+      }
     }
 
     if (metrics != null && !createdItems.isEmpty()) {
@@ -528,7 +538,8 @@ public class InventoryService {
 
     String vendorId = StringUtils.hasText(inv.getVendorId()) ? inv.getVendorId().trim() : null;
     if (!StringUtils.hasText(vendorId)) {
-      throw new ValidationException("Vendor id is required to track vendor credit");
+      // Estimate-only stock-in may have no vendor; skip payable tracking until a vendor is set.
+      return null;
     }
     String vendorName =
         vendorRepository
@@ -573,6 +584,11 @@ public class InventoryService {
     if (accountingFacade == null || inv == null) {
       return;
     }
+    String vendorId = StringUtils.hasText(inv.getVendorId()) ? inv.getVendorId().trim() : null;
+    if (!StringUtils.hasText(vendorId)) {
+      // BASIC estimate lock may omit vendor; skip ledger posting until a vendor is attached.
+      return;
+    }
     BigDecimal goodsValue =
         nz(inv.getLineSubTotal()).subtract(nz(inv.getOverallDiscount())).max(BigDecimal.ZERO);
     BigDecimal taxTotal = nz(inv.getTaxTotal());
@@ -583,16 +599,13 @@ public class InventoryService {
     BigDecimal paidNow =
         resolveVendorPaidNow(
             invoiceTotal, normalizePaymentMethod(inv.getPaymentMethod()), inv.getPaidAmount());
-    String vendorId = StringUtils.hasText(inv.getVendorId()) ? inv.getVendorId().trim() : null;
     String vendorName =
-        vendorId != null
-            ? vendorRepository
-                .findById(vendorId)
-                .map(Vendor::getName)
-                .filter(StringUtils::hasText)
-                .map(String::trim)
-                .orElse("Vendor " + vendorId)
-            : null;
+        vendorRepository
+            .findById(vendorId)
+            .map(Vendor::getName)
+            .filter(StringUtils::hasText)
+            .map(String::trim)
+            .orElse("Vendor " + vendorId);
 
     java.time.LocalDate txnDate =
         inv.getInvoiceDate() != null
@@ -827,11 +840,21 @@ public class InventoryService {
       inventory.setUnitConversions(resolveUnitConversionForCreate(
           request, normalizedBaseUnit));
       inventory.setPurchaseDate(request.getPurchaseDate() != null ? request.getPurchaseDate() : Instant.now());
-      inventory.setBillingMode(normalizeBillingMode(request.getBillingMode()));
+      BillingMode billingMode = normalizeBillingMode(request.getBillingMode());
+      inventory.setBillingMode(billingMode);
+      if (billingMode == BillingMode.BASIC) {
+        inventory.setSellRestriction(
+            com.inventory.product.domain.model.enums.InventorySellRestriction.ESTIMATE_ONLY);
+      } else if (inventory.getSellRestriction() == null) {
+        inventory.setSellRestriction(
+            com.inventory.product.domain.model.enums.InventorySellRestriction.ANY);
+      }
 
       // Resolve catalog identity: reuse selected product, fork on identity edit, else match/create.
       inventory.setProductId(
           productService.resolveForRegistration(request.getProductId(), inventory, shopId));
+      // Reads hydrate packaging from the product, so base counts must use the product's factor.
+      adoptProductPackaging(inventory, shopId);
 
       int billQty = request.getCount() != null ? request.getCount() : 0;
       boolean useNewFixedUnits = request.getSchemePayFor() != null || request.getSchemeFree() != null;
@@ -1441,6 +1464,7 @@ public class InventoryService {
       }
 
       inventoryVerticalValidationHandler.validateUpdate(shopId, inventory, request);
+      int previousPackFactor = LotPackaging.factor(inventory.getUnitConversions());
 
       // Product details - only update when provided
       if (request.getBarcode() != null) inventory.setBarcode(request.getBarcode());
@@ -1488,10 +1512,24 @@ public class InventoryService {
             normalizeUnitName(inventory.getBaseUnit())));
       }
 
+      boolean packagingRequested =
+          request.getBaseUnit() != null || request.getUnitConversions() != null;
+      int requestedPackFactor = LotPackaging.factor(inventory.getUnitConversions());
+      if (packagingRequested && requestedPackFactor != previousPackFactor) {
+        // Before product resolution, so a rejected edit never forks a product.
+        assertLotStockUntouched(inventory, shopId);
+      }
+
       // Identity edits are not persisted on the inventory doc; re-resolve the catalog product so an
       // identity change forks/links a new product while unchanged identity keeps the same one.
       inventory.setProductId(
           productService.resolveForRegistration(inventory.getProductId(), inventory, shopId));
+      adoptProductPackaging(inventory, shopId);
+      int newPackFactor = LotPackaging.factor(inventory.getUnitConversions());
+      if (newPackFactor != previousPackFactor) {
+        assertLotStockUntouched(inventory, shopId);
+        rebaseCountsFromDisplay(inventory, newPackFactor);
+      }
 
       // Update updatedAt timestamp
       inventory.setUpdatedAt(Instant.now());
@@ -1695,6 +1733,50 @@ public class InventoryService {
         .multiply(BigDecimal.valueOf(factor))
         .setScale(0, RoundingMode.HALF_UP)
         .intValue();
+  }
+
+  /**
+   * Make the lot's packaging match its catalog product, since every read hydrates packaging from
+   * the product. Identity matching includes the pack factor, so a mismatch is not expected.
+   */
+  private void adoptProductPackaging(Inventory inventory, String shopId) {
+    productService.findInShop(shopId, inventory.getProductId()).ifPresent(product -> {
+      if (LotPackaging.factor(product.getUnitConversions())
+          != LotPackaging.factor(inventory.getUnitConversions())) {
+        log.warn(
+            "Lot packaging {} differs from product {} packaging {} in shop {}; using the product's",
+            LotPackaging.describe(inventory.getBaseUnit(), inventory.getUnitConversions()),
+            product.getId(),
+            LotPackaging.describe(product.getBaseUnit(), product.getUnitConversions()),
+            shopId);
+      }
+      inventory.setBaseUnit(product.getBaseUnit());
+      inventory.setUnitConversions(product.getUnitConversions());
+    });
+  }
+
+  /**
+   * Sale, refund and return lines store base quantities, so a lot's base counts can only be
+   * re-derived while nothing references them.
+   */
+  private void assertLotStockUntouched(Inventory inventory, String shopId) {
+    int sold = inventory.getSoldBaseCount() != null ? inventory.getSoldBaseCount() : 0;
+    boolean moved = sold > 0
+        || !java.util.Objects.equals(inventory.getCurrentBaseCount(), inventory.getReceivedBaseCount());
+    int reserved = quotationService
+        .quotedBaseQuantitiesByLot(shopId, null)
+        .getOrDefault(inventory.getId(), 0);
+    if (moved || reserved > 0) {
+      throw new ValidationException(
+          "Packaging can't be changed on a lot that already has sales, returns or open quotations;"
+              + " register the stock as a new lot instead");
+    }
+  }
+
+  private void rebaseCountsFromDisplay(Inventory inventory, int packFactor) {
+    inventory.setReceivedBaseCount(LotPackaging.toBase(inventory.getReceivedCount(), packFactor));
+    inventory.setCurrentBaseCount(LotPackaging.toBase(inventory.getCurrentCount(), packFactor));
+    inventory.setSoldBaseCount(LotPackaging.toBase(inventory.getSoldCount(), packFactor));
   }
 
   private int toBaseQuantityFromDisplay(int displayQuantity, Inventory inventory) {
