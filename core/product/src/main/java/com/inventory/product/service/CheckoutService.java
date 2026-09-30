@@ -1331,6 +1331,7 @@ public class CheckoutService {
                       ? perUnitDiscount.multiply(saleQty)
                       : BigDecimal.ZERO
               );
+              carryKitchenState(existingItem, switchedItem);
               switchedItem.setSaleAdditionalDiscount(newItem.getSaleAdditionalDiscount() != null
                   ? newItem.getSaleAdditionalDiscount()
                   : existingItem.getSaleAdditionalDiscount());
@@ -1426,6 +1427,7 @@ public class CheckoutService {
                 priceToRetail,
                 newDiscount.compareTo(BigDecimal.ZERO) > 0 ? newDiscount : BigDecimal.ZERO
             );
+            carryKitchenState(existingItem, updatedItem);
             updatedItem.setSaleAdditionalDiscount(additionalDiscount);
             updatedItem.setSchemeType(schemeType);
             updatedItem.setSchemePercentage(schemePercentage);
@@ -2258,6 +2260,18 @@ public class CheckoutService {
         .schemeFree(item.getSchemeFree())
         .schemePercentage(item.getSchemePercentage())
         .build();
+  }
+
+  /**
+   * A stock line changed in quantity or sale unit is rebuilt from scratch. What the kitchen side
+   * owns on it must come across: the station frozen when the line was first added (a later menu
+   * edit must not re-route it, and a missing one falls back to KITCHEN), the quantity the kitchen
+   * has already been sent (without it the next punch re-sends the whole line), and the note.
+   */
+  private static void carryKitchenState(PurchaseItem existing, PurchaseItem rebuilt) {
+    rebuilt.setDepartment(existing.getDepartment());
+    rebuilt.setKotSentQuantity(existing.getKotSentQuantity());
+    rebuilt.setNote(existing.getNote());
   }
 
   private static boolean sameCartLine(PurchaseItem a, PurchaseItem b) {
