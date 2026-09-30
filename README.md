@@ -240,6 +240,12 @@ Shops are bound to a **vertical** (`Shop.verticalId` + `Shop.pluginVersion`). Fi
 
 **Purchase tax basis.** GSTR-2 and the purchase journal both take each supplier invoice's tax from `PurchaseTaxBasisResolver` (`core/product/.../utils`): a stated header that agrees with the line rates (within ₹1.00 or 0.5% of the tax, whichever is larger) is used as printed; otherwise the header's tax, then landed and finally list line values, with a verdict (`OK`, `MISSING`, `MISMATCH`, `RATE_CONFLICT`) logged for anything but `OK`. A bill marked `INCLUSIVE` has tax taken out of line values only; its printed header is already ex-tax.
 
+**Purchase tax at stock-in.** `POST /api/v1/inventory/bulk` with a `vendorPurchaseInvoice` header:
+
+- **Refused (400, validation errors):** any negative header amount (line subtotal, tax, invoice total, shipping, other charges, overall discount), or a tax total above the line subtotal. Rules live in `VendorPurchaseInvoiceValidator`.
+- **Accepted and recorded:** a header that merely disagrees with its lines. The stated header is stored as typed; `PurchaseTaxRecorder` stores the resolved per-line taxable value and tax beside it, and the response carries `headerReconciliation` (the verdict), `computedLineSubTotal` and `computedTaxTotal`.
+- **Never blocks stock-in:** if the tax cannot be resolved, the invoice keeps its stated header and is resolved on read.
+
 ### Build commands
 
 ```bash
