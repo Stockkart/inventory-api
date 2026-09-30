@@ -1,6 +1,8 @@
 package com.inventory.product.service;
 
 import com.inventory.common.util.GstMath;
+import com.inventory.product.utils.PurchaseTaxBasis;
+import com.inventory.product.utils.PurchaseTaxBasisResolver;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
@@ -614,12 +616,9 @@ public class InventoryService {
                 ? java.time.LocalDate.ofInstant(inv.getCreatedAt(), java.time.ZoneOffset.UTC)
                 : java.time.LocalDate.now());
 
-    // GST routing: split the combined taxTotal into CGST + SGST. Source of truth is per-line:
-    // each {@link VendorPurchaseInvoiceLine} points to an inventory item whose {@code pricing}
-    // doc carries the actual cgst / sgst rates. We compute CGST and SGST amounts per line and
-    // sum them, falling back to shop-level rates only when an inventory or pricing lookup is
-    // missing. IGST is intentionally always zero here — interstate tax will be wired in once
-    // the FE captures a place-of-supply / interstate flag on the invoice.
+    // GST routing: split the combined taxTotal into CGST + SGST from the same per-line basis
+    // GSTR-2 reports (see splitTaxByLines). IGST is always zero here until a purchase carries a
+    // place of supply.
     GstSplit gst = splitTaxByLines(shopId, inv, taxTotal);
     String paymentMethod = normalizePaymentMethod(inv.getPaymentMethod());
     com.inventory.accounting.api.VendorPurchaseInvoicePostingRequest req =
@@ -643,26 +642,14 @@ public class InventoryService {
   }
 
   /**
-   * Splits a combined {@code taxTotal} into CGST + SGST by walking each invoice line and reading
-   * the CGST / SGST percentages from that line's pricing document. This mirrors the way the
-   * cart/checkout flow originally computed the tax (per-line, per-item rate), so the journal
-   * entry uses the same source of truth instead of guessing from a shop-level fallback.
+   * Splits a combined {@code taxTotal} into CGST + SGST for the journal.
    *
-   * <p>Resolution order (in priority):
-   * <ol>
-   *   <li>Per-line: {@code lineValue × pricing.cgst / 100} and {@code × pricing.sgst / 100}.
-   *       Line value is taken from {@code count × costPrice} (PTR is a last-resort fallback
-   *       for legacy lines that never captured cost price).</li>
-   *   <li>Lines that don't resolve to a pricing doc fall back to the shop's configured
-   *       CGST / SGST.</li>
-   *   <li>If neither pricing nor shop rates exist, that line contributes nothing and the
-   *       residual tax is split using whatever per-line numbers we did manage to compute.</li>
-   * </ol>
-   *
-   * <p>The two halves are reconciled against {@code taxTotal} before returning: any rounding
-   * delta (typically < ₹1) is absorbed into the larger of the two halves so the books always
-   * balance. If we couldn't compute anything (no lines, no rates), the input tax is split using
-   * the shop's CGST/SGST percentages.
+   * <p>The split comes from {@link PurchaseTaxBasisResolver} — the same per-line basis GSTR-2
+   * reports from — so the ledger and the return read one answer. The stated {@code taxTotal} is
+   * the amount (it is what the vendor is owed, so the entry has to balance on it) and the basis
+   * gives the ratio. Where the header proves itself the basis already carries the stated tax, and
+   * the halves posted are exactly the halves the return reports. Lines with no rate contribute
+   * nothing; if none has a rate, the shop's CGST / SGST percentages decide the split.
    */
   private GstSplit splitTaxByLines(String shopId, VendorPurchaseInvoice inv, BigDecimal taxTotal) {
     BigDecimal total = nz(taxTotal);
@@ -670,79 +657,42 @@ public class InventoryService {
     if (total.signum() <= 0) {
       return new GstSplit(zero, zero);
     }
+
+    // IGST is not posted yet: the ledger has no place of supply for a purchase, so the basis is
+    // read as intra-state.
+    PurchaseTaxBasis basis =
+        PurchaseTaxBasisResolver.resolve(inv, this::pricingOfLot, inv.getTaxTreatment(), false);
+    BigDecimal central = BigDecimal.ZERO;
+    BigDecimal state = BigDecimal.ZERO;
+    for (PurchaseTaxBasis.Line line : basis.lines()) {
+      central = central.add(line.centralTax());
+      state = state.add(line.stateTax());
+    }
+    BigDecimal lineTax = central.add(state);
+    if (lineTax.signum() > 0) {
+      BigDecimal cgst = total.multiply(central).divide(lineTax, 4, RoundingMode.HALF_UP);
+      return new GstSplit(cgst, total.subtract(cgst).setScale(4, RoundingMode.HALF_UP));
+    }
+
     Shop shop =
         StringUtils.hasText(shopId) ? shopRepository.findById(shopId).orElse(null) : null;
-    BigDecimal shopCgstPct = parsePercentage(shop != null ? shop.getCgst() : null);
-    BigDecimal shopSgstPct = parsePercentage(shop != null ? shop.getSgst() : null);
-
-    BigDecimal cgstSum = BigDecimal.ZERO;
-    BigDecimal sgstSum = BigDecimal.ZERO;
-    boolean anyLineContributed = false;
-
-    List<VendorPurchaseInvoiceLine> lines =
-        inv.getLines() != null ? inv.getLines() : java.util.Collections.emptyList();
-    for (VendorPurchaseInvoiceLine line : lines) {
-      BigDecimal cgstPct = shopCgstPct;
-      BigDecimal sgstPct = shopSgstPct;
-      String inventoryId = line.getInventoryId();
-      if (StringUtils.hasText(inventoryId)) {
-        com.inventory.pricing.domain.model.Pricing pricing =
-            inventoryRepository
-                .findById(inventoryId)
-                .map(Inventory::getPricingId)
-                .filter(StringUtils::hasText)
-                .flatMap(pricingRepository::findById)
-                .orElse(null);
-        if (pricing != null) {
-          BigDecimal pCgst = parsePercentage(pricing.getCgst());
-          BigDecimal pSgst = parsePercentage(pricing.getSgst());
-          if (pCgst.signum() > 0 || pSgst.signum() > 0) {
-            cgstPct = pCgst;
-            sgstPct = pSgst;
-          }
-        }
-      }
-      BigDecimal lineValue = lineGoodsValue(line);
-      if (lineValue.signum() <= 0) continue;
-      if (cgstPct.signum() <= 0 && sgstPct.signum() <= 0) continue;
-      BigDecimal cgstAmt =
-          lineValue.multiply(cgstPct).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
-      BigDecimal sgstAmt =
-          lineValue.multiply(sgstPct).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
-      cgstSum = cgstSum.add(cgstAmt);
-      sgstSum = sgstSum.add(sgstAmt);
-      anyLineContributed = true;
-    }
-
-    if (!anyLineContributed) {
-      // No usable line data — fall back to shop ratio split of the invoice's stated taxTotal.
-      return splitByRatio(total, shopCgstPct, shopSgstPct);
-    }
-
-    // Reconcile rounding drift back to taxTotal so the JE always ties out.
-    BigDecimal computed = cgstSum.add(sgstSum);
-    BigDecimal drift = total.subtract(computed).setScale(4, RoundingMode.HALF_UP);
-    if (drift.signum() != 0) {
-      // Push the rounding penny to whichever side is larger, defaulting to SGST when equal.
-      if (cgstSum.compareTo(sgstSum) > 0) {
-        cgstSum = cgstSum.add(drift);
-      } else {
-        sgstSum = sgstSum.add(drift);
-      }
-    }
-    return new GstSplit(
-        cgstSum.setScale(4, RoundingMode.HALF_UP),
-        sgstSum.setScale(4, RoundingMode.HALF_UP));
+    return splitByRatio(
+        total,
+        GstMath.parseGstRate(shop != null ? shop.getCgst() : null),
+        GstMath.parseGstRate(shop != null ? shop.getSgst() : null));
   }
 
-  /** Per-line "goods value" used as the GST base. Prefers costPrice; falls back to PTR. */
-  private static BigDecimal lineGoodsValue(VendorPurchaseInvoiceLine line) {
-    BigDecimal qty =
-        line.getCount() != null ? BigDecimal.valueOf(line.getCount()) : BigDecimal.ZERO;
-    if (qty.signum() <= 0) return BigDecimal.ZERO;
-    BigDecimal price = nz(line.getCostPrice());
-    if (price.signum() <= 0) price = nz(line.getPriceToRetail());
-    return price.multiply(qty);
+  /** The pricing record behind a purchase line's lot, or null when either is missing. */
+  private com.inventory.pricing.domain.model.Pricing pricingOfLot(String inventoryId) {
+    if (!StringUtils.hasText(inventoryId)) {
+      return null;
+    }
+    return inventoryRepository
+        .findById(inventoryId)
+        .map(Inventory::getPricingId)
+        .filter(StringUtils::hasText)
+        .flatMap(pricingRepository::findById)
+        .orElse(null);
   }
 
   /** Plain ratio split — used only when no line-level rates are available. */
@@ -761,11 +711,6 @@ public class InventoryService {
     return new GstSplit(
         total.subtract(half).setScale(4, RoundingMode.HALF_UP),
         half.setScale(4, RoundingMode.HALF_UP));
-  }
-
-  /** Parses a shop's percentage field ({@code "9"}, {@code "9.00"}, {@code "9%"}). */
-  private static BigDecimal parsePercentage(String raw) {
-    return GstMath.parseGstRate(raw);
   }
 
   /** Per-invoice CGST / SGST slice. IGST is wired in once the invoice carries a place-of-supply. */
