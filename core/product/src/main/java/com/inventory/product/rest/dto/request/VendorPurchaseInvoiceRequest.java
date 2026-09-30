@@ -1,6 +1,6 @@
 package com.inventory.product.rest.dto.request;
 
-import com.inventory.product.tax.PurchaseTaxTreatment;
+import com.inventory.product.domain.model.enums.PurchaseTaxTreatment;
 import lombok.Data;
 
 import java.math.BigDecimal;

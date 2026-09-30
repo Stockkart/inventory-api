@@ -1,8 +1,6 @@
 package com.inventory.product.service;
 
-import com.inventory.common.tax.GstMath;
-import com.inventory.product.tax.PurchaseTaxBasisResolver;
-import com.inventory.product.tax.PurchaseTaxBasis;
+import com.inventory.common.util.GstMath;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
@@ -12,6 +10,8 @@ import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.VendorPurchaseInvoice;
 import com.inventory.product.domain.model.VendorPurchaseInvoiceLine;
 import com.inventory.product.domain.repository.VendorPurchaseInvoiceRepository;
+import com.inventory.product.utils.PurchaseTaxBasis;
+import com.inventory.product.utils.PurchaseTaxBasisResolver;
 import com.inventory.product.utils.constants.ProductMetricsConstants;
 import com.inventory.user.domain.model.Vendor;
 import com.inventory.user.domain.repository.VendorRepository;
@@ -342,14 +342,20 @@ public class InventoryService {
   public BulkCreateInventoryResponse bulkCreate(BulkCreateInventoryRequest bulkRequest, String userId, String shopId) {
     List<InventoryReceiptResponse> createdItems = new ArrayList<>();
 
-    if (!StringUtils.hasText(bulkRequest.getVendorId())) {
-      throw new ValidationException("Vendor is required for bulk inventory registration");
-    }
-    validateVendorId(bulkRequest.getVendorId(), shopId);
-
     List<CreateInventoryItemRequest> itemRequests = bulkRequest.getItems();
     if (itemRequests == null || itemRequests.isEmpty()) {
       throw new ValidationException("At least one product is required for bulk registration");
+    }
+
+    boolean allBasic =
+        itemRequests.stream().allMatch(item -> item.getBillingMode() == BillingMode.BASIC);
+
+    boolean hasVendor = StringUtils.hasText(bulkRequest.getVendorId());
+    if (hasVendor) {
+      validateVendorId(bulkRequest.getVendorId(), shopId);
+    } else if (!allBasic) {
+      // Estimate lock may omit vendor; only BASIC (estimate-only) lots are allowed without one.
+      throw new ValidationException("Vendor is required for bulk inventory registration");
     }
 
     List<String> validationErrors = new ArrayList<>();
@@ -393,8 +399,9 @@ public class InventoryService {
 
     if (userInvoice) {
       String normalizedNo = invReq.getInvoiceNo().trim();
-      if (vendorPurchaseInvoiceRepository.existsByShopIdAndVendorIdAndInvoiceNo(
-          shopId, bulkRequest.getVendorId(), normalizedNo)) {
+      if (hasVendor
+          && vendorPurchaseInvoiceRepository.existsByShopIdAndVendorIdAndInvoiceNo(
+              shopId, bulkRequest.getVendorId(), normalizedNo)) {
         throw new ValidationException(
             "An invoice with this number already exists for this vendor");
       }
@@ -471,10 +478,13 @@ public class InventoryService {
     log.info("Bulk creation completed: {} created", createdItems.size());
 
     String creditEntryId = null;
-    var invOpt = vendorPurchaseInvoiceRepository.findById(returnedInvoiceId);
-    if (invOpt.isPresent()) {
-      VendorPurchaseInvoice persistedInvoice = invOpt.get();
-      creditEntryId = postCreditAndAccountingForVendorInvoice(persistedInvoice, shopId, userId);
+    // BASIC (estimate-only) stock-in never posts credit or accounting — REGULAR bulk create does.
+    if (!allBasic) {
+      var invOpt = vendorPurchaseInvoiceRepository.findById(returnedInvoiceId);
+      if (invOpt.isPresent()) {
+        VendorPurchaseInvoice persistedInvoice = invOpt.get();
+        creditEntryId = postCreditAndAccountingForVendorInvoice(persistedInvoice, shopId, userId);
+      }
     }
 
     if (metrics != null && !createdItems.isEmpty()) {
@@ -540,7 +550,8 @@ public class InventoryService {
 
     String vendorId = StringUtils.hasText(inv.getVendorId()) ? inv.getVendorId().trim() : null;
     if (!StringUtils.hasText(vendorId)) {
-      throw new ValidationException("Vendor id is required to track vendor credit");
+      // Estimate-only stock-in may have no vendor; skip payable tracking until a vendor is set.
+      return null;
     }
     String vendorName =
         vendorRepository
@@ -585,6 +596,11 @@ public class InventoryService {
     if (accountingFacade == null || inv == null) {
       return;
     }
+    String vendorId = StringUtils.hasText(inv.getVendorId()) ? inv.getVendorId().trim() : null;
+    if (!StringUtils.hasText(vendorId)) {
+      // BASIC estimate lock may omit vendor; skip ledger posting until a vendor is attached.
+      return;
+    }
     BigDecimal goodsValue =
         nz(inv.getLineSubTotal()).subtract(nz(inv.getOverallDiscount())).max(BigDecimal.ZERO);
     BigDecimal taxTotal = nz(inv.getTaxTotal());
@@ -595,16 +611,13 @@ public class InventoryService {
     BigDecimal paidNow =
         resolveVendorPaidNow(
             invoiceTotal, normalizePaymentMethod(inv.getPaymentMethod()), inv.getPaidAmount());
-    String vendorId = StringUtils.hasText(inv.getVendorId()) ? inv.getVendorId().trim() : null;
     String vendorName =
-        vendorId != null
-            ? vendorRepository
-                .findById(vendorId)
-                .map(Vendor::getName)
-                .filter(StringUtils::hasText)
-                .map(String::trim)
-                .orElse("Vendor " + vendorId)
-            : null;
+        vendorRepository
+            .findById(vendorId)
+            .map(Vendor::getName)
+            .filter(StringUtils::hasText)
+            .map(String::trim)
+            .orElse("Vendor " + vendorId);
 
     java.time.LocalDate txnDate =
         inv.getInvoiceDate() != null
@@ -613,12 +626,9 @@ public class InventoryService {
                 ? java.time.LocalDate.ofInstant(inv.getCreatedAt(), java.time.ZoneOffset.UTC)
                 : java.time.LocalDate.now());
 
-    // GST routing: split the combined taxTotal into CGST + SGST. Source of truth is per-line:
-    // each {@link VendorPurchaseInvoiceLine} points to an inventory item whose {@code pricing}
-    // doc carries the actual cgst / sgst rates. We compute CGST and SGST amounts per line and
-    // sum them, falling back to shop-level rates only when an inventory or pricing lookup is
-    // missing. IGST is intentionally always zero here — interstate tax will be wired in once
-    // the FE captures a place-of-supply / interstate flag on the invoice.
+    // GST routing: split the combined taxTotal into CGST + SGST from the same per-line basis
+    // GSTR-2 reports (see splitTaxByLines). IGST is always zero here until a purchase carries a
+    // place of supply.
     GstSplit gst = splitTaxByLines(shopId, inv, taxTotal);
     String paymentMethod = normalizePaymentMethod(inv.getPaymentMethod());
     com.inventory.accounting.api.VendorPurchaseInvoicePostingRequest req =
@@ -642,26 +652,14 @@ public class InventoryService {
   }
 
   /**
-   * Splits a combined {@code taxTotal} into CGST + SGST by walking each invoice line and reading
-   * the CGST / SGST percentages from that line's pricing document. This mirrors the way the
-   * cart/checkout flow originally computed the tax (per-line, per-item rate), so the journal
-   * entry uses the same source of truth instead of guessing from a shop-level fallback.
+   * Splits a combined {@code taxTotal} into CGST + SGST for the journal.
    *
-   * <p>Resolution order (in priority):
-   * <ol>
-   *   <li>Per-line: {@code lineValue × pricing.cgst / 100} and {@code × pricing.sgst / 100}.
-   *       Line value is taken from {@code count × costPrice} (PTR is a last-resort fallback
-   *       for legacy lines that never captured cost price).</li>
-   *   <li>Lines that don't resolve to a pricing doc fall back to the shop's configured
-   *       CGST / SGST.</li>
-   *   <li>If neither pricing nor shop rates exist, that line contributes nothing and the
-   *       residual tax is split using whatever per-line numbers we did manage to compute.</li>
-   * </ol>
-   *
-   * <p>The two halves are reconciled against {@code taxTotal} before returning: any rounding
-   * delta (typically < ₹1) is absorbed into the larger of the two halves so the books always
-   * balance. If we couldn't compute anything (no lines, no rates), the input tax is split using
-   * the shop's CGST/SGST percentages.
+   * <p>The split comes from {@link PurchaseTaxBasisResolver} — the same per-line basis GSTR-2
+   * reports from — so the ledger and the return read one answer. The stated {@code taxTotal} is
+   * the amount (it is what the vendor is owed, so the entry has to balance on it) and the basis
+   * gives the ratio. Where the header proves itself the basis already carries the stated tax, and
+   * the halves posted are exactly the halves the return reports. Lines with no rate contribute
+   * nothing; if none has a rate, the shop's CGST / SGST percentages decide the split.
    */
   private GstSplit splitTaxByLines(String shopId, VendorPurchaseInvoice inv, BigDecimal taxTotal) {
     BigDecimal total = nz(taxTotal);
@@ -669,79 +667,35 @@ public class InventoryService {
     if (total.signum() <= 0) {
       return new GstSplit(zero, zero);
     }
+
+    // IGST is not posted yet: the ledger has no place of supply for a purchase, so the basis is
+    // read as intra-state.
+    PurchaseTaxBasis basis =
+        PurchaseTaxBasisResolver.resolve(inv, this::pricingOfLot, inv.getTaxTreatment(), false);
+    java.util.Optional<PurchaseTaxBasis.IntraStateSplit> split = basis.splitStated(total);
+    if (split.isPresent()) {
+      return new GstSplit(split.get().centralTax(), split.get().stateTax());
+    }
+
     Shop shop =
         StringUtils.hasText(shopId) ? shopRepository.findById(shopId).orElse(null) : null;
-    BigDecimal shopCgstPct = parsePercentage(shop != null ? shop.getCgst() : null);
-    BigDecimal shopSgstPct = parsePercentage(shop != null ? shop.getSgst() : null);
-
-    BigDecimal cgstSum = BigDecimal.ZERO;
-    BigDecimal sgstSum = BigDecimal.ZERO;
-    boolean anyLineContributed = false;
-
-    List<VendorPurchaseInvoiceLine> lines =
-        inv.getLines() != null ? inv.getLines() : java.util.Collections.emptyList();
-    for (VendorPurchaseInvoiceLine line : lines) {
-      BigDecimal cgstPct = shopCgstPct;
-      BigDecimal sgstPct = shopSgstPct;
-      String inventoryId = line.getInventoryId();
-      if (StringUtils.hasText(inventoryId)) {
-        com.inventory.pricing.domain.model.Pricing pricing =
-            inventoryRepository
-                .findById(inventoryId)
-                .map(Inventory::getPricingId)
-                .filter(StringUtils::hasText)
-                .flatMap(pricingRepository::findById)
-                .orElse(null);
-        if (pricing != null) {
-          BigDecimal pCgst = parsePercentage(pricing.getCgst());
-          BigDecimal pSgst = parsePercentage(pricing.getSgst());
-          if (pCgst.signum() > 0 || pSgst.signum() > 0) {
-            cgstPct = pCgst;
-            sgstPct = pSgst;
-          }
-        }
-      }
-      BigDecimal lineValue = lineGoodsValue(line);
-      if (lineValue.signum() <= 0) continue;
-      if (cgstPct.signum() <= 0 && sgstPct.signum() <= 0) continue;
-      BigDecimal cgstAmt =
-          lineValue.multiply(cgstPct).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
-      BigDecimal sgstAmt =
-          lineValue.multiply(sgstPct).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
-      cgstSum = cgstSum.add(cgstAmt);
-      sgstSum = sgstSum.add(sgstAmt);
-      anyLineContributed = true;
-    }
-
-    if (!anyLineContributed) {
-      // No usable line data — fall back to shop ratio split of the invoice's stated taxTotal.
-      return splitByRatio(total, shopCgstPct, shopSgstPct);
-    }
-
-    // Reconcile rounding drift back to taxTotal so the JE always ties out.
-    BigDecimal computed = cgstSum.add(sgstSum);
-    BigDecimal drift = total.subtract(computed).setScale(4, RoundingMode.HALF_UP);
-    if (drift.signum() != 0) {
-      // Push the rounding penny to whichever side is larger, defaulting to SGST when equal.
-      if (cgstSum.compareTo(sgstSum) > 0) {
-        cgstSum = cgstSum.add(drift);
-      } else {
-        sgstSum = sgstSum.add(drift);
-      }
-    }
-    return new GstSplit(
-        cgstSum.setScale(4, RoundingMode.HALF_UP),
-        sgstSum.setScale(4, RoundingMode.HALF_UP));
+    return splitByRatio(
+        total,
+        GstMath.parseGstRate(shop != null ? shop.getCgst() : null),
+        GstMath.parseGstRate(shop != null ? shop.getSgst() : null));
   }
 
-  /** Per-line "goods value" used as the GST base. Prefers costPrice; falls back to PTR. */
-  private static BigDecimal lineGoodsValue(VendorPurchaseInvoiceLine line) {
-    BigDecimal qty =
-        line.getCount() != null ? BigDecimal.valueOf(line.getCount()) : BigDecimal.ZERO;
-    if (qty.signum() <= 0) return BigDecimal.ZERO;
-    BigDecimal price = nz(line.getCostPrice());
-    if (price.signum() <= 0) price = nz(line.getPriceToRetail());
-    return price.multiply(qty);
+  /** The pricing record behind a purchase line's lot, or null when either is missing. */
+  private com.inventory.pricing.domain.model.Pricing pricingOfLot(String inventoryId) {
+    if (!StringUtils.hasText(inventoryId)) {
+      return null;
+    }
+    return inventoryRepository
+        .findById(inventoryId)
+        .map(Inventory::getPricingId)
+        .filter(StringUtils::hasText)
+        .flatMap(pricingRepository::findById)
+        .orElse(null);
   }
 
   /** Plain ratio split — used only when no line-level rates are available. */
@@ -860,11 +814,6 @@ public class InventoryService {
     }
   }
 
-  /** Parses a shop's percentage field ({@code "9"}, {@code "9.00"}, {@code "9%"}). */
-  private static BigDecimal parsePercentage(String raw) {
-    return GstMath.parseRatePct(raw);
-  }
-
   /** Per-invoice CGST / SGST slice. IGST is wired in once the invoice carries a place-of-supply. */
   private record GstSplit(BigDecimal cgst, BigDecimal sgst) {}
 
@@ -937,11 +886,21 @@ public class InventoryService {
       inventory.setUnitConversions(resolveUnitConversionForCreate(
           request, normalizedBaseUnit));
       inventory.setPurchaseDate(request.getPurchaseDate() != null ? request.getPurchaseDate() : Instant.now());
-      inventory.setBillingMode(normalizeBillingMode(request.getBillingMode()));
+      BillingMode billingMode = normalizeBillingMode(request.getBillingMode());
+      inventory.setBillingMode(billingMode);
+      if (billingMode == BillingMode.BASIC) {
+        inventory.setSellRestriction(
+            com.inventory.product.domain.model.enums.InventorySellRestriction.ESTIMATE_ONLY);
+      } else if (inventory.getSellRestriction() == null) {
+        inventory.setSellRestriction(
+            com.inventory.product.domain.model.enums.InventorySellRestriction.ANY);
+      }
 
       // Resolve catalog identity: reuse selected product, fork on identity edit, else match/create.
       inventory.setProductId(
           productService.resolveForRegistration(request.getProductId(), inventory, shopId));
+      // Reads hydrate packaging from the product, so base counts must use the product's factor.
+      adoptProductPackaging(inventory, shopId);
 
       int billQty = request.getCount() != null ? request.getCount() : 0;
       boolean useNewFixedUnits = request.getSchemePayFor() != null || request.getSchemeFree() != null;
@@ -1551,6 +1510,7 @@ public class InventoryService {
       }
 
       inventoryVerticalValidationHandler.validateUpdate(shopId, inventory, request);
+      int previousPackFactor = LotPackaging.factor(inventory.getUnitConversions());
 
       // Product details - only update when provided
       if (request.getBarcode() != null) inventory.setBarcode(request.getBarcode());
@@ -1598,10 +1558,24 @@ public class InventoryService {
             normalizeUnitName(inventory.getBaseUnit())));
       }
 
+      boolean packagingRequested =
+          request.getBaseUnit() != null || request.getUnitConversions() != null;
+      int requestedPackFactor = LotPackaging.factor(inventory.getUnitConversions());
+      if (packagingRequested && requestedPackFactor != previousPackFactor) {
+        // Before product resolution, so a rejected edit never forks a product.
+        assertLotStockUntouched(inventory, shopId);
+      }
+
       // Identity edits are not persisted on the inventory doc; re-resolve the catalog product so an
       // identity change forks/links a new product while unchanged identity keeps the same one.
       inventory.setProductId(
           productService.resolveForRegistration(inventory.getProductId(), inventory, shopId));
+      adoptProductPackaging(inventory, shopId);
+      int newPackFactor = LotPackaging.factor(inventory.getUnitConversions());
+      if (newPackFactor != previousPackFactor) {
+        assertLotStockUntouched(inventory, shopId);
+        rebaseCountsFromDisplay(inventory, newPackFactor);
+      }
 
       // Update updatedAt timestamp
       inventory.setUpdatedAt(Instant.now());
@@ -1805,6 +1779,50 @@ public class InventoryService {
         .multiply(BigDecimal.valueOf(factor))
         .setScale(0, RoundingMode.HALF_UP)
         .intValue();
+  }
+
+  /**
+   * Make the lot's packaging match its catalog product, since every read hydrates packaging from
+   * the product. Identity matching includes the pack factor, so a mismatch is not expected.
+   */
+  private void adoptProductPackaging(Inventory inventory, String shopId) {
+    productService.findInShop(shopId, inventory.getProductId()).ifPresent(product -> {
+      if (LotPackaging.factor(product.getUnitConversions())
+          != LotPackaging.factor(inventory.getUnitConversions())) {
+        log.warn(
+            "Lot packaging {} differs from product {} packaging {} in shop {}; using the product's",
+            LotPackaging.describe(inventory.getBaseUnit(), inventory.getUnitConversions()),
+            product.getId(),
+            LotPackaging.describe(product.getBaseUnit(), product.getUnitConversions()),
+            shopId);
+      }
+      inventory.setBaseUnit(product.getBaseUnit());
+      inventory.setUnitConversions(product.getUnitConversions());
+    });
+  }
+
+  /**
+   * Sale, refund and return lines store base quantities, so a lot's base counts can only be
+   * re-derived while nothing references them.
+   */
+  private void assertLotStockUntouched(Inventory inventory, String shopId) {
+    int sold = inventory.getSoldBaseCount() != null ? inventory.getSoldBaseCount() : 0;
+    boolean moved = sold > 0
+        || !java.util.Objects.equals(inventory.getCurrentBaseCount(), inventory.getReceivedBaseCount());
+    int reserved = quotationService
+        .quotedBaseQuantitiesByLot(shopId, null)
+        .getOrDefault(inventory.getId(), 0);
+    if (moved || reserved > 0) {
+      throw new ValidationException(
+          "Packaging can't be changed on a lot that already has sales, returns or open quotations;"
+              + " register the stock as a new lot instead");
+    }
+  }
+
+  private void rebaseCountsFromDisplay(Inventory inventory, int packFactor) {
+    inventory.setReceivedBaseCount(LotPackaging.toBase(inventory.getReceivedCount(), packFactor));
+    inventory.setCurrentBaseCount(LotPackaging.toBase(inventory.getCurrentCount(), packFactor));
+    inventory.setSoldBaseCount(LotPackaging.toBase(inventory.getSoldCount(), packFactor));
   }
 
   private int toBaseQuantityFromDisplay(int displayQuantity, Inventory inventory) {

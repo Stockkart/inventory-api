@@ -1,6 +1,6 @@
 package com.inventory.product.domain.model;
 
-import com.inventory.product.tax.PurchaseTaxTreatment;
+import com.inventory.product.domain.model.enums.PurchaseTaxTreatment;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
