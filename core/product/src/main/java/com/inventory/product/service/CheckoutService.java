@@ -5,6 +5,7 @@ import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.InsufficientStockException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.common.util.GstMath;
 import com.inventory.common.util.TxnIdGenerator;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.AvailableUnit;
@@ -942,24 +943,16 @@ public class CheckoutService {
       
       // Calculate SGST for this item
       if (itemSgst != null && !itemSgst.trim().isEmpty()) {
-        try {
-          BigDecimal sgstRate = new BigDecimal(itemSgst.trim()).divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
-          BigDecimal itemSgstAmount = itemTotal.multiply(sgstRate).setScale(2, RoundingMode.HALF_UP);
-          totalSgstAmount = totalSgstAmount.add(itemSgstAmount);
-        } catch (NumberFormatException e) {
-          log.warn("Invalid SGST value '{}' for item {}, using 0", itemSgst, PurchaseItemRefs.stockLotId(item));
-        }
+        BigDecimal sgstRate = GstMath.parseGstRate(itemSgst).divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
+        BigDecimal itemSgstAmount = itemTotal.multiply(sgstRate).setScale(2, RoundingMode.HALF_UP);
+        totalSgstAmount = totalSgstAmount.add(itemSgstAmount);
       }
       
       // Calculate CGST for this item
       if (itemCgst != null && !itemCgst.trim().isEmpty()) {
-        try {
-          BigDecimal cgstRate = new BigDecimal(itemCgst.trim()).divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
-          BigDecimal itemCgstAmount = itemTotal.multiply(cgstRate).setScale(2, RoundingMode.HALF_UP);
-          totalCgstAmount = totalCgstAmount.add(itemCgstAmount);
-        } catch (NumberFormatException e) {
-          log.warn("Invalid CGST value '{}' for item {}, using 0", itemCgst, PurchaseItemRefs.stockLotId(item));
-        }
+        BigDecimal cgstRate = GstMath.parseGstRate(itemCgst).divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
+        BigDecimal itemCgstAmount = itemTotal.multiply(cgstRate).setScale(2, RoundingMode.HALF_UP);
+        totalCgstAmount = totalCgstAmount.add(itemCgstAmount);
       }
     }
     
@@ -1048,20 +1041,12 @@ public class CheckoutService {
     }
     BigDecimal taxMultiplier = BigDecimal.ONE;
     if (cgst != null && StringUtils.hasText(cgst)) {
-      try {
-        BigDecimal cgstRate = new BigDecimal(cgst.trim()).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
-        taxMultiplier = taxMultiplier.add(cgstRate);
-      } catch (NumberFormatException e) {
-        // Invalid CGST rate, ignore
-      }
+      BigDecimal cgstRate = GstMath.parseGstRate(cgst).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
+      taxMultiplier = taxMultiplier.add(cgstRate);
     }
     if (sgst != null && StringUtils.hasText(sgst)) {
-      try {
-        BigDecimal sgstRate = new BigDecimal(sgst.trim()).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
-        taxMultiplier = taxMultiplier.add(sgstRate);
-      } catch (NumberFormatException e) {
-        // Invalid SGST rate, ignore
-      }
+      BigDecimal sgstRate = GstMath.parseGstRate(sgst).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
+      taxMultiplier = taxMultiplier.add(sgstRate);
     }
     
     BigDecimal totalAmount = totalDiscountedAmount.multiply(taxMultiplier);
