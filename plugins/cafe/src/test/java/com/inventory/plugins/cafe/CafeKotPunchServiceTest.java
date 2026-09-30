@@ -235,6 +235,60 @@ class CafeKotPunchServiceTest {
   }
 
   @Test
+  void aNoneLineIsClaimedButPrintsNoTicket() {
+    purchaseGainsPunchOnClaim(
+        punchDoc(
+            "PENDING_KOT_CREATION",
+            List.of(
+                delta("inventory:coke", "Coca-Cola", "NONE", 1),
+                delta("inventory:lassi", "Lassi", "BAR", 1),
+                delta("menu:m1", "Biryani", "KITCHEN", 1)),
+            List.of()));
+
+    List<CafeKot> kots = service.punch("shop-1", "user-1", "p1", "key-1");
+
+    assertEquals(List.of("punch-1:BAR:ISSUE", "punch-1:KITCHEN:ISSUE"), newlyCreatedKotIds());
+    assertTrue(
+        kots.stream()
+            .flatMap(k -> k.getLines().stream())
+            .noneMatch(l -> "Coca-Cola".equals(l.getName())));
+  }
+
+  @Test
+  void aPunchOfOnlyNoneLinesCompletesWithNoTicketAndNoNumber() {
+    purchaseGainsPunchOnClaim(
+        punchDoc(
+            "PENDING_KOT_CREATION",
+            List.of(
+                delta("inventory:coke", "Coca-Cola", "NONE", 2),
+                delta("inventory:sprite", "Sprite", "NONE", -1)),
+            List.of()));
+
+    List<CafeKot> kots = service.punch("shop-1", "user-1", "p1", "key-1");
+
+    assertTrue(kots.isEmpty());
+    verify(kotRepository, never()).saveAll(any());
+    verify(sequenceService, never()).allocate(anyString(), any(LocalDate.class), any());
+    assertEquals("COMPLETE", capturedPurchaseUpdate().getUpdateObject()
+        .get("$set", Document.class).get("cafeKotPunches.$.status"));
+  }
+
+  @Test
+  void theStationFrozenOnTheLineWinsOverAnyLaterMenuEdit() {
+    // Lassi was added before it was placed in a section, so its line carries KITCHEN. The punch
+    // prints it there and never looks the station up again.
+    purchaseGainsPunchOnClaim(
+        punchDoc(
+            "PENDING_KOT_CREATION",
+            List.of(delta("inventory:lassi", "Lassi", "KITCHEN", 1)),
+            List.of()));
+
+    service.punch("shop-1", "user-1", "p1", "key-1");
+
+    assertEquals(List.of("punch-1:KITCHEN:ISSUE"), newlyCreatedKotIds());
+  }
+
+  @Test
   void aCompleteReplayReturnsTheRecordedTicketsAndCreatesNothing() {
     CafeKot existing = new CafeKot();
     existing.setId("punch-1:KITCHEN:ISSUE");
