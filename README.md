@@ -228,6 +228,24 @@ Shops are bound to a **vertical** (`Shop.verticalId` + `Shop.pluginVersion`). Fi
 
 **Remaining:** M8 core field strip migration; scan-sell detail modal schema columns; apparel/cafe vertical (Phase 5); import mappers + widgets (Phase 6).
 
+### GST reports (taxation)
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/v1/taxation/gstr1` | Outward supplies (sales) |
+| `GET /api/v1/taxation/gstr2` | Inward supplies (purchases) |
+| `GET /api/v1/taxation/gstr3b` | Summary return |
+
+**Shop state is required for GSTR-2.** The shop's state comes from its GSTIN, else the state on its address. Without either, `GET /taxation/gstr2` (and its download) returns **422** with error code **7000 `GST_CONFIGURATION_MISSING`**, because an interstate purchase (IGST) cannot be told from a local one (CGST + SGST). Set the shop's GSTIN or address state, then generate the return again.
+
+**Purchase tax basis.** GSTR-2 and the purchase journal both take each supplier invoice's tax from `PurchaseTaxBasisResolver` (`core/product/.../utils`): a stated header that agrees with the line rates (within ₹1.00 or 0.5% of the tax, whichever is larger) is used as printed; otherwise the header's tax, then landed and finally list line values, with a verdict (`OK`, `MISSING`, `MISMATCH`, `RATE_CONFLICT`) logged for anything but `OK`. A bill marked `INCLUSIVE` has tax taken out of line values only; its printed header is already ex-tax.
+
+**Purchase tax at stock-in.** `POST /api/v1/inventory/bulk` with a `vendorPurchaseInvoice` header:
+
+- **Refused (400, validation errors):** any negative header amount (line subtotal, tax, invoice total, shipping, other charges, overall discount), or a tax total above the line subtotal. Rules live in `VendorPurchaseInvoiceValidator`.
+- **Accepted and recorded:** a header that merely disagrees with its lines. The stated header is stored as typed; `PurchaseTaxRecorder` stores the resolved per-line taxable value and tax beside it, and the response carries `headerReconciliation` (the verdict), `computedLineSubTotal` and `computedTaxTotal`.
+- **Never blocks stock-in:** if the tax cannot be resolved, the invoice keeps its stated header and is resolved on read.
+
 ### Build commands
 
 ```bash

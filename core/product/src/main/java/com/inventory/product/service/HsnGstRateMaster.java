@@ -1,4 +1,4 @@
-package com.inventory.product.tax;
+package com.inventory.product.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;

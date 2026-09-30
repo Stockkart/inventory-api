@@ -1,6 +1,7 @@
-package com.inventory.product.tax;
+package com.inventory.product.utils;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.List;
 
 /**
@@ -68,5 +69,31 @@ public record PurchaseTaxBasis(List<Line> lines, Verdict verdict) {
 
   public BigDecimal totalTax() {
     return lines.stream().map(Line::tax).reduce(BigDecimal.ZERO, BigDecimal::add);
+  }
+
+  /** CGST and SGST halves of a stated tax amount, at 4dp. */
+  public record IntraStateSplit(BigDecimal centralTax, BigDecimal stateTax) {}
+
+  /**
+   * Shares a stated tax amount between CGST and SGST in the ratio this basis carries.
+   *
+   * <p>The journal posts what the vendor is owed, so the amount is the stated tax; the basis only
+   * decides the ratio. When the basis already sums to the stated tax the halves are exactly its
+   * own. Empty when the basis carries no intra-state tax to take a ratio from.
+   */
+  public java.util.Optional<IntraStateSplit> splitStated(BigDecimal statedTax) {
+    BigDecimal central = BigDecimal.ZERO;
+    BigDecimal state = BigDecimal.ZERO;
+    for (Line line : lines) {
+      central = central.add(line.centralTax());
+      state = state.add(line.stateTax());
+    }
+    BigDecimal lineTax = central.add(state);
+    if (statedTax == null || lineTax.signum() <= 0) {
+      return java.util.Optional.empty();
+    }
+    BigDecimal cgst = statedTax.multiply(central).divide(lineTax, 4, RoundingMode.HALF_UP);
+    return java.util.Optional.of(
+        new IntraStateSplit(cgst, statedTax.subtract(cgst).setScale(4, RoundingMode.HALF_UP)));
   }
 }
