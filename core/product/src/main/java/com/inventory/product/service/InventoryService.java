@@ -1,8 +1,6 @@
 package com.inventory.product.service;
 
 import com.inventory.common.util.GstMath;
-import com.inventory.product.utils.PurchaseTaxBasis;
-import com.inventory.product.utils.PurchaseTaxBasisResolver;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
@@ -12,6 +10,8 @@ import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.VendorPurchaseInvoice;
 import com.inventory.product.domain.model.VendorPurchaseInvoiceLine;
 import com.inventory.product.domain.repository.VendorPurchaseInvoiceRepository;
+import com.inventory.product.utils.PurchaseTaxBasis;
+import com.inventory.product.utils.PurchaseTaxBasisResolver;
 import com.inventory.product.utils.constants.ProductMetricsConstants;
 import com.inventory.user.domain.model.Vendor;
 import com.inventory.user.domain.repository.VendorRepository;
@@ -662,16 +662,9 @@ public class InventoryService {
     // read as intra-state.
     PurchaseTaxBasis basis =
         PurchaseTaxBasisResolver.resolve(inv, this::pricingOfLot, inv.getTaxTreatment(), false);
-    BigDecimal central = BigDecimal.ZERO;
-    BigDecimal state = BigDecimal.ZERO;
-    for (PurchaseTaxBasis.Line line : basis.lines()) {
-      central = central.add(line.centralTax());
-      state = state.add(line.stateTax());
-    }
-    BigDecimal lineTax = central.add(state);
-    if (lineTax.signum() > 0) {
-      BigDecimal cgst = total.multiply(central).divide(lineTax, 4, RoundingMode.HALF_UP);
-      return new GstSplit(cgst, total.subtract(cgst).setScale(4, RoundingMode.HALF_UP));
+    java.util.Optional<PurchaseTaxBasis.IntraStateSplit> split = basis.splitStated(total);
+    if (split.isPresent()) {
+      return new GstSplit(split.get().centralTax(), split.get().stateTax());
     }
 
     Shop shop =

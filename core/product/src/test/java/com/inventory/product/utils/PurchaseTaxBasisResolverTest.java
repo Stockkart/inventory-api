@@ -210,4 +210,38 @@ class PurchaseTaxBasisResolverTest {
     assertMoney("0", basis.lines().get(1).tax());
     assertMoney("18.01", basis.totalTax());
   }
+
+  @Test
+  void theJournalSplitIsTheReturnsSplitWhenTheHeaderProvesItself() {
+    line(10, "100", "6", null, null);
+    line(4, "250", "2.5", null, null);
+
+    PurchaseTaxBasis basis = resolve("2000.00", "170.00", PurchaseTaxTreatment.EXCLUSIVE, false);
+    PurchaseTaxBasis.IntraStateSplit split = basis.splitStated(bd("170.00")).orElseThrow();
+
+    BigDecimal central = BigDecimal.ZERO;
+    for (PurchaseTaxBasis.Line l : basis.lines()) central = central.add(l.centralTax());
+    assertMoney(central.toPlainString(), split.centralTax());
+    assertMoney("170.00", split.centralTax().add(split.stateTax()));
+  }
+
+  @Test
+  void theJournalAlwaysPostsTheStatedTaxEvenWhenTheHeaderIsOff() {
+    line(10, "100", "9", null, null);
+
+    PurchaseTaxBasis basis = resolve(null, null, PurchaseTaxTreatment.EXCLUSIVE, false);
+    PurchaseTaxBasis.IntraStateSplit split = basis.splitStated(bd("181.00")).orElseThrow();
+
+    assertMoney("90.50", split.centralTax());
+    assertMoney("90.50", split.stateTax());
+  }
+
+  @Test
+  void aBasisWithNoRatesGivesNoSplit() {
+    line(1, "100", "0", null, null);
+
+    PurchaseTaxBasis basis = resolve(null, null, PurchaseTaxTreatment.EXCLUSIVE, false);
+
+    assertEquals(java.util.Optional.empty(), basis.splitStated(bd("18.00")));
+  }
 }
