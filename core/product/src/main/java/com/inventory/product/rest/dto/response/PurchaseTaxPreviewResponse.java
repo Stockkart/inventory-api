@@ -16,6 +16,8 @@ public class PurchaseTaxPreviewResponse {
   /** Taxable value of the items, after purchase scheme and additional discount. */
   private BigDecimal lineSubTotal;
   private BigDecimal taxTotal;
+  /** Items only: the taxable value plus its tax, before header charges and discount. */
+  private BigDecimal itemsTotal;
   /** Typed subtotal and tax where given, else the resolved ones, plus charges, less discount. */
   private BigDecimal invoiceTotal;
   private int productCount;
