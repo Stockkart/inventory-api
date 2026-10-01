@@ -501,6 +501,12 @@ public class VendorService {
         updated = true;
       }
     }
+    // Null leaves the default alone; an explicit choice replaces it.
+    if (request.getDefaultTaxTreatment() != null
+        && request.getDefaultTaxTreatment() != vendor.getDefaultTaxTreatment()) {
+      vendor.setDefaultTaxTreatment(request.getDefaultTaxTreatment());
+      updated = true;
+    }
 
     if (updated) {
       vendor.setUpdatedAt(Instant.now());
