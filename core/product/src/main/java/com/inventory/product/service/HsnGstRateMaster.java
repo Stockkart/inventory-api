@@ -1,5 +1,6 @@
 package com.inventory.product.service;
 
+import com.inventory.common.util.HsnCodes;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -7,7 +8,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 
 import java.io.InputStream;
 import java.math.BigDecimal;
@@ -74,26 +74,7 @@ public class HsnGstRateMaster {
    * otherwise.
    */
   public Optional<Entry> rateFor(String hsn) {
-    String digits = digitsOnly(hsn);
-    if (!StringUtils.hasText(digits) || "0".equals(digits)) {
-      return Optional.empty();
-    }
-    for (int length = digits.length(); length >= 4; length--) {
-      Entry entry = byHsn.get(digits.substring(0, length));
-      if (entry != null) {
-        return Optional.of(entry);
-      }
-    }
-    return Optional.empty();
-  }
-
-  private static String digitsOnly(String raw) {
-    if (raw == null) return "";
-    StringBuilder out = new StringBuilder();
-    for (char c : raw.toCharArray()) {
-      if (Character.isDigit(c)) out.append(c);
-    }
-    return out.toString();
+    return HsnCodes.mostSpecific(hsn, byHsn::get, 4);
   }
 
   private static Map<String, Entry> load(ObjectMapper objectMapper, Resource resource) {
