@@ -16,7 +16,7 @@ import com.inventory.product.domain.repository.VendorPurchaseInvoiceRepository;
 import com.inventory.product.domain.repository.VendorPurchaseReturnRepository;
 import com.inventory.taxation.domain.gstr2.*;
 import com.inventory.taxation.domain.model.GstHsnLine;
-import com.inventory.common.tax.GstStateCode;
+import com.inventory.common.util.GstStateCode;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.user.domain.model.Vendor;
@@ -411,20 +411,10 @@ public class Gstr2DataAggregator {
             .collect(Collectors.toMap(Pricing::getId, pricing -> pricing));
   }
 
-  /**
-   * The state the shop supplies from, as a two-digit code.
-   *
-   * <p>Its GSTIN carries the code it registered under, which is the authority on
-   * the question. A shop below the registration threshold has none, and is then
-   * placed by the state on its address.
-   */
+  /** The state the shop supplies from: its GSTIN, else its address (see GstStateCode). */
   private String shopState(Shop shop) {
-    String fromGstin = GstStateCode.codeFromGstin(shop.getGstinNo());
-    if (StringUtils.hasText(fromGstin)) {
-      return fromGstin;
-    }
-    return shop.getLocation() == null ? ""
-        : GstStateCode.codeFromName(shop.getLocation().getState());
+    return GstStateCode.shopState(shop.getGstinNo(),
+        shop.getLocation() == null ? null : shop.getLocation().getState());
   }
 
   /**
@@ -512,9 +502,7 @@ public class Gstr2DataAggregator {
           ? LocalDateTime.ofInstant(invoice.getInvoiceDate(), ZoneId.systemDefault()).toLocalDate()
           : LocalDate.now();
       String supplierState = supplierState(vendor, supplierGstin);
-      boolean interstate = StringUtils.hasText(shopState)
-          && StringUtils.hasText(supplierState)
-          && !supplierState.equals(shopState);
+      boolean interstate = GstStateCode.isInterstate(shopState, supplierState);
 
       // What the invoice is worth for tax, and how far that answer can be trusted. The header is
       // used where it proves itself, and where it does not the resolver says so rather than

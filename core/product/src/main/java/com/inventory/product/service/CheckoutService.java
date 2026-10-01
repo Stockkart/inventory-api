@@ -1,6 +1,6 @@
 package com.inventory.product.service;
 
-import com.inventory.common.tax.GstStateCode;
+import com.inventory.common.util.GstStateCode;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.InsufficientStockException;
@@ -888,20 +888,6 @@ public class CheckoutService {
   }
 
   /**
-   * Calculate tax based on inventory-level SGST and CGST rates from purchase items.
-   * Each item's tax is calculated using its own CGST/SGST rates, then summed.
-   * If an item doesn't have CGST/SGST, falls back to shop defaults.
-   * 
-   * @param purchaseItems list of purchase items with inventory-level CGST/SGST
-   * @param shopId the shop ID to fetch default tax rates from if item doesn't have rates
-   * @return TaxCalculationResult with sgstAmount, cgstAmount, and taxTotal
-   */
-  private TaxCalculationResult calculateTax(List<PurchaseItem> purchaseItems, String shopId,
-      BillingMode billingMode) {
-    return calculateTax(purchaseItems, shopId, billingMode, null);
-  }
-
-  /**
    * Tax on a sale, split by where it is going.
    *
    * <p>The customer's own GSTIN places them. An unregistered buyer has none to read and the place
@@ -913,6 +899,10 @@ public class CheckoutService {
     return calculateTax(purchaseItems, shopId, billingMode, interstate);
   }
 
+  /**
+   * Tax on purchase items at each item's own CGST/SGST rate (shop defaults where an item has
+   * none), summed; on an interstate sale the same total is charged as IGST.
+   */
   private TaxCalculationResult calculateTax(List<PurchaseItem> purchaseItems, String shopId,
       BillingMode billingMode, boolean interstate) {
     if (!CheckoutUtils.isTaxApplicable(billingMode)) {
@@ -989,9 +979,6 @@ public class CheckoutService {
   }
   
   /**
-   * Inner class to hold tax calculation results.
-   */
-  /**
    * Whether a sale leaves the state the shop is registered in.
    *
    * <p>Both ends are placed by GSTIN where there is one, and the shop falls back to its address.
@@ -1015,7 +1002,7 @@ public class CheckoutService {
               shop.getLocation() != null ? shop.getLocation().getState() : null))
           .orElse("");
 
-      return StringUtils.hasText(shopState) && !shopState.equals(customerState);
+      return GstStateCode.isInterstate(shopState, customerState);
     } catch (RuntimeException e) {
       log.warn("Could not place the sale for interstate tax (shop {}, customer {}); "
           + "treating it as local", shopId, customerId, e);
@@ -1023,6 +1010,7 @@ public class CheckoutService {
     }
   }
 
+  /** Inner class to hold tax calculation results. */
   private static class TaxCalculationResult {
     private final BigDecimal sgstAmount;
     private final BigDecimal cgstAmount;

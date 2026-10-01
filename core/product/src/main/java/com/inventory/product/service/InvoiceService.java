@@ -342,7 +342,8 @@ public class InvoiceService {
           .toList());
       request.setSgstAmount(summary.getSgstTotal());
       request.setCgstAmount(summary.getCgstTotal());
-      request.setTaxTotal(summary.getSgstTotal().add(summary.getCgstTotal()));
+      request.setTaxTotal(
+          summary.getSgstTotal().add(summary.getCgstTotal()).add(summary.getIgstTotal()));
     });
 
     if (!invoiceItems.isEmpty()) {

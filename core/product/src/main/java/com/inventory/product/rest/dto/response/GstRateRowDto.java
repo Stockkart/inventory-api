@@ -6,7 +6,10 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 
-/** The GST a bill charges at one rate: the taxable value of its lines at that rate, and the CGST and SGST on it. */
+/**
+ * The GST a bill charges at one rate: the taxable value of its lines at that rate, and the CGST and
+ * SGST on it -- or, on an interstate sale, the IGST (CGST and SGST then zero).
+ */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -16,4 +19,5 @@ public class GstRateRowDto {
   private BigDecimal taxableValue;
   private BigDecimal cgstAmount;
   private BigDecimal sgstAmount;
+  private BigDecimal igstAmount;
 }

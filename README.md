@@ -238,6 +238,8 @@ Shops are bound to a **vertical** (`Shop.verticalId` + `Shop.pluginVersion`). Fi
 
 **Shop state is required for GSTR-2.** The shop's state comes from its GSTIN, else the state on its address. Without either, `GET /taxation/gstr2` (and its download) returns **422** with error code **7000 `GST_CONFIGURATION_MISSING`**, because an interstate purchase (IGST) cannot be told from a local one (CGST + SGST). Set the shop's GSTIN or address state, then generate the return again.
 
+**IGST on interstate sales.** A sale to a customer whose GSTIN places them in another state is billed as IGST at the combined rate (CGST and SGST zero); an unregistered or unplaceable customer is local. The decision is `GstStateCode.isInterstate` (`core/common/util`), shared by checkout and GSTR-2, and is stored on the sale (`interstate`, `igstAmount`) so GSTR-1, the invoice and estimate conversion read it rather than deciding again. Sale responses (`PurchaseSummaryDto`, `AddToCartResponse`, `CheckoutResponse`) carry `igstAmount` and `interstate`, and `taxSummary` gives IGST per rate (`rates[].igstAmount`, `igstTotal`).
+
 **Purchase tax basis.** GSTR-2 and the purchase journal both take each supplier invoice's tax from `PurchaseTaxBasisResolver` (`core/product/.../utils`): a stated header that agrees with the line rates (within ₹1.00 or 0.5% of the tax, whichever is larger) is used as printed; otherwise the header's tax, then landed and finally list line values, with a verdict (`OK`, `MISSING`, `MISMATCH`, `RATE_CONFLICT`) logged for anything but `OK`. A bill marked `INCLUSIVE` has tax taken out of line values only; its printed header is already ex-tax.
 
 **Purchase tax at stock-in.** `POST /api/v1/inventory/bulk` with a `vendorPurchaseInvoice` header:
