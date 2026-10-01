@@ -71,6 +71,7 @@ class PurchaseTaxPreviewServiceTest {
     assertMoney("2000.00", out.getLineSubTotal());
     assertMoney("170.00", out.getTaxTotal());
     assertMoney("2170.00", out.getInvoiceTotal());
+    assertMoney("2170.00", out.getItemsTotal());
     assertEquals(2, out.getProductCount());
     assertEquals(14, out.getTotalQuantity());
   }
