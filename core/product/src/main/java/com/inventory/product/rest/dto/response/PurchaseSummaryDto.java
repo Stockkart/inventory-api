@@ -29,6 +29,7 @@ public class PurchaseSummaryDto {
   private BigDecimal discountTotal;
   private BigDecimal saleAdditionalDiscountTotal; // Total additional discount amount
   private BigDecimal grandTotal;
+  private SaleTaxSummaryDto taxSummary; // Totals as the invoice states them, GST per rate; null when no line is taxed
   private BigDecimal totalCost;       // Margin: total cost (inventory cost × quantities)
   private BigDecimal revenueBeforeTax; // Margin: subTotal − additionalDiscountTotal
   private BigDecimal revenueAfterTax;  // Margin: grandTotal (total received including tax)
