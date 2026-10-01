@@ -13,6 +13,7 @@ import com.inventory.product.domain.model.VendorPurchaseInvoiceLine;
 import com.inventory.product.domain.repository.VendorPurchaseInvoiceRepository;
 import com.inventory.product.utils.PurchaseTaxBasis;
 import com.inventory.product.utils.PurchaseTaxBasisResolver;
+import com.inventory.product.utils.VendorInvoiceTotals;
 import com.inventory.product.utils.constants.ProductMetricsConstants;
 import com.inventory.user.domain.model.Vendor;
 import com.inventory.user.domain.repository.VendorRepository;
@@ -108,6 +109,9 @@ public class InventoryService {
 
   @Autowired
   private PurchaseTaxRecorder purchaseTaxRecorder;
+
+  @Autowired
+  private PurchaseTaxTreatmentResolver purchaseTaxTreatmentResolver;
 
   @Autowired
   private PackagingUnitService packagingUnitService;
@@ -438,11 +442,8 @@ public class InventoryService {
       // convention is a property of their software rather than of any one invoice, so asking on
       // every bill from the same vendor would be asking a question already answered.
       pendingInvoice.setTaxTreatment(
-          invReq.getTaxTreatment() != null
-              ? invReq.getTaxTreatment()
-              : vendorRepository.findById(bulkRequest.getVendorId())
-                  .map(Vendor::getDefaultTaxTreatment)
-                  .orElse(null));
+          purchaseTaxTreatmentResolver.taxTreatmentFor(
+              invReq.getTaxTreatment(), bulkRequest.getVendorId()));
     }
 
     try {
@@ -471,13 +472,8 @@ public class InventoryService {
       InventoryReceiptResponse response = create(fullRequest, userId, shopId);
       createdItems.add(response);
 
-      VendorPurchaseInvoiceLine line = new VendorPurchaseInvoiceLine();
+      VendorPurchaseInvoiceLine line = inventoryMapper.toInvoiceLine(itemRequest);
       line.setLineIndex(invoiceLines.size());
-      line.setName(itemRequest.getName());
-      line.setBarcode(itemRequest.getBarcode());
-      line.setCount(itemRequest.getCount());
-      line.setCostPrice(itemRequest.getCostPrice());
-      line.setPriceToRetail(itemRequest.getPriceToRetail());
       line.setInventoryId(response.getId());
       invoiceLines.add(line);
     }
@@ -839,18 +835,9 @@ public class InventoryService {
   private record GstSplit(BigDecimal cgst, BigDecimal sgst) {}
 
   private static BigDecimal deriveInvoiceTotalForCredit(VendorPurchaseInvoice inv) {
-    BigDecimal invTotal = nz(inv.getInvoiceTotal());
-    if (invTotal.signum() > 0) {
-      return invTotal.setScale(4, RoundingMode.HALF_UP);
-    }
-    return nz(inv.getLineSubTotal())
-        .add(nz(inv.getTaxTotal()))
-        .add(nz(inv.getShippingCharge()))
-        .add(nz(inv.getOtherCharges()))
-        .add(nz(inv.getRoundOff()))
-        .subtract(nz(inv.getOverallDiscount()))
-        .max(BigDecimal.ZERO)
-        .setScale(4, RoundingMode.HALF_UP);
+    return VendorInvoiceTotals.invoiceTotal(
+        inv.getInvoiceTotal(), inv.getLineSubTotal(), inv.getTaxTotal(), inv.getShippingCharge(),
+        inv.getOtherCharges(), inv.getRoundOff(), inv.getOverallDiscount());
   }
 
   /**
