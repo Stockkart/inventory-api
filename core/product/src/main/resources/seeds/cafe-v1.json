@@ -86,6 +86,19 @@
           "showIn": ["menu_form"]
         }
       ]
+    },
+    "shop": {
+      "fields": [
+        {
+          "key": "fssai",
+          "label": "FSSAI Number",
+          "type": "string",
+          "required": true,
+          "storage": "core",
+          "showIn": ["onboarding"],
+          "validation": { "minLength": 1, "maxLength": 64 }
+        }
+      ]
     }
   },
   "workflows": {
