@@ -72,6 +72,7 @@ public class PurchaseTaxPreviewService {
     out.setTaxTreatment(treatment);
     out.setLineSubTotal(lineSubTotal);
     out.setTaxTotal(taxTotal);
+    out.setItemsTotal(lineSubTotal.add(taxTotal));
     out.setInvoiceTotal(money(VendorInvoiceTotals.invoiceTotal(
         null,
         request.getLineSubTotal() != null ? request.getLineSubTotal() : lineSubTotal,
