@@ -5,6 +5,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -51,10 +52,10 @@ public class BulkCreateInventoryResponse {
   private String headerReconciliation;
 
   /** Taxable value the lines resolve to, for showing beside the typed subtotal. */
-  private java.math.BigDecimal computedLineSubTotal;
+  private BigDecimal computedLineSubTotal;
 
   /** Tax the lines resolve to at their own rates, for showing beside the typed tax. */
-  private java.math.BigDecimal computedTaxTotal;
+  private BigDecimal computedTaxTotal;
 
   /**
    * Products whose GST rate disagrees with the rest of the shop's catalogue under the same HSN.

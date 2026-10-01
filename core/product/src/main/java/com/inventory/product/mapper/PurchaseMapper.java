@@ -1,5 +1,6 @@
 package com.inventory.product.mapper;
 
+import com.inventory.common.util.GstMath;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.Purchase;
@@ -18,6 +19,7 @@ import com.inventory.product.rest.dto.response.PurchaseListResponse;
 import com.inventory.product.rest.dto.response.PurchaseSummaryDto;
 import com.inventory.product.rest.dto.response.SaleStatusResponse;
 import com.inventory.product.util.PurchaseItemRefs;
+import com.inventory.product.utils.SaleTaxBreakdown;
 import com.inventory.product.service.PurchaseCustomerRequests;
 import com.inventory.user.service.CustomerService;
 import org.mapstruct.AfterMapping;
@@ -441,20 +443,12 @@ public abstract class PurchaseMapper {
     
     BigDecimal taxMultiplier = BigDecimal.ONE;
     if (finalCgst != null && !finalCgst.trim().isEmpty()) {
-      try {
-        BigDecimal cgstRate = new BigDecimal(finalCgst.trim()).divide(BigDecimal.valueOf(100), 4, java.math.RoundingMode.HALF_UP);
-        taxMultiplier = taxMultiplier.add(cgstRate);
-      } catch (NumberFormatException e) {
-        // Invalid CGST rate, ignore
-      }
+      BigDecimal cgstRate = GstMath.parseGstRate(finalCgst).divide(BigDecimal.valueOf(100), 4, java.math.RoundingMode.HALF_UP);
+      taxMultiplier = taxMultiplier.add(cgstRate);
     }
     if (finalSgst != null && !finalSgst.trim().isEmpty()) {
-      try {
-        BigDecimal sgstRate = new BigDecimal(finalSgst.trim()).divide(BigDecimal.valueOf(100), 4, java.math.RoundingMode.HALF_UP);
-        taxMultiplier = taxMultiplier.add(sgstRate);
-      } catch (NumberFormatException e) {
-        // Invalid SGST rate, ignore
-      }
+      BigDecimal sgstRate = GstMath.parseGstRate(finalSgst).divide(BigDecimal.valueOf(100), 4, java.math.RoundingMode.HALF_UP);
+      taxMultiplier = taxMultiplier.add(sgstRate);
     }
     
     BigDecimal totalAmount = totalDiscountedAmount.multiply(taxMultiplier);
@@ -551,7 +545,13 @@ public abstract class PurchaseMapper {
   @Mapping(target = "customerAddress", ignore = true)
   @Mapping(target = "customerPhone", ignore = true)
   @Mapping(target = "paymentMethod", source = "paymentMethod")
+  @Mapping(target = "taxSummary", ignore = true)
   public abstract AddToCartResponse toAddToCartResponse(Purchase purchase);
+
+  @AfterMapping
+  protected void populateTaxSummary(@MappingTarget AddToCartResponse response, Purchase purchase) {
+    response.setTaxSummary(SaleTaxBreakdown.of(purchase).orElse(null));
+  }
 
   @AfterMapping
   protected void populateCustomerDetails(@MappingTarget AddToCartResponse response, Purchase purchase) {
@@ -640,7 +640,13 @@ public abstract class PurchaseMapper {
   @Mapping(target = "customerName", ignore = true)
   @Mapping(target = "customerAddress", ignore = true)
   @Mapping(target = "customerPhone", ignore = true)
+  @Mapping(target = "taxSummary", ignore = true)
   public abstract PurchaseSummaryDto toPurchaseSummaryDto(Purchase purchase);
+
+  @AfterMapping
+  protected void populateTaxSummary(@MappingTarget PurchaseSummaryDto dto, Purchase purchase) {
+    dto.setTaxSummary(SaleTaxBreakdown.of(purchase).orElse(null));
+  }
 
   @AfterMapping
   protected void populateCustomerDetails(@MappingTarget PurchaseSummaryDto dto, Purchase purchase) {

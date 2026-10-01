@@ -94,6 +94,9 @@ public class GenerateInvoiceRequest {
   private BigDecimal sgstPercent;
   private BigDecimal cgstPercent;
   private BigDecimal taxTotal;
+  // One row per GST rate on the invoice. Empty when no line carries tax, in which case the
+  // single SGST/CGST amounts above are printed as before.
+  private List<InvoiceTaxRateRow> taxRateRows;
   private BigDecimal roundOff;
   private BigDecimal grandTotal;
   private BigDecimal totalMRPAmount; // Sum of all MRPs (maximumRetailPrice * quantity)

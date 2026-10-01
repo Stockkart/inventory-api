@@ -1,7 +1,7 @@
 package com.inventory.taxation.service;
 
 import com.inventory.common.exception.GstConfigurationException;
-import com.inventory.common.tax.GstMath;
+import com.inventory.common.util.GstMath;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.PurchaseItem;
@@ -16,7 +16,7 @@ import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.service.PackagingUnitCatalog;
 import com.inventory.taxation.domain.model.*;
 import com.inventory.taxation.domain.gstr1.Gstr1ReportContext;
-import com.inventory.common.tax.GstStateCode;
+import com.inventory.common.util.GstStateCode;
 import com.inventory.user.domain.model.Customer;
 import com.inventory.user.domain.repository.CustomerRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -423,7 +423,7 @@ public class Gstr1DataAggregator {
   }
 
   private BigDecimal parseRate(String rateStr) {
-    return GstMath.parseRatePct(rateStr);
+    return GstMath.parseGstRate(rateStr);
   }
 
   private GstInvoiceLine mergeB2csLine(GstInvoiceLine a, GstInvoiceLine b) {

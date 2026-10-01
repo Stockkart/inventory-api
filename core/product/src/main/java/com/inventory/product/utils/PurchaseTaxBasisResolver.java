@@ -1,7 +1,7 @@
-package com.inventory.product.tax;
+package com.inventory.product.utils;
 
-import com.inventory.common.tax.GstMath;
-import com.inventory.common.tax.PurchaseTaxTreatment;
+import com.inventory.common.util.GstMath;
+import com.inventory.common.constants.PurchaseTaxTreatment;
 import com.inventory.pricing.domain.model.Pricing;
 import com.inventory.pricing.domain.model.Scheme;
 import com.inventory.pricing.utils.constants.PricingConstants;
@@ -13,7 +13,6 @@ import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 
@@ -37,10 +36,15 @@ import java.util.function.Function;
 public final class PurchaseTaxBasisResolver {
 
   /**
-   * How far the stated tax may sit from the tax the lines imply before the header is disbelieved.
+   * How far the stated tax may sit from the tax the lines imply before the header is disbelieved:
+   * the larger of ₹1.00 and 0.5% of the stated tax.
    *
-   * <p>Wide enough to absorb the paisa-level drift of a supplier rounding each line while the
-   * shop's total rounds once, narrow enough that a whole missing discount cannot hide inside it.
+   * <p>Measured against the tax, not the subtotal. A supplier rounding each line's tax while the
+   * shop rounds once drifts by at most a paisa a line, which ₹1.00 absorbs on any ordinary bill,
+   * and 0.5% of the tax covers the rest on a very long one. A missing discount moves the tax by the
+   * discount's own share of it — a 2% discount moves it 2% — so it lands well outside. Measured
+   * against the subtotal instead, the allowance on a ₹1,00,000 bill at 5% was ₹500 on ₹5,000 of
+   * tax, and a ₹10,000 discount could hide inside it.
    */
   private static final BigDecimal ABSOLUTE_TOLERANCE = new BigDecimal("1.00");
 
@@ -99,15 +103,23 @@ public final class PurchaseTaxBasisResolver {
     BigDecimal statedSubTotal = netOfOverallDiscount(invoice);
     BigDecimal statedTax = invoice.getTaxTotal();
     BigDecimal grossSum = sum(gross);
+    boolean inclusive = PurchaseTaxTreatment.orDefault(treatment) == PurchaseTaxTreatment.INCLUSIVE;
+
+    // The header rungs below read the supplier's printed subtotal and tax, and a printed subtotal
+    // is the taxable value: rung 1 accepts it only when tax at the line rates on top of it matches
+    // the printed tax. A tax-inclusive figure keyed into the subtotal fails that test by the whole
+    // rate and falls through. So header figures are ex-tax whatever the bill's treatment, and only
+    // the line-value rungs (3 and 4) have tax to take out of them.
 
     // 1. A header that agrees with itself. The operator read the supplier's totals off the paper,
-    //    and the line rates confirm them, so the figures are used as stated.
+    //    and the line rates confirm them, so the figures are used as stated -- the tax as well as
+    //    the subtotal, so the return reports exactly the tax the ledger posts.
     if (statedSubTotal != null && statedTax != null && grossSum.signum() > 0) {
       List<BigDecimal> scaled = prorate(gross, grossSum, statedSubTotal);
       BigDecimal impliedTax = taxOf(scaled, rates);
-      if (within(impliedTax, statedTax, statedSubTotal)) {
-        return basis(scaled, rates, PurchaseTaxBasis.Source.HEADER_CONSISTENT,
-            treatment, interstate, PurchaseTaxBasis.Verdict.OK);
+      if (within(impliedTax, statedTax)) {
+        return statedBasis(scaled, rates, statedTax, PurchaseTaxBasis.Source.HEADER_CONSISTENT,
+            interstate, PurchaseTaxBasis.Verdict.OK);
       }
 
       // 2. The header disagrees with itself. On a single-rate invoice the stated tax is the more
@@ -121,15 +133,15 @@ public final class PurchaseTaxBasisResolver {
           BigDecimal derived = money(
               statedTax.multiply(BigDecimal.valueOf(100))
                   .divide(rate, 2, RoundingMode.HALF_UP));
-          return basis(prorate(gross, grossSum, derived), rates,
-              PurchaseTaxBasis.Source.DERIVED_FROM_TAX, treatment, interstate,
+          return statedBasis(prorate(gross, grossSum, derived), rates, statedTax,
+              PurchaseTaxBasis.Source.DERIVED_FROM_TAX, interstate,
               verdictForInconsistentHeader(statedSubTotal, statedTax, rates));
         }
       }
 
       // Multi-rate and inconsistent: the stated subtotal is still the best split we have, but the
       // header is flagged so the figures are not mistaken for a reconciled invoice.
-      return basis(scaled, rates, PurchaseTaxBasis.Source.HEADER_CONSISTENT, treatment, interstate,
+      return basis(scaled, rates, PurchaseTaxBasis.Source.HEADER_CONSISTENT, false, interstate,
           verdictForInconsistentHeader(statedSubTotal, statedTax, rates));
     }
 
@@ -141,33 +153,33 @@ public final class PurchaseTaxBasisResolver {
       for (int i = 0; i < lines.size(); i++) {
         basisValues.add(landed.get(i) != null ? landed.get(i) : gross.get(i));
       }
-      return basis(basisValues, rates, PurchaseTaxBasis.Source.LINE_LANDED, treatment, interstate,
+      return basis(basisValues, rates, PurchaseTaxBasis.Source.LINE_LANDED, inclusive, interstate,
           PurchaseTaxBasis.Verdict.MISSING);
     }
 
     // 4. Nothing but list prices. Whatever discount the bill gave was never recorded, so this is
     //    gross and reads high -- which is exactly why the verdict says the header is missing.
-    return basis(gross, rates, PurchaseTaxBasis.Source.LINE_GROSS, treatment, interstate,
+    return basis(gross, rates, PurchaseTaxBasis.Source.LINE_GROSS, inclusive, interstate,
         PurchaseTaxBasis.Verdict.MISSING);
   }
 
   /**
    * Turns line values into taxable values and tax.
    *
-   * <p>Where the amounts are tax-inclusive the tax is taken out of them; otherwise it is added on
-   * top. The source is reported as the extraction in the first case, since that is what the caller
-   * needs to know to read the figure.
+   * <p>Where the values are tax-inclusive the tax is taken out of them; otherwise it is added on
+   * top. Only the line-value rungs pass inclusive values: a header subtotal is already ex-tax. The
+   * source is reported as the extraction when one happened, since that is what the caller needs to
+   * know to read the figure.
    */
   private static PurchaseTaxBasis basis(
       List<BigDecimal> values, List<BigDecimal> rates, PurchaseTaxBasis.Source source,
-      PurchaseTaxTreatment treatment, boolean interstate, PurchaseTaxBasis.Verdict verdict) {
+      boolean valuesInclusive, boolean interstate, PurchaseTaxBasis.Verdict verdict) {
 
-    boolean inclusive = PurchaseTaxTreatment.orDefault(treatment) == PurchaseTaxTreatment.INCLUSIVE;
     List<PurchaseTaxBasis.Line> out = new ArrayList<>(values.size());
 
     for (int i = 0; i < values.size(); i++) {
       BigDecimal rate = rates.get(i);
-      BigDecimal taxable = inclusive
+      BigDecimal taxable = valuesInclusive
           ? GstMath.extractFromInclusive(values.get(i), rate).taxable()
           : values.get(i);
 
@@ -177,7 +189,50 @@ public final class PurchaseTaxBasisResolver {
           : GstMath.splitIntraState(taxable, rate);
 
       out.add(new PurchaseTaxBasis.Line(taxable, rate, halves.centralTax(), halves.stateTax(),
-          integrated, inclusive ? PurchaseTaxBasis.Source.INCLUSIVE_EXTRACTED : source));
+          integrated, valuesInclusive ? PurchaseTaxBasis.Source.INCLUSIVE_EXTRACTED : source));
+    }
+    return new PurchaseTaxBasis(out, verdict);
+  }
+
+  /**
+   * Ex-tax line values carrying the tax the header states, shared out by what each line's rate
+   * implies.
+   *
+   * <p>Used where the stated tax is trusted. Recomputing it per line instead would report a figure
+   * a few paise or rupees off the one printed on the bill and posted to the ledger. On an
+   * intra-state bill the stated tax is halved first and each half shared out, so the CGST and SGST
+   * totals match the bill's two equal columns; each line's halves then differ by a paisa at most.
+   */
+  private static PurchaseTaxBasis statedBasis(
+      List<BigDecimal> taxables, List<BigDecimal> rates, BigDecimal statedTax,
+      PurchaseTaxBasis.Source source, boolean interstate, PurchaseTaxBasis.Verdict verdict) {
+
+    List<BigDecimal> implied = new ArrayList<>(taxables.size());
+    for (int i = 0; i < taxables.size(); i++) {
+      implied.add(GstMath.taxOnExclusive(taxables.get(i), rates.get(i)));
+    }
+    BigDecimal impliedSum = sum(implied);
+    if (impliedSum.signum() <= 0 || statedTax.signum() <= 0) {
+      return basis(taxables, rates, source, false, interstate, verdict);
+    }
+
+    BigDecimal zero = money(BigDecimal.ZERO);
+    List<PurchaseTaxBasis.Line> out = new ArrayList<>(taxables.size());
+    if (interstate) {
+      List<BigDecimal> integrated = shareTax(implied, impliedSum, money(statedTax));
+      for (int i = 0; i < taxables.size(); i++) {
+        out.add(new PurchaseTaxBasis.Line(taxables.get(i), rates.get(i), zero, zero,
+            integrated.get(i), source));
+      }
+    } else {
+      BigDecimal central = money(statedTax).divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP);
+      BigDecimal state = money(statedTax).subtract(central);
+      List<BigDecimal> centrals = shareTax(implied, impliedSum, central);
+      List<BigDecimal> states = shareTax(implied, impliedSum, state);
+      for (int i = 0; i < taxables.size(); i++) {
+        out.add(new PurchaseTaxBasis.Line(taxables.get(i), rates.get(i), centrals.get(i),
+            states.get(i), zero, source));
+      }
     }
     return new PurchaseTaxBasis(out, verdict);
   }
@@ -204,13 +259,33 @@ public final class PurchaseTaxBasisResolver {
   }
 
   /**
-   * Whether the tax implied by the lines is close enough to the tax the header states.
-   *
-   * <p>Relative to the invoice, because a rupee's drift on a lakh is rounding and a rupee's drift
-   * on fifty is a mistake.
+   * Shares a stated tax across lines by the tax each implies. Like {@link #prorate}, except the
+   * rounding remainder goes to the line carrying the most tax, so a zero-rated line never ends up
+   * holding a paisa of tax.
    */
-  private static boolean within(BigDecimal implied, BigDecimal stated, BigDecimal subTotal) {
-    BigDecimal allowed = subTotal.abs().multiply(RELATIVE_TOLERANCE);
+  private static List<BigDecimal> shareTax(
+      List<BigDecimal> implied, BigDecimal impliedSum, BigDecimal target) {
+    List<BigDecimal> shares = new ArrayList<>(implied.size());
+    BigDecimal running = BigDecimal.ZERO;
+    int largest = 0;
+    for (int i = 0; i < implied.size(); i++) {
+      BigDecimal share = implied.get(i).multiply(target).divide(impliedSum, 2, RoundingMode.HALF_UP);
+      shares.add(share);
+      running = running.add(share);
+      if (implied.get(i).compareTo(implied.get(largest)) > 0) {
+        largest = i;
+      }
+    }
+    shares.set(largest, shares.get(largest).add(target.subtract(running)));
+    return shares;
+  }
+
+  /**
+   * Whether the tax implied by the lines is close enough to the tax the header states. See
+   * {@link #ABSOLUTE_TOLERANCE} for why the allowance is measured against the tax.
+   */
+  private static boolean within(BigDecimal implied, BigDecimal stated) {
+    BigDecimal allowed = stated.abs().multiply(RELATIVE_TOLERANCE);
     if (allowed.compareTo(ABSOLUTE_TOLERANCE) < 0) {
       allowed = ABSOLUTE_TOLERANCE;
     }
@@ -259,7 +334,7 @@ public final class PurchaseTaxBasisResolver {
   /**
    * Unit cost after the price reductions that GST recognises — and only those.
    *
-   * <p>Deliberately not {@link PricingUtils#computeEffectiveCostPrice}, which is the landed cost:
+   * <p>Deliberately not {@link com.inventory.pricing.utils.PricingUtils#computeEffectiveCostPrice}, which is the landed cost:
    * it also dilutes the price by free goods, so a "19+1" bonus makes each unit held cost a
    * twentieth less. That is the right basis for valuation and margin, and the wrong one for tax.
    * A supplier who ships twenty and charges for nineteen has charged for nineteen; the taxable
@@ -316,7 +391,7 @@ public final class PurchaseTaxBasisResolver {
 
   private static BigDecimal rateOf(Pricing pricing) {
     return pricing == null ? BigDecimal.ZERO
-        : GstMath.parseRatePct(pricing.getSgst()).add(GstMath.parseRatePct(pricing.getCgst()));
+        : GstMath.parseGstRate(pricing.getSgst()).add(GstMath.parseGstRate(pricing.getCgst()));
   }
 
   private static BigDecimal sum(List<BigDecimal> values) {
