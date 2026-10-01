@@ -228,15 +228,33 @@
       <td class="label">Taxable Amount</td>
       <td class="value">Rs. <span th:text="${#numbers.formatDecimal(taxableAmount, 1, 2)}">0.00</span></td>
     </tr>
-    <tr th:if="${cgstAmount != null && cgstAmount.compareTo(T(java.math.BigDecimal).ZERO) > 0}">
+    <!-- Per rate: IGST on an interstate supply, else one CGST and one SGST row; the single rows
+         below are for bills with no rows. -->
+    <th:block th:if="${interstate}" th:each="row : ${taxRateRows}">
+      <tr>
+        <td class="label">IGST @ <span th:text="${#numbers.formatDecimal(row.igstPercent, 1, 2)}">5.00</span>%</td>
+        <td class="value">Rs. <span th:text="${#numbers.formatDecimal(row.igstAmount, 1, 2)}">0.00</span></td>
+      </tr>
+    </th:block>
+    <th:block th:if="${!interstate}" th:each="row : ${taxRateRows}">
+      <tr>
+        <td class="label">CGST @ <span th:text="${#numbers.formatDecimal(row.cgstPercent, 1, 2)}">2.50</span>%</td>
+        <td class="value">Rs. <span th:text="${#numbers.formatDecimal(row.cgstAmount, 1, 2)}">0.00</span></td>
+      </tr>
+      <tr>
+        <td class="label">SGST @ <span th:text="${#numbers.formatDecimal(row.sgstPercent, 1, 2)}">2.50</span>%</td>
+        <td class="value">Rs. <span th:text="${#numbers.formatDecimal(row.sgstAmount, 1, 2)}">0.00</span></td>
+      </tr>
+    </th:block>
+    <tr th:if="${!interstate && #lists.isEmpty(taxRateRows) && cgstAmount != null && cgstAmount.compareTo(T(java.math.BigDecimal).ZERO) > 0}">
       <td class="label">CGST @ <span th:text="${#numbers.formatDecimal(cgstPercent, 1, 2)}">2.50</span>%</td>
       <td class="value">Rs. <span th:text="${#numbers.formatDecimal(cgstAmount, 1, 2)}">0.00</span></td>
     </tr>
-    <tr th:if="${igstAmount != null && igstAmount.compareTo(T(java.math.BigDecimal).ZERO) > 0}">
-      <td class="label">IGST @ <span th:text="${#numbers.formatDecimal(igstPercent, 1, 2)}">5.00</span>%</td>
+    <tr th:if="${interstate && #lists.isEmpty(taxRateRows) && igstAmount != null && igstAmount.compareTo(T(java.math.BigDecimal).ZERO) > 0}">
+      <td class="label">IGST</td>
       <td class="value">Rs. <span th:text="${#numbers.formatDecimal(igstAmount, 1, 2)}">0.00</span></td>
     </tr>
-    <tr th:if="${sgstAmount != null && sgstAmount.compareTo(T(java.math.BigDecimal).ZERO) > 0}">
+    <tr th:if="${!interstate && #lists.isEmpty(taxRateRows) && sgstAmount != null && sgstAmount.compareTo(T(java.math.BigDecimal).ZERO) > 0}">
       <td class="label">SGST @ <span th:text="${#numbers.formatDecimal(sgstPercent, 1, 2)}">2.50</span>%</td>
       <td class="value">Rs. <span th:text="${#numbers.formatDecimal(sgstAmount, 1, 2)}">0.00</span></td>
     </tr>

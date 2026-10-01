@@ -2,6 +2,7 @@ package com.inventory.product.domain.model;
 
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.enums.DiscountApplicable;
+import com.inventory.product.domain.model.enums.InventorySellRestriction;
 import com.inventory.product.domain.model.enums.ItemType;
 import com.inventory.product.domain.model.enums.SchemeType;
 import com.inventory.pricing.rest.dto.response.RateDto;
@@ -81,6 +82,11 @@ public class Inventory {
   private String hsn;
   private String batchNo;
   private BillingMode billingMode;
+  /**
+   * Sell path policy for this lot. Null / missing treated as {@link InventorySellRestriction#ANY}.
+   * Locked stock-entry estimates create lots with {@link InventorySellRestriction#ESTIMATE_ONLY}.
+   */
+  private InventorySellRestriction sellRestriction;
   /** Transient: from Pricing.saleScheme. Not persisted on inventory. */
   @Transient
   private SchemeType schemeType;

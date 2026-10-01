@@ -1,6 +1,6 @@
 package com.inventory.user.rest.dto.request;
 
-import com.inventory.common.tax.PurchaseTaxTreatment;
+import com.inventory.common.constants.PurchaseTaxTreatment;
 import lombok.Data;
 
 @Data

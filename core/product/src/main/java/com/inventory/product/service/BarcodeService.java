@@ -1,6 +1,5 @@
 package com.inventory.product.service;
 
-import com.inventory.common.exception.ResourceExistsException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.product.domain.model.BarcodePool;
@@ -144,14 +143,6 @@ public class BarcodeService {
         .findByShopIdAndCode(shopId, normalized)
         .orElse(null);
 
-    if (pool != null) {
-      if (pool.getStatus() == BarcodePoolStatus.ATTACHED
-          && StringUtils.hasText(pool.getProductId())
-          && !pool.getProductId().equals(product.getId())) {
-        throw new ResourceExistsException("Barcode", "code", normalized);
-      }
-    }
-
     productService.updateBarcodeInPlace(product.getId(), shopId, normalized);
 
     Instant now = Instant.now();
@@ -162,7 +153,10 @@ public class BarcodeService {
       pool.setCreatedAt(now);
     }
     pool.setStatus(BarcodePoolStatus.ATTACHED);
-    pool.setProductId(product.getId());
+    // Codes may be shared; the first attached product stays the pool's label source.
+    if (!StringUtils.hasText(pool.getProductId())) {
+      pool.setProductId(product.getId());
+    }
     if (!StringUtils.hasText(pool.getLabelName())) {
       pool.setLabelName(product.getName());
     }
@@ -175,8 +169,8 @@ public class BarcodeService {
   }
 
   /**
-   * When a product is saved with a barcode that exists in the UNUSED pool, mark it ATTACHED.
-   * Also rejects barcodes already attached to another product.
+   * When a product is saved with a barcode that exists in the pool, mark it ATTACHED. Codes may
+   * be shared by several products; the first attached product stays the label source.
    */
   public void claimPoolForProduct(String shopId, String productId, String barcode) {
     String normalized = productValidator.normalizeBarcode(barcode);
@@ -188,10 +182,8 @@ public class BarcodeService {
       return;
     }
     BarcodePool pool = existing.get();
-    if (pool.getStatus() == BarcodePoolStatus.ATTACHED
-        && StringUtils.hasText(pool.getProductId())
-        && !pool.getProductId().equals(productId)) {
-      throw new ResourceExistsException("Barcode", "code", normalized);
+    if (pool.getStatus() == BarcodePoolStatus.ATTACHED && StringUtils.hasText(pool.getProductId())) {
+      return;
     }
     pool.setStatus(BarcodePoolStatus.ATTACHED);
     pool.setProductId(productId);
@@ -204,7 +196,9 @@ public class BarcodeService {
     if (request == null) {
       throw new ValidationException("Request is required");
     }
+    // Keyed by code + product: a shared code prints one label per product.
     Map<String, BarcodeLabelsResponse.BarcodeLabelDto> byCode = new LinkedHashMap<>();
+    java.util.Set<String> codesWithProduct = new java.util.HashSet<>();
 
     if (request.getProductIds() != null) {
       for (String productId : request.getProductIds()) {
@@ -217,14 +211,8 @@ public class BarcodeService {
         if (product == null || !StringUtils.hasText(product.getBarcode())) {
           continue;
         }
-        byCode.put(
-            product.getBarcode(),
-            new BarcodeLabelsResponse.BarcodeLabelDto(
-                product.getBarcode(),
-                product.getName(),
-                product.getCompanyName(),
-                resolvePrice(shopId, product.getId(), null),
-                product.getId()));
+        putProductLabel(byCode, product.getBarcode(), product, shopId);
+        codesWithProduct.add(product.getBarcode());
       }
     }
 
@@ -234,20 +222,15 @@ public class BarcodeService {
         if (normalized == null) {
           continue;
         }
-        if (byCode.containsKey(normalized)) {
+        if (codesWithProduct.contains(normalized)) {
           continue;
         }
-        Optional<Product> productOpt = productRepository.findByShopIdAndBarcode(shopId, normalized);
-        if (productOpt.isPresent()) {
-          Product product = productOpt.get();
-          byCode.put(
-              normalized,
-              new BarcodeLabelsResponse.BarcodeLabelDto(
-                  normalized,
-                  product.getName(),
-                  product.getCompanyName(),
-                  resolvePrice(shopId, product.getId(), null),
-                  product.getId()));
+        List<Product> products = productRepository.findAllByShopIdAndBarcode(shopId, normalized);
+        if (!products.isEmpty()) {
+          for (Product product : products) {
+            putProductLabel(byCode, normalized, product, shopId);
+          }
+          codesWithProduct.add(normalized);
           continue;
         }
         BarcodePool pool = barcodePoolRepository.findByShopIdAndCode(shopId, normalized).orElse(null);
@@ -269,6 +252,21 @@ public class BarcodeService {
     }
 
     return new BarcodeLabelsResponse(new ArrayList<>(byCode.values()));
+  }
+
+  private void putProductLabel(
+      Map<String, BarcodeLabelsResponse.BarcodeLabelDto> labels,
+      String code,
+      Product product,
+      String shopId) {
+    labels.put(
+        code + "\u0001" + product.getId(),
+        new BarcodeLabelsResponse.BarcodeLabelDto(
+            code,
+            product.getName(),
+            product.getCompanyName(),
+            resolvePrice(shopId, product.getId(), null),
+            product.getId()));
   }
 
   private BigDecimal resolvePrice(String shopId, String productId, BigDecimal fallback) {

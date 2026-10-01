@@ -46,6 +46,19 @@ public class ProductController {
     return ResponseEntity.ok(ApiResponse.success(productService.suggest(shopId, q)));
   }
 
+  /**
+   * Every product carrying this exact barcode (empty when none). Registration offers these so a
+   * stock-in joins an existing product instead of creating a near-duplicate.
+   */
+  @GetMapping("/by-barcode")
+  public ResponseEntity<ApiResponse<List<ProductSuggestionDto>>> listByBarcode(
+      @RequestParam("code") String code,
+      HttpServletRequest httpRequest) {
+    String shopId = requireShopId(httpRequest);
+    return ResponseEntity.ok(
+        ApiResponse.success(productService.suggestionsByBarcode(shopId, code)));
+  }
+
   /** Full catalog identity for a selected product (prefill source). */
   @GetMapping("/{id}")
   public ResponseEntity<ApiResponse<ProductSuggestionDto>> getById(
