@@ -117,6 +117,7 @@ public class CustomerRefundCreditNoteAssembler implements CreditNoteDocumentAsse
     BigDecimal taxable = nz(refund.getTaxableTotal());
     BigDecimal cgst = nz(refund.getCgstAmount());
     BigDecimal sgst = nz(refund.getSgstAmount());
+    BigDecimal igst = nz(refund.getIgstAmount());
     if (taxable.signum() == 0 && !items.isEmpty()) {
       for (CreditNoteItem item : items) {
         taxable = taxable.add(nz(item.getTaxableValue()));
@@ -125,7 +126,7 @@ public class CustomerRefundCreditNoteAssembler implements CreditNoteDocumentAsse
       }
     }
     BigDecimal grand = nz(refund.getRefundAmount());
-    BigDecimal taxTotal = cgst.add(sgst);
+    BigDecimal taxTotal = cgst.add(sgst).add(igst);
     BigDecimal roundOff = nz(refund.getRoundOff());
     if (roundOff.signum() == 0 && taxable.signum() > 0) {
       roundOff = grand.subtract(taxable.add(taxTotal)).setScale(2, RoundingMode.HALF_UP);
@@ -134,6 +135,9 @@ public class CustomerRefundCreditNoteAssembler implements CreditNoteDocumentAsse
     request.setTaxableTotal(taxable.setScale(2, RoundingMode.HALF_UP));
     request.setCgstAmount(cgst.setScale(2, RoundingMode.HALF_UP));
     request.setSgstAmount(sgst.setScale(2, RoundingMode.HALF_UP));
+    // A return of an interstate sale reverses IGST, and the note states it under that head.
+    request.setIgstAmount(igst.setScale(2, RoundingMode.HALF_UP));
+    request.setInterstate(Boolean.TRUE.equals(refund.getInterstate()));
     request.setTaxTotal(taxTotal.setScale(2, RoundingMode.HALF_UP));
     request.setRoundOff(roundOff);
     request.setGrandTotal(grand.setScale(2, RoundingMode.HALF_UP));

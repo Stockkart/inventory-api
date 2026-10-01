@@ -42,6 +42,7 @@ public class RefundItem {
   private BigDecimal taxableValue;
   private BigDecimal cgstAmount;
   private BigDecimal sgstAmount;
+  private BigDecimal igstAmount;
   private BigDecimal cogsAmount;
   private BigDecimal lineReturnTotal;
 }
