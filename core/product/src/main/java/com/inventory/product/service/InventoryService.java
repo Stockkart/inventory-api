@@ -657,7 +657,7 @@ public class InventoryService {
     String paymentMethod = normalizePaymentMethod(inv.getPaymentMethod());
     com.inventory.accounting.api.VendorPurchaseInvoicePostingRequest req =
         com.inventory.accounting.api.VendorPurchaseInvoicePostingRequest.builder()
-            .sourceId(inv.getId())
+            .sourceId(ledgerSourceId(inv))
             .invoiceNo(inv.getInvoiceNo())
             .txnDate(txnDate)
             .vendorId(vendorId)
@@ -673,6 +673,37 @@ public class InventoryService {
             .paymentMethod(paymentMethod)
             .build();
     accountingFacade.postVendorPurchaseInvoice(shopId, userId, req);
+  }
+
+  /**
+   * Brings the ledger in line with an amended invoice header.
+   *
+   * <p>The live entry is reversed, so the original figures stay on record, and the invoice is
+   * posted again with its corrected header under a new source id. An invoice that was never
+   * posted (no vendor, nothing owed) is left alone, as stock-in left it.
+   */
+  public void repostAccountingAfterAmend(
+      VendorPurchaseInvoice inv, String shopId, String userId, String reason) {
+    if (accountingFacade == null || inv == null || !StringUtils.hasText(inv.getVendorId())) {
+      return;
+    }
+    java.util.Optional<com.inventory.accounting.domain.model.JournalEntry> live =
+        accountingFacade.findBySource(
+            shopId,
+            com.inventory.accounting.domain.model.JournalSource.VENDOR_PURCHASE_INVOICE,
+            ledgerSourceId(inv));
+    if (live.isEmpty()) {
+      return;
+    }
+    if (live.get().getStatus() != com.inventory.accounting.domain.model.JournalStatus.REVERSED) {
+      accountingFacade.reverse(shopId, userId, live.get().getId(), "Invoice amended: " + reason);
+    }
+    inv.setLedgerSourceId(inv.getId() + ":amend:" + Instant.now().toEpochMilli());
+    postAccountingForVendorInvoice(inv, shopId, userId);
+  }
+
+  private static String ledgerSourceId(VendorPurchaseInvoice inv) {
+    return StringUtils.hasText(inv.getLedgerSourceId()) ? inv.getLedgerSourceId() : inv.getId();
   }
 
   /**

@@ -85,6 +85,14 @@ public class VendorPurchaseInvoice {
   private String amendedByUserId;
   /** Why it was corrected -- required at the point of amendment. */
   private String amendmentReason;
+
+  /**
+   * The journal source id of this invoice's live ledger entry. Null means the entry stock-in
+   * posted, keyed by the invoice id. An amendment reverses the live entry and posts a fresh one
+   * under a new key, since the ledger keeps one entry per source id and a reversed entry keeps
+   * its key.
+   */
+  private String ledgerSourceId;
   /** The header as it stood before the most recent amendment. */
   private AmendedHeaderSnapshot previousHeader;
 
