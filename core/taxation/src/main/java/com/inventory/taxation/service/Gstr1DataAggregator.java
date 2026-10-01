@@ -437,6 +437,9 @@ public class Gstr1DataAggregator {
         .invoiceValue(a.getInvoiceValue().add(b.getInvoiceValue() != null ? b.getInvoiceValue() : BigDecimal.ZERO))
         .centralTaxAmount(a.getCentralTaxAmount().add(b.getCentralTaxAmount() != null ? b.getCentralTaxAmount() : BigDecimal.ZERO))
         .stateTaxAmount(a.getStateTaxAmount().add(b.getStateTaxAmount() != null ? b.getStateTaxAmount() : BigDecimal.ZERO))
+        // Interstate B2CS rows carry their tax as IGST; merging without it dropped that tax.
+        .integratedTaxAmount((a.getIntegratedTaxAmount() != null ? a.getIntegratedTaxAmount() : BigDecimal.ZERO)
+            .add(b.getIntegratedTaxAmount() != null ? b.getIntegratedTaxAmount() : BigDecimal.ZERO))
         .cessAmount(BigDecimal.ZERO)
         .build();
   }
