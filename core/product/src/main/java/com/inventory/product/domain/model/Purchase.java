@@ -50,6 +50,10 @@ public class Purchase {
   private String convertedToPurchaseId;
   /** On a SALE cart created from an estimate — points back to the source estimate. */
   private String sourceEstimateId;
+  /** When the estimate was locked for print (estimate documents only). */
+  private Instant lockedAt;
+  /** User who locked the estimate. */
+  private String lockedByUserId;
   private String userId;
   private String shopId;
   private List<PurchaseItem> items;

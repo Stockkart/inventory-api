@@ -160,6 +160,9 @@ public class CheckoutService {
   @Autowired
   private PurchaseTargetedWriter purchaseTargetedWriter;
 
+  @Autowired
+  private com.inventory.product.service.estimate.EstimateInventoryPolicy estimateInventoryPolicy;
+
   @Transactional
   public AddToCartResponse addToCart(AddToCartRequest request, HttpServletRequest httpRequest) {
     // Get shopId and userId from request attributes (set by AuthenticationInterceptor)
@@ -203,6 +206,12 @@ public class CheckoutService {
       validateStockAvailabilityForCartUpdate(stockCheckCart, newItems, shopId);
 
       BillingMode cartBillingMode = checkoutValidator.resolveAndValidateCartBillingMode(existingCart, newItems);
+      boolean targetIsEstimate =
+          existingCart != null && DocumentTypes.isEstimate(existingCart);
+      if (!targetIsEstimate && cartBillingMode == BillingMode.BASIC) {
+        throw new ValidationException(
+            "BASIC / estimate-only stock can only be sold on Sell Estimate. Open or create an estimate.");
+      }
 
       Purchase purchase;
       if (existingCart != null) {
@@ -297,6 +306,7 @@ public class CheckoutService {
 
       // If status is being changed to COMPLETED, check plan limits, decrease inventory, assign invoice number
       if (requestedStatus == PurchaseStatus.COMPLETED) {
+        estimateInventoryPolicy.assertSaleCheckoutAllowed(purchase);
         BigDecimal grandTotal = purchase.getGrandTotal() != null ? purchase.getGrandTotal() : BigDecimal.ZERO;
         if (usageService != null) {
           usageService.checkCanAddBill(shopId, grandTotal, 1);

@@ -20,6 +20,7 @@ import com.inventory.product.domain.model.enums.PurchaseStatus;
 import com.inventory.product.mapper.PurchaseMapper;
 import com.inventory.product.rest.dto.request.UpdatePurchaseStatusRequest;
 import com.inventory.product.rest.dto.response.CheckoutResponse;
+import com.inventory.product.service.estimate.EstimateInventoryPolicy;
 import com.inventory.product.service.vertical.CheckoutCompletionOrchestrator;
 import com.inventory.product.validation.CheckoutValidator;
 import jakarta.servlet.http.HttpServletRequest;
@@ -82,6 +83,8 @@ class CheckoutServiceSettlementRaceTest {
     ReflectionTestUtils.setField(checkoutService, "purchaseMapper", purchaseMapper);
     ReflectionTestUtils.setField(checkoutService, "checkoutValidator", new CheckoutValidator());
     ReflectionTestUtils.setField(checkoutService, "usageService", usageService);
+    ReflectionTestUtils.setField(
+        checkoutService, "estimateInventoryPolicy", mock(EstimateInventoryPolicy.class));
     ReflectionTestUtils.setField(
         checkoutService, "invoiceSequenceService", invoiceSequenceService);
     ReflectionTestUtils.setField(checkoutService, "checkoutCompletionOrchestrator", orchestrator);
