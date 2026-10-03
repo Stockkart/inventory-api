@@ -47,6 +47,4 @@ public class VendorPurchaseInvoiceLine {
   private BigDecimal centralTax;
   private BigDecimal stateTax;
   private BigDecimal integratedTax;
-  /** Which rung of the basis ladder produced {@link #taxableValue}. */
-  private String taxBasisSource;
 }
