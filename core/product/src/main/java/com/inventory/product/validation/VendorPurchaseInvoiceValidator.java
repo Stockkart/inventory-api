@@ -9,16 +9,11 @@ import java.util.Set;
 import org.springframework.stereotype.Component;
 
 /**
- * Rejects a supplier bill header that cannot describe a real bill.
+ * Rejects a supplier bill header that cannot describe a real bill: a negative charge or discount.
  *
- * <p>Deliberately narrow. A header that merely disagrees with its lines is recorded and flagged,
- * not refused: bills are entered daily with the goods already counted out, and stopping the
- * operator over a rupee would cost more than the rupee. What is refused is input no bill can
- * produce -- a negative amount, or tax exceeding the value it is charged on, which cannot happen
- * at any GST slab.
- *
- * <p>Used when an invoice is registered and when its header is corrected, so both paths refuse the
- * same things.
+ * <p>The line subtotal, tax total and invoice total are worked out from the lines, so there is
+ * nothing in them to check. Used when an invoice is registered and when its header is corrected,
+ * so both paths refuse the same things.
  */
 @Component
 public class VendorPurchaseInvoiceValidator {
@@ -29,35 +24,16 @@ public class VendorPurchaseInvoiceValidator {
       return;
     }
     validateHeaderAmounts(
-        request.getLineSubTotal(),
-        request.getTaxTotal(),
-        request.getInvoiceTotal(),
-        request.getShippingCharge(),
-        request.getOtherCharges(),
-        request.getOverallDiscount());
+        request.getShippingCharge(), request.getOtherCharges(), request.getOverallDiscount());
   }
 
-  /** The header amounts on their own; any of them may be absent. */
+  /** The typed header amounts on their own; any of them may be absent. */
   public void validateHeaderAmounts(
-      BigDecimal lineSubTotal,
-      BigDecimal taxTotal,
-      BigDecimal invoiceTotal,
-      BigDecimal shippingCharge,
-      BigDecimal otherCharges,
-      BigDecimal overallDiscount) {
+      BigDecimal shippingCharge, BigDecimal otherCharges, BigDecimal overallDiscount) {
     Set<String> errors = new LinkedHashSet<>();
-    rejectIfNegative(errors, "Line subtotal", lineSubTotal);
-    rejectIfNegative(errors, "Tax total", taxTotal);
-    rejectIfNegative(errors, "Invoice total", invoiceTotal);
     rejectIfNegative(errors, "Shipping charge", shippingCharge);
     rejectIfNegative(errors, "Other charges", otherCharges);
     rejectIfNegative(errors, "Overall discount", overallDiscount);
-
-    if (lineSubTotal != null && taxTotal != null && lineSubTotal.signum() > 0
-        && taxTotal.compareTo(lineSubTotal) > 0) {
-      errors.add("Tax total (" + taxTotal + ") cannot exceed the line subtotal (" + lineSubTotal
-          + ") -- the highest GST slab is 28%");
-    }
     if (!errors.isEmpty()) {
       throw new ValidationException(errors);
     }

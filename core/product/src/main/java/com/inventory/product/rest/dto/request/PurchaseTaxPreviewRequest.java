@@ -8,7 +8,7 @@ import lombok.Data;
 /**
  * The stock-in screen as it stands, before it is submitted: the same item rows
  * {@code POST /inventory/bulk} takes, the vendor, how the bill states tax, and whatever header
- * figures have been typed so far (all optional).
+ * charges have been typed so far (all optional).
  */
 @Data
 public class PurchaseTaxPreviewRequest {
@@ -16,9 +16,7 @@ public class PurchaseTaxPreviewRequest {
   private PurchaseTaxTreatment taxTreatment;
   private List<CreateInventoryItemRequest> items;
 
-  /** Typed header figures; an empty subtotal or tax falls back to the figure resolved from items. */
-  private BigDecimal lineSubTotal;
-  private BigDecimal taxTotal;
+  /** Typed header charges. The subtotal, tax and invoice total are worked out from the items. */
   private BigDecimal shippingCharge;
   private BigDecimal otherCharges;
   private BigDecimal overallDiscount;

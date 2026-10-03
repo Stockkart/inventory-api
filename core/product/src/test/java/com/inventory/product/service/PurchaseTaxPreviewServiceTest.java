@@ -113,17 +113,18 @@ class PurchaseTaxPreviewServiceTest {
   }
 
   @Test
-  void theInvoiceTotalUsesTypedHeaderFiguresAndCharges() {
+  void theInvoiceTotalTakesTheDiscountOffBeforeTaxAndAddsTheCharges() {
     item(10, "100", "9");
     PurchaseTaxPreviewRequest request = request(PurchaseTaxTreatment.EXCLUSIVE);
-    request.setTaxTotal(new BigDecimal("179.50"));
     request.setShippingCharge(new BigDecimal("50"));
     request.setOverallDiscount(new BigDecimal("20"));
     request.setRoundOff(new BigDecimal("0.50"));
 
     PurchaseTaxPreviewResponse out = service.preview(request);
 
-    assertMoney("1210.00", out.getInvoiceTotal());
+    // 1000 less 20 = 980 taxable, 176.40 tax, plus 50 shipping and 0.50 round-off.
+    assertMoney("176.40", out.getTaxTotal());
+    assertMoney("1206.90", out.getInvoiceTotal());
   }
 
   @Test

@@ -1,7 +1,6 @@
 package com.inventory.product.utils;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 import com.inventory.pricing.domain.model.Pricing;
 import com.inventory.pricing.domain.model.Scheme;
@@ -55,10 +54,9 @@ class PurchaseTaxBasisResolverTest {
   }
 
   private PurchaseTaxBasis resolve(
-      String subTotal, String tax, PurchaseTaxTreatment treatment, boolean interstate) {
+      String overallDiscount, PurchaseTaxTreatment treatment, boolean interstate) {
     VendorPurchaseInvoice invoice = new VendorPurchaseInvoice();
-    invoice.setLineSubTotal(subTotal == null ? null : bd(subTotal));
-    invoice.setTaxTotal(tax == null ? null : bd(tax));
+    invoice.setOverallDiscount(overallDiscount == null ? null : bd(overallDiscount));
     invoice.setLines(lines);
     return PurchaseTaxBasisResolver.resolve(invoice, pricing::get, treatment, interstate);
   }
@@ -74,173 +72,103 @@ class PurchaseTaxBasisResolverTest {
   }
 
   @Test
-  void consistentHeaderIsUsedAsStatedTaxIncluded() {
-    line(10, "100", "2.5", null, null);
-    line(3, "333.33", "6", null, null);
+  void exclusiveLinesHaveTheTaxAddedOnTop() {
+    line(4, "250", "9", null, null);
 
-    // Lines imply 50.00 + 119.99 = 169.99; the bill prints 170.00 -- a paisa of rounding.
-    PurchaseTaxBasis basis = resolve("1999.99", "170.00", PurchaseTaxTreatment.EXCLUSIVE, false);
+    PurchaseTaxBasis basis = resolve(null, PurchaseTaxTreatment.EXCLUSIVE, false);
 
-    assertEquals(PurchaseTaxBasis.Verdict.OK, basis.verdict());
-    assertMoney("1999.99", basis.totalTaxable());
-    assertMoney("170.00", basis.totalTax());
-    assertMoney("85.00", central(basis));
-    assertMoney("85.00", state(basis));
-    assertEquals(PurchaseTaxBasis.Source.HEADER_CONSISTENT, basis.lines().get(0).source());
+    assertMoney("1000.00", basis.totalTaxable());
+    assertMoney("180.00", basis.totalTax());
+    assertMoney("90.00", central(basis));
+    assertMoney("90.00", state(basis));
   }
 
   @Test
-  void inclusiveBillDoesNotLoseTaxTwiceFromItsHeader() {
-    line(10, "105", "2.5", null, null);
-
-    // The printed header is ex-tax even on an MRP-billed invoice: 1000.00 + 50.00.
-    PurchaseTaxBasis exclusive = resolve("1000.00", "50.00", PurchaseTaxTreatment.EXCLUSIVE, false);
-    PurchaseTaxBasis inclusive = resolve("1000.00", "50.00", PurchaseTaxTreatment.INCLUSIVE, false);
-
-    assertEquals(PurchaseTaxBasis.Verdict.OK, inclusive.verdict());
-    assertMoney("1000.00", inclusive.totalTaxable());
-    assertMoney("50.00", inclusive.totalTax());
-    assertEquals(PurchaseTaxBasis.Source.HEADER_CONSISTENT, inclusive.lines().get(0).source());
-    assertMoney(exclusive.totalTaxable().toPlainString(), inclusive.totalTaxable());
-  }
-
-  @Test
-  void singleRateHeaderThatDisagreesIsReadFromItsTax() {
-    line(10, "100", "2.5", null, null);
-
-    // Gross keyed as subtotal: 1050 and 50 do not agree at 5%, so the tax is trusted.
-    for (PurchaseTaxTreatment treatment : PurchaseTaxTreatment.values()) {
-      PurchaseTaxBasis basis = resolve("1050.00", "50.00", treatment, false);
-      assertEquals(PurchaseTaxBasis.Verdict.MISMATCH, basis.verdict());
-      assertEquals(PurchaseTaxBasis.Source.DERIVED_FROM_TAX, basis.lines().get(0).source());
-      assertMoney("1000.00", basis.totalTaxable());
-      assertMoney("50.00", basis.totalTax());
-    }
-  }
-
-  @Test
-  void headerImplyingASlabNoLineCarriesIsARateConflict() {
-    line(10, "100", "2.5", null, null);
-
-    PurchaseTaxBasis basis = resolve("1000.00", "120.00", PurchaseTaxTreatment.EXCLUSIVE, false);
-
-    assertEquals(PurchaseTaxBasis.Verdict.RATE_CONFLICT, basis.verdict());
-  }
-
-  @Test
-  void withoutAHeaderTheLandedLineValueIsTheBasis() {
+  void theSchemeAndAdditionalDiscountComeOffTheLine() {
     line(10, "100", "2.5", "5", "10");
 
-    PurchaseTaxBasis basis = resolve(null, null, PurchaseTaxTreatment.EXCLUSIVE, false);
+    PurchaseTaxBasis basis = resolve(null, PurchaseTaxTreatment.EXCLUSIVE, false);
 
-    assertEquals(PurchaseTaxBasis.Verdict.MISSING, basis.verdict());
-    assertEquals(PurchaseTaxBasis.Source.LINE_LANDED, basis.lines().get(0).source());
     // 100 less 5% scheme less 10% discount = 85.50 a unit.
     assertMoney("855.00", basis.totalTaxable());
     assertMoney("42.76", basis.totalTax());
   }
 
+  /** PARAS A00000999: 36 at 99, 24% scheme, rates including 5% GST. */
   @Test
-  void inclusiveLineValuesHaveTheirTaxTakenOut() {
-    line(10, "105", "2.5", null, null);
+  void inclusiveLinesHaveTheirTaxTakenOut() {
+    line(36, "99", "2.5", "24", null);
 
-    PurchaseTaxBasis basis = resolve(null, null, PurchaseTaxTreatment.INCLUSIVE, false);
+    PurchaseTaxBasis basis = resolve(null, PurchaseTaxTreatment.INCLUSIVE, false);
 
-    assertEquals(PurchaseTaxBasis.Verdict.MISSING, basis.verdict());
-    assertEquals(PurchaseTaxBasis.Source.INCLUSIVE_EXTRACTED, basis.lines().get(0).source());
-    assertMoney("1000.00", basis.totalTaxable());
-    assertMoney("50.00", basis.totalTax());
+    assertMoney("2579.66", basis.totalTaxable());
+    assertMoney("128.98", basis.totalTax());
+    assertMoney("64.49", central(basis));
+    assertMoney("64.49", state(basis));
   }
 
   @Test
-  void withNothingButListPricesTheGrossIsTheBasis() {
-    line(4, "250", "9", null, null);
+  void aBillLevelDiscountIsSharedAcrossTheLinesBeforeTax() {
+    line(10, "100", "2.5", null, null);
+    line(10, "100", "9", null, null);
 
-    PurchaseTaxBasis basis = resolve(null, null, PurchaseTaxTreatment.EXCLUSIVE, false);
+    PurchaseTaxBasis basis = resolve("200", PurchaseTaxTreatment.EXCLUSIVE, false);
 
-    assertEquals(PurchaseTaxBasis.Source.LINE_GROSS, basis.lines().get(0).source());
-    assertMoney("1000.00", basis.totalTaxable());
-    assertMoney("180.00", basis.totalTax());
+    assertMoney("900.00", basis.lines().get(0).taxable());
+    assertMoney("900.00", basis.lines().get(1).taxable());
+    assertMoney("207.00", basis.totalTax());
+    assertMoney("200.00", basis.overallDiscount());
+  }
+
+  @Test
+  void aDiscountAsLargeAsTheLinesIsIgnored() {
+    line(1, "100", "9", null, null);
+
+    PurchaseTaxBasis basis = resolve("100", PurchaseTaxTreatment.EXCLUSIVE, false);
+
+    assertMoney("100.00", basis.totalTaxable());
+    assertMoney("0", basis.overallDiscount());
   }
 
   @Test
   void interstateSupplyIsAllIntegratedTax() {
     line(10, "100", "2.5", null, null);
 
-    PurchaseTaxBasis basis = resolve("1000.00", "50.00", PurchaseTaxTreatment.EXCLUSIVE, true);
+    PurchaseTaxBasis basis = resolve(null, PurchaseTaxTreatment.EXCLUSIVE, true);
 
-    assertEquals(PurchaseTaxBasis.Verdict.OK, basis.verdict());
     assertMoney("50.00", basis.lines().get(0).integratedTax());
     assertMoney("0", central(basis));
     assertMoney("0", state(basis));
   }
 
   @Test
-  void toleranceIsMeasuredAgainstTheTaxNotTheSubtotal() {
-    line(1000, "100", "2.5", null, null);
-
-    // Lines imply 5000.00. 0.5% of the stated tax allows about 25.
-    PurchaseTaxBasis rounding = resolve("100000.00", "5020.00", PurchaseTaxTreatment.EXCLUSIVE,
-        false);
-    assertEquals(PurchaseTaxBasis.Verdict.OK, rounding.verdict());
-
-    // A 2% gap is a missing discount, not rounding. 0.5% of the subtotal (500) used to accept it.
-    PurchaseTaxBasis discount = resolve("100000.00", "5100.00", PurchaseTaxTreatment.EXCLUSIVE,
-        false);
-    assertNotEquals(PurchaseTaxBasis.Verdict.OK, discount.verdict());
-  }
-
-  @Test
-  void aSmallBillStillGetsARupeeOfRoundingRoom() {
-    line(1, "20", "2.5", null, null);
-
-    PurchaseTaxBasis basis = resolve("20.00", "1.90", PurchaseTaxTreatment.EXCLUSIVE, false);
-
-    assertEquals(PurchaseTaxBasis.Verdict.OK, basis.verdict());
-  }
-
-  @Test
-  void aZeroRatedLineNeverHoldsTheRoundingPaisa() {
+  void aZeroRatedLineCarriesNoTax() {
     line(3, "33.33", "9", null, null);
     line(1, "50", "0", null, null);
 
-    PurchaseTaxBasis basis = resolve("149.99", "18.01", PurchaseTaxTreatment.EXCLUSIVE, false);
+    PurchaseTaxBasis basis = resolve(null, PurchaseTaxTreatment.EXCLUSIVE, false);
 
-    assertEquals(PurchaseTaxBasis.Verdict.OK, basis.verdict());
     assertMoney("0", basis.lines().get(1).tax());
-    assertMoney("18.01", basis.totalTax());
+    assertMoney("18.00", basis.totalTax());
   }
 
   @Test
-  void theJournalSplitIsTheReturnsSplitWhenTheHeaderProvesItself() {
+  void theJournalSplitIsTheLinesSplit() {
     line(10, "100", "6", null, null);
     line(4, "250", "2.5", null, null);
 
-    PurchaseTaxBasis basis = resolve("2000.00", "170.00", PurchaseTaxTreatment.EXCLUSIVE, false);
-    PurchaseTaxBasis.IntraStateSplit split = basis.splitStated(bd("170.00")).orElseThrow();
+    PurchaseTaxBasis basis = resolve(null, PurchaseTaxTreatment.EXCLUSIVE, false);
+    PurchaseTaxBasis.IntraStateSplit split = basis.splitStated(basis.totalTax()).orElseThrow();
 
-    BigDecimal central = BigDecimal.ZERO;
-    for (PurchaseTaxBasis.Line l : basis.lines()) central = central.add(l.centralTax());
-    assertMoney(central.toPlainString(), split.centralTax());
+    assertMoney(central(basis).toPlainString(), split.centralTax());
     assertMoney("170.00", split.centralTax().add(split.stateTax()));
-  }
-
-  @Test
-  void theJournalAlwaysPostsTheStatedTaxEvenWhenTheHeaderIsOff() {
-    line(10, "100", "9", null, null);
-
-    PurchaseTaxBasis basis = resolve(null, null, PurchaseTaxTreatment.EXCLUSIVE, false);
-    PurchaseTaxBasis.IntraStateSplit split = basis.splitStated(bd("181.00")).orElseThrow();
-
-    assertMoney("90.50", split.centralTax());
-    assertMoney("90.50", split.stateTax());
   }
 
   @Test
   void aBasisWithNoRatesGivesNoSplit() {
     line(1, "100", "0", null, null);
 
-    PurchaseTaxBasis basis = resolve(null, null, PurchaseTaxTreatment.EXCLUSIVE, false);
+    PurchaseTaxBasis basis = resolve(null, PurchaseTaxTreatment.EXCLUSIVE, false);
 
     assertEquals(java.util.Optional.empty(), basis.splitStated(bd("18.00")));
   }
