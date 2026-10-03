@@ -110,7 +110,6 @@ public class PurchaseTaxRecorder {
       VendorPurchaseInvoiceLine line = lines.get(i);
       PurchaseTaxBasis.Line resolved = basis.lines().get(i);
       line.setTaxableValue(resolved.taxable());
-      line.setGstRatePct(resolved.ratePct());
       line.setCentralTax(resolved.centralTax());
       line.setStateTax(resolved.stateTax());
       line.setIntegratedTax(resolved.integratedTax());
