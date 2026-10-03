@@ -14,8 +14,8 @@ public interface ProductRepository extends MongoRepository<Product, String> {
 
   Optional<Product> findByIdAndShopId(String id, String shopId);
 
-  /** Exact barcode lookup within a shop (uniqueness / attach). */
-  Optional<Product> findByShopIdAndBarcode(String shopId, String barcode);
+  /** Exact barcode lookup within a shop; several products may share one barcode. */
+  List<Product> findAllByShopIdAndBarcode(String shopId, String barcode);
 
   /** Candidates for identity matching / fork detection within a shop. */
   List<Product> findByShopIdAndNormalizedName(String shopId, String normalizedName);

@@ -9,6 +9,7 @@ import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.enums.DocumentType;
+import com.inventory.product.domain.model.enums.EstimateState;
 import com.inventory.product.domain.model.enums.PurchaseStatus;
 import com.inventory.product.domain.repository.PurchaseRepository;
 import com.inventory.product.mapper.PurchaseMapper;
@@ -207,7 +208,11 @@ public class QuotationService {
         .orElse(null);
   }
 
-  /** Sum of base quantities reserved in other open SALE quotations for the shop. Estimates do not reserve. */
+  /**
+   * Sum of base quantities soft-reserved in other open documents for the shop: CREATED sale
+   * quotations and OPEN/LOCKED estimates. Converted/discarded estimates and menu lines do not
+   * reserve.
+   */
   @Transactional(readOnly = true)
   public Map<String, Integer> quotedBaseQuantitiesByLot(String shopId, String excludePurchaseId) {
     List<Purchase> open =
@@ -218,7 +223,10 @@ public class QuotationService {
         continue;
       }
       if (DocumentTypes.isEstimate(purchase)) {
-        continue;
+        EstimateState state = purchase.getEstimateState();
+        if (state != EstimateState.OPEN && state != EstimateState.LOCKED) {
+          continue;
+        }
       }
       if (purchase.getItems() == null) {
         continue;

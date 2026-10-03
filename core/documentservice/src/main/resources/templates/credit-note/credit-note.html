@@ -374,6 +374,10 @@
           <td>CGST <span th:text="${cgstPercent ?: ''}"></span> %</td>
           <td th:text="${#numbers.formatDecimal(cgstAmount, 1, 2)}"></td>
         </tr>
+        <tr th:if="${showTaxDetails and interstate and igstAmount != null && igstAmount > 0}">
+          <td>IGST</td>
+          <td th:text="${#numbers.formatDecimal(igstAmount, 1, 2)}"></td>
+        </tr>
         <tr th:if="${roundOff != null && roundOff != 0}">
           <td>Round Off</td>
           <td th:text="${#numbers.formatDecimal(roundOff, 1, 2)}"></td>

@@ -1,19 +1,11 @@
 package com.inventory.product.service;
 
-import com.inventory.pricing.domain.model.Pricing;
-import com.inventory.pricing.domain.repository.PricingRepository;
-import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.rest.dto.request.AmendVendorPurchaseInvoiceRequest;
-import com.inventory.product.tax.PurchaseTaxBasis;
-import com.inventory.product.tax.PurchaseTaxBasisResolver;
+import com.inventory.product.validation.VendorPurchaseInvoiceValidator;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import lombok.extern.slf4j.Slf4j;
-import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.HashMap;
-import java.util.LinkedHashSet;
-import java.util.Set;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.user.domain.model.Vendor;
@@ -52,9 +44,11 @@ public class VendorPurchaseInvoiceService {
 
   @Autowired private VendorRepository vendorRepository;
 
-  @Autowired private InventoryRepository inventoryRepository;
+  @Autowired private VendorPurchaseInvoiceValidator vendorPurchaseInvoiceValidator;
 
-  @Autowired private PricingRepository pricingRepository;
+  @Autowired private PurchaseTaxRecorder purchaseTaxRecorder;
+
+  @Autowired private InventoryService inventoryService;
 
   /**
    * Corrects a purchase invoice's header against the paper bill and re-resolves its tax.
@@ -109,14 +103,21 @@ public class VendorPurchaseInvoiceService {
     if (request.getInvoiceTotal() != null) invoice.setInvoiceTotal(request.getInvoiceTotal());
     if (request.getTaxTreatment() != null) invoice.setTaxTreatment(request.getTaxTreatment());
 
-    validateAmendedHeader(invoice);
+    // The same shape check registration applies, so an amendment cannot introduce what it
+    // rejects.
+    vendorPurchaseInvoiceValidator.validateHeaderAmounts(
+        invoice.getLineSubTotal(), invoice.getTaxTotal(), invoice.getInvoiceTotal(),
+        invoice.getShippingCharge(), invoice.getOtherCharges(), invoice.getOverallDiscount());
 
     invoice.setPreviousHeader(before);
     invoice.setAmendedAt(Instant.now());
     invoice.setAmendedByUserId(userId);
     invoice.setAmendmentReason(request.getReason().trim());
 
-    recordResolvedTax(invoice);
+    // Non-fatal, as at registration: the report path resolves on read regardless.
+    purchaseTaxRecorder.record(invoice);
+    // The journal carried the old header; reverse it and post the corrected one.
+    inventoryService.repostAccountingAfterAmend(invoice, shopId, userId, invoice.getAmendmentReason());
     VendorPurchaseInvoice saved = vendorPurchaseInvoiceRepository.save(invoice);
 
     log.info("Invoice {} (shop {}) amended by {}: {} -- now reconciles as {}",
@@ -124,73 +125,6 @@ public class VendorPurchaseInvoiceService {
         saved.getHeaderReconciliation());
 
     return getById(saved.getId(), shopId);
-  }
-
-  /** The same shape check registration applies, so an amendment cannot introduce what it rejects. */
-  private void validateAmendedHeader(VendorPurchaseInvoice invoice) {
-    Set<String> errors = new LinkedHashSet<>();
-    rejectIfNegative(errors, "Line subtotal", invoice.getLineSubTotal());
-    rejectIfNegative(errors, "Tax total", invoice.getTaxTotal());
-    rejectIfNegative(errors, "Invoice total", invoice.getInvoiceTotal());
-    rejectIfNegative(errors, "Shipping charge", invoice.getShippingCharge());
-    rejectIfNegative(errors, "Other charges", invoice.getOtherCharges());
-    rejectIfNegative(errors, "Overall discount", invoice.getOverallDiscount());
-
-    BigDecimal subTotal = invoice.getLineSubTotal();
-    BigDecimal tax = invoice.getTaxTotal();
-    if (subTotal != null && tax != null && subTotal.signum() > 0 && tax.compareTo(subTotal) > 0) {
-      errors.add("Tax total (" + tax + ") cannot exceed the line subtotal (" + subTotal
-          + ") -- the highest GST slab is 28%");
-    }
-    if (!errors.isEmpty()) {
-      throw new ValidationException(errors);
-    }
-  }
-
-  private void rejectIfNegative(Set<String> errors, String label, BigDecimal value) {
-    if (value != null && value.signum() < 0) {
-      errors.add(label + " cannot be negative");
-    }
-  }
-
-  /**
-   * Re-resolves the invoice's tax from its lines, exactly as registration does.
-   *
-   * <p>Non-fatal for the same reason it is there: an amendment that records the operator's
-   * figures but cannot re-derive the analysis is still an improvement on the header it replaced,
-   * and the report path resolves on read regardless.
-   */
-  private void recordResolvedTax(VendorPurchaseInvoice invoice) {
-    try {
-      Map<String, Pricing> pricingByInventoryId = new HashMap<>();
-      for (VendorPurchaseInvoiceLine line : invoice.getLines()) {
-        if (!StringUtils.hasText(line.getInventoryId())) continue;
-        inventoryRepository.findById(line.getInventoryId())
-            .filter(lot -> StringUtils.hasText(lot.getPricingId()))
-            .flatMap(lot -> pricingRepository.findById(lot.getPricingId()))
-            .ifPresent(pricing -> pricingByInventoryId.put(line.getInventoryId(), pricing));
-      }
-
-      PurchaseTaxBasis basis = PurchaseTaxBasisResolver.resolve(
-          invoice, pricingByInventoryId::get, invoice.getTaxTreatment(), false);
-
-      for (int i = 0; i < invoice.getLines().size() && i < basis.lines().size(); i++) {
-        VendorPurchaseInvoiceLine line = invoice.getLines().get(i);
-        PurchaseTaxBasis.Line resolved = basis.lines().get(i);
-        line.setTaxableValue(resolved.taxable());
-        line.setGstRatePct(resolved.ratePct());
-        line.setCentralTax(resolved.centralTax());
-        line.setStateTax(resolved.stateTax());
-        line.setIntegratedTax(resolved.integratedTax());
-        line.setTaxBasisSource(resolved.source().name());
-      }
-      invoice.setComputedLineSubTotal(basis.totalTaxable());
-      invoice.setComputedTaxTotal(basis.totalTax());
-      invoice.setHeaderReconciliation(basis.verdict().name());
-    } catch (RuntimeException e) {
-      log.error("Could not re-resolve tax basis for amended invoice {} (shop {})",
-          invoice.getInvoiceNo(), invoice.getShopId(), e);
-    }
   }
 
   public VendorPurchaseInvoiceListResponse list(String shopId, int page, int size, String query) {

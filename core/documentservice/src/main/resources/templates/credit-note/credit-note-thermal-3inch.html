@@ -221,6 +221,10 @@
       <td class="label">SGST @ <span th:text="${#numbers.formatDecimal(sgstPercent, 1, 2)}">2.50</span>%</td>
       <td class="value">Rs. <span th:text="${#numbers.formatDecimal(sgstAmount, 1, 2)}">0.00</span></td>
     </tr>
+    <tr th:if="${interstate && igstAmount != null && igstAmount.compareTo(T(java.math.BigDecimal).ZERO) > 0}">
+      <td class="label">IGST</td>
+      <td class="value">Rs. <span th:text="${#numbers.formatDecimal(igstAmount, 1, 2)}">0.00</span></td>
+    </tr>
   </table>
 
   <hr class="line"/>

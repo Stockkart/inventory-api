@@ -1,11 +1,12 @@
 package com.inventory.product.service;
 
-import com.inventory.common.tax.GstStateCode;
+import com.inventory.common.util.GstStateCode;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.InsufficientStockException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.common.util.GstMath;
 import com.inventory.common.util.TxnIdGenerator;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.AvailableUnit;
@@ -149,6 +150,9 @@ public class CheckoutService {
   @Autowired
   private QuotationService quotationService;
 
+  @Autowired
+  private com.inventory.product.service.estimate.EstimateInventoryPolicy estimateInventoryPolicy;
+
   @Transactional
   public AddToCartResponse addToCart(AddToCartRequest request, HttpServletRequest httpRequest) {
     // Get shopId and userId from request attributes (set by AuthenticationInterceptor)
@@ -186,6 +190,12 @@ public class CheckoutService {
       validateStockAvailabilityForCartUpdate(stockCheckCart, newItems, shopId);
 
       BillingMode cartBillingMode = checkoutValidator.resolveAndValidateCartBillingMode(existingCart, newItems);
+      boolean targetIsEstimate =
+          existingCart != null && DocumentTypes.isEstimate(existingCart);
+      if (!targetIsEstimate && cartBillingMode == BillingMode.BASIC) {
+        throw new ValidationException(
+            "BASIC / estimate-only stock can only be sold on Sell Estimate. Open or create an estimate.");
+      }
 
       Purchase purchase;
       if (existingCart != null) {
@@ -274,6 +284,7 @@ public class CheckoutService {
 
       // If status is being changed to COMPLETED, check plan limits, decrease inventory, assign invoice number
       if (requestedStatus == PurchaseStatus.COMPLETED) {
+        estimateInventoryPolicy.assertSaleCheckoutAllowed(purchase);
         BigDecimal grandTotal = purchase.getGrandTotal() != null ? purchase.getGrandTotal() : BigDecimal.ZERO;
         if (usageService != null) {
           usageService.checkCanAddBill(shopId, grandTotal, 1);
@@ -857,32 +868,23 @@ public class CheckoutService {
     return purchaseItems;
   }
 
+  /**
+   * Taxable value before the additional discount. A line sold at MRP contributes its price with
+   * the GST inside it taken out, so subtotal − additional discount + tax is what the lines add
+   * up to rather than overshooting it by that GST.
+   */
   private BigDecimal calculateSubtotal(List<PurchaseItem> items) {
     if (items == null || items.isEmpty()) {
       return BigDecimal.ZERO;
     }
     return items.stream()
         .map(item -> {
-          BigDecimal effectivePrice = CheckoutUtils.getEffectiveSellingPricePerUnit(item);
+          BigDecimal effectivePrice = CheckoutUtils.getTaxablePricePerUnit(item);
           BigDecimal billableQty = CheckoutUtils.getBillableQuantityAsDecimal(item);
           return effectivePrice.multiply(billableQty);
         })
         .reduce(BigDecimal.ZERO, BigDecimal::add)
         .setScale(2, RoundingMode.HALF_UP);
-  }
-
-  /**
-   * Calculate tax based on inventory-level SGST and CGST rates from purchase items.
-   * Each item's tax is calculated using its own CGST/SGST rates, then summed.
-   * If an item doesn't have CGST/SGST, falls back to shop defaults.
-   * 
-   * @param purchaseItems list of purchase items with inventory-level CGST/SGST
-   * @param shopId the shop ID to fetch default tax rates from if item doesn't have rates
-   * @return TaxCalculationResult with sgstAmount, cgstAmount, and taxTotal
-   */
-  private TaxCalculationResult calculateTax(List<PurchaseItem> purchaseItems, String shopId,
-      BillingMode billingMode) {
-    return calculateTax(purchaseItems, shopId, billingMode, null);
   }
 
   /**
@@ -897,6 +899,10 @@ public class CheckoutService {
     return calculateTax(purchaseItems, shopId, billingMode, interstate);
   }
 
+  /**
+   * Tax on purchase items at each item's own CGST/SGST rate (shop defaults where an item has
+   * none), summed; on an interstate sale the same total is charged as IGST.
+   */
   private TaxCalculationResult calculateTax(List<PurchaseItem> purchaseItems, String shopId,
       BillingMode billingMode, boolean interstate) {
     if (!CheckoutUtils.isTaxApplicable(billingMode)) {
@@ -917,17 +923,18 @@ public class CheckoutService {
       }
     }
     
-    // Calculate tax for each item based on its inventory-level CGST/SGST
-    // Skip tax for items selling at MRP - MRP is inclusive of tax
+    // Calculate tax for each item based on its inventory-level CGST/SGST.
+    // A line sold at MRP adds no GST on top, but the GST inside its price is still charged and is
+    // stated here: its tax is worked on the price with that GST taken out, so it is the GST the
+    // MRP already contains. Skipping it left the bill, the journal and the invoice saying no tax
+    // was charged on goods whose price included it.
     for (PurchaseItem item : purchaseItems) {
-      if (CheckoutUtils.isSellingAtMrp(item)) {
-        continue; // MRP is tax-inclusive, no additional CGST/SGST
-      }
+      boolean sellingAtMrp = CheckoutUtils.isSellingAtMrp(item);
       // Item total for tax: use paid quantity when scheme is set (billing basis)
       BigDecimal itemTotal = BigDecimal.ZERO;
       if (item.getMaximumRetailPrice() != null && item.getQuantity() != null 
           && item.getPriceToRetail() != null) {
-        BigDecimal effectivePrice = CheckoutUtils.getEffectiveSellingPricePerUnit(item);
+        BigDecimal effectivePrice = CheckoutUtils.getTaxablePricePerUnit(item);
         BigDecimal billableQty = CheckoutUtils.getBillableQuantityAsDecimal(item);
         itemTotal = effectivePrice.multiply(billableQty);
         // Apply additional discount if present
@@ -937,30 +944,24 @@ public class CheckoutService {
         }
       }
       
-      // Use inventory-level rates if available, otherwise use shop defaults
-      String itemSgst = StringUtils.hasText(item.getSgst()) ? item.getSgst() : shopSgst;
-      String itemCgst = StringUtils.hasText(item.getCgst()) ? item.getCgst() : shopCgst;
+      // Use inventory-level rates if available, otherwise use shop defaults. A line sold at MRP
+      // uses only its own rates: its taxable price was worked from them, and a shop default it
+      // does not carry would charge tax that its price does not contain.
+      String itemSgst = StringUtils.hasText(item.getSgst()) ? item.getSgst() : (sellingAtMrp ? null : shopSgst);
+      String itemCgst = StringUtils.hasText(item.getCgst()) ? item.getCgst() : (sellingAtMrp ? null : shopCgst);
       
       // Calculate SGST for this item
       if (itemSgst != null && !itemSgst.trim().isEmpty()) {
-        try {
-          BigDecimal sgstRate = new BigDecimal(itemSgst.trim()).divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
-          BigDecimal itemSgstAmount = itemTotal.multiply(sgstRate).setScale(2, RoundingMode.HALF_UP);
-          totalSgstAmount = totalSgstAmount.add(itemSgstAmount);
-        } catch (NumberFormatException e) {
-          log.warn("Invalid SGST value '{}' for item {}, using 0", itemSgst, PurchaseItemRefs.stockLotId(item));
-        }
+        BigDecimal sgstRate = GstMath.parseGstRate(itemSgst).divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
+        BigDecimal itemSgstAmount = itemTotal.multiply(sgstRate).setScale(2, RoundingMode.HALF_UP);
+        totalSgstAmount = totalSgstAmount.add(itemSgstAmount);
       }
       
       // Calculate CGST for this item
       if (itemCgst != null && !itemCgst.trim().isEmpty()) {
-        try {
-          BigDecimal cgstRate = new BigDecimal(itemCgst.trim()).divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
-          BigDecimal itemCgstAmount = itemTotal.multiply(cgstRate).setScale(2, RoundingMode.HALF_UP);
-          totalCgstAmount = totalCgstAmount.add(itemCgstAmount);
-        } catch (NumberFormatException e) {
-          log.warn("Invalid CGST value '{}' for item {}, using 0", itemCgst, PurchaseItemRefs.stockLotId(item));
-        }
+        BigDecimal cgstRate = GstMath.parseGstRate(itemCgst).divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
+        BigDecimal itemCgstAmount = itemTotal.multiply(cgstRate).setScale(2, RoundingMode.HALF_UP);
+        totalCgstAmount = totalCgstAmount.add(itemCgstAmount);
       }
     }
     
@@ -977,9 +978,6 @@ public class CheckoutService {
         taxTotal, false);
   }
   
-  /**
-   * Inner class to hold tax calculation results.
-   */
   /**
    * Whether a sale leaves the state the shop is registered in.
    *
@@ -1004,7 +1002,7 @@ public class CheckoutService {
               shop.getLocation() != null ? shop.getLocation().getState() : null))
           .orElse("");
 
-      return StringUtils.hasText(shopState) && !shopState.equals(customerState);
+      return GstStateCode.isInterstate(shopState, customerState);
     } catch (RuntimeException e) {
       log.warn("Could not place the sale for interstate tax (shop {}, customer {}); "
           + "treating it as local", shopId, customerId, e);
@@ -1012,6 +1010,7 @@ public class CheckoutService {
     }
   }
 
+  /** Inner class to hold tax calculation results. */
   private static class TaxCalculationResult {
     private final BigDecimal sgstAmount;
     private final BigDecimal cgstAmount;
@@ -1107,20 +1106,12 @@ public class CheckoutService {
     }
     BigDecimal taxMultiplier = BigDecimal.ONE;
     if (cgst != null && StringUtils.hasText(cgst)) {
-      try {
-        BigDecimal cgstRate = new BigDecimal(cgst.trim()).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
-        taxMultiplier = taxMultiplier.add(cgstRate);
-      } catch (NumberFormatException e) {
-        // Invalid CGST rate, ignore
-      }
+      BigDecimal cgstRate = GstMath.parseGstRate(cgst).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
+      taxMultiplier = taxMultiplier.add(cgstRate);
     }
     if (sgst != null && StringUtils.hasText(sgst)) {
-      try {
-        BigDecimal sgstRate = new BigDecimal(sgst.trim()).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
-        taxMultiplier = taxMultiplier.add(sgstRate);
-      } catch (NumberFormatException e) {
-        // Invalid SGST rate, ignore
-      }
+      BigDecimal sgstRate = GstMath.parseGstRate(sgst).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
+      taxMultiplier = taxMultiplier.add(sgstRate);
     }
     
     BigDecimal totalAmount = totalDiscountedAmount.multiply(taxMultiplier);
@@ -1138,7 +1129,8 @@ public class CheckoutService {
     }
     return items.stream()
         .map(item -> {
-          BigDecimal effectivePrice = CheckoutUtils.getEffectiveSellingPricePerUnit(item);
+          // On the taxable price, the same basis as the subtotal it is taken from.
+          BigDecimal effectivePrice = CheckoutUtils.getTaxablePricePerUnit(item);
           BigDecimal additionalDiscount = item.getSaleAdditionalDiscount() != null ? item.getSaleAdditionalDiscount() : BigDecimal.ZERO;
           BigDecimal billableQty = CheckoutUtils.getBillableQuantityAsDecimal(item);
           BigDecimal itemTotal = effectivePrice.multiply(billableQty);

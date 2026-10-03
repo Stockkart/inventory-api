@@ -205,7 +205,8 @@ public class RefundService {
 
         SalesReturnValuation.LineAmounts amounts =
             SalesReturnValuation.lineAmounts(
-                purchaseItem, refundBaseQuantity, refundItem.getQuantity(), billingMode);
+                purchaseItem, refundBaseQuantity, refundItem.getQuantity(), billingMode,
+                Boolean.TRUE.equals(purchase.getInterstate()));
 
         restoreInventoryForRefund(refundItem.getInventoryId(), refundBaseQuantity, shopId);
 
@@ -229,6 +230,7 @@ public class RefundService {
         domainItem.setTaxableValue(amounts.taxable());
         domainItem.setCgstAmount(amounts.cgst());
         domainItem.setSgstAmount(amounts.sgst());
+        domainItem.setIgstAmount(amounts.igst());
         domainItem.setCogsAmount(amounts.cogs());
         domainItem.setLineReturnTotal(amounts.lineTotal());
         domainRefundItems.add(domainItem);
@@ -255,6 +257,8 @@ public class RefundService {
       refund.setTaxableTotal(totals.taxableTotal());
       refund.setCgstAmount(totals.cgstTotal());
       refund.setSgstAmount(totals.sgstTotal());
+      refund.setIgstAmount(totals.igstTotal());
+      refund.setInterstate(Boolean.TRUE.equals(purchase.getInterstate()));
       refund.setCogsTotal(totals.cogsTotal());
       refund.setRoundOff(totals.roundOff());
       refund.setCustomerId(purchase.getCustomerId());
@@ -444,6 +448,7 @@ public class RefundService {
               .taxableRevenue(totals.taxableTotal())
               .outputCgst(totals.cgstTotal())
               .outputSgst(totals.sgstTotal())
+              .outputIgst(totals.igstTotal())
               .returnTotal(totals.returnTotal())
               .cogsAmount(totals.cogsTotal())
               .roundOff(totals.roundOff())
