@@ -8,11 +8,10 @@ import java.util.Set;
 import org.springframework.stereotype.Component;
 
 /**
- * Rejects a supplier bill header that cannot describe a real bill: a negative charge or discount.
+ * Rejects a supplier bill header that cannot describe a real bill: a negative amount.
  *
- * <p>The line subtotal, tax total and invoice total are worked out from the lines, so there is
- * nothing in them to check. Used when an invoice is registered and when its header is corrected,
- * so both paths refuse the same things.
+ * <p>Used when an invoice is registered and when its header is corrected, so both paths refuse the
+ * same things.
  */
 @Component
 public class VendorPurchaseInvoiceValidator {
@@ -21,6 +20,13 @@ public class VendorPurchaseInvoiceValidator {
   public void validateHeader(VendorPurchaseInvoiceRequest request) {
     if (request == null) {
       return;
+    }
+    Set<String> errors = new LinkedHashSet<>();
+    rejectIfNegative(errors, "Line subtotal", request.getLineSubTotal());
+    rejectIfNegative(errors, "Tax total", request.getTaxTotal());
+    rejectIfNegative(errors, "Invoice total", request.getInvoiceTotal());
+    if (!errors.isEmpty()) {
+      throw new ValidationException(errors);
     }
     validateHeaderAmounts(
         request.getShippingCharge(), request.getOtherCharges(), request.getOverallDiscount());
