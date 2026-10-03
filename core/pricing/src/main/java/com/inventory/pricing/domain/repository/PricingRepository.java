@@ -8,7 +8,8 @@ import java.util.List;
 import java.util.Optional;
 
 @Repository
-public interface PricingRepository extends MongoRepository<Pricing, String> {
+public interface PricingRepository
+    extends MongoRepository<Pricing, String>, PricingRepositoryCustom {
 
   List<Pricing> findByShopId(String shopId);
 }
