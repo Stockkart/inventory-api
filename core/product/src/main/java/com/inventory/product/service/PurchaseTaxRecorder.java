@@ -20,11 +20,11 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 /**
- * Works out a supplier bill's totals from its lines and writes them on the invoice.
+ * Works out a supplier bill's tax from its lines and writes it on the invoice.
  *
- * <p>The line subtotal, tax total and invoice total are not typed by the operator; they are what
- * the lines come to. Shared by stock-in and by a header correction, so both arrive at the same
- * figures the same way.
+ * <p>Each line gets its taxable value and tax. The invoice's line subtotal, tax total and invoice
+ * total are kept as given; any of them left empty is filled from the lines. Shared by stock-in and
+ * by a header correction, so both arrive at the same figures the same way.
  */
 @Slf4j
 @Component
@@ -96,8 +96,9 @@ public class PurchaseTaxRecorder {
   }
 
   /**
-   * Writes the lines' tax and the invoice totals. The line subtotal is before the bill-level
-   * discount, which the journal takes off it; the invoice total adds the charges and round-off.
+   * Writes the lines' tax, and fills whichever invoice totals are empty. The line subtotal is
+   * before the bill-level discount, which the journal takes off it; the invoice total adds the
+   * charges and round-off.
    */
   static void apply(VendorPurchaseInvoice invoice, PurchaseTaxBasis basis) {
     List<VendorPurchaseInvoiceLine> lines = invoice.getLines();
@@ -111,13 +112,19 @@ public class PurchaseTaxRecorder {
     }
     BigDecimal taxable = basis.totalTaxable();
     BigDecimal tax = basis.totalTax();
-    invoice.setLineSubTotal(taxable.add(basis.overallDiscount()));
-    invoice.setTaxTotal(tax);
-    invoice.setInvoiceTotal(taxable
-        .add(tax)
-        .add(nz(invoice.getShippingCharge()))
-        .add(nz(invoice.getOtherCharges()))
-        .add(nz(invoice.getRoundOff())));
+    if (invoice.getLineSubTotal() == null) {
+      invoice.setLineSubTotal(taxable.add(basis.overallDiscount()));
+    }
+    if (invoice.getTaxTotal() == null) {
+      invoice.setTaxTotal(tax);
+    }
+    if (invoice.getInvoiceTotal() == null) {
+      invoice.setInvoiceTotal(taxable
+          .add(tax)
+          .add(nz(invoice.getShippingCharge()))
+          .add(nz(invoice.getOtherCharges()))
+          .add(nz(invoice.getRoundOff())));
+    }
   }
 
   private static BigDecimal nz(BigDecimal value) {
