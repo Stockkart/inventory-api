@@ -31,6 +31,17 @@ class VendorPurchaseInvoiceValidatorTest {
   }
 
   @Test
+  void aNegativeSentTotalIsRefused() {
+    VendorPurchaseInvoiceRequest request = new VendorPurchaseInvoiceRequest();
+    request.setTaxTotal(new BigDecimal("-1"));
+
+    ValidationException e =
+        assertThrows(ValidationException.class, () -> validator.validateHeader(request));
+
+    assertTrue(e.getMessage().contains("Tax total cannot be negative"), e.getMessage());
+  }
+
+  @Test
   void theAmendPathRefusesTheSameThings() {
     assertThrows(ValidationException.class, () -> validator.validateHeaderAmounts(
         null, null, new BigDecimal("-1")));
