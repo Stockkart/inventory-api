@@ -2,19 +2,33 @@ package com.inventory.product.service;
 
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.pricing.domain.model.Pricing;
+import com.inventory.pricing.domain.repository.PricingRepository;
 import com.inventory.product.domain.model.BarcodePool;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Product;
+import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.enums.BarcodePoolStatus;
 import com.inventory.product.domain.repository.BarcodePoolRepository;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.ProductRepository;
+import com.inventory.product.domain.repository.ShopRepository;
+import com.inventory.product.labels.EffectiveLayout;
+import com.inventory.product.labels.FieldCatalog;
+import com.inventory.product.labels.LabelDataResolver;
+import com.inventory.product.labels.LabelDataResolver.LabelTarget;
+import com.inventory.product.labels.LabelDataResolver.ResolutionContext;
+import com.inventory.product.labels.LabelExtensionReader;
+import com.inventory.product.labels.LabelFieldCatalogService;
+import com.inventory.product.labels.LabelLayoutService;
+import com.inventory.product.labels.LotSelector;
 import com.inventory.product.rest.dto.request.AttachBarcodeRequest;
 import com.inventory.product.rest.dto.request.BarcodeLabelsRequest;
 import com.inventory.product.rest.dto.request.GenerateBarcodesRequest;
 import com.inventory.product.rest.dto.response.BarcodeLabelsResponse;
 import com.inventory.product.rest.dto.response.BarcodePoolListResponse;
 import com.inventory.product.rest.dto.response.GenerateBarcodesResponse;
+import com.inventory.product.rest.dto.response.LabelLayoutResponse;
 import com.inventory.product.validation.ProductValidator;
 import com.inventory.metrics.MetricsWrapper;
 import com.inventory.product.utils.constants.ProductMetricsConstants;
@@ -28,10 +42,13 @@ import org.springframework.util.StringUtils;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -41,6 +58,10 @@ public class BarcodeService {
   private static final int MAX_GENERATE = 500;
   private static final int DEFAULT_LIST_LIMIT = 100;
   private static final int MAX_LIST_LIMIT = 500;
+  private static final int MAX_LABEL_INPUTS = 500;
+
+  /** Where a labels row came from; drives {@link LabelTarget} construction (Req 6.8, 6.9). */
+  private record LabelSource(String code, Product product, BarcodePool poolRow) {}
 
   @Autowired
   private BarcodeGeneratorService barcodeGeneratorService;
@@ -62,6 +83,24 @@ public class BarcodeService {
 
   @Autowired
   private MetricsWrapper metrics;
+
+  @Autowired
+  private ShopRepository shopRepository;
+
+  @Autowired
+  private PricingRepository pricingRepository;
+
+  @Autowired
+  private LabelFieldCatalogService catalogService;
+
+  @Autowired
+  private LabelLayoutService layoutService;
+
+  @Autowired
+  private LabelExtensionReader extensionReader;
+
+  @Autowired
+  private LabelDataResolver resolver;
 
   /**
    * Generate unique codes and store them as UNUSED pool rows (also used for count=1 at registration).
@@ -196,8 +235,17 @@ public class BarcodeService {
     if (request == null) {
       throw new ValidationException("Request is required");
     }
+    int inputCount =
+        (request.getProductIds() == null ? 0 : request.getProductIds().size())
+            + (request.getCodes() == null ? 0 : request.getCodes().size());
+    if (inputCount > MAX_LABEL_INPUTS) {
+      throw new ValidationException(
+          "At most " + MAX_LABEL_INPUTS + " productIds and codes per request");
+    }
     // Keyed by code + product: a shared code prints one label per product.
     Map<String, BarcodeLabelsResponse.BarcodeLabelDto> byCode = new LinkedHashMap<>();
+    // Same keys as byCode; remembers the product / pool row each DTO was built from.
+    Map<String, LabelSource> sources = new HashMap<>();
     java.util.Set<String> codesWithProduct = new java.util.HashSet<>();
 
     if (request.getProductIds() != null) {
@@ -211,7 +259,7 @@ public class BarcodeService {
         if (product == null || !StringUtils.hasText(product.getBarcode())) {
           continue;
         }
-        putProductLabel(byCode, product.getBarcode(), product, shopId);
+        putProductLabel(byCode, sources, product.getBarcode(), product, shopId);
         codesWithProduct.add(product.getBarcode());
       }
     }
@@ -228,7 +276,7 @@ public class BarcodeService {
         List<Product> products = productRepository.findAllByShopIdAndBarcode(shopId, normalized);
         if (!products.isEmpty()) {
           for (Product product : products) {
-            putProductLabel(byCode, normalized, product, shopId);
+            putProductLabel(byCode, sources, normalized, product, shopId);
           }
           codesWithProduct.add(normalized);
           continue;
@@ -243,30 +291,173 @@ public class BarcodeService {
                   pool.getLabelCompany(),
                   pool.getLabelPrice(),
                   pool.getProductId()));
+          sources.put(normalized, new LabelSource(normalized, null, pool));
         } else {
           byCode.put(
               normalized,
               new BarcodeLabelsResponse.BarcodeLabelDto(normalized, null, null, null, null));
+          sources.put(normalized, new LabelSource(normalized, null, null));
         }
       }
     }
 
-    return new BarcodeLabelsResponse(new ArrayList<>(byCode.values()));
+    LabelLayoutResponse layout = resolveLabelValues(byCode, sources, request.getInventoryIds(), shopId);
+    return new BarcodeLabelsResponse(new ArrayList<>(byCode.values()), layout);
+  }
+
+  /**
+   * Fills {@code values} on every DTO against the shop's effective layout (Req 6.1, 6.11, 6.12)
+   * and returns that layout. All documents are batch-loaded once per request; the lot per product
+   * is {@link LotSelector}'s pick unless the request pins one via {@code inventoryIds} (Req 6.5),
+   * which is validated before any value is produced (Req 6.14).
+   */
+  private LabelLayoutResponse resolveLabelValues(
+      Map<String, BarcodeLabelsResponse.BarcodeLabelDto> byCode,
+      Map<String, LabelSource> sources,
+      Map<String, String> requestedInventoryIds,
+      String shopId) {
+    Shop shop =
+        shopRepository
+            .findById(shopId)
+            .orElseThrow(() -> new ResourceNotFoundException("Shop", "shopId", shopId));
+    FieldCatalog catalog = catalogService.catalog(shop);
+    LabelLayoutResponse layout = layoutService.responseFor(shopId, catalog);
+    EffectiveLayout effective = layout.toEffectiveLayout();
+    ResolutionContext ctx = new ResolutionContext(shop, catalog, effective);
+
+    // Lots for every product that made it into the response, in one query.
+    Set<String> productIds = new LinkedHashSet<>();
+    for (LabelSource source : sources.values()) {
+      if (source.product() != null) {
+        productIds.add(source.product().getId());
+      }
+    }
+    List<Inventory> lots =
+        productIds.isEmpty()
+            ? List.of()
+            : inventoryRepository.findByShopIdAndProductIdIn(shopId, productIds);
+    Map<String, Inventory> autoLot = LotSelector.selectPerProduct(lots);
+    Map<String, Inventory> lotById = new HashMap<>();
+    for (Inventory lot : lots) {
+      if (lot != null && lot.getId() != null) {
+        lotById.put(lot.getId(), lot);
+      }
+    }
+
+    // Explicit lots (code → inventoryId); fail fast on anything that does not line up.
+    Map<String, Inventory> explicitLot = new HashMap<>();
+    if (requestedInventoryIds != null) {
+      for (Map.Entry<String, String> entry : requestedInventoryIds.entrySet()) {
+        String code = productValidator.normalizeBarcode(entry.getKey());
+        String inventoryId = entry.getValue();
+        if (code == null || !StringUtils.hasText(inventoryId)) {
+          continue;
+        }
+        Inventory lot = lotById.get(inventoryId.trim());
+        if (lot == null) {
+          lot =
+              inventoryRepository
+                  .findById(inventoryId.trim())
+                  .filter(l -> shopId.equals(l.getShopId()))
+                  .orElse(null);
+        }
+        if (lot == null || !codeHasProduct(sources, code, lot.getProductId())) {
+          throw new ValidationException(
+              "inventoryId "
+                  + inventoryId
+                  + " does not exist or does not belong to the product for code "
+                  + code);
+        }
+        explicitLot.put(code, lot);
+      }
+    }
+
+    // Chosen lot per response row, then pricing docs and extension rows for those lots.
+    Map<String, Inventory> chosenLot = new HashMap<>();
+    Set<String> pricingIds = new LinkedHashSet<>();
+    Set<String> lotIds = new LinkedHashSet<>();
+    for (Map.Entry<String, LabelSource> entry : sources.entrySet()) {
+      LabelSource source = entry.getValue();
+      if (source.product() == null) {
+        continue;
+      }
+      Inventory explicit = explicitLot.get(source.code());
+      Inventory lot =
+          explicit != null && source.product().getId().equals(explicit.getProductId())
+              ? explicit
+              : autoLot.get(source.product().getId());
+      if (lot == null) {
+        continue;
+      }
+      chosenLot.put(entry.getKey(), lot);
+      if (StringUtils.hasText(lot.getPricingId())) {
+        pricingIds.add(lot.getPricingId());
+      }
+      if (StringUtils.hasText(lot.getId())) {
+        lotIds.add(lot.getId());
+      }
+    }
+    Map<String, Pricing> pricingById = new HashMap<>();
+    if (!pricingIds.isEmpty()) {
+      for (Pricing pricing : pricingRepository.findAllById(pricingIds)) {
+        if (pricing != null && pricing.getId() != null) {
+          pricingById.put(pricing.getId(), pricing);
+        }
+      }
+    }
+    Map<String, Map<String, Object>> extRows = extensionReader.readByInventoryIds(shop, lotIds);
+
+    for (Map.Entry<String, BarcodeLabelsResponse.BarcodeLabelDto> entry : byCode.entrySet()) {
+      LabelSource source = sources.get(entry.getKey());
+      Inventory lot = chosenLot.get(entry.getKey());
+      Pricing pricing =
+          lot == null || lot.getPricingId() == null ? null : pricingById.get(lot.getPricingId());
+      Map<String, Object> extensionRow = lot == null ? null : extRows.get(lot.getId());
+      LabelTarget target =
+          new LabelTarget(
+              entry.getValue().getCode(),
+              source == null ? null : source.product(),
+              lot,
+              pricing,
+              extensionRow,
+              source == null ? null : source.poolRow());
+      entry.getValue().setValues(resolver.resolve(target, ctx));
+    }
+    return layout;
+  }
+
+  /** True when some response row for {@code code} is backed by product {@code productId}. */
+  private static boolean codeHasProduct(
+      Map<String, LabelSource> sources, String code, String productId) {
+    if (productId == null) {
+      return false;
+    }
+    for (LabelSource source : sources.values()) {
+      if (code.equals(source.code())
+          && source.product() != null
+          && productId.equals(source.product().getId())) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private void putProductLabel(
       Map<String, BarcodeLabelsResponse.BarcodeLabelDto> labels,
+      Map<String, LabelSource> sources,
       String code,
       Product product,
       String shopId) {
+    String key = code + "\u0001" + product.getId();
     labels.put(
-        code + "\u0001" + product.getId(),
+        key,
         new BarcodeLabelsResponse.BarcodeLabelDto(
             code,
             product.getName(),
             product.getCompanyName(),
             resolvePrice(shopId, product.getId(), null),
             product.getId()));
+    sources.put(key, new LabelSource(code, product, null));
   }
 
   private BigDecimal resolvePrice(String shopId, String productId, BigDecimal fallback) {
