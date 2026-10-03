@@ -478,6 +478,7 @@ public class InventoryService {
 
     pendingInvoice.setLines(invoiceLines);
     purchaseTaxRecorder.record(pendingInvoice);
+    keepSentTotals(pendingInvoice, invReq);
     rememberVendorTaxTreatment(bulkRequest.getVendorId(), invReq);
     List<String> rateWarnings = checkHsnRates(pendingInvoice, shopId);
     vendorPurchaseInvoiceRepository.save(pendingInvoice);
@@ -871,6 +872,20 @@ public class InventoryService {
           + "treating it as local", shopId, vendorId, e);
       return false;
     }
+  }
+
+  /**
+   * Puts back the totals the client sent over the ones worked out from the lines. The stock-in
+   * screen sends what the server's bill preview gave it, so the two normally agree; a total the
+   * client left out keeps the worked-out figure.
+   */
+  static void keepSentTotals(VendorPurchaseInvoice invoice, VendorPurchaseInvoiceRequest sent) {
+    if (sent == null) {
+      return;
+    }
+    if (sent.getLineSubTotal() != null) invoice.setLineSubTotal(sent.getLineSubTotal());
+    if (sent.getTaxTotal() != null) invoice.setTaxTotal(sent.getTaxTotal());
+    if (sent.getInvoiceTotal() != null) invoice.setInvoiceTotal(sent.getInvoiceTotal());
   }
 
   /** Per-invoice CGST / SGST slice. IGST is wired in once the invoice carries a place-of-supply. */
