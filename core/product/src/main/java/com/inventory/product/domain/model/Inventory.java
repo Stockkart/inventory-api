@@ -125,6 +125,9 @@ public class Inventory {
    */
   @Transient
   private BigDecimal effectiveCostPrice;
+  /** Transient: true when costPrice came off a bill whose rates include GST. Written to Pricing. */
+  @Transient
+  private Boolean costPriceIncludesTax;
   /** Original Price to Retail (PTR). Immutable base from pricing. */
   @Transient
   private BigDecimal priceToRetail;

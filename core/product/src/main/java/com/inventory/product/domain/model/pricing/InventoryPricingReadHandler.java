@@ -118,7 +118,7 @@ public class InventoryPricingReadHandler {
         && saleScheme == null && purchaseScheme == null) {
       return null;
     }
-    return new PricingReadDto(mrp, cost, null, ptr, null, null, ptr, discount, null, purchaseScheme, saleScheme, sgst, cgst);
+    return new PricingReadDto(mrp, cost, null, ptr, null, null, ptr, discount, null, purchaseScheme, saleScheme, sgst, cgst, null);
   }
 
   private void applyPricing(Inventory inv, PricingReadDto p) {

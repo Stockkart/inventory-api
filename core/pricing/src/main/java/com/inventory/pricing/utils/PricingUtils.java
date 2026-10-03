@@ -1,5 +1,6 @@
 package com.inventory.pricing.utils;
 
+import com.inventory.common.util.GstMath;
 import com.inventory.pricing.rest.dto.response.PricingReadDto;
 import com.inventory.pricing.rest.dto.response.RateDto;
 import com.inventory.pricing.domain.model.Pricing;
@@ -86,6 +87,20 @@ public final class PricingUtils {
    */
   public static BigDecimal computeEffectiveCostPrice(
       BigDecimal costPrice, BigDecimal purchaseAdditionalDiscount, Scheme purchaseScheme) {
+    return computeEffectiveCostPrice(
+        costPrice, purchaseAdditionalDiscount, purchaseScheme, false, null, null);
+  }
+
+  /**
+   * Landed cost per unit before GST. When the cost was entered off a bill whose rates include GST,
+   * the tax is taken out after the scheme and discount, at the lot's own rate:
+   * {@code landed × 100 / (100 + sgst + cgst)}. That is the per-unit form of what
+   * {@code PurchaseTaxBasisResolver} does to the bill line, so 36 × 99 less 24% at 5% inclusive
+   * lands at 71.6571 a unit and 2579.66 for the line, matching the taxable value on the bill.
+   */
+  public static BigDecimal computeEffectiveCostPrice(
+      BigDecimal costPrice, BigDecimal purchaseAdditionalDiscount, Scheme purchaseScheme,
+      boolean costPriceIncludesTax, String sgst, String cgst) {
     if (costPrice == null) {
       return null;
     }
@@ -113,19 +128,28 @@ public final class PricingUtils {
           purchaseAdditionalDiscount.divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP)));
     }
 
+    if (costPriceIncludesTax) {
+      BigDecimal gstRate = GstMath.parseGstRate(sgst).add(GstMath.parseGstRate(cgst));
+      if (gstRate.signum() > 0) {
+        effective = effective.multiply(BigDecimal.valueOf(100))
+            .divide(BigDecimal.valueOf(100).add(gstRate), 6, RoundingMode.HALF_UP);
+      }
+    }
+
     if (effective.signum() < 0) {
       effective = BigDecimal.ZERO;
     }
     return effective.setScale(4, RoundingMode.HALF_UP);
   }
 
-  /** Landed cost for a pricing record, falling back to the entered cost when nothing reduces it. */
+  /** Landed cost before GST for a pricing record; the entered cost when nothing reduces it. */
   public static BigDecimal computeEffectiveCostPrice(Pricing p) {
     if (p == null) {
       return null;
     }
     return computeEffectiveCostPrice(
-        p.getCostPrice(), p.getPurchaseAdditionalDiscount(), p.getPurchaseScheme());
+        p.getCostPrice(), p.getPurchaseAdditionalDiscount(), p.getPurchaseScheme(),
+        Boolean.TRUE.equals(p.getCostPriceIncludesTax()), p.getSgst(), p.getCgst());
   }
 
   /**
