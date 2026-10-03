@@ -88,10 +88,8 @@ public class VendorPurchaseInvoiceService {
             invoice.getOtherCharges(), invoice.getOverallDiscount(), invoice.getRoundOff(),
             invoice.getInvoiceTotal(), invoice.getTaxTreatment());
 
-    // Absent means "leave it as it stands", so that adding the totals to a bill which never had
-    // them does not require restating everything else on the header.
-    if (request.getLineSubTotal() != null) invoice.setLineSubTotal(request.getLineSubTotal());
-    if (request.getTaxTotal() != null) invoice.setTaxTotal(request.getTaxTotal());
+    // Absent means "leave it as it stands". The subtotal, tax and invoice total are not taken from
+    // the request: they are worked out again from the lines below.
     if (request.getShippingCharge() != null) {
       invoice.setShippingCharge(request.getShippingCharge());
     }
@@ -100,13 +98,11 @@ public class VendorPurchaseInvoiceService {
       invoice.setOverallDiscount(request.getOverallDiscount());
     }
     if (request.getRoundOff() != null) invoice.setRoundOff(request.getRoundOff());
-    if (request.getInvoiceTotal() != null) invoice.setInvoiceTotal(request.getInvoiceTotal());
     if (request.getTaxTreatment() != null) invoice.setTaxTreatment(request.getTaxTreatment());
 
     // The same shape check registration applies, so an amendment cannot introduce what it
     // rejects.
     vendorPurchaseInvoiceValidator.validateHeaderAmounts(
-        invoice.getLineSubTotal(), invoice.getTaxTotal(), invoice.getInvoiceTotal(),
         invoice.getShippingCharge(), invoice.getOtherCharges(), invoice.getOverallDiscount());
 
     invoice.setPreviousHeader(before);
@@ -114,15 +110,16 @@ public class VendorPurchaseInvoiceService {
     invoice.setAmendedByUserId(userId);
     invoice.setAmendmentReason(request.getReason().trim());
 
+    // The treatment, charges or discount may have changed, so the totals are worked out again.
     // Non-fatal, as at registration: the report path resolves on read regardless.
     purchaseTaxRecorder.record(invoice);
     // The journal carried the old header; reverse it and post the corrected one.
     inventoryService.repostAccountingAfterAmend(invoice, shopId, userId, invoice.getAmendmentReason());
     VendorPurchaseInvoice saved = vendorPurchaseInvoiceRepository.save(invoice);
 
-    log.info("Invoice {} (shop {}) amended by {}: {} -- now reconciles as {}",
+    log.info("Invoice {} (shop {}) amended by {}: {} -- now {} taxable, {} tax",
         saved.getInvoiceNo(), shopId, userId, saved.getAmendmentReason(),
-        saved.getHeaderReconciliation());
+        saved.getLineSubTotal(), saved.getTaxTotal());
 
     return getById(saved.getId(), shopId);
   }
@@ -311,9 +308,6 @@ public class VendorPurchaseInvoiceService {
     dto.setCreatedAt(e.getCreatedAt());
     dto.setSynthetic(e.getSynthetic());
     dto.setLegacyLotId(e.getLegacyLotId());
-    dto.setHeaderReconciliation(e.getHeaderReconciliation());
-    dto.setComputedLineSubTotal(e.getComputedLineSubTotal());
-    dto.setComputedTaxTotal(e.getComputedTaxTotal());
     dto.setTaxTreatment(e.getTaxTreatment() != null ? e.getTaxTreatment().name() : null);
     dto.setAmendedAt(e.getAmendedAt());
     dto.setAmendedByUserId(e.getAmendedByUserId());

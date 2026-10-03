@@ -13,23 +13,15 @@ class VendorPurchaseInvoiceValidatorTest {
 
   private final VendorPurchaseInvoiceValidator validator = new VendorPurchaseInvoiceValidator();
 
-  private static VendorPurchaseInvoiceRequest header(String subTotal, String tax) {
-    VendorPurchaseInvoiceRequest request = new VendorPurchaseInvoiceRequest();
-    request.setLineSubTotal(subTotal == null ? null : new BigDecimal(subTotal));
-    request.setTaxTotal(tax == null ? null : new BigDecimal(tax));
-    return request;
-  }
-
   @Test
-  void aHeaderThatDisagreesWithItsLinesIsStillAccepted() {
-    assertDoesNotThrow(() -> validator.validateHeader(header("1000.00", "999.00")));
-    assertDoesNotThrow(() -> validator.validateHeader(header(null, null)));
+  void anEmptyHeaderIsAccepted() {
+    assertDoesNotThrow(() -> validator.validateHeader(new VendorPurchaseInvoiceRequest()));
     assertDoesNotThrow(() -> validator.validateHeader(null));
   }
 
   @Test
   void aNegativeAmountIsRefused() {
-    VendorPurchaseInvoiceRequest request = header("1000.00", "50.00");
+    VendorPurchaseInvoiceRequest request = new VendorPurchaseInvoiceRequest();
     request.setShippingCharge(new BigDecimal("-10"));
 
     ValidationException e =
@@ -39,18 +31,8 @@ class VendorPurchaseInvoiceValidatorTest {
   }
 
   @Test
-  void taxAboveTheSubtotalIsRefused() {
-    ValidationException e = assertThrows(
-        ValidationException.class, () -> validator.validateHeader(header("100.00", "100.01")));
-
-    assertTrue(e.getMessage().contains("cannot exceed the line subtotal"), e.getMessage());
-  }
-
-  @Test
   void theAmendPathRefusesTheSameThings() {
     assertThrows(ValidationException.class, () -> validator.validateHeaderAmounts(
-        new BigDecimal("-1"), null, null, null, null, null));
-    assertThrows(ValidationException.class, () -> validator.validateHeaderAmounts(
-        new BigDecimal("100"), new BigDecimal("200"), null, null, null, null));
+        null, null, new BigDecimal("-1")));
   }
 }

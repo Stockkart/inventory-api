@@ -62,11 +62,9 @@ class PurchaseTaxRecorderTest {
     lines.add(line);
   }
 
-  private VendorPurchaseInvoice invoice(String subTotal, String tax) {
+  private VendorPurchaseInvoice invoice() {
     VendorPurchaseInvoice invoice = new VendorPurchaseInvoice();
     invoice.setInvoiceNo("A1");
-    invoice.setLineSubTotal(subTotal == null ? null : new BigDecimal(subTotal));
-    invoice.setTaxTotal(tax == null ? null : new BigDecimal(tax));
     invoice.setLines(lines);
     return invoice;
   }
@@ -86,40 +84,42 @@ class PurchaseTaxRecorderTest {
   }
 
   @Test
-  void recordsTheResolvedTaxAndLeavesTheStatedHeaderAlone() {
+  void writesTheTotalsTheLinesComeTo() {
     line(10, "100", "9");
-    VendorPurchaseInvoice invoice = invoice("1000.00", "180.00");
+    VendorPurchaseInvoice invoice = invoice();
+    invoice.setShippingCharge(new BigDecimal("20"));
+    invoice.setRoundOff(new BigDecimal("-0.40"));
 
     recorder.record(invoice);
 
     assertEquals(0, new BigDecimal("1000.00").compareTo(invoice.getLineSubTotal()));
     assertEquals(0, new BigDecimal("180.00").compareTo(invoice.getTaxTotal()));
-    assertEquals("OK", invoice.getHeaderReconciliation());
-    assertEquals(0, new BigDecimal("180.00").compareTo(invoice.getComputedTaxTotal()));
+    assertEquals(0, new BigDecimal("1199.60").compareTo(invoice.getInvoiceTotal()));
     assertNotNull(lines.get(0).getTaxableValue());
   }
 
+  /** The journal takes the bill-level discount off the subtotal, so the subtotal is before it. */
   @Test
-  void recordsADisagreeingHeaderInsteadOfRefusingIt() {
+  void theSubtotalIsBeforeTheBillLevelDiscount() {
     line(10, "100", "9");
-    VendorPurchaseInvoice invoice = invoice("1000.00", "50.00");
+    VendorPurchaseInvoice invoice = invoice();
+    invoice.setOverallDiscount(new BigDecimal("100"));
 
     recorder.record(invoice);
 
-    // 5% of the subtotal is a real slab the 18% lines do not carry.
-    assertEquals("RATE_CONFLICT", invoice.getHeaderReconciliation());
-    assertEquals(0, new BigDecimal("50.00").compareTo(invoice.getTaxTotal()));
+    assertEquals(0, new BigDecimal("1000.00").compareTo(invoice.getLineSubTotal()));
+    assertEquals(0, new BigDecimal("162.00").compareTo(invoice.getTaxTotal()));
+    assertEquals(0, new BigDecimal("1062.00").compareTo(invoice.getInvoiceTotal()));
   }
 
   @Test
   void aLookupFailureNeverStopsTheStockIn() {
     line(1, "100", "9");
     when(inventoryRepository.findAllById(anyIterable())).thenThrow(new IllegalStateException("db"));
-    VendorPurchaseInvoice invoice = invoice("100.00", "18.00");
+    VendorPurchaseInvoice invoice = invoice();
 
     assertDoesNotThrow(() -> recorder.record(invoice));
 
-    assertNull(invoice.getHeaderReconciliation());
-    assertEquals(0, new BigDecimal("18.00").compareTo(invoice.getTaxTotal()));
+    assertNull(invoice.getTaxTotal());
   }
 }
