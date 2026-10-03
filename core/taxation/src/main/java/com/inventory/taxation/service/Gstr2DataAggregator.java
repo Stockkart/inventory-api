@@ -504,18 +504,10 @@ public class Gstr2DataAggregator {
       String supplierState = supplierState(vendor, supplierGstin);
       boolean interstate = GstStateCode.isInterstate(shopState, supplierState);
 
-      // What the invoice is worth for tax, and how far that answer can be trusted. The header is
-      // used where it proves itself, and where it does not the resolver says so rather than
-      // quietly reporting a figure the bill does not support.
+      // What the invoice is worth for tax, worked out from its lines.
       PurchaseTaxBasis taxBasis = PurchaseTaxBasisResolver.resolve(
           invoice, inventoryId -> pricingOfLine(inventoryId, lotMap, pricingMap),
           invoice.getTaxTreatment(), interstate);
-      if (taxBasis.verdict() != PurchaseTaxBasis.Verdict.OK) {
-        log.warn("GSTR-2 {}: invoice {} reports {} -- stated subtotal {}, tax {}; "
-                + "resolved taxable {}, tax {}",
-            shopId, invoice.getInvoiceNo(), taxBasis.verdict(), invoice.getLineSubTotal(),
-            invoice.getTaxTotal(), taxBasis.totalTaxable(), taxBasis.totalTax());
-      }
 
       Map<String, BigDecimal[]> byRate = new LinkedHashMap<>();
       for (int i = 0; i < invoice.getLines().size(); i++) {

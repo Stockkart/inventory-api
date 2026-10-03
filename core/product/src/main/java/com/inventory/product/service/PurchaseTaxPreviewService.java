@@ -10,7 +10,6 @@ import com.inventory.product.rest.dto.request.PurchaseTaxPreviewRequest;
 import com.inventory.product.rest.dto.response.PurchaseTaxPreviewResponse;
 import com.inventory.product.utils.PurchaseTaxBasis;
 import com.inventory.product.utils.PurchaseTaxBasisResolver;
-import com.inventory.product.utils.VendorInvoiceTotals;
 import com.inventory.product.validation.VendorPurchaseInvoiceValidator;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -28,8 +27,8 @@ import org.springframework.stereotype.Service;
  * stock-in applies, and the two disagreed (a free-unit scheme reduced the taxable value on screen
  * but not on the books). This runs the stock-in rules instead: the item rows become invoice lines
  * and purchase pricing through the same mapper stock-in uses, the tax treatment comes from the same
- * resolver, and the tax from {@link PurchaseTaxBasisResolver} with no header, which is how
- * stock-in reads lines before a header is typed.
+ * resolver, and the totals from {@link PurchaseTaxBasisResolver} and {@link PurchaseTaxRecorder},
+ * which is how stock-in works them out.
  */
 @Service
 @RequiredArgsConstructor
@@ -58,29 +57,25 @@ public class PurchaseTaxPreviewService {
       }
     }
     invoice.setLines(lines);
+    invoice.setShippingCharge(request.getShippingCharge());
+    invoice.setOtherCharges(request.getOtherCharges());
+    invoice.setOverallDiscount(request.getOverallDiscount());
+    invoice.setRoundOff(request.getRoundOff());
 
     PurchaseTaxTreatment treatment =
         purchaseTaxTreatmentResolver.taxTreatmentFor(request.getTaxTreatment(), request.getVendorId());
     // Intra-state, as stock-in records it until a purchase carries a place of supply.
     PurchaseTaxBasis basis =
         PurchaseTaxBasisResolver.resolve(invoice, pricingByRow::get, treatment, false);
-
-    BigDecimal lineSubTotal = money(basis.totalTaxable());
-    BigDecimal taxTotal = money(basis.totalTax());
+    // The same totals stock-in will store.
+    PurchaseTaxRecorder.apply(invoice, basis);
 
     PurchaseTaxPreviewResponse out = new PurchaseTaxPreviewResponse();
     out.setTaxTreatment(treatment);
-    out.setLineSubTotal(lineSubTotal);
-    out.setTaxTotal(taxTotal);
-    out.setItemsTotal(lineSubTotal.add(taxTotal));
-    out.setInvoiceTotal(money(VendorInvoiceTotals.invoiceTotal(
-        null,
-        request.getLineSubTotal() != null ? request.getLineSubTotal() : lineSubTotal,
-        request.getTaxTotal() != null ? request.getTaxTotal() : taxTotal,
-        request.getShippingCharge(),
-        request.getOtherCharges(),
-        request.getRoundOff(),
-        request.getOverallDiscount())));
+    out.setLineSubTotal(money(invoice.getLineSubTotal()));
+    out.setTaxTotal(money(invoice.getTaxTotal()));
+    out.setItemsTotal(money(invoice.getLineSubTotal().add(invoice.getTaxTotal())));
+    out.setInvoiceTotal(money(invoice.getInvoiceTotal()));
     out.setProductCount(lines.size());
     out.setTotalQuantity(totalQuantity);
     out.setLines(basis.lines().stream().map(inventoryMapper::toPreviewLine).toList());

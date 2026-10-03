@@ -8,6 +8,7 @@ import com.inventory.product.domain.model.VendorPurchaseInvoiceLine;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.utils.PurchaseTaxBasis;
 import com.inventory.product.utils.PurchaseTaxBasisResolver;
+import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -19,11 +20,11 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 /**
- * Resolves what a supplier bill's lines are worth for tax and records it on the invoice.
+ * Works out a supplier bill's totals from its lines and writes them on the invoice.
  *
- * <p>Shared by stock-in and by a header correction, so both write the same second opinion beside
- * the stated header. The stated header is never changed here; what is written is the resolved
- * taxable value and tax per line, the totals, and the verdict saying how far the two agree.
+ * <p>The line subtotal, tax total and invoice total are not typed by the operator; they are what
+ * the lines come to. Shared by stock-in and by a header correction, so both arrive at the same
+ * figures the same way.
  */
 @Slf4j
 @Component
@@ -72,38 +73,32 @@ public class PurchaseTaxRecorder {
   }
 
   /**
-   * Resolves the invoice's lines and records the result on it (the caller saves).
+   * Works out the invoice's totals from its lines and writes them on it (the caller saves).
    *
    * <p>Never fatal. Stock already exists by the time this runs, and an invoice that records its
-   * goods but not its tax analysis is recoverable; one that fails half way through leaves the shop
-   * with lots it cannot see. On failure the invoice keeps the header it was given and the report
-   * path resolves it on read, as it does for every older document.
+   * goods but not its totals is recoverable; one that fails half way through leaves the shop with
+   * lots it cannot see. On failure the totals stay empty and the reports resolve the lines on read.
    */
   public void record(VendorPurchaseInvoice invoice) {
     try {
       Map<String, Pricing> pricing = pricingByInventoryId(invoice.getLines());
       // Interstate is not decided here. It turns on the supplier's state against the shop's, and
       // the tax heads are a property of the return rather than of the purchase, so the split is
-      // left to the aggregator that knows both ends. The taxable value and rate stored here do
-      // not change either way.
+      // left to the aggregator that knows both ends. The totals do not change either way.
       PurchaseTaxBasis basis = PurchaseTaxBasisResolver.resolve(
           invoice, pricing::get, invoice.getTaxTreatment(), false);
       apply(invoice, basis);
-
-      if (basis.verdict() != PurchaseTaxBasis.Verdict.OK) {
-        log.warn("Invoice {} for shop {} recorded as {}: stated subtotal {}, tax {}; "
-                + "lines resolve to {}, tax {}",
-            invoice.getInvoiceNo(), invoice.getShopId(), basis.verdict(),
-            invoice.getLineSubTotal(), invoice.getTaxTotal(),
-            basis.totalTaxable(), basis.totalTax());
-      }
     } catch (RuntimeException e) {
-      log.error("Could not resolve tax basis for invoice {} (shop {}); "
-              + "the invoice keeps its stated header and will be resolved on read",
+      log.error("Could not work out the totals of invoice {} (shop {}); "
+              + "the reports will resolve its lines on read",
           invoice.getInvoiceNo(), invoice.getShopId(), e);
     }
   }
 
+  /**
+   * Writes the lines' tax and the invoice totals. The line subtotal is before the bill-level
+   * discount, which the journal takes off it; the invoice total adds the charges and round-off.
+   */
   static void apply(VendorPurchaseInvoice invoice, PurchaseTaxBasis basis) {
     List<VendorPurchaseInvoiceLine> lines = invoice.getLines();
     for (int i = 0; i < lines.size() && i < basis.lines().size(); i++) {
@@ -113,10 +108,19 @@ public class PurchaseTaxRecorder {
       line.setCentralTax(resolved.centralTax());
       line.setStateTax(resolved.stateTax());
       line.setIntegratedTax(resolved.integratedTax());
-      line.setTaxBasisSource(resolved.source().name());
     }
-    invoice.setComputedLineSubTotal(basis.totalTaxable());
-    invoice.setComputedTaxTotal(basis.totalTax());
-    invoice.setHeaderReconciliation(basis.verdict().name());
+    BigDecimal taxable = basis.totalTaxable();
+    BigDecimal tax = basis.totalTax();
+    invoice.setLineSubTotal(taxable.add(basis.overallDiscount()));
+    invoice.setTaxTotal(tax);
+    invoice.setInvoiceTotal(taxable
+        .add(tax)
+        .add(nz(invoice.getShippingCharge()))
+        .add(nz(invoice.getOtherCharges()))
+        .add(nz(invoice.getRoundOff())));
+  }
+
+  private static BigDecimal nz(BigDecimal value) {
+    return value == null ? BigDecimal.ZERO : value;
   }
 }

@@ -55,31 +55,31 @@ class VendorPurchaseInvoiceServiceAmendTest {
     when(vendorPurchaseInvoiceRepository.save(any())).thenAnswer(i -> i.getArgument(0));
   }
 
-  private static AmendVendorPurchaseInvoiceRequest amend(String subTotal, String reason) {
+  private static AmendVendorPurchaseInvoiceRequest amend(String discount, String reason) {
     AmendVendorPurchaseInvoiceRequest request = new AmendVendorPurchaseInvoiceRequest();
-    request.setLineSubTotal(new BigDecimal(subTotal));
+    request.setOverallDiscount(new BigDecimal(discount));
     request.setReason(reason);
     return request;
   }
 
   @Test
   void validatesRecordsAndRepostsInThatOrder() {
-    service.amendHeader("inv-1", "s1", "u1", amend("1000.00", "subtotal was gross"));
+    service.amendHeader("inv-1", "s1", "u1", amend("100.00", "discount was missed"));
 
     InOrder order = inOrder(vendorPurchaseInvoiceValidator, purchaseTaxRecorder, inventoryService);
     order.verify(vendorPurchaseInvoiceValidator).validateHeaderAmounts(
-        eq(new BigDecimal("1000.00")), eq(new BigDecimal("50.00")), any(), any(), any(), any());
+        any(), any(), eq(new BigDecimal("100.00")));
     order.verify(purchaseTaxRecorder).record(invoice);
     order.verify(inventoryService)
-        .repostAccountingAfterAmend(invoice, "s1", "u1", "subtotal was gross");
+        .repostAccountingAfterAmend(invoice, "s1", "u1", "discount was missed");
     assertEquals(0, new BigDecimal("1100.00").compareTo(invoice.getPreviousHeader().getLineSubTotal()));
   }
 
   @Test
   void aRejectedHeaderChangesNothingDownstream() {
-    doThrow(new ValidationException("Line subtotal cannot be negative"))
+    doThrow(new ValidationException("Overall discount cannot be negative"))
         .when(vendorPurchaseInvoiceValidator)
-        .validateHeaderAmounts(any(), any(), any(), any(), any(), any());
+        .validateHeaderAmounts(any(), any(), any());
 
     assertThrows(ValidationException.class,
         () -> service.amendHeader("inv-1", "s1", "u1", amend("-1", "typo")));
@@ -92,6 +92,6 @@ class VendorPurchaseInvoiceServiceAmendTest {
   @Test
   void aReasonIsRequired() {
     assertThrows(ValidationException.class,
-        () -> service.amendHeader("inv-1", "s1", "u1", amend("1000.00", " ")));
+        () -> service.amendHeader("inv-1", "s1", "u1", amend("100.00", " ")));
   }
 }
