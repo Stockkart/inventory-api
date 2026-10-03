@@ -38,11 +38,12 @@ public class VendorPurchaseInvoiceLine {
   // pricing record -- and the three did not have to agree, because nothing made
   // them. Null on any line recorded before this was captured, which sends the
   // reader back to deriving it.
+  //
+  // The rate is not copied here. It lives on the lot's pricing (sgst + cgst), which
+  // is where it is edited, and a copy would keep the old rate after an edit.
 
   /** Value the tax is charged on, after discounts and after any inclusive tax was taken out. */
   private BigDecimal taxableValue;
-  /** Total GST rate on the line (sgst + cgst, or the igst rate -- the same number). */
-  private BigDecimal gstRatePct;
   private BigDecimal centralTax;
   private BigDecimal stateTax;
   private BigDecimal integratedTax;
