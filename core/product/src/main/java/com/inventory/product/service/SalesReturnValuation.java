@@ -1,12 +1,12 @@
 package com.inventory.product.service;
 
+import com.inventory.common.util.GstMath;
 import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.utils.CheckoutUtils;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
-import org.springframework.util.StringUtils;
 
 /** Computes taxable, tax, COGS, and refund tender splits for customer returns. */
 final class SalesReturnValuation {
@@ -17,6 +17,7 @@ final class SalesReturnValuation {
       BigDecimal taxable,
       BigDecimal cgst,
       BigDecimal sgst,
+      BigDecimal igst,
       BigDecimal cogs,
       BigDecimal lineTotal) {}
 
@@ -24,12 +25,21 @@ final class SalesReturnValuation {
       BigDecimal taxableTotal,
       BigDecimal cgstTotal,
       BigDecimal sgstTotal,
+      BigDecimal igstTotal,
       BigDecimal cogsTotal,
       BigDecimal returnTotal,
       BigDecimal roundOff) {}
 
+  /**
+   * A returned line's taxable value and tax. A return reverses the sale's tax under the head the
+   * sale charged it: IGST at the combined rate when the sale was interstate, else CGST and SGST.
+   */
   static LineAmounts lineAmounts(
-      PurchaseItem purchaseItem, int refundBaseQty, int refundDisplayQty, BillingMode billingMode) {
+      PurchaseItem purchaseItem,
+      int refundBaseQty,
+      int refundDisplayQty,
+      BillingMode billingMode,
+      boolean interstate) {
     BigDecimal billableQty =
         prorateBillableQuantity(purchaseItem, refundBaseQty, refundDisplayQty);
     BigDecimal effectivePrice = CheckoutUtils.getEffectiveSellingPricePerUnit(purchaseItem);
@@ -48,16 +58,21 @@ final class SalesReturnValuation {
 
     BigDecimal cgst = BigDecimal.ZERO;
     BigDecimal sgst = BigDecimal.ZERO;
+    BigDecimal igst = BigDecimal.ZERO;
     if (CheckoutUtils.isTaxApplicableForItem(purchaseItem, billingMode)) {
-      BigDecimal cgstRate = parseRate(purchaseItem.getCgst());
-      BigDecimal sgstRate = parseRate(purchaseItem.getSgst());
-      cgst = taxable.multiply(cgstRate).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
-      sgst = taxable.multiply(sgstRate).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+      BigDecimal cgstRate = GstMath.parseGstRate(purchaseItem.getCgst());
+      BigDecimal sgstRate = GstMath.parseGstRate(purchaseItem.getSgst());
+      if (interstate) {
+        igst = GstMath.taxOnExclusive(taxable, cgstRate.add(sgstRate));
+      } else {
+        cgst = GstMath.taxOnExclusive(taxable, cgstRate);
+        sgst = GstMath.taxOnExclusive(taxable, sgstRate);
+      }
     }
 
     BigDecimal cogs = prorateCogs(purchaseItem, refundBaseQty);
-    BigDecimal lineTotal = taxable.add(cgst).add(sgst).setScale(2, RoundingMode.HALF_UP);
-    return new LineAmounts(taxable, cgst, sgst, cogs, lineTotal);
+    BigDecimal lineTotal = taxable.add(cgst).add(sgst).add(igst).setScale(2, RoundingMode.HALF_UP);
+    return new LineAmounts(taxable, cgst, sgst, igst, cogs, lineTotal);
   }
 
   static AmountTotals aggregate(List<LineAmounts> lines) {
@@ -65,18 +80,20 @@ final class SalesReturnValuation {
         lines.stream().map(LineAmounts::taxable).reduce(BigDecimal.ZERO, BigDecimal::add);
     BigDecimal cgst = lines.stream().map(LineAmounts::cgst).reduce(BigDecimal.ZERO, BigDecimal::add);
     BigDecimal sgst = lines.stream().map(LineAmounts::sgst).reduce(BigDecimal.ZERO, BigDecimal::add);
+    BigDecimal igst = lines.stream().map(LineAmounts::igst).reduce(BigDecimal.ZERO, BigDecimal::add);
     BigDecimal cogs = lines.stream().map(LineAmounts::cogs).reduce(BigDecimal.ZERO, BigDecimal::add);
 
     taxable = taxable.setScale(2, RoundingMode.HALF_UP);
     cgst = cgst.setScale(2, RoundingMode.HALF_UP);
     sgst = sgst.setScale(2, RoundingMode.HALF_UP);
+    igst = igst.setScale(2, RoundingMode.HALF_UP);
     cogs = cogs.setScale(2, RoundingMode.HALF_UP);
 
-    BigDecimal preRound = taxable.add(cgst).add(sgst).setScale(2, RoundingMode.HALF_UP);
+    BigDecimal preRound = taxable.add(cgst).add(sgst).add(igst).setScale(2, RoundingMode.HALF_UP);
     BigDecimal returnTotal = roundToWholeRupee(preRound);
     BigDecimal roundOff = returnTotal.subtract(preRound).setScale(4, RoundingMode.HALF_UP);
 
-    return new AmountTotals(taxable, cgst, sgst, cogs, returnTotal, roundOff);
+    return new AmountTotals(taxable, cgst, sgst, igst, cogs, returnTotal, roundOff);
   }
 
   private static BigDecimal prorateBillableQuantity(
@@ -114,15 +131,6 @@ final class SalesReturnValuation {
     return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
   }
 
-  private static BigDecimal parseRate(String raw) {
-    if (!StringUtils.hasText(raw)) return BigDecimal.ZERO;
-    String t = raw.trim().replace("%", "");
-    try {
-      return new BigDecimal(t).max(BigDecimal.ZERO);
-    } catch (NumberFormatException ex) {
-      return BigDecimal.ZERO;
-    }
-  }
 
   private static BigDecimal roundToWholeRupee(BigDecimal amount) {
     if (amount == null) return BigDecimal.ZERO;

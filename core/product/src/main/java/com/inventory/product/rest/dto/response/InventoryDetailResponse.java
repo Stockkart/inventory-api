@@ -3,6 +3,7 @@ package com.inventory.product.rest.dto.response;
 import com.inventory.pricing.rest.dto.response.RateDto;
 import com.inventory.product.domain.model.enums.DiscountApplicable;
 import com.inventory.product.domain.model.enums.BillingMode;
+import com.inventory.product.domain.model.enums.InventorySellRestriction;
 import com.inventory.product.domain.model.enums.ItemType;
 import com.inventory.product.domain.model.enums.SchemeType;
 import com.inventory.product.domain.model.enums.SellUnitRule;
@@ -62,6 +63,7 @@ public class InventoryDetailResponse {
   Instant purchaseDate;
   String hsn;
   BillingMode billingMode;
+  InventorySellRestriction sellRestriction;
   SchemeType schemeType;
   Integer scheme;
   Integer schemePayFor;
