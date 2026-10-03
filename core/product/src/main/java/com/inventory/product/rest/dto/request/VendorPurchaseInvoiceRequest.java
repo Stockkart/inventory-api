@@ -1,5 +1,6 @@
 package com.inventory.product.rest.dto.request;
 
+import com.inventory.product.domain.model.enums.PurchaseTaxTreatment;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -7,6 +8,10 @@ import java.time.Instant;
 
 /**
  * Optional vendor invoice header for bulk stock registration. When omitted, behavior is unchanged.
+ *
+ * <p>The line subtotal, tax total and invoice total are stored as sent; the stock-in screen sends
+ * the figures the server's bill preview gave it. Any of the three left out is worked out from the
+ * lines.
  */
 @Data
 public class VendorPurchaseInvoiceRequest {
@@ -25,4 +30,12 @@ public class VendorPurchaseInvoiceRequest {
   private String paymentMethod;
   /** Optional paid-now amount for split credit purchases. */
   private BigDecimal paidAmount;
+  /**
+   * Whether the line amounts on this bill already include GST.
+   *
+   * <p>INCLUSIVE for a supplier who bills at MRP, EXCLUSIVE for one who quotes a rate and adds
+   * the tax. Omitted means EXCLUSIVE, which is what every path assumed before the distinction
+   * was recorded.
+   */
+  private PurchaseTaxTreatment taxTreatment;
 }

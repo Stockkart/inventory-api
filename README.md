@@ -240,6 +240,12 @@ Shops are bound to a **vertical** (`Shop.verticalId` + `Shop.pluginVersion`). Fi
 
 **Purchase tax basis.** GSTR-2 and the purchase journal both take each supplier invoice's tax from `PurchaseTaxBasisResolver` (`core/product/.../utils`), which works it out from the lines: quantity × cost after the percentage scheme and additional discount (free units do not reduce it), less the bill-level discount shared across lines by value, then tax at each lot's rate added on top, or taken out for a bill marked `INCLUSIVE`.
 
+**Purchase tax at stock-in.** `POST /api/v1/inventory/bulk` with a `vendorPurchaseInvoice` header:
+
+- **Totals:** line subtotal, tax total and invoice total are saved from the request (the stock-in screen sends the server's bill preview figures). `PurchaseTaxRecorder` stores the per-line taxable value and tax, and fills in any total the client left out from the lines. The line subtotal is before the bill-level discount; the invoice total is taxable + tax + shipping + other charges + round-off.
+- **Refused (400, validation errors):** a negative line subtotal, tax total, invoice total, shipping charge, other charges or overall discount. Rules live in `VendorPurchaseInvoiceValidator`.
+- **Never blocks stock-in:** if the totals cannot be worked out, they stay empty and the reports resolve the lines on read.
+
 ### Build commands
 
 ```bash

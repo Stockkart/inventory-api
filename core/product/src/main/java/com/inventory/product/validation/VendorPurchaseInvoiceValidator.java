@@ -1,0 +1,52 @@
+package com.inventory.product.validation;
+
+import com.inventory.common.exception.ValidationException;
+import com.inventory.product.rest.dto.request.VendorPurchaseInvoiceRequest;
+import java.math.BigDecimal;
+import java.util.LinkedHashSet;
+import java.util.Set;
+import org.springframework.stereotype.Component;
+
+/**
+ * Rejects a supplier bill header that cannot describe a real bill: a negative amount.
+ *
+ * <p>Used when an invoice is registered and when its header is corrected, so both paths refuse the
+ * same things.
+ */
+@Component
+public class VendorPurchaseInvoiceValidator {
+
+  /** The header as it arrives with a stock-in. */
+  public void validateHeader(VendorPurchaseInvoiceRequest request) {
+    if (request == null) {
+      return;
+    }
+    Set<String> errors = new LinkedHashSet<>();
+    rejectIfNegative(errors, "Line subtotal", request.getLineSubTotal());
+    rejectIfNegative(errors, "Tax total", request.getTaxTotal());
+    rejectIfNegative(errors, "Invoice total", request.getInvoiceTotal());
+    if (!errors.isEmpty()) {
+      throw new ValidationException(errors);
+    }
+    validateHeaderAmounts(
+        request.getShippingCharge(), request.getOtherCharges(), request.getOverallDiscount());
+  }
+
+  /** The typed header amounts on their own; any of them may be absent. */
+  public void validateHeaderAmounts(
+      BigDecimal shippingCharge, BigDecimal otherCharges, BigDecimal overallDiscount) {
+    Set<String> errors = new LinkedHashSet<>();
+    rejectIfNegative(errors, "Shipping charge", shippingCharge);
+    rejectIfNegative(errors, "Other charges", otherCharges);
+    rejectIfNegative(errors, "Overall discount", overallDiscount);
+    if (!errors.isEmpty()) {
+      throw new ValidationException(errors);
+    }
+  }
+
+  private static void rejectIfNegative(Set<String> errors, String label, BigDecimal value) {
+    if (value != null && value.signum() < 0) {
+      errors.add(label + " cannot be negative");
+    }
+  }
+}

@@ -74,6 +74,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -99,6 +100,13 @@ public class InventoryService {
 
   @Autowired
   private InventoryValidator inventoryValidator;
+
+  @Autowired
+  private com.inventory.product.validation.VendorPurchaseInvoiceValidator
+      vendorPurchaseInvoiceValidator;
+
+  @Autowired
+  private PurchaseTaxRecorder purchaseTaxRecorder;
 
   @Autowired
   private PackagingUnitService packagingUnitService;
@@ -151,9 +159,6 @@ public class InventoryService {
 
   @Autowired
   private InventoryVerticalExpiryHandler inventoryVerticalExpiryHandler;
-
-  @Autowired
-  private com.inventory.pricing.domain.repository.PricingRepository pricingRepository;
 
   @Autowired
   private QuotationService quotationService;
@@ -411,6 +416,7 @@ public class InventoryService {
       pendingInvoice.setSynthetic(Boolean.TRUE);
     }
     if (invReq != null) {
+      vendorPurchaseInvoiceValidator.validateHeader(invReq);
       pendingInvoice.setInvoiceDate(invReq.getInvoiceDate());
       pendingInvoice.setLineSubTotal(invReq.getLineSubTotal());
       pendingInvoice.setTaxTotal(invReq.getTaxTotal());
@@ -421,6 +427,7 @@ public class InventoryService {
       pendingInvoice.setInvoiceTotal(invReq.getInvoiceTotal());
       pendingInvoice.setPaymentMethod(invReq.getPaymentMethod());
       pendingInvoice.setPaidAmount(invReq.getPaidAmount());
+      pendingInvoice.setTaxTreatment(invReq.getTaxTreatment());
     }
 
     try {
@@ -461,6 +468,7 @@ public class InventoryService {
     }
 
     pendingInvoice.setLines(invoiceLines);
+    purchaseTaxRecorder.record(pendingInvoice);
     vendorPurchaseInvoiceRepository.save(pendingInvoice);
     if (metrics != null) {
       metrics.record(
@@ -660,7 +668,9 @@ public class InventoryService {
     // IGST is not posted yet: the ledger has no place of supply for a purchase, so the basis is
     // read as intra-state.
     PurchaseTaxBasis basis =
-        PurchaseTaxBasisResolver.resolve(inv, this::pricingOfLot, inv.getTaxTreatment(), false);
+        PurchaseTaxBasisResolver.resolve(
+            inv, purchaseTaxRecorder.pricingByInventoryId(inv.getLines())::get,
+            inv.getTaxTreatment(), false);
     java.util.Optional<PurchaseTaxBasis.IntraStateSplit> split = basis.splitStated(total);
     if (split.isPresent()) {
       return new GstSplit(split.get().centralTax(), split.get().stateTax());
@@ -675,17 +685,6 @@ public class InventoryService {
   }
 
   /** The pricing record behind a purchase line's lot, or null when either is missing. */
-  private com.inventory.pricing.domain.model.Pricing pricingOfLot(String inventoryId) {
-    if (!StringUtils.hasText(inventoryId)) {
-      return null;
-    }
-    return inventoryRepository
-        .findById(inventoryId)
-        .map(Inventory::getPricingId)
-        .filter(StringUtils::hasText)
-        .flatMap(pricingRepository::findById)
-        .orElse(null);
-  }
 
   /** Plain ratio split — used only when no line-level rates are available. */
   private static GstSplit splitByRatio(

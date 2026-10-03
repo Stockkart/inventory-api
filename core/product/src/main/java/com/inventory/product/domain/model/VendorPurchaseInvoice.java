@@ -51,6 +51,7 @@ public class VendorPurchaseInvoice {
    * figures do not move.
    */
   private PurchaseTaxTreatment taxTreatment;
+
   /**
    * True when invoice number was generated (AUTO-*) because the user did not enter one.
    * User-entered invoices are non-synthetic.
