@@ -39,6 +39,7 @@ public class InventoryPricingWriteHandler {
             .costPrice(inventory.getCostPrice())
             .saleAdditionalDiscount(inventory.getSaleAdditionalDiscount())
             .purchaseAdditionalDiscount(inventory.getPurchaseAdditionalDiscount())
+            .costPriceIncludesTax(inventory.getCostPriceIncludesTax())
             .sgst(resolveSgst(inventory.getSgst(), inventory.getShopId()))
             .cgst(resolveCgst(inventory.getCgst(), inventory.getShopId()));
         if (isRetailerShop(inventory.getShopId())) {

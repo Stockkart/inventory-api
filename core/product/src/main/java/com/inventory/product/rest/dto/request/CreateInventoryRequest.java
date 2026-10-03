@@ -1,5 +1,6 @@
 package com.inventory.product.rest.dto.request;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.inventory.reminders.rest.dto.request.CustomReminderRequest;
 import com.inventory.pricing.rest.dto.response.RateDto;
@@ -57,6 +58,12 @@ public class CreateInventoryRequest {
   private String lotId;
   /** Set when bulk registration includes vendor purchase invoice metadata. */
   private String vendorPurchaseInvoiceId;
+  /**
+   * Set by bulk registration from the bill's tax treatment, never read from the client: it decides
+   * whether GST is taken out of the cost, so a caller must not be able to choose it.
+   */
+  @JsonIgnore
+  private Boolean costPriceIncludesTax;
   // HSN code (optional)
   private String hsn;
   // Batch number (optional)

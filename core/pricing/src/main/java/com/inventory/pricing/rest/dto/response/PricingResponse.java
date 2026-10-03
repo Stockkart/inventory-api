@@ -19,6 +19,7 @@ public class PricingResponse {
   private BigDecimal costPrice;
   /** Landed cost per unit after purchase scheme and additional discount. */
   private BigDecimal effectiveCostPrice;
+  private Boolean costPriceIncludesTax;
   private BigDecimal priceToRetail;
   private List<Rate> rates;
   private String defaultRate;
