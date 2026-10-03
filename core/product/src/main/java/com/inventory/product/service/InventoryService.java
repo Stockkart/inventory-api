@@ -770,18 +770,24 @@ public class InventoryService {
     List<String> warnings = new ArrayList<>();
     try {
       for (VendorPurchaseInvoiceLine line : invoice.getLines()) {
-        if (!StringUtils.hasText(line.getInventoryId()) || line.getGstRatePct() == null) continue;
+        if (!StringUtils.hasText(line.getInventoryId())) continue;
+        // The rate is the lot's own, read from its pricing (the lot read fills sgst and cgst in).
         inventoryRepository.findById(line.getInventoryId())
             .filter(lot -> StringUtils.hasText(lot.getProductId()))
-            .flatMap(lot -> productRepository.findById(lot.getProductId()))
-            .ifPresent((com.inventory.product.domain.model.Product product) ->
-                hsnRateConsistency.check(shopId, product.getHsn(), line.getGstRatePct())
-                    .ifPresent(conflict -> {
-                      String message = conflict.describe(
-                          StringUtils.hasText(line.getName()) ? line.getName() : product.getName());
-                      warnings.add(message);
-                      log.warn("Invoice {} (shop {}): {}", invoice.getInvoiceNo(), shopId, message);
-                    }));
+            .ifPresent(lot -> {
+              BigDecimal rate = GstMath.parseGstRate(lot.getSgst())
+                  .add(GstMath.parseGstRate(lot.getCgst()));
+              productRepository.findById(lot.getProductId())
+                  .ifPresent((com.inventory.product.domain.model.Product product) ->
+                      hsnRateConsistency.check(shopId, product.getHsn(), rate)
+                          .ifPresent(conflict -> {
+                            String message = conflict.describe(StringUtils.hasText(line.getName())
+                                ? line.getName() : product.getName());
+                            warnings.add(message);
+                            log.warn("Invoice {} (shop {}): {}",
+                                invoice.getInvoiceNo(), shopId, message);
+                          }));
+            });
       }
     } catch (RuntimeException e) {
       log.warn("HSN rate check failed for invoice {} (shop {})",
