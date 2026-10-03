@@ -1,8 +1,8 @@
 package com.inventory.product.service;
 
-import com.inventory.product.tax.PurchaseTaxBasisResolver;
-import com.inventory.common.tax.GstStateCode;
-import com.inventory.common.tax.GstMath;
+import com.inventory.product.utils.PurchaseTaxBasisResolver;
+import com.inventory.common.util.GstStateCode;
+import com.inventory.common.util.GstMath;
 import com.inventory.pricing.domain.model.Scheme;
 import com.inventory.user.domain.model.Vendor;
 import com.inventory.common.constants.ErrorCode;
@@ -469,10 +469,8 @@ public class VendorPurchaseReturnService {
         // after the bill's scheme and discount, and with the tax taken out where the supplier
         // billed at MRP. Reading costPrice raw and adding tax on top credited the supplier for
         // more than was ever paid them: on a scheme-discounted inclusive bill, by over a third.
-        BigDecimal rate = originalLine != null && originalLine.getGstRatePct() != null
-            ? originalLine.getGstRatePct()
-            : GstMath.parseRatePct(pricing != null ? pricing.getSgst() : null)
-                .add(GstMath.parseRatePct(pricing != null ? pricing.getCgst() : null));
+        BigDecimal rate = GstMath.parseGstRate(pricing != null ? pricing.getSgst() : null)
+            .add(GstMath.parseGstRate(pricing != null ? pricing.getCgst() : null));
 
         BigDecimal unitTaxable = unitTaxableFromInvoiceLine(originalLine);
         if (unitTaxable == null) {
@@ -847,9 +845,5 @@ public class VendorPurchaseReturnService {
           + "treating the return as local", shopId, vendorId, e);
       return false;
     }
-  }
-
-  private BigDecimal parseRatePct(String s) {
-    return GstMath.parseRatePct(s);
   }
 }

@@ -4,8 +4,10 @@ import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.documentservice.rest.dto.GenerateInvoiceRequest;
 import com.inventory.documentservice.rest.dto.InvoiceItem;
+import com.inventory.documentservice.rest.dto.InvoiceTaxRateRow;
 import com.inventory.documentservice.service.DocumentService;
 import com.inventory.product.domain.model.Inventory;
+import com.inventory.product.domain.model.DocumentTypes;
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
@@ -15,9 +17,11 @@ import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.PurchaseRepository;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.pluginengine.VerticalFieldsReader;
+import com.inventory.product.service.estimate.EstimateInventoryPolicy;
 import com.inventory.product.service.vertical.InventoryVerticalExtensionHandler;
 import com.inventory.product.utils.constants.ProductMetricsConstants;
 import com.inventory.product.utils.AmountToWordsConverter;
+import com.inventory.product.utils.SaleTaxBreakdown;
 import com.inventory.user.domain.model.Customer;
 import com.inventory.user.service.CustomerService;
 import lombok.extern.slf4j.Slf4j;
@@ -67,6 +71,9 @@ public class InvoiceService {
   @Autowired
   private InvoiceSettingsService invoiceSettingsService;
 
+  @Autowired
+  private EstimateInventoryPolicy estimateInventoryPolicy;
+
   @Autowired(required = false)
   private com.inventory.metrics.MetricsWrapper metrics;
 
@@ -87,6 +94,10 @@ public class InvoiceService {
 
     if (!shopId.equals(purchase.getShopId())) {
       throw new ValidationException("Purchase does not belong to the specified shop");
+    }
+
+    if (DocumentTypes.isEstimate(purchase)) {
+      estimateInventoryPolicy.assertPrintable(purchase);
     }
 
     Shop shop = shopRepository.findById(purchase.getShopId())
@@ -229,7 +240,10 @@ public class InvoiceService {
         invoiceItem.setQuantity(purchaseItem.getQuantity());
         invoiceItem.setName(purchaseItem.getName());
         invoiceItem.setMaximumRetailPrice(purchaseItem.getMaximumRetailPrice());
-        invoiceItem.setPriceToRetail(purchaseItem.getPriceToRetail());
+        // A line sold at MRP prints its rate with the GST inside it taken out, as every other
+        // line's rate already is: the RATE column is the taxable price, and the GST is stated
+        // beneath the lines rather than left hidden in the rate.
+        invoiceItem.setPriceToRetail(SaleTaxBreakdown.taxableRate(purchaseItem));
         invoiceItem.setDiscount(purchaseItem.getDiscount());
         invoiceItem.setSaleAdditionalDiscount(purchaseItem.getSaleAdditionalDiscount());
         invoiceItem.setTotalAmount(purchaseItem.getTotalAmount());
@@ -316,6 +330,28 @@ public class InvoiceService {
     request.setSgstAmount(purchase.getSgstAmount() != null ? purchase.getSgstAmount() : BigDecimal.ZERO);
     request.setCgstAmount(purchase.getCgstAmount() != null ? purchase.getCgstAmount() : BigDecimal.ZERO);
     request.setIgstAmount(purchase.getIgstAmount() != null ? purchase.getIgstAmount() : BigDecimal.ZERO);
+    request.setTaxTotal(purchase.getTaxTotal() != null ? purchase.getTaxTotal() : BigDecimal.ZERO);
+    // Whether the sale crossed a state border was decided at checkout and stored on it; every
+    // template reads this one flag rather than inferring it from the amounts.
+    request.setInterstate(Boolean.TRUE.equals(purchase.getInterstate()));
+    // The footer is worked from the lines, the way GSTR-1 reads the same sale, rather than
+    // copied from the header. Bills saved before tax was taken out of MRP carry a header that
+    // states no tax on those lines and a subtotal that still holds it; the lines do not. On an
+    // interstate sale each rate's tax is IGST.
+    SaleTaxBreakdown.of(purchase).ifPresent(summary -> {
+      request.setSubTotal(summary.getSubTotal());
+      request.setSaleAdditionalDiscountTotal(summary.getAdditionalDiscount());
+      request.setTaxRateRows(summary.getRates().stream()
+          .map(row -> new InvoiceTaxRateRow(row.getCgstPercent(), row.getSgstPercent(),
+              row.getTaxableValue(), row.getCgstAmount(), row.getSgstAmount(), row.getIgstAmount(),
+              row.getCgstPercent().add(row.getSgstPercent())))
+          .toList());
+      request.setSgstAmount(summary.getSgstTotal());
+      request.setCgstAmount(summary.getCgstTotal());
+      request.setIgstAmount(summary.getIgstTotal());
+      request.setTaxTotal(
+          summary.getSgstTotal().add(summary.getCgstTotal()).add(summary.getIgstTotal()));
+    });
 
     if (!invoiceItems.isEmpty()) {
       InvoiceItem firstItem = invoiceItems.get(0);
@@ -342,21 +378,11 @@ public class InvoiceService {
       request.setCgstPercent(BigDecimal.valueOf(2.5));
     }
 
-    // On an interstate supply the whole rate is charged once as IGST rather than as two halves,
-    // so the printed rate is the two added back together -- 5%, not 2.5% twice.
-    if (Boolean.TRUE.equals(purchase.getInterstate())) {
-      BigDecimal sgstPct = request.getSgstPercent() != null
-          ? request.getSgstPercent() : BigDecimal.ZERO;
-      BigDecimal cgstPct = request.getCgstPercent() != null
-          ? request.getCgstPercent() : BigDecimal.ZERO;
-      request.setIgstPercent(sgstPct.add(cgstPct));
-    }
-
-    request.setTaxTotal(purchase.getTaxTotal() != null ? purchase.getTaxTotal() : BigDecimal.ZERO);
-
     BigDecimal grandTotal = purchase.getGrandTotal() != null ? purchase.getGrandTotal() : BigDecimal.ZERO;
+    // The additional discount is what comes off the subtotal. The trade discount is the gap
+    // between MRP and rate, already inside the subtotal, so subtracting it misstated round-off.
     BigDecimal calculatedTotal = request.getSubTotal()
-        .subtract(request.getDiscountTotal())
+        .subtract(request.getSaleAdditionalDiscountTotal())
         .add(request.getTaxTotal());
     request.setRoundOff(grandTotal.subtract(calculatedTotal));
     request.setGrandTotal(grandTotal);

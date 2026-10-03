@@ -46,7 +46,7 @@ public class BarcodeGeneratorService {
   }
 
   public boolean isAvailable(String shopId, String code) {
-    if (productRepository.findByShopIdAndBarcode(shopId, code).isPresent()) {
+    if (!productRepository.findAllByShopIdAndBarcode(shopId, code).isEmpty()) {
       return false;
     }
     return barcodePoolRepository.findByShopIdAndCode(shopId, code).isEmpty();

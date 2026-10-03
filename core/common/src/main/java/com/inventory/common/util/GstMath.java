@@ -1,4 +1,4 @@
-package com.inventory.common.tax;
+package com.inventory.common.util;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -60,7 +60,7 @@ public final class GstMath {
    * report that fails to generate at all. A negative rate is clamped to zero — it has no meaning
    * and would otherwise produce a negative credit.
    */
-  public static BigDecimal parseRatePct(String raw) {
+  public static BigDecimal parseGstRate(String raw) {
     if (raw == null) return BigDecimal.ZERO;
     String trimmed = raw.trim();
     if (trimmed.isEmpty()) return BigDecimal.ZERO;
@@ -76,18 +76,18 @@ public final class GstMath {
   }
 
   /** True when the rate is a GST slab. Used to flag a line whose rate cannot be right. */
-  public static boolean isKnownSlab(BigDecimal ratePct) {
-    if (ratePct == null) return false;
-    return KNOWN_SLABS.stream().anyMatch(slab -> slab.compareTo(ratePct) == 0);
+  public static boolean isKnownSlab(BigDecimal gstRate) {
+    if (gstRate == null) return false;
+    return KNOWN_SLABS.stream().anyMatch(slab -> slab.compareTo(gstRate) == 0);
   }
 
   /**
    * Tax added on top of a stated taxable value — the convention of a supplier who quotes ex-GST
    * rates and lists the tax separately.
    */
-  public static BigDecimal taxOnExclusive(BigDecimal base, BigDecimal ratePct) {
-    if (base == null || ratePct == null || ratePct.signum() <= 0) return BigDecimal.ZERO;
-    return base.multiply(ratePct).divide(HUNDRED, MONEY_SCALE, RoundingMode.HALF_UP);
+  public static BigDecimal taxOnExclusive(BigDecimal base, BigDecimal gstRate) {
+    if (base == null || gstRate == null || gstRate.signum() <= 0) return BigDecimal.ZERO;
+    return base.multiply(gstRate).divide(HUNDRED, MONEY_SCALE, RoundingMode.HALF_UP);
   }
 
   /**
@@ -98,14 +98,14 @@ public final class GstMath {
    * <p>The tax is returned as {@code gross − taxable} rather than recomputed from the rate, so the
    * two always add back to the amount actually on the bill.
    */
-  public static TaxSplit extractFromInclusive(BigDecimal gross, BigDecimal ratePct) {
+  public static TaxSplit extractFromInclusive(BigDecimal gross, BigDecimal gstRate) {
     if (gross == null) return new TaxSplit(BigDecimal.ZERO, BigDecimal.ZERO);
     BigDecimal amount = gross.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
-    if (ratePct == null || ratePct.signum() <= 0) {
+    if (gstRate == null || gstRate.signum() <= 0) {
       return new TaxSplit(amount, BigDecimal.ZERO);
     }
     BigDecimal taxable = amount.multiply(HUNDRED)
-        .divide(HUNDRED.add(ratePct), MONEY_SCALE, RoundingMode.HALF_UP);
+        .divide(HUNDRED.add(gstRate), MONEY_SCALE, RoundingMode.HALF_UP);
     return new TaxSplit(taxable, amount.subtract(taxable));
   }
 
@@ -116,11 +116,11 @@ public final class GstMath {
    * hand the odd paisa to one side; an intra-state purchase is taxed at half the rate twice, and
    * the two halves are equal.
    */
-  public static IntraStateTax splitIntraState(BigDecimal taxable, BigDecimal ratePct) {
-    if (taxable == null || ratePct == null || ratePct.signum() <= 0) {
+  public static IntraStateTax splitIntraState(BigDecimal taxable, BigDecimal gstRate) {
+    if (taxable == null || gstRate == null || gstRate.signum() <= 0) {
       return new IntraStateTax(BigDecimal.ZERO, BigDecimal.ZERO);
     }
-    BigDecimal half = ratePct.divide(TWO, RATE_SCALE, RoundingMode.HALF_UP);
+    BigDecimal half = gstRate.divide(TWO, RATE_SCALE, RoundingMode.HALF_UP);
     BigDecimal each = taxable.multiply(half).divide(HUNDRED, MONEY_SCALE, RoundingMode.HALF_UP);
     return new IntraStateTax(each, each);
   }
