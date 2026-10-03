@@ -238,7 +238,7 @@ Shops are bound to a **vertical** (`Shop.verticalId` + `Shop.pluginVersion`). Fi
 
 **Shop state is required for GSTR-2.** The shop's state comes from its GSTIN, else the state on its address. Without either, `GET /taxation/gstr2` (and its download) returns **422** with error code **7000 `GST_CONFIGURATION_MISSING`**, because an interstate purchase (IGST) cannot be told from a local one (CGST + SGST). Set the shop's GSTIN or address state, then generate the return again.
 
-**Purchase tax basis.** GSTR-2 and the purchase journal both take each supplier invoice's tax from `PurchaseTaxBasisResolver` (`core/product/.../utils`): a stated header that agrees with the line rates (within ₹1.00 or 0.5% of the tax, whichever is larger) is used as printed; otherwise the header's tax, then landed and finally list line values, with a verdict (`OK`, `MISSING`, `MISMATCH`, `RATE_CONFLICT`) logged for anything but `OK`. A bill marked `INCLUSIVE` has tax taken out of line values only; its printed header is already ex-tax.
+**Purchase tax basis.** GSTR-2 and the purchase journal both take each supplier invoice's tax from `PurchaseTaxBasisResolver` (`core/product/.../utils`), which works it out from the lines: quantity × cost after the percentage scheme and additional discount (free units do not reduce it), less the bill-level discount shared across lines by value, then tax at each lot's rate added on top, or taken out for a bill marked `INCLUSIVE`.
 
 ### Build commands
 
