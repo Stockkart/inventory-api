@@ -228,6 +228,34 @@ Shops are bound to a **vertical** (`Shop.verticalId` + `Shop.pluginVersion`). Fi
 
 **Remaining:** M8 core field strip migration; scan-sell detail modal schema columns; apparel/cafe vertical (Phase 5); import mappers + widgets (Phase 6).
 
+### GST reports (taxation)
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/v1/taxation/gstr1` | Outward supplies (sales) |
+| `GET /api/v1/taxation/gstr2` | Inward supplies (purchases) |
+| `GET /api/v1/taxation/gstr3b` | Summary return |
+
+**Shop state is required for GSTR-1 and GSTR-2.** The shop's state comes from its GSTIN, else the state on its address. Without either, `GET /taxation/gstr1` and `GET /taxation/gstr2` (and their downloads) return **422** with error code **7000 `GST_CONFIGURATION_MISSING`**, because an interstate supply (IGST) cannot be told from a local one (CGST + SGST). GSTR-1 previously wrote an empty place of supply instead. Set the shop's GSTIN or address state, then generate the return again.
+
+**IGST on interstate sales.** A sale to a customer whose GSTIN places them in another state is billed as IGST at the combined rate (CGST and SGST zero); an unregistered or unplaceable customer is local. The decision is `GstStateCode.isInterstate` (`core/common/util`), shared by checkout and GSTR-2, and is stored on the sale (`interstate`, `igstAmount`) so GSTR-1 (B2B, B2CL, B2CS and the HSN summary, under IGST), the invoice and estimate conversion read it rather than deciding again. Sale responses (`PurchaseSummaryDto`, `AddToCartResponse`, `CheckoutResponse`) carry `igstAmount` and `interstate`, and `taxSummary` gives IGST per rate (`rates[].igstAmount`, `igstTotal`). Printed invoices (A4, thermal, dot matrix) read the sale's `interstate` flag: an interstate bill prints an IGST% column from each line's combined rate and one IGST row per rate, never CGST/SGST beside it. The journal posts output IGST. A return of an interstate sale reverses IGST (`SalesReturnValuation`), posts it as output IGST, and its credit note states IGST.
+
+**Purchase tax basis.** GSTR-2 and the purchase journal both take each supplier invoice's tax from `PurchaseTaxBasisResolver` (`core/product/.../utils`), which works it out from the lines: quantity × cost after the percentage scheme and additional discount (free units do not reduce it), less the bill-level discount shared across lines by value, then tax at each lot's rate added on top, or taken out for a bill marked `INCLUSIVE`.
+
+**Purchase tax at stock-in.** `POST /api/v1/inventory/bulk` with a `vendorPurchaseInvoice` header:
+
+- **Not accepted from the client:** line subtotal, tax total and invoice total. `PurchaseTaxRecorder` works them out from the lines and stores them with the per-line taxable value and tax. The line subtotal is before the bill-level discount; the invoice total is taxable + tax + shipping + other charges + round-off.
+- **Refused (400, validation errors):** a negative shipping charge, other charges or overall discount. Rules live in `VendorPurchaseInvoiceValidator`.
+- **Never blocks stock-in:** if the totals cannot be worked out, they stay empty and the reports resolve the lines on read.
+
+**Previewing a bill before stock-in.** `POST /api/v1/vendor-purchase-invoices/preview-totals` takes the stock-in screen as it stands (`vendorId`, `taxTreatment`, the same `items` rows `POST /inventory/bulk` takes, and any typed `shippingCharge`, `otherCharges`, `overallDiscount`, `roundOff`) and returns `taxTreatment`, `lineSubTotal`, `taxTotal`, `itemsTotal` (items only), `invoiceTotal`, `productCount`, `totalQuantity` and per-row `lines` (`taxable`, `ratePct`, `centralTax`, `stateTax`, `integratedTax`, `tax`). Nothing is saved. It runs the stock-in rules (same item mapping, tax treatment, `PurchaseTaxBasisResolver` and `PurchaseTaxRecorder` totals), so the figures it returns are the ones stock-in stores, and the frontend shows them read-only instead of computing GST or totals itself.
+
+**HSN rate warnings at stock-in.** The same response carries `rateWarnings` when a product's GST rate looks wrong for its HSN: either it differs from the rate every other product the shop holds under that HSN carries, or it contradicts a `verified` entry in `core/product/src/main/resources/hsn/hsn-gst-rates.json` (`HsnGstRateMaster`). Warnings never block stock-in. HSN codes are read by `common/util/HsnCodes`, shared with the GSTR HSN descriptions (`HsnSacCatalog`).
+
+**Vendor tax treatment.** A vendor carries `defaultTaxTreatment` (`EXCLUSIVE` or `INCLUSIVE`, set on `POST`/`PUT /api/v1/vendors`). A stock-in that leaves the invoice's treatment empty uses the vendor's default. A stock-in that states one explicitly also updates the vendor's default (the latest bill wins); leaving it empty changes nothing.
+
+**Amending a purchase invoice header.** `PATCH /api/v1/vendor-purchase-invoices/{id}` corrects the header against the paper bill (shipping, other charges, overall discount, round-off, tax treatment) and needs a `reason`. The subtotal, tax and invoice total are worked out again from the lines. Lines are not amendable. The previous header, who changed it and why are kept on the invoice. The amendment is validated like stock-in, the totals are worked out again, and the purchase journal entry is **reversed and posted again** with the corrected figures (the invoice's `ledgerSourceId` names the live entry). The vendor's credit ledger (`core/credit`) is not adjusted yet.
+
 ### Build commands
 
 ```bash

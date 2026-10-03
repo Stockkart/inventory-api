@@ -120,6 +120,15 @@ public class CheckoutController {
     return ResponseEntity.ok(ApiResponse.success(estimateService.getEstimate(purchaseId, shopId)));
   }
 
+  @PostMapping("/estimates/{purchaseId}/lock")
+  public ResponseEntity<ApiResponse<AddToCartResponse>> lockEstimate(
+      @PathVariable String purchaseId, HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    String userId = (String) httpRequest.getAttribute("userId");
+    return ResponseEntity.ok(
+        ApiResponse.success(estimateService.lockEstimate(purchaseId, userId, shopId)));
+  }
+
   @PostMapping("/estimates/{purchaseId}/convert")
   public ResponseEntity<ApiResponse<ConvertEstimateResponse>> convertEstimate(
       @PathVariable String purchaseId, HttpServletRequest httpRequest) {

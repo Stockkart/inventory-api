@@ -85,6 +85,48 @@ public final class CheckoutUtils {
     return item.getPriceToRetail().compareTo(item.getMaximumRetailPrice()) == 0;
   }
 
+  /**
+   * The line's combined GST rate (CGST + SGST, e.g. 18 for 9 + 9), from the rates on the line
+   * itself. Zero when the line carries none, which is also what a BASIC bill leaves behind.
+   */
+  public static BigDecimal combinedGstRate(PurchaseItem item) {
+    return parseRate(item.getCgst()).add(parseRate(item.getSgst()));
+  }
+
+  /**
+   * The selling price per unit with any GST already inside it taken out.
+   *
+   * <p>A line sold at MRP charges no GST on top, because MRP already includes it. That tax is
+   * still collected, so the bill has to state it: the price is split into its taxable value and
+   * the GST inside it rather than treated as all taxable value. Any other line is priced before
+   * tax and is returned unchanged.
+   *
+   * <p>MRP 115 at 5% is 109.52 taxable and 5.48 GST, not 115 taxable and no GST.
+   */
+  public static BigDecimal getTaxablePricePerUnit(PurchaseItem item) {
+    BigDecimal price = getEffectiveSellingPricePerUnit(item);
+    if (!isSellingAtMrp(item)) {
+      return price;
+    }
+    BigDecimal rate = combinedGstRate(item);
+    if (rate.signum() <= 0) {
+      return price;
+    }
+    return price.multiply(BigDecimal.valueOf(100))
+        .divide(BigDecimal.valueOf(100).add(rate), 6, RoundingMode.HALF_UP);
+  }
+
+  private static BigDecimal parseRate(String rate) {
+    if (rate == null || rate.isBlank()) {
+      return BigDecimal.ZERO;
+    }
+    try {
+      return new BigDecimal(rate.trim());
+    } catch (NumberFormatException e) {
+      return BigDecimal.ZERO;
+    }
+  }
+
   /** Tax applicable only when billing mode is REGULAR and item is NOT selling at MRP. */
   public static boolean isTaxApplicableForItem(PurchaseItem item, BillingMode billingMode) {
     return isTaxApplicable(billingMode) && !isSellingAtMrp(item);

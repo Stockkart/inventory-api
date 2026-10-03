@@ -1,6 +1,8 @@
-package com.inventory.common.tax;
+package com.inventory.common.util;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -44,5 +46,23 @@ class GstStateCodeTest {
     assertEquals("19", GstStateCode.codeFromGstin("19AAOCM4713F1ZB"));
     assertEquals("10", GstStateCode.codeFromGstin("10AADFT3025B1Z4"));
     assertEquals("", GstStateCode.codeFromGstin("XX1234"));
+  }
+
+  @Test
+  @DisplayName("a supply is interstate only when both ends are placed and differ")
+  void interstateNeedsBothEndsPlaced() {
+    assertTrue(GstStateCode.isInterstate("10", "19"));
+    assertFalse(GstStateCode.isInterstate("10", "10"));
+    assertFalse(GstStateCode.isInterstate("10", ""));
+    assertFalse(GstStateCode.isInterstate("", "19"));
+    assertFalse(GstStateCode.isInterstate(null, null));
+  }
+
+  @Test
+  @DisplayName("a shop is placed by its GSTIN, else by the state on its address")
+  void shopStateGstinFirstThenAddress() {
+    assertEquals("19", GstStateCode.shopState("19AAOCM4713F1ZB", "Bihar"));
+    assertEquals("10", GstStateCode.shopState(null, "Bihar"));
+    assertEquals("", GstStateCode.shopState("", ""));
   }
 }

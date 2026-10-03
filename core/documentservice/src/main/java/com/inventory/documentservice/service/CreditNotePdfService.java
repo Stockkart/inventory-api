@@ -148,6 +148,7 @@ public class CreditNotePdfService {
     context.setVariable("taxableTotal", taxableTotal);
     context.setVariable("sgstAmount", nz(request.getSgstAmount()));
     context.setVariable("cgstAmount", nz(request.getCgstAmount()));
+    context.setVariable("interstate", request.isInterstate());
     context.setVariable(
         "sgstPercent",
         request.getSgstPercent() != null ? request.getSgstPercent() : BigDecimal.valueOf(2.5));

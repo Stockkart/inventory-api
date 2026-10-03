@@ -1,4 +1,4 @@
-package com.inventory.common.tax;
+package com.inventory.common.util;
 
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -152,6 +152,19 @@ public final class GstStateCode {
   public static String shopState(String gstinNo, String addressState) {
     String fromGstin = codeFromGstin(gstinNo);
     return StringUtils.hasText(fromGstin) ? fromGstin : codeFromName(addressState);
+  }
+
+  /**
+   * Whether a supply between two states crosses a border, so the tax is IGST.
+   *
+   * <p>Both ends must be placed. Anything unplaceable is treated as local: that is the far more
+   * common case, and reporting a supply as interstate on a guess would put the tax under a head the
+   * other party cannot claim. One definition for sales, purchases and returns.
+   */
+  public static boolean isInterstate(String ourState, String theirState) {
+    return StringUtils.hasText(ourState)
+        && StringUtils.hasText(theirState)
+        && !ourState.equals(theirState);
   }
 
   /**
