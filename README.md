@@ -244,7 +244,7 @@ Shops are bound to a **vertical** (`Shop.verticalId` + `Shop.pluginVersion`). Fi
 
 **Purchase tax at stock-in.** `POST /api/v1/inventory/bulk` with a `vendorPurchaseInvoice` header:
 
-- **Totals:** line subtotal, tax total and invoice total are stored as sent (the stock-in screen sends the server's bill preview figures). `PurchaseTaxRecorder` works them out from the lines and fills in any the client left out, and stores the per-line taxable value and tax. The line subtotal is before the bill-level discount; the invoice total is taxable + tax + shipping + other charges + round-off.
+- **Totals:** line subtotal, tax total and invoice total are saved from the request (the stock-in screen sends the server's bill preview figures). `PurchaseTaxRecorder` stores the per-line taxable value and tax, and fills in any total the client left out from the lines. The line subtotal is before the bill-level discount; the invoice total is taxable + tax + shipping + other charges + round-off.
 - **Refused (400, validation errors):** a negative line subtotal, tax total, invoice total, shipping charge, other charges or overall discount. Rules live in `VendorPurchaseInvoiceValidator`.
 - **Never blocks stock-in:** if the totals cannot be worked out, they stay empty and the reports resolve the lines on read.
 

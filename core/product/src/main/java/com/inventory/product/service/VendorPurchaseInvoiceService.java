@@ -110,8 +110,11 @@ public class VendorPurchaseInvoiceService {
     invoice.setAmendedByUserId(userId);
     invoice.setAmendmentReason(request.getReason().trim());
 
-    // The treatment, charges or discount may have changed, so the totals are worked out again.
-    // Non-fatal, as at registration: the report path resolves on read regardless.
+    // The treatment, charges or discount may have changed, so the totals are worked out again:
+    // cleared here, then filled from the lines. Non-fatal, as at registration.
+    invoice.setLineSubTotal(null);
+    invoice.setTaxTotal(null);
+    invoice.setInvoiceTotal(null);
     purchaseTaxRecorder.record(invoice);
     // The journal carried the old header; reverse it and post the corrected one.
     inventoryService.repostAccountingAfterAmend(invoice, shopId, userId, invoice.getAmendmentReason());
