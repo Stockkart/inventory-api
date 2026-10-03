@@ -117,7 +117,7 @@
           <td class="right" th:text="${taxableTotal}">0</td>
         </tr>
         <tr th:if="${showTaxDetails}">
-          <td>Tax</td>
+          <td th:text="${interstate ? 'IGST' : 'Tax'}">Tax</td>
           <td class="right" th:text="${taxTotal}">0</td>
         </tr>
         <tr>

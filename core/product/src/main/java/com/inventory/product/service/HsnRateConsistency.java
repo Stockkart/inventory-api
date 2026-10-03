@@ -1,6 +1,6 @@
-package com.inventory.product.tax;
+package com.inventory.product.service;
 
-import com.inventory.common.tax.GstMath;
+import com.inventory.common.util.GstMath;
 import com.inventory.pricing.domain.model.Pricing;
 import com.inventory.pricing.domain.repository.PricingRepository;
 import com.inventory.product.domain.model.Inventory;
@@ -157,8 +157,8 @@ public class HsnRateConsistency {
     for (Inventory lot : lots) {
       Pricing pricing = pricingById.get(lot.getPricingId());
       if (pricing == null) continue;
-      BigDecimal rate = GstMath.parseRatePct(pricing.getSgst())
-          .add(GstMath.parseRatePct(pricing.getCgst()));
+      BigDecimal rate = GstMath.parseGstRate(pricing.getSgst())
+          .add(GstMath.parseGstRate(pricing.getCgst()));
       rateByProduct.putIfAbsent(lot.getProductId(), rate);
     }
 

@@ -76,6 +76,9 @@ public class GenerateCreditNoteRequest {
   private BigDecimal taxableTotal;
   private BigDecimal sgstAmount;
   private BigDecimal cgstAmount;
+  /** IGST, when the note reverses an interstate sale; CGST and SGST are then zero. */
+  private BigDecimal igstAmount;
+  private boolean interstate;
   private BigDecimal sgstPercent;
   private BigDecimal cgstPercent;
   private BigDecimal taxTotal;
