@@ -655,9 +655,8 @@ public class InventoryService {
    * <p>The split comes from {@link PurchaseTaxBasisResolver} — the same per-line basis GSTR-2
    * reports from — so the ledger and the return read one answer. The stated {@code taxTotal} is
    * the amount (it is what the vendor is owed, so the entry has to balance on it) and the basis
-   * gives the ratio. Where the header proves itself the basis already carries the stated tax, and
-   * the halves posted are exactly the halves the return reports. Lines with no rate contribute
-   * nothing; if none has a rate, the shop's CGST / SGST percentages decide the split.
+   * gives the ratio. Lines with no rate contribute nothing; if none has a rate, the shop's CGST /
+   * SGST percentages decide the split.
    */
   private GstSplit splitTaxByLines(String shopId, VendorPurchaseInvoice inv, BigDecimal taxTotal) {
     BigDecimal total = nz(taxTotal);
