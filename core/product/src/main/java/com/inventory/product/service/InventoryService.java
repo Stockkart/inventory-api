@@ -429,13 +429,10 @@ public class InventoryService {
     if (invReq != null) {
       vendorPurchaseInvoiceValidator.validateHeader(invReq);
       pendingInvoice.setInvoiceDate(invReq.getInvoiceDate());
-      pendingInvoice.setLineSubTotal(invReq.getLineSubTotal());
-      pendingInvoice.setTaxTotal(invReq.getTaxTotal());
       pendingInvoice.setShippingCharge(invReq.getShippingCharge());
       pendingInvoice.setOtherCharges(invReq.getOtherCharges());
       pendingInvoice.setOverallDiscount(invReq.getOverallDiscount());
       pendingInvoice.setRoundOff(invReq.getRoundOff());
-      pendingInvoice.setInvoiceTotal(invReq.getInvoiceTotal());
       pendingInvoice.setPaymentMethod(invReq.getPaymentMethod());
       pendingInvoice.setPaidAmount(invReq.getPaidAmount());
       // The bill decides; the vendor answers when the bill did not. A supplier's billing
@@ -522,12 +519,6 @@ public class InventoryService {
     BulkCreateInventoryResponse out =
         inventoryMapper.toBulkCreateInventoryResponse(
             createdItems, 0, returnedInvoiceId);
-    // Hand the reconciliation back so the client can raise it while the operator still has the
-    // bill in hand. Nothing was blocked on it -- the stock is registered and the header stands as
-    // typed -- but a discrepancy is only cheap to settle at this moment.
-    out.setHeaderReconciliation(pendingInvoice.getHeaderReconciliation());
-    out.setComputedLineSubTotal(pendingInvoice.getComputedLineSubTotal());
-    out.setComputedTaxTotal(pendingInvoice.getComputedTaxTotal());
     if (!rateWarnings.isEmpty()) {
       out.setRateWarnings(rateWarnings);
     }
