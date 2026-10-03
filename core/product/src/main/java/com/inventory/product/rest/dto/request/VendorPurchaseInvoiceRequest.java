@@ -9,19 +9,23 @@ import java.time.Instant;
 /**
  * Optional vendor invoice header for bulk stock registration. When omitted, behavior is unchanged.
  *
- * <p>The line subtotal, tax total and invoice total are not part of it: the server works them out
- * from the lines.
+ * <p>The line subtotal, tax total and invoice total are stored as sent; the stock-in screen sends
+ * the figures the server's bill preview gave it. Any of the three left out is worked out from the
+ * lines.
  */
 @Data
 public class VendorPurchaseInvoiceRequest {
 
   private String invoiceNo;
   private Instant invoiceDate;
+  private BigDecimal lineSubTotal;
+  private BigDecimal taxTotal;
   private BigDecimal shippingCharge;
   private BigDecimal otherCharges;
   /** Bill-level discount in currency units (not %). */
   private BigDecimal overallDiscount;
   private BigDecimal roundOff;
+  private BigDecimal invoiceTotal;
   /** CASH | ONLINE | CREDIT (defaults to CASH when omitted). */
   private String paymentMethod;
   /** Optional paid-now amount for split credit purchases. */

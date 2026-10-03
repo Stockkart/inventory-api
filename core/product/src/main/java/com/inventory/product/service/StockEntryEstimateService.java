@@ -209,11 +209,13 @@ public class StockEntryEstimateService {
       inv.setInvoiceNo(draft.getVendorInvoiceNo().trim());
     }
     inv.setInvoiceDate(draft.getVendorInvoiceDate());
-    // Subtotal, tax and invoice total are worked out from the lines when the bill is registered.
+    inv.setLineSubTotal(draft.getLineSubTotal());
+    inv.setTaxTotal(draft.getTaxTotal());
     inv.setShippingCharge(draft.getShippingCharge());
     inv.setOtherCharges(draft.getOtherCharges());
     inv.setOverallDiscount(draft.getOverallDiscount());
     inv.setRoundOff(draft.getRoundOff());
+    inv.setInvoiceTotal(draft.getInvoiceTotal());
     inv.setPaymentMethod(draft.getPaymentMethod());
     inv.setPaidAmount(draft.getPaidAmount());
     bulk.setVendorPurchaseInvoice(inv);
