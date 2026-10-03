@@ -98,6 +98,22 @@ class PurchaseTaxRecorderTest {
     assertNotNull(lines.get(0).getTaxableValue());
   }
 
+  @Test
+  void totalsTheBillWasSavedWithAreKept() {
+    line(10, "100", "9");
+    VendorPurchaseInvoice invoice = invoice();
+    invoice.setLineSubTotal(new BigDecimal("1000.00"));
+    invoice.setTaxTotal(new BigDecimal("180.40"));
+    invoice.setInvoiceTotal(new BigDecimal("1180.40"));
+
+    recorder.record(invoice);
+
+    assertEquals(0, new BigDecimal("180.40").compareTo(invoice.getTaxTotal()));
+    assertEquals(0, new BigDecimal("1180.40").compareTo(invoice.getInvoiceTotal()));
+    assertEquals(0, new BigDecimal("180.00").compareTo(
+        lines.get(0).getCentralTax().add(lines.get(0).getStateTax())));
+  }
+
   /** The journal takes the bill-level discount off the subtotal, so the subtotal is before it. */
   @Test
   void theSubtotalIsBeforeTheBillLevelDiscount() {
