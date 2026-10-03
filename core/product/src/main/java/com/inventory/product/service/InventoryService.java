@@ -418,10 +418,13 @@ public class InventoryService {
     if (invReq != null) {
       vendorPurchaseInvoiceValidator.validateHeader(invReq);
       pendingInvoice.setInvoiceDate(invReq.getInvoiceDate());
+      pendingInvoice.setLineSubTotal(invReq.getLineSubTotal());
+      pendingInvoice.setTaxTotal(invReq.getTaxTotal());
       pendingInvoice.setShippingCharge(invReq.getShippingCharge());
       pendingInvoice.setOtherCharges(invReq.getOtherCharges());
       pendingInvoice.setOverallDiscount(invReq.getOverallDiscount());
       pendingInvoice.setRoundOff(invReq.getRoundOff());
+      pendingInvoice.setInvoiceTotal(invReq.getInvoiceTotal());
       pendingInvoice.setPaymentMethod(invReq.getPaymentMethod());
       pendingInvoice.setPaidAmount(invReq.getPaidAmount());
       pendingInvoice.setTaxTreatment(invReq.getTaxTreatment());
@@ -466,7 +469,6 @@ public class InventoryService {
 
     pendingInvoice.setLines(invoiceLines);
     purchaseTaxRecorder.record(pendingInvoice);
-    keepSentTotals(pendingInvoice, invReq);
     vendorPurchaseInvoiceRepository.save(pendingInvoice);
     if (metrics != null) {
       metrics.record(
@@ -700,20 +702,6 @@ public class InventoryService {
     return new GstSplit(
         total.subtract(half).setScale(4, RoundingMode.HALF_UP),
         half.setScale(4, RoundingMode.HALF_UP));
-  }
-
-  /**
-   * Puts back the totals the client sent over the ones worked out from the lines. The stock-in
-   * screen sends what the server's bill preview gave it, so the two normally agree; a total the
-   * client left out keeps the worked-out figure.
-   */
-  static void keepSentTotals(VendorPurchaseInvoice invoice, VendorPurchaseInvoiceRequest sent) {
-    if (sent == null) {
-      return;
-    }
-    if (sent.getLineSubTotal() != null) invoice.setLineSubTotal(sent.getLineSubTotal());
-    if (sent.getTaxTotal() != null) invoice.setTaxTotal(sent.getTaxTotal());
-    if (sent.getInvoiceTotal() != null) invoice.setInvoiceTotal(sent.getInvoiceTotal());
   }
 
   /** Per-invoice CGST / SGST slice. IGST is wired in once the invoice carries a place-of-supply. */
