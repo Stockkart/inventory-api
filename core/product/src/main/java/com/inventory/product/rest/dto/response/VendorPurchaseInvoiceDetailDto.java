@@ -39,4 +39,6 @@ public class VendorPurchaseInvoiceDetailDto {
   private Instant amendedAt;
   private String amendedByUserId;
   private String amendmentReason;
+  /** The header as it stood before the last correction; null if never corrected. */
+  private InvoiceHeaderFiguresDto previousHeader;
 }

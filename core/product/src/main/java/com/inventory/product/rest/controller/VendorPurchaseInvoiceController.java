@@ -8,6 +8,7 @@ import com.inventory.metrics.annotation.RecordRequestRate;
 import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.product.rest.dto.request.AmendVendorPurchaseInvoiceRequest;
 import com.inventory.product.rest.dto.request.PurchaseTaxPreviewRequest;
+import com.inventory.product.rest.dto.response.AmendInvoicePreviewResponse;
 import com.inventory.product.rest.dto.response.PurchaseTaxPreviewResponse;
 import com.inventory.product.service.PurchaseTaxPreviewService;
 import com.inventory.product.rest.dto.response.VendorPurchaseInvoiceDetailDto;
@@ -72,6 +73,25 @@ public class VendorPurchaseInvoiceController {
           ErrorCode.UNAUTHORIZED, "User not authenticated or shop not found");
     }
     return ResponseEntity.ok(ApiResponse.success(purchaseTaxPreviewService.preview(request)));
+  }
+
+  /**
+   * What a correction would change, worked out without saving: the saved header beside the
+   * corrected one and the figures that move. The form shows this before the operator confirms.
+   */
+  @PostMapping(value = "/{id}/amend-preview", consumes = MediaType.APPLICATION_JSON_VALUE,
+      produces = MediaType.APPLICATION_JSON_VALUE)
+  public ResponseEntity<ApiResponse<AmendInvoicePreviewResponse>> previewAmendment(
+      @PathVariable String id,
+      @RequestBody AmendVendorPurchaseInvoiceRequest request,
+      HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    if (StringUtils.isEmpty(shopId)) {
+      throw new AuthenticationException(
+          ErrorCode.UNAUTHORIZED, "User not authenticated or shop not found");
+    }
+    return ResponseEntity.ok(
+        ApiResponse.success(vendorPurchaseInvoiceService.previewAmendment(id, shopId, request)));
   }
 
   /**

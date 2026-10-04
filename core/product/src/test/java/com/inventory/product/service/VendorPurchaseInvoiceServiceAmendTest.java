@@ -2,8 +2,10 @@ package com.inventory.product.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
@@ -14,6 +16,7 @@ import com.inventory.common.exception.ValidationException;
 import com.inventory.product.domain.model.VendorPurchaseInvoice;
 import com.inventory.product.domain.repository.VendorPurchaseInvoiceRepository;
 import com.inventory.product.rest.dto.request.AmendVendorPurchaseInvoiceRequest;
+import com.inventory.product.rest.dto.response.AmendInvoicePreviewResponse;
 import com.inventory.product.validation.VendorPurchaseInvoiceValidator;
 import com.inventory.user.domain.repository.VendorRepository;
 import java.math.BigDecimal;
@@ -93,5 +96,46 @@ class VendorPurchaseInvoiceServiceAmendTest {
   void aReasonIsRequired() {
     assertThrows(ValidationException.class,
         () -> service.amendHeader("inv-1", "s1", "u1", amend("100.00", " ")));
+  }
+
+  /** Recalculating gives back the totals the bill already has, as the real recorder would. */
+  private void recorderRestoresTheSavedTotals() {
+    doAnswer(call -> {
+      VendorPurchaseInvoice inv = call.getArgument(0);
+      inv.setLineSubTotal(new BigDecimal("1100.00"));
+      inv.setTaxTotal(new BigDecimal("50.00"));
+      inv.setInvoiceTotal(new BigDecimal("1150.00"));
+      return null;
+    }).when(purchaseTaxRecorder).record(any());
+    invoice.setInvoiceTotal(new BigDecimal("1150.00"));
+  }
+
+  @Test
+  void thePreviewShowsWhatWouldMoveAndSavesNothing() {
+    recorderRestoresTheSavedTotals();
+    AmendVendorPurchaseInvoiceRequest request = amend("100.00", "discount was missed");
+
+    AmendInvoicePreviewResponse preview = service.previewAmendment("inv-1", "s1", request);
+
+    assertTrue(preview.getChangedFields().contains("overallDiscount"));
+    assertTrue(preview.isJournalReposted());
+    assertEquals(0, new BigDecimal("100.00").compareTo(preview.getCorrected().getOverallDiscount()));
+    // The saved invoice is untouched and nothing is written or reposted.
+    assertEquals(null, invoice.getOverallDiscount());
+    verify(vendorPurchaseInvoiceRepository, never()).save(any());
+    verify(inventoryService, never()).repostAccountingAfterAmend(any(), any(), any(), any());
+  }
+
+  @Test
+  void aCorrectionThatChangesNothingIsRefused() {
+    recorderRestoresTheSavedTotals();
+    invoice.setOverallDiscount(new BigDecimal("100.00"));
+
+    ValidationException e = assertThrows(ValidationException.class,
+        () -> service.amendHeader("inv-1", "s1", "u1", amend("100", "same again")));
+
+    assertTrue(e.getMessage().contains("Nothing would change"), e.getMessage());
+    verify(inventoryService, never()).repostAccountingAfterAmend(any(), any(), any(), any());
+    verify(vendorPurchaseInvoiceRepository, never()).save(any());
   }
 }
