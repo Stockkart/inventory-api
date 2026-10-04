@@ -89,7 +89,8 @@ public class LabelDataResolver {
       if (fieldKey == null || values.containsKey(fieldKey)) {
         continue;
       }
-      PrintableField field = catalog == null ? null : catalog.find(fieldKey).orElse(null);
+      PrintableField field =
+          catalog == null ? null : catalog.findForUsage(fieldKey, FieldUsage.LABEL).orElse(null);
       ValueType valueType = field != null ? field.valueType() : parseValueType(enabled.valueType());
 
       Object raw;

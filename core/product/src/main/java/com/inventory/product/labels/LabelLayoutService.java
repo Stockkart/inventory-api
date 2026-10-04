@@ -207,7 +207,7 @@ public class LabelLayoutService {
     List<EnabledFieldDto> enabled = new ArrayList<>();
     for (String key : cfg.enabledFieldKeys()) {
       catalog
-          .find(key)
+          .findForUsage(key, FieldUsage.LABEL)
           .filter(field -> field.isAvailableFor(shopType))
           .map(field -> enabledField(field, cfg))
           .ifPresent(enabled::add);

@@ -3,11 +3,11 @@ package com.inventory.product.labels;
 import java.util.Set;
 
 /**
- * Stable {@code fieldKey} constants for every static (non-vertical) printable field, plus the key
- * prefixes used for dynamically generated fields (Req 1.6, 1.7).
+ * Stable {@code fieldKey} constants for every static (non-vertical) catalog field, plus the key
+ * prefixes used for dynamically generated fields (label Req 1.6, 1.7; card Req 1.3).
  *
  * <p>Keys are part of the API contract: they are persisted in {@code shop_barcode_label_layouts}
- * and exchanged with the frontend, so they must never be renamed.
+ * and {@code shop_card_layouts} and exchanged with the frontend, so they must never be renamed.
  */
 public final class LabelFieldKeys {
 
@@ -19,6 +19,10 @@ public final class LabelFieldKeys {
   public static final String BASE_UNIT = "baseUnit";
   public static final String PACK_SIZE = "packSize";
   public static final String DESCRIPTION = "description";
+  /** Card only: item type label (Normal / Costly / Temp N°). */
+  public static final String ITEM_TYPE = "itemType";
+  /** Card only: discount applicability label (Discount / Scheme / Discount + scheme). */
+  public static final String DISCOUNT_APPLICABLE = "discountApplicable";
 
   // ---- pricing group -------------------------------------------------------------------------
   public static final String MRP = "mrp";
@@ -27,6 +31,14 @@ public final class LabelFieldKeys {
   public static final String COST_PRICE = "costPrice";
   public static final String SALE_SCHEME = "saleScheme";
   public static final String GST_RATE = "gstRate";
+  /** Card only: additional discount offered on sale (%). */
+  public static final String SALE_ADDITIONAL_DISCOUNT = "saleAdditionalDiscount";
+  /** Card only, shop-internal: additional discount received on purchase (%). */
+  public static final String PURCHASE_ADDITIONAL_DISCOUNT = "purchaseAdditionalDiscount";
+  /** Card only, shop-internal: scheme received on purchase. */
+  public static final String PURCHASE_SCHEME = "purchaseScheme";
+  /** Card only, shop-internal: cost after purchase discounts and schemes. */
+  public static final String EFFECTIVE_COST_PRICE = "effectiveCostPrice";
 
   /** Prefix for named-rate fields: {@code pricing.rate.<rateName>} (rate name used verbatim). */
   public static final String PRICING_RATE_PREFIX = "pricing.rate.";
@@ -35,6 +47,20 @@ public final class LabelFieldKeys {
   public static final String BATCH_NO = "batchNo";
   public static final String EXPIRY_DATE = "expiryDate";
   public static final String RECEIVED_DATE = "receivedDate";
+  /** Card only: storage location of the lot. */
+  public static final String LOCATION = "location";
+  /** Card only: stock available to sell (current minus open-quotation reservations). */
+  public static final String AVAILABLE_COUNT = "availableCount";
+  /** Card only: physical stock on hand. */
+  public static final String CURRENT_COUNT = "currentCount";
+  /** Card only: quantity received into the lot. */
+  public static final String RECEIVED_COUNT = "receivedCount";
+  /** Card only: quantity sold from the lot. */
+  public static final String SOLD_COUNT = "soldCount";
+  /** Card only: low-stock threshold. */
+  public static final String THRESHOLD_COUNT = "thresholdCount";
+  /** Card only: purchase date of the lot. */
+  public static final String PURCHASE_DATE = "purchaseDate";
 
   // ---- shop group ----------------------------------------------------------------------------
   public static final String SHOP_NAME = "shopName";
