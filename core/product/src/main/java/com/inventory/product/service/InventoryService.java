@@ -167,9 +167,6 @@ public class InventoryService {
   private InventoryVerticalExpiryHandler inventoryVerticalExpiryHandler;
 
   @Autowired
-  private HsnRateConsistency hsnRateConsistency;
-
-  @Autowired
   private com.inventory.product.domain.repository.ProductRepository productRepository;
 
   @Autowired
@@ -482,7 +479,6 @@ public class InventoryService {
     pendingInvoice.setLines(invoiceLines);
     purchaseTaxRecorder.record(pendingInvoice);
     rememberVendorTaxTreatment(bulkRequest.getVendorId(), invReq);
-    List<String> rateWarnings = checkHsnRates(pendingInvoice, shopId);
     vendorPurchaseInvoiceRepository.save(pendingInvoice);
     if (metrics != null) {
       metrics.record(
@@ -523,9 +519,6 @@ public class InventoryService {
     BulkCreateInventoryResponse out =
         inventoryMapper.toBulkCreateInventoryResponse(
             createdItems, 0, returnedInvoiceId);
-    if (!rateWarnings.isEmpty()) {
-      out.setRateWarnings(rateWarnings);
-    }
     out.setItemErrors(null);
     out.setCreditEntryId(creditEntryId);
     return out;
@@ -762,44 +755,6 @@ public class InventoryService {
     return new GstSplit(
         total.subtract(half).setScale(4, RoundingMode.HALF_UP),
         half.setScale(4, RoundingMode.HALF_UP));
-  }
-
-  /**
-   * Warns where a line's GST rate disagrees with the rest of the catalogue under its HSN.
-   *
-   * <p>Separate from the header check, because it catches what the header cannot. An invoice
-   * priced entirely at the wrong slab reconciles with itself perfectly -- subtotal, tax and total
-   * all agree -- and is wrong all the same. The only evidence against it is that the same goods
-   * are recorded at a different rate elsewhere in the shop.
-   */
-  private List<String> checkHsnRates(VendorPurchaseInvoice invoice, String shopId) {
-    List<String> warnings = new ArrayList<>();
-    try {
-      for (VendorPurchaseInvoiceLine line : invoice.getLines()) {
-        if (!StringUtils.hasText(line.getInventoryId())) continue;
-        // The rate is the lot's own, read from its pricing (the lot read fills sgst and cgst in).
-        inventoryRepository.findById(line.getInventoryId())
-            .filter(lot -> StringUtils.hasText(lot.getProductId()))
-            .ifPresent(lot -> {
-              BigDecimal rate = GstMath.parseGstRate(lot.getSgst())
-                  .add(GstMath.parseGstRate(lot.getCgst()));
-              productRepository.findById(lot.getProductId())
-                  .ifPresent((com.inventory.product.domain.model.Product product) ->
-                      hsnRateConsistency.check(shopId, product.getHsn(), rate)
-                          .ifPresent(conflict -> {
-                            String message = conflict.describe(StringUtils.hasText(line.getName())
-                                ? line.getName() : product.getName());
-                            warnings.add(message);
-                            log.warn("Invoice {} (shop {}): {}",
-                                invoice.getInvoiceNo(), shopId, message);
-                          }));
-            });
-      }
-    } catch (RuntimeException e) {
-      log.warn("HSN rate check failed for invoice {} (shop {})",
-          invoice.getInvoiceNo(), shopId, e);
-    }
-    return warnings;
   }
 
   /**

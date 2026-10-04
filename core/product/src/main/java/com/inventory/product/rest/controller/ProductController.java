@@ -8,6 +8,8 @@ import com.inventory.metrics.annotation.RecordRequestRate;
 import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.product.rest.dto.response.InventoryDetailResponse;
 import com.inventory.product.rest.dto.response.ProductSuggestionDto;
+import com.inventory.product.rest.dto.response.HsnGstRatesResponse;
+import com.inventory.product.service.HsnGstRateService;
 import com.inventory.product.service.InventoryService;
 import com.inventory.product.service.ProductService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -37,6 +39,9 @@ public class ProductController {
   @Autowired
   private InventoryService inventoryService;
 
+  @Autowired
+  private HsnGstRateService hsnGstRateService;
+
   /** Typeahead for registration: suggest existing catalog products for this shop. */
   @GetMapping("/suggest")
   public ResponseEntity<ApiResponse<List<ProductSuggestionDto>>> suggest(
@@ -57,6 +62,18 @@ public class ProductController {
     String shopId = requireShopId(httpRequest);
     return ResponseEntity.ok(
         ApiResponse.success(productService.suggestionsByBarcode(shopId, code)));
+  }
+
+  /**
+   * The GST rates the rate notifications allow for an HSN, for the stock-in row to offer. Empty
+   * rates when the HSN is not in the table.
+   */
+  @GetMapping("/hsn-gst-rates")
+  public ResponseEntity<ApiResponse<HsnGstRatesResponse>> hsnGstRates(
+      @RequestParam("hsn") String hsn,
+      HttpServletRequest httpRequest) {
+    requireShopId(httpRequest);
+    return ResponseEntity.ok(ApiResponse.success(hsnGstRateService.ratesFor(hsn)));
   }
 
   /** Full catalog identity for a selected product (prefill source). */

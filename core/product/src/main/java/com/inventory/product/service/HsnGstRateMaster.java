@@ -21,15 +21,12 @@ import java.util.Optional;
 /**
  * The GST rates a given HSN attracts, from the CBIC rate notifications.
  *
- * <p>Exists to catch the one thing a shop's own records cannot: a rate keyed wrong the first time
- * and copied ever since. Comparing a product against its neighbours finds the odd one out, and
- * finds nothing at all when every product under an HSN carries the same wrong rate. Only a source
- * outside the shop can contradict a consensus.
+ * <p>Offered as the GST choices on a stock-in row once its HSN is typed, so the rate is picked from
+ * the schedule rather than keyed from memory.
  *
  * <p>An entry lists every rate the schedule allows for the code, because an entry there is limited
  * by its description as well as its code (toothpaste 5% and other oral-care goods 18% under 3306).
- * Only {@code verified} entries, taken from the notification, may overrule a shop; anything else
- * on file is ignored by the check.
+ * Only {@code verified} entries, taken from the notification, are offered.
  */
 @Service
 @Slf4j
@@ -41,14 +38,19 @@ public class HsnGstRateMaster {
 
   private final Map<String, Entry> byHsn;
 
-  /** The rates this HSN attracts, and how far they can be trusted. */
-  public record Entry(List<BigDecimal> rates, String source) {
+  /**
+   * The rates an HSN attracts, and how far they can be trusted.
+   *
+   * @param code the code on file, which may be a parent of the HSN asked about
+   * @param ref the notification entries the rates come from
+   */
+  public record Entry(String code, List<BigDecimal> rates, String source, String ref) {
 
     public Entry {
       rates = List.copyOf(rates);
     }
 
-    /** Whether this entry may contradict a shop whose own records all agree. */
+    /** Whether the rates were taken from the notification. */
     public boolean isAuthoritative() {
       return SOURCE_VERIFIED.equalsIgnoreCase(source);
     }
@@ -96,7 +98,8 @@ public class HsnGstRateMaster {
         List<BigDecimal> rates = new ArrayList<>();
         value.path("rates").forEach(rate -> rates.add(new BigDecimal(rate.asText())));
         if (rates.isEmpty()) continue;
-        out.put(field.getKey(), new Entry(rates, value.path("source").asText("")));
+        out.put(field.getKey(), new Entry(field.getKey(), rates,
+            value.path("source").asText(""), value.path("ref").asText("")));
       }
       log.info("Loaded {} HSN GST rates ({} verified)", out.size(),
           out.values().stream().filter(Entry::isAuthoritative).count());
