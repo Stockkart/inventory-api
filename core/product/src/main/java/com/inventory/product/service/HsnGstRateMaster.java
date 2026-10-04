@@ -11,32 +11,25 @@ import org.springframework.stereotype.Service;
 
 import java.io.InputStream;
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
 /**
- * The GST rate a given HSN attracts, where someone has said so.
+ * The GST rates a given HSN attracts, from the CBIC rate notifications.
  *
  * <p>Exists to catch the one thing a shop's own records cannot: a rate keyed wrong the first time
  * and copied ever since. Comparing a product against its neighbours finds the odd one out, and
  * finds nothing at all when every product under an HSN carries the same wrong rate. Only a source
  * outside the shop can contradict a consensus.
  *
- * <p>Which is why entries carry their provenance and are not all equal:
- *
- * <ul>
- *   <li>{@code catalogue-unanimous} — taken from shop records where every product agreed. Evidence,
- *       not authority. It cannot overrule a shop, because it is only that shop's own belief
- *       written down, and a belief that is wrong everywhere agrees with itself perfectly.
- *   <li>{@code verified} — checked against the GST schedule by a person. This one can overrule a
- *       shop, and is the only kind that catches a rate that is wrong everywhere.
- * </ul>
- *
- * <p>The seed ships entirely as {@code catalogue-unanimous} deliberately. Populating it with rates
- * nobody checked would flag correct products as wrong and teach operators to ignore the warning,
- * which costs more than the errors it would catch. Entries are promoted as they are verified.
+ * <p>An entry lists every rate the schedule allows for the code, because an entry there is limited
+ * by its description as well as its code (toothpaste 5% and other oral-care goods 18% under 3306).
+ * Only {@code verified} entries, taken from the notification, may overrule a shop; anything else
+ * on file is ignored by the check.
  */
 @Service
 @Slf4j
@@ -48,12 +41,21 @@ public class HsnGstRateMaster {
 
   private final Map<String, Entry> byHsn;
 
-  /** A rate this HSN attracts, and how far it can be trusted. */
-  public record Entry(BigDecimal ratePct, String source) {
+  /** The rates this HSN attracts, and how far they can be trusted. */
+  public record Entry(List<BigDecimal> rates, String source) {
+
+    public Entry {
+      rates = List.copyOf(rates);
+    }
 
     /** Whether this entry may contradict a shop whose own records all agree. */
     public boolean isAuthoritative() {
       return SOURCE_VERIFIED.equalsIgnoreCase(source);
+    }
+
+    /** Whether {@code ratePct} is one of the rates on file for this HSN. */
+    public boolean allows(BigDecimal ratePct) {
+      return ratePct != null && rates.stream().anyMatch(rate -> rate.compareTo(ratePct) == 0);
     }
   }
 
@@ -67,7 +69,7 @@ public class HsnGstRateMaster {
   }
 
   /**
-   * The rate recorded for an HSN, matching the most specific prefix on file.
+   * The rates recorded for an HSN, matching the most specific prefix on file.
    *
    * <p>An eight-digit code falls back to its six- and four-digit parents, which is how the
    * schedule itself reads: a heading sets a rate and its subheadings inherit it unless they say
@@ -86,15 +88,15 @@ public class HsnGstRateMaster {
     }
     try (InputStream in = resource.getInputStream()) {
       JsonNode root = objectMapper.readTree(in);
-      JsonNode rates = root.path("rates");
-      Iterator<Map.Entry<String, JsonNode>> fields = rates.fields();
+      JsonNode table = root.path("rates");
+      Iterator<Map.Entry<String, JsonNode>> fields = table.fields();
       while (fields.hasNext()) {
         Map.Entry<String, JsonNode> field = fields.next();
         JsonNode value = field.getValue();
-        if (!value.hasNonNull("ratePct")) continue;
-        out.put(field.getKey(),
-            new Entry(new BigDecimal(value.get("ratePct").asText()),
-                value.path("source").asText("catalogue-unanimous")));
+        List<BigDecimal> rates = new ArrayList<>();
+        value.path("rates").forEach(rate -> rates.add(new BigDecimal(rate.asText())));
+        if (rates.isEmpty()) continue;
+        out.put(field.getKey(), new Entry(rates, value.path("source").asText("")));
       }
       log.info("Loaded {} HSN GST rates ({} verified)", out.size(),
           out.values().stream().filter(Entry::isAuthoritative).count());

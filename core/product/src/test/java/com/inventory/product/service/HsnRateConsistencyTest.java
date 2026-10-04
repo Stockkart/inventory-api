@@ -36,8 +36,10 @@ class HsnRateConsistencyTest {
   @Spy
   private HsnGstRateMaster hsnGstRateMaster =
       new HsnGstRateMaster(Map.of(
-          "3401", new HsnGstRateMaster.Entry(new BigDecimal("18"), "verified"),
-          "3306", new HsnGstRateMaster.Entry(new BigDecimal("12"), "catalogue-unanimous")));
+          "3401", new HsnGstRateMaster.Entry(List.of(new BigDecimal("18")), "verified"),
+          "3306", new HsnGstRateMaster.Entry(
+              List.of(new BigDecimal("5"), new BigDecimal("18")), "verified"),
+          "3304", new HsnGstRateMaster.Entry(List.of(new BigDecimal("12")), "unchecked")));
 
   @Mock private ProductRepository productRepository;
   @Mock private InventoryRepository inventoryRepository;
@@ -81,7 +83,22 @@ class HsnRateConsistencyTest {
         consistency.check("s1", "34011190", new BigDecimal("12"));
 
     assertTrue(conflict.isPresent());
-    assertEquals(0, new BigDecimal("18").compareTo(conflict.get().prevailingRate()));
+    assertEquals(0, new BigDecimal("18").compareTo(conflict.get().expectedRates().get(0)));
+  }
+
+  /** Toothpaste 5% and other oral care 18% share 3306; either is right, a third is not. */
+  @Test
+  void anyRateTheScheduleAllowsIsFineAndOthersAreFlagged() {
+    held("6");
+    held("6");
+
+    assertTrue(consistency.check("s1", "33061020", new BigDecimal("5")).isEmpty());
+    assertTrue(consistency.check("s1", "33061020", new BigDecimal("18")).isEmpty());
+    Optional<HsnRateConsistency.Conflict> conflict =
+        consistency.check("s1", "33061020", new BigDecimal("12"));
+    assertTrue(conflict.isPresent());
+    assertEquals("Paste is recorded at 12% GST, but HSN 33061020 is rated at 5% or 18%.",
+        conflict.get().describe("Paste"));
   }
 
   @Test
@@ -89,7 +106,7 @@ class HsnRateConsistencyTest {
     held("9");
     held("9");
 
-    assertTrue(consistency.check("s1", "33061020", new BigDecimal("18")).isEmpty());
+    assertTrue(consistency.check("s1", "33049910", new BigDecimal("18")).isEmpty());
   }
 
   @Test
@@ -110,7 +127,7 @@ class HsnRateConsistencyTest {
         consistency.check("s1", "30049099", new BigDecimal("18"));
 
     assertTrue(conflict.isPresent());
-    assertEquals(0, new BigDecimal("12").compareTo(conflict.get().prevailingRate()));
+    assertEquals(0, new BigDecimal("12").compareTo(conflict.get().expectedRates().get(0)));
   }
 
   @Test

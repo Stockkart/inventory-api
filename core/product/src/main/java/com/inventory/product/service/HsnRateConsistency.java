@@ -50,7 +50,7 @@ public class HsnRateConsistency {
    */
   private static final int MIN_AGREEING_PRODUCTS = 2;
 
-  /** Stands in for a product count where the contradiction came from a verified rate. */
+  /** Stands in for a product count where the contradiction came from the rate notifications. */
   public static final int SCHEDULE = -1;
 
   @Autowired private HsnGstRateMaster hsnGstRateMaster;
@@ -61,23 +61,27 @@ public class HsnRateConsistency {
   /**
    * A rate that disagrees with what this HSN should carry.
    *
+   * @param expectedRates the rates the notifications allow for the HSN, or the one rate the
+   *     shop's other products carry
    * @param agreeingProducts how many of the shop's own products carry the prevailing rate, or
-   *     {@link #SCHEDULE} where the contradiction comes from a verified rate rather than from
-   *     the shop's records
+   *     {@link #SCHEDULE} where the contradiction comes from the rate notifications rather than
+   *     from the shop's records
    */
-  public record Conflict(String hsn, BigDecimal recordedRate, BigDecimal prevailingRate,
+  public record Conflict(String hsn, BigDecimal recordedRate, List<BigDecimal> expectedRates,
                          int agreeingProducts) {
 
     public String describe(String productName) {
+      String expected = expectedRates.stream()
+          .map(Conflict::strip).map(rate -> rate + "%").collect(Collectors.joining(" or "));
       if (agreeingProducts == SCHEDULE) {
         return String.format(
-            "%s is recorded at %s%% GST, but HSN %s is rated at %s%%.",
-            productName, strip(recordedRate), hsn, strip(prevailingRate));
+            "%s is recorded at %s%% GST, but HSN %s is rated at %s.",
+            productName, strip(recordedRate), hsn, expected);
       }
       return String.format(
-          "%s is recorded at %s%% GST, but %d other product%s under HSN %s %s at %s%%.",
+          "%s is recorded at %s%% GST, but %d other product%s under HSN %s %s at %s.",
           productName, strip(recordedRate), agreeingProducts, agreeingProducts == 1 ? "" : "s",
-          hsn, agreeingProducts == 1 ? "is" : "are", strip(prevailingRate));
+          hsn, agreeingProducts == 1 ? "is" : "are", expected);
     }
 
     private static String strip(BigDecimal value) {
@@ -97,13 +101,16 @@ public class HsnRateConsistency {
       return Optional.empty();
     }
     try {
-      // A verified rate outranks the shop's own records, and is the only thing that can. Where a
-      // rate was keyed wrong once and copied since, every product under that HSN agrees with it,
-      // and no amount of comparing them to each other will say so.
-      Optional<HsnGstRateMaster.Entry> master = hsnGstRateMaster.rateFor(hsn);
-      if (master.isPresent() && master.get().isAuthoritative()
-          && master.get().ratePct().compareTo(ratePct) != 0) {
-        return Optional.of(new Conflict(hsn, ratePct, master.get().ratePct(), SCHEDULE));
+      // The notifications outrank the shop's own records, and are the only thing that can. Where
+      // a rate was keyed wrong once and copied since, every product under that HSN agrees with it,
+      // and no amount of comparing them to each other will say so. Where the HSN is on file, its
+      // rates decide; the shop's records are only consulted for an HSN that is not.
+      Optional<HsnGstRateMaster.Entry> master = hsnGstRateMaster.rateFor(hsn)
+          .filter(HsnGstRateMaster.Entry::isAuthoritative);
+      if (master.isPresent()) {
+        return master.get().allows(ratePct)
+            ? Optional.empty()
+            : Optional.of(new Conflict(hsn, ratePct, master.get().rates(), SCHEDULE));
       }
 
       Map<BigDecimal, Integer> byRate = ratesUnderHsn(shopId, hsn, ratePct);
@@ -124,7 +131,7 @@ public class HsnRateConsistency {
         return Optional.empty();
       }
       return Optional.of(
-          new Conflict(hsn, ratePct, prevailing.getKey(), prevailing.getValue()));
+          new Conflict(hsn, ratePct, List.of(prevailing.getKey()), prevailing.getValue()));
     } catch (RuntimeException e) {
       // Advisory only. A check that cannot run is not a reason to fail the work it was checking.
       log.warn("HSN rate check failed for shop {} hsn {}", shopId, hsn, e);
