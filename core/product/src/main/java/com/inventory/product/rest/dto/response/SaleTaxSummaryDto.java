@@ -26,4 +26,6 @@ public class SaleTaxSummaryDto {
   private BigDecimal roundOff;
   /** Each line's rate before tax, in line order: what the invoice prints in its RATE column. */
   private List<BigDecimal> lineRates;
+  /** IGST on an interstate sale; zero otherwise (and CGST and SGST are zero when it is not). */
+  private BigDecimal igstTotal;
 }

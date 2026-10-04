@@ -1,4 +1,4 @@
-package com.inventory.product.domain.model.enums;
+package com.inventory.common.constants;
 
 /**
  * Whether the amounts on a supplier's bill already contain GST.

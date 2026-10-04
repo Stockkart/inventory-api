@@ -1,6 +1,7 @@
 package com.inventory.product.validation;
 
 import com.inventory.common.exception.ValidationException;
+import com.inventory.product.rest.dto.request.PurchaseTaxPreviewRequest;
 import com.inventory.product.rest.dto.request.VendorPurchaseInvoiceRequest;
 import java.math.BigDecimal;
 import java.util.LinkedHashSet;
@@ -47,6 +48,13 @@ public class VendorPurchaseInvoiceValidator {
   private static void rejectIfNegative(Set<String> errors, String label, BigDecimal value) {
     if (value != null && value.signum() < 0) {
       errors.add(label + " cannot be negative");
+    }
+  }
+
+  /** A preview needs at least one item row; everything else is optional while typing. */
+  public void validatePreview(PurchaseTaxPreviewRequest request) {
+    if (request == null || request.getItems() == null || request.getItems().isEmpty()) {
+      throw new ValidationException("At least one product is needed to preview the bill");
     }
   }
 }
