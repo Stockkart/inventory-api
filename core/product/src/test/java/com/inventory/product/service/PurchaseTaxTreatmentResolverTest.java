@@ -1,7 +1,9 @@
 package com.inventory.product.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -62,5 +64,36 @@ class PurchaseTaxTreatmentResolverTest {
     assertEquals(PurchaseTaxTreatmentResolver.Source.LINES, fromLines.source());
     assertEquals(PurchaseTaxTreatmentResolver.Source.VENDOR,
         resolver.resolve(null, "v1", List.of(row("50", null))).source());
+  }
+
+  /** The HIORA K bill: chosen inclusive, but cost 108.06 is below MRP 160. */
+  @Test
+  void aChoiceTheRowsContradictIsAConflict() {
+    PurchaseTaxTreatmentResolver.Resolved r =
+        resolver.resolve(PurchaseTaxTreatment.INCLUSIVE, null, List.of(row("108.06", "160")));
+
+    assertTrue(r.conflict());
+    assertEquals(PurchaseTaxTreatment.EXCLUSIVE, r.fromLines());
+    assertEquals(PurchaseTaxTreatment.INCLUSIVE, r.treatment());
+    assertTrue(r.conflictMessage().startsWith("The bill is marked 'GST already included'"));
+    assertTrue(r.conflictMessage().contains("cost is below MRP"));
+  }
+
+  @Test
+  void aVendorDefaultTheRowsContradictIsAConflictToo() {
+    Vendor vendor = new Vendor();
+    vendor.setDefaultTaxTreatment(PurchaseTaxTreatment.EXCLUSIVE);
+    when(vendorRepository.findById("v2")).thenReturn(Optional.of(vendor));
+
+    // Rows decide first, so the vendor is only reached when they cannot; here a mixed bill.
+    PurchaseTaxTreatmentResolver.Resolved mixed =
+        resolver.resolve(null, "v2", List.of(row("99", "99"), row("108.06", "160")));
+    assertEquals(PurchaseTaxTreatmentResolver.Source.VENDOR, mixed.source());
+    assertFalse(mixed.conflict());
+
+    PurchaseTaxTreatmentResolver.Resolved agreeing =
+        resolver.resolve(PurchaseTaxTreatment.EXCLUSIVE, "v2", List.of(row("108.06", "160")));
+    assertFalse(agreeing.conflict());
+    assertNull(agreeing.conflictMessage());
   }
 }

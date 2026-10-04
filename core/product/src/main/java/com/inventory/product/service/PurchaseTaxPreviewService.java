@@ -74,6 +74,8 @@ public class PurchaseTaxPreviewService {
     PurchaseTaxPreviewResponse out = new PurchaseTaxPreviewResponse();
     out.setTaxTreatment(treatment);
     out.setTaxTreatmentSource(resolved.source().name());
+    out.setTaxTreatmentFromLines(resolved.fromLines());
+    out.setTaxTreatmentConflict(resolved.conflictMessage());
     out.setLineSubTotal(money(invoice.getLineSubTotal()));
     out.setTaxTotal(money(invoice.getTaxTotal()));
     out.setItemsTotal(money(invoice.getLineSubTotal().add(invoice.getTaxTotal())));

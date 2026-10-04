@@ -16,7 +16,9 @@ import org.springframework.util.StringUtils;
  * <p>In order: what the bill states; else what its lines show; else the vendor's usual
  * convention. The lines are read by cost against MRP. MRP always includes GST, so a cost equal to
  * the MRP has the tax inside it (the supplier billed at MRP), and a cost below the MRP does not
- * (the tax is added on top). Shared by stock-in and its preview so both read a bill the same way.
+ * (the tax is added on top). A treatment chosen on the bill, or taken from the vendor, is still
+ * checked against the lines, and a disagreement is reported rather than saved quietly. Shared by
+ * stock-in and its preview so both read a bill the same way.
  */
 @Component
 @RequiredArgsConstructor
@@ -25,8 +27,32 @@ public class PurchaseTaxTreatmentResolver {
   /** Where the treatment applied to a bill came from. */
   public enum Source { STATED, LINES, VENDOR, NONE }
 
-  /** The treatment applied, null read as exclusive, and where it came from. */
-  public record Resolved(PurchaseTaxTreatment treatment, Source source) {}
+  /**
+   * The treatment applied, null read as exclusive, where it came from, and what the lines say.
+   *
+   * @param fromLines what cost against MRP says, or null when the lines cannot decide
+   * @param conflict true when the treatment applied (chosen on the bill or the vendor's usual)
+   *     contradicts the lines -- the bill is then not saved until the operator confirms it
+   */
+  public record Resolved(
+      PurchaseTaxTreatment treatment, Source source, PurchaseTaxTreatment fromLines,
+      boolean conflict) {
+
+    /** Why the lines disagree, for the operator; null when they do not. */
+    public String conflictMessage() {
+      if (!conflict) {
+        return null;
+      }
+      String applied = treatment == PurchaseTaxTreatment.INCLUSIVE
+          ? "GST already included" : "GST added on top";
+      String lines = fromLines == PurchaseTaxTreatment.INCLUSIVE
+          ? "cost equals MRP, which means GST is already included"
+          : "cost is below MRP, which means GST is added on top";
+      String how = source == Source.VENDOR ? "This vendor is recorded as billing" : "The bill is marked";
+      return how + " '" + applied + "', but on these rows " + lines
+          + ". Check the bill, then change the choice or confirm it.";
+    }
+  }
 
   private final VendorRepository vendorRepository;
 
@@ -37,22 +63,26 @@ public class PurchaseTaxTreatmentResolver {
 
   public Resolved resolve(
       PurchaseTaxTreatment stated, String vendorId, List<CreateInventoryItemRequest> items) {
-    if (stated != null) {
-      return new Resolved(stated, Source.STATED);
-    }
     PurchaseTaxTreatment fromLines = fromLines(items);
+    if (stated != null) {
+      return new Resolved(stated, Source.STATED, fromLines, disagrees(stated, fromLines));
+    }
     if (fromLines != null) {
-      return new Resolved(fromLines, Source.LINES);
+      return new Resolved(fromLines, Source.LINES, fromLines, false);
     }
     if (StringUtils.hasText(vendorId)) {
       PurchaseTaxTreatment usual = vendorRepository.findById(vendorId.trim())
           .map(Vendor::getDefaultTaxTreatment)
           .orElse(null);
       if (usual != null) {
-        return new Resolved(usual, Source.VENDOR);
+        return new Resolved(usual, Source.VENDOR, fromLines, disagrees(usual, fromLines));
       }
     }
-    return new Resolved(null, Source.NONE);
+    return new Resolved(null, Source.NONE, fromLines, false);
+  }
+
+  private static boolean disagrees(PurchaseTaxTreatment applied, PurchaseTaxTreatment fromLines) {
+    return fromLines != null && applied != fromLines;
   }
 
   /**

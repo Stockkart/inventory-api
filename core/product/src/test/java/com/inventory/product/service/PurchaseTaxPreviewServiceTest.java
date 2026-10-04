@@ -1,6 +1,7 @@
 package com.inventory.product.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -131,5 +132,22 @@ class PurchaseTaxPreviewServiceTest {
   void needsAtLeastOneItem() {
     assertThrows(ValidationException.class,
         () -> service.preview(request(PurchaseTaxTreatment.EXCLUSIVE)));
+  }
+
+  @Test
+  void thePreviewSaysWhenTheChoiceContradictsTheRows() {
+    CreateInventoryItemRequest row = item(50, "108.06", "2.5");
+    row.setMaximumRetailPrice(new BigDecimal("160"));
+
+    PurchaseTaxPreviewResponse out = service.preview(request(PurchaseTaxTreatment.INCLUSIVE));
+
+    assertEquals("STATED", out.getTaxTreatmentSource());
+    assertEquals(PurchaseTaxTreatment.EXCLUSIVE, out.getTaxTreatmentFromLines());
+    assertTrue(out.getTaxTreatmentConflict().contains("cost is below MRP"));
+
+    PurchaseTaxPreviewResponse read = service.preview(request(null));
+    assertEquals("LINES", read.getTaxTreatmentSource());
+    assertEquals(PurchaseTaxTreatment.EXCLUSIVE, read.getTaxTreatment());
+    assertEquals(null, read.getTaxTreatmentConflict());
   }
 }

@@ -18,6 +18,13 @@ public class PurchaseTaxPreviewResponse {
    * exclusive), VENDOR (its usual convention) or NONE.
    */
   private String taxTreatmentSource;
+  /** What cost against MRP says on the rows; null when they cannot decide. */
+  private PurchaseTaxTreatment taxTreatmentFromLines;
+  /**
+   * Set when the treatment applied contradicts the rows: the message to show the operator.
+   * Stock-in refuses such a bill unless {@code confirmTaxTreatment} is sent.
+   */
+  private String taxTreatmentConflict;
   /** Taxable value of the items after scheme and additional discount, before the bill-level discount. */
   private BigDecimal lineSubTotal;
   private BigDecimal taxTotal;

@@ -437,10 +437,14 @@ public class InventoryService {
       pendingInvoice.setPaymentMethod(invReq.getPaymentMethod());
       pendingInvoice.setPaidAmount(invReq.getPaidAmount());
       // The bill decides; else its lines (cost at MRP means GST is inside it, cost below MRP
-      // means it is added on top); else the vendor's usual convention.
-      pendingInvoice.setTaxTreatment(
-          purchaseTaxTreatmentResolver.taxTreatmentFor(
-              invReq.getTaxTreatment(), bulkRequest.getVendorId(), itemRequests));
+      // means it is added on top); else the vendor's usual convention. A choice the lines
+      // contradict is refused until the operator confirms it from the paper.
+      PurchaseTaxTreatmentResolver.Resolved treatment = purchaseTaxTreatmentResolver.resolve(
+          invReq.getTaxTreatment(), bulkRequest.getVendorId(), itemRequests);
+      if (treatment.conflict() && !Boolean.TRUE.equals(invReq.getConfirmTaxTreatment())) {
+        throw new ValidationException(treatment.conflictMessage());
+      }
+      pendingInvoice.setTaxTreatment(treatment.treatment());
     }
 
     try {

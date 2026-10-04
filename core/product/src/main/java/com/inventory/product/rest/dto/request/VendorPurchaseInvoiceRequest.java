@@ -38,4 +38,10 @@ public class VendorPurchaseInvoiceRequest {
    * was recorded.
    */
   private PurchaseTaxTreatment taxTreatment;
+  /**
+   * True when the operator has read the bill and confirms its tax treatment although the rows'
+   * cost against MRP says otherwise. Without it such a bill is refused, so the choice is never
+   * saved unseen.
+   */
+  private Boolean confirmTaxTreatment;
 }
