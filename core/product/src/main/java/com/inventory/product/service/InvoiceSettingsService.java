@@ -179,6 +179,7 @@ public class InvoiceSettingsService {
     request.setShowHsn(Boolean.TRUE.equals(fields.getShowHsn()));
     request.setShowMfg(Boolean.TRUE.equals(fields.getShowMfg()));
     request.setShowBatch(Boolean.TRUE.equals(fields.getShowBatch()));
+    request.setShowExpiry(Boolean.TRUE.equals(fields.getShowExpiry()));
     request.setShowSignatures(Boolean.TRUE.equals(fields.getShowSignatures()));
   }
 

@@ -20,6 +20,9 @@ public interface ProductRepository extends MongoRepository<Product, String> {
   /** Candidates for identity matching / fork detection within a shop. */
   List<Product> findByShopIdAndNormalizedName(String shopId, String normalizedName);
 
+  /** Every product in a shop sharing one HSN, for checking that they agree on a GST rate. */
+  List<Product> findByShopIdAndHsn(String shopId, String hsn);
+
   /** Typeahead for registration: case-insensitive match on name, company, or barcode. */
   @Query("{ 'shopId': ?0, '$or': [ " +
       "{ 'name': { '$regex': ?1, '$options': 'i' } }, " +

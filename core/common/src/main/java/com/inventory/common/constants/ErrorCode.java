@@ -36,7 +36,11 @@ public enum ErrorCode {
   INVALID_ORDER_STATUS(5001, "Invalid order status", HttpStatus.BAD_REQUEST),
 
   // Plan / subscription errors (6000-6999)
-  PLAN_EXPIRED(6000, "Plan or trial has expired", HttpStatus.PAYMENT_REQUIRED);
+  PLAN_EXPIRED(6000, "Plan or trial has expired", HttpStatus.PAYMENT_REQUIRED),
+
+  // Taxation / GST errors (7000-7999)
+  GST_CONFIGURATION_MISSING(7000, "GST configuration is incomplete",
+      HttpStatus.UNPROCESSABLE_ENTITY);
 
   private final int code;
   private final String message;

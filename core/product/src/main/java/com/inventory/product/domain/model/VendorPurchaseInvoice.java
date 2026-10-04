@@ -1,5 +1,6 @@
 package com.inventory.product.domain.model;
 
+import com.inventory.common.constants.PurchaseTaxTreatment;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -43,6 +44,15 @@ public class VendorPurchaseInvoice {
   private String paymentMethod;
   private BigDecimal paidAmount;
   /**
+   * Whether the line amounts on this bill already contain GST.
+   *
+   * <p>Null on every invoice recorded before the distinction was captured, and read as
+   * {@code EXCLUSIVE} — the assumption those documents were written under, so their reported
+   * figures do not move.
+   */
+  private PurchaseTaxTreatment taxTreatment;
+
+  /**
    * True when invoice number was generated (AUTO-*) because the user did not enter one.
    * User-entered invoices are non-synthetic.
    */
@@ -52,4 +62,47 @@ public class VendorPurchaseInvoice {
   private List<VendorPurchaseInvoiceLine> lines = new ArrayList<>();
   private Instant createdAt;
   private String createdByUserId;
+
+  // --- Amendment trail ------------------------------------------------------
+  // A purchase invoice is evidence for an input credit, so a figure that changes
+  // after the fact has to say who changed it and why. Without that an amended
+  // invoice and a mis-keyed one look identical at filing time.
+
+  /** When the header was last corrected against the paper bill. */
+  private Instant amendedAt;
+  private String amendedByUserId;
+  /** Why it was corrected -- required at the point of amendment. */
+  private String amendmentReason;
+
+  /**
+   * The journal source id of this invoice's live ledger entry. Null means the entry stock-in
+   * posted, keyed by the invoice id. An amendment reverses the live entry and posts a fresh one
+   * under a new key, since the ledger keeps one entry per source id and a reversed entry keeps
+   * its key.
+   */
+  private String ledgerSourceId;
+  /** The header as it stood before the most recent amendment. */
+  private AmendedHeaderSnapshot previousHeader;
+
+  /**
+   * What the header said before it was amended.
+   *
+   * <p>One level deep on purpose. This is a record of what was reported, not a full history:
+   * a second amendment means the first was already wrong, and keeping a chain of wrong figures
+   * invites reading the wrong one. Where a full history is wanted the journal is the place for
+   * it, not the invoice.
+   */
+  @Data
+  @NoArgsConstructor
+  @AllArgsConstructor
+  public static class AmendedHeaderSnapshot {
+    private BigDecimal lineSubTotal;
+    private BigDecimal taxTotal;
+    private BigDecimal shippingCharge;
+    private BigDecimal otherCharges;
+    private BigDecimal overallDiscount;
+    private BigDecimal roundOff;
+    private BigDecimal invoiceTotal;
+    private PurchaseTaxTreatment taxTreatment;
+  }
 }

@@ -1,10 +1,12 @@
 package com.inventory.product.service;
 
+import com.inventory.common.util.GstStateCode;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.InsufficientStockException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.common.util.GstMath;
 import com.inventory.common.util.TxnIdGenerator;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.AvailableUnit;
@@ -886,15 +888,23 @@ public class CheckoutService {
   }
 
   /**
-   * Calculate tax based on inventory-level SGST and CGST rates from purchase items.
-   * Each item's tax is calculated using its own CGST/SGST rates, then summed.
-   * If an item doesn't have CGST/SGST, falls back to shop defaults.
-   * 
-   * @param purchaseItems list of purchase items with inventory-level CGST/SGST
-   * @param shopId the shop ID to fetch default tax rates from if item doesn't have rates
-   * @return TaxCalculationResult with sgstAmount, cgstAmount, and taxTotal
+   * Tax on a sale, split by where it is going.
+   *
+   * <p>The customer's own GSTIN places them. An unregistered buyer has none to read and the place
+   * of supply is the shop's own state, so they are local -- which is the ordinary counter sale.
    */
-  private TaxCalculationResult calculateTax(List<PurchaseItem> purchaseItems, String shopId, BillingMode billingMode) {
+  private TaxCalculationResult calculateTax(List<PurchaseItem> purchaseItems, String shopId,
+      BillingMode billingMode, String customerId) {
+    boolean interstate = isInterstateSale(shopId, customerId);
+    return calculateTax(purchaseItems, shopId, billingMode, interstate);
+  }
+
+  /**
+   * Tax on purchase items at each item's own CGST/SGST rate (shop defaults where an item has
+   * none), summed; on an interstate sale the same total is charged as IGST.
+   */
+  private TaxCalculationResult calculateTax(List<PurchaseItem> purchaseItems, String shopId,
+      BillingMode billingMode, boolean interstate) {
     if (!CheckoutUtils.isTaxApplicable(billingMode)) {
       return new TaxCalculationResult(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
     }
@@ -942,43 +952,99 @@ public class CheckoutService {
       
       // Calculate SGST for this item
       if (itemSgst != null && !itemSgst.trim().isEmpty()) {
-        try {
-          BigDecimal sgstRate = new BigDecimal(itemSgst.trim()).divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
-          BigDecimal itemSgstAmount = itemTotal.multiply(sgstRate).setScale(2, RoundingMode.HALF_UP);
-          totalSgstAmount = totalSgstAmount.add(itemSgstAmount);
-        } catch (NumberFormatException e) {
-          log.warn("Invalid SGST value '{}' for item {}, using 0", itemSgst, PurchaseItemRefs.stockLotId(item));
-        }
+        BigDecimal sgstRate = GstMath.parseGstRate(itemSgst).divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
+        BigDecimal itemSgstAmount = itemTotal.multiply(sgstRate).setScale(2, RoundingMode.HALF_UP);
+        totalSgstAmount = totalSgstAmount.add(itemSgstAmount);
       }
       
       // Calculate CGST for this item
       if (itemCgst != null && !itemCgst.trim().isEmpty()) {
-        try {
-          BigDecimal cgstRate = new BigDecimal(itemCgst.trim()).divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
-          BigDecimal itemCgstAmount = itemTotal.multiply(cgstRate).setScale(2, RoundingMode.HALF_UP);
-          totalCgstAmount = totalCgstAmount.add(itemCgstAmount);
-        } catch (NumberFormatException e) {
-          log.warn("Invalid CGST value '{}' for item {}, using 0", itemCgst, PurchaseItemRefs.stockLotId(item));
-        }
+        BigDecimal cgstRate = GstMath.parseGstRate(itemCgst).divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
+        BigDecimal itemCgstAmount = itemTotal.multiply(cgstRate).setScale(2, RoundingMode.HALF_UP);
+        totalCgstAmount = totalCgstAmount.add(itemCgstAmount);
       }
     }
     
     BigDecimal taxTotal = totalSgstAmount.add(totalCgstAmount);
-    return new TaxCalculationResult(totalSgstAmount, totalCgstAmount, taxTotal);
+
+    // A supply leaving the state is taxed as IGST at the full rate rather than split in two. The
+    // rate is the same either way, so the total does not move -- only which head it sits under,
+    // and the customer can only claim it under the head the invoice states.
+    if (interstate) {
+      return new TaxCalculationResult(
+          BigDecimal.ZERO, BigDecimal.ZERO, taxTotal, taxTotal, true);
+    }
+    return new TaxCalculationResult(totalSgstAmount, totalCgstAmount, BigDecimal.ZERO,
+        taxTotal, false);
   }
   
   /**
-   * Inner class to hold tax calculation results.
+   * Whether a sale leaves the state the shop is registered in.
+   *
+   * <p>A registered buyer is placed by their GSTIN, which is the authority. An unregistered one
+   * has none, and is placed by the address the shop holds for them -- an interstate supply is
+   * interstate whether or not the buyer is registered, and the tax is due under IGST either way.
+   *
+   * <p>Anything unplaceable is treated as local. That is the far more common case -- a walk-in
+   * with no address on record is standing in the shop -- and reporting a supply as interstate on
+   * a guess would charge the customer under a head that does not apply to them.
    */
+  private boolean isInterstateSale(String shopId, String customerId) {
+    if (!StringUtils.hasText(customerId)) {
+      return false;
+    }
+    try {
+      Customer customer = customerRepository.findById(customerId.trim()).orElse(null);
+      if (customer == null) {
+        return false;
+      }
+      String customerState = GstStateCode.codeFromGstin(customer.getGstin());
+      if (!StringUtils.hasText(customerState)) {
+        customerState = GstStateCode.codeFromAddress(customer.getAddress());
+      }
+      if (!StringUtils.hasText(customerState)) {
+        return false;
+      }
+      String shopState = shopRepository.findById(shopId)
+          .map(shop -> GstStateCode.shopState(shop.getGstinNo(),
+              shop.getLocation() != null ? shop.getLocation().getState() : null))
+          .orElse("");
+
+      return GstStateCode.isInterstate(shopState, customerState);
+    } catch (RuntimeException e) {
+      log.warn("Could not place the sale for interstate tax (shop {}, customer {}); "
+          + "treating it as local", shopId, customerId, e);
+      return false;
+    }
+  }
+
+  /** Inner class to hold tax calculation results. */
   private static class TaxCalculationResult {
     private final BigDecimal sgstAmount;
     private final BigDecimal cgstAmount;
+    private final BigDecimal igstAmount;
     private final BigDecimal taxTotal;
-    
+    private final boolean interstate;
+
     public TaxCalculationResult(BigDecimal sgstAmount, BigDecimal cgstAmount, BigDecimal taxTotal) {
+      this(sgstAmount, cgstAmount, BigDecimal.ZERO, taxTotal, false);
+    }
+
+    public TaxCalculationResult(BigDecimal sgstAmount, BigDecimal cgstAmount,
+        BigDecimal igstAmount, BigDecimal taxTotal, boolean interstate) {
       this.sgstAmount = sgstAmount;
       this.cgstAmount = cgstAmount;
+      this.igstAmount = igstAmount;
       this.taxTotal = taxTotal;
+      this.interstate = interstate;
+    }
+
+    public BigDecimal getIgstAmount() {
+      return igstAmount;
+    }
+
+    public boolean isInterstate() {
+      return interstate;
     }
     
     public BigDecimal getSgstAmount() {
@@ -1048,20 +1114,12 @@ public class CheckoutService {
     }
     BigDecimal taxMultiplier = BigDecimal.ONE;
     if (cgst != null && StringUtils.hasText(cgst)) {
-      try {
-        BigDecimal cgstRate = new BigDecimal(cgst.trim()).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
-        taxMultiplier = taxMultiplier.add(cgstRate);
-      } catch (NumberFormatException e) {
-        // Invalid CGST rate, ignore
-      }
+      BigDecimal cgstRate = GstMath.parseGstRate(cgst).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
+      taxMultiplier = taxMultiplier.add(cgstRate);
     }
     if (sgst != null && StringUtils.hasText(sgst)) {
-      try {
-        BigDecimal sgstRate = new BigDecimal(sgst.trim()).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
-        taxMultiplier = taxMultiplier.add(sgstRate);
-      } catch (NumberFormatException e) {
-        // Invalid SGST rate, ignore
-      }
+      BigDecimal sgstRate = GstMath.parseGstRate(sgst).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
+      taxMultiplier = taxMultiplier.add(sgstRate);
     }
     
     BigDecimal totalAmount = totalDiscountedAmount.multiply(taxMultiplier);
@@ -1154,7 +1212,7 @@ public class CheckoutService {
       recalculateLineTotalsForBillingMode(purchaseItems, billingMode);
       // Calculate totals
       BigDecimal subTotal = calculateSubtotal(purchaseItems);
-      TaxCalculationResult taxResult = calculateTax(purchaseItems, shopId, billingMode);
+      TaxCalculationResult taxResult = calculateTax(purchaseItems, shopId, billingMode, customerId);
       BigDecimal discountTotal = calculateTotalDiscount(purchaseItems);
       BigDecimal additionalDiscountTotal = calculateAdditionalDiscountTotal(purchaseItems);
       BigDecimal calculatedTotal = subTotal.add(taxResult.getTaxTotal()).subtract(additionalDiscountTotal);
@@ -1170,6 +1228,8 @@ public class CheckoutService {
       purchase.setDocumentType(DocumentType.SALE);
       purchase.setSgstAmount(taxResult.getSgstAmount());
       purchase.setCgstAmount(taxResult.getCgstAmount());
+      purchase.setIgstAmount(taxResult.getIgstAmount());
+      purchase.setInterstate(taxResult.isInterstate());
       purchase.setSaleAdditionalDiscountTotal(additionalDiscountTotal);
       setPurchaseMarginDetails(purchase);
 
@@ -1430,10 +1490,13 @@ public class CheckoutService {
       BigDecimal newSubTotal = calculateSubtotal(mergedItems);
       existingCart.setSubTotal(newSubTotal);
       
-      TaxCalculationResult taxResult = calculateTax(mergedItems, existingCart.getShopId(), billingMode);
+      TaxCalculationResult taxResult = calculateTax(
+          mergedItems, existingCart.getShopId(), billingMode, existingCart.getCustomerId());
       existingCart.setTaxTotal(taxResult.getTaxTotal());
       existingCart.setSgstAmount(taxResult.getSgstAmount());
       existingCart.setCgstAmount(taxResult.getCgstAmount());
+      existingCart.setIgstAmount(taxResult.getIgstAmount());
+      existingCart.setInterstate(taxResult.isInterstate());
       
       BigDecimal discountTotal = calculateTotalDiscount(mergedItems);
       BigDecimal additionalDiscountTotal = calculateAdditionalDiscountTotal(mergedItems);
@@ -1953,7 +2016,11 @@ public class CheckoutService {
 
     BigDecimal cgst = nzMoney(purchase.getCgstAmount());
     BigDecimal sgst = nzMoney(purchase.getSgstAmount());
-    BigDecimal taxBeforeRound = revenue.add(cgst).add(sgst);
+    // An interstate sale carries its tax under IGST alone, so the books have to say so too.
+    // Posting it to the local heads would leave the ledger claiming a liability the return does
+    // not declare, and the two have to agree at filing.
+    BigDecimal igst = nzMoney(purchase.getIgstAmount());
+    BigDecimal taxBeforeRound = revenue.add(cgst).add(sgst).add(igst);
     BigDecimal roundOff = saleTotal.subtract(taxBeforeRound).setScale(4, RoundingMode.HALF_UP);
 
     SalePaymentBreakdown payment =
@@ -1979,6 +2046,7 @@ public class CheckoutService {
             .taxableRevenue(revenue)
             .outputCgst(cgst)
             .outputSgst(sgst)
+            .outputIgst(igst)
             .saleTotal(saleTotal)
             .paidCash(payment.cash())
             .paidOnline(payment.online())
