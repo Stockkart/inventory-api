@@ -26,7 +26,6 @@ import com.inventory.ocr.service.InvoiceParserService;
 import com.inventory.product.service.ocr.InvoicePricingLayoutResolver;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.enums.BillingMode;
-import com.inventory.product.domain.model.enums.PurchaseTaxTreatment;
 import com.inventory.product.domain.model.enums.SchemeType;
 import com.inventory.product.domain.model.UnitConversion;
 import com.inventory.product.domain.repository.InventoryRepository;
