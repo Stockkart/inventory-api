@@ -13,12 +13,12 @@ import lombok.Data;
 public class PurchaseTaxPreviewResponse {
   /** The treatment applied: the one stated, else the vendor's default; null reads as exclusive. */
   private PurchaseTaxTreatment taxTreatment;
-  /** Taxable value of the items, after purchase scheme and additional discount. */
+  /** Taxable value of the items after scheme and additional discount, before the bill-level discount. */
   private BigDecimal lineSubTotal;
   private BigDecimal taxTotal;
   /** Items only: the taxable value plus its tax, before header charges and discount. */
   private BigDecimal itemsTotal;
-  /** Typed subtotal and tax where given, else the resolved ones, plus charges, less discount. */
+  /** Taxable value after the bill-level discount, plus tax, shipping, other charges and round-off. */
   private BigDecimal invoiceTotal;
   private int productCount;
   private int totalQuantity;
