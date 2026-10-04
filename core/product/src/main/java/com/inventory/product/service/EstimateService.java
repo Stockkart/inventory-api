@@ -276,6 +276,8 @@ public class EstimateService {
     sale.setTaxTotal(estimate.getTaxTotal());
     sale.setSgstAmount(estimate.getSgstAmount());
     sale.setCgstAmount(estimate.getCgstAmount());
+    sale.setIgstAmount(estimate.getIgstAmount());
+    sale.setInterstate(estimate.getInterstate());
     sale.setDiscountTotal(estimate.getDiscountTotal());
     sale.setSaleAdditionalDiscountTotal(estimate.getSaleAdditionalDiscountTotal());
     sale.setGrandTotal(estimate.getGrandTotal());

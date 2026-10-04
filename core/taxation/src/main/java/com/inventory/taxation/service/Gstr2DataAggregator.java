@@ -16,7 +16,7 @@ import com.inventory.product.domain.repository.VendorPurchaseInvoiceRepository;
 import com.inventory.product.domain.repository.VendorPurchaseReturnRepository;
 import com.inventory.taxation.domain.gstr2.*;
 import com.inventory.taxation.domain.model.GstHsnLine;
-import com.inventory.taxation.utils.GstStateCode;
+import com.inventory.common.util.GstStateCode;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.user.domain.model.Vendor;
@@ -245,7 +245,7 @@ public class Gstr2DataAggregator {
         String hsn = inv.getHsn() != null && !inv.getHsn().isBlank() ? inv.getHsn() : "0";
         String desc = hsnSacCatalog.descriptionFor(hsn).orElseGet(() ->
             inv.getDescription() != null ? inv.getDescription() : (inv.getName() != null ? inv.getName() : ""));
-        String key = hsn + "|" + rate;
+        String key = hsnRateKey(hsn, rate);
         GstHsnLine existing = hsnMap.get(key);
         if (existing == null) {
           existing = GstHsnLine.builder()
@@ -411,20 +411,10 @@ public class Gstr2DataAggregator {
             .collect(Collectors.toMap(Pricing::getId, pricing -> pricing));
   }
 
-  /**
-   * The state the shop supplies from, as a two-digit code.
-   *
-   * <p>Its GSTIN carries the code it registered under, which is the authority on
-   * the question. A shop below the registration threshold has none, and is then
-   * placed by the state on its address.
-   */
+  /** The state the shop supplies from: its GSTIN, else its address (see GstStateCode). */
   private String shopState(Shop shop) {
-    String fromGstin = GstStateCode.codeFromGstin(shop.getGstinNo());
-    if (StringUtils.hasText(fromGstin)) {
-      return fromGstin;
-    }
-    return shop.getLocation() == null ? ""
-        : GstStateCode.codeFromName(shop.getLocation().getState());
+    return GstStateCode.shopState(shop.getGstinNo(),
+        shop.getLocation() == null ? null : shop.getLocation().getState());
   }
 
   /**
@@ -512,9 +502,7 @@ public class Gstr2DataAggregator {
           ? LocalDateTime.ofInstant(invoice.getInvoiceDate(), ZoneId.systemDefault()).toLocalDate()
           : LocalDate.now();
       String supplierState = supplierState(vendor, supplierGstin);
-      boolean interstate = StringUtils.hasText(shopState)
-          && StringUtils.hasText(supplierState)
-          && !supplierState.equals(shopState);
+      boolean interstate = GstStateCode.isInterstate(shopState, supplierState);
 
       // What the invoice is worth for tax, worked out from its lines.
       PurchaseTaxBasis taxBasis = PurchaseTaxBasisResolver.resolve(
@@ -548,9 +536,10 @@ public class Gstr2DataAggregator {
         BigDecimal quantity = BigDecimal.valueOf(
             line.getCount() != null ? line.getCount() : 0);
         BigDecimal gross = taxable.add(tax);
-        GstHsnLine row = hsnMap.get(hsn + "|" + rate);
+        String hsnKey = hsnRateKey(hsn, rate);
+        GstHsnLine row = hsnMap.get(hsnKey);
         if (row == null) {
-          hsnMap.put(hsn + "|" + rate, GstHsnLine.builder()
+          hsnMap.put(hsnKey, GstHsnLine.builder()
               .hsn(hsn)
               .description(hsn)
               .uqc("OTH-OTHERS")
@@ -874,5 +863,20 @@ public class Gstr2DataAggregator {
                 .build());
       }
     }
+  }
+
+  /**
+   * The key an HSN row is grouped under: the code and the rate it is taxed at.
+   *
+   * <p>The rate is normalised because a {@code BigDecimal} keeps its scale, and the same rate
+   * reaches this from two places spelled differently -- one pricing record says {@code "9"} and
+   * the next says {@code "9.00"}. Keyed on the raw value, those are two keys, and one HSN taxed
+   * at one rate was reported as two rows: the portal reads that as two entries for the same
+   * goods, and the count above the grid disagreed with the rows beneath it.
+   */
+  private static String hsnRateKey(String hsn, java.math.BigDecimal rate) {
+    java.math.BigDecimal normalised =
+        rate == null ? java.math.BigDecimal.ZERO : rate.stripTrailingZeros();
+    return hsn + "|" + normalised.toPlainString();
   }
 }

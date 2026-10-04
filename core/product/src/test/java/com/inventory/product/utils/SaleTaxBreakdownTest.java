@@ -136,4 +136,29 @@ class SaleTaxBreakdownTest {
     basic.setSgst(null);
     assertFalse(summaryOf(basic).isPresent());
   }
+
+  @Test
+  void anInterstateSaleStatesItsTaxAsIgstPerRate() {
+    Purchase purchase = new Purchase();
+    purchase.setInterstate(true);
+    purchase.setItems(List.of(
+        line("1", "150", "114.28", "6", "2.5", "112.79"),
+        line("1", "90", "67.87", "2", "9", "78.48")));
+
+    SaleTaxSummaryDto footer = SaleTaxBreakdown.of(purchase).orElseThrow();
+
+    assertEquals(0, BigDecimal.ZERO.compareTo(footer.getCgstTotal()));
+    assertEquals(0, BigDecimal.ZERO.compareTo(footer.getSgstTotal()));
+    assertEquals(new BigDecimal("5.37"), footer.getRates().get(0).getIgstAmount());
+    assertEquals(new BigDecimal("11.97"), footer.getRates().get(1).getIgstAmount());
+    assertEquals(new BigDecimal("17.34"), footer.getIgstTotal());
+  }
+
+  @Test
+  void aRateWrittenWithAPercentSignStillCounts() {
+    SaleTaxSummaryDto footer = footerOf(line("1", "90", "67.87", "2", "9%", "78.48"));
+
+    assertEquals(new BigDecimal("11.97"),
+        footer.getRates().get(0).getCgstAmount().add(footer.getRates().get(0).getSgstAmount()));
+  }
 }
