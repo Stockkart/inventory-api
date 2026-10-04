@@ -196,7 +196,12 @@ public class Gstr1DataAggregator {
         if (b2b) {
           line.setSupplyType(SupplyType.B2B);
           b2bLines.add(line);
-        } else if (invValue.compareTo(B2CL_THRESHOLD) >= 0) {
+        } else if (invValue.compareTo(B2CL_THRESHOLD) >= 0
+            && (purchase.getInterstate() == null || interstate)) {
+          // B2CL is a large supply to an unregistered buyer in another state; a local one of the
+          // same size belongs on b2cs. Sales made before the supply type was recorded cannot be
+          // told apart, so they keep the routing they have always had rather than moving between
+          // sheets of a return that has already been filed.
           line.setSupplyType(SupplyType.B2CL);
           b2clLines.add(line);
         } else {
@@ -507,7 +512,7 @@ public class Gstr1DataAggregator {
       // they do not, since a row covering pieces and packs together is a row
       // whose quantity is in no single unit. That is what OTH-OTHERS means, and
       // it is what the shop's own filed returns carry for those rows.
-      String key = hsn + "|" + rate;
+      String key = hsnRateKey(hsn, rate);
       GstHsnLine existing = hsnMap.get(key);
       if (existing == null) {
         existing = GstHsnLine.builder()
@@ -543,5 +548,20 @@ public class Gstr1DataAggregator {
         existing.setStateUtTaxAmount(existing.getStateUtTaxAmount().add(stateUtTaxAmount));
       }
     }
+  }
+
+  /**
+   * The key an HSN row is grouped under: the code and the rate it is taxed at.
+   *
+   * <p>The rate is normalised because a {@code BigDecimal} keeps its scale, and the same rate
+   * reaches this from two places spelled differently -- one pricing record says {@code "9"} and
+   * the next says {@code "9.00"}. Keyed on the raw value, those are two keys, and one HSN taxed
+   * at one rate was reported as two rows: the portal reads that as two entries for the same
+   * goods, and the count above the grid disagreed with the rows beneath it.
+   */
+  private static String hsnRateKey(String hsn, java.math.BigDecimal rate) {
+    java.math.BigDecimal normalised =
+        rate == null ? java.math.BigDecimal.ZERO : rate.stripTrailingZeros();
+    return hsn + "|" + normalised.toPlainString();
   }
 }
