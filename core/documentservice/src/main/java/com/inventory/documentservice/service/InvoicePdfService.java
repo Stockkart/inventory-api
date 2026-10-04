@@ -156,6 +156,9 @@ public class InvoicePdfService {
     context.setVariable("sgstAmount", request.getSgstAmount() != null ? request.getSgstAmount() : BigDecimal.ZERO);
     context.setVariable("cgstAmount", request.getCgstAmount() != null ? request.getCgstAmount() : BigDecimal.ZERO);
     context.setVariable("sgstPercent", request.getSgstPercent() != null ? request.getSgstPercent() : BigDecimal.valueOf(2.5));
+    context.setVariable("igstAmount",
+        request.getIgstAmount() != null ? request.getIgstAmount() : BigDecimal.ZERO);
+    context.setVariable("interstate", request.isInterstate());
     context.setVariable("cgstPercent", request.getCgstPercent() != null ? request.getCgstPercent() : BigDecimal.valueOf(2.5));
     context.setVariable("taxTotal", taxTotal);
     // With per-rate rows the taxable value is theirs, so the round-off printed beneath it is not

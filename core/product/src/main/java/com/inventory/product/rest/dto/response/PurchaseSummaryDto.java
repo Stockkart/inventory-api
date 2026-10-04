@@ -26,6 +26,8 @@ public class PurchaseSummaryDto {
   private BigDecimal taxTotal;
   private BigDecimal sgstAmount; // Calculated SGST amount
   private BigDecimal cgstAmount; // Calculated CGST amount
+  private BigDecimal igstAmount; // IGST on an interstate sale, else zero
+  private Boolean interstate; // true when the sale was billed as an interstate supply
   private BigDecimal discountTotal;
   private BigDecimal saleAdditionalDiscountTotal; // Total additional discount amount
   private BigDecimal grandTotal;
