@@ -206,7 +206,7 @@ class LabelFieldCatalogServiceProperties {
 
   // ---- helpers -------------------------------------------------------------------------------
 
-  private static LabelFieldCatalogService service(Scenario scenario) {
+  static LabelFieldCatalogService service(Scenario scenario) {
     ShopRepository shopRepository = mock(ShopRepository.class);
     PricingRepository pricingRepository = mock(PricingRepository.class);
     SchemaLoader schemaLoader = mock(SchemaLoader.class);
@@ -217,7 +217,7 @@ class LabelFieldCatalogServiceProperties {
         shopRepository, pricingRepository, schemaLoader, new VerticalValueTypeMapper());
   }
 
-  private static Shop shop(Scenario scenario, ShopType shopType) {
+  static Shop shop(Scenario scenario, ShopType shopType) {
     Shop shop = new Shop();
     shop.setShopId(SHOP_ID);
     shop.setShopType(shopType);

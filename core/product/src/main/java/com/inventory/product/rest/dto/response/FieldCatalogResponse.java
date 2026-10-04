@@ -2,6 +2,7 @@ package com.inventory.product.rest.dto.response;
 
 import com.inventory.product.domain.model.enums.ShopType;
 import com.inventory.product.labels.FieldCatalog;
+import com.inventory.product.labels.FieldUsage;
 import com.inventory.product.labels.LabelLayoutDefaults;
 import com.inventory.product.labels.StickerSizeSpec;
 import java.util.List;
@@ -50,7 +51,7 @@ public record FieldCatalogResponse(
             .map(preset -> SheetPresetDto.from(preset, catalog.stickerSizes()))
             .toList();
     return new FieldCatalogResponse(
-        catalog.fields().stream().map(PrintableFieldDto::from).toList(),
+        catalog.forUsage(FieldUsage.LABEL).stream().map(PrintableFieldDto::from).toList(),
         catalog.stickerSizes(),
         catalog.effectiveShopType(),
         catalog.verticalSchemaLoaded(),

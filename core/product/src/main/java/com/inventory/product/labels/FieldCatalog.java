@@ -6,10 +6,15 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * The Field_Catalog for one shop: every printable field in catalog order, deduplicated by {@code
- * fieldKey}, plus the sticker size presets and the context the resolver needs (Req 1.1, 1.2).
+ * The Field_Catalog for one shop: every catalog field (sticker and card) in catalog order,
+ * deduplicated by {@code fieldKey}, plus the sticker size presets and the context the resolver needs
+ * (label Req 1.1, 1.2; card Req 1.1–1.6).
  *
- * @param fields ordered, deduplicated printable fields
+ * <p>Callers that serve one surface filter with {@link #forUsage(FieldUsage)} / {@link
+ * #findForUsage(String, FieldUsage)} so the label endpoint never sees card-only fields and vice
+ * versa.
+ *
+ * @param fields ordered, deduplicated catalog fields across all usages
  * @param stickerSizes the sticker size presets (always included, Req 3.5)
  * @param effectiveShopType the shop's type; null/unknown is normalized to {@code RETAILER}
  * @param verticalSchemaLoaded false when the vertical schema could not be loaded (Req 1.9)
@@ -33,12 +38,22 @@ public record FieldCatalog(
     productSchemaFields = productSchemaFields == null ? List.of() : List.copyOf(productSchemaFields);
   }
 
-  /** Looks up a field by its key. */
+  /** Looks up a field by its key, regardless of usage. */
   public Optional<PrintableField> find(String fieldKey) {
     if (fieldKey == null) {
       return Optional.empty();
     }
     return fields.stream().filter(f -> fieldKey.equals(f.fieldKey())).findFirst();
+  }
+
+  /** Looks up a field by its key, but only when it is usable on the given surface. */
+  public Optional<PrintableField> findForUsage(String fieldKey, FieldUsage usage) {
+    return find(fieldKey).filter(f -> f.usableFor(usage));
+  }
+
+  /** The fields usable on the given surface, in catalog order. */
+  public List<PrintableField> forUsage(FieldUsage usage) {
+    return fields.stream().filter(f -> f.usableFor(usage)).toList();
   }
 
   /** Looks up a sticker size preset by its id. */

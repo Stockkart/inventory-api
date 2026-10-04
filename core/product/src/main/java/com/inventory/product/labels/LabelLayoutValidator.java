@@ -288,7 +288,7 @@ public class LabelLayoutValidator {
         duplicates.add(key);
         continue; // report unknown/unavailable once per distinct key
       }
-      Optional<PrintableField> field = catalog.find(key);
+      Optional<PrintableField> field = catalog.findForUsage(key, FieldUsage.LABEL);
       if (field.isEmpty()) {
         unknown.add(key);
       } else if (!field.get().isAvailableFor(shopType)) {

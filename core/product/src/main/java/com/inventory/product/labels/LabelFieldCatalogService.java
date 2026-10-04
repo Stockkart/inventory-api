@@ -20,14 +20,17 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 /**
- * Assembles the Field_Catalog for a shop (Req 1.1–1.7, 1.9, 3.5, 4.6).
+ * Assembles the Field_Catalog for a shop (label Req 1.1–1.7, 1.9, 3.5, 4.6; card Req 1.2, 1.3, 1.8).
  *
- * <p>Group order is fixed to {@code product, pricing, lot, vertical, shop}. The pricing group is
- * the static set plus one named-rate field per distinct {@code Pricing.rates[].name} found for the
- * shop. The vertical group is derived from the shop's vertical schema ({@code inventory} entity
- * fields, then {@code product} entity fields); when the shop has no vertical or the schema cannot
- * be loaded, the group is empty and {@link FieldCatalog#verticalSchemaLoaded()} is {@code false}.
- * The final list is deduplicated by {@code fieldKey}, keeping the first occurrence.
+ * <p>Group order is fixed to {@code product, pricing, lot, vertical, shop}. Within the product,
+ * pricing and lot groups the sticker-and-card fields come first and the card-only fields follow, so
+ * the {@link FieldUsage#LABEL} view of the catalog is byte-for-byte what it was before cards
+ * existed. The pricing group is the static set plus one named-rate field per distinct {@code
+ * Pricing.rates[].name} found for the shop. The vertical group is derived from the shop's vertical
+ * schema ({@code inventory} entity fields, then {@code product} entity fields); when the shop has
+ * no vertical or the schema cannot be loaded, the group is empty and {@link
+ * FieldCatalog#verticalSchemaLoaded()} is {@code false}. The final list is deduplicated by {@code
+ * fieldKey}, keeping the first occurrence.
  */
 @Service
 @Slf4j
@@ -41,6 +44,9 @@ public class LabelFieldCatalogService {
 
   /** Maximum length of a vertical field label (longer schema labels are truncated). */
   static final int MAX_LABEL_LENGTH = 60;
+
+  /** Card values of vertical fields live in the summary DTO's {@code verticalFields} map. */
+  static final String VERTICAL_ITEM_PATH_PREFIX = "verticalFields.";
 
   private static final Set<ShopType> ALL_SHOP_TYPES =
       Set.of(ShopType.RETAILER, ShopType.DISTRIBUTOR, ShopType.WHOLESALER);
@@ -80,9 +86,12 @@ public class LabelFieldCatalogService {
 
     List<PrintableField> ordered = new ArrayList<>();
     ordered.addAll(LabelLayoutDefaults.coreFields());
+    ordered.addAll(LabelLayoutDefaults.cardProductFields());
     ordered.addAll(LabelLayoutDefaults.pricingFields());
     ordered.addAll(namedRateFields(shopId));
+    ordered.addAll(LabelLayoutDefaults.cardPricingFields());
     ordered.addAll(LabelLayoutDefaults.lotFields());
+    ordered.addAll(LabelLayoutDefaults.cardLotFields());
 
     VerticalSchemaResult vertical = loadVerticalSchema(shop);
     ordered.addAll(verticalFields(vertical.inventoryFields()));
@@ -210,7 +219,10 @@ public class LabelFieldCatalogService {
             SourceGroup.VERTICAL,
             valueType.get(),
             ALL_SHOP_TYPES,
-            apiKey));
+            apiKey,
+            PrintableField.DEFAULT_USAGES,
+            Sensitivity.PUBLIC,
+            VERTICAL_ITEM_PATH_PREFIX + apiKey));
   }
 
   // ---- helpers -------------------------------------------------------------------------------

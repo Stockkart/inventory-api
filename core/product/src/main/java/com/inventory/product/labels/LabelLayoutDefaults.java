@@ -1,19 +1,30 @@
 package com.inventory.product.labels;
 
+import static com.inventory.product.labels.LabelFieldKeys.AVAILABLE_COUNT;
 import static com.inventory.product.labels.LabelFieldKeys.BARCODE_TEXT;
 import static com.inventory.product.labels.LabelFieldKeys.BASE_UNIT;
 import static com.inventory.product.labels.LabelFieldKeys.BATCH_NO;
 import static com.inventory.product.labels.LabelFieldKeys.COMPANY_NAME;
 import static com.inventory.product.labels.LabelFieldKeys.COST_PRICE;
+import static com.inventory.product.labels.LabelFieldKeys.CURRENT_COUNT;
 import static com.inventory.product.labels.LabelFieldKeys.DESCRIPTION;
+import static com.inventory.product.labels.LabelFieldKeys.DISCOUNT_APPLICABLE;
+import static com.inventory.product.labels.LabelFieldKeys.EFFECTIVE_COST_PRICE;
 import static com.inventory.product.labels.LabelFieldKeys.EXPIRY_DATE;
 import static com.inventory.product.labels.LabelFieldKeys.GST_RATE;
 import static com.inventory.product.labels.LabelFieldKeys.HSN;
+import static com.inventory.product.labels.LabelFieldKeys.ITEM_TYPE;
+import static com.inventory.product.labels.LabelFieldKeys.LOCATION;
 import static com.inventory.product.labels.LabelFieldKeys.MRP;
 import static com.inventory.product.labels.LabelFieldKeys.PACK_SIZE;
 import static com.inventory.product.labels.LabelFieldKeys.PRODUCT_NAME;
 import static com.inventory.product.labels.LabelFieldKeys.PTR;
+import static com.inventory.product.labels.LabelFieldKeys.PURCHASE_ADDITIONAL_DISCOUNT;
+import static com.inventory.product.labels.LabelFieldKeys.PURCHASE_DATE;
+import static com.inventory.product.labels.LabelFieldKeys.PURCHASE_SCHEME;
+import static com.inventory.product.labels.LabelFieldKeys.RECEIVED_COUNT;
 import static com.inventory.product.labels.LabelFieldKeys.RECEIVED_DATE;
+import static com.inventory.product.labels.LabelFieldKeys.SALE_ADDITIONAL_DISCOUNT;
 import static com.inventory.product.labels.LabelFieldKeys.SALE_SCHEME;
 import static com.inventory.product.labels.LabelFieldKeys.SELLING_PRICE;
 import static com.inventory.product.labels.LabelFieldKeys.SHOP_ADDRESS;
@@ -24,6 +35,11 @@ import static com.inventory.product.labels.LabelFieldKeys.SHOP_GSTIN;
 import static com.inventory.product.labels.LabelFieldKeys.SHOP_NAME;
 import static com.inventory.product.labels.LabelFieldKeys.SHOP_PHONE;
 import static com.inventory.product.labels.LabelFieldKeys.SHOP_TAGLINE;
+import static com.inventory.product.labels.LabelFieldKeys.SOLD_COUNT;
+import static com.inventory.product.labels.LabelFieldKeys.THRESHOLD_COUNT;
+
+import static com.inventory.product.labels.Sensitivity.PUBLIC;
+import static com.inventory.product.labels.Sensitivity.SHOP_INTERNAL;
 
 import com.inventory.product.domain.model.enums.ShopType;
 import java.util.List;
@@ -32,8 +48,9 @@ import java.util.Set;
 
 /**
  * Static definitions shared by the label layout feature: sticker size presets (Req 3.1, 3.5), the
- * Default_Layout and shop-type defaults (Req 3.6, 4.1, 4.2, 4.6), and the four static printable
- * field sets in catalog order (Req 1.6, 1.7).
+ * Default_Layout and shop-type defaults (Req 3.6, 4.1, 4.2, 4.6), and the static catalog field sets
+ * in catalog order (label Req 1.6, 1.7; card Req 1.2–1.4) — including the card-only fields that
+ * the product card feature added to the shared Field_Catalog.
  *
  * <p>Everything here is immutable; collections are unmodifiable.
  */
@@ -96,50 +113,116 @@ public final class LabelLayoutDefaults {
 
   private static final List<PrintableField> CORE_FIELDS =
       List.of(
-          text(PRODUCT_NAME, "Product name", SourceGroup.PRODUCT),
-          text(COMPANY_NAME, "Company", SourceGroup.PRODUCT),
-          text(BARCODE_TEXT, "Barcode", SourceGroup.PRODUCT),
-          text(HSN, "HSN", SourceGroup.PRODUCT),
-          text(BASE_UNIT, "Unit", SourceGroup.PRODUCT),
-          text(PACK_SIZE, "Pack size", SourceGroup.PRODUCT),
-          text(DESCRIPTION, "Description", SourceGroup.PRODUCT));
+          text(PRODUCT_NAME, "Product name", SourceGroup.PRODUCT, "name"),
+          text(COMPANY_NAME, "Company", SourceGroup.PRODUCT, "companyName"),
+          text(BARCODE_TEXT, "Barcode", SourceGroup.PRODUCT, "barcode"),
+          text(HSN, "HSN", SourceGroup.PRODUCT, "hsn"),
+          text(BASE_UNIT, "Unit", SourceGroup.PRODUCT, "baseUnit"),
+          text(PACK_SIZE, "Pack size", SourceGroup.PRODUCT, "unitsPerPack"),
+          text(DESCRIPTION, "Description", SourceGroup.PRODUCT, "description"));
+
+  /** Card-only product fields, appended after {@link #CORE_FIELDS} in the catalog (card Req 1.3). */
+  private static final List<PrintableField> CARD_PRODUCT_FIELDS =
+      List.of(
+          PrintableField.cardOnly(
+              ITEM_TYPE, "Item type", SourceGroup.PRODUCT, ValueType.TEXT, "itemType", PUBLIC),
+          PrintableField.cardOnly(
+              DISCOUNT_APPLICABLE,
+              "Discount applicable",
+              SourceGroup.PRODUCT,
+              ValueType.TEXT,
+              "discountApplicable",
+              PUBLIC));
 
   private static final List<PrintableField> PRICING_FIELDS =
       List.of(
-          new PrintableField(MRP, "MRP", SourceGroup.PRICING, ValueType.CURRENCY, ALL_SHOP_TYPES),
-          new PrintableField(
+          both(MRP, "MRP", SourceGroup.PRICING, ValueType.CURRENCY, ALL_SHOP_TYPES, "maximumRetailPrice"),
+          both(
               SELLING_PRICE,
               "Selling price",
               SourceGroup.PRICING,
               ValueType.CURRENCY,
-              ALL_SHOP_TYPES),
-          new PrintableField(
-              PTR, "PTR", SourceGroup.PRICING, ValueType.CURRENCY, TRADE_SHOP_TYPES),
-          new PrintableField(
-              COST_PRICE, "Cost price", SourceGroup.PRICING, ValueType.CURRENCY, TRADE_SHOP_TYPES),
-          new PrintableField(
-              SALE_SCHEME, "Scheme", SourceGroup.PRICING, ValueType.TEXT, TRADE_SHOP_TYPES),
-          new PrintableField(
-              GST_RATE, "GST %", SourceGroup.PRICING, ValueType.PERCENTAGE, TRADE_SHOP_TYPES));
+              ALL_SHOP_TYPES,
+              "sellingPrice"),
+          both(PTR, "PTR", SourceGroup.PRICING, ValueType.CURRENCY, TRADE_SHOP_TYPES, "priceToRetail"),
+          both(COST_PRICE, "Cost price", SourceGroup.PRICING, ValueType.CURRENCY, TRADE_SHOP_TYPES, "costPrice")
+              .withSensitivity(SHOP_INTERNAL),
+          both(SALE_SCHEME, "Scheme", SourceGroup.PRICING, ValueType.TEXT, TRADE_SHOP_TYPES, "scheme"),
+          both(GST_RATE, "GST %", SourceGroup.PRICING, ValueType.PERCENTAGE, TRADE_SHOP_TYPES, "sgst"));
+
+  /**
+   * Card-only pricing fields, appended after the static pricing fields and named rates in the
+   * catalog (card Req 1.3, 1.4).
+   */
+  private static final List<PrintableField> CARD_PRICING_FIELDS =
+      List.of(
+          PrintableField.cardOnly(
+              SALE_ADDITIONAL_DISCOUNT,
+              "Additional discount",
+              SourceGroup.PRICING,
+              ValueType.PERCENTAGE,
+              "saleAdditionalDiscount",
+              PUBLIC),
+          PrintableField.cardOnly(
+              PURCHASE_ADDITIONAL_DISCOUNT,
+              "Purchase add. discount",
+              SourceGroup.PRICING,
+              ValueType.PERCENTAGE,
+              "purchaseAdditionalDiscount",
+              SHOP_INTERNAL),
+          PrintableField.cardOnly(
+              PURCHASE_SCHEME,
+              "Purchase scheme",
+              SourceGroup.PRICING,
+              ValueType.TEXT,
+              "purchaseSchemeType",
+              SHOP_INTERNAL),
+          PrintableField.cardOnly(
+              EFFECTIVE_COST_PRICE,
+              "Effective cost",
+              SourceGroup.PRICING,
+              ValueType.CURRENCY,
+              "effectiveCostPrice",
+              SHOP_INTERNAL));
 
   private static final List<PrintableField> LOT_FIELDS =
       List.of(
-          text(BATCH_NO, "Batch no.", SourceGroup.LOT),
-          new PrintableField(
-              EXPIRY_DATE, "Expiry", SourceGroup.LOT, ValueType.DATE, ALL_SHOP_TYPES),
-          new PrintableField(
-              RECEIVED_DATE, "Received on", SourceGroup.LOT, ValueType.DATE, ALL_SHOP_TYPES));
+          text(BATCH_NO, "Batch no.", SourceGroup.LOT, "batchNo"),
+          both(EXPIRY_DATE, "Expiry", SourceGroup.LOT, ValueType.DATE, ALL_SHOP_TYPES, "expiryDate"),
+          both(RECEIVED_DATE, "Received on", SourceGroup.LOT, ValueType.DATE, ALL_SHOP_TYPES, "createdAt"));
 
+  /** Card-only lot fields, appended after {@link #LOT_FIELDS} in the catalog (card Req 1.3). */
+  private static final List<PrintableField> CARD_LOT_FIELDS =
+      List.of(
+          PrintableField.cardOnly(LOCATION, "Location", SourceGroup.LOT, ValueType.TEXT, "location", PUBLIC),
+          PrintableField.cardOnly(
+              AVAILABLE_COUNT, "Available", SourceGroup.LOT, ValueType.NUMBER, "availableCount", PUBLIC),
+          PrintableField.cardOnly(
+              CURRENT_COUNT, "Current stock", SourceGroup.LOT, ValueType.NUMBER, "currentCount", PUBLIC),
+          PrintableField.cardOnly(
+              RECEIVED_COUNT, "Received", SourceGroup.LOT, ValueType.NUMBER, "receivedCount", PUBLIC),
+          PrintableField.cardOnly(SOLD_COUNT, "Sold", SourceGroup.LOT, ValueType.NUMBER, "soldCount", PUBLIC),
+          PrintableField.cardOnly(
+              THRESHOLD_COUNT,
+              "Low-stock threshold",
+              SourceGroup.LOT,
+              ValueType.NUMBER,
+              "thresholdCount",
+              PUBLIC),
+          PrintableField.cardOnly(
+              PURCHASE_DATE, "Purchased on", SourceGroup.LOT, ValueType.DATE, "purchaseDate", PUBLIC));
+
+  /** Shop identity fields are sticker-only: a card already sits inside the shop's own UI. */
   private static final List<PrintableField> SHOP_FIELDS =
       List.of(
-          text(SHOP_NAME, "Shop name", SourceGroup.SHOP),
-          text(SHOP_TAGLINE, "Tagline", SourceGroup.SHOP),
-          text(SHOP_PHONE, "Phone", SourceGroup.SHOP),
-          text(SHOP_EMAIL, "Email", SourceGroup.SHOP),
-          text(SHOP_ADDRESS, "Address", SourceGroup.SHOP),
-          text(SHOP_GSTIN, "GSTIN", SourceGroup.SHOP),
-          text(SHOP_FSSAI, "FSSAI", SourceGroup.SHOP),
-          text(SHOP_DL_NO, "D.L. No.", SourceGroup.SHOP));
+          shopText(SHOP_NAME, "Shop name"),
+          shopText(SHOP_TAGLINE, "Tagline"),
+          shopText(SHOP_PHONE, "Phone"),
+          shopText(SHOP_EMAIL, "Email"),
+          shopText(SHOP_ADDRESS, "Address"),
+          shopText(SHOP_GSTIN, "GSTIN"),
+          shopText(SHOP_FSSAI, "FSSAI"),
+          shopText(SHOP_DL_NO, "D.L. No."));
 
   private static final LabelLayoutConfig DEFAULT_LAYOUT =
       new LabelLayoutConfig(
@@ -238,9 +321,14 @@ public final class LabelLayoutDefaults {
 
   // ---- static field sets (catalog order) -----------------------------------------------------
 
-  /** Product group fields in catalog order. */
+  /** Product group sticker-and-card fields in catalog order. */
   public static List<PrintableField> coreFields() {
     return CORE_FIELDS;
+  }
+
+  /** Card-only product fields; the catalog appends them after {@link #coreFields()}. */
+  public static List<PrintableField> cardProductFields() {
+    return CARD_PRODUCT_FIELDS;
   }
 
   /** Static pricing group fields in catalog order (named rates are appended by the catalog). */
@@ -248,30 +336,67 @@ public final class LabelLayoutDefaults {
     return PRICING_FIELDS;
   }
 
-  /** Lot group fields in catalog order. */
+  /** Card-only pricing fields; the catalog appends them after the named rates. */
+  public static List<PrintableField> cardPricingFields() {
+    return CARD_PRICING_FIELDS;
+  }
+
+  /** Lot group sticker-and-card fields in catalog order. */
   public static List<PrintableField> lotFields() {
     return LOT_FIELDS;
   }
 
-  /** Shop group fields in catalog order. */
+  /** Card-only lot fields; the catalog appends them after {@link #lotFields()}. */
+  public static List<PrintableField> cardLotFields() {
+    return CARD_LOT_FIELDS;
+  }
+
+  /** Shop group fields in catalog order (sticker only). */
   public static List<PrintableField> shopFields() {
     return SHOP_FIELDS;
   }
 
   /**
-   * Builds the printable field for a named pricing rate: key {@code pricing.rate.<name>}, label
-   * {@code "Rate: <name>"}, currency, DISTRIBUTOR/WHOLESALER only.
+   * Builds the catalog field for a named pricing rate: key {@code pricing.rate.<name>}, label
+   * {@code "Rate: <name>"}, currency, DISTRIBUTOR/WHOLESALER only on stickers. On cards the value is
+   * picked from the {@code rates} list by name.
    */
   public static PrintableField namedRateField(String rateName) {
-    return new PrintableField(
+    return both(
         LabelFieldKeys.pricingRateKey(rateName),
         "Rate: " + rateName,
         SourceGroup.PRICING,
         ValueType.CURRENCY,
-        TRADE_SHOP_TYPES);
+        TRADE_SHOP_TYPES,
+        "rates");
   }
 
-  private static PrintableField text(String fieldKey, String label, SourceGroup group) {
-    return new PrintableField(fieldKey, label, group, ValueType.TEXT, ALL_SHOP_TYPES);
+  private static PrintableField text(
+      String fieldKey, String label, SourceGroup group, String itemPath) {
+    return both(fieldKey, label, group, ValueType.TEXT, ALL_SHOP_TYPES, itemPath);
+  }
+
+  private static PrintableField shopText(String fieldKey, String label) {
+    return PrintableField.labelOnly(fieldKey, label, SourceGroup.SHOP, ValueType.TEXT, ALL_SHOP_TYPES);
+  }
+
+  /** A field usable on both stickers and cards. */
+  private static PrintableField both(
+      String fieldKey,
+      String label,
+      SourceGroup group,
+      ValueType valueType,
+      Set<ShopType> shopTypes,
+      String itemPath) {
+    return new PrintableField(
+        fieldKey,
+        label,
+        group,
+        valueType,
+        shopTypes,
+        null,
+        PrintableField.DEFAULT_USAGES,
+        PUBLIC,
+        itemPath);
   }
 }

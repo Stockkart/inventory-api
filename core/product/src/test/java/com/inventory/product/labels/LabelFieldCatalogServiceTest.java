@@ -98,6 +98,71 @@ class LabelFieldCatalogServiceTest {
     verify(schemaLoader, never()).load(anyString(), any());
   }
 
+  // ---- card view (configurable-product-card Req 1.2–1.7) -------------------------------------
+
+  @Test
+  void cardViewInterleavesCardOnlyFieldsAfterEachGroupAndExcludesShopFields() {
+    Shop shop = shop(ShopType.RETAILER, null, null);
+    when(pricingRepository.findDistinctRateNamesByShopId(SHOP_ID)).thenReturn(List.of("Retail"));
+
+    FieldCatalog catalog = service.catalog(shop);
+
+    List<String> expected = new ArrayList<>();
+    LabelLayoutDefaults.coreFields().forEach(f -> expected.add(f.fieldKey()));
+    LabelLayoutDefaults.cardProductFields().forEach(f -> expected.add(f.fieldKey()));
+    LabelLayoutDefaults.pricingFields().forEach(f -> expected.add(f.fieldKey()));
+    expected.add(LabelFieldKeys.pricingRateKey("Retail"));
+    LabelLayoutDefaults.cardPricingFields().forEach(f -> expected.add(f.fieldKey()));
+    LabelLayoutDefaults.lotFields().forEach(f -> expected.add(f.fieldKey()));
+    LabelLayoutDefaults.cardLotFields().forEach(f -> expected.add(f.fieldKey()));
+    assertEquals(expected, cardKeys(catalog));
+
+    // every card field knows where its value lives; shop fields are sticker-only
+    catalog.forUsage(FieldUsage.CARD).forEach(f -> assertTrue(f.itemPath() != null, f.fieldKey()));
+    assertTrue(cardKeys(catalog).stream().noneMatch(k -> k.startsWith("shop")));
+    LabelLayoutDefaults.shopFields()
+        .forEach(f -> assertFalse(f.usableFor(FieldUsage.CARD), f.fieldKey()));
+  }
+
+  @Test
+  void cardViewMarksShopInternalFields() {
+    Shop shop = shop(ShopType.RETAILER, null, null);
+    when(pricingRepository.findDistinctRateNamesByShopId(SHOP_ID)).thenReturn(List.of());
+
+    FieldCatalog catalog = service.catalog(shop);
+
+    Set<String> internal =
+        catalog.forUsage(FieldUsage.CARD).stream()
+            .filter(f -> f.sensitivity() == Sensitivity.SHOP_INTERNAL)
+            .map(PrintableField::fieldKey)
+            .collect(java.util.stream.Collectors.toSet());
+    assertEquals(
+        Set.of(
+            LabelFieldKeys.COST_PRICE,
+            LabelFieldKeys.PURCHASE_ADDITIONAL_DISCOUNT,
+            LabelFieldKeys.PURCHASE_SCHEME,
+            LabelFieldKeys.EFFECTIVE_COST_PRICE),
+        internal);
+  }
+
+  @Test
+  void verticalFieldsAreUsableOnCardsViaVerticalFieldsPath() {
+    Shop shop = shop(ShopType.RETAILER, "sports", "1.0.0");
+    when(pricingRepository.findDistinctRateNamesByShopId(SHOP_ID)).thenReturn(List.of());
+    when(schemaLoader.load("sports", "1.0.0"))
+        .thenReturn(
+            schema(
+                Map.of(
+                    LabelFieldCatalogService.INVENTORY_ENTITY,
+                    entity(field("brand", "brandName", "Brand", "string")))));
+
+    PrintableField brand = service.catalog(shop).findForUsage("vertical.brand", FieldUsage.CARD).orElseThrow();
+
+    assertEquals("verticalFields.brandName", brand.itemPath());
+    assertTrue(brand.usableFor(FieldUsage.LABEL));
+    assertEquals(Sensitivity.PUBLIC, brand.sensitivity());
+  }
+
   @Test
   void nullShopTypeNormalizesToRetailer() {
     Shop shop = shop(null, null, null);
@@ -513,7 +578,13 @@ class LabelFieldCatalogServiceTest {
     return s;
   }
 
+  /** Keys of the sticker view of the catalog — what the label endpoint and validator see. */
   private static List<String> keys(FieldCatalog catalog) {
-    return catalog.fields().stream().map(PrintableField::fieldKey).toList();
+    return catalog.forUsage(FieldUsage.LABEL).stream().map(PrintableField::fieldKey).toList();
+  }
+
+  /** Keys of the card view of the catalog. */
+  private static List<String> cardKeys(FieldCatalog catalog) {
+    return catalog.forUsage(FieldUsage.CARD).stream().map(PrintableField::fieldKey).toList();
   }
 }
