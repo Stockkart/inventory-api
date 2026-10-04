@@ -1,6 +1,8 @@
 package com.inventory.product.service;
 
 import com.inventory.common.util.GstMath;
+import com.inventory.common.constants.PurchaseTaxTreatment;
+import com.inventory.common.util.GstStateCode;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
@@ -12,6 +14,7 @@ import com.inventory.product.domain.model.VendorPurchaseInvoiceLine;
 import com.inventory.product.domain.repository.VendorPurchaseInvoiceRepository;
 import com.inventory.product.utils.PurchaseTaxBasis;
 import com.inventory.product.utils.PurchaseTaxBasisResolver;
+import com.inventory.product.utils.VendorInvoiceTotals;
 import com.inventory.product.utils.constants.ProductMetricsConstants;
 import com.inventory.user.domain.model.Vendor;
 import com.inventory.user.domain.repository.VendorRepository;
@@ -74,6 +77,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -99,6 +103,16 @@ public class InventoryService {
 
   @Autowired
   private InventoryValidator inventoryValidator;
+
+  @Autowired
+  private com.inventory.product.validation.VendorPurchaseInvoiceValidator
+      vendorPurchaseInvoiceValidator;
+
+  @Autowired
+  private PurchaseTaxRecorder purchaseTaxRecorder;
+
+  @Autowired
+  private PurchaseTaxTreatmentResolver purchaseTaxTreatmentResolver;
 
   @Autowired
   private PackagingUnitService packagingUnitService;
@@ -153,7 +167,7 @@ public class InventoryService {
   private InventoryVerticalExpiryHandler inventoryVerticalExpiryHandler;
 
   @Autowired
-  private com.inventory.pricing.domain.repository.PricingRepository pricingRepository;
+  private com.inventory.product.domain.repository.ProductRepository productRepository;
 
   @Autowired
   private QuotationService quotationService;
@@ -411,6 +425,7 @@ public class InventoryService {
       pendingInvoice.setSynthetic(Boolean.TRUE);
     }
     if (invReq != null) {
+      vendorPurchaseInvoiceValidator.validateHeader(invReq);
       pendingInvoice.setInvoiceDate(invReq.getInvoiceDate());
       pendingInvoice.setLineSubTotal(invReq.getLineSubTotal());
       pendingInvoice.setTaxTotal(invReq.getTaxTotal());
@@ -421,6 +436,15 @@ public class InventoryService {
       pendingInvoice.setInvoiceTotal(invReq.getInvoiceTotal());
       pendingInvoice.setPaymentMethod(invReq.getPaymentMethod());
       pendingInvoice.setPaidAmount(invReq.getPaidAmount());
+      // The bill decides; else its lines (cost at MRP means GST is inside it, cost below MRP
+      // means it is added on top); else the vendor's usual convention. A choice the lines
+      // contradict is refused until the operator confirms it from the paper.
+      PurchaseTaxTreatmentResolver.Resolved treatment = purchaseTaxTreatmentResolver.resolve(
+          invReq.getTaxTreatment(), bulkRequest.getVendorId(), itemRequests);
+      if (treatment.conflict() && !Boolean.TRUE.equals(invReq.getConfirmTaxTreatment())) {
+        throw new ValidationException(treatment.conflictMessage());
+      }
+      pendingInvoice.setTaxTreatment(treatment.treatment());
     }
 
     try {
@@ -449,18 +473,15 @@ public class InventoryService {
       InventoryReceiptResponse response = create(fullRequest, userId, shopId);
       createdItems.add(response);
 
-      VendorPurchaseInvoiceLine line = new VendorPurchaseInvoiceLine();
+      VendorPurchaseInvoiceLine line = inventoryMapper.toInvoiceLine(itemRequest);
       line.setLineIndex(invoiceLines.size());
-      line.setName(itemRequest.getName());
-      line.setBarcode(itemRequest.getBarcode());
-      line.setCount(itemRequest.getCount());
-      line.setCostPrice(itemRequest.getCostPrice());
-      line.setPriceToRetail(itemRequest.getPriceToRetail());
       line.setInventoryId(response.getId());
       invoiceLines.add(line);
     }
 
     pendingInvoice.setLines(invoiceLines);
+    purchaseTaxRecorder.record(pendingInvoice);
+    rememberVendorTaxTreatment(bulkRequest.getVendorId(), invReq);
     vendorPurchaseInvoiceRepository.save(pendingInvoice);
     if (metrics != null) {
       metrics.record(
@@ -616,14 +637,25 @@ public class InventoryService {
                 ? java.time.LocalDate.ofInstant(inv.getCreatedAt(), java.time.ZoneOffset.UTC)
                 : java.time.LocalDate.now());
 
-    // GST routing: split the combined taxTotal into CGST + SGST from the same per-line basis
-    // GSTR-2 reports (see splitTaxByLines). IGST is always zero here until a purchase carries a
-    // place of supply.
-    GstSplit gst = splitTaxByLines(shopId, inv, taxTotal);
+    // GST routing: split the combined taxTotal into CGST + SGST. Source of truth is per-line:
+    // each {@link VendorPurchaseInvoiceLine} points to an inventory item whose {@code pricing}
+    // doc carries the actual cgst / sgst rates. We compute CGST and SGST amounts per line and
+    // sum them, falling back to shop-level rates only when an inventory or pricing lookup is
+    // missing.
+    //
+    // A supplier in another state charges IGST instead, and the whole tax goes to that one head.
+    // The books have to agree with the return: GSTR-2 places this purchase by the supplier's own
+    // GSTIN, and posting it to the local heads would leave the ledger claiming credit under two
+    // heads the return does not.
+    boolean interstate = isInterstatePurchase(shopId, vendorId);
+    GstSplit gst =
+        interstate ? new GstSplit(BigDecimal.ZERO, BigDecimal.ZERO)
+            : splitTaxByLines(shopId, inv, taxTotal);
+    BigDecimal inputIgst = interstate ? taxTotal : BigDecimal.ZERO;
     String paymentMethod = normalizePaymentMethod(inv.getPaymentMethod());
     com.inventory.accounting.api.VendorPurchaseInvoicePostingRequest req =
         com.inventory.accounting.api.VendorPurchaseInvoicePostingRequest.builder()
-            .sourceId(inv.getId())
+            .sourceId(ledgerSourceId(inv))
             .invoiceNo(inv.getInvoiceNo())
             .txnDate(txnDate)
             .vendorId(vendorId)
@@ -631,6 +663,7 @@ public class InventoryService {
             .goodsValue(goodsValue)
             .inputCgst(gst.cgst())
             .inputSgst(gst.sgst())
+            .inputIgst(inputIgst)
             .shippingCharge(nz(inv.getShippingCharge()))
             .otherCharges(nz(inv.getOtherCharges()))
             .roundOff(nz(inv.getRoundOff()))
@@ -639,6 +672,37 @@ public class InventoryService {
             .paymentMethod(paymentMethod)
             .build();
     accountingFacade.postVendorPurchaseInvoice(shopId, userId, req);
+  }
+
+  /**
+   * Brings the ledger in line with an amended invoice header.
+   *
+   * <p>The live entry is reversed, so the original figures stay on record, and the invoice is
+   * posted again with its corrected header under a new source id. An invoice that was never
+   * posted (no vendor, nothing owed) is left alone, as stock-in left it.
+   */
+  public void repostAccountingAfterAmend(
+      VendorPurchaseInvoice inv, String shopId, String userId, String reason) {
+    if (accountingFacade == null || inv == null || !StringUtils.hasText(inv.getVendorId())) {
+      return;
+    }
+    java.util.Optional<com.inventory.accounting.domain.model.JournalEntry> live =
+        accountingFacade.findBySource(
+            shopId,
+            com.inventory.accounting.domain.model.JournalSource.VENDOR_PURCHASE_INVOICE,
+            ledgerSourceId(inv));
+    if (live.isEmpty()) {
+      return;
+    }
+    if (live.get().getStatus() != com.inventory.accounting.domain.model.JournalStatus.REVERSED) {
+      accountingFacade.reverse(shopId, userId, live.get().getId(), "Invoice amended: " + reason);
+    }
+    inv.setLedgerSourceId(inv.getId() + ":amend:" + Instant.now().toEpochMilli());
+    postAccountingForVendorInvoice(inv, shopId, userId);
+  }
+
+  private static String ledgerSourceId(VendorPurchaseInvoice inv) {
+    return StringUtils.hasText(inv.getLedgerSourceId()) ? inv.getLedgerSourceId() : inv.getId();
   }
 
   /**
@@ -660,7 +724,9 @@ public class InventoryService {
     // IGST is not posted yet: the ledger has no place of supply for a purchase, so the basis is
     // read as intra-state.
     PurchaseTaxBasis basis =
-        PurchaseTaxBasisResolver.resolve(inv, this::pricingOfLot, inv.getTaxTreatment(), false);
+        PurchaseTaxBasisResolver.resolve(
+            inv, purchaseTaxRecorder.pricingByInventoryId(inv.getLines())::get,
+            inv.getTaxTreatment(), false);
     java.util.Optional<PurchaseTaxBasis.IntraStateSplit> split = basis.splitStated(total);
     if (split.isPresent()) {
       return new GstSplit(split.get().centralTax(), split.get().stateTax());
@@ -675,17 +741,6 @@ public class InventoryService {
   }
 
   /** The pricing record behind a purchase line's lot, or null when either is missing. */
-  private com.inventory.pricing.domain.model.Pricing pricingOfLot(String inventoryId) {
-    if (!StringUtils.hasText(inventoryId)) {
-      return null;
-    }
-    return inventoryRepository
-        .findById(inventoryId)
-        .map(Inventory::getPricingId)
-        .filter(StringUtils::hasText)
-        .flatMap(pricingRepository::findById)
-        .orElse(null);
-  }
 
   /** Plain ratio split — used only when no line-level rates are available. */
   private static GstSplit splitByRatio(
@@ -705,22 +760,87 @@ public class InventoryService {
         half.setScale(4, RoundingMode.HALF_UP));
   }
 
+  /**
+   * Remembers how a supplier bills, from the bill in front of the operator.
+   *
+   * <p>The question can only be answered with an invoice in hand -- whether the printed line
+   * amount already contains the tax is a fact about the paper, not something anyone knows while
+   * typing a supplier's phone number into a form. So it is asked where it is answerable, at stock
+   * in, and kept for next time.
+   *
+   * <p>The latest answer wins. A supplier that changes how it bills is telling us so through its
+   * bills, and an operator correcting the choice on today's invoice means the stored one was
+   * wrong; either way the newer answer came from someone looking at a real document. Only an
+   * explicit choice is recorded -- leaving the field on "as this vendor usually bills" says
+   * nothing new and overwrites nothing.
+   *
+   * <p>Never fatal. The stock is registered and the invoice is right regardless; failing to
+   * remember only means being asked again next time.
+   */
+  private void rememberVendorTaxTreatment(String vendorId, VendorPurchaseInvoiceRequest invReq) {
+    if (invReq == null || invReq.getTaxTreatment() == null || !StringUtils.hasText(vendorId)) {
+      return;
+    }
+    try {
+      vendorRepository.findById(vendorId.trim()).ifPresent(vendor -> {
+        PurchaseTaxTreatment stated = invReq.getTaxTreatment();
+        if (stated == vendor.getDefaultTaxTreatment()) {
+          return;
+        }
+        PurchaseTaxTreatment previous = vendor.getDefaultTaxTreatment();
+        vendor.setDefaultTaxTreatment(stated);
+        vendor.setUpdatedAt(Instant.now());
+        vendorRepository.save(vendor);
+        log.info("Vendor {} now bills {} (was {}), learnt from invoice {}",
+            vendor.getName(), stated, previous == null ? "unrecorded" : previous,
+            invReq.getInvoiceNo());
+      });
+    } catch (RuntimeException e) {
+      log.warn("Could not record how vendor {} bills; it will be asked again next time",
+          vendorId, e);
+    }
+  }
+
+  /**
+   * Whether goods came from a supplier in another state.
+   *
+   * <p>Placed the same way GSTR-2 places them, so the ledger and the return cannot disagree: the
+   * supplier by their own GSTIN, the shop by its GSTIN and then its address. Anything unplaceable
+   * is local, which is the far more common case and the safer of the two errors -- credit under
+   * the wrong local head is a reclassification, credit claimed on an interstate supply that never
+   * happened is not.
+   */
+  private boolean isInterstatePurchase(String shopId, String vendorId) {
+    if (!StringUtils.hasText(vendorId)) {
+      return false;
+    }
+    try {
+      String supplierState = vendorRepository.findById(vendorId.trim())
+          .map(Vendor::getGstinUin)
+          .map(GstStateCode::codeFromGstin)
+          .orElse("");
+      if (!StringUtils.hasText(supplierState)) {
+        return false;
+      }
+      String shopState = shopRepository.findById(shopId)
+          .map(shop -> GstStateCode.shopState(shop.getGstinNo(),
+              shop.getLocation() != null ? shop.getLocation().getState() : null))
+          .orElse("");
+      return StringUtils.hasText(shopState) && !shopState.equals(supplierState);
+    } catch (RuntimeException e) {
+      log.warn("Could not place the purchase for interstate tax (shop {}, vendor {}); "
+          + "treating it as local", shopId, vendorId, e);
+      return false;
+    }
+  }
+
   /** Per-invoice CGST / SGST slice. IGST is wired in once the invoice carries a place-of-supply. */
   private record GstSplit(BigDecimal cgst, BigDecimal sgst) {}
 
   private static BigDecimal deriveInvoiceTotalForCredit(VendorPurchaseInvoice inv) {
-    BigDecimal invTotal = nz(inv.getInvoiceTotal());
-    if (invTotal.signum() > 0) {
-      return invTotal.setScale(4, RoundingMode.HALF_UP);
-    }
-    return nz(inv.getLineSubTotal())
-        .add(nz(inv.getTaxTotal()))
-        .add(nz(inv.getShippingCharge()))
-        .add(nz(inv.getOtherCharges()))
-        .add(nz(inv.getRoundOff()))
-        .subtract(nz(inv.getOverallDiscount()))
-        .max(BigDecimal.ZERO)
-        .setScale(4, RoundingMode.HALF_UP);
+    return VendorInvoiceTotals.invoiceTotal(
+        inv.getInvoiceTotal(), inv.getLineSubTotal(), inv.getTaxTotal(), inv.getShippingCharge(),
+        inv.getOtherCharges(), inv.getRoundOff(), inv.getOverallDiscount());
   }
 
   /**

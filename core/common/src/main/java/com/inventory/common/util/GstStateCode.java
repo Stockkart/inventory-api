@@ -1,4 +1,4 @@
-package com.inventory.taxation.utils;
+package com.inventory.common.util;
 
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -139,6 +139,32 @@ public final class GstStateCode {
       }
       from = at + 1;
     }
+  }
+
+  /**
+   * The state a shop is registered in, as a two-digit code.
+   *
+   * <p>Its GSTIN carries the code it registered under, which is the authority on the question. A
+   * shop below the registration threshold has none, and is then placed by the state on its
+   * address. Empty when neither says -- a caller that needs to tell an interstate supply from a
+   * local one cannot proceed on that and should say so rather than assume.
+   */
+  public static String shopState(String gstinNo, String addressState) {
+    String fromGstin = codeFromGstin(gstinNo);
+    return StringUtils.hasText(fromGstin) ? fromGstin : codeFromName(addressState);
+  }
+
+  /**
+   * Whether a supply between two states crosses a border, so the tax is IGST.
+   *
+   * <p>Both ends must be placed. Anything unplaceable is treated as local: that is the far more
+   * common case, and reporting a supply as interstate on a guess would put the tax under a head the
+   * other party cannot claim. One definition for sales, purchases and returns.
+   */
+  public static boolean isInterstate(String ourState, String theirState) {
+    return StringUtils.hasText(ourState)
+        && StringUtils.hasText(theirState)
+        && !ourState.equals(theirState);
   }
 
   /**

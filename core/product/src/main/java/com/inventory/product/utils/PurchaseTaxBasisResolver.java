@@ -1,12 +1,12 @@
 package com.inventory.product.utils;
 
 import com.inventory.common.util.GstMath;
+import com.inventory.common.constants.PurchaseTaxTreatment;
 import com.inventory.pricing.domain.model.Pricing;
 import com.inventory.pricing.domain.model.Scheme;
 import com.inventory.pricing.utils.constants.PricingConstants;
 import com.inventory.product.domain.model.VendorPurchaseInvoice;
 import com.inventory.product.domain.model.VendorPurchaseInvoiceLine;
-import com.inventory.product.domain.model.enums.PurchaseTaxTreatment;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -120,6 +120,27 @@ public final class PurchaseTaxBasisResolver {
     int last = out.size() - 1;
     out.set(last, out.get(last).subtract(discount.subtract(taken)));
     return out;
+  }
+
+  /**
+   * What one unit of a lot is worth for tax, from its pricing alone.
+   *
+   * <p>The fallback for a line recorded before the taxable value was persisted on it. It applies
+   * the price reductions GST recognises and, where the supplier billed at MRP, takes the tax back
+   * out -- the two things a raw {@code costPrice} does not account for, and between them worth
+   * more than a third of the figure on a scheme-discounted inclusive bill.
+   */
+  public static BigDecimal unitTaxable(Pricing pricing, PurchaseTaxTreatment treatment,
+      BigDecimal ratePct) {
+    BigDecimal cost = discountedUnitCost(pricing);
+    if (cost == null) {
+      cost = pricing != null && pricing.getCostPrice() != null
+          ? pricing.getCostPrice() : BigDecimal.ZERO;
+    }
+    if (PurchaseTaxTreatment.orDefault(treatment) == PurchaseTaxTreatment.INCLUSIVE) {
+      return GstMath.extractFromInclusive(cost, ratePct).taxable();
+    }
+    return cost;
   }
 
   /**

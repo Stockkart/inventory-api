@@ -6,7 +6,7 @@ import com.inventory.pricing.domain.model.Pricing;
 import com.inventory.pricing.domain.model.Scheme;
 import com.inventory.product.domain.model.VendorPurchaseInvoice;
 import com.inventory.product.domain.model.VendorPurchaseInvoiceLine;
-import com.inventory.product.domain.model.enums.PurchaseTaxTreatment;
+import com.inventory.common.constants.PurchaseTaxTreatment;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
