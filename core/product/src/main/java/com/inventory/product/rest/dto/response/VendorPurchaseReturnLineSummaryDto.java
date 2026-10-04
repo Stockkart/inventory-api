@@ -37,4 +37,20 @@ public class VendorPurchaseReturnLineSummaryDto {
 
   /** Line total incl. tax snapshot. */
   private BigDecimal lineNoteValue;
+
+  // --- The purchase this line reverses, in the terms the bill stated it ---
+  /** Cost per unit as billed, and the price to retail beside it. */
+  private BigDecimal costPrice;
+  private BigDecimal priceToRetail;
+  private BigDecimal maximumRetailPrice;
+  /** Total GST rate on the line (sgst + cgst, or the igst rate). */
+  private BigDecimal gstRatePct;
+  /** IGST where the supplier is in another state; the halves above are then zero. */
+  private BigDecimal integratedGstAmount;
+  /** Scheme and additional discount the goods were bought under. */
+  private String purchaseSchemeType;
+  private Integer purchaseSchemePayFor;
+  private Integer purchaseSchemeFree;
+  private BigDecimal purchaseSchemePercentage;
+  private BigDecimal purchaseAdditionalDiscount;
 }

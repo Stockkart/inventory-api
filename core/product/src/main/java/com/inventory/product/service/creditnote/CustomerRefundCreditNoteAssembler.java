@@ -3,8 +3,8 @@ package com.inventory.product.service.creditnote;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.documentservice.rest.dto.CreditNoteItem;
+import com.inventory.product.domain.model.enums.SchemeType;
 import com.inventory.documentservice.rest.dto.GenerateCreditNoteRequest;
-import com.inventory.pluginengine.VerticalFieldsReader;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.Refund;
 import com.inventory.product.domain.model.RefundItem;
@@ -15,7 +15,6 @@ import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.PurchaseRepository;
 import com.inventory.product.domain.repository.RefundRepository;
 import com.inventory.product.service.PurchaseCustomerRequests;
-import com.inventory.product.service.vertical.InventoryVerticalExtensionHandler;
 import com.inventory.product.utils.AmountToWordsConverter;
 import com.inventory.user.domain.model.Customer;
 import com.inventory.user.service.CustomerService;
@@ -29,7 +28,6 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -44,7 +42,6 @@ public class CustomerRefundCreditNoteAssembler implements CreditNoteDocumentAsse
   private final PurchaseRepository purchaseRepository;
   private final InventoryRepository inventoryRepository;
   private final CustomerService customerService;
-  private final InventoryVerticalExtensionHandler inventoryVerticalExtensionHandler;
   private final CreditNoteRequestSupport requestSupport;
 
   public CustomerRefundCreditNoteAssembler(
@@ -52,13 +49,11 @@ public class CustomerRefundCreditNoteAssembler implements CreditNoteDocumentAsse
       PurchaseRepository purchaseRepository,
       InventoryRepository inventoryRepository,
       CustomerService customerService,
-      InventoryVerticalExtensionHandler inventoryVerticalExtensionHandler,
       CreditNoteRequestSupport requestSupport) {
     this.refundRepository = refundRepository;
     this.purchaseRepository = purchaseRepository;
     this.inventoryRepository = inventoryRepository;
     this.customerService = customerService;
-    this.inventoryVerticalExtensionHandler = inventoryVerticalExtensionHandler;
     this.requestSupport = requestSupport;
   }
 
@@ -205,6 +200,16 @@ public class CustomerRefundCreditNoteAssembler implements CreditNoteDocumentAsse
       item.setTaxableValue(line.getTaxableValue());
       item.setCgstAmount(line.getCgstAmount());
       item.setSgstAmount(line.getSgstAmount());
+      // Restate the sale in its own terms. Snapshotted onto the refund when it was taken, so a
+      // note printed years later still shows what the customer was actually billed.
+      item.setMaximumRetailPrice(line.getMaximumRetailPrice());
+      item.setDiscountPercent(line.getSaleAdditionalDiscount());
+      item.setSchemeLabel(
+          saleSchemeLabel(
+              line.getSchemeType(), line.getSchemePercentage(),
+              line.getSchemePayFor(), line.getSchemeFree()));
+      item.setCgst(line.getCgst());
+      item.setSgst(line.getSgst());
 
       if (StringUtils.hasText(line.getInventoryId())) {
         inventoryRepository
@@ -213,16 +218,32 @@ public class CustomerRefundCreditNoteAssembler implements CreditNoteDocumentAsse
                 inv -> {
                   item.setHsn(inv.getHsn());
                   item.setCompanyName(inv.getCompanyName());
-                  Map<String, Object> extensionFields =
-                      inventoryVerticalExtensionHandler.loadExtensionFields(
-                          inv.getShopId(), inv.getId());
-                  item.setBatchNo(VerticalFieldsReader.batchNoFrom(extensionFields));
+                  requestSupport.applyBatchAndExpiry(item, inv);
                 });
       }
       item.setGstPercent(sumAmountsAsPercent(item.getCgst(), item.getSgst()));
       out.add(item);
     }
     return out;
+  }
+
+  /**
+   * The sale scheme as billed, worded for print.
+   *
+   * <p>A percentage, or a pay-for/free pair, or nothing. Worded here rather than in the template
+   * because a debit note reads the purchase-side fields for the same column, and a template
+   * choosing between them would have to know which document it is rendering.
+   */
+  private static String saleSchemeLabel(
+      SchemeType schemeType, BigDecimal percentage, Integer payFor, Integer free) {
+    if (schemeType == SchemeType.PERCENTAGE && percentage != null
+        && percentage.signum() > 0) {
+      return percentage.stripTrailingZeros().toPlainString() + "%";
+    }
+    if (payFor != null && free != null) {
+      return payFor + "+" + free;
+    }
+    return null;
   }
 
   private static void applyTaxPercents(GenerateCreditNoteRequest request, List<CreditNoteItem> items) {

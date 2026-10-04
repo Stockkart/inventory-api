@@ -2,6 +2,7 @@ package com.inventory.product.service;
 
 import com.inventory.common.util.GstMath;
 import com.inventory.common.constants.PurchaseTaxTreatment;
+import com.inventory.common.util.GstStateCode;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
@@ -640,10 +641,21 @@ public class InventoryService {
                 ? java.time.LocalDate.ofInstant(inv.getCreatedAt(), java.time.ZoneOffset.UTC)
                 : java.time.LocalDate.now());
 
-    // GST routing: split the combined taxTotal into CGST + SGST from the same per-line basis
-    // GSTR-2 reports (see splitTaxByLines). IGST is always zero here until a purchase carries a
-    // place of supply.
-    GstSplit gst = splitTaxByLines(shopId, inv, taxTotal);
+    // GST routing: split the combined taxTotal into CGST + SGST. Source of truth is per-line:
+    // each {@link VendorPurchaseInvoiceLine} points to an inventory item whose {@code pricing}
+    // doc carries the actual cgst / sgst rates. We compute CGST and SGST amounts per line and
+    // sum them, falling back to shop-level rates only when an inventory or pricing lookup is
+    // missing.
+    //
+    // A supplier in another state charges IGST instead, and the whole tax goes to that one head.
+    // The books have to agree with the return: GSTR-2 places this purchase by the supplier's own
+    // GSTIN, and posting it to the local heads would leave the ledger claiming credit under two
+    // heads the return does not.
+    boolean interstate = isInterstatePurchase(shopId, vendorId);
+    GstSplit gst =
+        interstate ? new GstSplit(BigDecimal.ZERO, BigDecimal.ZERO)
+            : splitTaxByLines(shopId, inv, taxTotal);
+    BigDecimal inputIgst = interstate ? taxTotal : BigDecimal.ZERO;
     String paymentMethod = normalizePaymentMethod(inv.getPaymentMethod());
     com.inventory.accounting.api.VendorPurchaseInvoicePostingRequest req =
         com.inventory.accounting.api.VendorPurchaseInvoicePostingRequest.builder()
@@ -655,6 +667,7 @@ public class InventoryService {
             .goodsValue(goodsValue)
             .inputCgst(gst.cgst())
             .inputSgst(gst.sgst())
+            .inputIgst(inputIgst)
             .shippingCharge(nz(inv.getShippingCharge()))
             .otherCharges(nz(inv.getOtherCharges()))
             .roundOff(nz(inv.getRoundOff()))
@@ -827,6 +840,39 @@ public class InventoryService {
     } catch (RuntimeException e) {
       log.warn("Could not record how vendor {} bills; it will be asked again next time",
           vendorId, e);
+    }
+  }
+
+  /**
+   * Whether goods came from a supplier in another state.
+   *
+   * <p>Placed the same way GSTR-2 places them, so the ledger and the return cannot disagree: the
+   * supplier by their own GSTIN, the shop by its GSTIN and then its address. Anything unplaceable
+   * is local, which is the far more common case and the safer of the two errors -- credit under
+   * the wrong local head is a reclassification, credit claimed on an interstate supply that never
+   * happened is not.
+   */
+  private boolean isInterstatePurchase(String shopId, String vendorId) {
+    if (!StringUtils.hasText(vendorId)) {
+      return false;
+    }
+    try {
+      String supplierState = vendorRepository.findById(vendorId.trim())
+          .map(Vendor::getGstinUin)
+          .map(GstStateCode::codeFromGstin)
+          .orElse("");
+      if (!StringUtils.hasText(supplierState)) {
+        return false;
+      }
+      String shopState = shopRepository.findById(shopId)
+          .map(shop -> GstStateCode.shopState(shop.getGstinNo(),
+              shop.getLocation() != null ? shop.getLocation().getState() : null))
+          .orElse("");
+      return StringUtils.hasText(shopState) && !shopState.equals(supplierState);
+    } catch (RuntimeException e) {
+      log.warn("Could not place the purchase for interstate tax (shop {}, vendor {}); "
+          + "treating it as local", shopId, vendorId, e);
+      return false;
     }
   }
 
