@@ -11,8 +11,13 @@ import lombok.Data;
  */
 @Data
 public class PurchaseTaxPreviewResponse {
-  /** The treatment applied: the one stated, else the vendor's default; null reads as exclusive. */
+  /** The treatment applied: stated, else read from cost against MRP, else the vendor's usual; null reads as exclusive. */
   private PurchaseTaxTreatment taxTreatment;
+  /**
+   * Where the treatment came from: STATED (the bill), LINES (cost at MRP is inclusive, below MRP
+   * exclusive), VENDOR (its usual convention) or NONE.
+   */
+  private String taxTreatmentSource;
   /** Taxable value of the items after scheme and additional discount, before the bill-level discount. */
   private BigDecimal lineSubTotal;
   private BigDecimal taxTotal;

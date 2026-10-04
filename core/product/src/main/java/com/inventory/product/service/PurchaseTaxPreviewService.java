@@ -62,8 +62,9 @@ public class PurchaseTaxPreviewService {
     invoice.setOverallDiscount(request.getOverallDiscount());
     invoice.setRoundOff(request.getRoundOff());
 
-    PurchaseTaxTreatment treatment =
-        purchaseTaxTreatmentResolver.taxTreatmentFor(request.getTaxTreatment(), request.getVendorId());
+    PurchaseTaxTreatmentResolver.Resolved resolved = purchaseTaxTreatmentResolver.resolve(
+        request.getTaxTreatment(), request.getVendorId(), request.getItems());
+    PurchaseTaxTreatment treatment = resolved.treatment();
     // Intra-state, as stock-in records it until a purchase carries a place of supply.
     PurchaseTaxBasis basis =
         PurchaseTaxBasisResolver.resolve(invoice, pricingByRow::get, treatment, false);
@@ -72,6 +73,7 @@ public class PurchaseTaxPreviewService {
 
     PurchaseTaxPreviewResponse out = new PurchaseTaxPreviewResponse();
     out.setTaxTreatment(treatment);
+    out.setTaxTreatmentSource(resolved.source().name());
     out.setLineSubTotal(money(invoice.getLineSubTotal()));
     out.setTaxTotal(money(invoice.getTaxTotal()));
     out.setItemsTotal(money(invoice.getLineSubTotal().add(invoice.getTaxTotal())));

@@ -436,12 +436,11 @@ public class InventoryService {
       pendingInvoice.setInvoiceTotal(invReq.getInvoiceTotal());
       pendingInvoice.setPaymentMethod(invReq.getPaymentMethod());
       pendingInvoice.setPaidAmount(invReq.getPaidAmount());
-      // The bill decides; the vendor answers when the bill did not. A supplier's billing
-      // convention is a property of their software rather than of any one invoice, so asking on
-      // every bill from the same vendor would be asking a question already answered.
+      // The bill decides; else its lines (cost at MRP means GST is inside it, cost below MRP
+      // means it is added on top); else the vendor's usual convention.
       pendingInvoice.setTaxTreatment(
           purchaseTaxTreatmentResolver.taxTreatmentFor(
-              invReq.getTaxTreatment(), bulkRequest.getVendorId()));
+              invReq.getTaxTreatment(), bulkRequest.getVendorId(), itemRequests));
     }
 
     try {
