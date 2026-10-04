@@ -468,6 +468,8 @@ public class InventoryService {
           inventoryMapper.toCreateInventoryRequest(
               itemRequest, bulkRequest.getVendorId(), registrationId);
       fullRequest.setVendorPurchaseInvoiceId(registrationId);
+      fullRequest.setCostPriceIncludesTax(
+          pendingInvoice.getTaxTreatment() == PurchaseTaxTreatment.INCLUSIVE);
       InventoryVerticalRequestNormalizer.normalizeCreate(fullRequest);
 
       InventoryReceiptResponse response = create(fullRequest, userId, shopId);
