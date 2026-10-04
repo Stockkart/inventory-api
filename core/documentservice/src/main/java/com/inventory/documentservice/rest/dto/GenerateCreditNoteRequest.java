@@ -50,6 +50,7 @@ public class GenerateCreditNoteRequest {
   private Boolean showHsn;
   private Boolean showMfg;
   private Boolean showBatch;
+  private Boolean showExpiry;
   private Boolean showSignatures;
 
   private String shopName;

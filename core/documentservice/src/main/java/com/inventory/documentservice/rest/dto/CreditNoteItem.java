@@ -14,6 +14,8 @@ public class CreditNoteItem {
   private String hsn;
   private String companyName;
   private String batchNo;
+  /** Expiry of the batch, {@code MM/yy} as the invoice prints it. */
+  private String expiryDate;
   private BigDecimal unitPrice;
   private BigDecimal taxableValue;
   private BigDecimal cgstAmount;
