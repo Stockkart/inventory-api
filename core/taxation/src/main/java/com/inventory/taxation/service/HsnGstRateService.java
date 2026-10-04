@@ -1,6 +1,6 @@
-package com.inventory.product.service;
+package com.inventory.taxation.service;
 
-import com.inventory.product.rest.dto.response.HsnGstRatesResponse;
+import com.inventory.taxation.rest.dto.HsnGstRatesResponse;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;

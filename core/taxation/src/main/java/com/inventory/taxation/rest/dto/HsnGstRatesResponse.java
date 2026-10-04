@@ -1,4 +1,4 @@
-package com.inventory.product.rest.dto.response;
+package com.inventory.taxation.rest.dto;
 
 import java.math.BigDecimal;
 import java.util.List;

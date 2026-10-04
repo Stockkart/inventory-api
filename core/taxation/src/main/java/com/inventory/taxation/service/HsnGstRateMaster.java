@@ -1,4 +1,4 @@
-package com.inventory.product.service;
+package com.inventory.taxation.service;
 
 import com.inventory.common.util.HsnCodes;
 import com.fasterxml.jackson.databind.JsonNode;

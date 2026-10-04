@@ -1,11 +1,11 @@
-package com.inventory.product.service;
+package com.inventory.taxation.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.inventory.product.rest.dto.response.HsnGstRatesResponse;
+import com.inventory.taxation.rest.dto.HsnGstRatesResponse;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
