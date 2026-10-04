@@ -75,8 +75,9 @@ class PurchaseTaxTreatmentResolverTest {
     assertTrue(r.conflict());
     assertEquals(PurchaseTaxTreatment.EXCLUSIVE, r.fromLines());
     assertEquals(PurchaseTaxTreatment.INCLUSIVE, r.treatment());
-    assertTrue(r.conflictMessage().startsWith("The bill is marked 'GST already included'"));
-    assertTrue(r.conflictMessage().contains("cost is below MRP"));
+    assertEquals("The entered prices are lower than the MRP. This may be correct, but it does not "
+        + "match the selected \u201cGST is already included in the price\u201d setting. "
+        + "Please verify the supplier bill before continuing.", r.conflictMessage());
   }
 
   @Test

@@ -143,7 +143,7 @@ class PurchaseTaxPreviewServiceTest {
 
     assertEquals("STATED", out.getTaxTreatmentSource());
     assertEquals(PurchaseTaxTreatment.EXCLUSIVE, out.getTaxTreatmentFromLines());
-    assertTrue(out.getTaxTreatmentConflict().contains("cost is below MRP"));
+    assertTrue(out.getTaxTreatmentConflict().startsWith("The entered prices are lower than the MRP."));
 
     PurchaseTaxPreviewResponse read = service.preview(request(null));
     assertEquals("LINES", read.getTaxTreatmentSource());

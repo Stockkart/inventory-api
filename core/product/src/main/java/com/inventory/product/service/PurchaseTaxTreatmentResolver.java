@@ -43,14 +43,17 @@ public class PurchaseTaxTreatmentResolver {
       if (!conflict) {
         return null;
       }
-      String applied = treatment == PurchaseTaxTreatment.INCLUSIVE
-          ? "GST already included" : "GST added on top";
-      String lines = fromLines == PurchaseTaxTreatment.INCLUSIVE
-          ? "cost equals MRP, which means GST is already included"
-          : "cost is below MRP, which means GST is added on top";
-      String how = source == Source.VENDOR ? "This vendor is recorded as billing" : "The bill is marked";
-      return how + " '" + applied + "', but on these rows " + lines
-          + ". Check the bill, then change the choice or confirm it.";
+      String prices = fromLines == PurchaseTaxTreatment.INCLUSIVE
+          ? "The entered prices are equal to the MRP."
+          : "The entered prices are lower than the MRP.";
+      String setting = treatment == PurchaseTaxTreatment.INCLUSIVE
+          ? "GST is already included in the price"
+          : "GST is added to the price";
+      String whose = source == Source.VENDOR
+          ? "this vendor's usual \u201c" + setting + "\u201d setting"
+          : "the selected \u201c" + setting + "\u201d setting";
+      return prices + " This may be correct, but it does not match " + whose
+          + ". Please verify the supplier bill before continuing.";
     }
   }
 
