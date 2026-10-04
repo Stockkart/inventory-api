@@ -93,6 +93,16 @@ public class GenerateInvoiceRequest {
   private BigDecimal cgstAmount;
   private BigDecimal sgstPercent;
   private BigDecimal cgstPercent;
+  /**
+   * IGST, charged instead of SGST + CGST when the supply crosses a state border.
+   *
+   * <p>The invoice has to print the head the tax was actually charged under: a customer can only
+   * claim a credit under the head their copy states, and a bill showing CGST and SGST on an
+   * interstate supply cannot be matched against the supplier's return.
+   */
+  private BigDecimal igstAmount;
+  /** True when the sale was billed as an interstate supply: print IGST columns and rows, not CGST/SGST. */
+  private boolean interstate;
   private BigDecimal taxTotal;
   // One row per GST rate on the invoice. Empty when no line carries tax, in which case the
   // single SGST/CGST amounts above are printed as before.
