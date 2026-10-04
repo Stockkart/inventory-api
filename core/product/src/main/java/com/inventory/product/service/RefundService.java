@@ -205,7 +205,8 @@ public class RefundService {
 
         SalesReturnValuation.LineAmounts amounts =
             SalesReturnValuation.lineAmounts(
-                purchaseItem, refundBaseQuantity, refundItem.getQuantity(), billingMode);
+                purchaseItem, refundBaseQuantity, refundItem.getQuantity(), billingMode,
+                Boolean.TRUE.equals(purchase.getInterstate()));
 
         restoreInventoryForRefund(refundItem.getInventoryId(), refundBaseQuantity, shopId);
 
@@ -229,8 +230,18 @@ public class RefundService {
         domainItem.setTaxableValue(amounts.taxable());
         domainItem.setCgstAmount(amounts.cgst());
         domainItem.setSgstAmount(amounts.sgst());
+        domainItem.setIgstAmount(amounts.igst());
         domainItem.setCogsAmount(amounts.cogs());
         domainItem.setLineReturnTotal(amounts.lineTotal());
+        // The note states the supply it credits in the invoice's own terms.
+        domainItem.setMaximumRetailPrice(purchaseItem.getMaximumRetailPrice());
+        domainItem.setSaleAdditionalDiscount(purchaseItem.getSaleAdditionalDiscount());
+        domainItem.setSgst(purchaseItem.getSgst());
+        domainItem.setCgst(purchaseItem.getCgst());
+        domainItem.setSchemeType(purchaseItem.getSchemeType());
+        domainItem.setSchemePayFor(purchaseItem.getSchemePayFor());
+        domainItem.setSchemeFree(purchaseItem.getSchemeFree());
+        domainItem.setSchemePercentage(purchaseItem.getSchemePercentage());
         domainRefundItems.add(domainItem);
         lineAmounts.add(amounts);
       }
@@ -255,6 +266,8 @@ public class RefundService {
       refund.setTaxableTotal(totals.taxableTotal());
       refund.setCgstAmount(totals.cgstTotal());
       refund.setSgstAmount(totals.sgstTotal());
+      refund.setIgstAmount(totals.igstTotal());
+      refund.setInterstate(Boolean.TRUE.equals(purchase.getInterstate()));
       refund.setCogsTotal(totals.cogsTotal());
       refund.setRoundOff(totals.roundOff());
       refund.setCustomerId(purchase.getCustomerId());
@@ -444,6 +457,7 @@ public class RefundService {
               .taxableRevenue(totals.taxableTotal())
               .outputCgst(totals.cgstTotal())
               .outputSgst(totals.sgstTotal())
+              .outputIgst(totals.igstTotal())
               .returnTotal(totals.returnTotal())
               .cogsAmount(totals.cogsTotal())
               .roundOff(totals.roundOff())
@@ -783,12 +797,24 @@ public class RefundService {
   }
 
   private RefundSummaryItemDto toRefundSummaryItemDto(RefundItem item) {
-    return new RefundSummaryItemDto(
-        item.getInventoryId(),
-        item.getName(),
-        item.getQuantity(),
-        item.getPriceToRetail(),
-        item.getItemRefundAmount());
+    RefundSummaryItemDto dto = new RefundSummaryItemDto();
+    dto.setInventoryId(item.getInventoryId());
+    dto.setName(item.getName());
+    dto.setQuantity(item.getQuantity());
+    dto.setPriceToRetail(item.getPriceToRetail());
+    dto.setItemRefundAmount(item.getItemRefundAmount());
+    dto.setMaximumRetailPrice(item.getMaximumRetailPrice());
+    dto.setSaleAdditionalDiscount(item.getSaleAdditionalDiscount());
+    dto.setSgst(item.getSgst());
+    dto.setCgst(item.getCgst());
+    dto.setSchemeType(item.getSchemeType() != null ? item.getSchemeType().name() : null);
+    dto.setSchemePayFor(item.getSchemePayFor());
+    dto.setSchemeFree(item.getSchemeFree());
+    dto.setSchemePercentage(item.getSchemePercentage());
+    dto.setTaxableValue(item.getTaxableValue());
+    dto.setCgstAmount(item.getCgstAmount());
+    dto.setSgstAmount(item.getSgstAmount());
+    return dto;
   }
 }
 

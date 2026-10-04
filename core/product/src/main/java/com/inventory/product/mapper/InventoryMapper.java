@@ -2,11 +2,15 @@ package com.inventory.product.mapper;
 
 import com.inventory.reminders.rest.dto.request.CreateReminderForInventoryRequest;
 import com.inventory.reminders.rest.dto.response.InventoryLowEventDto;
+import com.inventory.pricing.domain.model.Pricing;
 import com.inventory.product.domain.model.Inventory;
+import com.inventory.product.domain.model.VendorPurchaseInvoiceLine;
+import com.inventory.product.utils.PurchaseTaxBasis;
 import com.inventory.product.domain.model.UnitConversion;
 import com.inventory.product.rest.dto.request.CreateInventoryItemRequest;
 import com.inventory.product.rest.dto.request.CreateInventoryRequest;
 import com.inventory.product.rest.dto.response.*;
+import org.mapstruct.BeanMapping;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.ReportingPolicy;
@@ -22,6 +26,34 @@ public interface InventoryMapper {
   @Mapping(target = "vendorId", ignore = true)
   @Mapping(target = "lotId", ignore = true)
   CreateInventoryRequest toCreateInventoryRequest(CreateInventoryItemRequest source);
+
+  /** The supplier-invoice line stock-in records for an item; index and lot are set by the caller. */
+  @BeanMapping(ignoreByDefault = true)
+  @Mapping(target = "name", source = "name")
+  @Mapping(target = "barcode", source = "barcode")
+  @Mapping(target = "count", source = "count")
+  @Mapping(target = "costPrice", source = "costPrice")
+  @Mapping(target = "priceToRetail", source = "priceToRetail")
+  VendorPurchaseInvoiceLine toInvoiceLine(CreateInventoryItemRequest source);
+
+  /**
+   * The purchase side of the pricing stock-in writes for an item: cost, GST rates, purchase scheme
+   * and additional discount. Used to resolve an item's tax before it is stocked in.
+   */
+  @BeanMapping(ignoreByDefault = true)
+  @Mapping(target = "costPrice", source = "costPrice")
+  @Mapping(target = "priceToRetail", source = "priceToRetail")
+  @Mapping(target = "sgst", source = "sgst")
+  @Mapping(target = "cgst", source = "cgst")
+  @Mapping(target = "purchaseAdditionalDiscount", source = "purchaseAdditionalDiscount")
+  @Mapping(target = "purchaseScheme.schemeType", source = "purchaseSchemeType")
+  @Mapping(target = "purchaseScheme.schemePayFor", source = "purchaseSchemePayFor")
+  @Mapping(target = "purchaseScheme.schemeFree", source = "purchaseSchemeFree")
+  @Mapping(target = "purchaseScheme.schemePercentage", source = "purchaseSchemePercentage")
+  Pricing toPurchasePricing(CreateInventoryItemRequest source);
+
+  @Mapping(target = "tax", expression = "java(line.tax())")
+  PurchaseTaxPreviewLineDto toPreviewLine(PurchaseTaxBasis.Line line);
 
   default CreateInventoryRequest toCreateInventoryRequest(
       CreateInventoryItemRequest source, String vendorId, String lotId) {

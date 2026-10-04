@@ -36,5 +36,13 @@ public class BulkCreateInventoryResponse {
 
   /** Per-item failure messages when {@link #totalFailed} &gt; 0 (product name + reason). */
   private List<String> itemErrors;
+
+  /**
+   * Products whose GST rate disagrees with the rest of the shop's catalogue under the same HSN.
+   *
+   * <p>The one error class no total can reveal: an invoice priced at the wrong slab adds up
+   * perfectly against its own bill and is still wrong. Advisory; nothing is blocked.
+   */
+  private List<String> rateWarnings;
 }
 

@@ -1,5 +1,11 @@
 package com.inventory.product.service;
 
+import com.inventory.product.rest.dto.request.AmendVendorPurchaseInvoiceRequest;
+import com.inventory.product.validation.VendorPurchaseInvoiceValidator;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+import lombok.extern.slf4j.Slf4j;
+import java.time.Instant;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.user.domain.model.Vendor;
@@ -30,12 +36,96 @@ import java.util.regex.PatternSyntaxException;
 import java.util.stream.Collectors;
 
 @Service
+@Slf4j
 public class VendorPurchaseInvoiceService {
 
   @Autowired
   private VendorPurchaseInvoiceRepository vendorPurchaseInvoiceRepository;
 
   @Autowired private VendorRepository vendorRepository;
+
+  @Autowired private VendorPurchaseInvoiceValidator vendorPurchaseInvoiceValidator;
+
+  @Autowired private PurchaseTaxRecorder purchaseTaxRecorder;
+
+  @Autowired private InventoryService inventoryService;
+
+  /**
+   * Corrects a purchase invoice's header against the paper bill and re-resolves its tax.
+   *
+   * <p>This is the way out of a flagged invoice. Registration warns when the header does not
+   * reconcile, but until now there was nowhere to act on that: the goods were already in stock,
+   * so re-entering the bill would have doubled them, and the only remaining route was the
+   * database. An operator holding the paper can now put the figures right.
+   *
+   * <p>Only the header moves. The lines are what the stock was created from, and changing a
+   * quantity or a cost here would leave the invoice describing goods that were never received.
+   *
+   * <p>The previous header is kept, along with who changed it and why. A purchase invoice is the
+   * evidence behind an input credit; a figure that changes with no account of itself is worse
+   * than the wrong figure, which at least had a bill behind it.
+   */
+  @Transactional
+  public VendorPurchaseInvoiceDetailDto amendHeader(
+      String id, String shopId, String userId, AmendVendorPurchaseInvoiceRequest request) {
+
+    if (request == null) {
+      throw new ValidationException("Nothing to amend");
+    }
+    if (!StringUtils.hasText(request.getReason())) {
+      throw new ValidationException("A reason is required to amend an invoice");
+    }
+
+    VendorPurchaseInvoice invoice =
+        vendorPurchaseInvoiceRepository
+            .findById(id)
+            .filter(found -> shopId.equals(found.getShopId()))
+            .orElseThrow(() -> new ResourceNotFoundException("Purchase invoice not found: " + id));
+
+    VendorPurchaseInvoice.AmendedHeaderSnapshot before =
+        new VendorPurchaseInvoice.AmendedHeaderSnapshot(
+            invoice.getLineSubTotal(), invoice.getTaxTotal(), invoice.getShippingCharge(),
+            invoice.getOtherCharges(), invoice.getOverallDiscount(), invoice.getRoundOff(),
+            invoice.getInvoiceTotal(), invoice.getTaxTreatment());
+
+    // Absent means "leave it as it stands". The subtotal, tax and invoice total are not taken from
+    // the request: they are worked out again from the lines below.
+    if (request.getShippingCharge() != null) {
+      invoice.setShippingCharge(request.getShippingCharge());
+    }
+    if (request.getOtherCharges() != null) invoice.setOtherCharges(request.getOtherCharges());
+    if (request.getOverallDiscount() != null) {
+      invoice.setOverallDiscount(request.getOverallDiscount());
+    }
+    if (request.getRoundOff() != null) invoice.setRoundOff(request.getRoundOff());
+    if (request.getTaxTreatment() != null) invoice.setTaxTreatment(request.getTaxTreatment());
+
+    // The same shape check registration applies, so an amendment cannot introduce what it
+    // rejects.
+    vendorPurchaseInvoiceValidator.validateHeaderAmounts(
+        invoice.getShippingCharge(), invoice.getOtherCharges(), invoice.getOverallDiscount());
+
+    invoice.setPreviousHeader(before);
+    invoice.setAmendedAt(Instant.now());
+    invoice.setAmendedByUserId(userId);
+    invoice.setAmendmentReason(request.getReason().trim());
+
+    // The treatment, charges or discount may have changed, so the totals are worked out again:
+    // cleared here, then filled from the lines. Non-fatal, as at registration.
+    invoice.setLineSubTotal(null);
+    invoice.setTaxTotal(null);
+    invoice.setInvoiceTotal(null);
+    purchaseTaxRecorder.record(invoice);
+    // The journal carried the old header; reverse it and post the corrected one.
+    inventoryService.repostAccountingAfterAmend(invoice, shopId, userId, invoice.getAmendmentReason());
+    VendorPurchaseInvoice saved = vendorPurchaseInvoiceRepository.save(invoice);
+
+    log.info("Invoice {} (shop {}) amended by {}: {} -- now {} taxable, {} tax",
+        saved.getInvoiceNo(), shopId, userId, saved.getAmendmentReason(),
+        saved.getLineSubTotal(), saved.getTaxTotal());
+
+    return getById(saved.getId(), shopId);
+  }
 
   public VendorPurchaseInvoiceListResponse list(String shopId, int page, int size, String query) {
     if (query != null && !query.trim().isEmpty()) {
@@ -221,6 +311,10 @@ public class VendorPurchaseInvoiceService {
     dto.setCreatedAt(e.getCreatedAt());
     dto.setSynthetic(e.getSynthetic());
     dto.setLegacyLotId(e.getLegacyLotId());
+    dto.setTaxTreatment(e.getTaxTreatment() != null ? e.getTaxTreatment().name() : null);
+    dto.setAmendedAt(e.getAmendedAt());
+    dto.setAmendedByUserId(e.getAmendedByUserId());
+    dto.setAmendmentReason(e.getAmendmentReason());
     if (e.getLines() != null) {
       dto.setLines(
           e.getLines().stream().map(this::toLineDto).collect(Collectors.toList()));

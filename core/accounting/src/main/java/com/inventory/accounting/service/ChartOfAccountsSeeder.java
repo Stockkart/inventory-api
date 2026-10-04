@@ -36,7 +36,7 @@ public class ChartOfAccountsSeeder {
    * On {@link #seedShop(String)} we drop these for any shop that has no ledger activity against
    * them so legacy shops stop seeing dangling rows in the trial balance.
    */
-  private static final Set<String> RETIRED_CODES = Set.of(INPUT_IGST, OUTPUT_IGST);
+  private static final Set<String> RETIRED_CODES = Set.of();
 
   /** Templates for the canonical system accounts seeded on first call per shop. */
   private static final List<Template> TEMPLATES =
@@ -50,13 +50,16 @@ public class ChartOfAccountsSeeder {
           t(INVENTORY, "Inventory (Stock-in-Trade)", AccountType.ASSET, NormalBalance.DEBIT, null),
           t(INPUT_CGST, "Input CGST", AccountType.ASSET, NormalBalance.DEBIT, null),
           t(INPUT_SGST, "Input SGST", AccountType.ASSET, NormalBalance.DEBIT, null),
-          // IGST (interstate) accounts are intentionally not seeded — interstate posting will be
-          // wired in once invoices capture a place-of-supply marker. The constants live in
-          // SystemAccountCode so we can re-introduce these rows without a migration.
+          // Interstate supplies are taxed under IGST alone, and a sale now records which it was,
+          // so these are seeded again. They were retired while nothing could post to them; a
+          // shop that trades across a state border needs somewhere for that tax to sit, or the
+          // ledger states a liability under heads the return does not declare.
+          t(INPUT_IGST, "Input IGST", AccountType.ASSET, NormalBalance.DEBIT, null),
           // Liabilities
           t(SUNDRY_CREDITORS, "Sundry Creditors", AccountType.LIABILITY, NormalBalance.CREDIT, null),
           t(OUTPUT_CGST, "Output CGST", AccountType.LIABILITY, NormalBalance.CREDIT, null),
           t(OUTPUT_SGST, "Output SGST", AccountType.LIABILITY, NormalBalance.CREDIT, null),
+          t(OUTPUT_IGST, "Output IGST", AccountType.LIABILITY, NormalBalance.CREDIT, null),
           t(ROUND_OFF_PAYABLE, "Round-off Payable", AccountType.LIABILITY, NormalBalance.CREDIT, null),
           // Equity
           t(OWNERS_CAPITAL, "Owner's Capital", AccountType.EQUITY, NormalBalance.CREDIT, null),
