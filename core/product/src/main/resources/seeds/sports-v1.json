@@ -10,7 +10,7 @@
           "type": "string",
           "required": true,
           "storage": "core",
-          "showIn": ["registration", "scan-sell"],
+          "showIn": ["registration", "scan-sell", "basic"],
           "validation": { "minLength": 1, "maxLength": 255 }
         },
         {
@@ -29,7 +29,7 @@
           "type": "string",
           "required": true,
           "storage": "core",
-          "showIn": ["registration"],
+          "showIn": ["registration", "basic"],
           "validation": { "minLength": 1, "maxLength": 16 }
         },
         {
@@ -42,7 +42,7 @@
           "indexed": true,
           "searchable": true,
           "sortable": true,
-          "showIn": ["registration", "scan-sell"]
+          "showIn": ["registration", "scan-sell", "basic"]
         },
         {
           "key": "brand",
@@ -53,7 +53,7 @@
           "indexed": true,
           "searchable": true,
           "sortable": true,
-          "showIn": ["registration", "scan-sell"],
+          "showIn": ["registration", "scan-sell", "basic"],
           "validation": { "minLength": 1, "maxLength": 120 }
         },
         {
@@ -63,7 +63,7 @@
           "required": true,
           "storage": "extension",
           "indexed": true,
-          "showIn": ["registration", "scan-sell"],
+          "showIn": ["registration", "scan-sell", "basic"],
           "validation": { "minLength": 1, "maxLength": 120 }
         },
         {

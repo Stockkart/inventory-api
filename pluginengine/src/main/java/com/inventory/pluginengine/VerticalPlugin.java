@@ -1,6 +1,7 @@
 package com.inventory.pluginengine;
 
 import com.inventory.pluginengine.capabilities.VerticalUiContributor;
+import com.inventory.pluginengine.cards.CardSurfaceContributor;
 import com.inventory.pluginengine.cart.CartLineContributor;
 import com.inventory.pluginengine.cart.CheckoutCompletionHandler;
 import com.inventory.pluginengine.cart.QuotationCreateHandler;
@@ -52,6 +53,11 @@ public interface VerticalPlugin {
   }
 
   default Optional<VerticalPricingPolicy> getPricingPolicy() {
+    return Optional.empty();
+  }
+
+  /** Surfaces and default layouts this vertical contributes to configurable product cards. */
+  default Optional<CardSurfaceContributor> getCardSurfaceContributor() {
     return Optional.empty();
   }
 }
