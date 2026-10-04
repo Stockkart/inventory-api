@@ -50,6 +50,7 @@ public class GenerateCreditNoteRequest {
   private Boolean showHsn;
   private Boolean showMfg;
   private Boolean showBatch;
+  private Boolean showExpiry;
   private Boolean showSignatures;
 
   private String shopName;
@@ -80,6 +81,8 @@ public class GenerateCreditNoteRequest {
   private BigDecimal igstAmount;
   private boolean interstate;
   private BigDecimal sgstPercent;
+  /** The rate IGST was charged at on an interstate note. */
+  private BigDecimal igstPercent;
   private BigDecimal cgstPercent;
   private BigDecimal taxTotal;
   private BigDecimal roundOff;
