@@ -82,8 +82,8 @@ Environments (Settings → Environments):
 | Environment | Reviewers | Deployment branches | Secrets | Variables |
 |---|---|---|---|---|
 | `staging` | none | any | `RENDER_API_KEY` | `RENDER_SERVICE_ID`, `STAGING_API_URL` |
-| `production` | none | `main` only | `DIGITALOCEAN_TOKEN` | `DO_APP_ID`, `PROD_API_URL` |
-| `production-manual` | team `stockkart-release-approvers` | any | `DIGITALOCEAN_TOKEN` | `DO_APP_ID`, `PROD_API_URL` |
+| `production` | none | `main` only | `DIGITALOCEAN_TOKEN` | `DO_APP_ID` (bare UUID, no `?i=…`), `PROD_API_URL` |
+| `production-manual` | team `stockkart-release-approvers` | any | `DIGITALOCEAN_TOKEN` | `DO_APP_ID` (bare UUID, no `?i=…`), `PROD_API_URL` |
 
 Repository secrets: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`.
 Optional repository variable: `IMAGE_REPOSITORY` (default `docker.io/myntrack/inventory-backend`).
