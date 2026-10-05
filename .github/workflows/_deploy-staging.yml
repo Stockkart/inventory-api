@@ -28,11 +28,11 @@ jobs:
     environment:
       name: staging
       url: ${{ vars.STAGING_API_URL }}
-    # One staging deploy at a time; newer queued runs replace older queued ones,
-    # a running deploy is never interrupted.
+    # Newest wins on staging: a newer push cancels an older staging deploy job
+    # (and render-deploy.sh cancels the in-progress Render deploy itself).
     concurrency:
       group: api-staging
-      cancel-in-progress: false
+      cancel-in-progress: true
     outputs:
       deploy_url: ${{ steps.render.outputs.deploy_url }}
       api_url: ${{ vars.STAGING_API_URL }}

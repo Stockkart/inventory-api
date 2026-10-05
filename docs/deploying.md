@@ -32,8 +32,11 @@ Add the label `deploy:staging` to the pull request. The PR's head commit is buil
 and deployed to staging; a comment on the PR shows the sha and links, and is
 updated on every push while the label stays on. Remove the label to stop.
 
-Staging is shared: the latest deploy wins, and the next merge to `main` takes it
-back. Pull requests from forks cannot be deployed (fork workflows get no secrets).
+Staging is shared and **newest wins**: a newer push cancels an older staging deploy
+job and the in-progress Render deploy, then deploys itself (Render keeps the old
+instance serving until the new one is healthy, so nothing goes down). The
+superseded run shows as cancelled. The next merge to `main` takes staging back.
+Pull requests from forks cannot be deployed (fork workflows get no secrets).
 
 Branch deploys never reach production.
 
