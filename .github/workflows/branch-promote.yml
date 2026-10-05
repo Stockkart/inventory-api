@@ -87,6 +87,32 @@ jobs:
             echo "A reviewer of the \`production-manual\` environment must approve the next job."
           } >> "$GITHUB_STEP_SUMMARY"
 
+  request-approval:
+    name: Ask for approval on the PR
+    needs: preflight
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comment with a direct link to the review button
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        env:
+          SHA: ${{ github.event.pull_request.head.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        with:
+          script: |
+            const { SHA, RUN_URL } = process.env;
+            const { owner, repo } = context.repo;
+            const body = [
+              '<!-- production-approval -->',
+              `### 🟡 Production deploy of \`${SHA.slice(0, 12)}\` is waiting for approval`,
+              '',
+              `Staging is serving this commit. A reviewer of the \`production-manual\` environment must approve:`,
+              '',
+              `➡️ **[Review deployments](${RUN_URL})** (button at the top of the run page)`,
+              '',
+              `Requested by @${context.actor} by adding the \`deploy:production\` label.`,
+            ].join('\n');
+            await github.rest.issues.createComment({ owner, repo, issue_number: context.payload.pull_request.number, body });
+
   deploy-production:
     name: Production (approval required)
     needs: preflight
