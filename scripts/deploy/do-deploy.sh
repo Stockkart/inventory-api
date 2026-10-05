@@ -32,6 +32,11 @@ DO_IMAGE_REPOSITORY=${DO_IMAGE_REPOSITORY:-inventory-backend}
 DO_TIMEOUT_MIN=${DO_TIMEOUT_MIN:-15}
 API=${DO_API_BASE:-https://api.digitalocean.com/v2}
 
+# The app id is a UUID. People copy it from the browser URL, which carries a
+# "?i=..." suffix; that would silently turn the deployment URL into a query string.
+[[ "$DO_APP_ID" =~ ^[0-9a-fA-F-]{36}$ ]] \
+  || die "DO_APP_ID must be the bare app UUID (got '${DO_APP_ID}'); copy it from the app URL without any '?...' suffix"
+
 do_api() {
   http_json "$@" \
     --header "Authorization: Bearer ${DIGITALOCEAN_TOKEN}" \
@@ -103,7 +108,11 @@ check_deployment() {
     log "DigitalOcean: status check returned HTTP ${HTTP_STATUS}, retrying"
     return 1
   fi
-  phase=$(jq -r '.deployment.phase // "UNKNOWN"' <<<"$HTTP_BODY")
+  phase=$(jq -r '.deployment.phase // empty' <<<"$HTTP_BODY")
+  if [[ -z "$phase" ]]; then
+    LAST_ERROR="status endpoint returned no deployment object (first 200 chars: ${HTTP_BODY:0:200})"
+    return 2
+  fi
   if [[ "$phase" != "$LAST_PHASE" ]]; then
     log "DigitalOcean: deployment phase = ${phase}"
     LAST_PHASE=$phase
@@ -122,7 +131,7 @@ rc=0
 poll 15 "$DO_TIMEOUT_MIN" check_deployment || rc=$?
 case $rc in
   0) log "DigitalOcean: deployment ${DEPLOYMENT_ID} is ACTIVE" ;;
-  2) die "DigitalOcean deployment ended in '${LAST_PHASE}'${LAST_ERROR:+ — ${LAST_ERROR}} — ${DEPLOYMENT_URL}" ;;
+  2) die "DigitalOcean deployment ${DEPLOYMENT_ID} ended in '${LAST_PHASE:-no phase}'${LAST_ERROR:+ — ${LAST_ERROR}} — ${DEPLOYMENT_URL}" ;;
   *) die "DigitalOcean deployment did not become ACTIVE within ${DO_TIMEOUT_MIN} minutes (last phase '${LAST_PHASE}') — ${DEPLOYMENT_URL}" ;;
 esac
 
