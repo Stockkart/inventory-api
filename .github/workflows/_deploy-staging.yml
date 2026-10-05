@@ -45,6 +45,17 @@ jobs:
       - name: Checkout (deploy scripts)
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
+      - name: Check environment configuration
+        run: |
+          missing=()
+          [[ -n "$RENDER_API_KEY" ]]    || missing+=("secret RENDER_API_KEY")
+          [[ -n "$RENDER_SERVICE_ID" ]] || missing+=("variable RENDER_SERVICE_ID")
+          [[ -n "$STAGING_API_URL" ]]   || missing+=("variable STAGING_API_URL")
+          if ((${#missing[@]})); then
+            echo "::error::GitHub environment 'staging' is missing: ${missing[*]}. Add them under Settings → Environments → staging."
+            exit 1
+          fi
+
       - name: Deploy image to Render
         id: render
         run: scripts/deploy/render-deploy.sh "${{ inputs.sha }}"

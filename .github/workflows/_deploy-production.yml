@@ -59,6 +59,17 @@ jobs:
           echo "::error::environment 'production' is reserved for pushes to main (got ${{ github.ref }}). Use promote-to-production."
           exit 1
 
+      - name: Check environment configuration
+        run: |
+          missing=()
+          [[ -n "$DIGITALOCEAN_TOKEN" ]] || missing+=("secret DIGITALOCEAN_TOKEN")
+          [[ -n "$DO_APP_ID" ]]          || missing+=("variable DO_APP_ID")
+          [[ -n "$PROD_API_URL" ]]       || missing+=("variable PROD_API_URL")
+          if ((${#missing[@]})); then
+            echo "::error::GitHub environment '${{ inputs.environment }}' is missing: ${missing[*]}. Add them under Settings → Environments → ${{ inputs.environment }}."
+            exit 1
+          fi
+
       - name: Update image tag on DigitalOcean and wait for rollout
         id: do
         run: scripts/deploy/do-deploy.sh "${{ inputs.sha }}"
