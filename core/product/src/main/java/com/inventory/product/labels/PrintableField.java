@@ -1,6 +1,7 @@
 package com.inventory.product.labels;
 
 import com.inventory.product.domain.model.enums.ShopType;
+import com.inventory.product.search.SearchSpec;
 import java.util.EnumSet;
 import java.util.Set;
 import org.springframework.util.StringUtils;
@@ -28,6 +29,8 @@ import org.springframework.util.StringUtils;
  * @param itemPath dot path into the inventory summary DTO the frontend reads a card value from
  *     (e.g. {@code maximumRetailPrice}, {@code verticalFields.brand}); required when {@code usages}
  *     contains {@link FieldUsage#CARD}, {@code null} otherwise
+ * @param searchSpec how the field is matched, faceted and sorted in advanced search; required when
+ *     {@code usages} contains {@link FieldUsage#SEARCH}, {@code null} otherwise
  */
 public record PrintableField(
     String fieldKey,
@@ -38,7 +41,8 @@ public record PrintableField(
     String schemaApiKey,
     Set<FieldUsage> usages,
     Sensitivity sensitivity,
-    String itemPath) {
+    String itemPath,
+    SearchSpec searchSpec) {
 
   /** Usages applied when a caller does not say otherwise. */
   public static final Set<FieldUsage> DEFAULT_USAGES = Set.of(FieldUsage.LABEL, FieldUsage.CARD);
@@ -53,6 +57,34 @@ public record PrintableField(
       throw new IllegalArgumentException(
           "Field " + fieldKey + " is usable on cards and therefore needs an itemPath");
     }
+    if (usages.contains(FieldUsage.SEARCH) != (searchSpec != null)) {
+      throw new IllegalArgumentException(
+          "Field " + fieldKey + " must carry a searchSpec exactly when it is usable in search");
+    }
+  }
+
+  /** Nine-argument constructor without search metadata (not searchable). */
+  public PrintableField(
+      String fieldKey,
+      String label,
+      SourceGroup sourceGroup,
+      ValueType valueType,
+      Set<ShopType> availableForShopTypes,
+      String schemaApiKey,
+      Set<FieldUsage> usages,
+      Sensitivity sensitivity,
+      String itemPath) {
+    this(
+        fieldKey,
+        label,
+        sourceGroup,
+        valueType,
+        availableForShopTypes,
+        schemaApiKey,
+        usages,
+        sensitivity,
+        itemPath,
+        null);
   }
 
   /**
@@ -133,43 +165,37 @@ public record PrintableField(
   /** Copy of this field with a different item path. */
   public PrintableField withItemPath(String newItemPath) {
     return new PrintableField(
-        fieldKey,
-        label,
-        sourceGroup,
-        valueType,
-        availableForShopTypes,
-        schemaApiKey,
-        usages,
-        sensitivity,
-        newItemPath);
+        fieldKey, label, sourceGroup, valueType, availableForShopTypes, schemaApiKey, usages,
+        sensitivity, newItemPath, searchSpec);
   }
 
   /** Copy of this field with a different sensitivity. */
   public PrintableField withSensitivity(Sensitivity newSensitivity) {
     return new PrintableField(
-        fieldKey,
-        label,
-        sourceGroup,
-        valueType,
-        availableForShopTypes,
-        schemaApiKey,
-        usages,
-        newSensitivity,
-        itemPath);
+        fieldKey, label, sourceGroup, valueType, availableForShopTypes, schemaApiKey, usages,
+        newSensitivity, itemPath, searchSpec);
   }
 
   /** Copy of this field with different usages (and, for card use, item path). */
   public PrintableField withUsages(Set<FieldUsage> newUsages, String newItemPath) {
+    Set<FieldUsage> next = newUsages == null ? Set.of() : newUsages;
     return new PrintableField(
-        fieldKey,
-        label,
-        sourceGroup,
-        valueType,
-        availableForShopTypes,
-        schemaApiKey,
-        newUsages,
-        sensitivity,
-        newItemPath);
+        fieldKey, label, sourceGroup, valueType, availableForShopTypes, schemaApiKey, next,
+        sensitivity, newItemPath, next.contains(FieldUsage.SEARCH) ? searchSpec : null);
+  }
+
+  /** Copy of this field that is also usable in search, with the given metadata. */
+  public PrintableField withSearch(SearchSpec spec) {
+    Set<FieldUsage> next = EnumSet.copyOf(usages);
+    next.add(FieldUsage.SEARCH);
+    return new PrintableField(
+        fieldKey, label, sourceGroup, valueType, availableForShopTypes, schemaApiKey, next,
+        sensitivity, itemPath, spec);
+  }
+
+  /** Copy of this field with its search metadata replaced (no-op when not searchable). */
+  public PrintableField withSearchSpec(SearchSpec spec) {
+    return searchSpec == null ? this : withSearch(spec);
   }
 
   /** True when a shop of the given type may print this field on a sticker. */

@@ -32,7 +32,10 @@ import java.time.Instant;
     @CompoundIndex(
         name = "shop_barcode_idx",
         def = "{'shopId': 1, 'barcode': 1}",
-        sparse = true)
+        sparse = true),
+    /** Advanced search (R4.7): company filter / facet and HSN prefix match. */
+    @CompoundIndex(name = "shop_company_idx", def = "{'shopId': 1, 'companyName': 1}"),
+    @CompoundIndex(name = "shop_hsn_idx", def = "{'shopId': 1, 'hsn': 1}", sparse = true)
 })
 public class Product {
 

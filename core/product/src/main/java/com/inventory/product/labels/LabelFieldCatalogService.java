@@ -8,6 +8,8 @@ import com.inventory.pricing.domain.repository.PricingRepository;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.enums.ShopType;
 import com.inventory.product.domain.repository.ShopRepository;
+import com.inventory.product.search.SearchSource;
+import com.inventory.product.search.SearchSpec;
 import com.inventory.product.service.vertical.SchemaLoader;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -47,6 +49,12 @@ public class LabelFieldCatalogService {
 
   /** Card values of vertical fields live in the summary DTO's {@code verticalFields} map. */
   static final String VERTICAL_ITEM_PATH_PREFIX = "verticalFields.";
+
+  /** In the search pipeline the joined extension document is unwound under this prefix. */
+  static final String SEARCH_EXTENSION_PATH_PREFIX = "ext.";
+
+  /** Schema storage value meaning "lives in the extension collection". */
+  static final String EXTENSION_STORAGE = "extension";
 
   private static final Set<ShopType> ALL_SHOP_TYPES =
       Set.of(ShopType.RETAILER, ShopType.DISTRIBUTOR, ShopType.WHOLESALER);
@@ -90,10 +98,11 @@ public class LabelFieldCatalogService {
     ordered.addAll(LabelLayoutDefaults.pricingFields());
     ordered.addAll(namedRateFields(shopId));
     ordered.addAll(LabelLayoutDefaults.cardPricingFields());
-    ordered.addAll(LabelLayoutDefaults.lotFields());
-    ordered.addAll(LabelLayoutDefaults.cardLotFields());
-
     VerticalSchemaResult vertical = loadVerticalSchema(shop);
+    ordered.addAll(relocateShadowedLotFields(LabelLayoutDefaults.lotFields(), vertical));
+    ordered.addAll(LabelLayoutDefaults.cardLotFields());
+    ordered.addAll(LabelLayoutDefaults.searchLotFields());
+
     ordered.addAll(verticalFields(vertical.inventoryFields()));
     ordered.addAll(verticalFields(vertical.productFields()));
 
@@ -212,7 +221,7 @@ public class LabelFieldCatalogService {
     if (label.length() > MAX_LABEL_LENGTH) {
       label = label.substring(0, MAX_LABEL_LENGTH);
     }
-    return Optional.of(
+    PrintableField printable =
         new PrintableField(
             LabelFieldKeys.verticalKey(key),
             label,
@@ -222,7 +231,117 @@ public class LabelFieldCatalogService {
             apiKey,
             PrintableField.DEFAULT_USAGES,
             Sensitivity.PUBLIC,
-            VERTICAL_ITEM_PATH_PREFIX + apiKey));
+            VERTICAL_ITEM_PATH_PREFIX + apiKey);
+    Optional<SearchSpec> search = verticalSearchSpec(field, apiKey);
+    return Optional.of(search.map(printable::withSearch).orElse(printable));
+  }
+
+  // ---- search metadata (advanced-product-search R1.3, R1.5) ----------------------------------
+
+  /**
+   * A schema field marked {@code searchable} becomes a search field: enums are facetable, {@code
+   * sortable} follows the schema, the Mongo path points into the joined extension document (or the
+   * core lot when the schema stores it on the core document).
+   */
+  private static Optional<SearchSpec> verticalSearchSpec(VerticalSchemaField field, String apiKey) {
+    if (!Boolean.TRUE.equals(field.getSearchable())) {
+      return Optional.empty();
+    }
+    boolean extension = isExtensionStorage(field);
+    SearchSource source = extension ? SearchSource.EXTENSION : SearchSource.LOT;
+    String path = extension ? SEARCH_EXTENSION_PATH_PREFIX + apiKey : apiKey;
+    boolean sortable = Boolean.TRUE.equals(field.getSortable());
+    String type = field.getType() == null ? "" : field.getType().trim().toLowerCase();
+    return switch (type) {
+      case "enum" -> {
+        List<SearchSpec.EnumValue> values =
+            field.getValues() == null
+                ? List.of()
+                : field.getValues().stream().filter(StringUtils::hasText).map(SearchSpec.EnumValue::of).toList();
+        yield values.isEmpty()
+            ? Optional.of(SearchSpec.text(source, path, true, sortable))
+            : Optional.of(SearchSpec.enumeration(source, path, sortable, values));
+      }
+      case "number", "money", "currency", "percent", "percentage" ->
+          Optional.of(SearchSpec.number(source, path, sortable));
+      case "date" -> Optional.of(SearchSpec.date(source, path, sortable));
+      default -> Optional.of(SearchSpec.text(source, path, false, sortable));
+    };
+  }
+
+  /**
+   * Core lot fields that the vertical stores in its extension document (pharmacy batch and expiry)
+   * are matched on the extension path, with the schema's own {@code searchable}/{@code sortable}
+   * flags. The field keeps its core key so saved card/label layouts are unaffected.
+   */
+  private static List<PrintableField> relocateShadowedLotFields(
+      List<PrintableField> lotFields, VerticalSchemaResult vertical) {
+    if (!vertical.loaded()) {
+      return lotFields;
+    }
+    Map<String, VerticalSchemaField> extensionByApiKey = new LinkedHashMap<>();
+    for (VerticalSchemaField f : vertical.inventoryFields()) {
+      String apiKey = StringUtils.hasText(f.getApiKey()) ? f.getApiKey() : f.getKey();
+      if (StringUtils.hasText(apiKey) && isExtensionStorage(f)) {
+        extensionByApiKey.put(apiKey, f);
+      }
+    }
+    if (extensionByApiKey.isEmpty()) {
+      return lotFields;
+    }
+    List<PrintableField> out = new ArrayList<>(lotFields.size());
+    for (PrintableField field : lotFields) {
+      VerticalSchemaField shadow = extensionByApiKey.get(field.itemPath());
+      if (shadow == null || field.searchSpec() == null) {
+        out.add(field);
+        continue;
+      }
+      SearchSpec relocated =
+          field.searchSpec()
+              .relocate(SearchSource.EXTENSION, SEARCH_EXTENSION_PATH_PREFIX + field.itemPath())
+              .withSortable(Boolean.TRUE.equals(shadow.getSortable()) || field.searchSpec().sortable());
+      // A shadowed field the schema does not mark searchable is not offered in search.
+      out.add(
+          Boolean.TRUE.equals(shadow.getSearchable())
+              ? field.withSearchSpec(relocated)
+              : field.withUsages(withoutSearch(field.usages()), field.itemPath()));
+    }
+    return out;
+  }
+
+  private static boolean isExtensionStorage(VerticalSchemaField field) {
+    return field.getStorage() != null && EXTENSION_STORAGE.equalsIgnoreCase(field.getStorage().trim());
+  }
+
+  private static Set<FieldUsage> withoutSearch(Set<FieldUsage> usages) {
+    Set<FieldUsage> out = new java.util.HashSet<>(usages);
+    out.remove(FieldUsage.SEARCH);
+    return out;
+  }
+
+  /** Default sort for search: the schema's first default sort key when it names a catalog field. */
+  public static Optional<String> schemaDefaultSort(VerticalSchema schema, FieldCatalog catalog) {
+    if (schema == null || schema.getEntities() == null) {
+      return Optional.empty();
+    }
+    VerticalEntitySchema inventory = schema.getEntities().get(INVENTORY_ENTITY);
+    if (inventory == null || inventory.getSearch() == null || inventory.getSearch().getDefaultSort() == null) {
+      return Optional.empty();
+    }
+    for (var sortKey : inventory.getSearch().getDefaultSort()) {
+      if (sortKey == null || !StringUtils.hasText(sortKey.getField())) {
+        continue;
+      }
+      String key = sortKey.getField().trim();
+      Optional<PrintableField> match =
+          catalog.findForUsage(key, FieldUsage.SEARCH)
+              .or(() -> catalog.findForUsage(LabelFieldKeys.verticalKey(key), FieldUsage.SEARCH));
+      if (match.isPresent() && match.get().searchSpec().sortable()) {
+        String dir = "desc".equalsIgnoreCase(sortKey.getDirection()) ? "desc" : "asc";
+        return Optional.of(match.get().fieldKey() + ":" + dir);
+      }
+    }
+    return Optional.empty();
   }
 
   // ---- helpers -------------------------------------------------------------------------------
