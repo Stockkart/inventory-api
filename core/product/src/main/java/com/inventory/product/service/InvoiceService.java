@@ -400,19 +400,26 @@ public class InvoiceService {
     request.setCgstAmount(purchase.getCgstAmount() != null ? purchase.getCgstAmount() : BigDecimal.ZERO);
     request.setIgstAmount(purchase.getIgstAmount() != null ? purchase.getIgstAmount() : BigDecimal.ZERO);
     request.setTaxTotal(purchase.getTaxTotal() != null ? purchase.getTaxTotal() : BigDecimal.ZERO);
+    // Whether the sale crossed a state border was decided at checkout and stored on it; every
+    // template reads this one flag rather than inferring it from the amounts.
+    request.setInterstate(Boolean.TRUE.equals(purchase.getInterstate()));
     // The footer is worked from the lines, the way GSTR-1 reads the same sale, rather than
     // copied from the header. Bills saved before tax was taken out of MRP carry a header that
-    // states no tax on those lines and a subtotal that still holds it; the lines do not.
+    // states no tax on those lines and a subtotal that still holds it; the lines do not. On an
+    // interstate sale each rate's tax is IGST.
     SaleTaxBreakdown.of(purchase).ifPresent(summary -> {
       request.setSubTotal(summary.getSubTotal());
       request.setSaleAdditionalDiscountTotal(summary.getAdditionalDiscount());
       request.setTaxRateRows(summary.getRates().stream()
           .map(row -> new InvoiceTaxRateRow(row.getCgstPercent(), row.getSgstPercent(),
-              row.getTaxableValue(), row.getCgstAmount(), row.getSgstAmount()))
+              row.getTaxableValue(), row.getCgstAmount(), row.getSgstAmount(), row.getIgstAmount(),
+              row.getCgstPercent().add(row.getSgstPercent())))
           .toList());
       request.setSgstAmount(summary.getSgstTotal());
       request.setCgstAmount(summary.getCgstTotal());
-      request.setTaxTotal(summary.getSgstTotal().add(summary.getCgstTotal()));
+      request.setIgstAmount(summary.getIgstTotal());
+      request.setTaxTotal(
+          summary.getSgstTotal().add(summary.getCgstTotal()).add(summary.getIgstTotal()));
     });
 
     if (!invoiceItems.isEmpty()) {

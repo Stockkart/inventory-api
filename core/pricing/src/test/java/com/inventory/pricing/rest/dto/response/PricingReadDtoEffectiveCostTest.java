@@ -88,4 +88,21 @@ class PricingReadDtoEffectiveCostTest {
   void returnsNullWhenThereIsNeitherACostNorAStoredFigure() {
     assertNull(dto(null, null, "10", null).resolveEffectiveCostPrice());
   }
+
+  /**
+   * A lot off a tax-inclusive bill derives its landed cost before GST, whatever was stored before
+   * the flag was honoured (75.24 here, the scheme alone).
+   */
+  @Test
+  void inclusiveRecordDerivesItsCostBeforeGst() {
+    SchemeDto scheme = new SchemeDto();
+    scheme.setSchemeType("PERCENTAGE");
+    scheme.setSchemePercentage(bd("24"));
+    PricingReadDto d = dto("99", "75.2400", null, scheme);
+    d.setSgst("2.5");
+    d.setCgst("2.5");
+    d.setCostPriceIncludesTax(Boolean.TRUE);
+
+    assertEquals(0, bd("71.6571").compareTo(d.resolveEffectiveCostPrice()));
+  }
 }

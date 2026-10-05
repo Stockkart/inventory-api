@@ -37,6 +37,7 @@ public class ProductController {
   @Autowired
   private InventoryService inventoryService;
 
+
   /** Typeahead for registration: suggest existing catalog products for this shop. */
   @GetMapping("/suggest")
   public ResponseEntity<ApiResponse<List<ProductSuggestionDto>>> suggest(

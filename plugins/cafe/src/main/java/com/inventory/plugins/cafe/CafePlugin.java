@@ -6,6 +6,7 @@ import com.inventory.pluginengine.InventorySearchProvider;
 import com.inventory.pluginengine.InventoryVerticalValidator;
 import com.inventory.pluginengine.SchemaDrivenInventoryValidator;
 import com.inventory.pluginengine.capabilities.VerticalUiContributor;
+import com.inventory.pluginengine.cards.CardSurfaceContributor;
 import com.inventory.pluginengine.cart.CartLineContributor;
 import com.inventory.pluginengine.cart.CheckoutCompletionHandler;
 import com.inventory.pluginengine.cart.QuotationCreateHandler;
@@ -29,6 +30,7 @@ public class CafePlugin extends ConfiguredVerticalPlugin {
   private final CafeQuotationCreateHandler quotationCreateHandler;
   private final CafePricingPolicy cafePricingPolicy;
   private final CafeKotAdapter kotAdapter;
+  private final CafeCardSurfaceContributor cardSurfaceContributor = new CafeCardSurfaceContributor();
 
   public CafePlugin(
       CafeVerticalProperties properties,
@@ -102,5 +104,10 @@ public class CafePlugin extends ConfiguredVerticalPlugin {
   @Override
   public Optional<CafeKotPort> getCafeKotPort() {
     return Optional.of(kotAdapter);
+  }
+
+  @Override
+  public Optional<CardSurfaceContributor> getCardSurfaceContributor() {
+    return Optional.of(cardSurfaceContributor);
   }
 }

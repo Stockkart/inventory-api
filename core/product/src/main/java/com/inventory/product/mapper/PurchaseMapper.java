@@ -1,5 +1,6 @@
 package com.inventory.product.mapper;
 
+import com.inventory.common.util.GstMath;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.Purchase;
@@ -442,20 +443,12 @@ public abstract class PurchaseMapper {
     
     BigDecimal taxMultiplier = BigDecimal.ONE;
     if (finalCgst != null && !finalCgst.trim().isEmpty()) {
-      try {
-        BigDecimal cgstRate = new BigDecimal(finalCgst.trim()).divide(BigDecimal.valueOf(100), 4, java.math.RoundingMode.HALF_UP);
-        taxMultiplier = taxMultiplier.add(cgstRate);
-      } catch (NumberFormatException e) {
-        // Invalid CGST rate, ignore
-      }
+      BigDecimal cgstRate = GstMath.parseGstRate(finalCgst).divide(BigDecimal.valueOf(100), 4, java.math.RoundingMode.HALF_UP);
+      taxMultiplier = taxMultiplier.add(cgstRate);
     }
     if (finalSgst != null && !finalSgst.trim().isEmpty()) {
-      try {
-        BigDecimal sgstRate = new BigDecimal(finalSgst.trim()).divide(BigDecimal.valueOf(100), 4, java.math.RoundingMode.HALF_UP);
-        taxMultiplier = taxMultiplier.add(sgstRate);
-      } catch (NumberFormatException e) {
-        // Invalid SGST rate, ignore
-      }
+      BigDecimal sgstRate = GstMath.parseGstRate(finalSgst).divide(BigDecimal.valueOf(100), 4, java.math.RoundingMode.HALF_UP);
+      taxMultiplier = taxMultiplier.add(sgstRate);
     }
     
     BigDecimal totalAmount = totalDiscountedAmount.multiply(taxMultiplier);

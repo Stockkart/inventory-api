@@ -36,9 +36,11 @@ class InvoiceTextRendererTaxTest {
     GenerateInvoiceRequest request = taxBill();
     request.setTaxRateRows(List.of(
         new InvoiceTaxRateRow(new BigDecimal("2.5"), new BigDecimal("2.5"),
-            new BigDecimal("298.62"), new BigDecimal("7.47"), new BigDecimal("7.46")),
+            new BigDecimal("298.62"), new BigDecimal("7.47"), new BigDecimal("7.46"),
+            BigDecimal.ZERO, BigDecimal.ZERO),
         new InvoiceTaxRateRow(new BigDecimal("9"), new BigDecimal("9"),
-            new BigDecimal("66.51"), new BigDecimal("5.99"), new BigDecimal("5.98"))));
+            new BigDecimal("66.51"), new BigDecimal("5.99"), new BigDecimal("5.98"),
+            BigDecimal.ZERO, BigDecimal.ZERO)));
     request.setSgstAmount(new BigDecimal("13.44"));
     request.setCgstAmount(new BigDecimal("13.46"));
 
@@ -91,5 +93,27 @@ class InvoiceTextRendererTaxTest {
     assertTrue(text.contains("Less Roundoff"), text);
     assertTrue(text.contains("0.40"), text);
     assertFalse(text.contains("-0.40"), text);
+  }
+
+  @Test
+  void interstateRowsPrintIgstPerRateAndNoLocalHeads() {
+    GenerateInvoiceRequest request = taxBill();
+    request.setInterstate(true);
+    request.setTaxRateRows(List.of(
+        new InvoiceTaxRateRow(new BigDecimal("2.5"), new BigDecimal("2.5"),
+            new BigDecimal("298.62"), BigDecimal.ZERO, BigDecimal.ZERO,
+            new BigDecimal("14.93"), new BigDecimal("5")),
+        new InvoiceTaxRateRow(new BigDecimal("9"), new BigDecimal("9"),
+            new BigDecimal("66.51"), BigDecimal.ZERO, BigDecimal.ZERO,
+            new BigDecimal("11.97"), new BigDecimal("18"))));
+    request.setIgstAmount(new BigDecimal("26.90"));
+
+    String text = renderer.render(request);
+
+    assertTrue(text.contains("Add IGST 5 %"), text);
+    assertTrue(text.contains("Add IGST 18 %"), text);
+    assertTrue(text.contains("GST=298.62*5%=14.93IGST."), text);
+    assertFalse(text.contains("Add SGST"), text);
+    assertFalse(text.contains("26.90"), text);
   }
 }

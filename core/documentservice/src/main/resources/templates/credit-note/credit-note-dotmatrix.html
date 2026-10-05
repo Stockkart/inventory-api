@@ -130,7 +130,7 @@
         <tr th:if="${showTaxDetails}">
           <!-- Named, because a customer or supplier reading this needs to know which head the
                credit reverses -- an interstate note reverses IGST. -->
-          <td th:text="${anyIgst} ? 'IGST' : 'Tax'">Tax</td>
+          <td th:text="${interstate or anyIgst} ? 'IGST' : 'Tax'">Tax</td>
           <td class="right" th:text="${taxTotal}">0</td>
         </tr>
         <tr>

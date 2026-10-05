@@ -140,6 +140,7 @@ public class TemplateInvoicePreviewRenderer implements InvoicePreviewRenderer {
     context.setVariable("sgstPercent", request.getSgstPercent() != null ? request.getSgstPercent() : BigDecimal.valueOf(2.5));
     context.setVariable("igstAmount",
         request.getIgstAmount() != null ? request.getIgstAmount() : BigDecimal.ZERO);
+    context.setVariable("interstate", request.isInterstate());
     context.setVariable("igstPercent",
         request.getIgstPercent() != null ? request.getIgstPercent() : BigDecimal.ZERO);
     context.setVariable("cgstPercent", request.getCgstPercent() != null ? request.getCgstPercent() : BigDecimal.valueOf(2.5));

@@ -632,6 +632,11 @@ public class InvoiceTextRenderer {
       List<InvoiceTaxRateRow> rows = taxRateRows(r);
       if (!rows.isEmpty()) {
         for (InvoiceTaxRateRow row : rows) {
+          // An interstate row carries its tax once, as IGST at the combined rate.
+          if (r.isInterstate() || isPositive(row.getIgstAmount())) {
+            out.add(taxTotalRow(taxLabel("Add IGST", row.getIgstPercent()), row.getIgstAmount()));
+            continue;
+          }
           out.add(taxTotalRow(taxLabel("Add SGST", row.getSgstPercent()), row.getSgstAmount()));
           out.add(taxTotalRow(taxLabel("Add CGST", row.getCgstPercent()), row.getCgstAmount()));
         }
@@ -644,8 +649,8 @@ public class InvoiceTextRenderer {
         }
       }
       // An interstate bill carries its whole tax as IGST, with nothing under SGST or CGST; left
-      // out, the bill printed no tax at all.
-      if (isPositive(r.getIgstAmount())) {
+      // out, the bill printed no tax at all. With per-rate rows the IGST was printed above.
+      if (rows.isEmpty() && isPositive(r.getIgstAmount())) {
         out.add(taxTotalRow(taxLabel("Add IGST", r.getIgstPercent()), r.getIgstAmount()));
       }
     }
@@ -709,6 +714,11 @@ public class InvoiceTextRenderer {
     List<InvoiceTaxRateRow> rows = taxRateRows(r);
     if (!rows.isEmpty()) {
       for (InvoiceTaxRateRow row : rows) {
+        if (r.isInterstate() || isPositive(row.getIgstAmount())) {
+          out.add("GST=" + money(row.getTaxableValue())
+              + "*" + quantity(row.getIgstPercent()) + "%=" + money(row.getIgstAmount()) + "IGST.");
+          continue;
+        }
         out.add("GST=" + money(row.getTaxableValue())
             + "*" + quantity(row.getSgstPercent()) + "*" + quantity(row.getCgstPercent()) + "%="
             + money(row.getSgstAmount()) + "SGST+" + money(row.getCgstAmount()) + "CGST.");

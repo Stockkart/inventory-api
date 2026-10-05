@@ -25,6 +25,8 @@ public class PricingReadDto {
   private SchemeDto saleScheme;
   private String sgst;
   private String cgst;
+  /** True when costPrice was entered off a bill whose rates include GST. */
+  private Boolean costPriceIncludesTax;
 
   public boolean isEmpty() {
     return maximumRetailPrice == null && costPrice == null && priceToRetail == null
@@ -37,7 +39,8 @@ public class PricingReadDto {
   }
 
   /**
-   * Landed cost per unit: the cost after the vendor's purchase scheme and additional discount.
+   * Landed cost per unit: the cost after the vendor's purchase scheme and additional discount, and
+   * before GST -- taken out here when the cost was entered off a tax-inclusive bill.
    *
    * <p>Derived from those fields whenever they are there to derive from, and only then falling
    * back to the stored {@code effectiveCostPrice}. The stored figure is a cache of this same
@@ -59,7 +62,10 @@ public class PricingReadDto {
                 purchaseScheme.getSchemeType(),
                 purchaseScheme.getSchemePayFor(),
                 purchaseScheme.getSchemeFree(),
-                purchaseScheme.getSchemePercentage()));
+                purchaseScheme.getSchemePercentage()),
+        Boolean.TRUE.equals(costPriceIncludesTax),
+        sgst,
+        cgst);
     return derived != null ? derived : effectiveCostPrice;
   }
 }

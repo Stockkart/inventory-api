@@ -32,12 +32,6 @@ public class VendorPurchaseInvoiceDetailDto {
   private String legacyLotId;
   private List<VendorPurchaseInvoiceLineDto> lines;
 
-  /** OK | MISSING | MISMATCH | RATE_CONFLICT -- how the header compares to the lines. */
-  private String headerReconciliation;
-  /** Taxable value the lines resolve to, for showing beside the stated subtotal. */
-  private BigDecimal computedLineSubTotal;
-  /** Tax the lines resolve to at their own rates. */
-  private BigDecimal computedTaxTotal;
   /** Whether the line amounts on this bill already include GST. */
   private String taxTreatment;
 
@@ -45,4 +39,6 @@ public class VendorPurchaseInvoiceDetailDto {
   private Instant amendedAt;
   private String amendedByUserId;
   private String amendmentReason;
+  /** The header as it stood before the last correction; null if never corrected. */
+  private InvoiceHeaderFiguresDto previousHeader;
 }

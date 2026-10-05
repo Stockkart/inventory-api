@@ -1,11 +1,8 @@
 package com.inventory.product.service;
 
-import com.inventory.common.tax.GstMath;
-import com.inventory.common.tax.GstStateCode;
-import com.inventory.common.tax.PurchaseTaxTreatment;
-import com.inventory.product.tax.PurchaseTaxBasisResolver;
-import com.inventory.product.tax.HsnRateConsistency;
-import com.inventory.product.tax.PurchaseTaxBasis;
+import com.inventory.common.util.GstMath;
+import com.inventory.common.constants.PurchaseTaxTreatment;
+import com.inventory.common.util.GstStateCode;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
@@ -15,6 +12,9 @@ import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.VendorPurchaseInvoice;
 import com.inventory.product.domain.model.VendorPurchaseInvoiceLine;
 import com.inventory.product.domain.repository.VendorPurchaseInvoiceRepository;
+import com.inventory.product.utils.PurchaseTaxBasis;
+import com.inventory.product.utils.PurchaseTaxBasisResolver;
+import com.inventory.product.utils.VendorInvoiceTotals;
 import com.inventory.product.utils.constants.ProductMetricsConstants;
 import com.inventory.user.domain.model.Vendor;
 import com.inventory.user.domain.repository.VendorRepository;
@@ -106,6 +106,16 @@ public class InventoryService {
   private InventoryValidator inventoryValidator;
 
   @Autowired
+  private com.inventory.product.validation.VendorPurchaseInvoiceValidator
+      vendorPurchaseInvoiceValidator;
+
+  @Autowired
+  private PurchaseTaxRecorder purchaseTaxRecorder;
+
+  @Autowired
+  private PurchaseTaxTreatmentResolver purchaseTaxTreatmentResolver;
+
+  @Autowired
   private PackagingUnitService packagingUnitService;
 
   @Autowired
@@ -156,12 +166,6 @@ public class InventoryService {
 
   @Autowired
   private InventoryVerticalExpiryHandler inventoryVerticalExpiryHandler;
-
-  @Autowired
-  private com.inventory.pricing.domain.repository.PricingRepository pricingRepository;
-
-  @Autowired
-  private HsnRateConsistency hsnRateConsistency;
 
   @Autowired
   private com.inventory.product.domain.repository.ProductRepository productRepository;
@@ -422,7 +426,7 @@ public class InventoryService {
       pendingInvoice.setSynthetic(Boolean.TRUE);
     }
     if (invReq != null) {
-      validateInvoiceHeaderShape(invReq);
+      vendorPurchaseInvoiceValidator.validateHeader(invReq);
       pendingInvoice.setInvoiceDate(invReq.getInvoiceDate());
       pendingInvoice.setLineSubTotal(invReq.getLineSubTotal());
       pendingInvoice.setTaxTotal(invReq.getTaxTotal());
@@ -433,15 +437,15 @@ public class InventoryService {
       pendingInvoice.setInvoiceTotal(invReq.getInvoiceTotal());
       pendingInvoice.setPaymentMethod(invReq.getPaymentMethod());
       pendingInvoice.setPaidAmount(invReq.getPaidAmount());
-      // The bill decides; the vendor answers when the bill did not. A supplier's billing
-      // convention is a property of their software rather than of any one invoice, so asking on
-      // every bill from the same vendor would be asking a question already answered.
-      pendingInvoice.setTaxTreatment(
-          invReq.getTaxTreatment() != null
-              ? invReq.getTaxTreatment()
-              : vendorRepository.findById(bulkRequest.getVendorId())
-                  .map(Vendor::getDefaultTaxTreatment)
-                  .orElse(null));
+      // The bill decides; else its lines (cost at MRP means GST is inside it, cost below MRP
+      // means it is added on top); else the vendor's usual convention. A choice the lines
+      // contradict is refused until the operator confirms it from the paper.
+      PurchaseTaxTreatmentResolver.Resolved treatment = purchaseTaxTreatmentResolver.resolve(
+          invReq.getTaxTreatment(), bulkRequest.getVendorId(), itemRequests);
+      if (treatment.conflict() && !Boolean.TRUE.equals(invReq.getConfirmTaxTreatment())) {
+        throw new ValidationException(treatment.conflictMessage());
+      }
+      pendingInvoice.setTaxTreatment(treatment.treatment());
     }
 
     try {
@@ -473,26 +477,22 @@ public class InventoryService {
           inventoryMapper.toCreateInventoryRequest(
               itemRequest, bulkRequest.getVendorId(), registrationId);
       fullRequest.setVendorPurchaseInvoiceId(registrationId);
+      fullRequest.setCostPriceIncludesTax(
+          pendingInvoice.getTaxTreatment() == PurchaseTaxTreatment.INCLUSIVE);
       InventoryVerticalRequestNormalizer.normalizeCreate(fullRequest);
 
       InventoryReceiptResponse response = create(fullRequest, userId, shopId);
       createdItems.add(response);
 
-      VendorPurchaseInvoiceLine line = new VendorPurchaseInvoiceLine();
+      VendorPurchaseInvoiceLine line = inventoryMapper.toInvoiceLine(itemRequest);
       line.setLineIndex(invoiceLines.size());
-      line.setName(itemRequest.getName());
-      line.setBarcode(itemRequest.getBarcode());
-      line.setCount(itemRequest.getCount());
-      line.setCostPrice(itemRequest.getCostPrice());
-      line.setPriceToRetail(itemRequest.getPriceToRetail());
       line.setInventoryId(response.getId());
       invoiceLines.add(line);
     }
 
     pendingInvoice.setLines(invoiceLines);
-    recordResolvedTax(pendingInvoice);
+    purchaseTaxRecorder.record(pendingInvoice);
     rememberVendorTaxTreatment(bulkRequest.getVendorId(), invReq);
-    List<String> rateWarnings = checkHsnRates(pendingInvoice, shopId);
     vendorPurchaseInvoiceRepository.save(pendingInvoice);
     if (metrics != null) {
       metrics.record(
@@ -533,15 +533,6 @@ public class InventoryService {
     BulkCreateInventoryResponse out =
         inventoryMapper.toBulkCreateInventoryResponse(
             createdItems, 0, returnedInvoiceId);
-    // Hand the reconciliation back so the client can raise it while the operator still has the
-    // bill in hand. Nothing was blocked on it -- the stock is registered and the header stands as
-    // typed -- but a discrepancy is only cheap to settle at this moment.
-    out.setHeaderReconciliation(pendingInvoice.getHeaderReconciliation());
-    out.setComputedLineSubTotal(pendingInvoice.getComputedLineSubTotal());
-    out.setComputedTaxTotal(pendingInvoice.getComputedTaxTotal());
-    if (!rateWarnings.isEmpty()) {
-      out.setRateWarnings(rateWarnings);
-    }
     out.setItemErrors(null);
     out.setItemWarnings(itemWarnings.isEmpty() ? null : itemWarnings);
     out.setCreditEntryId(creditEntryId);
@@ -676,7 +667,7 @@ public class InventoryService {
     String paymentMethod = normalizePaymentMethod(inv.getPaymentMethod());
     com.inventory.accounting.api.VendorPurchaseInvoicePostingRequest req =
         com.inventory.accounting.api.VendorPurchaseInvoicePostingRequest.builder()
-            .sourceId(inv.getId())
+            .sourceId(ledgerSourceId(inv))
             .invoiceNo(inv.getInvoiceNo())
             .txnDate(txnDate)
             .vendorId(vendorId)
@@ -696,26 +687,44 @@ public class InventoryService {
   }
 
   /**
-   * Splits a combined {@code taxTotal} into CGST + SGST by walking each invoice line and reading
-   * the CGST / SGST percentages from that line's pricing document. This mirrors the way the
-   * cart/checkout flow originally computed the tax (per-line, per-item rate), so the journal
-   * entry uses the same source of truth instead of guessing from a shop-level fallback.
+   * Brings the ledger in line with an amended invoice header.
    *
-   * <p>Resolution order (in priority):
-   * <ol>
-   *   <li>Per-line: {@code lineValue × pricing.cgst / 100} and {@code × pricing.sgst / 100}.
-   *       Line value is taken from {@code count × costPrice} (PTR is a last-resort fallback
-   *       for legacy lines that never captured cost price).</li>
-   *   <li>Lines that don't resolve to a pricing doc fall back to the shop's configured
-   *       CGST / SGST.</li>
-   *   <li>If neither pricing nor shop rates exist, that line contributes nothing and the
-   *       residual tax is split using whatever per-line numbers we did manage to compute.</li>
-   * </ol>
+   * <p>The live entry is reversed, so the original figures stay on record, and the invoice is
+   * posted again with its corrected header under a new source id. An invoice that was never
+   * posted (no vendor, nothing owed) is left alone, as stock-in left it.
+   */
+  public void repostAccountingAfterAmend(
+      VendorPurchaseInvoice inv, String shopId, String userId, String reason) {
+    if (accountingFacade == null || inv == null || !StringUtils.hasText(inv.getVendorId())) {
+      return;
+    }
+    java.util.Optional<com.inventory.accounting.domain.model.JournalEntry> live =
+        accountingFacade.findBySource(
+            shopId,
+            com.inventory.accounting.domain.model.JournalSource.VENDOR_PURCHASE_INVOICE,
+            ledgerSourceId(inv));
+    if (live.isEmpty()) {
+      return;
+    }
+    if (live.get().getStatus() != com.inventory.accounting.domain.model.JournalStatus.REVERSED) {
+      accountingFacade.reverse(shopId, userId, live.get().getId(), "Invoice amended: " + reason);
+    }
+    inv.setLedgerSourceId(inv.getId() + ":amend:" + Instant.now().toEpochMilli());
+    postAccountingForVendorInvoice(inv, shopId, userId);
+  }
+
+  private static String ledgerSourceId(VendorPurchaseInvoice inv) {
+    return StringUtils.hasText(inv.getLedgerSourceId()) ? inv.getLedgerSourceId() : inv.getId();
+  }
+
+  /**
+   * Splits a combined {@code taxTotal} into CGST + SGST for the journal.
    *
-   * <p>The two halves are reconciled against {@code taxTotal} before returning: any rounding
-   * delta (typically < ₹1) is absorbed into the larger of the two halves so the books always
-   * balance. If we couldn't compute anything (no lines, no rates), the input tax is split using
-   * the shop's CGST/SGST percentages.
+   * <p>The split comes from {@link PurchaseTaxBasisResolver} — the same per-line basis GSTR-2
+   * reports from — so the ledger and the return read one answer. The stated {@code taxTotal} is
+   * the amount (it is what the vendor is owed, so the entry has to balance on it) and the basis
+   * gives the ratio. Lines with no rate contribute nothing; if none has a rate, the shop's CGST /
+   * SGST percentages decide the split.
    */
   private GstSplit splitTaxByLines(String shopId, VendorPurchaseInvoice inv, BigDecimal taxTotal) {
     BigDecimal total = nz(taxTotal);
@@ -723,80 +732,27 @@ public class InventoryService {
     if (total.signum() <= 0) {
       return new GstSplit(zero, zero);
     }
+
+    // IGST is not posted yet: the ledger has no place of supply for a purchase, so the basis is
+    // read as intra-state.
+    PurchaseTaxBasis basis =
+        PurchaseTaxBasisResolver.resolve(
+            inv, purchaseTaxRecorder.pricingByInventoryId(inv.getLines())::get,
+            inv.getTaxTreatment(), false);
+    java.util.Optional<PurchaseTaxBasis.IntraStateSplit> split = basis.splitStated(total);
+    if (split.isPresent()) {
+      return new GstSplit(split.get().centralTax(), split.get().stateTax());
+    }
+
     Shop shop =
         StringUtils.hasText(shopId) ? shopRepository.findById(shopId).orElse(null) : null;
-    BigDecimal shopCgstPct = parsePercentage(shop != null ? shop.getCgst() : null);
-    BigDecimal shopSgstPct = parsePercentage(shop != null ? shop.getSgst() : null);
-
-    BigDecimal cgstSum = BigDecimal.ZERO;
-    BigDecimal sgstSum = BigDecimal.ZERO;
-    boolean anyLineContributed = false;
-
-    List<VendorPurchaseInvoiceLine> lines =
-        inv.getLines() != null ? inv.getLines() : java.util.Collections.emptyList();
-    for (VendorPurchaseInvoiceLine line : lines) {
-      BigDecimal cgstPct = shopCgstPct;
-      BigDecimal sgstPct = shopSgstPct;
-      String inventoryId = line.getInventoryId();
-      if (StringUtils.hasText(inventoryId)) {
-        com.inventory.pricing.domain.model.Pricing pricing =
-            inventoryRepository
-                .findById(inventoryId)
-                .map(Inventory::getPricingId)
-                .filter(StringUtils::hasText)
-                .flatMap(pricingRepository::findById)
-                .orElse(null);
-        if (pricing != null) {
-          BigDecimal pCgst = parsePercentage(pricing.getCgst());
-          BigDecimal pSgst = parsePercentage(pricing.getSgst());
-          if (pCgst.signum() > 0 || pSgst.signum() > 0) {
-            cgstPct = pCgst;
-            sgstPct = pSgst;
-          }
-        }
-      }
-      BigDecimal lineValue = lineGoodsValue(line);
-      if (lineValue.signum() <= 0) continue;
-      if (cgstPct.signum() <= 0 && sgstPct.signum() <= 0) continue;
-      BigDecimal cgstAmt =
-          lineValue.multiply(cgstPct).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
-      BigDecimal sgstAmt =
-          lineValue.multiply(sgstPct).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
-      cgstSum = cgstSum.add(cgstAmt);
-      sgstSum = sgstSum.add(sgstAmt);
-      anyLineContributed = true;
-    }
-
-    if (!anyLineContributed) {
-      // No usable line data — fall back to shop ratio split of the invoice's stated taxTotal.
-      return splitByRatio(total, shopCgstPct, shopSgstPct);
-    }
-
-    // Reconcile rounding drift back to taxTotal so the JE always ties out.
-    BigDecimal computed = cgstSum.add(sgstSum);
-    BigDecimal drift = total.subtract(computed).setScale(4, RoundingMode.HALF_UP);
-    if (drift.signum() != 0) {
-      // Push the rounding penny to whichever side is larger, defaulting to SGST when equal.
-      if (cgstSum.compareTo(sgstSum) > 0) {
-        cgstSum = cgstSum.add(drift);
-      } else {
-        sgstSum = sgstSum.add(drift);
-      }
-    }
-    return new GstSplit(
-        cgstSum.setScale(4, RoundingMode.HALF_UP),
-        sgstSum.setScale(4, RoundingMode.HALF_UP));
+    return splitByRatio(
+        total,
+        GstMath.parseGstRate(shop != null ? shop.getCgst() : null),
+        GstMath.parseGstRate(shop != null ? shop.getSgst() : null));
   }
 
-  /** Per-line "goods value" used as the GST base. Prefers costPrice; falls back to PTR. */
-  private static BigDecimal lineGoodsValue(VendorPurchaseInvoiceLine line) {
-    BigDecimal qty =
-        line.getCount() != null ? BigDecimal.valueOf(line.getCount()) : BigDecimal.ZERO;
-    if (qty.signum() <= 0) return BigDecimal.ZERO;
-    BigDecimal price = nz(line.getCostPrice());
-    if (price.signum() <= 0) price = nz(line.getPriceToRetail());
-    return price.multiply(qty);
-  }
+  /** The pricing record behind a purchase line's lot, or null when either is missing. */
 
   /** Plain ratio split — used only when no line-level rates are available. */
   private static GstSplit splitByRatio(
@@ -814,74 +770,6 @@ public class InventoryService {
     return new GstSplit(
         total.subtract(half).setScale(4, RoundingMode.HALF_UP),
         half.setScale(4, RoundingMode.HALF_UP));
-  }
-
-  /**
-   * Warns where a line's GST rate disagrees with the rest of the catalogue under its HSN.
-   *
-   * <p>Separate from the header check, because it catches what the header cannot. An invoice
-   * priced entirely at the wrong slab reconciles with itself perfectly -- subtotal, tax and total
-   * all agree -- and is wrong all the same. The only evidence against it is that the same goods
-   * are recorded at a different rate elsewhere in the shop.
-   */
-  private List<String> checkHsnRates(VendorPurchaseInvoice invoice, String shopId) {
-    List<String> warnings = new ArrayList<>();
-    try {
-      for (VendorPurchaseInvoiceLine line : invoice.getLines()) {
-        if (!StringUtils.hasText(line.getInventoryId()) || line.getGstRatePct() == null) continue;
-        inventoryRepository.findById(line.getInventoryId())
-            .filter(lot -> StringUtils.hasText(lot.getProductId()))
-            .flatMap(lot -> productRepository.findById(lot.getProductId()))
-            .ifPresent((com.inventory.product.domain.model.Product product) ->
-                hsnRateConsistency.check(shopId, product.getHsn(), line.getGstRatePct())
-                    .ifPresent(conflict -> {
-                      String message = conflict.describe(
-                          StringUtils.hasText(line.getName()) ? line.getName() : product.getName());
-                      warnings.add(message);
-                      log.warn("Invoice {} (shop {}): {}", invoice.getInvoiceNo(), shopId, message);
-                    }));
-      }
-    } catch (RuntimeException e) {
-      log.warn("HSN rate check failed for invoice {} (shop {})",
-          invoice.getInvoiceNo(), shopId, e);
-    }
-    return warnings;
-  }
-
-  /**
-   * Rejects an invoice header that cannot describe a real bill.
-   *
-   * <p>Deliberately narrow. A header that merely disagrees with its lines is recorded and
-   * flagged, not refused: bills are entered daily with the goods already counted out, and
-   * stopping the operator over a rupee would cost more than the rupee. What is refused is input
-   * no bill can produce -- a negative total, or tax exceeding the value it is charged on, which
-   * cannot happen at any GST slab.
-   */
-  private void validateInvoiceHeaderShape(VendorPurchaseInvoiceRequest invReq) {
-    Set<String> errors = new LinkedHashSet<>();
-    rejectIfNegative(errors, "Line subtotal", invReq.getLineSubTotal());
-    rejectIfNegative(errors, "Tax total", invReq.getTaxTotal());
-    rejectIfNegative(errors, "Invoice total", invReq.getInvoiceTotal());
-    rejectIfNegative(errors, "Shipping charge", invReq.getShippingCharge());
-    rejectIfNegative(errors, "Other charges", invReq.getOtherCharges());
-    rejectIfNegative(errors, "Overall discount", invReq.getOverallDiscount());
-
-    BigDecimal subTotal = invReq.getLineSubTotal();
-    BigDecimal tax = invReq.getTaxTotal();
-    if (subTotal != null && tax != null && subTotal.signum() > 0
-        && tax.compareTo(subTotal) > 0) {
-      errors.add("Tax total (" + tax + ") cannot exceed the line subtotal (" + subTotal
-          + ") -- the highest GST slab is 28%");
-    }
-    if (!errors.isEmpty()) {
-      throw new ValidationException(errors);
-    }
-  }
-
-  private void rejectIfNegative(Set<String> errors, String label, BigDecimal value) {
-    if (value != null && value.signum() < 0) {
-      errors.add(label + " cannot be negative");
-    }
   }
 
   /**
@@ -926,73 +814,6 @@ public class InventoryService {
   }
 
   /**
-   * Resolves what the lines are worth for tax and records it on the invoice.
-   *
-   * <p>Runs after the lots exist, because the rate and any discount live on their pricing. The
-   * stated header is left exactly as the operator typed it; what is written here is the second
-   * opinion beside it, and the verdict saying how far the two agree. A caller can then tell an
-   * invoice that reconciles from one that merely has numbers in it -- which is the difference
-   * between a return that can be filed and one that cannot.
-   *
-   * <p>Never fatal. Stock is already created by this point, and an invoice that records its
-   * goods but not its tax analysis is recoverable; one that fails half way through leaves the
-   * shop with lots it cannot see. On failure the invoice keeps the header it was given and the
-   * report path falls back to resolving it on read, as it does for every older document.
-   */
-  private void recordResolvedTax(VendorPurchaseInvoice invoice) {
-    try {
-      Map<String, com.inventory.pricing.domain.model.Pricing> pricingByInventoryId =
-          new java.util.HashMap<>();
-      for (VendorPurchaseInvoiceLine line : invoice.getLines()) {
-        if (!StringUtils.hasText(line.getInventoryId())) continue;
-        inventoryRepository.findById(line.getInventoryId())
-            .filter(lot -> StringUtils.hasText(lot.getPricingId()))
-            .flatMap(lot -> pricingRepository.findById(lot.getPricingId()))
-            .ifPresent(pricing -> pricingByInventoryId.put(line.getInventoryId(), pricing));
-      }
-
-      // Interstate is not decided here. It turns on the supplier's state against the shop's, and
-      // the tax heads are a property of the return rather than of the purchase, so the split is
-      // left to the aggregator that knows both ends. What is stored is the taxable value and the
-      // rate, which do not change either way.
-      PurchaseTaxBasis basis = PurchaseTaxBasisResolver.resolve(
-          invoice, pricingByInventoryId::get, invoice.getTaxTreatment(), false);
-
-      for (int i = 0; i < invoice.getLines().size() && i < basis.lines().size(); i++) {
-        VendorPurchaseInvoiceLine line = invoice.getLines().get(i);
-        PurchaseTaxBasis.Line resolved = basis.lines().get(i);
-        line.setTaxableValue(resolved.taxable());
-        line.setGstRatePct(resolved.ratePct());
-        line.setCentralTax(resolved.centralTax());
-        line.setStateTax(resolved.stateTax());
-        line.setIntegratedTax(resolved.integratedTax());
-        line.setTaxBasisSource(resolved.source().name());
-      }
-
-      invoice.setComputedLineSubTotal(basis.totalTaxable());
-      invoice.setComputedTaxTotal(basis.totalTax());
-      invoice.setHeaderReconciliation(basis.verdict().name());
-
-      if (basis.verdict() != PurchaseTaxBasis.Verdict.OK) {
-        log.warn("Invoice {} for shop {} recorded as {}: stated subtotal {}, tax {}; "
-                + "lines resolve to {}, tax {}",
-            invoice.getInvoiceNo(), invoice.getShopId(), basis.verdict(),
-            invoice.getLineSubTotal(), invoice.getTaxTotal(),
-            basis.totalTaxable(), basis.totalTax());
-      }
-    } catch (RuntimeException e) {
-      log.error("Could not resolve tax basis for invoice {} (shop {}); "
-              + "the invoice keeps its stated header and will be resolved on read",
-          invoice.getInvoiceNo(), invoice.getShopId(), e);
-    }
-  }
-
-  /** Parses a shop's percentage field ({@code "9"}, {@code "9.00"}, {@code "9%"}). */
-  private static BigDecimal parsePercentage(String raw) {
-    return GstMath.parseRatePct(raw);
-  }
-
-  /**
    * Whether goods came from a supplier in another state.
    *
    * <p>Placed the same way GSTR-2 places them, so the ledger and the return cannot disagree: the
@@ -1029,18 +850,9 @@ public class InventoryService {
   private record GstSplit(BigDecimal cgst, BigDecimal sgst) {}
 
   private static BigDecimal deriveInvoiceTotalForCredit(VendorPurchaseInvoice inv) {
-    BigDecimal invTotal = nz(inv.getInvoiceTotal());
-    if (invTotal.signum() > 0) {
-      return invTotal.setScale(4, RoundingMode.HALF_UP);
-    }
-    return nz(inv.getLineSubTotal())
-        .add(nz(inv.getTaxTotal()))
-        .add(nz(inv.getShippingCharge()))
-        .add(nz(inv.getOtherCharges()))
-        .add(nz(inv.getRoundOff()))
-        .subtract(nz(inv.getOverallDiscount()))
-        .max(BigDecimal.ZERO)
-        .setScale(4, RoundingMode.HALF_UP);
+    return VendorInvoiceTotals.invoiceTotal(
+        inv.getInvoiceTotal(), inv.getLineSubTotal(), inv.getTaxTotal(), inv.getShippingCharge(),
+        inv.getOtherCharges(), inv.getRoundOff(), inv.getOverallDiscount());
   }
 
   /**

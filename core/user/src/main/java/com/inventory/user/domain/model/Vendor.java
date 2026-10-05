@@ -1,6 +1,6 @@
 package com.inventory.user.domain.model;
 
-import com.inventory.common.tax.PurchaseTaxTreatment;
+import com.inventory.common.constants.PurchaseTaxTreatment;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;

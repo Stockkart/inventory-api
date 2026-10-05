@@ -103,6 +103,8 @@ public class GenerateInvoiceRequest {
    */
   private BigDecimal igstAmount;
   private BigDecimal igstPercent;
+  /** True when the sale was billed as an interstate supply: print IGST columns and rows, not CGST/SGST. */
+  private boolean interstate;
   private BigDecimal taxTotal;
   // One row per GST rate on the invoice. Empty when no line carries tax, in which case the
   // single SGST/CGST amounts above are printed as before.

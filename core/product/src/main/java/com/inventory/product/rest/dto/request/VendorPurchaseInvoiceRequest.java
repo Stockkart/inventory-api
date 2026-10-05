@@ -1,6 +1,6 @@
 package com.inventory.product.rest.dto.request;
 
-import com.inventory.common.tax.PurchaseTaxTreatment;
+import com.inventory.common.constants.PurchaseTaxTreatment;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -8,6 +8,10 @@ import java.time.Instant;
 
 /**
  * Optional vendor invoice header for bulk stock registration. When omitted, behavior is unchanged.
+ *
+ * <p>The line subtotal, tax total and invoice total are stored as sent; the stock-in screen sends
+ * the figures the server's bill preview gave it. Any of the three left out is worked out from the
+ * lines.
  */
 @Data
 public class VendorPurchaseInvoiceRequest {
@@ -34,4 +38,10 @@ public class VendorPurchaseInvoiceRequest {
    * was recorded.
    */
   private PurchaseTaxTreatment taxTreatment;
+  /**
+   * True when the operator has read the bill and confirms its tax treatment although the rows'
+   * cost against MRP says otherwise. Without it such a bill is refused, so the choice is never
+   * saved unseen.
+   */
+  private Boolean confirmTaxTreatment;
 }
