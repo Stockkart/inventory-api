@@ -65,8 +65,14 @@ Actions → **promote-to-production** → Run workflow, with:
   (it was deployed to staging via label, or merged to `main` earlier).
 - `reason`: free text, shown to the approver and kept in the run.
 
-The workflow checks the image exists, then waits for a reviewer of the
-`production-manual` environment to approve. After approval it deploys and verifies.
+The workflow checks the image exists, deploys it to **staging** and verifies it
+there, then waits for a reviewer of the `production-manual` environment to approve.
+After approval it deploys to production and verifies.
+
+Rule with no exceptions: **nothing reaches production without having been verified
+on staging first** — a merge to `main` does both in one run, the PR label requires
+staging to be serving that commit, and promote deploys to staging before asking for
+approval. A rollback therefore also passes through staging for a few minutes.
 
 ## Rolling back
 
@@ -121,7 +127,7 @@ Secret scanning and push protection are enabled on the repository, and
 | `release.yml` | push to `main` | test → build → staging → production |
 | `branch-staging.yml` | PR labelled `deploy:staging` / pushes while labelled | build PR head → staging → PR comment |
 | `branch-promote.yml` | PR labelled `deploy:production` | PR head (already on staging) → production, with approval; label removed afterwards |
-| `promote.yml` | manual | any built sha → production, with approval (rollbacks) |
+| `promote.yml` | manual | any built sha → staging → production, with approval (rollbacks) |
 | `build-checker.yml` | PR | tests |
 | `ci-hygiene.yml` | PR, push to `main` | actionlint, shellcheck, no `.env` |
 | `_build-image.yml`, `_deploy-staging.yml`, `_deploy-production.yml` | called by the above | shared jobs so the three paths cannot drift |

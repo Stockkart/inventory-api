@@ -1,6 +1,8 @@
-# Promote: deploy any already-built sha to production, after approval.
-# This is the only way a non-main sha reaches production, and the way to roll back
-# (promote the previous sha printed in the last production summary).
+# Promote: deploy any already-built sha to production, after approval — the way to
+# roll back (promote the previous sha printed in the last production summary).
+# Like every other path, it goes through staging first: nothing reaches production
+# that was not verified on staging in the same run (or, for the PR label path,
+# currently serving on staging).
 name: promote-to-production
 
 on:
@@ -67,12 +69,20 @@ jobs:
             echo "| Image | \`${IMAGE_REPOSITORY}:${SHA}\` |"
             echo "| Reason | ${REASON} |"
             echo
-            echo "A reviewer of the \`production-manual\` environment must approve the next job."
+            echo "The build is deployed to staging first; a reviewer of the \`production-manual\` environment must then approve the production job."
           } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-staging:
+    name: Staging first
+    needs: check-artifact
+    uses: ./.github/workflows/_deploy-staging.yml
+    with:
+      sha: ${{ inputs.sha }}
+    secrets: inherit
 
   deploy-production:
     name: Production (approval required)
-    needs: check-artifact
+    needs: deploy-staging
     uses: ./.github/workflows/_deploy-production.yml
     with:
       sha: ${{ inputs.sha }}
