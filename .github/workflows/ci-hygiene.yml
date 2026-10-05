@@ -1,0 +1,37 @@
+# Hygiene checks for the pipeline itself: workflow lint, shell lint, and a guard
+# against committing .env files to a public repository.
+name: CI hygiene
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  hygiene:
+    name: actionlint, shellcheck, no .env
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: No tracked .env files
+        run: |
+          tracked="$(git ls-files | grep -E '(^|/)\.env(\..+)?$' | grep -vE '\.(example|sample)$|-example$' || true)"
+          if [[ -n "$tracked" ]]; then
+            echo "::error::.env files must never be committed:"
+            echo "$tracked"
+            exit 1
+          fi
+          echo "ok: no .env files tracked"
+
+      - name: shellcheck deploy scripts
+        run: shellcheck -x -s bash scripts/deploy/*.sh
+
+      - name: actionlint
+        run: |
+          docker run --rm -v "${PWD}:/repo" -w /repo rhysd/actionlint:1.7.7 -color

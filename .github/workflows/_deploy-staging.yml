@@ -1,0 +1,65 @@
+# Reusable: deploy an already-built image tag to the Render staging service and
+# verify it is live. Used by release.yml and branch-staging.yml.
+name: _deploy-staging
+
+on:
+  workflow_call:
+    inputs:
+      sha:
+        description: Full commit sha whose image is already in Docker Hub
+        type: string
+        required: true
+    outputs:
+      deploy_url:
+        description: Render dashboard link for the deploy
+        value: ${{ jobs.deploy.outputs.deploy_url }}
+      api_url:
+        description: Public URL of the staging API
+        value: ${{ jobs.deploy.outputs.api_url }}
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to staging (Render)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment:
+      name: staging
+      url: ${{ vars.STAGING_API_URL }}
+    # One staging deploy at a time; newer queued runs replace older queued ones,
+    # a running deploy is never interrupted.
+    concurrency:
+      group: api-staging
+      cancel-in-progress: false
+    outputs:
+      deploy_url: ${{ steps.render.outputs.deploy_url }}
+      api_url: ${{ vars.STAGING_API_URL }}
+    env:
+      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      RENDER_SERVICE_ID: ${{ vars.RENDER_SERVICE_ID }}
+      STAGING_API_URL: ${{ vars.STAGING_API_URL }}
+      IMAGE_REPOSITORY: ${{ vars.IMAGE_REPOSITORY || 'docker.io/myntrack/inventory-backend' }}
+    steps:
+      - name: Checkout (deploy scripts)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Deploy image to Render
+        id: render
+        run: scripts/deploy/render-deploy.sh "${{ inputs.sha }}"
+
+      - name: Verify staging is live on this sha
+        run: scripts/deploy/verify-backend.sh "$STAGING_API_URL" "${{ inputs.sha }}" 10
+
+      - name: Job summary
+        if: always()
+        env:
+          SUMMARY_ENVIRONMENT: staging
+          SUMMARY_SHA: ${{ inputs.sha }}
+          SUMMARY_RESULT: ${{ job.status == 'success' && 'success' || 'failed' }}
+          SUMMARY_DEPLOYMENT_ID: ${{ steps.render.outputs.deploy_id }}
+          SUMMARY_DEPLOYMENT_URL: ${{ steps.render.outputs.deploy_url }}
+          SUMMARY_BASE_URL: ${{ vars.STAGING_API_URL }}
+          SUMMARY_ACTOR: ${{ github.actor }}
+        run: scripts/deploy/summary.sh

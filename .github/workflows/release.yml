@@ -1,0 +1,61 @@
+# Release: every push to main → test → build image → staging → verify → production → verify.
+# No human step after the merge. See docs/deploying.md.
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Set up JDK
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Cache Maven repo
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-m2-
+
+      - name: Maven test (multi-module)
+        run: mvn -B -pl app -am clean test
+
+  build:
+    name: Build
+    needs: test
+    uses: ./.github/workflows/_build-image.yml
+    with:
+      ref: ${{ github.sha }}
+    secrets: inherit
+
+  deploy-staging:
+    name: Staging
+    needs: build
+    uses: ./.github/workflows/_deploy-staging.yml
+    with:
+      sha: ${{ needs.build.outputs.sha }}
+    secrets: inherit
+
+  deploy-production:
+    name: Production
+    needs: [build, deploy-staging]
+    uses: ./.github/workflows/_deploy-production.yml
+    with:
+      sha: ${{ needs.build.outputs.sha }}
+      environment: production
+    secrets: inherit

@@ -8,6 +8,7 @@ Backend API for the Stock Kart inventory management system. A Spring Boot–base
 
 - [Project Overview](#project-overview)
 - [Local Setup with Docker](#local-setup-with-docker)
+- [Deploying](docs/deploying.md) — staging, production, branch deploys, rollback
 - [Multimodule Structure](#multimodule-structure)
 - [Project Structure](#project-structure)
 - [Contributing Guidelines](#contributing-guidelines)

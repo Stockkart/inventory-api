@@ -1,0 +1,81 @@
+# Reusable: deploy an already-built image tag to the DigitalOcean App Platform
+# production app and verify it is live.
+#
+# `environment` selects the gate:
+#   production        – no reviewers, GitHub only allows it for shas on main (release.yml)
+#   production-manual – required reviewers, any sha (promote.yml)
+# Both environments hold identical secrets/variables.
+name: _deploy-production
+
+on:
+  workflow_call:
+    inputs:
+      sha:
+        description: Full commit sha whose image is already in Docker Hub
+        type: string
+        required: true
+      environment:
+        description: production | production-manual
+        type: string
+        required: true
+      reason:
+        description: Why this deploy is happening (promote only)
+        type: string
+        required: false
+        default: ''
+    outputs:
+      previous_tag:
+        description: Image tag that was live before this deploy (for rollback)
+        value: ${{ jobs.deploy.outputs.previous_tag }}
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to production (DigitalOcean)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ vars.PROD_API_URL }}
+    # One production deploy at a time (shared group for both gates).
+    concurrency:
+      group: api-production
+      cancel-in-progress: false
+    outputs:
+      previous_tag: ${{ steps.do.outputs.previous_tag }}
+    env:
+      DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+      DO_APP_ID: ${{ vars.DO_APP_ID }}
+      PROD_API_URL: ${{ vars.PROD_API_URL }}
+    steps:
+      - name: Checkout (deploy scripts)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Guard — only release.yml may use the automatic gate
+        if: inputs.environment == 'production' && github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::environment 'production' is reserved for pushes to main (got ${{ github.ref }}). Use promote-to-production."
+          exit 1
+
+      - name: Update image tag on DigitalOcean and wait for rollout
+        id: do
+        run: scripts/deploy/do-deploy.sh "${{ inputs.sha }}"
+
+      - name: Verify production is live on this sha
+        run: scripts/deploy/verify-backend.sh "$PROD_API_URL" "${{ inputs.sha }}" 15
+
+      - name: Job summary
+        if: always()
+        env:
+          SUMMARY_ENVIRONMENT: production
+          SUMMARY_SHA: ${{ inputs.sha }}
+          SUMMARY_PREVIOUS: ${{ steps.do.outputs.previous_tag }}
+          SUMMARY_RESULT: ${{ job.status == 'success' && 'success' || 'failed' }}
+          SUMMARY_DEPLOYMENT_ID: ${{ steps.do.outputs.deployment_id }}
+          SUMMARY_DEPLOYMENT_URL: ${{ steps.do.outputs.deployment_url }}
+          SUMMARY_BASE_URL: ${{ vars.PROD_API_URL }}
+          SUMMARY_ACTOR: ${{ github.actor }}
+          SUMMARY_REASON: ${{ inputs.reason }}
+        run: scripts/deploy/summary.sh
