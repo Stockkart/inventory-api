@@ -43,6 +43,23 @@ HTTP request count is recorded on **`inventory_api_requests_total`** (same Count
 
 Do not graph HTTP as `rate()` with unit `reqps` and 0 decimals — a few requests per minute is ~0.03/s and Grafana rounds it to **0**. Re-import `03-module.json` after rebuilding the API.
 
+### Search row (`module=product`)
+
+A collapsed **Search** row sits between HTTP and Business. It only has data when the dropdown is `product`. All meters are Counters with `module="product"` and a `surface` tag (`product-search`, `scan-sell`, `legacy-get`); none carry shop, user or search values.
+
+| Meter | What it is | PromQL |
+|-------|------------|--------|
+| `inventory_product_search_requests_total{surface, outcome, mode, text, filters}` | one per search; `outcome` = `ok`, `timeout`, `regex_rejected`, `validation_error`, `error` | searches / 5 min = `sum by (surface, outcome) (increase(...[5m]))` |
+| `inventory_product_search_latency_bucket_total{le}` | cumulative buckets in **ms** (50, 100, 250, 500, 1000, 2500, 5000, +Inf) | p95 = `histogram_quantile(0.95, sum by (le) (increase(...[5m])))` |
+| `inventory_product_search_duration_ms_total` | sum of wall time | average = this / `requests_total{outcome="ok"}` |
+| `inventory_product_search_db_ms_total` | sum of time inside Mongo | same division; a gap to total = enrichment cost |
+| `inventory_product_search_matched_total` | sum of matched lots | average matches per search = this / ok requests |
+| `inventory_product_search_docs_examined_total`, `..._docs_returned_total` | from `explain` on 1 in 50 searches | read amplification = examined / returned (≈1 is ideal) |
+| `inventory_product_search_facets_total{facet}` | facets requested | by field |
+| `inventory_product_search_slow_total` | searches over 500 ms (each also logs `[search-slow]` with the request shape) | / 5 min |
+
+Suggested alerts: **p95 latency > 1 s for 10 min** and **more than 5 `outcome="timeout"` in 5 min** (both on `env="prod"`).
+
 ## Explore smoke queries
 
 After generating traffic (login, checkout, OCR, plan checkout, MIS, reminder, credit charge, journal, GSTR, cafe token):

@@ -61,6 +61,10 @@ public final class LabelFieldKeys {
   public static final String THRESHOLD_COUNT = "thresholdCount";
   /** Card only: purchase date of the lot. */
   public static final String PURCHASE_DATE = "purchaseDate";
+  /** Search only (computed): IN_STOCK / LOW_STOCK / SOLD_OUT from current and threshold counts. */
+  public static final String STOCK_STATE = "stockState";
+  /** Card and search: billing mode of the lot (REGULAR / BASIC). */
+  public static final String BILLING_MODE = "billingMode";
 
   // ---- shop group ----------------------------------------------------------------------------
   public static final String SHOP_NAME = "shopName";

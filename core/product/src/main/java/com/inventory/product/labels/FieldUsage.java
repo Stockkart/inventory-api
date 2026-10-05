@@ -15,7 +15,9 @@ public enum FieldUsage {
   /** Printable on a barcode sticker. */
   LABEL("label"),
   /** Showable on a product card (search result, Scan &amp; Sell row, ingredient card). */
-  CARD("card");
+  CARD("card"),
+  /** Usable as a filter, facet or sort key in advanced product search. */
+  SEARCH("search");
 
   private final String wireName;
 

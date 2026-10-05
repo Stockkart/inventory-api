@@ -51,6 +51,12 @@ public class InventoryController {
   private InventoryService inventoryService;
 
   @Autowired
+  private com.inventory.product.search.SearchFieldCatalogService searchFieldCatalogService;
+
+  @Autowired
+  private com.inventory.product.search.SearchValueSuggester searchValueSuggester;
+
+  @Autowired
   private RbacService rbacService;
 
 
@@ -119,6 +125,42 @@ public class InventoryController {
 
     return ResponseEntity.ok(
         ApiResponse.success(inventoryService.list(shopId, page, size, includeZeroStock)));
+  }
+
+  /** Advanced search (advanced-product-search R2.1): text + filter groups + facets + sort + paging. */
+  @PostMapping("/search")
+  public ResponseEntity<ApiResponse<com.inventory.product.rest.dto.response.SearchResponse>> searchAdvanced(
+      @RequestBody com.inventory.product.rest.dto.request.SearchRequest request,
+      HttpServletRequest httpRequest) {
+    String shopId = requireShopIdForSearch(httpRequest);
+    return ResponseEntity.ok(ApiResponse.success(inventoryService.searchAdvanced(shopId, request)));
+  }
+
+  /** The fields the active shop can filter, facet and sort on (R1.1). */
+  @GetMapping("/search/fields")
+  public ResponseEntity<ApiResponse<com.inventory.product.rest.dto.response.SearchFieldCatalogResponse>> searchFields(
+      HttpServletRequest httpRequest) {
+    String shopId = requireShopIdForSearch(httpRequest);
+    return ResponseEntity.ok(ApiResponse.success(searchFieldCatalogService.fields(shopId)));
+  }
+
+  /** Distinct values of a text facet field for the "Find…" box (R5.4). */
+  @GetMapping("/search/values")
+  public ResponseEntity<ApiResponse<java.util.List<String>>> searchValues(
+      @RequestParam String field,
+      @RequestParam(required = false) String q,
+      @RequestParam(required = false) Integer limit,
+      HttpServletRequest httpRequest) {
+    String shopId = requireShopIdForSearch(httpRequest);
+    return ResponseEntity.ok(ApiResponse.success(searchValueSuggester.suggest(shopId, field, q, limit)));
+  }
+
+  private static String requireShopIdForSearch(HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    if (StringUtils.isEmpty(shopId)) {
+      throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "Unauthorized access to shop inventory");
+    }
+    return shopId;
   }
 
   @GetMapping("/search")
