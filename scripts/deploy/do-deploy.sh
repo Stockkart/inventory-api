@@ -20,6 +20,7 @@
 #   4. Poll the deployment until ACTIVE, or fail with the platform's error.
 # API: https://docs.digitalocean.com/reference/api/digitalocean/#tag/Apps
 
+# shellcheck source=scripts/deploy/lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 SHA=${1:-}

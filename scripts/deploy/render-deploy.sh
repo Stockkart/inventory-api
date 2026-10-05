@@ -16,6 +16,7 @@
 # The service must be image-backed and already configured for IMAGE_REPOSITORY;
 # the API rejects an imageUrl whose host/repository differ from the service's.
 
+# shellcheck source=scripts/deploy/lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 SHA=${1:-}

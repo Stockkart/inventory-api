@@ -15,6 +15,7 @@
 #   SUMMARY_REASON          promote reason, if any
 #   SUMMARY_REPOSITORY      owner/repo, used to link the commit
 
+# shellcheck source=scripts/deploy/lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 require_env SUMMARY_ENVIRONMENT SUMMARY_SHA SUMMARY_RESULT

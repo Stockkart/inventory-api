@@ -14,6 +14,7 @@
 #
 # Environment (optional): VERIFY_SETTLE_CHECKS (default 3), VERIFY_SETTLE_INTERVAL (default 20)
 
+# shellcheck source=scripts/deploy/lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 BASE=${1:-}

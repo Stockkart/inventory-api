@@ -30,7 +30,7 @@ jobs:
           echo "ok: no .env files tracked"
 
       - name: shellcheck deploy scripts
-        run: shellcheck -x -s bash scripts/deploy/*.sh
+        run: shellcheck -x -P SCRIPTDIR -s bash scripts/deploy/*.sh
 
       - name: actionlint
         run: |
