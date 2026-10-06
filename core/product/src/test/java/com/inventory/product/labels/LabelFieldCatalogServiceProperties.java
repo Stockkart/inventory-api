@@ -40,7 +40,7 @@ import net.jqwik.api.Provide;
  * present regardless of shop type, groups appear in the order {@code product, pricing, lot,
  * vertical, shop}, and vertical keys keep schema order.
  */
-class LabelFieldCatalogServiceProperties {
+public class LabelFieldCatalogServiceProperties {
 
   private static final String SHOP_ID = "shop-prop";
 
@@ -50,7 +50,7 @@ class LabelFieldCatalogServiceProperties {
           "boolean", "list", "object", "file", "", "weird");
 
   /** All inputs the catalog depends on, generated together. */
-  record Scenario(
+  public record Scenario(
       ShopType shopType,
       String verticalId,
       String pluginVersion,
@@ -127,7 +127,7 @@ class LabelFieldCatalogServiceProperties {
   // ---- generators ----------------------------------------------------------------------------
 
   @Provide
-  Arbitrary<Scenario> scenarios() {
+  public Arbitrary<Scenario> scenarios() {
     Arbitrary<ShopType> shopType = Arbitraries.of(ShopType.class).injectNull(0.25);
     Arbitrary<String> verticalId =
         Arbitraries.oneOf(
@@ -206,7 +206,7 @@ class LabelFieldCatalogServiceProperties {
 
   // ---- helpers -------------------------------------------------------------------------------
 
-  static LabelFieldCatalogService service(Scenario scenario) {
+  public static LabelFieldCatalogService service(Scenario scenario) {
     ShopRepository shopRepository = mock(ShopRepository.class);
     PricingRepository pricingRepository = mock(PricingRepository.class);
     SchemaLoader schemaLoader = mock(SchemaLoader.class);
@@ -217,7 +217,7 @@ class LabelFieldCatalogServiceProperties {
         shopRepository, pricingRepository, schemaLoader, new VerticalValueTypeMapper());
   }
 
-  static Shop shop(Scenario scenario, ShopType shopType) {
+  public static Shop shop(Scenario scenario, ShopType shopType) {
     Shop shop = new Shop();
     shop.setShopId(SHOP_ID);
     shop.setShopType(shopType);

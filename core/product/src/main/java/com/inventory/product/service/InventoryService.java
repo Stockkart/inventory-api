@@ -91,6 +91,16 @@ public class InventoryService {
   private InventoryRepository inventoryRepository;
 
   @Autowired
+  private com.inventory.product.search.InventorySearchEngine searchEngine;
+
+  /**
+   * {@code pipeline} (default) runs the one-query advanced engine; {@code legacy} keeps the old
+   * three-collection handler for one release as a safety switch (advanced-product-search R10.8).
+   */
+  @org.springframework.beans.factory.annotation.Value("${stockkart.search.engine:pipeline}")
+  private String searchEngineMode;
+
+  @Autowired
   private VendorPurchaseInvoiceRepository vendorPurchaseInvoiceRepository;
 
   @Autowired
@@ -1042,6 +1052,16 @@ public class InventoryService {
   }
 
   public InventoryListResponse search(String shopId, Map<String, String> query) {
+    if (usePipelineEngine()) {
+      inventoryValidator.validateShopId(shopId);
+      com.inventory.product.search.SearchFieldCatalogService.ShopSearchContext ctx =
+          searchEngine.context(shopId);
+      com.inventory.product.rest.dto.request.SearchRequest request =
+          com.inventory.product.search.LegacySearchQueryTranslator.translate(query, ctx);
+      com.inventory.product.rest.dto.response.SearchResponse response =
+          searchEngine.search(shopId, request, this::toSummariesWithExtensions);
+      return inventoryMapper.toInventoryListResponse(response.data(), response.page());
+    }
     InventorySearchQueryParser.Parsed parsed = InventorySearchQueryParser.parse(query);
     return search(
         shopId,
@@ -1052,6 +1072,17 @@ public class InventoryService {
         parsed.cursor(),
         parsed.includeZeroStock(),
         parsed.page());
+  }
+
+  /** Advanced search: {@code POST /inventory/search} (advanced-product-search R2.1). */
+  public com.inventory.product.rest.dto.response.SearchResponse searchAdvanced(
+      String shopId, com.inventory.product.rest.dto.request.SearchRequest request) {
+    inventoryValidator.validateShopId(shopId);
+    return searchEngine.search(shopId, request, this::toSummariesWithExtensions);
+  }
+
+  private boolean usePipelineEngine() {
+    return !"legacy".equalsIgnoreCase(searchEngineMode == null ? "" : searchEngineMode.trim());
   }
 
   public InventoryListResponse search(

@@ -11,6 +11,8 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.Transient;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
+import org.springframework.data.mongodb.core.index.CompoundIndexes;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.math.BigDecimal;
@@ -21,6 +23,14 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @Document(collection = "inventory")
+/** Advanced search indexes (advanced-product-search R4.7): every search starts with {@code shopId}. */
+@CompoundIndexes({
+    @CompoundIndex(name = "shop_product_idx", def = "{'shopId': 1, 'productId': 1}"),
+    @CompoundIndex(name = "shop_location_idx", def = "{'shopId': 1, 'location': 1}"),
+    @CompoundIndex(name = "shop_batch_idx", def = "{'shopId': 1, 'batchNo': 1}", sparse = true),
+    @CompoundIndex(name = "shop_stock_idx", def = "{'shopId': 1, 'currentCount': 1}"),
+    @CompoundIndex(name = "shop_created_idx", def = "{'shopId': 1, 'createdAt': -1}")
+})
 public class Inventory {
 
   @Id

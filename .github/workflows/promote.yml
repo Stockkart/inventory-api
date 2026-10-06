@@ -1,0 +1,91 @@
+# Promote: deploy any already-built sha to production, after approval — the way to
+# roll back (promote the previous sha printed in the last production summary).
+# Like every other path, it goes through staging first: nothing reaches production
+# that was not verified on staging in the same run (or, for the PR label path,
+# currently serving on staging).
+name: promote-to-production
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Full 40-character commit sha to deploy (its image must already exist in Docker Hub)
+        type: string
+        required: true
+      reason:
+        description: Why (hotfix for …, rollback because …). Shown to the approver and kept in the run.
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  check-artifact:
+    name: Check artifact exists
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      IMAGE_REPOSITORY: ${{ vars.IMAGE_REPOSITORY || 'docker.io/myntrack/inventory-backend' }}
+    steps:
+      - name: Validate inputs
+        env:
+          SHA: ${{ inputs.sha }}
+          REASON: ${{ inputs.reason }}
+        run: |
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::sha must be the full 40-character commit hash, got '$SHA'"; exit 1; }
+          [[ -n "${REASON// /}" ]] || { echo "::error::reason must not be empty"; exit 1; }
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Image tag must exist
+        env:
+          SHA: ${{ inputs.sha }}
+        run: |
+          image="${IMAGE_REPOSITORY}:${SHA}"
+          if docker manifest inspect "$image" >/dev/null 2>&1; then
+            echo "found $image"
+          else
+            echo "::error::no image '$image' in the registry — the sha was never built. Deploy it to staging first (label a PR with deploy:staging) or merge it to main."
+            exit 1
+          fi
+
+      - name: Summary for the approver
+        env:
+          SHA: ${{ inputs.sha }}
+          REASON: ${{ inputs.reason }}
+        run: |
+          {
+            echo "## Promote to production — awaiting approval"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Requested by | @${{ github.actor }} |"
+            echo "| Commit | [\`${SHA:0:12}\`](${{ github.server_url }}/${{ github.repository }}/commit/${SHA}) |"
+            echo "| Image | \`${IMAGE_REPOSITORY}:${SHA}\` |"
+            echo "| Reason | ${REASON} |"
+            echo
+            echo "The build is deployed to staging first; a reviewer of the \`production-manual\` environment must then approve the production job."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-staging:
+    name: Staging first
+    needs: check-artifact
+    uses: ./.github/workflows/_deploy-staging.yml
+    with:
+      sha: ${{ inputs.sha }}
+    secrets: inherit
+
+  deploy-production:
+    name: Production (approval required)
+    needs: deploy-staging
+    uses: ./.github/workflows/_deploy-production.yml
+    with:
+      sha: ${{ inputs.sha }}
+      environment: production-manual
+      reason: ${{ inputs.reason }}
+    secrets: inherit

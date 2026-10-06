@@ -49,6 +49,16 @@ public class LabelLayoutDocument {
   private String sheetPreset;
 
   /**
+   * Labels side by side on the roll when {@code printMedia} is {@code ROLL}. Absent (with {@code
+   * rollColumnGapMm}) in documents saved before multi-across rolls; such layouts keep the legacy
+   * single-column roll output.
+   */
+  private Integer rollLabelsAcross;
+
+  /** Gap between neighbouring roll labels in millimetres; see {@link #rollLabelsAcross}. */
+  private Double rollColumnGapMm;
+
+  /**
    * {@code STACKED} or {@code COMPACT} (see {@code StickerTemplate}). Absent in documents written
    * before the sticker-template feature; such documents resolve to {@code STACKED}.
    */

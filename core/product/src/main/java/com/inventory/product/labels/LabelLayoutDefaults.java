@@ -4,6 +4,7 @@ import static com.inventory.product.labels.LabelFieldKeys.AVAILABLE_COUNT;
 import static com.inventory.product.labels.LabelFieldKeys.BARCODE_TEXT;
 import static com.inventory.product.labels.LabelFieldKeys.BASE_UNIT;
 import static com.inventory.product.labels.LabelFieldKeys.BATCH_NO;
+import static com.inventory.product.labels.LabelFieldKeys.BILLING_MODE;
 import static com.inventory.product.labels.LabelFieldKeys.COMPANY_NAME;
 import static com.inventory.product.labels.LabelFieldKeys.COST_PRICE;
 import static com.inventory.product.labels.LabelFieldKeys.CURRENT_COUNT;
@@ -36,12 +37,16 @@ import static com.inventory.product.labels.LabelFieldKeys.SHOP_NAME;
 import static com.inventory.product.labels.LabelFieldKeys.SHOP_PHONE;
 import static com.inventory.product.labels.LabelFieldKeys.SHOP_TAGLINE;
 import static com.inventory.product.labels.LabelFieldKeys.SOLD_COUNT;
+import static com.inventory.product.labels.LabelFieldKeys.STOCK_STATE;
 import static com.inventory.product.labels.LabelFieldKeys.THRESHOLD_COUNT;
 
 import static com.inventory.product.labels.Sensitivity.PUBLIC;
 import static com.inventory.product.labels.Sensitivity.SHOP_INTERNAL;
 
 import com.inventory.product.domain.model.enums.ShopType;
+import com.inventory.product.search.SearchSource;
+import com.inventory.product.search.SearchSpec;
+import com.inventory.product.search.SearchSpec.EnumValue;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -79,6 +84,7 @@ public final class LabelLayoutDefaults {
       List.of(
           new StickerSizeSpec("50x25", 50, 25, 3),
           new StickerSizeSpec("38x25", 38, 25, 2),
+          new StickerSizeSpec("38x38", 38, 38, 4),
           new StickerSizeSpec("100x50", 100, 50, 6));
 
   /**
@@ -113,10 +119,14 @@ public final class LabelLayoutDefaults {
 
   private static final List<PrintableField> CORE_FIELDS =
       List.of(
-          text(PRODUCT_NAME, "Product name", SourceGroup.PRODUCT, "name"),
-          text(COMPANY_NAME, "Company", SourceGroup.PRODUCT, "companyName"),
-          text(BARCODE_TEXT, "Barcode", SourceGroup.PRODUCT, "barcode"),
-          text(HSN, "HSN", SourceGroup.PRODUCT, "hsn"),
+          text(PRODUCT_NAME, "Product name", SourceGroup.PRODUCT, "name")
+              .withSearch(SearchSpec.text(SearchSource.PRODUCT, "product.normalizedName", false, true)),
+          text(COMPANY_NAME, "Company", SourceGroup.PRODUCT, "companyName")
+              .withSearch(SearchSpec.text(SearchSource.PRODUCT, "product.companyName", true, true)),
+          text(BARCODE_TEXT, "Barcode", SourceGroup.PRODUCT, "barcode")
+              .withSearch(SearchSpec.text(SearchSource.PRODUCT, "product.barcode", false, false)),
+          text(HSN, "HSN", SourceGroup.PRODUCT, "hsn")
+              .withSearch(SearchSpec.text(SearchSource.PRODUCT, "product.hsn", false, false)),
           text(BASE_UNIT, "Unit", SourceGroup.PRODUCT, "baseUnit"),
           text(PACK_SIZE, "Pack size", SourceGroup.PRODUCT, "unitsPerPack"),
           text(DESCRIPTION, "Description", SourceGroup.PRODUCT, "description"));
@@ -187,18 +197,23 @@ public final class LabelLayoutDefaults {
 
   private static final List<PrintableField> LOT_FIELDS =
       List.of(
-          text(BATCH_NO, "Batch no.", SourceGroup.LOT, "batchNo"),
-          both(EXPIRY_DATE, "Expiry", SourceGroup.LOT, ValueType.DATE, ALL_SHOP_TYPES, "expiryDate"),
-          both(RECEIVED_DATE, "Received on", SourceGroup.LOT, ValueType.DATE, ALL_SHOP_TYPES, "createdAt"));
+          text(BATCH_NO, "Batch no.", SourceGroup.LOT, "batchNo")
+              .withSearch(SearchSpec.text(SearchSource.LOT, "batchNo", false, false)),
+          both(EXPIRY_DATE, "Expiry", SourceGroup.LOT, ValueType.DATE, ALL_SHOP_TYPES, "expiryDate")
+              .withSearch(SearchSpec.date(SearchSource.LOT, "expiryDate", true)),
+          both(RECEIVED_DATE, "Received on", SourceGroup.LOT, ValueType.DATE, ALL_SHOP_TYPES, "createdAt")
+              .withSearch(SearchSpec.date(SearchSource.LOT, "createdAt", true)));
 
   /** Card-only lot fields, appended after {@link #LOT_FIELDS} in the catalog (card Req 1.3). */
   private static final List<PrintableField> CARD_LOT_FIELDS =
       List.of(
-          PrintableField.cardOnly(LOCATION, "Location", SourceGroup.LOT, ValueType.TEXT, "location", PUBLIC),
+          PrintableField.cardOnly(LOCATION, "Location", SourceGroup.LOT, ValueType.TEXT, "location", PUBLIC)
+              .withSearch(SearchSpec.text(SearchSource.LOT, "location", true, false)),
           PrintableField.cardOnly(
               AVAILABLE_COUNT, "Available", SourceGroup.LOT, ValueType.NUMBER, "availableCount", PUBLIC),
           PrintableField.cardOnly(
-              CURRENT_COUNT, "Current stock", SourceGroup.LOT, ValueType.NUMBER, "currentCount", PUBLIC),
+              CURRENT_COUNT, "Current stock", SourceGroup.LOT, ValueType.NUMBER, "currentCount", PUBLIC)
+              .withSearch(SearchSpec.number(SearchSource.LOT, "currentCount", true)),
           PrintableField.cardOnly(
               RECEIVED_COUNT, "Received", SourceGroup.LOT, ValueType.NUMBER, "receivedCount", PUBLIC),
           PrintableField.cardOnly(SOLD_COUNT, "Sold", SourceGroup.LOT, ValueType.NUMBER, "soldCount", PUBLIC),
@@ -210,7 +225,41 @@ public final class LabelLayoutDefaults {
               "thresholdCount",
               PUBLIC),
           PrintableField.cardOnly(
-              PURCHASE_DATE, "Purchased on", SourceGroup.LOT, ValueType.DATE, "purchaseDate", PUBLIC));
+              PURCHASE_DATE, "Purchased on", SourceGroup.LOT, ValueType.DATE, "purchaseDate", PUBLIC)
+              .withSearch(SearchSpec.date(SearchSource.LOT, "purchaseDate", true)),
+          PrintableField.cardOnly(
+                  BILLING_MODE, "Billing mode", SourceGroup.LOT, ValueType.TEXT, "billingMode", PUBLIC)
+              .withSearch(
+                  SearchSpec.enumeration(
+                      SearchSource.LOT,
+                      "billingMode",
+                      false,
+                      List.of(new EnumValue("REGULAR", "Regular"), new EnumValue("BASIC", "Basic")))));
+
+  /**
+   * Search-only fields computed in the pipeline (advanced-product-search R1.2). Not on cards, not
+   * on stickers; they exist so the filter panel can offer them.
+   */
+  private static final List<PrintableField> SEARCH_LOT_FIELDS =
+      List.of(
+          new PrintableField(
+              STOCK_STATE,
+              "Stock",
+              SourceGroup.LOT,
+              ValueType.TEXT,
+              ALL_SHOP_TYPES,
+              null,
+              Set.of(FieldUsage.SEARCH),
+              PUBLIC,
+              null,
+              SearchSpec.enumeration(
+                  SearchSource.COMPUTED,
+                  "stockState",
+                  false,
+                  List.of(
+                      new EnumValue("IN_STOCK", "In stock"),
+                      new EnumValue("LOW_STOCK", "Low stock"),
+                      new EnumValue("SOLD_OUT", "Sold out")))));
 
   /** Shop identity fields are sticker-only: a card already sits inside the shop's own UI. */
   private static final List<PrintableField> SHOP_FIELDS =
@@ -254,8 +303,8 @@ public final class LabelLayoutDefaults {
 
   /**
    * Per-zone field caps for the {@link StickerTemplate#COMPACT} template, by sticker size (Req 11):
-   * {@code 50x25 → 1/4/2}, {@code 38x25 → 1/3/1}, {@code 100x50 → 1/6/3}. Unknown sizes fall back to
-   * the {@link #DEFAULT_STICKER_SIZE} caps.
+   * {@code 50x25 → 1/4/2}, {@code 38x25 → 1/3/1}, {@code 38x38 → 1/4/2}, {@code 100x50 → 1/6/3}.
+   * Unknown sizes fall back to the {@link #DEFAULT_STICKER_SIZE} caps.
    */
   public static ZoneCaps zoneCaps(String size) {
     if (size == null) {
@@ -263,6 +312,7 @@ public final class LabelLayoutDefaults {
     }
     return switch (size.trim()) {
       case "38x25" -> new ZoneCaps(1, 3, 1);
+      case "38x38" -> new ZoneCaps(1, 4, 2);
       case "100x50" -> new ZoneCaps(1, 6, 3);
       case "50x25" -> new ZoneCaps(1, 4, 2);
       default -> DEFAULT_ZONE_CAPS;
@@ -349,6 +399,11 @@ public final class LabelLayoutDefaults {
   /** Card-only lot fields; the catalog appends them after {@link #lotFields()}. */
   public static List<PrintableField> cardLotFields() {
     return CARD_LOT_FIELDS;
+  }
+
+  /** Search-only computed lot fields; the catalog appends them after {@link #cardLotFields()}. */
+  public static List<PrintableField> searchLotFields() {
+    return SEARCH_LOT_FIELDS;
   }
 
   /** Shop group fields in catalog order (sticker only). */

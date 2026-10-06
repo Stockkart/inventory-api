@@ -51,6 +51,7 @@ class FieldCatalogUsageProperties {
     Set<String> union = new HashSet<>();
     labelView.forEach(f -> union.add(f.fieldKey()));
     cardView.forEach(f -> union.add(f.fieldKey()));
+    catalog.forUsage(FieldUsage.SEARCH).forEach(f -> union.add(f.fieldKey()));
     assertThat(union).hasSameSizeAs(all);
     assertSubsequence(labelView, all);
     assertSubsequence(cardView, all);
