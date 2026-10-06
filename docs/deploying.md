@@ -40,7 +40,24 @@ Pull requests from forks cannot be deployed (fork workflows get no secrets).
 
 Branch deploys never reach production.
 
-## Putting a specific build in production (hotfix, re-deploy)
+## Promoting a pull request to production (hotfix path)
+
+Once the PR is on staging and you have tested it, add the label **`deploy:production`**.
+The **PR → production** workflow:
+
+1. checks the PR's image exists and that staging is *currently serving that exact
+   commit* (so staging cannot be skipped);
+2. waits for a reviewer of the `production-manual` environment to approve
+   ("Review deployments" on the run page);
+3. deploys and verifies, then removes the label and comments on the PR.
+
+The reason recorded on the run is `PR #N promoted by @user: <PR title>`. Adding the
+label again after new pushes promotes the newer commit (after it has been on staging).
+
+Production is then running an unmerged commit: merge the PR soon, because any other
+merge to `main` would replace it.
+
+## Putting an arbitrary build in production (rollback, re-deploy)
 
 Actions → **promote-to-production** → Run workflow, with:
 
@@ -48,8 +65,14 @@ Actions → **promote-to-production** → Run workflow, with:
   (it was deployed to staging via label, or merged to `main` earlier).
 - `reason`: free text, shown to the approver and kept in the run.
 
-The workflow checks the image exists, then waits for a reviewer of the
-`production-manual` environment to approve. After approval it deploys and verifies.
+The workflow checks the image exists, deploys it to **staging** and verifies it
+there, then waits for a reviewer of the `production-manual` environment to approve.
+After approval it deploys to production and verifies.
+
+Rule with no exceptions: **nothing reaches production without having been verified
+on staging first** — a merge to `main` does both in one run, the PR label requires
+staging to be serving that commit, and promote deploys to staging before asking for
+approval. A rollback therefore also passes through staging for a few minutes.
 
 ## Rolling back
 
@@ -82,12 +105,12 @@ Environments (Settings → Environments):
 | Environment | Reviewers | Deployment branches | Secrets | Variables |
 |---|---|---|---|---|
 | `staging` | none | any | `RENDER_API_KEY` | `RENDER_SERVICE_ID`, `STAGING_API_URL` |
-| `production` | none | `main` only | `DIGITALOCEAN_TOKEN` | `DO_APP_ID`, `PROD_API_URL` |
-| `production-manual` | team `stockkart-release-approvers` | any | `DIGITALOCEAN_TOKEN` | `DO_APP_ID`, `PROD_API_URL` |
+| `production` | none | `main` only | `DIGITALOCEAN_TOKEN` | `DO_APP_ID` (bare UUID, no `?i=…`), `PROD_API_URL` |
+| `production-manual` | team `stockkart-release-approvers` | any | `DIGITALOCEAN_TOKEN` | `DO_APP_ID` (bare UUID, no `?i=…`), `PROD_API_URL` |
 
 Repository secrets: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`.
 Optional repository variable: `IMAGE_REPOSITORY` (default `docker.io/myntrack/inventory-backend`).
-Label: `deploy:staging`.
+Labels: `deploy:staging`, `deploy:production`.
 
 `production` and `production-manual` point at the same real production; two
 environments exist only because GitHub attaches reviewers per environment. The
@@ -103,7 +126,8 @@ Secret scanning and push protection are enabled on the repository, and
 |---|---|---|
 | `release.yml` | push to `main` | test → build → staging → production |
 | `branch-staging.yml` | PR labelled `deploy:staging` / pushes while labelled | build PR head → staging → PR comment |
-| `promote.yml` | manual | any built sha → production, with approval |
+| `branch-promote.yml` | PR labelled `deploy:production` | PR head (already on staging) → production, with approval; label removed afterwards |
+| `promote.yml` | manual | any built sha → staging → production, with approval (rollbacks) |
 | `build-checker.yml` | PR | tests |
 | `ci-hygiene.yml` | PR, push to `main` | actionlint, shellcheck, no `.env` |
 | `_build-image.yml`, `_deploy-staging.yml`, `_deploy-production.yml` | called by the above | shared jobs so the three paths cannot drift |
