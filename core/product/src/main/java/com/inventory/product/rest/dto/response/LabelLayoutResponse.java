@@ -8,6 +8,7 @@ import com.inventory.product.labels.CurrencyStyle;
 import com.inventory.product.labels.EffectiveLayout;
 import com.inventory.product.labels.EnabledFieldDto;
 import com.inventory.product.labels.PrintMedia;
+import com.inventory.product.labels.RollSpec;
 import com.inventory.product.labels.SheetSpec;
 import com.inventory.product.labels.StickerSizeSpec;
 import com.inventory.product.labels.StickerTemplate;
@@ -31,6 +32,7 @@ import java.util.List;
  *   "printMedia": "ROLL",
  *   "sheetPreset": null,
  *   "sheetSpec": null,
+ *   "rollSpec": { "labelsAcross": 2, "columnGapMm": 3.0, "pageWidthMm": 79.0, "pageHeightMm": 38.0 },
  *   "isDefault": true,
  *   "updatedAt": null,
  *   "updatedByUserId": null,
@@ -42,6 +44,8 @@ import java.util.List;
  *     property name is exactly {@code isDefault}
  * @param updatedAt {@code null} when {@code isDefault} is true
  * @param updatedByUserId {@code null} when {@code isDefault} is true
+ * @param rollSpec resolved roll geometry for {@code ROLL} layouts with a saved roll setup; {@code
+ *     null} otherwise (the renderer then keeps the legacy single-column roll output)
  */
 public record LabelLayoutResponse(
     List<EnabledFieldDto> enabledFields,
@@ -53,6 +57,7 @@ public record LabelLayoutResponse(
     PrintMedia printMedia,
     String sheetPreset,
     SheetSpec sheetSpec,
+    RollSpec rollSpec,
     StickerTemplate template,
     BarcodePosition barcodePosition,
     CurrencyStyle currencyStyle,
@@ -86,6 +91,7 @@ public record LabelLayoutResponse(
         layout.printMedia(),
         layout.sheetPreset(),
         layout.sheetSpec(),
+        layout.rollSpec(),
         layout.template(),
         layout.barcodePosition(),
         layout.currencyStyle(),
@@ -109,6 +115,7 @@ public record LabelLayoutResponse(
         sheetSpec,
         template,
         barcodePosition,
-        currencyStyle);
+        currencyStyle,
+        rollSpec);
   }
 }

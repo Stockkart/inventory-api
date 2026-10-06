@@ -85,6 +85,8 @@ final class InMemoryLabelLayoutRepository {
         d.getBlankValueBehavior(),
         d.getPrintMedia(),
         d.getSheetPreset(),
+        d.getRollLabelsAcross(),
+        d.getRollColumnGapMm(),
         d.getTemplate(),
         d.getBarcodePosition(),
         d.getCurrencyStyle(),

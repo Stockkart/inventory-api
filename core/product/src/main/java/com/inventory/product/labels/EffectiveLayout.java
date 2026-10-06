@@ -20,6 +20,8 @@ import java.util.List;
  *     (defaults to {@code TOP})
  * @param currencyStyle currency rendering style (Req 11); never {@code null} (defaults to {@code
  *     RUPEE_SYMBOL})
+ * @param rollSpec resolved roll geometry when {@code printMedia == ROLL} and the shop saved a roll
+ *     setup; {@code null} for {@code SHEET} and for legacy single-column rolls
  */
 public record EffectiveLayout(
     List<EnabledFieldDto> enabledFields,
@@ -33,7 +35,38 @@ public record EffectiveLayout(
     SheetSpec sheetSpec,
     StickerTemplate template,
     BarcodePosition barcodePosition,
-    CurrencyStyle currencyStyle) {
+    CurrencyStyle currencyStyle,
+    RollSpec rollSpec) {
+
+  /** Convenience constructor for the pre-roll-setup shape: no roll spec. */
+  public EffectiveLayout(
+      List<EnabledFieldDto> enabledFields,
+      String stickerSize,
+      StickerSizeSpec stickerSizeSpec,
+      boolean showBarcodeText,
+      boolean showFieldLabels,
+      BlankValueBehavior blankValueBehavior,
+      PrintMedia printMedia,
+      String sheetPreset,
+      SheetSpec sheetSpec,
+      StickerTemplate template,
+      BarcodePosition barcodePosition,
+      CurrencyStyle currencyStyle) {
+    this(
+        enabledFields,
+        stickerSize,
+        stickerSizeSpec,
+        showBarcodeText,
+        showFieldLabels,
+        blankValueBehavior,
+        printMedia,
+        sheetPreset,
+        sheetSpec,
+        template,
+        barcodePosition,
+        currencyStyle,
+        null);
+  }
 
   public EffectiveLayout {
     enabledFields = enabledFields == null ? List.of() : List.copyOf(enabledFields);

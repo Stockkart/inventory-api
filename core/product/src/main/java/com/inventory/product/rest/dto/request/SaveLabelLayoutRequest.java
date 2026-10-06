@@ -38,6 +38,12 @@ import java.util.Map;
  *     COMPACT}; keys not in {@code enabledFieldKeys} are dropped (Req 11)
  * @param fieldLabelOverrides field key → force label on/off; absent key means the automatic rule;
  *     keys not in {@code enabledFieldKeys} are dropped (Req 11)
+ * @param rollLabelsAcross labels side by side on the roll, {@code 1}–{@code 4}; only used when
+ *     {@code printMedia} is {@code ROLL}. When both roll fields are omitted the layout keeps the
+ *     legacy single-column roll output; when one is given the other defaults ({@code 1} across,
+ *     {@code 0} mm gap)
+ * @param rollColumnGapMm gap between neighbouring labels in millimetres, {@code 0}–{@code 20}; only
+ *     used when {@code printMedia} is {@code ROLL}
  */
 public record SaveLabelLayoutRequest(
     List<String> enabledFieldKeys,
@@ -51,7 +57,40 @@ public record SaveLabelLayoutRequest(
     String barcodePosition,
     String currencyStyle,
     Map<String, String> fieldZones,
-    Map<String, Boolean> fieldLabelOverrides) {
+    Map<String, Boolean> fieldLabelOverrides,
+    Integer rollLabelsAcross,
+    Double rollColumnGapMm) {
+
+  /** Convenience constructor for the pre-roll-setup shape: no roll fields. */
+  public SaveLabelLayoutRequest(
+      List<String> enabledFieldKeys,
+      String stickerSize,
+      LenientBoolean showBarcodeText,
+      LenientBoolean showFieldLabels,
+      String blankValueBehavior,
+      String printMedia,
+      String sheetPreset,
+      String template,
+      String barcodePosition,
+      String currencyStyle,
+      Map<String, String> fieldZones,
+      Map<String, Boolean> fieldLabelOverrides) {
+    this(
+        enabledFieldKeys,
+        stickerSize,
+        showBarcodeText,
+        showFieldLabels,
+        blankValueBehavior,
+        printMedia,
+        sheetPreset,
+        template,
+        barcodePosition,
+        currencyStyle,
+        fieldZones,
+        fieldLabelOverrides,
+        null,
+        null);
+  }
 
   /**
    * Convenience constructor for the pre-sheet-layout shape with {@link LenientBoolean} options and

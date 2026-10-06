@@ -102,6 +102,9 @@ public class LabelLayoutService {
     doc.setBlankValueBehavior(config.blankValueBehavior().name());
     doc.setPrintMedia(config.printMedia().name());
     doc.setSheetPreset(config.sheetPreset());
+    RollSetup roll = config.rollSetup();
+    doc.setRollLabelsAcross(roll == null ? null : roll.labelsAcross());
+    doc.setRollColumnGapMm(roll == null ? null : roll.columnGapMm());
     doc.setTemplate(config.template().name());
     doc.setBarcodePosition(config.barcodePosition().name());
     doc.setCurrencyStyle(config.currencyStyle().name());
@@ -225,6 +228,13 @@ public class LabelLayoutService {
               .orElse(null);
     }
 
+    // Resolve the roll page box only for ROLL layouts that saved a roll setup; legacy
+    // single-column rolls stay null so the renderer keeps its old output.
+    RollSpec rollSpec = null;
+    if (cfg.printMedia() == PrintMedia.ROLL && cfg.rollSetup() != null) {
+      rollSpec = RollLayoutCalculator.resolve(cfg.rollSetup(), spec);
+    }
+
     return new EffectiveLayout(
         enabled,
         spec.size(),
@@ -237,7 +247,8 @@ public class LabelLayoutService {
         sheetSpec,
         cfg.template(),
         cfg.barcodePosition(),
-        cfg.currencyStyle());
+        cfg.currencyStyle(),
+        rollSpec);
   }
 
   /**
@@ -316,6 +327,9 @@ public class LabelLayoutService {
             .orElse(LabelLayoutDefaults.DEFAULT_BARCODE_POSITION);
     CurrencyStyle currencyStyle =
         parseCurrencyStyle(doc.getCurrencyStyle()).orElse(LabelLayoutDefaults.DEFAULT_CURRENCY_STYLE);
+    // Roll setup only applies to ROLL documents that stored it; documents written before
+    // multi-across rolls have neither field and keep the legacy single-column output.
+    RollSetup rollSetup = printMedia == PrintMedia.ROLL ? rollSetupOf(doc) : null;
     return new LabelLayoutConfig(
         doc.getEnabledFieldKeys() == null ? defaults.enabledFieldKeys() : doc.getEnabledFieldKeys(),
         doc.getStickerSize() == null ? defaults.stickerSize() : doc.getStickerSize(),
@@ -328,7 +342,27 @@ public class LabelLayoutService {
         barcodePosition,
         currencyStyle,
         doc.getFieldZones(),
-        doc.getFieldLabelOverrides());
+        doc.getFieldLabelOverrides(),
+        rollSetup);
+  }
+
+  /**
+   * The stored roll setup, or {@code null} when the document carries neither roll field. A stored
+   * value outside the {@link RollLayoutCalculator} bounds (hand-edited data) is clamped to its
+   * default rather than failing every labels request.
+   */
+  private static RollSetup rollSetupOf(LabelLayoutDocument doc) {
+    Integer across = doc.getRollLabelsAcross();
+    Double gap = doc.getRollColumnGapMm();
+    if (across == null && gap == null) {
+      return null;
+    }
+    int safeAcross =
+        across != null && RollLayoutCalculator.isValidLabelsAcross(across)
+            ? across
+            : RollLayoutCalculator.MIN_LABELS_ACROSS;
+    double safeGap = gap != null && RollLayoutCalculator.isValidColumnGap(gap) ? gap : 0;
+    return new RollSetup(safeAcross, safeGap);
   }
 
   private static Optional<StickerTemplate> parseTemplate(String raw) {

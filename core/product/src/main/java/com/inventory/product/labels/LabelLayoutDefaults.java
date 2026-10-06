@@ -84,6 +84,7 @@ public final class LabelLayoutDefaults {
       List.of(
           new StickerSizeSpec("50x25", 50, 25, 3),
           new StickerSizeSpec("38x25", 38, 25, 2),
+          new StickerSizeSpec("38x38", 38, 38, 4),
           new StickerSizeSpec("100x50", 100, 50, 6));
 
   /**
@@ -302,8 +303,8 @@ public final class LabelLayoutDefaults {
 
   /**
    * Per-zone field caps for the {@link StickerTemplate#COMPACT} template, by sticker size (Req 11):
-   * {@code 50x25 → 1/4/2}, {@code 38x25 → 1/3/1}, {@code 100x50 → 1/6/3}. Unknown sizes fall back to
-   * the {@link #DEFAULT_STICKER_SIZE} caps.
+   * {@code 50x25 → 1/4/2}, {@code 38x25 → 1/3/1}, {@code 38x38 → 1/4/2}, {@code 100x50 → 1/6/3}.
+   * Unknown sizes fall back to the {@link #DEFAULT_STICKER_SIZE} caps.
    */
   public static ZoneCaps zoneCaps(String size) {
     if (size == null) {
@@ -311,6 +312,7 @@ public final class LabelLayoutDefaults {
     }
     return switch (size.trim()) {
       case "38x25" -> new ZoneCaps(1, 3, 1);
+      case "38x38" -> new ZoneCaps(1, 4, 2);
       case "100x50" -> new ZoneCaps(1, 6, 3);
       case "50x25" -> new ZoneCaps(1, 4, 2);
       default -> DEFAULT_ZONE_CAPS;

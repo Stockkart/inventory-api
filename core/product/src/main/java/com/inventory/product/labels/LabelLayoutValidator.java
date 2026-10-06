@@ -34,6 +34,13 @@ public class LabelLayoutValidator {
   private static final String PRINT_MEDIA_ERROR = "printMedia must be ROLL or SHEET";
   private static final String SHEET_PRESET_REQUIRED_ERROR =
       "sheetPreset is required when printMedia is SHEET";
+  private static final String ROLL_LABELS_ACROSS_ERROR =
+      "rollLabelsAcross must be between "
+          + RollLayoutCalculator.MIN_LABELS_ACROSS
+          + " and "
+          + RollLayoutCalculator.MAX_LABELS_ACROSS;
+  private static final String ROLL_COLUMN_GAP_ERROR =
+      "rollColumnGapMm must be between 0 and " + (int) RollLayoutCalculator.MAX_COLUMN_GAP_MM;
   private static final String TEMPLATE_ERROR = "template must be STACKED or COMPACT";
   private static final String BARCODE_POSITION_ERROR = "barcodePosition must be TOP or BOTTOM";
   private static final String CURRENCY_STYLE_ERROR =
@@ -184,6 +191,12 @@ public class LabelLayoutValidator {
       sheetPreset = validateSheetPreset(req.sheetPreset(), stickerSize, sizeSpec, errors);
     }
 
+    // ---- roll setup, only for ROLL and only when at least one roll field is given -----------
+    RollSetup rollSetup = null;
+    if (printMedia == PrintMedia.ROLL) {
+      rollSetup = validateRollSetup(req.rollLabelsAcross(), req.rollColumnGapMm(), errors);
+    }
+
     if (!errors.isEmpty()) {
       throw new ValidationException(errors);
     }
@@ -200,7 +213,32 @@ public class LabelLayoutValidator {
         barcodePosition,
         currencyStyle,
         fieldZones,
-        fieldLabelOverrides);
+        fieldLabelOverrides,
+        rollSetup);
+  }
+
+  /**
+   * Validates the roll fields of a {@code ROLL} layout. Both omitted → {@code null} (legacy
+   * single-column output). Otherwise a missing field takes its default ({@code 1} across, {@code 0}
+   * mm gap) and each supplied field is range-checked against {@link RollLayoutCalculator}.
+   */
+  private static RollSetup validateRollSetup(
+      Integer labelsAcross, Double columnGapMm, Set<String> errors) {
+    if (labelsAcross == null && columnGapMm == null) {
+      return null;
+    }
+    int across = labelsAcross == null ? RollLayoutCalculator.MIN_LABELS_ACROSS : labelsAcross;
+    double gap = columnGapMm == null ? 0 : columnGapMm;
+    boolean ok = true;
+    if (!RollLayoutCalculator.isValidLabelsAcross(across)) {
+      errors.add(ROLL_LABELS_ACROSS_ERROR);
+      ok = false;
+    }
+    if (!RollLayoutCalculator.isValidColumnGap(gap)) {
+      errors.add(ROLL_COLUMN_GAP_ERROR);
+      ok = false;
+    }
+    return ok ? new RollSetup(across, gap) : null;
   }
 
   /**
