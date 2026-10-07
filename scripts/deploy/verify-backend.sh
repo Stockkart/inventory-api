@@ -12,6 +12,12 @@
 # Connection errors and 5xx are treated as "not yet" until the timeout, because
 # Render free instances cold-start and App Platform swaps containers mid-rollout.
 #
+# VERIFY_MODE=reachable drops the commit.txt check (health only) for images built
+# from commits that predate /commit.txt. The caller decides the mode from the
+# deployed commit's Dockerfile; this script does not guess.
+# TODO(temporary-old-commit-deploys): remove the reachable mode (and every VERIFY_MODE branch
+# below) once old commits no longer need deploying.
+#
 # Environment (optional): VERIFY_SETTLE_CHECKS (default 3), VERIFY_SETTLE_INTERVAL (default 20)
 
 # shellcheck source=scripts/deploy/lib.sh
@@ -26,6 +32,8 @@ require_cmd curl jq
 BASE=${BASE%/}
 SETTLE_CHECKS=${VERIFY_SETTLE_CHECKS:-3}
 SETTLE_INTERVAL=${VERIFY_SETTLE_INTERVAL:-20}
+VERIFY_MODE=${VERIFY_MODE:-sha}
+[[ "$VERIFY_MODE" == "sha" || "$VERIFY_MODE" == "reachable" ]] || die "VERIFY_MODE must be 'sha' or 'reachable', got '$VERIFY_MODE'"
 
 health_up() {
   local status
@@ -37,6 +45,7 @@ health_up() {
 
 LAST_COMMIT=""
 commit_matches() {
+  [[ "$VERIFY_MODE" == "sha" ]] || return 0
   http_json GET "${BASE}/commit.txt" --header 'Accept: text/plain'
   is_2xx || return 1
   LAST_COMMIT=$(tr -d '[:space:]' <<<"$HTTP_BODY")
@@ -56,9 +65,17 @@ live_with_sha() {
   return 0
 }
 
-log "verify: waiting up to ${TIMEOUT_MIN}m for ${BASE} to serve ${SHA}"
+if [[ "$VERIFY_MODE" == "reachable" ]]; then
+  log "verify: ${SHA} predates /commit.txt; waiting up to ${TIMEOUT_MIN}m for ${BASE} health to be UP"
+else
+  log "verify: waiting up to ${TIMEOUT_MIN}m for ${BASE} to serve ${SHA}"
+fi
 poll 15 "$TIMEOUT_MIN" live_with_sha || die "verification failed after ${TIMEOUT_MIN}m: ${LAST_REASON}"
-log "verify: health UP and commit.txt == ${SHA}"
+if [[ "$VERIFY_MODE" == "reachable" ]]; then
+  log "verify: health UP (which commit runs cannot be proven for this build)"
+else
+  log "verify: health UP and commit.txt == ${SHA}"
+fi
 
 for ((i = 1; i <= SETTLE_CHECKS; i++)); do
   sleep "$SETTLE_INTERVAL"
@@ -67,5 +84,10 @@ for ((i = 1; i <= SETTLE_CHECKS; i++)); do
   log "verify: settle check ${i}/${SETTLE_CHECKS} ok"
 done
 
-log "verify: ${BASE} is live on ${SHA}"
-emit_output verified_sha "$SHA"
+if [[ "$VERIFY_MODE" == "reachable" ]]; then
+  log "verify: ${BASE} is healthy"
+  emit_output verified_sha ""
+else
+  log "verify: ${BASE} is live on ${SHA}"
+  emit_output verified_sha "$SHA"
+fi

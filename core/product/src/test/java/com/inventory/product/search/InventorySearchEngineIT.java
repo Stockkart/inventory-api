@@ -458,6 +458,20 @@ class InventorySearchEngineIT {
   }
 
   @Test
+  void valueSuggestionsCoverCountedAndOnePerProductFields() {
+    SearchValueSuggester suggester = new SearchValueSuggester(template, catalogService);
+    // counted field: from the cached distinct list, prefix first
+    assertThat(suggester.suggest(SHOP, LabelFieldKeys.COMPANY_NAME, "s", null)).containsExactly("Sun Pharma", "GSK"); // prefix first, then contains
+    assertThat(suggester.suggest(SHOP, LabelFieldKeys.COMPANY_NAME, "", null)).containsExactly("Cipla", "GSK", "Sun Pharma");
+    // one-per-product fields: looked up live; names match anywhere, identifiers from the start
+    List<String> names = suggester.suggest(SHOP, LabelFieldKeys.PRODUCT_NAME, "cetam", null);
+    assertThat(names).isNotEmpty().allMatch(n -> n.toLowerCase().contains("cetam")).hasSizeLessThanOrEqualTo(20);
+    assertThat(suggester.suggest(SHOP, LabelFieldKeys.BARCODE_TEXT, "BC1", 5)).hasSize(5).allMatch(b -> b.startsWith("BC1"));
+    assertThat(suggester.suggest(SHOP, LabelFieldKeys.BARCODE_TEXT, "C1", 5)).as("no match in the middle of an identifier").isEmpty();
+    assertThat(suggester.suggest(SHOP, LabelFieldKeys.HSN, "3004", null)).containsExactlyInAnyOrder("30040", "30041", "30042");
+  }
+
+  @Test
   void explainShowsIndexScanFirst() {
     ValidatedSearch v = new SearchRequestValidator().validate(
         req("para*mol", List.of(in(LabelFieldKeys.COMPANY_NAME, "Cipla")), null, List.of(LabelFieldKeys.COMPANY_NAME), null, 0, 20, false),

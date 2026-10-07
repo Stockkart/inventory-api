@@ -42,8 +42,10 @@ jobs:
       STAGING_API_URL: ${{ vars.STAGING_API_URL }}
       IMAGE_REPOSITORY: ${{ vars.IMAGE_REPOSITORY || 'docker.io/myntrack/inventory-backend' }}
     steps:
-      - name: Checkout (deploy scripts)
+      - name: Checkout (deploy scripts, full history to inspect the deployed commit)
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
 
       - name: Check environment configuration
         run: |
@@ -60,7 +62,25 @@ jobs:
         id: render
         run: scripts/deploy/render-deploy.sh "${{ inputs.sha }}"
 
+      # TODO(temporary-old-commit-deploys): remove this step and pass no VERIFY_MODE once old commits
+      # no longer need deploying (verify-backend.sh then always checks /commit.txt).
+      - name: Decide how the deploy can be verified
+        id: verify-mode
+        env:
+          SHA: ${{ inputs.sha }}
+        run: |
+          # Images built from commits whose Dockerfile bakes in commit.txt can prove which commit
+          # they run; older ones can only prove they are healthy.
+          if git cat-file -e "${SHA}:Dockerfile" 2>/dev/null && git show "${SHA}:Dockerfile" | grep -q 'commit.txt'; then
+            echo "mode=sha" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=reachable" >> "$GITHUB_OUTPUT"
+            echo "::warning::commit ${SHA} predates /commit.txt; verifying health only"
+          fi
+
       - name: Verify staging is live on this sha
+        env:
+          VERIFY_MODE: ${{ steps.verify-mode.outputs.mode }}
         run: scripts/deploy/verify-backend.sh "$STAGING_API_URL" "${{ inputs.sha }}" 10
 
       - name: Job summary
@@ -73,4 +93,5 @@ jobs:
           SUMMARY_DEPLOYMENT_URL: ${{ steps.render.outputs.deploy_url }}
           SUMMARY_BASE_URL: ${{ vars.STAGING_API_URL }}
           SUMMARY_ACTOR: ${{ github.actor }}
+          SUMMARY_VERIFY_MODE: ${{ steps.verify-mode.outputs.mode }}
         run: scripts/deploy/summary.sh

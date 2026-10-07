@@ -1,5 +1,15 @@
-# Promote: deploy any already-built sha to production, after approval — the way to
-# roll back (promote the previous sha printed in the last production summary).
+# Promote: deploy any commit to production, after approval — the way to roll back
+# (promote the previous sha printed in the last production summary). A sha whose
+# image is already in Docker Hub is deployed as is; otherwise the image is built
+# from that commit first, so older commits (from before the pipeline) work too.
+#
+# TODO(temporary-old-commit-deploys): building missing images and deploying commits that
+# predate /commit.txt is a stop-gap while older builds still need to be deployable.
+# To remove it: drop the `build-image` job below (deploy-staging then needs only
+# check-artifact), make "Does the image exist already?" fail when the image is
+# missing, and remove the `reachable` verification mode (grep this tag in
+# _deploy-staging.yml, _deploy-production.yml, scripts/deploy/verify-backend.sh,
+# scripts/deploy/summary.sh).
 # Like every other path, it goes through staging first: nothing reaches production
 # that was not verified on staging in the same run (or, for the PR label path,
 # currently serving on staging).
@@ -9,7 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       sha:
-        description: Full 40-character commit sha to deploy (its image must already exist in Docker Hub)
+        description: Full 40-character commit sha to deploy (the image is built if Docker Hub does not have it yet)
         type: string
         required: true
       reason:
@@ -27,6 +37,8 @@ jobs:
     timeout-minutes: 10
     env:
       IMAGE_REPOSITORY: ${{ vars.IMAGE_REPOSITORY || 'docker.io/myntrack/inventory-backend' }}
+    outputs:
+      image_exists: ${{ steps.image.outputs.exists }}
     steps:
       - name: Validate inputs
         env:
@@ -42,16 +54,35 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Image tag must exist
+      - name: Checkout (full history)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Commit must exist in this repository
+        env:
+          SHA: ${{ inputs.sha }}
+        run: |
+          if git cat-file -e "${SHA}^{commit}" 2>/dev/null; then
+            echo "found commit $SHA"
+          else
+            echo "::error::commit '$SHA' is not in this repository (unpushed branch? typo?)"
+            exit 1
+          fi
+
+      # TODO(temporary-old-commit-deploys): make a missing image an error again once this flow is removed.
+      - name: Does the image exist already?
+        id: image
         env:
           SHA: ${{ inputs.sha }}
         run: |
           image="${IMAGE_REPOSITORY}:${SHA}"
           if docker manifest inspect "$image" >/dev/null 2>&1; then
             echo "found $image"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::error::no image '$image' in the registry — the sha was never built. Deploy it to staging first (label a PR with deploy:staging) or merge it to main."
-            exit 1
+            echo "no image '$image' yet — it will be built from the commit first"
+            echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Summary for the approver
@@ -66,15 +97,27 @@ jobs:
             echo "|---|---|"
             echo "| Requested by | @${{ github.actor }} |"
             echo "| Commit | [\`${SHA:0:12}\`](${{ github.server_url }}/${{ github.repository }}/commit/${SHA}) |"
-            echo "| Image | \`${IMAGE_REPOSITORY}:${SHA}\` |"
+            echo "| Image | \`${IMAGE_REPOSITORY}:${SHA}\` ${{ steps.image.outputs.exists == 'true' && '(already built)' || '(built in this run)' }} |"
             echo "| Reason | ${REASON} |"
             echo
             echo "The build is deployed to staging first; a reviewer of the \`production-manual\` environment must then approve the production job."
           } >> "$GITHUB_STEP_SUMMARY"
 
+  # TODO(temporary-old-commit-deploys): remove this job once old commits no longer need deploying.
+  build-image:
+    name: Build image (only when missing)
+    needs: check-artifact
+    if: needs.check-artifact.outputs.image_exists != 'true'
+    uses: ./.github/workflows/_build-image.yml
+    with:
+      ref: ${{ inputs.sha }}
+    secrets: inherit
+
   deploy-staging:
     name: Staging first
-    needs: check-artifact
+    needs: [check-artifact, build-image]
+    # runs whether the build was needed (success) or not (skipped), never after a failure
+    if: ${{ !cancelled() && needs.check-artifact.result == 'success' && (needs.build-image.result == 'success' || needs.build-image.result == 'skipped') }}
     uses: ./.github/workflows/_deploy-staging.yml
     with:
       sha: ${{ inputs.sha }}
@@ -83,6 +126,10 @@ jobs:
   deploy-production:
     name: Production (approval required)
     needs: deploy-staging
+    # Explicit so a skipped build-image upstream does not skip this job too: the default
+    # success() condition looks at every job in the chain, not only deploy-staging.
+    # TODO(temporary-old-commit-deploys): drop this `if` together with the build-image job.
+    if: ${{ !cancelled() && needs.deploy-staging.result == 'success' }}
     uses: ./.github/workflows/_deploy-production.yml
     with:
       sha: ${{ inputs.sha }}

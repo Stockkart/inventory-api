@@ -79,7 +79,7 @@ class SearchRequestValidatorProperties {
             null, "fuzzy",
             List.of(new FilterGroup("nope", "in", List.of("x"), null, null),
                 new FilterGroup(LabelFieldKeys.STOCK_STATE, "in", List.of("PLENTY"), null, null)),
-            "some", List.of("productName"), "mrp:asc", -1, 999, null, null);
+            "some", List.of("expiryDate"), "mrp:asc", -1, 999, null, null);
     assertThatThrownBy(() -> validator.validate(req, PHARMACY))
         .isInstanceOf(ValidationException.class)
         .hasMessageContaining("textMode must be")
@@ -236,7 +236,7 @@ class SearchRequestValidatorProperties {
         new Fault("repeats a group", new SearchRequest("(a+)+", "regex", null, null, null, null, null, null, null, null)),
         new Fault("match must be", new SearchRequest(null, null, null, "some", null, null, null, null, null, null)),
         new Fault("facets: unknown search field", new SearchRequest(null, null, null, null, List.of("nope"), null, null, null, null, null)),
-        new Fault("cannot show counts", new SearchRequest(null, null, null, null, List.of(LabelFieldKeys.PRODUCT_NAME), null, null, null, null, null)),
+        new Fault("cannot show counts", new SearchRequest(null, null, null, null, List.of(LabelFieldKeys.EXPIRY_DATE), null, null, null, null, null)),
         new Fault("sort: unknown search field", new SearchRequest(null, null, null, null, null, "nope:asc", null, null, null, null)),
         new Fault("cannot be sorted on", new SearchRequest(null, null, null, null, null, LabelFieldKeys.LOCATION + ":asc", null, null, null, null)),
         new Fault("direction must be asc or desc", new SearchRequest(null, null, null, null, null, LabelFieldKeys.COMPANY_NAME + ":up", null, null, null, null)),
