@@ -126,6 +126,10 @@ jobs:
   deploy-production:
     name: Production (approval required)
     needs: deploy-staging
+    # Explicit so a skipped build-image upstream does not skip this job too: the default
+    # success() condition looks at every job in the chain, not only deploy-staging.
+    # TODO(temporary-old-commit-deploys): drop this `if` together with the build-image job.
+    if: ${{ !cancelled() && needs.deploy-staging.result == 'success' }}
     uses: ./.github/workflows/_deploy-production.yml
     with:
       sha: ${{ inputs.sha }}
