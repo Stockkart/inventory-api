@@ -76,6 +76,8 @@ jobs:
         id: do
         run: scripts/deploy/do-deploy.sh "${{ inputs.sha }}"
 
+      # TODO(temporary-old-commit-deploys): remove this step and pass no VERIFY_MODE once old commits
+      # no longer need deploying (verify-backend.sh then always checks /commit.txt).
       - name: Decide how the deploy can be verified
         id: verify-mode
         env:

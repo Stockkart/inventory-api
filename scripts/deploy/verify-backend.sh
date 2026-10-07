@@ -15,6 +15,8 @@
 # VERIFY_MODE=reachable drops the commit.txt check (health only) for images built
 # from commits that predate /commit.txt. The caller decides the mode from the
 # deployed commit's Dockerfile; this script does not guess.
+# TODO(temporary-old-commit-deploys): remove the reachable mode (and every VERIFY_MODE branch
+# below) once old commits no longer need deploying.
 #
 # Environment (optional): VERIFY_SETTLE_CHECKS (default 3), VERIFY_SETTLE_INTERVAL (default 20)
 

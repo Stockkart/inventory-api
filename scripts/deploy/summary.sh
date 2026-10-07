@@ -15,6 +15,7 @@
 #   SUMMARY_REASON          promote reason, if any
 #   SUMMARY_VERIFY_MODE     sha (service proved to run the commit) | reachable (health UP only; the
 #                           commit predates /commit.txt, so it could not be proven)
+#                           TODO(temporary-old-commit-deploys): drop the reachable case with the flow.
 #   SUMMARY_REPOSITORY      owner/repo, used to link the commit
 
 # shellcheck source=scripts/deploy/lib.sh

@@ -2,6 +2,14 @@
 # (promote the previous sha printed in the last production summary). A sha whose
 # image is already in Docker Hub is deployed as is; otherwise the image is built
 # from that commit first, so older commits (from before the pipeline) work too.
+#
+# TODO(temporary-old-commit-deploys): building missing images and deploying commits that
+# predate /commit.txt is a stop-gap while older builds still need to be deployable.
+# To remove it: drop the `build-image` job below (deploy-staging then needs only
+# check-artifact), make "Does the image exist already?" fail when the image is
+# missing, and remove the `reachable` verification mode (grep this tag in
+# _deploy-staging.yml, _deploy-production.yml, scripts/deploy/verify-backend.sh,
+# scripts/deploy/summary.sh).
 # Like every other path, it goes through staging first: nothing reaches production
 # that was not verified on staging in the same run (or, for the PR label path,
 # currently serving on staging).
@@ -62,6 +70,7 @@ jobs:
             exit 1
           fi
 
+      # TODO(temporary-old-commit-deploys): make a missing image an error again once this flow is removed.
       - name: Does the image exist already?
         id: image
         env:
@@ -94,6 +103,7 @@ jobs:
             echo "The build is deployed to staging first; a reviewer of the \`production-manual\` environment must then approve the production job."
           } >> "$GITHUB_STEP_SUMMARY"
 
+  # TODO(temporary-old-commit-deploys): remove this job once old commits no longer need deploying.
   build-image:
     name: Build image (only when missing)
     needs: check-artifact
