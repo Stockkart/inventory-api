@@ -13,6 +13,8 @@
 #   SUMMARY_BASE_URL        public URL of the environment
 #   SUMMARY_ACTOR           who triggered the run
 #   SUMMARY_REASON          promote reason, if any
+#   SUMMARY_VERIFY_MODE     sha (service proved to run the commit) | reachable (health UP only; the
+#                           commit predates /commit.txt, so it could not be proven)
 #   SUMMARY_REPOSITORY      owner/repo, used to link the commit
 
 # shellcheck source=scripts/deploy/lib.sh
@@ -37,6 +39,13 @@ commit_link() {
 icon="✅"
 [[ "$SUMMARY_RESULT" == "success" ]] || icon="❌"
 
+verify_text() {
+  case "${SUMMARY_VERIFY_MODE:-sha}" in
+    reachable) echo "health UP — commit predates /commit.txt, so which build runs is not proven" ;;
+    *) echo "health UP and /commit.txt returns this commit" ;;
+  esac
+}
+
 out=$(
   cat <<EOF
 ## ${icon} Backend → ${SUMMARY_ENVIRONMENT} — ${SUMMARY_RESULT}
@@ -50,6 +59,7 @@ out=$(
 | URL | ${SUMMARY_BASE_URL:-—} |
 | Triggered by | ${SUMMARY_ACTOR:-${GITHUB_ACTOR:-—}} |
 | Reason | ${SUMMARY_REASON:-—} |
+| Verified | $(verify_text) |
 | Time (UTC) | $(date -u +'%Y-%m-%d %H:%M:%S') |
 EOF
 )
