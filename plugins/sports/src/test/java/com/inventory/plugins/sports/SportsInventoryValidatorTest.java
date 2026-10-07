@@ -36,7 +36,7 @@ class SportsInventoryValidatorTest {
             Map.of(
                 "name", "Cricket Bat",
                 "baseUnit", "PCS",
-                "sport", "Cricket",
+                "sport", "cricket",
                 "brand", "MRF",
                 "model", "Genius Grand"),
             null);
@@ -88,7 +88,7 @@ class SportsInventoryValidatorTest {
             schema,
             Map.of(
                 "name", "Cricket Bat",
-                "sport", "Cricket",
+                "sport", "cricket",
                 "brand", "MRF",
                 "model", "Genius Grand"),
             null);
@@ -106,7 +106,7 @@ class SportsInventoryValidatorTest {
             Map.of(
                 "name", "Cricket Bat",
                 "baseUnit", "PCS",
-                "sport", "Cricket",
+                "sport", "cricket",
                 "brand", "MRF",
                 "model", "Genius Grand",
                 "warrantyMonths", 200),
@@ -119,7 +119,7 @@ class SportsInventoryValidatorTest {
     name.setValidation(Map.of("minLength", 1, "maxLength", 255));
 
     VerticalSchemaField sport = field("sport", "enum", true);
-    sport.setValues(List.of("Cricket", "Football", "Gym", "Tennis", "Badminton", "Other"));
+    sport.setValues(List.of("cricket", "football", "gym", "tennis", "badminton", "other"));
 
     VerticalSchemaField warrantyMonths = field("warrantyMonths", "number", false);
     warrantyMonths.setValidation(Map.of("min", 0, "max", 120));
