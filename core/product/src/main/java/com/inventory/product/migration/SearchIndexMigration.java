@@ -16,6 +16,8 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.index.Index;
 import org.springframework.data.mongodb.core.index.IndexDefinition;
+import org.springframework.data.mongodb.core.index.IndexField;
+import org.springframework.data.mongodb.core.index.IndexInfo;
 import org.springframework.data.mongodb.core.index.IndexOperations;
 import org.springframework.data.mongodb.core.index.MongoPersistentEntityIndexResolver;
 import org.springframework.core.type.filter.AssignableTypeFilter;
@@ -68,6 +70,24 @@ public class SearchIndexMigration {
   }
 
   /**
+   * True when an index with exactly these keys exists under any name. {@code directions} may be
+   * empty for all-ascending.
+   */
+  private static boolean hasIndexOn(IndexOperations ops, List<String> fields, List<Sort.Direction> directions) {
+    for (IndexInfo info : ops.getIndexInfo()) {
+      List<IndexField> keys = info.getIndexFields();
+      if (keys.size() != fields.size()) continue;
+      boolean same = true;
+      for (int i = 0; i < keys.size() && same; i++) {
+        Sort.Direction want = directions.isEmpty() ? Sort.Direction.ASC : directions.get(i);
+        same = fields.get(i).equals(keys.get(i).getKey()) && want.equals(keys.get(i).getDirection());
+      }
+      if (same) return true;
+    }
+    return false;
+  }
+
+  /**
    * The indexes each plugin declared on its extension document, created as declared. Extension
    * classes are found on the classpath (they live in plugin modules outside the entity-scan package),
    * so a new vertical gets its indexes without touching this class.
@@ -101,8 +121,8 @@ public class SearchIndexMigration {
   private void ensure(Class<?> entity, String name, List<String> fields, boolean sparse) {
     try {
       IndexOperations ops = mongoTemplate.indexOps(entity);
-      if (ops.getIndexInfo().stream().anyMatch(i -> name.equals(i.getName()))) {
-        return;
+      if (hasIndexOn(ops, fields, List.of())) {
+        return; // present already, whatever it was named (Mongo refuses a same-key index under a new name)
       }
       Index index = new Index().named(name);
       for (String f : fields) {
@@ -121,7 +141,7 @@ public class SearchIndexMigration {
   private void ensureCreatedDesc() {
     try {
       IndexOperations ops = mongoTemplate.indexOps(Inventory.class);
-      if (ops.getIndexInfo().stream().anyMatch(i -> "shop_created_idx".equals(i.getName()))) {
+      if (hasIndexOn(ops, List.of("shopId", "createdAt"), List.of(Sort.Direction.ASC, Sort.Direction.DESC))) {
         return;
       }
       ops.ensureIndex(

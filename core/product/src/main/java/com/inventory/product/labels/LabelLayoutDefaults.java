@@ -120,13 +120,13 @@ public final class LabelLayoutDefaults {
   private static final List<PrintableField> CORE_FIELDS =
       List.of(
           text(PRODUCT_NAME, "Product name", SourceGroup.PRODUCT, "name")
-              .withSearch(SearchSpec.text(SearchSource.PRODUCT, "product.normalizedName", false, true)),
+              .withSearch(SearchSpec.text(SearchSource.PRODUCT, "product.normalizedName", true, true)),
           text(COMPANY_NAME, "Company", SourceGroup.PRODUCT, "companyName")
               .withSearch(SearchSpec.text(SearchSource.PRODUCT, "product.companyName", true, true)),
           text(BARCODE_TEXT, "Barcode", SourceGroup.PRODUCT, "barcode")
-              .withSearch(SearchSpec.text(SearchSource.PRODUCT, "product.barcode", false, false)),
+              .withSearch(SearchSpec.text(SearchSource.PRODUCT, "product.barcode", true, false)),
           text(HSN, "HSN", SourceGroup.PRODUCT, "hsn")
-              .withSearch(SearchSpec.text(SearchSource.PRODUCT, "product.hsn", false, false)),
+              .withSearch(SearchSpec.text(SearchSource.PRODUCT, "product.hsn", true, false)),
           text(BASE_UNIT, "Unit", SourceGroup.PRODUCT, "baseUnit"),
           text(PACK_SIZE, "Pack size", SourceGroup.PRODUCT, "unitsPerPack"),
           text(DESCRIPTION, "Description", SourceGroup.PRODUCT, "description"));
