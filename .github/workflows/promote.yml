@@ -126,6 +126,9 @@ jobs:
   deploy-production:
     name: Production (approval required)
     needs: deploy-staging
+      # the build-image job may be skipped (image already built); without this the default
+    # success() sees a skipped job in the chain and skips production too
+    if: ${{ !cancelled() && needs.deploy-staging.result == 'success' }}
     uses: ./.github/workflows/_deploy-production.yml
     with:
       sha: ${{ inputs.sha }}
