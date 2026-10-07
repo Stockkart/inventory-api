@@ -252,7 +252,9 @@ public class InventorySearchPlanner {
       SearchSpec spec = f.searchSpec();
       if (spec.source() == SearchSource.PRODUCT && !needProduct) {
         // Group by productId; the engine maps ids to the product field with one indexed read.
-        productFacetPaths.put(f.fieldKey(), stripAlias(spec.path(), PRODUCT_ALIAS));
+        // Names are shown as written, not as the lowercase copy the search matches on.
+        String path = stripAlias(spec.path(), PRODUCT_ALIAS);
+        productFacetPaths.put(f.fieldKey(), path.equals("normalizedName") ? "name" : path);
         sub.add(new Document("$group", new Document("_id", "$productId").append("count", new Document("$sum", 1))));
       } else {
         String path = spec.path();
