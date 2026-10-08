@@ -265,7 +265,9 @@ public class LabelLayoutService {
         cfg.template(),
         cfg.barcodePosition(),
         cfg.currencyStyle(),
-        rollSpec);
+        rollSpec,
+        cfg.fieldZones(),
+        cfg.fieldLabelOverrides());
   }
 
   /**

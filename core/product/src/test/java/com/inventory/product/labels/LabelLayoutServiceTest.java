@@ -212,6 +212,35 @@ class LabelLayoutServiceTest {
     assertFalse(ex.getMessage().contains("showBarcodeText"), ex.getMessage());
   }
 
+  @Test
+  void savedCompactZonesAndLabelOverridesComeBackOnSaveAndGet() {
+    InMemoryLabelLayoutRepository repo = new InMemoryLabelLayoutRepository();
+    LabelLayoutService service = serviceFor(repo, catalogFor(ShopType.RETAILER));
+    SaveLabelLayoutRequest req =
+        new SaveLabelLayoutRequest(
+            List.of("productName", "mrp", "companyName"),
+            "38x38",
+            com.inventory.product.rest.dto.request.LenientBoolean.of(true),
+            com.inventory.product.rest.dto.request.LenientBoolean.of(false),
+            null,
+            "ROLL",
+            null,
+            "COMPACT",
+            null,
+            null,
+            java.util.Map.of("productName", "HEADER", "mrp", "RIGHT", "companyName", "LEFT"),
+            java.util.Map.of("companyName", true));
+
+    LabelLayoutResponse saved = service.save(SHOP, USER, req);
+    LabelLayoutResponse reloaded = service.get(SHOP, USER);
+
+    java.util.Map<String, String> zones =
+        java.util.Map.of("productName", "HEADER", "mrp", "RIGHT", "companyName", "LEFT");
+    assertEquals(zones, saved.fieldZones());
+    assertEquals(zones, reloaded.fieldZones());
+    assertEquals(java.util.Map.of("companyName", true), reloaded.fieldLabelOverrides());
+  }
+
   // ---- fixtures ------------------------------------------------------------------------------
 
   private static ObjectMapper mapper() {

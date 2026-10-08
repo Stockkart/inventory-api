@@ -1,6 +1,7 @@
 package com.inventory.product.labels;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * The layout actually applied to a labels request: the saved (or default) config with every field
@@ -22,6 +23,9 @@ import java.util.List;
  *     RUPEE_SYMBOL})
  * @param rollSpec resolved roll geometry when {@code printMedia == ROLL} and the shop saved a roll
  *     setup; {@code null} for {@code SHEET} and for legacy single-column rolls
+ * @param fieldZones the saved field key → {@link LabelZone} name map for {@code COMPACT}; never
+ *     {@code null}. Returned so an editor reloads the zones the user saved.
+ * @param fieldLabelOverrides the saved field key → forced label on/off map; never {@code null}
  */
 public record EffectiveLayout(
     List<EnabledFieldDto> enabledFields,
@@ -36,7 +40,42 @@ public record EffectiveLayout(
     StickerTemplate template,
     BarcodePosition barcodePosition,
     CurrencyStyle currencyStyle,
-    RollSpec rollSpec) {
+    RollSpec rollSpec,
+    Map<String, String> fieldZones,
+    Map<String, Boolean> fieldLabelOverrides) {
+
+  /** Convenience constructor for the pre-zone-echo shape: no saved zone or label maps. */
+  public EffectiveLayout(
+      List<EnabledFieldDto> enabledFields,
+      String stickerSize,
+      StickerSizeSpec stickerSizeSpec,
+      boolean showBarcodeText,
+      boolean showFieldLabels,
+      BlankValueBehavior blankValueBehavior,
+      PrintMedia printMedia,
+      String sheetPreset,
+      SheetSpec sheetSpec,
+      StickerTemplate template,
+      BarcodePosition barcodePosition,
+      CurrencyStyle currencyStyle,
+      RollSpec rollSpec) {
+    this(
+        enabledFields,
+        stickerSize,
+        stickerSizeSpec,
+        showBarcodeText,
+        showFieldLabels,
+        blankValueBehavior,
+        printMedia,
+        sheetPreset,
+        sheetSpec,
+        template,
+        barcodePosition,
+        currencyStyle,
+        rollSpec,
+        null,
+        null);
+  }
 
   /** Convenience constructor for the pre-roll-setup shape: no roll spec. */
   public EffectiveLayout(
@@ -70,6 +109,8 @@ public record EffectiveLayout(
 
   public EffectiveLayout {
     enabledFields = enabledFields == null ? List.of() : List.copyOf(enabledFields);
+    fieldZones = fieldZones == null ? Map.of() : Map.copyOf(fieldZones);
+    fieldLabelOverrides = fieldLabelOverrides == null ? Map.of() : Map.copyOf(fieldLabelOverrides);
     printMedia = printMedia == null ? PrintMedia.ROLL : printMedia;
     template = template == null ? LabelLayoutDefaults.DEFAULT_TEMPLATE : template;
     barcodePosition =

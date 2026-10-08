@@ -14,6 +14,7 @@ import com.inventory.product.labels.StickerSizeSpec;
 import com.inventory.product.labels.StickerTemplate;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Barcode label layout as returned by {@code GET/PUT /barcode-label-layout}, {@code GET /defaults}
@@ -46,6 +47,9 @@ import java.util.List;
  * @param updatedByUserId {@code null} when {@code isDefault} is true
  * @param rollSpec resolved roll geometry for {@code ROLL} layouts with a saved roll setup; {@code
  *     null} otherwise (the renderer then keeps the legacy single-column roll output)
+ * @param fieldZones saved field key → zone map for {@code COMPACT}; never {@code null}. The layout
+ *     editor reloads it after save, so zones no longer fall back to {@code LEFT}.
+ * @param fieldLabelOverrides saved field key → forced label on/off map; never {@code null}
  */
 public record LabelLayoutResponse(
     List<EnabledFieldDto> enabledFields,
@@ -64,10 +68,14 @@ public record LabelLayoutResponse(
     @JsonProperty("isDefault") boolean isDefault,
     Instant updatedAt,
     String updatedByUserId,
-    ShopType shopType) {
+    ShopType shopType,
+    Map<String, String> fieldZones,
+    Map<String, Boolean> fieldLabelOverrides) {
 
   public LabelLayoutResponse {
     enabledFields = enabledFields == null ? List.of() : List.copyOf(enabledFields);
+    fieldZones = fieldZones == null ? Map.of() : Map.copyOf(fieldZones);
+    fieldLabelOverrides = fieldLabelOverrides == null ? Map.of() : Map.copyOf(fieldLabelOverrides);
     printMedia = printMedia == null ? PrintMedia.ROLL : printMedia;
     template = template == null ? StickerTemplate.STACKED : template;
     barcodePosition = barcodePosition == null ? BarcodePosition.TOP : barcodePosition;
@@ -98,7 +106,9 @@ public record LabelLayoutResponse(
         isDefault,
         updatedAt,
         updatedByUserId,
-        shopType);
+        shopType,
+        layout.fieldZones(),
+        layout.fieldLabelOverrides());
   }
 
   /** The effective layout this response was built from (inverse of {@link #from}). */
@@ -116,6 +126,8 @@ public record LabelLayoutResponse(
         template,
         barcodePosition,
         currencyStyle,
-        rollSpec);
+        rollSpec,
+        fieldZones,
+        fieldLabelOverrides);
   }
 }
