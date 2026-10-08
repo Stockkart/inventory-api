@@ -31,4 +31,45 @@
         <java.version>21</java.version>
     </properties>
 
+    <!-- Mockito's inline mock maker needs a Java agent. By default it self-attaches at
+         runtime by spawning a second JVM, which fails on the GitHub runners
+         ("Could not self-attach to current VM using external process"). Preloading
+         the Byte Buddy agent with -javaagent removes the dynamic attach entirely, as
+         Mockito recommends for JDK 21+. The byte-buddy-agent test dependency below
+         makes the ${net.bytebuddy:byte-buddy-agent:jar} property resolve in every
+         module, including those without Mockito. -->
+    <dependencies>
+        <dependency>
+            <groupId>net.bytebuddy</groupId>
+            <artifactId>byte-buddy-agent</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.7.0</version>
+                <executions>
+                    <execution>
+                        <id>resolve-byte-buddy-agent-path</id>
+                        <goals>
+                            <goal>properties</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.4</version>
+                <configuration>
+                    <argLine>-javaagent:${net.bytebuddy:byte-buddy-agent:jar} -XX:+EnableDynamicAgentLoading</argLine>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
 </project>
