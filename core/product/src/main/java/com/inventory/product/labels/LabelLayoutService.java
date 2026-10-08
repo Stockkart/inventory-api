@@ -125,6 +125,23 @@ public class LabelLayoutService {
         catalog.effectiveShopType());
   }
 
+  /**
+   * The effective layout an unsaved draft would print with, worked out the way {@link #save}
+   * would store it but without persisting anything. The layout screen calls this as the user
+   * edits so the live preview shows server-resolved geometry (sticker size, sheet grid, roll page
+   * box) instead of computing it itself, the same pattern as the stock-in {@code /preview-totals}.
+   *
+   * @throws com.inventory.common.exception.ValidationException when the user lacks access or the
+   *     draft is invalid; the message lists every problem, exactly as on save
+   */
+  public LabelLayoutResponse preview(String shopId, String userId, SaveLabelLayoutRequest req) {
+    checkAccess(shopId, userId);
+    FieldCatalog catalog = catalogService.catalog(shopId);
+    LabelLayoutConfig config = validator.validate(req, catalog);
+    return LabelLayoutResponse.from(
+        effectiveLayout(config, catalog), false, null, null, catalog.effectiveShopType());
+  }
+
   // ---- unchecked operations (shop-scoped callers and tests) ----------------------------------
 
   /**

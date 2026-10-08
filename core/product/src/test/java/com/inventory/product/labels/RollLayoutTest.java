@@ -56,6 +56,25 @@ class RollLayoutTest {
   }
 
   @Test
+  void columnPitchIsSnappedToWholePrinterDots() {
+    RollSpec spec = RollLayoutCalculator.resolve(new RollSetup(2, 3), S_38x38);
+    // 41 mm = 327.7 dots at 203 dpi; snapped to 328 dots so both columns share a dot phase.
+    assertEquals(328 * RollLayoutCalculator.DOT_MM, spec.pitchMm(), 1e-4);
+    assertTrue(Math.abs(spec.pitchMm() - 41) < RollLayoutCalculator.DOT_MM / 2 + 1e-4);
+  }
+
+  @Test
+  void catalogPublishesTheRollLimits() {
+    var limits = com.inventory.product.rest.dto.response.RollLimitsDto.CURRENT;
+    assertEquals(RollLayoutCalculator.MIN_LABELS_ACROSS, limits.minLabelsAcross());
+    assertEquals(RollLayoutCalculator.MAX_LABELS_ACROSS, limits.maxLabelsAcross());
+    assertEquals(RollLayoutCalculator.MAX_COLUMN_GAP_MM, limits.maxColumnGapMm());
+    assertEquals(
+        limits,
+        com.inventory.product.rest.dto.response.FieldCatalogResponse.from(catalog()).rollLimits());
+  }
+
+  @Test
   void singleAcrossPageIsTheStickerItself() {
     RollSpec spec = RollLayoutCalculator.resolve(new RollSetup(1, 5), S_50x25);
     assertEquals(50.0, spec.pageWidthMm());
