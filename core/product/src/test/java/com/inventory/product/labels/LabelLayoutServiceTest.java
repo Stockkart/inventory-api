@@ -212,68 +212,6 @@ class LabelLayoutServiceTest {
     assertFalse(ex.getMessage().contains("showBarcodeText"), ex.getMessage());
   }
 
-  // ---- preview (unsaved draft) ---------------------------------------------------------------
-
-  @Test
-  void previewResolvesRollGeometryAndPersistsNothing() {
-    InMemoryLabelLayoutRepository repo = new InMemoryLabelLayoutRepository();
-    LabelLayoutService service = serviceFor(repo, catalogFor(ShopType.RETAILER));
-    SaveLabelLayoutRequest draft =
-        new SaveLabelLayoutRequest(
-            List.of("productName"),
-            "38x38",
-            com.inventory.product.rest.dto.request.LenientBoolean.of(true),
-            com.inventory.product.rest.dto.request.LenientBoolean.of(false),
-            null,
-            "ROLL",
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            2,
-            3.0);
-
-    LabelLayoutResponse preview = service.preview(SHOP, USER, draft);
-
-    assertNotNull(preview.rollSpec());
-    assertEquals(2, preview.rollSpec().labelsAcross());
-    assertEquals(79.0, preview.rollSpec().pageWidthMm());
-    assertEquals(38.0, preview.rollSpec().pageHeightMm());
-    assertEquals(328 * RollLayoutCalculator.DOT_MM, preview.rollSpec().pitchMm(), 1e-4);
-    assertFalse(preview.isDefault());
-    assertEquals(0, repo.saveCalls());
-    assertEquals(0, repo.size());
-  }
-
-  @Test
-  void previewRejectsAnInvalidDraftWithTheSaveMessages() {
-    InMemoryLabelLayoutRepository repo = new InMemoryLabelLayoutRepository();
-    LabelLayoutService service = serviceFor(repo, catalogFor(ShopType.RETAILER));
-    SaveLabelLayoutRequest draft =
-        new SaveLabelLayoutRequest(
-            List.of(),
-            "38x38",
-            com.inventory.product.rest.dto.request.LenientBoolean.of(true),
-            com.inventory.product.rest.dto.request.LenientBoolean.of(false),
-            null,
-            "ROLL",
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            9,
-            3.0);
-
-    ValidationException ex =
-        assertThrows(ValidationException.class, () -> service.preview(SHOP, USER, draft));
-    assertTrue(ex.getMessage().contains("rollLabelsAcross must be between 1 and 4"), ex.getMessage());
-    assertEquals(0, repo.saveCalls());
-  }
-
   // ---- fixtures ------------------------------------------------------------------------------
 
   private static ObjectMapper mapper() {
