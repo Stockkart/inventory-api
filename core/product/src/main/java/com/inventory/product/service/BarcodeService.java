@@ -196,20 +196,30 @@ public class BarcodeService {
     if (!StringUtils.hasText(pool.getProductId())) {
       pool.setProductId(product.getId());
     }
-    if (!StringUtils.hasText(pool.getLabelName())) {
-      pool.setLabelName(product.getName());
-    }
-    if (!StringUtils.hasText(pool.getLabelCompany())) {
-      pool.setLabelCompany(product.getCompanyName());
-    }
+    fillLabelFromProduct(pool, product);
     pool.setUpdatedAt(now);
     pool = barcodePoolRepository.save(pool);
     return toPoolDto(pool);
   }
 
   /**
-   * When a product is saved with a barcode that exists in the pool, mark it ATTACHED. Codes may
-   * be shared by several products; the first attached product stays the label source.
+   * Copies the label source product's name and company onto a pool row's sticker text, keeping
+   * any text already there (codes may be shared; the first attached product stays the source).
+   */
+  private static void fillLabelFromProduct(BarcodePool pool, Product product) {
+    if (!StringUtils.hasText(pool.getLabelName())) {
+      pool.setLabelName(product.getName());
+    }
+    if (!StringUtils.hasText(pool.getLabelCompany())) {
+      pool.setLabelCompany(product.getCompanyName());
+    }
+  }
+
+  /**
+   * When a product is saved with a barcode that exists in the pool, mark it ATTACHED and fill the
+   * pool row's label (name, company) from the label source product, as the Attach button does.
+   * Codes may be shared by several products; the first attached product stays the label source.
+   * Saving that product again also fills a label left blank by older versions.
    */
   public void claimPoolForProduct(String shopId, String productId, String barcode) {
     String normalized = productValidator.normalizeBarcode(barcode);
@@ -221,11 +231,22 @@ public class BarcodeService {
       return;
     }
     BarcodePool pool = existing.get();
-    if (pool.getStatus() == BarcodePoolStatus.ATTACHED && StringUtils.hasText(pool.getProductId())) {
+    boolean alreadyAttached =
+        pool.getStatus() == BarcodePoolStatus.ATTACHED && StringUtils.hasText(pool.getProductId());
+    boolean labelComplete =
+        StringUtils.hasText(pool.getLabelName()) && StringUtils.hasText(pool.getLabelCompany());
+    if (alreadyAttached && labelComplete) {
       return;
     }
-    pool.setStatus(BarcodePoolStatus.ATTACHED);
-    pool.setProductId(productId);
+    if (!alreadyAttached) {
+      pool.setStatus(BarcodePoolStatus.ATTACHED);
+      pool.setProductId(productId);
+    }
+    // Same sticker text as the Attach button: from the label source product (the first one
+    // attached), so codes claimed on Product Entry show a Label too.
+    productRepository
+        .findByIdAndShopId(pool.getProductId(), shopId)
+        .ifPresent(product -> fillLabelFromProduct(pool, product));
     pool.setUpdatedAt(Instant.now());
     barcodePoolRepository.save(pool);
   }
