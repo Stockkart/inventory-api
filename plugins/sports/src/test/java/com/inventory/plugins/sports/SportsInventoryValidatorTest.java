@@ -114,12 +114,53 @@ class SportsInventoryValidatorTest {
     assertThrows(ValidationException.class, () -> validator.validateCreate(context));
   }
 
+  @Test
+  void createSucceedsWithSize() {
+    InventoryValidationContext context =
+        new InventoryValidationContext(
+            "shop-1",
+            "sports",
+            "1.0.0",
+            schema,
+            Map.of(
+                "name", "Cricket Bat",
+                "baseUnit", "PCS",
+                "sport", "cricket",
+                "brand", "MRF",
+                "model", "Genius Grand",
+                "size", "SH"),
+            null);
+    assertDoesNotThrow(() -> validator.validateCreate(context));
+  }
+
+  @Test
+  void createFailsWhenSizeTooLong() {
+    InventoryValidationContext context =
+        new InventoryValidationContext(
+            "shop-1",
+            "sports",
+            "1.0.0",
+            schema,
+            Map.of(
+                "name", "Cricket Bat",
+                "baseUnit", "PCS",
+                "sport", "cricket",
+                "brand", "MRF",
+                "model", "Genius Grand",
+                "size", "x".repeat(33)),
+            null);
+    assertThrows(ValidationException.class, () -> validator.validateCreate(context));
+  }
+
   private static VerticalSchema sportsSchema() {
     VerticalSchemaField name = field("name", "string", true);
     name.setValidation(Map.of("minLength", 1, "maxLength", 255));
 
     VerticalSchemaField sport = field("sport", "enum", true);
     sport.setValues(List.of("cricket", "football", "gym", "tennis", "badminton", "other"));
+
+    VerticalSchemaField size = field("size", "string", false);
+    size.setValidation(Map.of("minLength", 1, "maxLength", 32));
 
     VerticalSchemaField warrantyMonths = field("warrantyMonths", "number", false);
     warrantyMonths.setValidation(Map.of("min", 0, "max", 120));
@@ -132,6 +173,7 @@ class SportsInventoryValidatorTest {
             sport,
             field("brand", "string", true),
             field("model", "string", true),
+            size,
             warrantyMonths));
 
     VerticalSchema schema = new VerticalSchema();

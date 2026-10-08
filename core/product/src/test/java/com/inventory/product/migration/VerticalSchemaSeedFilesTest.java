@@ -28,7 +28,7 @@ class VerticalSchemaSeedFilesTest {
   void sportsBasicModeKeepsRequiredRegistrationFields() throws Exception {
     List<String> keys = fieldKeys("sports-v1.json", "inventory", SchemaDisplayMode.BASIC);
 
-    assertEquals(List.of("name", "baseUnit", "sport", "brand", "model"), keys);
+    assertEquals(List.of("name", "baseUnit", "sport", "brand", "model", "size"), keys);
   }
 
   @Test
@@ -36,7 +36,19 @@ class VerticalSchemaSeedFilesTest {
     List<String> keys = fieldKeys("sports-v1.json", "inventory", SchemaDisplayMode.REGULAR);
 
     assertEquals(
-        List.of("name", "hsn", "baseUnit", "sport", "brand", "model", "warrantyMonths"), keys);
+        List.of("name", "hsn", "baseUnit", "sport", "brand", "model", "size", "warrantyMonths"),
+        keys);
+  }
+
+  @Test
+  void sportsSizeIsAnOptionalExtensionField() throws Exception {
+    VerticalSchema schema = load("sports-v1.json");
+    List<VerticalSchemaField> fields = schema.getEntities().get("inventory").getFields();
+
+    VerticalSchemaField size = byKey(fields, "size");
+    assertEquals("string", size.getType());
+    assertEquals(Boolean.FALSE, size.getRequired());
+    assertEquals("extension", size.getStorage());
   }
 
   @Test
@@ -58,6 +70,10 @@ class VerticalSchemaSeedFilesTest {
         .stream()
         .map(VerticalSchemaField::getKey)
         .toList();
+  }
+
+  private static VerticalSchemaField byKey(List<VerticalSchemaField> fields, String key) {
+    return fields.stream().filter(f -> key.equals(f.getKey())).findFirst().orElseThrow();
   }
 
   private VerticalSchema load(String seed) throws Exception {

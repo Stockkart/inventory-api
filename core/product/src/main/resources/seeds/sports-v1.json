@@ -96,6 +96,17 @@
           "validation": { "minLength": 1, "maxLength": 120 }
         },
         {
+          "key": "size",
+          "label": "Size",
+          "type": "string",
+          "required": false,
+          "storage": "extension",
+          "indexed": true,
+          "searchable": true,
+          "showIn": ["registration", "scan-sell", "basic"],
+          "validation": { "minLength": 1, "maxLength": 32 }
+        },
+        {
           "key": "warrantyMonths",
           "label": "Warranty (months)",
           "type": "number",
