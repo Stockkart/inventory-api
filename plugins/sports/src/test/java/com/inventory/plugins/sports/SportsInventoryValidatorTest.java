@@ -115,7 +115,7 @@ class SportsInventoryValidatorTest {
   }
 
   @Test
-  void createSucceedsWithSizeAndSportsType() {
+  void createSucceedsWithSize() {
     InventoryValidationContext context =
         new InventoryValidationContext(
             "shop-1",
@@ -126,31 +126,11 @@ class SportsInventoryValidatorTest {
                 "name", "Cricket Bat",
                 "baseUnit", "PCS",
                 "sport", "cricket",
-                "sportsType", "equipment",
                 "brand", "MRF",
                 "model", "Genius Grand",
                 "size", "SH"),
             null);
     assertDoesNotThrow(() -> validator.validateCreate(context));
-  }
-
-  @Test
-  void createFailsWhenSportsTypeNotInEnum() {
-    InventoryValidationContext context =
-        new InventoryValidationContext(
-            "shop-1",
-            "sports",
-            "1.0.0",
-            schema,
-            Map.of(
-                "name", "Cricket Bat",
-                "baseUnit", "PCS",
-                "sport", "cricket",
-                "sportsType", "vehicle",
-                "brand", "MRF",
-                "model", "Genius Grand"),
-            null);
-    assertThrows(ValidationException.class, () -> validator.validateCreate(context));
   }
 
   @Test
@@ -179,10 +159,6 @@ class SportsInventoryValidatorTest {
     VerticalSchemaField sport = field("sport", "enum", true);
     sport.setValues(List.of("cricket", "football", "gym", "tennis", "badminton", "other"));
 
-    VerticalSchemaField sportsType = field("sportsType", "enum", false);
-    sportsType.setValues(
-        List.of("equipment", "apparel", "footwear", "accessories", "nutrition", "other"));
-
     VerticalSchemaField size = field("size", "string", false);
     size.setValidation(Map.of("minLength", 1, "maxLength", 32));
 
@@ -195,7 +171,6 @@ class SportsInventoryValidatorTest {
             name,
             field("baseUnit", "string", true),
             sport,
-            sportsType,
             field("brand", "string", true),
             field("model", "string", true),
             size,

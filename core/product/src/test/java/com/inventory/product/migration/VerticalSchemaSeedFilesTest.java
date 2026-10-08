@@ -28,8 +28,7 @@ class VerticalSchemaSeedFilesTest {
   void sportsBasicModeKeepsRequiredRegistrationFields() throws Exception {
     List<String> keys = fieldKeys("sports-v1.json", "inventory", SchemaDisplayMode.BASIC);
 
-    assertEquals(
-        List.of("name", "baseUnit", "sport", "sportsType", "brand", "model", "size"), keys);
+    assertEquals(List.of("name", "baseUnit", "sport", "brand", "model", "size"), keys);
   }
 
   @Test
@@ -37,21 +36,12 @@ class VerticalSchemaSeedFilesTest {
     List<String> keys = fieldKeys("sports-v1.json", "inventory", SchemaDisplayMode.REGULAR);
 
     assertEquals(
-        List.of(
-            "name",
-            "hsn",
-            "baseUnit",
-            "sport",
-            "sportsType",
-            "brand",
-            "model",
-            "size",
-            "warrantyMonths"),
+        List.of("name", "hsn", "baseUnit", "sport", "brand", "model", "size", "warrantyMonths"),
         keys);
   }
 
   @Test
-  void sportsSizeAndSportsTypeAreOptionalExtensionFields() throws Exception {
+  void sportsSizeIsAnOptionalExtensionField() throws Exception {
     VerticalSchema schema = load("sports-v1.json");
     List<VerticalSchemaField> fields = schema.getEntities().get("inventory").getFields();
 
@@ -59,12 +49,6 @@ class VerticalSchemaSeedFilesTest {
     assertEquals("string", size.getType());
     assertEquals(Boolean.FALSE, size.getRequired());
     assertEquals("extension", size.getStorage());
-
-    VerticalSchemaField sportsType = byKey(fields, "sportsType");
-    assertEquals("enum", sportsType.getType());
-    assertEquals(Boolean.FALSE, sportsType.getRequired());
-    assertEquals("extension", sportsType.getStorage());
-    assertTrue(sportsType.getValues().contains("other"));
   }
 
   @Test

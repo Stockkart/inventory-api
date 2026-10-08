@@ -13,8 +13,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 @Document(collection = "inventory_ext_sports")
 @CompoundIndexes({
   @CompoundIndex(name = "shop_sport", def = "{'shopId': 1, 'sport': 1}"),
-  @CompoundIndex(name = "shop_brand", def = "{'shopId': 1, 'brand': 1}"),
-  @CompoundIndex(name = "shop_sports_type", def = "{'shopId': 1, 'sportsType': 1}")
+  @CompoundIndex(name = "shop_brand", def = "{'shopId': 1, 'brand': 1}")
 })
 public class SportsInventoryExtension implements InventoryExtensionDocument {
 
@@ -28,7 +27,6 @@ public class SportsInventoryExtension implements InventoryExtensionDocument {
   private String verticalId = "sports";
 
   private String sport;
-  private String sportsType;
   private String brand;
   private String model;
   private String size;

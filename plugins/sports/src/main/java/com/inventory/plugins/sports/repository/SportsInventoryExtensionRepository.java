@@ -71,9 +71,6 @@ public class SportsInventoryExtensionRepository implements InventoryExtensionRep
     if (doc.getSport() != null) {
       out.put("sport", doc.getSport());
     }
-    if (doc.getSportsType() != null) {
-      out.put("sportsType", doc.getSportsType());
-    }
     if (doc.getBrand() != null) {
       out.put("brand", doc.getBrand());
     }
@@ -95,9 +92,6 @@ public class SportsInventoryExtensionRepository implements InventoryExtensionRep
     }
     if (fields.containsKey("sport")) {
       doc.setSport(ExtensionFieldCoercion.asString(fields.get("sport")));
-    }
-    if (fields.containsKey("sportsType")) {
-      doc.setSportsType(ExtensionFieldCoercion.asString(fields.get("sportsType")));
     }
     if (fields.containsKey("brand")) {
       doc.setBrand(ExtensionFieldCoercion.asString(fields.get("brand")));

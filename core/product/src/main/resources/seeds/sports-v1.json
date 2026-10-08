@@ -74,18 +74,6 @@
           "showIn": ["registration", "scan-sell", "basic"]
         },
         {
-          "key": "sportsType",
-          "label": "Sports Type",
-          "type": "enum",
-          "values": ["equipment", "apparel", "footwear", "accessories", "nutrition", "other"],
-          "required": false,
-          "storage": "extension",
-          "indexed": true,
-          "searchable": true,
-          "sortable": true,
-          "showIn": ["registration", "scan-sell", "basic"]
-        },
-        {
           "key": "brand",
           "label": "Brand",
           "type": "string",
