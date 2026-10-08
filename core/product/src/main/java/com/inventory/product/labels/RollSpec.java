@@ -13,6 +13,13 @@ package com.inventory.product.labels;
  * @param columnGapMm horizontal gap between neighbouring labels in millimetres
  * @param pageWidthMm {@code labelsAcross * width + (labelsAcross - 1) * columnGapMm}
  * @param pageHeightMm the sticker height
+ * @param pitchMm distance from one column's left edge to the next ({@code width + columnGapMm}),
+ *     rounded to a whole number of 203 dpi printer dots so every column starts on the same dot
+ *     phase and identical text rasterises identically in each column
  */
 public record RollSpec(
-    int labelsAcross, double columnGapMm, double pageWidthMm, double pageHeightMm) {}
+    int labelsAcross,
+    double columnGapMm,
+    double pageWidthMm,
+    double pageHeightMm,
+    double pitchMm) {}

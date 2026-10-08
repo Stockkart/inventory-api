@@ -16,6 +16,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -57,6 +58,20 @@ public class BarcodeLabelLayoutController {
     log.info("Saving barcode label layout for shop: {}", shopId);
     return ResponseEntity.ok(
         ApiResponse.success(labelLayoutService.save(shopId, userId, request)));
+  }
+
+  /**
+   * The effective layout an unsaved draft would print with. Nothing is saved; the layout screen
+   * calls this as the user edits and renders the preview from the response instead of computing
+   * sticker, sheet or roll geometry itself. Invalid drafts fail with the same messages as save.
+   */
+  @PostMapping("/preview")
+  public ResponseEntity<ApiResponse<LabelLayoutResponse>> previewLayout(
+      @RequestBody SaveLabelLayoutRequest request, HttpServletRequest httpRequest) {
+    String userId = requireUserId(httpRequest);
+    String shopId = requireShopId(httpRequest);
+    return ResponseEntity.ok(
+        ApiResponse.success(labelLayoutService.preview(shopId, userId, request)));
   }
 
   /** The shop's Field_Catalog: printable fields, sticker sizes, shop type (Req 1.1, 1.8). */
