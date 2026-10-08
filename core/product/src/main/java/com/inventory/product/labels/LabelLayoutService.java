@@ -301,11 +301,9 @@ public class LabelLayoutService {
     if (cfg.template() != StickerTemplate.COMPACT) {
       return cfg.showFieldLabels();
     }
-    return switch (zone) {
-      case HEADER -> false;
-      case LEFT -> true;
-      case RIGHT -> field.valueType() != ValueType.CURRENCY;
-    };
+    // COMPACT prints values only by default ("Paracetamol 650", not "PRODUCT NAME: Paracetamol
+    // 650"): on a 38 mm sticker the field name eats the line. A per-field override turns it on.
+    return false;
   }
 
   static Optional<LabelZone> parseZone(String raw) {
