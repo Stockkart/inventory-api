@@ -74,6 +74,18 @@
           "showIn": ["registration", "scan-sell", "basic"]
         },
         {
+          "key": "sportsType",
+          "label": "Sports Type",
+          "type": "enum",
+          "values": ["equipment", "apparel", "footwear", "accessories", "nutrition", "other"],
+          "required": false,
+          "storage": "extension",
+          "indexed": true,
+          "searchable": true,
+          "sortable": true,
+          "showIn": ["registration", "scan-sell", "basic"]
+        },
+        {
           "key": "brand",
           "label": "Brand",
           "type": "string",
@@ -94,6 +106,17 @@
           "indexed": true,
           "showIn": ["registration", "scan-sell", "basic"],
           "validation": { "minLength": 1, "maxLength": 120 }
+        },
+        {
+          "key": "size",
+          "label": "Size",
+          "type": "string",
+          "required": false,
+          "storage": "extension",
+          "indexed": true,
+          "searchable": true,
+          "showIn": ["registration", "scan-sell", "basic"],
+          "validation": { "minLength": 1, "maxLength": 32 }
         },
         {
           "key": "warrantyMonths",

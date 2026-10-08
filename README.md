@@ -222,6 +222,7 @@ Shops are bound to a **vertical** (`Shop.verticalId` + `Shop.pluginVersion`). Fi
 **Modes:** `regular` (full registration), `basic` (quick stock-in), `invoice` (print surfaces). Required fields respect `showIn` per mode after Phase 2 filter updates.
 
 - **`basic` needs explicit tags.** A required field reaches `basic` only when its `showIn` is empty or lists `"basic"`; an optional field needs `tier: "basic"` or `"basic"` in `showIn`. A seed with no such fields returns an empty inventory list, and stock-in in Basic mode cannot add products. `VerticalSchemaSeedFilesTest` checks the sports seed.
+- **Sports inventory fields** (`sports-v1.json`, stored in `inventory_ext_sports`): required `sport` (enum), `brand`, `model`; optional `sportsType` (enum: equipment, apparel, footwear, accessories, nutrition, other), `size` (string, max 32) and `warrantyMonths`. `sportsType` and `size` are tagged `"basic"` in `showIn`, so they appear in quick stock-in too; `warrantyMonths` stays regular-only.
 - **Shop licence fields** sit in the seed's `shop` entity with `showIn: ["onboarding"]`: `dlNo` (medical), `fssai` (grocery, cafe).
 
 **After changing seed JSON**, restart the app: `VerticalSchemaSeeder` overwrites rows it created (`createdBy` starts with `seed:`) and then `SchemaLoader.warmCache()` runs. Rows published another way are skipped, so delete or update those (e.g. `medical_1.0.0`) by hand.
