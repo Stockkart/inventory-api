@@ -102,6 +102,9 @@ public class LabelLayoutService {
     doc.setBlankValueBehavior(config.blankValueBehavior().name());
     doc.setPrintMedia(config.printMedia().name());
     doc.setSheetPreset(config.sheetPreset());
+    RollSetup roll = config.rollSetup();
+    doc.setRollLabelsAcross(roll == null ? null : roll.labelsAcross());
+    doc.setRollColumnGapMm(roll == null ? null : roll.columnGapMm());
     doc.setTemplate(config.template().name());
     doc.setBarcodePosition(config.barcodePosition().name());
     doc.setCurrencyStyle(config.currencyStyle().name());
@@ -120,6 +123,23 @@ public class LabelLayoutService {
         saved.getUpdatedAt(),
         saved.getUpdatedByUserId(),
         catalog.effectiveShopType());
+  }
+
+  /**
+   * The effective layout an unsaved draft would print with, worked out the way {@link #save}
+   * would store it but without persisting anything. The layout screen calls this as the user
+   * edits so the live preview shows server-resolved geometry (sticker size, sheet grid, roll page
+   * box) instead of computing it itself, the same pattern as the stock-in {@code /preview-totals}.
+   *
+   * @throws com.inventory.common.exception.ValidationException when the user lacks access or the
+   *     draft is invalid; the message lists every problem, exactly as on save
+   */
+  public LabelLayoutResponse preview(String shopId, String userId, SaveLabelLayoutRequest req) {
+    checkAccess(shopId, userId);
+    FieldCatalog catalog = catalogService.catalog(shopId);
+    LabelLayoutConfig config = validator.validate(req, catalog);
+    return LabelLayoutResponse.from(
+        effectiveLayout(config, catalog), false, null, null, catalog.effectiveShopType());
   }
 
   // ---- unchecked operations (shop-scoped callers and tests) ----------------------------------
@@ -225,6 +245,13 @@ public class LabelLayoutService {
               .orElse(null);
     }
 
+    // Resolve the roll page box only for ROLL layouts that saved a roll setup; legacy
+    // single-column rolls stay null so the renderer keeps its old output.
+    RollSpec rollSpec = null;
+    if (cfg.printMedia() == PrintMedia.ROLL && cfg.rollSetup() != null) {
+      rollSpec = RollLayoutCalculator.resolve(cfg.rollSetup(), spec);
+    }
+
     return new EffectiveLayout(
         enabled,
         spec.size(),
@@ -237,7 +264,10 @@ public class LabelLayoutService {
         sheetSpec,
         cfg.template(),
         cfg.barcodePosition(),
-        cfg.currencyStyle());
+        cfg.currencyStyle(),
+        rollSpec,
+        cfg.fieldZones(),
+        cfg.fieldLabelOverrides());
   }
 
   /**
@@ -273,11 +303,9 @@ public class LabelLayoutService {
     if (cfg.template() != StickerTemplate.COMPACT) {
       return cfg.showFieldLabels();
     }
-    return switch (zone) {
-      case HEADER -> false;
-      case LEFT -> true;
-      case RIGHT -> field.valueType() != ValueType.CURRENCY;
-    };
+    // COMPACT prints values only by default ("Paracetamol 650", not "PRODUCT NAME: Paracetamol
+    // 650"): on a 38 mm sticker the field name eats the line. A per-field override turns it on.
+    return false;
   }
 
   static Optional<LabelZone> parseZone(String raw) {
@@ -316,6 +344,9 @@ public class LabelLayoutService {
             .orElse(LabelLayoutDefaults.DEFAULT_BARCODE_POSITION);
     CurrencyStyle currencyStyle =
         parseCurrencyStyle(doc.getCurrencyStyle()).orElse(LabelLayoutDefaults.DEFAULT_CURRENCY_STYLE);
+    // Roll setup only applies to ROLL documents that stored it; documents written before
+    // multi-across rolls have neither field and keep the legacy single-column output.
+    RollSetup rollSetup = printMedia == PrintMedia.ROLL ? rollSetupOf(doc) : null;
     return new LabelLayoutConfig(
         doc.getEnabledFieldKeys() == null ? defaults.enabledFieldKeys() : doc.getEnabledFieldKeys(),
         doc.getStickerSize() == null ? defaults.stickerSize() : doc.getStickerSize(),
@@ -328,7 +359,27 @@ public class LabelLayoutService {
         barcodePosition,
         currencyStyle,
         doc.getFieldZones(),
-        doc.getFieldLabelOverrides());
+        doc.getFieldLabelOverrides(),
+        rollSetup);
+  }
+
+  /**
+   * The stored roll setup, or {@code null} when the document carries neither roll field. A stored
+   * value outside the {@link RollLayoutCalculator} bounds (hand-edited data) is clamped to its
+   * default rather than failing every labels request.
+   */
+  private static RollSetup rollSetupOf(LabelLayoutDocument doc) {
+    Integer across = doc.getRollLabelsAcross();
+    Double gap = doc.getRollColumnGapMm();
+    if (across == null && gap == null) {
+      return null;
+    }
+    int safeAcross =
+        across != null && RollLayoutCalculator.isValidLabelsAcross(across)
+            ? across
+            : RollLayoutCalculator.MIN_LABELS_ACROSS;
+    double safeGap = gap != null && RollLayoutCalculator.isValidColumnGap(gap) ? gap : 0;
+    return new RollSetup(safeAcross, safeGap);
   }
 
   private static Optional<StickerTemplate> parseTemplate(String raw) {

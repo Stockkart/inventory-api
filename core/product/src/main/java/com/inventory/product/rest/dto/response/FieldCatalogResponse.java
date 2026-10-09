@@ -23,7 +23,8 @@ import java.util.List;
  *   "sheetPresets": [{ "id": "A4_PLAIN", "label": "A4 (plain)", "plain": true,
  *                      "compatibleStickerSizes": [],
  *                      "perStickerSize": { "50x25": { "columns": 3, "rows": 10, "perSheet": 30,
- *                                                     "pitchXMm": 52.0, "pitchYMm": 27.0 } } }]
+ *                                                     "pitchXMm": 52.0, "pitchYMm": 27.0 } } }],
+ *   "rollLimits": { "minLabelsAcross": 1, "maxLabelsAcross": 4, "maxColumnGapMm": 20.0 }
  * }
  * }</pre>
  *
@@ -36,13 +37,26 @@ public record FieldCatalogResponse(
     ShopType shopType,
     boolean verticalSchemaLoaded,
     List<SheetPresetDto> sheetPresets,
-    List<TemplateDto> templates) {
+    List<TemplateDto> templates,
+    RollLimitsDto rollLimits) {
+
+  /** Convenience constructor for the pre-roll-setup shape: current roll limits. */
+  public FieldCatalogResponse(
+      List<PrintableFieldDto> fields,
+      List<StickerSizeSpec> stickerSizes,
+      ShopType shopType,
+      boolean verticalSchemaLoaded,
+      List<SheetPresetDto> sheetPresets,
+      List<TemplateDto> templates) {
+    this(fields, stickerSizes, shopType, verticalSchemaLoaded, sheetPresets, templates, null);
+  }
 
   public FieldCatalogResponse {
     fields = fields == null ? List.of() : List.copyOf(fields);
     stickerSizes = stickerSizes == null ? List.of() : List.copyOf(stickerSizes);
     sheetPresets = sheetPresets == null ? List.of() : List.copyOf(sheetPresets);
     templates = templates == null ? List.of() : List.copyOf(templates);
+    rollLimits = rollLimits == null ? RollLimitsDto.CURRENT : rollLimits;
   }
 
   public static FieldCatalogResponse from(FieldCatalog catalog) {
@@ -56,6 +70,7 @@ public record FieldCatalogResponse(
         catalog.effectiveShopType(),
         catalog.verticalSchemaLoaded(),
         sheetPresets,
-        TemplateDto.ALL);
+        TemplateDto.ALL,
+        RollLimitsDto.CURRENT);
   }
 }

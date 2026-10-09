@@ -26,6 +26,9 @@ import java.util.Map;
  *     a missing key means {@link LabelZone#LEFT} (Req 11); never {@code null}
  * @param fieldLabelOverrides field key → forced label on/off; an absent key means the automatic
  *     rule applies (Req 11); never {@code null}
+ * @param rollSetup labels across the roll and the column gap when {@code printMedia == ROLL};
+ *     {@code null} for {@code SHEET} and for roll layouts saved without a setup (legacy
+ *     single-column behaviour)
  */
 public record LabelLayoutConfig(
     List<String> enabledFieldKeys,
@@ -39,7 +42,38 @@ public record LabelLayoutConfig(
     BarcodePosition barcodePosition,
     CurrencyStyle currencyStyle,
     Map<String, String> fieldZones,
-    Map<String, Boolean> fieldLabelOverrides) {
+    Map<String, Boolean> fieldLabelOverrides,
+    RollSetup rollSetup) {
+
+  /** Convenience constructor for the pre-roll-setup shape: no roll setup. */
+  public LabelLayoutConfig(
+      List<String> enabledFieldKeys,
+      String stickerSize,
+      boolean showBarcodeText,
+      boolean showFieldLabels,
+      BlankValueBehavior blankValueBehavior,
+      PrintMedia printMedia,
+      String sheetPreset,
+      StickerTemplate template,
+      BarcodePosition barcodePosition,
+      CurrencyStyle currencyStyle,
+      Map<String, String> fieldZones,
+      Map<String, Boolean> fieldLabelOverrides) {
+    this(
+        enabledFieldKeys,
+        stickerSize,
+        showBarcodeText,
+        showFieldLabels,
+        blankValueBehavior,
+        printMedia,
+        sheetPreset,
+        template,
+        barcodePosition,
+        currencyStyle,
+        fieldZones,
+        fieldLabelOverrides,
+        null);
+  }
 
   public LabelLayoutConfig {
     enabledFieldKeys = enabledFieldKeys == null ? List.of() : List.copyOf(enabledFieldKeys);

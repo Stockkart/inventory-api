@@ -8,11 +8,13 @@ import com.inventory.product.labels.CurrencyStyle;
 import com.inventory.product.labels.EffectiveLayout;
 import com.inventory.product.labels.EnabledFieldDto;
 import com.inventory.product.labels.PrintMedia;
+import com.inventory.product.labels.RollSpec;
 import com.inventory.product.labels.SheetSpec;
 import com.inventory.product.labels.StickerSizeSpec;
 import com.inventory.product.labels.StickerTemplate;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Barcode label layout as returned by {@code GET/PUT /barcode-label-layout}, {@code GET /defaults}
@@ -31,6 +33,7 @@ import java.util.List;
  *   "printMedia": "ROLL",
  *   "sheetPreset": null,
  *   "sheetSpec": null,
+ *   "rollSpec": { "labelsAcross": 2, "columnGapMm": 3.0, "pageWidthMm": 79.0, "pageHeightMm": 38.0 },
  *   "isDefault": true,
  *   "updatedAt": null,
  *   "updatedByUserId": null,
@@ -42,6 +45,11 @@ import java.util.List;
  *     property name is exactly {@code isDefault}
  * @param updatedAt {@code null} when {@code isDefault} is true
  * @param updatedByUserId {@code null} when {@code isDefault} is true
+ * @param rollSpec resolved roll geometry for {@code ROLL} layouts with a saved roll setup; {@code
+ *     null} otherwise (the renderer then keeps the legacy single-column roll output)
+ * @param fieldZones saved field key → zone map for {@code COMPACT}; never {@code null}. The layout
+ *     editor reloads it after save, so zones no longer fall back to {@code LEFT}.
+ * @param fieldLabelOverrides saved field key → forced label on/off map; never {@code null}
  */
 public record LabelLayoutResponse(
     List<EnabledFieldDto> enabledFields,
@@ -53,16 +61,21 @@ public record LabelLayoutResponse(
     PrintMedia printMedia,
     String sheetPreset,
     SheetSpec sheetSpec,
+    RollSpec rollSpec,
     StickerTemplate template,
     BarcodePosition barcodePosition,
     CurrencyStyle currencyStyle,
     @JsonProperty("isDefault") boolean isDefault,
     Instant updatedAt,
     String updatedByUserId,
-    ShopType shopType) {
+    ShopType shopType,
+    Map<String, String> fieldZones,
+    Map<String, Boolean> fieldLabelOverrides) {
 
   public LabelLayoutResponse {
     enabledFields = enabledFields == null ? List.of() : List.copyOf(enabledFields);
+    fieldZones = fieldZones == null ? Map.of() : Map.copyOf(fieldZones);
+    fieldLabelOverrides = fieldLabelOverrides == null ? Map.of() : Map.copyOf(fieldLabelOverrides);
     printMedia = printMedia == null ? PrintMedia.ROLL : printMedia;
     template = template == null ? StickerTemplate.STACKED : template;
     barcodePosition = barcodePosition == null ? BarcodePosition.TOP : barcodePosition;
@@ -86,13 +99,16 @@ public record LabelLayoutResponse(
         layout.printMedia(),
         layout.sheetPreset(),
         layout.sheetSpec(),
+        layout.rollSpec(),
         layout.template(),
         layout.barcodePosition(),
         layout.currencyStyle(),
         isDefault,
         updatedAt,
         updatedByUserId,
-        shopType);
+        shopType,
+        layout.fieldZones(),
+        layout.fieldLabelOverrides());
   }
 
   /** The effective layout this response was built from (inverse of {@link #from}). */
@@ -109,6 +125,9 @@ public record LabelLayoutResponse(
         sheetSpec,
         template,
         barcodePosition,
-        currencyStyle);
+        currencyStyle,
+        rollSpec,
+        fieldZones,
+        fieldLabelOverrides);
   }
 }

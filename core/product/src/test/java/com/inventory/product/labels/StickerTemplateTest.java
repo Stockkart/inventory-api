@@ -57,7 +57,7 @@ class StickerTemplateTest {
 
   @Test
   void labelOverrideWinsOverEveryAutomaticRule() {
-    // COMPACT + LEFT would be true automatically, but the override forces it off.
+    // The override wins over the COMPACT default.
     LabelLayoutConfig off =
         config(StickerTemplate.COMPACT, "50x25", Map.of(), Map.of("hsn", false), false);
     assertFalse(LabelLayoutService.enabledField(field("hsn", ValueType.TEXT), off).showLabel());
@@ -83,19 +83,16 @@ class StickerTemplateTest {
   }
 
   @Test
-  void compactShowLabelDependsOnZoneAndCurrency() {
+  void compactPrintsValuesOnlyInEveryZoneByDefault() {
     Map<String, String> zones =
         Map.of("header", "HEADER", "leftText", "LEFT", "rightMoney", "RIGHT", "rightText", "RIGHT");
     LabelLayoutConfig cfg = config(StickerTemplate.COMPACT, "50x25", zones, Map.of(), true);
 
-    // HEADER → never labelled.
+    // No field name on any zone unless a per-field override asks for it.
     assertFalse(LabelLayoutService.enabledField(field("header", ValueType.TEXT), cfg).showLabel());
-    // LEFT → always labelled.
-    assertTrue(LabelLayoutService.enabledField(field("leftText", ValueType.TEXT), cfg).showLabel());
-    // RIGHT + currency → not labelled.
+    assertFalse(LabelLayoutService.enabledField(field("leftText", ValueType.TEXT), cfg).showLabel());
     assertFalse(LabelLayoutService.enabledField(field("rightMoney", ValueType.CURRENCY), cfg).showLabel());
-    // RIGHT + non-currency → labelled.
-    assertTrue(LabelLayoutService.enabledField(field("rightText", ValueType.TEXT), cfg).showLabel());
+    assertFalse(LabelLayoutService.enabledField(field("rightText", ValueType.TEXT), cfg).showLabel());
   }
 
   // ---- zone-cap validation -------------------------------------------------------------------
