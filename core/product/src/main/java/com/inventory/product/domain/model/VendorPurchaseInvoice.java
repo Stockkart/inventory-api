@@ -53,6 +53,14 @@ public class VendorPurchaseInvoice {
   private PurchaseTaxTreatment taxTreatment;
 
   /**
+   * Whether the goods came from a supplier in another state, so the tax is IGST rather than
+   * CGST + SGST. Decided once, at stock-in, from where the supplier and the shop are; the ledger,
+   * the GST returns and any return of the goods read this instead of deciding again. Null on
+   * invoices recorded before it was captured — those are placed on read, as they always were.
+   */
+  private Boolean interstate;
+
+  /**
    * True when invoice number was generated (AUTO-*) because the user did not enter one.
    * User-entered invoices are non-synthetic.
    */

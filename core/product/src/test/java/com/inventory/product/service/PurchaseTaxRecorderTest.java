@@ -2,6 +2,7 @@ package com.inventory.product.service;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
@@ -23,11 +24,14 @@ import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
+import com.inventory.common.gst.SupplyPlacement;
 
 class PurchaseTaxRecorderTest {
 
   private InventoryRepository inventoryRepository;
   private PricingRepository pricingRepository;
+  private SupplyPlacement placement;
   private PurchaseTaxRecorder recorder;
   private final List<Inventory> lots = new ArrayList<>();
   private final List<Pricing> pricings = new ArrayList<>();
@@ -39,7 +43,12 @@ class PurchaseTaxRecorderTest {
     pricingRepository = mock(PricingRepository.class);
     when(inventoryRepository.findAllById(anyIterable())).thenReturn(lots);
     when(pricingRepository.findAllById(anyIterable())).thenReturn(pricings);
-    recorder = new PurchaseTaxRecorder(inventoryRepository, pricingRepository);
+    placement = mock(SupplyPlacement.class);
+    when(placement.isInterstatePurchase(any(), any())).thenReturn(false);
+    @SuppressWarnings("unchecked")
+    ObjectProvider<SupplyPlacement> provider = mock(ObjectProvider.class);
+    when(provider.getIfAvailable()).thenReturn(placement);
+    recorder = new PurchaseTaxRecorder(inventoryRepository, pricingRepository, provider);
   }
 
   private void line(int count, String cost, String halfGst) {
@@ -137,5 +146,38 @@ class PurchaseTaxRecorderTest {
     assertDoesNotThrow(() -> recorder.record(invoice));
 
     assertNull(invoice.getTaxTotal());
+  }
+
+  @Test
+  void anInterstateSupplierPutsTheWholeTaxUnderIgstAndStampsTheInvoice() {
+    when(placement.isInterstatePurchase(any(), any())).thenReturn(true);
+    line(10, "100", "6");
+    VendorPurchaseInvoice invoice = invoice();
+    recorder.record(invoice);
+    VendorPurchaseInvoiceLine l = invoice.getLines().get(0);
+    assertEquals(Boolean.TRUE, invoice.getInterstate());
+    assertEquals(0, l.getCentralTax().signum());
+    assertEquals(0, l.getStateTax().signum());
+    assertEquals(new BigDecimal("120.00"), l.getIntegratedTax().setScale(2, java.math.RoundingMode.HALF_UP));
+  }
+
+  @Test
+  void aLocalSupplierSplitsTheTaxInHalvesAndStampsTheInvoice() {
+    line(10, "100", "6");
+    VendorPurchaseInvoice invoice = invoice();
+    recorder.record(invoice);
+    VendorPurchaseInvoiceLine l = invoice.getLines().get(0);
+    assertEquals(Boolean.FALSE, invoice.getInterstate());
+    assertEquals(new BigDecimal("60.00"), l.getCentralTax().setScale(2, java.math.RoundingMode.HALF_UP));
+    assertEquals(new BigDecimal("60.00"), l.getStateTax().setScale(2, java.math.RoundingMode.HALF_UP));
+    assertEquals(0, l.getIntegratedTax().signum());
+  }
+
+  @Test
+  void theStoredAnswerWinsOverPlacingAgain() {
+    VendorPurchaseInvoice invoice = invoice();
+    invoice.setInterstate(true);
+    when(placement.isInterstatePurchase(any(), any())).thenReturn(false);
+    assertTrue(recorder.isInterstate(invoice));
   }
 }
