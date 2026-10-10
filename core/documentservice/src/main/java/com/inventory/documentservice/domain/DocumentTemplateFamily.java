@@ -9,7 +9,14 @@ public enum DocumentTemplateFamily {
   CREDIT_NOTE(
       "credit-note/credit-note",
       "credit-note/credit-note-dotmatrix",
-      "credit-note/credit-note-thermal-3inch");
+      "credit-note/credit-note-thermal-3inch"),
+
+  /**
+   * A KOT is always a ticket — there is no A4 kitchen order — so every printer type maps to the
+   * one thermal template. The repetition satisfies the three-argument constructor; it is not a
+   * copy-paste mistake.
+   */
+  KOT("kot/kot-thermal-3inch", "kot/kot-thermal-3inch", "kot/kot-thermal-3inch");
 
   private final String normalTemplate;
   private final String dotMatrixTemplate;
