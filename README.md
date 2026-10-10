@@ -279,6 +279,10 @@ The in-app preview for a dot-matrix printer (`DotMatrixInvoicePreviewRenderer`) 
 
 The shop's invoice settings decide which columns print. `showPack` turns the PACK column off.
 
+**Print bridge status.** `POST /api/v1/print-bridge/status` (`core/product`, `service/printing/`) takes what the browser's probe of the bridge saw (`reachable`, `version`, `selectedPrinter`); only a page on the shop PC can reach `127.0.0.1:9110`. It returns `state` (`NOT_DETECTED`, `OUTDATED`, `CONNECTED`), `latestVersion`, `minimumVersion` and `downloadUrl`. The version comparison is the backend's (`BridgeVersion`); an outdated bridge still prints.
+
+The bridge offered to shops is set per environment: `PRINT_BRIDGE_DOWNLOAD_URL`, `PRINT_BRIDGE_LATEST_VERSION` (default `0.12.0`) and `PRINT_BRIDGE_MINIMUM_VERSION` (default `0.11.0`, the first release that gives an estimate its own page length). The default download URL is the release on Google Drive; it must be shared as "Anyone with the link", or a shop that is not signed in to that Google account cannot download it.
+
 ### Build commands
 
 ```bash
