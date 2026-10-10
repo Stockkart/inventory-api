@@ -263,6 +263,22 @@ Shops are bound to a **vertical** (`Shop.verticalId` + `Shop.pluginVersion`). Fi
 
 **Amending a purchase invoice header.** `PATCH /api/v1/vendor-purchase-invoices/{id}` corrects the header against the paper bill (shipping, other charges, overall discount, round-off, tax treatment) and needs a `reason`. The subtotal, tax and invoice total are worked out again from the lines. Lines are not amendable. The previous header, who changed it and why are kept on the invoice. The amendment is validated like stock-in, the totals are worked out again, and the purchase journal entry is **reversed and posted again** with the corrected figures (the invoice's `ledgerSourceId` names the live entry). The vendor's credit ledger (`core/credit`) is not adjusted yet. Before saving, `POST /api/v1/vendor-purchase-invoices/{id}/amend-preview` (same body, reason optional) works the correction out without saving and returns `saved` and `corrected` header figures, `changedFields` and `journalReposted`, so the form shows the operator what moves. A correction that would change nothing is refused (400). The invoice detail carries `previousHeader` after a correction.
 
+### Dot-matrix printing (documentservice)
+
+A dot-matrix printer cannot take a PDF, so these documents are served as fixed-width plain text. The shop's print bridge sends the text to the printer and owns the ESC/P control bytes and where the paper sits. The backend owns the layout and every figure on it.
+
+| Endpoint | Returns |
+|----------|---------|
+| `GET /api/v1/invoices/{purchaseId}/dot-matrix` | The sale invoice, or the estimate for a `BASIC` sale |
+| `GET /api/v1/refund/{refundId}/dot-matrix` | The customer credit note |
+| `GET /api/v1/vendor-purchase-returns/{returnId}/dot-matrix` | The vendor debit note |
+
+All three are `text/plain;charset=UTF-8`, rendered by `InvoiceTextRenderer` (`core/documentservice/.../service`). An estimate is 80 columns. A tax invoice is 137 columns condensed (8 inches): the masthead, then the buyer, tax-id and document columns (45 + 44 + 46), then the items, then one GST row per rate (`taxRateRows`). On an interstate bill that row is IGST at the combined rate (`igstPercent`), never SGST and CGST. Round-off is signed by direction.
+
+The in-app preview for a dot-matrix printer (`DotMatrixInvoicePreviewRenderer`) shows the same text rather than a separate template, so the preview and the paper cannot disagree. Other printers are still previewed from their Thymeleaf templates (`TemplateInvoicePreviewRenderer`).
+
+The shop's invoice settings decide which columns print. `showPack` turns the PACK column off.
+
 ### Build commands
 
 ```bash
