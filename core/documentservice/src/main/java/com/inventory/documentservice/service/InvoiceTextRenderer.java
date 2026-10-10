@@ -1,5 +1,6 @@
 package com.inventory.documentservice.service;
 
+import com.inventory.documentservice.domain.DotMatrixDocumentKind;
 import com.inventory.documentservice.rest.dto.CreditNoteItem;
 import com.inventory.documentservice.rest.dto.GenerateCreditNoteRequest;
 import com.inventory.documentservice.rest.dto.GenerateInvoiceRequest;
@@ -1209,6 +1210,16 @@ public class InvoiceTextRenderer {
   }
 
   // ---------------------------------------------------------------- helpers
+
+  /** Invoice or estimate, by the same rule that labels the document on the paper. */
+  public static DotMatrixDocumentKind kindOf(GenerateInvoiceRequest r) {
+    return isEstimate(r) ? DotMatrixDocumentKind.ESTIMATE : DotMatrixDocumentKind.INVOICE;
+  }
+
+  /** Credit or debit note, by the same rule that titles the note on the paper. */
+  public static DotMatrixDocumentKind kindOf(GenerateCreditNoteRequest r) {
+    return isVendorNote(r) ? DotMatrixDocumentKind.DEBIT_NOTE : DotMatrixDocumentKind.CREDIT_NOTE;
+  }
 
   private static boolean isEstimate(GenerateInvoiceRequest r) {
     return "ESTIMATE".equalsIgnoreCase(r.getDocumentType())
