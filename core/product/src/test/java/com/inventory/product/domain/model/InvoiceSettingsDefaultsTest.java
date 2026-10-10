@@ -26,6 +26,20 @@ class InvoiceSettingsDefaultsTest {
   }
 
   @Test
+  void packIsOnByDefaultAndCanBeTurnedOff() {
+    assertTrue(InvoiceSettingsDefaults.regularFields().getShowPack());
+    assertTrue(InvoiceSettingsDefaults.basicFields().getShowPack());
+
+    InvoiceFieldVisibility stored = new InvoiceFieldVisibility();
+    stored.setShowPack(false);
+
+    assertFalse(
+        InvoiceSettingsDefaults.resolve(stored, InvoiceSettingsDefaults.regularFields())
+            .getShowPack());
+    assertFalse(InvoiceSettingsDefaults.copy(stored).getShowPack());
+  }
+
+  @Test
   void regularDefaultsShowPartyChildren() {
     InvoiceFieldVisibility regular = InvoiceSettingsDefaults.regularFields();
     assertTrue(regular.getShowShopName());
