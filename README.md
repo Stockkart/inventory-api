@@ -239,6 +239,12 @@ A cafe menu item is priced **either** by one `sellingPrice` **or** by named port
 
 Menu lines also carry the kitchen `department` (station, blank means `KITCHEN`, see `MenuDepartments`) and an optional `note`, frozen onto the cart line when it is added.
 
+### Cart and settlement writes
+
+`CheckoutService` no longer replaces a bill with `purchaseRepository.save`. Cart edits and settlement go through `PurchaseTargetedWriter`, which writes only the fields that changed (lines addressed by `lineRef`, else `sellableRef`), so a concurrent writer -- a kitchen punch recording `kotSentQuantity` -- is never deleted by a cart write. A cart write that cannot address its line is refused rather than replacing the bill.
+
+Settlement is guarded: if the bill changed after its total was computed, the write is refused (400, "This bill changed while it was being settled") and nothing irreversible has happened. Stock is only checked before that write and taken off after it succeeds, so a refused settle and its retry never decrement stock twice. There is no Mongo transaction manager; nothing here relies on multi-document atomicity.
+
 ### GST reports (taxation)
 
 | Endpoint | Purpose |
