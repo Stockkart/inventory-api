@@ -1,5 +1,6 @@
 package com.inventory.documentservice.service;
 
+import com.inventory.documentservice.domain.DotMatrixDocument;
 import com.inventory.documentservice.rest.dto.GenerateCreditNoteRequest;
 import com.inventory.documentservice.rest.dto.GenerateInvoiceRequest;
 import com.inventory.documentservice.rest.dto.mis.MisTabularDocumentRequest;
@@ -60,6 +61,26 @@ public class DocumentService {
   public String generateInvoiceText(GenerateInvoiceRequest request) {
     log.info("Generating invoice text for invoice: {}", request.getInvoiceNo());
     return invoiceTextRenderer.render(request);
+  }
+
+  /**
+   * Render the invoice for the print bridge: its text, whether it is an invoice or an estimate,
+   * and its number.
+   */
+  public DotMatrixDocument renderInvoiceForPrint(GenerateInvoiceRequest request) {
+    return new DotMatrixDocument(
+        generateInvoiceText(request), InvoiceTextRenderer.kindOf(request), request.getInvoiceNo());
+  }
+
+  /**
+   * Render a credit or debit note for the print bridge: its text, which of the two it is, and
+   * its number.
+   */
+  public DotMatrixDocument renderCreditNoteForPrint(GenerateCreditNoteRequest request) {
+    return new DotMatrixDocument(
+        generateCreditNoteText(request),
+        InvoiceTextRenderer.kindOf(request),
+        request.getCreditNoteNo());
   }
 
   /**
