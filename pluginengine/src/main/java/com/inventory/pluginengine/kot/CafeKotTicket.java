@@ -1,0 +1,50 @@
+package com.inventory.pluginengine.kot;
+
+import java.util.List;
+import lombok.Builder;
+import lombok.Data;
+
+/** One kitchen ticket, as core sees it. */
+@Data
+@Builder
+public class CafeKotTicket {
+
+  private String kotId;
+  private String shopId;
+
+  /** The purchase (cart) this ticket's punch belongs to. */
+  private String purchaseId;
+
+  private Integer kotNo;
+  private String department;
+  private Integer roundNo;
+
+  /** {@code ISSUE} or {@code CANCEL} — literal, mirroring the cafe-side {@code CafeKotKind}. */
+  private String kind;
+
+  /**
+   * {@code ISSUED} — literal, mirroring the cafe-side {@code CafeKotStatus}, which has no other
+   * constant. Whether a ticket sends food or stops it is {@link #kind}, never this.
+   */
+  private String status;
+
+  /** Dine-in table, free text. Null for tickets with no table (e.g. counter/takeaway). */
+  private String tableLabel;
+
+  /** Daily order token. Null when the cart carries none. */
+  private String tokenNo;
+
+  private String businessDate;
+
+  /** How many times this ticket has been reprinted. Zero for a ticket never reprinted. */
+  private Integer reprintCount;
+
+  /**
+   * When the ticket was written. The Sell screen's "Sent rounds" list orders by it and shows it,
+   * because a cook asking about a missed slip says "the one from ten minutes ago" at least as
+   * often as they say a KOT number.
+   */
+  private java.time.Instant createdAt;
+
+  private List<CafeKotTicketLine> lines;
+}
