@@ -39,6 +39,11 @@ public class GstinRegistryService implements GstinDirectory {
   // ---- GstinDirectory (the view other modules get) ---------------------------------------------
 
   @Override
+  public boolean isVerificationEnabled() {
+    return provider.isConfigured();
+  }
+
+  @Override
   public Optional<GstinRegistration> find(String raw) {
     return record(raw).map(GstinRecord::toRegistration);
   }

@@ -510,7 +510,7 @@ public class VendorService {
     }
     if (request.getGstinUin() != null) {
       vendorValidator.validateGstin(request.getGstinUin());
-      String gstin = Gstin.normalize(request.getGstinUin());
+      String gstin = vendorValidator.enforcesGstinRules() ? Gstin.normalize(request.getGstinUin()) : request.getGstinUin().trim();
       if (!gstin.equals(vendor.getGstinUin() != null ? vendor.getGstinUin() : "")) {
         vendor.setGstinUin(StringUtils.hasText(gstin) ? gstin : null);
         verifyGstin(vendor);
@@ -548,9 +548,10 @@ public class VendorService {
     return vendorMapper.toDto(vendor);
   }
 
-  private static void normalizeGstin(Vendor vendor) {
+  /** Uppercased when verification is on; trimmed only (as before) when it is off. */
+  private void normalizeGstin(Vendor vendor) {
     if (vendor.getGstinUin() != null) {
-      String g = Gstin.normalize(vendor.getGstinUin());
+      String g = vendorValidator.enforcesGstinRules() ? Gstin.normalize(vendor.getGstinUin()) : vendor.getGstinUin().trim();
       vendor.setGstinUin(StringUtils.hasText(g) ? g : null);
     }
   }

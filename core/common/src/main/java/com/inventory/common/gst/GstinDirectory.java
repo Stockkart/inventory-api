@@ -11,6 +11,13 @@ import java.util.Optional;
  */
 public interface GstinDirectory {
 
+  /**
+   * Whether online verification is switched on (a provider is configured). When it is not, the
+   * GSTIN field keeps its old behaviour everywhere: free text, no check-character test, no
+   * "GSTIN or state" rule — nothing changes for shops until the feature is turned on.
+   */
+  boolean isVerificationEnabled();
+
   /** The registration if the network has been asked before; never calls out. */
   Optional<GstinRegistration> find(String gstin);
 

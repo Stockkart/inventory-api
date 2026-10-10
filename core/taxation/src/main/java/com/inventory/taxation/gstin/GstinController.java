@@ -41,6 +41,16 @@ public class GstinController {
     this.registry = registry;
   }
 
+  /** Whether online verification is on; the vendor form keeps its old behaviour when it is not. */
+  @GetMapping("/settings")
+  public ResponseEntity<ApiResponse<GstinSettingsResponse>> settings(HttpServletRequest http) {
+    requireShop(http);
+    return ResponseEntity.ok(ApiResponse.success(
+        new GstinSettingsResponse(registry.isVerificationEnabled(), registry.provider().name())));
+  }
+
+  public record GstinSettingsResponse(boolean verificationEnabled, String provider) {}
+
   @GetMapping("/{gstin}")
   public ResponseEntity<ApiResponse<GstinLookupResponse>> lookup(@PathVariable String gstin, HttpServletRequest http) {
     requireShop(http);

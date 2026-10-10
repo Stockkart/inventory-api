@@ -5,13 +5,41 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.inventory.common.exception.ValidationException;
+import com.inventory.common.gst.GstinDirectory;
 import com.inventory.common.gst.PostalAddress;
+import org.springframework.test.util.ReflectionTestUtils;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 import com.inventory.user.rest.dto.request.CreateVendorRequest;
 import org.junit.jupiter.api.Test;
 
 class VendorValidatorTest {
 
-  final VendorValidator validator = new VendorValidator();
+  /** Online verification switched on, so the stricter rules apply. */
+  final VendorValidator validator = withVerification(true);
+
+  static VendorValidator withVerification(boolean on) {
+    VendorValidator v = new VendorValidator();
+    GstinDirectory directory = mock(GstinDirectory.class);
+    when(directory.isVerificationEnabled()).thenReturn(on);
+    ReflectionTestUtils.setField(v, "gstinDirectory", directory);
+    return v;
+  }
+
+  @Test
+  void withVerificationOffTheGstinFieldBehavesAsBefore() {
+    VendorValidator relaxed = withVerification(false);
+    CreateVendorRequest r = base();
+    r.setGstinUin("not-a-gstin");           // accepted, as it always was
+    r.setPostalAddress(null);               // no state needed
+    assertDoesNotThrow(() -> relaxed.validateCreateRequest(r));
+    assertDoesNotThrow(() -> relaxed.validatePlace(null, null));
+  }
+
+  @Test
+  void withoutTheTaxationModuleWiredTheRulesAreOffToo() {
+    assertDoesNotThrow(() -> new VendorValidator().validateCreateRequest(base()));
+  }
 
   private CreateVendorRequest base() {
     CreateVendorRequest r = new CreateVendorRequest();
