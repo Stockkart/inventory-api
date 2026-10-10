@@ -289,7 +289,7 @@ The shop's invoice settings decide which columns print. `showPack` turns the PAC
 
 `bridgeRequest` asks the bridge for its own configured copies (`copies: 0`). A second job for a document whose job is still `PENDING` or `SUBMITTED` returns `IN_PROGRESS`, enforced by a unique index scoped to those statuses (`PrintJobIndexMigration`). A job left unreported past `print-bridge.in-flight-timeout` (2 minutes) becomes `EXPIRED`, which means outcome unknown, not "did not print". Physical printing is at-least-once: a refusal from a bridge that was reached (`BRIDGE_REJECTED`) offers no fallback file, because the job may already have printed.
 
-The bridge offered to shops is set per environment: `PRINT_BRIDGE_DOWNLOAD_URL`, `PRINT_BRIDGE_LATEST_VERSION` (default `0.12.0`) and `PRINT_BRIDGE_MINIMUM_VERSION` (default `0.11.0`, the first release that gives an estimate its own page length). The default download URL is a placeholder until the real link is set.
+The bridge offered to shops is set per environment: `PRINT_BRIDGE_DOWNLOAD_URL`, `PRINT_BRIDGE_LATEST_VERSION` (default `0.12.0`) and `PRINT_BRIDGE_MINIMUM_VERSION` (default `0.11.0`, the first release that gives an estimate its own page length). The default download URL is the release on Google Drive; it must be shared as "Anyone with the link", or a shop that is not signed in to that Google account cannot download it.
 
 ### Build commands
 
