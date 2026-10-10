@@ -102,6 +102,8 @@ public class GenerateInvoiceRequest {
    * interstate supply cannot be matched against the supplier's return.
    */
   private BigDecimal igstAmount;
+  /** The combined rate an interstate supply is charged at, e.g. 18 for 9% + 9%. */
+  private BigDecimal igstPercent;
   /** True when the sale was billed as an interstate supply: print IGST columns and rows, not CGST/SGST. */
   private boolean interstate;
   private BigDecimal taxTotal;
