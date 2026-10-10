@@ -26,12 +26,17 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.dao.DataAccessException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Optional;
+import java.util.function.Consumer;
 
 import org.springframework.beans.factory.annotation.Value;
 
@@ -225,6 +230,20 @@ public class ShopService {
     shop.setPlanId(planId);
     shop.setPlanExpiryDate(expiryDate);
     shopRepository.save(shop);
+  }
+
+  /**
+   * Visit every shop's plan fields, one page at a time. Used by ShopProviderImpl adapter.
+   */
+  public void forEachShopPlanInfo(Consumer<ShopPlanInfo> action) {
+    Pageable page = PageRequest.of(0, 500, Sort.by("_id"));
+    Page<Shop> shops;
+    do {
+      shops = shopRepository.findAll(page);
+      shops.forEach(shop -> action.accept(
+          new ShopPlanInfo(shop.getShopId(), shop.getPlanId(), shop.getPlanExpiryDate())));
+      page = shops.nextPageable();
+    } while (shops.hasNext());
   }
 
   /**
