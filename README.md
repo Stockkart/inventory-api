@@ -254,6 +254,12 @@ A cafe menu item is priced **either** by one `sellingPrice` **or** by named port
 
 Menu lines also carry the kitchen `department` (station, blank means `KITCHEN`, see `MenuDepartments`) and an optional `note`, frozen onto the cart line when it is added.
 
+### Cafe stock items in menu sections
+
+A sell-direct stock lot can be placed in a menu section as a `MenuItem` with `sellMode: direct` and `inventoryId` (no new collection). The lot keeps owning price and stock: `MenuDirectLinks.normalize` clears any price, portions or GST sent on a placement, and the cart still sells it by its `inventory:` ref, so checkout, stock decrement and refunds are unchanged. The placement decides only the station: a stock cart line freezes the placement's `department` (`ShopMenuLookup.findDirectLink`), and an unplaced lot keeps `KITCHEN`. A placement's own `menu:` ref is refused for sale.
+
+`NONE` is a real station meaning "billed, but no ticket" (a bottle from the counter fridge): the punch claims the line but creates no KOT and burns no number (`MenuDepartments.emitsTicket`). Saving the menu: a lot may be placed once ("Lassi is already in Beverages"), a save over a stored menu must carry its revision, and a placement whose lot was deleted stays saveable.
+
 ### Cart and settlement writes
 
 `CheckoutService` no longer replaces a bill with `purchaseRepository.save`. Cart edits and settlement go through `PurchaseTargetedWriter`, which writes only the fields that changed (lines addressed by `lineRef`, else `sellableRef`), so a concurrent writer -- a kitchen punch recording `kotSentQuantity` -- is never deleted by a cart write. A cart write that cannot address its line is refused rather than replacing the bill.
