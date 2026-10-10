@@ -232,6 +232,10 @@ public class CafeKotPunchService {
       }
       CafeKotKind kind = quantity > 0 ? CafeKotKind.ISSUE : CafeKotKind.CANCEL;
       String department = MenuDepartments.resolve(delta.getString("department"));
+      if (!MenuDepartments.emitsTicket(department)) {
+        // Claimed with the rest (kotSentQuantity already advanced), but nothing goes to paper.
+        continue;
+      }
       String id = punchId + ":" + department + ":" + kind.name();
 
       CafeKot kot =

@@ -4,6 +4,7 @@ import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.pluginengine.PluginRegistry;
 import com.inventory.pluginengine.VerticalPlugin;
+import com.inventory.pluginengine.menu.MenuDirectLinks;
 import com.inventory.pluginengine.menu.MenuItem;
 import com.inventory.pluginengine.menu.MenuRates;
 import com.inventory.pluginengine.menu.MenuSection;
@@ -22,8 +23,10 @@ import com.inventory.product.validation.ShopValidator;
 import com.inventory.user.service.UserShopMembershipService;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Lazy;
@@ -84,13 +87,19 @@ public class ShopMenuService {
     menuPayload.setVerticalId(shop.getVerticalId());
     menuPayload.setSections(normalizeSections(request.getSections()));
 
-    resolveMenuValidator(shop.getVerticalId()).validate(menuPayload, schema, shopId);
-    validateDirectInventoryLinks(shopId, menuPayload);
-
     ShopMenuDocument existing =
         shopMenuRepository
             .findByShopIdAndVerticalId(shopId, shop.getVerticalId())
             .orElse(null);
+
+    // A save that names no revision could be from a screen that never read the stored menu, and
+    // would silently overwrite whatever another admin saved — including a stock lot they placed.
+    if (existing != null && request.getRevision() == null) {
+      throw new ValidationException("Menu revision missing — reload the menu and try again");
+    }
+
+    resolveMenuValidator(shop.getVerticalId()).validate(menuPayload, schema, shopId);
+    validateDirectInventoryLinks(shopId, menuPayload, existing);
 
     if (existing != null
         && request.getRevision() != null
@@ -160,9 +169,25 @@ public class ShopMenuService {
                     "Menu management is not supported for vertical: " + verticalId));
   }
 
-  private void validateDirectInventoryLinks(String shopId, ShopMenu menu) {
+  private void validateDirectInventoryLinks(
+      String shopId, ShopMenu menu, ShopMenuDocument existing) {
     if (menu.getSections() == null) {
       return;
+    }
+    // Links the stored menu already has. A lot deleted since it was placed must not make the whole
+    // menu unsaveable; only a link new in this save has to point at a lot that exists.
+    Set<String> alreadyLinked = new HashSet<>();
+    if (existing != null && existing.getSections() != null) {
+      for (MenuSection stored : existing.getSections()) {
+        if (stored == null || stored.getItems() == null) {
+          continue;
+        }
+        for (MenuItem item : stored.getItems()) {
+          if (MenuDirectLinks.isDirect(item) && StringUtils.hasText(item.getInventoryId())) {
+            alreadyLinked.add(item.getInventoryId().trim());
+          }
+        }
+      }
     }
     for (MenuSection section : menu.getSections()) {
       if (section == null || section.getItems() == null) {
@@ -172,13 +197,14 @@ public class ShopMenuService {
         if (item == null || item.getSellMode() != MenuSellMode.direct) {
           continue;
         }
+        if (!StringUtils.hasText(item.getInventoryId())) {
+          continue;
+        }
         String inventoryId = item.getInventoryId().trim();
-        boolean exists =
-            inventoryRepository
-                .findById(inventoryId)
-                .filter(inv -> shopId.equals(inv.getShopId()))
-                .isPresent();
-        if (!exists) {
+        var lot = inventoryRepository.findById(inventoryId);
+        boolean inThisShop = lot.filter(inv -> shopId.equals(inv.getShopId())).isPresent();
+        boolean deletedButStored = lot.isEmpty() && alreadyLinked.contains(inventoryId);
+        if (!inThisShop && !deletedButStored) {
           throw new ValidationException(
               "Menu item \""
                   + item.getName()
@@ -209,9 +235,13 @@ public class ShopMenuService {
           if (!StringUtils.hasText(item.getId())) {
             item.setId(UUID.randomUUID().toString());
           }
-          // Freezes a slug onto each new portion and drops a sellingPrice the portions replaced.
-          // Before validation, so the validator sees the document as it will be stored.
-          MenuRates.normalize(item);
+          // Clears any price a client sent on a placed stock lot; the lot owns price and tax.
+          MenuDirectLinks.normalize(item);
+          if (!MenuDirectLinks.isDirect(item)) {
+            // Freezes a slug onto each new portion and drops a sellingPrice the portions replaced.
+            // Before validation, so the validator sees the document as it will be stored.
+            MenuRates.normalize(item);
+          }
         }
       }
       out.add(section);
