@@ -447,6 +447,16 @@ public class InvoiceService {
       request.setCgstPercent(BigDecimal.valueOf(2.5));
     }
 
+    // On an interstate supply the whole rate is charged once as IGST rather than as two halves,
+    // so the printed rate is the two added back together -- 5%, not 2.5% twice.
+    if (Boolean.TRUE.equals(purchase.getInterstate())) {
+      BigDecimal sgstPct = request.getSgstPercent() != null
+          ? request.getSgstPercent() : BigDecimal.ZERO;
+      BigDecimal cgstPct = request.getCgstPercent() != null
+          ? request.getCgstPercent() : BigDecimal.ZERO;
+      request.setIgstPercent(sgstPct.add(cgstPct));
+    }
+
     BigDecimal grandTotal = purchase.getGrandTotal() != null ? purchase.getGrandTotal() : BigDecimal.ZERO;
     // The additional discount is what comes off the subtotal. The trade discount is the gap
     // between MRP and rate, already inside the subtotal, so subtracting it misstated round-off.
