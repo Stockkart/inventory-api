@@ -21,6 +21,9 @@ public class DocumentService {
   private InvoicePdfService invoicePdfService;
 
   @Autowired
+  private InvoiceTextRenderer invoiceTextRenderer;
+
+  @Autowired
   private CreditNotePdfService creditNotePdfService;
 
   @Autowired
@@ -46,6 +49,17 @@ public class DocumentService {
   public String generateInvoiceHtml(GenerateInvoiceRequest request) {
     log.info("Generating invoice HTML preview for invoice: {}", request.getInvoiceNo());
     return invoicePdfService.renderInvoiceHtml(request);
+  }
+
+  /**
+   * Render the invoice as fixed-width plain text for dot matrix printers.
+   *
+   * @param request the invoice generation request
+   * @return 80-column plain text, newline separated, with no control characters
+   */
+  public String generateInvoiceText(GenerateInvoiceRequest request) {
+    log.info("Generating invoice text for invoice: {}", request.getInvoiceNo());
+    return invoiceTextRenderer.render(request);
   }
 
   /** Generate credit-note PDF (customer or vendor). */
