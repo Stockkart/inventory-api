@@ -10,6 +10,9 @@ public final class MenuDepartments {
 
   public static final String DEFAULT = "KITCHEN";
 
+  /** A real station meaning "billed, but no kitchen ticket" — a bottle from the counter fridge. */
+  public static final String NONE = "NONE";
+
   private MenuDepartments() {}
 
   /** Null or blank means the default kitchen. Values are trimmed and uppercased so grouping is stable. */
@@ -18,5 +21,10 @@ public final class MenuDepartments {
       return DEFAULT;
     }
     return raw.trim().toUpperCase();
+  }
+
+  /** Whether a resolved station produces a physical KOT. */
+  public static boolean emitsTicket(String resolved) {
+    return !NONE.equals(resolved);
   }
 }

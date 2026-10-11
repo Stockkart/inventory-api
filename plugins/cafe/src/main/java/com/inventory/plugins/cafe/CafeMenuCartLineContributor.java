@@ -14,6 +14,7 @@ import com.inventory.pluginengine.integration.InventoryCartLookup;
 import com.inventory.pluginengine.integration.InventoryLineSnapshot;
 import com.inventory.pluginengine.integration.ShopMenuLookup;
 import com.inventory.pluginengine.menu.MenuDepartments;
+import com.inventory.pluginengine.menu.MenuDirectLinks;
 import com.inventory.pluginengine.menu.MenuItem;
 import com.inventory.pluginengine.menu.MenuRate;
 import com.inventory.pluginengine.menu.MenuRates;
@@ -135,6 +136,13 @@ public class CafeMenuCartLineContributor implements CartLineContributor {
           .build();
     }
 
+    if (MenuDirectLinks.isDirect(menuItem)) {
+      // A placed stock lot sells by its inventory ref, where price and stock live. Priced from the
+      // menu it would be free and never leave stock; only a stale screen still sends this ref.
+      throw new ValidationException(
+          menuItem.getName() + " is sold from stock — reload the sell screen");
+    }
+
     if (!Boolean.TRUE.equals(menuItem.getAvailable())) {
       throw new ValidationException("Menu item is not available: " + menuItem.getName());
     }
@@ -218,6 +226,14 @@ public class CafeMenuCartLineContributor implements CartLineContributor {
       String shopId, SellableRef sellable, CartLineInput input, int qty) {
     String inventoryId = sellable.id();
     requireSellDirect(shopId, inventoryId);
+    // The placement decides only the station; price and stock stay the lot's. Frozen onto the line
+    // here so a later menu edit never re-routes paper already in the kitchen.
+    String department =
+        MenuDepartments.resolve(
+            shopMenuLookup
+                .findDirectLink(shopId, inventoryId)
+                .map(MenuItem::getDepartment)
+                .orElse(null));
 
     if (qty < 0) {
       return CartLineSnapshot.builder()
@@ -227,6 +243,7 @@ public class CafeMenuCartLineContributor implements CartLineContributor {
           .quantity(BigDecimal.valueOf(qty))
           .baseQuantity(qty)
           .unitFactor(1)
+          .department(department)
           .build();
     }
 
@@ -287,6 +304,7 @@ public class CafeMenuCartLineContributor implements CartLineContributor {
         .sgst(sgst)
         .costPrice(costPrice)
         .costTotal(costTotal)
+        .department(department)
         .build();
   }
 

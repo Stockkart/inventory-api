@@ -1,6 +1,7 @@
 package com.inventory.plugins.cafe;
 
 import com.inventory.common.exception.ValidationException;
+import com.inventory.pluginengine.menu.MenuDirectLinks;
 import com.inventory.pluginengine.menu.MenuItem;
 import com.inventory.pluginengine.menu.MenuRate;
 import com.inventory.pluginengine.menu.MenuRates;
@@ -10,8 +11,10 @@ import com.inventory.pluginengine.menu.MenuVerticalValidator;
 import com.inventory.pluginengine.menu.ShopMenu;
 import com.inventory.pluginengine.schema.VerticalSchema;
 import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -33,17 +36,22 @@ public class CafeMenuVerticalValidator implements MenuVerticalValidator {
       return;
     }
     Set<String> itemIds = new HashSet<>();
+    // inventoryId -> title of the section that already places it: a lot is placed once.
+    Map<String, String> linkedIn = new HashMap<>();
     for (MenuSection section : menu.getSections()) {
       if (section == null || section.getItems() == null) {
         continue;
       }
+      String sectionTitle =
+          StringUtils.hasText(section.getTitle()) ? section.getTitle().trim() : "another section";
       for (MenuItem item : section.getItems()) {
-        validateItem(item, itemIds);
+        validateItem(item, itemIds, linkedIn, sectionTitle);
       }
     }
   }
 
-  private static void validateItem(MenuItem item, Set<String> itemIds) {
+  private static void validateItem(
+      MenuItem item, Set<String> itemIds, Map<String, String> linkedIn, String sectionTitle) {
     if (item == null) {
       return;
     }
@@ -56,7 +64,16 @@ public class CafeMenuVerticalValidator implements MenuVerticalValidator {
     if (!StringUtils.hasText(item.getName())) {
       throw new ValidationException("Menu item name is required for id: " + item.getId());
     }
-    if (MenuRates.isPortioned(item)) {
+    if (MenuDirectLinks.isDirect(item)) {
+      // A placed stock lot: the lot owns the price, so there is none to check here.
+      if (!StringUtils.hasText(item.getInventoryId())) {
+        throw new ValidationException("Pick a stock item for " + item.getName());
+      }
+      String where = linkedIn.putIfAbsent(item.getInventoryId().trim(), sectionTitle);
+      if (where != null) {
+        throw new ValidationException(item.getName().trim() + " is already in " + where);
+      }
+    } else if (MenuRates.isPortioned(item)) {
       // The portions ARE the price. sellingPrice was normalised to null on the way in, and
       // demanding a positive one here would make a portioned item unsaveable.
       validateRates(item);
