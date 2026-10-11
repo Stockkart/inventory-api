@@ -233,6 +233,12 @@ Shops are bound to a **vertical** (`Shop.verticalId` + `Shop.pluginVersion`). Fi
 
 **Remaining:** M8 core field strip migration; scan-sell detail modal schema columns; apparel/cafe vertical (Phase 5); import mappers + widgets (Phase 6).
 
+### Cafe menu portions
+
+A cafe menu item is priced **either** by one `sellingPrice` **or** by named portions (`rates`: Qtr / Half / Full, each a `MenuRate { id, name, price }`), never both. The portion `id` is a slug frozen when the portion is first named (`MenuRates.normalize`, run on save before validation), so renaming "Half" never orphans a cart line. A cart line names its portion in the sellable ref, `menu:<itemId>@<rateId>` (`SellableRef`), and the price is always resolved from the menu on the server, never taken from the request. Validation (`CafeMenuVerticalValidator`): every portion needs an id, a name and a positive price, ids and names unique within the item.
+
+Menu lines also carry the kitchen `department` (station, blank means `KITCHEN`, see `MenuDepartments`) and an optional `note`, frozen onto the cart line when it is added.
+
 ### GST reports (taxation)
 
 | Endpoint | Purpose |

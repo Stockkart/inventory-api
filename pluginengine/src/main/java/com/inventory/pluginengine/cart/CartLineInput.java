@@ -15,6 +15,8 @@ public class CartLineInput {
   private Integer quantity;
   private Integer baseQuantity;
   private String unit;
+  /** Preparation instruction for the kitchen, e.g. "no onion" (cafe only). */
+  private String note;
   private BigDecimal priceToRetail;
   private BigDecimal saleAdditionalDiscount;
   private String schemeType;
