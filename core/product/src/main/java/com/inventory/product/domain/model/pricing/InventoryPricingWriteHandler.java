@@ -42,7 +42,9 @@ public class InventoryPricingWriteHandler {
             .costPriceIncludesTax(inventory.getCostPriceIncludesTax())
             .sgst(resolveSgst(inventory.getSgst(), inventory.getShopId()))
             .cgst(resolveCgst(inventory.getCgst(), inventory.getShopId()));
-        if (isRetailerShop(inventory.getShopId())) {
+        // Cafe shops are registered as RETAILER too; their pricing policy rejects MRP/PTR,
+        // so they must take the vertical-owned branch below.
+        if (!"cafe".equalsIgnoreCase(verticalId) && isRetailerShop(inventory.getShopId())) {
           // Retail: shop enters Rate (cost) + Selling Price; MRP/PTR mirror selling price.
           // Schemes / discounts still persist (unlike cafe simplePricing).
           java.math.BigDecimal selling = inventory.getSellingPrice();
