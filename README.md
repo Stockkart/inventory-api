@@ -231,7 +231,22 @@ Shops are bound to a **vertical** (`Shop.verticalId` + `Shop.pluginVersion`). Fi
 
 **Frontend (inventory-platform):** consumes schema APIs for onboarding, product registration, scan-sell, product search (cursor pagination), and reminders expiry buckets — see architecture doc § Implementation status.
 
-**Remaining:** M8 core field strip migration; scan-sell detail modal schema columns; apparel/cafe vertical (Phase 5); import mappers + widgets (Phase 6).
+**Remaining:** M8 core field strip migration; scan-sell detail modal schema columns; apparel vertical (Phase 5); import mappers + widgets (Phase 6).
+
+### Cafe kitchen tickets
+
+Cafe KOT lives in `plugins/cafe`. Calls between it and `core/product` go through `pluginengine` (`CafeKotPort`, implemented by `CafeKotAdapter`); the plugin imports nothing from core. One known exception, kept for a follow-up: the punch reads and updates the bill's `items[].kotSentQuantity` and `cafeKotPunches` directly in the `purchases` collection (`CafeCartPuncher`, `CafeKotPunchService`) rather than through a core port.
+
+The Sell screen punches a cart and the server owns the delta: each line sends `baseQuantity - kotSentQuantity`, so a second press sends only what was added, and a press with nothing new creates nothing. Only an open bill (`CREATED` / `PENDING`) of a cafe shop can be punched. Tickets are grouped by station (`department`) and have deterministic ids (`punchId:department:kind`); they are **inserted**, never saved, so a concurrent recovery of the same punch reads the stored ticket back instead of renumbering it. Reprint is a field-level update of `reprintCount` plus `reprintIdempotencyKey` -- a replay of the same key does not bump the count.
+
+Deploy **before** the app: `scripts/cafe-kot-indexes.mongodb.js` (KOT indexes, and stamps legacy `cafe_token_counters` rows with `scope: BILL`).
+
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /api/v1/cafe/purchases/{purchaseId}/kots` | Punch the cart. Requires `Idempotency-Key`. No body. |
+| `GET /api/v1/cafe/purchases/{purchaseId}/kots` | Tickets this bill has issued, newest first (the Sell screen's "Sent rounds"). |
+| `GET /api/v1/cafe/kots/{kotId}/document` | Thermal PDF for a ticket. |
+| `POST /api/v1/cafe/kots/{kotId}/reprint` | Reprint stamp. Requires `Idempotency-Key`. Same key is a no-op bump. |
 
 ### Cafe menu portions
 
