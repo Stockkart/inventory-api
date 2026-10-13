@@ -76,13 +76,33 @@ public class LabelLayoutDocument {
    */
   private String currencyStyle;
 
-  /** Field key → {@code LabelZone} name; only used for {@code COMPACT}. May be {@code null}. */
+  /**
+   * Legacy field key → {@code LabelZone} name. Read only: a Mongo map key cannot contain a dot,
+   * so a vertical field ({@code vertical.size}) could never be saved here. New saves write {@link
+   * #fieldSettings} and clear this. May be {@code null}.
+   */
   private Map<String, String> fieldZones;
 
-  /** Field key → forced label on/off; absent keys use the automatic rule. May be {@code null}. */
+  /** Legacy field key → forced label on/off. Read only, replaced by {@link #fieldSettings}. */
   private Map<String, Boolean> fieldLabelOverrides;
+
+  /**
+   * Per-field zone and label override, one entry per field key. Stored as a list so the key is a
+   * value, which may contain dots ({@code vertical.size}). May be {@code null}.
+   */
+  private List<FieldSettingDoc> fieldSettings;
 
   private Instant updatedAt;
 
   private String updatedByUserId;
+
+  /** One field's zone ({@code LabelZone} name) and label override; either may be {@code null}. */
+  @Data
+  @NoArgsConstructor
+  @AllArgsConstructor
+  public static class FieldSettingDoc {
+    private String fieldKey;
+    private String zone;
+    private Boolean showLabel;
+  }
 }
