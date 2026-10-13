@@ -90,7 +90,10 @@ class LabelLayoutServiceProperties {
     assertFalse(loaded.isDefault(), "a saved layout is never reported as default");
     assertEquals(s.userId(), loaded.updatedByUserId());
     assertNotNull(loaded.updatedAt());
-    assertFalse(loaded.updatedAt().isBefore(before), "updatedAt before save started");
+    // Mongo (and the converter round-trip in the in-memory repository) keeps milliseconds only.
+    assertFalse(
+        loaded.updatedAt().isBefore(before.truncatedTo(java.time.temporal.ChronoUnit.MILLIS)),
+        "updatedAt before save started");
     assertFalse(loaded.updatedAt().isAfter(after), "updatedAt after save finished");
 
     // The stored document is keyed by the context shopId and there is exactly one.
