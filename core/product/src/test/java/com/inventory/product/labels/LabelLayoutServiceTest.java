@@ -241,6 +241,61 @@ class LabelLayoutServiceTest {
     assertEquals(java.util.Map.of("companyName", true), reloaded.fieldLabelOverrides());
   }
 
+  @Test
+  void savedZonesAndLabelOverridesOnVerticalFieldsComeBackOnSaveAndGet() {
+    // A vertical key carries a dot ("vertical.size"); Mongo refuses a dot in a map key, so a save
+    // with a zone on a vertical field used to fail with a 500 (MappingException).
+    InMemoryLabelLayoutRepository repo = new InMemoryLabelLayoutRepository();
+    LabelLayoutService service = serviceFor(repo, catalogWithVerticalFields());
+    java.util.Map<String, String> zones =
+        java.util.Map.of("shopName", "HEADER", "vertical.size", "RIGHT", "productName", "LEFT");
+    SaveLabelLayoutRequest req =
+        new SaveLabelLayoutRequest(
+            List.of("shopName", "productName", "mrp", "vertical.model", "vertical.size"),
+            "38x38",
+            com.inventory.product.rest.dto.request.LenientBoolean.of(true),
+            com.inventory.product.rest.dto.request.LenientBoolean.of(false),
+            null,
+            "ROLL",
+            null,
+            "COMPACT",
+            null,
+            null,
+            zones,
+            java.util.Map.of("vertical.model", true));
+
+    LabelLayoutResponse saved = service.save(SHOP, USER, req);
+    LabelLayoutResponse reloaded = service.get(SHOP, USER);
+
+    assertEquals(zones, saved.fieldZones());
+    assertEquals(zones, reloaded.fieldZones());
+    assertEquals(java.util.Map.of("vertical.model", true), reloaded.fieldLabelOverrides());
+    LabelLayoutDocument stored = repo.stored(SHOP).orElseThrow();
+    assertNull(stored.getFieldZones());
+    assertNull(stored.getFieldLabelOverrides());
+  }
+
+  @Test
+  void layoutSavedWithTheLegacyZoneMapsStillReadsBack() {
+    InMemoryLabelLayoutRepository repo = new InMemoryLabelLayoutRepository();
+    LabelLayoutDocument legacy = new LabelLayoutDocument();
+    legacy.setShopId(SHOP);
+    legacy.setEnabledFieldKeys(List.of("productName", "mrp", "companyName"));
+    legacy.setStickerSize("38x38");
+    legacy.setTemplate("COMPACT");
+    legacy.setFieldZones(
+        new java.util.LinkedHashMap<>(java.util.Map.of("productName", "HEADER", "mrp", "RIGHT")));
+    legacy.setFieldLabelOverrides(
+        new java.util.LinkedHashMap<>(java.util.Map.of("companyName", true)));
+    repo.repository().save(legacy);
+    LabelLayoutService service = serviceFor(repo, catalogFor(ShopType.RETAILER));
+
+    LabelLayoutResponse res = service.get(SHOP, USER);
+
+    assertEquals(java.util.Map.of("productName", "HEADER", "mrp", "RIGHT"), res.fieldZones());
+    assertEquals(java.util.Map.of("companyName", true), res.fieldLabelOverrides());
+  }
+
   // ---- fixtures ------------------------------------------------------------------------------
 
   private static ObjectMapper mapper() {
@@ -256,6 +311,24 @@ class LabelLayoutServiceTest {
     FieldCatalog retailer = LabelLayoutServiceProperties.retailerCatalog();
     return new FieldCatalog(
         retailer.fields(), retailer.stickerSizes(), shopType, true, List.of(), List.of());
+  }
+
+  /** The retailer catalog plus two vertical fields, whose keys carry a dot. */
+  private static FieldCatalog catalogWithVerticalFields() {
+    FieldCatalog retailer = LabelLayoutServiceProperties.retailerCatalog();
+    List<PrintableField> fields = new java.util.ArrayList<>(retailer.fields());
+    for (String apiKey : List.of("model", "size")) {
+      fields.add(
+          new PrintableField(
+              LabelFieldKeys.verticalKey(apiKey),
+              apiKey,
+              SourceGroup.VERTICAL,
+              ValueType.TEXT,
+              java.util.Set.of(ShopType.RETAILER),
+              apiKey));
+    }
+    return new FieldCatalog(
+        fields, retailer.stickerSizes(), ShopType.RETAILER, true, List.of(), List.of());
   }
 
   private static LabelLayoutService serviceFor(
