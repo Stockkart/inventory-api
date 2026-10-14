@@ -68,14 +68,16 @@ class InvoiceTextRendererTaxTest {
   }
 
   @Test
-  void interstateBillPrintsIgst() {
+  void interstateBillWithoutRowsPrintsIgstWithoutARate() {
+    // No per-rate rows: the whole IGST is printed, but no single rate can honestly label it.
     GenerateInvoiceRequest request = taxBill();
+    request.setInterstate(true);
     request.setIgstAmount(new BigDecimal("19.28"));
-    request.setIgstPercent(new BigDecimal("5"));
 
     String text = renderer.render(request);
 
-    assertTrue(text.contains("Add IGST 5 %"), text);
+    assertTrue(text.contains("Add IGST"), text);
+    assertFalse(text.contains("Add IGST 5 %"), text);
     assertTrue(text.contains("19.28"), text);
     assertFalse(text.contains("Add SGST"), text);
   }
