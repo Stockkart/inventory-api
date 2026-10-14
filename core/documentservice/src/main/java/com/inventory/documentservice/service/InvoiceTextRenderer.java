@@ -649,9 +649,10 @@ public class InvoiceTextRenderer {
         }
       }
       // An interstate bill carries its whole tax as IGST, with nothing under SGST or CGST; left
-      // out, the bill printed no tax at all. With per-rate rows the IGST was printed above.
+      // out, the bill printed no tax at all. With per-rate rows the IGST was printed above, each
+      // at its own rate. Without rows no rate can be stated for the whole amount, so none is.
       if (rows.isEmpty() && isPositive(r.getIgstAmount())) {
-        out.add(taxTotalRow(taxLabel("Add IGST", r.getIgstPercent()), r.getIgstAmount()));
+        out.add(taxTotalRow("Add IGST", r.getIgstAmount()));
       }
     }
     // Round-off is net amount less everything above it: positive is added to reach the net
