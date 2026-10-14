@@ -12,6 +12,9 @@ import com.inventory.user.rest.dto.response.CustomerDto;
 import com.inventory.user.rest.dto.response.CustomerListResponse;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.common.gst.Gstin;
+import com.inventory.common.gst.GstinDirectory;
+import com.inventory.common.gst.PostalAddress;
 import com.inventory.user.utils.TextUtils;
 import com.inventory.user.validation.CustomerValidator;
 import com.inventory.metrics.MetricsWrapper;
@@ -28,6 +31,7 @@ import org.springframework.util.StringUtils;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 @Service
@@ -54,6 +58,10 @@ public class CustomerService {
 
   @Autowired
   private MetricsWrapper metrics;
+
+  /** Absent when the taxation module is not on the classpath; customers then stay unverified. */
+  @Autowired(required = false)
+  private GstinDirectory gstinDirectory;
 
   public CustomerDto createCustomerDto(String shopId, CreateCustomerRequest request) {
     CustomerDto dto = customerMapper.toDto(findOrCreateCustomer(shopId, request));
@@ -104,6 +112,7 @@ public class CustomerService {
 
     if (customer == null) {
       customer = customerMapper.toCustomer(request);
+      verifyGstin(customer);
       customer = customerRepository.save(customer);
       log.info("Created new customer with ID: {}", customer.getId());
     } else {
@@ -198,7 +207,7 @@ public class CustomerService {
   private Optional<Customer> findByUniqueKeys(CreateCustomerRequest request) {
     String phone = TextUtils.trimToNull(request.getPhone());
     String email = TextUtils.trimToNull(request.getEmail());
-    String gstin = TextUtils.trimToNull(request.getGstin());
+    String gstin = TextUtils.trimToNull(Gstin.normalize(request.getGstin()));
     String pan = TextUtils.trimToNull(request.getPan());
     String dlNo = TextUtils.trimToNull(request.getDlNo());
 
@@ -233,7 +242,11 @@ public class CustomerService {
   }
 
   private void updateExistingCustomerFromCreateRequest(CreateCustomerRequest request, Customer customer) {
+    String before = customer.getGstin();
     customerMapper.applyCreateRequest(request, customer);
+    if (!Objects.equals(before, customer.getGstin())) {
+      verifyGstin(customer);
+    }
     customerRepository.save(customer);
     log.info("Updated customer with ID: {}", customer.getId());
   }
@@ -348,7 +361,11 @@ public class CustomerService {
       throw new ValidationException("The general customer placeholder cannot be edited");
     }
 
+    String gstinBefore = customer.getGstin();
     customerMapper.applyUpdate(request, customer);
+    if (!Objects.equals(gstinBefore, customer.getGstin())) {
+      verifyGstin(customer);
+    }
 
     boolean stillHasUnique =
         CustomerValidator.hasUniqueIdentifier(
@@ -395,5 +412,34 @@ public class CustomerService {
         .filter(c -> !c.isGeneralCustomer())
         .map(Customer::getId)
         .toList();
+  }
+
+  /**
+   * Records what the GST network says about the customer's GSTIN, when a registry is wired and the
+   * GSTIN is valid. Never blocks the save: an unreachable network leaves the customer unverified.
+   */
+  private void verifyGstin(Customer customer) {
+    customer.setGstinVerifiedAt(null);
+    customer.setGstinStatus(null);
+    if (gstinDirectory == null || !Gstin.isValid(customer.getGstin())) {
+      return;
+    }
+    try {
+      gstinDirectory.lookup(customer.getGstin()).ifPresent(reg -> {
+        customer.setGstinVerifiedAt(reg.lastCheckedAt() != null ? reg.lastCheckedAt() : Instant.now());
+        customer.setGstinStatus(reg.status());
+        // the registry knows the state better than a typed address does
+        if (StringUtils.hasText(reg.stateCode())) {
+          PostalAddress address =
+              customer.getPostalAddress() == null ? new PostalAddress() : customer.getPostalAddress();
+          if (!address.hasState()) {
+            address.setStateCode(reg.stateCode());
+            customer.setPostalAddress(address);
+          }
+        }
+      });
+    } catch (RuntimeException e) {
+      log.warn("GSTIN verification skipped for customer {}: {}", customer.getName(), e.getMessage());
+    }
   }
 }

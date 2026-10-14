@@ -13,6 +13,7 @@ import com.inventory.common.gst.SupplyPlacement.PartyPlace;
 import com.inventory.product.domain.model.Location;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.repository.ShopRepository;
+import com.inventory.user.domain.model.Customer;
 import com.inventory.user.domain.model.Vendor;
 import com.inventory.user.domain.repository.CustomerRepository;
 import com.inventory.user.domain.repository.VendorRepository;
@@ -101,6 +102,38 @@ class SupplyPlacementServiceTest {
     assertFalse(placement.isInterstatePurchase("s1", "v1"));
     assertFalse(placement.isInterstatePurchase("s1", null));
     assertFalse(placement.isInterstatePurchase("s1", "missing"));
+  }
+
+  private Customer customer(String gstin, PostalAddress address, String text) {
+    Customer c = new Customer();
+    c.setId("c1");
+    c.setGstin(gstin);
+    c.setPostalAddress(address);
+    c.setAddress(text);
+    when(customers.findById("c1")).thenReturn(Optional.of(c));
+    return c;
+  }
+
+  @Test
+  void customerWithGstinIsPlacedByIt() {
+    customer("27AAPFU0939F1ZV", null, null);
+    assertEquals(new PartyPlace("27", PartyPlace.Source.GSTIN), placement.placeCustomer("c1"));
+    assertTrue(placement.isInterstateSale("s1", "c1"));
+  }
+
+  @Test
+  void customerWithoutGstinIsPlacedByTheStateOnTheirAddress() {
+    customer(null, PostalAddress.builder().stateCode("29").build(), "Bengaluru");
+    assertEquals(new PartyPlace("29", PartyPlace.Source.ADDRESS_STATE), placement.placeCustomer("c1"));
+    assertTrue(placement.isInterstateSale("s1", "c1"));
+  }
+
+  @Test
+  void walkInCustomerWithNoPlaceBuysLocally() {
+    customer(null, null, null);
+    assertEquals(PartyPlace.UNKNOWN, placement.placeCustomer("c1"));
+    assertFalse(placement.isInterstateSale("s1", "c1"));
+    assertFalse(placement.isInterstateSale("s1", null));
   }
 
   @Test

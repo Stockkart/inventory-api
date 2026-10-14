@@ -92,7 +92,7 @@ public class SupplyPlacementService implements SupplyPlacement {
       if (c == null) {
         return PartyPlace.UNKNOWN;
       }
-      return place(c.getGstin(), null, c.getAddress());
+      return place(c.getGstin(), c.getPostalAddress(), c.getAddress());
     } catch (RuntimeException e) {
       log.warn("[placement] could not place customer {}: {}", customerId, e.getMessage());
       return PartyPlace.UNKNOWN;
