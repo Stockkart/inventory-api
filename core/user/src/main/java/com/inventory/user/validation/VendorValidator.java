@@ -2,27 +2,16 @@ package com.inventory.user.validation;
 
 import com.inventory.common.exception.ValidationException;
 import com.inventory.common.gst.Gstin;
-import com.inventory.common.gst.GstinDirectory;
 import com.inventory.common.gst.PostalAddress;
 import com.inventory.common.util.GstStateCode;
 import com.inventory.user.rest.dto.request.CreateVendorRequest;
 import com.inventory.user.rest.dto.request.SearchVendorRequest;
 import java.util.Optional;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 @Component
 public class VendorValidator {
-
-  /** The GSTIN registry; absent in slices of the app that do not wire taxation. */
-  @Autowired(required = false)
-  private GstinDirectory gstinDirectory;
-
-  /** The stricter GSTIN rules apply only once online verification is switched on. */
-  public boolean enforcesGstinRules() {
-    return gstinDirectory != null && gstinDirectory.isVerificationEnabled();
-  }
 
   public static final String PLACE_REQUIRED =
       "Add the vendor's GSTIN, or at least the state on their address, so tax can be worked out";
@@ -46,11 +35,11 @@ public class VendorValidator {
   }
 
   /**
-   * A GSTIN, when given, must pass the offline shape and check-character test. Blank is fine: an
-   * unregistered supplier has none.
+   * A GSTIN, when given, must pass the offline shape and check-character test — whether or not an
+   * online lookup provider is configured. Blank is fine: an unregistered supplier has none.
    */
   public void validateGstin(String gstinUin) {
-    if (!enforcesGstinRules() || !StringUtils.hasText(gstinUin)) {
+    if (!StringUtils.hasText(gstinUin)) {
       return;
     }
     Optional<String> problem = Gstin.problem(gstinUin);
@@ -76,9 +65,6 @@ public class VendorValidator {
    * their address. With neither, every bill from them would have to be guessed as local.
    */
   public void validatePlace(String gstinUin, PostalAddress address) {
-    if (!enforcesGstinRules()) {
-      return;
-    }
     boolean placedByGstin = Gstin.isValid(gstinUin);
     boolean placedByAddress = address != null && address.hasState();
     if (!placedByGstin && !placedByAddress) {
