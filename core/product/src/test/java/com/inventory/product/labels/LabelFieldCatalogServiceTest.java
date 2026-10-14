@@ -251,10 +251,10 @@ class LabelFieldCatalogServiceTest {
     assertEquals(LabelLayoutDefaults.STICKER_SIZES, sizes);
     assertEquals(
         List.of(
-            new StickerSizeSpec("50x25", 50, 25, 3),
-            new StickerSizeSpec("38x25", 38, 25, 2),
-            new StickerSizeSpec("38x38", 38, 38, 4),
-            new StickerSizeSpec("100x50", 100, 50, 6)),
+            new StickerSizeSpec("50x25", 50, 25, 4),
+            new StickerSizeSpec("38x25", 38, 25, 4),
+            new StickerSizeSpec("38x38", 38, 38, 6),
+            new StickerSizeSpec("100x50", 100, 50, 8)),
         sizes);
   }
 

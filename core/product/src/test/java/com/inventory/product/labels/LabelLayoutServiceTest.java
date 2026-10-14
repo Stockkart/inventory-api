@@ -63,7 +63,7 @@ class LabelLayoutServiceTest {
 
     assertEquals(List.of("productName", "companyName"), keys(res));
     assertEquals("50x25", res.stickerSize());
-    assertEquals(3, res.stickerSizeSpec().maxLines());
+    assertEquals(4, res.stickerSizeSpec().maxLines());
     assertTrue(res.showBarcodeText());
     assertFalse(res.showFieldLabels());
     assertEquals(BlankValueBehavior.HIDE_LINE, res.blankValueBehavior());
