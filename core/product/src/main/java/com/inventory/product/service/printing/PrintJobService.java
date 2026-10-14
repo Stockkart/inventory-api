@@ -2,6 +2,7 @@ package com.inventory.product.service.printing;
 
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.documentservice.domain.DotMatrixDocument;
+import com.inventory.metrics.MetricsWrapper;
 import com.inventory.product.config.PrintBridgeProperties;
 import com.inventory.product.domain.model.PrintJob;
 import com.inventory.product.domain.model.enums.PrintAction;
@@ -20,6 +21,7 @@ import com.inventory.product.rest.dto.response.PrintOutcomeResponse;
 import com.inventory.product.rest.dto.response.PrintPollPolicy;
 import com.inventory.product.service.CreditNoteService;
 import com.inventory.product.service.InvoiceService;
+import com.inventory.product.utils.constants.ProductMetricsConstants;
 import com.inventory.product.validation.PrintJobValidator;
 import java.time.Clock;
 import java.time.Instant;
@@ -53,6 +55,7 @@ public class PrintJobService {
   private final PrintJobValidator printJobValidator;
   private final InvoiceService invoiceService;
   private final CreditNoteService creditNoteService;
+  private final MetricsWrapper metrics;
   private final Clock clock;
 
   @Autowired
@@ -62,7 +65,8 @@ public class PrintJobService {
       PrintBridgeProperties properties,
       PrintJobValidator printJobValidator,
       InvoiceService invoiceService,
-      CreditNoteService creditNoteService) {
+      CreditNoteService creditNoteService,
+      MetricsWrapper metrics) {
     this(
         printJobRepository,
         printBridgeService,
@@ -70,6 +74,7 @@ public class PrintJobService {
         printJobValidator,
         invoiceService,
         creditNoteService,
+        metrics,
         Clock.systemUTC());
   }
 
@@ -81,6 +86,7 @@ public class PrintJobService {
       PrintJobValidator printJobValidator,
       InvoiceService invoiceService,
       CreditNoteService creditNoteService,
+      MetricsWrapper metrics,
       Clock clock) {
     this.printJobRepository = printJobRepository;
     this.printBridgeService = printBridgeService;
@@ -88,6 +94,7 @@ public class PrintJobService {
     this.printJobValidator = printJobValidator;
     this.invoiceService = invoiceService;
     this.creditNoteService = creditNoteService;
+    this.metrics = metrics;
     this.clock = clock;
   }
 
@@ -107,6 +114,7 @@ public class PrintJobService {
 
     Optional<PrintJob> inFlight = findInFlight(shopId, request);
     if (inFlight.isPresent()) {
+      recordJob(request.getSource(), PrintAction.IN_PROGRESS);
       return inProgress(inFlight.get());
     }
 
@@ -115,8 +123,12 @@ public class PrintJobService {
       job = printJobRepository.save(job);
     } catch (DuplicateKeyException e) {
       // Another click created the in-flight job between our read and this write.
-      return findInFlight(shopId, request).map(this::inProgress).orElseThrow(() -> e);
+      PrintJobResponse existing =
+          findInFlight(shopId, request).map(this::inProgress).orElseThrow(() -> e);
+      recordJob(request.getSource(), PrintAction.IN_PROGRESS);
+      return existing;
     }
+    recordJob(request.getSource(), job.getAction());
     log.info(
         "Print job {} for {} {} (shop {}): {} via {}",
         job.getId(), request.getSource(), request.getDocumentId(), shopId, job.getAction(),
@@ -154,6 +166,7 @@ public class PrintJobService {
       job.setError(request.getError());
     }
     printJobRepository.save(job);
+    recordOutcome(job);
     return outcomeOf(job);
   }
 
@@ -177,6 +190,7 @@ public class PrintJobService {
     if (job.getCreatedAt() != null && job.getCreatedAt().isBefore(staleBefore)) {
       settle(job, PrintJobStatus.EXPIRED);
       printJobRepository.save(job);
+      recordOutcome(job);
       return Optional.empty();
     }
     return found;
@@ -208,6 +222,36 @@ public class PrintJobService {
       job.setStatus(PrintJobStatus.PENDING);
     }
     return job;
+  }
+
+  /** One per print click: what the backend told the browser to do with it. */
+  private void recordJob(PrintDocumentSource source, PrintAction action) {
+    metrics.record(
+        ProductMetricsConstants.PRINT_JOBS,
+        1,
+        "module",
+        ProductMetricsConstants.MODULE,
+        "operation",
+        tag(source),
+        "outcome",
+        tag(action));
+  }
+
+  /** One per reported or expired job: the status it was left in. */
+  private void recordOutcome(PrintJob job) {
+    metrics.record(
+        ProductMetricsConstants.PRINT_JOB_OUTCOMES,
+        1,
+        "module",
+        ProductMetricsConstants.MODULE,
+        "operation",
+        tag(job.getSource()),
+        "outcome",
+        tag(job.getStatus()));
+  }
+
+  private static String tag(Enum<?> value) {
+    return value.name().toLowerCase(Locale.ROOT);
   }
 
   private void settle(PrintJob job, PrintJobStatus status) {

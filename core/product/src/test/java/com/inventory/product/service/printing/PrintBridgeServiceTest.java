@@ -3,8 +3,10 @@ package com.inventory.product.service.printing;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.mock;
 
 import com.inventory.common.exception.ValidationException;
+import com.inventory.metrics.MetricsWrapper;
 import com.inventory.product.config.PrintBridgeProperties;
 import com.inventory.product.domain.model.enums.PrintBridgeState;
 import com.inventory.product.rest.dto.request.PrintBridgeObservation;
@@ -16,7 +18,7 @@ class PrintBridgeServiceTest {
 
   private final PrintBridgeProperties properties = properties();
   private final PrintBridgeService service =
-      new PrintBridgeService(properties, new PrintJobValidator());
+      new PrintBridgeService(properties, new PrintJobValidator(), mock(MetricsWrapper.class));
 
   @Test
   void noBridgeReachedIsNotDetectedAndOffersTheDownload() {

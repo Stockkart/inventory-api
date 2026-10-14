@@ -10,10 +10,12 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.inventory.documentservice.domain.DotMatrixDocument;
 import com.inventory.documentservice.domain.DotMatrixDocumentKind;
+import com.inventory.metrics.MetricsWrapper;
 import com.inventory.product.config.PrintBridgeProperties;
 import com.inventory.product.domain.model.PrintJob;
 import com.inventory.product.domain.model.enums.PrintAction;
@@ -49,6 +51,7 @@ class PrintJobServiceTest {
   private PrintJobRepository repository;
   private InvoiceService invoiceService;
   private CreditNoteService creditNoteService;
+  private MetricsWrapper metrics;
   private PrintJobService service;
 
   @BeforeEach
@@ -56,6 +59,7 @@ class PrintJobServiceTest {
     repository = mock(PrintJobRepository.class);
     invoiceService = mock(InvoiceService.class);
     creditNoteService = mock(CreditNoteService.class);
+    metrics = mock(MetricsWrapper.class);
     PrintBridgeProperties properties = new PrintBridgeProperties();
     properties.setMinimumVersion("0.11.0");
     properties.setInFlightTimeout(Duration.ofMinutes(2));
@@ -63,11 +67,12 @@ class PrintJobServiceTest {
     service =
         new PrintJobService(
             repository,
-            new PrintBridgeService(properties, validator),
+            new PrintBridgeService(properties, validator, metrics),
             properties,
             validator,
             invoiceService,
             creditNoteService,
+            metrics,
             Clock.fixed(NOW, ZoneOffset.UTC));
     when(repository.save(any(PrintJob.class)))
         .thenAnswer(
@@ -113,6 +118,10 @@ class PrintJobServiceTest {
     assertNull(response.getBridgeRequest());
     assertEquals("invoice-T001148.prn", response.getDownload().getFilename());
     assertEquals(PrintJobStatus.DOWNLOAD_READY, saved().getStatus());
+    verify(metrics)
+        .record(
+            "inventory_product_print_jobs_total", 1, "module", "product",
+            "operation", "sale", "outcome", "download");
   }
 
   @Test
@@ -193,6 +202,10 @@ class PrintJobServiceTest {
     assertEquals("Out of paper", outcome.getError());
     assertEquals("j-4", pending.getBridgeJobId());
     assertEquals(PrintJobStatus.FAILED_PRINTER, pending.getStatus());
+    verify(metrics)
+        .record(
+            "inventory_product_print_job_outcomes_total", 1, "module", "product",
+            "operation", "sale", "outcome", "failed_printer");
   }
 
   @Test
@@ -246,6 +259,8 @@ class PrintJobServiceTest {
     assertEquals(PrintOutcome.PRINTED, outcome.getOutcome());
     assertEquals(PrintJobStatus.PRINTED, printed.getStatus());
     verify(repository, never()).save(any());
+    // Already counted when it settled; a late report must not count it again.
+    verifyNoInteractions(metrics);
   }
 
   @Test
