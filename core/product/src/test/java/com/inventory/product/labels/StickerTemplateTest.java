@@ -178,7 +178,7 @@ class StickerTemplateTest {
     ValidationException ex =
         assertThrows(ValidationException.class, () -> validator.validate(req, retailerCatalog()));
     assertTrue(
-        ex.getMessage().contains("Sticker 50x25 allows at most 3 lines; 5 enabled"), ex.getMessage());
+        ex.getMessage().contains("Sticker 50x25 allows at most 4 lines; 5 enabled"), ex.getMessage());
   }
 
   @Test

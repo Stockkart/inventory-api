@@ -79,13 +79,17 @@ public final class LabelLayoutDefaults {
   /** Zone caps used for a sticker size with no explicit mapping. */
   private static final ZoneCaps DEFAULT_ZONE_CAPS = new ZoneCaps(1, 4, 2);
 
-  /** Sticker size presets in display order. */
+  /**
+   * Sticker size presets in display order. {@code maxLines} follows the sticker height: 4 lines on a
+   * 25 mm-high sticker, 6 on 38 mm, 8 on 50 mm. The frontend shrinks the bars (and, if still
+   * needed, the type) so that many lines fit.
+   */
   public static final List<StickerSizeSpec> STICKER_SIZES =
       List.of(
-          new StickerSizeSpec("50x25", 50, 25, 3),
-          new StickerSizeSpec("38x25", 38, 25, 2),
-          new StickerSizeSpec("38x38", 38, 38, 4),
-          new StickerSizeSpec("100x50", 100, 50, 6));
+          new StickerSizeSpec("50x25", 50, 25, 4),
+          new StickerSizeSpec("38x25", 38, 25, 4),
+          new StickerSizeSpec("38x38", 38, 38, 6),
+          new StickerSizeSpec("100x50", 100, 50, 8));
 
   /**
    * Fixed sheet presets in display order (Req 10.2). Plain presets ({@code *_PLAIN}) derive their
