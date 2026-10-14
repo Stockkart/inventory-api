@@ -201,6 +201,12 @@ inventory-api/
 
 ### Vertical plugins & schema API
 
+## GSTIN verification and where a party is (taxation module)
+
+Vendor and customer GSTINs are checked in three steps: offline format + check character (`Gstin` in `core/common`), the `gstin_registry` collection (one record per GSTIN, shared by every shop), and only for a GSTIN never seen before, one call to the configured provider (`GstinLookupProvider` in `core/taxation`). Switch providers with `GSTIN_PROVIDER` (`gstinapi` needs `GSTINAPI_KEY`; `none` keeps offline checks only). Vendors save either way — a failed lookup leaves the vendor unverified, never blocked.
+
+Whether a supply is interstate (IGST) or local (CGST + SGST) is decided in one place, `SupplyPlacement` (implemented by `SupplyPlacementService` in taxation): shop by its GSTIN then address; vendor/customer by the registry record, then their GSTIN, then the state on their address (`postalAddress.stateCode`). A vendor must have a valid GSTIN or that state. Stock-in writes the answer on the purchase invoice (`interstate`) and the ledger, vendor returns and GSTR-2 read it from there.
+
 Shops are bound to a **vertical** (`Shop.verticalId` + `Shop.pluginVersion`). Field definitions live in MongoDB (`vertical_schemas`), seeded from `core/product/src/main/resources/seeds/*.json` on boot.
 
 | Endpoint | Purpose |

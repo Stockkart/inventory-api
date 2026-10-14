@@ -88,6 +88,9 @@ public class VendorPurchaseReturnService {
   private VendorRepository vendorRepository;
 
   @Autowired
+  private PurchaseTaxRecorder purchaseTaxRecorder;
+
+  @Autowired
   private com.inventory.product.domain.repository.ShopRepository shopRepository;
 
   @Autowired
@@ -402,7 +405,7 @@ public class VendorPurchaseReturnService {
 
     // The credit note follows the purchase: goods that came from another state were taxed under
     // IGST, and returning them reverses that credit off the same head.
-    boolean interstateReturn = isInterstateVendor(shopId, invoice.getVendorId());
+    boolean interstateReturn = purchaseTaxRecorder.isInterstate(invoice);
 
     Set<String> seenIds = new HashSet<>();
     for (VendorPurchaseReturnRequest.Item it : request.getItems()) {
@@ -815,35 +818,5 @@ public class VendorPurchaseReturnService {
     }
     return line.getTaxableValue()
         .divide(BigDecimal.valueOf(line.getCount()), 4, RoundingMode.HALF_UP);
-  }
-
-  /**
-   * Whether a supplier is in another state, placed the same way the purchase and the return are.
-   *
-   * <p>Unplaceable is local, matching the purchase side: a credit reversed off the wrong local
-   * head is a reclassification, one reversed off IGST that was never claimed is not.
-   */
-  private boolean isInterstateVendor(String shopId, String vendorId) {
-    if (!StringUtils.hasText(vendorId)) {
-      return false;
-    }
-    try {
-      String supplierState = vendorRepository.findById(vendorId.trim())
-          .map(Vendor::getGstinUin)
-          .map(GstStateCode::codeFromGstin)
-          .orElse("");
-      if (!StringUtils.hasText(supplierState)) {
-        return false;
-      }
-      String shopState = shopRepository.findById(shopId)
-          .map(shop -> GstStateCode.shopState(shop.getGstinNo(),
-              shop.getLocation() != null ? shop.getLocation().getState() : null))
-          .orElse("");
-      return StringUtils.hasText(shopState) && !shopState.equals(supplierState);
-    } catch (RuntimeException e) {
-      log.warn("Could not place the vendor for interstate tax (shop {}, vendor {}); "
-          + "treating the return as local", shopId, vendorId, e);
-      return false;
-    }
   }
 }

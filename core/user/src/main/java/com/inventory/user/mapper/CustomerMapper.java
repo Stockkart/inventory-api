@@ -1,5 +1,7 @@
 package com.inventory.user.mapper;
 
+import com.inventory.common.gst.Gstin;
+import com.inventory.common.gst.PostalAddress;
 import com.inventory.user.domain.model.Customer;
 import com.inventory.user.domain.model.ShopCustomer;
 import com.inventory.user.domain.model.enums.CustomerPartyType;
@@ -44,8 +46,9 @@ public interface CustomerMapper {
     c.setName(TextUtils.trimToNull(request.getName()));
     c.setPhone(TextUtils.trimToNull(request.getPhone()));
     c.setAddress(TextUtils.trimToNull(request.getAddress()));
+    c.setPostalAddress(cleanAddress(request.getPostalAddress()));
     c.setEmail(TextUtils.trimToNull(request.getEmail()));
-    c.setGstin(TextUtils.trimToNull(request.getGstin()));
+    c.setGstin(cleanGstin(request.getGstin()));
     c.setDlNo(TextUtils.trimToNull(request.getDlNo()));
     c.setPan(TextUtils.trimToNull(request.getPan()));
     c.setPartyType(
@@ -73,8 +76,11 @@ public interface CustomerMapper {
     if (request.getAddress() != null) {
       customer.setAddress(TextUtils.trimToNull(request.getAddress()));
     }
+    if (request.getPostalAddress() != null) {
+      customer.setPostalAddress(cleanAddress(request.getPostalAddress()));
+    }
     if (request.getGstin() != null) {
-      customer.setGstin(TextUtils.trimToNull(request.getGstin()));
+      customer.setGstin(cleanGstin(request.getGstin()));
     }
     if (request.getDlNo() != null) {
       customer.setDlNo(TextUtils.trimToNull(request.getDlNo()));
@@ -105,8 +111,11 @@ public interface CustomerMapper {
     if (TextUtils.trimToNull(request.getAddress()) != null) {
       customer.setAddress(TextUtils.trimToNull(request.getAddress()));
     }
-    if (TextUtils.trimToNull(request.getGstin()) != null) {
-      customer.setGstin(TextUtils.trimToNull(request.getGstin()));
+    if (cleanAddress(request.getPostalAddress()) != null) {
+      customer.setPostalAddress(cleanAddress(request.getPostalAddress()));
+    }
+    if (cleanGstin(request.getGstin()) != null) {
+      customer.setGstin(cleanGstin(request.getGstin()));
     }
     if (TextUtils.trimToNull(request.getDlNo()) != null) {
       customer.setDlNo(TextUtils.trimToNull(request.getDlNo()));
@@ -118,6 +127,35 @@ public interface CustomerMapper {
       customer.setPartyType(request.getPartyType());
     }
     customer.setUpdatedAt(Instant.now());
+  }
+
+  /** Upper-case, no spaces, or null when blank — the shape the registry and indexes expect. */
+  static String cleanGstin(String raw) {
+    String g = Gstin.normalize(raw);
+    return g == null || g.isEmpty() ? null : g;
+  }
+
+  /** Null when every field is blank, so an empty form does not store an empty object. */
+  static PostalAddress cleanAddress(PostalAddress address) {
+    if (address == null) {
+      return null;
+    }
+    PostalAddress a =
+        new PostalAddress(
+            TextUtils.trimToNull(address.getLine1()),
+            TextUtils.trimToNull(address.getLine2()),
+            TextUtils.trimToNull(address.getCity()),
+            TextUtils.trimToNull(address.getDistrict()),
+            TextUtils.trimToNull(address.getStateCode()),
+            TextUtils.trimToNull(address.getPincode()));
+    boolean empty =
+        a.getLine1() == null
+            && a.getLine2() == null
+            && a.getCity() == null
+            && a.getDistrict() == null
+            && a.getStateCode() == null
+            && a.getPincode() == null;
+    return empty ? null : a;
   }
 
   default ShopCustomer toShopCustomer(String shopId, String customerId) {

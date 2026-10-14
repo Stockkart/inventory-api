@@ -1,5 +1,7 @@
 package com.inventory.user.rest.dto.response;
 
+import com.inventory.common.gst.PostalAddress;
+
 import com.inventory.common.constants.PurchaseTaxTreatment;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -16,9 +18,12 @@ public class VendorDto {
   private String contactEmail;
   private String contactPhone;
   private String address;
+  private PostalAddress postalAddress;
   private String companyName;
   private String businessType;
   private String gstinUin;
+  private Instant gstinVerifiedAt;
+  private String gstinStatus;
   private String dlNo;
   /** INCLUSIVE when this supplier bills at MRP with GST inside the line amount. */
   private PurchaseTaxTreatment defaultTaxTreatment;

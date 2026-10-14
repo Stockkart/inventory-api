@@ -1,5 +1,6 @@
 package com.inventory.product.service;
 
+import com.inventory.common.gst.SupplyPlacement;
 import com.inventory.common.util.GstStateCode;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
@@ -113,6 +114,10 @@ public class CheckoutService {
 
   @Autowired
   private ShopRepository shopRepository;
+
+  /** Who is where (taxation module); the one rule shared with purchases and the GST returns. */
+  @Autowired
+  private org.springframework.beans.factory.ObjectProvider<SupplyPlacement> supplyPlacement;
 
   @Autowired
   private com.inventory.reminders.service.EventService eventService;
@@ -993,29 +998,8 @@ public class CheckoutService {
     if (!StringUtils.hasText(customerId)) {
       return false;
     }
-    try {
-      Customer customer = customerRepository.findById(customerId.trim()).orElse(null);
-      if (customer == null) {
-        return false;
-      }
-      String customerState = GstStateCode.codeFromGstin(customer.getGstin());
-      if (!StringUtils.hasText(customerState)) {
-        customerState = GstStateCode.codeFromAddress(customer.getAddress());
-      }
-      if (!StringUtils.hasText(customerState)) {
-        return false;
-      }
-      String shopState = shopRepository.findById(shopId)
-          .map(shop -> GstStateCode.shopState(shop.getGstinNo(),
-              shop.getLocation() != null ? shop.getLocation().getState() : null))
-          .orElse("");
-
-      return GstStateCode.isInterstate(shopState, customerState);
-    } catch (RuntimeException e) {
-      log.warn("Could not place the sale for interstate tax (shop {}, customer {}); "
-          + "treating it as local", shopId, customerId, e);
-      return false;
-    }
+    SupplyPlacement p = supplyPlacement.getIfAvailable();
+    return p != null && p.isInterstateSale(shopId, customerId);
   }
 
   /** Inner class to hold tax calculation results. */

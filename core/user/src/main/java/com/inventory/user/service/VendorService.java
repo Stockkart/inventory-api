@@ -5,6 +5,9 @@ import com.inventory.common.exception.AuthenticationException;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.common.gst.Gstin;
+import com.inventory.common.gst.GstinDirectory;
+import com.inventory.common.gst.PostalAddress;
 import com.inventory.user.domain.model.ShopVendor;
 import com.inventory.user.domain.model.Vendor;
 import com.inventory.user.domain.repository.ShopVendorRepository;
@@ -64,6 +67,10 @@ public class VendorService {
   @Autowired
   private MetricsWrapper metrics;
 
+  /** The GSTIN registry (taxation module). Absent in slices of the app that do not wire it. */
+  @Autowired(required = false)
+  private GstinDirectory gstinDirectory;
+
   /**
    * Create a vendor and link it to a shop.
    *
@@ -80,6 +87,8 @@ public class VendorService {
     }
 
     if (existingVendor == null) {
+      normalizeGstin(vendor);
+      verifyGstin(vendor);
       vendorMapper.setTimestamps(vendor);
       vendor = vendorRepository.save(vendor);
       log.info("Created new vendor with ID: {}", vendor.getId());
@@ -106,8 +115,13 @@ public class VendorService {
         existingVendor.setBusinessType(vendor.getBusinessType().trim());
         updated = true;
       }
+      if (vendor.getPostalAddress() != null && !vendor.getPostalAddress().equals(existingVendor.getPostalAddress())) {
+        existingVendor.setPostalAddress(vendor.getPostalAddress());
+        updated = true;
+      }
       if (vendor.getGstinUin() != null && !vendor.getGstinUin().equals(existingVendor.getGstinUin())) {
         existingVendor.setGstinUin(StringUtils.hasText(vendor.getGstinUin()) ? vendor.getGstinUin().trim() : null);
+        verifyGstin(existingVendor);
         updated = true;
       }
       if (vendor.getDlNo() != null && !vendor.getDlNo().equals(existingVendor.getDlNo())) {
@@ -487,13 +501,24 @@ public class VendorService {
         updated = true;
       }
     }
-    if (request.getGstinUin() != null) {
-      String gstin = request.getGstinUin().trim();
-      if (!gstin.equals(vendor.getGstinUin() != null ? vendor.getGstinUin() : "")) {
-        vendor.setGstinUin(StringUtils.hasText(gstin) ? gstin : null);
+    if (request.getPostalAddress() != null) {
+      vendorValidator.validateAddress(request.getPostalAddress());
+      if (!request.getPostalAddress().equals(vendor.getPostalAddress())) {
+        vendor.setPostalAddress(request.getPostalAddress());
         updated = true;
       }
     }
+    if (request.getGstinUin() != null) {
+      vendorValidator.validateGstin(request.getGstinUin());
+      String gstin = Gstin.normalize(request.getGstinUin());
+      if (!gstin.equals(vendor.getGstinUin() != null ? vendor.getGstinUin() : "")) {
+        vendor.setGstinUin(StringUtils.hasText(gstin) ? gstin : null);
+        verifyGstin(vendor);
+        updated = true;
+      }
+    }
+    // The vendor must still be placeable after the change (R: GSTIN or address state).
+    vendorValidator.validatePlace(vendor.getGstinUin(), vendor.getPostalAddress());
     if (request.getDlNo() != null) {
       String dlNo = request.getDlNo().trim();
       if (!dlNo.equals(vendor.getDlNo() != null ? vendor.getDlNo() : "")) {
@@ -522,5 +547,39 @@ public class VendorService {
     }
     return vendorMapper.toDto(vendor);
   }
-}
 
+  private static void normalizeGstin(Vendor vendor) {
+    if (vendor.getGstinUin() != null) {
+      String g = Gstin.normalize(vendor.getGstinUin());
+      vendor.setGstinUin(StringUtils.hasText(g) ? g : null);
+    }
+  }
+
+  /**
+   * Records what the GST network says about the vendor's GSTIN, when a registry is wired and the
+   * GSTIN is valid. Never blocks the save: an unreachable network leaves the vendor unverified.
+   */
+  private void verifyGstin(Vendor vendor) {
+    vendor.setGstinVerifiedAt(null);
+    vendor.setGstinStatus(null);
+    if (gstinDirectory == null || !Gstin.isValid(vendor.getGstinUin())) {
+      return;
+    }
+    try {
+      gstinDirectory.lookup(vendor.getGstinUin()).ifPresent(reg -> {
+        vendor.setGstinVerifiedAt(reg.lastCheckedAt() != null ? reg.lastCheckedAt() : Instant.now());
+        vendor.setGstinStatus(reg.status());
+        // the registry knows the state better than a typed address does
+        if (StringUtils.hasText(reg.stateCode())) {
+          PostalAddress address = vendor.getPostalAddress() == null ? new PostalAddress() : vendor.getPostalAddress();
+          if (!address.hasState()) {
+            address.setStateCode(reg.stateCode());
+            vendor.setPostalAddress(address);
+          }
+        }
+      });
+    } catch (RuntimeException e) {
+      log.warn("GSTIN verification skipped for vendor {}: {}", vendor.getName(), e.getMessage());
+    }
+  }
+}

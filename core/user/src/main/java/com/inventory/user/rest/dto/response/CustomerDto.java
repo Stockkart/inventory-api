@@ -1,5 +1,6 @@
 package com.inventory.user.rest.dto.response;
 
+import com.inventory.common.gst.PostalAddress;
 import com.inventory.user.domain.model.enums.CustomerPartyType;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -15,8 +16,11 @@ public class CustomerDto {
   private String name;
   private String phone;
   private String address;
+  private PostalAddress postalAddress;
   private String email;
   private String gstin;
+  private Instant gstinVerifiedAt;
+  private String gstinStatus;
   private String dlNo;
   private String pan;
   /** PAN derived from GSTIN: 10 chars from 3rd character (1-based). */
