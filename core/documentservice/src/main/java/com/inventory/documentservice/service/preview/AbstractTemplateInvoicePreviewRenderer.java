@@ -11,43 +11,41 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.Ordered;
-import org.springframework.core.annotation.Order;
-import org.springframework.stereotype.Component;
 import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
 
 /**
  * Previews an invoice by rendering the Thymeleaf markup its printer's template describes.
  *
- * <p>This is the fallback: it answers for every printer that has no more specific renderer, which
- * is why it is ordered last. A printer whose preview is genuinely page markup needs only a
- * template, not a class.
+ * <p>Shared by every printer whose preview is page markup. A subclass only names its printer:
+ * that decides both whether it answers and which template it renders, so a printer type with no
+ * renderer of its own fails in {@code InvoicePdfService} instead of quietly getting another
+ * printer's page.
  */
-@Component
-@Order(Ordered.LOWEST_PRECEDENCE)
 @Slf4j
-public class TemplateInvoicePreviewRenderer implements InvoicePreviewRenderer {
+abstract class AbstractTemplateInvoicePreviewRenderer implements InvoicePreviewRenderer {
 
   private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
   private final TemplateEngine templateEngine;
 
-  public TemplateInvoicePreviewRenderer(TemplateEngine templateEngine) {
+  protected AbstractTemplateInvoicePreviewRenderer(TemplateEngine templateEngine) {
     this.templateEngine = templateEngine;
   }
 
+  /** The one printer this renderer previews. */
+  protected abstract PrinterType printerType();
+
   @Override
   public boolean supports(PrinterType printerType) {
-    return true;
+    return printerType == printerType();
   }
 
   @Override
   public String render(GenerateInvoiceRequest request) {
-    PrinterType printerType = PrinterType.from(request.getPrinterType());
     Context context = prepareTemplateContext(request);
-    String templateName = printerType.getTemplateName(DocumentTemplateFamily.INVOICE);
-    log.debug("Rendering invoice HTML with printer type {} -> template {}", printerType, templateName);
+    String templateName = printerType().getTemplateName(DocumentTemplateFamily.INVOICE);
+    log.debug("Rendering invoice HTML with printer type {} -> template {}", printerType(), templateName);
     return templateEngine.process(templateName, context);
   }
 
@@ -179,4 +177,5 @@ public class TemplateInvoicePreviewRenderer implements InvoicePreviewRenderer {
 
   private static boolean visible(Boolean flag) {
     return flag == null || flag;
-  }}
+  }
+}

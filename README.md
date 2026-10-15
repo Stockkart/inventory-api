@@ -275,7 +275,7 @@ A dot-matrix printer cannot take a PDF, so these documents are served as fixed-w
 
 All three are `text/plain;charset=UTF-8`, rendered by `InvoiceTextRenderer` (`core/documentservice/.../service`). An estimate is 80 columns. A tax invoice is 137 columns condensed (8 inches): the masthead, then the buyer, tax-id and document columns (45 + 44 + 46), then the items, then one GST row per rate (`taxRateRows`). On an interstate bill that row is IGST at the combined rate (`igstPercent`), never SGST and CGST. Round-off is signed by direction.
 
-The in-app preview for a dot-matrix printer (`DotMatrixInvoicePreviewRenderer`) shows the same text rather than a separate template, so the preview and the paper cannot disagree. Other printers are still previewed from their Thymeleaf templates (`TemplateInvoicePreviewRenderer`).
+The in-app preview for a dot-matrix printer (`DotMatrixInvoicePreviewRenderer`) shows the same text rather than a separate template, so the preview and the paper cannot disagree. Laser (`NormalInvoicePreviewRenderer`) and thermal (`Thermal3InchInvoicePreviewRenderer`) are previewed from their Thymeleaf templates, through the shared `AbstractTemplateInvoicePreviewRenderer`. Each printer type has exactly one renderer (`InvoicePreviewRenderer.supports`); a printer type without one fails rather than borrowing another printer's template.
 
 The shop's invoice settings decide which columns print. `showPack` turns the PACK column off.
 

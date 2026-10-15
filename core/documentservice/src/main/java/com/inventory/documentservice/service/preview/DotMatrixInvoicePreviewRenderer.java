@@ -5,7 +5,6 @@ import com.inventory.documentservice.rest.dto.GenerateInvoiceRequest;
 import com.inventory.documentservice.service.InvoiceTextRenderer;
 import com.inventory.documentservice.utils.DotMatrixTextUtils;
 import java.util.Locale;
-import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
@@ -16,7 +15,6 @@ import org.springframework.stereotype.Component;
  * appears at all. Both now come from {@link InvoiceTextRenderer}.
  */
 @Component
-@Order(0)
 public class DotMatrixInvoicePreviewRenderer implements InvoicePreviewRenderer {
 
   /** The preview page is sized for eighty columns; a wider bill is set smaller to fit it. */
