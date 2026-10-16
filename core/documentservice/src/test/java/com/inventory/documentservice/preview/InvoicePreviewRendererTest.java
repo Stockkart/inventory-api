@@ -1,4 +1,4 @@
-package com.inventory.documentservice.service.preview;
+package com.inventory.documentservice.preview;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;

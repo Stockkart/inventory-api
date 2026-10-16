@@ -2,7 +2,7 @@ package com.inventory.documentservice.service;
 
 import com.inventory.documentservice.domain.PrinterType;
 import com.inventory.documentservice.rest.dto.GenerateInvoiceRequest;
-import com.inventory.documentservice.service.preview.InvoicePreviewRenderer;
+import com.inventory.documentservice.preview.InvoicePreviewRenderer;
 import com.inventory.documentservice.utils.constants.DocumentMetricsConstants;
 import com.inventory.metrics.MetricsWrapper;
 import lombok.extern.slf4j.Slf4j;

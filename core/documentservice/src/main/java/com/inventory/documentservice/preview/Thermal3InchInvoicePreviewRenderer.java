@@ -1,4 +1,4 @@
-package com.inventory.documentservice.service.preview;
+package com.inventory.documentservice.preview;
 
 import com.inventory.documentservice.domain.PrinterType;
 import org.springframework.stereotype.Component;

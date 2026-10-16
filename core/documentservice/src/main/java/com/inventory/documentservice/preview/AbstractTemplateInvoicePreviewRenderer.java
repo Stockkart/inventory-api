@@ -1,4 +1,4 @@
-package com.inventory.documentservice.service.preview;
+package com.inventory.documentservice.preview;
 
 import com.inventory.documentservice.domain.DocumentTemplateFamily;
 import com.inventory.documentservice.domain.PrinterType;
