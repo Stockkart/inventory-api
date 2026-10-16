@@ -2,6 +2,7 @@ package com.inventory.product.service;
 
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.documentservice.domain.DotMatrixDocument;
 import com.inventory.documentservice.rest.dto.GenerateInvoiceRequest;
 import com.inventory.documentservice.rest.dto.InvoiceItem;
 import com.inventory.documentservice.rest.dto.InvoiceTaxRateRow;
@@ -115,6 +116,14 @@ public class InvoiceService {
    * @return 80-column plain text
    */
   public String generateInvoiceText(String purchaseId, String shopId) {
+    return renderInvoiceForPrint(purchaseId, shopId).text();
+  }
+
+  /**
+   * Render the sale for the print bridge: the text, whether it is an invoice or an estimate, and
+   * its number. Shop-scoped like every other invoice entry point.
+   */
+  public DotMatrixDocument renderInvoiceForPrint(String purchaseId, String shopId) {
     log.info("Generating invoice text for purchase: {}, shop: {}", purchaseId, shopId);
 
     PurchaseInvoiceContext context = loadAndValidate(purchaseId, shopId);
@@ -122,12 +131,12 @@ public class InvoiceService {
         buildGenerateInvoiceRequest(context.purchase(), context.shop(), context.settings());
     request.setPrinterType("DOT_MATRIX");
 
-    String text = documentService.generateInvoiceText(request);
+    DotMatrixDocument document = documentService.renderInvoiceForPrint(request);
     if (metrics != null) {
       metrics.record(
           ProductMetricsConstants.INVOICES_GENERATED, 1, "module", ProductMetricsConstants.MODULE);
     }
-    return text;
+    return document;
   }
 
   /**
