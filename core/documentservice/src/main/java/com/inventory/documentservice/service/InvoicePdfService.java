@@ -2,7 +2,7 @@ package com.inventory.documentservice.service;
 
 import com.inventory.documentservice.domain.PrinterType;
 import com.inventory.documentservice.rest.dto.GenerateInvoiceRequest;
-import com.inventory.documentservice.service.preview.InvoicePreviewRenderer;
+import com.inventory.documentservice.preview.InvoicePreviewRenderer;
 import com.inventory.documentservice.utils.constants.DocumentMetricsConstants;
 import com.inventory.metrics.MetricsWrapper;
 import lombok.extern.slf4j.Slf4j;
@@ -55,10 +55,9 @@ public class InvoicePdfService {
   /**
    * Render the markup previewed for this invoice, as the request's printer describes it.
    *
-   * <p>The renderer is chosen by asking each one, in order, whether it serves this printer. The
-   * list is ordered, so a printer-specific renderer answers before the template renderer that
-   * accepts everything, and a new kind of printer arrives as a new InvoicePreviewRenderer rather
-   * than another branch here.
+   * <p>The renderer is chosen by asking each one whether it serves this printer. Every printer has
+   * exactly one, so a new kind of printer arrives as a new InvoicePreviewRenderer rather than
+   * another branch here.
    */
   public String renderInvoiceHtml(GenerateInvoiceRequest request) {
     PrinterType printerType = PrinterType.from(request.getPrinterType());

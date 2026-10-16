@@ -47,6 +47,7 @@ public class GenerateCreditNoteRequest {
   private Boolean showTaxDetails;
   private Boolean showPaymentMethod;
   private Boolean showAmountInWords;
+  private Boolean showPack;
   private Boolean showHsn;
   private Boolean showMfg;
   private Boolean showBatch;
