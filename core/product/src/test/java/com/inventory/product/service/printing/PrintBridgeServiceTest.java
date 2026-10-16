@@ -10,6 +10,7 @@ import com.inventory.metrics.MetricsWrapper;
 import com.inventory.product.config.PrintBridgeProperties;
 import com.inventory.product.domain.model.enums.PrintBridgeState;
 import com.inventory.product.rest.dto.request.PrintBridgeObservation;
+import com.inventory.product.rest.dto.response.PrintBridgeConnectionResponse;
 import com.inventory.product.rest.dto.response.PrintBridgeStatusResponse;
 import com.inventory.product.validation.PrintJobValidator;
 import org.junit.jupiter.api.Test;
@@ -19,6 +20,30 @@ class PrintBridgeServiceTest {
   private final PrintBridgeProperties properties = properties();
   private final PrintBridgeService service =
       new PrintBridgeService(properties, new PrintJobValidator(), mock(MetricsWrapper.class));
+
+  @Test
+  void theConnectionComesFromTheProperties() {
+    properties.setOrigin("http://127.0.0.1:9200");
+    properties.setHealthTimeoutMs(900);
+    properties.setPrintTimeoutMs(6000);
+
+    PrintBridgeConnectionResponse connection = service.connection();
+
+    assertEquals("http://127.0.0.1:9200", connection.getOrigin());
+    assertEquals(900, connection.getHealthTimeoutMs());
+    assertEquals(6000, connection.getPrintTimeoutMs());
+  }
+
+  @Test
+  void anOriginOffThisComputerIsRefused() {
+    PrintBridgeProperties lan = new PrintBridgeProperties();
+    lan.setOrigin("http://192.168.1.20:9110");
+    assertThrows(IllegalStateException.class, lan::requireLoopbackOrigin);
+
+    PrintBridgeProperties local = new PrintBridgeProperties();
+    local.setOrigin("http://localhost:9110");
+    local.requireLoopbackOrigin();
+  }
 
   @Test
   void noBridgeReachedIsNotDetectedAndOffersTheDownload() {

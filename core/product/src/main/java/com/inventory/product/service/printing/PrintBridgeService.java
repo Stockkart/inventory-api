@@ -4,6 +4,7 @@ import com.inventory.metrics.MetricsWrapper;
 import com.inventory.product.config.PrintBridgeProperties;
 import com.inventory.product.domain.model.enums.PrintBridgeState;
 import com.inventory.product.rest.dto.request.PrintBridgeObservation;
+import com.inventory.product.rest.dto.response.PrintBridgeConnectionResponse;
 import com.inventory.product.rest.dto.response.PrintBridgeStatusResponse;
 import com.inventory.product.utils.BridgeVersion;
 import com.inventory.product.utils.constants.ProductMetricsConstants;
@@ -23,6 +24,12 @@ public class PrintBridgeService {
   private final PrintBridgeProperties properties;
   private final PrintJobValidator printJobValidator;
   private final MetricsWrapper metrics;
+
+  /** Where the browser reaches the bridge and how long it waits on it. Read before any probe. */
+  public PrintBridgeConnectionResponse connection() {
+    return new PrintBridgeConnectionResponse(
+        properties.getOrigin(), properties.getHealthTimeoutMs(), properties.getPrintTimeoutMs());
+  }
 
   public PrintBridgeStatusResponse status(PrintBridgeObservation observation) {
     printJobValidator.validateBridgeObservation(observation);

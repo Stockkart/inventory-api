@@ -283,13 +283,14 @@ The shop's invoice settings decide which columns print. `showPack` turns the PAC
 
 | Endpoint | Purpose |
 |----------|---------|
+| `GET /api/v1/print-bridge/connection` | Where the browser reaches the bridge and how long it waits: `origin` (loopback only; the app refuses to start otherwise), `healthTimeoutMs` (for `GET /health` and `GET /jobs`), `printTimeoutMs` (for `POST /print`). Read before the first probe. |
 | `POST /api/v1/print-bridge/status` | Body: what the probe saw (`reachable`, `version`, `selectedPrinter`). Returns `state` (`NOT_DETECTED`, `OUTDATED`, `CONNECTED`), `latestVersion`, `minimumVersion`, `downloadUrl`. An outdated bridge still prints. |
 | `POST /api/v1/print-jobs` | Body: `source` (`SALE`, `REFUND`, `VENDOR_RETURN`), `documentId`, `bridge` (the probe). Renders the document, records a `print_jobs` row and returns `action`: `BRIDGE` (send `bridgeRequest` to the bridge unchanged), `DOWNLOAD` (no bridge: save `download`, a `.prn` file) or `IN_PROGRESS` (the same document is already on its way; send nothing). Also `reason`, `documentKind` (`INVOICE`, `ESTIMATE`, `CREDIT_NOTE`, `DEBIT_NOTE`, decided by the same rule that labels the paper) and `poll` (`intervalMs`, `budgetMs`). |
 | `POST /api/v1/print-jobs/{id}/outcome` | Body: `observation` (`PRINTED`, `FAILED`, `STILL_QUEUED`, `UNREACHABLE`, `DUPLICATE`, `REJECTED`), `bridgeJobId`, `error`. Returns `outcome` as a code plus `shouldClose`, `retryable` and `downloadInstead`. The frontend words the code. |
 
 `bridgeRequest` asks the bridge for its own configured copies (`copies: 0`). A second job for a document whose job is still `PENDING` or `SUBMITTED` returns `IN_PROGRESS`, enforced by a unique index scoped to those statuses (`PrintJobIndexMigration`). A job left unreported past `print-bridge.in-flight-timeout` (2 minutes) becomes `EXPIRED`, which means outcome unknown, not "did not print". Physical printing is at-least-once: a refusal from a bridge that was reached (`BRIDGE_REJECTED`) offers no fallback file, because the job may already have printed.
 
-The bridge offered to shops is set per environment: `PRINT_BRIDGE_DOWNLOAD_URL`, `PRINT_BRIDGE_LATEST_VERSION` (default `0.12.0`) and `PRINT_BRIDGE_MINIMUM_VERSION` (default `0.11.0`, the first release that gives an estimate its own page length). The default download URL is the release on Google Drive; it must be shared as "Anyone with the link", or a shop that is not signed in to that Google account cannot download it.
+The bridge offered to shops is set per environment: `PRINT_BRIDGE_ORIGIN` (default `http://127.0.0.1:9110`), `PRINT_BRIDGE_HEALTH_TIMEOUT_MS` (default 1200), `PRINT_BRIDGE_PRINT_TIMEOUT_MS` (default 8000), `PRINT_BRIDGE_DOWNLOAD_URL`, `PRINT_BRIDGE_LATEST_VERSION` (default `0.12.0`) and `PRINT_BRIDGE_MINIMUM_VERSION` (default `0.11.0`, the first release that gives an estimate its own page length). The default download URL is the release on Google Drive; it must be shared as "Anyone with the link", or a shop that is not signed in to that Google account cannot download it.
 
 ### Build commands
 
