@@ -1,12 +1,41 @@
 package com.inventory.documentservice.service;
 
+import static com.inventory.documentservice.utils.DotMatrixTextUtils.BOLD_OFF;
+import static com.inventory.documentservice.utils.DotMatrixTextUtils.BOLD_ON;
+import static com.inventory.documentservice.utils.DotMatrixTextUtils.CONDENSED_OFF;
+import static com.inventory.documentservice.utils.DotMatrixTextUtils.CONDENSED_ON;
+import static com.inventory.documentservice.utils.DotMatrixTextUtils.DOUBLE_OFF;
+import static com.inventory.documentservice.utils.DotMatrixTextUtils.DOUBLE_ON;
+import static com.inventory.documentservice.utils.DotMatrixTextUtils.addCentred;
+import static com.inventory.documentservice.utils.DotMatrixTextUtils.addPart;
+import static com.inventory.documentservice.utils.DotMatrixTextUtils.addWrapped;
+import static com.inventory.documentservice.utils.DotMatrixTextUtils.bold;
+import static com.inventory.documentservice.utils.DotMatrixTextUtils.centre;
+import static com.inventory.documentservice.utils.DotMatrixTextUtils.centreWide;
+import static com.inventory.documentservice.utils.DotMatrixTextUtils.clean;
+import static com.inventory.documentservice.utils.DotMatrixTextUtils.condensed;
+import static com.inventory.documentservice.utils.DotMatrixTextUtils.doubleWide;
+import static com.inventory.documentservice.utils.DotMatrixTextUtils.finish;
+import static com.inventory.documentservice.utils.DotMatrixTextUtils.isPositive;
+import static com.inventory.documentservice.utils.DotMatrixTextUtils.join;
+import static com.inventory.documentservice.utils.DotMatrixTextUtils.letterSpaced;
+import static com.inventory.documentservice.utils.DotMatrixTextUtils.money;
+import static com.inventory.documentservice.utils.DotMatrixTextUtils.nullToEmpty;
+import static com.inventory.documentservice.utils.DotMatrixTextUtils.pad;
+import static com.inventory.documentservice.utils.DotMatrixTextUtils.present;
+import static com.inventory.documentservice.utils.DotMatrixTextUtils.quantity;
+import static com.inventory.documentservice.utils.DotMatrixTextUtils.rule;
+import static com.inventory.documentservice.utils.DotMatrixTextUtils.twoColumn;
+import static com.inventory.documentservice.utils.DotMatrixTextUtils.visible;
+import static com.inventory.documentservice.utils.DotMatrixTextUtils.wrap;
+
+import com.inventory.documentservice.domain.DotMatrixDocumentKind;
 import com.inventory.documentservice.rest.dto.CreditNoteItem;
 import com.inventory.documentservice.rest.dto.GenerateCreditNoteRequest;
 import com.inventory.documentservice.rest.dto.GenerateInvoiceRequest;
 import com.inventory.documentservice.rest.dto.InvoiceItem;
 import com.inventory.documentservice.rest.dto.InvoiceTaxRateRow;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
@@ -124,82 +153,6 @@ public class InvoiceTextRenderer {
   // twenty-eight.
   private static final int TAX_NAME_MIN = 20;
 
-  /**
-   * ESC/P emphasised mode on and off. The printer draws these lines twice, which is the only
-   * bold a text-mode printer has; the preview turns the same pair into markup. Centring happens
-   * before they are added, so they never count towards the width.
-   */
-  public static final String BOLD_ON = "\u001B\u0045";
-
-  public static final String BOLD_OFF = "\u001B\u0046";
-
-  private static String bold(String line) {
-    return BOLD_ON + line + BOLD_OFF;
-  }
-
-  /**
-   * ESC/P condensed pitch on and off - 17.1 characters to the inch instead of 10. The smallest
-   * type the printer has, which is what a maker's credit line should be set in.
-   */
-  public static final String CONDENSED_ON = "\u000F";
-
-  public static final String CONDENSED_OFF = "\u0012";
-
-  private static String condensed(String line) {
-    return CONDENSED_ON + line + CONDENSED_OFF;
-  }
-
-  /**
-   * ESC/P double-width on and off. Every character between them is drawn twice as wide, so it
-   * occupies two printing columns rather than one - which is what the eye reads as a bigger
-   * character on a printer that has one type size.
-   */
-  public static final String DOUBLE_ON = "\u000E";
-
-  public static final String DOUBLE_OFF = "\u0014";
-
-  private static String doubleWide(String line) {
-    return DOUBLE_ON + line + DOUBLE_OFF;
-  }
-
-  /**
-   * Centres text that will print at double width.
-   *
-   * <p>The padding is computed against twice the text's length, because that is the room it
-   * takes on paper. Centring it by its character count would sit it a quarter of the page to
-   * the left of where it lands.
-   */
-  /**
-   * Opens a space between every character, so a name reads as a masthead rather than a word.
-   *
-   * <p>The gap between words has to grow with it. Spacing the letters alone leaves the same
-   * single space between "KUBER" and "PHARMA" as between its letters, and the whole name reads
-   * as one word.
-   */
-  private static String letterSpaced(String text) {
-    List<String> words = new ArrayList<>();
-    for (String word : text.trim().split("\\s+")) {
-      if (word.isEmpty()) {
-        continue;
-      }
-      StringBuilder spaced = new StringBuilder(word.length() * 2);
-      for (int i = 0; i < word.length(); i++) {
-        if (i > 0) {
-          spaced.append(' ');
-        }
-        spaced.append(word.charAt(i));
-      }
-      words.add(spaced.toString());
-    }
-    return String.join("   ", words);
-  }
-
-  private static String centreWide(String text, int width) {
-    int printed = text.length() * 2;
-    int left = Math.max(0, (width - printed) / 2);
-    return " ".repeat(left) + doubleWide(text);
-  }
-
   /** Who made the bill. Tax invoices only: an estimate is a quote, not a document of record. */
   private static final String MAKER_CREDIT = "stockkart.co.in | for all kind of shops | call: 9828606899";
 
@@ -237,15 +190,6 @@ public class InvoiceTextRenderer {
     return finish(out);
   }
 
-  /** Trailing padding is invisible on screen and wasted carriage travel on paper; trim it. */
-  private static String finish(List<String> out) {
-    List<String> trimmed = new ArrayList<>(out.size());
-    for (String line : out) {
-      trimmed.add(line.stripTrailing());
-    }
-    return String.join("\n", trimmed) + "\n";
-  }
-
   /**
    * Buyer down the left, the estimate's own details opposite. They used to stack, which cost
    * four lines and a blank on a page where vertical space is the scarce thing.
@@ -275,7 +219,8 @@ public class InvoiceTextRenderer {
     }
 
     for (int i = 0; i < Math.max(left.size(), right.size()); i++) {
-      out.add(twoColumn(i < left.size() ? left.get(i) : "", i < right.size() ? right.get(i) : ""));
+      out.add(twoColumn(
+          i < left.size() ? left.get(i) : "", i < right.size() ? right.get(i) : "", LINE_WIDTH));
     }
     out.add("");
   }
@@ -1014,37 +959,12 @@ public class InvoiceTextRenderer {
     out.add(MAKER_CREDIT);
   }
 
-  /** Centres "prefix + value" when shown and present, wrapping to the page. */
-  private static void addCentred(
-      List<String> out, boolean shown, String value, String prefix, int width) {
-    if (!shown || !present(value)) {
-      return;
-    }
-    for (String line : wrap((prefix == null ? "" : prefix) + value.trim(), width)) {
-      out.add(centre(line, width));
-    }
-  }
-
-  private static void addPart(List<String> parts, boolean shown, String value, String prefix) {
-    if (shown && present(value)) {
-      parts.add(prefix + value.trim());
-    }
-  }
-
-  private static void addWrapped(
-      List<String> lines, boolean shown, String value, String prefix, int width) {
-    if (!shown || !present(value)) {
-      return;
-    }
-    lines.addAll(wrap((prefix == null ? "" : prefix) + value.trim(), width));
-  }
-
   // ----------------------------------------------------------------- header
 
   /** The template prints a centred "Estimate" heading, and nothing at all for an invoice. */
   private void appendTitle(List<String> out, boolean estimate) {
     if (estimate) {
-      out.add(centre("ESTIMATE"));
+      out.add(centre("ESTIMATE", LINE_WIDTH));
       out.add("");
     }
   }
@@ -1084,7 +1004,7 @@ public class InvoiceTextRenderer {
     for (int i = 0; i < Math.max(left.size(), right.size()); i++) {
       String l = i < left.size() ? left.get(i) : "";
       String rr = i < right.size() ? right.get(i) : "";
-      out.add(twoColumn(l, rr));
+      out.add(twoColumn(l, rr, LINE_WIDTH));
     }
     out.add("");
   }
@@ -1204,12 +1124,22 @@ public class InvoiceTextRenderer {
     if (present(r.getFooterNote())) {
       out.add("");
       for (String line : wrap(r.getFooterNote(), LINE_WIDTH)) {
-        out.add(centre(line));
+        out.add(centre(line, LINE_WIDTH));
       }
     }
   }
 
   // ---------------------------------------------------------------- helpers
+
+  /** Invoice or estimate, by the same rule that labels the document on the paper. */
+  public static DotMatrixDocumentKind kindOf(GenerateInvoiceRequest r) {
+    return isEstimate(r) ? DotMatrixDocumentKind.ESTIMATE : DotMatrixDocumentKind.INVOICE;
+  }
+
+  /** Credit or debit note, by the same rule that titles the note on the paper. */
+  public static DotMatrixDocumentKind kindOf(GenerateCreditNoteRequest r) {
+    return isVendorNote(r) ? DotMatrixDocumentKind.DEBIT_NOTE : DotMatrixDocumentKind.CREDIT_NOTE;
+  }
 
   private static boolean isEstimate(GenerateInvoiceRequest r) {
     return "ESTIMATE".equalsIgnoreCase(r.getDocumentType())
@@ -1251,165 +1181,4 @@ public class InvoiceTextRenderer {
     lines.addAll(wrap((prefix == null ? "" : prefix) + value.trim(), HALF));
   }
 
-  /** Money with two decimals. A null value renders blank, never 0.00. */
-  private static String money(BigDecimal value) {
-    return value == null ? "" : value.setScale(2, RoundingMode.HALF_UP).toPlainString();
-  }
-
-  /**
-   * Quantity as the preview shows it: a whole number prints without decimals, so 5 rather than
-   * 5.00, and a fractional quantity keeps only the places it actually uses.
-   */
-  private static String quantity(BigDecimal value) {
-    if (value == null) {
-      return "";
-    }
-    BigDecimal trimmed = value.stripTrailingZeros();
-    return trimmed.scale() <= 0 ? trimmed.toBigInteger().toString() : trimmed.toPlainString();
-  }
-
-  private static String pad(String raw, int width, boolean rightAlign) {
-    String value = clean(raw);
-    if (value.length() > width) {
-      return value.substring(0, width);
-    }
-    String filler = " ".repeat(width - value.length());
-    return rightAlign ? filler + value : value + filler;
-  }
-
-  private static String rule(int width) {
-    return "-".repeat(width);
-  }
-
-  private static String centre(String raw, int width) {
-    String value = clean(raw);
-    if (value.length() >= width) {
-      return value.substring(0, width);
-    }
-    return " ".repeat((width - value.length()) / 2) + value;
-  }
-
-  private static String centre(String raw) {
-    String value = clean(raw);
-    if (value.length() >= LINE_WIDTH) {
-      return value.substring(0, LINE_WIDTH);
-    }
-    return " ".repeat((LINE_WIDTH - value.length()) / 2) + value;
-  }
-
-  private static String twoColumn(String left, String right, int width) {
-    String l = clean(left);
-    String r = clean(right);
-    int half = width / 2;
-    if (l.length() > half) {
-      l = l.substring(0, half);
-    }
-    if (r.length() > width - half) {
-      r = r.substring(0, width - half);
-    }
-    int gap = Math.max(1, width - l.length() - r.length());
-    String line = l + " ".repeat(gap) + r;
-    return line.length() > width ? line.substring(0, width) : line;
-  }
-
-  private static String twoColumn(String left, String right) {
-    String l = clean(left);
-    String r = clean(right);
-    if (l.length() > HALF) {
-      l = l.substring(0, HALF);
-    }
-    if (r.length() > LINE_WIDTH - HALF) {
-      r = r.substring(0, LINE_WIDTH - HALF);
-    }
-    int gap = Math.max(1, LINE_WIDTH - l.length() - r.length());
-    String line = l + " ".repeat(gap) + r;
-    return line.length() > LINE_WIDTH ? line.substring(0, LINE_WIDTH) : line;
-  }
-
-  /** Greedy word wrap. Words longer than the width are hard-split. */
-  private static List<String> wrap(String raw, int width) {
-    List<String> lines = new ArrayList<>();
-    String value = clean(raw).trim();
-    if (value.isEmpty()) {
-      return lines;
-    }
-    StringBuilder current = new StringBuilder();
-    for (String token : value.split("\\s+")) {
-      String word = token;
-      while (word.length() > width) {
-        if (current.length() > 0) {
-          lines.add(current.toString());
-          current.setLength(0);
-        }
-        lines.add(word.substring(0, width));
-        word = word.substring(width);
-      }
-      if (current.length() == 0) {
-        current.append(word);
-      } else if (current.length() + 1 + word.length() <= width) {
-        current.append(' ').append(word);
-      } else {
-        lines.add(current.toString());
-        current.setLength(0);
-        current.append(word);
-      }
-    }
-    if (current.length() > 0) {
-      lines.add(current.toString());
-    }
-    return lines;
-  }
-
-  /**
-   * Neutralises control characters and folds anything outside printable ASCII to '?'.
-   *
-   * <p>A CR or LF in a product or customer name — plausible from a pasted spreadsheet — would
-   * otherwise split one row into two physical lines and destroy every column below it. The fold
-   * keeps this renderer's idea of a column identical to the encoder's: ESC/P text mode is
-   * single-byte, and Java counts UTF-16 units where the encoder counts runes, so the two
-   * disagree on astral characters unless both reduce to one byte each.
-   */
-  private static String clean(String raw) {
-    if (raw == null) {
-      return "";
-    }
-    StringBuilder sb = new StringBuilder(raw.length());
-    raw.codePoints().forEach(cp -> {
-      if (cp == '\t' || cp == '\n' || cp == '\r') {
-        sb.append(' ');
-      } else if (cp >= 0x20 && cp <= 0x7E) {
-        sb.append((char) cp);
-      } else {
-        sb.append('?');
-      }
-    });
-    return sb.toString();
-  }
-
-  private static String join(String separator, String a, String b) {
-    if (!present(a)) {
-      return nullToEmpty(b);
-    }
-    if (!present(b)) {
-      return a;
-    }
-    return a + separator + b;
-  }
-
-  private static boolean isPositive(BigDecimal value) {
-    return value != null && value.compareTo(BigDecimal.ZERO) > 0;
-  }
-
-  private static boolean present(String value) {
-    return value != null && !value.isBlank();
-  }
-
-  private static String nullToEmpty(String value) {
-    return value == null ? "" : value;
-  }
-
-  /** Visibility flags default to visible when unset, matching InvoicePdfService. */
-  private static boolean visible(Boolean flag) {
-    return flag == null || flag;
-  }
 }

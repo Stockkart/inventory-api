@@ -7,6 +7,7 @@ import com.inventory.metrics.annotation.Latency;
 import com.inventory.metrics.annotation.RecordRequestRate;
 import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.product.rest.dto.request.PrintBridgeObservation;
+import com.inventory.product.rest.dto.response.PrintBridgeConnectionResponse;
 import com.inventory.product.rest.dto.response.PrintBridgeStatusResponse;
 import com.inventory.product.service.printing.PrintBridgeService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -14,12 +15,16 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** The shop's dot-matrix print bridge: missing, outdated or connected, and where to get it. */
+/**
+ * The shop's dot-matrix print bridge: where the browser reaches it, whether it is missing,
+ * outdated or connected, and where to get it.
+ */
 @RestController
 @RequestMapping("/api/v1/print-bridge")
 @Latency(module = "product")
@@ -30,6 +35,13 @@ public class PrintBridgeController {
 
   @Autowired
   private PrintBridgeService printBridgeService;
+
+  @GetMapping("/connection")
+  public ResponseEntity<ApiResponse<PrintBridgeConnectionResponse>> connection(
+      HttpServletRequest httpRequest) {
+    requireShopId(httpRequest);
+    return ResponseEntity.ok(ApiResponse.success(printBridgeService.connection()));
+  }
 
   @PostMapping("/status")
   public ResponseEntity<ApiResponse<PrintBridgeStatusResponse>> status(

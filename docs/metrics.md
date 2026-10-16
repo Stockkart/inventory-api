@@ -81,6 +81,9 @@ further tags list them.
 | `inventory_product_invoices_generated_total` | `ProductMetricsConstants.INVOICES_GENERATED` | InvoiceService |
 | `inventory_product_orders_amount` | `ProductMetricsConstants.ORDERS_AMOUNT` | CheckoutService |
 | `inventory_product_orders_completed_total` | `ProductMetricsConstants.ORDERS_COMPLETED` | CheckoutService |
+| `inventory_product_print_bridge_checks_total` | `ProductMetricsConstants.PRINT_BRIDGE_CHECKS` | PrintBridgeService |
+| `inventory_product_print_job_outcomes_total` | `ProductMetricsConstants.PRINT_JOB_OUTCOMES` | PrintJobService |
+| `inventory_product_print_jobs_total` | `ProductMetricsConstants.PRINT_JOBS` | PrintJobService |
 | `inventory_product_qr_tokens_total` | `ProductMetricsConstants.QR_TOKENS_TOTAL` | QRUploadService |
 | `inventory_product_quotations_total` | `ProductMetricsConstants.QUOTATIONS_TOTAL` | QuotationService |
 | `inventory_product_refund_amount` | `ProductMetricsConstants.REFUND_AMOUNT` | RefundService |
@@ -127,6 +130,9 @@ Some call sites add a second tag beside `module`. The ones that matter for a das
 | Metric | Tag | Values seen |
 |---|---|---|
 | `document.generated.total` | `operation` | `invoice_pdf`, and one per document kind |
+| `inventory_product_print_jobs_total` | `operation`, `outcome` | `sale`, `refund`, `vendor_return`; `bridge`, `download`, `in_progress` |
+| `inventory_product_print_job_outcomes_total` | `operation`, `outcome` | the source as above; `printed`, `failed_printer`, `still_queued`, `bridge_unreachable`, `already_sent`, `bridge_rejected`, `unconfirmed` |
+| `inventory_product_print_bridge_checks_total` | `outcome` | `not_detected`, `outdated`, `connected` |
 
 ## Adding a metric
 

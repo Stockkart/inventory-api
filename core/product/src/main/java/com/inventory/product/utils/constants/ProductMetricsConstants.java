@@ -32,4 +32,10 @@ public final class ProductMetricsConstants {
   public static final String CREDIT_NOTES_TOTAL = "inventory_product_credit_notes_total";
   public static final String BARCODES_GENERATED = "inventory_product_barcodes_generated_total";
   public static final String QR_TOKENS_TOTAL = "inventory_product_qr_tokens_total";
+
+  // Printing (dot matrix, through the print bridge). Tagged operation = document source and
+  // outcome = what happened, the two tags the module dashboard breaks a business panel down by.
+  public static final String PRINT_JOBS = "inventory_product_print_jobs_total";
+  public static final String PRINT_JOB_OUTCOMES = "inventory_product_print_job_outcomes_total";
+  public static final String PRINT_BRIDGE_CHECKS = "inventory_product_print_bridge_checks_total";
 }
