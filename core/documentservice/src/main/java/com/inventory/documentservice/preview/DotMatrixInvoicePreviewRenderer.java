@@ -1,10 +1,10 @@
-package com.inventory.documentservice.service.preview;
+package com.inventory.documentservice.preview;
 
 import com.inventory.documentservice.domain.PrinterType;
 import com.inventory.documentservice.rest.dto.GenerateInvoiceRequest;
 import com.inventory.documentservice.service.InvoiceTextRenderer;
+import com.inventory.documentservice.utils.DotMatrixTextUtils;
 import java.util.Locale;
-import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
@@ -15,7 +15,6 @@ import org.springframework.stereotype.Component;
  * appears at all. Both now come from {@link InvoiceTextRenderer}.
  */
 @Component
-@Order(0)
 public class DotMatrixInvoicePreviewRenderer implements InvoicePreviewRenderer {
 
   /** The preview page is sized for eighty columns; a wider bill is set smaller to fit it. */
@@ -102,11 +101,11 @@ public class DotMatrixInvoicePreviewRenderer implements InvoicePreviewRenderer {
   /** The printer's emphasis codes have no width; the preview shows them as the bold they are. */
   private static String showEmphasis(String escaped) {
     return escaped
-        .replace(InvoiceTextRenderer.BOLD_ON, "<b>")
-        .replace(InvoiceTextRenderer.BOLD_OFF, "</b>")
-        .replace(InvoiceTextRenderer.CONDENSED_ON, "<span class=\"sm\">")
-        .replace(InvoiceTextRenderer.CONDENSED_OFF, "</span>")
-        .replace(InvoiceTextRenderer.DOUBLE_ON, "<span class=\"wide\">")
-        .replace(InvoiceTextRenderer.DOUBLE_OFF, "</span>");
+        .replace(DotMatrixTextUtils.BOLD_ON, "<b>")
+        .replace(DotMatrixTextUtils.BOLD_OFF, "</b>")
+        .replace(DotMatrixTextUtils.CONDENSED_ON, "<span class=\"sm\">")
+        .replace(DotMatrixTextUtils.CONDENSED_OFF, "</span>")
+        .replace(DotMatrixTextUtils.DOUBLE_ON, "<span class=\"wide\">")
+        .replace(DotMatrixTextUtils.DOUBLE_OFF, "</span>");
   }
 }

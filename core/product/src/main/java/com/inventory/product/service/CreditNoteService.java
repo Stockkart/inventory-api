@@ -1,6 +1,7 @@
 package com.inventory.product.service;
 
 import com.inventory.common.exception.ResourceNotFoundException;
+import com.inventory.documentservice.domain.DotMatrixDocument;
 import com.inventory.documentservice.domain.PrinterType;
 import com.inventory.documentservice.rest.dto.GenerateCreditNoteRequest;
 import com.inventory.documentservice.service.DocumentService;
@@ -66,12 +67,22 @@ public class CreditNoteService {
 
   /** The customer's credit note as plain text for the dot matrix bridge. */
   public String generateCustomerCreditNoteText(String refundId, String shopId) {
-    return generateText(CreditNotePartyRole.CUSTOMER, refundId, shopId);
+    return renderForPrint(CreditNotePartyRole.CUSTOMER, refundId, shopId).text();
   }
 
   /** The vendor's debit note as plain text for the dot matrix bridge. */
   public String generateVendorCreditNoteText(String returnId, String shopId) {
-    return generateText(CreditNotePartyRole.VENDOR, returnId, shopId);
+    return renderForPrint(CreditNotePartyRole.VENDOR, returnId, shopId).text();
+  }
+
+  /** The customer's credit note for the print bridge: text, kind and note number. */
+  public DotMatrixDocument renderCustomerCreditNoteForPrint(String refundId, String shopId) {
+    return renderForPrint(CreditNotePartyRole.CUSTOMER, refundId, shopId);
+  }
+
+  /** The vendor's debit note for the print bridge: text, kind and note number. */
+  public DotMatrixDocument renderVendorCreditNoteForPrint(String returnId, String shopId) {
+    return renderForPrint(CreditNotePartyRole.VENDOR, returnId, shopId);
   }
 
   /**
@@ -82,11 +93,12 @@ public class CreditNoteService {
    * it can send. Honouring a setting that said NORMAL here would return a document laid out for
    * a laser printer down a pipe that can only print characters.
    */
-  private String generateText(CreditNotePartyRole role, String documentId, String shopId) {
+  private DotMatrixDocument renderForPrint(
+      CreditNotePartyRole role, String documentId, String shopId) {
     log.info("Generating {} note text for document={}, shop={}", role, documentId, shopId);
     var request = assemble(role, documentId, shopId);
     request.setPrinterType(PrinterType.DOT_MATRIX.name());
-    return documentService.generateCreditNoteText(request);
+    return documentService.renderCreditNoteForPrint(request);
   }
 
   private byte[] generatePdf(
