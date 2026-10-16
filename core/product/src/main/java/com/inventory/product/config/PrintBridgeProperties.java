@@ -51,9 +51,10 @@ public class PrintBridgeProperties {
   private long pollBudgetMs = 5000;
 
   /**
-   * How long an unreported job blocks a second print of the same document. Past this the job
-   * is marked EXPIRED (outcome unknown) and a new one may start, so a closed browser cannot
-   * stop a document ever printing again.
+   * How long the browser treats a sent document as on its way. Within it a second print of the
+   * same document is IN_PROGRESS; past it the browser stops tracking the job (reported
+   * UNCONFIRMED if it never saw it finish) and a new print may start, so a closed tab cannot stop
+   * a document ever printing again.
    */
   private Duration inFlightTimeout = Duration.ofMinutes(2);
 

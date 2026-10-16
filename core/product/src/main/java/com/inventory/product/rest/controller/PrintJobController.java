@@ -16,7 +16,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
-import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -37,21 +36,17 @@ public class PrintJobController {
   @PostMapping
   public ResponseEntity<ApiResponse<PrintJobResponse>> create(
       @RequestBody CreatePrintJobRequest request, HttpServletRequest httpRequest) {
-    String userId = requireUserId(httpRequest);
-    String shopId = requireShopId(httpRequest);
-    return ResponseEntity.ok(
-        ApiResponse.success(printJobService.create(shopId, userId, request)));
-  }
-
-  @PostMapping("/{printJobId}/outcome")
-  public ResponseEntity<ApiResponse<PrintOutcomeResponse>> reportOutcome(
-      @PathVariable String printJobId,
-      @RequestBody ReportPrintOutcomeRequest request,
-      HttpServletRequest httpRequest) {
     requireUserId(httpRequest);
     String shopId = requireShopId(httpRequest);
-    return ResponseEntity.ok(
-        ApiResponse.success(printJobService.reportOutcome(shopId, printJobId, request)));
+    return ResponseEntity.ok(ApiResponse.success(printJobService.create(shopId, request)));
+  }
+
+  @PostMapping("/outcome")
+  public ResponseEntity<ApiResponse<PrintOutcomeResponse>> reportOutcome(
+      @RequestBody ReportPrintOutcomeRequest request, HttpServletRequest httpRequest) {
+    requireUserId(httpRequest);
+    String shopId = requireShopId(httpRequest);
+    return ResponseEntity.ok(ApiResponse.success(printJobService.reportOutcome(shopId, request)));
   }
 
   private static String requireUserId(HttpServletRequest request) {

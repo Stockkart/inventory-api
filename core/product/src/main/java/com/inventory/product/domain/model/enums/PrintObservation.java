@@ -16,5 +16,10 @@ public enum PrintObservation {
   /** The bridge answered 409: it already had this document in flight. */
   DUPLICATE,
   /** The bridge answered with any other refusal, or its reply could not be confirmed. */
-  REJECTED
+  REJECTED,
+  /**
+   * The browser stopped tracking a queued job after its in-flight time without seeing it finish,
+   * typically because the bridge restarted and lost its history.
+   */
+  EXPIRED
 }

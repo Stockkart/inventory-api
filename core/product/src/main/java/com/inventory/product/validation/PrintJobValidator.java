@@ -27,11 +27,17 @@ public class PrintJobValidator {
       throw new ValidationException("Document ID is required");
     }
     validateBridgeObservation(request.getBridge());
+    if (request.getPendingAgeMs() != null && request.getPendingAgeMs() < 0) {
+      throw new ValidationException("Pending job age cannot be negative");
+    }
   }
 
   public void validateOutcomeRequest(ReportPrintOutcomeRequest request) {
     if (request == null) {
       throw new ValidationException("Request cannot be null");
+    }
+    if (request.getSource() == null) {
+      throw new ValidationException("Document source is required");
     }
     if (request.getObservation() == null) {
       throw new ValidationException("Print observation is required");

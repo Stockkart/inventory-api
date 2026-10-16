@@ -10,5 +10,7 @@ public enum PrintOutcome {
   /** The bridge already had this document in flight; nothing more to do. */
   ALREADY_SENT,
   /** The bridge refused the job or its reply could not be confirmed. It may have printed. */
-  BRIDGE_REJECTED
+  BRIDGE_REJECTED,
+  /** Nobody saw the job finish. Unknown, not failed: it may well have printed. */
+  UNCONFIRMED
 }

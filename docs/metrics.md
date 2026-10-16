@@ -131,7 +131,7 @@ Some call sites add a second tag beside `module`. The ones that matter for a das
 |---|---|---|
 | `document.generated.total` | `operation` | `invoice_pdf`, and one per document kind |
 | `inventory_product_print_jobs_total` | `operation`, `outcome` | `sale`, `refund`, `vendor_return`; `bridge`, `download`, `in_progress` |
-| `inventory_product_print_job_outcomes_total` | `operation`, `outcome` | the source as above; `printed`, `submitted`, `failed_printer`, `failed_bridge`, `failed_client`, `duplicate_suppressed`, `expired` |
+| `inventory_product_print_job_outcomes_total` | `operation`, `outcome` | the source as above; `printed`, `failed_printer`, `still_queued`, `bridge_unreachable`, `already_sent`, `bridge_rejected`, `unconfirmed` |
 | `inventory_product_print_bridge_checks_total` | `outcome` | `not_detected`, `outdated`, `connected` |
 
 ## Adding a metric

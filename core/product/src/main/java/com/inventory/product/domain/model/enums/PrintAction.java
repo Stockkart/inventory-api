@@ -6,6 +6,6 @@ public enum PrintAction {
   BRIDGE,
   /** No bridge: hand the operator the printer file in {@code download}. */
   DOWNLOAD,
-  /** The same document is already on its way to the printer: send nothing. */
+  /** This browser already sent the same document and has not seen it finish: send nothing. */
   IN_PROGRESS
 }

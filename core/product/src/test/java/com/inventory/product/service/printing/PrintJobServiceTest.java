@@ -2,29 +2,23 @@ package com.inventory.product.service.printing;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.inventory.common.exception.ValidationException;
 import com.inventory.documentservice.domain.DotMatrixDocument;
 import com.inventory.documentservice.domain.DotMatrixDocumentKind;
 import com.inventory.metrics.MetricsWrapper;
 import com.inventory.product.config.PrintBridgeProperties;
-import com.inventory.product.domain.model.PrintJob;
 import com.inventory.product.domain.model.enums.PrintAction;
 import com.inventory.product.domain.model.enums.PrintActionReason;
 import com.inventory.product.domain.model.enums.PrintDocumentSource;
-import com.inventory.product.domain.model.enums.PrintJobStatus;
 import com.inventory.product.domain.model.enums.PrintObservation;
 import com.inventory.product.domain.model.enums.PrintOutcome;
-import com.inventory.product.domain.repository.PrintJobRepository;
 import com.inventory.product.rest.dto.request.CreatePrintJobRequest;
 import com.inventory.product.rest.dto.request.PrintBridgeObservation;
 import com.inventory.product.rest.dto.request.ReportPrintOutcomeRequest;
@@ -33,22 +27,15 @@ import com.inventory.product.rest.dto.response.PrintOutcomeResponse;
 import com.inventory.product.service.CreditNoteService;
 import com.inventory.product.service.InvoiceService;
 import com.inventory.product.validation.PrintJobValidator;
-import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
-import java.time.ZoneOffset;
-import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.dao.DuplicateKeyException;
 
-/** Every print decision is made here; the browser only carries the answers. */
+/** Every print decision is made here; the browser only carries the answers. Nothing is stored. */
 class PrintJobServiceTest {
 
-  private static final Instant NOW = Instant.parse("2026-10-10T10:00:00Z");
   private static final String SHOP = "shop-1";
 
-  private PrintJobRepository repository;
   private InvoiceService invoiceService;
   private CreditNoteService creditNoteService;
   private MetricsWrapper metrics;
@@ -56,7 +43,6 @@ class PrintJobServiceTest {
 
   @BeforeEach
   void setUp() {
-    repository = mock(PrintJobRepository.class);
     invoiceService = mock(InvoiceService.class);
     creditNoteService = mock(CreditNoteService.class);
     metrics = mock(MetricsWrapper.class);
@@ -66,26 +52,12 @@ class PrintJobServiceTest {
     PrintJobValidator validator = new PrintJobValidator();
     service =
         new PrintJobService(
-            repository,
             new PrintBridgeService(properties, validator, metrics),
             properties,
             validator,
             invoiceService,
             creditNoteService,
-            metrics,
-            Clock.fixed(NOW, ZoneOffset.UTC));
-    when(repository.save(any(PrintJob.class)))
-        .thenAnswer(
-            call -> {
-              PrintJob job = call.getArgument(0);
-              if (job.getId() == null) {
-                job.setId("job-new");
-              }
-              return job;
-            });
-    when(repository.findFirstByShopIdAndSourceAndDocumentIdAndStatusIn(
-            any(), any(), any(), any()))
-        .thenReturn(Optional.empty());
+            metrics);
   }
 
   @Test
@@ -93,7 +65,7 @@ class PrintJobServiceTest {
     when(invoiceService.renderInvoiceForPrint("p-1", SHOP))
         .thenReturn(new DotMatrixDocument("TEXT", DotMatrixDocumentKind.ESTIMATE, "EST/00022"));
 
-    PrintJobResponse response = service.create(SHOP, "u-1", sale("p-1", true, "0.12.0"));
+    PrintJobResponse response = service.create(SHOP, sale("p-1", true, "0.12.0"));
 
     assertEquals(PrintAction.BRIDGE, response.getAction());
     assertNull(response.getReason());
@@ -101,9 +73,14 @@ class PrintJobServiceTest {
     assertEquals("p-1", response.getBridgeRequest().getDocId());
     assertEquals(0, response.getBridgeRequest().getCopies());
     assertEquals("TEXT", response.getBridgeRequest().getText());
+    assertEquals("EST/00022", response.getDocumentNumber());
     assertEquals("estimate-EST-00022.prn", response.getDownload().getFilename());
     assertEquals(5000, response.getPoll().getBudgetMs());
-    assertEquals(PrintJobStatus.PENDING, saved().getStatus());
+    assertEquals(120_000, response.getInFlightTtlMs());
+    verify(metrics)
+        .record(
+            "inventory_product_print_jobs_total", 1, "module", "product",
+            "operation", "sale", "outcome", "bridge");
   }
 
   @Test
@@ -111,13 +88,12 @@ class PrintJobServiceTest {
     when(invoiceService.renderInvoiceForPrint("p-1", SHOP))
         .thenReturn(new DotMatrixDocument("TEXT", DotMatrixDocumentKind.INVOICE, "T001148"));
 
-    PrintJobResponse response = service.create(SHOP, "u-1", sale("p-1", false, null));
+    PrintJobResponse response = service.create(SHOP, sale("p-1", false, null));
 
     assertEquals(PrintAction.DOWNLOAD, response.getAction());
     assertEquals(PrintActionReason.BRIDGE_UNAVAILABLE, response.getReason());
     assertNull(response.getBridgeRequest());
     assertEquals("invoice-T001148.prn", response.getDownload().getFilename());
-    assertEquals(PrintJobStatus.DOWNLOAD_READY, saved().getStatus());
     verify(metrics)
         .record(
             "inventory_product_print_jobs_total", 1, "module", "product",
@@ -125,53 +101,41 @@ class PrintJobServiceTest {
   }
 
   @Test
-  void aDocumentAlreadyInFlightIsNotSentAgain() {
+  void aDocumentThisBrowserSentRecentlyIsNotSentAgain() {
     when(invoiceService.renderInvoiceForPrint("p-1", SHOP))
         .thenReturn(new DotMatrixDocument("TEXT", DotMatrixDocumentKind.INVOICE, "T001148"));
-    PrintJob inFlight = job("job-old", PrintJobStatus.PENDING, NOW.minusSeconds(10));
-    when(repository.findFirstByShopIdAndSourceAndDocumentIdAndStatusIn(
-            eq(SHOP), eq(PrintDocumentSource.SALE), eq("p-1"), any()))
-        .thenReturn(Optional.of(inFlight));
+    CreatePrintJobRequest request = sale("p-1", true, "0.12.0");
+    request.setPendingAgeMs(10_000L);
 
-    PrintJobResponse response = service.create(SHOP, "u-1", sale("p-1", true, "0.12.0"));
+    PrintJobResponse response = service.create(SHOP, request);
 
     assertEquals(PrintAction.IN_PROGRESS, response.getAction());
-    assertEquals("job-old", response.getPrintJobId());
+    assertEquals(PrintActionReason.PRINT_IN_PROGRESS, response.getReason());
+    assertEquals("T001148", response.getDocumentNumber());
     assertNull(response.getBridgeRequest());
-    verify(repository, never()).save(any());
+    assertNull(response.getDownload());
+    verify(metrics)
+        .record(
+            "inventory_product_print_jobs_total", 1, "module", "product",
+            "operation", "sale", "outcome", "in_progress");
   }
 
   @Test
-  void aJobLeftInFlightTooLongExpiresAndANewOneStarts() {
+  void aPendingJobPastTheInFlightTimeDoesNotBlockANewPrint() {
     when(invoiceService.renderInvoiceForPrint("p-1", SHOP))
         .thenReturn(new DotMatrixDocument("TEXT", DotMatrixDocumentKind.INVOICE, "T001148"));
-    PrintJob stale = job("job-old", PrintJobStatus.PENDING, NOW.minus(Duration.ofMinutes(5)));
-    when(repository.findFirstByShopIdAndSourceAndDocumentIdAndStatusIn(
-            eq(SHOP), eq(PrintDocumentSource.SALE), eq("p-1"), any()))
-        .thenReturn(Optional.of(stale));
+    CreatePrintJobRequest request = sale("p-1", true, "0.12.0");
+    request.setPendingAgeMs(120_000L);
 
-    PrintJobResponse response = service.create(SHOP, "u-1", sale("p-1", true, "0.12.0"));
-
-    assertEquals(PrintJobStatus.EXPIRED, stale.getStatus());
-    assertEquals(NOW, stale.getCompletedAt());
-    assertEquals(PrintAction.BRIDGE, response.getAction());
-    assertEquals("job-new", response.getPrintJobId());
+    assertEquals(PrintAction.BRIDGE, service.create(SHOP, request).getAction());
   }
 
   @Test
-  void aRaceOnTheInFlightIndexAnswersWithTheJobThatWon() {
-    when(invoiceService.renderInvoiceForPrint("p-1", SHOP))
-        .thenReturn(new DotMatrixDocument("TEXT", DotMatrixDocumentKind.INVOICE, "T001148"));
-    PrintJob winner = job("job-winner", PrintJobStatus.PENDING, NOW);
-    when(repository.findFirstByShopIdAndSourceAndDocumentIdAndStatusIn(
-            eq(SHOP), eq(PrintDocumentSource.SALE), eq("p-1"), any()))
-        .thenReturn(Optional.empty(), Optional.of(winner));
-    when(repository.save(any(PrintJob.class))).thenThrow(new DuplicateKeyException("dup"));
+  void aNegativePendingAgeIsRefused() {
+    CreatePrintJobRequest request = sale("p-1", true, "0.12.0");
+    request.setPendingAgeMs(-1L);
 
-    PrintJobResponse response = service.create(SHOP, "u-1", sale("p-1", true, "0.12.0"));
-
-    assertEquals(PrintAction.IN_PROGRESS, response.getAction());
-    assertEquals("job-winner", response.getPrintJobId());
+    assertThrows(ValidationException.class, () -> service.create(SHOP, request));
   }
 
   @Test
@@ -181,7 +145,7 @@ class PrintJobServiceTest {
     CreatePrintJobRequest request = sale("r-1", true, "0.12.0");
     request.setSource(PrintDocumentSource.REFUND);
 
-    PrintJobResponse response = service.create(SHOP, "u-1", request);
+    PrintJobResponse response = service.create(SHOP, request);
 
     assertEquals("CREDIT_NOTE", response.getBridgeRequest().getDocType());
     assertEquals("credit-note-CN-7.prn", response.getDownload().getFilename());
@@ -189,19 +153,14 @@ class PrintJobServiceTest {
 
   @Test
   void aPrinterFaultStaysOnScreenAndKeepsThePrintersError() {
-    PrintJob pending = job("job-1", PrintJobStatus.PENDING, NOW);
-    when(repository.findByIdAndShopId("job-1", SHOP)).thenReturn(Optional.of(pending));
-
     PrintOutcomeResponse outcome =
-        service.reportOutcome(SHOP, "job-1", report(PrintObservation.FAILED, "j-4", "Out of paper"));
+        service.reportOutcome(SHOP, report(PrintObservation.FAILED, "j-4", "Out of paper"));
 
     assertEquals(PrintOutcome.FAILED_PRINTER, outcome.getOutcome());
     assertFalse(outcome.isShouldClose());
     assertTrue(outcome.isRetryable());
     assertFalse(outcome.isDownloadInstead());
     assertEquals("Out of paper", outcome.getError());
-    assertEquals("j-4", pending.getBridgeJobId());
-    assertEquals(PrintJobStatus.FAILED_PRINTER, pending.getStatus());
     verify(metrics)
         .record(
             "inventory_product_print_job_outcomes_total", 1, "module", "product",
@@ -210,24 +169,17 @@ class PrintJobServiceTest {
 
   @Test
   void anUnreachableBridgeFallsBackToTheFile() {
-    PrintJob pending = job("job-1", PrintJobStatus.PENDING, NOW);
-    when(repository.findByIdAndShopId("job-1", SHOP)).thenReturn(Optional.of(pending));
-
     PrintOutcomeResponse outcome =
-        service.reportOutcome(SHOP, "job-1", report(PrintObservation.UNREACHABLE, null, null));
+        service.reportOutcome(SHOP, report(PrintObservation.UNREACHABLE, null, null));
 
     assertEquals(PrintOutcome.BRIDGE_UNREACHABLE, outcome.getOutcome());
     assertTrue(outcome.isDownloadInstead());
-    assertEquals(PrintJobStatus.FAILED_CLIENT, pending.getStatus());
   }
 
   @Test
   void aRefusalThatMayHavePrintedOffersNoFileThatCouldPrintItTwice() {
-    PrintJob pending = job("job-1", PrintJobStatus.PENDING, NOW);
-    when(repository.findByIdAndShopId("job-1", SHOP)).thenReturn(Optional.of(pending));
-
     PrintOutcomeResponse outcome =
-        service.reportOutcome(SHOP, "job-1", report(PrintObservation.REJECTED, null, "timeout"));
+        service.reportOutcome(SHOP, report(PrintObservation.REJECTED, null, "timeout"));
 
     assertEquals(PrintOutcome.BRIDGE_REJECTED, outcome.getOutcome());
     assertFalse(outcome.isDownloadInstead());
@@ -235,52 +187,47 @@ class PrintJobServiceTest {
   }
 
   @Test
-  void stillQueuedStaysInFlightAndCloses() {
-    PrintJob pending = job("job-1", PrintJobStatus.PENDING, NOW);
-    when(repository.findByIdAndShopId("job-1", SHOP)).thenReturn(Optional.of(pending));
-
+  void stillQueuedCloses() {
     PrintOutcomeResponse outcome =
-        service.reportOutcome(SHOP, "job-1", report(PrintObservation.STILL_QUEUED, "j-5", null));
+        service.reportOutcome(SHOP, report(PrintObservation.STILL_QUEUED, "j-5", null));
 
     assertEquals(PrintOutcome.STILL_QUEUED, outcome.getOutcome());
     assertTrue(outcome.isShouldClose());
-    assertEquals(PrintJobStatus.SUBMITTED, pending.getStatus());
-    assertNull(pending.getCompletedAt());
+    assertFalse(outcome.isRetryable());
   }
 
   @Test
-  void aSecondReportOnASettledJobChangesNothing() {
-    PrintJob printed = job("job-1", PrintJobStatus.PRINTED, NOW);
-    when(repository.findByIdAndShopId("job-1", SHOP)).thenReturn(Optional.of(printed));
-
+  void aJobNobodySawFinishIsUnconfirmedNotFailed() {
     PrintOutcomeResponse outcome =
-        service.reportOutcome(SHOP, "job-1", report(PrintObservation.FAILED, null, "late"));
+        service.reportOutcome(SHOP, report(PrintObservation.EXPIRED, "j-5", null));
 
-    assertEquals(PrintOutcome.PRINTED, outcome.getOutcome());
-    assertEquals(PrintJobStatus.PRINTED, printed.getStatus());
-    verify(repository, never()).save(any());
-    // Already counted when it settled; a late report must not count it again.
-    verifyNoInteractions(metrics);
+    assertEquals(PrintOutcome.UNCONFIRMED, outcome.getOutcome());
+    assertFalse(outcome.isRetryable());
+    assertFalse(outcome.isDownloadInstead());
+    verify(metrics)
+        .record(
+            "inventory_product_print_job_outcomes_total", 1, "module", "product",
+            "operation", "sale", "outcome", "unconfirmed");
+  }
+
+  @Test
+  void anOutcomeWithoutASourceIsRefused() {
+    ReportPrintOutcomeRequest request = report(PrintObservation.PRINTED, "j-1", null);
+    request.setSource(null);
+
+    assertThrows(ValidationException.class, () -> service.reportOutcome(SHOP, request));
   }
 
   @Test
   void theFileIsNamedAfterTheNumberWithUnsafeCharactersReplaced() {
-    PrintJob job = job("job-1", PrintJobStatus.PENDING, NOW);
-    job.setDocumentKind(DotMatrixDocumentKind.DEBIT_NOTE);
-    job.setDocumentNumber("DN/00004 A");
-    assertEquals("debit-note-DN-00004-A.prn", PrintJobService.filenameFor(job));
-
-    job.setDocumentNumber(null);
-    job.setDocumentId("ret-9");
-    assertEquals("debit-note-ret-9.prn", PrintJobService.filenameFor(job));
-  }
-
-  private PrintJob saved() {
-    org.mockito.ArgumentCaptor<PrintJob> captor = org.mockito.ArgumentCaptor.forClass(PrintJob.class);
-    verify(repository).save(captor.capture());
-    PrintJob job = captor.getValue();
-    assertNotNull(job.getCreatedAt());
-    return job;
+    assertEquals(
+        "debit-note-DN-00004-A.prn",
+        PrintJobService.filenameFor(
+            new DotMatrixDocument("T", DotMatrixDocumentKind.DEBIT_NOTE, "DN/00004 A"), "ret-9"));
+    assertEquals(
+        "debit-note-ret-9.prn",
+        PrintJobService.filenameFor(
+            new DotMatrixDocument("T", DotMatrixDocumentKind.DEBIT_NOTE, null), "ret-9"));
   }
 
   private static CreatePrintJobRequest sale(String id, boolean reachable, String version) {
@@ -294,21 +241,10 @@ class PrintJobServiceTest {
   private static ReportPrintOutcomeRequest report(
       PrintObservation observation, String bridgeJobId, String error) {
     ReportPrintOutcomeRequest request = new ReportPrintOutcomeRequest();
+    request.setSource(PrintDocumentSource.SALE);
     request.setObservation(observation);
     request.setBridgeJobId(bridgeJobId);
     request.setError(error);
     return request;
-  }
-
-  private static PrintJob job(String id, PrintJobStatus status, Instant createdAt) {
-    PrintJob job = new PrintJob();
-    job.setId(id);
-    job.setShopId(SHOP);
-    job.setSource(PrintDocumentSource.SALE);
-    job.setDocumentId("p-1");
-    job.setDocumentKind(DotMatrixDocumentKind.INVOICE);
-    job.setStatus(status);
-    job.setCreatedAt(createdAt);
-    return job;
   }
 }

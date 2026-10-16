@@ -17,12 +17,13 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class PrintJobResponse {
-  private String printJobId;
   private PrintAction action;
   /** Null when the job goes to the bridge. */
   private PrintActionReason reason;
   private PrintBridgeState bridgeState;
   private DotMatrixDocumentKind documentKind;
+  /** The number printed on the document, e.g. T001148, for messages about it later. */
+  private String documentNumber;
   /** Present when {@link #action} is BRIDGE. */
   private PrintBridgeJobPayload bridgeRequest;
   /**
@@ -31,4 +32,9 @@ public class PrintJobResponse {
    */
   private PrintDownload download;
   private PrintPollPolicy poll;
+  /**
+   * How long the browser treats this document as on its way once sent: a second print within
+   * this is IN_PROGRESS, and a job not seen to finish by then is reported UNCONFIRMED.
+   */
+  private long inFlightTtlMs;
 }

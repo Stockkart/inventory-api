@@ -1,11 +1,14 @@
 package com.inventory.product.rest.dto.request;
 
+import com.inventory.product.domain.model.enums.PrintDocumentSource;
 import com.inventory.product.domain.model.enums.PrintObservation;
 import lombok.Data;
 
 /** What happened when the browser sent a print job to the bridge. */
 @Data
 public class ReportPrintOutcomeRequest {
+  /** Which kind of record was printed, for the metrics. */
+  private PrintDocumentSource source;
   private PrintObservation observation;
   /** The bridge's job id, once it accepted the job. */
   private String bridgeJobId;
