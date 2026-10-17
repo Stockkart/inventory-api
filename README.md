@@ -298,6 +298,24 @@ The shop's invoice settings decide which columns print. `showPack` turns the PAC
 
 The bridge offered to shops is set per environment: `PRINT_BRIDGE_ORIGIN` (default `http://127.0.0.1:9110`), `PRINT_BRIDGE_HEALTH_TIMEOUT_MS` (default 1200), `PRINT_BRIDGE_PRINT_TIMEOUT_MS` (default 8000), `PRINT_BRIDGE_DOWNLOAD_URL`, `PRINT_BRIDGE_LATEST_VERSION` (default `0.12.0`) and `PRINT_BRIDGE_MINIMUM_VERSION` (default `0.11.0`, the first release that gives an estimate its own page length). The default download URL is the release on Google Drive; it must be shared as "Anyone with the link", or a shop that is not signed in to that Google account cannot download it.
 
+### Shop grid layouts (product)
+
+The product entry grid view lays out its columns the way a spreadsheet does: column order, widths and hidden columns belong to the **shop**, so every member and every device sees the same layout. Scroll position and how many columns fit on screen stay with each browser. Only an **owner or admin** may change the layout (`RbacService.canManageShopLayouts`); everyone else uses it. The list view uses the same hidden columns to hide optional fields (no widths or order there).
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/v1/shops/active-shop/grid-layouts/{gridId}` | The saved layout or the default, plus `catalog` (every column the grid can show, its display `label` and its rules), `canEdit` for the caller, and `revision` (null on the default). |
+| `PATCH /api/v1/shops/active-shop/grid-layouts/{gridId}` | One change: `{ type: "RESIZE", key, widthPx }`, `{ type: "SET_HIDDEN", key, hidden }` or `{ type: "MOVE", key, beforeKey }` (`beforeKey` null = last movable). 400 when it breaks a column rule, 403 for a non-admin. |
+| `DELETE /api/v1/shops/active-shop/grid-layouts/{gridId}` | Reset to the default (owner or admin). |
+
+**Column rules are separate from field rules.** Each catalog entry carries `required` (must be filled in to save: from the vertical schema, or a core stock-in field), and, for layout only, `hideable`, `reorderable` and `position` (`FIRST`, `ANY`, `LAST`). A required column cannot be hidden but can move; `rowNo` is `FIRST` and `actions` is `LAST`, and neither moves nor hides. The catalog (`GridCatalogs` looks up the `GridCatalog` for the grid; product entry is `ProductEntryGridCatalog`, `core/product/.../gridlayout`) lists every column any billing mode can show; vertical schema fields appear as `field:<schemaKey>`, so a new vertical gets its columns with no grid code.
+
+**Another screen.** The layout API, storage, concurrency and permissions are generic over `gridId`. To give another grid a shop-shared layout, add its id to `GridIds` and a Spring bean implementing `GridCatalog` (its columns, in default order; `SchemaGridColumns` turns vertical schema fields into columns). Nothing else on the backend changes.
+
+**Concurrent changes.** A change is applied to the latest saved layout under an optimistic lock (`@Version revision` on `shop_grid_layouts`); if another member saved in between, it is re-applied on top of theirs (up to 3 times, then 409). Changes to different columns both survive; two changes to the same column: the later one wins. Other members' browsers pick the new layout up when they refetch (window focus, after their own change).
+
+**Schema changes.** Stored keys only, one document per shop and grid; the unique `(shopId, gridId)` index is created at startup by `GridLayoutIndexMigration` (automatic index creation is off). On read, unknown keys are dropped, widths are clamped, required columns are shown and new columns are placed after their catalog neighbour (`GridLayoutResolver`), so a shop keeps its layout across schema versions.
+
 ### Build commands
 
 ```bash
