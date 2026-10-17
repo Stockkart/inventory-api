@@ -2,7 +2,7 @@ package com.inventory.product.gridlayout;
 
 /**
  * Stable ids of the configurable data grids. Part of the API contract: persisted in {@code
- * shop_grid_layouts} and used by the frontend; never rename.
+ * shop_grid_layouts} and used by the frontend; never rename. Each id has one {@link GridCatalog}.
  */
 public final class GridIds {
 

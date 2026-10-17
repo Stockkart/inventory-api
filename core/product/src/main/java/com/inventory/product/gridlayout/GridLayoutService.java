@@ -42,7 +42,7 @@ public class GridLayoutService {
   private final GridLayoutRepository repository;
   private final ShopRepository shopRepository;
   private final SchemaLoader schemaLoader;
-  private final GridColumnCatalog columnCatalog;
+  private final GridCatalogs catalogs;
   private final GridLayoutChangeApplier applier;
   private final GridLayoutResolver resolver;
   private final UserShopMembershipService membershipService;
@@ -53,7 +53,7 @@ public class GridLayoutService {
       GridLayoutRepository repository,
       ShopRepository shopRepository,
       SchemaLoader schemaLoader,
-      GridColumnCatalog columnCatalog,
+      GridCatalogs catalogs,
       GridLayoutChangeApplier applier,
       GridLayoutResolver resolver,
       UserShopMembershipService membershipService,
@@ -62,7 +62,7 @@ public class GridLayoutService {
     this.repository = repository;
     this.shopRepository = shopRepository;
     this.schemaLoader = schemaLoader;
-    this.columnCatalog = columnCatalog;
+    this.catalogs = catalogs;
     this.applier = applier;
     this.resolver = resolver;
     this.membershipService = membershipService;
@@ -145,7 +145,7 @@ public class GridLayoutService {
         StringUtils.hasText(shop.getVerticalId())
             ? schemaLoader.load(shop.getVerticalId(), shop.getPluginVersion())
             : null;
-    return columnCatalog.columnsFor(gridId, schema);
+    return catalogs.columnsFor(gridId, schema);
   }
 
   private static List<GridColumnState> stored(GridLayoutDocument doc) {

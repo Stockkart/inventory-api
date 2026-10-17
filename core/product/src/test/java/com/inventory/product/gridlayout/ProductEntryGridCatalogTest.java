@@ -7,7 +7,7 @@ import com.inventory.common.exception.ValidationException;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-class GridColumnCatalogTest {
+class ProductEntryGridCatalogTest {
 
   private final List<GridColumnDefinition> catalog = GridLayoutTestFixtures.catalog();
 
@@ -58,15 +58,17 @@ class GridColumnCatalogTest {
 
   @Test
   void noSchemaStillGivesStaticColumns() {
-    List<GridColumnDefinition> bare = new GridColumnCatalog().columnsFor(GridIds.PRODUCT_ENTRY, null);
+    List<GridColumnDefinition> bare = new ProductEntryGridCatalog().columns(null);
     assertThat(bare).extracting(GridColumnDefinition::key).doesNotContain("field:batchNo").contains("product");
   }
 
   @Test
-  void unknownGridIsRejected() {
-    assertThatThrownBy(() -> new GridColumnCatalog().columnsFor("nope", null))
+  void registryFindsCatalogByGridIdAndRejectsUnknownOnes() {
+    GridCatalogs catalogs = new GridCatalogs(List.of(new ProductEntryGridCatalog()));
+    assertThat(catalogs.columnsFor(GridIds.PRODUCT_ENTRY, null)).isNotEmpty();
+    assertThatThrownBy(() -> catalogs.columnsFor("nope", null))
         .isInstanceOf(ValidationException.class)
-        .hasMessageContaining("Unknown grid");
+        .hasMessageContaining("Unknown grid: nope (available: product-entry)");
   }
 
   private GridColumnDefinition def(String key) {

@@ -82,7 +82,7 @@ class GridLayoutServiceTest {
             repository,
             shops,
             schemaLoader,
-            new GridColumnCatalog(),
+            new GridCatalogs(List.of(new ProductEntryGridCatalog())),
             new GridLayoutChangeApplier(),
             new GridLayoutResolver(),
             membership,

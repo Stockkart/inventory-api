@@ -28,7 +28,7 @@ final class GridLayoutTestFixtures {
   }
 
   static List<GridColumnDefinition> catalog() {
-    return new GridColumnCatalog().columnsFor(GridIds.PRODUCT_ENTRY, schema());
+    return new ProductEntryGridCatalog().columns(schema());
   }
 
   private static VerticalSchemaField field(
