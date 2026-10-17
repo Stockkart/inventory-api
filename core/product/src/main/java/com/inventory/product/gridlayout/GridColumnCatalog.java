@@ -60,7 +60,7 @@ public class GridColumnCatalog {
         .filter(f -> !COMPANY_FIELD.equals(f.getKey()) && !SELL_DIRECT_FIELD.equals(f.getKey()))
         .forEach(f -> out.add(schemaColumn(f)));
     out.add(required("qty", 80));
-    out.add(optional("packaging", 210));
+    out.add(required("packaging", 210));
     out.add(required("location", 140));
     fields.stream()
         .filter(f -> SELL_DIRECT_FIELD.equals(f.getKey()))

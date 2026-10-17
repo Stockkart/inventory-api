@@ -32,8 +32,8 @@ class GridLayoutChangeApplierTest {
   @Test
   void optionalColumnsHideRequiredOnesDoNot() {
     List<GridColumnState> out =
-        applier.apply(change("SET_HIDDEN", "packaging", null, true, null), base, catalog);
-    assertThat(state(out, "packaging").hidden()).isTrue();
+        applier.apply(change("SET_HIDDEN", "barcode", null, true, null), base, catalog);
+    assertThat(state(out, "barcode").hidden()).isTrue();
     assertThatThrownBy(
             () -> applier.apply(change("SET_HIDDEN", "field:batchNo", null, true, null), base, catalog))
         .isInstanceOf(ValidationException.class)

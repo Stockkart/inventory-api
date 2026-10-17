@@ -24,13 +24,13 @@ class GridColumnCatalogTest {
 
   @Test
   void requiredFieldsCannotBeHiddenButCanMove() {
-    for (String key : List.of("field:batchNo", "field:sellDirect", "product", "qty", "location")) {
+    for (String key : List.of("field:batchNo", "field:sellDirect", "product", "qty", "packaging", "location")) {
       assertThat(def(key).required()).as(key).isTrue();
       assertThat(def(key).hideable()).as(key).isFalse();
       assertThat(def(key).reorderable()).as(key).isTrue();
       assertThat(def(key).position()).as(key).isEqualTo(GridColumnPosition.ANY);
     }
-    for (String key : List.of("field:companyName", "field:expiryDate", "barcode", "packaging", "hsn")) {
+    for (String key : List.of("field:companyName", "field:expiryDate", "barcode", "hsn")) {
       assertThat(def(key).required()).as(key).isFalse();
       assertThat(def(key).hideable()).as(key).isTrue();
     }

@@ -300,7 +300,7 @@ The bridge offered to shops is set per environment: `PRINT_BRIDGE_ORIGIN` (defau
 
 ### Shop grid layouts (product)
 
-The product entry grid view lays out its columns the way a spreadsheet does: column order, widths and hidden columns belong to the **shop**, so every member and every device sees the same layout. Scroll position and how many columns fit on screen stay with each browser. Only an **owner or admin** may change the layout (`RbacService.canManageShopLayouts`); everyone else uses it. The list view has no layout.
+The product entry grid view lays out its columns the way a spreadsheet does: column order, widths and hidden columns belong to the **shop**, so every member and every device sees the same layout. Scroll position and how many columns fit on screen stay with each browser. Only an **owner or admin** may change the layout (`RbacService.canManageShopLayouts`); everyone else uses it. The list view uses the same hidden columns to hide optional fields (no widths or order there).
 
 | Endpoint | Purpose |
 |----------|---------|

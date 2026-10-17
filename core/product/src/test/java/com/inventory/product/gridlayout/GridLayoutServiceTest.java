@@ -122,19 +122,19 @@ class GridLayoutServiceTest {
   @Test
   void concurrentChangesToDifferentColumnsBothSurvive() {
     service.change(SHOP, ADMIN, GRID, change("RESIZE", "qty", 90, null, null));
-    // Another member hides packaging between our read and our write.
+    // Another member hides barcode between our read and our write.
     beforeNextSave.set(
         () -> {
           GridLayoutDocument theirs = copy(store.get(SHOP + "/" + GRID));
           theirs.getColumns().replaceAll(
-              c -> c.getKey().equals("packaging") ? new GridLayoutDocument.ColumnDoc("packaging", c.getWidthPx(), true) : c);
+              c -> c.getKey().equals("barcode") ? new GridLayoutDocument.ColumnDoc("barcode", c.getWidthPx(), true) : c);
           save(theirs);
         });
 
     GridLayoutResponse res = service.change(SHOP, ADMIN, GRID, change("RESIZE", "product", 330, null, null));
 
     assertThat(res.columns()).contains(new GridColumnState("product", 330, false));
-    assertThat(res.columns()).anyMatch(c -> c.key().equals("packaging") && c.hidden());
+    assertThat(res.columns()).anyMatch(c -> c.key().equals("barcode") && c.hidden());
     assertThat(res.columns()).contains(new GridColumnState("qty", 90, false));
     assertThat(res.revision()).isEqualTo(2L);
   }
