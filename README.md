@@ -298,6 +298,18 @@ The shop's invoice settings decide which columns print. `showPack` turns the PAC
 
 The bridge offered to shops is set per environment: `PRINT_BRIDGE_ORIGIN` (default `http://127.0.0.1:9110`), `PRINT_BRIDGE_HEALTH_TIMEOUT_MS` (default 1200), `PRINT_BRIDGE_PRINT_TIMEOUT_MS` (default 8000), `PRINT_BRIDGE_DOWNLOAD_URL`, `PRINT_BRIDGE_LATEST_VERSION` (default `0.12.0`) and `PRINT_BRIDGE_MINIMUM_VERSION` (default `0.11.0`, the first release that gives an estimate its own page length). The default download URL is the release on Google Drive; it must be shared as "Anyone with the link", or a shop that is not signed in to that Google account cannot download it.
 
+### Shop grid layouts (product)
+
+The product entry grid view lays out its columns the way a spreadsheet does: column order, widths and hidden columns belong to the **shop**, so every member and every device sees the same layout. Scroll position and how many columns fit on screen stay with each browser. The list view has no layout.
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/v1/shops/active-shop/grid-layouts/{gridId}` | The saved layout or the default, plus `catalog`: every column the grid can show with `mandatory`, `movable`, `defaultWidthPx`, `minWidthPx`, `maxWidthPx`. `isDefault` is true when nothing is saved. |
+| `PUT /api/v1/shops/active-shop/grid-layouts/{gridId}` | Body `columns: [{ key, widthPx, hidden }]` in display order. Refused (400, every problem listed) for an unknown or repeated key, a width outside the column's limits, a hidden mandatory column, or a pinned column out of place. |
+| `DELETE /api/v1/shops/active-shop/grid-layouts/{gridId}` | Reset: drops the saved layout and returns the default. |
+
+The only grid is `product-entry` (`GridIds`). Its catalog (`GridColumnCatalog`, `core/product/.../gridlayout`) lists every column any billing mode can show; the frontend draws the ones the current mode has. Vertical schema fields appear as `field:<schemaKey>` and a required field is mandatory, as are product, qty, location, sell-direct and the price columns. `rowNo` stays first and `actions` last. Stored in `shop_grid_layouts`, one document per shop and grid, keys only: on read, unknown keys are dropped, widths are clamped and new columns are placed after their catalog neighbour (`GridLayoutResolver`).
+
 ### Build commands
 
 ```bash
