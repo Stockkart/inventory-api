@@ -304,7 +304,7 @@ The product entry grid view lays out its columns the way a spreadsheet does: col
 
 | Endpoint | Purpose |
 |----------|---------|
-| `GET /api/v1/shops/active-shop/grid-layouts/{gridId}` | The saved layout or the default, plus `catalog` (every column the grid can show and its rules), `canEdit` for the caller, and `revision` (null on the default). |
+| `GET /api/v1/shops/active-shop/grid-layouts/{gridId}` | The saved layout or the default, plus `catalog` (every column the grid can show, its display `label` and its rules), `canEdit` for the caller, and `revision` (null on the default). |
 | `PATCH /api/v1/shops/active-shop/grid-layouts/{gridId}` | One change: `{ type: "RESIZE", key, widthPx }`, `{ type: "SET_HIDDEN", key, hidden }` or `{ type: "MOVE", key, beforeKey }` (`beforeKey` null = last movable). 400 when it breaks a column rule, 403 for a non-admin. |
 | `DELETE /api/v1/shops/active-shop/grid-layouts/{gridId}` | Reset to the default (owner or admin). |
 

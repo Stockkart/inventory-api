@@ -6,6 +6,8 @@ package com.inventory.product.gridlayout;
  * ({@code hideable}, {@code reorderable}, {@code position}) is a separate, grid-only rule.
  *
  * @param key stable column key; schema fields use {@code field:<schemaKey>}
+ * @param label display name for settings screens (the schema label for schema fields); never
+ *     stored with a layout
  * @param required the value must be filled in to save (shown as {@code *})
  * @param hideable the shop may hide the column
  * @param reorderable the shop may move the column
@@ -13,6 +15,7 @@ package com.inventory.product.gridlayout;
  */
 public record GridColumnDefinition(
     String key,
+    String label,
     boolean required,
     boolean hideable,
     boolean reorderable,

@@ -47,6 +47,16 @@ class GridColumnCatalogTest {
   }
 
   @Test
+  void everyColumnHasADisplayLabel() {
+    assertThat(def("product").label()).isEqualTo("Product");
+    assertThat(def("rowNo").label()).isEqualTo("#");
+    // Schema fields without a label fall back to the key in words, like the frontend.
+    assertThat(def("field:batchNo").label()).isEqualTo("Batch No");
+    assertThat(def("field:expiryDate").label()).isEqualTo("Expiry Date");
+    assertThat(catalog).allSatisfy(c -> assertThat(c.label()).isNotBlank());
+  }
+
+  @Test
   void noSchemaStillGivesStaticColumns() {
     List<GridColumnDefinition> bare = new GridColumnCatalog().columnsFor(GridIds.PRODUCT_ENTRY, null);
     assertThat(bare).extracting(GridColumnDefinition::key).doesNotContain("field:batchNo").contains("product");

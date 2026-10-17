@@ -14,7 +14,7 @@ import java.util.List;
  * { "gridId": "product-entry", "isDefault": false, "revision": 12, "canEdit": true,
  *   "updatedAt": "…", "updatedByUserId": "u_1",
  *   "columns": [ { "key": "rowNo", "widthPx": 48, "hidden": false }, ... ],
- *   "catalog": [ { "key": "rowNo", "required": false, "hideable": false, "reorderable": false,
+ *   "catalog": [ { "key": "rowNo", "label": "#", "required": false, "hideable": false, "reorderable": false,
  *                  "position": "FIRST", "defaultWidthPx": 48, "minWidthPx": 48,
  *                  "maxWidthPx": 600 }, ... ] }
  * }</pre>
