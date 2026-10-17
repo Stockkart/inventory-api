@@ -7,7 +7,7 @@ import com.inventory.metrics.annotation.Latency;
 import com.inventory.metrics.annotation.RecordRequestRate;
 import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.product.gridlayout.GridLayoutService;
-import com.inventory.product.rest.dto.request.SaveGridLayoutRequest;
+import com.inventory.product.rest.dto.request.GridLayoutChangeRequest;
 import com.inventory.product.rest.dto.response.GridLayoutResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -16,14 +16,14 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Shop-level data grid column layouts (order, widths, hidden columns), shared by every member of
- * the active shop. Same pattern as {@link CardLayoutController}: the body never carries {@code
+ * the active shop; only an owner or admin may change them. Same pattern as {@link CardLayoutController}: the body never carries {@code
  * shopId}; the grid comes from the path.
  */
 @RestController
@@ -49,17 +49,18 @@ public class GridLayoutController {
     return ResponseEntity.ok(ApiResponse.success(gridLayoutService.get(shopId, userId, gridId)));
   }
 
-  /** Validates and upserts one grid's layout. */
-  @PutMapping("/{gridId}")
-  public ResponseEntity<ApiResponse<GridLayoutResponse>> save(
+  /** Applies one column change (resize, show/hide, move). Owner or admin only. */
+  @PatchMapping("/{gridId}")
+  public ResponseEntity<ApiResponse<GridLayoutResponse>> change(
       @PathVariable String gridId,
-      @RequestBody SaveGridLayoutRequest request,
+      @RequestBody GridLayoutChangeRequest request,
       HttpServletRequest httpRequest) {
     String userId = requireUserId(httpRequest);
     String shopId = requireShopId(httpRequest);
-    log.info("Saving grid layout for shop {} grid {}", shopId, gridId);
+    log.info(
+        "Grid layout change for shop {} grid {}: {} {}", shopId, gridId, request.type(), request.key());
     return ResponseEntity.ok(
-        ApiResponse.success(gridLayoutService.save(shopId, userId, gridId, request)));
+        ApiResponse.success(gridLayoutService.change(shopId, userId, gridId, request)));
   }
 
   /** Drops the saved layout and returns the default. */

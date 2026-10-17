@@ -300,15 +300,19 @@ The bridge offered to shops is set per environment: `PRINT_BRIDGE_ORIGIN` (defau
 
 ### Shop grid layouts (product)
 
-The product entry grid view lays out its columns the way a spreadsheet does: column order, widths and hidden columns belong to the **shop**, so every member and every device sees the same layout. Scroll position and how many columns fit on screen stay with each browser. The list view has no layout.
+The product entry grid view lays out its columns the way a spreadsheet does: column order, widths and hidden columns belong to the **shop**, so every member and every device sees the same layout. Scroll position and how many columns fit on screen stay with each browser. Only an **owner or admin** may change the layout (`RbacService.canManageShopLayouts`); everyone else uses it. The list view has no layout.
 
 | Endpoint | Purpose |
 |----------|---------|
-| `GET /api/v1/shops/active-shop/grid-layouts/{gridId}` | The saved layout or the default, plus `catalog`: every column the grid can show with `mandatory`, `movable`, `defaultWidthPx`, `minWidthPx`, `maxWidthPx`. `isDefault` is true when nothing is saved. |
-| `PUT /api/v1/shops/active-shop/grid-layouts/{gridId}` | Body `columns: [{ key, widthPx, hidden }]` in display order. Refused (400, every problem listed) for an unknown or repeated key, a width outside the column's limits, a hidden mandatory column, or a pinned column out of place. |
-| `DELETE /api/v1/shops/active-shop/grid-layouts/{gridId}` | Reset: drops the saved layout and returns the default. |
+| `GET /api/v1/shops/active-shop/grid-layouts/{gridId}` | The saved layout or the default, plus `catalog` (every column the grid can show and its rules), `canEdit` for the caller, and `revision` (null on the default). |
+| `PATCH /api/v1/shops/active-shop/grid-layouts/{gridId}` | One change: `{ type: "RESIZE", key, widthPx }`, `{ type: "SET_HIDDEN", key, hidden }` or `{ type: "MOVE", key, beforeKey }` (`beforeKey` null = last movable). 400 when it breaks a column rule, 403 for a non-admin. |
+| `DELETE /api/v1/shops/active-shop/grid-layouts/{gridId}` | Reset to the default (owner or admin). |
 
-The only grid is `product-entry` (`GridIds`). Its catalog (`GridColumnCatalog`, `core/product/.../gridlayout`) lists every column any billing mode can show; the frontend draws the ones the current mode has. Vertical schema fields appear as `field:<schemaKey>` and a required field is mandatory, as are product, qty, location, sell-direct and the price columns. `rowNo` stays first and `actions` last. Stored in `shop_grid_layouts`, one document per shop and grid, keys only: on read, unknown keys are dropped, widths are clamped and new columns are placed after their catalog neighbour (`GridLayoutResolver`).
+**Column rules are separate from field rules.** Each catalog entry carries `required` (must be filled in to save: from the vertical schema, or a core stock-in field), and, for layout only, `hideable`, `reorderable` and `position` (`FIRST`, `ANY`, `LAST`). A required column cannot be hidden but can move; `rowNo` is `FIRST` and `actions` is `LAST`, and neither moves nor hides. The catalog (`GridColumnCatalog`, `core/product/.../gridlayout`) lists every column any billing mode can show; vertical schema fields appear as `field:<schemaKey>`, so a new vertical gets its columns with no grid code.
+
+**Concurrent changes.** A change is applied to the latest saved layout under an optimistic lock (`@Version revision` on `shop_grid_layouts`); if another member saved in between, it is re-applied on top of theirs (up to 3 times, then 409). Changes to different columns both survive; two changes to the same column: the later one wins. Other members' browsers pick the new layout up when they refetch (window focus, after their own change).
+
+**Schema changes.** Stored keys only, one document per shop and grid. On read, unknown keys are dropped, widths are clamped, required columns are shown and new columns are placed after their catalog neighbour (`GridLayoutResolver`), so a shop keeps its layout across schema versions.
 
 ### Build commands
 

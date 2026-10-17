@@ -23,19 +23,27 @@ class GridColumnCatalogTest {
   }
 
   @Test
-  void requiredSchemaFieldsAndSellDirectAreMandatory() {
-    assertThat(def("field:batchNo").mandatory()).isTrue();
-    assertThat(def("field:sellDirect").mandatory()).isTrue();
-    assertThat(def("field:companyName").mandatory()).isFalse();
-    assertThat(def("field:expiryDate").mandatory()).isFalse();
-    assertThat(def("product").mandatory()).isTrue();
-    assertThat(def("barcode").mandatory()).isFalse();
+  void requiredFieldsCannotBeHiddenButCanMove() {
+    for (String key : List.of("field:batchNo", "field:sellDirect", "product", "qty", "location")) {
+      assertThat(def(key).required()).as(key).isTrue();
+      assertThat(def(key).hideable()).as(key).isFalse();
+      assertThat(def(key).reorderable()).as(key).isTrue();
+      assertThat(def(key).position()).as(key).isEqualTo(GridColumnPosition.ANY);
+    }
+    for (String key : List.of("field:companyName", "field:expiryDate", "barcode", "packaging", "hsn")) {
+      assertThat(def(key).required()).as(key).isFalse();
+      assertThat(def(key).hideable()).as(key).isTrue();
+    }
   }
 
   @Test
-  void onlyRowNumberAndActionsArePinned() {
-    assertThat(catalog.stream().filter(c -> !c.movable()).map(GridColumnDefinition::key))
+  void structuralColumnsArePinnedAndNotRequired() {
+    assertThat(catalog.stream().filter(c -> !c.reorderable()).map(GridColumnDefinition::key))
         .containsExactly("rowNo", "actions");
+    assertThat(def("rowNo").position()).isEqualTo(GridColumnPosition.FIRST);
+    assertThat(def("actions").position()).isEqualTo(GridColumnPosition.LAST);
+    assertThat(def("rowNo").required()).isFalse();
+    assertThat(def("rowNo").hideable()).isFalse();
   }
 
   @Test

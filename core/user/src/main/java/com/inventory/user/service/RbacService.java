@@ -264,6 +264,22 @@ public class RbacService {
         ErrorCode.ACCESS_DENIED, "Only the owner or manager can approve stock corrections");
   }
 
+  /** Owner or admin may change shop-wide layouts (grid columns) that every member sees. */
+  @Transactional(readOnly = true)
+  public boolean canManageShopLayouts(String userId, String shopId) {
+    ShopAccessResponse access = getEffectiveAccess(userId, shopId);
+    return access.isOwner()
+        || UserRole.OWNER.name().equals(access.getRole())
+        || UserRole.ADMIN.name().equals(access.getRole());
+  }
+
+  public void requireShopLayoutManagement(String userId, String shopId) {
+    if (!canManageShopLayouts(userId, shopId)) {
+      throw new BaseException(
+          ErrorCode.ACCESS_DENIED, "Only the owner or an admin can change the shop's column layout");
+    }
+  }
+
   private void requireOwner(String userId, String shopId) {
     if (!membershipService.hasOwnerAccess(userId, shopId)) {
       throw new BaseException(

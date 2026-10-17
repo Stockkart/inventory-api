@@ -6,6 +6,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Version;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.mapping.Document;
 
@@ -29,6 +30,9 @@ public class GridLayoutDocument {
   private String shopId;
 
   private String gridId;
+
+  /** Optimistic-lock revision; bumped on every save, so concurrent writers retry on the latest. */
+  @Version private Long revision;
 
   /** Display order. */
   private List<ColumnDoc> columns;

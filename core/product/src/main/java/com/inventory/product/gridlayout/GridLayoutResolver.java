@@ -12,9 +12,10 @@ import org.springframework.stereotype.Component;
  * Turns a saved (possibly stale) column list into the full layout served to the frontend.
  *
  * <p>Never fails: unknown and duplicate keys are dropped, widths are clamped to the column's limits,
- * mandatory columns are shown, pinned columns go back to their ends, and catalog columns the saved
- * list lacks (new schema fields, columns added later) are placed after their nearest preceding
- * catalog neighbour with default width.
+ * columns that cannot be hidden are shown, {@code FIRST}/{@code LAST} columns go back to their ends,
+ * and catalog columns the saved list lacks (new schema fields, columns added later) are placed after
+ * their nearest preceding catalog neighbour with default width. This is how a layout survives
+ * schema changes without being keyed by schema version.
  */
 @Component
 public class GridLayoutResolver {
@@ -23,47 +24,48 @@ public class GridLayoutResolver {
       List<GridColumnState> saved, List<GridColumnDefinition> catalog) {
     Map<String, GridColumnDefinition> byKey = new LinkedHashMap<>();
     catalog.forEach(c -> byKey.put(c.key(), c));
-
-    List<GridColumnState> out = new ArrayList<>();
-    Set<String> seen = new HashSet<>();
+    Map<String, GridColumnState> savedByKey = new LinkedHashMap<>();
     for (GridColumnState s : saved == null ? List.<GridColumnState>of() : saved) {
-      GridColumnDefinition def = s == null ? null : byKey.get(s.key());
-      if (def == null || !def.movable() || !seen.add(def.key())) {
-        continue;
+      if (s != null && byKey.containsKey(s.key())) {
+        savedByKey.putIfAbsent(s.key(), s);
       }
-      out.add(new GridColumnState(def.key(), clamp(s.widthPx(), def), s.hidden() && !def.mandatory()));
     }
 
+    List<GridColumnState> middle = new ArrayList<>();
+    Set<String> seen = new HashSet<>();
+    for (GridColumnState s : savedByKey.values()) {
+      GridColumnDefinition def = byKey.get(s.key());
+      if (def.position() == GridColumnPosition.ANY && seen.add(def.key())) {
+        middle.add(stateFor(def, s));
+      }
+    }
     for (int i = 0; i < catalog.size(); i++) {
       GridColumnDefinition def = catalog.get(i);
-      if (!def.movable() || seen.contains(def.key())) {
+      if (def.position() != GridColumnPosition.ANY || seen.contains(def.key())) {
         continue;
       }
-      out.add(insertionIndex(out, catalog, i), defaultState(def));
+      middle.add(insertionIndex(middle, catalog, i), stateFor(def, null));
       seen.add(def.key());
     }
 
-    List<GridColumnState> leading = new ArrayList<>();
-    List<GridColumnState> trailing = new ArrayList<>();
-    boolean beforeMovable = true;
+    List<GridColumnState> resolved = new ArrayList<>();
     for (GridColumnDefinition def : catalog) {
-      if (def.movable()) {
-        beforeMovable = false;
-      } else if (beforeMovable) {
-        leading.add(defaultStateFrom(saved, def));
-      } else {
-        trailing.add(defaultStateFrom(saved, def));
+      if (def.position() == GridColumnPosition.FIRST) {
+        resolved.add(stateFor(def, savedByKey.get(def.key())));
       }
     }
-    List<GridColumnState> resolved = new ArrayList<>(leading);
-    resolved.addAll(out);
-    resolved.addAll(trailing);
+    resolved.addAll(middle);
+    for (GridColumnDefinition def : catalog) {
+      if (def.position() == GridColumnPosition.LAST) {
+        resolved.add(stateFor(def, savedByKey.get(def.key())));
+      }
+    }
     return List.copyOf(resolved);
   }
 
   /** The catalog default: every column at default width, none hidden. */
   public List<GridColumnState> defaults(List<GridColumnDefinition> catalog) {
-    return catalog.stream().map(GridLayoutResolver::defaultState).toList();
+    return resolve(List.of(), catalog);
   }
 
   private static int insertionIndex(
@@ -79,24 +81,15 @@ public class GridLayoutResolver {
     return 0;
   }
 
-  /** A pinned column keeps its saved width; position and visibility are fixed. */
-  private static GridColumnState defaultStateFrom(
-      List<GridColumnState> saved, GridColumnDefinition def) {
-    if (saved != null) {
-      for (GridColumnState s : saved) {
-        if (s != null && def.key().equals(s.key())) {
-          return new GridColumnState(def.key(), clamp(s.widthPx(), def), false);
-        }
-      }
+  private static GridColumnState stateFor(GridColumnDefinition def, GridColumnState saved) {
+    if (saved == null) {
+      return new GridColumnState(def.key(), def.defaultWidthPx(), false);
     }
-    return defaultState(def);
+    return new GridColumnState(
+        def.key(), clamp(saved.widthPx(), def), saved.hidden() && def.hideable());
   }
 
-  private static GridColumnState defaultState(GridColumnDefinition def) {
-    return new GridColumnState(def.key(), def.defaultWidthPx(), false);
-  }
-
-  private static int clamp(int widthPx, GridColumnDefinition def) {
+  static int clamp(int widthPx, GridColumnDefinition def) {
     if (widthPx <= 0) {
       return def.defaultWidthPx();
     }

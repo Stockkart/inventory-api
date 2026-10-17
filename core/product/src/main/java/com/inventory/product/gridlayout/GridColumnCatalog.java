@@ -10,13 +10,15 @@ import java.util.Set;
 import org.springframework.stereotype.Component;
 
 /**
- * Every column a grid can show, in default order, with its mandatory flag and width limits.
+ * Every column a grid can show, in default order, with its layout rules and width limits.
  *
  * <p>The product entry catalog is a superset: it lists every column any billing mode or pricing
  * feature can show. The frontend renders only the columns the current mode has and uses this
  * catalog for their order, width and whether they may be hidden. Vertical schema fields appear as
  * {@code field:<schemaKey>} and follow the same registration-visibility rule the frontend uses
- * ({@code getDynamicInventoryFields(..., 'registration')}); a required schema field is mandatory.
+ * ({@code getDynamicInventoryFields(..., 'registration')}), so every vertical gets its own fields
+ * without vertical checks here. A required schema field, and each core field stock-in cannot save
+ * without, is {@code required} and therefore not hideable.
  */
 @Component
 public class GridColumnCatalog {
@@ -47,28 +49,28 @@ public class GridColumnCatalog {
 
   private static List<GridColumnDefinition> productEntry(List<VerticalSchemaField> fields) {
     List<GridColumnDefinition> out = new ArrayList<>();
-    out.add(pinned(ROW_NO, 48));
+    out.add(pinned(ROW_NO, 48, GridColumnPosition.FIRST));
     out.add(optional("barcode", 200));
     fields.stream()
         .filter(f -> COMPANY_FIELD.equals(f.getKey()))
         .findFirst()
         .ifPresent(f -> out.add(schemaColumn(f)));
-    out.add(mandatory("product", 240));
+    out.add(required("product", 240));
     fields.stream()
         .filter(f -> !COMPANY_FIELD.equals(f.getKey()) && !SELL_DIRECT_FIELD.equals(f.getKey()))
         .forEach(f -> out.add(schemaColumn(f)));
-    out.add(mandatory("qty", 80));
+    out.add(required("qty", 80));
     out.add(optional("packaging", 210));
-    out.add(mandatory("location", 140));
+    out.add(required("location", 140));
     fields.stream()
         .filter(f -> SELL_DIRECT_FIELD.equals(f.getKey()))
         .findFirst()
         .ifPresent(f -> out.add(schemaColumn(f)));
-    out.add(mandatory("rate", 110));
-    out.add(mandatory("sellPrice", 110));
-    out.add(mandatory("pts", 100));
-    out.add(mandatory("ptr", 100));
-    out.add(mandatory("mrp", 100));
+    out.add(required("rate", 110));
+    out.add(required("sellPrice", 110));
+    out.add(required("pts", 100));
+    out.add(required("ptr", 100));
+    out.add(required("mrp", 100));
     out.add(optional("saleDealType", 130));
     out.add(optional("saleScheme", 110));
     out.add(optional("saleDisc", 100));
@@ -80,7 +82,7 @@ public class GridColumnCatalog {
     out.add(optional("gstRate", 110));
     out.add(optional("cgst", 90));
     out.add(optional("sgst", 90));
-    out.add(pinned(ACTIONS, 140));
+    out.add(pinned(ACTIONS, 140, GridColumnPosition.LAST));
     return List.copyOf(out);
   }
 
@@ -113,19 +115,25 @@ public class GridColumnCatalog {
     boolean required =
         Boolean.TRUE.equals(field.getRequired()) || SELL_DIRECT_FIELD.equals(field.getKey());
     int width = "date".equals(field.getType()) ? 130 : COMPANY_FIELD.equals(field.getKey()) ? 160 : 140;
+    return required
+        ? required(FIELD_PREFIX + field.getKey(), width)
+        : optional(FIELD_PREFIX + field.getKey(), width);
+  }
+
+  /** Structural: never hidden or moved. */
+  private static GridColumnDefinition pinned(String key, int width, GridColumnPosition position) {
     return new GridColumnDefinition(
-        FIELD_PREFIX + field.getKey(), required, true, width, MIN_WIDTH_PX, MAX_WIDTH_PX);
+        key, false, false, false, position, width, MIN_WIDTH_PX, MAX_WIDTH_PX);
   }
 
-  private static GridColumnDefinition pinned(String key, int width) {
-    return new GridColumnDefinition(key, true, false, width, MIN_WIDTH_PX, MAX_WIDTH_PX);
-  }
-
-  private static GridColumnDefinition mandatory(String key, int width) {
-    return new GridColumnDefinition(key, true, true, width, MIN_WIDTH_PX, MAX_WIDTH_PX);
+  /** Must be filled in to save, so it is never hidden; it may move. */
+  private static GridColumnDefinition required(String key, int width) {
+    return new GridColumnDefinition(
+        key, true, false, true, GridColumnPosition.ANY, width, MIN_WIDTH_PX, MAX_WIDTH_PX);
   }
 
   private static GridColumnDefinition optional(String key, int width) {
-    return new GridColumnDefinition(key, false, true, width, MIN_WIDTH_PX, MAX_WIDTH_PX);
+    return new GridColumnDefinition(
+        key, false, true, true, GridColumnPosition.ANY, width, MIN_WIDTH_PX, MAX_WIDTH_PX);
   }
 }
