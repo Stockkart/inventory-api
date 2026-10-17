@@ -64,7 +64,6 @@ public class GridColumnCatalog {
         .filter(f -> SELL_DIRECT_FIELD.equals(f.getKey()))
         .findFirst()
         .ifPresent(f -> out.add(schemaColumn(f)));
-    out.add(optional("hsn", 110));
     out.add(mandatory("rate", 110));
     out.add(mandatory("sellPrice", 110));
     out.add(mandatory("pts", 100));
@@ -77,6 +76,8 @@ public class GridColumnCatalog {
     out.add(optional("purchaseScheme", 120));
     out.add(optional("purchaseDisc", 110));
     out.add(optional("discApplicability", 130));
+    out.add(optional("hsn", 110));
+    out.add(optional("gstRate", 110));
     out.add(optional("cgst", 90));
     out.add(optional("sgst", 90));
     out.add(pinned(ACTIONS, 140));

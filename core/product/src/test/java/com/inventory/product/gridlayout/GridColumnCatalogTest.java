@@ -16,9 +16,9 @@ class GridColumnCatalogTest {
     assertThat(catalog.stream().map(GridColumnDefinition::key))
         .containsExactly(
             "rowNo", "barcode", "field:companyName", "product", "field:batchNo",
-            "field:expiryDate", "qty", "packaging", "location", "field:sellDirect", "hsn",
+            "field:expiryDate", "qty", "packaging", "location", "field:sellDirect",
             "rate", "sellPrice", "pts", "ptr", "mrp", "saleDealType", "saleScheme", "saleDisc",
-            "purchaseDealType", "purchaseScheme", "purchaseDisc", "discApplicability", "cgst",
+            "purchaseDealType", "purchaseScheme", "purchaseDisc", "discApplicability", "hsn", "gstRate", "cgst",
             "sgst", "actions");
   }
 
