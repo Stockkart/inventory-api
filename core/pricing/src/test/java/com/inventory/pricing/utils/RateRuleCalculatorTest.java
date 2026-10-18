@@ -46,6 +46,19 @@ class RateRuleCalculatorTest {
     assertFalse(rate.getManual());
   }
 
+  /**
+   * The FIXED_UNITS price is afterDisc × payFor / (payFor + free) in one divide: a 4 dp ratio
+   * (10/11 = 0.9091) made PTR 500 − 8% · 10+1 come to 418.19, where 460 × 10 / 11 = 418.18.
+   */
+  @Test
+  void fixedUnitsPriceIsWorkedInOneDivide() {
+    Rate small = only(gen(List.of(rule("Rate-A", PTR, "8", fixedUnits(10, 1))), null, "500", "600", null));
+    assertEquals(new BigDecimal("418.18"), small.getPrice());
+
+    Rate large = only(gen(List.of(rule("Rate-A", PTR, "8", fixedUnits(10, 1))), null, "5000", "6000", null));
+    assertEquals(new BigDecimal("4181.82"), large.getPrice());
+  }
+
   @Test
   void discOnlyOnPtr() {
     Rate rate = only(gen(List.of(rule("B", PTR, "7", null)), null, "100", "150", null));

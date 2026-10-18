@@ -18,7 +18,8 @@ import java.util.List;
  * Turns shop rate rules into a batch's named rates. Pure: no I/O, nothing thrown on a normal path.
  *
  * <p>Per-unit price = {@code baseValue × (1 − disc/100)}, then the scheme (PERCENTAGE cuts price,
- * FIXED_UNITS scales by payFor/(payFor+free)), rounded HALF_UP to 2 dp only at the end.
+ * FIXED_UNITS multiplies by payFor and divides by payFor + free in one step), rounded HALF_UP to
+ * 2 dp only at the end.
  */
 @Slf4j
 public final class RateRuleCalculator {
@@ -90,15 +91,25 @@ public final class RateRuleCalculator {
         discountPercent.divide(HUNDRED, 4, RoundingMode.HALF_UP)));
   }
 
+  /**
+   * The per-unit price. FIXED_UNITS is {@code afterDisc × payFor / (payFor + free)} with one
+   * divide, rounded HALF_UP to 2 dp: a 4 dp billable ratio (10/11 = 0.9091) would put PTR 500 −
+   * 8% · 10+1 at 418.19 instead of 418.18. Checkout keeps {@link SchemePriceUtils#billableQuantity}
+   * for real quantities.
+   */
   private static BigDecimal price(BigDecimal baseValue, BigDecimal discountPercent, Scheme scheme) {
     BigDecimal afterDisc = afterDiscount(baseValue, discountPercent);
     String type = scheme == null ? null : scheme.getSchemeType();
     BigDecimal unitPrice = SchemePriceUtils.percentagePrice(afterDisc, type,
         scheme == null ? null : scheme.getSchemePercentage());
-    BigDecimal billable = SchemePriceUtils.billableQuantity(BigDecimal.ONE, type,
-        scheme == null ? null : scheme.getSchemePayFor(),
-        scheme == null ? null : scheme.getSchemeFree());
-    return unitPrice.multiply(billable).setScale(2, RoundingMode.HALF_UP);
+    Integer payFor = scheme == null ? null : scheme.getSchemePayFor();
+    Integer free = scheme == null ? null : scheme.getSchemeFree();
+    if (PricingConstants.SCHEME_TYPE_FIXED_UNITS.equals(type)
+        && payFor != null && payFor > 0 && free != null && free >= 0) {
+      return unitPrice.multiply(BigDecimal.valueOf(payFor))
+          .divide(BigDecimal.valueOf((long) payFor + free), 2, RoundingMode.HALF_UP);
+    }
+    return unitPrice.setScale(2, RoundingMode.HALF_UP);
   }
 
   /**
