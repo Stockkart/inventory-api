@@ -391,6 +391,18 @@ class CheckoutServiceRateNameTest {
     assertEquals("STRIP", line().getSaleUnit());
   }
 
+  /** A pick sent for a lot that is not in the cart is a client error, not a silent no-op. */
+  @Test
+  void pickOnALotNotInTheCartIsRejected() {
+    stock("100", "150", "83.64", null, rateA());
+    add(1, null);
+    cart.getItems().clear();
+    cart.getItems().add(otherLine());
+
+    assertThrows(com.inventory.common.exception.ResourceNotFoundException.class,
+        () -> add(0, "Rate-A"));
+  }
+
   @Test
   void unknownRateNameRejected() {
     stock("100", "150", "83.64", null, rateA());
@@ -625,6 +637,20 @@ class CheckoutServiceRateNameTest {
     stock("100", "150", "83.64", "Rate-A", rateA());
     send(typed);
     assertNull(line().getAppliedRateName());
+  }
+
+  private static PurchaseItem otherLine() {
+    PurchaseItem other = new PurchaseItem();
+    other.setSellableRef("inventory:lot-2");
+    other.setName("Other");
+    other.setQuantity(BigDecimal.ONE);
+    other.setBaseQuantity(1);
+    other.setUnitFactor(1);
+    other.setSaleUnit("UNIT");
+    other.setPriceToRetail(BigDecimal.TEN);
+    other.setMaximumRetailPrice(BigDecimal.TEN);
+    other.setTotalAmount(BigDecimal.TEN);
+    return other;
   }
 
   /** PTR 100, MRP 150, sells at 90, batch sale scheme 5+1, default rate the system PTR. */

@@ -74,6 +74,12 @@ public class CheckoutValidator {
         && !hasBaseQuantity
         && (item.getSaleAdditionalDiscount() != null || hasSchemeChange || item.getPriceToRetail() != null
             || StringUtils.hasText(item.getRateName()));
+    // A rate is picked on a line, or on units being added; a "−" only takes units off.
+    if (StringUtils.hasText(item.getRateName())
+        && ((item.getQuantity() != null && item.getQuantity() < 0)
+            || (item.getBaseQuantity() != null && item.getBaseQuantity() < 0))) {
+      throw new ValidationException("rateName cannot be sent with a quantity decrease for item: " + item.getId());
+    }
     if (!updateOnly) {
       if (!hasQuantity && !hasBaseQuantity) {
         throw new ValidationException("Quantity or baseQuantity is required for item: " + item.getId());

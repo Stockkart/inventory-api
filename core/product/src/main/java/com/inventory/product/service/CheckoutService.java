@@ -1532,6 +1532,13 @@ public class CheckoutService {
           CheckoutUtils.applyItemTaxMode(newItem, billingMode);
           mergedItems.add(newItem);
         }
+        // A rate picked for a lot that is not in the cart has no line to price.
+        if (!found && getBaseQuantityOrFallback(newItem) == 0
+            && StringUtils.hasText(newItem.getRequestedRateName())) {
+          throw new ResourceNotFoundException("Cart line", "lotId",
+              "Cannot pick rate " + newItem.getRequestedRateName() + " for lot "
+                  + PurchaseItemRefs.stockLotId(newItem) + ": it is not in the cart");
+        }
         // Case 2 & 3: If item not found and quantity is negative, throw error (can't remove what doesn't exist)
         if (!found && getBaseQuantityOrFallback(newItem) < 0) {
           throw new ValidationException("Cannot remove item with lotId " + PurchaseItemRefs.stockLotId(newItem) +
