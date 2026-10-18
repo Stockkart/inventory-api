@@ -758,7 +758,7 @@ public class CheckoutService {
           // Only an explicit pick: an edit without rateName must not snap back to the default rate.
           if (StringUtils.hasText(item.getRateName())) {
             cartRateResolver.resolve(inventory, item.getRateName())
-                .ifPresent(terms -> applyPickedRateTerms(purchaseItem, terms));
+                .ifPresent(terms -> applyPickedRateTerms(purchaseItem, terms, inventory, saleUnit));
             purchaseItem.setRequestedRateName(item.getRateName().trim());
           }
           purchaseItem.setSaleUnit(saleUnit);
@@ -797,6 +797,7 @@ public class CheckoutService {
               BigDecimal.ZERO, // Not used for negative quantities
               BigDecimal.ZERO
           );
+          purchaseItem.setBatchFilledPrice(true);
           purchaseItem.setSaleUnit(saleUnit);
           purchaseItem.setBaseQuantity(baseQuantity);
           purchaseItem.setUnitFactor(factor);
@@ -849,16 +850,27 @@ public class CheckoutService {
           purchaseItem.setQuantity(toSaleQuantityDecimal(Math.abs(baseQuantity), factor));
           purchaseItem.setMaximumRetailPrice(maximumRetailPrice);
           purchaseItem.setPriceToRetail(sellingPrice);
+          // Without a rateName the price is always the batch's; disc and scheme are the batch's
+          // unless the request sent them. A line already in the cart keeps its own (merge).
+          boolean schemeSent = item.getSchemePayFor() != null || item.getSchemeFree() != null
+              || item.getSchemeType() != null || item.getSchemePercentage() != null;
+          purchaseItem.setBatchFilledPrice(true);
+          purchaseItem.setBatchFilledDisc(item.getSaleAdditionalDiscount() == null);
+          purchaseItem.setBatchFilledScheme(!schemeSent);
           // A picked rate, or a default rate that is a rule rate, puts its base on the line with its
           // disc and scheme in place of the batch's own sale defaults (never 83.64 with them on top).
           Optional<CartRateResolver.LineTerms> rateTerms = cartRateResolver.resolve(inventory, item.getRateName());
           if (rateTerms.isPresent()) {
             if (StringUtils.hasText(item.getRateName())) {
-              applyPickedRateTerms(purchaseItem, rateTerms.get());
+              applyPickedRateTerms(purchaseItem, rateTerms.get(), inventory, saleUnit);
               purchaseItem.setRequestedRateName(item.getRateName().trim());
             } else {
-              applyDefaultRateTerms(purchaseItem, rateTerms.get(), item);
+              applyDefaultRateTerms(purchaseItem, rateTerms.get(), item, inventory, saleUnit);
             }
+          }
+          if (StringUtils.hasText(purchaseItem.getAppliedRateName())) {
+            // A rate's MRP is the line's for its sale unit (a tablet line's per-tablet MRP).
+            maximumRetailPrice = purchaseItem.getMaximumRetailPrice();
           }
           BigDecimal linePrice = purchaseItem.getPriceToRetail();
           purchaseItem.setCostPrice(costPrice);
@@ -1297,7 +1309,7 @@ public class CheckoutService {
                 switchBaseQuantity = roundedWholeUnits * targetFactor;
               }
               BigDecimal saleQty = toSaleQuantityDecimal(switchBaseQuantity, targetFactor);
-              BigDecimal priceToRetail = newItem.getPriceToRetail() != null && !newItem.isDefaultRateTerms()
+              BigDecimal priceToRetail = newItem.getPriceToRetail() != null && !newItem.isBatchFilledPrice()
                   ? newItem.getPriceToRetail() : existingItem.getPriceToRetail();
               if (priceToRetail != null
                   && existingItem.getQuantity() != null
@@ -1333,9 +1345,9 @@ public class CheckoutService {
                       ? perUnitDiscount.multiply(saleQty)
                       : BigDecimal.ZERO
               );
-              // Terms the default rate filled in (the request sent none) never replace the line's own.
-              PurchaseItem termsSource = newItem.isDefaultRateScheme() ? existingItem : newItem;
-              switchedItem.setSaleAdditionalDiscount(newItem.getSaleAdditionalDiscount() != null && !newItem.isDefaultRateDisc()
+              // Terms the batch filled in (the request sent none) never replace the line's own.
+              PurchaseItem termsSource = newItem.isBatchFilledScheme() ? existingItem : newItem;
+              switchedItem.setSaleAdditionalDiscount(newItem.getSaleAdditionalDiscount() != null && !newItem.isBatchFilledDisc()
                   ? newItem.getSaleAdditionalDiscount()
                   : existingItem.getSaleAdditionalDiscount());
               SchemeType switchedSchemeType = termsSource.getSchemeType() != null ? termsSource.getSchemeType() : existingItem.getSchemeType();
@@ -1351,6 +1363,9 @@ public class CheckoutService {
                 switchedItem.setSchemeFree(termsSource.getSchemeFree() != null ? termsSource.getSchemeFree() : existingItem.getSchemeFree());
                 switchedItem.setSchemePercentage(null);
               }
+              // A switch keeps the line's rate; only a disc or scheme edit sent with it clears it.
+              switchedItem.setAppliedRateName(
+                  discOrSchemeEdited(existingItem, newItem) ? null : existingItem.getAppliedRateName());
               switchedItem.setSgst(existingItem.getSgst());
               switchedItem.setCgst(existingItem.getCgst());
               switchedItem.setCostPrice(costPrice);
@@ -1394,18 +1409,23 @@ public class CheckoutService {
               break;
             }
 
-            // Case 1 & 2: Update quantity (positive adds, negative decreases). Use payload priceToRetail when provided (update-only or add); for negative qty we only remove, keep existing price.
-            // A price the default rate filled in is for a lot new to the cart; the line keeps its own.
-            BigDecimal priceToRetail = ((newItem.getQuantity() == null || newItem.getQuantity().compareTo(BigDecimal.ZERO) >= 0)
-                && newItem.getPriceToRetail() != null && !newItem.isDefaultRateTerms())
-                ? newItem.getPriceToRetail()
-                : existingItem.getPriceToRetail();
+            // Case 1 & 2: Update quantity (positive adds, negative decreases). A line already in
+            // the cart keeps its own price, disc and scheme unless the request sent them: a price
+            // the batch filled in (every add without rateName) or a negative quantity never
+            // replaces it, nor do disc or scheme the batch filled in.
+            boolean priceSent = (newItem.getQuantity() == null || newItem.getQuantity().compareTo(BigDecimal.ZERO) >= 0)
+                && newItem.getPriceToRetail() != null && !newItem.isBatchFilledPrice();
+            BigDecimal priceToRetail = priceSent ? newItem.getPriceToRetail() : existingItem.getPriceToRetail();
             int saleUnitFactor = getConversionFactorToBase(inventory, existingSaleUnit);
             BigDecimal maximumRetailPrice = resolveInventoryMaximumRetailPrice(
                 inventory,
                 existingItem.getMaximumRetailPrice(),
                 newItem.getMaximumRetailPrice(),
                 priceToRetail);
+            if (StringUtils.hasText(newItem.getRequestedRateName()) && newItem.getMaximumRetailPrice() != null) {
+              // A picked rate brings the MRP for the line's sale unit with its price.
+              maximumRetailPrice = newItem.getMaximumRetailPrice();
+            }
             // A quantity change on a line sold at MRP keeps it at MRP for its sale unit. Taking the
             // batch's per-pack MRP (or the per-pack selling price) instead would drop a tablet line
             // off MRP and add GST on top. A price edit sends no quantity and is left as typed.
@@ -1425,32 +1445,37 @@ public class CheckoutService {
                 perUnitDiscount.compareTo(BigDecimal.ZERO) > 0
                     ? perUnitDiscount.multiply(newQuantity)
                     : BigDecimal.ZERO;
-            // Use payload additionalDiscount when provided (so changing discount updates the line); otherwise keep existing
-            BigDecimal additionalDiscount = newItem.getSaleAdditionalDiscount() != null
+            boolean discSent = newItem.getSaleAdditionalDiscount() != null && !newItem.isBatchFilledDisc();
+            BigDecimal additionalDiscount = discSent
                 ? newItem.getSaleAdditionalDiscount()
                 : existingItem.getSaleAdditionalDiscount();
-            // Use payload scheme when provided; otherwise keep existing
-            Integer schemePayFor = newItem.getSchemePayFor() != null ? newItem.getSchemePayFor() : existingItem.getSchemePayFor();
-            Integer schemeFree = newItem.getSchemeFree() != null ? newItem.getSchemeFree() : existingItem.getSchemeFree();
-            SchemeType schemeType = newItem.getSchemeType() != null ? newItem.getSchemeType() : existingItem.getSchemeType();
-            BigDecimal schemePercentage = newItem.getSchemePercentage() != null ? newItem.getSchemePercentage() : existingItem.getSchemePercentage();
-            // A picked rule rate's terms are the line's terms: a scheme it lacks is cleared, not kept.
-            // Disc or scheme the default rate filled in (the request sent none) keep the line's own.
-            if (newItem.isDefaultRateDisc()) {
-              additionalDiscount = existingItem.getSaleAdditionalDiscount();
+            Integer schemePayFor = existingItem.getSchemePayFor();
+            Integer schemeFree = existingItem.getSchemeFree();
+            SchemeType schemeType = existingItem.getSchemeType();
+            BigDecimal schemePercentage = existingItem.getSchemePercentage();
+            if (!newItem.isBatchFilledScheme()) {
+              // Use payload scheme fields when provided; otherwise keep existing
+              if (newItem.getSchemePayFor() != null) schemePayFor = newItem.getSchemePayFor();
+              if (newItem.getSchemeFree() != null) schemeFree = newItem.getSchemeFree();
+              if (newItem.getSchemeType() != null) schemeType = newItem.getSchemeType();
+              if (newItem.getSchemePercentage() != null) schemePercentage = newItem.getSchemePercentage();
             }
-            if (newItem.isDefaultRateScheme()) {
-              schemePayFor = existingItem.getSchemePayFor();
-              schemeFree = existingItem.getSchemeFree();
-              schemeType = existingItem.getSchemeType();
-              schemePercentage = existingItem.getSchemePercentage();
-            }
+            // A picked rate's terms are the line's terms: a scheme it lacks is cleared, not kept.
             if (newItem.isRateTermsPicked()) {
               additionalDiscount = newItem.getSaleAdditionalDiscount();
               schemePayFor = newItem.getSchemePayFor();
               schemeFree = newItem.getSchemeFree();
               schemeType = newItem.getSchemeType();
               schemePercentage = newItem.getSchemePercentage();
+            }
+            // The line keeps the rate it is billed at until a pick replaces it or a manual price,
+            // disc or scheme edit (a sent value that differs from the line's) clears it.
+            String appliedRateName = existingItem.getAppliedRateName();
+            if (StringUtils.hasText(newItem.getRequestedRateName())) {
+              appliedRateName = newItem.getAppliedRateName();
+            } else if ((priceSent && !sameMoney(newItem.getPriceToRetail(), existingItem.getPriceToRetail()))
+                || discOrSchemeEdited(existingItem, newItem)) {
+              appliedRateName = null;
             }
 
             PurchaseItem updatedItem = purchaseMapper.createPurchaseItem(
@@ -1462,6 +1487,7 @@ public class CheckoutService {
                 newDiscount.compareTo(BigDecimal.ZERO) > 0 ? newDiscount : BigDecimal.ZERO
             );
             updatedItem.setSaleAdditionalDiscount(additionalDiscount);
+            updatedItem.setAppliedRateName(appliedRateName);
             updatedItem.setSchemeType(schemeType);
             updatedItem.setSchemePercentage(schemePercentage);
             // Normalize: PERCENTAGE -> payFor/free null; FIXED_UNITS -> schemePercentage null
@@ -1717,9 +1743,18 @@ public class CheckoutService {
     BigDecimal maximumRetailPrice = inventory.getMaximumRetailPrice() != null
         ? inventory.getMaximumRetailPrice()
         : BigDecimal.ZERO;
+    return perPackToSaleUnit(inventory, saleUnit, maximumRetailPrice);
+  }
+
+  /**
+   * A per-pack figure (the batch's pricing unit, e.g. a strip) for one {@code saleUnit}: the
+   * same for the pack, divided by the pack factor and rounded down for the base unit, so the
+   * units of a pack never bill above the pack's figure.
+   */
+  private BigDecimal perPackToSaleUnit(Inventory inventory, String saleUnit, BigDecimal perPack) {
     UnitConversion conversion = getConfiguredUnitConversion(inventory);
     if (conversion == null) {
-      return maximumRetailPrice;
+      return perPack;
     }
     String conversionUnit = conversion.getUnit().trim().toUpperCase();
     int factor = conversion.getFactor();
@@ -1730,10 +1765,10 @@ public class CheckoutService {
         ? inventory.getBaseUnit().trim().toUpperCase()
         : "UNIT";
     if (saleUnit.equals(conversionUnit)) {
-      return maximumRetailPrice;
+      return perPack;
     }
     if (saleUnit.equals(baseUnit)) {
-      return maximumRetailPrice.divide(BigDecimal.valueOf(factor), 2, RoundingMode.DOWN);
+      return perPack.divide(BigDecimal.valueOf(factor), 2, RoundingMode.DOWN);
     }
     throw new ValidationException("Unit " + saleUnit + " is not configured for product " + inventory.getName());
   }
@@ -2278,12 +2313,34 @@ public class CheckoutService {
 
   /**
    * Puts a picked rate on the line. A rule rate's base, disc and scheme replace whatever the line
-   * had -- the batch's sale defaults and any disc/scheme sent with the pick. A legacy rate gives
-   * only its price.
+   * had -- the batch's sale defaults and any disc/scheme sent with the pick. A system pick (PTR,
+   * MRP, cost) puts that batch field on the line with the batch's own sale disc and scheme, as a
+   * first add without rules gets. A legacy rate gives only its price.
+   *
+   * <p>A rate's figures are per pack (the batch's pricing unit). On a line sold by another unit
+   * (a tablet line) the price goes on for that unit, rounded down as the per-unit MRP is, and the
+   * line MRP becomes the MRP for that unit; disc and scheme apply unchanged.
    */
-  private static void applyPickedRateTerms(PurchaseItem line, CartRateResolver.LineTerms terms) {
+  private void applyPickedRateTerms(PurchaseItem line, CartRateResolver.LineTerms terms,
+      Inventory inventory, String saleUnit) {
     if (terms.price() != null) {
-      line.setPriceToRetail(terms.price());
+      line.setPriceToRetail(perPackToSaleUnit(inventory, saleUnit, terms.price()));
+      if (inventory.getMaximumRetailPrice() != null) {
+        line.setMaximumRetailPrice(resolveMaximumRetailPriceForSaleUnit(inventory, saleUnit));
+      }
+      line.setBatchFilledPrice(false);
+    }
+    line.setAppliedRateName(terms.name());
+    if (terms.isSystem()) {
+      PurchaseItem defaults = purchaseMapper.toPurchaseItemFromCartItem(
+          new AddToCartRequest.CartItem(), inventory);
+      line.setSaleAdditionalDiscount(defaults.getSaleAdditionalDiscount());
+      line.setSchemeType(defaults.getSchemeType());
+      line.setSchemePayFor(defaults.getSchemePayFor());
+      line.setSchemeFree(defaults.getSchemeFree());
+      line.setSchemePercentage(defaults.getSchemePercentage());
+      line.setRateTermsPicked(true);
+      return;
     }
     if (!terms.replacesTerms()) {
       return;
@@ -2294,27 +2351,59 @@ public class CheckoutService {
   }
 
   /**
-   * Puts the batch's default rule rate on a new line: its base, and its disc and scheme in place
-   * of the batch's sale defaults. Disc or scheme sent with the item still win, as they do today.
-   * The line is marked so that, if the lot is already in the cart, the merge keeps that line's own
-   * price and any disc/scheme the request did not send.
+   * Puts the batch's default rule rate on a new line: its base (per sale unit, as a pick), and
+   * its disc and scheme in place of the batch's sale defaults. Disc or scheme sent with the item
+   * still win, as they do today, and then the line is not at the rate's terms, so it records no
+   * applied rate. The price stays marked batch-filled: if the lot is already in the cart, the
+   * merge keeps that line's own price and any disc/scheme the request did not send.
    */
-  private static void applyDefaultRateTerms(PurchaseItem line, CartRateResolver.LineTerms terms,
-      AddToCartRequest.CartItem item) {
+  private void applyDefaultRateTerms(PurchaseItem line, CartRateResolver.LineTerms terms,
+      AddToCartRequest.CartItem item, Inventory inventory, String saleUnit) {
     if (terms.price() != null) {
-      line.setPriceToRetail(terms.price());
+      line.setPriceToRetail(perPackToSaleUnit(inventory, saleUnit, terms.price()));
+      if (inventory.getMaximumRetailPrice() != null) {
+        line.setMaximumRetailPrice(resolveMaximumRetailPriceForSaleUnit(inventory, saleUnit));
+      }
     }
-    line.setDefaultRateTerms(true);
-    if (item.getSaleAdditionalDiscount() == null) {
+    boolean discSent = item.getSaleAdditionalDiscount() != null;
+    if (!discSent) {
       line.setSaleAdditionalDiscount(terms.discountPercent());
-      line.setDefaultRateDisc(true);
     }
     boolean schemeSent = item.getSchemePayFor() != null || item.getSchemeFree() != null
         || item.getSchemeType() != null || item.getSchemePercentage() != null;
     if (!schemeSent) {
       setRateScheme(line, terms);
-      line.setDefaultRateScheme(true);
     }
+    line.setAppliedRateName(discSent || schemeSent ? null : terms.name());
+  }
+
+  /**
+   * Whether an incoming line edits the disc or scheme of the line in the cart: it sent one (not
+   * batch-filled, not a pick) that differs from the line's. ScanSell's + resends the line's own
+   * disc and scheme, which is no edit.
+   */
+  private static boolean discOrSchemeEdited(PurchaseItem existing, PurchaseItem incoming) {
+    if (StringUtils.hasText(incoming.getRequestedRateName())) {
+      return false;
+    }
+    if (incoming.getSaleAdditionalDiscount() != null && !incoming.isBatchFilledDisc()
+        && !sameMoney(incoming.getSaleAdditionalDiscount(), existing.getSaleAdditionalDiscount())) {
+      return true;
+    }
+    if (incoming.isBatchFilledScheme()) {
+      return false;
+    }
+    return (incoming.getSchemeType() != null && incoming.getSchemeType() != existing.getSchemeType())
+        || (incoming.getSchemePayFor() != null && !incoming.getSchemePayFor().equals(existing.getSchemePayFor()))
+        || (incoming.getSchemeFree() != null && !incoming.getSchemeFree().equals(existing.getSchemeFree()))
+        || (incoming.getSchemePercentage() != null
+            && !sameMoney(incoming.getSchemePercentage(), existing.getSchemePercentage()));
+  }
+
+  private static boolean sameMoney(BigDecimal a, BigDecimal b) {
+    BigDecimal x = a != null ? a : BigDecimal.ZERO;
+    BigDecimal y = b != null ? b : BigDecimal.ZERO;
+    return x.compareTo(y) == 0;
   }
 
   private static void setRateScheme(PurchaseItem line, CartRateResolver.LineTerms terms) {

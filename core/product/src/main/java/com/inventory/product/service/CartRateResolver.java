@@ -3,6 +3,7 @@ package com.inventory.product.service;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.pricing.rest.dto.response.RateDto;
 import com.inventory.pricing.rest.dto.response.SchemeDto;
+import com.inventory.pricing.utils.SystemRateNames;
 import com.inventory.pricing.utils.constants.PricingConstants;
 import com.inventory.product.domain.model.Inventory;
 import java.math.BigDecimal;
@@ -27,10 +28,18 @@ public class CartRateResolver {
    * only when it is a rule rate; a legacy or system default (priceToRetail …) is already the
    * batch's selling price and changes nothing.
    *
-   * @throws ValidationException when {@code rateName} is set and the batch has no rate by that name
+   * <p>A system name ({@link SystemRateNames}: {@code priceToRetail}, {@code MRP} …) means the
+   * batch's own field, never a stored rate of the same name; see {@link LineTerms#systemKey()}.
+   *
+   * @throws ValidationException when {@code rateName} is set and the batch has no rate by that
+   *     name, or names a system field the batch has no value for
    */
   public Optional<LineTerms> resolve(Inventory inventory, String rateName) {
     if (StringUtils.hasText(rateName)) {
+      String systemKey = SystemRateNames.systemKey(rateName);
+      if (systemKey != null) {
+        return Optional.of(systemTerms(inventory, systemKey));
+      }
       RateDto rate = find(inventory, rateName.trim())
           .orElseThrow(() -> new ValidationException("Unknown rate: " + rateName.trim()));
       return Optional.of(toTerms(rate));
@@ -53,33 +62,61 @@ public class CartRateResolver {
         .findFirst();
   }
 
+  private static LineTerms systemTerms(Inventory inventory, String systemKey) {
+    BigDecimal price = null;
+    if (inventory != null) {
+      if (PricingConstants.DEFAULT_RATE_PRICE_TO_RETAIL.equals(systemKey)) {
+        price = inventory.getPriceToRetail();
+      } else if (PricingConstants.DEFAULT_RATE_MAXIMUM_RETAIL_PRICE.equals(systemKey)) {
+        price = inventory.getMaximumRetailPrice();
+      } else if (PricingConstants.DEFAULT_RATE_COST_PRICE.equals(systemKey)) {
+        price = inventory.getCostPrice();
+      }
+    }
+    if (price == null) {
+      throw new ValidationException("This batch has no " + systemKey + " to bill at");
+    }
+    return new LineTerms(systemKey, systemKey, price, null, null, null, null, null);
+  }
+
   private static LineTerms toTerms(RateDto rate) {
+    String name = rate.getName();
     if (rate.getBaseValue() == null) {
-      return new LineTerms(rate.getPrice(), null, null, null, null, null);
+      return new LineTerms(name, null, rate.getPrice(), null, null, null, null, null);
     }
     BigDecimal disc = rate.getDiscountPercent() != null ? rate.getDiscountPercent() : BigDecimal.ZERO;
     SchemeDto scheme = rate.getScheme();
     String type = scheme != null ? scheme.getSchemeType() : null;
     if (PricingConstants.SCHEME_TYPE_PERCENTAGE.equals(type)) {
-      return new LineTerms(rate.getBaseValue(), disc, type, null, null, scheme.getSchemePercentage());
+      return new LineTerms(name, null, rate.getBaseValue(), disc, type, null, null,
+          scheme.getSchemePercentage());
     }
     if (PricingConstants.SCHEME_TYPE_FIXED_UNITS.equals(type)) {
-      return new LineTerms(rate.getBaseValue(), disc, type, scheme.getSchemePayFor(),
+      return new LineTerms(name, null, rate.getBaseValue(), disc, type, scheme.getSchemePayFor(),
           scheme.getSchemeFree(), null);
     }
-    return new LineTerms(rate.getBaseValue(), disc, null, null, null, null);
+    return new LineTerms(name, null, rate.getBaseValue(), disc, null, null, null, null);
   }
 
   /**
-   * Price, disc and scheme for a cart line. {@code discountPercent} is set (0 when the rule has
-   * none) only for a rule rate; the scheme fields are null when it has no scheme.
+   * Price, disc and scheme for a cart line, per pack (the batch's pricing unit). {@code
+   * discountPercent} is set (0 when the rule has none) only for a rule rate; the scheme fields
+   * are null when it has no scheme. {@code name} is the rate name the line records as applied;
+   * {@code systemKey} is set when the pick is a system field, whose disc and scheme are the
+   * batch's own sale defaults.
    */
-  public record LineTerms(BigDecimal price, BigDecimal discountPercent, String schemeType,
-      Integer payFor, Integer free, BigDecimal percentage) {
+  public record LineTerms(String name, String systemKey, BigDecimal price,
+      BigDecimal discountPercent, String schemeType, Integer payFor, Integer free,
+      BigDecimal percentage) {
 
     /** True for a rule rate: its disc and scheme replace the line's, including clearing a scheme. */
     public boolean replacesTerms() {
       return discountPercent != null;
+    }
+
+    /** True for a system pick (PTR, MRP, cost). */
+    public boolean isSystem() {
+      return systemKey != null;
     }
   }
 }

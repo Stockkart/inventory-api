@@ -398,6 +398,250 @@ class CheckoutServiceRateNameTest {
     assertThrows(ValidationException.class, () -> add(1, "Rate-Z"));
   }
 
+  /**
+   * B1: a rate's base is per pack. Picked on a line sold by the tablet it goes on per tablet
+   * (base ÷ pack, rounded down) with the line MRP for a tablet; disc and scheme apply unchanged,
+   * the scheme on the tablets paid for. 110 tablets of Rate-A: 100 paid × 10.00 × 0.92 = 920.00.
+   */
+  @Test
+  void switchToTabletThenPickRateBillsThePerTabletBase() {
+    stock("100", "150", "90", null, rateA());
+    add(11, null);
+    switchUnit("TABLET");
+    assertEquals("TABLET", line().getSaleUnit());
+
+    add(0, "Rate-A", "TABLET");
+
+    PurchaseItem line = line();
+    assertMoney("10.00", line.getPriceToRetail());
+    assertMoney("15.00", line.getMaximumRetailPrice());
+    assertMoney("8", line.getSaleAdditionalDiscount());
+    assertEquals(SchemeType.FIXED_UNITS, line.getSchemeType());
+    assertEquals(10, line.getSchemePayFor());
+    assertEquals(1, line.getSchemeFree());
+    assertEquals(110, line.getBaseQuantity());
+    assertMoney("920.00", beforeTax());
+    assertMoney("110.40", cart.getTaxTotal());
+
+    add(1, null, "TABLET");
+    assertMoney("10.00", line().getPriceToRetail());
+    assertEquals(111, line().getBaseQuantity());
+  }
+
+  /**
+   * T6: an at-MRP rate picked on a tablet line of an uneven pack (MRP 100, strip of 15) goes on
+   * at 6.66 a tablet, rounded down: line MRP equals the price, GST stays inside, and the bill is
+   * never above MRP × quantity.
+   */
+  @Test
+  void atMrpRatePickedOnAnUnevenTabletLineStaysAtMrp() {
+    RateDto rateM = rate("Rate-M", PricingConstants.RATE_BASE_MAXIMUM_RETAIL_PRICE, "100", "10",
+        PricingConstants.GST_MODE_INCLUSIVE);
+    stock("80", "100", "90", null, 15, rateM);
+    add(1, null);
+    switchUnit("TABLET");
+
+    add(0, "Rate-M", "TABLET");
+
+    PurchaseItem line = line();
+    assertMoney("6.66", line.getPriceToRetail());
+    assertMoney("6.66", line.getMaximumRetailPrice());
+    assertEquals(PricingConstants.GST_MODE_INCLUSIVE, rateM.getGstMode());
+    assertEquals(true, CheckoutUtils.isSellingAtMrp(line));
+    assertEquals(15, line.getBaseQuantity());
+    BigDecimal mrpTimesQuantity = line.getMaximumRetailPrice().multiply(line.getQuantity());
+    org.junit.jupiter.api.Assertions.assertTrue(
+        cart.getGrandTotal().compareTo(mrpTimesQuantity) <= 0, "grandTotal " + cart.getGrandTotal());
+    org.junit.jupiter.api.Assertions.assertTrue(cart.getTaxTotal().signum() > 0, "GST stated inside");
+    assertMoney("89.91", line.getTotalAmount());
+  }
+
+  /**
+   * B2: with no rateName, the price on an incoming line is the batch's and disc/scheme the
+   * request did not send are the batch's; a line already in the cart keeps its own. The shop's
+   * default rate is a system one, the batch has its own 5+1 and sells at 90 (not PTR 100).
+   */
+  @Test
+  void pickRateAThenPlusOneSendingOnlyDiscKeepsTheRateTerms() {
+    stockWithBatchScheme();
+    add(11, "Rate-A");
+
+    AddToCartRequest.CartItem plus = item(1, null);
+    plus.setSaleAdditionalDiscount(new BigDecimal("8"));
+    send(plus);
+
+    assertEquals(12, line().getQuantity().intValue());
+    assertTerms("100", "8", 10, 1);
+    assertEquals("Rate-A", line().getAppliedRateName());
+  }
+
+  @Test
+  void pickRateBThenPlusOneAddsNoBatchScheme() {
+    stockWithBatchScheme();
+    add(11, "Rate-B");
+
+    add(1, null);
+
+    PurchaseItem line = line();
+    assertEquals(12, line.getQuantity().intValue());
+    assertMoney("100", line.getPriceToRetail());
+    assertMoney("7", line.getSaleAdditionalDiscount());
+    assertNull(line.getSchemeType());
+    assertNull(line.getSchemePayFor());
+    assertMoney("1116.00", beforeTax());
+  }
+
+  @Test
+  void manualPriceEditThenPlusOneKeepsThePrice() {
+    stockWithBatchScheme();
+    add(1, null);
+    assertMoney("90", line().getPriceToRetail());
+
+    AddToCartRequest.CartItem edit = item(0, null);
+    edit.setPriceToRetail(new BigDecimal("85"));
+    send(edit);
+    add(1, null);
+
+    assertEquals(2, line().getQuantity().intValue());
+    assertMoney("85", line().getPriceToRetail());
+    assertEquals(5, line().getSchemePayFor());
+  }
+
+  /**
+   * B4a: a system name as rateName puts that batch field on the line with the batch's own sale
+   * disc and scheme, as a first add without rules gets, replacing a rule rate's terms.
+   */
+  @Test
+  void systemPickAfterARuleRateResetsToTheBatchDefaults() {
+    stockWithBatchScheme();
+    batch.setSaleAdditionalDiscount(new BigDecimal("2"));
+    add(11, "Rate-A");
+
+    add(0, "priceToRetail");
+    assertTerms("100", "2", 5, 1);
+    assertEquals("priceToRetail", line().getAppliedRateName());
+
+    add(0, "maximumRetailPrice");
+    assertTerms("150", "2", 5, 1);
+    assertEquals(true, CheckoutUtils.isSellingAtMrp(line()));
+    assertEquals("maximumRetailPrice", line().getAppliedRateName());
+
+    add(0, "costPrice");
+    assertTerms("50", "2", 5, 1);
+    assertEquals("costPrice", line().getAppliedRateName());
+  }
+
+  @Test
+  void systemPickWithAUnitChangeIsRejected() {
+    stockWithBatchScheme();
+    add(11, null);
+
+    AddToCartRequest.CartItem pickAndSwitch = item(0, "priceToRetail");
+    pickAndSwitch.setUnit("TABLET");
+    assertThrows(ValidationException.class, () -> send(pickAndSwitch));
+  }
+
+  /** T5: a stored hand-typed rate named like a system option never shadows it. */
+  @Test
+  void systemNameWinsOverAStoredRateOfTheSameName() {
+    RateDto ptr = new RateDto("priceToRetail", new BigDecimal("120"));
+    RateDto mrp = new RateDto("MRP", new BigDecimal("140"));
+    stock("100", "150", "90", null, ptr, mrp);
+
+    add(1, "priceToRetail");
+    assertMoney("100", line().getPriceToRetail());
+
+    add(0, "MRP");
+    assertMoney("150", line().getPriceToRetail());
+    assertEquals("maximumRetailPrice", line().getAppliedRateName());
+  }
+
+  /** A system pick on a tablet line takes the batch field per tablet, as a rule rate does. */
+  @Test
+  void systemPickOnATabletLineTakesThePerTabletValue() {
+    stockWithBatchScheme();
+    add(1, null);
+    switchUnit("TABLET");
+
+    add(0, "priceToRetail", "TABLET");
+
+    assertMoney("10.00", line().getPriceToRetail());
+    assertMoney("15.00", line().getMaximumRetailPrice());
+  }
+
+  /**
+   * B4b: the line records the rate it is billed at -- a pick, a system pick, or the batch's
+   * default rule rate on a first add -- and returns it on the cart.
+   */
+  @Test
+  void appliedRateNameIsSetByPickSystemPickAndDefaultRuleRate() {
+    stock("100", "150", "83.64", "Rate-A", rateA(), rateB());
+    add(11, null);
+    assertEquals("Rate-A", line().getAppliedRateName());
+
+    add(0, "Rate-B");
+    assertEquals("Rate-B", line().getAppliedRateName());
+
+    add(1, null);
+    assertEquals("Rate-B", line().getAppliedRateName());
+
+    add(0, "priceToRetail");
+    assertEquals("priceToRetail", line().getAppliedRateName());
+
+    cart = null;
+    stock("100", "150", "90", null, rateA());
+    add(1, null);
+    assertNull(line().getAppliedRateName());
+  }
+
+  /** T4: any manual price, disc or scheme edit clears the applied rate name. */
+  @Test
+  void manualPriceDiscOrSchemeEditClearsAppliedRateName() {
+    stock("100", "150", "83.64", null, rateA());
+
+    add(11, "Rate-A");
+    AddToCartRequest.CartItem disc = item(0, null);
+    disc.setSaleAdditionalDiscount(new BigDecimal("5"));
+    send(disc);
+    assertNull(line().getAppliedRateName());
+
+    add(0, "Rate-A");
+    AddToCartRequest.CartItem price = item(0, null);
+    price.setPriceToRetail(new BigDecimal("95"));
+    send(price);
+    assertNull(line().getAppliedRateName());
+
+    add(0, "Rate-A");
+    AddToCartRequest.CartItem scheme = item(0, null);
+    scheme.setSchemeType(SchemeType.FIXED_UNITS);
+    scheme.setSchemePayFor(5);
+    scheme.setSchemeFree(1);
+    send(scheme);
+    assertNull(line().getAppliedRateName());
+
+    cart = null;
+    AddToCartRequest.CartItem typed = item(11, null);
+    typed.setSaleAdditionalDiscount(new BigDecimal("3"));
+    stock("100", "150", "83.64", "Rate-A", rateA());
+    send(typed);
+    assertNull(line().getAppliedRateName());
+  }
+
+  /** PTR 100, MRP 150, sells at 90, batch sale scheme 5+1, default rate the system PTR. */
+  private void stockWithBatchScheme() {
+    stock("100", "150", "90", "priceToRetail", rateA(), rateB());
+    batch.setSchemeType(SchemeType.FIXED_UNITS);
+    batch.setSchemePayFor(5);
+    batch.setSchemeFree(1);
+  }
+
+  private void switchUnit(String unit) {
+    AddToCartRequest.CartItem item = item(0, null);
+    item.setUnit(unit);
+    item.setPriceToRetail(new BigDecimal("1"));
+    send(item);
+  }
+
   private void gstRow(String ptr, String mrp, RateDto rate, String customerPays, String gst) {
     cart = null;
     stock(ptr, mrp, rate.getPrice().toPlainString(), null, rate);
@@ -437,12 +681,17 @@ class CheckoutServiceRateNameTest {
   }
 
   private void stock(String ptr, String mrp, String sell, String defaultRate, RateDto... rates) {
+    stock(ptr, mrp, sell, defaultRate, 10, rates);
+  }
+
+  private void stock(String ptr, String mrp, String sell, String defaultRate, int pack,
+      RateDto... rates) {
     batch = new Inventory();
     batch.setId(LOT);
     batch.setShopId(SHOP);
     batch.setName("Paracetamol 650");
     batch.setBaseUnit("TABLET");
-    batch.setUnitConversions(new UnitConversion("STRIP", 10));
+    batch.setUnitConversions(new UnitConversion("STRIP", pack));
     batch.setMaximumRetailPrice(new BigDecimal(mrp));
     batch.setPriceToRetail(new BigDecimal(ptr));
     batch.setSellingPrice(new BigDecimal(sell));
@@ -460,13 +709,22 @@ class CheckoutServiceRateNameTest {
     item.setId(LOT);
     item.setUnit("STRIP");
     item.setQuantity(strips);
-    item.setBaseQuantity(strips * 10);
+    item.setBaseQuantity(strips * batch.getUnitConversions().getFactor());
     item.setRateName(rateName);
     return item;
   }
 
   private void add(int strips, String rateName) {
     send(item(strips, rateName));
+  }
+
+  /** {@code quantity} of {@code unit} (TABLET: base units). */
+  private void add(int quantity, String rateName, String unit) {
+    AddToCartRequest.CartItem item = item(0, rateName);
+    item.setUnit(unit);
+    item.setQuantity(quantity);
+    item.setBaseQuantity("TABLET".equals(unit) ? quantity : quantity * batch.getUnitConversions().getFactor());
+    send(item);
   }
 
   private void send(AddToCartRequest.CartItem item) {
