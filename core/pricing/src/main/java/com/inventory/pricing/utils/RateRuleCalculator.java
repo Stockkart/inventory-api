@@ -23,7 +23,8 @@ import java.util.List;
 @Slf4j
 public final class RateRuleCalculator {
 
-  static final String REASON_BELOW_COST = "BELOW_COST";
+  /** Reason on a {@link SkippedRateRule} whose price, ex-GST, is under the batch cost. */
+  public static final String REASON_BELOW_COST = "BELOW_COST";
 
   private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
 
@@ -95,8 +96,11 @@ public final class RateRuleCalculator {
     return unitPrice.multiply(billable).setScale(2, RoundingMode.HALF_UP);
   }
 
-  /** Compares like with like: an inclusive price is divided by (1 + GST%) at 4 dp before the check. */
-  private static boolean isBelowCost(BigDecimal price, boolean inclusive, BigDecimal cost,
+  /**
+   * True when a rate's price is under cost. Compares like with like: an inclusive price is divided
+   * by (1 + GST%) at 4 dp before the check. A null cost disables the check.
+   */
+  public static boolean isBelowCost(BigDecimal price, boolean inclusive, BigDecimal cost,
       BigDecimal gstPercent) {
     if (cost == null) {
       return false;

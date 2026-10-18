@@ -40,6 +40,9 @@ public interface PricingMapper {
   @Mapping(target = "saleScheme", expression = "java(toSchemeDto(pricing.getSaleScheme()))")
   PricingResponse toResponse(Pricing pricing);
 
+  /** A working copy, so rate generation can see a patch's new bases without touching the stored record. */
+  Pricing copy(Pricing pricing);
+
   @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
   @Mapping(target = "id", ignore = true)
   @Mapping(target = "shopId", ignore = true)
@@ -129,6 +132,7 @@ public interface PricingMapper {
     UpdateDefaultPriceRequest req = new UpdateDefaultPriceRequest();
     req.setRates(item.getRates());
     req.setDefaultRate(item.getDefaultRate());
+    req.setResetRates(item.getResetRates());
     return req;
   }
 

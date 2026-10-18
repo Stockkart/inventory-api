@@ -5,6 +5,7 @@ import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.pricing.domain.model.Pricing;
+import com.inventory.pricing.domain.model.SkippedRateRule;
 import com.inventory.pricing.domain.repository.PricingRepository;
 import com.inventory.pricing.rest.dto.request.CreatePricingRequest;
 import com.inventory.pricing.rest.dto.request.UpdateDefaultPriceItem;
@@ -49,12 +50,17 @@ public class PricingService {
   @Autowired
   private VerticalPricingPolicyPort pricingPolicyPort;
 
+  @Autowired
+  private RateGenerationService rateGenerationService;
+
   /**
    * Create pricing and return the saved entity (with id).
-   * Vertical policy validates fields and normalizes defaultRate/sellingPrice.
+   * Vertical policy validates fields and normalizes defaultRate/sellingPrice. Rates are generated
+   * from the shop's rate rules first, so the policy sees them; a new batch needs no grant.
    */
   public Pricing createAndReturnEntity(CreatePricingRequest request) {
     pricingValidator.validateCreateBasics(request);
+    generateRatesOnCreate(request);
     pricingPolicyPort.validateAndNormalizeCreate(request);
     Pricing pricing = pricingMapper.toEntity(request);
     pricingPolicyPort.normalizeEntity(pricing, request.getVerticalId());
@@ -88,9 +94,11 @@ public class PricingService {
 
   /**
    * Update pricing by pricing ID. Both rates and defaultRate can be updated.
-   * sellingPrice is recomputed after any change.
+   * sellingPrice is recomputed after any change. With rate rules, rule rates are regenerated and
+   * a changed disc % or scheme, or a reset, needs the user's grant.
    */
-  public PricingResponse updateDefaultPrice(String pricingId, UpdateDefaultPriceRequest request, String shopId) {
+  public PricingResponse updateDefaultPrice(String pricingId, UpdateDefaultPriceRequest request, String shopId,
+      String userId) {
     try {
       pricingValidator.validatePricingId(pricingId);
 
@@ -101,11 +109,15 @@ public class PricingService {
 
       pricingValidator.validateUpdateDefaultPriceRequest(request, pricing.getRates(), pricing.getDefaultRate());
 
-      if (request.getRates() != null) {
-        pricing.setRates(request.getRates());
-      }
       if (StringUtils.hasText(request.getDefaultRate())) {
         pricing.setDefaultRate(request.getDefaultRate());
+      }
+      boolean touchesRates = request.getRates() != null || hasNames(request.getResetRates());
+      if (touchesRates && rateGenerationService.hasRules(pricing.getShopId())) {
+        logWarnings(pricingId, rateGenerationService.apply(
+            pricing, request.getRates(), request.getResetRates(), userId));
+      } else if (request.getRates() != null) {
+        pricing.setRates(request.getRates());
       }
       pricing.setSellingPrice(PricingUtils.resolveEffectiveSellingPrice(pricing));
       pricing.setUpdatedAt(java.time.Instant.now());
@@ -126,7 +138,8 @@ public class PricingService {
   /**
    * Bulk update default/selling price for multiple pricing records. Verifies each pricing belongs to shopId.
    */
-  public List<PricingResponse> bulkUpdateDefaultPrice(List<UpdateDefaultPriceItem> updates, String shopId) {
+  public List<PricingResponse> bulkUpdateDefaultPrice(List<UpdateDefaultPriceItem> updates, String shopId,
+      String userId) {
     if (updates == null || updates.isEmpty()) {
       return List.of();
     }
@@ -137,7 +150,7 @@ public class PricingService {
             .orElseThrow(() -> new ResourceNotFoundException("Pricing", "id", item.getPricingId()));
         pricingValidator.validateUpdateDefaultPriceItem(item, pricing.getRates(), pricing.getDefaultRate());
         UpdateDefaultPriceRequest req = pricingMapper.toUpdateDefaultPriceRequest(item);
-        results.add(updateDefaultPrice(item.getPricingId(), req, shopId));
+        results.add(updateDefaultPrice(item.getPricingId(), req, shopId, userId));
       } catch (Exception e) {
         log.warn("Bulk update failed for pricingId {}: {}", item.getPricingId(), e.getMessage());
         throw e;
@@ -147,15 +160,17 @@ public class PricingService {
   }
 
   /**
-   * Update pricing by pricing ID.
+   * Update pricing by pricing ID. When the request touches rates or a base (PTR, MRP, selling price),
+   * rates are regenerated from the shop's rate rules before the vertical policy runs.
    */
-  public PricingResponse update(String pricingId, UpdatePricingRequest request, String verticalId) {
+  public PricingResponse update(String pricingId, UpdatePricingRequest request, String verticalId, String userId) {
     try {
       pricingValidator.validatePricingId(pricingId);
 
       Pricing pricing = pricingRepository.findById(pricingId)
           .orElseThrow(() -> new ResourceNotFoundException("Pricing", "id", pricingId));
 
+      generateRatesOnUpdate(pricing, request, userId);
       pricingPolicyPort.validateAndNormalizeUpdate(request, verticalId, pricing);
       pricingValidator.validateUpdateRequest(request);
 
@@ -172,6 +187,53 @@ public class PricingService {
     } catch (DataAccessException e) {
       log.error("Database error while updating pricing: {}", e.getMessage(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Error updating pricing");
+    }
+  }
+
+  /** Generates the new batch's rates into the request; untouched when the shop has no rules. */
+  private void generateRatesOnCreate(CreatePricingRequest request) {
+    if (!rateGenerationService.hasRules(request.getShopId())) {
+      return;
+    }
+    Pricing draft = pricingMapper.toEntity(request);
+    logWarnings(null, rateGenerationService.apply(draft, request.getRates(), null, null));
+    request.setRates(draft.getRates());
+    request.setDefaultRate(draft.getDefaultRate());
+    request.setSellingPrice(draft.getSellingPrice());
+  }
+
+  /**
+   * Regenerates rates against the patched bases on a working copy, then writes the result into the
+   * request, so the policy and the mapper below apply it like any other patch.
+   */
+  private void generateRatesOnUpdate(Pricing pricing, UpdatePricingRequest request, String userId) {
+    if (request == null) {
+      return;
+    }
+    boolean touches = request.getRates() != null || hasNames(request.getResetRates())
+        || request.getPriceToRetail() != null || request.getMaximumRetailPrice() != null
+        || request.getSellingPrice() != null;
+    if (!touches || !rateGenerationService.hasRules(pricing.getShopId())) {
+      return;
+    }
+    Pricing draft = pricingMapper.copy(pricing);
+    draft.setRates(null);
+    pricingMapper.updateEntity(request, draft);
+    draft.setRates(pricing.getRates() == null ? null : new ArrayList<>(pricing.getRates()));
+    logWarnings(pricing.getId(), rateGenerationService.apply(
+        draft, request.getRates(), request.getResetRates(), userId));
+    request.setRates(draft.getRates() == null ? new ArrayList<>() : draft.getRates());
+    request.setDefaultRate(draft.getDefaultRate());
+    request.setSellingPrice(draft.getSellingPrice());
+  }
+
+  private static boolean hasNames(List<String> names) {
+    return names != null && !names.isEmpty();
+  }
+
+  private static void logWarnings(String pricingId, List<SkippedRateRule> warnings) {
+    for (SkippedRateRule w : warnings) {
+      log.info("Rate '{}' on pricing {}: {}", w.name(), pricingId, w.reason());
     }
   }
 

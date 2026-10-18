@@ -21,4 +21,6 @@ public class UpdatePricingRequest {
   private SchemeDto saleScheme;
   private String sgst;
   private String cgst;
+  /** Rate names to regenerate from their rule, clearing a per-batch override. Needs the grant. */
+  private List<String> resetRates;
 }

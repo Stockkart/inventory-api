@@ -310,7 +310,7 @@ public class InventoryController {
     rbacService.validateProductSearchFieldUpdates(
         userId, shopId, ProductSearchUpdateFields.fromUpdateRequest(request));
 
-    return ResponseEntity.ok(ApiResponse.success(inventoryService.update(inventoryId, request, shopId)));
+    return ResponseEntity.ok(ApiResponse.success(inventoryService.update(inventoryId, request, shopId, userId)));
   }
 
   /**

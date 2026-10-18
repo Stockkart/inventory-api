@@ -1498,10 +1498,12 @@ public class InventoryService {
    * @param inventoryId the inventory ID (mandatory)
    * @param request the update request containing optional fields
    * @param shopId the shop ID for authorization
+   * @param userId the user making the change; checked for the grant to edit generated rates
    * @return updated inventory detail response
    */
   @Transactional
-  public InventoryDetailResponse update(String inventoryId, UpdateInventoryRequest request, String shopId) {
+  public InventoryDetailResponse update(String inventoryId, UpdateInventoryRequest request, String shopId,
+      String userId) {
     try {
       inventoryValidator.validateShopId(shopId);
       if (inventoryId == null || inventoryId.trim().isEmpty()) {

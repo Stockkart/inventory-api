@@ -2,6 +2,8 @@ package com.inventory.pricing.validation;
 
 import com.inventory.common.exception.ValidationException;
 import com.inventory.pricing.domain.model.Rate;
+import com.inventory.pricing.domain.model.Scheme;
+import com.inventory.pricing.utils.constants.PricingConstants;
 import com.inventory.pricing.rest.dto.request.CreatePricingRequest;
 import com.inventory.pricing.rest.dto.request.PricingCreateCommand;
 import com.inventory.pricing.rest.dto.request.PricingUpdateCommand;
@@ -90,7 +92,8 @@ public class PricingValidator {
   }
 
   /**
-   * Validate update default price request. At least one of rates or defaultRate must be provided.
+   * Validate update default price request. At least one of rates, defaultRate or resetRates must be
+   * provided.
    */
   public void validateUpdateDefaultPriceRequest(UpdateDefaultPriceRequest request, List<Rate> effectiveRates, String effectiveDefaultRate) {
     if (request == null) {
@@ -98,8 +101,9 @@ public class PricingValidator {
     }
     boolean hasRates = request.getRates() != null && !request.getRates().isEmpty();
     boolean hasDefaultRate = StringUtils.hasText(request.getDefaultRate());
-    if (!hasRates && !hasDefaultRate) {
-      throw new ValidationException("At least one of rates or defaultRate must be provided");
+    boolean hasResets = request.getResetRates() != null && !request.getResetRates().isEmpty();
+    if (!hasRates && !hasDefaultRate && !hasResets) {
+      throw new ValidationException("At least one of rates, defaultRate or resetRates must be provided");
     }
     List<Rate> ratesToValidate = hasRates ? request.getRates() : effectiveRates;
     String defaultRateToValidate = hasDefaultRate ? request.getDefaultRate() : effectiveDefaultRate;
@@ -123,13 +127,41 @@ public class PricingValidator {
     }
     boolean hasRates = item.getRates() != null && !item.getRates().isEmpty();
     boolean hasDefaultRate = StringUtils.hasText(item.getDefaultRate());
-    if (!hasRates && !hasDefaultRate) {
-      throw new ValidationException("At least one of rates or defaultRate must be provided");
+    boolean hasResets = item.getResetRates() != null && !item.getResetRates().isEmpty();
+    if (!hasRates && !hasDefaultRate && !hasResets) {
+      throw new ValidationException("At least one of rates, defaultRate or resetRates must be provided");
     }
     List<Rate> ratesToValidate = hasRates ? item.getRates() : effectiveRates;
     String defaultRateToValidate = hasDefaultRate ? item.getDefaultRate() : effectiveDefaultRate;
     if (ratesToValidate != null) {
       validateRates(ratesToValidate, defaultRateToValidate);
+    }
+  }
+
+  /**
+   * Validate the terms sent to override a generated rate: disc % 0..100; a FIXED_UNITS scheme pays
+   * for at least 1 and gives at least 1 free; a PERCENTAGE scheme is over 0 and under 100.
+   */
+  public void validateRateTerms(String rateName, BigDecimal discountPercent, Scheme scheme) {
+    if (discountPercent != null
+        && (discountPercent.signum() < 0 || discountPercent.compareTo(BigDecimal.valueOf(100)) > 0)) {
+      throw new ValidationException("Rate discount must be between 0 and 100: " + rateName);
+    }
+    if (scheme == null) {
+      return;
+    }
+    if (PricingConstants.SCHEME_TYPE_FIXED_UNITS.equals(scheme.getSchemeType())) {
+      if (scheme.getSchemePayFor() == null || scheme.getSchemePayFor() < 1
+          || scheme.getSchemeFree() == null || scheme.getSchemeFree() < 1) {
+        throw new ValidationException("Rate scheme needs pay-for and free units of at least 1: " + rateName);
+      }
+    } else if (PricingConstants.SCHEME_TYPE_PERCENTAGE.equals(scheme.getSchemeType())) {
+      BigDecimal pct = scheme.getSchemePercentage();
+      if (pct == null || pct.signum() <= 0 || pct.compareTo(BigDecimal.valueOf(100)) >= 0) {
+        throw new ValidationException("Rate scheme percentage must be over 0 and under 100: " + rateName);
+      }
+    } else {
+      throw new ValidationException("Rate scheme type must be FIXED_UNITS or PERCENTAGE: " + rateName);
     }
   }
 

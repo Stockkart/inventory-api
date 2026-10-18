@@ -87,7 +87,7 @@ public class InventoryPricingWriteHandler {
               .sgst(req.getSgst())
               .cgst(req.getCgst())
               .build();
-          pricingPort.update(inventory.getPricingId(), cmd);
+          pricingPort.update(inventory.getPricingId(), cmd, ctx.userId);
         }
       }
     } catch (Exception e) {
