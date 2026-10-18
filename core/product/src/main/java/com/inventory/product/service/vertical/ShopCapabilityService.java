@@ -11,6 +11,8 @@ import com.inventory.pluginengine.capabilities.VerticalUiContributor;
 import com.inventory.pluginengine.schema.VerticalSchema;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.enums.ShopType;
+import com.inventory.product.domain.model.ShopRateRulesDocument;
+import com.inventory.product.domain.repository.ShopRateRulesRepository;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.validation.ShopValidator;
 import com.inventory.user.service.UserShopMembershipService;
@@ -30,6 +32,7 @@ public class ShopCapabilityService {
   private final DefaultSkuScanUiContributor defaultSkuScanUiContributor;
   private final ShopValidator shopValidator;
   private final UserShopMembershipService membershipService;
+  private final ShopRateRulesRepository rateRulesRepository;
 
   public ShopCapabilityService(
       ShopRepository shopRepository,
@@ -37,13 +40,15 @@ public class ShopCapabilityService {
       PluginRegistry pluginRegistry,
       DefaultSkuScanUiContributor defaultSkuScanUiContributor,
       ShopValidator shopValidator,
-      UserShopMembershipService membershipService) {
+      UserShopMembershipService membershipService,
+      ShopRateRulesRepository rateRulesRepository) {
     this.shopRepository = shopRepository;
     this.schemaLoader = schemaLoader;
     this.pluginRegistry = pluginRegistry;
     this.defaultSkuScanUiContributor = defaultSkuScanUiContributor;
     this.shopValidator = shopValidator;
     this.membershipService = membershipService;
+    this.rateRulesRepository = rateRulesRepository;
   }
 
   public ShopUiCapabilities getShopCapabilities(String shopId, String userId) {
@@ -74,6 +79,19 @@ public class ShopCapabilityService {
       capabilities.setFeatures(features);
     }
     features.setRetailPricing(shop.getShopType() == ShopType.RETAILER);
+    features.setRateRules(hasRateRules(shop));
+  }
+
+  /** True when the shop has at least one rate rule and its vertical supports them (not cafe). */
+  private boolean hasRateRules(Shop shop) {
+    if ("cafe".equalsIgnoreCase(shop.getVerticalId())) {
+      return false;
+    }
+    return rateRulesRepository
+        .findByShopId(shop.getShopId())
+        .map(ShopRateRulesDocument::getRules)
+        .map(rules -> !rules.isEmpty())
+        .orElse(false);
   }
 
   public boolean isCustomerReturnEnabled(String shopId, String userId) {

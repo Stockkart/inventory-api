@@ -24,6 +24,8 @@ public enum ErrorCode {
   // Product related errors (3000-3999)
   PRODUCT_NOT_FOUND(3000, "Product not found", HttpStatus.NOT_FOUND),
   INSUFFICIENT_STOCK(3001, "Insufficient stock available", HttpStatus.BAD_REQUEST),
+  RATE_RULE_INVALID(3002, "Invalid rate rule", HttpStatus.BAD_REQUEST),
+  RATE_RULE_BASE_NOT_ALLOWED(3003, "Rate rule base not allowed for this shop type", HttpStatus.BAD_REQUEST),
 
   // User related errors (4000-4999)
   USER_NOT_FOUND(4000, "User not found", HttpStatus.NOT_FOUND),

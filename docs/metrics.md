@@ -8,7 +8,7 @@ All metrics are counters recorded through `MetricsWrapper.record(name, amount, t
 every one carries a `module` tag whose value is the module column below. Metrics that add
 further tags list them.
 
-**47 metrics across 14 modules.**
+**48 metrics across 14 modules.**
 
 ## accounting
 
@@ -93,6 +93,7 @@ further tags list them.
 | `inventory_product_print_jobs_total` | `ProductMetricsConstants.PRINT_JOBS` | PrintJobService |
 | `inventory_product_qr_tokens_total` | `ProductMetricsConstants.QR_TOKENS_TOTAL` | QRUploadService |
 | `inventory_product_quotations_total` | `ProductMetricsConstants.QUOTATIONS_TOTAL` | QuotationService |
+| `inventory_product_rate_rules_updates_total` | `ProductMetricsConstants.RATE_RULES_UPDATES` | RateRulesService |
 | `inventory_product_refund_amount` | `ProductMetricsConstants.REFUND_AMOUNT` | RefundService |
 | `inventory_product_refunds_total` | `ProductMetricsConstants.REFUNDS_TOTAL` | RefundService |
 | `inventory_product_vendor_purchases_total` | `ProductMetricsConstants.VENDOR_PURCHASES` | InventoryService |

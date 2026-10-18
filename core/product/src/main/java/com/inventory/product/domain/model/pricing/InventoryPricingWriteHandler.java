@@ -6,6 +6,7 @@ import com.inventory.pricing.domain.model.Scheme;
 import com.inventory.pricing.rest.dto.request.PricingCreateCommand;
 import com.inventory.pricing.rest.dto.request.PricingUpdateCommand;
 import com.inventory.pricing.service.InventoryPricingAdapter;
+import com.inventory.pricing.service.ShopRateRulesPort;
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.enums.SchemeType;
@@ -31,6 +32,9 @@ public class InventoryPricingWriteHandler {
   @Autowired
   private ShopRepository shopRepository;
 
+  @Autowired(required = false)
+  private ShopRateRulesPort shopRateRulesPort;
+
   public void persistOnSave(Inventory inventory) {
     try {
       String verticalId = resolveVerticalId(inventory.getShopId());
@@ -53,7 +57,9 @@ public class InventoryPricingWriteHandler {
               .maximumRetailPrice(selling)
               .priceToRetail(selling)
               .defaultRate("priceToRetail")
-              .rates(null)
+              // With rate rules the generated rates stay; PricingService rebuilds them from the
+              // selling price. Without rules a retailer has none.
+              .rates(hasRateRules(inventory.getShopId()) ? inventory.getRates() : null)
               .purchaseScheme(buildPurchaseScheme(inventory))
               .saleScheme(buildSaleScheme(inventory));
         } else {
@@ -101,6 +107,10 @@ public class InventoryPricingWriteHandler {
     } catch (Exception e) {
       log.warn("Failed to persist pricing for inventory {}: {}", inventory.getId(), e.getMessage());
     }
+  }
+
+  private boolean hasRateRules(String shopId) {
+    return shopRateRulesPort != null && !shopRateRulesPort.rulesFor(shopId).isEmpty();
   }
 
   private boolean isRetailerShop(String shopId) {

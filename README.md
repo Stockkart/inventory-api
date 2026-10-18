@@ -271,6 +271,18 @@ Shops are bound to a **vertical** (`Shop.verticalId` + `Shop.pluginVersion`). Fi
 
 **Amending a purchase invoice header.** `PATCH /api/v1/vendor-purchase-invoices/{id}` corrects the header against the paper bill (shipping, other charges, overall discount, round-off, tax treatment) and needs a `reason`. The subtotal, tax and invoice total are worked out again from the lines. Lines are not amendable. The previous header, who changed it and why are kept on the invoice. The amendment is validated like stock-in, the totals are worked out again, and the purchase journal entry is **reversed and posted again** with the corrected figures (the invoice's `ledgerSourceId` names the live entry). The vendor's credit ledger (`core/credit`) is not adjusted yet. Before saving, `POST /api/v1/vendor-purchase-invoices/{id}/amend-preview` (same body, reason optional) works the correction out without saving and returns `saved` and `corrected` header figures, `changedFields` and `journalReposted`, so the form shows the operator what moves. A correction that would change nothing is refused (400). The invoice detail carries `previousHeader` after a correction.
 
+### Rate rules (product, pricing)
+
+A shop can define named rate rules once (for example `Rate-A` = PTR - 8% + 10+1) and every batch gets the matching rates generated from its own PTR or MRP. The rules live in `shop_rate_rules` (`ShopRateRulesDocument`, one per shop, unique `shopId` index made at startup by `RateRulesIndexMigration`). All arithmetic is in `RateRuleCalculator` (`core/pricing`); the settings code only stores rules and previews them.
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/v1/shops/active-shop/rate-rules` | `enabled` (false for cafe), `baseOptions` (`sellingPrice` for a RETAILER; `priceToRetail`, `maximumRetailPrice` otherwise), `rules`, and `canEdit` for the caller. Shop access only. |
+| `PUT /api/v1/shops/active-shop/rate-rules` | Replaces the ordered rule list. Needs the `rateRulesEdit` grant (owner always; others only when the owner grants it on the access screen), else 403 `ACCESS_DENIED`. |
+| `POST /api/v1/shops/active-shop/rate-rules/preview` | Body: base values, the raw cost inputs (`costPrice`, `costPriceIncludesTax`, `purchaseAdditionalDiscount`, `purchaseScheme`, `sgst`, `cgst`) and optionally unsaved `rules`. Returns each generated rate (`baseValue`, `afterDiscount`, `price`, `gstMode`, `termsText`) and the rules skipped below cost. Cost is resolved as on save. |
+
+A rule needs a discount (0 to 100), a scheme, or both. Names are unique ignoring case and may not be `priceToRetail`, `maximumRetailPrice` or `costPrice`. Errors: 3002 `RATE_RULE_INVALID`, 3003 `RATE_RULE_BASE_NOT_ALLOWED`. Shops with rules report `features.rateRules = true` in their capabilities. A retailer with rules keeps generated rates on inventory save (`InventoryPricingWriteHandler`); a retailer without rules still has none.
+
 ### Dot-matrix printing (documentservice)
 
 A dot-matrix printer cannot take a PDF, so these documents are served as fixed-width plain text. The shop's print bridge sends the text to the printer and owns the ESC/P control bytes and where the paper sits. The backend owns the layout and every figure on it.
