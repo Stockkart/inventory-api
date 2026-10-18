@@ -14,9 +14,6 @@ public interface ShopRateRulesPort {
   /** The shop's rate rules in display order; empty when the shop has none. */
   List<RateRuleSpec> rulesFor(String shopId);
 
-  /** True when the shop is a RETAILER. */
-  boolean isRetailer(String shopId);
-
   /** True when the user may override or reset a generated rate's terms in this shop. */
   boolean canEditRates(String userId, String shopId);
 }

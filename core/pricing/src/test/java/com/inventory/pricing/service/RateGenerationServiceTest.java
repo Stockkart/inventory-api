@@ -60,7 +60,6 @@ class RateGenerationServiceTest {
   @BeforeEach
   void setUp() {
     when(port.rulesFor(SHOP)).thenReturn(List.of(rateA()));
-    when(port.isRetailer(SHOP)).thenReturn(false);
     when(port.canEditRates(OWNER, SHOP)).thenReturn(true);
     when(port.canEditRates(CASHIER, SHOP)).thenReturn(false);
   }
@@ -285,8 +284,7 @@ class RateGenerationServiceTest {
 
   @Test
   void defaultRateOnSkippedRuleFallsBackWithoutThrowing() {
-    for (boolean retailer : List.of(false, true)) {
-      when(port.isRetailer(SHOP)).thenReturn(retailer);
+    for (int run = 0; run < 2; run++) {
       Pricing p = stored("p1", "100", "150", "90", storedRateA100());
       p.setDefaultRate("Rate-A");
       p.setSellingPrice(dec("83.64"));

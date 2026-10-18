@@ -60,7 +60,8 @@ class RateRulesValidatorTest {
   @Test
   void acceptsDiscAtTheInclusiveEnds() {
     assertDoesNotThrow(() -> validator.validate(
-        List.of(rule("Zero", PTR, "0", null), rule("Full", PTR, "100", null)), ShopType.DISTRIBUTOR));
+        List.of(rule("Zero", PTR, "0", tenPlusOne()), rule("Full", PTR, "100", null)),
+        ShopType.DISTRIBUTOR));
   }
 
   @Test
@@ -68,6 +69,24 @@ class RateRulesValidatorTest {
     BaseException e = rejected(ShopType.DISTRIBUTOR,
         rule("Rate-A", PTR, "8", null), rule("rate-a", PTR, "5", null));
     assertEquals(ErrorCode.RATE_RULE_INVALID, e.getErrorCode());
+  }
+
+  /** A zero disc and no scheme leaves the base as it is: no rate of its own. */
+  @Test
+  void rejectsRuleWithAZeroDiscAndNoScheme() {
+    BaseException e = rejected(ShopType.DISTRIBUTOR, rule("Rate-A", PTR, "0", null));
+    assertEquals(ErrorCode.RATE_RULE_INVALID, e.getErrorCode());
+    assertDoesNotThrow(() -> validator.validate(
+        List.of(rule("Rate-A", PTR, "0", tenPlusOne())), ShopType.DISTRIBUTOR));
+  }
+
+  /** The counter's labels for the built-in prices are reserved too, so a rule never shadows one. */
+  @Test
+  void rejectsTheBuiltInLabelsAsNames() {
+    for (String reserved : List.of("MRP", "PTR", "Cost", "mrp", "ptr", "COST", " Mrp ")) {
+      assertEquals(ErrorCode.RATE_RULE_INVALID,
+          rejected(ShopType.DISTRIBUTOR, rule(reserved, PTR, "8", null)).getErrorCode(), reserved);
+    }
   }
 
   @Test

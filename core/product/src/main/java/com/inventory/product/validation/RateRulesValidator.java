@@ -4,7 +4,7 @@ import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.pricing.domain.model.Scheme;
 import com.inventory.pricing.rest.dto.response.SchemeDto;
-import com.inventory.pricing.utils.constants.PricingConstants;
+import com.inventory.pricing.utils.SystemRateNames;
 import com.inventory.pricing.validation.PricingValidator;
 import com.inventory.product.domain.model.enums.RateBase;
 import com.inventory.product.domain.model.enums.ShopType;
@@ -20,12 +20,6 @@ import org.springframework.util.StringUtils;
 /** Checks a shop's rate rule list before it is saved or previewed. */
 @Component
 public class RateRulesValidator {
-
-  /** Names a rule may not take: they are the shop's built-in rate names. */
-  static final Set<String> RESERVED_NAMES = Set.of(
-      PricingConstants.DEFAULT_RATE_PRICE_TO_RETAIL.toLowerCase(Locale.ROOT),
-      PricingConstants.DEFAULT_RATE_MAXIMUM_RETAIL_PRICE.toLowerCase(Locale.ROOT),
-      PricingConstants.DEFAULT_RATE_COST_PRICE.toLowerCase(Locale.ROOT));
 
   private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
 
@@ -59,7 +53,8 @@ public class RateRulesValidator {
         throw invalid("Rate rule name is required");
       }
       String key = name.toLowerCase(Locale.ROOT);
-      if (RESERVED_NAMES.contains(key)) {
+      // The built-in prices' keys and counter labels (priceToRetail, PTR, MRP, Cost …).
+      if (SystemRateNames.isReserved(name)) {
         throw invalid("Rate rule name is reserved: " + name);
       }
       if (!seen.add(key)) {
@@ -74,8 +69,9 @@ public class RateRulesValidator {
       }
       BigDecimal disc = rule.getDiscountPercent();
       SchemeDto scheme = rule.getScheme();
-      if (disc == null && scheme == null) {
-        throw invalid("Rate rule needs a discount, a scheme, or both: " + name);
+      // A rule with no disc (or 0) and no scheme is its base unchanged: not a rate of its own.
+      if ((disc == null || disc.signum() == 0) && scheme == null) {
+        throw invalid("Rate rule needs a discount above 0, a scheme, or both: " + name);
       }
       if (disc != null && (disc.signum() < 0 || disc.compareTo(HUNDRED) > 0)) {
         throw invalid("Rate rule discount must be between 0 and 100: " + name);

@@ -4,7 +4,6 @@ import com.inventory.pricing.domain.model.RateRuleSpec;
 import com.inventory.pricing.service.ShopRateRulesPort;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.ShopRateRulesDocument;
-import com.inventory.product.domain.model.enums.ShopType;
 import com.inventory.product.domain.repository.ShopRateRulesRepository;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.user.service.RbacService;
@@ -48,16 +47,6 @@ public class ShopRateRulesPortImpl implements ShopRateRulesPort {
                 r.getDiscountPercent(), r.getScheme()))
             .toList())
         .orElseGet(List::of);
-  }
-
-  @Override
-  public boolean isRetailer(String shopId) {
-    if (!StringUtils.hasText(shopId)) {
-      return false;
-    }
-    return shopRepository.findById(shopId)
-        .map(s -> s.getShopType() == ShopType.RETAILER)
-        .orElse(false);
   }
 
   @Override

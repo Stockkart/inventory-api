@@ -84,16 +84,6 @@ class ShopRateRulesPortImplTest {
   }
 
   @Test
-  void isRetailerFollowsTheShopType() {
-    when(shopRepository.findById(SHOP))
-        .thenReturn(Optional.of(RateRulesTestFixtures.shop(ShopType.RETAILER, "pharmacy")));
-    assertTrue(port.isRetailer(SHOP));
-    when(shopRepository.findById(SHOP))
-        .thenReturn(Optional.of(RateRulesTestFixtures.shop(ShopType.WHOLESALER, "pharmacy")));
-    assertFalse(port.isRetailer(SHOP));
-  }
-
-  @Test
   void canEditRatesFollowsRbac() {
     when(rbacService.canEditRates(OWNER, SHOP)).thenReturn(true);
     when(rbacService.canEditRates("cashier-1", SHOP)).thenReturn(false);
