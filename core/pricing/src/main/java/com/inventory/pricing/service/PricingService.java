@@ -112,19 +112,24 @@ public class PricingService {
       if (StringUtils.hasText(request.getDefaultRate())) {
         pricing.setDefaultRate(request.getDefaultRate());
       }
-      boolean touchesRates = request.getRates() != null || hasNames(request.getResetRates());
+      // A defaultRate counts: with rules it must pass the generator's guard, so a default rate
+      // built on the selling price falls back instead of becoming the selling price.
+      boolean touchesRates = request.getRates() != null || hasNames(request.getResetRates())
+          || StringUtils.hasText(request.getDefaultRate());
+      List<SkippedRateRule> warnings = List.of();
       if (touchesRates && rateGenerationService.hasRules(pricing.getShopId())) {
-        logWarnings(pricingId, rateGenerationService.apply(
-            pricing, request.getRates(), request.getResetRates(), userId));
+        warnings = rateGenerationService.apply(
+            pricing, request.getRates(), request.getResetRates(), userId);
+        logWarnings(pricingId, warnings);
       } else if (request.getRates() != null) {
-        pricing.setRates(request.getRates());
+        pricing.setRates(RateGenerationService.asManualRates(request.getRates()));
       }
       pricing.setSellingPrice(PricingUtils.resolveEffectiveSellingPrice(pricing));
       pricing.setUpdatedAt(java.time.Instant.now());
       pricing = pricingRepository.save(pricing);
 
       log.debug("Updated default price for pricing: {}", pricingId);
-      return pricingMapper.toResponse(pricing);
+      return withWarnings(pricingMapper.toResponse(pricing), warnings);
 
     } catch (ValidationException | ResourceNotFoundException e) {
       log.warn("Update default price failed: {}", e.getMessage());
@@ -170,7 +175,7 @@ public class PricingService {
       Pricing pricing = pricingRepository.findById(pricingId)
           .orElseThrow(() -> new ResourceNotFoundException("Pricing", "id", pricingId));
 
-      generateRatesOnUpdate(pricing, request, userId);
+      List<SkippedRateRule> warnings = generateRatesOnUpdate(pricing, request, userId);
       pricingPolicyPort.validateAndNormalizeUpdate(request, verticalId, pricing);
       pricingValidator.validateUpdateRequest(request);
 
@@ -179,7 +184,7 @@ public class PricingService {
       pricing = pricingRepository.save(pricing);
 
       log.debug("Updated pricing: {}", pricingId);
-      return pricingMapper.toResponse(pricing);
+      return withWarnings(pricingMapper.toResponse(pricing), warnings);
 
     } catch (ValidationException | ResourceNotFoundException e) {
       log.warn("Update pricing failed: {}", e.getMessage());
@@ -190,9 +195,15 @@ public class PricingService {
     }
   }
 
-  /** Generates the new batch's rates into the request; untouched when the shop has no rules. */
+  /**
+   * Generates the new batch's rates into the request. A shop without rules keeps the rates sent,
+   * as name and price only (see {@link RateGenerationService#asManualRates}).
+   */
   private void generateRatesOnCreate(CreatePricingRequest request) {
     if (!rateGenerationService.hasRules(request.getShopId())) {
+      if (request.getRates() != null) {
+        request.setRates(RateGenerationService.asManualRates(request.getRates()));
+      }
       return;
     }
     Pricing draft = pricingMapper.toEntity(request);
@@ -206,25 +217,42 @@ public class PricingService {
    * Regenerates rates against the patched bases on a working copy, then writes the result into the
    * request, so the policy and the mapper below apply it like any other patch.
    */
-  private void generateRatesOnUpdate(Pricing pricing, UpdatePricingRequest request, String userId) {
+  private List<SkippedRateRule> generateRatesOnUpdate(Pricing pricing, UpdatePricingRequest request,
+      String userId) {
     if (request == null) {
-      return;
+      return List.of();
     }
     boolean touches = request.getRates() != null || hasNames(request.getResetRates())
         || request.getPriceToRetail() != null || request.getMaximumRetailPrice() != null
-        || request.getSellingPrice() != null;
-    if (!touches || !rateGenerationService.hasRules(pricing.getShopId())) {
-      return;
+        || request.getSellingPrice() != null || StringUtils.hasText(request.getDefaultRate());
+    if (!touches) {
+      return List.of();
+    }
+    if (!rateGenerationService.hasRules(pricing.getShopId())) {
+      if (request.getRates() != null) {
+        request.setRates(RateGenerationService.asManualRates(request.getRates()));
+      }
+      return List.of();
     }
     Pricing draft = pricingMapper.copy(pricing);
     draft.setRates(null);
     pricingMapper.updateEntity(request, draft);
     draft.setRates(pricing.getRates() == null ? null : new ArrayList<>(pricing.getRates()));
-    logWarnings(pricing.getId(), rateGenerationService.apply(
-        draft, request.getRates(), request.getResetRates(), userId));
+    List<SkippedRateRule> warnings = rateGenerationService.apply(
+        draft, request.getRates(), request.getResetRates(), userId);
+    logWarnings(pricing.getId(), warnings);
     request.setRates(draft.getRates() == null ? new ArrayList<>() : draft.getRates());
     request.setDefaultRate(draft.getDefaultRate());
     request.setSellingPrice(draft.getSellingPrice());
+    return warnings;
+  }
+
+  /** Puts the write's below-cost warnings on the response; null when there are none. */
+  private static PricingResponse withWarnings(PricingResponse response, List<SkippedRateRule> warnings) {
+    if (response != null) {
+      response.setWarnings(warnings == null || warnings.isEmpty() ? null : List.copyOf(warnings));
+    }
+    return response;
   }
 
   private static boolean hasNames(List<String> names) {

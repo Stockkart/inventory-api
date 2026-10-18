@@ -42,7 +42,8 @@ import java.util.Set;
  *       reported.</li>
  *   <li>{@code resetRates} names need the grant and are regenerated from the rule.</li>
  *   <li>Other rule rates are regenerated; a rule skipped below cost leaves no rate.</li>
- *   <li>Rates matching no rule are kept as sent and marked {@code manual}; no grant needed.</li>
+ *   <li>Rates matching no rule keep only their name and price and are marked {@code manual}; no
+ *       grant needed.</li>
  * </ul>
  *
  * <p>A pricing with no id is a new batch: incoming rule rates are replaced by generated ones and no
@@ -239,17 +240,29 @@ public class RateGenerationService {
         || PricingConstants.DEFAULT_RATE_COST_PRICE.equalsIgnoreCase(dr);
   }
 
-  private static Rate asManual(Rate rate) {
+  /**
+   * A rate that matches no rule, as stored: its name and price, marked {@code manual}. Every other
+   * field is dropped, because only a rule can produce them: a client-sent {@code baseValue} would
+   * otherwise be what checkout bills ({@code CartRateResolver}).
+   */
+  static Rate asManual(Rate rate) {
     return Rate.builder()
         .name(rate.getName())
         .price(rate.getPrice())
-        .base(rate.getBase())
-        .baseValue(rate.getBaseValue())
-        .discountPercent(rate.getDiscountPercent())
-        .scheme(rate.getScheme())
         .manual(true)
-        .gstMode(rate.getGstMode())
         .build();
+  }
+
+  /** {@link #asManual} for each rate; the rates of a shop without rules are stored this way. */
+  static List<Rate> asManualRates(List<Rate> rates) {
+    if (rates == null) {
+      return null;
+    }
+    List<Rate> result = new ArrayList<>(rates.size());
+    for (Rate r : rates) {
+      result.add(r == null ? null : asManual(r));
+    }
+    return result;
   }
 
   private static Map<String, Rate> byName(List<Rate> rates) {
