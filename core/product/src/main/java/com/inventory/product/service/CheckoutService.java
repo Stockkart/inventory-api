@@ -759,6 +759,7 @@ public class CheckoutService {
           if (StringUtils.hasText(item.getRateName())) {
             cartRateResolver.resolve(inventory, item.getRateName())
                 .ifPresent(terms -> applyPickedRateTerms(purchaseItem, terms));
+            purchaseItem.setRequestedRateName(item.getRateName().trim());
           }
           purchaseItem.setSaleUnit(saleUnit);
           purchaseItem.setBaseQuantity(baseQuantity);
@@ -854,6 +855,7 @@ public class CheckoutService {
           if (rateTerms.isPresent()) {
             if (StringUtils.hasText(item.getRateName())) {
               applyPickedRateTerms(purchaseItem, rateTerms.get());
+              purchaseItem.setRequestedRateName(item.getRateName().trim());
             } else {
               applyDefaultRateTerms(purchaseItem, rateTerms.get(), item);
             }
@@ -1274,6 +1276,10 @@ public class CheckoutService {
             String existingSaleUnit = existingItem.getSaleUnit() != null ? existingItem.getSaleUnit() : "UNIT";
             String incomingSaleUnit = newItem.getSaleUnit() != null ? newItem.getSaleUnit() : existingSaleUnit;
             if (!existingSaleUnit.equals(incomingSaleUnit)) {
+              if (StringUtils.hasText(newItem.getRequestedRateName())) {
+                throw new ValidationException("rateName cannot be sent with a unit change for "
+                    + existingItem.getName() + ": switch the unit first, then pick the rate");
+              }
               boolean wasAtMrp = CheckoutUtils.isSellingAtMrp(existingItem);
               String existingLotId = PurchaseItemRefs.stockLotId(existingItem);
               Inventory inventory = inventoryRepository.findById(existingLotId)
@@ -1291,7 +1297,8 @@ public class CheckoutService {
                 switchBaseQuantity = roundedWholeUnits * targetFactor;
               }
               BigDecimal saleQty = toSaleQuantityDecimal(switchBaseQuantity, targetFactor);
-              BigDecimal priceToRetail = newItem.getPriceToRetail() != null ? newItem.getPriceToRetail() : existingItem.getPriceToRetail();
+              BigDecimal priceToRetail = newItem.getPriceToRetail() != null && !newItem.isDefaultRateTerms()
+                  ? newItem.getPriceToRetail() : existingItem.getPriceToRetail();
               if (priceToRetail != null
                   && existingItem.getQuantity() != null
                   && existingItem.getQuantity().compareTo(BigDecimal.ZERO) > 0
@@ -1326,20 +1333,22 @@ public class CheckoutService {
                       ? perUnitDiscount.multiply(saleQty)
                       : BigDecimal.ZERO
               );
-              switchedItem.setSaleAdditionalDiscount(newItem.getSaleAdditionalDiscount() != null
+              // Terms the default rate filled in (the request sent none) never replace the line's own.
+              PurchaseItem termsSource = newItem.isDefaultRateScheme() ? existingItem : newItem;
+              switchedItem.setSaleAdditionalDiscount(newItem.getSaleAdditionalDiscount() != null && !newItem.isDefaultRateDisc()
                   ? newItem.getSaleAdditionalDiscount()
                   : existingItem.getSaleAdditionalDiscount());
-              SchemeType switchedSchemeType = newItem.getSchemeType() != null ? newItem.getSchemeType() : existingItem.getSchemeType();
+              SchemeType switchedSchemeType = termsSource.getSchemeType() != null ? termsSource.getSchemeType() : existingItem.getSchemeType();
               switchedItem.setSchemeType(switchedSchemeType);
-              switchedItem.setSchemePercentage(newItem.getSchemePercentage() != null
-                  ? newItem.getSchemePercentage()
+              switchedItem.setSchemePercentage(termsSource.getSchemePercentage() != null
+                  ? termsSource.getSchemePercentage()
                   : existingItem.getSchemePercentage());
               if (switchedSchemeType == SchemeType.PERCENTAGE) {
                 switchedItem.setSchemePayFor(null);
                 switchedItem.setSchemeFree(null);
               } else {
-                switchedItem.setSchemePayFor(newItem.getSchemePayFor() != null ? newItem.getSchemePayFor() : existingItem.getSchemePayFor());
-                switchedItem.setSchemeFree(newItem.getSchemeFree() != null ? newItem.getSchemeFree() : existingItem.getSchemeFree());
+                switchedItem.setSchemePayFor(termsSource.getSchemePayFor() != null ? termsSource.getSchemePayFor() : existingItem.getSchemePayFor());
+                switchedItem.setSchemeFree(termsSource.getSchemeFree() != null ? termsSource.getSchemeFree() : existingItem.getSchemeFree());
                 switchedItem.setSchemePercentage(null);
               }
               switchedItem.setSgst(existingItem.getSgst());
@@ -1386,8 +1395,9 @@ public class CheckoutService {
             }
 
             // Case 1 & 2: Update quantity (positive adds, negative decreases). Use payload priceToRetail when provided (update-only or add); for negative qty we only remove, keep existing price.
+            // A price the default rate filled in is for a lot new to the cart; the line keeps its own.
             BigDecimal priceToRetail = ((newItem.getQuantity() == null || newItem.getQuantity().compareTo(BigDecimal.ZERO) >= 0)
-                && newItem.getPriceToRetail() != null)
+                && newItem.getPriceToRetail() != null && !newItem.isDefaultRateTerms())
                 ? newItem.getPriceToRetail()
                 : existingItem.getPriceToRetail();
             int saleUnitFactor = getConversionFactorToBase(inventory, existingSaleUnit);
@@ -1423,6 +1433,16 @@ public class CheckoutService {
             SchemeType schemeType = newItem.getSchemeType() != null ? newItem.getSchemeType() : existingItem.getSchemeType();
             BigDecimal schemePercentage = newItem.getSchemePercentage() != null ? newItem.getSchemePercentage() : existingItem.getSchemePercentage();
             // A picked rule rate's terms are the line's terms: a scheme it lacks is cleared, not kept.
+            // Disc or scheme the default rate filled in (the request sent none) keep the line's own.
+            if (newItem.isDefaultRateDisc()) {
+              additionalDiscount = existingItem.getSaleAdditionalDiscount();
+            }
+            if (newItem.isDefaultRateScheme()) {
+              schemePayFor = existingItem.getSchemePayFor();
+              schemeFree = existingItem.getSchemeFree();
+              schemeType = existingItem.getSchemeType();
+              schemePercentage = existingItem.getSchemePercentage();
+            }
             if (newItem.isRateTermsPicked()) {
               additionalDiscount = newItem.getSaleAdditionalDiscount();
               schemePayFor = newItem.getSchemePayFor();
@@ -1537,6 +1557,8 @@ public class CheckoutService {
       // You can add logic here to delete the cart if needed
 
       return purchaseRepository.save(existingCart);
+    } catch (ValidationException | ResourceNotFoundException e) {
+      throw e;
     } catch (DataAccessException e) {
       log.error("Database error while updating cart: {}", existingCart.getId(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
@@ -2272,19 +2294,24 @@ public class CheckoutService {
   /**
    * Puts the batch's default rule rate on a new line: its base, and its disc and scheme in place
    * of the batch's sale defaults. Disc or scheme sent with the item still win, as they do today.
+   * The line is marked so that, if the lot is already in the cart, the merge keeps that line's own
+   * price and any disc/scheme the request did not send.
    */
   private static void applyDefaultRateTerms(PurchaseItem line, CartRateResolver.LineTerms terms,
       AddToCartRequest.CartItem item) {
     if (terms.price() != null) {
       line.setPriceToRetail(terms.price());
     }
+    line.setDefaultRateTerms(true);
     if (item.getSaleAdditionalDiscount() == null) {
       line.setSaleAdditionalDiscount(terms.discountPercent());
+      line.setDefaultRateDisc(true);
     }
     boolean schemeSent = item.getSchemePayFor() != null || item.getSchemeFree() != null
         || item.getSchemeType() != null || item.getSchemePercentage() != null;
     if (!schemeSent) {
       setRateScheme(line, terms);
+      line.setDefaultRateScheme(true);
     }
   }
 

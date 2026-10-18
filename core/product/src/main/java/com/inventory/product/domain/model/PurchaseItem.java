@@ -110,6 +110,30 @@ public class PurchaseItem {
   @JsonIgnore
   private boolean rateTermsPicked;
 
+  /** Request-scoped: the {@code rateName} the incoming item carried, if any. Never stored. */
+  @Transient
+  @JsonIgnore
+  private String requestedRateName;
+
+  /**
+   * Request-scoped: this incoming line's price came from the batch's default rule rate, not from
+   * the request. When it merges into a line already in the cart, the existing line keeps its
+   * price; the default rate only prices a lot new to the cart. Never stored.
+   */
+  @Transient
+  @JsonIgnore
+  private boolean defaultRateTerms;
+
+  /** Request-scoped: the disc came from the default rate (the request sent none). Never stored. */
+  @Transient
+  @JsonIgnore
+  private boolean defaultRateDisc;
+
+  /** Request-scoped: the scheme came from the default rate (the request sent none). Never stored. */
+  @Transient
+  @JsonIgnore
+  private boolean defaultRateScheme;
+
   /** Derived stock lot id for refunds/analytics and API backward compatibility. */
   @JsonProperty("inventoryId")
   public String getInventoryId() {

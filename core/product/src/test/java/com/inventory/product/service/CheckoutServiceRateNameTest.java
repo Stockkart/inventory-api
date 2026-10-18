@@ -259,6 +259,108 @@ class CheckoutServiceRateNameTest {
         PricingConstants.GST_MODE_INCLUSIVE), "92.00", "9.86");
   }
 
+  /** ScanSell's + resends the line's disc and sends scheme only when the line has one. */
+  @Test
+  void defaultRateThenPickRateBThenPlusOneKeepsRateBTerms() {
+    stock("100", "150", "83.64", "Rate-A", rateA(), rateB());
+    add(11, null);
+    add(0, "Rate-B");
+
+    AddToCartRequest.CartItem plus = item(1, null);
+    plus.setSaleAdditionalDiscount(new BigDecimal("7"));
+    send(plus);
+
+    PurchaseItem line = line();
+    assertEquals(12, line.getQuantity().intValue());
+    assertMoney("100", line.getPriceToRetail());
+    assertMoney("7", line.getSaleAdditionalDiscount());
+    assertNull(line.getSchemeType());
+    assertNull(line.getSchemePayFor());
+    assertNull(line.getSchemeFree());
+    assertMoney("1116.00", beforeTax());
+  }
+
+  @Test
+  void defaultRateThenDiscEditThenPlusOneKeepsEdit() {
+    RateDto schemeOnly = rate("Rate-C", PricingConstants.RATE_BASE_PRICE_TO_RETAIL, "100", "0",
+        PricingConstants.GST_MODE_EXCLUSIVE);
+    schemeOnly.setDiscountPercent(null);
+    schemeOnly.setScheme(new SchemeDto(PricingConstants.SCHEME_TYPE_FIXED_UNITS, 10, 1, null));
+    stock("100", "150", "90.91", "Rate-C", schemeOnly);
+    add(11, null);
+    assertTerms("100", "0", 10, 1);
+
+    AddToCartRequest.CartItem edit = item(0, null);
+    edit.setSaleAdditionalDiscount(new BigDecimal("5"));
+    send(edit);
+
+    add(1, null);
+
+    assertEquals(12, line().getQuantity().intValue());
+    assertTerms("100", "5", 10, 1);
+  }
+
+  @Test
+  void defaultMrpRateThenPickPtrRateThenPlusOneKeepsPtrPrice() {
+    RateDto rateM = rate("Rate-M", PricingConstants.RATE_BASE_MAXIMUM_RETAIL_PRICE, "150", "25",
+        PricingConstants.GST_MODE_INCLUSIVE);
+    stock("100", "150", "112.50", "Rate-M", rateM, rateA());
+    add(1, null);
+    assertMoney("150", line().getPriceToRetail());
+    assertMoney("25", line().getSaleAdditionalDiscount());
+    add(0, "Rate-A");
+
+    AddToCartRequest.CartItem plus = item(10, null);
+    plus.setSaleAdditionalDiscount(new BigDecimal("8"));
+    plus.setSchemeType(SchemeType.FIXED_UNITS);
+    plus.setSchemePayFor(10);
+    plus.setSchemeFree(1);
+    send(plus);
+
+    assertEquals(11, line().getQuantity().intValue());
+    assertTerms("100", "8", 10, 1);
+    assertMoney("920.00", beforeTax());
+  }
+
+  @Test
+  void unitSwitchDoesNotReapplyDefaultRate() {
+    stock("100", "150", "83.64", "Rate-A", rateA());
+    add(11, null);
+    AddToCartRequest.CartItem edit = item(0, null);
+    edit.setSaleAdditionalDiscount(new BigDecimal("5"));
+    send(edit);
+
+    AddToCartRequest.CartItem toTablet = item(110, null);
+    toTablet.setUnit("TABLET");
+    toTablet.setBaseQuantity(110);
+    send(toTablet);
+
+    PurchaseItem line = line();
+    assertEquals("TABLET", line.getSaleUnit());
+    assertMoney("5", line.getSaleAdditionalDiscount());
+    assertEquals(SchemeType.FIXED_UNITS, line.getSchemeType());
+    assertEquals(10, line.getSchemePayFor());
+    assertEquals(1, line.getSchemeFree());
+    assertMoney("10.00", line.getPriceToRetail());
+  }
+
+  @Test
+  void rateNameWithUnitSwitchRejected() {
+    stock("100", "150", "83.64", null, rateA());
+    add(11, "Rate-A");
+
+    AddToCartRequest.CartItem pickAndSwitch = item(0, "Rate-A");
+    pickAndSwitch.setUnit("TABLET");
+    ValidationException e = assertThrows(ValidationException.class, () -> send(pickAndSwitch));
+    org.junit.jupiter.api.Assertions.assertTrue(e.getMessage().contains("rateName"), e.getMessage());
+
+    AddToCartRequest.CartItem addAndSwitch = item(10, "Rate-A");
+    addAndSwitch.setUnit("TABLET");
+    addAndSwitch.setBaseQuantity(10);
+    assertThrows(ValidationException.class, () -> send(addAndSwitch));
+    assertEquals("STRIP", line().getSaleUnit());
+  }
+
   @Test
   void unknownRateNameRejected() {
     stock("100", "150", "83.64", null, rateA());
