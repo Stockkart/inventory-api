@@ -13,9 +13,11 @@ import com.inventory.product.domain.model.enums.PurchaseStatus;
 import com.inventory.credit.domain.model.CreditPartyType;
 import com.inventory.product.domain.model.Refund;
 import com.inventory.product.domain.model.RefundItem;
+import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.PurchaseRepository;
 import com.inventory.product.domain.repository.RefundRepository;
+import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.rest.dto.request.RefundRequest;
 import com.inventory.product.mapper.RefundMapper;
 import com.inventory.product.util.MongoEmbeddedReadUtil;
@@ -100,6 +102,9 @@ public class RefundService {
   @Autowired
   private ShopCapabilityService shopCapabilityService;
 
+  @Autowired
+  private ShopRepository shopRepository;
+
   /**
    * Process refund for a purchase.
    * Validates the purchase, calculates refund amount, and restores inventory.
@@ -163,7 +168,11 @@ public class RefundService {
       List<RefundItem> domainRefundItems = new ArrayList<>();
       List<SalesReturnValuation.LineAmounts> lineAmounts = new ArrayList<>();
       // Sales made before #229 never stated the GST inside at-MRP lines; their returns reverse none.
-      boolean atMrpGstStated = SalesReturnValuation.statedAtMrpGst(purchase);
+      // The sale taxed a below-MRP line without its own rates at the shop's defaults.
+      Shop shop = shopRepository.findById(shopId).orElse(null);
+      boolean atMrpGstStated =
+          SalesReturnValuation.statedAtMrpGst(
+              purchase, shop != null ? shop.getCgst() : null, shop != null ? shop.getSgst() : null);
 
       for (RefundRequest.RefundItem refundItem : request.getItems()) {
         if (!StringUtils.hasText(refundItem.getInventoryId())) {
@@ -205,10 +214,13 @@ public class RefundService {
                   + refundItem.getInventoryId());
         }
 
+        // What earlier returns (and earlier rows of this one) took back, so a line returned in
+        // pieces reverses in total the GST the sale stated.
         SalesReturnValuation.LineAmounts amounts =
             SalesReturnValuation.lineAmounts(
                 purchaseItem, refundBaseQuantity, refundItem.getQuantity(), billingMode,
-                Boolean.TRUE.equals(purchase.getInterstate()), atMrpGstStated);
+                Boolean.TRUE.equals(purchase.getInterstate()), atMrpGstStated, alreadyRefunded);
+        priorRefundedBase.merge(refundItem.getInventoryId(), refundBaseQuantity, Integer::sum);
 
         restoreInventoryForRefund(refundItem.getInventoryId(), refundBaseQuantity, shopId);
 

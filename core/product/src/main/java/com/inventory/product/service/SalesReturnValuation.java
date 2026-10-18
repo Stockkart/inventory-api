@@ -38,6 +38,9 @@ final class SalesReturnValuation {
    * A line sold at MRP reverses the GST inside its price (see {@link #atMrpLineAmounts}), but
    * only when {@code atMrpGstStated}: the sale stated that GST ({@link #statedAtMrpGst}). A sale
    * that never stated it keeps the old return, zero GST and the whole amount taxable.
+   *
+   * <p>This form is for a line nothing of which was returned before; see the form taking
+   * {@code returnedBeforeBaseQty}.
    */
   static LineAmounts lineAmounts(
       PurchaseItem purchaseItem,
@@ -46,8 +49,55 @@ final class SalesReturnValuation {
       BillingMode billingMode,
       boolean interstate,
       boolean atMrpGstStated) {
-    BigDecimal billableQty =
-        prorateBillableQuantity(purchaseItem, refundBaseQty, refundDisplayQty);
+    return lineAmounts(
+        purchaseItem, refundBaseQty, refundDisplayQty, billingMode, interstate, atMrpGstStated, 0);
+  }
+
+  /**
+   * As {@link #lineAmounts(PurchaseItem, int, int, BillingMode, boolean, boolean)}, for a line of
+   * which {@code returnedBeforeBaseQty} base units were taken back by earlier returns. Every
+   * amount is the sold line's amount for everything returned so far, this return included, less
+   * its amount for what was returned before ({@link #returnedUpTo}). Each is a share of the sold
+   * line (its billable quantity × returned ÷ sold), never the scheme worked out again on the
+   * returned quantity, and is rounded once. So a line returned in pieces refunds, in total, what
+   * returning it whole does, and an at-MRP line reverses head by head the GST the sale stated.
+   */
+  static LineAmounts lineAmounts(
+      PurchaseItem purchaseItem,
+      int refundBaseQty,
+      int refundDisplayQty,
+      BillingMode billingMode,
+      boolean interstate,
+      boolean atMrpGstStated,
+      int returnedBeforeBaseQty) {
+    int before = Math.max(returnedBeforeBaseQty, 0);
+    LineAmounts upTo =
+        returnedUpTo(
+            purchaseItem, before + refundBaseQty, before + refundDisplayQty, billingMode,
+            interstate, atMrpGstStated);
+    if (before == 0) {
+      return upTo;
+    }
+    LineAmounts earlier =
+        returnedUpTo(purchaseItem, before, before, billingMode, interstate, atMrpGstStated);
+    return new LineAmounts(
+        upTo.taxable().subtract(earlier.taxable()),
+        upTo.cgst().subtract(earlier.cgst()),
+        upTo.sgst().subtract(earlier.sgst()),
+        upTo.igst().subtract(earlier.igst()),
+        upTo.cogs().subtract(earlier.cogs()),
+        upTo.lineTotal().subtract(earlier.lineTotal()));
+  }
+
+  /** The amounts for the first {@code baseQty} base units of a sold line, taken back at once. */
+  private static LineAmounts returnedUpTo(
+      PurchaseItem purchaseItem,
+      int baseQty,
+      int displayQty,
+      BillingMode billingMode,
+      boolean interstate,
+      boolean atMrpGstStated) {
+    BigDecimal billableQty = prorateBillableQuantity(purchaseItem, baseQty, displayQty);
     BigDecimal effectivePrice = CheckoutUtils.getEffectiveSellingPricePerUnit(purchaseItem);
     BigDecimal taxable = effectivePrice.multiply(billableQty).setScale(2, RoundingMode.HALF_UP);
     if (purchaseItem.getSaleAdditionalDiscount() != null
@@ -62,7 +112,7 @@ final class SalesReturnValuation {
               .setScale(2, RoundingMode.HALF_UP);
     }
 
-    BigDecimal cogs = prorateCogs(purchaseItem, refundBaseQty);
+    BigDecimal cogs = prorateCogs(purchaseItem, baseQty);
     // At MRP the amount above is what the customer paid, GST included.
     if (atMrpGstStated
         && CheckoutUtils.isTaxApplicable(billingMode)
@@ -127,10 +177,11 @@ final class SalesReturnValuation {
    * remainder is zero. Half, not all, so a paisa of rounding cannot decide it.
    *
    * <p>A sale with no at-MRP GST to state counts as stated: its at-MRP split is zero either way.
-   * Rates come from the lines only; a below-MRP line taxed at a shop default leaves extra header
-   * tax and can make an old sale read as stated.
+   * Rates are worked as {@code CheckoutService.calculateTax} does: a below-MRP line without its
+   * own rate is taxed at the shop's default ({@code shopCgst}, {@code shopSgst}; null when the
+   * shop has none), an at-MRP line only at its own.
    */
-  static boolean statedAtMrpGst(Purchase sale) {
+  static boolean statedAtMrpGst(Purchase sale, String shopCgst, String shopSgst) {
     if (sale == null || sale.getItems() == null) {
       return false;
     }
@@ -143,16 +194,19 @@ final class SalesReturnValuation {
           || item.getPriceToRetail() == null) {
         continue;
       }
+      boolean atMrp = CheckoutUtils.isSellingAtMrp(item);
+      String cgstRate = StringUtils.hasText(item.getCgst()) ? item.getCgst() : (atMrp ? null : shopCgst);
+      String sgstRate = StringUtils.hasText(item.getSgst()) ? item.getSgst() : (atMrp ? null : shopSgst);
       BigDecimal value =
           CheckoutUtils.getTaxableLineValue(item, CheckoutUtils.getBillableQuantityAsDecimal(item));
       BigDecimal gst = BigDecimal.ZERO;
-      if (StringUtils.hasText(item.getCgst())) {
-        gst = gst.add(CheckoutUtils.gstHeadAmount(value, item.getCgst()));
+      if (StringUtils.hasText(cgstRate)) {
+        gst = gst.add(CheckoutUtils.gstHeadAmount(value, cgstRate));
       }
-      if (StringUtils.hasText(item.getSgst())) {
-        gst = gst.add(CheckoutUtils.gstHeadAmount(value, item.getSgst()));
+      if (StringUtils.hasText(sgstRate)) {
+        gst = gst.add(CheckoutUtils.gstHeadAmount(value, sgstRate));
       }
-      if (CheckoutUtils.isSellingAtMrp(item)) {
+      if (atMrp) {
         atMrpGst = atMrpGst.add(gst);
       } else {
         belowMrpGst = belowMrpGst.add(gst);
