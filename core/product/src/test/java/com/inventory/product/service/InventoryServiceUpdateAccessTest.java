@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
+import com.inventory.common.exception.ValidationException;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.rest.dto.request.UpdateInventoryRequest;
@@ -31,6 +32,7 @@ class InventoryServiceUpdateAccessTest {
   @Mock private InventoryRepository inventoryRepository;
   @Mock private InventoryValidator inventoryValidator;
   @Mock private InventoryVerticalValidationHandler inventoryVerticalValidationHandler;
+  @Mock private ProductService productService;
   @InjectMocks private InventoryService inventoryService;
 
   @Test
@@ -47,5 +49,24 @@ class InventoryServiceUpdateAccessTest {
 
     assertEquals(ErrorCode.ACCESS_DENIED, e.getErrorCode());
     verify(inventoryRepository, never()).save(any(Inventory.class));
+  }
+
+  /**
+   * A pricing 400 raised while the inventory is saved (the write aspect runs the pricing update
+   * before the save) stays a 400, and nothing is saved.
+   */
+  @Test
+  void pricingValidationFailureOnSaveStaysABadRequest() {
+    Inventory inventory = new Inventory();
+    inventory.setId("inv-1");
+    inventory.setShopId("shop-1");
+    when(inventoryRepository.findById("inv-1")).thenReturn(Optional.of(inventory));
+    ValidationException clash = new ValidationException("Rate rate-a differs from rate rule Rate-A only in case");
+    when(inventoryRepository.save(any(Inventory.class))).thenThrow(clash);
+
+    ValidationException e = assertThrows(ValidationException.class,
+        () -> inventoryService.update("inv-1", new UpdateInventoryRequest(), "shop-1", "user-7"));
+
+    assertEquals(clash.getMessage(), e.getMessage());
   }
 }

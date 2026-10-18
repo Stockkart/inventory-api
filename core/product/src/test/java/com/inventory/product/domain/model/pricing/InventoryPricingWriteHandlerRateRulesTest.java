@@ -1,13 +1,20 @@
 package com.inventory.product.domain.model.pricing;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.inventory.common.constants.ErrorCode;
+import com.inventory.common.exception.BaseException;
+import com.inventory.common.exception.ValidationException;
 import com.inventory.pricing.domain.model.RateRuleSpec;
 import com.inventory.pricing.rest.dto.request.PricingCreateCommand;
 import com.inventory.pricing.rest.dto.request.PricingUpdateCommand;
@@ -86,6 +93,43 @@ class InventoryPricingWriteHandlerRateRulesTest {
     ArgumentCaptor<PricingUpdateCommand> captor = ArgumentCaptor.forClass(PricingUpdateCommand.class);
     verify(pricingPort).update(eq("p-1"), captor.capture(), eq("owner-1"));
     return captor.getValue();
+  }
+
+  private void updateRatesWhilePricingThrows(RuntimeException failure) {
+    doThrow(failure).when(pricingPort).update(anyString(), any(PricingUpdateCommand.class), any());
+    Inventory inventory = newInventory();
+    inventory.setId("inv-1");
+    inventory.setPricingId("p-1");
+    UpdateInventoryRequest req = new UpdateInventoryRequest();
+    req.setPriceToRetail(new BigDecimal("110"));
+    InventoryPricingContext.setUpdate(req, "owner-1");
+    try {
+      handler.persistOnSave(inventory);
+    } finally {
+      InventoryPricingContext.clear();
+    }
+  }
+
+  /**
+   * A rejected rate edit (case-only clash with a rule, override on a missing base) must reach
+   * the caller as 400 before the inventory is saved, not be dropped with the pricing update.
+   */
+  @Test
+  void pricingValidationFailureOnUpdateReachesTheCaller() {
+    ValidationException clash = new ValidationException("Rate rate-a differs from rate rule Rate-A only in case");
+
+    ValidationException e = assertThrows(ValidationException.class,
+        () -> updateRatesWhilePricingThrows(clash));
+
+    assertSame(clash, e);
+  }
+
+  /** Other pricing failures are still logged and swallowed, as before. */
+  @Test
+  void otherPricingFailuresOnUpdateAreStillSwallowed() {
+    assertDoesNotThrow(() -> updateRatesWhilePricingThrows(
+        new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Error updating pricing")));
+    assertDoesNotThrow(() -> updateRatesWhilePricingThrows(new IllegalStateException("boom")));
   }
 
   /** T3: a retailer with rules gets MRP and PTR mirroring a new selling price, as on create. */

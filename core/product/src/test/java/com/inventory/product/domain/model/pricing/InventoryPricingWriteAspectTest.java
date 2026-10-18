@@ -116,7 +116,9 @@ class InventoryPricingWriteAspectTest {
       handler.persistOnSave(inventory);
       return null;
     });
-    org.mockito.Mockito.doThrow(new com.inventory.common.exception.ValidationException("bad"))
+    // A pricing 400 now reaches the caller (InventoryPricingWriteHandlerRateRulesTest); any
+    // other pricing failure is still logged and swallowed.
+    org.mockito.Mockito.doThrow(new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Error updating pricing"))
         .when(pricingService).update(anyString(), any(), any(), any());
 
     aspect.setUpdateContext(joinPoint);
