@@ -2,13 +2,17 @@ package com.inventory.product.domain.model.pricing;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.inventory.common.constants.ErrorCode;
+import com.inventory.common.exception.BaseException;
 import com.inventory.pricing.mapper.PricingMapper;
 import com.inventory.pricing.mapper.PricingMapperImpl;
 import com.inventory.pricing.rest.dto.request.UpdatePricingRequest;
@@ -75,6 +79,47 @@ class InventoryPricingWriteAspectTest {
     verify(pricingService).update(eq("pr-1"), captor.capture(), isNull(), eq("user-7"));
     assertEquals(new BigDecimal("110"), captor.getValue().getPriceToRetail());
     assertNull(InventoryPricingContext.get());
+  }
+
+  @Test
+  void accessDeniedOnInventoryUpdatePropagatesAndInventoryIsNotSaved() throws Throwable {
+    UpdateInventoryRequest request = new UpdateInventoryRequest();
+    request.setPriceToRetail(new BigDecimal("110"));
+    Inventory inventory = new Inventory();
+    inventory.setId("inv-1");
+    inventory.setShopId("shop-1");
+    inventory.setPricingId("pr-1");
+    ProceedingJoinPoint saveCall = org.mockito.Mockito.mock(ProceedingJoinPoint.class);
+    when(saveCall.getArgs()).thenReturn(new Object[] {inventory});
+    when(joinPoint.getArgs()).thenReturn(new Object[] {"inv-1", request, "shop-1", "user-7"});
+    when(joinPoint.proceed()).thenAnswer(i -> aspect.persistOnSave(saveCall));
+    org.mockito.Mockito.doThrow(new BaseException(ErrorCode.ACCESS_DENIED, "You do not have permission to edit rates"))
+        .when(pricingService).update(anyString(), any(), any(), any());
+
+    BaseException e = assertThrows(BaseException.class, () -> aspect.setUpdateContext(joinPoint));
+
+    assertEquals(ErrorCode.ACCESS_DENIED, e.getErrorCode());
+    verify(saveCall, never()).proceed(any());
+    assertNull(InventoryPricingContext.get());
+  }
+
+  @Test
+  void otherPricingFailuresAreStillSwallowed() throws Throwable {
+    UpdateInventoryRequest request = new UpdateInventoryRequest();
+    request.setPriceToRetail(new BigDecimal("110"));
+    Inventory inventory = new Inventory();
+    inventory.setId("inv-1");
+    inventory.setShopId("shop-1");
+    inventory.setPricingId("pr-1");
+    when(joinPoint.getArgs()).thenReturn(new Object[] {"inv-1", request, "shop-1", "user-7"});
+    when(joinPoint.proceed()).thenAnswer(i -> {
+      handler.persistOnSave(inventory);
+      return null;
+    });
+    org.mockito.Mockito.doThrow(new com.inventory.common.exception.ValidationException("bad"))
+        .when(pricingService).update(anyString(), any(), any(), any());
+
+    aspect.setUpdateContext(joinPoint);
   }
 
   @Test

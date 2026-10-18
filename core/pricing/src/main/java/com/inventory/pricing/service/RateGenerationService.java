@@ -102,8 +102,9 @@ public class RateGenerationService {
     for (RateRuleSpec rule : rules) {
       String name = rule.name();
       Rate own = overrides.get(name);
+      // A legacy hand-typed rate (no base) later covered by a rule is regenerated, not repriced.
       if (own == null && !resets.contains(name) && stored.containsKey(name)
-          && Boolean.TRUE.equals(stored.get(name).getManual())) {
+          && Boolean.TRUE.equals(stored.get(name).getManual()) && stored.get(name).getBase() != null) {
         own = stored.get(name);
       }
       if (own != null) {
@@ -158,7 +159,7 @@ public class RateGenerationService {
       Rate current = stored.get(in.getName());
       BigDecimal currentDisc = current != null ? current.getDiscountPercent() : rule.discountPercent();
       Scheme currentScheme = current != null ? current.getScheme() : rule.scheme();
-      boolean discChanged = in.getDiscountPercent() != null && !sameAmount(in.getDiscountPercent(), currentDisc);
+      boolean discChanged = in.getDiscountPercent() != null && !sameDisc(in.getDiscountPercent(), currentDisc);
       boolean schemeChanged = in.getScheme() != null && !sameScheme(in.getScheme(), currentScheme);
       if (!discChanged && !schemeChanged) {
         continue;
@@ -202,17 +203,22 @@ public class RateGenerationService {
 
   /**
    * A defaultRate naming a rate that is no longer present falls back to priceToRetail (retailers
-   * too), never throwing. A named default then sets the selling price to that rate's price; the
-   * built-in defaults keep the selling price as it was, so a typed retailer selling price stays.
+   * too), never throwing. So does one naming a rate built on the selling price, so the selling
+   * price is never derived from a rate derived from it. A named default then sets the selling
+   * price to that rate's price; the built-in defaults keep the selling price as it was, so a typed
+   * retailer selling price stays.
    */
   private void resolveDefaultRate(Pricing pricing, List<Rate> rates) {
     String defaultRate = pricing.getDefaultRate();
     if (!StringUtils.hasText(defaultRate) || isBuiltInDefault(defaultRate)) {
       return;
     }
-    if (find(rates, defaultRate) == null) {
-      log.warn("Default rate '{}' on pricing {} is no longer generated; falling back to {}",
-          defaultRate, pricing.getId(), PricingConstants.DEFAULT_RATE_PRICE_TO_RETAIL);
+    Rate target = find(rates, defaultRate);
+    boolean missing = target == null;
+    if (missing || PricingConstants.RATE_BASE_SELLING_PRICE.equals(target.getBase())) {
+      log.warn("Default rate '{}' on pricing {} is {}; falling back to {}", defaultRate, pricing.getId(),
+          missing ? "no longer generated" : "built on the selling price",
+          PricingConstants.DEFAULT_RATE_PRICE_TO_RETAIL);
       metrics.increment(PricingMetricsConstants.RATE_DEFAULT_FALLBACK_TOTAL, 1,
           "module", PricingMetricsConstants.MODULE);
       pricing.setDefaultRate(PricingConstants.DEFAULT_RATE_PRICE_TO_RETAIL);
@@ -267,6 +273,11 @@ public class RateGenerationService {
       return a == b;
     }
     return a.compareTo(b) == 0;
+  }
+
+  /** Disc % null and 0 are the same: echoing 0 for a rule with no disc is not an override. */
+  private static boolean sameDisc(BigDecimal a, BigDecimal b) {
+    return (a == null ? BigDecimal.ZERO : a).compareTo(b == null ? BigDecimal.ZERO : b) == 0;
   }
 
   private static boolean sameScheme(Scheme a, Scheme b) {

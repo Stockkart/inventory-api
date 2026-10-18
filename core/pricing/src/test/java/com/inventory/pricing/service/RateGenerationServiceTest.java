@@ -347,6 +347,53 @@ class RateGenerationServiceTest {
   }
 
   @Test
+  void legacyRateLaterCoveredByRuleIsRegenerated() {
+    Rate legacy = namePrice("Rate-A", "70");
+    legacy.setManual(true);
+    Pricing p = stored("p1", "100", "150", null, legacy);
+
+    service.apply(p, null, null, CASHIER);
+
+    Rate a = find(p.getRates(), "Rate-A");
+    assertEquals(dec("83.64"), a.getPrice());
+    assertEquals(dec("8"), a.getDiscountPercent());
+    assertFalse(a.getManual());
+  }
+
+  @Test
+  void defaultRateOnSellingPriceBasedRateFallsBack() {
+    when(port.rulesFor(SHOP)).thenReturn(List.of(new com.inventory.pricing.domain.model.RateRuleSpec(
+        "Rate-S", PricingConstants.RATE_BASE_SELLING_PRICE, dec("10"), null)));
+    Pricing p = stored("p1", "100", "100", null);
+    p.setDefaultRate("Rate-S");
+    p.setSellingPrice(dec("100"));
+
+    service.apply(p, null, null, CASHIER);
+
+    assertEquals(dec("90.00"), find(p.getRates(), "Rate-S").getPrice());
+    assertEquals(PricingConstants.DEFAULT_RATE_PRICE_TO_RETAIL, p.getDefaultRate());
+    assertEquals(dec("100"), p.getSellingPrice());
+    verify(metrics).increment(
+        PricingMetricsConstants.RATE_DEFAULT_FALLBACK_TOTAL, 1, "module", PricingMetricsConstants.MODULE);
+  }
+
+  @Test
+  void echoedZeroDiscIsNotAnOverride() {
+    when(port.rulesFor(SHOP)).thenReturn(List.of(new com.inventory.pricing.domain.model.RateRuleSpec(
+        "Rate-D", PricingConstants.RATE_BASE_PRICE_TO_RETAIL, null, RateGenerationTestFixtures.tenPlusOne())));
+    Rate storedD = RateGenerationTestFixtures.generated("Rate-D", "90.91", PricingConstants.RATE_BASE_PRICE_TO_RETAIL,
+        "100", null, RateGenerationTestFixtures.tenPlusOne(), false, PricingConstants.GST_MODE_EXCLUSIVE);
+    Pricing p = stored("p1", "100", "150", null, storedD);
+
+    service.apply(p, List.of(withDisc("Rate-D", "90.91", "0")), null, CASHIER);
+
+    Rate d = find(p.getRates(), "Rate-D");
+    assertFalse(d.getManual());
+    assertNull(d.getDiscountPercent());
+    verify(port, never()).canEditRates(anyString(), anyString());
+  }
+
+  @Test
   void grantIsCheckedAgainstTheUserAndShop() {
     Pricing p = stored("p1", "100", "150", null, storedRateA100());
 

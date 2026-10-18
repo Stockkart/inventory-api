@@ -1,5 +1,7 @@
 package com.inventory.product.domain.model.pricing;
 
+import com.inventory.common.constants.ErrorCode;
+import com.inventory.common.exception.BaseException;
 import com.inventory.pricing.domain.model.Scheme;
 import com.inventory.pricing.rest.dto.request.PricingCreateCommand;
 import com.inventory.pricing.rest.dto.request.PricingUpdateCommand;
@@ -90,6 +92,12 @@ public class InventoryPricingWriteHandler {
           pricingPort.update(inventory.getPricingId(), cmd, ctx.userId);
         }
       }
+    } catch (BaseException e) {
+      // A denied rate edit must reach the caller (403), not save the inventory without its pricing.
+      if (e.getErrorCode() == ErrorCode.ACCESS_DENIED) {
+        throw e;
+      }
+      log.warn("Failed to persist pricing for inventory {}: {}", inventory.getId(), e.getMessage());
     } catch (Exception e) {
       log.warn("Failed to persist pricing for inventory {}: {}", inventory.getId(), e.getMessage());
     }
