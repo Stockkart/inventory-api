@@ -1,6 +1,7 @@
 package com.inventory.product.utils;
 
 import com.inventory.common.util.GstMath;
+import com.inventory.pricing.utils.SchemePriceUtils;
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.enums.SchemeType;
 import com.inventory.product.domain.model.Inventory;
@@ -27,20 +28,8 @@ public final class CheckoutUtils {
     if (totalQty.compareTo(BigDecimal.ZERO) <= 0) {
       return BigDecimal.ZERO;
     }
-    if (item.getSchemeType() == SchemeType.PERCENTAGE) {
-      return totalQty;
-    }
-    if (item.getSchemeType() == SchemeType.FIXED_UNITS && item.getSchemePayFor() != null && item.getSchemePayFor() > 0
-        && item.getSchemeFree() != null && item.getSchemeFree() >= 0) {
-      BigDecimal payFor = BigDecimal.valueOf(item.getSchemePayFor());
-      BigDecimal free = BigDecimal.valueOf(item.getSchemeFree());
-      BigDecimal sum = payFor.add(free);
-      if (sum.compareTo(BigDecimal.ZERO) <= 0) {
-        return totalQty;
-      }
-      return totalQty.multiply(payFor).divide(sum, 4, RoundingMode.HALF_UP);
-    }
-    return totalQty;
+    return SchemePriceUtils.billableQuantity(totalQty, schemeTypeName(item),
+        item.getSchemePayFor(), item.getSchemeFree());
   }
 
   /** Quantity in pricing units (converts base qty using unitFactor when applicable). */
@@ -58,12 +47,13 @@ public final class CheckoutUtils {
    */
   public static BigDecimal getEffectiveSellingPricePerUnit(PurchaseItem item) {
     BigDecimal price = item.getPriceToRetail() != null ? item.getPriceToRetail() : BigDecimal.ZERO;
-    if (item.getSchemeType() == SchemeType.PERCENTAGE && item.getSchemePercentage() != null
-        && item.getSchemePercentage().signum() > 0) {
-      BigDecimal pct = item.getSchemePercentage();
-      return price.multiply(BigDecimal.ONE.subtract(pct.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP)));
-    }
-    return price;
+    return SchemePriceUtils.percentagePrice(price, schemeTypeName(item), item.getSchemePercentage());
+  }
+
+  /** The scheme type as pricing names it, which does not see product's enum. */
+  private static String schemeTypeName(PurchaseItem item) {
+    SchemeType schemeType = item.getSchemeType();
+    return schemeType == null ? null : schemeType.name();
   }
 
   public static BillingMode normalizeBillingMode(BillingMode billingMode) {
@@ -80,10 +70,10 @@ public final class CheckoutUtils {
 
   /** Returns true when item is selling at MRP (priceToRetail equals maximumRetailPrice). MRP is tax-inclusive. */
   public static boolean isSellingAtMrp(PurchaseItem item) {
-    if (item == null || item.getPriceToRetail() == null || item.getMaximumRetailPrice() == null) {
+    if (item == null) {
       return false;
     }
-    return item.getPriceToRetail().compareTo(item.getMaximumRetailPrice()) == 0;
+    return SchemePriceUtils.isAtMrp(item.getPriceToRetail(), item.getMaximumRetailPrice());
   }
 
   /**

@@ -18,4 +18,7 @@ public final class PricingConstants {
 
   /** Scheme type where the discount is expressed as a percentage rather than free units. */
   public static final String SCHEME_TYPE_PERCENTAGE = "PERCENTAGE";
+
+  /** Scheme type where the deal is free units, e.g. 10+1: pay for 10, get 11. */
+  public static final String SCHEME_TYPE_FIXED_UNITS = "FIXED_UNITS";
 }
