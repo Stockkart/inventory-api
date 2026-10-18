@@ -939,14 +939,8 @@ public class CheckoutService {
       BigDecimal itemTotal = BigDecimal.ZERO;
       if (item.getMaximumRetailPrice() != null && item.getQuantity() != null 
           && item.getPriceToRetail() != null) {
-        BigDecimal effectivePrice = CheckoutUtils.getTaxablePricePerUnit(item);
-        BigDecimal billableQty = CheckoutUtils.getBillableQuantityAsDecimal(item);
-        itemTotal = effectivePrice.multiply(billableQty);
-        // Apply additional discount if present
-        if (item.getSaleAdditionalDiscount() != null && item.getSaleAdditionalDiscount().compareTo(BigDecimal.ZERO) > 0) {
-          itemTotal = itemTotal.multiply(new BigDecimal(1).subtract(item.getSaleAdditionalDiscount().divide(new BigDecimal(
-              "100"), 4, RoundingMode.HALF_UP)));
-        }
+        // Shared with returns (SalesReturnValuation), so a return reverses this exact tax.
+        itemTotal = CheckoutUtils.getTaxableLineValue(item, CheckoutUtils.getBillableQuantityAsDecimal(item));
       }
       
       // Use inventory-level rates if available, otherwise use shop defaults. A line sold at MRP
@@ -957,15 +951,13 @@ public class CheckoutService {
       
       // Calculate SGST for this item
       if (itemSgst != null && !itemSgst.trim().isEmpty()) {
-        BigDecimal sgstRate = GstMath.parseGstRate(itemSgst).divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
-        BigDecimal itemSgstAmount = itemTotal.multiply(sgstRate).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal itemSgstAmount = CheckoutUtils.gstHeadAmount(itemTotal, itemSgst);
         totalSgstAmount = totalSgstAmount.add(itemSgstAmount);
       }
       
       // Calculate CGST for this item
       if (itemCgst != null && !itemCgst.trim().isEmpty()) {
-        BigDecimal cgstRate = GstMath.parseGstRate(itemCgst).divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
-        BigDecimal itemCgstAmount = itemTotal.multiply(cgstRate).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal itemCgstAmount = CheckoutUtils.gstHeadAmount(itemTotal, itemCgst);
         totalCgstAmount = totalCgstAmount.add(itemCgstAmount);
       }
     }

@@ -1,5 +1,6 @@
 package com.inventory.product.utils;
 
+import com.inventory.common.util.GstMath;
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.enums.SchemeType;
 import com.inventory.product.domain.model.Inventory;
@@ -114,6 +115,34 @@ public final class CheckoutUtils {
     }
     return price.multiply(BigDecimal.valueOf(100))
         .divide(BigDecimal.valueOf(100).add(rate), 6, RoundingMode.HALF_UP);
+  }
+
+  /**
+   * The value a line's GST is worked on, for {@code billableQuantity} of it: the taxable price
+   * per unit × the quantity × (1 − the line's additional discount). Left unrounded, so each tax
+   * head rounds once, on the whole line.
+   *
+   * <p>The sale and its return both use this, so a return reverses exactly the tax the sale
+   * stated for the same quantity.
+   */
+  public static BigDecimal getTaxableLineValue(PurchaseItem item, BigDecimal billableQuantity) {
+    BigDecimal value = getTaxablePricePerUnit(item).multiply(billableQuantity);
+    if (item.getSaleAdditionalDiscount() != null
+        && item.getSaleAdditionalDiscount().compareTo(BigDecimal.ZERO) > 0) {
+      value = value.multiply(BigDecimal.ONE.subtract(
+          item.getSaleAdditionalDiscount().divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP)));
+    }
+    return value;
+  }
+
+  /**
+   * One GST head (CGST or SGST) on a line's taxable value: value × rate / 100, rounded to 2 dp
+   * HALF_UP. An interstate line charges the two heads' sum as IGST, never the combined rate in
+   * one step, so its IGST is the same paise the two heads would have been.
+   */
+  public static BigDecimal gstHeadAmount(BigDecimal taxableValue, String rate) {
+    BigDecimal fraction = GstMath.parseGstRate(rate).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
+    return taxableValue.multiply(fraction).setScale(2, RoundingMode.HALF_UP);
   }
 
   private static BigDecimal parseRate(String rate) {

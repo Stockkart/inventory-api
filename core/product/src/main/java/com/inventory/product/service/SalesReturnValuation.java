@@ -33,6 +33,7 @@ final class SalesReturnValuation {
   /**
    * A returned line's taxable value and tax. A return reverses the sale's tax under the head the
    * sale charged it: IGST at the combined rate when the sale was interstate, else CGST and SGST.
+   * A line sold at MRP reverses the GST inside its price (see {@link #atMrpLineAmounts}).
    */
   static LineAmounts lineAmounts(
       PurchaseItem purchaseItem,
@@ -56,6 +57,12 @@ final class SalesReturnValuation {
               .setScale(2, RoundingMode.HALF_UP);
     }
 
+    BigDecimal cogs = prorateCogs(purchaseItem, refundBaseQty);
+    // At MRP the amount above is what the customer paid, GST included.
+    if (CheckoutUtils.isTaxApplicable(billingMode) && CheckoutUtils.isSellingAtMrp(purchaseItem)) {
+      return atMrpLineAmounts(purchaseItem, billableQty, taxable, interstate, cogs);
+    }
+
     BigDecimal cgst = BigDecimal.ZERO;
     BigDecimal sgst = BigDecimal.ZERO;
     BigDecimal igst = BigDecimal.ZERO;
@@ -70,9 +77,36 @@ final class SalesReturnValuation {
       }
     }
 
-    BigDecimal cogs = prorateCogs(purchaseItem, refundBaseQty);
     BigDecimal lineTotal = taxable.add(cgst).add(sgst).add(igst).setScale(2, RoundingMode.HALF_UP);
     return new LineAmounts(taxable, cgst, sgst, igst, cogs, lineTotal);
+  }
+
+  /**
+   * A line sold at MRP had its GST inside the price, and the sale stated it
+   * ({@code CheckoutService.calculateTax}). The return reverses that same GST, worked the same
+   * way: on the price with the GST taken out, each head rounded once on the whole line, and on an
+   * interstate return IGST as the two heads' sum. The refund stays what the customer paid, so the
+   * taxable value is the balance: per-head rounding can never move the refund by a paisa.
+   *
+   * <p>MRP 150 − 5% at 12%: paid 142.50, CGST 7.63, SGST 7.63, taxable 127.24.
+   */
+  private static LineAmounts atMrpLineAmounts(
+      PurchaseItem purchaseItem,
+      BigDecimal billableQty,
+      BigDecimal paid,
+      boolean interstate,
+      BigDecimal cogs) {
+    BigDecimal base = CheckoutUtils.getTaxableLineValue(purchaseItem, billableQty);
+    BigDecimal cgst = CheckoutUtils.gstHeadAmount(base, purchaseItem.getCgst());
+    BigDecimal sgst = CheckoutUtils.gstHeadAmount(base, purchaseItem.getSgst());
+    BigDecimal igst = BigDecimal.ZERO.setScale(2);
+    if (interstate) {
+      igst = cgst.add(sgst);
+      cgst = BigDecimal.ZERO.setScale(2);
+      sgst = BigDecimal.ZERO.setScale(2);
+    }
+    BigDecimal taxable = paid.subtract(cgst).subtract(sgst).subtract(igst);
+    return new LineAmounts(taxable, cgst, sgst, igst, cogs, paid);
   }
 
   static AmountTotals aggregate(List<LineAmounts> lines) {
