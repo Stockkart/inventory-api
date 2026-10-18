@@ -80,11 +80,21 @@ public class InventoryPricingWriteHandler {
       if (ctx != null && ctx.type == InventoryPricingContext.Type.UPDATE && ctx.updateRequest != null) {
         UpdateInventoryRequest req = ctx.updateRequest;
         if (hasAnyPricingUpdate(req) && StringUtils.hasText(inventory.getPricingId())) {
+          java.math.BigDecimal mrp = req.getMaximumRetailPrice();
+          java.math.BigDecimal ptr = req.getPriceToRetail();
+          // A retailer with rate rules: MRP and PTR mirror a selling price sent alone, as on
+          // create, so rules on the selling price and the at-MRP check see one figure. Shops
+          // without rules keep today's edit behaviour.
+          if (req.getSellingPrice() != null && mrp == null && ptr == null
+              && isRetailerShop(inventory.getShopId()) && hasRateRules(inventory.getShopId())) {
+            mrp = req.getSellingPrice();
+            ptr = req.getSellingPrice();
+          }
           var cmd = PricingUpdateCommand.builder()
               .verticalId(verticalId)
-              .maximumRetailPrice(req.getMaximumRetailPrice())
+              .maximumRetailPrice(mrp)
               .costPrice(req.getCostPrice())
-              .priceToRetail(req.getPriceToRetail())
+              .priceToRetail(ptr)
               .sellingPrice(req.getSellingPrice())
               .rates(req.getRates())
               .defaultRate(req.getDefaultRate())
