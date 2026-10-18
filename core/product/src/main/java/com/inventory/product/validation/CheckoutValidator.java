@@ -72,7 +72,8 @@ public class CheckoutValidator {
     boolean hasQuantity = item.getQuantity() != null && item.getQuantity() != 0;
     boolean updateOnly = (item.getQuantity() == null || item.getQuantity() == 0)
         && !hasBaseQuantity
-        && (item.getSaleAdditionalDiscount() != null || hasSchemeChange || item.getPriceToRetail() != null);
+        && (item.getSaleAdditionalDiscount() != null || hasSchemeChange || item.getPriceToRetail() != null
+            || StringUtils.hasText(item.getRateName()));
     if (!updateOnly) {
       if (!hasQuantity && !hasBaseQuantity) {
         throw new ValidationException("Quantity or baseQuantity is required for item: " + item.getId());

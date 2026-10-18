@@ -101,6 +101,15 @@ public class PurchaseItem {
   @Transient
   private BigDecimal purchaseSchemePercentage;
 
+  /**
+   * Request-scoped: true when this incoming line carries a picked rule rate's terms
+   * ({@code rateName}). The cart merge then takes its disc and scheme as they are, clearing a
+   * scheme the rate does not have, instead of keeping the existing line's. Never stored.
+   */
+  @Transient
+  @JsonIgnore
+  private boolean rateTermsPicked;
+
   /** Derived stock lot id for refunds/analytics and API backward compatibility. */
   @JsonProperty("inventoryId")
   public String getInventoryId() {

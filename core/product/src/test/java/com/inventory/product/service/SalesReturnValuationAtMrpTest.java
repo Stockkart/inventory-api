@@ -65,6 +65,7 @@ class SalesReturnValuationAtMrpTest {
   @Mock private CustomerService customerService;
   @Mock private CartContributorResolver cartContributorResolver;
   @Spy private PurchaseMapperImpl purchaseMapper;
+  @Spy private CartRateResolver cartRateResolver;
   @InjectMocks private CheckoutService checkoutService;
 
   private Purchase cart;
