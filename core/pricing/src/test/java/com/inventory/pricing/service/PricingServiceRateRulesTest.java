@@ -606,6 +606,19 @@ class PricingServiceRateRulesTest {
         "Rate-A", "Legacy"), response.getDefaultRateOptions());
   }
 
+  /** A stored rate with a reserved name (MRP, PTR, Cost, a system key; any case) is never offered. */
+  @Test
+  void defaultRateOptionsLeaveOutReservedNames() {
+    givenStored(stored("p1", "100", "150", null, storedRateA100(), namePrice("MRP", "140"),
+        namePrice("ptr", "100"), namePrice("Cost", "60"), namePrice("PRICETORETAIL", "100")));
+
+    PricingResponse response = pricingService.getById("p1", SHOP);
+
+    assertEquals(List.of(PricingConstants.DEFAULT_RATE_PRICE_TO_RETAIL,
+        PricingConstants.DEFAULT_RATE_MAXIMUM_RETAIL_PRICE, PricingConstants.DEFAULT_RATE_COST_PRICE,
+        "Rate-A"), response.getDefaultRateOptions());
+  }
+
   private static void assertDenied(org.junit.jupiter.api.function.Executable call) {
     BaseException e = assertThrows(BaseException.class, call);
     assertEquals(ErrorCode.ACCESS_DENIED, e.getErrorCode());

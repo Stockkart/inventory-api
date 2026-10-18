@@ -61,7 +61,9 @@ public final class PricingUtils {
 
   /**
    * The names a batch's default rate may take, in display order: the built-in options
-   * (priceToRetail, maximumRetailPrice, costPrice), then each rate that {@link #canBeDefaultRate}.
+   * (priceToRetail, maximumRetailPrice, costPrice), then each rate that {@link #canBeDefaultRate},
+   * leaving out any stored rate with a built-in price's name ({@link SystemRateNames}: MRP, PTR,
+   * Cost or a system key, any case), which a pick by that name would never bill.
    */
   public static List<String> defaultRateOptions(List<Rate> rates) {
     List<String> options = new ArrayList<>(List.of(
@@ -70,7 +72,8 @@ public final class PricingUtils {
         PricingConstants.DEFAULT_RATE_COST_PRICE));
     if (rates != null) {
       for (Rate rate : rates) {
-        if (canBeDefaultRate(rate) && !options.contains(rate.getName())) {
+        if (canBeDefaultRate(rate) && !SystemRateNames.isReserved(rate.getName())
+            && !options.contains(rate.getName())) {
           options.add(rate.getName());
         }
       }
