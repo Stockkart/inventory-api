@@ -1409,8 +1409,10 @@ public class CheckoutService {
             // A quantity change on a line sold at MRP keeps it at MRP for its sale unit. Taking the
             // batch's per-pack MRP (or the per-pack selling price) instead would drop a tablet line
             // off MRP and add GST on top. A price edit sends no quantity and is left as typed.
-            // A rate picked with the quantity change brings its own base and is not held at MRP.
-            if (wasAtMrp && incomingBaseQuantity != 0 && !newItem.isRateTermsPicked()
+            // A rate picked with the quantity change (rule or legacy) brings its own price and is
+            // not held at MRP.
+            if (wasAtMrp && incomingBaseQuantity != 0
+                && !StringUtils.hasText(newItem.getRequestedRateName())
                 && inventory.getMaximumRetailPrice() != null) {
               maximumRetailPrice = resolveMaximumRetailPriceForSaleUnit(inventory, existingSaleUnit);
               priceToRetail = maximumRetailPrice;

@@ -191,6 +191,36 @@ class CheckoutServiceRateNameTest {
     assertMoney("920.00", beforeTax());
   }
 
+  /** A legacy rate picked with a quantity change on an at-MRP line takes the rate's price. */
+  @Test
+  void legacyPickWithAQuantityOnALineAtMrpTakesTheRatePrice() {
+    RateDto old = new RateDto("Old", new BigDecimal("120"));
+    stock("100", "150", "150", null, old);
+    add(1, null);
+    assertEquals(true, CheckoutUtils.isSellingAtMrp(line()));
+
+    add(1, "Old");
+
+    assertMoney("120", line().getPriceToRetail());
+    assertEquals(2, line().getQuantity().intValue());
+  }
+
+  /**
+   * A rate matching no rule is stored as name, price and manual only (pricing strips anything a
+   * client sent), so checkout bills its price as a legacy rate, never a client-typed base.
+   */
+  @Test
+  void strippedOrphanRateBillsItsPriceAsALegacyRate() {
+    RateDto orphan = new RateDto("Orphan", new BigDecimal("120"));
+    orphan.setManual(true);
+    stock("100", "150", "130", null, orphan);
+
+    add(1, "Orphan");
+
+    assertMoney("120", line().getPriceToRetail());
+    assertNull(line().getSchemeType());
+  }
+
   @Test
   void defaultRateNewLineDoesNotDoubleDiscount() {
     stock("100", "150", "83.64", "Rate-A", rateA());
