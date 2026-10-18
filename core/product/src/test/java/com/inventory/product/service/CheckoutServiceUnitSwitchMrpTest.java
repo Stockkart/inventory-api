@@ -85,9 +85,13 @@ class CheckoutServiceUnitSwitchMrpTest {
    * request is the one ScanSell sends on a unit change: quantity 0 and the price it already
    * rescaled to the new unit. Lines hold quantity in the sale unit (base / unitFactor, where
    * unitFactor is the sale unit's factor) and keep the batch's per-strip MRP whatever the unit.
+   *
+   * <p>Known bug, out of scope here: these results are wrong. The price ScanSell already
+   * rescaled is rescaled again (1350 a strip becomes 20250), and a 15-tablet line is priced at
+   * the per-strip 90. The test pins them so a change to them is deliberate.
    */
   @Test
-  void unitSwitchTodayCharacterization() {
+  void unitSwitchBelowMrpPinsKnownDoubleRescale() {
     stock("100", "90", 15);
     add("TABLET", 15, 15, null);
     assertLine("90", "100", "15.0000", 15, 1, "1512.00");
@@ -194,8 +198,13 @@ class CheckoutServiceUnitSwitchMrpTest {
     assertFalse(CheckoutUtils.isSellingAtMrp(line()));
   }
 
+  /**
+   * A below-MRP line is left to the old switch code: the cart totals below are today's, and
+   * wrong. Known bug (double rescale, see {@link #unitSwitchBelowMrpPinsKnownDoubleRescale}),
+   * out of scope here; pinned so a change to it is deliberate.
+   */
   @Test
-  void belowMrpLineKeepsExistingBehaviour() {
+  void belowMrpUnitSwitchPinsKnownDoubleRescale() {
     stock("100", "90", 15);
     add("TABLET", 15, 15, null);
     add("STRIP", 0, 0, "1350.00");
@@ -208,6 +217,28 @@ class CheckoutServiceUnitSwitchMrpTest {
     add("TABLET", 0, 0, "14.00");
     assertCart("14.00", "1.68", "16");
     assertFalse(CheckoutUtils.isSellingAtMrp(line()));
+  }
+
+  /**
+   * A quantity change on a line sold at MRP keeps it at MRP for its sale unit: a price sent with
+   * the change is ignored. Only a price-only edit (no quantity) moves the line off MRP.
+   */
+  @Test
+  void priceSentWithQuantityChangeOnAtMrpLineIsIgnored() {
+    stock("150", "150", 10);
+    add("STRIP", 1, 10, null);
+    add("TABLET", 0, 0, "15.00");
+
+    add("TABLET", 1, 1, "14.00");
+
+    assertLine("15.00", "15.00", "11.0000", 11, 1, "165.00");
+    assertTrue(CheckoutUtils.isSellingAtMrp(line()));
+    assertGstInsideMrp("165");
+
+    add("TABLET", -1, -1, "14.00");
+
+    assertLine("15.00", "15.00", "10.0000", 10, 1, "150.00");
+    assertTrue(CheckoutUtils.isSellingAtMrp(line()));
   }
 
   private void stock(String mrp, String sell, int factor) {
