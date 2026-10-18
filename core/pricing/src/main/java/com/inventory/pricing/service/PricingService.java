@@ -5,6 +5,7 @@ import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.pricing.domain.model.Pricing;
+import com.inventory.pricing.domain.model.RateRuleSpec;
 import com.inventory.pricing.domain.model.SkippedRateRule;
 import com.inventory.pricing.domain.repository.PricingRepository;
 import com.inventory.pricing.rest.dto.request.CreatePricingRequest;
@@ -117,12 +118,17 @@ public class PricingService {
       boolean touchesRates = request.getRates() != null || hasNames(request.getResetRates())
           || StringUtils.hasText(request.getDefaultRate());
       List<SkippedRateRule> warnings = List.of();
-      if (touchesRates && rateGenerationService.hasRules(pricing.getShopId())) {
+      List<RateRuleSpec> rules = touchesRates
+          ? rateGenerationService.rulesFor(pricing.getShopId()) : List.of();
+      if (!rules.isEmpty()) {
         warnings = rateGenerationService.apply(
-            pricing, request.getRates(), request.getResetRates(), userId);
+            pricing, rules, request.getRates(), request.getResetRates(), userId);
         logWarnings(pricingId, warnings);
       } else if (request.getRates() != null) {
         pricing.setRates(RateGenerationService.asManualRates(request.getRates()));
+      } else if (touchesRates && RateGenerationService.hasRuleTerms(pricing.getRates())) {
+        // The shop has no rules left: stored rule rates keep only their name and price.
+        pricing.setRates(RateGenerationService.asManualRates(pricing.getRates()));
       }
       pricing.setSellingPrice(PricingUtils.resolveEffectiveSellingPrice(pricing));
       pricing.setUpdatedAt(java.time.Instant.now());
@@ -200,14 +206,15 @@ public class PricingService {
    * as name and price only (see {@link RateGenerationService#asManualRates}).
    */
   private void generateRatesOnCreate(CreatePricingRequest request) {
-    if (!rateGenerationService.hasRules(request.getShopId())) {
+    List<RateRuleSpec> rules = rateGenerationService.rulesFor(request.getShopId());
+    if (rules.isEmpty()) {
       if (request.getRates() != null) {
         request.setRates(RateGenerationService.asManualRates(request.getRates()));
       }
       return;
     }
     Pricing draft = pricingMapper.toEntity(request);
-    logWarnings(null, rateGenerationService.apply(draft, request.getRates(), null, null));
+    logWarnings(null, rateGenerationService.apply(draft, rules, request.getRates(), null, null));
     request.setRates(draft.getRates());
     request.setDefaultRate(draft.getDefaultRate());
     request.setSellingPrice(draft.getSellingPrice());
@@ -215,7 +222,9 @@ public class PricingService {
 
   /**
    * Regenerates rates against the patched bases on a working copy, then writes the result into the
-   * request, so the policy and the mapper below apply it like any other patch.
+   * request, so the policy and the mapper below apply it like any other patch. It runs when the
+   * request sends rates, resets or a default rate, or changes a base (PTR, MRP or selling price
+   * differing from the stored value); a base sent unchanged is no reason to regenerate.
    */
   private List<SkippedRateRule> generateRatesOnUpdate(Pricing pricing, UpdatePricingRequest request,
       String userId) {
@@ -223,14 +232,20 @@ public class PricingService {
       return List.of();
     }
     boolean touches = request.getRates() != null || hasNames(request.getResetRates())
-        || request.getPriceToRetail() != null || request.getMaximumRetailPrice() != null
-        || request.getSellingPrice() != null || StringUtils.hasText(request.getDefaultRate());
+        || changes(request.getPriceToRetail(), pricing.getPriceToRetail())
+        || changes(request.getMaximumRetailPrice(), pricing.getMaximumRetailPrice())
+        || changes(request.getSellingPrice(), pricing.getSellingPrice())
+        || StringUtils.hasText(request.getDefaultRate());
     if (!touches) {
       return List.of();
     }
-    if (!rateGenerationService.hasRules(pricing.getShopId())) {
+    List<RateRuleSpec> rules = rateGenerationService.rulesFor(pricing.getShopId());
+    if (rules.isEmpty()) {
       if (request.getRates() != null) {
         request.setRates(RateGenerationService.asManualRates(request.getRates()));
+      } else if (RateGenerationService.hasRuleTerms(pricing.getRates())) {
+        // The shop has no rules left: stored rule rates keep only their name and price.
+        request.setRates(RateGenerationService.asManualRates(pricing.getRates()));
       }
       return List.of();
     }
@@ -239,7 +254,7 @@ public class PricingService {
     pricingMapper.updateEntity(request, draft);
     draft.setRates(pricing.getRates() == null ? null : new ArrayList<>(pricing.getRates()));
     List<SkippedRateRule> warnings = rateGenerationService.apply(
-        draft, request.getRates(), request.getResetRates(), userId);
+        draft, rules, request.getRates(), request.getResetRates(), userId);
     logWarnings(pricing.getId(), warnings);
     request.setRates(draft.getRates() == null ? new ArrayList<>() : draft.getRates());
     request.setDefaultRate(draft.getDefaultRate());
@@ -253,6 +268,11 @@ public class PricingService {
       response.setWarnings(warnings == null || warnings.isEmpty() ? null : List.copyOf(warnings));
     }
     return response;
+  }
+
+  /** True when {@code sent} is set and differs in value from {@code stored} (100 equals 100.00). */
+  private static boolean changes(BigDecimal sent, BigDecimal stored) {
+    return sent != null && (stored == null || sent.compareTo(stored) != 0);
   }
 
   private static boolean hasNames(List<String> names) {

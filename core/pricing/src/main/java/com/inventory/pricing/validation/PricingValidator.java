@@ -3,6 +3,7 @@ package com.inventory.pricing.validation;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.pricing.domain.model.Rate;
 import com.inventory.pricing.domain.model.Scheme;
+import com.inventory.pricing.utils.SystemRateNames;
 import com.inventory.pricing.utils.constants.PricingConstants;
 import com.inventory.pricing.rest.dto.request.CreatePricingRequest;
 import com.inventory.pricing.rest.dto.request.PricingCreateCommand;
@@ -105,6 +106,9 @@ public class PricingValidator {
     if (!hasRates && !hasDefaultRate && !hasResets) {
       throw new ValidationException("At least one of rates, defaultRate or resetRates must be provided");
     }
+    if (hasRates) {
+      rejectReservedRateNames(request.getRates());
+    }
     List<Rate> ratesToValidate = hasRates ? request.getRates() : effectiveRates;
     String defaultRateToValidate = hasDefaultRate ? request.getDefaultRate() : effectiveDefaultRate;
     if (ratesToValidate != null) {
@@ -130,6 +134,9 @@ public class PricingValidator {
     boolean hasResets = item.getResetRates() != null && !item.getResetRates().isEmpty();
     if (!hasRates && !hasDefaultRate && !hasResets) {
       throw new ValidationException("At least one of rates, defaultRate or resetRates must be provided");
+    }
+    if (hasRates) {
+      rejectReservedRateNames(item.getRates());
     }
     List<Rate> ratesToValidate = hasRates ? item.getRates() : effectiveRates;
     String defaultRateToValidate = hasDefaultRate ? item.getDefaultRate() : effectiveDefaultRate;
@@ -180,6 +187,20 @@ public class PricingValidator {
             || additionalDiscount.compareTo(BigDecimal.valueOf(100)) > 0)) {
       throw new ValidationException(
           "Additional discount must be between -100 and 100 (negative = markup)");
+    }
+  }
+
+  /**
+   * A rate sent may not take a built-in option's name ({@link SystemRateNames}: priceToRetail,
+   * MRP, PTR, Cost …, any case): a cart pick by that name means the batch field, so such a rate
+   * could never be billed.
+   */
+  private static void rejectReservedRateNames(List<Rate> rates) {
+    for (Rate r : rates) {
+      if (r != null && SystemRateNames.isReserved(r.getName())) {
+        throw new ValidationException("Rate name is reserved for a built-in price: " + r.getName().trim()
+            + ". Rename the rate.");
+      }
     }
   }
 

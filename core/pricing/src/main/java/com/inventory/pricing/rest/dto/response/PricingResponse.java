@@ -39,4 +39,11 @@ public class PricingResponse {
    * bulk-update and inventory update on a shop with rate rules; null or empty when there are none.
    */
   private List<SkippedRateRule> warnings;
+
+  /**
+   * The names this batch's {@code defaultRate} may take, in display order: the built-in options
+   * ({@code priceToRetail}, {@code maximumRetailPrice}, {@code costPrice}) then every rate not
+   * built on the selling price (a default on the selling price falls back to priceToRetail).
+   */
+  private List<String> defaultRateOptions;
 }

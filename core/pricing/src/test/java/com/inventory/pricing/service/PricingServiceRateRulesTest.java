@@ -23,6 +23,7 @@ import static org.mockito.Mockito.when;
 
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
+import com.inventory.common.exception.ValidationException;
 import com.inventory.metrics.MetricsWrapper;
 import com.inventory.pricing.domain.model.Pricing;
 import com.inventory.pricing.domain.model.Rate;
@@ -280,12 +281,13 @@ class PricingServiceRateRulesTest {
     p.setSellingPrice(dec("83.64"));
     givenStored(p);
     UpdatePricingRequest req = new UpdatePricingRequest();
-    req.setPriceToRetail(dec("100"));
+    // 101 × 0.92 × 10/11 = 84.47, under the cost of 90.
+    req.setPriceToRetail(dec("101"));
 
     pricingService.update("p1", req, null, CASHIER);
 
     assertEquals("priceToRetail", saved().getDefaultRate());
-    assertEquals(dec("100"), saved().getSellingPrice());
+    assertEquals(dec("101"), saved().getSellingPrice());
     assertNull(find(saved().getRates(), "Rate-A"));
   }
 
@@ -455,7 +457,8 @@ class PricingServiceRateRulesTest {
   void belowCostOverrideWarningIsInTheUpdateResponse() {
     givenStored(stored("p1", "100", "150", "90", RateGenerationTestFixtures.storedOverrideFivePercent()));
     UpdatePricingRequest req = new UpdatePricingRequest();
-    req.setPriceToRetail(dec("100"));
+    // 101 × 0.95 × 10/11 = 87.23, under the cost of 90.
+    req.setPriceToRetail(dec("101"));
 
     PricingResponse response = pricingService.update("p1", req, null, CASHIER);
 
@@ -472,6 +475,135 @@ class PricingServiceRateRulesTest {
     PricingResponse response = pricingService.updateDefaultPrice("p1", req, SHOP, CASHIER);
 
     assertTrue(response.getWarnings() == null || response.getWarnings().isEmpty());
+  }
+
+  /**
+   * A base sent unchanged (the inventory form sends every field) is no reason to regenerate:
+   * only a base whose value differs from the stored one is.
+   */
+  @Test
+  void updateSendingAnUnchangedBaseDoesNotRegenerate() {
+    Pricing p = givenStored(stored("p1", "100", "150", null, storedRateA100()));
+    UpdatePricingRequest req = new UpdatePricingRequest();
+    req.setPriceToRetail(dec("100.00"));
+    req.setMaximumRetailPrice(dec("150"));
+    req.setSellingPrice(dec("100"));
+
+    pricingService.update("p1", req, null, CASHIER);
+
+    verify(port, never()).rulesFor(anyString());
+    assertEquals(dec("83.64"), find(saved().getRates(), "Rate-A").getPrice());
+    assertEquals(p, saved());
+  }
+
+  /**
+   * With every rule removed, a write that would regenerate strips the stored rule rates to name,
+   * price and manual, so checkout no longer bills their old base, disc and scheme.
+   */
+  @Test
+  void ruleRatesAreStrippedWhenTheShopHasNoRulesLeft() {
+    when(port.rulesFor(SHOP)).thenReturn(List.of());
+    givenStored(stored("p1", "100", "150", null, storedRateA100()));
+    UpdatePricingRequest update = new UpdatePricingRequest();
+    update.setPriceToRetail(dec("110"));
+
+    pricingService.update("p1", update, null, CASHIER);
+
+    Rate a = find(saved().getRates(), "Rate-A");
+    assertEquals(dec("83.64"), a.getPrice());
+    assertTrue(a.getManual());
+    assertNull(a.getBase());
+    assertNull(a.getBaseValue());
+    assertNull(a.getDiscountPercent());
+    assertNull(a.getScheme());
+  }
+
+  @Test
+  void patchOfOnlyTheDefaultRateStripsRuleRatesWhenTheShopHasNoRulesLeft() {
+    when(port.rulesFor(SHOP)).thenReturn(List.of());
+    givenStored(stored("p1", "100", "150", null, storedRateA100()));
+    UpdateDefaultPriceRequest req = new UpdateDefaultPriceRequest();
+    req.setDefaultRate(PricingConstants.DEFAULT_RATE_MAXIMUM_RETAIL_PRICE);
+
+    pricingService.updateDefaultPrice("p1", req, SHOP, CASHIER);
+
+    Rate a = find(saved().getRates(), "Rate-A");
+    assertNull(a.getBaseValue());
+    assertTrue(a.getManual());
+  }
+
+  /** A rule taking over a hand-typed rate's name replaces it, and says so. */
+  @Test
+  void ruleTakingOverAHandTypedRateWarnsReplacedByRule() {
+    Rate handTyped = namePrice("Rate-A", "95");
+    handTyped.setManual(true);
+    givenStored(stored("p1", "100", "150", null, handTyped));
+    UpdateDefaultPriceRequest req = new UpdateDefaultPriceRequest();
+    req.setRates(new ArrayList<>(List.of(namePrice("Rate-A", "95"))));
+
+    PricingResponse response = pricingService.updateDefaultPrice("p1", req, SHOP, CASHIER);
+
+    assertEquals(List.of(new SkippedRateRule("Rate-A", RateGenerationService.REASON_REPLACED_BY_RULE)),
+        response.getWarnings());
+    assertEquals(dec("83.64"), findDto(response, "Rate-A").getPrice());
+  }
+
+  @Test
+  void patchWithARateNamedLikeARuleButInAnotherCaseIsRejected() {
+    givenStored(stored("p1", "100", "150", null, storedRateA100()));
+    UpdateDefaultPriceRequest req = new UpdateDefaultPriceRequest();
+    req.setRates(new ArrayList<>(List.of(namePrice("Rate-A", "83.64"), namePrice("rate-a", "50"))));
+
+    ValidationException e = assertThrows(ValidationException.class,
+        () -> pricingService.updateDefaultPrice("p1", req, SHOP, OWNER));
+    assertTrue(e.getMessage().contains("rate-a"), e.getMessage());
+    verify(pricingRepository, never()).save(any(Pricing.class));
+  }
+
+  /** T5: PATCH rejects a rate named like a built-in option, rules or not. */
+  @Test
+  void patchWithAReservedRateNameIsRejected() {
+    for (List<RateRuleSpec> rules : List.<List<RateRuleSpec>>of(List.of(rateA()), List.of())) {
+      when(port.rulesFor(SHOP)).thenReturn(rules);
+      givenStored(stored("p1", "100", "150", null));
+      for (String name : List.of("MRP", "ptr", "Cost", "priceToRetail")) {
+        UpdateDefaultPriceRequest req = new UpdateDefaultPriceRequest();
+        req.setRates(new ArrayList<>(List.of(namePrice(name, "50"))));
+        assertThrows(ValidationException.class,
+            () -> pricingService.updateDefaultPrice("p1", req, SHOP, OWNER), name);
+      }
+    }
+    verify(pricingRepository, never()).save(any(Pricing.class));
+  }
+
+  /** An override of a rate built on a base the batch has no value for cannot be priced: 400. */
+  @Test
+  void overrideOfARateOnAMissingBaseIsRejected() {
+    when(port.rulesFor(SHOP)).thenReturn(List.of(RateGenerationTestFixtures.rateM()));
+    givenStored(stored("p1", "100", null, null));
+    UpdateDefaultPriceRequest req = new UpdateDefaultPriceRequest();
+    req.setRates(new ArrayList<>(List.of(withDisc("Rate-M", "0", "5"))));
+
+    ValidationException e = assertThrows(ValidationException.class,
+        () -> pricingService.updateDefaultPrice("p1", req, SHOP, OWNER));
+    assertTrue(e.getMessage().contains("Rate-M"), e.getMessage());
+    verify(pricingRepository, never()).save(any(Pricing.class));
+  }
+
+  /**
+   * #227: the pricing response lists the rates the batch may take as its default: the built-in
+   * options and every rate not built on the selling price.
+   */
+  @Test
+  void responseListsTheEligibleDefaultRates() {
+    givenStored(stored("p1", "100", "150", null, storedRateA100(), storedRateS100(),
+        namePrice("Legacy", "95")));
+
+    PricingResponse response = pricingService.getById("p1", SHOP);
+
+    assertEquals(List.of(PricingConstants.DEFAULT_RATE_PRICE_TO_RETAIL,
+        PricingConstants.DEFAULT_RATE_MAXIMUM_RETAIL_PRICE, PricingConstants.DEFAULT_RATE_COST_PRICE,
+        "Rate-A", "Legacy"), response.getDefaultRateOptions());
   }
 
   private static void assertDenied(org.junit.jupiter.api.function.Executable call) {

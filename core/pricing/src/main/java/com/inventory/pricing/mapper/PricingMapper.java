@@ -41,6 +41,8 @@ public interface PricingMapper {
   // Mapped inline, not via toRateDtos, so an empty rate list stays [] in the response as before.
   @Mapping(target = "rates", expression = "java(pricing.getRates() == null ? null : "
       + "pricing.getRates().stream().map(this::toRateDto).toList())")
+  @Mapping(target = "defaultRateOptions",
+      expression = "java(com.inventory.pricing.utils.PricingUtils.defaultRateOptions(pricing.getRates()))")
   PricingResponse toResponse(Pricing pricing);
 
   /** A working copy, so rate generation can see a patch's new bases without touching the stored record. */

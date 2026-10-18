@@ -2,6 +2,7 @@ package com.inventory.pricing.service;
 
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
+import com.inventory.common.exception.ValidationException;
 import com.inventory.common.util.GstMath;
 import com.inventory.metrics.MetricsWrapper;
 import com.inventory.pricing.domain.model.Pricing;
@@ -53,6 +54,9 @@ import java.util.Set;
 @Service
 public class RateGenerationService {
 
+  /** Warning reason: a rule now names a rate that was typed by hand, and regenerated it. */
+  public static final String REASON_REPLACED_BY_RULE = "REPLACED_BY_RULE";
+
   @Autowired(required = false)
   private ShopRateRulesPort shopRateRulesPort;
 
@@ -67,17 +71,26 @@ public class RateGenerationService {
     return !rulesFor(shopId).isEmpty();
   }
 
+  /** {@link #apply(Pricing, List, List, List, String)} with the shop's rules read here. */
+  public List<SkippedRateRule> apply(Pricing pricing, List<Rate> incoming, List<String> resetRates,
+      String userId) {
+    return apply(pricing, rulesFor(pricing.getShopId()), incoming, resetRates, userId);
+  }
+
   /**
    * Mutates {@code pricing.rates}, {@code defaultRate} and {@code sellingPrice}.
    *
    * @param pricing the record with its new bases applied and its stored rates (none for a new batch)
+   * @param rules the shop's rules, read once by the caller ({@link #rulesFor}); empty does nothing
    * @param incoming the rates sent, or null when the request sent none
-   * @return the rules skipped below cost and the kept overrides that are below cost
+   * @return the rules skipped below cost, the kept overrides that are below cost, and the
+   *     hand-typed rates a rule took over ({@link #REASON_REPLACED_BY_RULE})
+   * @throws ValidationException when an override names a rate whose base the batch has no value
+   *     for, or (on a saved batch) a rate sent differs from a rule's name only in case
    */
-  public List<SkippedRateRule> apply(Pricing pricing, List<Rate> incoming, List<String> resetRates,
-      String userId) {
-    List<RateRuleSpec> rules = rulesFor(pricing.getShopId());
-    if (rules.isEmpty()) {
+  public List<SkippedRateRule> apply(Pricing pricing, List<RateRuleSpec> rules, List<Rate> incoming,
+      List<String> resetRates, String userId) {
+    if (rules == null || rules.isEmpty()) {
       return List.of();
     }
     boolean create = pricing.getId() == null;
@@ -86,6 +99,9 @@ public class RateGenerationService {
     Set<String> resets = create || resetRates == null ? Set.of() : new HashSet<>(resetRates);
     Map<String, RateRuleSpec> ruleByName = new LinkedHashMap<>();
     rules.forEach(r -> ruleByName.put(r.name(), r));
+    if (!create) {
+      rejectCaseOnlyClashes(ruleByName, sent);
+    }
 
     Map<String, Rate> overrides = create ? Map.of() : overrides(ruleByName, stored, sent);
     if (!overrides.isEmpty() || resets.stream().anyMatch(ruleByName::containsKey)) {
@@ -107,6 +123,16 @@ public class RateGenerationService {
       if (own == null && !resets.contains(name) && stored.containsKey(name)
           && Boolean.TRUE.equals(stored.get(name).getManual()) && stored.get(name).getBase() != null) {
         own = stored.get(name);
+      }
+      if (overrides.containsKey(name) && baseValueOf(own.getBase(), pricing) == null) {
+        throw new ValidationException("Rate " + name + " is built on " + own.getBase()
+            + ", which this batch has no value for, so its terms cannot be changed");
+      }
+      Rate storedRate = stored.get(name);
+      if (own == null && storedRate != null && storedRate.getBase() == null
+          && generatedByName.containsKey(name)) {
+        // A rule now names a rate typed by hand: the rule's rate replaces it.
+        warnings.add(new SkippedRateRule(name, REASON_REPLACED_BY_RULE));
       }
       if (own != null) {
         Rate repriced = repriceWithOwnTerms(rule, own, pricing, cost, gst, warnings);
@@ -137,12 +163,45 @@ public class RateGenerationService {
     return warnings;
   }
 
-  private List<RateRuleSpec> rulesFor(String shopId) {
+  /** The shop's rate rules, in order; empty when it has none or no port is wired. */
+  public List<RateRuleSpec> rulesFor(String shopId) {
     if (shopRateRulesPort == null || !StringUtils.hasText(shopId)) {
       return List.of();
     }
     List<RateRuleSpec> rules = shopRateRulesPort.rulesFor(shopId);
     return rules == null ? List.of() : rules;
+  }
+
+  /**
+   * A rate sent whose name matches a rule's only when case is ignored ("rate-a" against "Rate-A")
+   * would be kept as a second, hand-typed rate beside the rule's, two rates a cashier cannot tell
+   * apart. Rates are matched by exact name, so it is rejected.
+   */
+  private static void rejectCaseOnlyClashes(Map<String, RateRuleSpec> ruleByName, Map<String, Rate> sent) {
+    for (String name : sent.keySet()) {
+      if (ruleByName.containsKey(name)) {
+        continue;
+      }
+      for (String rule : ruleByName.keySet()) {
+        if (rule.equalsIgnoreCase(name)) {
+          throw new ValidationException("Rate " + name + " differs from rate rule " + rule
+              + " only in case; use the rule's name " + rule);
+        }
+      }
+    }
+  }
+
+  private static BigDecimal baseValueOf(String base, Pricing pricing) {
+    if (PricingConstants.RATE_BASE_SELLING_PRICE.equals(base)) {
+      return pricing.getSellingPrice();
+    }
+    if (PricingConstants.RATE_BASE_PRICE_TO_RETAIL.equals(base)) {
+      return pricing.getPriceToRetail();
+    }
+    if (PricingConstants.RATE_BASE_MAXIMUM_RETAIL_PRICE.equals(base)) {
+      return pricing.getMaximumRetailPrice();
+    }
+    return null;
   }
 
   /**
@@ -216,7 +275,7 @@ public class RateGenerationService {
     }
     Rate target = find(rates, defaultRate);
     boolean missing = target == null;
-    if (missing || PricingConstants.RATE_BASE_SELLING_PRICE.equals(target.getBase())) {
+    if (missing || !PricingUtils.canBeDefaultRate(target)) {
       log.warn("Default rate '{}' on pricing {} is {}; falling back to {}", defaultRate, pricing.getId(),
           missing ? "no longer generated" : "built on the selling price",
           PricingConstants.DEFAULT_RATE_PRICE_TO_RETAIL);
@@ -251,6 +310,14 @@ public class RateGenerationService {
         .price(rate.getPrice())
         .manual(true)
         .build();
+  }
+
+  /**
+   * True when a stored rate still carries rule terms (a base). On a shop with no rules left those
+   * terms are stale: checkout would still bill them, so the next write strips them.
+   */
+  static boolean hasRuleTerms(List<Rate> rates) {
+    return rates != null && rates.stream().anyMatch(r -> r != null && r.getBase() != null);
   }
 
   /** {@link #asManual} for each rate; the rates of a shop without rules are stored this way. */
