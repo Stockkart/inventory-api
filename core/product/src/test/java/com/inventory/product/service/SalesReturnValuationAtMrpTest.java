@@ -195,13 +195,13 @@ class SalesReturnValuationAtMrpTest {
   void saleThatStatedAtMrpGstIsSplitOnReturn() {
     for (boolean interstate : new boolean[] {false, true}) {
       sell(3, 0, 0, interstate);
-      assertTrue(SalesReturnValuation.statedAtMrpGst(cart), "sale stated its at-MRP GST");
+      assertTrue(SalesReturnValuation.statedAtMrpGst(cart, null, null), "sale stated its at-MRP GST");
 
       PurchaseItem soldLine = cart.getItems().get(0);
       SalesReturnValuation.LineAmounts returned =
           SalesReturnValuation.lineAmounts(
               soldLine, soldLine.getBaseQuantity(), 3, BillingMode.REGULAR, interstate,
-              SalesReturnValuation.statedAtMrpGst(cart));
+              SalesReturnValuation.statedAtMrpGst(cart, null, null));
       assertMoneyEquals(cart.getTaxTotal(),
           returned.cgst().add(returned.sgst()).add(returned.igst()), "GST reversed");
     }
@@ -220,13 +220,13 @@ class SalesReturnValuationAtMrpTest {
     old.setTaxTotal(BigDecimal.ZERO);
     old.setCgstAmount(BigDecimal.ZERO);
     old.setSgstAmount(BigDecimal.ZERO);
-    assertFalse(SalesReturnValuation.statedAtMrpGst(old));
+    assertFalse(SalesReturnValuation.statedAtMrpGst(old, null, null));
 
     for (boolean interstate : new boolean[] {false, true}) {
       SalesReturnValuation.LineAmounts line =
           SalesReturnValuation.lineAmounts(
               atMrpLine(), 1, 1, BillingMode.REGULAR, interstate,
-              SalesReturnValuation.statedAtMrpGst(old));
+              SalesReturnValuation.statedAtMrpGst(old, null, null));
       assertMoney("0", line.cgst());
       assertMoney("0", line.sgst());
       assertMoney("0", line.igst());
@@ -241,7 +241,7 @@ class SalesReturnValuationAtMrpTest {
     Purchase old = new Purchase();
     old.setBillingMode(BillingMode.REGULAR);
     old.setItems(List.of(atMrpLine()));
-    assertFalse(SalesReturnValuation.statedAtMrpGst(old));
+    assertFalse(SalesReturnValuation.statedAtMrpGst(old, null, null));
   }
 
   /**
@@ -257,15 +257,147 @@ class SalesReturnValuationAtMrpTest {
     old.setBillingMode(BillingMode.REGULAR);
     old.setItems(List.of(atMrpLine(), below));
     old.setTaxTotal(new BigDecimal("15.96"));
-    assertFalse(SalesReturnValuation.statedAtMrpGst(old));
+    assertFalse(SalesReturnValuation.statedAtMrpGst(old, null, null));
 
     old.setTaxTotal(new BigDecimal("31.22"));
-    assertTrue(SalesReturnValuation.statedAtMrpGst(old));
+    assertTrue(SalesReturnValuation.statedAtMrpGst(old, null, null));
 
     // An interstate header states it all as IGST, with taxTotal left as the sum.
     old.setTaxTotal(null);
     old.setIgstAmount(new BigDecimal("31.22"));
-    assertTrue(SalesReturnValuation.statedAtMrpGst(old));
+    assertTrue(SalesReturnValuation.statedAtMrpGst(old, null, null));
+  }
+
+  /**
+   * A line returned in pieces reverses, head by head, exactly the GST the sale stated: each
+   * return reverses GST(returned before + this return) − GST(returned before), so no piece is
+   * rounded on its own. 30 tablets at 15 − 5% returned one at a time once reversed 0.76 a head
+   * each, 22.80 where the sale charged 22.90. The refund is shared out the same way, from the
+   * sold line, so the refunds add up to what the customer paid; free units of a scheme are never
+   * worked out again on the returned quantity.
+   */
+  @Test
+  void atMrpLineReturnedInPiecesReversesTheSaleGst() {
+    for (boolean interstate : new boolean[] {false, true}) {
+      sell(3, 0, 0, interstate);
+      switchToTablets();
+      assertMoney("30", cart.getItems().get(0).getQuantity());
+      assertPiecewiseReturnMatchesSale(1, interstate, "30 tablets one by one");
+
+      sell(3, 0, 0, interstate);
+      assertPiecewiseReturnMatchesSale(1, interstate, "3 strips one by one");
+
+      sell(11, 10, 1, interstate);
+      assertPiecewiseReturnMatchesSale(1, interstate, "10+1 strips one by one");
+      sell(11, 10, 1, interstate);
+      assertPiecewiseReturnMatchesSale(4, interstate, "10+1 strips four at a time");
+    }
+  }
+
+  /**
+   * A line below MRP returned in pieces refunds and reverses, in total, what returning it whole
+   * does: each piece is the whole-line amounts up to and including it less those before it.
+   */
+  @Test
+  void belowMrpLineReturnedInPiecesAddsUpToTheWholeReturn() {
+    PurchaseItem line = atMrpLine();
+    line.setPriceToRetail(new BigDecimal("140"));
+    line.setQuantity(new BigDecimal("11"));
+    line.setBaseQuantity(11);
+    line.setSchemeType(SchemeType.FIXED_UNITS);
+    line.setSchemePayFor(10);
+    line.setSchemeFree(1);
+    for (boolean interstate : new boolean[] {false, true}) {
+      SalesReturnValuation.LineAmounts whole =
+          SalesReturnValuation.lineAmounts(line, 11, 11, BillingMode.REGULAR, interstate, true);
+      BigDecimal[] sum = {BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+          BigDecimal.ZERO};
+      for (int returned = 0; returned < 11; returned++) {
+        SalesReturnValuation.LineAmounts piece =
+            SalesReturnValuation.lineAmounts(
+                line, 1, 1, BillingMode.REGULAR, interstate, true, returned);
+        sum[0] = sum[0].add(piece.taxable());
+        sum[1] = sum[1].add(piece.cgst());
+        sum[2] = sum[2].add(piece.sgst());
+        sum[3] = sum[3].add(piece.igst());
+        sum[4] = sum[4].add(piece.lineTotal());
+      }
+      String where = interstate ? "interstate" : "local";
+      assertMoneyEquals(whole.taxable(), sum[0], where + " taxable");
+      assertMoneyEquals(whole.cgst(), sum[1], where + " CGST");
+      assertMoneyEquals(whole.sgst(), sum[2], where + " SGST");
+      assertMoneyEquals(whole.igst(), sum[3], where + " IGST");
+      assertMoneyEquals(whole.lineTotal(), sum[4], where + " refund");
+    }
+  }
+
+  /**
+   * A below-MRP line with no rates of its own is taxed at the shop's default rates
+   * ({@code CheckoutService.calculateTax}). Its GST is in the header of an old mixed bill, so
+   * leaving it out made that bill read as having stated its at-MRP GST.
+   */
+  @Test
+  void belowMrpLineAtShopDefaultRatesIsNotReadAsAtMrpGst() {
+    PurchaseItem below = atMrpLine();
+    below.setPriceToRetail(new BigDecimal("140"));
+    below.setCgst(null);
+    below.setSgst(null);
+    // below at the shop's 6 + 6: 133.00 taxable, 7.98 + 7.98. at MRP: 7.63 + 7.63 inside 142.50.
+    Purchase old = new Purchase();
+    old.setBillingMode(BillingMode.REGULAR);
+    old.setItems(List.of(atMrpLine(), below));
+    old.setTaxTotal(new BigDecimal("15.96"));
+    assertFalse(SalesReturnValuation.statedAtMrpGst(old, "6", "6"));
+
+    old.setTaxTotal(new BigDecimal("31.22"));
+    assertTrue(SalesReturnValuation.statedAtMrpGst(old, "6", "6"));
+  }
+
+  /** Returns the sold line {@code step} sale units at a time and checks the heads add up. */
+  private void assertPiecewiseReturnMatchesSale(int step, boolean interstate, String label) {
+    PurchaseItem soldLine = cart.getItems().get(0);
+    int soldQty = soldLine.getQuantity().intValueExact();
+    int basePerUnit = soldLine.getBaseQuantity() / soldQty;
+    BigDecimal cgst = BigDecimal.ZERO;
+    BigDecimal sgst = BigDecimal.ZERO;
+    BigDecimal igst = BigDecimal.ZERO;
+    BigDecimal refunded = BigDecimal.ZERO;
+    int returnedBase = 0;
+    for (int returned = 0; returned < soldQty; returned += step) {
+      int qty = Math.min(step, soldQty - returned);
+      SalesReturnValuation.LineAmounts piece =
+          SalesReturnValuation.lineAmounts(
+              soldLine, qty * basePerUnit, qty, BillingMode.REGULAR, interstate, true,
+              returnedBase);
+      assertMoneyEquals(
+          piece.lineTotal(),
+          piece.taxable().add(piece.cgst()).add(piece.sgst()).add(piece.igst()),
+          label + ": refund is taxable + GST");
+      cgst = cgst.add(piece.cgst());
+      sgst = sgst.add(piece.sgst());
+      igst = igst.add(piece.igst());
+      refunded = refunded.add(piece.lineTotal());
+      returnedBase += qty * basePerUnit;
+    }
+    String where = label + (interstate ? " interstate" : " local");
+    assertMoneyEquals(soldLine.getTotalAmount(), refunded, where + " refunds");
+    assertMoneyEquals(cart.getCgstAmount(), cgst, where + " CGST");
+    assertMoneyEquals(cart.getSgstAmount(), sgst, where + " SGST");
+    assertMoneyEquals(cart.getIgstAmount(), igst, where + " IGST");
+  }
+
+  /** Switches the cart's strip line to tablets, as ScanSell does: quantity 0, price rescaled. */
+  private void switchToTablets() {
+    AddToCartRequest.CartItem item = new AddToCartRequest.CartItem();
+    item.setId(LOT);
+    item.setUnit("TABLET");
+    item.setQuantity(0);
+    item.setBaseQuantity(0);
+    item.setPriceToRetail(new BigDecimal("15.00"));
+    AddToCartRequest request = new AddToCartRequest();
+    request.setCustomerId(CUSTOMER);
+    request.setItems(List.of(item));
+    checkoutService.addToCart(request, httpRequest);
   }
 
   /** {quantity, scheme pay-for, scheme free}; 0/0 is no scheme. */
