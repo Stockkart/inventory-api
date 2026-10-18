@@ -36,6 +36,7 @@ import com.inventory.pricing.rest.dto.request.UpdateDefaultPriceItem;
 import com.inventory.pricing.rest.dto.request.UpdateDefaultPriceRequest;
 import com.inventory.pricing.rest.dto.request.UpdatePricingRequest;
 import com.inventory.pricing.rest.dto.response.PricingResponse;
+import com.inventory.pricing.rest.dto.response.RateDto;
 import com.inventory.pricing.utils.RateRuleCalculator;
 import com.inventory.pricing.utils.constants.PricingConstants;
 import com.inventory.pricing.validation.PricingValidator;
@@ -408,7 +409,33 @@ class PricingServiceRateRulesTest {
 
     assertEquals(List.of(new SkippedRateRule("Rate-A", RateRuleCalculator.REASON_BELOW_COST)),
         response.getWarnings());
-    assertEquals(dec("86.36"), find(response.getRates(), "Rate-A").getPrice());
+    assertEquals(dec("86.36"), findDto(response, "Rate-A").getPrice());
+  }
+
+  @Test
+  void getResponseCarriesTermsTextForRuleRatesAndNullForLegacyRates() {
+    givenStored(stored("p1", "100", "150", null, storedRateA100(), namePrice("Legacy", "95")));
+
+    PricingResponse response = pricingService.getById("p1", SHOP);
+
+    assertEquals("PTR 100.00 − 8% · 10+1", findDto(response, "Rate-A").getTermsText());
+    assertNull(findDto(response, "Legacy").getTermsText());
+  }
+
+  @Test
+  void patchResponseCarriesTermsTextForRuleRatesAndNullForLegacyRates() {
+    givenStored(stored("p1", "100", "150", null, storedRateA100(), namePrice("Legacy", "95")));
+    UpdateDefaultPriceRequest req = new UpdateDefaultPriceRequest();
+    req.setRates(new ArrayList<>(List.of(namePrice("Rate-A", "83.64"), namePrice("Legacy", "95"))));
+
+    PricingResponse response = pricingService.updateDefaultPrice("p1", req, SHOP, OWNER);
+
+    assertEquals("PTR 100.00 − 8% · 10+1", findDto(response, "Rate-A").getTermsText());
+    assertNull(findDto(response, "Legacy").getTermsText());
+  }
+
+  private static RateDto findDto(PricingResponse response, String name) {
+    return response.getRates().stream().filter(r -> name.equals(r.getName())).findFirst().orElseThrow();
   }
 
   @Test

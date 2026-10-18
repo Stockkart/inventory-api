@@ -38,6 +38,9 @@ public interface PricingMapper {
 
   @Mapping(target = "purchaseScheme", expression = "java(toSchemeDto(pricing.getPurchaseScheme()))")
   @Mapping(target = "saleScheme", expression = "java(toSchemeDto(pricing.getSaleScheme()))")
+  // Mapped inline, not via toRateDtos, so an empty rate list stays [] in the response as before.
+  @Mapping(target = "rates", expression = "java(pricing.getRates() == null ? null : "
+      + "pricing.getRates().stream().map(this::toRateDto).toList())")
   PricingResponse toResponse(Pricing pricing);
 
   /** A working copy, so rate generation can see a patch's new bases without touching the stored record. */

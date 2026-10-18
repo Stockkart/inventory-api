@@ -1,6 +1,5 @@
 package com.inventory.pricing.rest.dto.response;
 
-import com.inventory.pricing.domain.model.Rate;
 import com.inventory.pricing.domain.model.SkippedRateRule;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -22,7 +21,8 @@ public class PricingResponse {
   private BigDecimal effectiveCostPrice;
   private Boolean costPriceIncludesTax;
   private BigDecimal priceToRetail;
-  private List<Rate> rates;
+  /** Each rate with its terms and read-only {@code termsText} (null for a legacy rate). */
+  private List<RateDto> rates;
   private String defaultRate;
   private BigDecimal sellingPrice;
   private BigDecimal saleAdditionalDiscount;
