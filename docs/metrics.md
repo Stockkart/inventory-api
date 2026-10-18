@@ -8,7 +8,7 @@ All metrics are counters recorded through `MetricsWrapper.record(name, amount, t
 every one carries a `module` tag whose value is the module column below. Metrics that add
 further tags list them.
 
-**48 metrics across 14 modules.**
+**51 metrics across 14 modules.**
 
 ## accounting
 
