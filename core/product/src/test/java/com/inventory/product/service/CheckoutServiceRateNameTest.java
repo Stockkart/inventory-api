@@ -403,6 +403,32 @@ class CheckoutServiceRateNameTest {
         () -> add(0, "Rate-A"));
   }
 
+  /**
+   * After the shop's rules are removed, a batch whose default was a rule rate gets its own sale
+   * defaults on a first add, and a pick of that rate bills its stored price as a legacy rate.
+   */
+  @Test
+  void rateWhoseRuleIsGoneNoLongerAppliesItsTerms() {
+    com.inventory.pricing.service.ShopRateRulesPort port =
+        org.mockito.Mockito.mock(com.inventory.pricing.service.ShopRateRulesPort.class);
+    when(port.rulesFor(SHOP)).thenReturn(List.of());
+    org.springframework.test.util.ReflectionTestUtils.setField(cartRateResolver, "shopRateRulesPort", port);
+    stock("100", "150", "83.64", "Rate-A", rateA());
+    batch.setSaleAdditionalDiscount(new BigDecimal("2"));
+
+    add(11, null);
+    assertMoney("83.64", line().getPriceToRetail());
+    assertMoney("2", line().getSaleAdditionalDiscount());
+    assertNull(line().getSchemeType());
+    assertNull(line().getAppliedRateName());
+
+    cart = null;
+    add(11, "Rate-A");
+    assertMoney("83.64", line().getPriceToRetail());
+    assertMoney("2", line().getSaleAdditionalDiscount());
+    assertNull(line().getSchemeType());
+  }
+
   @Test
   void unknownRateNameRejected() {
     stock("100", "150", "83.64", null, rateA());

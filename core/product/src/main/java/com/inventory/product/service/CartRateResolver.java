@@ -1,14 +1,17 @@
 package com.inventory.product.service;
 
 import com.inventory.common.exception.ValidationException;
+import com.inventory.pricing.domain.model.RateRuleSpec;
 import com.inventory.pricing.rest.dto.response.RateDto;
 import com.inventory.pricing.rest.dto.response.SchemeDto;
 import com.inventory.pricing.utils.SystemRateNames;
+import com.inventory.pricing.service.ShopRateRulesPort;
 import com.inventory.pricing.utils.constants.PricingConstants;
 import com.inventory.product.domain.model.Inventory;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -22,6 +25,9 @@ import org.springframework.util.StringUtils;
  */
 @Component
 public class CartRateResolver {
+
+  @Autowired(required = false)
+  private ShopRateRulesPort shopRateRulesPort;
 
   /**
    * The terms for {@code rateName} on this batch. With no name, the batch's default rate is used
@@ -42,14 +48,35 @@ public class CartRateResolver {
       }
       RateDto rate = find(inventory, rateName.trim())
           .orElseThrow(() -> new ValidationException("Unknown rate: " + rateName.trim()));
-      return Optional.of(toTerms(rate));
+      return Optional.of(isLiveRuleRate(inventory, rate) ? toTerms(rate) : legacyTerms(rate));
     }
     if (inventory == null || !StringUtils.hasText(inventory.getDefaultRate())) {
       return Optional.empty();
     }
     return find(inventory, inventory.getDefaultRate().trim())
-        .filter(rate -> rate.getBaseValue() != null)
+        .filter(rate -> isLiveRuleRate(inventory, rate))
         .map(CartRateResolver::toTerms);
+  }
+
+  /**
+   * Whether a stored rate bills as a rule rate: it has a base, and its rule is still among the
+   * shop's rules. A rate whose rule was removed (or the shop's rules cleared) keeps its stored
+   * terms until the batch is next saved; here it bills its price only, as a legacy rate, and is
+   * no default rule rate. Without a {@link ShopRateRulesPort} the rules are not checked.
+   */
+  private boolean isLiveRuleRate(Inventory inventory, RateDto rate) {
+    if (rate.getBaseValue() == null) {
+      return false;
+    }
+    if (shopRateRulesPort == null) {
+      return true;
+    }
+    List<RateRuleSpec> rules = shopRateRulesPort.rulesFor(inventory.getShopId());
+    return rules != null && rules.stream().anyMatch(r -> rate.getName().equals(r.name()));
+  }
+
+  private static LineTerms legacyTerms(RateDto rate) {
+    return new LineTerms(rate.getName(), null, rate.getPrice(), null, null, null, null, null);
   }
 
   private static Optional<RateDto> find(Inventory inventory, String name) {
@@ -82,7 +109,7 @@ public class CartRateResolver {
   private static LineTerms toTerms(RateDto rate) {
     String name = rate.getName();
     if (rate.getBaseValue() == null) {
-      return new LineTerms(name, null, rate.getPrice(), null, null, null, null, null);
+      return legacyTerms(rate);
     }
     BigDecimal disc = rate.getDiscountPercent() != null ? rate.getDiscountPercent() : BigDecimal.ZERO;
     SchemeDto scheme = rate.getScheme();

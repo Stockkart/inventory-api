@@ -4,9 +4,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.inventory.common.exception.ValidationException;
+import com.inventory.pricing.domain.model.RateRuleSpec;
 import com.inventory.pricing.rest.dto.response.RateDto;
+import com.inventory.pricing.service.ShopRateRulesPort;
 import com.inventory.pricing.rest.dto.response.SchemeDto;
 import com.inventory.pricing.utils.constants.PricingConstants;
 import com.inventory.product.domain.model.Inventory;
@@ -15,6 +19,7 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class CartRateResolverTest {
 
@@ -96,6 +101,35 @@ class CartRateResolverTest {
         () -> resolver.resolve(batch(null, rateA()), "Rate-Z"));
     assertTrue(e.getMessage().contains("Unknown rate: Rate-Z"), e.getMessage());
     assertThrows(ValidationException.class, () -> resolver.resolve(batch(null), "Rate-A"));
+  }
+
+  /**
+   * With the shop's rules in hand, a stored rule rate whose rule is gone (removed, or PUT with
+   * rules=[]) bills its stored price as a legacy rate, and is no default rule rate any more.
+   */
+  @Test
+  void ruleRateWhoseRuleIsGoneIsBilledAsALegacyRate() {
+    ShopRateRulesPort port = mock(ShopRateRulesPort.class);
+    ReflectionTestUtils.setField(resolver, "shopRateRulesPort", port);
+    Inventory batch = batch("Rate-A", rateA(), legacy());
+    batch.setShopId("shop-1");
+
+    when(port.rulesFor("shop-1")).thenReturn(List.of());
+    LineTerms picked = resolver.resolve(batch, "Rate-A").orElseThrow();
+    assertEquals(0, new BigDecimal("83.64").compareTo(picked.price()));
+    assertNull(picked.discountPercent());
+    assertNull(picked.schemeType());
+    assertEquals("Rate-A", picked.name());
+    assertEquals(Optional.empty(), resolver.resolve(batch, null));
+
+    when(port.rulesFor("shop-1")).thenReturn(List.of(new RateRuleSpec("Rate-M",
+        PricingConstants.RATE_BASE_MAXIMUM_RETAIL_PRICE, new BigDecimal("10"), null)));
+    assertNull(resolver.resolve(batch, "Rate-A").orElseThrow().discountPercent());
+
+    when(port.rulesFor("shop-1")).thenReturn(List.of(new RateRuleSpec("Rate-A",
+        PricingConstants.RATE_BASE_PRICE_TO_RETAIL, new BigDecimal("8"), null)));
+    assertTrue(resolver.resolve(batch, "Rate-A").orElseThrow().replacesTerms());
+    assertTrue(resolver.resolve(batch, null).isPresent());
   }
 
   static RateDto rateA() {
