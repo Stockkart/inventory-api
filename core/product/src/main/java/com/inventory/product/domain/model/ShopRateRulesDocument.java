@@ -7,6 +7,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Version;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 /**
@@ -31,4 +32,13 @@ public class ShopRateRulesDocument {
   private Instant updatedAt;
 
   private String updatedByUserId;
+
+  /**
+   * Optimistic lock: a save holding a stale version fails rather than overwriting a concurrent
+   * one ({@code RateRulesService} answers 409). Documents saved before it existed are given 0 at
+   * startup ({@code RateRulesIndexMigration}): a null version would make Spring Data insert them
+   * again.
+   */
+  @Version
+  private Long version;
 }

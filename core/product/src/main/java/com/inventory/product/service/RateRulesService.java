@@ -37,6 +37,8 @@ import java.util.ArrayList;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -95,27 +97,43 @@ public class RateRulesService {
     List<RateRuleDto> incoming = request == null || request.getRules() == null
         ? List.of() : request.getRules();
     validator.validate(incoming, shop.getShopType());
+    List<RateRule> rules = mapper.toEntities(incoming);
+    rules.forEach(r -> r.setName(r.getName().trim()));
     try {
-      Instant now = Instant.now();
-      ShopRateRulesDocument doc = rulesRepository.findByShopId(shopId).orElseGet(() -> {
-        ShopRateRulesDocument created = new ShopRateRulesDocument();
-        created.setShopId(shopId);
-        created.setCreatedAt(now);
-        return created;
-      });
-      List<RateRule> rules = mapper.toEntities(incoming);
-      rules.forEach(r -> r.setName(r.getName().trim()));
-      doc.setRules(rules);
-      doc.setUpdatedAt(now);
-      doc.setUpdatedByUserId(userId);
-      ShopRateRulesDocument saved = rulesRepository.save(doc);
+      ShopRateRulesDocument saved;
+      try {
+        saved = saveRules(shopId, userId, rules);
+      } catch (DuplicateKeyException e) {
+        // A concurrent first save created the document: save onto it, once.
+        log.info("Rate rules for shop {} were created concurrently; retrying on the saved document", shopId);
+        saved = saveRules(shopId, userId, rules);
+      }
       metrics.record(ProductMetricsConstants.RATE_RULES_UPDATES, 1,
           "module", ProductMetricsConstants.MODULE, "operation", "update");
       return toResponse(shop, saved.getRules(), userId);
+    } catch (DuplicateKeyException | OptimisticLockingFailureException e) {
+      log.warn("Rate rules for shop {} changed concurrently: {}", shopId, e.getMessage());
+      throw new BaseException(ErrorCode.RATE_RULES_CONFLICT,
+          "Rate rules were changed by someone else at the same time. Reload and save again.", e);
     } catch (DataAccessException e) {
       log.error("Failed to save rate rules for shop {}: {}", shopId, e.getMessage(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Failed to save rate rules", e);
     }
+  }
+
+  /** Loads (or starts) the shop's document and saves {@code rules} on it; versioned, so a stale save fails. */
+  private ShopRateRulesDocument saveRules(String shopId, String userId, List<RateRule> rules) {
+    Instant now = Instant.now();
+    ShopRateRulesDocument doc = rulesRepository.findByShopId(shopId).orElseGet(() -> {
+      ShopRateRulesDocument created = new ShopRateRulesDocument();
+      created.setShopId(shopId);
+      created.setCreatedAt(now);
+      return created;
+    });
+    doc.setRules(new ArrayList<>(rules));
+    doc.setUpdatedAt(now);
+    doc.setUpdatedByUserId(userId);
+    return rulesRepository.save(doc);
   }
 
   public RateRulesPreviewResponse preview(String shopId, String userId, PreviewRateRulesRequest request) {

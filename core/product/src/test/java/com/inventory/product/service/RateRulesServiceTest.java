@@ -13,7 +13,10 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.inventory.common.constants.ErrorCode;
@@ -29,6 +32,7 @@ import com.inventory.pricing.utils.constants.PricingConstants;
 import com.inventory.pricing.validation.PricingValidator;
 import com.inventory.product.domain.model.ShopRateRulesDocument;
 import com.inventory.product.domain.model.enums.ShopType;
+import com.inventory.product.domain.repository.ShopRateRulesRepository;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.mapper.RateRulesMapper;
 import com.inventory.product.mapper.RateRulesMapperImpl;
@@ -47,10 +51,13 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
@@ -136,6 +143,71 @@ class RateRulesServiceTest {
 
     assertEquals(created, rules.stored(SHOP).orElseThrow().getCreatedAt());
     assertEquals(2, rules.stored(SHOP).orElseThrow().getRules().size());
+  }
+
+  /**
+   * Two first saves racing: the loser's insert hits the unique shopId index. It reloads the
+   * winner's document and saves its rules onto it, once.
+   */
+  @Test
+  void updateRetriesOnceOnTheDocumentAConcurrentFirstSaveCreated() {
+    ShopRateRulesRepository repo = mock(ShopRateRulesRepository.class);
+    ShopRateRulesDocument winner = new ShopRateRulesDocument();
+    winner.setId("doc-1");
+    winner.setShopId(SHOP);
+    winner.setVersion(0L);
+    when(repo.findByShopId(SHOP)).thenReturn(Optional.empty(), Optional.of(winner));
+    when(repo.save(any(ShopRateRulesDocument.class)))
+        .thenThrow(new DuplicateKeyException("E11000 duplicate key shopId"))
+        .thenAnswer(i -> i.getArgument(0));
+    service = serviceWith(repo);
+
+    RateRulesResponse response = service.updateRules(SHOP, OWNER, update(rateA()));
+
+    assertEquals(1, response.getRules().size());
+    ArgumentCaptor<ShopRateRulesDocument> saved = ArgumentCaptor.forClass(ShopRateRulesDocument.class);
+    verify(repo, times(2)).save(saved.capture());
+    assertEquals("doc-1", saved.getAllValues().get(1).getId());
+    assertEquals("Rate-A", saved.getAllValues().get(1).getRules().get(0).getName());
+  }
+
+  @Test
+  void updateIsAConflictWhenTheRetryAlsoLoses() {
+    ShopRateRulesRepository repo = mock(ShopRateRulesRepository.class);
+    when(repo.findByShopId(SHOP)).thenReturn(Optional.empty());
+    when(repo.save(any(ShopRateRulesDocument.class)))
+        .thenThrow(new DuplicateKeyException("E11000 duplicate key shopId"));
+    service = serviceWith(repo);
+
+    BaseException e = assertThrows(BaseException.class,
+        () -> service.updateRules(SHOP, OWNER, update(rateA())));
+
+    assertEquals(ErrorCode.RATE_RULES_CONFLICT, e.getErrorCode());
+    assertEquals(org.springframework.http.HttpStatus.CONFLICT, e.getErrorCode().getHttpStatus());
+  }
+
+  /** Two saves of the same document: the one holding a stale version gets a 409, not a lost write. */
+  @Test
+  void updateOnAStaleVersionIsAConflict() {
+    ShopRateRulesRepository repo = mock(ShopRateRulesRepository.class);
+    ShopRateRulesDocument doc = new ShopRateRulesDocument();
+    doc.setId("doc-1");
+    doc.setShopId(SHOP);
+    doc.setVersion(3L);
+    when(repo.findByShopId(SHOP)).thenReturn(Optional.of(doc));
+    when(repo.save(any(ShopRateRulesDocument.class)))
+        .thenThrow(new OptimisticLockingFailureException("version 3 is stale"));
+    service = serviceWith(repo);
+
+    BaseException e = assertThrows(BaseException.class,
+        () -> service.updateRules(SHOP, OWNER, update(rateA())));
+
+    assertEquals(ErrorCode.RATE_RULES_CONFLICT, e.getErrorCode());
+  }
+
+  private RateRulesService serviceWith(ShopRateRulesRepository repo) {
+    return new RateRulesService(repo, shopRepository, membershipService,
+        shopValidator, rbacService, new RateRulesValidator(new PricingValidator()), mapper, metrics);
   }
 
   @Test
