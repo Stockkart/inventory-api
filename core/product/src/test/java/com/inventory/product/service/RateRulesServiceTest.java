@@ -160,7 +160,10 @@ class RateRulesServiceTest {
   void updateIsRefusedForCafe() {
     shopIs(ShopType.RETAILER, "cafe");
 
-    assertThrows(BaseException.class, () -> service.updateRules(SHOP, OWNER, update(rateS())));
+    BaseException e = assertThrows(BaseException.class,
+        () -> service.updateRules(SHOP, OWNER, update(rateS())));
+
+    assertEquals(ErrorCode.RATE_RULE_INVALID, e.getErrorCode());
   }
 
   private static PreviewRateRulesRequest previewRequest() {

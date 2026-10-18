@@ -17,7 +17,8 @@ import org.springframework.util.StringUtils;
 @Component
 public class ShopRateRulesPortImpl implements ShopRateRulesPort {
 
-  private static final String CAFE_VERTICAL = "cafe";
+  /** The one vertical that has no rate rules. */
+  public static final String CAFE_VERTICAL = "cafe";
 
   private final ShopRateRulesRepository rulesRepository;
   private final ShopRepository shopRepository;

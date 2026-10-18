@@ -281,7 +281,7 @@ A shop can define named rate rules once (for example `Rate-A` = PTR - 8% + 10+1)
 | `PUT /api/v1/shops/active-shop/rate-rules` | Replaces the ordered rule list. Needs the `rateRulesEdit` grant (owner always; others only when the owner grants it on the access screen), else 403 `ACCESS_DENIED`. |
 | `POST /api/v1/shops/active-shop/rate-rules/preview` | Body: base values, the raw cost inputs (`costPrice`, `costPriceIncludesTax`, `purchaseAdditionalDiscount`, `purchaseScheme`, `sgst`, `cgst`) and optionally unsaved `rules`. Returns each generated rate (`baseValue`, `afterDiscount`, `price`, `gstMode`, `termsText`) and the rules skipped below cost. Cost is resolved as on save. |
 
-A rule needs a discount (0 to 100), a scheme, or both. Names are unique ignoring case and may not be `priceToRetail`, `maximumRetailPrice` or `costPrice`. Errors: 3002 `RATE_RULE_INVALID`, 3003 `RATE_RULE_BASE_NOT_ALLOWED`. Shops with rules report `features.rateRules = true` in their capabilities. A retailer with rules keeps generated rates on inventory save (`InventoryPricingWriteHandler`); a retailer without rules still has none.
+A rule needs a discount (0 to 100), a scheme, or both. Names are unique ignoring case and may not be `priceToRetail`, `maximumRetailPrice` or `costPrice`. Errors (all 400): 3002 `RATE_RULE_INVALID`, 3003 `RATE_RULE_BASE_NOT_ALLOWED`, and 1006 `VALIDATION_ERROR` for a bad scheme shape. `PUT` on a cafe shop returns 400 `RATE_RULE_INVALID`. Shops with rules report `features.rateRules = true` in their capabilities. A retailer with rules keeps generated rates on inventory save (`InventoryPricingWriteHandler`); a retailer without rules still has none.
 
 ### Dot-matrix printing (documentservice)
 

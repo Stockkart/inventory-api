@@ -18,6 +18,8 @@ import com.inventory.product.domain.model.enums.ShopType;
 import com.inventory.product.domain.repository.ShopRateRulesRepository;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.service.RateRulesTestFixtures;
+import com.inventory.product.service.ShopRateRulesPortImpl;
+import com.inventory.user.service.RbacService;
 import com.inventory.product.validation.ShopValidator;
 import com.inventory.user.service.UserShopMembershipService;
 import java.math.BigDecimal;
@@ -40,7 +42,8 @@ class ShopCapabilityServiceRateRulesTest {
   @BeforeEach
   void setUp() {
     service = new ShopCapabilityService(shopRepository, schemaLoader, mock(PluginRegistry.class),
-        contributor, mock(ShopValidator.class), membershipService, rulesRepository);
+        contributor, mock(ShopValidator.class), membershipService,
+        new ShopRateRulesPortImpl(rulesRepository, shopRepository, mock(RbacService.class)));
     when(membershipService.hasAccess("u1", SHOP)).thenReturn(true);
     when(schemaLoader.load(any(), any())).thenReturn(mock(VerticalSchema.class));
     when(contributor.contribute(any())).thenAnswer(

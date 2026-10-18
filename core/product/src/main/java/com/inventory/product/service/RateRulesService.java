@@ -45,8 +45,6 @@ import org.springframework.util.StringUtils;
 @Slf4j
 public class RateRulesService {
 
-  private static final String CAFE_VERTICAL = "cafe";
-  private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
 
   private final ShopRateRulesRepository rulesRepository;
   private final ShopRepository shopRepository;
@@ -156,7 +154,7 @@ public class RateRulesService {
           .name(rate.getName())
           .base(rate.getBase())
           .baseValue(rate.getBaseValue())
-          .afterDiscount(afterDiscount(rate.getBaseValue(), rate.getDiscountPercent()))
+          .afterDiscount(scaled(RateRuleCalculator.afterDiscount(rate.getBaseValue(), rate.getDiscountPercent())))
           .price(rate.getPrice())
           .discountPercent(rate.getDiscountPercent())
           .scheme(mapper.toSchemeDto(rate.getScheme()))
@@ -170,16 +168,8 @@ public class RateRulesService {
     return new RateRulesPreviewResponse(rates, skipped);
   }
 
-  private static BigDecimal afterDiscount(BigDecimal baseValue, BigDecimal discountPercent) {
-    if (baseValue == null) {
-      return null;
-    }
-    BigDecimal after = baseValue;
-    if (discountPercent != null && discountPercent.signum() > 0) {
-      after = baseValue.multiply(BigDecimal.ONE.subtract(
-          discountPercent.divide(HUNDRED, 4, RoundingMode.HALF_UP)));
-    }
-    return after.setScale(2, RoundingMode.HALF_UP);
+  private static BigDecimal scaled(BigDecimal value) {
+    return value == null ? null : value.setScale(2, RoundingMode.HALF_UP);
   }
 
   private RateRulesResponse toResponse(Shop shop, List<RateRule> rules, String userId) {
@@ -203,7 +193,7 @@ public class RateRulesService {
   }
 
   private static boolean isCafe(Shop shop) {
-    return CAFE_VERTICAL.equalsIgnoreCase(shop.getVerticalId());
+    return ShopRateRulesPortImpl.CAFE_VERTICAL.equalsIgnoreCase(shop.getVerticalId());
   }
 
   private static void requireShopId(String shopId) {

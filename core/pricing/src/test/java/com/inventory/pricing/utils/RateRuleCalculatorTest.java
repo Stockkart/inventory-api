@@ -122,4 +122,18 @@ class RateRuleCalculatorTest {
     assertEquals("Ok", r.rates().get(0).getName());
     assertTrue(r.skipped().isEmpty());
   }
+
+  @Test
+  void afterDiscountTakesThePercentOffUnrounded() {
+    assertEquals(0, bd("92").compareTo(RateRuleCalculator.afterDiscount(bd("100"), bd("8"))));
+    assertEquals(0, bd("66.67").compareTo(
+        RateRuleCalculator.afterDiscount(bd("100"), bd("33.3333"))));
+  }
+
+  @Test
+  void afterDiscountLeavesTheBaseWhenThereIsNoDiscount() {
+    assertEquals(bd("100"), RateRuleCalculator.afterDiscount(bd("100"), null));
+    assertEquals(bd("100"), RateRuleCalculator.afterDiscount(bd("100"), BigDecimal.ZERO));
+    assertEquals(null, RateRuleCalculator.afterDiscount(null, bd("8")));
+  }
 }

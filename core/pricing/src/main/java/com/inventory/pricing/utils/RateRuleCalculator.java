@@ -81,12 +81,17 @@ public final class RateRuleCalculator {
     return null;
   }
 
-  private static BigDecimal price(BigDecimal baseValue, BigDecimal discountPercent, Scheme scheme) {
-    BigDecimal afterDisc = baseValue;
-    if (discountPercent != null && discountPercent.signum() > 0) {
-      afterDisc = baseValue.multiply(BigDecimal.ONE.subtract(
-          discountPercent.divide(HUNDRED, 4, RoundingMode.HALF_UP)));
+  /** The base after the discount, unrounded; a null or zero discount leaves it unchanged. */
+  public static BigDecimal afterDiscount(BigDecimal baseValue, BigDecimal discountPercent) {
+    if (baseValue == null || discountPercent == null || discountPercent.signum() <= 0) {
+      return baseValue;
     }
+    return baseValue.multiply(BigDecimal.ONE.subtract(
+        discountPercent.divide(HUNDRED, 4, RoundingMode.HALF_UP)));
+  }
+
+  private static BigDecimal price(BigDecimal baseValue, BigDecimal discountPercent, Scheme scheme) {
+    BigDecimal afterDisc = afterDiscount(baseValue, discountPercent);
     String type = scheme == null ? null : scheme.getSchemeType();
     BigDecimal unitPrice = SchemePriceUtils.percentagePrice(afterDisc, type,
         scheme == null ? null : scheme.getSchemePercentage());
