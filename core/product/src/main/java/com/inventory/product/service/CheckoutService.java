@@ -1295,6 +1295,7 @@ public class CheckoutService {
               // MRP stays the batch's would part the two and add GST on top, billing above MRP,
               // so it stays at MRP for the new unit instead.
               if (wasAtMrp && inventory.getMaximumRetailPrice() != null) {
+                // Any price sent with the switch is ignored here: the line stays at MRP.
                 maximumRetailPrice = resolveMaximumRetailPriceForSaleUnit(inventory, incomingSaleUnit);
                 priceToRetail = maximumRetailPrice;
               }
@@ -1355,6 +1356,7 @@ public class CheckoutService {
               break;
             }
             // Handle quantity update based on positive or negative
+            boolean wasAtMrp = CheckoutUtils.isSellingAtMrp(existingItem);
             String existingLotId = PurchaseItemRefs.stockLotId(existingItem);
             Inventory inventory = inventoryRepository.findById(existingLotId)
                 .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", existingLotId));
@@ -1381,6 +1383,13 @@ public class CheckoutService {
                 existingItem.getMaximumRetailPrice(),
                 newItem.getMaximumRetailPrice(),
                 priceToRetail);
+            // A quantity change on a line sold at MRP keeps it at MRP for its sale unit. Taking the
+            // batch's per-pack MRP (or the per-pack selling price) instead would drop a tablet line
+            // off MRP and add GST on top. A price edit sends no quantity and is left as typed.
+            if (wasAtMrp && incomingBaseQuantity != 0 && inventory.getMaximumRetailPrice() != null) {
+              maximumRetailPrice = resolveMaximumRetailPriceForSaleUnit(inventory, existingSaleUnit);
+              priceToRetail = maximumRetailPrice;
+            }
             BigDecimal costPrice = inventory.costForValuation();
             BigDecimal newQuantity = toSaleQuantityDecimal(newBaseQuantity, saleUnitFactor);
             BigDecimal unitPrice = priceToRetail != null ? priceToRetail : BigDecimal.ZERO;

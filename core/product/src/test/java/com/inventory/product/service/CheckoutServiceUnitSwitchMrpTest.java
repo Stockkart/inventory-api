@@ -144,6 +144,57 @@ class CheckoutServiceUnitSwitchMrpTest {
   }
 
   @Test
+  void switchToTabletThenPlusOneStaysAtMrp() {
+    stock("150", "150", 10);
+    add("STRIP", 1, 10, null);
+    add("TABLET", 0, 0, "15.00");
+
+    add("TABLET", 1, 1, "15.00");
+
+    assertLine("15.00", "15.00", "11.0000", 11, 1, "165.00");
+    assertTrue(CheckoutUtils.isSellingAtMrp(line()));
+    assertGstInsideMrp("165");
+  }
+
+  @Test
+  void switchToTabletThenMinusOneStaysAtMrp() {
+    stock("150", "150", 10);
+    add("STRIP", 1, 10, null);
+    add("TABLET", 0, 0, "15.00");
+
+    add("TABLET", -1, -1, "15.00");
+
+    assertLine("15.00", "15.00", "9.0000", 9, 1, "135.00");
+    assertTrue(CheckoutUtils.isSellingAtMrp(line()));
+    assertGstInsideMrp("135");
+  }
+
+  @Test
+  void unevenTabletsToStripTwentyTablets() {
+    stock("100", "100", 15);
+    add("TABLET", 20, 20, null);
+    add("STRIP", 0, 0, "2000.00");
+
+    assertLine("100", "100", "1.0000", 15, 15, "100.00");
+    assertTrue(CheckoutUtils.isSellingAtMrp(line()));
+    BigDecimal mrpTimesQuantity = line().getMaximumRetailPrice()
+        .multiply(CheckoutUtils.getQuantityAsPricingUnits(line()));
+    assertTrue(cart.getGrandTotal().compareTo(mrpTimesQuantity) <= 0, "grandTotal " + cart.getGrandTotal());
+    assertGstInsideMrp("100");
+  }
+
+  @Test
+  void atMrpPriceEditWithoutQuantityChangeIsKept() {
+    stock("150", "150", 10);
+    add("STRIP", 1, 10, null);
+
+    add("STRIP", 0, 0, "140.00");
+
+    assertLine("140.00", "150", "1.0000", 10, 10, "156.80");
+    assertFalse(CheckoutUtils.isSellingAtMrp(line()));
+  }
+
+  @Test
   void belowMrpLineKeepsExistingBehaviour() {
     stock("100", "90", 15);
     add("TABLET", 15, 15, null);
