@@ -1,6 +1,7 @@
 package com.inventory.product.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -94,7 +95,7 @@ class SalesReturnValuationAtMrpTest {
   @Test
   void atMrpReturnStatesGstInside() {
     SalesReturnValuation.LineAmounts line =
-        SalesReturnValuation.lineAmounts(atMrpLine(), 1, 1, BillingMode.REGULAR, false);
+        SalesReturnValuation.lineAmounts(atMrpLine(), 1, 1, BillingMode.REGULAR, false, true);
 
     assertMoney("7.63", line.cgst());
     assertMoney("7.63", line.sgst());
@@ -106,7 +107,7 @@ class SalesReturnValuationAtMrpTest {
   @Test
   void atMrpInterstateReturnUsesIgst() {
     SalesReturnValuation.LineAmounts line =
-        SalesReturnValuation.lineAmounts(atMrpLine(), 1, 1, BillingMode.REGULAR, true);
+        SalesReturnValuation.lineAmounts(atMrpLine(), 1, 1, BillingMode.REGULAR, true, true);
 
     assertMoney("0", line.cgst());
     assertMoney("0", line.sgst());
@@ -126,7 +127,7 @@ class SalesReturnValuationAtMrpTest {
 
         SalesReturnValuation.LineAmounts returned =
             SalesReturnValuation.lineAmounts(
-                soldLine, soldLine.getBaseQuantity(), sale[0], BillingMode.REGULAR, interstate);
+                soldLine, soldLine.getBaseQuantity(), sale[0], BillingMode.REGULAR, interstate, true);
 
         String label = "qty " + sale[0] + (interstate ? " interstate" : " local");
         assertTrue(cart.getTaxTotal().signum() > 0, label + ": sale states GST");
@@ -145,7 +146,7 @@ class SalesReturnValuationAtMrpTest {
 
       SalesReturnValuation.LineAmounts returned =
           SalesReturnValuation.lineAmounts(
-              soldLine, soldLine.getBaseQuantity(), sale[0], BillingMode.REGULAR, false);
+              soldLine, soldLine.getBaseQuantity(), sale[0], BillingMode.REGULAR, false, true);
 
       assertMoney(PAID[sale[0] == 1 ? 0 : sale[0] == 3 ? 1 : 2], soldLine.getTotalAmount());
       assertMoneyEquals(soldLine.getTotalAmount(), returned.lineTotal(), "qty " + sale[0]);
@@ -163,7 +164,7 @@ class SalesReturnValuationAtMrpTest {
     item.setPriceToRetail(new BigDecimal("140"));
 
     SalesReturnValuation.LineAmounts local =
-        SalesReturnValuation.lineAmounts(item, 1, 1, BillingMode.REGULAR, false);
+        SalesReturnValuation.lineAmounts(item, 1, 1, BillingMode.REGULAR, false, true);
     assertMoney("133.00", local.taxable());
     assertMoney("7.98", local.cgst());
     assertMoney("7.98", local.sgst());
@@ -171,7 +172,7 @@ class SalesReturnValuationAtMrpTest {
     assertMoney("148.96", local.lineTotal());
 
     SalesReturnValuation.LineAmounts interstate =
-        SalesReturnValuation.lineAmounts(item, 1, 1, BillingMode.REGULAR, true);
+        SalesReturnValuation.lineAmounts(item, 1, 1, BillingMode.REGULAR, true, true);
     assertMoney("133.00", interstate.taxable());
     assertMoney("15.96", interstate.igst());
     assertMoney("148.96", interstate.lineTotal());
@@ -180,13 +181,91 @@ class SalesReturnValuationAtMrpTest {
   @Test
   void compositionBillingAtMrpStillNoTax() {
     SalesReturnValuation.LineAmounts line =
-        SalesReturnValuation.lineAmounts(atMrpLine(), 1, 1, BillingMode.BASIC, false);
+        SalesReturnValuation.lineAmounts(atMrpLine(), 1, 1, BillingMode.BASIC, false, true);
 
     assertMoney("0", line.cgst());
     assertMoney("0", line.sgst());
     assertMoney("0", line.igst());
     assertMoney("142.50", line.taxable());
     assertMoney("142.50", line.lineTotal());
+  }
+
+  /** A sale made since #229 stated the GST inside its at-MRP lines, so its return splits it. */
+  @Test
+  void saleThatStatedAtMrpGstIsSplitOnReturn() {
+    for (boolean interstate : new boolean[] {false, true}) {
+      sell(3, 0, 0, interstate);
+      assertTrue(SalesReturnValuation.statedAtMrpGst(cart), "sale stated its at-MRP GST");
+
+      PurchaseItem soldLine = cart.getItems().get(0);
+      SalesReturnValuation.LineAmounts returned =
+          SalesReturnValuation.lineAmounts(
+              soldLine, soldLine.getBaseQuantity(), 3, BillingMode.REGULAR, interstate,
+              SalesReturnValuation.statedAtMrpGst(cart));
+      assertMoneyEquals(cart.getTaxTotal(),
+          returned.cgst().add(returned.sgst()).add(returned.igst()), "GST reversed");
+    }
+  }
+
+  /**
+   * A sale made before #229 stated no GST for its at-MRP lines (header tax 0), so the return
+   * keeps the old zero-GST result: reversing GST that was never stated or posted would credit
+   * tax the shop never paid.
+   */
+  @Test
+  void saleThatStatedNoAtMrpGstKeepsZeroGstReturn() {
+    Purchase old = new Purchase();
+    old.setBillingMode(BillingMode.REGULAR);
+    old.setItems(List.of(atMrpLine()));
+    old.setTaxTotal(BigDecimal.ZERO);
+    old.setCgstAmount(BigDecimal.ZERO);
+    old.setSgstAmount(BigDecimal.ZERO);
+    assertFalse(SalesReturnValuation.statedAtMrpGst(old));
+
+    for (boolean interstate : new boolean[] {false, true}) {
+      SalesReturnValuation.LineAmounts line =
+          SalesReturnValuation.lineAmounts(
+              atMrpLine(), 1, 1, BillingMode.REGULAR, interstate,
+              SalesReturnValuation.statedAtMrpGst(old));
+      assertMoney("0", line.cgst());
+      assertMoney("0", line.sgst());
+      assertMoney("0", line.igst());
+      assertMoney("142.50", line.taxable());
+      assertMoney("142.50", line.lineTotal());
+    }
+  }
+
+  /** A header with no tax fields at all (older still) is no evidence either. */
+  @Test
+  void saleWithNoHeaderTaxStatedNoAtMrpGst() {
+    Purchase old = new Purchase();
+    old.setBillingMode(BillingMode.REGULAR);
+    old.setItems(List.of(atMrpLine()));
+    assertFalse(SalesReturnValuation.statedAtMrpGst(old));
+  }
+
+  /**
+   * On a mixed pre-#229 bill the header carries only the below-MRP line's GST; that is not
+   * evidence the at-MRP line's GST was stated. Once the header also holds it, it is.
+   */
+  @Test
+  void mixedSaleIsJudgedByTheAtMrpShareOfItsHeaderTax() {
+    PurchaseItem below = atMrpLine();
+    below.setPriceToRetail(new BigDecimal("140"));
+    // below: 133.00 taxable, 7.98 + 7.98. at MRP: 7.63 + 7.63 inside 142.50.
+    Purchase old = new Purchase();
+    old.setBillingMode(BillingMode.REGULAR);
+    old.setItems(List.of(atMrpLine(), below));
+    old.setTaxTotal(new BigDecimal("15.96"));
+    assertFalse(SalesReturnValuation.statedAtMrpGst(old));
+
+    old.setTaxTotal(new BigDecimal("31.22"));
+    assertTrue(SalesReturnValuation.statedAtMrpGst(old));
+
+    // An interstate header states it all as IGST, with taxTotal left as the sum.
+    old.setTaxTotal(null);
+    old.setIgstAmount(new BigDecimal("31.22"));
+    assertTrue(SalesReturnValuation.statedAtMrpGst(old));
   }
 
   /** {quantity, scheme pay-for, scheme free}; 0/0 is no scheme. */
