@@ -1,12 +1,14 @@
 package com.inventory.product.service;
 
 import com.inventory.common.util.GstMath;
+import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.utils.CheckoutUtils;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
+import org.springframework.util.StringUtils;
 
 /** Computes taxable, tax, COGS, and refund tender splits for customer returns. */
 final class SalesReturnValuation {
@@ -33,14 +35,17 @@ final class SalesReturnValuation {
   /**
    * A returned line's taxable value and tax. A return reverses the sale's tax under the head the
    * sale charged it: IGST at the combined rate when the sale was interstate, else CGST and SGST.
-   * A line sold at MRP reverses the GST inside its price (see {@link #atMrpLineAmounts}).
+   * A line sold at MRP reverses the GST inside its price (see {@link #atMrpLineAmounts}), but
+   * only when {@code atMrpGstStated}: the sale stated that GST ({@link #statedAtMrpGst}). A sale
+   * that never stated it keeps the old return, zero GST and the whole amount taxable.
    */
   static LineAmounts lineAmounts(
       PurchaseItem purchaseItem,
       int refundBaseQty,
       int refundDisplayQty,
       BillingMode billingMode,
-      boolean interstate) {
+      boolean interstate,
+      boolean atMrpGstStated) {
     BigDecimal billableQty =
         prorateBillableQuantity(purchaseItem, refundBaseQty, refundDisplayQty);
     BigDecimal effectivePrice = CheckoutUtils.getEffectiveSellingPricePerUnit(purchaseItem);
@@ -59,7 +64,9 @@ final class SalesReturnValuation {
 
     BigDecimal cogs = prorateCogs(purchaseItem, refundBaseQty);
     // At MRP the amount above is what the customer paid, GST included.
-    if (CheckoutUtils.isTaxApplicable(billingMode) && CheckoutUtils.isSellingAtMrp(purchaseItem)) {
+    if (atMrpGstStated
+        && CheckoutUtils.isTaxApplicable(billingMode)
+        && CheckoutUtils.isSellingAtMrp(purchaseItem)) {
       return atMrpLineAmounts(purchaseItem, billableQty, taxable, interstate, cogs);
     }
 
@@ -107,6 +114,71 @@ final class SalesReturnValuation {
     }
     BigDecimal taxable = paid.subtract(cgst).subtract(sgst).subtract(igst);
     return new LineAmounts(taxable, cgst, sgst, igst, cogs, paid);
+  }
+
+  /**
+   * Whether a sale stated the GST inside its at-MRP lines. Sales made before #229 did not: their
+   * header, journal and invoice charged those lines no GST, so a return must not reverse any.
+   * No line field records this, so the evidence is the sale header. It holds the GST of the
+   * below-MRP lines (on top of the price) plus, since #229, the GST inside the at-MRP lines,
+   * each worked by {@link CheckoutUtils#getTaxableLineValue} and {@link
+   * CheckoutUtils#gstHeadAmount}. The sale stated its at-MRP GST when the header tax left after
+   * the below-MRP lines' GST covers at least half of the at-MRP lines' GST; before #229 that
+   * remainder is zero. Half, not all, so a paisa of rounding cannot decide it.
+   *
+   * <p>A sale with no at-MRP GST to state counts as stated: its at-MRP split is zero either way.
+   * Rates come from the lines only; a below-MRP line taxed at a shop default leaves extra header
+   * tax and can make an old sale read as stated.
+   */
+  static boolean statedAtMrpGst(Purchase sale) {
+    if (sale == null || sale.getItems() == null) {
+      return false;
+    }
+    BigDecimal atMrpGst = BigDecimal.ZERO;
+    BigDecimal belowMrpGst = BigDecimal.ZERO;
+    for (PurchaseItem item : sale.getItems()) {
+      if (item == null
+          || item.getMaximumRetailPrice() == null
+          || item.getQuantity() == null
+          || item.getPriceToRetail() == null) {
+        continue;
+      }
+      BigDecimal value =
+          CheckoutUtils.getTaxableLineValue(item, CheckoutUtils.getBillableQuantityAsDecimal(item));
+      BigDecimal gst = BigDecimal.ZERO;
+      if (StringUtils.hasText(item.getCgst())) {
+        gst = gst.add(CheckoutUtils.gstHeadAmount(value, item.getCgst()));
+      }
+      if (StringUtils.hasText(item.getSgst())) {
+        gst = gst.add(CheckoutUtils.gstHeadAmount(value, item.getSgst()));
+      }
+      if (CheckoutUtils.isSellingAtMrp(item)) {
+        atMrpGst = atMrpGst.add(gst);
+      } else {
+        belowMrpGst = belowMrpGst.add(gst);
+      }
+    }
+    if (atMrpGst.signum() <= 0) {
+      return true;
+    }
+    BigDecimal headerTax = headerTax(sale);
+    BigDecimal halfAtMrp = atMrpGst.divide(BigDecimal.valueOf(2), 4, RoundingMode.HALF_UP);
+    return headerTax.subtract(belowMrpGst).compareTo(halfAtMrp) >= 0;
+  }
+
+  /** The sale header's GST: taxTotal, else CGST + SGST + IGST; zero when none is stored. */
+  private static BigDecimal headerTax(Purchase sale) {
+    if (sale.getTaxTotal() != null) {
+      return sale.getTaxTotal();
+    }
+    BigDecimal tax = BigDecimal.ZERO;
+    for (BigDecimal head : new BigDecimal[] {
+        sale.getCgstAmount(), sale.getSgstAmount(), sale.getIgstAmount()}) {
+      if (head != null) {
+        tax = tax.add(head);
+      }
+    }
+    return tax;
   }
 
   static AmountTotals aggregate(List<LineAmounts> lines) {

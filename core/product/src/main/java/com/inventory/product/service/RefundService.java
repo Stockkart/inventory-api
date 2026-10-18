@@ -162,6 +162,8 @@ public class RefundService {
       List<RefundResponse.RefundedItem> refundedItems = new ArrayList<>();
       List<RefundItem> domainRefundItems = new ArrayList<>();
       List<SalesReturnValuation.LineAmounts> lineAmounts = new ArrayList<>();
+      // Sales made before #229 never stated the GST inside at-MRP lines; their returns reverse none.
+      boolean atMrpGstStated = SalesReturnValuation.statedAtMrpGst(purchase);
 
       for (RefundRequest.RefundItem refundItem : request.getItems()) {
         if (!StringUtils.hasText(refundItem.getInventoryId())) {
@@ -206,7 +208,7 @@ public class RefundService {
         SalesReturnValuation.LineAmounts amounts =
             SalesReturnValuation.lineAmounts(
                 purchaseItem, refundBaseQuantity, refundItem.getQuantity(), billingMode,
-                Boolean.TRUE.equals(purchase.getInterstate()));
+                Boolean.TRUE.equals(purchase.getInterstate()), atMrpGstStated);
 
         restoreInventoryForRefund(refundItem.getInventoryId(), refundBaseQuantity, shopId);
 
