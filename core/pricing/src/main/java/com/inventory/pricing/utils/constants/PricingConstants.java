@@ -21,4 +21,19 @@ public final class PricingConstants {
 
   /** Scheme type where the deal is free units, e.g. 10+1: pay for 10, get 11. */
   public static final String SCHEME_TYPE_FIXED_UNITS = "FIXED_UNITS";
+
+  /** Rate rule base: the selling price. */
+  public static final String RATE_BASE_SELLING_PRICE = "sellingPrice";
+
+  /** Rate rule base: the price to retail. */
+  public static final String RATE_BASE_PRICE_TO_RETAIL = "priceToRetail";
+
+  /** Rate rule base: the maximum retail price. */
+  public static final String RATE_BASE_MAXIMUM_RETAIL_PRICE = "maximumRetailPrice";
+
+  /** The rate's price already contains GST. */
+  public static final String GST_MODE_INCLUSIVE = "INCLUSIVE";
+
+  /** GST is added on top of the rate's price. */
+  public static final String GST_MODE_EXCLUSIVE = "EXCLUSIVE";
 }

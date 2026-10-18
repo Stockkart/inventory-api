@@ -108,7 +108,10 @@ public interface PricingMapper {
     return dto;
   }
 
+  @Mapping(target = "termsText", expression = "java(com.inventory.pricing.utils.RateTermsText.of(rate))")
   RateDto toRateDto(Rate rate);
+
+  @Mapping(target = "scheme", expression = "java(toScheme(dto.getScheme()))")
   Rate toRate(RateDto dto);
 
   default List<RateDto> toRateDtos(List<Rate> rates) {
