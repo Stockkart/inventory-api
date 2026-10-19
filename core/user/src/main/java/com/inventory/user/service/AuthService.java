@@ -144,9 +144,9 @@ public class AuthService {
 
       // Populate shop information if shopId exists and adapter is available
       if (account.getShopId() != null && !account.getShopId().trim().isEmpty() && shopServiceAdapter != null) {
-        ShopServiceAdapter.ShopTaxInfo taxInfo = shopServiceAdapter.getShopTaxInfo(account.getShopId());
-        if (taxInfo != null) {
-          response.setShop(userMapper.toShopInfo(taxInfo));
+        ShopServiceAdapter.ShopSummary shop = shopServiceAdapter.getShopSummary(account.getShopId());
+        if (shop != null) {
+          response.setShop(userMapper.toShopInfo(shop));
         }
       }
 

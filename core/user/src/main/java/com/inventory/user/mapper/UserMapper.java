@@ -176,7 +176,7 @@ public interface UserMapper {
     }
   }
 
-  LoginResponse.ShopInfo toShopInfo(ShopServiceAdapter.ShopTaxInfo taxInfo);
+  LoginResponse.ShopInfo toShopInfo(ShopServiceAdapter.ShopSummary shop);
 
   default UserAccount toUserAccountFromOAuth(String email, String name, SignupRequest request) {
     if (email == null) {

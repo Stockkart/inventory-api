@@ -69,7 +69,8 @@ public class ProductEntryGridCatalog implements GridCatalog {
     out.add(GridColumnDefinition.optional("purchaseDisc", "Purchase disc %", 110));
     out.add(GridColumnDefinition.optional("discApplicability", "Discount applicable", 130));
     out.add(GridColumnDefinition.optional("hsn", "HSN", 110));
-    out.add(GridColumnDefinition.optional("gstRate", "GST rate", 110));
+    // GST is required on every taxable lot (no shop default), so its picker cannot be hidden
+    out.add(GridColumnDefinition.required("gstRate", "GST rate", 110));
     out.add(GridColumnDefinition.optional("cgst", "CGST %", 90));
     out.add(GridColumnDefinition.optional("sgst", "SGST %", 90));
     out.add(GridColumnDefinition.pinned(ACTIONS, "Actions", 140, GridColumnPosition.LAST));

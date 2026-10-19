@@ -244,13 +244,12 @@ public class ShopService {
   }
 
   /**
-   * Get shop tax info. Used by ShopServiceAdapterImpl.
+   * Shop summary for the login response. Used by ShopServiceAdapterImpl.
    */
   @Transactional(readOnly = true)
-  public com.inventory.user.service.ShopServiceAdapter.ShopTaxInfo getShopTaxInfo(String shopId) {
+  public com.inventory.user.service.ShopServiceAdapter.ShopSummary getShopSummary(String shopId) {
     return shopRepository.findById(shopId)
-        .map(shop -> new com.inventory.user.service.ShopServiceAdapter.ShopTaxInfo(
-            shop.getSgst(), shop.getCgst(), shop.getName()))
+        .map(shop -> new com.inventory.user.service.ShopServiceAdapter.ShopSummary(shop.getName()))
         .orElse(null);
   }
 

@@ -6,8 +6,6 @@ import com.inventory.pricing.service.InventoryPricingAdapter;
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.enums.SchemeType;
-import com.inventory.product.domain.model.Shop;
-import com.inventory.product.domain.repository.ShopRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -24,8 +22,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
-import java.util.function.Function;
 
 /**
  * Handles inventory pricing read: resolve pricing (from port or legacy) and enrich inventory.
@@ -39,9 +35,6 @@ public class InventoryPricingReadHandler {
 
   @Autowired
   private MongoTemplate mongoTemplate;
-
-  @Autowired
-  private ShopRepository shopRepository;
 
   public PricingReadDto resolve(Inventory inventory) {
     if (inventory == null) return null;
@@ -92,26 +85,17 @@ public class InventoryPricingReadHandler {
     PricingReadDto p = resolve(inventory);
     if (p != null) {
       log.debug("enrich inventory {} applying sgst={} cgst={}", inventory.getId(), p.getSgst(), p.getCgst());
-      applyPricing(inventory, p, shopLookup());
+      applyPricing(inventory, p);
     }
   }
 
   public void enrich(List<Inventory> inventories) {
     if (inventories == null || inventories.isEmpty()) return;
     Map<String, PricingReadDto> map = resolveBatch(inventories);
-    // the shop GST fallback reads each shop once per list, not once per lot
-    Function<String, Shop> shops = shopLookup();
     for (Inventory inv : inventories) {
       PricingReadDto p = map.get(inv.getId());
-      if (p != null) applyPricing(inv, p, shops);
+      if (p != null) applyPricing(inv, p);
     }
-  }
-
-  /** Shop lookup memoised for one enrich call; a null id or a missing shop resolves to null. */
-  private Function<String, Shop> shopLookup() {
-    Map<String, Optional<Shop>> memo = new HashMap<>();
-    return shopId -> shopId == null ? null
-        : memo.computeIfAbsent(shopId, id -> shopRepository.findById(id)).orElse(null);
   }
 
   private PricingReadDto readLegacyPricing(String inventoryId) {
@@ -170,7 +154,7 @@ public class InventoryPricingReadHandler {
     return new PricingReadDto(mrp, cost, null, ptr, null, null, ptr, discount, null, purchaseScheme, saleScheme, sgst, cgst, null);
   }
 
-  private void applyPricing(Inventory inv, PricingReadDto p, Function<String, Shop> shops) {
+  private void applyPricing(Inventory inv, PricingReadDto p) {
     inv.setMaximumRetailPrice(p.getMaximumRetailPrice());
     inv.setCostPrice(p.getCostPrice());
     inv.setEffectiveCostPrice(p.resolveEffectiveCostPrice());
@@ -209,17 +193,9 @@ public class InventoryPricingReadHandler {
       inv.setCgst(null);
       return;
     }
-    String sgst = p.getSgst();
-    String cgst = p.getCgst();
-    if (!StringUtils.hasText(sgst) || !StringUtils.hasText(cgst)) {
-      var shop = shops.apply(inv.getShopId());
-      if (shop != null) {
-        if (!StringUtils.hasText(sgst)) sgst = shop.getSgst();
-        if (!StringUtils.hasText(cgst)) cgst = shop.getCgst();
-      }
-    }
-    inv.setSgst(sgst);
-    inv.setCgst(cgst);
+    // GST comes from the lot's own pricing only; the shop carries no GST rate.
+    inv.setSgst(p.getSgst());
+    inv.setCgst(p.getCgst());
   }
 
   private static boolean isValidObjectId(String s) {

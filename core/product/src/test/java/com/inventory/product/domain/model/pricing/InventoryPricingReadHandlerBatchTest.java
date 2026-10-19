@@ -12,12 +12,9 @@ import static org.mockito.Mockito.when;
 import com.inventory.pricing.rest.dto.response.PricingReadDto;
 import com.inventory.pricing.service.InventoryPricingAdapter;
 import com.inventory.product.domain.model.Inventory;
-import com.inventory.product.domain.model.Shop;
-import com.inventory.product.domain.repository.ShopRepository;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import org.bson.Document;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
@@ -35,7 +32,6 @@ class InventoryPricingReadHandlerBatchTest {
 
   @Mock private InventoryPricingAdapter pricingPort;
   @Mock private MongoTemplate mongoTemplate;
-  @Mock private ShopRepository shopRepository;
   @InjectMocks private InventoryPricingReadHandler handler;
 
   private static Inventory lot(String id, String pricingId, String shopId) {
@@ -111,24 +107,19 @@ class InventoryPricingReadHandlerBatchTest {
   }
 
   @Test
-  void shopGstFallbackReadsEachShopOnceForTheWholeList() {
+  void gstComesFromTheLotsPricingOnlyNeverFromTheShop() {
     PricingReadDto noTax = new PricingReadDto();
     noTax.setMaximumRetailPrice(BigDecimal.TEN);
-    when(pricingPort.findByIdIn(anyList())).thenReturn(Map.of("p", noTax));
-    Shop shop = new Shop();
-    shop.setSgst("6");
-    shop.setCgst("6");
-    when(shopRepository.findById("s1")).thenReturn(Optional.of(shop));
+    when(pricingPort.findByIdIn(anyList())).thenReturn(Map.of("p", noTax, "q", priced("50")));
 
-    List<Inventory> lots = List.of(lot("a", "p", "s1"), lot("b", "p", "s1"), lot("c", "p", "s1"));
+    List<Inventory> lots = List.of(lot("a", "p", "s1"), lot("b", "q", "s1"));
     handler.enrich(lots);
 
-    assertThat(lots).allSatisfy(inv -> {
-      assertThat(inv.getSgst()).isEqualTo("6");
-      assertThat(inv.getCgst()).isEqualTo("6");
-      assertThat(inv.getMaximumRetailPrice()).isEqualByComparingTo("10");
-    });
-    verify(shopRepository, times(1)).findById("s1");
+    assertThat(lots.get(0).getSgst()).isNull();
+    assertThat(lots.get(0).getCgst()).isNull();
+    assertThat(lots.get(0).getMaximumRetailPrice()).isEqualByComparingTo("10");
+    assertThat(lots.get(1).getSgst()).isEqualTo("2.5");
+    assertThat(lots.get(1).getCgst()).isEqualTo("2.5");
   }
 
   @Test

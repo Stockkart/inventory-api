@@ -31,47 +31,29 @@ public interface ShopServiceAdapter {
   boolean shopExists(String shopId);
   
   /**
-   * Get shop SGST and CGST values by shop ID.
-   * 
+   * Shop summary for the login response.
+   *
    * @param shopId the shop ID
-   * @return ShopTaxInfo containing sgst and cgst, or null if shop not found
+   * @return the shop's summary, or null if the shop is not found
    */
-  ShopTaxInfo getShopTaxInfo(String shopId);
-  
-  /**
-   * Data class for shop tax information.
-   */
-  class ShopTaxInfo {
-    private String sgst;
-    private String cgst;
+  ShopSummary getShopSummary(String shopId);
+
+  /** What the login response shows about the active shop. GST is per product, never per shop. */
+  class ShopSummary {
     private String name;
-    
-    public ShopTaxInfo() {}
-    
-    public ShopTaxInfo(String sgst, String cgst, String name) {
-      this.sgst = sgst;
-      this.cgst = cgst;
-      this.name= name;
-    }
-    
-    public String getSgst() {
-      return sgst;
-    }
-    
-    public void setSgst(String sgst) {
-      this.sgst = sgst;
-    }
-    
-    public String getCgst() {
-      return cgst;
-    }
-    
-    public void setCgst(String cgst) {
-      this.cgst = cgst;
+
+    public ShopSummary() {}
+
+    public ShopSummary(String name) {
+      this.name = name;
     }
 
-    public String getName() {return name;}
+    public String getName() {
+      return name;
+    }
 
-    public void setName(String name) {this.name = name;}
+    public void setName(String name) {
+      this.name = name;
+    }
   }
 }

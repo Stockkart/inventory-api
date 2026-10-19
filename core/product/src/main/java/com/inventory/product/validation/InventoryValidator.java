@@ -101,9 +101,7 @@ public class InventoryValidator {
         throw new ValidationException("Scheme (free units) must be zero or greater");
       }
     }
-    if (request.getBillingMode() != null) {
-      validateTaxFieldsByBillingMode(request.getBillingMode(), request.getSgst(), request.getCgst());
-    }
+    validateTaxFieldsOnUpdate(request.getBillingMode(), request.getSgst(), request.getCgst());
     if (request.getBaseUnit() != null || request.getUnitConversions() != null) {
       Integer unitsPerPack = request.getUnitConversions() != null
           ? request.getUnitConversions().getFactor()
@@ -141,13 +139,38 @@ public class InventoryValidator {
     }
   }
 
+  static final String GST_REQUIRED =
+      "SGST and CGST are required (enter 0 for a GST-exempt item)";
+
+  /**
+   * GST belongs to the lot; the shop has no rate to fall back on. A taxable (non-BASIC) lot must
+   * state both SGST and CGST on create, 0 for an exempt item. A BASIC (estimate-only) lot carries
+   * none.
+   */
   private void validateTaxFieldsByBillingMode(BillingMode billingMode, String sgst, String cgst) {
     BillingMode effectiveMode = billingMode != null ? billingMode : BillingMode.REGULAR;
     if (effectiveMode != BillingMode.BASIC) {
+      if (!StringUtils.hasText(sgst) || !StringUtils.hasText(cgst)) {
+        throw new ValidationException(GST_REQUIRED);
+      }
       return;
     }
     if (StringUtils.hasText(sgst) || StringUtils.hasText(cgst)) {
       throw new ValidationException("SGST/CGST must not be provided when billingMode is BASIC");
+    }
+  }
+
+  /**
+   * An update leaves GST alone unless it sends it; what it sends must not blank a taxable lot's
+   * rate (BASIC lots carry none).
+   */
+  private void validateTaxFieldsOnUpdate(BillingMode billingMode, String sgst, String cgst) {
+    if (billingMode == BillingMode.BASIC) {
+      validateTaxFieldsByBillingMode(billingMode, sgst, cgst);
+      return;
+    }
+    if ((sgst != null && !StringUtils.hasText(sgst)) || (cgst != null && !StringUtils.hasText(cgst))) {
+      throw new ValidationException(GST_REQUIRED);
     }
   }
 

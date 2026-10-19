@@ -905,8 +905,8 @@ public class CheckoutService {
   }
 
   /**
-   * Tax on purchase items at each item's own CGST/SGST rate (shop defaults where an item has
-   * none), summed; on an interstate sale the same total is charged as IGST.
+   * Tax on purchase items at each item's own CGST/SGST rate, summed; on an interstate sale the
+   * same total is charged as IGST.
    */
   private TaxCalculationResult calculateTax(List<PurchaseItem> purchaseItems, String shopId,
       BillingMode billingMode, boolean interstate) {
@@ -916,25 +916,12 @@ public class CheckoutService {
     BigDecimal totalSgstAmount = BigDecimal.ZERO;
     BigDecimal totalCgstAmount = BigDecimal.ZERO;
     
-    // Get shop defaults for items without inventory-level rates
-    String shopSgst = null;
-    String shopCgst = null;
-    if (shopId != null && !shopId.trim().isEmpty()) {
-      Optional<Shop> shopOpt = shopRepository.findById(shopId);
-      if (shopOpt.isPresent()) {
-        Shop shop = shopOpt.get();
-        shopSgst = shop.getSgst();
-        shopCgst = shop.getCgst();
-      }
-    }
-    
     // Calculate tax for each item based on its inventory-level CGST/SGST.
     // A line sold at MRP adds no GST on top, but the GST inside its price is still charged and is
     // stated here: its tax is worked on the price with that GST taken out, so it is the GST the
     // MRP already contains. Skipping it left the bill, the journal and the invoice saying no tax
     // was charged on goods whose price included it.
     for (PurchaseItem item : purchaseItems) {
-      boolean sellingAtMrp = CheckoutUtils.isSellingAtMrp(item);
       // Item total for tax: use paid quantity when scheme is set (billing basis)
       BigDecimal itemTotal = BigDecimal.ZERO;
       if (item.getMaximumRetailPrice() != null && item.getQuantity() != null 
@@ -949,11 +936,9 @@ public class CheckoutService {
         }
       }
       
-      // Use inventory-level rates if available, otherwise use shop defaults. A line sold at MRP
-      // uses only its own rates: its taxable price was worked from them, and a shop default it
-      // does not carry would charge tax that its price does not contain.
-      String itemSgst = StringUtils.hasText(item.getSgst()) ? item.getSgst() : (sellingAtMrp ? null : shopSgst);
-      String itemCgst = StringUtils.hasText(item.getCgst()) ? item.getCgst() : (sellingAtMrp ? null : shopCgst);
+      // Each line is taxed at its own lot's rates; there is no shop-level GST.
+      String itemSgst = StringUtils.hasText(item.getSgst()) ? item.getSgst() : null;
+      String itemCgst = StringUtils.hasText(item.getCgst()) ? item.getCgst() : null;
       
       // Calculate SGST for this item
       if (itemSgst != null && !itemSgst.trim().isEmpty()) {
