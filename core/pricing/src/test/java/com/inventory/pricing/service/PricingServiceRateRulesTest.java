@@ -576,6 +576,30 @@ class PricingServiceRateRulesTest {
     verify(pricingRepository, never()).save(any(Pricing.class));
   }
 
+  /**
+   * Inventory create and update reject a rate named like a built-in option too, rules or not:
+   * a cart pick by that name means the batch field, so the rate could never be billed.
+   */
+  @Test
+  void inventoryCreateAndUpdateWithAReservedRateNameAreRejected() {
+    for (List<RateRuleSpec> rules : List.<List<RateRuleSpec>>of(List.of(rateA()), List.of())) {
+      when(port.rulesFor(SHOP)).thenReturn(rules);
+      givenStored(stored("p1", "100", "150", null));
+      for (String name : List.of("MRP", "ptr", "Cost", "priceToRetail")) {
+        CreatePricingRequest create = createRequest();
+        create.setRates(new ArrayList<>(List.of(namePrice(name, "50"))));
+        assertThrows(ValidationException.class,
+            () -> pricingService.createAndReturnEntity(create), "create " + name);
+
+        UpdatePricingRequest update = new UpdatePricingRequest();
+        update.setRates(new ArrayList<>(List.of(namePrice(name, "50"))));
+        assertThrows(ValidationException.class,
+            () -> pricingService.update("p1", update, null, OWNER), "update " + name);
+      }
+    }
+    verify(pricingRepository, never()).save(any(Pricing.class));
+  }
+
   /** An override of a rate built on a base the batch has no value for cannot be priced: 400. */
   @Test
   void overrideOfARateOnAMissingBaseIsRejected() {

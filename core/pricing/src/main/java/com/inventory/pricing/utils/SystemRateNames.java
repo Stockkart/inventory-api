@@ -7,9 +7,11 @@ import java.util.Map;
 /**
  * The batch's built-in rate options -- PTR, MRP and cost -- by every name they go by: the system
  * keys ({@code priceToRetail}, {@code maximumRetailPrice}, {@code costPrice}) and the labels the
- * counter shows ({@code PTR}, {@code MRP}, {@code Cost}), case-insensitively. No rule or
- * hand-typed rate may take one of these names, and a cart pick by one of them means the system
- * option, never a stored rate of the same name.
+ * counter shows ({@code PTR}, {@code MRP}, {@code Cost}), case-insensitively. No rule
+ * ({@code RateRulesValidator}) or hand-typed rate ({@code PricingValidator}: on create, update,
+ * {@code PATCH} and bulk-update) may take one of these names, and a cart pick by one of them means
+ * the system option, never a stored rate of the same name. Rates stored before that check may
+ * still carry one; checkout never bills them.
  */
 public final class SystemRateNames {
 

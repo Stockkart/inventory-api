@@ -27,6 +27,9 @@ public class PricingValidator {
     if (!StringUtils.hasText(request.getShopId())) {
       throw new ValidationException("Shop ID is required for pricing");
     }
+    if (request.getRates() != null) {
+      rejectReservedRateNames(request.getRates());
+    }
   }
 
   /** @deprecated Use {@link #validateCreateBasics} plus vertical pricing policy. */
@@ -47,6 +50,9 @@ public class PricingValidator {
   public void validateUpdateRequest(UpdatePricingRequest request) {
     if (request == null) {
       return;
+    }
+    if (request.getRates() != null) {
+      rejectReservedRateNames(request.getRates());
     }
     validateRates(request.getRates(), request.getDefaultRate());
     validateGstRates(request.getSgst(), request.getCgst());
@@ -191,9 +197,10 @@ public class PricingValidator {
   }
 
   /**
-   * A rate sent may not take a built-in option's name ({@link SystemRateNames}: priceToRetail,
-   * MRP, PTR, Cost …, any case): a cart pick by that name means the batch field, so such a rate
-   * could never be billed.
+   * A rate sent -- on pricing or inventory create and update, {@code PATCH} or bulk-update -- may
+   * not take a built-in option's name ({@link SystemRateNames}: priceToRetail, MRP, PTR, Cost …,
+   * any case): a cart pick by that name means the batch field, so such a rate could never be
+   * billed.
    */
   private static void rejectReservedRateNames(List<Rate> rates) {
     for (Rate r : rates) {
