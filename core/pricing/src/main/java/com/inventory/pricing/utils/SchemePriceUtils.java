@@ -17,14 +17,15 @@ public final class SchemePriceUtils {
 
   /**
    * The price after a PERCENTAGE scheme: {@code price × (1 − percentage/100)}, with the
-   * {@code percentage/100} divide at 4 dp HALF_UP and the product left unrounded. Any other scheme,
-   * or a missing or non-positive percentage, leaves {@code price} as it is.
+   * {@code percentage/100} divide at 6 dp HALF_UP (as {@code PricingUtils.computeEffectiveCostPrice}
+   * divides the purchase scheme) and the product left unrounded. Any other scheme, or a missing or
+   * non-positive percentage, leaves {@code price} as it is.
    */
   public static BigDecimal percentagePrice(BigDecimal price, String schemeType, BigDecimal percentage) {
     if (PricingConstants.SCHEME_TYPE_PERCENTAGE.equals(schemeType) && percentage != null
         && percentage.signum() > 0) {
       return price.multiply(
-          BigDecimal.ONE.subtract(percentage.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP)));
+          BigDecimal.ONE.subtract(percentage.divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP)));
     }
     return price;
   }

@@ -82,13 +82,17 @@ public final class RateRuleCalculator {
     return null;
   }
 
-  /** The base after the discount, unrounded; a null or zero discount leaves it unchanged. */
+  /**
+   * The base after the discount, unrounded; a null or zero discount leaves it unchanged. The
+   * {@code disc/100} divide is at 6 dp HALF_UP, as {@code PricingUtils.computeEffectiveCostPrice}
+   * divides the purchase discount (7.125% stays 0.07125).
+   */
   public static BigDecimal afterDiscount(BigDecimal baseValue, BigDecimal discountPercent) {
     if (baseValue == null || discountPercent == null || discountPercent.signum() <= 0) {
       return baseValue;
     }
     return baseValue.multiply(BigDecimal.ONE.subtract(
-        discountPercent.divide(HUNDRED, 4, RoundingMode.HALF_UP)));
+        discountPercent.divide(HUNDRED, 6, RoundingMode.HALF_UP)));
   }
 
   /**

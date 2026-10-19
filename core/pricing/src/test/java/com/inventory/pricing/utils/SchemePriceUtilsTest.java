@@ -11,8 +11,15 @@ class SchemePriceUtilsTest {
 
   @Test
   void percentagePriceMatchesCheckout() {
-    assertEquals(new BigDecimal("92").multiply(new BigDecimal("0.9000")),
+    assertEquals(new BigDecimal("92").multiply(new BigDecimal("0.900000")),
         SchemePriceUtils.percentagePrice(new BigDecimal("92"), "PERCENTAGE", new BigDecimal("10")));
+  }
+
+  /** The percentage is divided by 100 at 6 dp: 12.345% is 0.12345, not 0.1235. */
+  @Test
+  void percentagePriceDividesThePercentageAtSixPlaces() {
+    assertEquals(0, new BigDecimal("87.655").compareTo(
+        SchemePriceUtils.percentagePrice(new BigDecimal("100"), "PERCENTAGE", new BigDecimal("12.345"))));
   }
 
   @Test

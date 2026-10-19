@@ -92,6 +92,20 @@ class RateRuleCalculatorTest {
     assertEquals(new BigDecimal("90.00"), rate.getPrice());
   }
 
+  /**
+   * The disc % and a percentage scheme are divided by 100 at 6 dp, as the purchase cost is
+   * ({@code PricingUtils.computeEffectiveCostPrice}): 7.125% off PTR 100 is 92.875, so 92.88 (at
+   * 4 dp the 0.0713 made it 92.87); a 12.345% scheme is 87.655, so 87.66 (87.65 at 4 dp).
+   */
+  @Test
+  void discAndPercentageSchemeAreDividedAtSixPlaces() {
+    Rate disc = only(gen(List.of(rule("D", PTR, "7.125", null)), null, "100", "150", null));
+    assertEquals(new BigDecimal("92.88"), disc.getPrice());
+
+    Rate scheme = only(gen(List.of(rule("S", PTR, "0", percentage("12.345"))), null, "100", "150", null));
+    assertEquals(new BigDecimal("87.66"), scheme.getPrice());
+  }
+
   @Test
   void noDiscountLeavesBaseUnchanged() {
     Rate rate = only(gen(List.of(rule("G", PTR, null, null)), null, "100", "150", null));
@@ -139,7 +153,8 @@ class RateRuleCalculatorTest {
   @Test
   void afterDiscountTakesThePercentOffUnrounded() {
     assertEquals(0, bd("92").compareTo(RateRuleCalculator.afterDiscount(bd("100"), bd("8"))));
-    assertEquals(0, bd("66.67").compareTo(
+    // 33.3333 / 100 at 6 dp is 0.333333 (0.3333 at 4 dp gave 66.67).
+    assertEquals(0, bd("66.6667").compareTo(
         RateRuleCalculator.afterDiscount(bd("100"), bd("33.3333"))));
   }
 
