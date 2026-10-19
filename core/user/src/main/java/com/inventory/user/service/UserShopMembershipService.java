@@ -56,6 +56,9 @@ public class UserShopMembershipService {
   @Autowired
   private MetricsWrapper metrics;
 
+  @Autowired(required = false)
+  private AuthCache authCache;
+
   /**
    * Check if user has access to a shop. Backward compatible: returns true if user has
    * membership OR if user.shopId matches (legacy users not yet in memberships).
@@ -65,13 +68,20 @@ public class UserShopMembershipService {
     if (userId == null || shopId == null) {
       return false;
     }
-    if (membershipRepository.existsByUserIdAndShopIdAndActiveTrue(userId, shopId)) {
-      return true;
+    // asked on every request (X-Shop-Id); remembered ≤ auth.cache.ttl-seconds, evicted on change
+    Boolean cached = authCache != null ? authCache.getShopAccess(userId, shopId) : null;
+    if (cached != null) {
+      return cached;
     }
-    // Backward compatibility: check UserAccount.shopId
-    return userAccountRepository.findById(userId)
-        .map(u -> shopId.equals(u.getShopId()))
-        .orElse(false);
+    boolean allowed = membershipRepository.existsByUserIdAndShopIdAndActiveTrue(userId, shopId)
+        // Backward compatibility: check UserAccount.shopId
+        || userAccountRepository.findById(userId)
+            .map(u -> shopId.equals(u.getShopId()))
+            .orElse(false);
+    if (authCache != null) {
+      authCache.putShopAccess(userId, shopId, allowed);
+    }
+    return allowed;
   }
 
   /**
