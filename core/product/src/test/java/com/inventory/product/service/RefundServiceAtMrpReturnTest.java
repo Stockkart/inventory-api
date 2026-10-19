@@ -9,6 +9,7 @@ import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.product.domain.model.Refund;
+import com.inventory.product.domain.model.RefundItem;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.enums.PurchaseStatus;
@@ -24,6 +25,7 @@ import com.inventory.product.validation.CheckoutValidator;
 import jakarta.servlet.http.HttpServletRequest;
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -160,14 +162,49 @@ class RefundServiceAtMrpReturnTest {
     assertMoney("1425.00", paid);
   }
 
-  private Refund refund(int quantity) {
-    RefundRequest.RefundItem item = new RefundRequest.RefundItem();
-    item.setInventoryId(LOT);
-    item.setQuantity(quantity);
+  /**
+   * The same sale line sent as several rows of ONE refund request: each row is valued after the
+   * rows before it, as across separate returns, so no row is rounded on its own. 30 tablets at
+   * MRP 15 − 5% (GST 22.90 a head inside 427.50) as 30 one-tablet rows: valued alone each row
+   * reverses 0.76 a head, 22.80 in all.
+   */
+  @Test
+  void sameLineManyTimesInOneRequestReversesTheSaleGst() {
+    PurchaseItem line = atMrpLine(1, 0, 0);
+    line.setPriceToRetail(new BigDecimal("15"));
+    line.setMaximumRetailPrice(new BigDecimal("15"));
+    line.setQuantity(new BigDecimal("30"));
+    line.setBaseQuantity(30);
+    line.setUnitFactor(1);
+    sale(line, new BigDecimal("45.80"));
+    int[] rows = new int[30];
+    Arrays.fill(rows, 1);
+
+    Refund refund = refund(rows);
+
+    assertEquals(30, refund.getRefundedItems().size());
+    assertMoney("22.90", refund.getCgstAmount());
+    assertMoney("22.90", refund.getSgstAmount());
+    BigDecimal paid = BigDecimal.ZERO;
+    for (RefundItem item : refund.getRefundedItems()) {
+      paid = paid.add(item.getLineReturnTotal());
+    }
+    assertMoney("427.50", paid);
+  }
+
+  /** One refund request with a row of {@code quantities[i]} strips each, all for the one lot. */
+  private Refund refund(int... quantities) {
+    List<RefundRequest.RefundItem> items = new ArrayList<>();
+    for (int quantity : quantities) {
+      RefundRequest.RefundItem item = new RefundRequest.RefundItem();
+      item.setInventoryId(LOT);
+      item.setQuantity(quantity);
+      items.add(item);
+    }
     RefundRequest request = new RefundRequest();
     request.setPurchaseId(SALE);
     request.setPaymentMethod("CASH");
-    request.setItems(List.of(item));
+    request.setItems(items);
     refundService.processRefund(request, httpRequest);
     return saved.get(saved.size() - 1);
   }

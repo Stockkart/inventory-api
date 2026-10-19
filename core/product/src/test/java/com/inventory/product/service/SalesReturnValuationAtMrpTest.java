@@ -296,6 +296,25 @@ class SalesReturnValuationAtMrpTest {
   }
 
   /**
+   * A PERCENTAGE scheme takes its share off the price, not off the quantity: 3 strips at MRP
+   * 150 − 5% with 10% off returned in pieces reverse the GST heads and refund what the sale line
+   * charged, as the FIXED_UNITS line above does.
+   */
+  @Test
+  void percentageSchemeLineReturnedInPiecesReversesTheSaleGst() {
+    for (boolean interstate : new boolean[] {false, true}) {
+      sell(3, new BigDecimal("10"), interstate);
+      assertTrue(CheckoutUtils.isSellingAtMrp(cart.getItems().get(0)), "line sold at MRP");
+      assertPiecewiseReturnMatchesSale(1, interstate, "3 strips at 10% one by one");
+
+      sell(7, new BigDecimal("12.5"), interstate);
+      assertPiecewiseReturnMatchesSale(1, interstate, "7 strips at 12.5% one by one");
+      sell(7, new BigDecimal("12.5"), interstate);
+      assertPiecewiseReturnMatchesSale(3, interstate, "7 strips at 12.5% three at a time");
+    }
+  }
+
+  /**
    * A line below MRP returned in pieces refunds and reverses, in total, what returning it whole
    * does: each piece is the whole-line amounts up to and including it less those before it.
    */
@@ -421,6 +440,16 @@ class SalesReturnValuationAtMrpTest {
   }
 
   private void sell(int quantity, int payFor, int free, boolean interstate) {
+    sell(quantity, payFor, free, null, interstate);
+  }
+
+  /** {@code quantity} strips on a PERCENTAGE scheme of {@code percentage}% off the price. */
+  private void sell(int quantity, BigDecimal percentage, boolean interstate) {
+    sell(quantity, 0, 0, percentage, interstate);
+  }
+
+  private void sell(
+      int quantity, int payFor, int free, BigDecimal percentage, boolean interstate) {
     cart = null;
     SupplyPlacement placement = mock(SupplyPlacement.class);
     when(placement.isInterstateSale(any(), any())).thenReturn(interstate);
@@ -450,6 +479,10 @@ class SalesReturnValuationAtMrpTest {
       item.setSchemeType(SchemeType.FIXED_UNITS);
       item.setSchemePayFor(payFor);
       item.setSchemeFree(free);
+    }
+    if (percentage != null) {
+      item.setSchemeType(SchemeType.PERCENTAGE);
+      item.setSchemePercentage(percentage);
     }
     AddToCartRequest request = new AddToCartRequest();
     request.setCustomerId(CUSTOMER);
