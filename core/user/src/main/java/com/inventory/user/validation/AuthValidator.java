@@ -53,6 +53,14 @@ public class AuthValidator {
     if (request.getRole() != null && request.getRole().isPlatformRole()) {
       throw new ValidationException("Invalid role. SUPER_USER cannot be requested at signup");
     }
+    // A new account joins a shop only by registering one, an accepted invitation or an accepted
+    // join request. A shopId in the body would set UserAccount.shopId, which the legacy access
+    // checks (hasAccess / hasOwnerAccess) and AuthenticationInterceptor treat as owning that shop.
+    if (StringUtils.hasText(request.getShopId())) {
+      throw new ValidationException(
+          "shopId cannot be set at signup. Register a shop or join one after signing up");
+    }
+    request.setShopId(null);
 
     // Either idToken (OAuth) or email/password/name must be provided
     boolean hasIdToken = StringUtils.hasText(request.getIdToken());
