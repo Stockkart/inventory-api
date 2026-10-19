@@ -88,6 +88,8 @@ public class ShopService {
 
       com.inventory.user.domain.model.UserAccount userAccount = userAccountRepository.findById(userId)
           .orElseThrow(() -> new ResourceNotFoundException("User", "userId", userId));
+      // Checked before the shop is saved so a rejected staff account leaves no orphan shop behind
+      shopValidator.validateUserCanRegisterShop(userAccount);
 
       // Multi-shop: user can own multiple shops - no "already has shop" check
 
@@ -150,8 +152,15 @@ public class ShopService {
     }
   }
 
+  /**
+   * Approve or reject a shop. Platform-admin action: only a SUPER_USER caller may run it.
+   *
+   * @param callerRole role of the authenticated caller (request attribute {@code userRole})
+   */
   @Transactional
-  public ShopApprovalResponse approve(String shopId, ShopApprovalRequest request) {
+  public ShopApprovalResponse approve(String shopId, ShopApprovalRequest request, UserRole callerRole) {
+    // Outside the try block so the 403 is not re-wrapped as a 500 by the catch-all below
+    shopValidator.validateCanApproveShops(callerRole);
     try {
       // Input validation using ShopValidator
       shopValidator.validateApprovalRequest(shopId, request);

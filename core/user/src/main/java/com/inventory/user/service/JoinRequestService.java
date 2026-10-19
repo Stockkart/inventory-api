@@ -104,6 +104,7 @@ public class JoinRequestService {
       // Verify user exists
       UserAccount user = userAccountRepository.findById(userId)
           .orElseThrow(() -> new ResourceNotFoundException("User", "userId", userId));
+      joinRequestValidator.validateRequesterCanJoinShop(user);
 
       // Find owner by email
       String ownerEmail = request.getOwnerEmail().toLowerCase().trim();

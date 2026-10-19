@@ -49,6 +49,11 @@ public class AuthValidator {
       throw new ValidationException("Signup request cannot be null");
     }
 
+    // SUPER_USER (Stockkart staff) is granted only by the operator script, never by signup.
+    if (request.getRole() != null && request.getRole().isPlatformRole()) {
+      throw new ValidationException("Invalid role. SUPER_USER cannot be requested at signup");
+    }
+
     // Either idToken (OAuth) or email/password/name must be provided
     boolean hasIdToken = StringUtils.hasText(request.getIdToken());
     boolean hasEmail = StringUtils.hasText(request.getEmail());

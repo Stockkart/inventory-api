@@ -150,6 +150,8 @@ public class UserShopMembershipService {
    * Add a membership for a user to a shop. Used when registering a shop or accepting an invitation.
    */
   public UserShopMembership addMembership(String userId, String shopId, UserRole role, String relationship) {
+    // SUPER_USER accounts (Stockkart staff) and the SUPER_USER role never enter a shop (A3)
+    userValidator.validateCanJoinShop(userAccountRepository.findById(userId).orElse(null), role);
     if (membershipRepository.existsByUserIdAndShopIdAndActiveTrue(userId, shopId)) {
       log.debug("User {} already has active membership for shop {}", userId, shopId);
       return membershipRepository.findByUserIdAndShopIdAndActiveTrue(userId, shopId).orElseThrow();

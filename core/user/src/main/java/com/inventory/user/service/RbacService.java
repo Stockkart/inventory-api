@@ -304,6 +304,12 @@ public class RbacService {
         userAccountRepository
             .findById(userId)
             .orElseThrow(() -> new ResourceNotFoundException("User", "userId", userId));
+    // Fail closed: SUPER_USER accounts (Stockkart staff) are never shop people, so they get no
+    // shop access even if a stray membership or legacy shopId exists for them.
+    if (account.getRole() != null && account.getRole().isPlatformRole()) {
+      throw new BaseException(
+          ErrorCode.ACCESS_DENIED, "Stockkart staff accounts have no shop access");
+    }
     UserShopMembership membership =
         membershipRepository.findByUserIdAndShopIdAndActiveTrue(userId, shopId).orElse(null);
     if (membership != null) {
@@ -459,7 +465,8 @@ public class RbacService {
   }
 
   private ShopAccessResponse.TeamAccessDto resolveTeam(UserRole role) {
-    boolean staff = role != UserRole.CASHIER;
+    // Allow-list the shop staff roles so a non-shop role (SUPER_USER) gets no team access
+    boolean staff = role == UserRole.OWNER || role == UserRole.ADMIN || role == UserRole.MANAGER;
     return ShopAccessResponse.TeamAccessDto.builder()
         .manageInvitations(staff)
         .manageJoinRequests(staff)
