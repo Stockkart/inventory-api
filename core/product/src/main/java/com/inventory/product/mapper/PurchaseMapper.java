@@ -288,7 +288,7 @@ public abstract class PurchaseMapper {
     if (item.getSchemeType() == SchemeType.PERCENTAGE && item.getSchemePercentage() != null
         && item.getSchemePercentage().signum() > 0) {
       BigDecimal pct = item.getSchemePercentage();
-      return price.multiply(BigDecimal.ONE.subtract(pct.divide(BigDecimal.valueOf(100), 4, java.math.RoundingMode.HALF_UP)));
+      return price.multiply(BigDecimal.ONE.subtract(pct.divide(BigDecimal.valueOf(100), 6, java.math.RoundingMode.HALF_UP)));
     }
     return price;
   }
@@ -382,7 +382,7 @@ public abstract class PurchaseMapper {
     if (item.getSchemeType() == SchemeType.PERCENTAGE && item.getSchemePercentage() != null
         && item.getSchemePercentage().signum() > 0) {
       BigDecimal pct = item.getSchemePercentage();
-      return price.multiply(BigDecimal.ONE.subtract(pct.divide(BigDecimal.valueOf(100), 4, java.math.RoundingMode.HALF_UP)));
+      return price.multiply(BigDecimal.ONE.subtract(pct.divide(BigDecimal.valueOf(100), 6, java.math.RoundingMode.HALF_UP)));
     }
     return price;
   }
@@ -415,7 +415,7 @@ public abstract class PurchaseMapper {
     BigDecimal discountedPricePerUnit = priceToRetail;
     if (additionalDiscount != null && additionalDiscount.compareTo(BigDecimal.ZERO) != 0) {
       BigDecimal discountMultiplier = BigDecimal.ONE.subtract(
-          additionalDiscount.divide(BigDecimal.valueOf(100), 4, java.math.RoundingMode.HALF_UP)
+          additionalDiscount.divide(BigDecimal.valueOf(100), 6, java.math.RoundingMode.HALF_UP)
       );
       discountedPricePerUnit = priceToRetail.multiply(discountMultiplier);
     }

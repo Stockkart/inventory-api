@@ -645,6 +645,53 @@ class CheckoutServiceRateNameTest {
   }
 
   /**
+   * A % is divided by 100 at 6 dp in checkout as in the rate (and #248's purchase cost): a 7.125%
+   * rule rate is priced 92.88 (92.875) and a unit picked at it is a 92.88 line before GST, 104.02
+   * with 12% (at 4 dp: 92.87, 104.01). The header's disc total rounds on its own, 7.125 to 7.13.
+   */
+  @Test
+  void threeDecimalRuleRateBillsItsOwnPrice() {
+    RateDto rateD = rate("Rate-D", PricingConstants.RATE_BASE_PRICE_TO_RETAIL, "100", "7.125",
+        PricingConstants.GST_MODE_EXCLUSIVE);
+    assertMoney("92.88", rateD.getPrice());
+    stock("100", "150", "100", null, rateD);
+
+    add(1, "Rate-D");
+
+    assertMoney("92.88", lineBeforeTax());
+    assertMoney("104.02", line().getTotalAmount());
+    assertMoney("7.13", cart.getSaleAdditionalDiscountTotal());
+  }
+
+  /** A typed 7.125% disc on a plain line: 100 × 0.92875 is a 92.88 line, 104.02 with 12%. */
+  @Test
+  void threeDecimalTypedDiscIsDividedAtSixPlaces() {
+    stock("100", "150", "100", null);
+    AddToCartRequest.CartItem typed = item(1, null);
+    typed.setSaleAdditionalDiscount(new BigDecimal("7.125"));
+
+    send(typed);
+
+    assertMoney("7.125", line().getSaleAdditionalDiscount());
+    assertMoney("92.88", lineBeforeTax());
+    assertMoney("104.02", line().getTotalAmount());
+  }
+
+  /** A 12.345% scheme on 10 at 100: 876.55 before GST (876.50 at 4 dp), 981.74 with 12%. */
+  @Test
+  void threeDecimalPercentageSchemeIsDividedAtSixPlaces() {
+    stock("100", "150", "100", null);
+    AddToCartRequest.CartItem typed = item(10, null);
+    typed.setSchemeType(SchemeType.PERCENTAGE);
+    typed.setSchemePercentage(new BigDecimal("12.345"));
+
+    send(typed);
+
+    assertMoney("876.55", beforeTax());
+    assertMoney("981.74", line().getTotalAmount());
+  }
+
+  /**
    * B2: with no rateName, the price on an incoming line is the batch's and disc/scheme the
    * request did not send are the batch's; a line already in the cart keeps its own. The shop's
    * default rate is a system one, the batch has its own 5+1 and sells at 90 (not PTR 100).
@@ -1003,6 +1050,13 @@ class CheckoutServiceRateNameTest {
   /** Line value before GST: subtotal less the additional discount. */
   private BigDecimal beforeTax() {
     return cart.getSubTotal().subtract(cart.getSaleAdditionalDiscountTotal());
+  }
+
+  /** The line's own value before GST (its taxable value), to 2 dp. */
+  private BigDecimal lineBeforeTax() {
+    PurchaseItem line = line();
+    return CheckoutUtils.getTaxableLineValue(line, CheckoutUtils.getBillableQuantityAsDecimal(line))
+        .setScale(2, RoundingMode.HALF_UP);
   }
 
   private void assertTerms(String price, String disc, int payFor, int free) {

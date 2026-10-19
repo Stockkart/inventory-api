@@ -1116,10 +1116,11 @@ public class CheckoutService {
     }
     // Step 1: Calculate discounted/marked-up selling price per unit
     // Formula: price * (1 - additionalDiscount/100). Negative discount = markup (e.g. -2% => 1.02)
+    // The % is divided at 6 dp, as rate rules and the purchase cost divide it (7.125% => 0.07125).
     BigDecimal discountedPricePerUnit = priceToRetail;
     if (additionalDiscount != null && additionalDiscount.compareTo(BigDecimal.ZERO) != 0) {
       BigDecimal discountMultiplier = BigDecimal.ONE.subtract(
-          additionalDiscount.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP)
+          additionalDiscount.divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP)
       );
       discountedPricePerUnit = priceToRetail.multiply(discountMultiplier);
     }
@@ -1160,7 +1161,7 @@ public class CheckoutService {
           BigDecimal additionalDiscount = item.getSaleAdditionalDiscount() != null ? item.getSaleAdditionalDiscount() : BigDecimal.ZERO;
           BigDecimal billableQty = CheckoutUtils.getBillableQuantityAsDecimal(item);
           BigDecimal itemTotal = effectivePrice.multiply(billableQty);
-          BigDecimal discountAmount = itemTotal.multiply(additionalDiscount.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP));
+          BigDecimal discountAmount = itemTotal.multiply(additionalDiscount.divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP));
           return discountAmount;
         })
         .reduce(BigDecimal.ZERO, BigDecimal::add)

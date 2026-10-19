@@ -120,7 +120,7 @@ public final class CheckoutUtils {
     if (item.getSaleAdditionalDiscount() != null
         && item.getSaleAdditionalDiscount().compareTo(BigDecimal.ZERO) > 0) {
       value = value.multiply(BigDecimal.ONE.subtract(
-          item.getSaleAdditionalDiscount().divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP)));
+          item.getSaleAdditionalDiscount().divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP)));
     }
     return value;
   }
