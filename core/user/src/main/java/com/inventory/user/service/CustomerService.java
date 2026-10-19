@@ -30,9 +30,14 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.Instant;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 @Service
 @Slf4j
@@ -265,6 +270,31 @@ public class CustomerService {
       return Optional.empty();
     }
     return customerRepository.findById(customerId.trim());
+  }
+
+  /**
+   * Customers for many ids in one query (list screens), keyed by id. Blank ids are ignored; ids with
+   * no customer are absent from the map.
+   */
+  @Transactional(readOnly = true)
+  public Map<String, Customer> getCustomersByIds(Collection<String> customerIds) {
+    if (customerIds == null || customerIds.isEmpty()) {
+      return Map.of();
+    }
+    Set<String> ids = new LinkedHashSet<>();
+    for (String id : customerIds) {
+      if (StringUtils.hasText(id)) {
+        ids.add(id.trim());
+      }
+    }
+    if (ids.isEmpty()) {
+      return Map.of();
+    }
+    Map<String, Customer> byId = new HashMap<>();
+    for (Customer c : customerRepository.findAllById(ids)) {
+      byId.put(c.getId(), c);
+    }
+    return byId;
   }
 
   @Transactional(readOnly = true)

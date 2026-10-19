@@ -460,9 +460,8 @@ public class CheckoutService {
       // Query purchases by shopId
       Page<Purchase> purchasePage = purchaseRepository.findByShopId(shopId, pageable);
 
-      List<PurchaseSummaryDto> purchaseDtos = purchasePage.getContent().stream()
-          .map(purchaseMapper::toPurchaseSummaryDto)
-          .toList();
+      // one customer query for the whole page
+      List<PurchaseSummaryDto> purchaseDtos = purchaseMapper.toPurchaseSummaryDtos(purchasePage.getContent());
 
       PurchaseListResponse response = purchaseMapper.toPurchaseListResponse(
           purchaseDtos, pageNumber + 1, pageSize,
@@ -556,9 +555,8 @@ public class CheckoutService {
           customerIds,
           pageable);
 
-      List<PurchaseSummaryDto> purchaseDtos = purchasePage.getContent().stream()
-          .map(purchaseMapper::toPurchaseSummaryDto)
-          .toList();
+      // one customer query for the whole page
+      List<PurchaseSummaryDto> purchaseDtos = purchaseMapper.toPurchaseSummaryDtos(purchasePage.getContent());
 
       PurchaseListResponse response = purchaseMapper.toPurchaseListResponse(
           purchaseDtos, pageNumber + 1, pageSize,
