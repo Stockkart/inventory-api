@@ -54,9 +54,10 @@ A collapsed **Search** row sits between HTTP and Business. It only has data when
 | `inventory_product_search_duration_ms_total` | sum of wall time | average = this / `requests_total{outcome="ok"}` |
 | `inventory_product_search_db_ms_total` | sum of time inside Mongo | same division; a gap to total = enrichment cost |
 | `inventory_product_search_matched_total` | sum of matched lots | average matches per search = this / ok requests |
-| `inventory_product_search_docs_examined_total`, `..._docs_returned_total` | from `explain` on 1 in 50 searches | read amplification = examined / returned (≈1 is ideal) |
 | `inventory_product_search_facets_total{facet}` | facets requested | by field |
-| `inventory_product_search_slow_total` | searches over 500 ms (each also logs `[search-slow]` with the request shape) | / 5 min |
+| `inventory_product_search_slow_total` | searches over 500 ms (each also logs `[search-slow]` with the request shape, enough to reproduce it and run `explain` by hand) | / 5 min |
+
+Documents examined per search is not measured by the app (it used to re-run searches with `explain`, doubling the database work when searches were slow). On a dedicated Atlas tier (M10+) the Query Profiler records it for slow operations. Index use is checked in `InventorySearchEngineIT.explainShowsIndexScanFirst`.
 
 Suggested alerts: **p95 latency > 1 s for 10 min** and **more than 5 `outcome="timeout"` in 5 min** (both on `env="prod"`).
 

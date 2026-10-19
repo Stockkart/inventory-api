@@ -482,7 +482,5 @@ class InventorySearchEngineIT {
             .append("verbosity", "queryPlanner"));
     String json = explain.toJson();
     assertThat(json).contains("IXSCAN");
-    long[] stats = engine.explainStats(plan);
-    assertThat(stats[0]).isGreaterThanOrEqualTo(0);
   }
 }
