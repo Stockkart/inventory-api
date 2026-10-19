@@ -19,8 +19,10 @@ import com.inventory.product.rest.dto.response.SaleStatusResponse;
 import com.inventory.product.util.PurchaseItemRefs;
 import com.inventory.product.utils.SaleTaxBreakdown;
 import com.inventory.product.service.PurchaseCustomerRequests;
+import com.inventory.user.domain.model.Customer;
 import com.inventory.user.service.CustomerService;
 import org.mapstruct.AfterMapping;
+import org.mapstruct.Context;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.MappingTarget;
@@ -32,6 +34,8 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 @Mapper(componentModel = "spring", imports = {Instant.class, BigDecimal.class, PurchaseStatus.class}, unmappedTargetPolicy = ReportingPolicy.IGNORE)
 public abstract class PurchaseMapper {
@@ -480,6 +484,7 @@ public abstract class PurchaseMapper {
   protected void populateCustomerDetails(@MappingTarget AddToCartResponse response, Purchase purchase) {
     applyLinkedCustomerDisplay(
         purchase,
+        CustomerLookup.of(customerService::getCustomerById),
         response::setCustomerName,
         response::setCustomerPhone,
         response::setCustomerAddress,
@@ -533,6 +538,7 @@ public abstract class PurchaseMapper {
   protected void populateCustomerDetails(@MappingTarget CheckoutResponse response, Purchase purchase) {
     applyLinkedCustomerDisplay(
         purchase,
+        CustomerLookup.of(customerService::getCustomerById),
         response::setCustomerName,
         response::setCustomerPhone,
         response::setCustomerAddress,
@@ -564,7 +570,27 @@ public abstract class PurchaseMapper {
   @Mapping(target = "customerAddress", ignore = true)
   @Mapping(target = "customerPhone", ignore = true)
   @Mapping(target = "taxSummary", ignore = true)
-  public abstract PurchaseSummaryDto toPurchaseSummaryDto(Purchase purchase);
+  protected abstract PurchaseSummaryDto toPurchaseSummaryDto(Purchase purchase, @Context CustomerLookup customers);
+
+  /** One purchase; looks its customer up on its own. */
+  public PurchaseSummaryDto toPurchaseSummaryDto(Purchase purchase) {
+    return toPurchaseSummaryDto(purchase, CustomerLookup.of(customerService::getCustomerById));
+  }
+
+  /**
+   * A page of purchases with their linked customers fetched in one query, instead of one customer
+   * lookup per row (History list, purchase search).
+   */
+  public List<PurchaseSummaryDto> toPurchaseSummaryDtos(List<Purchase> purchases) {
+    if (purchases == null || purchases.isEmpty()) {
+      return List.of();
+    }
+    Map<String, Customer> byId = customerService.getCustomersByIds(
+        purchases.stream().map(Purchase::getCustomerId).toList());
+    CustomerLookup lookup =
+        CustomerLookup.of(id -> Optional.ofNullable(id == null ? null : byId.get(id.trim())));
+    return purchases.stream().map(p -> toPurchaseSummaryDto(p, lookup)).toList();
+  }
 
   @AfterMapping
   protected void populateTaxSummary(@MappingTarget PurchaseSummaryDto dto, Purchase purchase) {
@@ -572,9 +598,11 @@ public abstract class PurchaseMapper {
   }
 
   @AfterMapping
-  protected void populateCustomerDetails(@MappingTarget PurchaseSummaryDto dto, Purchase purchase) {
+  protected void populateCustomerDetails(
+      @MappingTarget PurchaseSummaryDto dto, Purchase purchase, @Context CustomerLookup customers) {
     applyLinkedCustomerDisplay(
         purchase,
+        customers,
         dto::setCustomerName,
         dto::setCustomerPhone,
         dto::setCustomerAddress,
@@ -589,6 +617,7 @@ public abstract class PurchaseMapper {
    */
   private void applyLinkedCustomerDisplay(
       Purchase purchase,
+      CustomerLookup customers,
       java.util.function.Consumer<String> setName,
       java.util.function.Consumer<String> setPhone,
       java.util.function.Consumer<String> setAddress,
@@ -597,7 +626,7 @@ public abstract class PurchaseMapper {
       java.util.function.Consumer<String> setPan) {
     String overlay = PurchaseCustomerRequests.sanitizedDisplayName(purchase.getCustomerName());
     if (purchase.getCustomerId() != null && !purchase.getCustomerId().trim().isEmpty()) {
-      var found = customerService.getCustomerById(purchase.getCustomerId());
+      var found = customers.find(purchase.getCustomerId());
       if (found.isPresent()) {
         var customer = found.get();
         if (customer.isGeneralCustomer()) {
