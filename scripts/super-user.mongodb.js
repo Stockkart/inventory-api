@@ -61,14 +61,24 @@ if (action === 'grant') {
     quit(0);
   }
   // SUPER_USER accounts are never shop people: refuse any trace of a shop.
-  if (user.shopId && String(user.shopId).trim() !== '') {
-    fail('account has an active shop (shopId ' + user.shopId + '); use a dedicated staff account');
+  if (user.shopId !== undefined && user.shopId !== null && user.shopId !== '') {
+    fail('account has a shopId (' + JSON.stringify(user.shopId) + '); use a dedicated staff account');
   }
   const memberships = db.user_shop_memberships.find({ userId: userId }).toArray();
   if (memberships.length > 0) {
     fail('account has ' + memberships.length + ' shop membership(s) ('
       + memberships.map((m) => m.shopId + (m.active ? '' : ' inactive')).join(', ')
       + '); use a dedicated staff account');
+  }
+  // Not blocking (accepting them is rejected by the API), but worth knowing
+  const pendingInvites = db.invitations.countDocuments({ inviteeUserId: userId, status: 'PENDING' });
+  const pendingJoins = db.join_requests.countDocuments({ userId: userId, status: 'PENDING' });
+  if (pendingInvites > 0 || pendingJoins > 0) {
+    print('WARNING: ' + pendingInvites + ' pending invitation(s) and ' + pendingJoins
+      + ' pending join request(s); they can no longer be accepted');
+  }
+  if (user.active === false) {
+    print('WARNING: account is deactivated; it cannot sign in until reactivated');
   }
   if (dryRun) {
     print('Would set role SUPER_USER.');

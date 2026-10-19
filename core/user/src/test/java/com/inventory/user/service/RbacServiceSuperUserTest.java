@@ -98,6 +98,18 @@ class RbacServiceSuperUserTest {
   }
 
   @Test
+  void aSuperUserIsNeverTreatedAsShopOwner() {
+    // stray data: legacy shopId makes hasOwnerAccess true
+    when(membershipService.hasOwnerAccess("staff-1", "shop-1")).thenReturn(true);
+    when(userAccountRepository.findById("staff-1"))
+        .thenReturn(Optional.of(account("staff-1", UserRole.SUPER_USER, "shop-1")));
+
+    BaseException e = assertThrows(BaseException.class,
+        () -> rbacService.getAdminView("staff-1", "shop-1"));
+    assertEquals(ErrorCode.ACCESS_DENIED, e.getErrorCode());
+  }
+
+  @Test
   void managersKeepTheirTeamAccess() {
     UserShopMembership m = new UserShopMembership();
     m.setUserId("u-2");

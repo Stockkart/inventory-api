@@ -281,7 +281,12 @@ public class RbacService {
   }
 
   private void requireOwner(String userId, String shopId) {
-    if (!membershipService.hasOwnerAccess(userId, shopId)) {
+    // Fail closed for SUPER_USER (Stockkart staff): never a shop owner, even with stray shop data
+    boolean platformStaff = userId != null && userAccountRepository.findById(userId)
+        .map(UserAccount::getRole)
+        .filter(UserRole::isPlatformRole)
+        .isPresent();
+    if (platformStaff || !membershipService.hasOwnerAccess(userId, shopId)) {
       throw new BaseException(
           ErrorCode.ACCESS_DENIED, "Only the shop owner can manage access settings");
     }
