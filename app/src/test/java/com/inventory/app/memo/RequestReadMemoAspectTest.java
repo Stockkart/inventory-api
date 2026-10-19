@@ -78,8 +78,13 @@ class RequestReadMemoAspectTest {
     }
 
     @Bean
-    RequestReadMemoAspect requestReadMemoAspect(MongoConverter converter) {
-      return new RequestReadMemoAspect(converter);
+    ShopReadCache shopReadCache() {
+      return new ShopReadCache(true, 60, 1000);
+    }
+
+    @Bean
+    RequestReadMemoAspect requestReadMemoAspect(MongoConverter converter, ShopReadCache cache) {
+      return new RequestReadMemoAspect(converter, cache);
     }
 
     @Bean
@@ -101,6 +106,7 @@ class RequestReadMemoAspectTest {
   @Autowired FakeRepository shopRepository;
   @Autowired FakeRepository planRepository;
   @Autowired FakeRepository customerRepository;
+  @Autowired ShopReadCache shopReadCache;
 
   private void inRequest() {
     RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(new MockHttpServletRequest()));
@@ -109,6 +115,7 @@ class RequestReadMemoAspectTest {
   @AfterEach
   void reset() {
     RequestContextHolder.resetRequestAttributes();
+    shopReadCache.clear();
     for (FakeRepository r : new FakeRepository[] {shopRepository, planRepository, customerRepository}) {
       r.resetFake();
     }
@@ -145,21 +152,79 @@ class RequestReadMemoAspectTest {
   }
 
   @Test
-  void eachRequestReadsAfresh() {
+  void planReadsAreFreshInEachRequest() {
+    inRequest();
+    planRepository.findById("p1");
+    inRequest(); // a new request
+    planRepository.findById("p1");
+
+    assertThat(planRepository.readCount()).isEqualTo(2);
+  }
+
+  @Test
+  void outsideARequestPlanReadsGoToTheDatabase() {
+    planRepository.findById("p1");
+    planRepository.findById("p1");
+
+    assertThat(planRepository.readCount()).isEqualTo(2);
+  }
+
+  @Test
+  void shopReadsAreRememberedAcrossRequests() {
     inRequest();
     shopRepository.findById("s1");
-    inRequest(); // a new request
+    inRequest(); // the next request, e.g. the next scan
+    Thing again = shopRepository.findById("s1").orElseThrow();
+    shopRepository.findById("s1"); // outside the memo and the cache: still one read
+
+    assertThat(shopRepository.readCount()).isEqualTo(1);
+    assertThat(again.name).isEqualTo("original");
+  }
+
+  @Test
+  void shopReadsOutsideARequestUseTheCacheToo() {
+    shopRepository.findById("s1");
     shopRepository.findById("s1");
 
+    assertThat(shopRepository.readCount()).isEqualTo(1);
+  }
+
+  @Test
+  void aShopWriteInOneRequestIsSeenByTheNext() {
+    inRequest();
+    shopRepository.findById("s1");
+    shopRepository.save(new Thing("s1", "plan renewed"));
+    inRequest();
+
+    assertThat(shopRepository.findById("s1").orElseThrow().name).isEqualTo("plan renewed");
     assertThat(shopRepository.readCount()).isEqualTo(2);
   }
 
   @Test
-  void outsideARequestEveryReadGoesToTheDatabase() {
+  void aShopWriteOutsideAnyRequestClearsTheCache() {
+    inRequest();
     shopRepository.findById("s1");
-    shopRepository.findById("s1");
+    RequestContextHolder.resetRequestAttributes();
+    shopRepository.save(new Thing("s1", "changed by a job")); // e.g. a webhook or scheduler
+    inRequest();
 
-    assertThat(shopRepository.readCount()).isEqualTo(2);
+    assertThat(shopRepository.findById("s1").orElseThrow().name).isEqualTo("changed by a job");
+  }
+
+  @Test
+  void aReadThatRacedAWriteIsNotRemembered() {
+    long before = shopReadCache.generation();
+    shopReadCache.clear(); // a write lands while the read is in flight
+    shopReadCache.put("shop#findById[s9]", java.util.Optional.of(new Thing("s9", "stale")), before);
+
+    assertThat(shopReadCache.get("shop#findById[s9]")).isNull();
+  }
+
+  @Test
+  void disabledCacheRemembersNothing() {
+    ShopReadCache off = new ShopReadCache(false, 60, 1000);
+    off.put("k", java.util.Optional.empty(), off.generation());
+    assertThat(off.get("k")).isNull();
   }
 
   @Test
