@@ -45,8 +45,8 @@ class CheckoutUtilsSchemeRefactorTest {
     item.setSchemeType(SchemeType.PERCENTAGE);
     item.setSchemePercentage(new BigDecimal("10"));
 
-    // Same scale as today: 100 × 0.9000, unrounded.
-    assertEquals(new BigDecimal("100").multiply(new BigDecimal("0.9000")),
+    // 100 × 0.900000, unrounded: the percentage is divided by 100 at 6 dp (SchemePriceUtils).
+    assertEquals(new BigDecimal("100").multiply(new BigDecimal("0.900000")),
         CheckoutUtils.getEffectiveSellingPricePerUnit(item));
     assertEquals(new BigDecimal("10"), CheckoutUtils.getBillableQuantityAsDecimal(item));
     assertEquals(new BigDecimal("900.00"), lineTotal(item));
