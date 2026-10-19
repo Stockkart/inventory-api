@@ -65,6 +65,14 @@ public class AccountService {
     seeder.seedShop(shopId);
   }
 
+  /**
+   * {@link #ensureSeeded(String)} that also returns the shop's chart of accounts, read in the same
+   * query, for callers that resolve accounts next (journal posting).
+   */
+  public List<Account> ensureSeededAndList(String shopId) {
+    return seeder.seedShopAndList(shopId);
+  }
+
   @Transactional
   public Account create(
       String shopId, String code, String name, AccountType type, NormalBalance normalBalance) {
