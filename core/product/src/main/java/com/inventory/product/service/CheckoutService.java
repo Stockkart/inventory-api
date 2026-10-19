@@ -185,14 +185,15 @@ public class CheckoutService {
         customerName = PurchaseCustomerRequests.displayNameOverlay(customerId, request);
       }
 
-      // Process new items
-      List<PurchaseItem> newItems = processCartItems(request.getItems(), shopId);
+      // Process new items; their lots are read once here and reused below
+      CartLots lots = new CartLots(lotIdsOf(request.getItems()));
+      List<PurchaseItem> newItems = processCartItems(request.getItems(), shopId, lots);
       Purchase stockCheckCart =
           existingCart != null ? existingCart : new Purchase();
       if (existingCart == null) {
         stockCheckCart.setItems(new ArrayList<>());
       }
-      validateStockAvailabilityForCartUpdate(stockCheckCart, newItems, shopId);
+      validateStockAvailabilityForCartUpdate(stockCheckCart, newItems, shopId, lots);
 
       BillingMode cartBillingMode = checkoutValidator.resolveAndValidateCartBillingMode(existingCart, newItems);
       boolean targetIsEstimate =
@@ -206,7 +207,7 @@ public class CheckoutService {
       if (existingCart != null) {
         // Update existing cart - merge items (including quantity-0 update-only items)
         log.info("Updating existing cart with ID: {}", existingCart.getId());
-        purchase = updateCart(existingCart, newItems, request.getBusinessType(), customerId, customerName, cartBillingMode);
+        purchase = updateCart(existingCart, newItems, request.getBusinessType(), customerId, customerName, cartBillingMode, lots);
         if (metrics != null) {
           metrics.record(ProductMetricsConstants.CART_UPDATED, 1, "module", ProductMetricsConstants.MODULE);
         }
@@ -666,7 +667,8 @@ public class CheckoutService {
         "invoiceNo".equals(field);
   }
 
-  private List<PurchaseItem> processCartItems(List<AddToCartRequest.CartItem> items, String shopId) {
+  private List<PurchaseItem> processCartItems(
+      List<AddToCartRequest.CartItem> items, String shopId, CartLots lots) {
     Optional<CartLineContributor> contributor = cartContributorResolver.resolveContributor(shopId);
     if (contributor.isPresent()) {
       List<CartLineInput> inputs = items.stream().map(this::toCartLineInput).toList();
@@ -716,8 +718,7 @@ public class CheckoutService {
 
         if (updateOnly) {
           // Verify inventory exists and belongs to shop; no stock check needed
-          Inventory inventory = inventoryRepository.findById(item.getId())
-              .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", item.getId()));
+          Inventory inventory = lots.require(item.getId());
           if (!shopId.equals(inventory.getShopId())) {
             throw new ValidationException("Inventory lot " + item.getId() + " does not belong to shop " + shopId);
           }
@@ -765,8 +766,7 @@ public class CheckoutService {
             || (item.getBaseQuantity() != null && item.getBaseQuantity() < 0)) {
           // For negative quantities (reduce/remove), verify lotId exists and belongs to the shop
           // Stock validation is not needed for removing items
-          Inventory inventory = inventoryRepository.findById(item.getId())
-              .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", item.getId()));
+          Inventory inventory = lots.require(item.getId());
 
           if (!shopId.equals(inventory.getShopId())) {
             throw new ValidationException("Inventory lot " + item.getId() + " does not belong to shop " + shopId);
@@ -799,8 +799,7 @@ public class CheckoutService {
           purchaseItems.add(purchaseItem);
         } else {
           // Positive quantity - normal flow with stock validation
-          Inventory inventory = inventoryRepository.findById(item.getId())
-              .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", item.getId()));
+          Inventory inventory = lots.require(item.getId());
 
           // Verify the inventory belongs to the shop
           if (!shopId.equals(inventory.getShopId())) {
@@ -1234,7 +1233,8 @@ public class CheckoutService {
   }
 
   private Purchase updateCart(Purchase existingCart, List<PurchaseItem> newItems, String businessType,
-                              String customerId, String customerName, BillingMode billingMode) {
+                              String customerId, String customerName, BillingMode billingMode,
+                              CartLots lots) {
     try {
       // Merge items - if same inventoryId exists, update quantity; otherwise add new
       List<PurchaseItem> mergedItems = new ArrayList<>(existingCart.getItems() != null ? existingCart.getItems() : new ArrayList<>());
@@ -1252,8 +1252,7 @@ public class CheckoutService {
             String incomingSaleUnit = newItem.getSaleUnit() != null ? newItem.getSaleUnit() : existingSaleUnit;
             if (!existingSaleUnit.equals(incomingSaleUnit)) {
               String existingLotId = PurchaseItemRefs.stockLotId(existingItem);
-              Inventory inventory = inventoryRepository.findById(existingLotId)
-                  .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", existingLotId));
+              Inventory inventory = lots.require(existingLotId);
               int existingBaseQuantity = getBaseQuantityOrFallback(existingItem);
               int incomingBaseQuantity = getBaseQuantityOrFallback(newItem);
               int switchBaseQuantity = incomingBaseQuantity > 0 ? incomingBaseQuantity : existingBaseQuantity;
@@ -1338,8 +1337,7 @@ public class CheckoutService {
             }
             // Handle quantity update based on positive or negative
             String existingLotId = PurchaseItemRefs.stockLotId(existingItem);
-            Inventory inventory = inventoryRepository.findById(existingLotId)
-                .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", existingLotId));
+            Inventory inventory = lots.require(existingLotId);
             int existingBaseQuantity = getBaseQuantityOrFallback(existingItem);
             int incomingBaseQuantity = getBaseQuantityOrFallback(newItem);
             // FE always sends add/subtract deltas (including typed qty and +/-). Never replace.
@@ -1498,7 +1496,8 @@ public class CheckoutService {
     }
   }
 
-  private void validateStockAvailabilityForCartUpdate(Purchase existingCart, List<PurchaseItem> newItems, String shopId) {
+  private void validateStockAvailabilityForCartUpdate(
+      Purchase existingCart, List<PurchaseItem> newItems, String shopId, CartLots lots) {
     // Create a map of existing cart items by inventoryId for quick lookup
     Map<String, PurchaseItem> existingItemsMap = new HashMap<>();
     if (existingCart.getItems() != null) {
@@ -1506,6 +1505,8 @@ public class CheckoutService {
         existingItemsMap.put(cartLineKey(item), item);
       }
     }
+    // stock held by the shop's other open quotations: the same for every line, read once
+    Map<String, Integer> quotedElsewhere = null;
 
     // Validate each new item
     for (PurchaseItem newItem : newItems) {
@@ -1519,8 +1520,7 @@ public class CheckoutService {
         int addingBaseQuantity = getBaseQuantityOrFallback(newItem);
         // Get inventory to check available stock
         String stockLotId = PurchaseItemRefs.stockLotId(newItem);
-        Inventory inventory = inventoryRepository.findById(stockLotId)
-            .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", stockLotId));
+        Inventory inventory = lots.require(stockLotId);
 
         if (!shopId.equals(inventory.getShopId())) {
           throw new ValidationException("Inventory lot " + stockLotId + " does not belong to shop " + shopId);
@@ -1549,9 +1549,11 @@ public class CheckoutService {
         }
 
         // Check if final quantity exceeds available stock (minus other open quotations)
-        Map<String, Integer> quotedElsewhere =
-            quotationService.quotedBaseQuantitiesByLot(
-                shopId, existingCart != null ? existingCart.getId() : null);
+        if (quotedElsewhere == null) {
+          quotedElsewhere =
+              quotationService.quotedBaseQuantitiesByLot(
+                  shopId, existingCart != null ? existingCart.getId() : null);
+        }
         int reservedElsewhere = quotedElsewhere.getOrDefault(stockLotId, 0);
         int availableStock = getCurrentBaseCount(inventory) - reservedElsewhere;
         if (finalBaseQuantity > availableStock) {
@@ -1809,6 +1811,51 @@ public class CheckoutService {
         .stream()
         .map(dto -> new AvailableUnit(dto.getUnit(), dto.isBaseUnit()))
         .toList();
+  }
+
+  /** Lot ids named by a cart request, without blanks or repeats. */
+  private static List<String> lotIdsOf(List<AddToCartRequest.CartItem> items) {
+    if (items == null || items.isEmpty()) {
+      return List.of();
+    }
+    Set<String> ids = new java.util.LinkedHashSet<>();
+    for (AddToCartRequest.CartItem item : items) {
+      if (item != null && StringUtils.hasText(item.getId())) {
+        ids.add(item.getId());
+      }
+    }
+    return new ArrayList<>(ids);
+  }
+
+  /**
+   * The lots one cart request works on: read together up front (one inventory query, with product
+   * and pricing hydrated in batch by the repository aspects), then reused by line building, the
+   * stock check and the merge. A lot it was not given is read on its own, as before. Lives for one
+   * request only.
+   */
+  private final class CartLots {
+    private final Map<String, Inventory> byId = new HashMap<>();
+
+    CartLots(List<String> lotIds) {
+      if (!lotIds.isEmpty()) {
+        for (Inventory inv : inventoryRepository.findAllById(lotIds)) {
+          if (inv != null && inv.getId() != null) {
+            byId.put(inv.getId(), inv);
+          }
+        }
+      }
+    }
+
+    /** The lot, or {@link ResourceNotFoundException} as a single read would throw. */
+    Inventory require(String lotId) {
+      Inventory inv = lotId != null ? byId.get(lotId) : null;
+      if (inv == null) {
+        inv = inventoryRepository.findById(lotId)
+            .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", lotId));
+        byId.put(lotId, inv);
+      }
+      return inv;
+    }
   }
 
   private void enrichCartItemPackaging(PurchaseItem item, Inventory inventory) {
