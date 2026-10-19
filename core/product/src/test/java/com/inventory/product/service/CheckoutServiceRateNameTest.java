@@ -3,15 +3,19 @@ package com.inventory.product.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.common.gst.SupplyPlacement;
 import com.inventory.pricing.rest.dto.response.RateDto;
 import com.inventory.pricing.rest.dto.response.SchemeDto;
+import com.inventory.pricing.service.ShopRateRulesPort;
 import com.inventory.pricing.utils.constants.PricingConstants;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Purchase;
@@ -31,6 +35,7 @@ import com.inventory.product.validation.CheckoutValidator;
 import com.inventory.user.service.CustomerService;
 import jakarta.servlet.http.HttpServletRequest;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -44,6 +49,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.test.util.ReflectionTestUtils;
 
 /**
  * Checkout with a picked rate: the rate's base goes on the line with its disc and scheme, so
@@ -382,7 +388,7 @@ class CheckoutServiceRateNameTest {
     AddToCartRequest.CartItem pickAndSwitch = item(0, "Rate-A");
     pickAndSwitch.setUnit("TABLET");
     ValidationException e = assertThrows(ValidationException.class, () -> send(pickAndSwitch));
-    org.junit.jupiter.api.Assertions.assertTrue(e.getMessage().contains("rateName"), e.getMessage());
+    assertTrue(e.getMessage().contains("rateName"), e.getMessage());
 
     AddToCartRequest.CartItem addAndSwitch = item(10, "Rate-A");
     addAndSwitch.setUnit("TABLET");
@@ -399,7 +405,7 @@ class CheckoutServiceRateNameTest {
     cart.getItems().clear();
     cart.getItems().add(otherLine());
 
-    assertThrows(com.inventory.common.exception.ResourceNotFoundException.class,
+    assertThrows(ResourceNotFoundException.class,
         () -> add(0, "Rate-A"));
   }
 
@@ -409,10 +415,9 @@ class CheckoutServiceRateNameTest {
    */
   @Test
   void rateWhoseRuleIsGoneNoLongerAppliesItsTerms() {
-    com.inventory.pricing.service.ShopRateRulesPort port =
-        org.mockito.Mockito.mock(com.inventory.pricing.service.ShopRateRulesPort.class);
+    ShopRateRulesPort port = mock(ShopRateRulesPort.class);
     when(port.rulesFor(SHOP)).thenReturn(List.of());
-    org.springframework.test.util.ReflectionTestUtils.setField(cartRateResolver, "shopRateRulesPort", port);
+    ReflectionTestUtils.setField(cartRateResolver, "shopRateRulesPort", port);
     stock("100", "150", "83.64", "Rate-A", rateA());
     batch.setSaleAdditionalDiscount(new BigDecimal("2"));
 
@@ -468,8 +473,8 @@ class CheckoutServiceRateNameTest {
 
   /**
    * T6: an at-MRP rate picked on a tablet line of an uneven pack (MRP 100, strip of 15) goes on
-   * at 6.66 a tablet, rounded down: line MRP equals the price, GST stays inside, and the bill is
-   * never above MRP × quantity.
+   * at 6.66 a tablet, rounded down: line MRP equals the price and GST stays inside it, so the
+   * customer pays MRP × quantity less the rate's 10% (99.90 × 0.90 = 89.91), no GST on top.
    */
   @Test
   void atMrpRatePickedOnAnUnevenTabletLineStaysAtMrp() {
@@ -487,11 +492,156 @@ class CheckoutServiceRateNameTest {
     assertEquals(PricingConstants.GST_MODE_INCLUSIVE, rateM.getGstMode());
     assertEquals(true, CheckoutUtils.isSellingAtMrp(line));
     assertEquals(15, line.getBaseQuantity());
-    BigDecimal mrpTimesQuantity = line.getMaximumRetailPrice().multiply(line.getQuantity());
-    org.junit.jupiter.api.Assertions.assertTrue(
-        cart.getGrandTotal().compareTo(mrpTimesQuantity) <= 0, "grandTotal " + cart.getGrandTotal());
-    org.junit.jupiter.api.Assertions.assertTrue(cart.getTaxTotal().signum() > 0, "GST stated inside");
-    assertMoney("89.91", line.getTotalAmount());
+    BigDecimal mrpLessRateDisc = line.getMaximumRetailPrice().multiply(line.getQuantity())
+        .multiply(new BigDecimal("0.90")).setScale(2, RoundingMode.HALF_UP);
+    assertMoney("89.91", mrpLessRateDisc);
+    assertMoney(mrpLessRateDisc.toPlainString(), line.getTotalAmount());
+    assertTrue(cart.getTaxTotal().signum() > 0, "GST stated inside");
+  }
+
+  /**
+   * A first add by the tablet with a rateName: the rate's base goes on per tablet with the MRP
+   * for a tablet, so the line discount is (15.00 − 10.00) × 110, not against the strip's MRP.
+   */
+  @Test
+  void firstAddOnATabletLineWithARateNameBillsThePerTabletBase() {
+    stock("100", "150", "90", null, rateA());
+
+    add(110, "Rate-A", "TABLET");
+
+    PurchaseItem line = line();
+    assertEquals("TABLET", line.getSaleUnit());
+    assertMoney("10.00", line.getPriceToRetail());
+    assertMoney("15.00", line.getMaximumRetailPrice());
+    assertMoney("550.00", line.getDiscount());
+    assertEquals("Rate-A", line.getAppliedRateName());
+    assertMoney("920.00", beforeTax());
+  }
+
+  /** The batch's default rule rate on a first add by the tablet goes on per tablet, as a pick. */
+  @Test
+  void defaultRuleRateOnATabletFirstAddBillsThePerTabletBase() {
+    stock("100", "150", "83.64", "Rate-A", rateA());
+
+    add(110, null, "TABLET");
+
+    PurchaseItem line = line();
+    assertMoney("10.00", line.getPriceToRetail());
+    assertMoney("15.00", line.getMaximumRetailPrice());
+    assertMoney("550.00", line.getDiscount());
+    assertTerms("10.00", "8", 10, 1);
+    assertEquals("Rate-A", line.getAppliedRateName());
+    assertMoney("920.00", beforeTax());
+  }
+
+  /**
+   * A typed disc on a tablet first add keeps the default rule rate's base per tablet but records
+   * no rate; the line MRP is still the tablet's, so the line discount is 550.00, not 15400.00
+   * (strip MRP 150 against a 10.00 tablet price).
+   */
+  @Test
+  void defaultRuleRateWithATypedDiscOnATabletFirstAddUsesTheTabletMrp() {
+    stock("100", "150", "83.64", "Rate-A", rateA());
+    AddToCartRequest.CartItem item = item(0, null);
+    item.setUnit("TABLET");
+    item.setQuantity(110);
+    item.setBaseQuantity(110);
+    item.setSaleAdditionalDiscount(new BigDecimal("5"));
+
+    send(item);
+
+    PurchaseItem line = line();
+    assertNull(line.getAppliedRateName());
+    assertMoney("10.00", line.getPriceToRetail());
+    assertMoney("15.00", line.getMaximumRetailPrice());
+    assertMoney("550.00", line.getDiscount());
+    assertMoney("5", line.getSaleAdditionalDiscount());
+  }
+
+  /**
+   * A unit switch that sends a price other than the line's is a manual price edit and clears the
+   * applied rate; one that sends the line's own price, or none, keeps it.
+   */
+  @Test
+  void unitSwitchWithAnEditedPriceClearsTheAppliedRate() {
+    stock("100", "150", "90", null, rateA());
+    add(11, "Rate-A");
+    AddToCartRequest.CartItem edited = item(0, null);
+    edited.setUnit("TABLET");
+    edited.setPriceToRetail(new BigDecimal("90"));
+    send(edited);
+    assertEquals("TABLET", line().getSaleUnit());
+    assertMoney("9.00", line().getPriceToRetail());
+    assertNull(line().getAppliedRateName());
+
+    cart = null;
+    add(11, "Rate-A");
+    AddToCartRequest.CartItem same = item(0, null);
+    same.setUnit("TABLET");
+    same.setPriceToRetail(new BigDecimal("100"));
+    send(same);
+    assertMoney("10.00", line().getPriceToRetail());
+    assertEquals("Rate-A", line().getAppliedRateName());
+  }
+
+  /** A price sent with a switch of a line held at MRP is ignored, so it keeps the rate. */
+  @Test
+  void unitSwitchOfAnAtMrpRateLineIgnoresTheSentPriceAndKeepsTheRate() {
+    RateDto rateM = rate("Rate-M", PricingConstants.RATE_BASE_MAXIMUM_RETAIL_PRICE, "150", "25",
+        PricingConstants.GST_MODE_INCLUSIVE);
+    stock("100", "150", "112.50", null, rateM);
+    add(1, "Rate-M");
+    assertEquals(true, CheckoutUtils.isSellingAtMrp(line()));
+
+    AddToCartRequest.CartItem edited = item(0, null);
+    edited.setUnit("TABLET");
+    edited.setPriceToRetail(new BigDecimal("120"));
+    send(edited);
+
+    assertMoney("15.00", line().getPriceToRetail());
+    assertEquals("Rate-M", line().getAppliedRateName());
+  }
+
+  /**
+   * A request with no unit for a lot already in the cart is for that line's unit: a pick with
+   * quantity 0 and no unit on a tablet line prices the tablet line instead of switching it back
+   * to strips (which rejects the pick). A disc edit without a unit leaves it on tablets too.
+   */
+  @Test
+  void pickWithNoUnitOnATabletLineKeepsTheTabletUnit() {
+    stock("100", "150", "90", null, rateA());
+    add(11, null);
+    switchUnit("TABLET");
+
+    AddToCartRequest.CartItem pick = item(0, "Rate-A");
+    pick.setUnit(null);
+    send(pick);
+
+    PurchaseItem line = line();
+    assertEquals("TABLET", line.getSaleUnit());
+    assertEquals(110, line.getBaseQuantity());
+    assertMoney("10.00", line.getPriceToRetail());
+    assertMoney("920.00", beforeTax());
+
+    AddToCartRequest.CartItem disc = item(0, null);
+    disc.setUnit(null);
+    disc.setSaleAdditionalDiscount(new BigDecimal("5"));
+    send(disc);
+    assertEquals("TABLET", line().getSaleUnit());
+    assertMoney("5", line().getSaleAdditionalDiscount());
+  }
+
+  /** A new line sent with no unit keeps today's default: the batch's pack unit. */
+  @Test
+  void newLineWithNoUnitStillDefaultsToThePackUnit() {
+    stock("100", "150", "90", null, rateA());
+    AddToCartRequest.CartItem first = item(1, "Rate-A");
+    first.setUnit(null);
+
+    send(first);
+
+    assertEquals("STRIP", line().getSaleUnit());
+    assertMoney("100", line().getPriceToRetail());
   }
 
   /**
@@ -784,7 +934,7 @@ class CheckoutServiceRateNameTest {
   private static RateDto rate(String name, String base, String baseValue, String disc, String gstMode) {
     BigDecimal value = new BigDecimal(baseValue);
     BigDecimal price = value.multiply(BigDecimal.ONE.subtract(new BigDecimal(disc).movePointLeft(2)))
-        .setScale(2, java.math.RoundingMode.HALF_UP);
+        .setScale(2, RoundingMode.HALF_UP);
     RateDto rate = new RateDto(name, price);
     rate.setBase(base);
     rate.setBaseValue(value);

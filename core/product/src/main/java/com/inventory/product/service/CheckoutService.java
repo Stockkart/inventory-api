@@ -189,7 +189,7 @@ public class CheckoutService {
       }
 
       // Process new items
-      List<PurchaseItem> newItems = processCartItems(request.getItems(), shopId);
+      List<PurchaseItem> newItems = processCartItems(request.getItems(), shopId, existingCart);
       Purchase stockCheckCart =
           existingCart != null ? existingCart : new Purchase();
       if (existingCart == null) {
@@ -664,7 +664,8 @@ public class CheckoutService {
         "invoiceNo".equals(field);
   }
 
-  private List<PurchaseItem> processCartItems(List<AddToCartRequest.CartItem> items, String shopId) {
+  private List<PurchaseItem> processCartItems(List<AddToCartRequest.CartItem> items, String shopId,
+      Purchase existingCart) {
     Optional<CartLineContributor> contributor = cartContributorResolver.resolveContributor(shopId);
     if (contributor.isPresent()) {
       List<CartLineInput> inputs = items.stream().map(this::toCartLineInput).toList();
@@ -720,7 +721,12 @@ public class CheckoutService {
           if (!shopId.equals(inventory.getShopId())) {
             throw new ValidationException("Inventory lot " + item.getId() + " does not belong to shop " + shopId);
           }
-          String saleUnit = normalizeSaleUnit(item.getUnit(), inventory);
+          // No unit sent: the edit is for the line already in the cart, at its unit (a pick on a
+          // tablet line is not a switch back to strips).
+          String saleUnit = StringUtils.hasText(item.getUnit())
+              ? normalizeSaleUnit(item.getUnit(), inventory)
+              : cartLineSaleUnit(existingCart, item.getId())
+                  .orElseGet(() -> normalizeSaleUnit(null, inventory));
           int saleUnitFactor = getConversionFactorToBase(inventory, saleUnit);
           int pricingFactor = getDisplayToBaseFactor(inventory);
           int baseQuantity = resolveRequestedBaseQuantity(item, inventory, saleUnit, saleUnitFactor);
@@ -868,8 +874,9 @@ public class CheckoutService {
               applyDefaultRateTerms(purchaseItem, rateTerms.get(), item, inventory, saleUnit);
             }
           }
-          if (StringUtils.hasText(purchaseItem.getAppliedRateName())) {
-            // A rate's MRP is the line's for its sale unit (a tablet line's per-tablet MRP).
+          if (rateTerms.isPresent()) {
+            // A rate's base went on per sale unit, so the line MRP is the one for that unit (a
+            // tablet line's per-tablet MRP), also when a typed disc or scheme left no applied rate.
             maximumRetailPrice = purchaseItem.getMaximumRetailPrice();
           }
           BigDecimal linePrice = purchaseItem.getPriceToRetail();
@@ -1363,9 +1370,13 @@ public class CheckoutService {
                 switchedItem.setSchemeFree(termsSource.getSchemeFree() != null ? termsSource.getSchemeFree() : existingItem.getSchemeFree());
                 switchedItem.setSchemePercentage(null);
               }
-              // A switch keeps the line's rate; only a disc or scheme edit sent with it clears it.
-              switchedItem.setAppliedRateName(
-                  discOrSchemeEdited(existingItem, newItem) ? null : existingItem.getAppliedRateName());
+              // A switch keeps the line's rate; a price, disc or scheme edit sent with it clears it.
+              // A price sent to a line held at MRP is ignored above, so it edits nothing.
+              boolean priceEdited = newItem.getPriceToRetail() != null && !newItem.isBatchFilledPrice()
+                  && !sameMoney(newItem.getPriceToRetail(), existingItem.getPriceToRetail())
+                  && !(wasAtMrp && inventory.getMaximumRetailPrice() != null);
+              switchedItem.setAppliedRateName(priceEdited || discOrSchemeEdited(existingItem, newItem)
+                  ? null : existingItem.getAppliedRateName());
               switchedItem.setSgst(existingItem.getSgst());
               switchedItem.setCgst(existingItem.getCgst());
               switchedItem.setCostPrice(costPrice);
@@ -1547,9 +1558,7 @@ public class CheckoutService {
         // A rate picked for a lot that is not in the cart has no line to price.
         if (!found && getBaseQuantityOrFallback(newItem) == 0
             && StringUtils.hasText(newItem.getRequestedRateName())) {
-          throw new ResourceNotFoundException("Cart line", "lotId",
-              "Cannot pick rate " + newItem.getRequestedRateName() + " for lot "
-                  + PurchaseItemRefs.stockLotId(newItem) + ": it is not in the cart");
+          throw new ResourceNotFoundException("Cart line", "lotId", PurchaseItemRefs.stockLotId(newItem));
         }
         // Case 2 & 3: If item not found and quantity is negative, throw error (can't remove what doesn't exist)
         if (!found && getBaseQuantityOrFallback(newItem) < 0) {
@@ -1684,6 +1693,19 @@ public class CheckoutService {
         }
       }
     }
+  }
+
+  /** Sale unit of the cart's line for this lot, if the lot is in the cart. */
+  private static Optional<String> cartLineSaleUnit(Purchase cart, String lotId) {
+    if (cart == null || cart.getItems() == null || !StringUtils.hasText(lotId)) {
+      return Optional.empty();
+    }
+    String key = SellableRef.inventory(lotId).encode();
+    return cart.getItems().stream()
+        .filter(line -> key.equals(PurchaseItemRefs.lineKey(line)))
+        .map(PurchaseItem::getSaleUnit)
+        .filter(StringUtils::hasText)
+        .findFirst();
   }
 
   private String normalizeSaleUnit(String requestedUnit, Inventory inventory) {
