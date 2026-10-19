@@ -106,4 +106,47 @@ class UserShopMembershipServiceSuperUserTest {
     assertFalse(membershipService.hasAccess("staff-1", "shop-1"));
     assertFalse(membershipService.hasAccess("staff-1", null));
   }
+
+  @Test
+  void aSuperUserIsDeniedShopAccessEvenWithAMembershipOrLegacyShopId() {
+    // e.g. a row written before A3, or an account promoted by the operator script
+    UserAccount staff = account("staff-1", UserRole.SUPER_USER);
+    staff.setShopId("shop-1");
+    when(userAccountRepository.findById("staff-1")).thenReturn(Optional.of(staff));
+    when(membershipRepository.existsByUserIdAndShopIdAndActiveTrue("staff-1", "shop-1")).thenReturn(true);
+
+    assertFalse(membershipService.hasAccess("staff-1", "shop-1"));
+  }
+
+  @Test
+  void aSuperUserIsNeverAShopOwner() {
+    UserAccount staff = account("staff-1", UserRole.SUPER_USER);
+    staff.setShopId("shop-1");
+    UserShopMembership owner = new UserShopMembership();
+    owner.setUserId("staff-1");
+    owner.setShopId("shop-1");
+    owner.setRelationship(UserShopMembershipService.RELATIONSHIP_OWNER);
+    when(userAccountRepository.findById("staff-1")).thenReturn(Optional.of(staff));
+    when(membershipRepository.findByUserIdAndShopIdAndActiveTrue("staff-1", "shop-1"))
+        .thenReturn(Optional.of(owner));
+
+    assertFalse(membershipService.hasOwnerAccess("staff-1", "shop-1"));
+  }
+
+  @Test
+  void aShopPersonKeepsMembershipAndLegacyAccess() {
+    UserAccount legacy = account("u-1", UserRole.OWNER);
+    legacy.setShopId("shop-legacy");
+    when(userAccountRepository.findById("u-1")).thenReturn(Optional.of(legacy));
+    when(membershipRepository.existsByUserIdAndShopIdAndActiveTrue("u-1", "shop-1")).thenReturn(true);
+    UserShopMembership owner = new UserShopMembership();
+    owner.setRelationship(UserShopMembershipService.RELATIONSHIP_OWNER);
+    when(membershipRepository.findByUserIdAndShopIdAndActiveTrue("u-1", "shop-1"))
+        .thenReturn(Optional.of(owner));
+
+    assertTrue(membershipService.hasAccess("u-1", "shop-1"));
+    assertTrue(membershipService.hasAccess("u-1", "shop-legacy"));
+    assertTrue(membershipService.hasOwnerAccess("u-1", "shop-1"));
+    assertTrue(membershipService.hasOwnerAccess("u-1", "shop-legacy"));
+  }
 }
