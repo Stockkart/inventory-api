@@ -7,7 +7,6 @@ import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.product.domain.model.enums.PurchaseStatus;
 import com.inventory.product.domain.model.enums.SchemeType;
-import com.inventory.product.domain.model.pricing.InventoryPricingReadHandler;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.rest.dto.request.AddToCartRequest;
 import com.inventory.product.rest.dto.request.CheckoutRequest;
@@ -33,9 +32,12 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 @Mapper(componentModel = "spring", imports = {Instant.class, BigDecimal.class, PurchaseStatus.class}, unmappedTargetPolicy = ReportingPolicy.IGNORE)
 public abstract class PurchaseMapper {
@@ -45,9 +47,6 @@ public abstract class PurchaseMapper {
   
   @Autowired
   protected InventoryRepository inventoryRepository;
-
-  @Autowired
-  protected InventoryPricingReadHandler inventoryPricingReadHandler;
 
 
   @Mapping(target = "saleId", source = "id")
@@ -496,17 +495,27 @@ public abstract class PurchaseMapper {
   @AfterMapping
   protected void populatePurchaseValuesOnCartItems(@MappingTarget AddToCartResponse response, Purchase purchase) {
     if (response.getItems() == null) return;
+    // all the cart's lots in one read; the repository aspects hydrate product and pricing in batch
+    Set<String> lotIds = new LinkedHashSet<>();
+    for (PurchaseItem item : response.getItems()) {
+      String lotId = PurchaseItemRefs.stockLotId(item);
+      if (lotId != null) lotIds.add(lotId);
+    }
+    if (lotIds.isEmpty()) return;
+    Map<String, Inventory> lots = new HashMap<>();
+    for (Inventory inv : inventoryRepository.findAllById(lotIds)) {
+      if (inv != null && inv.getId() != null) lots.put(inv.getId(), inv);
+    }
     for (PurchaseItem item : response.getItems()) {
       String lotId = PurchaseItemRefs.stockLotId(item);
       if (lotId == null) continue;
-      inventoryRepository.findById(lotId).ifPresent(inv -> {
-        inventoryPricingReadHandler.enrich(inv);
-        item.setPurchaseAdditionalDiscount(inv.getPurchaseAdditionalDiscount());
-        item.setPurchaseSchemeType(inv.getPurchaseSchemeType());
-        item.setPurchaseSchemePayFor(inv.getPurchaseSchemePayFor());
-        item.setPurchaseSchemeFree(inv.getPurchaseSchemeFree());
-        item.setPurchaseSchemePercentage(inv.getPurchaseSchemePercentage());
-      });
+      Inventory inv = lots.get(lotId);
+      if (inv == null) continue;
+      item.setPurchaseAdditionalDiscount(inv.getPurchaseAdditionalDiscount());
+      item.setPurchaseSchemeType(inv.getPurchaseSchemeType());
+      item.setPurchaseSchemePayFor(inv.getPurchaseSchemePayFor());
+      item.setPurchaseSchemeFree(inv.getPurchaseSchemeFree());
+      item.setPurchaseSchemePercentage(inv.getPurchaseSchemePercentage());
     }
   }
 
