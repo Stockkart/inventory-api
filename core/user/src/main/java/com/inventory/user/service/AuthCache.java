@@ -23,13 +23,14 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * </ul>
  *
  * <p>Entries live {@code auth.cache.ttl-seconds} (60 s) at most. Anything that changes a user or a
- * membership through the repositories evicts that user ({@link AuthCacheEvictionListener}), again
- * after the surrounding transaction commits, so a logout, deactivation, shop switch or role change
- * takes effect on the next request on this instance. Changes made outside this instance (another
- * instance, a script, the database directly) are picked up when the entry expires.
+ * membership through the repositories evicts that user ({@link AuthCacheEvictionListener}), so a
+ * logout, deactivation, shop switch or role change takes effect on the next request on this
+ * instance. Changes made outside this instance (another instance, a script, the database directly)
+ * are picked up when the entry expires.
  *
- * <p>Before running more than one instance, add cross-instance eviction (Mongo change streams on
- * {@code users} and {@code user_shop_memberships}); see tasks.md group 9.
+ * <p>Per-instance state: listed in the engineering handbook's IN_MEMORY_STATE.md. Before running
+ * more than one instance, add cross-instance eviction (e.g. Mongo change streams on {@code users}
+ * and {@code user_shop_memberships}).
  */
 @Slf4j
 @Component
@@ -88,7 +89,11 @@ public class AuthCache {
 
   // --- eviction ---
 
-  /** Forget everything about this user now, and again once the current transaction commits. */
+  /**
+   * Forget everything about this user now, and again after the current transaction if one is
+   * active. No Mongo transaction manager is configured today (backend AGENTS.md P8), so in practice
+   * only the immediate eviction runs; the second keeps this correct if one is ever added.
+   */
   public void evictUser(String userId) {
     if (userId == null) {
       return;

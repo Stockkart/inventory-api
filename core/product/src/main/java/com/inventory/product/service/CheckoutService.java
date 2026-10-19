@@ -34,7 +34,6 @@ import com.inventory.product.rest.dto.response.PurchaseListResponse;
 import com.inventory.product.rest.dto.response.PurchaseSummaryDto;
 import com.inventory.product.mapper.InventoryMapper;
 import com.inventory.product.mapper.PurchaseMapper;
-import com.inventory.plan.rest.dto.request.RecordUsageRequest;
 import com.inventory.plan.service.UsageService;
 import com.inventory.product.util.PurchaseItemRefs;
 import com.inventory.product.utils.CheckoutUtils;
@@ -1880,10 +1879,8 @@ public class CheckoutService {
       return;
     }
     BigDecimal grandTotal = purchase.getGrandTotal() != null ? purchase.getGrandTotal() : BigDecimal.ZERO;
-    RecordUsageRequest usageReq = new RecordUsageRequest();
-    usageReq.setBillingAmount(grandTotal);
-    usageReq.setBillCount(1);
-    usageService.recordUsage(shopId, usageReq);
+    // limits were checked by checkCanAddBill before the bill was saved; this only counts it
+    usageService.recordCompletedBill(shopId, grandTotal);
   }
 
   private void updateInventoryForCompletedPurchase(Purchase purchase) {
