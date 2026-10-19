@@ -151,7 +151,7 @@ MongoDB: "table" means collection, "column" means field.
 - P4. Create indexes in an idempotent `ensureIndex` runner. Automatic index creation is off (no `auto-index-creation` property), so `@Indexed`/`@CompoundIndex` on core models do nothing by themselves; plugin extension annotations are created by this runner. Ref: `core/product/src/main/java/com/inventory/product/migration/SearchIndexMigration.java`
 - P5. Add a field by adding it to the model. Existing documents read it as `null`; treat `null` as the old behaviour and Javadoc that default. Ref: `core/user/src/main/java/com/inventory/user/domain/model/Vendor.java`
 - P6. Backfill data with a `@Component` in `<module>/migration/`: an `@EventListener(ApplicationReadyEvent.class)` method with an unused `@Order(n)`, an idempotent query that touches only rows still needing the change, `enabled` (and optionally `dry-run`) via `@Value("${stockkart.<job>.enabled:…}")`, a passthrough `stockkart.<job>.enabled=${<JOB>_ENABLED:…}` in `app/src/main/resources/application.properties` (it sets the effective default), and the affected count logged before and after. Ref: `core/product/src/main/java/com/inventory/product/migration/SellRestrictionBackfillRunner.java`
-  - Orders in use: 5, 6, 10, 12, 20, 25, 30, 30, 40. 30 is duplicated (`LotBaseCountRepairRunner`, `InvoiceSequenceBackfillRunner`).
+  - Orders in use: 5 (`ProductBarcodeIndexMigration`, `GridLayoutIndexMigration`), 6 (`SearchIndexMigration`), 7 (`LedgerIndexMigration`), 8 (`UserTokenIndexMigration`), 10 (`VerticalSchemaSeeder`).
   - No `enabled` flag: `core/product/src/main/java/com/inventory/product/migration/VerticalSchemaSeeder.java`, `core/product/src/main/java/com/inventory/product/migration/ProductBarcodeIndexMigration.java`.
   - `enabled` but no passthrough: `core/product/src/main/java/com/inventory/product/migration/InvoiceSequenceBackfillRunner.java`, `core/user/src/main/java/com/inventory/user/migration/VendorPlaceMigration.java`, `core/product/src/main/java/com/inventory/product/migration/SearchIndexMigration.java`.
   - `dry-run` exists only in the 4 runners that also have the passthrough: SellRestriction, TxnId, Product and LotBaseCountRepair backfills.
@@ -166,7 +166,7 @@ MongoDB: "table" means collection, "column" means field.
 
 - C1. Read config in Java only through property keys: `@Value("${key:default}")` or `@ConfigurationProperties`. Map env vars only in `application.properties` as `key=${ENV_NAME}` (optional default). Never call `System.getenv` (0 uses in main code). Ref: `core/product/src/main/java/com/inventory/product/config/PrintBridgeProperties.java`
 - C2. Add a variable in three places: the property in `app/src/main/resources/application.properties`, the name in `.env.example`, and a passthrough under `services.app.environment` in `docker-compose.yml`. Ref: `docker-compose.yml`
-  - `.env.example` values: dominant empty (30 of 33). Exceptions: `SPRING_PROFILES_ACTIVE`, `PAYMENT_GATEWAY`, `GSTIN_PROVIDER` carry a non-secret default.
+  - `.env.example` values: dominant empty (30 of 38). Exceptions: `SPRING_PROFILES_ACTIVE`, `PAYMENT_GATEWAY`, `GSTIN_PROVIDER` and the five `AUTH_*` settings carry a non-secret default (an empty `AUTH_CACHE_TTL_SECONDS` or `AUTH_CACHE_MAX_ENTRIES` fails boot, C3).
   - In `.env.example` only: `DB_USERNAME`, `DB_PASSWORD` (for the commented-out local `mongodb` service), `GSTIN_PROVIDER`, `GSTINAPI_KEY`. In compose only: `MESSAGING_DISPATCH_INTERVAL_MS`.
 - C3. Give every placeholder without a default a value, or boot fails with "Could not resolve placeholder" (e.g. `OCR_PREPROCESS_MODE`). `UPLOAD_TOKEN_EXPIRY_MINUTES` has no default and must be an integer, so the empty value from `.env.example` fails boot. The API key for the provider chosen by `OCR_PROVIDER` must be non-empty, or boot fails; `core/ocr/src/main/java/com/inventory/ocr/config/OcrConfig.java` maps providers to keys. Ref: `app/src/main/resources/application.properties`
 - C4. Never commit `.env`; CI hygiene fails on tracked `.env` files. `AppApplication` loads `.env` from the process working directory. Ref: `.github/workflows/ci-hygiene.yml`
@@ -190,6 +190,8 @@ MongoDB: "table" means collection, "column" means field.
 | `MESSAGING_EMAIL_ENABLED` | turn email sending on or off | both |
 | `RESEND_API_KEY` | Resend email API key (secret, never commit) | both |
 | `RESEND_FROM_EMAIL`, `RESEND_FROM_NAME` | sender address and name | both |
+| `AUTH_CACHE_ENABLED`, `AUTH_CACHE_TTL_SECONDS`, `AUTH_CACHE_MAX_ENTRIES` | per-instance login check cache (`AuthCache`): on/off, seconds an entry lives, entries per cache | both |
+| `AUTH_TOKEN_CLEANUP_ENABLED`, `AUTH_TOKEN_CLEANUP_CRON` | nightly removal of expired login tokens (`ExpiredTokenCleanupJob`): on/off, Spring cron in Asia/Kolkata | both |
 | `GRAFANA_CLOUD_OTLP_URL`, `GRAFANA_CLOUD_OTLP_USER` | OTLP metrics export endpoint and user (optional) | both |
 | `GRAFANA_CLOUD_LOKI_URL`, `GRAFANA_CLOUD_LOKI_USER` | Loki log push endpoint and user (optional) | both |
 | `GRAFANA_CLOUD_API_TOKEN` | Grafana Cloud token (secret, never commit) | both |
