@@ -327,6 +327,7 @@ The product entry grid view lays out its columns the way a spreadsheet does: col
 | Endpoint | Who |
 |----------|-----|
 | `POST /api/v1/auth/login`, `GET /api/v1/auth/me` | Any account; return `role` (`SUPER_USER` for staff) and work with no shop. |
+| `POST /api/v1/auth/change-password` | Signed-in account only (Bearer token); body `{ currentPassword, password }`; changes the token's account. Not public. |
 | `POST /api/v1/shops/admin/shops/{shopId}/approve` | SUPER_USER only; anyone else gets 403. Body `{ approve, userLimit }` (`userLimit` > 0 to approve). |
 
 ### Build commands

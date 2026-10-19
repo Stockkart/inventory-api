@@ -303,12 +303,29 @@ public class AuthService {
     }
   }
 
+  /**
+   * Change the signed-in account's password. The caller must be authenticated (Bearer token) and
+   * must send the current password; the account is the token's account, never one named in the body.
+   */
   @Transactional
-  public ChangePasswordResponse changePassword(ChangePasswordRequest request) {
+  public ChangePasswordResponse changePassword(String userId, ChangePasswordRequest request) {
     authValidator.validateChangePasswordRequest(request);
 
-    UserAccount account = userAccountRepository.findByEmail(request.getEmail().trim())
-        .orElseThrow(() -> new ResourceNotFoundException("User", "email", request.getEmail()));
+    UserAccount account = userAccountRepository.findById(userId)
+        .orElseThrow(() -> new ResourceNotFoundException("User", "userId", userId));
+
+    // The body email is optional; if sent it must name the signed-in account
+    if (request.getEmail() != null && !request.getEmail().trim().isEmpty()
+        && !request.getEmail().trim().equalsIgnoreCase(account.getEmail())) {
+      throw new ValidationException("Email does not match the signed-in account");
+    }
+    if (account.getPassword() == null || account.getPassword().isBlank()) {
+      throw new ValidationException("This account has no password. Use forgot password to set one.");
+    }
+    if (!passwordEncoder.matches(request.getCurrentPassword(), account.getPassword())) {
+      log.warn("Change password with a wrong current password for user: {}", account.getUserId());
+      throw new ValidationException("Current password is incorrect");
+    }
 
     account.setPassword(passwordEncoder.encode(request.getPassword().trim()));
     account.setUpdatedAt(Instant.now());

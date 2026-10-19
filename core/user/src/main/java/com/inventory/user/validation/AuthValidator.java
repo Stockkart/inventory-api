@@ -145,11 +145,17 @@ public class AuthValidator {
   }
 
   public void validateChangePasswordRequest(ChangePasswordRequest request) {
-    if (request == null || request.getEmail() == null || request.getEmail().trim().isEmpty()) {
-      throw new ValidationException("Email is required");
+    if (request == null) {
+      throw new ValidationException("Request body is required");
+    }
+    if (request.getCurrentPassword() == null || request.getCurrentPassword().isEmpty()) {
+      throw new ValidationException("Current password is required");
     }
     if (request.getPassword() == null || request.getPassword().trim().isEmpty()) {
       throw new ValidationException("Password is required");
+    }
+    if (request.getPassword().trim().length() < 8) {
+      throw new ValidationException("Password must be at least 8 characters long");
     }
   }
 
