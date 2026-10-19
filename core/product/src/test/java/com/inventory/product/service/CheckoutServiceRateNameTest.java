@@ -632,6 +632,67 @@ class CheckoutServiceRateNameTest {
     assertNull(line().getAppliedRateName());
   }
 
+  /**
+   * A system pick on a line that is not at a rule rate keeps the line's own disc and scheme, as
+   * before rate rules: a typed 5% and 10% scheme survive a PTR pick, then an MRP pick.
+   */
+  @Test
+  void systemPickOnALineWithoutARuleRateKeepsTypedDiscAndScheme() {
+    stock("100", "150", "90", null);
+    add(1, null);
+    AddToCartRequest.CartItem typed = item(0, null);
+    typed.setSaleAdditionalDiscount(new BigDecimal("5"));
+    typed.setSchemeType(SchemeType.PERCENTAGE);
+    typed.setSchemePercentage(new BigDecimal("10"));
+    send(typed);
+
+    add(0, "priceToRetail");
+    assertMoney("100", line().getPriceToRetail());
+    assertMoney("5", line().getSaleAdditionalDiscount());
+    assertEquals(SchemeType.PERCENTAGE, line().getSchemeType());
+    assertMoney("10", line().getSchemePercentage());
+    assertEquals("priceToRetail", line().getAppliedRateName());
+
+    add(0, "maximumRetailPrice");
+    assertMoney("150", line().getPriceToRetail());
+    assertMoney("5", line().getSaleAdditionalDiscount());
+    assertMoney("10", line().getSchemePercentage());
+  }
+
+  /** A first add by system pick takes a disc and deal sent with it, as a first add does today. */
+  @Test
+  void firstAddBySystemPickKeepsDiscAndDealSentWithIt() {
+    stockWithBatchScheme();
+    AddToCartRequest.CartItem pick = item(1, "priceToRetail");
+    pick.setSaleAdditionalDiscount(new BigDecimal("4"));
+    pick.setSchemeType(SchemeType.FIXED_UNITS);
+    pick.setSchemePayFor(10);
+    pick.setSchemeFree(2);
+    send(pick);
+
+    assertTerms("100", "4", 10, 2);
+  }
+
+  /** A system pick after a rule rate with a percentage scheme drops that scheme too. */
+  @Test
+  void systemPickAfterAPercentageSchemeRuleRateResetsToTheBatchDefaults() {
+    RateDto rateP = rate("Rate-P", PricingConstants.RATE_BASE_PRICE_TO_RETAIL, "100", "3",
+        PricingConstants.GST_MODE_EXCLUSIVE);
+    rateP.setScheme(new SchemeDto(PricingConstants.SCHEME_TYPE_PERCENTAGE, null, null,
+        new BigDecimal("5")));
+    stock("100", "150", "90", null, rateP);
+    batch.setSchemeType(SchemeType.FIXED_UNITS);
+    batch.setSchemePayFor(5);
+    batch.setSchemeFree(1);
+    batch.setSaleAdditionalDiscount(new BigDecimal("2"));
+    add(1, "Rate-P");
+    assertEquals(SchemeType.PERCENTAGE, line().getSchemeType());
+
+    add(0, "priceToRetail");
+    assertTerms("100", "2", 5, 1);
+    assertNull(line().getSchemePercentage());
+  }
+
   /** T4: any manual price, disc or scheme edit clears the applied rate name. */
   @Test
   void manualPriceDiscOrSchemeEditClearsAppliedRateName() {

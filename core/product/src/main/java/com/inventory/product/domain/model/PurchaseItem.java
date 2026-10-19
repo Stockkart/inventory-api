@@ -119,6 +119,16 @@ public class PurchaseItem {
   @JsonIgnore
   private boolean rateTermsPicked;
 
+  /**
+   * Request-scoped: true when this incoming line is a system pick ({@code priceToRetail},
+   * {@code maximumRetailPrice}, {@code costPrice}). The cart merge resets disc and scheme to the
+   * batch's sale defaults only when the line in the cart is at a rule rate; otherwise it keeps
+   * the line's own (a typed disc survives a PTR pick). Never stored.
+   */
+  @Transient
+  @JsonIgnore
+  private boolean systemRatePicked;
+
   /** Request-scoped: the {@code rateName} the incoming item carried, if any. Never stored. */
   @Transient
   @JsonIgnore

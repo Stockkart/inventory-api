@@ -91,6 +91,17 @@ class CartRateResolverTest {
   }
 
   @Test
+  void isRuleRateOnlyForAStoredRuleRate() {
+    Inventory inventory = batch(null, rateA(), legacy());
+
+    assertTrue(resolver.isRuleRate(inventory, "Rate-A"));
+    assertTrue(!resolver.isRuleRate(inventory, "Old"));
+    assertTrue(!resolver.isRuleRate(inventory, "priceToRetail"));
+    assertTrue(!resolver.isRuleRate(inventory, "Missing"));
+    assertTrue(!resolver.isRuleRate(inventory, null));
+  }
+
+  @Test
   void blankRateNameIsTreatedAsNone() {
     assertEquals(Optional.empty(), resolver.resolve(batch(null, rateA()), "  "));
   }

@@ -59,6 +59,19 @@ public class CartRateResolver {
   }
 
   /**
+   * Whether {@code rateName} is a live rule rate on this batch (not a system name, not a legacy
+   * rate, its rule still among the shop's). False for null or blank.
+   */
+  public boolean isRuleRate(Inventory inventory, String rateName) {
+    if (!StringUtils.hasText(rateName) || SystemRateNames.systemKey(rateName) != null) {
+      return false;
+    }
+    return find(inventory, rateName.trim())
+        .filter(rate -> isLiveRuleRate(inventory, rate))
+        .isPresent();
+  }
+
+  /**
    * Whether a stored rate bills as a rule rate: it has a base, and its rule is still among the
    * shop's rules. A rate whose rule was removed (or the shop's rules cleared) keeps its stored
    * terms until the batch is next saved; here it bills its price only, as a legacy rate, and is

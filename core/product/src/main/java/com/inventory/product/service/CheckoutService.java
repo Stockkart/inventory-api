@@ -1468,6 +1468,18 @@ public class CheckoutService {
               schemeType = newItem.getSchemeType();
               schemePercentage = newItem.getSchemePercentage();
             }
+            // A system pick (PTR, MRP, cost) leaves a rule rate's terms: the line goes back to the
+            // batch's own sale disc and scheme. On any other line its disc and scheme stay.
+            if (newItem.isSystemRatePicked()
+                && cartRateResolver.isRuleRate(inventory, existingItem.getAppliedRateName())) {
+              PurchaseItem defaults = purchaseMapper.toPurchaseItemFromCartItem(
+                  new AddToCartRequest.CartItem(), inventory);
+              additionalDiscount = defaults.getSaleAdditionalDiscount();
+              schemePayFor = defaults.getSchemePayFor();
+              schemeFree = defaults.getSchemeFree();
+              schemeType = defaults.getSchemeType();
+              schemePercentage = defaults.getSchemePercentage();
+            }
             // The line keeps the rate it is billed at until a pick replaces it or a manual price,
             // disc or scheme edit (a sent value that differs from the line's) clears it.
             String appliedRateName = existingItem.getAppliedRateName();
@@ -2321,8 +2333,9 @@ public class CheckoutService {
   /**
    * Puts a picked rate on the line. A rule rate's base, disc and scheme replace whatever the line
    * had -- the batch's sale defaults and any disc/scheme sent with the pick. A system pick (PTR,
-   * MRP, cost) puts that batch field on the line with the batch's own sale disc and scheme, as a
-   * first add without rules gets. A legacy rate gives only its price.
+   * MRP, cost) puts that batch field on the line; its disc and scheme go back to the batch's own
+   * sale defaults only when the line was at a rule rate (see the cart merge), so a typed disc on
+   * any other line survives. A legacy rate gives only its price.
    *
    * <p>A rate's figures are per pack (the batch's pricing unit). On a line sold by another unit
    * (a tablet line) the price goes on for that unit, rounded down as the per-unit MRP is, and the
@@ -2339,14 +2352,9 @@ public class CheckoutService {
     }
     line.setAppliedRateName(terms.name());
     if (terms.isSystem()) {
-      PurchaseItem defaults = purchaseMapper.toPurchaseItemFromCartItem(
-          new AddToCartRequest.CartItem(), inventory);
-      line.setSaleAdditionalDiscount(defaults.getSaleAdditionalDiscount());
-      line.setSchemeType(defaults.getSchemeType());
-      line.setSchemePayFor(defaults.getSchemePayFor());
-      line.setSchemeFree(defaults.getSchemeFree());
-      line.setSchemePercentage(defaults.getSchemePercentage());
-      line.setRateTermsPicked(true);
+      // Disc and scheme are left as the request and batch set them; the merge resets them to
+      // the batch's sale defaults only when the line in the cart is at a rule rate.
+      line.setSystemRatePicked(true);
       return;
     }
     if (!terms.replacesTerms()) {
