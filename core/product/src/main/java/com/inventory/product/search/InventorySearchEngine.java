@@ -19,7 +19,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiFunction;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
@@ -50,7 +49,6 @@ public class InventorySearchEngine {
   private final MongoTemplate mongoTemplate;
   private final InventoryRepository inventoryRepository;
   private final SearchMetrics metrics;
-  private final AtomicLong counter = new AtomicLong();
 
   public InventorySearchEngine(
       SearchFieldCatalogService catalogService,
@@ -274,56 +272,9 @@ public class InventorySearchEngine {
 
   private void record(ValidatedSearch search, SearchPlan plan, SearchMetrics.Tags tags, long dbMs, long totalMs, long total, String shopId) {
     metrics.completed(tags, totalMs, dbMs, total);
-    long n = counter.incrementAndGet();
-    long examined = -1;
-    long returned = -1;
-    if (!plan.shortCircuit() && (SearchMetrics.shouldSampleExplain(n) || totalMs >= SearchMetrics.SLOW_THRESHOLD_MS)) {
-      long[] stats = explainStats(plan);
-      examined = stats[0];
-      returned = stats[1];
-      if (examined >= 0) {
-        metrics.explainSample(search.surface(), examined, returned);
-      }
-    }
     if (totalMs >= SearchMetrics.SLOW_THRESHOLD_MS) {
-      metrics.slow(search, plan, dbMs, totalMs, examined, returned, shopId);
+      metrics.slow(search, plan, dbMs, totalMs, shopId);
     }
-  }
-
-  /** {@code [docsExamined, nReturned]} from {@code explain("executionStats")}; {@code [-1,-1]} on failure. */
-  @SuppressWarnings("unchecked")
-  long[] explainStats(SearchPlan plan) {
-    try {
-      Document cmd =
-          new Document("explain", new Document("aggregate", INVENTORY_COLLECTION).append("pipeline", plan.stages()).append("cursor", new Document()))
-              .append("verbosity", "executionStats");
-      Document explain = mongoTemplate.getDb().runCommand(cmd);
-      Document stats = findExecutionStats(explain);
-      if (stats == null) {
-        return new long[] {-1, -1};
-      }
-      Number examined = stats.get("totalDocsExamined", Number.class);
-      Number returned = stats.get("nReturned", Number.class);
-      return new long[] {examined == null ? -1 : examined.longValue(), returned == null ? -1 : returned.longValue()};
-    } catch (RuntimeException e) {
-      log.debug("[search] explain failed: {}", e.getMessage());
-      return new long[] {-1, -1};
-    }
-  }
-
-  @SuppressWarnings("unchecked")
-  private static Document findExecutionStats(Document explain) {
-    if (explain.containsKey("executionStats")) {
-      return explain.get("executionStats", Document.class);
-    }
-    List<Document> stages = (List<Document>) explain.get("stages");
-    if (stages != null && !stages.isEmpty()) {
-      Document cursor = stages.get(0).get("$cursor", Document.class);
-      if (cursor != null && cursor.containsKey("executionStats")) {
-        return cursor.get("executionStats", Document.class);
-      }
-    }
-    return null;
   }
 
   private static boolean isRegexRejection(ValidationException e) {

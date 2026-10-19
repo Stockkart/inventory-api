@@ -3,6 +3,7 @@ package com.inventory.product.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyIterable;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -72,7 +73,7 @@ class CheckoutServiceCartLotsTest {
     ReflectionTestUtils.setField(service, "purchaseMapper", mapper);
 
     when(quotationService.resolveTargetCart(any(), anyString(), anyString())).thenReturn(null);
-    when(quotationService.quotedBaseQuantitiesByLot(eq(SHOP), any())).thenReturn(Map.of("aaaaaaaaaaaaaaaaaaaaaaa3", 5));
+    when(quotationService.quotedBaseQuantitiesForLots(eq(SHOP), any(), anyCollection())).thenReturn(Map.of("aaaaaaaaaaaaaaaaaaaaaaa3", 5));
 
     http = new MockHttpServletRequest();
     http.setAttribute("shopId", SHOP);
@@ -122,7 +123,7 @@ class CheckoutServiceCartLotsTest {
     verify(inventoryRepository, times(1)).findAllById(ids.capture());
     assertThat(ids.getValue()).containsExactly("aaaaaaaaaaaaaaaaaaaaaaa1", "aaaaaaaaaaaaaaaaaaaaaaa2", "aaaaaaaaaaaaaaaaaaaaaaa3");
     verify(inventoryRepository, never()).findById(anyString());
-    verify(quotationService, times(1)).quotedBaseQuantitiesByLot(eq(SHOP), any());
+    verify(quotationService, times(1)).quotedBaseQuantitiesForLots(eq(SHOP), any(), anyCollection());
   }
 
   @Test
@@ -146,7 +147,7 @@ class CheckoutServiceCartLotsTest {
 
     assertThatThrownBy(() -> service.addToCart(request("aaaaaaaaaaaaaaaaaaaaaaa1", 1, "ccccccccccccccccccccccc1", 1), http))
         .isInstanceOf(ResourceNotFoundException.class);
-    verify(quotationService, never()).quotedBaseQuantitiesByLot(anyString(), any());
+    verify(quotationService, never()).quotedBaseQuantitiesForLots(anyString(), any(), anyCollection());
   }
 
   @Test

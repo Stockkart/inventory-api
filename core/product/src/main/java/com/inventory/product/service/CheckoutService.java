@@ -1504,8 +1504,17 @@ public class CheckoutService {
         existingItemsMap.put(cartLineKey(item), item);
       }
     }
-    // stock held by the shop's other open quotations: the same for every line, read once
+    // stock held by the shop's other open quotations for the lots this request adds: read once
     Map<String, Integer> quotedElsewhere = null;
+    List<String> lotsBeingAdded = new ArrayList<>();
+    for (PurchaseItem item : newItems) {
+      if (!"menu".equalsIgnoreCase(item.getSellMode()) && getBaseQuantityOrFallback(item) > 0) {
+        String lotId = PurchaseItemRefs.stockLotId(item);
+        if (StringUtils.hasText(lotId)) {
+          lotsBeingAdded.add(lotId);
+        }
+      }
+    }
 
     // Validate each new item
     for (PurchaseItem newItem : newItems) {
@@ -1550,8 +1559,8 @@ public class CheckoutService {
         // Check if final quantity exceeds available stock (minus other open quotations)
         if (quotedElsewhere == null) {
           quotedElsewhere =
-              quotationService.quotedBaseQuantitiesByLot(
-                  shopId, existingCart != null ? existingCart.getId() : null);
+              quotationService.quotedBaseQuantitiesForLots(
+                  shopId, existingCart != null ? existingCart.getId() : null, lotsBeingAdded);
         }
         int reservedElsewhere = quotedElsewhere.getOrDefault(stockLotId, 0);
         int availableStock = getCurrentBaseCount(inventory) - reservedElsewhere;

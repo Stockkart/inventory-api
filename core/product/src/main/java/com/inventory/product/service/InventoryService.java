@@ -1656,7 +1656,13 @@ public class InventoryService {
       return;
     }
     Map<String, Integer> reservedByLot =
-        quotationService.quotedBaseQuantitiesByLot(shopId, null);
+        quotationService.quotedBaseQuantitiesForLots(
+            shopId,
+            null,
+            summaries.stream()
+                .filter(s -> s != null && StringUtils.hasText(s.getId()))
+                .map(InventorySummaryDto::getId)
+                .toList());
     for (InventorySummaryDto summary : summaries) {
       if (summary == null || !StringUtils.hasText(summary.getId())) {
         continue;
@@ -1816,7 +1822,7 @@ public class InventoryService {
     boolean moved = sold > 0
         || !java.util.Objects.equals(inventory.getCurrentBaseCount(), inventory.getReceivedBaseCount());
     int reserved = quotationService
-        .quotedBaseQuantitiesByLot(shopId, null)
+        .quotedBaseQuantitiesForLots(shopId, null, List.of(inventory.getId()))
         .getOrDefault(inventory.getId(), 0);
     if (moved || reserved > 0) {
       throw new ValidationException(
