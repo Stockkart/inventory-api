@@ -33,8 +33,9 @@ import org.springframework.web.context.request.RequestContextHolder;
  *   <li>Outside a request (schedulers, async workers) calls go straight to the repository.
  * </ul>
  *
- * <p>Per-request only, so it adds no cross-instance state; still listed in the engineering
- * handbook's IN_MEMORY_STATE.md.
+ * <p>Shop reads also go through {@link ShopReadCache}, which keeps them across requests for 60 s
+ * (cleared on any shop write on this instance); that one is cross-request state and is listed in
+ * the engineering handbook's IN_MEMORY_STATE.md. The per-request memo itself adds none.
  *
  * <p>Writes through {@code MongoTemplate} are not seen; none exist for shops or plans today.
  */
@@ -47,9 +48,11 @@ public class RequestReadMemoAspect {
   static final String PLAN = "plan#";
 
   private final MongoConverter converter;
+  private final ShopReadCache shopReadCache;
 
-  public RequestReadMemoAspect(MongoConverter converter) {
+  public RequestReadMemoAspect(MongoConverter converter, ShopReadCache shopReadCache) {
     this.converter = converter;
+    this.shopReadCache = shopReadCache;
   }
 
   @Pointcut("execution(* findById(..)) || execution(* findByPlanName(..))")
@@ -60,16 +63,17 @@ public class RequestReadMemoAspect {
 
   @Around("bean(shopRepository) && singleReads()")
   public Object rememberShopRead(ProceedingJoinPoint jp) throws Throwable {
-    return remember(SHOP, jp);
+    return remember(SHOP, jp, shopReadCache);
   }
 
   @Around("bean(planRepository) && singleReads()")
   public Object rememberPlanRead(ProceedingJoinPoint jp) throws Throwable {
-    return remember(PLAN, jp);
+    return remember(PLAN, jp, null);
   }
 
   @AfterReturning("bean(shopRepository) && writes()")
   public void forgetShopsAfterWrite(JoinPoint jp) {
+    shopReadCache.clear();
     forget(SHOP);
   }
 
@@ -78,19 +82,36 @@ public class RequestReadMemoAspect {
     forget(PLAN);
   }
 
-  private Object remember(String prefix, ProceedingJoinPoint jp) throws Throwable {
+  /**
+   * Request memo first, then (shops only) the cross-request cache, then MongoDB. What is stored is
+   * a pristine copy; callers always get a copy of it.
+   */
+  private Object remember(String prefix, ProceedingJoinPoint jp, ShopReadCache shared) throws Throwable {
     Map<String, Optional<Object>> memo = memo(true);
-    if (memo == null) {
-      return jp.proceed();
-    }
     String key = prefix + jp.getSignature().getName() + Arrays.toString(jp.getArgs());
-    Optional<Object> remembered = memo.get(key);
+    Optional<Object> remembered = memo != null ? memo.get(key) : null;
+    if (remembered == null && shared != null) {
+      remembered = shared.get(key);
+      if (remembered != null && memo != null) {
+        memo.put(key, remembered);
+      }
+    }
     if (remembered != null) {
       return remembered.map(this::copy);
     }
+    if (memo == null && shared == null) {
+      return jp.proceed();
+    }
+    long generation = shared != null ? shared.generation() : 0;
     Object result = jp.proceed();
     if (result instanceof Optional<?> opt) {
-      memo.put(key, opt.map(this::copy));
+      Optional<Object> pristine = opt.map(this::copy);
+      if (memo != null) {
+        memo.put(key, pristine);
+      }
+      if (shared != null) {
+        shared.put(key, pristine, generation);
+      }
     }
     return result;
   }
