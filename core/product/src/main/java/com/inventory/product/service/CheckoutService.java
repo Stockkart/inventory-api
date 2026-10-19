@@ -594,11 +594,18 @@ public class CheckoutService {
     if (!StringUtils.hasText(term)) {
       return List.of();
     }
-    Set<String> matched = new HashSet<>();
+    Set<String> candidateIds = new HashSet<>();
     for (Customer candidate : customerRepository.searchByQuery(term.trim())) {
-      if (shopCustomerRepository.existsByShopIdAndCustomerId(shopId, candidate.getId())) {
-        matched.add(candidate.getId());
-      }
+      candidateIds.add(candidate.getId());
+    }
+    if (candidateIds.isEmpty()) {
+      return List.of();
+    }
+    // one membership query for all candidates, not one per candidate
+    Set<String> matched = new HashSet<>();
+    for (com.inventory.user.domain.model.ShopCustomer link
+        : shopCustomerRepository.findByShopIdAndCustomerIdIn(shopId, candidateIds)) {
+      matched.add(link.getCustomerId());
     }
     return new ArrayList<>(matched);
   }

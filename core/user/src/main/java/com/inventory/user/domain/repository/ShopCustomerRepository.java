@@ -6,6 +6,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -54,5 +55,14 @@ public interface ShopCustomerRepository extends MongoRepository<ShopCustomer, St
    * @return true if the relationship exists, false otherwise
    */
   boolean existsByShopIdAndCustomerId(String shopId, String customerId);
+
+  /**
+   * The relationships a shop has with any of the given customers, in one query.
+   *
+   * @param shopId the shop ID
+   * @param customerIds the candidate customer IDs
+   * @return the relationships that exist; customers not linked to the shop are absent
+   */
+  List<ShopCustomer> findByShopIdAndCustomerIdIn(String shopId, Collection<String> customerIds);
 }
 
