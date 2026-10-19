@@ -26,14 +26,15 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -68,7 +69,8 @@ public class AccountingPostingService {
   @Transactional
   public JournalEntry post(String shopId, String userId, PostJournalRequest req) {
     validateRequest(req);
-    accountService.ensureSeeded(shopId);
+    // the seeding check reads the whole chart; the lines below resolve from it
+    ChartLookup chart = new ChartLookup(accountService.ensureSeededAndList(shopId));
 
     JournalSource sourceType = req.getSourceType();
     String sourceId = trim(req.getSourceId());
@@ -94,7 +96,7 @@ public class AccountingPostingService {
 
     int idx = 0;
     for (PostJournalLine in : req.getLines()) {
-      Account a = resolveAccount(shopId, in, accountCache);
+      Account a = resolveAccount(shopId, in, chart, accountCache);
       BigDecimal debit = nz(in.getDebit());
       BigDecimal credit = nz(in.getCredit());
       if (debit.signum() < 0 || credit.signum() < 0) {
@@ -270,14 +272,13 @@ public class AccountingPostingService {
   }
 
   private BigDecimal latestBalanceFor(String shopId, String accountId, NormalBalance nb) {
-    var page =
-        ledgerEntryRepository.findByShopIdAndAccountIdOrderByPostedAtAsc(
-            shopId, accountId, PageRequest.of(0, 1, org.springframework.data.domain.Sort.by(
-                org.springframework.data.domain.Sort.Direction.DESC, "postedAt")));
-    if (page.isEmpty()) {
+    // newest row only: no page count, and served by the shop + account + postedAt index
+    List<LedgerEntry> latest =
+        ledgerEntryRepository.findFirst1ByShopIdAndAccountIdOrderByPostedAtDesc(shopId, accountId);
+    if (latest.isEmpty()) {
       return zero();
     }
-    BigDecimal balanceAfter = page.getContent().get(0).getBalanceAfter();
+    BigDecimal balanceAfter = latest.get(0).getBalanceAfter();
     return balanceAfter != null ? scale(balanceAfter) : zero();
   }
 
@@ -289,23 +290,61 @@ public class AccountingPostingService {
   }
 
   private Account resolveAccount(
-      String shopId, PostJournalLine in, Map<String, Account> cache) {
+      String shopId, PostJournalLine in, ChartLookup chart, Map<String, Account> cache) {
     String id = trim(in.getAccountId());
     if (id != null) {
       Account a = cache.get(id);
       if (a == null) {
-        a = accountService.findByIdOrThrow(shopId, id);
-        cache.put(a.getId(), a);
+        a = chart.byId(id);
       }
+      if (a == null) {
+        // not this shop's chart (or just created): the lookup that says which
+        a = accountService.findByIdOrThrow(shopId, id);
+      }
+      cache.put(a.getId(), a);
       return a;
     }
     String code = trim(in.getAccountCode());
     if (code == null) {
       throw new ValidationException("Either accountCode or accountId is required for every line");
     }
-    Account a = accountService.findByCodeOrThrow(shopId, code);
+    Account a = chart.byCode(code);
+    if (a == null) {
+      // missing or ambiguous in the chart: the lookup that says which
+      a = accountService.findByCodeOrThrow(shopId, code);
+    }
     cache.put(a.getId(), a);
     return a;
+  }
+
+  /** The shop's chart of accounts, read once per posting, by id and by code. */
+  private static final class ChartLookup {
+    private final Map<String, Account> byId = new HashMap<>();
+    private final Map<String, Account> byCode = new HashMap<>();
+    private final Set<String> ambiguousCodes = new HashSet<>();
+
+    ChartLookup(List<Account> accounts) {
+      if (accounts == null) {
+        return;
+      }
+      for (Account a : accounts) {
+        if (a == null || a.getId() == null) {
+          continue;
+        }
+        byId.put(a.getId(), a);
+        if (a.getCode() != null && byCode.putIfAbsent(a.getCode(), a) != null) {
+          ambiguousCodes.add(a.getCode());
+        }
+      }
+    }
+
+    Account byId(String id) {
+      return byId.get(id);
+    }
+
+    Account byCode(String code) {
+      return ambiguousCodes.contains(code) ? null : byCode.get(code);
+    }
   }
 
   private static void validateRequest(PostJournalRequest req) {
