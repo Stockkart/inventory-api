@@ -1,6 +1,5 @@
 package com.inventory.product.service;
 
-import com.inventory.common.util.GstMath;
 import com.inventory.common.constants.PurchaseTaxTreatment;
 import com.inventory.common.util.GstStateCode;
 import com.inventory.common.constants.ErrorCode;
@@ -723,8 +722,8 @@ public class InventoryService {
    * <p>The split comes from {@link PurchaseTaxBasisResolver} — the same per-line basis GSTR-2
    * reports from — so the ledger and the return read one answer. The stated {@code taxTotal} is
    * the amount (it is what the vendor is owed, so the entry has to balance on it) and the basis
-   * gives the ratio. Lines with no rate contribute nothing; if none has a rate, the shop's CGST /
-   * SGST percentages decide the split.
+   * gives the ratio. Lines with no rate contribute nothing; if none has a rate, the tax is split
+   * evenly (intra-state CGST and SGST are always equal halves).
    */
   private GstSplit splitTaxByLines(String shopId, VendorPurchaseInvoice inv, BigDecimal taxTotal) {
     BigDecimal total = nz(taxTotal);
@@ -744,17 +743,13 @@ public class InventoryService {
       return new GstSplit(split.get().centralTax(), split.get().stateTax());
     }
 
-    Shop shop =
-        StringUtils.hasText(shopId) ? shopRepository.findById(shopId).orElse(null) : null;
-    return splitByRatio(
-        total,
-        GstMath.parseGstRate(shop != null ? shop.getCgst() : null),
-        GstMath.parseGstRate(shop != null ? shop.getSgst() : null));
+    // No line carries a rate: intra-state GST is always half CGST, half SGST.
+    return splitByRatio(total, BigDecimal.ZERO, BigDecimal.ZERO);
   }
 
   /** The pricing record behind a purchase line's lot, or null when either is missing. */
 
-  /** Plain ratio split — used only when no line-level rates are available. */
+  /** Ratio split; with no rates (both zero) an even split. */
   private static GstSplit splitByRatio(
       BigDecimal total, BigDecimal cgstPct, BigDecimal sgstPct) {
     BigDecimal zero = BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP);

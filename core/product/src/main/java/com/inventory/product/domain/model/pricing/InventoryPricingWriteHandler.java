@@ -40,8 +40,8 @@ public class InventoryPricingWriteHandler {
             .saleAdditionalDiscount(inventory.getSaleAdditionalDiscount())
             .purchaseAdditionalDiscount(inventory.getPurchaseAdditionalDiscount())
             .costPriceIncludesTax(inventory.getCostPriceIncludesTax())
-            .sgst(resolveSgst(inventory.getSgst(), inventory.getShopId()))
-            .cgst(resolveCgst(inventory.getCgst(), inventory.getShopId()));
+            .sgst(resolveSgst(inventory.getSgst()))
+            .cgst(resolveCgst(inventory.getCgst()));
         if (isRetailerShop(inventory.getShopId())) {
           // Retail: shop enters Rate (cost) + Selling Price; MRP/PTR mirror selling price.
           // Schemes / discounts still persist (unlike cafe simplePricing).
@@ -146,15 +146,14 @@ public class InventoryPricingWriteHandler {
         || inv.getPurchaseSchemeFree() != null || inv.getPurchaseSchemePercentage() != null;
   }
 
-  private String resolveSgst(String fromRequest, String shopId) {
+  private String resolveSgst(String fromRequest) {
     InventoryPricingContext.Context ctx = InventoryPricingContext.get();
     if (ctx != null && ctx.type == InventoryPricingContext.Type.CREATE
         && ctx.createRequest != null && ctx.createRequest.getBillingMode() == BillingMode.BASIC) {
       return null;
     }
-    if (StringUtils.hasText(fromRequest)) return fromRequest;
-    if (!StringUtils.hasText(shopId)) return null;
-    return shopRepository.findById(shopId).map(Shop::getSgst).orElse(null);
+    // GST is the lot's own; there is no shop-level default (the validator requires it on create).
+    return StringUtils.hasText(fromRequest) ? fromRequest : null;
   }
 
   private Scheme buildPurchaseSchemeFromRequest(UpdateInventoryRequest req) {
@@ -212,14 +211,13 @@ public class InventoryPricingWriteHandler {
     return shopRepository.findById(shopId).map(Shop::getVerticalId).orElse(null);
   }
 
-  private String resolveCgst(String fromRequest, String shopId) {
+  private String resolveCgst(String fromRequest) {
     InventoryPricingContext.Context ctx = InventoryPricingContext.get();
     if (ctx != null && ctx.type == InventoryPricingContext.Type.CREATE
         && ctx.createRequest != null && ctx.createRequest.getBillingMode() == BillingMode.BASIC) {
       return null;
     }
-    if (StringUtils.hasText(fromRequest)) return fromRequest;
-    if (!StringUtils.hasText(shopId)) return null;
-    return shopRepository.findById(shopId).map(Shop::getCgst).orElse(null);
+    // GST is the lot's own; there is no shop-level default (the validator requires it on create).
+    return StringUtils.hasText(fromRequest) ? fromRequest : null;
   }
 }

@@ -7,10 +7,8 @@ import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.product.domain.model.enums.PurchaseStatus;
 import com.inventory.product.domain.model.enums.SchemeType;
-import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.pricing.InventoryPricingReadHandler;
 import com.inventory.product.domain.repository.InventoryRepository;
-import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.rest.dto.request.AddToCartRequest;
 import com.inventory.product.rest.dto.request.CheckoutRequest;
 import com.inventory.product.rest.dto.response.AddToCartResponse;
@@ -41,9 +39,6 @@ public abstract class PurchaseMapper {
   @Autowired
   protected CustomerService customerService;
   
-  @Autowired
-  protected ShopRepository shopRepository;
-
   @Autowired
   protected InventoryRepository inventoryRepository;
 
@@ -84,39 +79,14 @@ public abstract class PurchaseMapper {
   @Mapping(target = "priceToRetail", source = "item.priceToRetail")
   @Mapping(target = "discount", expression = "java(calculateDiscount(inventory.getMaximumRetailPrice(), item.getPriceToRetail()))")
   @Mapping(target = "saleAdditionalDiscount", source = "inventory.saleAdditionalDiscount")
-  @Mapping(target = "totalAmount", expression = "java(calculateTotalAmount(item.getPriceToRetail(), inventory.getSaleAdditionalDiscount(), item.getQuantity() != null ? java.math.BigDecimal.valueOf(item.getQuantity()) : java.math.BigDecimal.ZERO, inventory.getCgst(), inventory.getSgst(), inventory.getShopId()))")
+  @Mapping(target = "totalAmount", expression = "java(calculateTotalAmount(item.getPriceToRetail(), inventory.getSaleAdditionalDiscount(), item.getQuantity() != null ? java.math.BigDecimal.valueOf(item.getQuantity()) : java.math.BigDecimal.ZERO, inventory.getCgst(), inventory.getSgst()))")
   @Mapping(target = "sgst", source = "inventory.sgst")
   @Mapping(target = "cgst", source = "inventory.cgst")
   @Mapping(target = "costPrice", source = "inventory.costPrice")
   public abstract PurchaseItem toPurchaseItem(CheckoutRequest.CheckoutItem item, Inventory inventory);
 
   @AfterMapping
-  protected void setShopTaxRatesIfNullForCheckout(@MappingTarget PurchaseItem purchaseItem, Inventory inventory) {
-    // If CGST/SGST are null, use shop-level rates
-    if ((purchaseItem.getCgst() == null || purchaseItem.getCgst().trim().isEmpty()) 
-        || (purchaseItem.getSgst() == null || purchaseItem.getSgst().trim().isEmpty())) {
-      if (inventory.getShopId() != null) {
-        shopRepository.findById(inventory.getShopId()).ifPresent(shop -> {
-          if (purchaseItem.getCgst() == null || purchaseItem.getCgst().trim().isEmpty()) {
-            purchaseItem.setCgst(shop.getCgst());
-          }
-          if (purchaseItem.getSgst() == null || purchaseItem.getSgst().trim().isEmpty()) {
-            purchaseItem.setSgst(shop.getSgst());
-          }
-          // Recalculate totalAmount with shop rates if it was calculated with null rates
-          if (purchaseItem.getPriceToRetail() != null && purchaseItem.getQuantity() != null) {
-            purchaseItem.setTotalAmount(calculateTotalAmount(
-                purchaseItem.getPriceToRetail(),
-                purchaseItem.getSaleAdditionalDiscount(),
-                purchaseItem.getQuantity(),
-                purchaseItem.getCgst(),
-                purchaseItem.getSgst(),
-                inventory.getShopId()
-            ));
-          }
-        });
-      }
-    }
+  protected void completeCheckoutLine(@MappingTarget PurchaseItem purchaseItem, Inventory inventory) {
     enrichPurchaseItemMargin(purchaseItem);
     PurchaseItemRefs.applyInventoryLine(purchaseItem, inventory.getId());
   }
@@ -129,7 +99,7 @@ public abstract class PurchaseMapper {
   @Mapping(target = "priceToRetail", source = "item.priceToRetail")
   @Mapping(target = "discount", expression = "java(calculateDiscount(inventory.getMaximumRetailPrice(), item.getPriceToRetail()))")
   @Mapping(target = "saleAdditionalDiscount", expression = "java(getEffectiveSaleAdditionalDiscount(item, inventory))")
-  @Mapping(target = "totalAmount", expression = "java(calculateTotalAmount(getEffectiveSellingPriceForCartItem(item), getEffectiveSaleAdditionalDiscount(item, inventory), getBillableQuantityAsDecimalForCartItem(item), inventory.getCgst(), inventory.getSgst(), inventory.getShopId()))")
+  @Mapping(target = "totalAmount", expression = "java(calculateTotalAmount(getEffectiveSellingPriceForCartItem(item), getEffectiveSaleAdditionalDiscount(item, inventory), getBillableQuantityAsDecimalForCartItem(item), inventory.getCgst(), inventory.getSgst()))")
   @Mapping(target = "sgst", source = "inventory.sgst")
   @Mapping(target = "cgst", source = "inventory.cgst")
   @Mapping(target = "schemeType", source = "item.schemeType")
@@ -183,8 +153,7 @@ public abstract class PurchaseMapper {
           purchaseItem.getSaleAdditionalDiscount(),
           billableQty,
           purchaseItem.getCgst(),
-          purchaseItem.getSgst(),
-          inventory.getShopId()
+          purchaseItem.getSgst()
       ));
     }
     enrichPurchaseItemMargin(purchaseItem);
@@ -226,37 +195,6 @@ public abstract class PurchaseMapper {
         .multiply(BigDecimal.valueOf(factor))
         .setScale(0, RoundingMode.HALF_UP)
         .intValue();
-  }
-
-  @AfterMapping
-  protected void setShopTaxRatesIfNull(@MappingTarget PurchaseItem purchaseItem, Inventory inventory) {
-    // If CGST/SGST are null, use shop-level rates
-    if ((purchaseItem.getCgst() == null || purchaseItem.getCgst().trim().isEmpty()) 
-        || (purchaseItem.getSgst() == null || purchaseItem.getSgst().trim().isEmpty())) {
-      if (inventory.getShopId() != null) {
-        shopRepository.findById(inventory.getShopId()).ifPresent(shop -> {
-          if (purchaseItem.getCgst() == null || purchaseItem.getCgst().trim().isEmpty()) {
-            purchaseItem.setCgst(shop.getCgst());
-          }
-          if (purchaseItem.getSgst() == null || purchaseItem.getSgst().trim().isEmpty()) {
-            purchaseItem.setSgst(shop.getSgst());
-          }
-          // Recalculate totalAmount with shop rates (FIXED_UNITS: ratio on quantity)
-          if (purchaseItem.getPriceToRetail() != null && purchaseItem.getQuantity() != null) {
-            BigDecimal effectivePrice = getEffectiveSellingPriceFromPurchaseItem(purchaseItem);
-            BigDecimal billableQty = getBillableQuantityAsDecimalFromPurchaseItem(purchaseItem);
-            purchaseItem.setTotalAmount(calculateTotalAmount(
-                effectivePrice,
-                purchaseItem.getSaleAdditionalDiscount(),
-                billableQty,
-                purchaseItem.getCgst(),
-                purchaseItem.getSgst(),
-                inventory.getShopId()
-            ));
-          }
-        });
-      }
-    }
   }
 
   /** Billable quantity as decimal: FIXED_UNITS uses ratio schemePayFor/(schemePayFor+schemeFree) on any qty. */
@@ -406,7 +344,7 @@ public abstract class PurchaseMapper {
    * @param billableQuantity can be fractional (e.g. for FIXED_UNITS scheme applied as ratio).
    */
   protected BigDecimal calculateTotalAmount(BigDecimal priceToRetail, BigDecimal additionalDiscount,
-                                            BigDecimal billableQuantity, String cgst, String sgst, String shopId) {
+                                            BigDecimal billableQuantity, String cgst, String sgst) {
     if (priceToRetail == null || billableQuantity == null || billableQuantity.compareTo(BigDecimal.ZERO) <= 0) {
       return BigDecimal.ZERO;
     }
@@ -422,24 +360,9 @@ public abstract class PurchaseMapper {
     // Step 2: Multiply by billable quantity (can be fractional)
     BigDecimal totalDiscountedAmount = discountedPricePerUnit.multiply(billableQuantity);
     
-    // Step 3: Add CGST and SGST - use shop-level rates if inventory rates are null
+    // Step 3: Add the lot's own CGST and SGST (there is no shop-level GST)
     String finalCgst = cgst;
     String finalSgst = sgst;
-    
-    // If inventory rates are null, fetch from shop
-    if (shopId != null && ((finalCgst == null || finalCgst.trim().isEmpty()) || 
-        (finalSgst == null || finalSgst.trim().isEmpty()))) {
-      java.util.Optional<Shop> shopOpt = shopRepository.findById(shopId);
-      if (shopOpt.isPresent()) {
-        Shop shop = shopOpt.get();
-        if (finalCgst == null || finalCgst.trim().isEmpty()) {
-          finalCgst = shop.getCgst();
-        }
-        if (finalSgst == null || finalSgst.trim().isEmpty()) {
-          finalSgst = shop.getSgst();
-        }
-      }
-    }
     
     BigDecimal taxMultiplier = BigDecimal.ONE;
     if (finalCgst != null && !finalCgst.trim().isEmpty()) {
@@ -457,9 +380,9 @@ public abstract class PurchaseMapper {
 
   /** Overload for integer quantity (e.g. CheckoutRequest, createPurchaseItemWithTotal). */
   protected BigDecimal calculateTotalAmount(BigDecimal priceToRetail, BigDecimal additionalDiscount,
-                                            Integer quantity, String cgst, String sgst, String shopId) {
+                                            Integer quantity, String cgst, String sgst) {
     if (quantity == null) return BigDecimal.ZERO;
-    return calculateTotalAmount(priceToRetail, additionalDiscount, BigDecimal.valueOf(quantity), cgst, sgst, shopId);
+    return calculateTotalAmount(priceToRetail, additionalDiscount, BigDecimal.valueOf(quantity), cgst, sgst);
   }
 
   // Methods to create PurchaseItem
@@ -485,7 +408,7 @@ public abstract class PurchaseMapper {
   public PurchaseItem createPurchaseItemWithTotal(String inventoryId, String name, BigDecimal quantity,
                                                    BigDecimal maximumRetailPrice, BigDecimal priceToRetail, 
                                                    BigDecimal discount, BigDecimal additionalDiscount,
-                                                   String cgst, String sgst, String shopId) {
+                                                   String cgst, String sgst) {
     PurchaseItem item = new PurchaseItem();
     PurchaseItemRefs.applyInventoryLine(item, inventoryId);
     item.setName(name);
@@ -496,7 +419,7 @@ public abstract class PurchaseMapper {
     item.setSaleAdditionalDiscount(additionalDiscount);
     item.setCgst(cgst);
     item.setSgst(sgst);
-    item.setTotalAmount(calculateTotalAmount(priceToRetail, additionalDiscount, quantity, cgst, sgst, shopId));
+    item.setTotalAmount(calculateTotalAmount(priceToRetail, additionalDiscount, quantity, cgst, sgst));
     return item;
   }
 

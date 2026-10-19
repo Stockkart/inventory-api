@@ -45,7 +45,6 @@ public class AccountingBackfillService {
 
   private static final String VENDOR_PURCHASE_INVOICES = "vendor_purchase_invoices";
   private static final String VENDORS = "vendors";
-  private static final String SHOPS = "shops";
   private static final String INVENTORIES = "inventory";
   private static final String PRICING = "pricing";
   private static final String CREDIT_ENTRIES = "credit_entries";
@@ -100,11 +99,10 @@ public class AccountingBackfillService {
     }
     Query q = new Query(criteria);
 
-    Document shopDoc =
-        mongoTemplate.findOne(
-            new Query(Criteria.where("_id").is(shopId)), Document.class, SHOPS);
-    BigDecimal shopCgstPct = parsePercentage(shopDoc != null ? shopDoc.getString("cgst") : null);
-    BigDecimal shopSgstPct = parsePercentage(shopDoc != null ? shopDoc.getString("sgst") : null);
+    // GST rates come from each line / lot only; the shop has no rate. Zero here means "no
+    // fallback rate": lines without one contribute nothing and the split falls back to even halves.
+    BigDecimal shopCgstPct = BigDecimal.ZERO;
+    BigDecimal shopSgstPct = BigDecimal.ZERO;
 
     List<Document> invoices = mongoTemplate.find(q, Document.class, VENDOR_PURCHASE_INVOICES);
     for (Document inv : invoices) {
