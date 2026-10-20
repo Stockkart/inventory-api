@@ -929,14 +929,8 @@ public class CheckoutService {
       BigDecimal itemTotal = BigDecimal.ZERO;
       if (item.getMaximumRetailPrice() != null && item.getQuantity() != null 
           && item.getPriceToRetail() != null) {
-        BigDecimal effectivePrice = CheckoutUtils.getTaxablePricePerUnit(item);
-        BigDecimal billableQty = CheckoutUtils.getBillableQuantityAsDecimal(item);
-        itemTotal = effectivePrice.multiply(billableQty);
-        // Apply additional discount if present
-        if (item.getSaleAdditionalDiscount() != null && item.getSaleAdditionalDiscount().compareTo(BigDecimal.ZERO) > 0) {
-          itemTotal = itemTotal.multiply(new BigDecimal(1).subtract(item.getSaleAdditionalDiscount().divide(new BigDecimal(
-              "100"), 4, RoundingMode.HALF_UP)));
-        }
+        // Shared with returns (SalesReturnValuation), so a return reverses this exact tax.
+        itemTotal = CheckoutUtils.getTaxableLineValue(item, CheckoutUtils.getBillableQuantityAsDecimal(item));
       }
       
       // Each line is taxed at its own lot's rates; there is no shop-level GST.
@@ -945,15 +939,13 @@ public class CheckoutService {
       
       // Calculate SGST for this item
       if (itemSgst != null && !itemSgst.trim().isEmpty()) {
-        BigDecimal sgstRate = GstMath.parseGstRate(itemSgst).divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
-        BigDecimal itemSgstAmount = itemTotal.multiply(sgstRate).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal itemSgstAmount = CheckoutUtils.gstHeadAmount(itemTotal, itemSgst);
         totalSgstAmount = totalSgstAmount.add(itemSgstAmount);
       }
       
       // Calculate CGST for this item
       if (itemCgst != null && !itemCgst.trim().isEmpty()) {
-        BigDecimal cgstRate = GstMath.parseGstRate(itemCgst).divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
-        BigDecimal itemCgstAmount = itemTotal.multiply(cgstRate).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal itemCgstAmount = CheckoutUtils.gstHeadAmount(itemTotal, itemCgst);
         totalCgstAmount = totalCgstAmount.add(itemCgstAmount);
       }
     }
@@ -1250,6 +1242,7 @@ public class CheckoutService {
             String existingSaleUnit = existingItem.getSaleUnit() != null ? existingItem.getSaleUnit() : "UNIT";
             String incomingSaleUnit = newItem.getSaleUnit() != null ? newItem.getSaleUnit() : existingSaleUnit;
             if (!existingSaleUnit.equals(incomingSaleUnit)) {
+              boolean wasAtMrp = CheckoutUtils.isSellingAtMrp(existingItem);
               String existingLotId = PurchaseItemRefs.stockLotId(existingItem);
               Inventory inventory = lots.require(existingLotId);
               int existingBaseQuantity = getBaseQuantityOrFallback(existingItem);
@@ -1278,6 +1271,14 @@ public class CheckoutService {
                   existingItem.getMaximumRetailPrice(),
                   newItem.getMaximumRetailPrice(),
                   priceToRetail);
+              // A line sold at MRP has the GST inside its price. Rescaling the price while the
+              // MRP stays the batch's would part the two and add GST on top, billing above MRP,
+              // so it stays at MRP for the new unit instead.
+              if (wasAtMrp && inventory.getMaximumRetailPrice() != null) {
+                // Any price sent with the switch is ignored here: the line stays at MRP.
+                maximumRetailPrice = resolveMaximumRetailPriceForSaleUnit(inventory, incomingSaleUnit);
+                priceToRetail = maximumRetailPrice;
+              }
               BigDecimal costPrice = inventory.costForValuation();
               BigDecimal unitPrice = priceToRetail != null ? priceToRetail : BigDecimal.ZERO;
               BigDecimal perUnitDiscount = maximumRetailPrice.subtract(unitPrice);
@@ -1335,6 +1336,7 @@ public class CheckoutService {
               break;
             }
             // Handle quantity update based on positive or negative
+            boolean wasAtMrp = CheckoutUtils.isSellingAtMrp(existingItem);
             String existingLotId = PurchaseItemRefs.stockLotId(existingItem);
             Inventory inventory = lots.require(existingLotId);
             int existingBaseQuantity = getBaseQuantityOrFallback(existingItem);
@@ -1360,6 +1362,13 @@ public class CheckoutService {
                 existingItem.getMaximumRetailPrice(),
                 newItem.getMaximumRetailPrice(),
                 priceToRetail);
+            // A quantity change on a line sold at MRP keeps it at MRP for its sale unit. Taking the
+            // batch's per-pack MRP (or the per-pack selling price) instead would drop a tablet line
+            // off MRP and add GST on top. A price edit sends no quantity and is left as typed.
+            if (wasAtMrp && incomingBaseQuantity != 0 && inventory.getMaximumRetailPrice() != null) {
+              maximumRetailPrice = resolveMaximumRetailPriceForSaleUnit(inventory, existingSaleUnit);
+              priceToRetail = maximumRetailPrice;
+            }
             BigDecimal costPrice = inventory.costForValuation();
             BigDecimal newQuantity = toSaleQuantityDecimal(newBaseQuantity, saleUnitFactor);
             BigDecimal unitPrice = priceToRetail != null ? priceToRetail : BigDecimal.ZERO;
@@ -1644,6 +1653,11 @@ public class CheckoutService {
     return conversion.getFactor();
   }
 
+  /**
+   * The batch MRP for one {@code saleUnit}. The batch MRP is per pack; a base unit's share of it
+   * rounds down, so the units of a pack never bill above the pack's MRP (MRP 100 for 15 tablets
+   * is 6.66 a tablet, where 6.67 would make the strip 100.05).
+   */
   private BigDecimal resolveMaximumRetailPriceForSaleUnit(Inventory inventory, String saleUnit) {
     BigDecimal maximumRetailPrice = inventory.getMaximumRetailPrice() != null
         ? inventory.getMaximumRetailPrice()
@@ -1664,7 +1678,7 @@ public class CheckoutService {
       return maximumRetailPrice;
     }
     if (saleUnit.equals(baseUnit)) {
-      return maximumRetailPrice.divide(BigDecimal.valueOf(factor), 2, RoundingMode.HALF_UP);
+      return maximumRetailPrice.divide(BigDecimal.valueOf(factor), 2, RoundingMode.DOWN);
     }
     throw new ValidationException("Unit " + saleUnit + " is not configured for product " + inventory.getName());
   }
