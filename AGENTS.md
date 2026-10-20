@@ -166,7 +166,7 @@ MongoDB: "table" means collection, "column" means field.
 
 - C1. Read config in Java only through property keys: `@Value("${key:default}")` or `@ConfigurationProperties`. Map env vars only in `application.properties` as `key=${ENV_NAME}` (optional default). Never call `System.getenv` (0 uses in main code). Ref: `core/product/src/main/java/com/inventory/product/config/PrintBridgeProperties.java`
 - C2. Add a variable in three places: the property in `app/src/main/resources/application.properties`, the name in `.env.example`, and a passthrough under `services.app.environment` in `docker-compose.yml`. Ref: `docker-compose.yml`
-  - `.env.example` values: dominant empty (30 of 41). Exceptions: `SPRING_PROFILES_ACTIVE`, `PAYMENT_GATEWAY`, `GSTIN_PROVIDER`, the five `AUTH_*` and the three `SHOP_CACHE_*` settings carry a non-secret default (an empty TTL or max-entries value fails boot, C3).
+  - `.env.example` values: dominant empty (30 of 42). Exceptions: `SPRING_PROFILES_ACTIVE`, `PAYMENT_GATEWAY`, `GSTIN_PROVIDER`, the five `AUTH_*`, the three `SHOP_CACHE_*` settings and `MONGO_POOL_MAX_WAIT_MS` carry a non-secret default (an empty TTL or max-entries value fails boot, C3).
   - In `.env.example` only: `DB_USERNAME`, `DB_PASSWORD` (for the commented-out local `mongodb` service), `GSTIN_PROVIDER`, `GSTINAPI_KEY`. In compose only: `MESSAGING_DISPATCH_INTERVAL_MS`.
 - C3. Give every placeholder without a default a value, or boot fails with "Could not resolve placeholder" (e.g. `OCR_PREPROCESS_MODE`). `UPLOAD_TOKEN_EXPIRY_MINUTES` has no default and must be an integer, so the empty value from `.env.example` fails boot. The API key for the provider chosen by `OCR_PROVIDER` must be non-empty, or boot fails; `core/ocr/src/main/java/com/inventory/ocr/config/OcrConfig.java` maps providers to keys. Ref: `app/src/main/resources/application.properties`
 - C4. Never commit `.env`; CI hygiene fails on tracked `.env` files. `AppApplication` loads `.env` from the process working directory. Ref: `.github/workflows/ci-hygiene.yml`
@@ -193,6 +193,7 @@ MongoDB: "table" means collection, "column" means field.
 | `AUTH_CACHE_ENABLED`, `AUTH_CACHE_TTL_SECONDS`, `AUTH_CACHE_MAX_ENTRIES` | per-instance login check cache (`AuthCache`): on/off, seconds an entry lives, entries per cache | both |
 | `AUTH_TOKEN_CLEANUP_ENABLED`, `AUTH_TOKEN_CLEANUP_CRON` | nightly removal of expired login tokens (`ExpiredTokenCleanupJob`): on/off, Spring cron in Asia/Kolkata | both |
 | `SHOP_CACHE_ENABLED`, `SHOP_CACHE_TTL_SECONDS`, `SHOP_CACHE_MAX_ENTRIES` | per-instance shop read cache (`ShopReadCache`): on/off, seconds an entry lives, entries | both |
+| `MONGO_POOL_MAX_WAIT_MS` | longest wait for a free MongoDB connection before a 503 "busy" with `Retry-After` (`MongoPoolConfig`) | both |
 | `GRAFANA_CLOUD_OTLP_URL`, `GRAFANA_CLOUD_OTLP_USER` | OTLP metrics export endpoint and user (optional) | both |
 | `GRAFANA_CLOUD_LOKI_URL`, `GRAFANA_CLOUD_LOKI_USER` | Loki log push endpoint and user (optional) | both |
 | `GRAFANA_CLOUD_API_TOKEN` | Grafana Cloud token (secret, never commit) | both |
