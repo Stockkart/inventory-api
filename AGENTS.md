@@ -28,7 +28,7 @@ Cross-repo topics live in the handbook: handbook ARCHITECTURE.md (planned), hand
 | `pluginengine/` | Vertical plugin SPI and `PluginRegistry` |
 | `plugins/<vertical>/` | medical, grocery, sports, cafe |
 | `docs/` | `deploying.md`, `metrics.md` |
-| `scripts/` | deploy scripts and one manual Mongo script |
+| `scripts/` | deploy scripts and two manual Mongo scripts (lot-id migration; `super-user.mongodb.js`, the only way to grant or revoke SUPER_USER, documented in `docs/deploying.md`) |
 | `grafana/`, `.github/workflows/` | dashboards; CI |
 
 - R1. Lay out a module as `com.inventory.<module>.{domain.model, domain.repository, service, rest.controller, rest.dto.request, rest.dto.response, mapper, validation, utils, utils.constants, migration}`. Ref: `core/user/src/main/java/com/inventory/user/rest/controller/VendorController.java`
@@ -157,7 +157,7 @@ MongoDB: "table" means collection, "column" means field.
   - `dry-run` exists only in the 4 runners that also have the passthrough: SellRestriction, TxnId, Product and LotBaseCountRepair backfills.
   - Error handling, no single convention. Propagate (4): `core/product/src/main/java/com/inventory/product/migration/SellRestrictionBackfillRunner.java`, `core/product/src/main/java/com/inventory/product/migration/TxnIdBackfillRunner.java`, `core/product/src/main/java/com/inventory/product/migration/ProductBackfillRunner.java` (catches only inside value parsers), `core/product/src/main/java/com/inventory/product/migration/LotBaseCountRepairRunner.java`. Catch and log (5): `core/user/src/main/java/com/inventory/user/migration/VendorPlaceMigration.java`, `core/product/src/main/java/com/inventory/product/migration/InvoiceSequenceBackfillRunner.java`, `core/product/src/main/java/com/inventory/product/migration/SearchIndexMigration.java`, `core/product/src/main/java/com/inventory/product/migration/ProductBarcodeIndexMigration.java`, `core/product/src/main/java/com/inventory/product/migration/VerticalSchemaSeeder.java`. Choosing one is for a handbook decisions/ ADR (planned).
   - Runner list (split by reading each listener method): `grep -rl ApplicationReadyEvent --include=*.java core/*/src/main/java/com/inventory/*/migration`.
-  - Not a runner: the one-off manual script `scripts/migrate-lot-id-to-stock-in.mongodb.js`.
+  - Not a runner: the one-off manual script `scripts/migrate-lot-id-to-stock-in.mongodb.js`, and the operator script `scripts/super-user.mongodb.js`.
 - P7. Store money as `BigDecimal`; no domain model has a `double`/`float` money field (the only `Double` is `rollColumnGapMm` in `core/product/src/main/java/com/inventory/product/domain/model/LabelLayoutDocument.java`). Converters store it as Decimal128. Ref: `app/src/main/java/com/inventory/app/config/MongoConfig.java`
 - P8. Do not rely on `@Transactional` for multi-document atomicity: it appears in 59 files, but no `MongoTransactionManager` or other `TransactionManager` bean is declared. Ref: `core/user/src/main/java/com/inventory/user/service/VendorService.java`
 - P9. Change vertical schemas by editing `core/product/src/main/resources/seeds/<vertical>-v1.json`. On restart `VerticalSchemaSeeder` overwrites only rows whose `createdBy` starts with `seed:`. Run `VerticalSchemaSeedFilesTest` after. Ref: `core/product/src/main/java/com/inventory/product/migration/VerticalSchemaSeeder.java`

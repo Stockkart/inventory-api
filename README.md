@@ -316,6 +316,20 @@ The product entry grid view lays out its columns the way a spreadsheet does: col
 
 **Schema changes.** Stored keys only, one document per shop and grid; the unique `(shopId, gridId)` index is created at startup by `GridLayoutIndexMigration` (automatic index creation is off). On read, unknown keys are dropped, widths are clamped, required columns are shown and new columns are placed after their catalog neighbour (`GridLayoutResolver`), so a shop keeps its layout across schema versions.
 
+### Stockkart staff (SUPER_USER, user)
+
+`SUPER_USER` is a platform role for internal Stockkart staff, not a shop role. A SUPER_USER account has no shop (`shopId` null) and no shop memberships. Stockkart HQ signs these accounts in through `POST /api/v1/auth/login` and admits only `user.role == "SUPER_USER"`.
+
+- No API grants it: signup, invitations, join requests and shop-member role changes reject `SUPER_USER` (400). Invitations, join requests, shop registration and membership creation also reject a SUPER_USER account (400).
+- Shop RBAC denies a SUPER_USER account (`RbacService`, 403), so it cannot act inside any shop. `UserShopMembershipService.hasAccess`/`hasOwnerAccess` are false for it, so an `X-Shop-Id` header from staff is ignored.
+- Only the operator script `scripts/super-user.mongodb.js` grants or revokes it; see [docs/deploying.md](docs/deploying.md#granting-or-revoking-super_user).
+
+| Endpoint | Who |
+|----------|-----|
+| `POST /api/v1/auth/login`, `GET /api/v1/auth/me` | Any account; return `role` (`SUPER_USER` for staff) and work with no shop. |
+| `POST /api/v1/auth/change-password` | Signed-in account only (Bearer token); body `{ currentPassword, password }`; changes the token's account and logs out its other sessions (the caller's token stays valid). Not public. |
+| `POST /api/v1/shops/admin/shops/{shopId}/approve` | SUPER_USER only; anyone else gets 403. Body `{ approve, userLimit }` (`userLimit` > 0 to approve). |
+
 ### Build commands
 
 ```bash

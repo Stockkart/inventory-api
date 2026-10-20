@@ -70,6 +70,9 @@ public class AuthService {
   @Autowired
   private MetricsWrapper metrics;
 
+  @Autowired(required = false)
+  private AuthCache authCache;
+
   @Value("${client.url:http://localhost:3000}")
   private String clientUrl;
 
@@ -303,18 +306,43 @@ public class AuthService {
     }
   }
 
+  /**
+   * Change the signed-in account's password. The caller must be authenticated (Bearer token) and
+   * must send the current password; the account is the token's account, never one named in the body.
+   * Every other session of the account is logged out; the caller's own token stays valid.
+   *
+   * @param currentAccessToken the caller's Bearer token (request attribute {@code accessToken})
+   */
   @Transactional
-  public ChangePasswordResponse changePassword(ChangePasswordRequest request) {
+  public ChangePasswordResponse changePassword(
+      String userId, String currentAccessToken, ChangePasswordRequest request) {
     authValidator.validateChangePasswordRequest(request);
 
-    UserAccount account = userAccountRepository.findByEmail(request.getEmail().trim())
-        .orElseThrow(() -> new ResourceNotFoundException("User", "email", request.getEmail()));
+    UserAccount account = userAccountRepository.findById(userId)
+        .orElseThrow(() -> new ResourceNotFoundException("User", "userId", userId));
+
+    // The body email is optional; if sent it must name the signed-in account
+    if (request.getEmail() != null && !request.getEmail().trim().isEmpty()
+        && !request.getEmail().trim().equalsIgnoreCase(account.getEmail())) {
+      throw new ValidationException("Email does not match the signed-in account");
+    }
+    if (account.getPassword() == null || account.getPassword().isBlank()) {
+      throw new ValidationException("This account has no password. Use forgot password to set one.");
+    }
+    if (!passwordEncoder.matches(request.getCurrentPassword(), account.getPassword())) {
+      log.warn("Change password with a wrong current password for user: {}", account.getUserId());
+      throw new ValidationException("Current password is incorrect");
+    }
 
     account.setPassword(passwordEncoder.encode(request.getPassword().trim()));
+    // Someone who knew the old password may hold a session; keep only the caller's
+    int revoked = revokeTokens(account, currentAccessToken);
     account.setUpdatedAt(Instant.now());
     userAccountRepository.save(account);
+    evictCachedTokens(account.getUserId());
 
-    log.info("Password changed successfully for user: {}", account.getUserId());
+    log.info("Password changed successfully for user: {}, other sessions revoked: {}",
+        account.getUserId(), revoked);
     recordAuth("reset", "success");
     return new ChangePasswordResponse("Password has been changed successfully.");
   }
@@ -396,12 +424,38 @@ public class AuthService {
     account.setPassword(passwordEncoder.encode(request.getNewPassword().trim()));
     account.setPasswordResetToken(null);
     account.setPasswordResetTokenExpiresAt(null);
+    // The caller is not signed in: a reset logs out every session
+    int revoked = revokeTokens(account, null);
     account.setUpdatedAt(Instant.now());
     userAccountRepository.save(account);
+    evictCachedTokens(account.getUserId());
 
-    log.info("Password reset successfully for user: {}", account.getUserId());
+    log.info("Password reset successfully for user: {}, sessions revoked: {}", account.getUserId(), revoked);
     recordAuth("reset", "success");
     return new ResetPasswordResponse("Your password has been reset successfully. You can now log in.");
+  }
+
+  /**
+   * Drops every token of the account except {@code keepAccessToken} (all of them when null).
+   *
+   * @return how many tokens were dropped
+   */
+  private static int revokeTokens(UserAccount account, String keepAccessToken) {
+    int before = account.getTokens().size();
+    account.getTokens().removeIf(t -> t == null
+        || keepAccessToken == null
+        || !keepAccessToken.equals(t.getAccessToken()));
+    return before - account.getTokens().size();
+  }
+
+  /**
+   * Make revoked tokens fail on the next request. The save already evicts through
+   * {@link AuthCacheEvictionListener}; this does not depend on that listener being registered.
+   */
+  private void evictCachedTokens(String userId) {
+    if (authCache != null) {
+      authCache.evictUser(userId);
+    }
   }
 
   private void recordAuth(String operation, String outcome) {

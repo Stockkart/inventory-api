@@ -26,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 @Slf4j
 @Service
@@ -62,6 +63,8 @@ public class UserShopMembershipService {
   /**
    * Check if user has access to a shop. Backward compatible: returns true if user has
    * membership OR if user.shopId matches (legacy users not yet in memberships).
+   * A SUPER_USER (Stockkart staff) account never has shop access, so AuthenticationInterceptor
+   * never accepts an X-Shop-Id header for staff.
    */
   @Transactional(readOnly = true)
   public boolean hasAccess(String userId, String shopId) {
@@ -73,11 +76,11 @@ public class UserShopMembershipService {
     if (cached != null) {
       return cached;
     }
-    boolean allowed = membershipRepository.existsByUserIdAndShopIdAndActiveTrue(userId, shopId)
-        // Backward compatibility: check UserAccount.shopId
-        || userAccountRepository.findById(userId)
-            .map(u -> shopId.equals(u.getShopId()))
-            .orElse(false);
+    Optional<UserAccount> account = userAccountRepository.findById(userId);
+    boolean allowed = !isPlatformAccount(account)
+        && (membershipRepository.existsByUserIdAndShopIdAndActiveTrue(userId, shopId)
+            // Backward compatibility: check UserAccount.shopId
+            || account.map(u -> shopId.equals(u.getShopId())).orElse(false));
     if (authCache != null) {
       authCache.putShopAccess(userId, shopId, allowed);
     }
@@ -88,20 +91,30 @@ public class UserShopMembershipService {
    * Check if user has owner access (can send invitations, manage users) for a shop.
    * Owner = has membership with relationship OWNER, or legacy: user.shopId equals shopId
    * and user is not an invited user (no accepted invitation for this shop - we infer from membership).
+   * A SUPER_USER account is never a shop owner.
    */
   @Transactional(readOnly = true)
   public boolean hasOwnerAccess(String userId, String shopId) {
     if (userId == null || shopId == null) {
       return false;
     }
+    Optional<UserAccount> account = userAccountRepository.findById(userId);
+    if (isPlatformAccount(account)) {
+      return false;
+    }
     return membershipRepository.findByUserIdAndShopIdAndActiveTrue(userId, shopId)
         .map(m -> RELATIONSHIP_OWNER.equals(m.getRelationship()))
         .orElseGet(() -> {
           // Legacy: user.shopId equals shopId implies owner (pre-membership behavior)
-          return userAccountRepository.findById(userId)
+          return account
               .map(u -> shopId.equals(u.getShopId()))
               .orElse(false);
         });
+  }
+
+  /** Stockkart staff (SUPER_USER): platform-level, never a member of any shop. */
+  private static boolean isPlatformAccount(Optional<UserAccount> account) {
+    return account.map(u -> u.getRole() != null && u.getRole().isPlatformRole()).orElse(false);
   }
 
   /**
@@ -150,6 +163,8 @@ public class UserShopMembershipService {
    * Add a membership for a user to a shop. Used when registering a shop or accepting an invitation.
    */
   public UserShopMembership addMembership(String userId, String shopId, UserRole role, String relationship) {
+    // SUPER_USER accounts (Stockkart staff) and the SUPER_USER role never enter a shop (A3)
+    userValidator.validateCanJoinShop(userAccountRepository.findById(userId).orElse(null), role);
     if (membershipRepository.existsByUserIdAndShopIdAndActiveTrue(userId, shopId)) {
       log.debug("User {} already has active membership for shop {}", userId, shopId);
       return membershipRepository.findByUserIdAndShopIdAndActiveTrue(userId, shopId).orElseThrow();
