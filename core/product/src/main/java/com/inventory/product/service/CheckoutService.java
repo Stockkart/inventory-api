@@ -55,6 +55,11 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
+import org.bson.types.Decimal128;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -95,6 +100,10 @@ public class CheckoutService {
 
   @Autowired
   private PurchaseMapper purchaseMapper;
+
+  /** Guarded stock updates on bill completion (updateInventoryForCompletedPurchase). */
+  @Autowired
+  private MongoTemplate mongoTemplate;
 
   @Autowired
   private CheckoutValidator checkoutValidator;
@@ -376,7 +385,7 @@ public class CheckoutService {
       }
       return response;
 
-    } catch (ValidationException | ResourceNotFoundException e) {
+    } catch (ValidationException | ResourceNotFoundException | InsufficientStockException e) {
       log.warn("Update purchase status failed: {}", e.getMessage());
       throw e;
     } catch (DataAccessException e) {
@@ -1892,6 +1901,18 @@ public class CheckoutService {
     usageService.recordCompletedBill(shopId, grandTotal);
   }
 
+  /**
+   * Takes a completed bill's quantities off its lots.
+   *
+   * <p>Each lot is changed with one guarded update ("take n, only if at least n is in stock"), so
+   * two bills completing at the same moment cannot both sell the last unit or overwrite each
+   * other's count, and nothing but the four stock counts is written (a price or name edit saved at
+   * the same moment is kept). MongoDB applies updates to one document one at a time and checks the
+   * guard against the current value. There is no transaction across lots (AGENTS.md P8), so if a
+   * later lot fails its guard the lots already taken are put back before the error is thrown.
+   *
+   * <p>Lots with a missing stock count (legacy rows) keep the old read-modify-save.
+   */
   private void updateInventoryForCompletedPurchase(Purchase purchase) {
     if (purchase.getItems() == null || purchase.getItems().isEmpty()) {
       log.warn("Purchase {} has no items to process for inventory update", purchase.getId());
@@ -1900,83 +1921,182 @@ public class CheckoutService {
 
     log.info("Updating inventory for {} items in purchase {}", purchase.getItems().size(), purchase.getId());
 
+    // quantities per lot, in bill order; a lot on two lines is taken once for both
+    Map<String, StockTake> takes = new java.util.LinkedHashMap<>();
     for (PurchaseItem item : purchase.getItems()) {
+      if ("menu".equalsIgnoreCase(item.getSellMode())) {
+        continue;
+      }
       String stockLotId = PurchaseItemRefs.stockLotId(item);
-      try {
-        if ("menu".equalsIgnoreCase(item.getSellMode())) {
-          continue;
-        }
-        if (!StringUtils.hasText(stockLotId)) {
-          continue;
-        }
-        Inventory inventory = inventoryRepository.findById(stockLotId)
-            .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId",
-                "Inventory not found with lotId: " + stockLotId));
+      if (!StringUtils.hasText(stockLotId)) {
+        continue;
+      }
+      takes.computeIfAbsent(stockLotId, StockTake::new).lines.add(item);
+    }
+    if (takes.isEmpty()) {
+      return;
+    }
 
-        if (!purchase.getShopId().equals(inventory.getShopId())) {
-          throw new ValidationException("Inventory lot " + stockLotId +
-              " does not belong to shop " + purchase.getShopId());
-        }
-
-        // Get current values (handle nulls)
-        int currentCount = getCurrentBaseCount(inventory);
-        int soldCount = getSoldBaseCount(inventory);
-        BigDecimal currentDisplayCount = getCurrentDisplayCount(inventory);
-        BigDecimal soldDisplayCount = getSoldDisplayCount(inventory);
-        int baseQuantity = getBaseQuantityOrFallback(item);
-        BigDecimal displayQuantity = toDisplayQuantity(baseQuantity, inventory);
-
-        // Validate that we have enough stock
-        if (currentCount < baseQuantity) {
-          throw new InsufficientStockException(
-              "Insufficient stock to complete purchase for product: " + inventory.getName() +
-                  ". Available: " + currentCount + ", Required in base units: " + baseQuantity,
-              inventory.getBarcode(), currentCount, baseQuantity);
-        }
-
-        // Update inventory counts
-        inventory.setCurrentCount(currentDisplayCount.subtract(displayQuantity).setScale(4, RoundingMode.HALF_UP));
-        inventory.setSoldCount(soldDisplayCount.add(displayQuantity).setScale(4, RoundingMode.HALF_UP));
-        inventory.setCurrentBaseCount(currentCount - baseQuantity);
-        inventory.setSoldBaseCount(soldCount + baseQuantity);
-
-        // Save updated inventory
-        inventoryRepository.save(inventory);
-        Integer threshold = inventory.getThresholdCount() != null
-          ? inventory.getThresholdCount()
-          : 50;
-
-        log.info(
-          "Threshold check -> lotId={}, current={}, threshold={}",
-          inventory.getId(),
-          inventory.getCurrentBaseCount(),
-          threshold
-        );
-
-        if (inventory.getCurrentBaseCount() <= threshold) {
-
-          log.info("THRESHOLD REACHED — triggering INVENTORY_LOW event");
-
-          InventoryEventDto dto =
-            inventoryMapper.toInventoryLowEventDto(inventory, threshold);
-          var eventDto = inventoryMapper.toNotificationEventDto(dto);
-          eventService.recordAndBroadcastInventoryLow(eventDto);
-        }
-
-        log.info("Updated inventory for lotId: {} - decreased currentCount by {} (new: {}), increased soldCount by {} (new: {})",
-            stockLotId, baseQuantity, inventory.getCurrentBaseCount(), baseQuantity, inventory.getSoldBaseCount());
-
-      } catch (ResourceNotFoundException | ValidationException | InsufficientStockException e) {
-        log.error("Error updating inventory for lotId: {} - {}", stockLotId, e.getMessage());
-        throw e;
-      } catch (Exception e) {
-        log.error("Unexpected error updating inventory for lotId: {}", stockLotId, e);
-        throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
-            "Error updating inventory for lotId " + stockLotId + ": " + e.getMessage(), e);
+    // one read for all the bill's lots, then every check before anything is changed
+    Map<String, Inventory> lots = new HashMap<>();
+    for (Inventory inv : inventoryRepository.findAllById(takes.keySet())) {
+      if (inv != null && inv.getId() != null) {
+        lots.put(inv.getId(), inv);
+      }
+    }
+    for (StockTake take : takes.values()) {
+      Inventory inventory = lots.get(take.lotId);
+      if (inventory == null) {
+        throw new ResourceNotFoundException("Inventory", "lotId",
+            "Inventory not found with lotId: " + take.lotId);
+      }
+      if (!purchase.getShopId().equals(inventory.getShopId())) {
+        throw new ValidationException("Inventory lot " + take.lotId +
+            " does not belong to shop " + purchase.getShopId());
+      }
+      take.inventory = inventory;
+      for (PurchaseItem line : take.lines) {
+        int baseQuantity = getBaseQuantityOrFallback(line);
+        take.base += baseQuantity;
+        take.display = take.display.add(toDisplayQuantity(baseQuantity, inventory));
+      }
+      int currentCount = getCurrentBaseCount(inventory);
+      if (currentCount < take.base) {
+        throw insufficientStockToComplete(inventory, currentCount, take.base);
       }
     }
 
+    List<StockTake> taken = new ArrayList<>();
+    try {
+      for (StockTake take : takes.values()) {
+        if (hasAllStockCounts(take.inventory)) {
+          takeGuarded(purchase.getShopId(), take);
+        } else {
+          takeLegacy(take);
+        }
+        taken.add(take);
+      }
+    } catch (RuntimeException e) {
+      putBack(taken);
+      throw e;
+    }
+
+    for (StockTake take : takes.values()) {
+      raiseInventoryLowIfNeeded(take.inventory);
+      log.info("Updated inventory for lotId: {} - decreased currentCount by {} (new: {}), increased soldCount by {} (new: {})",
+          take.lotId, take.base, take.inventory.getCurrentBaseCount(), take.base, take.inventory.getSoldBaseCount());
+    }
+
     log.info("Successfully updated inventory for all items in purchase {}", purchase.getId());
+  }
+
+  /** One lot's share of a completed bill. */
+  private static final class StockTake {
+    final String lotId;
+    final List<PurchaseItem> lines = new ArrayList<>();
+    Inventory inventory;
+    int base;
+    BigDecimal display = BigDecimal.ZERO;
+
+    StockTake(String lotId) {
+      this.lotId = lotId;
+    }
+  }
+
+  private static boolean hasAllStockCounts(Inventory inventory) {
+    return inventory.getCurrentBaseCount() != null
+        && inventory.getSoldBaseCount() != null
+        && inventory.getCurrentCount() != null
+        && inventory.getSoldCount() != null;
+  }
+
+  /** "Take n, only if at least n is in stock" as one update; nothing but the counts is written. */
+  private void takeGuarded(String shopId, StockTake take) {
+    Query guarded = Query.query(Criteria.where("_id").is(take.lotId)
+        .and("shopId").is(shopId)
+        .and("currentBaseCount").gte(take.base));
+    Update update = new Update()
+        .inc("currentBaseCount", -take.base)
+        .inc("soldBaseCount", take.base)
+        .inc("currentCount", new Decimal128(take.display.negate()))
+        .inc("soldCount", new Decimal128(take.display));
+    long matched;
+    try {
+      matched = mongoTemplate.updateFirst(guarded, update, Inventory.class).getMatchedCount();
+    } catch (RuntimeException e) {
+      log.error("Unexpected error updating inventory for lotId: {}", take.lotId, e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
+          "Error updating inventory for lotId " + take.lotId + ": " + e.getMessage(), e);
+    }
+    if (matched != 1) {
+      // sold elsewhere since it was read: report what is there now
+      Inventory now = inventoryRepository.findById(take.lotId).orElse(take.inventory);
+      int available = getCurrentBaseCount(now);
+      log.warn("Stock for lotId {} changed while completing: available {}, required {}", take.lotId, available, take.base);
+      throw insufficientStockToComplete(now, available, take.base);
+    }
+    Inventory inventory = take.inventory;
+    inventory.setCurrentBaseCount(inventory.getCurrentBaseCount() - take.base);
+    inventory.setSoldBaseCount(inventory.getSoldBaseCount() + take.base);
+    inventory.setCurrentCount(inventory.getCurrentCount().subtract(take.display).setScale(4, RoundingMode.HALF_UP));
+    inventory.setSoldCount(inventory.getSoldCount().add(take.display).setScale(4, RoundingMode.HALF_UP));
+  }
+
+  /** Lots with a missing count: the previous read-modify-save, which also fills the counts in. */
+  private void takeLegacy(StockTake take) {
+    Inventory inventory = take.inventory;
+    int currentCount = getCurrentBaseCount(inventory);
+    int soldCount = getSoldBaseCount(inventory);
+    BigDecimal currentDisplayCount = getCurrentDisplayCount(inventory);
+    BigDecimal soldDisplayCount = getSoldDisplayCount(inventory);
+    inventory.setCurrentCount(currentDisplayCount.subtract(take.display).setScale(4, RoundingMode.HALF_UP));
+    inventory.setSoldCount(soldDisplayCount.add(take.display).setScale(4, RoundingMode.HALF_UP));
+    inventory.setCurrentBaseCount(currentCount - take.base);
+    inventory.setSoldBaseCount(soldCount + take.base);
+    try {
+      inventoryRepository.save(inventory);
+    } catch (RuntimeException e) {
+      log.error("Unexpected error updating inventory for lotId: {}", take.lotId, e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
+          "Error updating inventory for lotId " + take.lotId + ": " + e.getMessage(), e);
+    }
+  }
+
+  /** Gives back what an unfinished completion already took (no transaction across lots). */
+  private void putBack(List<StockTake> taken) {
+    for (StockTake take : taken) {
+      try {
+        Update back = new Update()
+            .inc("currentBaseCount", take.base)
+            .inc("soldBaseCount", -take.base)
+            .inc("currentCount", new Decimal128(take.display))
+            .inc("soldCount", new Decimal128(take.display.negate()));
+        mongoTemplate.updateFirst(Query.query(Criteria.where("_id").is(take.lotId)), back, Inventory.class);
+        log.info("Put back {} (base) on lotId {} after a failed completion", take.base, take.lotId);
+      } catch (RuntimeException e) {
+        log.error("Could not put back {} (base) on lotId {} after a failed completion; stock is now low by that much",
+            take.base, take.lotId, e);
+      }
+    }
+  }
+
+  private InsufficientStockException insufficientStockToComplete(Inventory inventory, int available, int required) {
+    return new InsufficientStockException(
+        "Insufficient stock to complete purchase for product: " + inventory.getName() +
+            ". Available: " + available + ", Required in base units: " + required,
+        inventory.getBarcode(), available, required);
+  }
+
+  private void raiseInventoryLowIfNeeded(Inventory inventory) {
+    Integer threshold = inventory.getThresholdCount() != null ? inventory.getThresholdCount() : 50;
+    log.info("Threshold check -> lotId={}, current={}, threshold={}",
+        inventory.getId(), inventory.getCurrentBaseCount(), threshold);
+    if (inventory.getCurrentBaseCount() != null && inventory.getCurrentBaseCount() <= threshold) {
+      log.info("THRESHOLD REACHED — triggering INVENTORY_LOW event");
+      InventoryEventDto dto = inventoryMapper.toInventoryLowEventDto(inventory, threshold);
+      var eventDto = inventoryMapper.toNotificationEventDto(dto);
+      eventService.recordAndBroadcastInventoryLow(eventDto);
+    }
   }
 
   /**
