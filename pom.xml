@@ -37,7 +37,7 @@
          the Byte Buddy agent with -javaagent removes the dynamic attach entirely, as
          Mockito recommends for JDK 21+. The byte-buddy-agent test dependency below
          makes the ${net.bytebuddy:byte-buddy-agent:jar} property resolve in every
-         module, including those without Mockito. -->
+         module, including those without Mockito. is this good -->
     <dependencies>
         <dependency>
             <groupId>net.bytebuddy</groupId>
