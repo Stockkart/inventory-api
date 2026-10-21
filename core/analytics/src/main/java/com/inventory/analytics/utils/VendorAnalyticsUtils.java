@@ -1,12 +1,9 @@
 package com.inventory.analytics.utils;
 
 import com.inventory.analytics.rest.dto.response.*;
+import com.inventory.analytics.utils.AnalyticsSalesQueries.LineGroup;
 import com.inventory.product.domain.model.Inventory;
-import com.inventory.product.domain.model.Purchase;
-import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.pluginengine.VerticalFieldsReader;
-import com.inventory.product.domain.repository.InventoryRepository;
-import com.inventory.product.service.vertical.InventoryVerticalExtensionHandler;
 import com.inventory.user.domain.model.Vendor;
 import com.inventory.user.domain.repository.VendorRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -25,18 +22,29 @@ import java.util.stream.Collectors;
 public class VendorAnalyticsUtils {
 
   @Autowired
-  private InventoryRepository inventoryRepository;
-
-  @Autowired
-  private InventoryVerticalExtensionHandler inventoryVerticalExtensionHandler;
-
-  @Autowired
   private VendorRepository vendorRepository;
+
+  /** The vendors of these ids, read once per request. */
+  public Map<String, Vendor> vendorsById(Collection<String> vendorIds) {
+    Map<String, Vendor> out = new HashMap<>();
+    if (vendorIds.isEmpty()) {
+      return out;
+    }
+    for (Vendor v : vendorRepository.findAllById(vendorIds)) {
+      out.put(v.getId(), v);
+    }
+    return out;
+  }
 
   /**
    * Calculate vendor stock analytics.
    */
-  public List<VendorStockDto> calculateVendorStockAnalytics(String shopId, List<Inventory> allInventories, List<Purchase> purchases) {
+  public List<VendorStockDto> calculateVendorStockAnalytics(
+      List<Inventory> allInventories,
+      Map<String, Map<String, Object>> extensionByInventoryId,
+      List<LineGroup> groups,
+      Map<String, Inventory> lotsById,
+      Map<String, Vendor> vendorMapById) {
     Map<String, VendorStockData> vendorMap = new HashMap<>();
     Set<String> vendorIds = new HashSet<>();
 
@@ -47,11 +55,6 @@ public class VendorAnalyticsUtils {
       }
     }
 
-    // Get vendor details
-    Map<String, Vendor> vendorMapById = new HashMap<>();
-    for (String vendorId : vendorIds) {
-      vendorRepository.findById(vendorId).ifPresent(vendor -> vendorMapById.put(vendorId, vendor));
-    }
 
     // Initialize vendor data
     for (String vendorId : vendorIds) {
@@ -64,9 +67,6 @@ public class VendorAnalyticsUtils {
       vendorMap.put(vendorId, data);
     }
 
-    Map<String, Map<String, Object>> extensionByInventoryId =
-        inventoryVerticalExtensionHandler.loadExtensionFieldsBatch(
-            shopId, allInventories.stream().map(Inventory::getId).toList());
 
     // Process inventory
     for (Inventory inventory : allInventories) {
@@ -100,19 +100,15 @@ public class VendorAnalyticsUtils {
       }
     }
 
-    // Process purchases to get revenue
+    // Revenue per vendor from the period's lines
     Map<String, BigDecimal> vendorRevenueMap = new HashMap<>();
-    for (Purchase purchase : purchases) {
-      if (purchase.getItems() != null) {
-        for (PurchaseItem item : purchase.getItems()) {
-          Inventory inv = inventoryRepository.findById(item.getInventoryId()).orElse(null);
-          if (inv != null && inv.getVendorId() != null) {
-            BigDecimal itemRevenue = item.getPriceToRetail() != null
-                ? item.getPriceToRetail().multiply(getPricingQuantity(item))
-                : BigDecimal.ZERO;
-            vendorRevenueMap.merge(inv.getVendorId(), itemRevenue, BigDecimal::add);
-          }
-        }
+    for (LineGroup g : groups) {
+      Inventory inv = g.lotId() == null ? null : lotsById.get(g.lotId());
+      if (inv != null && inv.getVendorId() != null) {
+        BigDecimal itemRevenue = g.line().getPriceToRetail() != null
+            ? g.line().getPriceToRetail().multiply(g.pricingQuantity())
+            : BigDecimal.ZERO;
+        vendorRevenueMap.merge(inv.getVendorId(), g.times(itemRevenue), BigDecimal::add);
       }
     }
 
@@ -151,27 +147,19 @@ public class VendorAnalyticsUtils {
   /**
    * Calculate vendor revenue analytics.
    */
-  public List<VendorRevenueDto> calculateVendorRevenueAnalytics(String shopId, List<Purchase> purchases) {
+  public List<VendorRevenueDto> calculateVendorRevenueAnalytics(
+      List<LineGroup> groups, Map<String, Inventory> lotsById, Map<String, Vendor> vendorMapById) {
     Map<String, VendorRevenueData> vendorMap = new HashMap<>();
     Set<String> vendorIds = new HashSet<>();
 
-    // Collect vendor IDs from purchases
-    for (Purchase purchase : purchases) {
-      if (purchase.getItems() != null) {
-        for (PurchaseItem item : purchase.getItems()) {
-          Inventory inv = inventoryRepository.findById(item.getInventoryId()).orElse(null);
-          if (inv != null && inv.getVendorId() != null) {
-            vendorIds.add(inv.getVendorId());
-          }
-        }
+    // Collect vendor IDs from the period's lines
+    for (LineGroup g : groups) {
+      Inventory inv = g.lotId() == null ? null : lotsById.get(g.lotId());
+      if (inv != null && inv.getVendorId() != null) {
+        vendorIds.add(inv.getVendorId());
       }
     }
 
-    // Get vendor details
-    Map<String, Vendor> vendorMapById = new HashMap<>();
-    for (String vendorId : vendorIds) {
-      vendorRepository.findById(vendorId).ifPresent(vendor -> vendorMapById.put(vendorId, vendor));
-    }
 
     // Initialize vendor data
     for (String vendorId : vendorIds) {
@@ -184,32 +172,28 @@ public class VendorAnalyticsUtils {
       vendorMap.put(vendorId, data);
     }
 
-    // Process purchases
-    for (Purchase purchase : purchases) {
-      if (purchase.getItems() != null) {
-        for (PurchaseItem item : purchase.getItems()) {
-          Inventory inv = inventoryRepository.findById(item.getInventoryId()).orElse(null);
-          if (inv == null || inv.getVendorId() == null) continue;
+    // Process the period's lines (billIds: the distinct bills each group appears on)
+    for (LineGroup g : groups) {
+      Inventory inv = g.lotId() == null ? null : lotsById.get(g.lotId());
+      if (inv == null || inv.getVendorId() == null) continue;
 
-          VendorRevenueData data = vendorMap.get(inv.getVendorId());
-          if (data == null) continue;
+      VendorRevenueData data = vendorMap.get(inv.getVendorId());
+      if (data == null) continue;
 
-          Integer quantity = getBaseQuantity(item);
-          BigDecimal pricingQuantity = getPricingQuantity(item);
-          BigDecimal priceToRetail = item.getPriceToRetail() != null ? item.getPriceToRetail() : BigDecimal.ZERO;
-          BigDecimal costPrice = inv.costForValuation() != null ? inv.costForValuation() : BigDecimal.ZERO;
+      int quantity = g.baseQuantity();
+      BigDecimal pricingQuantity = g.pricingQuantity();
+      BigDecimal priceToRetail = g.line().getPriceToRetail() != null ? g.line().getPriceToRetail() : BigDecimal.ZERO;
+      BigDecimal costPrice = inv.costForValuation() != null ? inv.costForValuation() : BigDecimal.ZERO;
 
-          BigDecimal itemRevenue = priceToRetail.multiply(pricingQuantity);
-          BigDecimal itemCost = costPrice.multiply(pricingQuantity);
-          BigDecimal itemProfit = itemRevenue.subtract(itemCost);
+      BigDecimal itemRevenue = priceToRetail.multiply(pricingQuantity);
+      BigDecimal itemCost = costPrice.multiply(pricingQuantity);
+      BigDecimal itemProfit = itemRevenue.subtract(itemCost);
 
-          data.totalRevenue = data.totalRevenue.add(itemRevenue);
-          data.totalCost = data.totalCost.add(itemCost);
-          data.grossProfit = data.grossProfit.add(itemProfit);
-          data.totalItemsSold += quantity;
-          data.purchaseIds.add(purchase.getId());
-        }
-      }
+      data.totalRevenue = data.totalRevenue.add(g.times(itemRevenue));
+      data.totalCost = data.totalCost.add(g.times(itemCost));
+      data.grossProfit = data.grossProfit.add(g.times(itemProfit));
+      data.totalItemsSold += g.times(quantity);
+      data.purchaseIds.addAll(g.billIds());
     }
 
     // Build response
@@ -241,7 +225,10 @@ public class VendorAnalyticsUtils {
   /**
    * Calculate vendor performance analytics.
    */
-  public List<VendorPerformanceDto> calculateVendorPerformanceAnalytics(String shopId, List<Inventory> allInventories) {
+  public List<VendorPerformanceDto> calculateVendorPerformanceAnalytics(
+      List<Inventory> allInventories,
+      Map<String, Map<String, Object>> extensionByInventoryId,
+      Map<String, Vendor> vendorMapById) {
     Map<String, VendorPerformanceData> vendorMap = new HashMap<>();
     Set<String> vendorIds = new HashSet<>();
 
@@ -252,11 +239,6 @@ public class VendorAnalyticsUtils {
       }
     }
 
-    // Get vendor details
-    Map<String, Vendor> vendorMapById = new HashMap<>();
-    for (String vendorId : vendorIds) {
-      vendorRepository.findById(vendorId).ifPresent(vendor -> vendorMapById.put(vendorId, vendor));
-    }
 
     // Initialize vendor data
     for (String vendorId : vendorIds) {
@@ -270,9 +252,6 @@ public class VendorAnalyticsUtils {
     }
 
     Instant now = Instant.now();
-    Map<String, Map<String, Object>> extensionByInventoryId =
-        inventoryVerticalExtensionHandler.loadExtensionFieldsBatch(
-            shopId, allInventories.stream().map(Inventory::getId).toList());
 
     // Process inventory
     for (Inventory inventory : allInventories) {
@@ -390,27 +369,14 @@ public class VendorAnalyticsUtils {
   /**
    * Calculate category expiry analytics per vendor.
    */
-  public List<VendorCategoryExpiryDto> calculateCategoryExpiryAnalytics(String shopId, List<Inventory> allInventories) {
+  public List<VendorCategoryExpiryDto> calculateCategoryExpiryAnalytics(
+      List<Inventory> allInventories,
+      Map<String, Map<String, Object>> extensionByInventoryId,
+      Map<String, Vendor> vendorMapById) {
     Map<String, CategoryExpiryData> categoryMap = new HashMap<>();
-    Set<String> vendorIds = new HashSet<>();
 
-    // Collect vendor IDs
-    for (Inventory inventory : allInventories) {
-      if (inventory.getVendorId() != null) {
-        vendorIds.add(inventory.getVendorId());
-      }
-    }
-
-    // Get vendor details
-    Map<String, Vendor> vendorMapById = new HashMap<>();
-    for (String vendorId : vendorIds) {
-      vendorRepository.findById(vendorId).ifPresent(vendor -> vendorMapById.put(vendorId, vendor));
-    }
 
     Instant now = Instant.now();
-    Map<String, Map<String, Object>> extensionByInventoryId =
-        inventoryVerticalExtensionHandler.loadExtensionFieldsBatch(
-            shopId, allInventories.stream().map(Inventory::getId).toList());
 
     // Process inventory
     for (Inventory inventory : allInventories) {
@@ -651,29 +617,6 @@ public class VendorAnalyticsUtils {
           .intValue();
     }
     return 0;
-  }
-
-  private int getBaseQuantity(PurchaseItem item) {
-    if (item.getBaseQuantity() != null) {
-      return item.getBaseQuantity();
-    }
-    if (item.getQuantity() == null) {
-      return 0;
-    }
-    int factor = item.getUnitFactor() != null && item.getUnitFactor() > 0 ? item.getUnitFactor() : 1;
-    return item.getQuantity().multiply(BigDecimal.valueOf(factor)).setScale(0, RoundingMode.HALF_UP).intValue();
-  }
-
-  private BigDecimal getPricingQuantity(PurchaseItem item) {
-    if (item.getQuantity() != null) {
-      return item.getQuantity();
-    }
-    if (item.getBaseQuantity() != null) {
-      int factor = item.getUnitFactor() != null && item.getUnitFactor() > 0 ? item.getUnitFactor() : 1;
-      return BigDecimal.valueOf(item.getBaseQuantity())
-          .divide(BigDecimal.valueOf(factor), 4, RoundingMode.HALF_UP);
-    }
-    return BigDecimal.ZERO;
   }
 
   private int getDisplayToBaseFactor(Inventory inventory) {
