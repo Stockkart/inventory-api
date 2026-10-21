@@ -23,6 +23,7 @@ import com.inventory.product.rest.dto.response.RefundListResponse;
 import com.inventory.product.rest.dto.response.RefundResponse;
 import com.inventory.product.rest.dto.response.RefundSummaryDto;
 import com.inventory.product.rest.dto.response.RefundSummaryItemDto;
+import com.inventory.product.utils.CreditNoteFigures;
 import com.inventory.product.utils.constants.ProductMetricsConstants;
 import com.inventory.product.validation.CheckoutValidator;
 import com.inventory.product.service.vertical.ShopCapabilityService;
@@ -766,6 +767,15 @@ public class RefundService {
       dto.setRefundedItems(
           lineItems.stream().map(this::toRefundSummaryItemDto).collect(Collectors.toList()));
     }
+    // The same figures the printed credit note states, so history and paper agree.
+    CreditNoteFigures.Totals totals = CreditNoteFigures.totals(refund, lineItems);
+    dto.setTaxableTotal(totals.taxableTotal());
+    dto.setCgstAmount(totals.cgstAmount());
+    dto.setSgstAmount(totals.sgstAmount());
+    dto.setIgstAmount(totals.igstAmount());
+    dto.setTaxTotal(totals.taxTotal());
+    dto.setRoundOff(totals.roundOff());
+    dto.setInterstate(Boolean.TRUE.equals(refund.getInterstate()));
 
     // Fetch purchase details to get invoice number and customer info
     purchaseRepository.findById(refund.getPurchaseId()).ifPresent(purchase -> {
@@ -807,6 +817,7 @@ public class RefundService {
     dto.setSaleAdditionalDiscount(item.getSaleAdditionalDiscount());
     dto.setSgst(item.getSgst());
     dto.setCgst(item.getCgst());
+    dto.setGstRatePct(CreditNoteFigures.lineRatePct(item.getCgst(), item.getSgst()));
     dto.setSchemeType(item.getSchemeType() != null ? item.getSchemeType().name() : null);
     dto.setSchemePayFor(item.getSchemePayFor());
     dto.setSchemeFree(item.getSchemeFree());
@@ -814,6 +825,7 @@ public class RefundService {
     dto.setTaxableValue(item.getTaxableValue());
     dto.setCgstAmount(item.getCgstAmount());
     dto.setSgstAmount(item.getSgstAmount());
+    dto.setIgstAmount(item.getIgstAmount());
     return dto;
   }
 }

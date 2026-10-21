@@ -16,13 +16,13 @@ import com.inventory.product.domain.repository.PurchaseRepository;
 import com.inventory.product.domain.repository.RefundRepository;
 import com.inventory.product.service.PurchaseCustomerRequests;
 import com.inventory.product.utils.AmountToWordsConverter;
+import com.inventory.product.utils.CreditNoteFigures;
 import com.inventory.user.domain.model.Customer;
 import com.inventory.user.service.CustomerService;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -109,35 +109,18 @@ public class CustomerRefundCreditNoteAssembler implements CreditNoteDocumentAsse
     List<CreditNoteItem> items = mapItems(refund);
     request.setItems(items);
 
-    BigDecimal taxable = nz(refund.getTaxableTotal());
-    BigDecimal cgst = nz(refund.getCgstAmount());
-    BigDecimal sgst = nz(refund.getSgstAmount());
-    BigDecimal igst = nz(refund.getIgstAmount());
-    if (taxable.signum() == 0 && !items.isEmpty()) {
-      for (CreditNoteItem item : items) {
-        taxable = taxable.add(nz(item.getTaxableValue()));
-        cgst = cgst.add(nz(item.getCgstAmount()));
-        sgst = sgst.add(nz(item.getSgstAmount()));
-      }
-    }
-    BigDecimal grand = nz(refund.getRefundAmount());
-    BigDecimal taxTotal = cgst.add(sgst).add(igst);
-    BigDecimal roundOff = nz(refund.getRoundOff());
-    if (roundOff.signum() == 0 && taxable.signum() > 0) {
-      roundOff = grand.subtract(taxable.add(taxTotal)).setScale(2, RoundingMode.HALF_UP);
-    }
-
-    request.setTaxableTotal(taxable.setScale(2, RoundingMode.HALF_UP));
-    request.setCgstAmount(cgst.setScale(2, RoundingMode.HALF_UP));
-    request.setSgstAmount(sgst.setScale(2, RoundingMode.HALF_UP));
+    CreditNoteFigures.Totals totals = CreditNoteFigures.totals(refund, refund.getRefundedItems());
+    request.setTaxableTotal(totals.taxableTotal());
+    request.setCgstAmount(totals.cgstAmount());
+    request.setSgstAmount(totals.sgstAmount());
     // A return of an interstate sale reverses IGST, and the note states it under that head.
-    request.setIgstAmount(igst.setScale(2, RoundingMode.HALF_UP));
+    request.setIgstAmount(totals.igstAmount());
     request.setInterstate(Boolean.TRUE.equals(refund.getInterstate()));
-    request.setTaxTotal(taxTotal.setScale(2, RoundingMode.HALF_UP));
-    request.setRoundOff(roundOff);
-    request.setGrandTotal(grand.setScale(2, RoundingMode.HALF_UP));
+    request.setTaxTotal(totals.taxTotal());
+    request.setRoundOff(totals.roundOff());
+    request.setGrandTotal(totals.grandTotal());
     applyTaxPercents(request, items);
-    request.setAmountInWords(AmountToWordsConverter.convertAmountToWords(grand));
+    request.setAmountInWords(AmountToWordsConverter.convertAmountToWords(totals.grandTotal()));
 
     return request;
   }
@@ -221,7 +204,7 @@ public class CustomerRefundCreditNoteAssembler implements CreditNoteDocumentAsse
                   requestSupport.applyBatchAndExpiry(item, inv);
                 });
       }
-      item.setGstPercent(sumAmountsAsPercent(item.getCgst(), item.getSgst()));
+      item.setGstPercent(CreditNoteFigures.lineRatePct(item.getCgst(), item.getSgst()));
       out.add(item);
     }
     return out;
@@ -269,22 +252,4 @@ public class CustomerRefundCreditNoteAssembler implements CreditNoteDocumentAsse
     }
   }
 
-  private static BigDecimal sumAmountsAsPercent(String cgst, String sgst) {
-    return parseRate(cgst).add(parseRate(sgst));
-  }
-
-  private static BigDecimal parseRate(String rate) {
-    if (!StringUtils.hasText(rate)) {
-      return BigDecimal.ZERO;
-    }
-    try {
-      return new BigDecimal(rate.trim());
-    } catch (NumberFormatException e) {
-      return BigDecimal.ZERO;
-    }
-  }
-
-  private static BigDecimal nz(BigDecimal v) {
-    return v != null ? v : BigDecimal.ZERO;
-  }
 }
