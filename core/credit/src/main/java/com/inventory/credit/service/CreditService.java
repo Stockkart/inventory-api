@@ -25,7 +25,12 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -171,43 +176,64 @@ public class CreditService {
    */
   @Transactional(readOnly = true)
   public List<CreditAccountResponse> listAccountResponses(String shopId) {
-    return listAccounts(shopId).stream()
-        .map(CreditMapper::toResponse)
-        .map(this::enrichAccountResponse)
-        .toList();
+    List<CreditAccountResponse> rows =
+        listAccounts(shopId).stream().map(CreditMapper::toResponse).toList();
+    // one read per party type for the whole list (was one read per account)
+    Map<String, String> customerNames =
+        namesById(rows, CreditPartyType.CUSTOMER, ids -> customerRepository.findAllById(ids),
+            Customer::getId, Customer::getName);
+    Map<String, String> vendorNames =
+        namesById(rows, CreditPartyType.VENDOR, ids -> vendorRepository.findAllById(ids),
+            Vendor::getId, Vendor::getName);
+    rows.forEach(r -> enrichAccountResponse(r, customerNames, vendorNames));
+    return rows;
   }
 
-  private CreditAccountResponse enrichAccountResponse(CreditAccountResponse r) {
+  /** Trimmed, non-blank names of the given type's parties, keyed by id; parties not found are absent. */
+  private static <T> Map<String, String> namesById(
+      List<CreditAccountResponse> rows,
+      CreditPartyType type,
+      Function<Set<String>, Iterable<T>> load,
+      Function<T, String> id,
+      Function<T, String> name) {
+    Set<String> ids = new HashSet<>();
+    for (CreditAccountResponse r : rows) {
+      if (r.getPartyType() == type && StringUtils.hasText(r.getPartyId())) {
+        ids.add(r.getPartyId().trim());
+      }
+    }
+    Map<String, String> out = new HashMap<>();
+    if (ids.isEmpty()) {
+      return out;
+    }
+    for (T party : load.apply(ids)) {
+      String n = name.apply(party);
+      if (id.apply(party) != null && StringUtils.hasText(n)) {
+        out.put(id.apply(party), n.trim());
+      }
+    }
+    return out;
+  }
+
+  private void enrichAccountResponse(
+      CreditAccountResponse r, Map<String, String> customerNames, Map<String, String> vendorNames) {
     if (r.getPartyType() == CreditPartyType.CUSTOMER && StringUtils.hasText(r.getPartyId())) {
       String pid = r.getPartyId().trim();
-      customerRepository
-          .findById(pid)
-          .map(Customer::getName)
-          .filter(StringUtils::hasText)
-          .map(String::trim)
-          .ifPresentOrElse(
-              r::setPartyDisplayName,
-              () -> {
-                if (isCustomerIdFallbackLabel(r.getPartyDisplayName(), pid)) {
-                  r.setPartyDisplayName("Customer");
-                }
-              });
+      String found = customerNames.get(pid);
+      if (found != null) {
+        r.setPartyDisplayName(found);
+      } else if (isCustomerIdFallbackLabel(r.getPartyDisplayName(), pid)) {
+        r.setPartyDisplayName("Customer");
+      }
     } else if (r.getPartyType() == CreditPartyType.VENDOR && StringUtils.hasText(r.getPartyId())) {
       String pid = r.getPartyId().trim();
-      vendorRepository
-          .findById(pid)
-          .map(Vendor::getName)
-          .filter(StringUtils::hasText)
-          .map(String::trim)
-          .ifPresentOrElse(
-              r::setPartyDisplayName,
-              () -> {
-                if (isVendorIdFallbackLabel(r.getPartyDisplayName(), pid)) {
-                  r.setPartyDisplayName("Vendor");
-                }
-              });
+      String found = vendorNames.get(pid);
+      if (found != null) {
+        r.setPartyDisplayName(found);
+      } else if (isVendorIdFallbackLabel(r.getPartyDisplayName(), pid)) {
+        r.setPartyDisplayName("Vendor");
+      }
     }
-    return r;
   }
 
   private static boolean isCustomerIdFallbackLabel(String displayName, String partyId) {
