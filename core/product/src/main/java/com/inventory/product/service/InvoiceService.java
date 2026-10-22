@@ -15,12 +15,10 @@ import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.product.domain.model.enums.SchemeType;
 import com.inventory.product.domain.model.Shop;
-import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.PurchaseRepository;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.pluginengine.VerticalFieldsReader;
 import com.inventory.product.service.estimate.EstimateInventoryPolicy;
-import com.inventory.product.service.vertical.InventoryVerticalExtensionHandler;
 import com.inventory.product.utils.constants.ProductMetricsConstants;
 import com.inventory.product.utils.AmountToWordsConverter;
 import com.inventory.product.utils.SaleTaxBreakdown;
@@ -58,11 +56,7 @@ public class InvoiceService {
   private ShopRepository shopRepository;
 
   @Autowired
-  private InventoryRepository inventoryRepository;
-
-  @Autowired
-  private com.inventory.product.service.vertical.InventoryVerticalExtensionHandler
-      inventoryVerticalExtensionHandler;
+  private DocumentLots documentLots;
 
   @Autowired
   private CustomerService customerService;
@@ -312,6 +306,13 @@ public class InvoiceService {
 
     List<InvoiceItem> invoiceItems = new ArrayList<>();
     if (purchase.getItems() != null) {
+      // Every line's lot and its vertical fields, read once for the bill (product and pricing are
+      // filled in by the repository's read aspects in one batch each), not four reads per line.
+      List<String> lotIds = new ArrayList<>();
+      for (PurchaseItem line : purchase.getItems()) {
+        lotIds.add(line.getInventoryId());
+      }
+      DocumentLots.Loaded lots = documentLots.load(lotIds);
       for (PurchaseItem purchaseItem : purchase.getItems()) {
         InvoiceItem invoiceItem = new InvoiceItem();
         invoiceItem.setQuantity(purchaseItem.getQuantity());
@@ -349,12 +350,10 @@ public class InvoiceService {
         invoiceItem.setExpiryDate(purchaseItem.getExpiryDate());
 
         if (purchaseItem.getInventoryId() != null) {
-          Optional<Inventory> inventoryOpt = inventoryRepository.findById(purchaseItem.getInventoryId());
+          Optional<Inventory> inventoryOpt = lots.lot(purchaseItem.getInventoryId());
           if (inventoryOpt.isPresent()) {
             Inventory inventory = inventoryOpt.get();
-            Map<String, Object> extensionFields =
-                inventoryVerticalExtensionHandler.loadExtensionFields(
-                    inventory.getShopId(), inventory.getId());
+            Map<String, Object> extensionFields = lots.extensionFields(inventory);
             if (!StringUtils.hasText(invoiceItem.getHsn())) {
               invoiceItem.setHsn(inventory.getHsn());
             }

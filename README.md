@@ -253,7 +253,9 @@ Shops are bound to a **vertical** (`Shop.verticalId` + `Shop.pluginVersion`). Fi
 
 **Return history states the credit note's figures.** `GET /api/v1/refund` gives each return `taxableTotal`, `cgstAmount`, `sgstAmount`, `igstAmount`, `taxTotal`, `roundOff` and `interstate` beside `refundAmount` (the grand total), and each line `gstRatePct` (CGST + SGST rate, e.g. 5) and `igstAmount`. They come from `CreditNoteFigures` (`core/product/.../utils`), which the printed credit note also reads, so the screen and the paper cannot disagree. A refund saved before its header carried totals is stated from its lines, and its round-off is whatever separates the refund from taxable value plus tax.
 
-**Purchase tax basis.** GSTR-2 and the purchase journal both take each supplier invoice's tax from `PurchaseTaxBasisResolver` (`core/product/.../utils`), which works it out from the lines: quantity × cost after the percentage scheme and additional discount (free units do not reduce it), less the bill-level discount shared across lines by value, then tax at each lot's rate added on top, or taken out for a bill marked `INCLUSIVE`.
+**Purchase tax basis.** GSTR-2 and the purchase journal both take each supplier invoice's tax from `PurchaseTaxBasisResolver` (`core/product/.../utils`), which works it out from the lines: quantity × cost after the purchase scheme and additional discount, less the bill-level discount shared across lines by value, then tax at each lot's rate added on top, or taken out for a bill marked `INCLUSIVE`.
+
+A deal ratio counts as a scheme: the line count is everything received, so "19+1" makes the line `count × cost × 19/20`. MAHAMAYA A012392 bills 20 at 121.90 less 19+1 less 8% as 2130.81 taxable, and 600 received as 540 paid + 60 free under 9+1 is taxed on the 540. Bills stocked in from 2026-10-04 until this fix left the deal ratio out, so their stored taxable value and tax are overstated.
 
 **Purchase tax at stock-in.** `POST /api/v1/inventory/bulk` with a `vendorPurchaseInvoice` header:
 
