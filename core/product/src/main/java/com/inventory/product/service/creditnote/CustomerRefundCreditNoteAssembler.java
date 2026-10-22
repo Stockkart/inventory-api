@@ -5,6 +5,7 @@ import com.inventory.common.exception.ValidationException;
 import com.inventory.documentservice.rest.dto.CreditNoteItem;
 import com.inventory.product.domain.model.enums.SchemeType;
 import com.inventory.documentservice.rest.dto.GenerateCreditNoteRequest;
+import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.Refund;
 import com.inventory.product.domain.model.RefundItem;
@@ -27,8 +28,12 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Assembles printable credit notes from customer sales returns ({@link Refund}).
@@ -181,6 +186,23 @@ public class CustomerRefundCreditNoteAssembler implements CreditNoteDocumentAsse
     if (refund.getRefundedItems() == null) {
       return out;
     }
+    // The note's lots and their vertical fields, read once for the note rather than per line
+    Set<String> lotIds = new LinkedHashSet<>();
+    for (RefundItem line : refund.getRefundedItems()) {
+      if (line != null && StringUtils.hasText(line.getInventoryId())) {
+        lotIds.add(line.getInventoryId().trim());
+      }
+    }
+    Map<String, Inventory> lots = new HashMap<>();
+    if (!lotIds.isEmpty()) {
+      for (Inventory inv : inventoryRepository.findAllById(lotIds)) {
+        if (inv != null && inv.getId() != null) {
+          lots.put(inv.getId(), inv);
+        }
+      }
+    }
+    Map<String, Map<String, Object>> fieldsByLot = requestSupport.extensionFields(lots.values());
+
     for (RefundItem line : refund.getRefundedItems()) {
       if (line == null) {
         continue;
@@ -212,14 +234,12 @@ public class CustomerRefundCreditNoteAssembler implements CreditNoteDocumentAsse
       item.setSgst(line.getSgst());
 
       if (StringUtils.hasText(line.getInventoryId())) {
-        inventoryRepository
-            .findById(line.getInventoryId().trim())
-            .ifPresent(
-                inv -> {
-                  item.setHsn(inv.getHsn());
-                  item.setCompanyName(inv.getCompanyName());
-                  requestSupport.applyBatchAndExpiry(item, inv);
-                });
+        Inventory inv = lots.get(line.getInventoryId().trim());
+        if (inv != null) {
+          item.setHsn(inv.getHsn());
+          item.setCompanyName(inv.getCompanyName());
+          requestSupport.applyBatchAndExpiry(item, fieldsByLot.getOrDefault(inv.getId(), Map.of()));
+        }
       }
       item.setGstPercent(sumAmountsAsPercent(item.getCgst(), item.getSgst()));
       out.add(item);
