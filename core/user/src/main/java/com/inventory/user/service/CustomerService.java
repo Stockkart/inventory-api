@@ -65,6 +65,9 @@ public class CustomerService {
   private MetricsWrapper metrics;
 
   /** Absent when the taxation module is not on the classpath; customers then stay unverified. */
+  @Autowired
+  private ShopPartySearch shopPartySearch;
+
   @Autowired(required = false)
   private GstinDirectory gstinDirectory;
 
@@ -351,29 +354,14 @@ public class CustomerService {
 
   private CustomerListResponse getCustomersByQuery(
       String shopId, int page, int limit, String query, Pageable pageable) {
-    List<String> shopCustomerIds = shopCustomerRepository.findByShopId(shopId).stream()
-        .map(ShopCustomer::getCustomerId)
-        .toList();
-    if (shopCustomerIds.isEmpty()) {
+    // matched, ordered and paged in MongoDB over this shop's customers only
+    ShopPartySearch.CustomerPage found = shopPartySearch.customersMatching(shopId, query, page, limit);
+    if (found.total() == 0) {
       return new CustomerListResponse(List.of(), page, limit, 0, 0);
     }
-    List<Customer> matching = customerRepository.searchByQuery(query);
-    List<Customer> shopCustomers = matching.stream()
-        .filter(c -> shopCustomerIds.contains(c.getId()))
-        .filter(c -> !c.isGeneralCustomer())
-        .sorted((a, b) -> (b.getUpdatedAt() != null ? b.getUpdatedAt() : b.getCreatedAt())
-            .compareTo(a.getUpdatedAt() != null ? a.getUpdatedAt() : a.getCreatedAt()))
-        .toList();
-    if (shopCustomers.isEmpty()) {
-      return new CustomerListResponse(List.of(), page, limit, 0, 0);
-    }
-    long total = shopCustomers.size();
-    int totalPages = (int) Math.ceil((double) total / limit);
-    int from = page * limit;
-    int to = Math.min(from + limit, shopCustomers.size());
-    List<Customer> paged = from < shopCustomers.size() ? shopCustomers.subList(from, to) : List.of();
-    List<CustomerDto> dtos = paged.stream().map(customerMapper::toDto).toList();
-    return new CustomerListResponse(dtos, page, limit, total, totalPages);
+    int totalPages = (int) Math.ceil((double) found.total() / limit);
+    List<CustomerDto> dtos = found.customers().stream().map(customerMapper::toDto).toList();
+    return new CustomerListResponse(dtos, page, limit, found.total(), totalPages);
   }
 
   public CustomerDto updateCustomer(String customerId, String shopId, UpdateCustomerRequest request) {
@@ -432,16 +420,19 @@ public class CustomerService {
     if (!StringUtils.hasText(query)) {
       return List.of();
     }
-    List<String> shopCustomerIds =
-        shopCustomerRepository.findByShopId(shopId).stream().map(ShopCustomer::getCustomerId).toList();
-    if (shopCustomerIds.isEmpty()) {
+    return shopPartySearch.customerIdsMatching(shopId, query.trim(), false);
+  }
+
+  /**
+   * Shop-scoped customer ids matching {@code query}, the walk-in placeholder included (what the
+   * bill-history customer filter has always matched).
+   */
+  @Transactional(readOnly = true)
+  public List<String> findShopCustomerIdsMatchingQueryIncludingGeneral(String shopId, String query) {
+    if (!StringUtils.hasText(query)) {
       return List.of();
     }
-    return customerRepository.searchByQuery(query.trim()).stream()
-        .filter(c -> shopCustomerIds.contains(c.getId()))
-        .filter(c -> !c.isGeneralCustomer())
-        .map(Customer::getId)
-        .toList();
+    return shopPartySearch.customerIdsMatching(shopId, query.trim(), true);
   }
 
   /**

@@ -61,6 +61,9 @@ public class VendorService {
   @Autowired
   private UserAccountRepository userAccountRepository;
 
+  @Autowired
+  private ShopPartySearch shopPartySearch;
+
   @Autowired(required = false)
   private UserShopMembershipService membershipService;
 
@@ -165,24 +168,18 @@ public class VendorService {
    */
   @Transactional(readOnly = true)
   public List<Vendor> searchVendors(String shopId, String query) {
-    // Get all vendor IDs for this shop
-    List<String> vendorIds = shopVendorRepository.findByShopId(shopId).stream()
-        .map(ShopVendor::getVendorId)
-        .collect(Collectors.toList());
-
-    if (vendorIds.isEmpty()) {
-      return List.of();
-    }
-
-    // If query provided, search vendors and filter by shop's vendors
+    // If query provided, search this shop's vendors only (in MongoDB)
     if (StringUtils.hasText(query)) {
-      List<Vendor> allMatchingVendors = vendorRepository.searchByQuery(query.trim());
-      return allMatchingVendors.stream()
-          .filter(v -> vendorIds.contains(v.getId()))
-          .collect(Collectors.toList());
+      return shopPartySearch.vendorsMatching(shopId, query.trim());
     }
 
     // If no query, return all vendors for the shop
+    List<String> vendorIds = shopVendorRepository.findByShopId(shopId).stream()
+        .map(ShopVendor::getVendorId)
+        .collect(Collectors.toList());
+    if (vendorIds.isEmpty()) {
+      return List.of();
+    }
     return vendorRepository.findAllById(vendorIds);
   }
 
