@@ -32,9 +32,21 @@ public class InventoryAnalyticsUtils {
       Integer lowStockThreshold,
       Integer deadStockDays,
       Integer expiringSoonDays) {
+    return calculateInventoryAnalytics(
+        shopId, allInventories, getLastSoldDates(shopId), Instant.now(),
+        lowStockThreshold, deadStockDays, expiringSoonDays);
+  }
 
-    Map<String, Instant> lastSoldDates = getLastSoldDates(shopId);
-    Instant now = Instant.now();
+  /** As above with the shop's last-sold dates and "now" given (one read and one clock for a whole pass). */
+  public List<InventoryAnalyticsDto> calculateInventoryAnalytics(
+      String shopId,
+      List<Inventory> allInventories,
+      Map<String, Instant> lastSoldDates,
+      Instant now,
+      Integer lowStockThreshold,
+      Integer deadStockDays,
+      Integer expiringSoonDays) {
+
     Map<String, Map<String, Object>> extensionByInventoryId =
         inventoryVerticalExtensionHandler.loadExtensionFieldsBatch(
             shopId, allInventories.stream().map(Inventory::getId).toList());
@@ -149,7 +161,7 @@ public class InventoryAnalyticsUtils {
   }
 
   /** Latest sale time per lot, from one MongoDB aggregation (was: every completed bill loaded). */
-  private Map<String, Instant> getLastSoldDates(String shopId) {
+  public Map<String, Instant> getLastSoldDates(String shopId) {
     return salesQueries.lastSoldByLot(shopId);
   }
 

@@ -6,7 +6,9 @@ import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.analytics.mapper.VendorAnalyticsMapper;
 import com.inventory.analytics.mapper.VendorAnalyticsResponseParams;
+import com.inventory.analytics.utils.ShopLotBatches;
 import com.inventory.analytics.utils.VendorAnalyticsUtils;
+import com.inventory.analytics.utils.VendorLotTotals;
 import com.inventory.analytics.utils.AnalyticsSalesQueries;
 import com.inventory.analytics.utils.AnalyticsSalesQueries.LineGroup;
 import com.inventory.analytics.utils.constants.AnalyticsMetricsConstants;
@@ -15,9 +17,7 @@ import com.inventory.analytics.rest.dto.response.VendorAnalyticsResponse;
 import com.inventory.analytics.rest.dto.response.VendorDependencyDto;
 import com.inventory.analytics.rest.dto.response.VendorRevenueDto;
 import com.inventory.product.domain.model.Inventory;
-import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.user.domain.model.Vendor;
-import com.inventory.pluginengine.VerticalFieldsReader;
 import com.inventory.product.service.vertical.InventoryVerticalExtensionHandler;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -52,7 +52,7 @@ public class VendorAnalyticsService {
   private VendorAnalyticsMapper vendorAnalyticsMapper;
 
   @Autowired
-  private InventoryRepository inventoryRepository;
+  private ShopLotBatches shopLots;
 
   @Autowired
   private InventoryVerticalExtensionHandler inventoryVerticalExtensionHandler;
@@ -99,33 +99,39 @@ public class VendorAnalyticsService {
 
       log.debug("Getting vendor analytics for shop: {} from {} to {}", shopId, startDate, endDate);
 
-      // The shop's lots, only the fields this tab reads (names and prices hydrated as usual)
-      List<Inventory> allInventories = inventoryRepository.findAnalyticsLotsByShopId(shopId);
-
       // Period's lines grouped by MongoDB (with the bills each group is on, for bill counts)
       List<LineGroup> lines = salesQueries.lineGroups(shopId, startDate, endDate, null, true);
       long bills = salesQueries.billTotals(shopId, startDate, endDate).bills();
-
-      // Lots by id: the shop's lots are already loaded; read only sold lots not among them
-      Map<String, Inventory> lotsById = new HashMap<>();
-      for (Inventory inv : allInventories) {
-        lotsById.put(inv.getId(), inv);
-      }
-      Set<String> missing = new LinkedHashSet<>();
+      Set<String> soldLotIds = new LinkedHashSet<>();
       for (LineGroup g : lines) {
-        if (StringUtils.hasText(g.lotId()) && !lotsById.containsKey(g.lotId())) {
-          missing.add(g.lotId());
+        if (StringUtils.hasText(g.lotId())) {
+          soldLotIds.add(g.lotId());
+        }
+      }
+
+      // The shop's lots, a batch at a time: per-vendor stock totals, and the lots sold from kept
+      VendorLotTotals totals = new VendorLotTotals(soldLotIds, Instant.now());
+      shopLots.forEach(shopId, batch -> {
+        Map<String, Map<String, Object>> extensionByInventoryId =
+            inventoryVerticalExtensionHandler.loadExtensionFieldsBatch(
+                shopId, batch.stream().map(Inventory::getId).toList());
+        for (Inventory inv : batch) {
+          totals.add(inv, extensionByInventoryId.getOrDefault(inv.getId(), Map.of()));
+        }
+      });
+
+      // Lots by id: sold lots of this shop are kept; read only sold lots not among them
+      Map<String, Inventory> lotsById = new HashMap<>(totals.soldLots());
+      Set<String> missing = new LinkedHashSet<>();
+      for (String lotId : soldLotIds) {
+        if (!lotsById.containsKey(lotId)) {
+          missing.add(lotId);
         }
       }
       lotsById.putAll(salesQueries.lots(missing));
 
-      // Vendors and vertical extension fields, read once for all sections
-      Set<String> vendorIds = new HashSet<>();
-      for (Inventory inv : allInventories) {
-        if (inv.getVendorId() != null) {
-          vendorIds.add(inv.getVendorId());
-        }
-      }
+      // Vendors, read once for all sections
+      Set<String> vendorIds = new HashSet<>(totals.vendorIds());
       for (LineGroup g : lines) {
         Inventory inv = g.lotId() == null ? null : lotsById.get(g.lotId());
         if (inv != null && inv.getVendorId() != null) {
@@ -133,63 +139,32 @@ public class VendorAnalyticsService {
         }
       }
       Map<String, Vendor> vendors = vendorUtils.vendorsById(vendorIds);
-      Map<String, Map<String, Object>> extensionByInventoryId =
-          inventoryVerticalExtensionHandler.loadExtensionFieldsBatch(
-              shopId, allInventories.stream().map(Inventory::getId).toList());
 
       // Stock analytics
-      var vendorStockAnalytics = vendorUtils.calculateVendorStockAnalytics(
-          allInventories, extensionByInventoryId, lines, lotsById, vendors);
+      var vendorStockAnalytics = vendorUtils.calculateVendorStockAnalytics(totals, lines, lotsById, vendors);
 
       // Revenue analytics
       List<VendorRevenueDto> vendorRevenues = vendorUtils.calculateVendorRevenueAnalytics(lines, lotsById, vendors);
 
       // Performance analytics
-      var vendorPerformanceAnalytics = vendorUtils.calculateVendorPerformanceAnalytics(
-          allInventories, extensionByInventoryId, vendors);
+      var vendorPerformanceAnalytics = vendorUtils.calculateVendorPerformanceAnalytics(totals, vendors);
 
       // Category expiry analytics
-      var categoryExpiryAnalytics = vendorUtils.calculateCategoryExpiryAnalytics(
-          allInventories, extensionByInventoryId, vendors);
+      var categoryExpiryAnalytics = vendorUtils.calculateCategoryExpiryAnalytics(totals, vendors);
 
       // Dependency analytics
-      List<VendorDependencyDto> dependencies = vendorUtils.calculateVendorDependencyAnalytics(shopId, vendorRevenues, allInventories);
+      List<VendorDependencyDto> dependencies = vendorUtils.calculateVendorDependencyAnalytics(vendorRevenues, totals);
 
-      // Calculate overall summary
-      BigDecimal totalInventoryValue = allInventories.stream()
-          .map(inv -> {
-            Integer current = getCurrentBaseCount(inv);
-            BigDecimal costPrice = inv.costForValuation() != null ? inv.costForValuation() : BigDecimal.ZERO;
-            return costPrice.multiply(BigDecimal.valueOf(current));
-          })
-          .reduce(BigDecimal.ZERO, BigDecimal::add);
+      // Calculate overall summary (stock value = cost x current over all lots)
+      BigDecimal totalInventoryValue = totals.totalValue();
 
       BigDecimal totalRevenue = vendorRevenues.stream()
           .map(VendorRevenueDto::getTotalRevenue)
           .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-      BigDecimal totalExpiredStockValue = allInventories.stream()
-          .filter(
-              inv -> {
-                Instant expiry =
-                    VerticalFieldsReader.expiryDateFrom(
-                        extensionByInventoryId.getOrDefault(inv.getId(), Map.of()));
-                return expiry != null && expiry.isBefore(Instant.now());
-              })
-          .map(inv -> {
-            Integer current = getCurrentBaseCount(inv);
-            BigDecimal costPrice = inv.costForValuation() != null ? inv.costForValuation() : BigDecimal.ZERO;
-            return costPrice.multiply(BigDecimal.valueOf(current));
-          })
-          .reduce(BigDecimal.ZERO, BigDecimal::add);
+      BigDecimal totalExpiredStockValue = totals.expiredValue();
 
-      BigDecimal totalUnsoldStockValue = allInventories.stream()
-          .map(inv -> {
-            Integer current = getCurrentBaseCount(inv);
-            BigDecimal costPrice = inv.costForValuation() != null ? inv.costForValuation() : BigDecimal.ZERO;
-            return costPrice.multiply(BigDecimal.valueOf(current));
-          })
-          .reduce(BigDecimal.ZERO, BigDecimal::add);
+      BigDecimal totalUnsoldStockValue = totals.totalValue();
 
       // Calculate top vendor percentages
       BigDecimal topVendorRevenuePercent = BigDecimal.ZERO;
@@ -234,7 +209,7 @@ public class VendorAnalyticsService {
           .mostDependentVendorName(mostDependentVendorName)
           .startDate(startDate)
           .endDate(endDate)
-          .totalInventories(allInventories.size())
+          .totalInventories(totals.lots())
           .totalPurchases(Math.toIntExact(bills))
           .build();
 
@@ -251,27 +226,4 @@ public class VendorAnalyticsService {
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Failed to retrieve vendor analytics", e);
     }
   }
-
-  private int getCurrentBaseCount(Inventory inventory) {
-    if (inventory.getCurrentBaseCount() != null) {
-      return inventory.getCurrentBaseCount();
-    }
-    if (inventory.getCurrentCount() != null) {
-      return inventory.getCurrentCount()
-          .multiply(BigDecimal.valueOf(getDisplayToBaseFactor(inventory)))
-          .setScale(0, RoundingMode.HALF_UP)
-          .intValue();
-    }
-    return 0;
-  }
-
-  private int getDisplayToBaseFactor(Inventory inventory) {
-    if (inventory.getUnitConversions() == null
-        || inventory.getUnitConversions().getFactor() == null
-        || inventory.getUnitConversions().getFactor() <= 0) {
-      return 1;
-    }
-    return inventory.getUnitConversions().getFactor();
-  }
 }
-

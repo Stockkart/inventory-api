@@ -6,14 +6,17 @@ import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.analytics.mapper.InventoryAnalyticsMapper;
 import com.inventory.analytics.mapper.InventoryAnalyticsResponseParams;
+import com.inventory.analytics.utils.InventoryAnalyticsScan;
+import com.inventory.analytics.utils.InventoryAnalyticsScan.ListKind;
 import com.inventory.analytics.utils.InventoryAnalyticsUtils;
+import com.inventory.analytics.utils.ShopLotBatches;
 import com.inventory.analytics.utils.constants.AnalyticsMetricsConstants;
 import com.inventory.metrics.MetricsWrapper;
 import com.inventory.analytics.rest.dto.response.InventoryAnalyticsDto;
+import com.inventory.analytics.rest.dto.response.InventoryAnalyticsItemsResponse;
 import com.inventory.analytics.rest.dto.response.InventoryAnalyticsResponse;
 import com.inventory.analytics.rest.dto.response.InventorySummaryDto;
 import com.inventory.product.domain.model.Inventory;
-import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.rest.dto.response.InventoryExpiryBucketsResponse;
 import com.inventory.product.service.vertical.InventoryVerticalExpiryHandler;
 import lombok.extern.slf4j.Slf4j;
@@ -23,13 +26,22 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.time.Instant;
+import java.util.EnumMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Slf4j
 @Service
 @Transactional(readOnly = true)
 public class InventoryAnalyticsService {
+
+  /** Rows of each list sent with the tab, and the default page size for more. */
+  public static final int DEFAULT_LIST_LIMIT = 50;
+  /** Largest page a caller may ask for. */
+  public static final int MAX_LIST_LIMIT = 200;
 
   @Autowired
   private InventoryAnalyticsUtils analyticsUtils;
@@ -38,7 +50,7 @@ public class InventoryAnalyticsService {
   private InventoryAnalyticsMapper inventoryAnalyticsMapper;
 
   @Autowired
-  private InventoryRepository inventoryRepository;
+  private ShopLotBatches shopLots;
 
   @Autowired
   private MetricsWrapper metrics;
@@ -49,11 +61,17 @@ public class InventoryAnalyticsService {
   /**
    * Get comprehensive inventory analytics.
    *
+   * <p>The summary covers every lot. Low stock, not selling, dead stock (and all items, when asked
+   * for) carry their first {@code listLimit} rows, in the same order as before, with each list's
+   * full size in {@code listTotals}; {@link #getInventoryAnalyticsItems} serves further pages. The
+   * lots are read and worked through a batch at a time, so memory does not grow with the shop.
+   *
    * @param shopId the shop ID
    * @param lowStockThreshold threshold for low stock alert (optional, defaults to 20% of received)
    * @param deadStockDays days without sales to consider dead stock (optional, defaults to 90)
    * @param expiringSoonDays days until expiry to alert (optional, defaults to 30)
    * @param includeAll whether to include all items in response (optional, defaults to false)
+   * @param listLimit rows per list (optional, defaults to 50, at most 200)
    * @return inventory analytics response
    */
   public InventoryAnalyticsResponse getInventoryAnalytics(
@@ -61,22 +79,11 @@ public class InventoryAnalyticsService {
       Integer lowStockThreshold,
       Integer deadStockDays,
       Integer expiringSoonDays,
-      Boolean includeAll) {
+      Boolean includeAll,
+      Integer listLimit) {
 
-    // Validate shopId
-    if (!StringUtils.hasText(shopId)) {
-      throw new AuthenticationException(
-          ErrorCode.UNAUTHORIZED,
-          "User not authenticated or shop not found");
-    }
-
-    metrics.record(
-        AnalyticsMetricsConstants.QUERIES_TOTAL,
-        1,
-        "module",
-        AnalyticsMetricsConstants.MODULE,
-        "operation",
-        "inventory");
+    requireShop(shopId);
+    record("inventory");
 
     try {
       // Set defaults
@@ -85,24 +92,30 @@ public class InventoryAnalyticsService {
       }
       int effectiveExpiringSoonDays =
           expiringSoonDays != null && expiringSoonDays > 0 ? expiringSoonDays : 30;
+      int limit = pageSize(listLimit);
 
       log.debug("Getting inventory analytics for shop: {}", shopId);
 
-      // The shop's lots, only the fields this tab reads (names and prices hydrated as usual)
-      List<Inventory> allInventories = inventoryRepository.findAnalyticsLotsByShopId(shopId);
+      Map<ListKind, Integer> keep = new EnumMap<>(ListKind.class);
+      keep.put(ListKind.LOW_STOCK, limit);
+      keep.put(ListKind.NOT_SELLING, limit);
+      keep.put(ListKind.DEAD_STOCK, limit);
+      if (includeAll) {
+        keep.put(ListKind.ALL, limit);
+      }
+      Map<String, Instant> lastSold = analyticsUtils.getLastSoldDates(shopId);
+      Instant now = Instant.now();
+      InventoryAnalyticsScan scan =
+          scan(shopId, keep, lastSold, now, lowStockThreshold, deadStockDays, effectiveExpiringSoonDays);
 
-      // Calculate analytics for all items (low stock, dead stock, turnover, etc.)
-      List<InventoryAnalyticsDto> allAnalytics = analyticsUtils.calculateInventoryAnalytics(
-          shopId, allInventories, lowStockThreshold, deadStockDays, effectiveExpiringSoonDays);
-
-      // Calculate summary from full analytics, then override expiry counts from extension index
-      InventorySummaryDto summary = analyticsUtils.calculateSummary(allAnalytics);
+      // Summary from every lot, then expiry counts from the extension index
+      InventorySummaryDto summary = scan.summary();
       InventoryExpiryBucketsResponse expiryBuckets =
           inventoryVerticalExpiryHandler.getExpiryBuckets(shopId, effectiveExpiringSoonDays);
       summary.setExpiredProducts(expiryBuckets.getExpired());
       summary.setExpiringSoonProducts(expiryBuckets.getExpiringSoonTotal());
 
-      // Near-expiry and expired lists via indexed extension search (no full-shop filter)
+      // Near-expiry and expired lists via indexed extension search (at most 200 each)
       List<Inventory> nearExpiryInventories =
           inventoryVerticalExpiryHandler.findNearExpiry(shopId, effectiveExpiringSoonDays, 200);
       List<Inventory> expiredInventories =
@@ -113,6 +126,8 @@ public class InventoryAnalyticsService {
               .calculateInventoryAnalytics(
                   shopId,
                   nearExpiryInventories,
+                  lastSold,
+                  now,
                   lowStockThreshold,
                   deadStockDays,
                   effectiveExpiringSoonDays)
@@ -131,6 +146,8 @@ public class InventoryAnalyticsService {
               .calculateInventoryAnalytics(
                   shopId,
                   expiredInventories,
+                  lastSold,
+                  now,
                   lowStockThreshold,
                   deadStockDays,
                   effectiveExpiringSoonDays)
@@ -144,46 +161,26 @@ public class InventoryAnalyticsService {
                   })
               .collect(Collectors.toList());
 
-      // Filter items by category
-      List<InventoryAnalyticsDto> lowStockItems = allAnalytics.stream()
-          .filter(InventoryAnalyticsDto::getIsLowStock)
-          .sorted((a, b) -> a.getCurrentCount().compareTo(b.getCurrentCount())) // Sort by stock level ascending
-          .collect(Collectors.toList());
-
-      List<InventoryAnalyticsDto> notSellingItems = allAnalytics.stream()
-          .filter(dto -> (dto.getSoldCount() == null || dto.getSoldCount() == 0) && dto.getCurrentCount() > 0)
-          .sorted((a, b) -> {
-            // Sort by days since received (oldest first)
-            if (a.getDaysSinceReceived() == null) return 1;
-            if (b.getDaysSinceReceived() == null) return -1;
-            return b.getDaysSinceReceived().compareTo(a.getDaysSinceReceived());
-          })
-          .collect(Collectors.toList());
-
-      List<InventoryAnalyticsDto> deadStockItems = allAnalytics.stream()
-          .filter(InventoryAnalyticsDto::getIsDeadStock)
-          .sorted((a, b) -> {
-            Long aDays = a.getLastSoldDate() != null ? a.getDaysSinceReceived() : a.getDaysSinceReceived();
-            Long bDays = b.getLastSoldDate() != null ? b.getDaysSinceReceived() : b.getDaysSinceReceived();
-            if (aDays == null) return 1;
-            if (bDays == null) return -1;
-            return bDays.compareTo(aDays);
-          })
-          .collect(Collectors.toList());
+      Map<String, Integer> listTotals = new LinkedHashMap<>();
+      for (ListKind kind : keep.keySet()) {
+        listTotals.put(kind.field, scan.total(kind));
+      }
 
       InventoryAnalyticsResponseParams params = InventoryAnalyticsResponseParams.builder()
           .summary(summary)
-          .lowStockItems(lowStockItems)
-          .notSellingItems(notSellingItems)
+          .lowStockItems(scan.page(ListKind.LOW_STOCK, 0, limit))
+          .notSellingItems(scan.page(ListKind.NOT_SELLING, 0, limit))
           .expiringSoonItems(expiringSoonItems)
           .expiredItems(expiredItems)
-          .deadStockItems(deadStockItems)
-          .allItems(includeAll != null && includeAll ? allAnalytics : null)
+          .deadStockItems(scan.page(ListKind.DEAD_STOCK, 0, limit))
+          .allItems(includeAll ? scan.page(ListKind.ALL, 0, limit) : null)
+          .listTotals(listTotals)
+          .listLimit(limit)
           .lowStockThreshold(lowStockThreshold)
           .deadStockDays(deadStockDays)
           .expiringSoonDays(expiringSoonDays)
           .includeAll(includeAll)
-          .totalItems(allInventories.size())
+          .totalItems(scan.count())
           .build();
 
       return inventoryAnalyticsMapper.toResponse(params);
@@ -199,5 +196,97 @@ public class InventoryAnalyticsService {
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Failed to retrieve inventory analytics");
     }
   }
-}
 
+  /**
+   * One page of one list ({@code lowStockItems}, {@code notSellingItems}, {@code deadStockItems}
+   * or {@code allItems}), in the same order and with the same figures as the tab.
+   */
+  public InventoryAnalyticsItemsResponse getInventoryAnalyticsItems(
+      String shopId,
+      String list,
+      Integer page,
+      Integer size,
+      Integer lowStockThreshold,
+      Integer deadStockDays,
+      Integer expiringSoonDays) {
+
+    requireShop(shopId);
+    ListKind kind = ListKind.byField(list);
+    if (kind == null) {
+      throw new ValidationException(
+          "list must be one of lowStockItems, notSellingItems, deadStockItems, allItems");
+    }
+    int p = page == null ? 0 : page;
+    if (p < 0) {
+      throw new ValidationException("page must be 0 or more");
+    }
+    int s = pageSize(size);
+    record("inventory_items");
+
+    try {
+      int effectiveExpiringSoonDays =
+          expiringSoonDays != null && expiringSoonDays > 0 ? expiringSoonDays : 30;
+      long keep = (long) (p + 1) * s;
+      if (keep > Integer.MAX_VALUE) {
+        throw new ValidationException("page is too large");
+      }
+      InventoryAnalyticsScan scan = scan(
+          shopId, Map.of(kind, (int) keep), analyticsUtils.getLastSoldDates(shopId), Instant.now(),
+          lowStockThreshold, deadStockDays, effectiveExpiringSoonDays);
+      return new InventoryAnalyticsItemsResponse(kind.field, scan.page(kind, p, s), p, s, scan.total(kind));
+    } catch (ValidationException e) {
+      throw e;
+    } catch (DataAccessException e) {
+      log.error("Database error while getting inventory analytics items: {}", e.getMessage(), e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Error retrieving inventory analytics");
+    } catch (Exception e) {
+      log.error("Unexpected error while getting inventory analytics items: {}", e.getMessage(), e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Failed to retrieve inventory analytics");
+    }
+  }
+
+  /** Every lot of the shop through the per-lot figures, a batch at a time. */
+  private InventoryAnalyticsScan scan(
+      String shopId,
+      Map<ListKind, Integer> keep,
+      Map<String, Instant> lastSold,
+      Instant now,
+      Integer lowStockThreshold,
+      Integer deadStockDays,
+      int expiringSoonDays) {
+    InventoryAnalyticsScan scan = new InventoryAnalyticsScan(keep);
+    shopLots.forEach(shopId, batch -> analyticsUtils
+        .calculateInventoryAnalytics(
+            shopId, batch, lastSold, now, lowStockThreshold, deadStockDays, expiringSoonDays)
+        .forEach(scan::add));
+    return scan;
+  }
+
+  private static int pageSize(Integer requested) {
+    if (requested == null) {
+      return DEFAULT_LIST_LIMIT;
+    }
+    if (requested < 1 || requested > MAX_LIST_LIMIT) {
+      throw new ValidationException("Rows per list must be between 1 and " + MAX_LIST_LIMIT);
+    }
+    return requested;
+  }
+
+  private static void requireShop(String shopId) {
+    if (!StringUtils.hasText(shopId)) {
+      throw new AuthenticationException(
+          ErrorCode.UNAUTHORIZED,
+          "User not authenticated or shop not found");
+    }
+  }
+
+  private void record(String operation) {
+    metrics.record(
+        AnalyticsMetricsConstants.QUERIES_TOTAL,
+        1,
+        "module",
+        AnalyticsMetricsConstants.MODULE,
+        "operation",
+        operation);
+  }
+}
