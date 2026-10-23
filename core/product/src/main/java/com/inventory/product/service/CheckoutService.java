@@ -70,7 +70,6 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -116,9 +115,6 @@ public class CheckoutService {
 
   @Autowired
   private com.inventory.user.domain.repository.CustomerRepository customerRepository;
-
-  @Autowired
-  private com.inventory.user.domain.repository.ShopCustomerRepository shopCustomerRepository;
 
   @Autowired
   private ShopRepository shopRepository;
@@ -603,20 +599,8 @@ public class CheckoutService {
     if (!StringUtils.hasText(term)) {
       return List.of();
     }
-    Set<String> candidateIds = new HashSet<>();
-    for (Customer candidate : customerRepository.searchByQuery(term.trim())) {
-      candidateIds.add(candidate.getId());
-    }
-    if (candidateIds.isEmpty()) {
-      return List.of();
-    }
-    // one membership query for all candidates, not one per candidate
-    Set<String> matched = new HashSet<>();
-    for (com.inventory.user.domain.model.ShopCustomer link
-        : shopCustomerRepository.findByShopIdAndCustomerIdIn(shopId, candidateIds)) {
-      matched.add(link.getCustomerId());
-    }
-    return new ArrayList<>(matched);
+    // this shop's customers only, matched in MongoDB (was: every shop's customers, then filtered)
+    return customerService.findShopCustomerIdsMatchingQueryIncludingGeneral(shopId, term.trim());
   }
 
   private Sort parseSortOrder(String order) {
