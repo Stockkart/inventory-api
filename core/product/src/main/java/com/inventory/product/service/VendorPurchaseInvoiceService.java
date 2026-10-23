@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import java.time.Instant;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.mongodb.MongoCommandException;
 import com.inventory.user.domain.model.Vendor;
 import com.inventory.user.domain.repository.VendorRepository;
 import com.inventory.product.domain.model.VendorPurchaseInvoice;
@@ -45,6 +46,8 @@ public class VendorPurchaseInvoiceService {
   private VendorPurchaseInvoiceRepository vendorPurchaseInvoiceRepository;
 
   @Autowired private VendorRepository vendorRepository;
+
+  @Autowired private VendorPurchaseInvoiceSearch vendorPurchaseInvoiceSearch;
 
   @Autowired private VendorPurchaseInvoiceValidator vendorPurchaseInvoiceValidator;
 
@@ -221,35 +224,25 @@ public class VendorPurchaseInvoiceService {
         throw new ValidationException(
             "Invalid search pattern (regular expression): " + e.getDescription());
       }
-      List<VendorPurchaseInvoice> all = vendorPurchaseInvoiceRepository.findByShopId(shopId);
+      List<VendorPurchaseInvoice> slice;
+      long total;
+      try {
+        VendorPurchaseInvoiceSearch.InvoicePage found =
+            vendorPurchaseInvoiceSearch.search(shopId, pattern.pattern(), page, size);
+        slice = found.invoices();
+        total = found.total();
+      } catch (MongoCommandException e) {
+        // valid in Java but not for MongoDB's regex engine
+        throw new ValidationException("Invalid search pattern (regular expression): " + e.getErrorMessage());
+      }
       Map<String, String> vendorNameById =
           loadVendorNames(
-              all.stream().map(VendorPurchaseInvoice::getVendorId).collect(Collectors.toSet()));
-      List<VendorPurchaseInvoice> filtered = new ArrayList<>();
-      for (VendorPurchaseInvoice inv : all) {
-        if (matchesInvoiceSearch(inv, pattern, vendorNameById)) {
-          filtered.add(inv);
-        }
-      }
-      filtered.sort(
-          (a, b) -> {
-            if (a.getCreatedAt() == null && b.getCreatedAt() == null) return 0;
-            if (a.getCreatedAt() == null) return 1;
-            if (b.getCreatedAt() == null) return -1;
-            int cmp = b.getCreatedAt().compareTo(a.getCreatedAt());
-            if (cmp != 0) return cmp;
-            String aId = a.getId() != null ? a.getId() : "";
-            String bId = b.getId() != null ? b.getId() : "";
-            return bId.compareTo(aId);
-          });
-      int from = Math.min(page * size, filtered.size());
-      int to = Math.min(from + size, filtered.size());
-      List<VendorPurchaseInvoice> slice = filtered.subList(from, to);
+              slice.stream().map(VendorPurchaseInvoice::getVendorId).collect(Collectors.toSet()));
       List<VendorPurchaseInvoiceSummaryDto> summaries =
           slice.stream().map((e) -> toSummary(e, vendorNameById)).collect(Collectors.toList());
-      int totalPages = size <= 0 ? 1 : (int) Math.ceil((double) filtered.size() / size);
+      int totalPages = size <= 0 ? 1 : (int) Math.ceil((double) total / size);
       return new VendorPurchaseInvoiceListResponse(
-          summaries, new PageMeta(page, size, filtered.size(), totalPages));
+          summaries, new PageMeta(page, size, total, totalPages));
     }
 
     PageRequest pageable =
@@ -309,47 +302,6 @@ public class VendorPurchaseInvoiceService {
       return null;
     }
     return vendorNameById.get(vendorId.trim());
-  }
-
-  /**
-   * True if the regex matches any of: line product {@code name} or {@code barcode}, {@link
-   * VendorPurchaseInvoice#getInvoiceNo()}, or resolved vendor display name.
-   */
-  private boolean matchesInvoiceSearch(
-      VendorPurchaseInvoice inv,
-      Pattern pattern,
-      Map<String, String> vendorNameById) {
-    if (regexFind(pattern, inv.getInvoiceNo())) {
-      return true;
-    }
-    if (regexFind(pattern, resolveVendorName(inv.getVendorId(), vendorNameById))) {
-      return true;
-    }
-    return matchesAnyPurchaseLine(inv, pattern);
-  }
-
-  /** True if any persisted invoice line matches the regex against stored product name or barcode. */
-  private boolean matchesAnyPurchaseLine(VendorPurchaseInvoice inv, Pattern pattern) {
-    List<VendorPurchaseInvoiceLine> lines = inv.getLines();
-    if (lines == null || lines.isEmpty()) {
-      return false;
-    }
-    for (VendorPurchaseInvoiceLine line : lines) {
-      if (regexFind(pattern, line.getName())) {
-        return true;
-      }
-      if (regexFind(pattern, line.getBarcode())) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  private static boolean regexFind(Pattern pattern, String value) {
-    if (value == null || value.isBlank()) {
-      return false;
-    }
-    return pattern.matcher(value.trim()).find();
   }
 
   private VendorPurchaseInvoiceSummaryDto toSummary(
