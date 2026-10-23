@@ -58,6 +58,7 @@ public class AccountingPostingService {
   private final AccountService accountService;
   private final JournalEntrySequenceService sequenceService;
   private final MetricsWrapper metrics;
+  private final AccountLedgerBalances ledgerBalances;
 
   /**
    * Optional plug-in tested with {@code @Autowired(required = false)} so callers without a clock
@@ -226,60 +227,84 @@ public class AccountingPostingService {
   }
 
   private void persistLedger(JournalEntry entry, Map<String, Account> accountCache) {
-    Map<String, BigDecimal> runningByAccount = new HashMap<>();
-    List<LedgerEntry> rows = new ArrayList<>(entry.getLines().size());
+    // Each account this entry touches moves once, atomically, by the entry's total for it; the
+    // balance after each of its lines is read back from the account's new balance.
+    Map<String, Account> accountsById = new java.util.LinkedHashMap<>();
+    Map<String, BigDecimal> totalByAccount = new java.util.LinkedHashMap<>();
     for (JournalLine l : entry.getLines()) {
       Account a = accountCache.get(l.getAccountId());
       if (a == null) {
         a = accountService.findByIdOrThrow(entry.getShopId(), l.getAccountId());
         accountCache.put(a.getId(), a);
       }
-      final Account account = a;
-      BigDecimal prior =
-          runningByAccount.computeIfAbsent(
-              account.getId(),
-              key -> latestBalanceFor(entry.getShopId(), key, account.getNormalBalance()));
-      BigDecimal delta = signedDelta(a.getNormalBalance(), nz(l.getDebit()), nz(l.getCredit()));
-      BigDecimal balanceAfter = scale(prior.add(delta));
-      runningByAccount.put(a.getId(), balanceAfter);
-
-      LedgerEntry row =
-          LedgerEntry.builder()
-              .shopId(entry.getShopId())
-              .accountId(a.getId())
-              .accountCode(a.getCode())
-              .accountName(a.getName())
-              .accountType(a.getType())
-              .normalBalance(a.getNormalBalance())
-              .journalEntryId(entry.getId())
-              .journalEntryNo(entry.getEntryNo())
-              .lineIndex(l.getLineIndex())
-              .sourceType(entry.getSourceType())
-              .sourceId(entry.getSourceId())
-              .txnDate(entry.getTxnDate())
-              .postedAt(entry.getPostedAt())
-              .debit(nz(l.getDebit()))
-              .credit(nz(l.getCredit()))
-              .balanceAfter(balanceAfter)
-              .partyType(l.getPartyType())
-              .partyRefId(l.getPartyRefId())
-              .partyDisplayName(l.getPartyDisplayName())
-              .narration(StringUtils.hasText(l.getMemo()) ? l.getMemo() : entry.getNarration())
-              .build();
-      rows.add(row);
+      accountsById.put(a.getId(), a);
+      totalByAccount.merge(
+          a.getId(), signedDelta(a.getNormalBalance(), nz(l.getDebit()), nz(l.getCredit())), BigDecimal::add);
     }
-    ledgerEntryRepository.saveAll(rows);
+
+    Map<String, BigDecimal> runningByAccount = new HashMap<>();
+    Map<String, Instant> movedAtByAccount = new HashMap<>();
+    Map<String, BigDecimal> applied = new java.util.LinkedHashMap<>();
+    try {
+      for (Map.Entry<String, BigDecimal> t : totalByAccount.entrySet()) {
+        AccountLedgerBalances.Moved moved = ledgerBalances.add(entry.getShopId(), t.getKey(), t.getValue());
+        applied.put(t.getKey(), t.getValue());
+        runningByAccount.put(t.getKey(), scale(moved.balance().subtract(t.getValue()))); // before this entry
+        movedAtByAccount.put(t.getKey(), moved.at());
+      }
+
+      List<LedgerEntry> rows = new ArrayList<>(entry.getLines().size());
+      for (JournalLine l : entry.getLines()) {
+        Account a = accountsById.get(l.getAccountId());
+        BigDecimal delta = signedDelta(a.getNormalBalance(), nz(l.getDebit()), nz(l.getCredit()));
+        BigDecimal balanceAfter = scale(runningByAccount.get(a.getId()).add(delta));
+        runningByAccount.put(a.getId(), balanceAfter);
+        rows.add(ledgerRow(entry, a, l, balanceAfter, movedAtByAccount.get(a.getId())));
+      }
+      ledgerEntryRepository.saveAll(rows);
+    } catch (RuntimeException e) {
+      applied.forEach((accountId, total) -> {
+        try {
+          ledgerBalances.undo(entry.getShopId(), accountId, total);
+        } catch (RuntimeException undoFailed) {
+          log.error(
+              "Could not take back ledger balance {} of account {} (journal {}); balance is ahead of its rows",
+              total, accountId, entry.getId(), undoFailed);
+        }
+      });
+      throw e;
+    }
   }
 
-  private BigDecimal latestBalanceFor(String shopId, String accountId, NormalBalance nb) {
-    // newest row only: no page count, and served by the shop + account + postedAt index
-    List<LedgerEntry> latest =
-        ledgerEntryRepository.findFirst1ByShopIdAndAccountIdOrderByPostedAtDesc(shopId, accountId);
-    if (latest.isEmpty()) {
-      return zero();
-    }
-    BigDecimal balanceAfter = latest.get(0).getBalanceAfter();
-    return balanceAfter != null ? scale(balanceAfter) : zero();
+  /**
+   * {@code postedAt} of the row is when its account's balance moved ({@link AccountLedgerBalances}),
+   * a few milliseconds after the journal's own {@code postedAt}: rows then list in the order their
+   * balances were applied.
+   */
+  private static LedgerEntry ledgerRow(
+      JournalEntry entry, Account a, JournalLine l, BigDecimal balanceAfter, Instant movedAt) {
+    return LedgerEntry.builder()
+        .shopId(entry.getShopId())
+        .accountId(a.getId())
+        .accountCode(a.getCode())
+        .accountName(a.getName())
+        .accountType(a.getType())
+        .normalBalance(a.getNormalBalance())
+        .journalEntryId(entry.getId())
+        .journalEntryNo(entry.getEntryNo())
+        .lineIndex(l.getLineIndex())
+        .sourceType(entry.getSourceType())
+        .sourceId(entry.getSourceId())
+        .txnDate(entry.getTxnDate())
+        .postedAt(movedAt != null ? movedAt : entry.getPostedAt())
+        .debit(nz(l.getDebit()))
+        .credit(nz(l.getCredit()))
+        .balanceAfter(balanceAfter)
+        .partyType(l.getPartyType())
+        .partyRefId(l.getPartyRefId())
+        .partyDisplayName(l.getPartyDisplayName())
+        .narration(StringUtils.hasText(l.getMemo()) ? l.getMemo() : entry.getNarration())
+        .build();
   }
 
   private static BigDecimal signedDelta(

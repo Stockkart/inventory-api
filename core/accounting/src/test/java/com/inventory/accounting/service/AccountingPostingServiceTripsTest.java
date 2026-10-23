@@ -24,7 +24,6 @@ import com.inventory.accounting.domain.repository.LedgerEntryRepository;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.metrics.MetricsWrapper;
 import java.math.BigDecimal;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -36,8 +35,8 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 /**
- * A posting resolves its accounts from the chart the seeding check already read, and takes each
- * account's opening balance from its newest ledger row without a count.
+ * A posting resolves its accounts from the chart the seeding check already read, and moves each
+ * account's balance once (atomically, in {@link AccountLedgerBalances}) by the entry's total for it.
  */
 class AccountingPostingServiceTripsTest {
 
@@ -47,6 +46,29 @@ class AccountingPostingServiceTripsTest {
   private LedgerEntryRepository ledger;
   private AccountService accounts;
   private AccountingPostingService service;
+  private FakeBalances balances;
+
+  /** In-memory stand-in for the atomic per-account balance. */
+  static final class FakeBalances extends AccountLedgerBalances {
+    final Map<String, BigDecimal> balance = new java.util.HashMap<>();
+    final List<String> calls = new ArrayList<>();
+
+    FakeBalances() {
+      super(null, null);
+    }
+
+    @Override
+    public Moved add(String shopId, String accountId, BigDecimal delta) {
+      calls.add("add " + accountId + " " + delta.stripTrailingZeros().toPlainString());
+      return new Moved(balance.merge(accountId, delta, BigDecimal::add), java.time.Instant.parse("2026-10-22T10:00:00Z"));
+    }
+
+    @Override
+    public void undo(String shopId, String accountId, BigDecimal delta) {
+      calls.add("undo " + accountId + " " + delta.stripTrailingZeros().toPlainString());
+      balance.merge(accountId, delta.negate(), BigDecimal::add);
+    }
+  }
 
   private final Account cash = account("a-cash", "1100", AccountType.ASSET, NormalBalance.DEBIT);
   private final Account sales = account("a-sales", "4000", AccountType.REVENUE, NormalBalance.CREDIT);
@@ -66,10 +88,9 @@ class AccountingPostingServiceTripsTest {
           e.setId("je-1");
           return e;
         });
-    when(ledger.findFirst1ByShopIdAndAccountIdOrderByPostedAtDesc(eq(SHOP), anyString()))
-        .thenReturn(List.of());
+    balances = new FakeBalances();
     service =
-        new AccountingPostingService(journals, ledger, accounts, sequence, mock(MetricsWrapper.class));
+        new AccountingPostingService(journals, ledger, accounts, sequence, mock(MetricsWrapper.class), balances);
   }
 
   private static Account account(String id, String code, AccountType type, NormalBalance nb) {
@@ -100,10 +121,6 @@ class AccountingPostingServiceTripsTest {
     return r;
   }
 
-  private static LedgerEntry prior(String balance) {
-    return LedgerEntry.builder().balanceAfter(new BigDecimal(balance)).postedAt(Instant.EPOCH).build();
-  }
-
   @SuppressWarnings("unchecked")
   private Map<String, LedgerEntry> savedRowsByAccount() {
     ArgumentCaptor<List<LedgerEntry>> rows = ArgumentCaptor.forClass(List.class);
@@ -112,12 +129,10 @@ class AccountingPostingServiceTripsTest {
   }
 
   @Test
-  void accountsComeFromTheSeededChartAndBalancesFromTheNewestRow() {
+  void accountsComeFromTheSeededChartAndBalancesFromTheAccount() {
     when(accounts.ensureSeededAndList(SHOP)).thenReturn(List.of(cash, sales, gst));
-    when(ledger.findFirst1ByShopIdAndAccountIdOrderByPostedAtDesc(SHOP, "a-cash"))
-        .thenReturn(List.of(prior("1000.0000")));
-    when(ledger.findFirst1ByShopIdAndAccountIdOrderByPostedAtDesc(SHOP, "a-sales"))
-        .thenReturn(List.of(prior("5000.0000")));
+    balances.balance.put("a-cash", new BigDecimal("1000.0000"));
+    balances.balance.put("a-sales", new BigDecimal("5000.0000"));
 
     service.post(SHOP, "user-1", sale(
         line("1100", "118", null),
@@ -129,26 +144,29 @@ class AccountingPostingServiceTripsTest {
     verify(accounts, never()).findByCodeOrThrow(anyString(), anyString());
     verify(accounts, never()).findByIdOrThrow(anyString(), anyString());
     verify(ledger, never()).findByShopIdAndAccountIdOrderByPostedAtAsc(any(), any(), any());
+    verify(ledger, never()).findFirst1ByShopIdAndAccountIdOrderByPostedAtDesc(any(), any());
 
     Map<String, LedgerEntry> rows = savedRowsByAccount();
     assertThat(rows.get("a-cash").getBalanceAfter()).isEqualByComparingTo("1118");  // Dr on a debit account
     assertThat(rows.get("a-sales").getBalanceAfter()).isEqualByComparingTo("5100"); // Cr on a credit account
     assertThat(rows.get("a-gst").getBalanceAfter()).isEqualByComparingTo("18");     // first row: from zero
     assertThat(rows.get("a-sales").getAccountCode()).isEqualTo("4000");
+    // the row's time is when its account's balance moved
+    assertThat(rows.get("a-cash").getPostedAt()).isEqualTo(java.time.Instant.parse("2026-10-22T10:00:00Z"));
   }
 
   @Test
   void sameAccountTwiceInOneEntryRunsOnFromItsOwnLine() {
     when(accounts.ensureSeededAndList(SHOP)).thenReturn(List.of(cash, sales));
-    when(ledger.findFirst1ByShopIdAndAccountIdOrderByPostedAtDesc(SHOP, "a-sales"))
-        .thenReturn(List.of(prior("10.0000")));
+    balances.balance.put("a-sales", new BigDecimal("10.0000"));
 
     service.post(SHOP, "user-1", sale(
         line("1100", "30", null),
         line("4000", null, "20"),
         line("4000", null, "10")));
 
-    verify(ledger, times(1)).findFirst1ByShopIdAndAccountIdOrderByPostedAtDesc(SHOP, "a-sales");
+    // one atomic move per account, by the entry's total for it
+    assertThat(balances.calls).containsExactly("add a-cash 30", "add a-sales 30");
     @SuppressWarnings("unchecked")
     ArgumentCaptor<List<LedgerEntry>> rows = ArgumentCaptor.forClass(List.class);
     verify(ledger).saveAll(rows.capture());
@@ -158,6 +176,22 @@ class AccountingPostingServiceTripsTest {
     }
     assertThat(salesBalances).usingElementComparator(BigDecimal::compareTo)
         .containsExactly(new BigDecimal("30"), new BigDecimal("40"));
+  }
+
+  @Test
+  void ledgerRowsThatCannotBeSavedTakeTheirBalancesBack() {
+    when(accounts.ensureSeededAndList(SHOP)).thenReturn(List.of(cash, sales));
+    balances.balance.put("a-cash", new BigDecimal("100"));
+    when(ledger.saveAll(any())).thenThrow(new IllegalStateException("write failed"));
+
+    assertThatThrownBy(() -> service.post(SHOP, "user-1", sale(
+        line("1100", "10", null),
+        line("4000", null, "10"))))
+        .isInstanceOf(IllegalStateException.class);
+
+    assertThat(balances.balance.get("a-cash")).isEqualByComparingTo("100");
+    assertThat(balances.balance.get("a-sales")).isEqualByComparingTo("0");
+    assertThat(balances.calls).containsExactly("add a-cash 10", "add a-sales 10", "undo a-cash 10", "undo a-sales 10");
   }
 
   @Test

@@ -4,7 +4,6 @@ import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.common.util.TxnIdGenerator;
 import com.inventory.credit.domain.model.CreditAccount;
-import com.inventory.credit.domain.model.CreditBalanceStatus;
 import com.inventory.credit.domain.model.CreditDirection;
 import com.inventory.credit.domain.model.CreditEntry;
 import com.inventory.credit.domain.model.CreditEntryType;
@@ -46,6 +45,7 @@ public class CreditService {
   private final CustomerRepository customerRepository;
   private final VendorRepository vendorRepository;
   private final MetricsWrapper metrics;
+  private final CreditBalances creditBalances;
 
   @Transactional
   public CreditEntry createCharge(String shopId, String userId, CreateCreditChargeRequest body) {
@@ -283,28 +283,17 @@ public class CreditService {
       }
     }
 
-    CreditAccount account =
-        creditAccountRepository
-            .findByShopIdAndPartyTypeAndPartyRefId(shopId, partyType, partyId.trim())
-            .orElseGet(() -> newAccount(shopId, partyType, partyId.trim(), partyDisplayName, partyPhone));
-
     Instant now = Instant.now();
-    account.setPartyDisplayName(partyDisplayName.trim());
-    account.setPartyPhone(normalize(partyPhone));
-
-    BigDecimal current = scale(account.getCurrentBalance() != null ? account.getCurrentBalance() : BigDecimal.ZERO);
     BigDecimal delta = direction == CreditDirection.INCREASE_DUE ? amt : scale(amt.negate());
-    BigDecimal nextBalance = scale(current.add(delta));
-
-    account.setCurrentBalance(nextBalance);
-    account.setStatus(statusOf(nextBalance));
-    account.setUpdatedAt(now);
-    account.setLastEntryAt(now);
-    account = creditAccountRepository.save(account);
+    // One atomic update: add to the due, set the status, create the account on a first entry
+    CreditBalances.Applied account =
+        creditBalances.add(
+            shopId, partyType, partyId.trim(), partyDisplayName.trim(), normalize(partyPhone), delta, now);
+    BigDecimal nextBalance = account.balance();
 
     CreditEntry entry = new CreditEntry();
     entry.setShopId(shopId);
-    entry.setAccountId(account.getId());
+    entry.setAccountId(account.accountId());
     entry.setTxnId(TxnIdGenerator.newId());
     entry.setPartyType(partyType);
     entry.setPartyRefId(partyId.trim());
@@ -321,7 +310,13 @@ public class CreditService {
     entry.setTxnDate(txnDate);
     entry.setCreatedByUserId(normalize(userId));
     entry.setCreatedAt(now);
-    return creditEntryRepository.save(entry);
+    try {
+      return creditEntryRepository.save(entry);
+    } catch (RuntimeException e) {
+      // no transactions: take the amount back off the due so it matches its entries again
+      creditBalances.undo(shopId, partyType, partyId.trim(), delta, Instant.now());
+      throw e;
+    }
   }
 
   private static void validateSettlementPaymentMethod(String paymentMethod) {
@@ -339,27 +334,6 @@ public class CreditService {
     }
   }
 
-  private static CreditAccount newAccount(
-      String shopId,
-      CreditPartyType partyType,
-      String partyId,
-      String partyDisplayName,
-      String partyPhone) {
-    Instant now = Instant.now();
-    CreditAccount a = new CreditAccount();
-    a.setShopId(shopId);
-    a.setPartyType(partyType);
-    a.setPartyRefId(partyId);
-    a.setPartyDisplayName(partyDisplayName.trim());
-    a.setPartyPhone(normalize(partyPhone));
-    a.setCurrentBalance(scale(BigDecimal.ZERO));
-    a.setStatus(CreditBalanceStatus.CLEAR);
-    a.setCreatedAt(now);
-    a.setUpdatedAt(now);
-    a.setLastEntryAt(now);
-    return a;
-  }
-
   private static void validateParty(CreditPartyType partyType, String partyId, String partyDisplayName) {
     if (partyType == null) throw new ValidationException("partyType is required");
     if (!StringUtils.hasText(partyId)) throw new ValidationException("partyId is required");
@@ -373,13 +347,6 @@ public class CreditService {
       throw new ValidationException("amount must be greater than zero");
     }
     return scale(amount);
-  }
-
-  private static CreditBalanceStatus statusOf(BigDecimal balance) {
-    int sign = balance.signum();
-    if (sign > 0) return CreditBalanceStatus.DUE;
-    if (sign < 0) return CreditBalanceStatus.ADVANCE;
-    return CreditBalanceStatus.CLEAR;
   }
 
   private static BigDecimal scale(BigDecimal amount) {

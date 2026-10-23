@@ -11,6 +11,12 @@ import org.springframework.data.mongodb.core.mapping.Document;
 /**
  * Chart-of-accounts entry, scoped per shop. {@code system} accounts are seeded by {@link
  * com.inventory.accounting.service.ChartOfAccountsSeeder} and cannot be renamed or deleted.
+ *
+ * <p>The stored document also carries {@code ledgerBalance}, the account's running ledger balance,
+ * written only by {@link com.inventory.accounting.service.AccountLedgerBalances} with atomic
+ * updates. It is deliberately not mapped here: update an existing account with targeted
+ * {@code $set}s, never a whole-document save (that would drop it, and posting would then restart
+ * it from the newest ledger row).
  */
 @Data
 @NoArgsConstructor
