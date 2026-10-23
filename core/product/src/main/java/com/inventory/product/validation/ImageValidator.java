@@ -48,8 +48,14 @@ public class ImageValidator {
   /** Max images per multi-page invoice parse request. */
   public static final int MAX_INVOICE_IMAGES = 20;
 
-  /** Max bytes per invoice image (10 MB). */
-  public static final long MAX_INVOICE_IMAGE_BYTES = 10L * 1024 * 1024;
+  /**
+   * Max bytes per invoice image (2 MB). The app shrinks photos to ~1,600–1,900 px JPEG before
+   * upload (usually 200–700 KB); Gemini reads an image in 768 px tiles, so larger files add memory
+   * and upload time, not detail. Each page is held about three times over while it is sent (bytes,
+   * base64, request body), so the cap also bounds OCR memory. The whole request stays capped at 10
+   * MB by {@code spring.servlet.multipart.max-request-size}.
+   */
+  public static final long MAX_INVOICE_IMAGE_BYTES = 2L * 1024 * 1024;
 
   public void validateInvoiceImageBatch(java.util.List<MultipartFile> images) {
     if (images == null || images.isEmpty()) {
@@ -61,10 +67,18 @@ public class ImageValidator {
     for (int i = 0; i < images.size(); i++) {
       MultipartFile image = images.get(i);
       validateImageFileForParsing(image);
-      if (image.getSize() > MAX_INVOICE_IMAGE_BYTES) {
-        throw new ValidationException(
-            "Image " + (i + 1) + " exceeds maximum size of 10 MB");
-      }
+      // checked on the stored part's size, before its bytes are read into memory
+      validateInvoiceImageSize(i, image.getSize());
+    }
+  }
+
+  /** Rejects image {@code index} (0-based) when it is over {@link #MAX_INVOICE_IMAGE_BYTES}. */
+  public void validateInvoiceImageSize(int index, long bytes) {
+    if (bytes > MAX_INVOICE_IMAGE_BYTES) {
+      throw new ValidationException(
+          String.format(
+              "Image %d is %.1f MB; the limit is %d MB per image. Please retake or crop the photo.",
+              index + 1, bytes / (1024.0 * 1024.0), MAX_INVOICE_IMAGE_BYTES / (1024 * 1024)));
     }
   }
 }

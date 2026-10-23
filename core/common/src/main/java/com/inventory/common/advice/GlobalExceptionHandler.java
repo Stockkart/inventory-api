@@ -39,6 +39,9 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
   @Autowired
   private ApiErrorMapper apiErrorMapper;
 
+  /** Named in the "upload too large" answer when the exception does not carry the limit. */
+  @org.springframework.beans.factory.annotation.Value("${spring.servlet.multipart.max-request-size:10MB}")
+  private org.springframework.util.unit.DataSize maxRequestSize;
   @ExceptionHandler(BaseException.class)
   public ResponseEntity<ApiResponse<ApiError>> handleBaseException(BaseException ex, HttpServletRequest request) {
     if (ex.getErrorCode() == ErrorCode.INTERNAL_SERVER_ERROR && isBusy(ex, request)) {
@@ -220,6 +223,25 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     ApiResponse<ApiError> response = ApiResponse.error("Malformed JSON request");
     response.setData(apiError);
     return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+  }
+
+  @Override
+  protected ResponseEntity<Object> handleMaxUploadSizeExceededException(
+      org.springframework.web.multipart.MaxUploadSizeExceededException ex,
+      HttpHeaders headers,
+      HttpStatusCode status,
+      WebRequest request) {
+    log.warn("Upload too large: {}", ex.getMessage());
+    long max = ex.getMaxUploadSize() > 0 ? ex.getMaxUploadSize()
+        : maxRequestSize != null ? maxRequestSize.toBytes() : -1;
+    String message =
+        max > 0
+            ? "Upload too large: the limit is " + (max / (1024 * 1024)) + " MB per upload"
+            : "Upload too large";
+    ApiError apiError = apiErrorMapper.toApiError(message, HttpStatus.PAYLOAD_TOO_LARGE.value());
+    ApiResponse<ApiError> response = ApiResponse.error(message);
+    response.setData(apiError);
+    return new ResponseEntity<>(response, HttpStatus.PAYLOAD_TOO_LARGE);
   }
 
   @ExceptionHandler({

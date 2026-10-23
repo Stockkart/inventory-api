@@ -246,9 +246,7 @@ public class InventoryService {
     for (int i = 0; i < imageBytesList.size(); i++) {
       byte[] bytes = imageBytesList.get(i);
       imageValidator.validateImageBytes(bytes);
-      if (bytes.length > ImageValidator.MAX_INVOICE_IMAGE_BYTES) {
-        throw new ValidationException("Image " + (i + 1) + " exceeds maximum size of 10 MB");
-      }
+      imageValidator.validateInvoiceImageSize(i, bytes.length);
     }
 
     InvoicePricingLayout layout = resolveInvoicePricingLayout(shopId);
