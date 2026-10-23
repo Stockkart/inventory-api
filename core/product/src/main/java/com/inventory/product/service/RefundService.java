@@ -31,6 +31,9 @@ import com.inventory.user.service.CustomerService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
+import org.bson.types.ObjectId;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.dao.DataAccessException;
@@ -678,8 +681,6 @@ public class RefundService {
    */
   private List<String> findPurchaseIdsBySearchCriteria(String shopId, String invoiceNo,
                                                         String customerPhone, String customerId, String customerEmail) {
-    List<String> purchaseIds = new ArrayList<>();
-
     // If customer phone provided, find customer IDs first
     if (StringUtils.hasText(customerPhone)) {
       java.util.Optional<com.inventory.user.domain.model.Customer> customerOpt =
@@ -722,29 +723,35 @@ public class RefundService {
       }
     }
 
-    // Find purchases matching criteria
-    List<Purchase> purchases;
-    if (StringUtils.hasText(invoiceNo) && StringUtils.hasText(customerId)) {
-      // Search by both invoice number and customer ID
-      purchases = purchaseRepository.findByShopIdAndInvoiceNoAndCustomerId(shopId, invoiceNo.trim(), customerId);
-    } else if (StringUtils.hasText(invoiceNo)) {
-      // Search by invoice number only
-      purchases = purchaseRepository.findByShopIdAndInvoiceNo(shopId, invoiceNo.trim());
-    } else if (StringUtils.hasText(customerId)) {
-      // Search by customer ID only
-      purchases = purchaseRepository.findByShopIdAndCustomerId(shopId, customerId);
-    } else {
+    // Find the matching bills' ids (only the ids: a regular customer, or the walk-in placeholder,
+    // can have thousands of bills, each a full document with its lines; the {shopId, customerId,
+    // soldAt} index finds them and only the ids come back)
+    String invoice = StringUtils.hasText(invoiceNo) ? invoiceNo.trim() : null;
+    String customer = StringUtils.hasText(customerId) ? customerId : null;
+    if (invoice == null && customer == null) {
       // No valid search criteria
       return new ArrayList<>();
     }
+    return purchaseIdsMatching(shopId, invoice, customer);
+  }
 
-    // Extract purchase IDs
-    purchaseIds = purchases.stream()
-        .map(Purchase::getId)
-        .distinct()
-        .collect(Collectors.toList());
-
-    return purchaseIds;
+  /** Ids of the shop's bills with this invoice number and/or customer (either may be null, not both). */
+  List<String> purchaseIdsMatching(String shopId, String invoiceNo, String customerId) {
+    Criteria match = Criteria.where("shopId").is(shopId);
+    if (invoiceNo != null) {
+      match = match.and("invoiceNo").is(invoiceNo);
+    }
+    if (customerId != null) {
+      match = match.and("customerId").is(customerId);
+    }
+    Query idsOnly = new Query(match);
+    idsOnly.fields().include("_id");
+    java.util.Set<String> ids = new java.util.LinkedHashSet<>();
+    for (Document d : mongoTemplate.find(idsOnly, Document.class, mongoTemplate.getCollectionName(Purchase.class))) {
+      Object id = d.get("_id");
+      ids.add(id instanceof ObjectId oid ? oid.toHexString() : String.valueOf(id));
+    }
+    return new ArrayList<>(ids);
   }
 
   /**
