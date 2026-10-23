@@ -31,6 +31,20 @@ public interface InventoryRepository extends MongoRepository<Inventory, String> 
   List<Inventory> findByShopId(String shopId);
 
   /**
+   * The shop's lots with only the stored fields the analytics Inventory and Vendors tabs read:
+   * counts, received date, vendor, location, lot id, plus {@code productId} / {@code pricingId} /
+   * {@code billingMode} so the read aspects still hydrate catalog identity and pricing as for any
+   * {@code find*}. Same values those tabs use; the rest of each lot document is not loaded.
+   */
+  @Query(
+      value = "{ 'shopId': ?0 }",
+      fields =
+          "{ 'lotId': 1, 'productId': 1, 'pricingId': 1, 'billingMode': 1, 'shopId': 1, 'vendorId': 1,"
+              + " 'location': 1, 'receivedCount': 1, 'soldCount': 1, 'currentCount': 1,"
+              + " 'receivedBaseCount': 1, 'soldBaseCount': 1, 'currentBaseCount': 1, 'receivedDate': 1 }")
+  List<Inventory> findAnalyticsLotsByShopId(String shopId);
+
+  /**
    * Find all inventories by lotId.
    *
    * @param lotId the lot ID

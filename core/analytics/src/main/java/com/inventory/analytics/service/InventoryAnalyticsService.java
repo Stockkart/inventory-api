@@ -88,8 +88,8 @@ public class InventoryAnalyticsService {
 
       log.debug("Getting inventory analytics for shop: {}", shopId);
 
-      // Get all inventory for the shop
-      List<Inventory> allInventories = inventoryRepository.findByShopId(shopId);
+      // The shop's lots, only the fields this tab reads (names and prices hydrated as usual)
+      List<Inventory> allInventories = inventoryRepository.findAnalyticsLotsByShopId(shopId);
 
       // Calculate analytics for all items (low stock, dead stock, turnover, etc.)
       List<InventoryAnalyticsDto> allAnalytics = analyticsUtils.calculateInventoryAnalytics(

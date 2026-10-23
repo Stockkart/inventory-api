@@ -99,8 +99,8 @@ public class VendorAnalyticsService {
 
       log.debug("Getting vendor analytics for shop: {} from {} to {}", shopId, startDate, endDate);
 
-      // Get all inventory for the shop
-      List<Inventory> allInventories = inventoryRepository.findByShopId(shopId);
+      // The shop's lots, only the fields this tab reads (names and prices hydrated as usual)
+      List<Inventory> allInventories = inventoryRepository.findAnalyticsLotsByShopId(shopId);
 
       // Period's lines grouped by MongoDB (with the bills each group is on, for bill counts)
       List<LineGroup> lines = salesQueries.lineGroups(shopId, startDate, endDate, null, true);
