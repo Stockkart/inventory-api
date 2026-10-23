@@ -1317,15 +1317,19 @@ public class CheckoutService {
                 switchBaseQuantity = roundedWholeUnits * targetFactor;
               }
               BigDecimal saleQty = toSaleQuantityDecimal(switchBaseQuantity, targetFactor);
-              BigDecimal priceToRetail = newItem.getPriceToRetail() != null && !newItem.isBatchFilledPrice()
-                  ? newItem.getPriceToRetail() : existingItem.getPriceToRetail();
-              if (priceToRetail != null
+              // The line's own price is for its old unit: rescale it so the line total stays. A
+              // price sent with the switch is already for the new unit (ScanSell rescales it
+              // before sending), so it goes on as sent, not rescaled a second time.
+              BigDecimal rescaledLinePrice = existingItem.getPriceToRetail();
+              if (rescaledLinePrice != null
                   && existingItem.getQuantity() != null
                   && existingItem.getQuantity().compareTo(BigDecimal.ZERO) > 0
                   && saleQty.compareTo(BigDecimal.ZERO) > 0) {
-                BigDecimal lineTotal = priceToRetail.multiply(existingItem.getQuantity());
-                priceToRetail = lineTotal.divide(saleQty, 2, RoundingMode.HALF_UP);
+                BigDecimal lineTotal = rescaledLinePrice.multiply(existingItem.getQuantity());
+                rescaledLinePrice = lineTotal.divide(saleQty, 2, RoundingMode.HALF_UP);
               }
+              boolean priceSent = newItem.getPriceToRetail() != null && !newItem.isBatchFilledPrice();
+              BigDecimal priceToRetail = priceSent ? newItem.getPriceToRetail() : rescaledLinePrice;
               BigDecimal maximumRetailPrice = resolveInventoryMaximumRetailPrice(
                   inventory,
                   existingItem.getMaximumRetailPrice(),
@@ -1373,8 +1377,8 @@ public class CheckoutService {
               }
               // A switch keeps the line's rate; a price, disc or scheme edit sent with it clears it.
               // A price sent to a line held at MRP is ignored above, so it edits nothing.
-              boolean priceEdited = newItem.getPriceToRetail() != null && !newItem.isBatchFilledPrice()
-                  && !sameMoney(newItem.getPriceToRetail(), existingItem.getPriceToRetail())
+              boolean priceEdited = priceSent
+                  && !sameMoney(newItem.getPriceToRetail(), rescaledLinePrice)
                   && !(wasAtMrp && inventory.getMaximumRetailPrice() != null);
               switchedItem.setAppliedRateName(priceEdited || discOrSchemeEdited(existingItem, newItem)
                   ? null : existingItem.getAppliedRateName());

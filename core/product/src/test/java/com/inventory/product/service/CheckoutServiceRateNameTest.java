@@ -559,8 +559,9 @@ class CheckoutServiceRateNameTest {
   }
 
   /**
-   * A unit switch that sends a price other than the line's is a manual price edit and clears the
-   * applied rate; one that sends the line's own price, or none, keeps it.
+   * A unit switch sends the price for the new unit, as ScanSell does. One other than the line's
+   * own price rescaled to that unit is a manual price edit and clears the applied rate; the
+   * line's own price for the new unit, or none, keeps it.
    */
   @Test
   void unitSwitchWithAnEditedPriceClearsTheAppliedRate() {
@@ -568,7 +569,7 @@ class CheckoutServiceRateNameTest {
     add(11, "Rate-A");
     AddToCartRequest.CartItem edited = item(0, null);
     edited.setUnit("TABLET");
-    edited.setPriceToRetail(new BigDecimal("90"));
+    edited.setPriceToRetail(new BigDecimal("9.00"));
     send(edited);
     assertEquals("TABLET", line().getSaleUnit());
     assertMoney("9.00", line().getPriceToRetail());
@@ -578,7 +579,7 @@ class CheckoutServiceRateNameTest {
     add(11, "Rate-A");
     AddToCartRequest.CartItem same = item(0, null);
     same.setUnit("TABLET");
-    same.setPriceToRetail(new BigDecimal("100"));
+    same.setPriceToRetail(new BigDecimal("10.00"));
     send(same);
     assertMoney("10.00", line().getPriceToRetail());
     assertEquals("Rate-A", line().getAppliedRateName());
