@@ -3,7 +3,6 @@ package com.inventory.analytics.utils;
 import com.inventory.analytics.rest.dto.response.*;
 import com.inventory.analytics.utils.AnalyticsSalesQueries.LineGroup;
 import com.inventory.product.domain.model.Inventory;
-import com.inventory.pluginengine.VerticalFieldsReader;
 import com.inventory.user.domain.model.Vendor;
 import com.inventory.user.domain.repository.VendorRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -12,8 +11,6 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -36,68 +33,26 @@ public class VendorAnalyticsUtils {
     return out;
   }
 
+  /** The vendors of the shop's lots, as a set filled in first-lot order (as the tab always built it). */
+  private static Set<String> lotVendorIds(VendorLotTotals totals) {
+    Set<String> vendorIds = new HashSet<>();
+    for (String id : totals.vendorIds()) {
+      vendorIds.add(id);
+    }
+    return vendorIds;
+  }
+
   /**
    * Calculate vendor stock analytics.
    */
   public List<VendorStockDto> calculateVendorStockAnalytics(
-      List<Inventory> allInventories,
-      Map<String, Map<String, Object>> extensionByInventoryId,
+      VendorLotTotals totals,
       List<LineGroup> groups,
       Map<String, Inventory> lotsById,
       Map<String, Vendor> vendorMapById) {
-    Map<String, VendorStockData> vendorMap = new HashMap<>();
-    Set<String> vendorIds = new HashSet<>();
-
-    // Collect all vendor IDs
-    for (Inventory inventory : allInventories) {
-      if (inventory.getVendorId() != null) {
-        vendorIds.add(inventory.getVendorId());
-      }
-    }
-
-
-    // Initialize vendor data
-    for (String vendorId : vendorIds) {
-      Vendor vendor = vendorMapById.get(vendorId);
-      VendorStockData data = new VendorStockData(vendorId);
-      if (vendor != null) {
-        data.vendorName = vendor.getName();
-        data.vendorCompanyName = vendor.getCompanyName();
-      }
-      vendorMap.put(vendorId, data);
-    }
-
-
-    // Process inventory
-    for (Inventory inventory : allInventories) {
-      if (inventory.getVendorId() == null) continue;
-
-      VendorStockData data = vendorMap.get(inventory.getVendorId());
-      if (data == null) continue;
-
-      Integer received = getReceivedBaseCount(inventory);
-      Integer sold = getSoldBaseCount(inventory);
-      Integer current = getCurrentBaseCount(inventory);
-      BigDecimal costPrice = inventory.costForValuation() != null ? inventory.costForValuation() : BigDecimal.ZERO;
-
-      data.totalInventoryReceived += received;
-      data.totalQuantitySold += sold;
-      data.totalUnsoldStock += current;
-
-      // Check if expired
-      Instant expiryDate =
-          VerticalFieldsReader.expiryDateFrom(
-              extensionByInventoryId.getOrDefault(inventory.getId(), Map.of()));
-      if (expiryDate != null && expiryDate.isBefore(Instant.now())) {
-        data.totalExpiredStock += current;
-        data.expiredStockValue = data.expiredStockValue.add(costPrice.multiply(BigDecimal.valueOf(current)));
-      }
-
-      data.unsoldStockValue = data.unsoldStockValue.add(costPrice.multiply(BigDecimal.valueOf(current)));
-      data.numberOfProducts++;
-      if (inventory.getLotId() != null) {
-        data.lotIds.add(inventory.getLotId());
-      }
+    Map<String, VendorLotTotals.Stock> vendorMap = new HashMap<>();
+    for (String vendorId : lotVendorIds(totals)) {
+      vendorMap.put(vendorId, totals.stock.get(vendorId));
     }
 
     // Revenue per vendor from the period's lines
@@ -113,30 +68,33 @@ public class VendorAnalyticsUtils {
     }
 
     // Build response
-    return vendorMap.values().stream()
-        .map(data -> {
+    return vendorMap.entrySet().stream()
+        .map(e -> {
+          String vendorId = e.getKey();
+          VendorLotTotals.Stock data = e.getValue();
+          Vendor vendor = vendorMapById.get(vendorId);
           BigDecimal sellThrough = BigDecimal.ZERO;
-          if (data.totalInventoryReceived > 0) {
-            sellThrough = BigDecimal.valueOf(data.totalQuantitySold)
-                .divide(BigDecimal.valueOf(data.totalInventoryReceived), 4, RoundingMode.HALF_UP)
+          if (data.received > 0) {
+            sellThrough = BigDecimal.valueOf(data.sold)
+                .divide(BigDecimal.valueOf(data.received), 4, RoundingMode.HALF_UP)
                 .multiply(BigDecimal.valueOf(100));
           }
 
-          BigDecimal revenue = vendorRevenueMap.getOrDefault(data.vendorId, BigDecimal.ZERO);
+          BigDecimal revenue = vendorRevenueMap.getOrDefault(vendorId, BigDecimal.ZERO);
 
           return new VendorStockDto(
-              data.vendorId,
-              data.vendorName,
-              data.vendorCompanyName,
-              data.totalInventoryReceived,
-              data.totalQuantitySold,
-              data.totalUnsoldStock,
-              data.totalExpiredStock,
+              vendorId,
+              vendor != null ? vendor.getName() : null,
+              vendor != null ? vendor.getCompanyName() : null,
+              data.received,
+              data.sold,
+              data.unsold,
+              data.expired,
               sellThrough,
               revenue,
-              data.unsoldStockValue,
-              data.expiredStockValue,
-              data.numberOfProducts,
+              data.unsoldValue,
+              data.expiredValue,
+              data.products,
               data.lotIds.size()
           );
         })
@@ -226,112 +184,46 @@ public class VendorAnalyticsUtils {
    * Calculate vendor performance analytics.
    */
   public List<VendorPerformanceDto> calculateVendorPerformanceAnalytics(
-      List<Inventory> allInventories,
-      Map<String, Map<String, Object>> extensionByInventoryId,
-      Map<String, Vendor> vendorMapById) {
-    Map<String, VendorPerformanceData> vendorMap = new HashMap<>();
-    Set<String> vendorIds = new HashSet<>();
-
-    // Collect vendor IDs
-    for (Inventory inventory : allInventories) {
-      if (inventory.getVendorId() != null) {
-        vendorIds.add(inventory.getVendorId());
-      }
-    }
-
-
-    // Initialize vendor data
-    for (String vendorId : vendorIds) {
-      Vendor vendor = vendorMapById.get(vendorId);
-      VendorPerformanceData data = new VendorPerformanceData(vendorId);
-      if (vendor != null) {
-        data.vendorName = vendor.getName();
-        data.vendorCompanyName = vendor.getCompanyName();
-      }
-      vendorMap.put(vendorId, data);
-    }
-
-    Instant now = Instant.now();
-
-    // Process inventory
-    for (Inventory inventory : allInventories) {
-      if (inventory.getVendorId() == null) continue;
-
-      VendorPerformanceData data = vendorMap.get(inventory.getVendorId());
-      if (data == null) continue;
-
-      Integer received = getReceivedBaseCount(inventory);
-      Integer sold = getSoldBaseCount(inventory);
-      Integer current = getCurrentBaseCount(inventory);
-      BigDecimal costPrice = inventory.costForValuation() != null ? inventory.costForValuation() : BigDecimal.ZERO;
-
-      // Calculate days in stock
-      if (inventory.getReceivedDate() != null) {
-        long daysInStock = ChronoUnit.DAYS.between(inventory.getReceivedDate(), now);
-        data.totalDaysInStock += daysInStock * received;
-        data.totalItemsForDays += received;
-      }
-
-      // Check for expired items
-      Instant expiryDate =
-          VerticalFieldsReader.expiryDateFrom(
-              extensionByInventoryId.getOrDefault(inventory.getId(), Map.of()));
-      if (expiryDate != null && expiryDate.isBefore(now)) {
-        data.totalExpiredItems += current;
-        data.expiredStockValue = data.expiredStockValue.add(costPrice.multiply(BigDecimal.valueOf(current)));
-      }
-
-      // Dead stock (unsold for > 90 days)
-      if (inventory.getReceivedDate() != null) {
-        long daysSinceReceived = ChronoUnit.DAYS.between(inventory.getReceivedDate(), now);
-        if (daysSinceReceived > 90 && current > 0) {
-          data.totalDeadStockItems += current;
-          data.deadStockValue = data.deadStockValue.add(costPrice.multiply(BigDecimal.valueOf(current)));
-        }
-      }
-
-      // Fast moving items (sold within 30 days)
-      if (inventory.getReceivedDate() != null && sold > 0) {
-        long daysToSell = ChronoUnit.DAYS.between(inventory.getReceivedDate(), now);
-        if (daysToSell <= 30) {
-          data.fastMovingItems += sold;
-        }
-      }
-
-      data.totalReceived += received;
+      VendorLotTotals totals, Map<String, Vendor> vendorMapById) {
+    Map<String, VendorLotTotals.Performance> vendorMap = new HashMap<>();
+    for (String vendorId : lotVendorIds(totals)) {
+      vendorMap.put(vendorId, totals.performance.get(vendorId));
     }
 
     // Build response
-    return vendorMap.values().stream()
-        .map(data -> {
+    return vendorMap.entrySet().stream()
+        .map(e -> {
+          String vendorId = e.getKey();
+          VendorLotTotals.Performance data = e.getValue();
+          Vendor vendor = vendorMapById.get(vendorId);
           BigDecimal avgDaysInStock = BigDecimal.ZERO;
-          if (data.totalItemsForDays > 0) {
-            avgDaysInStock = BigDecimal.valueOf(data.totalDaysInStock)
-                .divide(BigDecimal.valueOf(data.totalItemsForDays), 2, RoundingMode.HALF_UP);
+          if (data.itemsForDays > 0) {
+            avgDaysInStock = BigDecimal.valueOf(data.daysInStock)
+                .divide(BigDecimal.valueOf(data.itemsForDays), 2, RoundingMode.HALF_UP);
           }
 
           BigDecimal fastMovingPercent = BigDecimal.ZERO;
-          if (data.totalReceived > 0) {
-            fastMovingPercent = BigDecimal.valueOf(data.fastMovingItems)
-                .divide(BigDecimal.valueOf(data.totalReceived), 4, RoundingMode.HALF_UP)
+          if (data.received > 0) {
+            fastMovingPercent = BigDecimal.valueOf(data.fastMoving)
+                .divide(BigDecimal.valueOf(data.received), 4, RoundingMode.HALF_UP)
                 .multiply(BigDecimal.valueOf(100));
           }
 
           BigDecimal expiryLossPercent = BigDecimal.ZERO;
-          if (data.totalReceived > 0) {
-            expiryLossPercent = BigDecimal.valueOf(data.totalExpiredItems)
-                .divide(BigDecimal.valueOf(data.totalReceived), 4, RoundingMode.HALF_UP)
+          if (data.received > 0) {
+            expiryLossPercent = BigDecimal.valueOf(data.expiredItems)
+                .divide(BigDecimal.valueOf(data.received), 4, RoundingMode.HALF_UP)
                 .multiply(BigDecimal.valueOf(100));
           }
 
           // Calculate risk score (0-100)
           // Higher expiry %, dead stock, and longer days in stock = higher risk
           BigDecimal riskScore = BigDecimal.ZERO;
-          if (data.totalReceived > 0) {
+          if (data.received > 0) {
             BigDecimal expiryRisk = expiryLossPercent.multiply(BigDecimal.valueOf(0.4)); // 40% weight
-            BigDecimal deadStockRisk = data.totalReceived > 0
-                ? BigDecimal.valueOf(data.totalDeadStockItems)
-                    .divide(BigDecimal.valueOf(data.totalReceived), 4, RoundingMode.HALF_UP)
+            BigDecimal deadStockRisk = data.received > 0
+                ? BigDecimal.valueOf(data.deadStockItems)
+                    .divide(BigDecimal.valueOf(data.received), 4, RoundingMode.HALF_UP)
                     .multiply(BigDecimal.valueOf(100))
                     .multiply(BigDecimal.valueOf(0.3)) // 30% weight
                 : BigDecimal.ZERO;
@@ -348,16 +240,16 @@ public class VendorAnalyticsUtils {
           }
 
           return new VendorPerformanceDto(
-              data.vendorId,
-              data.vendorName,
-              data.vendorCompanyName,
+              vendorId,
+              vendor != null ? vendor.getName() : null,
+              vendor != null ? vendor.getCompanyName() : null,
               avgDaysInStock,
               fastMovingPercent,
               data.deadStockValue,
-              data.expiredStockValue,
+              data.expiredValue,
               expiryLossPercent,
-              data.totalExpiredItems,
-              data.totalDeadStockItems,
+              data.expiredItems,
+              data.deadStockItems,
               riskScore,
               riskLevel
           );
@@ -370,64 +262,29 @@ public class VendorAnalyticsUtils {
    * Calculate category expiry analytics per vendor.
    */
   public List<VendorCategoryExpiryDto> calculateCategoryExpiryAnalytics(
-      List<Inventory> allInventories,
-      Map<String, Map<String, Object>> extensionByInventoryId,
-      Map<String, Vendor> vendorMapById) {
-    Map<String, CategoryExpiryData> categoryMap = new HashMap<>();
-
-
-    Instant now = Instant.now();
-
-    // Process inventory
-    for (Inventory inventory : allInventories) {
-      if (inventory.getVendorId() == null || inventory.getBusinessType() == null) continue;
-
-      String key = inventory.getVendorId() + "|" + inventory.getBusinessType();
-      CategoryExpiryData data = categoryMap.getOrDefault(key, new CategoryExpiryData(
-          inventory.getVendorId(),
-          inventory.getBusinessType()
-      ));
-
-      Vendor vendor = vendorMapById.get(inventory.getVendorId());
-      if (vendor != null) {
-        data.vendorName = vendor.getName();
-      }
-
-      Integer received = getReceivedBaseCount(inventory);
-      Integer current = getCurrentBaseCount(inventory);
-      BigDecimal costPrice = inventory.costForValuation() != null ? inventory.costForValuation() : BigDecimal.ZERO;
-
-      data.totalReceived += received;
-
-      Instant expiryDate =
-          VerticalFieldsReader.expiryDateFrom(
-              extensionByInventoryId.getOrDefault(inventory.getId(), Map.of()));
-      if (expiryDate != null && expiryDate.isBefore(now)) {
-        data.totalExpired += current;
-        data.expiredStockValue = data.expiredStockValue.add(costPrice.multiply(BigDecimal.valueOf(current)));
-      }
-
-      categoryMap.put(key, data);
-    }
+      VendorLotTotals totals, Map<String, Vendor> vendorMapById) {
+    Map<String, VendorLotTotals.Category> categoryMap = new HashMap<>();
+    totals.categories.forEach(categoryMap::put); // first-lot order, as the map was always filled
 
     // Build response
     return categoryMap.values().stream()
         .map(data -> {
+          Vendor vendor = vendorMapById.get(data.vendorId);
           BigDecimal expiryPercent = BigDecimal.ZERO;
-          if (data.totalReceived > 0) {
-            expiryPercent = BigDecimal.valueOf(data.totalExpired)
-                .divide(BigDecimal.valueOf(data.totalReceived), 4, RoundingMode.HALF_UP)
+          if (data.received > 0) {
+            expiryPercent = BigDecimal.valueOf(data.expired)
+                .divide(BigDecimal.valueOf(data.received), 4, RoundingMode.HALF_UP)
                 .multiply(BigDecimal.valueOf(100));
           }
 
           return new VendorCategoryExpiryDto(
               data.vendorId,
-              data.vendorName,
+              vendor != null ? vendor.getName() : null,
               data.businessType,
-              data.totalReceived,
-              data.totalExpired,
+              data.received,
+              data.expired,
               expiryPercent,
-              data.expiredStockValue
+              data.expiredValue
           );
         })
         .sorted((a, b) -> b.getExpiredStockValue().compareTo(a.getExpiredStockValue()))
@@ -437,28 +294,14 @@ public class VendorAnalyticsUtils {
   /**
    * Calculate vendor dependency analytics.
    */
-  public List<VendorDependencyDto> calculateVendorDependencyAnalytics(String shopId, List<VendorRevenueDto> vendorRevenues, List<Inventory> allInventories) {
+  public List<VendorDependencyDto> calculateVendorDependencyAnalytics(
+      List<VendorRevenueDto> vendorRevenues, VendorLotTotals totals) {
     // Calculate total revenue
     BigDecimal totalRevenue = vendorRevenues.stream()
         .map(VendorRevenueDto::getTotalRevenue)
         .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-    // Calculate total inventory value
-    BigDecimal totalInventoryValue = allInventories.stream()
-        .map(inv -> {
-          Integer current = getCurrentBaseCount(inv);
-          BigDecimal costPrice = inv.costForValuation() != null ? inv.costForValuation() : BigDecimal.ZERO;
-          return costPrice.multiply(BigDecimal.valueOf(current));
-        })
-        .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-    // Count products per vendor
-    Map<String, Integer> vendorProductCount = new HashMap<>();
-    for (Inventory inventory : allInventories) {
-      if (inventory.getVendorId() != null) {
-        vendorProductCount.merge(inventory.getVendorId(), 1, (left, right) -> left + right);
-      }
-    }
+    BigDecimal totalInventoryValue = totals.totalValue();
 
     // Build dependency analytics
     return vendorRevenues.stream()
@@ -470,14 +313,7 @@ public class VendorAnalyticsUtils {
                 .multiply(BigDecimal.valueOf(100));
           }
 
-          BigDecimal inventoryValue = allInventories.stream()
-              .filter(inv -> revenue.getVendorId().equals(inv.getVendorId()))
-              .map(inv -> {
-                Integer current = getCurrentBaseCount(inv);
-                BigDecimal costPrice = inv.costForValuation() != null ? inv.costForValuation() : BigDecimal.ZERO;
-                return costPrice.multiply(BigDecimal.valueOf(current));
-              })
-              .reduce(BigDecimal.ZERO, BigDecimal::add);
+          BigDecimal inventoryValue = totals.valueByVendor.getOrDefault(revenue.getVendorId(), BigDecimal.ZERO);
 
           BigDecimal inventoryPercent = BigDecimal.ZERO;
           if (totalInventoryValue.compareTo(BigDecimal.ZERO) > 0) {
@@ -499,38 +335,20 @@ public class VendorAnalyticsUtils {
             dependencyLevel = "MEDIUM";
           }
 
+          VendorLotTotals.Stock stock = totals.stock.get(revenue.getVendorId());
           return new VendorDependencyDto(
               revenue.getVendorId(),
               revenue.getVendorName(),
               revenue.getVendorCompanyName(),
               revenuePercent,
               inventoryPercent,
-              vendorProductCount.getOrDefault(revenue.getVendorId(), 0),
+              stock != null ? stock.products : 0,
               dependencyScore,
               dependencyLevel
           );
         })
         .sorted((a, b) -> b.getDependencyScore().compareTo(a.getDependencyScore()))
         .collect(Collectors.toList());
-  }
-
-  // Helper classes
-  private static class VendorStockData {
-    String vendorId;
-    String vendorName;
-    String vendorCompanyName;
-    int totalInventoryReceived = 0;
-    int totalQuantitySold = 0;
-    int totalUnsoldStock = 0;
-    int totalExpiredStock = 0;
-    BigDecimal unsoldStockValue = BigDecimal.ZERO;
-    BigDecimal expiredStockValue = BigDecimal.ZERO;
-    int numberOfProducts = 0;
-    Set<String> lotIds = new HashSet<>();
-
-    VendorStockData(String vendorId) {
-      this.vendorId = vendorId;
-    }
   }
 
   private static class VendorRevenueData {
@@ -547,85 +365,4 @@ public class VendorAnalyticsUtils {
       this.vendorId = vendorId;
     }
   }
-
-  private static class VendorPerformanceData {
-    String vendorId;
-    String vendorName;
-    String vendorCompanyName;
-    long totalDaysInStock = 0;
-    int totalItemsForDays = 0;
-    int fastMovingItems = 0;
-    int totalReceived = 0;
-    int totalExpiredItems = 0;
-    int totalDeadStockItems = 0;
-    BigDecimal deadStockValue = BigDecimal.ZERO;
-    BigDecimal expiredStockValue = BigDecimal.ZERO;
-
-    VendorPerformanceData(String vendorId) {
-      this.vendorId = vendorId;
-    }
-  }
-
-  private static class CategoryExpiryData {
-    String vendorId;
-    String vendorName;
-    String businessType;
-    int totalReceived = 0;
-    int totalExpired = 0;
-    BigDecimal expiredStockValue = BigDecimal.ZERO;
-
-    CategoryExpiryData(String vendorId, String businessType) {
-      this.vendorId = vendorId;
-      this.businessType = businessType;
-    }
-  }
-
-  private int getCurrentBaseCount(Inventory inventory) {
-    if (inventory.getCurrentBaseCount() != null) {
-      return inventory.getCurrentBaseCount();
-    }
-    if (inventory.getCurrentCount() != null) {
-      return inventory.getCurrentCount()
-          .multiply(BigDecimal.valueOf(getDisplayToBaseFactor(inventory)))
-          .setScale(0, RoundingMode.HALF_UP)
-          .intValue();
-    }
-    return 0;
-  }
-
-  private int getSoldBaseCount(Inventory inventory) {
-    if (inventory.getSoldBaseCount() != null) {
-      return inventory.getSoldBaseCount();
-    }
-    if (inventory.getSoldCount() != null) {
-      return inventory.getSoldCount()
-          .multiply(BigDecimal.valueOf(getDisplayToBaseFactor(inventory)))
-          .setScale(0, RoundingMode.HALF_UP)
-          .intValue();
-    }
-    return 0;
-  }
-
-  private int getReceivedBaseCount(Inventory inventory) {
-    if (inventory.getReceivedBaseCount() != null) {
-      return inventory.getReceivedBaseCount();
-    }
-    if (inventory.getReceivedCount() != null) {
-      return inventory.getReceivedCount()
-          .multiply(BigDecimal.valueOf(getDisplayToBaseFactor(inventory)))
-          .setScale(0, RoundingMode.HALF_UP)
-          .intValue();
-    }
-    return 0;
-  }
-
-  private int getDisplayToBaseFactor(Inventory inventory) {
-    if (inventory.getUnitConversions() == null
-        || inventory.getUnitConversions().getFactor() == null
-        || inventory.getUnitConversions().getFactor() <= 0) {
-      return 1;
-    }
-    return inventory.getUnitConversions().getFactor();
-  }
 }
-

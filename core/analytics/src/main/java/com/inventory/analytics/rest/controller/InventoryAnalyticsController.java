@@ -7,6 +7,7 @@ import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.common.exception.AuthenticationException;
+import com.inventory.analytics.rest.dto.response.InventoryAnalyticsItemsResponse;
 import com.inventory.analytics.rest.dto.response.InventoryAnalyticsResponse;
 import com.inventory.analytics.service.InventoryAnalyticsService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -38,6 +39,8 @@ public class InventoryAnalyticsController {
    * - deadStockDays: Days without sales to consider dead stock (optional, defaults to 90)
    * - expiringSoonDays: Days until expiry to alert (optional, defaults to 30)
    * - includeAll: Whether to include all items in response (optional, defaults to false)
+   * - listLimit: Rows sent per list (optional, defaults to 50, at most 200); each list's full size
+   *   is in listTotals, further pages come from GET /items
    */
   @GetMapping
   public ResponseEntity<ApiResponse<InventoryAnalyticsResponse>> getInventoryAnalytics(
@@ -45,19 +48,46 @@ public class InventoryAnalyticsController {
       @RequestParam(required = false) Integer deadStockDays,
       @RequestParam(required = false) Integer expiringSoonDays,
       @RequestParam(required = false, defaultValue = "false") Boolean includeAll,
+      @RequestParam(required = false) Integer listLimit,
       HttpServletRequest httpRequest) {
 
-    String shopId = (String) httpRequest.getAttribute("shopId");
+    InventoryAnalyticsResponse response = inventoryAnalyticsService.getInventoryAnalytics(
+        shopOf(httpRequest), lowStockThreshold, deadStockDays, expiringSoonDays, includeAll, listLimit);
+    return ResponseEntity.ok(ApiResponse.success(response));
+  }
 
+  /**
+   * One page of one list of the Inventory tab ("Show more").
+   *
+   * Query Parameters:
+   * - list: lowStockItems | notSellingItems | deadStockItems | allItems (required)
+   * - page: 0-based page (optional, defaults to 0)
+   * - size: rows per page (optional, defaults to 50, at most 200)
+   * - lowStockThreshold, deadStockDays, expiringSoonDays: as for the tab
+   */
+  @GetMapping("/items")
+  public ResponseEntity<ApiResponse<InventoryAnalyticsItemsResponse>> getInventoryAnalyticsItems(
+      @RequestParam String list,
+      @RequestParam(required = false) Integer page,
+      @RequestParam(required = false) Integer size,
+      @RequestParam(required = false) Integer lowStockThreshold,
+      @RequestParam(required = false) Integer deadStockDays,
+      @RequestParam(required = false) Integer expiringSoonDays,
+      HttpServletRequest httpRequest) {
+
+    InventoryAnalyticsItemsResponse response = inventoryAnalyticsService.getInventoryAnalyticsItems(
+        shopOf(httpRequest), list, page, size, lowStockThreshold, deadStockDays, expiringSoonDays);
+    return ResponseEntity.ok(ApiResponse.success(response));
+  }
+
+  private static String shopOf(HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
     if (!StringUtils.hasText(shopId)) {
       throw new AuthenticationException(
           ErrorCode.UNAUTHORIZED,
           "Unauthorized access to shop analytics");
     }
-
-    InventoryAnalyticsResponse response = inventoryAnalyticsService.getInventoryAnalytics(
-        shopId, lowStockThreshold, deadStockDays, expiringSoonDays, includeAll);
-    return ResponseEntity.ok(ApiResponse.success(response));
+    return shopId;
   }
 }
 
