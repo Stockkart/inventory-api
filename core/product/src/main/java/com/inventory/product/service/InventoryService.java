@@ -1,6 +1,8 @@
 package com.inventory.product.service;
 
 import com.inventory.common.constants.PurchaseTaxTreatment;
+import com.inventory.common.heavy.HeavyKind;
+import com.inventory.common.heavy.HeavyRequestLimiter;
 import com.inventory.common.util.GstStateCode;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
@@ -84,6 +86,9 @@ import java.util.stream.Collectors;
 @Service
 @Transactional
 public class InventoryService {
+
+  @Autowired
+  private HeavyRequestLimiter heavyRequestLimiter;
 
   @Autowired
   private InventoryRepository inventoryRepository;
@@ -252,6 +257,15 @@ public class InventoryService {
     InvoicePricingLayout layout = resolveInvoicePricingLayout(shopId);
     log.info("Processing invoice parsing for {} image(s) shopId={} layout={}",
         imageBytesList.size(), shopId, layout);
+    // at most a few uploads parse at once (images in memory; the OCR provider rate-limits); the
+    // desktop upload waits briefly then gets "busy", the phone upload's background parse waits longer
+    try (HeavyRequestLimiter.Permit ignored = heavyRequestLimiter.acquire(HeavyKind.OCR)) {
+      return parseImages(imageBytesList, layout);
+    }
+  }
+
+  private ParsedInventoryListResponse parseImages(
+      java.util.List<byte[]> imageBytesList, InvoicePricingLayout layout) {
     java.util.List<CreateInventoryItemRequest> mergedItems = new java.util.ArrayList<>();
     com.inventory.product.rest.dto.response.ParsedVendorInvoiceDto vendorInvoice = null;
 

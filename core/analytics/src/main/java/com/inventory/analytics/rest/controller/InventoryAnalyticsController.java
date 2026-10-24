@@ -1,6 +1,8 @@
 package com.inventory.analytics.rest.controller;
 
 
+import com.inventory.common.heavy.HeavyKind;
+import com.inventory.common.heavy.HeavyRequest;
 import com.inventory.metrics.annotation.Latency;
 import com.inventory.metrics.annotation.RecordRequestRate;
 import com.inventory.metrics.annotation.RecordStatusCodes;
@@ -42,6 +44,7 @@ public class InventoryAnalyticsController {
    * - listLimit: Rows sent per list (optional, defaults to 50, at most 200); each list's full size
    *   is in listTotals, further pages come from GET /items
    */
+  @HeavyRequest(HeavyKind.ANALYTICS)
   @GetMapping
   public ResponseEntity<ApiResponse<InventoryAnalyticsResponse>> getInventoryAnalytics(
       @RequestParam(required = false) Integer lowStockThreshold,
@@ -65,6 +68,7 @@ public class InventoryAnalyticsController {
    * - size: rows per page (optional, defaults to 50, at most 200)
    * - lowStockThreshold, deadStockDays, expiringSoonDays: as for the tab
    */
+  @HeavyRequest(HeavyKind.ANALYTICS)
   @GetMapping("/items")
   public ResponseEntity<ApiResponse<InventoryAnalyticsItemsResponse>> getInventoryAnalyticsItems(
       @RequestParam String list,

@@ -97,6 +97,20 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         .body(response);
   }
 
+  /** No free heavy-request slot in time (see HeavyRequestLimiter): 503, the kind's message and Retry-After. */
+  @ExceptionHandler(com.inventory.common.heavy.HeavyRequestBusyException.class)
+  public ResponseEntity<ApiResponse<ApiError>> handleHeavyRequestBusy(
+      com.inventory.common.heavy.HeavyRequestBusyException ex, HttpServletRequest request) {
+    log.warn("Busy ({} slots full) on {} {}", ex.getKind().key,
+        request != null ? request.getMethod() : "-", request != null ? request.getRequestURI() : "-");
+    ApiError apiError = apiErrorMapper.toApiError(ex.getMessage(), HttpStatus.SERVICE_UNAVAILABLE.value());
+    ApiResponse<ApiError> response = ApiResponse.error(ex.getMessage());
+    response.setData(apiError);
+    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+        .header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.getKind().retryAfterSeconds))
+        .body(response);
+  }
+
   @ExceptionHandler(ValidationException.class)
   public ResponseEntity<ApiResponse<ApiError>> handleValidationException(ValidationException ex, HttpServletRequest request) {
     log.error("Validation exception: {}", ex.getMessage(), ex);
