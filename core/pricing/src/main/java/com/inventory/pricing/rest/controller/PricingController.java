@@ -60,8 +60,10 @@ public class PricingController {
       @RequestBody UpdateDefaultPriceRequest request,
       HttpServletRequest httpRequest) {
     String shopId = (String) httpRequest.getAttribute("shopId");
+    String userId = (String) httpRequest.getAttribute("userId");
     pricingValidator.validateShopId(shopId);
-    return ResponseEntity.ok(ApiResponse.success(pricingService.updateDefaultPrice(pricingId, request, shopId)));
+    return ResponseEntity.ok(ApiResponse.success(
+        pricingService.updateDefaultPrice(pricingId, request, shopId, userId)));
   }
 
   /**
@@ -72,9 +74,10 @@ public class PricingController {
       @RequestBody BulkUpdateDefaultPriceRequest request,
       HttpServletRequest httpRequest) {
     String shopId = (String) httpRequest.getAttribute("shopId");
+    String userId = (String) httpRequest.getAttribute("userId");
     pricingValidator.validateShopId(shopId);
     pricingValidator.validateBulkUpdateRequest(request != null ? request.getUpdates() : null);
-    List<PricingResponse> results = pricingService.bulkUpdateDefaultPrice(request.getUpdates(), shopId);
+    List<PricingResponse> results = pricingService.bulkUpdateDefaultPrice(request.getUpdates(), shopId, userId);
     return ResponseEntity.ok(ApiResponse.success(results));
   }
 }
