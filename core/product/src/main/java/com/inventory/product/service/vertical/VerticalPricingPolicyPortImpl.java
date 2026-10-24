@@ -158,7 +158,17 @@ public class VerticalPricingPolicyPortImpl implements VerticalPricingPolicyPort 
     if (rates == null || rates.isEmpty()) {
       return null;
     }
-    return rates.stream().map(r -> new PricingRateEntry(r.getName(), r.getPrice())).toList();
+    return rates.stream()
+        .map(r -> new PricingRateEntry(
+            r.getName(),
+            r.getPrice(),
+            r.getBase(),
+            r.getBaseValue(),
+            r.getDiscountPercent(),
+            toSchemeEntry(r.getScheme()),
+            r.getManual(),
+            r.getGstMode()))
+        .toList();
   }
 
   private List<PricingRateEntry> toRateEntriesFromDomain(List<Rate> rates) {
@@ -169,7 +179,18 @@ public class VerticalPricingPolicyPortImpl implements VerticalPricingPolicyPort 
     if (rates == null || rates.isEmpty()) {
       return null;
     }
-    return rates.stream().map(r -> new Rate(r.name(), r.price())).toList();
+    return rates.stream()
+        .map(r -> Rate.builder()
+            .name(r.name())
+            .price(r.price())
+            .base(r.base())
+            .baseValue(r.baseValue())
+            .discountPercent(r.discountPercent())
+            .scheme(toDomainScheme(r.scheme()))
+            .manual(r.manual())
+            .gstMode(r.gstMode())
+            .build())
+        .toList();
   }
 
   private PricingSchemeEntry toSchemeEntry(SchemeDto dto) {
