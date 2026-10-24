@@ -1,6 +1,7 @@
 package com.inventory.product.service.vertical;
 
 import com.inventory.common.exception.ResourceNotFoundException;
+import com.inventory.pricing.service.ShopRateRulesPort;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.pluginengine.PluginRegistry;
 import com.inventory.pluginengine.VerticalPlugin;
@@ -30,6 +31,7 @@ public class ShopCapabilityService {
   private final DefaultSkuScanUiContributor defaultSkuScanUiContributor;
   private final ShopValidator shopValidator;
   private final UserShopMembershipService membershipService;
+  private final ShopRateRulesPort rateRulesPort;
 
   public ShopCapabilityService(
       ShopRepository shopRepository,
@@ -37,13 +39,15 @@ public class ShopCapabilityService {
       PluginRegistry pluginRegistry,
       DefaultSkuScanUiContributor defaultSkuScanUiContributor,
       ShopValidator shopValidator,
-      UserShopMembershipService membershipService) {
+      UserShopMembershipService membershipService,
+      ShopRateRulesPort rateRulesPort) {
     this.shopRepository = shopRepository;
     this.schemaLoader = schemaLoader;
     this.pluginRegistry = pluginRegistry;
     this.defaultSkuScanUiContributor = defaultSkuScanUiContributor;
     this.shopValidator = shopValidator;
     this.membershipService = membershipService;
+    this.rateRulesPort = rateRulesPort;
   }
 
   public ShopUiCapabilities getShopCapabilities(String shopId, String userId) {
@@ -74,6 +78,8 @@ public class ShopCapabilityService {
       capabilities.setFeatures(features);
     }
     features.setRetailPricing(shop.getShopType() == ShopType.RETAILER);
+    // The port returns no rules for cafe, so this is false there too.
+    features.setRateRules(!rateRulesPort.rulesFor(shop.getShopId()).isEmpty());
   }
 
   public boolean isCustomerReturnEnabled(String shopId, String userId) {
