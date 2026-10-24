@@ -55,6 +55,7 @@ public class InventoryPricingAdapterImpl implements InventoryPricingAdapter {
   public void update(String pricingId, PricingUpdateCommand command) {
     pricingValidator.validateUpdateCommand(command);
     UpdatePricingRequest req = pricingMapper.toUpdatePricingRequest(command);
-    pricingService.update(pricingId, req, command.getVerticalId());
+    // No user yet: the inventory write path passes it once it checks the rate-edit grant.
+    pricingService.update(pricingId, req, command.getVerticalId(), null);
   }
 }
