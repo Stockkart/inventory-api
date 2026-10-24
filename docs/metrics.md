@@ -8,7 +8,7 @@ All metrics are counters recorded through `MetricsWrapper.record(name, amount, t
 every one carries a `module` tag whose value is the module column below. Metrics that add
 further tags list them.
 
-**45 metrics across 13 modules.**
+**51 metrics across 14 modules.**
 
 ## accounting
 
@@ -67,6 +67,13 @@ further tags list them.
 | `inventory_plan_payments_total` | `PlanMetricsConstants.PAYMENTS_TOTAL` | PlanPaymentService |
 | `inventory_plan_webhooks_total` | `PlanMetricsConstants.WEBHOOKS_TOTAL` | PlanPaymentService |
 
+## pricing
+
+| Metric | Constant | Emitted by |
+|---|---|---|
+| `inventory_pricing_rate_default_fallback_total` | `PricingMetricsConstants.RATE_DEFAULT_FALLBACK_TOTAL` | RateGenerationService |
+| `inventory_pricing_rate_rule_skipped_total` | `PricingMetricsConstants.RATE_RULE_SKIPPED_TOTAL` | RateGenerationService |
+
 ## product
 
 | Metric | Constant | Emitted by |
@@ -86,6 +93,7 @@ further tags list them.
 | `inventory_product_print_jobs_total` | `ProductMetricsConstants.PRINT_JOBS` | PrintJobService |
 | `inventory_product_qr_tokens_total` | `ProductMetricsConstants.QR_TOKENS_TOTAL` | QRUploadService |
 | `inventory_product_quotations_total` | `ProductMetricsConstants.QUOTATIONS_TOTAL` | QuotationService |
+| `inventory_product_rate_rules_updates_total` | `ProductMetricsConstants.RATE_RULES_UPDATES` | RateRulesService |
 | `inventory_product_refund_amount` | `ProductMetricsConstants.REFUND_AMOUNT` | RefundService |
 | `inventory_product_refunds_total` | `ProductMetricsConstants.REFUNDS_TOTAL` | RefundService |
 | `inventory_product_vendor_purchases_total` | `ProductMetricsConstants.VENDOR_PURCHASES` | InventoryService |
@@ -133,6 +141,7 @@ Some call sites add a second tag beside `module`. The ones that matter for a das
 | `inventory_product_print_jobs_total` | `operation`, `outcome` | `sale`, `refund`, `vendor_return`; `bridge`, `download`, `in_progress` |
 | `inventory_product_print_job_outcomes_total` | `operation`, `outcome` | the source as above; `printed`, `failed_printer`, `still_queued`, `bridge_unreachable`, `already_sent`, `bridge_rejected`, `unconfirmed` |
 | `inventory_product_print_bridge_checks_total` | `outcome` | `not_detected`, `outdated`, `connected` |
+| `inventory_pricing_rate_rule_skipped_total` | `reason` | `BELOW_COST` |
 
 ## Adding a metric
 

@@ -18,4 +18,6 @@ public class MemberModulePermissions {
   private Boolean paymentPlan;
   /** Explicit grant to edit products from product search / detail modal. */
   private Boolean productSearchEdit;
+  /** Explicit grant to override or reset generated rate-rule rates on a batch. */
+  private Boolean rateRulesEdit;
 }

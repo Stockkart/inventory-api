@@ -48,6 +48,7 @@ public class RbacService {
   public static final String MODULE_MARKETING = "marketing";
   public static final String MODULE_PAYMENT_PLAN = "paymentPlan";
   public static final String MODULE_PRODUCT_SEARCH_EDIT = "productSearchEdit";
+  public static final String MODULE_RATE_RULES_EDIT = "rateRulesEdit";
 
   public static final String TEAM_MANAGE_INVITATIONS = "manageInvitations";
   public static final String TEAM_MANAGE_JOIN_REQUESTS = "manageJoinRequests";
@@ -204,6 +205,13 @@ public class RbacService {
       return;
     }
     throw new BaseException(ErrorCode.ACCESS_DENIED, "You do not have access to this module");
+  }
+
+  /** True when the user may override or reset a generated rate's terms: owner, or granted. */
+  @Transactional(readOnly = true)
+  public boolean canEditRates(String userId, String shopId) {
+    ShopAccessResponse access = getEffectiveAccess(userId, shopId);
+    return Boolean.TRUE.equals(access.getModules().get(MODULE_RATE_RULES_EDIT));
   }
 
   public void requireTeamAccess(String userId, String shopId, String teamKey) {
@@ -374,6 +382,7 @@ public class RbacService {
   private ShopAccessResponse ownerAccess(ProductSearchEditMode editMode) {
     Map<String, Boolean> allModules = defaultModulesForRole(UserRole.OWNER, null);
     allModules.put(MODULE_PRODUCT_SEARCH_EDIT, true);
+    allModules.put(MODULE_RATE_RULES_EDIT, true);
     return ShopAccessResponse.builder()
         .role(UserRole.OWNER.name())
         .relationship(UserShopMembershipService.RELATIONSHIP_OWNER)
@@ -418,6 +427,7 @@ public class RbacService {
     applyOverride(resolved, MODULE_MARKETING, overrides.getMarketing());
     applyOverride(resolved, MODULE_PAYMENT_PLAN, overrides.getPaymentPlan());
     applyOverride(resolved, MODULE_PRODUCT_SEARCH_EDIT, overrides.getProductSearchEdit());
+    applyOverride(resolved, MODULE_RATE_RULES_EDIT, overrides.getRateRulesEdit());
     return resolved;
   }
 
@@ -439,6 +449,7 @@ public class RbacService {
     modules.put(MODULE_MARKETING, fullStaff && !cashier);
     modules.put(MODULE_PAYMENT_PLAN, fullStaff && !cashier);
     modules.put(MODULE_PRODUCT_SEARCH_EDIT, false);
+    modules.put(MODULE_RATE_RULES_EDIT, false);
     return modules;
   }
 
