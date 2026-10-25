@@ -363,8 +363,13 @@ public class AnalyticsSalesQueries {
         .getCollection(mongoTemplate.getCollectionName(Purchase.class))
         .aggregate(pipeline)
         .maxTime(MAX_TIME_MS, TimeUnit.MILLISECONDS)
+        // all rows are always read: take them in as few replies as possible (default first batch is 101)
+        .batchSize(RESULT_BATCH)
         .into(new ArrayList<>());
   }
+
+  /** Rows per reply for the aggregations above (each reply is still capped at 16 MB by the server). */
+  static final int RESULT_BATCH = 5000;
 
   /**
    * A sale line as the entity mapping would read it: numbers converted the way Spring converts them,
