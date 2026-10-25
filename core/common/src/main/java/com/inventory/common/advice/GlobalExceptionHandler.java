@@ -71,11 +71,15 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
   /**
    * True when the request failed because MongoDB could not be reached in time: no free pooled
-   * connection within {@code mongo.pool.max-wait-ms}, or no server selectable. The driver throws
+   * connection within {@code mongo.pool.max-wait-ms}, or no server selectable; or a transaction
+   * still lost a write conflict after its retries. The driver throws
    * {@code com.mongodb.MongoTimeoutException}; services usually wrap it, so the whole cause chain
    * is checked (by name: this module does not depend on the driver).
    */
   static boolean isBusy(Throwable ex) {
+    if (com.inventory.common.tx.MongoTx.isWriteConflict(ex)) {
+      return true; // another bill kept winning the same documents; nothing was saved, retry works
+    }
     for (Throwable t = ex; t != null; t = t.getCause() == t ? null : t.getCause()) {
       if ("com.mongodb.MongoTimeoutException".equals(t.getClass().getName())) {
         return true;

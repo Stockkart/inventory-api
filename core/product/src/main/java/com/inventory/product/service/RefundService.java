@@ -86,6 +86,9 @@ public class RefundService {
   @Autowired(required = false)
   private com.inventory.metrics.MetricsWrapper metrics;
 
+  @Autowired(required = false)
+  private com.inventory.common.tx.MongoTx mongoTx;
+
   @Autowired
   private com.inventory.user.domain.repository.CustomerRepository customerRepository;
 
@@ -113,6 +116,17 @@ public class RefundService {
    * @return RefundResponse with refund amount and refunded items
    */
   public RefundResponse processRefund(RefundRequest request, HttpServletRequest httpRequest) {
+    // one MongoDB transaction: stock back, the refund, the return journal and the due change
+    // together or not at all; two refunds of the same bill at once conflict and the second is
+    // checked again against what the first refunded
+    if (mongoTx != null) {
+      return mongoTx.run(com.inventory.common.tx.MongoTx.REFUND, (String) httpRequest.getAttribute("shopId"),
+          () -> refund(request, httpRequest));
+    }
+    return refund(request, httpRequest);
+  }
+
+  private RefundResponse refund(RefundRequest request, HttpServletRequest httpRequest) {
     // Get shopId and userId from request attributes
     String shopId = (String) httpRequest.getAttribute("shopId");
     String userId = (String) httpRequest.getAttribute("userId");
@@ -308,15 +322,18 @@ public class RefundService {
           refundedItems.size());
 
       if (metrics != null) {
-        metrics.record(
-            ProductMetricsConstants.REFUNDS_TOTAL, 1, "module", ProductMetricsConstants.MODULE);
-        if (roundedAmount.compareTo(BigDecimal.ZERO) > 0) {
+        // counted once, and only if the refund is saved
+        com.inventory.common.tx.MongoTx.afterCommit(() -> {
           metrics.record(
-              ProductMetricsConstants.REFUND_AMOUNT,
-              roundedAmount.doubleValue(),
-              "module",
-              ProductMetricsConstants.MODULE);
-        }
+              ProductMetricsConstants.REFUNDS_TOTAL, 1, "module", ProductMetricsConstants.MODULE);
+          if (roundedAmount.compareTo(BigDecimal.ZERO) > 0) {
+            metrics.record(
+                ProductMetricsConstants.REFUND_AMOUNT,
+                roundedAmount.doubleValue(),
+                "module",
+                ProductMetricsConstants.MODULE);
+          }
+        });
       }
 
       return response;

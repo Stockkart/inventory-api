@@ -263,6 +263,9 @@ public class AccountingPostingService {
       }
       ledgerEntryRepository.saveAll(rows);
     } catch (RuntimeException e) {
+      if (com.inventory.common.tx.MongoTx.inTransaction()) {
+        throw e; // the transaction takes the balances back with everything else
+      }
       applied.forEach((accountId, total) -> {
         try {
           ledgerBalances.undo(entry.getShopId(), accountId, total);

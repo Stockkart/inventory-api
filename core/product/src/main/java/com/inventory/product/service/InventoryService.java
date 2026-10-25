@@ -87,6 +87,9 @@ import java.util.stream.Collectors;
 @Transactional
 public class InventoryService {
 
+  @Autowired(required = false)
+  private com.inventory.common.tx.MongoTx mongoTx;
+
   @Autowired
   private HeavyRequestLimiter heavyRequestLimiter;
 
@@ -374,6 +377,17 @@ public class InventoryService {
    * @return bulk creation response with created items
    */
   public BulkCreateInventoryResponse bulkCreate(BulkCreateInventoryRequest bulkRequest, String userId, String shopId) {
+    // one MongoDB transaction: the invoice, every lot (product, pricing, stock), the vendor due and
+    // the purchase journal together or not at all (a half-registered bill left lots without a journal)
+    if (mongoTx != null) {
+      return mongoTx.run(com.inventory.common.tx.MongoTx.VENDOR_INVOICE, shopId,
+          () -> registerPurchase(bulkRequest, userId, shopId));
+    }
+    return registerPurchase(bulkRequest, userId, shopId);
+  }
+
+  private BulkCreateInventoryResponse registerPurchase(
+      BulkCreateInventoryRequest bulkRequest, String userId, String shopId) {
     List<InventoryReceiptResponse> createdItems = new ArrayList<>();
 
     List<CreateInventoryItemRequest> itemRequests = bulkRequest.getItems();
@@ -507,11 +521,11 @@ public class InventoryService {
     rememberVendorTaxTreatment(bulkRequest.getVendorId(), invReq);
     vendorPurchaseInvoiceRepository.save(pendingInvoice);
     if (metrics != null) {
-      metrics.record(
+      com.inventory.common.tx.MongoTx.afterCommit(() -> metrics.record(
           ProductMetricsConstants.VENDOR_PURCHASES,
           1,
           "module",
-          ProductMetricsConstants.MODULE);
+          ProductMetricsConstants.MODULE));
     }
     String returnedInvoiceId = pendingInvoice.getId();
 
@@ -528,18 +542,21 @@ public class InventoryService {
     }
 
     if (metrics != null && !createdItems.isEmpty()) {
-      metrics.record(
-          ProductMetricsConstants.INVENTORY_OPERATION,
-          1,
-          "module",
-          ProductMetricsConstants.MODULE,
-          "operation",
-          "bulk_create");
-      metrics.record(
-          ProductMetricsConstants.INVENTORY_ITEMS_ADDED,
-          createdItems.size(),
-          "module",
-          ProductMetricsConstants.MODULE);
+      int added = createdItems.size();
+      com.inventory.common.tx.MongoTx.afterCommit(() -> {
+        metrics.record(
+            ProductMetricsConstants.INVENTORY_OPERATION,
+            1,
+            "module",
+            ProductMetricsConstants.MODULE,
+            "operation",
+            "bulk_create");
+        metrics.record(
+            ProductMetricsConstants.INVENTORY_ITEMS_ADDED,
+            added,
+            "module",
+            ProductMetricsConstants.MODULE);
+      });
     }
 
     BulkCreateInventoryResponse out =
@@ -942,8 +959,11 @@ public class InventoryService {
 
       if (metrics != null) {
         int itemCount = request.getCount() != null ? request.getCount() : 1;
-        metrics.record(ProductMetricsConstants.INVENTORY_OPERATION, 1, "module", ProductMetricsConstants.MODULE, "operation", "create");
-        metrics.record(ProductMetricsConstants.INVENTORY_ITEMS_ADDED, itemCount, "module", ProductMetricsConstants.MODULE);
+        int added = itemCount;
+        com.inventory.common.tx.MongoTx.afterCommit(() -> {
+          metrics.record(ProductMetricsConstants.INVENTORY_OPERATION, 1, "module", ProductMetricsConstants.MODULE, "operation", "create");
+          metrics.record(ProductMetricsConstants.INVENTORY_ITEMS_ADDED, added, "module", ProductMetricsConstants.MODULE);
+        });
       }
 
       CreateReminderForInventoryRequest reminderRequest =
