@@ -36,7 +36,8 @@ public class SearchMetrics {
   static final String SLOW = "inventory_product_search_slow_total";
 
   static final long SLOW_THRESHOLD_MS = 500;
-  static final long[] LATENCY_LE_MS = {50, 100, 250, 500, 1_000, 2_500, 5_000};
+  // up to 30 s: under load a search took 7–17 s, which a 5 s top bucket hides
+  static final long[] LATENCY_LE_MS = {50, 100, 250, 500, 1_000, 2_500, 5_000, 10_000, 30_000};
 
   private static final String MODULE = ProductMetricsConstants.MODULE;
 
