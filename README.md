@@ -222,6 +222,7 @@ Shops are bound to a **vertical** (`Shop.verticalId` + `Shop.pluginVersion`). Fi
 | `GET /api/v1/inventory/search` | Unified `q`, `sort`, `limit`, `cursor` → `meta.nextCursor` |
 | `GET /api/v1/inventory/expiry-buckets` | Expiry bucket counts (Analytics) |
 | `GET /api/v1/reminders/expiry-buckets` | Expiry bucket cards (Reminders dashboard) |
+| `PUT /api/v1/inventory/{id}` | Edit one lot (product search Edit). Sent fields only; prices go to the lot's pricing record, and the response carries the prices as stored after the update |
 
 **Removed:** `GET /inventory/near-expiry`, `GET /inventory/fefo`.
 
