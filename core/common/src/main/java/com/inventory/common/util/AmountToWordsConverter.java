@@ -1,10 +1,13 @@
-package com.inventory.product.utils;
+package com.inventory.common.util;
 
 import java.math.BigDecimal;
 
 /**
  * Utility class for converting numeric amounts to words in Indian currency format.
  * Supports conversion up to 99,99,99,999 (Indian numbering system).
+ *
+ * <p>Moved from {@code core/product} (HR task 9.3) so that payslips can print net pay in words
+ * without HR depending on product.
  */
 public class AmountToWordsConverter {
 

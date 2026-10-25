@@ -15,7 +15,7 @@ import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.VendorPurchaseInvoiceRepository;
 import com.inventory.product.domain.repository.VendorPurchaseReturnRepository;
-import com.inventory.product.utils.AmountToWordsConverter;
+import com.inventory.common.util.AmountToWordsConverter;
 import com.inventory.user.domain.model.Vendor;
 import com.inventory.user.domain.repository.VendorRepository;
 import org.springframework.stereotype.Component;

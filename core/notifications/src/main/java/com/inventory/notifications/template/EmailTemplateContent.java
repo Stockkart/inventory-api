@@ -69,6 +69,23 @@ public final class EmailTemplateContent {
               </html>
               """
       );
+      // names and the month only: amounts stay inside the attached PDF
+      case PAYSLIP -> new TemplateContent(
+          "Your payslip for {{periodLabel}}",
+          """
+              <!DOCTYPE html>
+              <html>
+              <head><meta charset="UTF-8"></head>
+              <body style="font-family: sans-serif; line-height: 1.6; color: #333;">
+                <h2>Your payslip</h2>
+                <p>Hi {{employeeName}},</p>
+                <p>Your payslip from {{shopName}} for {{periodLabel}} is attached as a PDF.</p>
+                <p>If something looks wrong, please talk to {{shopName}}.</p>
+                <p>Best regards,<br>The Stock Kart Team</p>
+              </body>
+              </html>
+              """
+      );
     };
   }
 

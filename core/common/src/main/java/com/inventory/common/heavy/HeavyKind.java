@@ -17,7 +17,14 @@ public enum HeavyKind {
       "Invoice reading is busy right now. Please try again in a moment."),
   /** Excel stock import and price bulk update: a whole sheet in memory. */
   IMPORT("import", 1, 2, 20_000, 0, 30,
-      "Another import is running. Please try again in a minute.");
+      "Another import is running. Please try again in a minute."),
+  /**
+   * HR month export, leave-balance export, salary register, payroll create / recalculate /
+   * finalise: a month of attendance (≤ 9,300 day records for 300 employees) in memory. Its own
+   * kind so HR files never wait behind a slow MIS export (HR design decision 9).
+   */
+  HR("hr", 2, 4, 10_000, 0, 10,
+      "HR is preparing another file or payroll. Please try again in a few seconds.");
 
   /** Property / metric name. */
   public final String key;

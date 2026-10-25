@@ -41,11 +41,21 @@ public interface ShopServiceAdapter {
   /** What the login response shows about the active shop. GST is per product, never per shop. */
   class ShopSummary {
     private String name;
+    /**
+     * Shop address on one line ("street, area, city, state, PIN"), printed on payslips (HR R10.2).
+     * null = no address stored, so none is printed.
+     */
+    private String addressLine;
 
     public ShopSummary() {}
 
     public ShopSummary(String name) {
       this.name = name;
+    }
+
+    public ShopSummary(String name, String addressLine) {
+      this.name = name;
+      this.addressLine = addressLine;
     }
 
     public String getName() {
@@ -54,6 +64,14 @@ public interface ShopServiceAdapter {
 
     public void setName(String name) {
       this.name = name;
+    }
+
+    public String getAddressLine() {
+      return addressLine;
+    }
+
+    public void setAddressLine(String addressLine) {
+      this.addressLine = addressLine;
     }
   }
 }

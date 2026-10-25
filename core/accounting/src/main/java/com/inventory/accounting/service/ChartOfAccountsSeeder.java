@@ -47,6 +47,9 @@ public class ChartOfAccountsSeeder {
           t(CARD_CLEARING, "Card / Gateway Clearing", AccountType.ASSET, NormalBalance.DEBIT, null),
           t(UPI_CLEARING, "UPI Clearing", AccountType.ASSET, NormalBalance.DEBIT, null),
           t(SUNDRY_DEBTORS, "Sundry Debtors", AccountType.ASSET, NormalBalance.DEBIT, null),
+          // HR: advances, salary payable and salary expense. Existing shops get them on their
+          // next posting or accounting read, because seeding adds every missing code (R11.6).
+          t(STAFF_ADVANCES, "Staff Advances", AccountType.ASSET, NormalBalance.DEBIT, null),
           t(INVENTORY, "Inventory (Stock-in-Trade)", AccountType.ASSET, NormalBalance.DEBIT, null),
           t(INPUT_CGST, "Input CGST", AccountType.ASSET, NormalBalance.DEBIT, null),
           t(INPUT_SGST, "Input SGST", AccountType.ASSET, NormalBalance.DEBIT, null),
@@ -61,6 +64,7 @@ public class ChartOfAccountsSeeder {
           t(OUTPUT_SGST, "Output SGST", AccountType.LIABILITY, NormalBalance.CREDIT, null),
           t(OUTPUT_IGST, "Output IGST", AccountType.LIABILITY, NormalBalance.CREDIT, null),
           t(ROUND_OFF_PAYABLE, "Round-off Payable", AccountType.LIABILITY, NormalBalance.CREDIT, null),
+          t(SALARY_PAYABLE, "Salary Payable", AccountType.LIABILITY, NormalBalance.CREDIT, null),
           // Equity
           t(OWNERS_CAPITAL, "Owner's Capital", AccountType.EQUITY, NormalBalance.CREDIT, null),
           t(RETAINED_EARNINGS, "Retained Earnings", AccountType.EQUITY, NormalBalance.CREDIT, null),
@@ -81,6 +85,7 @@ public class ChartOfAccountsSeeder {
               AccountType.EXPENSE,
               NormalBalance.DEBIT,
               null),
+          t(SALARY_EXPENSE, "Salaries and Wages", AccountType.EXPENSE, NormalBalance.DEBIT, null),
           t(OTHER_OPERATING_EXPENSES,
               "Other Operating Expenses",
               AccountType.EXPENSE,

@@ -1266,7 +1266,7 @@
         "name": "module",
         "label": "module",
         "type": "custom",
-        "query": "accounting,analytics,cafe,credit,documentservice,notifications,ocr,plan,pricing,product,reminders,resource,taxation,user",
+        "query": "accounting,analytics,cafe,credit,documentservice,hr,notifications,ocr,plan,pricing,product,reminders,resource,taxation,user",
         "options": [
           {
             "selected": false,
@@ -1292,6 +1292,11 @@
             "selected": false,
             "text": "documentservice",
             "value": "documentservice"
+          },
+          {
+            "selected": false,
+            "text": "hr",
+            "value": "hr"
           },
           {
             "selected": false,

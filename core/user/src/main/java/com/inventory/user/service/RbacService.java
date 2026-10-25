@@ -48,6 +48,15 @@ public class RbacService {
   public static final String MODULE_MARKETING = "marketing";
   public static final String MODULE_PAYMENT_PLAN = "paymentPlan";
   public static final String MODULE_PRODUCT_SEARCH_EDIT = "productSearchEdit";
+  /** HR module (prefix {@code /api/v1/hr}); on for every role unless the member's switch is off. */
+  public static final String MODULE_HR = "hr";
+
+  /**
+   * Request attribute under which {@code RbacModuleInterceptor} keeps the {@link
+   * ShopAccessResponse} it resolved for the module check, so services of the same request (HR
+   * permission checks) reuse it instead of resolving access again.
+   */
+  public static final String ACCESS_ATTRIBUTE = "rbac.shopAccess";
 
   public static final String TEAM_MANAGE_INVITATIONS = "manageInvitations";
   public static final String TEAM_MANAGE_JOIN_REQUESTS = "manageJoinRequests";
@@ -80,6 +89,8 @@ public class RbacService {
   @Autowired private UserShopMembershipService membershipService;
   @Autowired private UserValidator userValidator;
   @Autowired private MetricsWrapper metrics;
+  /** HR block for {@code /shops/me/access}; absent when the HR module is not on the classpath. */
+  @Autowired(required = false) private HrAccessAdapter hrAccessAdapter;
 
   @Transactional(readOnly = true)
   public ShopAccessResponse getEffectiveAccess(String userId, String shopId) {
@@ -87,6 +98,28 @@ public class RbacService {
     MembershipContext ctx = resolveMembershipContext(userId, shopId);
     ProductSearchEditMode editMode = getOrDefaultPolicy(shopId).getProductSearchEditMode();
     return buildAccessResponse(ctx, editMode);
+  }
+
+  /**
+   * {@link #getEffectiveAccess} plus the HR block, for {@code GET /shops/me/access}. The HR block
+   * costs extra reads (role grid, linked employee), so module checks keep using {@link
+   * #getEffectiveAccess}.
+   */
+  public ShopAccessResponse getEffectiveAccessForClient(String userId, String shopId) {
+    ShopAccessResponse access = getEffectiveAccess(userId, shopId);
+    if (hrAccessAdapter != null) {
+      try {
+        access.setHr(hrAccessAdapter.resolve(userId, shopId, access));
+      } catch (RuntimeException e) {
+        // an HR read failure must not break the whole app shell: fall back to "no HR access"
+        log.error("HR access could not be resolved for shop {}: {}", shopId, e.getMessage());
+        access.setHr(ShopAccessResponse.HrAccessDto.builder()
+            .permissions(List.of())
+            .employeeId(null)
+            .build());
+      }
+    }
+    return access;
   }
 
   @Transactional(readOnly = true)
@@ -198,10 +231,16 @@ public class RbacService {
         .build();
   }
 
-  public void requireModule(String userId, String shopId, String moduleKey) {
+  /**
+   * Throws 403 unless the module resolves to on for the member.
+   *
+   * @return the access resolved for the check, so the caller can keep it for the rest of the
+   *     request ({@link #ACCESS_ATTRIBUTE})
+   */
+  public ShopAccessResponse requireModule(String userId, String shopId, String moduleKey) {
     ShopAccessResponse access = getEffectiveAccess(userId, shopId);
     if (Boolean.TRUE.equals(access.getModules().get(moduleKey))) {
-      return;
+      return access;
     }
     throw new BaseException(ErrorCode.ACCESS_DENIED, "You do not have access to this module");
   }
@@ -445,6 +484,8 @@ public class RbacService {
     applyOverride(resolved, MODULE_MARKETING, overrides.getMarketing());
     applyOverride(resolved, MODULE_PAYMENT_PLAN, overrides.getPaymentPlan());
     applyOverride(resolved, MODULE_PRODUCT_SEARCH_EDIT, overrides.getProductSearchEdit());
+    // null = on (role default); only an explicit false switches HR off for the member
+    applyOverride(resolved, MODULE_HR, overrides.getHr());
     return resolved;
   }
 
@@ -466,6 +507,10 @@ public class RbacService {
     modules.put(MODULE_MARKETING, fullStaff && !cashier);
     modules.put(MODULE_PAYMENT_PLAN, fullStaff && !cashier);
     modules.put(MODULE_PRODUCT_SEARCH_EDIT, false);
+    // HR is on for every shop role: what a member may do inside HR is decided by the shop's HR
+    // role grid (Cashier's default row is empty), so this switch alone grants nothing. Allow-listed
+    // so a non-shop role (SUPER_USER) still gets no module.
+    modules.put(MODULE_HR, fullStaff || cashier);
     return modules;
   }
 

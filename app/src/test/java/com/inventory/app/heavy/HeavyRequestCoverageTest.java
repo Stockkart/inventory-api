@@ -22,8 +22,8 @@ import org.springframework.web.bind.annotation.RestController;
  */
 class HeavyRequestCoverageTest {
 
-  /** Full path → the kind it must have (null: must not be heavy). */
-  private static HeavyKind expected(String path) {
+  /** Full path and HTTP verb → the kind it must have (null: must not be heavy). */
+  private static HeavyKind expected(String verb, String path) {
     if (path.startsWith("/api/v1/mis/") && path.matches(".*/(pdf|excel)$")) {
       return HeavyKind.EXPORT;
     }
@@ -35,6 +35,16 @@ class HeavyRequestCoverageTest {
     }
     if (path.equals("/api/v1/inventory/parse-stock-sheet") || path.equals("/api/v1/pricing/bulk-update")) {
       return HeavyKind.IMPORT;
+    }
+    // HR files and the month-wide payroll calculations (HR decision 9); GET /payroll-runs (the
+    // list) shares its path with create, so the verb decides
+    if (path.equals("/api/v1/hr/attendance/month/export") || path.equals("/api/v1/hr/leave-balances/export")
+        || path.equals("/api/v1/hr/payroll-runs/{runId}/register")) {
+      return HeavyKind.HR;
+    }
+    if ("POST".equals(verb) && (path.equals("/api/v1/hr/payroll-runs")
+        || path.matches("/api/v1/hr/payroll-runs/\\{runId}/(recalculate|finalise)"))) {
+      return HeavyKind.HR;
     }
     return null;
   }
@@ -53,9 +63,10 @@ class HeavyRequestCoverageTest {
           continue;
         }
         String[] paths = rm.path().length > 0 ? rm.path() : new String[] {""};
+        String verb = rm.method().length > 0 ? rm.method()[0].name() : "ANY";
         for (String prefix : prefixes) {
           for (String p : paths) {
-            out.put((prefix + p).replaceAll("/+$", "") + " " + type.getSimpleName() + "#" + m.getName(), m);
+            out.put(verb + " " + (prefix + p).replaceAll("/+$", "") + " " + type.getSimpleName() + "#" + m.getName(), m);
           }
         }
       }
@@ -69,8 +80,8 @@ class HeavyRequestCoverageTest {
     List<String> wrong = new ArrayList<>();
     int heavy = 0;
     for (Map.Entry<String, Method> e : all.entrySet()) {
-      String path = e.getKey().substring(0, e.getKey().indexOf(' '));
-      HeavyKind want = expected(path);
+      String[] key = e.getKey().split(" ");
+      HeavyKind want = expected(key[0], key[1]);
       HeavyRequest has = e.getValue().getAnnotation(HeavyRequest.class);
       HeavyKind got = has == null ? null : has.value();
       if (want != got) {
@@ -82,6 +93,6 @@ class HeavyRequestCoverageTest {
     }
     assertThat(wrong).isEmpty();
     assertThat(all).hasSizeGreaterThan(100); // the scan really saw the controllers
-    assertThat(heavy).isEqualTo(20); // 12 exports, 6 analytics, 2 imports
+    assertThat(heavy).isEqualTo(26); // 12 exports, 6 analytics, 2 imports, 6 HR
   }
 }

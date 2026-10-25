@@ -64,4 +64,12 @@ public interface AccountingFacade {
       String shopId,
       com.inventory.accounting.domain.model.JournalSource sourceType,
       String sourceId);
+
+  /**
+   * The codes among {@code codes} that the shop holds as an account of its own ({@code system
+   * != true}): the seeder skips a code a shop already uses, so posting by such a code would book
+   * into the shop's unrelated account. One read; codes the shop has no account for are not
+   * returned (posting seeds them as system accounts).
+   */
+  java.util.Set<String> ownAccountCodes(String shopId, java.util.Collection<String> codes);
 }
