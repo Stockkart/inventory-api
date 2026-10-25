@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
@@ -52,7 +53,18 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     ApiError apiError = apiErrorMapper.toApiError(ex.getMessage(), errorCode.getHttpStatus().value());
     ApiResponse<ApiError> response = ApiResponse.error(ex.getMessage());
     response.setData(apiError);
-    return new ResponseEntity<>(response, errorCode.getHttpStatus());
+    return json(response, errorCode.getHttpStatus());
+  }
+
+  /**
+   * An error answer as JSON, whatever the request's {@code Accept} says. Without a preset content
+   * type Spring negotiates against {@code Accept}: an SSE open ({@code text/event-stream}) or a
+   * file download asking only for its file type then finds no way to write the JSON body
+   * ({@code HttpMediaTypeNotAcceptableException}) and the answer becomes a 500 — under a burst of
+   * SSE opens, the 503 "busy" answers came out as 500s that way.
+   */
+  static <T> ResponseEntity<T> json(T body, HttpStatusCode status) {
+    return ResponseEntity.status(status).contentType(MediaType.APPLICATION_JSON).body(body);
   }
 
   /** Seconds a client is told to wait before retrying a "busy" (503) answer. */
@@ -94,6 +106,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     response.setData(apiError);
     return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
         .header(HttpHeaders.RETRY_AFTER, BUSY_RETRY_AFTER_SECONDS)
+        .contentType(MediaType.APPLICATION_JSON)
         .body(response);
   }
 
@@ -108,6 +121,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     response.setData(apiError);
     return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
         .header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.getKind().retryAfterSeconds))
+        .contentType(MediaType.APPLICATION_JSON)
         .body(response);
   }
 
@@ -126,7 +140,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     ApiError apiError = apiErrorMapper.toApiError(summary, HttpStatus.BAD_REQUEST.value(), errors);
     ApiResponse<ApiError> response = ApiResponse.error(summary);
     response.setData(apiError);
-    return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    return json(response, HttpStatus.BAD_REQUEST);
   }
 
   @ExceptionHandler(AuthenticationException.class)
@@ -135,7 +149,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     ApiError apiError = apiErrorMapper.toApiError(ex.getMessage(), HttpStatus.UNAUTHORIZED.value());
     ApiResponse<ApiError> response = ApiResponse.error(ex.getMessage());
     response.setData(apiError);
-    return new ResponseEntity<>(response, HttpStatus.UNAUTHORIZED);
+    return json(response, HttpStatus.UNAUTHORIZED);
   }
 
   @ExceptionHandler(BadCredentialsException.class)
@@ -144,7 +158,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     ApiError apiError = apiErrorMapper.toApiError("Invalid username or password", HttpStatus.UNAUTHORIZED.value());
     ApiResponse<ApiError> response = ApiResponse.error("Invalid username or password");
     response.setData(apiError);
-    return new ResponseEntity<>(response, HttpStatus.UNAUTHORIZED);
+    return json(response, HttpStatus.UNAUTHORIZED);
   }
 
   @ExceptionHandler(AccessDeniedException.class)
@@ -153,7 +167,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     ApiError apiError = apiErrorMapper.toApiError("You don't have permission to access this resource", HttpStatus.FORBIDDEN.value());
     ApiResponse<ApiError> response = ApiResponse.error("You don't have permission to access this resource");
     response.setData(apiError);
-    return new ResponseEntity<>(response, HttpStatus.FORBIDDEN);
+    return json(response, HttpStatus.FORBIDDEN);
   }
 
   @ExceptionHandler(ConstraintViolationException.class)
@@ -178,7 +192,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     ApiError apiError = apiErrorMapper.toApiError("Validation failed", HttpStatus.BAD_REQUEST.value(), errors);
     ApiResponse<ApiError> response = ApiResponse.error("Validation failed");
     response.setData(apiError);
-    return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    return json(response, HttpStatus.BAD_REQUEST);
   }
 
   @ExceptionHandler(Exception.class)
@@ -190,7 +204,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     ApiError apiError = apiErrorMapper.toApiError("An unexpected error occurred", HttpStatus.INTERNAL_SERVER_ERROR.value());
     ApiResponse<ApiError> response = ApiResponse.error("An unexpected error occurred");
     response.setData(apiError);
-    return new ResponseEntity<>(response, HttpStatus.INTERNAL_SERVER_ERROR);
+    return json(response, HttpStatus.INTERNAL_SERVER_ERROR);
   }
 
   @Override
@@ -222,7 +236,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     ApiError apiError = apiErrorMapper.toApiError("Validation failed", HttpStatus.BAD_REQUEST.value(), errors);
     ApiResponse<ApiError> response = ApiResponse.error("Validation failed");
     response.setData(apiError);
-    return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    return json(response, HttpStatus.BAD_REQUEST);
   }
 
   @Override
@@ -236,7 +250,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     ApiError apiError = apiErrorMapper.toApiError("Malformed JSON request", HttpStatus.BAD_REQUEST.value());
     ApiResponse<ApiError> response = ApiResponse.error("Malformed JSON request");
     response.setData(apiError);
-    return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    return json(response, HttpStatus.BAD_REQUEST);
   }
 
   @Override
@@ -255,7 +269,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     ApiError apiError = apiErrorMapper.toApiError(message, HttpStatus.PAYLOAD_TOO_LARGE.value());
     ApiResponse<ApiError> response = ApiResponse.error(message);
     response.setData(apiError);
-    return new ResponseEntity<>(response, HttpStatus.PAYLOAD_TOO_LARGE);
+    return json(response, HttpStatus.PAYLOAD_TOO_LARGE);
   }
 
   @ExceptionHandler({
