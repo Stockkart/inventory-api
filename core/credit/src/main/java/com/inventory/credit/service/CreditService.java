@@ -339,8 +339,11 @@ public class CreditService {
     try {
       return creditEntryRepository.save(entry);
     } catch (RuntimeException e) {
-      // no transactions: take the amount back off the due so it matches its entries again
-      creditBalances.undo(shopId, partyType, partyId.trim(), delta, Instant.now());
+      // without a transaction: take the amount back off the due so it matches its entries again
+      // (inside one, MongoTx's rollback does it)
+      if (!com.inventory.common.tx.MongoTx.inTransaction()) {
+        creditBalances.undo(shopId, partyType, partyId.trim(), delta, Instant.now());
+      }
       throw e;
     }
   }

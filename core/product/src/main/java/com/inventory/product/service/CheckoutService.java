@@ -104,6 +104,10 @@ public class CheckoutService {
   @Autowired
   private MongoTemplate mongoTemplate;
 
+  /** All-or-nothing bill completion (stock, bill, invoice no, usage, dues, journal). */
+  @Autowired(required = false)
+  private com.inventory.common.tx.MongoTx mongoTx;
+
   @Autowired
   private CheckoutValidator checkoutValidator;
 
@@ -250,8 +254,22 @@ public class CheckoutService {
     }
   }
 
+  /**
+   * Moves a bill to a new status. Completing it runs as one MongoDB transaction ({@link
+   * com.inventory.common.tx.MongoTx}): the stock taken, the bill, its invoice number, the usage
+   * count, the customer's due and the sale journal are saved together or not at all, and a write
+   * conflict with another bill (same lot, same Cash account) runs the completion again.
+   */
   @Transactional
   public CheckoutResponse updatePurchaseStatus(UpdatePurchaseStatusRequest request, HttpServletRequest httpRequest) {
+    if (mongoTx != null && request != null && request.getStatus() == PurchaseStatus.COMPLETED) {
+      return mongoTx.run(com.inventory.common.tx.MongoTx.BILL_COMPLETE, (String) httpRequest.getAttribute("shopId"),
+          () -> changePurchaseStatus(request, httpRequest));
+    }
+    return changePurchaseStatus(request, httpRequest);
+  }
+
+  private CheckoutResponse changePurchaseStatus(UpdatePurchaseStatusRequest request, HttpServletRequest httpRequest) {
     // Get shopId and userId from request attributes (set by AuthenticationInterceptor)
     String shopId = (String) httpRequest.getAttribute("shopId");
     String userId = (String) httpRequest.getAttribute("userId");
@@ -331,31 +349,9 @@ public class CheckoutService {
         recordBillingUsageForPurchase(shopId, purchase);
       }
       if (requestedStatus == PurchaseStatus.COMPLETED && metrics != null) {
-        BigDecimal grandTotal = purchase.getGrandTotal() != null ? purchase.getGrandTotal() : BigDecimal.ZERO;
-        String vertical = checkoutVertical(shopId);
-        if (vertical != null) {
-          metrics.record(
-              ProductMetricsConstants.ORDERS_COMPLETED,
-              1,
-              "module",
-              ProductMetricsConstants.MODULE,
-              "vertical",
-              vertical);
-          if (grandTotal.compareTo(BigDecimal.ZERO) > 0) {
-            metrics.record(
-                ProductMetricsConstants.ORDERS_AMOUNT,
-                grandTotal.doubleValue(),
-                "module",
-                ProductMetricsConstants.MODULE,
-                "vertical",
-                vertical);
-          }
-        } else {
-          metrics.record(ProductMetricsConstants.ORDERS_COMPLETED, 1, "module", ProductMetricsConstants.MODULE);
-          if (grandTotal.compareTo(BigDecimal.ZERO) > 0) {
-            metrics.record(ProductMetricsConstants.ORDERS_AMOUNT, grandTotal.doubleValue(), "module", ProductMetricsConstants.MODULE);
-          }
-        }
+        final Purchase counted = purchase;
+        // counted once, and only if the bill is saved (a write conflict runs the completion again)
+        com.inventory.common.tx.MongoTx.afterCommit(() -> recordCompletedOrderMetrics(shopId, counted));
       }
 
       log.info("Successfully updated purchase status from {} to {} for purchase ID: {}",
@@ -392,6 +388,34 @@ public class CheckoutService {
       log.error("Unexpected error during update purchase status for shop: {}, user: {}", shopId, userId, e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
           "An unexpected error occurred during update purchase status: " + e.getMessage(), e);
+    }
+  }
+
+  private void recordCompletedOrderMetrics(String shopId, Purchase purchase) {
+    BigDecimal grandTotal = purchase.getGrandTotal() != null ? purchase.getGrandTotal() : BigDecimal.ZERO;
+    String vertical = checkoutVertical(shopId);
+    if (vertical != null) {
+      metrics.record(
+          ProductMetricsConstants.ORDERS_COMPLETED,
+          1,
+          "module",
+          ProductMetricsConstants.MODULE,
+          "vertical",
+          vertical);
+      if (grandTotal.compareTo(BigDecimal.ZERO) > 0) {
+        metrics.record(
+            ProductMetricsConstants.ORDERS_AMOUNT,
+            grandTotal.doubleValue(),
+            "module",
+            ProductMetricsConstants.MODULE,
+            "vertical",
+            vertical);
+      }
+    } else {
+      metrics.record(ProductMetricsConstants.ORDERS_COMPLETED, 1, "module", ProductMetricsConstants.MODULE);
+      if (grandTotal.compareTo(BigDecimal.ZERO) > 0) {
+        metrics.record(ProductMetricsConstants.ORDERS_AMOUNT, grandTotal.doubleValue(), "module", ProductMetricsConstants.MODULE);
+      }
     }
   }
 
@@ -1961,7 +1985,9 @@ public class CheckoutService {
         taken.add(take);
       }
     } catch (RuntimeException e) {
-      putBack(taken);
+      if (!com.inventory.common.tx.MongoTx.inTransaction()) {
+        putBack(taken); // without a transaction, give back what was already taken
+      }
       throw e;
     }
 
@@ -2079,7 +2105,8 @@ public class CheckoutService {
       log.info("THRESHOLD REACHED — triggering INVENTORY_LOW event");
       InventoryEventDto dto = inventoryMapper.toInventoryLowEventDto(inventory, threshold);
       var eventDto = inventoryMapper.toNotificationEventDto(dto);
-      eventService.recordAndBroadcastInventoryLow(eventDto);
+      // pushed to open screens only once the stock change is saved
+      com.inventory.common.tx.MongoTx.afterCommit(() -> eventService.recordAndBroadcastInventoryLow(eventDto));
     }
   }
 

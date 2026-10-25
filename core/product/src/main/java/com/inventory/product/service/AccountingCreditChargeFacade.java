@@ -37,9 +37,23 @@ public class AccountingCreditChargeFacade implements CreditChargeFacade {
   @Autowired(required = false)
   private AccountingFacade accountingFacade;
 
+  @Autowired(required = false)
+  private com.inventory.common.tx.MongoTx mongoTx;
+
+  /**
+   * The journal (when one is needed) and the credit row in one MongoDB transaction; inside a bill
+   * or vendor invoice it is part of that one.
+   */
   @Override
   @Transactional
   public CreditEntry createCharge(String shopId, String userId, CreateCreditChargeRequest body) {
+    if (mongoTx != null) {
+      return mongoTx.run(com.inventory.common.tx.MongoTx.CREDIT_CHARGE, shopId, () -> charge(shopId, userId, body));
+    }
+    return charge(shopId, userId, body);
+  }
+
+  private CreditEntry charge(String shopId, String userId, CreateCreditChargeRequest body) {
     String chargeId = resolveChargeId(body);
     JournalSource journalSource = journalSourceFor(body.getPartyType());
     String creditSourceKey = resolveCreditSourceKey(body, journalSource, chargeId);

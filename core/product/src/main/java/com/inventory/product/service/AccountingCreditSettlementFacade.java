@@ -22,7 +22,8 @@ import org.springframework.util.StringUtils;
 
 /**
  * Posts vendor payment / customer settlement journal entries and credit ledger rows in one
- * transaction so the books and the credit module stay aligned.
+ * MongoDB transaction ({@link com.inventory.common.tx.MongoTx}) so the books and the credit module
+ * stay aligned.
  */
 @Service
 @Primary
@@ -35,10 +36,21 @@ public class AccountingCreditSettlementFacade implements CreditSettlementFacade 
   @Autowired(required = false)
   private AccountingFacade accountingFacade;
 
+  @Autowired(required = false)
+  private com.inventory.common.tx.MongoTx mongoTx;
+
+  /** The journal and the credit row in one MongoDB transaction (both or neither). */
   @Override
   @Transactional
   public CreditEntry createSettlement(
       String shopId, String userId, CreateCreditSettlementRequest body) {
+    if (mongoTx != null) {
+      return mongoTx.run(com.inventory.common.tx.MongoTx.CREDIT_SETTLEMENT, shopId, () -> settle(shopId, userId, body));
+    }
+    return settle(shopId, userId, body);
+  }
+
+  private CreditEntry settle(String shopId, String userId, CreateCreditSettlementRequest body) {
     String settlementId = resolveSettlementId(body);
     String creditSourceKey = creditSourceKey(body.getPartyType(), settlementId);
 
