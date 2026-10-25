@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.catalog.InventoryProductReadHandler;
+import com.inventory.product.domain.model.pricing.InventoryPricingReadHandler;
 import com.inventory.product.domain.model.enums.DiscountApplicable;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.mapper.InventoryMapper;
@@ -43,6 +44,8 @@ class InventoryServiceClearFieldsTest {
   @Mock private InventoryVerticalValidationHandler inventoryVerticalValidationHandler;
   @Mock private InventoryVerticalExtensionHandler inventoryVerticalExtensionHandler;
   @Mock private InventoryProductReadHandler inventoryProductReadHandler;
+  // Re-reads pricing after the save once inventory-api #309 is in; unused before it.
+  @Mock private InventoryPricingReadHandler inventoryPricingReadHandler;
   @Spy private InventoryMapper inventoryMapper = Mappers.getMapper(InventoryMapper.class);
   @InjectMocks private InventoryService inventoryService;
 
