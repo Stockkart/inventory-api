@@ -42,6 +42,12 @@ public class InventorySummaryDto {
   List<RateDto> rates;
   String defaultRate;
   BigDecimal saleAdditionalDiscount;
+  /** Purchase terms, so product search shows and edits them from the row. */
+  BigDecimal purchaseAdditionalDiscount;
+  SchemeType purchaseSchemeType;
+  Integer purchaseSchemePayFor;
+  Integer purchaseSchemeFree;
+  BigDecimal purchaseSchemePercentage;
   BigDecimal receivedCount;
   Integer receivedBaseCount;
   Integer thresholdCount;
