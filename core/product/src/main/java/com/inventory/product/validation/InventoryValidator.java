@@ -79,7 +79,7 @@ public class InventoryValidator {
       throw new ValidationException("When itemType is DEGREE, itemTypeDegree must be present and greater than zero");
     }
     if (request.getPurchaseDate() != null) {
-      validatePurchaseDate(request.getPurchaseDate());
+      validateEditedPurchaseDate(request.getPurchaseDate());
     }
     if (request.getSchemeType() == SchemeType.PERCENTAGE) {
       if (request.getSchemePercentage() == null) {
@@ -177,6 +177,17 @@ public class InventoryValidator {
   /**
    * Purchase date must be within 30 days in the past and not more than 30 days in the future.
    */
+  /**
+   * Editing a lot corrects the day it was bought, which may be any day in the past. The date
+   * arrives as the shop's local day at 00:00 UTC, so a day of slack keeps "today" valid in
+   * time zones ahead of UTC.
+   */
+  private void validateEditedPurchaseDate(Instant purchaseDate) {
+    if (purchaseDate.isAfter(Instant.now().plus(1, ChronoUnit.DAYS))) {
+      throw new ValidationException("Purchase date cannot be in the future");
+    }
+  }
+
   private void validatePurchaseDate(Instant purchaseDate) {
     Instant now = Instant.now();
     Instant minAllowed = now.minus(30, ChronoUnit.DAYS);
