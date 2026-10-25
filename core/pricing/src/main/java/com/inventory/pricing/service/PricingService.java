@@ -204,7 +204,7 @@ public class PricingService {
     if (distinctIds.isEmpty()) {
       return java.util.Collections.emptyMap();
     }
-    return pricingRepository.findAllById(distinctIds).stream()
+    return pricingRepository.findByIdIn(distinctIds).stream()
         .collect(Collectors.toMap(Pricing::getId, p -> p, (a, b) -> a));
   }
 }

@@ -118,7 +118,7 @@ public class InventoryPricingReadHandler {
     for (String id : inventoryIds) {
       ids.add(isValidObjectId(id) ? new ObjectId(id) : id);
     }
-    Query query = Query.query(Criteria.where("_id").in(ids));
+    Query query = Query.query(Criteria.where("_id").in(ids)).cursorBatchSize(ids.size()); // one reply, no getMore
     LEGACY_PRICING_FIELDS.forEach(f -> query.fields().include(f));
     Map<String, PricingReadDto> out = new HashMap<>();
     for (Document doc : mongoTemplate.find(query, Document.class, "inventory")) {
