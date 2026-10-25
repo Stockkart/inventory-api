@@ -239,6 +239,8 @@ Shops are bound to a **vertical** (`Shop.verticalId` + `Shop.pluginVersion`). Fi
 
 **Remaining:** M8 core field strip migration; scan-sell detail modal schema columns; apparel/cafe vertical (Phase 5); import mappers + widgets (Phase 6).
 
+**Clearing a field on a lot edit.** In `PUT /api/v1/inventory/{id}` a field left out or sent as `null` keeps its value. To empty one, name it in `clearFields`: `barcode`, `description`, `companyName`, `location`, `hsn`, `discountApplicable`, `thresholdCount` (lot) and `saleAdditionalDiscount`, `purchaseAdditionalDiscount`, `saleScheme`, `purchaseScheme` (pricing record). Any other name, or a name also sent with a value, is a 400. A clear needs the same product-search grant as setting the field (`saleScheme` → `schemeType`, `purchaseScheme` → `purchaseSchemeType`).
+
 ### GST reports (taxation)
 
 | Endpoint | Purpose |

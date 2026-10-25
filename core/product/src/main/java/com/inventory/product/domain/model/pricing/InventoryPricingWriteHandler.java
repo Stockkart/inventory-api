@@ -11,6 +11,7 @@ import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.enums.ShopType;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.rest.dto.request.UpdateInventoryRequest;
+import com.inventory.pricing.utils.constants.PricingConstants;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -86,6 +87,7 @@ public class InventoryPricingWriteHandler {
               .saleScheme(buildSaleSchemeFromRequest(req))
               .sgst(req.getSgst())
               .cgst(req.getCgst())
+              .clearFields(pricingClearFields(req))
               .build();
           pricingPort.update(inventory.getPricingId(), cmd);
         }
@@ -132,7 +134,22 @@ public class InventoryPricingWriteHandler {
         || (req.getRates() != null && !req.getRates().isEmpty())
         || StringUtils.hasText(req.getDefaultRate())
         || req.getSellingPrice() != null
-        || StringUtils.hasText(req.getSgst()) || StringUtils.hasText(req.getCgst());
+        || StringUtils.hasText(req.getSgst()) || StringUtils.hasText(req.getCgst())
+        || pricingClearFields(req) != null;
+  }
+
+  /** The request's clearFields that name pricing fields, or null when there are none. */
+  private java.util.Set<String> pricingClearFields(UpdateInventoryRequest req) {
+    if (req.getClearFields() == null) {
+      return null;
+    }
+    java.util.Set<String> pricing = new java.util.LinkedHashSet<>();
+    for (String field : req.getClearFields()) {
+      if (PricingConstants.CLEARABLE_FIELDS.contains(field)) {
+        pricing.add(field);
+      }
+    }
+    return pricing.isEmpty() ? null : pricing;
   }
 
   private boolean hasPricingData(Inventory inv) {
