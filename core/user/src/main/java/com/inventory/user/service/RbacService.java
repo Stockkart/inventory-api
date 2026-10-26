@@ -386,7 +386,7 @@ public class RbacService {
   private ShopAccessResponse buildAccessResponse(
       MembershipContext ctx, ProductSearchEditMode editMode) {
     if (ctx.owner()) {
-      return ownerAccess(editMode);
+      return ownerAccess();
     }
     Map<String, Boolean> modules = resolveModules(ctx.role(), ctx.permissions());
     ShopAccessResponse.TeamAccessDto team = resolveTeam(ctx.role());
@@ -437,7 +437,13 @@ public class RbacService {
     return role == UserRole.OWNER || role == UserRole.MANAGER || role == UserRole.ADMIN;
   }
 
-  private ShopAccessResponse ownerAccess(ProductSearchEditMode editMode) {
+  /**
+   * The owner edits every product-search field whatever the member policy says
+   * ({@link #validateProductSearchFieldUpdates} lets the owner through), so the owner's effective
+   * edit mode is {@link ProductSearchEditMode#FULL_EDIT}. The shop's policy itself is reported by
+   * {@link #getAdminView}.
+   */
+  private ShopAccessResponse ownerAccess() {
     Map<String, Boolean> allModules = defaultModulesForRole(UserRole.OWNER, null);
     allModules.put(MODULE_PRODUCT_SEARCH_EDIT, true);
     return ShopAccessResponse.builder()
@@ -449,7 +455,7 @@ public class RbacService {
             ShopAccessResponse.ProductSearchAccessDto.builder()
                 .canView(true)
                 .canEdit(true)
-                .editMode(editMode)
+                .editMode(ProductSearchEditMode.FULL_EDIT)
                 .canEditAll(true)
                 .editableFields(CORE_PRODUCT_SEARCH_FIELDS)
                 .build())
