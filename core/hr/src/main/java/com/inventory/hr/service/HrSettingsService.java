@@ -209,8 +209,9 @@ public class HrSettingsService {
     HrSettings effective = withDefaults(stored, null);
     HrSettingsResponse response = mapper.toResponse(effective);
     response.setSaved(stored != null);
-    response.setCurrentWeeklyOffDays(weeklyOffFor(effective,
-        PayCycle.currentPeriod(PayCycle.startDay(effective))));
+    String currentPeriod = PayCycle.currentPeriod(PayCycle.startDay(effective));
+    response.setCurrentWeeklyOffDays(weeklyOffFor(effective, currentPeriod));
+    response.setCurrentSalaryPeriod(currentPeriod);
     return response;
   }
 

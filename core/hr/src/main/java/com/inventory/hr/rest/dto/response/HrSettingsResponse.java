@@ -17,6 +17,8 @@ public class HrSettingsResponse {
   private List<WeeklyOffEntryDto> weeklyOffSchedule;
   /** Weekly-off days that apply this month. */
   private List<DayOfWeek> currentWeeklyOffDays;
+  /** Salary month (PayCycle, YYYY-MM) containing today; computed, read-only. */
+  private String currentSalaryPeriod;
   private String workStart;
   private String workEnd;
   private Integer graceMinutes;
