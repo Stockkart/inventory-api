@@ -40,6 +40,7 @@ import com.inventory.hr.rest.dto.request.CreatePayrollRunRequest;
 import com.inventory.hr.rest.dto.request.SavePayrollAdjustmentsRequest;
 import com.inventory.hr.rest.dto.response.PayrollRunResponse;
 import com.inventory.hr.service.payroll.PayrollInput;
+import com.inventory.hr.utils.PayCycle;
 import com.inventory.hr.utils.constants.HrMetricsConstants;
 import com.inventory.hr.validation.PayrollAdjustmentValidator;
 import com.inventory.metrics.MetricsWrapper;
@@ -81,6 +82,8 @@ class PayrollServiceTest {
   @Mock private HrAuditService auditService;
   @Mock private MetricsWrapper metrics;
   @Mock private SalaryPaymentService salaryPaymentService;
+  /** startDay → 0 from the mock = start day 1 (calendar months), the behaviour before. */
+  @Mock private PeriodLockService periodLockService;
   @Spy private PayrollAdjustmentValidator validator = new PayrollAdjustmentValidator();
   @Spy private HrPayrollMapper mapper = new HrPayrollMapperImpl();
   @Spy private HrQueryRunner queryRunner = new HrQueryRunner();
@@ -399,10 +402,30 @@ class PayrollServiceTest {
     ValidationException e = assertThrows(ValidationException.class,
         () -> service.finalise(USER, SHOP, "r1"));
 
-    assertEquals("This month is not over yet. Payroll for " + current
-        + " can be finalised from " + current.plusMonths(1).atDay(1), e.getMessage());
+    java.time.format.DateTimeFormatter f = java.time.format.DateTimeFormatter
+        .ofPattern("d MMM yyyy", java.util.Locale.ENGLISH);
+    assertEquals("This salary month ends on " + f.format(current.atEndOfMonth())
+        + ". You can finalise it from " + f.format(current.plusMonths(1).atDay(1)) + ".",
+        e.getMessage());
     verify(mongoTemplate, never()).findAndModify(any(Query.class), any(Update.class),
         any(FindAndModifyOptions.class), eq(PayrollRun.class));
+  }
+
+  @Test
+  void aSalaryMonthStartingOnThe26thCanBeFinalisedFromThe26thOfItsEndMonth() {
+    PayCycle.Range oct = PayCycle.range("2026-10", 26);
+
+    ValidationException e = assertThrows(ValidationException.class,
+        () -> PayrollService.assertMonthOver(oct, java.time.LocalDate.of(2026, 10, 25)));
+    assertEquals("This salary month ends on 25 Oct 2026. You can finalise it from 26 Oct 2026.",
+        e.getMessage());
+    org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+        () -> PayrollService.assertMonthOver(oct, java.time.LocalDate.of(2026, 10, 26)));
+    // start day 1 as before: October is finalisable from 1 November
+    assertThrows(ValidationException.class, () -> PayrollService.assertMonthOver(
+        PayCycle.range("2026-10", 1), java.time.LocalDate.of(2026, 10, 31)));
+    org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> PayrollService.assertMonthOver(
+        PayCycle.range("2026-10", 1), java.time.LocalDate.of(2026, 11, 1)));
   }
 
   @Test
@@ -414,7 +437,7 @@ class PayrollServiceTest {
 
     ValidationException e = assertThrows(ValidationException.class,
         () -> service.finalise(USER, SHOP, "r1"));
-    assertEquals(true, e.getMessage().startsWith("This month is not over yet"));
+    assertEquals(true, e.getMessage().startsWith("This salary month ends on"));
   }
 
   /** One employee, no marks, employed all of {@code month}. */

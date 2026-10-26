@@ -20,6 +20,7 @@ import com.inventory.hr.rest.dto.request.EmailPayslipsRequest;
 import com.inventory.hr.rest.dto.response.EmailPayslipsResponse;
 import com.inventory.hr.rest.dto.response.MyPayslipResponse;
 import com.inventory.hr.utils.HrDateUtils;
+import com.inventory.hr.utils.PayCycle;
 import com.inventory.hr.utils.constants.HrMetricsConstants;
 import com.inventory.metrics.MetricsWrapper;
 import com.inventory.notifications.domain.model.EmailTemplate;
@@ -114,7 +115,8 @@ public class PayslipService {
     return queryRunner.read("payslip_list_own", () -> {
       Query lines = Query.query(Criteria.where("shopId").is(shopId).and("employeeId")
           .is(self.getId())).with(Sort.by(Sort.Direction.DESC, "period"));
-      lines.fields().include("runId", "period", "net", "paymentStatus", "paidAt");
+      lines.fields().include("runId", "period", "fromDate", "toDate", "net", "paymentStatus",
+          "paidAt");
       lines.maxTimeMsec(HrQueryRunner.SCREEN_MAX_TIME_MS);
       List<PayrollLine> found = mongoTemplate.find(lines, PayrollLine.class);
       Set<String> finalised = finalisedRunIds(shopId,
@@ -122,9 +124,10 @@ public class PayslipService {
       List<MyPayslipResponse> out = new ArrayList<>();
       for (PayrollLine l : found) {
         if (finalised.contains(l.getRunId())) {
+          PayCycle.Range cycle = PayCycle.stored(l.getPeriod(), l.getFromDate(), l.getToDate());
           out.add(new MyPayslipResponse(l.getId(), l.getRunId(), l.getPeriod(), l.getNet(),
               l.getPaymentStatus() != null ? l.getPaymentStatus() : SalaryPaymentStatus.PENDING,
-              l.getPaidAt()));
+              l.getPaidAt(), cycle.fromText(), cycle.toText()));
         }
       }
       return out;
@@ -168,7 +171,7 @@ public class PayslipService {
       }
       Query lines = Query.query(Criteria.where("shopId").is(shopId).and("runId").is(runId)
           .and("_id").in(ids));
-      lines.fields().include("employeeId", "period", "employeeSnapshot.name",
+      lines.fields().include("employeeId", "period", "fromDate", "toDate", "employeeSnapshot.name",
           "employeeSnapshot.code");
       lines.maxTimeMsec(HrQueryRunner.SCREEN_MAX_TIME_MS);
       List<PayrollLine> found = mongoTemplate.find(lines, PayrollLine.class);
@@ -189,7 +192,7 @@ public class PayslipService {
         Map<String, Object> vars = new HashMap<>();
         vars.put("employeeName", snap != null && snap.getName() != null ? snap.getName() : "");
         vars.put("shopName", shopName);
-        vars.put("periodLabel", periodLabel(l.getPeriod()));
+        vars.put("periodLabel", periodLabel(l));
         outbox.add(new MessagingService.TemplateEmail(email, vars,
             new OutboundMessage.AttachmentRef(ATTACHMENT_KIND, runId, l.getId(), shopId)));
       }
@@ -248,7 +251,7 @@ public class PayslipService {
     doc.setEmployeeName(snap.getName());
     doc.setEmployeeCode(snap.getCode());
     doc.setDesignation(StringUtils.hasText(snap.getDesignation()) ? snap.getDesignation() : null);
-    doc.setPeriodLabel(periodLabel(line.getPeriod()));
+    doc.setPeriodLabel(periodLabel(line));
     doc.setDayRows(dayRows(line.getDayCounts(), snap.getPayType()));
     List<PayslipDocumentRequest.Item> earnings = new ArrayList<>();
     if (line.getEarnings() != null) {
@@ -330,6 +333,24 @@ public class PayslipService {
   static String periodLabel(String period) {
     YearMonth month = HrDateUtils.parsePeriod(period);
     return month != null ? MONTH.format(month) : String.valueOf(period);
+  }
+
+  /**
+   * Label of a salary month: the month name ("April 2025") when it is the calendar month, else
+   * its dates ("26 Sep – 25 Oct 2026"), so existing shops (start day 1) see no change.
+   */
+  static String periodLabel(String period, String fromDate, String toDate) {
+    YearMonth month = HrDateUtils.parsePeriod(period);
+    if (month == null) {
+      return String.valueOf(period);
+    }
+    PayCycle.Range cycle = PayCycle.stored(period, fromDate, toDate);
+    return cycle.equals(PayCycle.range(month, PayCycle.DEFAULT_START_DAY))
+        ? MONTH.format(month) : cycle.label();
+  }
+
+  static String periodLabel(PayrollLine line) {
+    return periodLabel(line.getPeriod(), line.getFromDate(), line.getToDate());
   }
 
   // ---- helpers ---------------------------------------------------------------------------------

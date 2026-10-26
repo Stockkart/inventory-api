@@ -13,6 +13,7 @@ import com.inventory.hr.rest.dto.request.SaveHolidayRequest;
 import com.inventory.hr.rest.dto.response.HolidayResponse;
 import com.inventory.hr.service.HrAuditService.AuditEntry;
 import com.inventory.hr.utils.HrDateUtils;
+import com.inventory.hr.utils.PayCycle;
 import com.inventory.hr.validation.HolidayValidator;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -54,7 +55,8 @@ public class HolidayService {
   public HolidayResponse create(String userId, String shopId, SaveHolidayRequest request) {
     guard.require(userId, shopId, HrPermission.MANAGE_SETTINGS);
     validator.validate(request);
-    periodLockService.assertOpen(shopId, HrDateUtils.periodOf(request.getDate()));
+    int startDay = periodLockService.startDay(shopId);
+    periodLockService.assertOpen(shopId, PayCycle.periodOf(request.getDate(), startDay));
     if (holidayRepository.existsByShopIdAndDate(shopId, request.getDate())) {
       throw duplicate();
     }
@@ -72,9 +74,10 @@ public class HolidayService {
     guard.require(userId, shopId, HrPermission.MANAGE_SETTINGS);
     validator.validate(request);
     Holiday holiday = find(shopId, id);
-    // both the old and the new month change, so both must be open
-    periodLockService.assertOpen(shopId, HrDateUtils.periodOf(holiday.getDate()));
-    periodLockService.assertOpen(shopId, HrDateUtils.periodOf(request.getDate()));
+    // both the old and the new salary month change, so both must be open
+    int startDay = periodLockService.startDay(shopId);
+    periodLockService.assertOpen(shopId, PayCycle.periodOf(holiday.getDate(), startDay));
+    periodLockService.assertOpen(shopId, PayCycle.periodOf(request.getDate(), startDay));
     if (!holiday.getDate().equals(request.getDate())
         && holidayRepository.existsByShopIdAndDate(shopId, request.getDate())) {
       throw duplicate();
@@ -89,7 +92,8 @@ public class HolidayService {
   public void delete(String userId, String shopId, String id) {
     guard.require(userId, shopId, HrPermission.MANAGE_SETTINGS);
     Holiday holiday = find(shopId, id);
-    periodLockService.assertOpen(shopId, HrDateUtils.periodOf(holiday.getDate()));
+    periodLockService.assertOpen(shopId,
+        PayCycle.periodOf(holiday.getDate(), periodLockService.startDay(shopId)));
     holidayRepository.deleteByShopIdAndId(shopId, id);
     audit(shopId, userId, holiday, snapshot(holiday), null);
   }

@@ -7,6 +7,7 @@ import com.inventory.hr.domain.model.LeaveRequest;
 import com.inventory.hr.domain.model.enums.AttendanceStatus;
 import com.inventory.hr.domain.model.enums.DayStatus;
 import com.inventory.hr.utils.HrDateUtils;
+import com.inventory.hr.utils.PayCycle;
 import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.time.Duration;
@@ -26,7 +27,7 @@ import java.util.List;
  *       mark left behind by a lost clean-up never shows);
  *   <li>stored mark → that status (PRESENT may become HALF_DAY by the half-day rule);
  *   <li>shop holiday → HOLIDAY;
- *   <li>weekly off for the date's month ({@code effectiveFrom} schedule) → WEEK_OFF;
+ *   <li>weekly off for the date's salary month ({@code effectiveFrom} schedule) → WEEK_OFF;
  *   <li>otherwise UNMARKED. ABSENT is never derived (R5.13): it only comes from a stored mark.
  * </ol>
  *
@@ -132,16 +133,22 @@ public final class DayStatusResolver {
         false);
   }
 
-  /** Between join and exit date, both inclusive; a missing join date is the start of time. */
+  /**
+   * Between join and exit date, both inclusive. A missing join date falls back to the
+   * {@code createdAt} date ({@link HrDateUtils#effectiveJoinDate}).
+   */
   public static boolean isEmployed(LocalDate date, Employee employee) {
-    LocalDate join = HrDateUtils.parseDate(employee.getJoinDate());
+    LocalDate join = HrDateUtils.effectiveJoinDate(employee);
     LocalDate exit = HrDateUtils.parseDate(employee.getExitDate());
     return (join == null || !date.isBefore(join)) && (exit == null || !date.isAfter(exit));
   }
 
-  /** Weekly off by the schedule entry that applies to the date's month. */
+  /**
+   * Weekly off by the schedule entry that applies to the date's salary month ({@link PayCycle}):
+   * a weekly-off change "from 2026-10" with start day 26 applies from 26 Sep 2026.
+   */
   public static boolean isWeekOff(LocalDate date, HrSettings settings) {
-    String period = HrDateUtils.periodOf(HrDateUtils.format(date));
+    String period = PayCycle.periodOf(date, PayCycle.startDay(settings)).toString();
     List<DayOfWeek> days = HrSettingsService.weeklyOffFor(settings, period);
     return days.contains(date.getDayOfWeek());
   }

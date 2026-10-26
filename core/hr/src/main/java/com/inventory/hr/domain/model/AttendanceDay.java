@@ -24,7 +24,10 @@ public class AttendanceDay {
   private String employeeId;
   /** yyyy-MM-dd. */
   private String date;
-  /** YYYY-MM of {@code date}, for lock checks and register queries. */
+  /**
+   * Calendar YYYY-MM of {@code date}; informational only (nothing queries it). It is NOT the
+   * salary month: lock checks map {@code date} through {@code PayCycle}.
+   */
   private String period;
   private AttendanceStatus status;
   /** HH:mm; null = not entered. */

@@ -23,13 +23,13 @@ import com.inventory.hr.rest.dto.response.SalaryPaymentsResponse;
 import com.inventory.hr.rest.dto.response.SalaryPaymentsResponse.LineStatus;
 import com.inventory.hr.service.HrAuditService.AuditEntry;
 import com.inventory.hr.utils.HrDateUtils;
+import com.inventory.hr.utils.PayCycle;
 import com.inventory.hr.utils.constants.HrMetricsConstants;
 import com.inventory.hr.validation.SalaryPaymentValidator;
 import com.inventory.metrics.MetricsWrapper;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.YearMonth;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -109,8 +109,10 @@ public class SalaryPaymentService {
     return queryRunner.read("salary_pay", () -> {
       PayrollRun run = find(shopId, runId);
       requireFinalised(run);
-      if (input.date().isBefore(YearMonth.parse(run.getPeriod()).atDay(1))) {
-        throw new ValidationException("The payment date cannot be before " + run.getPeriod());
+      PayCycle.Range cycle = PayCycle.stored(run.getPeriod(), run.getFromDate(), run.getToDate());
+      if (input.date().isBefore(cycle.from())) {
+        // the first day of the salary month (PayCycle), as stored on the run
+        throw new ValidationException("The payment date cannot be before " + cycle.fromText());
       }
       finishStaleClaims(userId, shopId, runId);
 

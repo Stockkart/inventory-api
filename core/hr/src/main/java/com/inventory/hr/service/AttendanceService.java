@@ -25,6 +25,7 @@ import com.inventory.hr.rest.dto.response.MarkUnmarkedPresentResponse;
 import com.inventory.hr.rest.dto.response.MonthRegisterResponse;
 import com.inventory.hr.service.HrAuditService.AuditEntry;
 import com.inventory.hr.utils.HrDateUtils;
+import com.inventory.hr.utils.PayCycle;
 import com.inventory.hr.utils.constants.HrMetricsConstants;
 import com.inventory.hr.validation.AttendanceDayValidator;
 import com.inventory.hr.validation.LeaveRequestValidator;
@@ -113,7 +114,7 @@ public class AttendanceService {
           approvedLeave(shopId, null, d, d, HrQueryRunner.SCREEN_MAX_TIME_MS), d, d);
       Set<String> holidays = holidayDates(shopId, d, d, HrQueryRunner.SCREEN_MAX_TIME_MS);
       boolean locked = !periodLockService.lockedPeriods(shopId,
-          List.of(HrDateUtils.periodOf(d))).isEmpty();
+          List.of(PayCycle.periodOf(d, PayCycle.startDay(settings)))).isEmpty();
       List<AttendanceRowResponse> rows = new ArrayList<>(employees.size());
       for (Employee e : employees) {
         rows.add(row(e, date, marks.get(key(e.getId(), d)), leave.get(key(e.getId(), d)),
@@ -140,11 +141,9 @@ public class AttendanceService {
     List<SaveAttendanceDaysRequest.Row> rows = request.getRows();
     Set<String> employeeIds = new LinkedHashSet<>();
     TreeSet<String> dates = new TreeSet<>();
-    Set<String> periods = new TreeSet<>();
     for (SaveAttendanceDaysRequest.Row r : rows) {
       employeeIds.add(r.getEmployeeId());
       dates.add(r.getDate());
-      periods.add(HrDateUtils.periodOf(r.getDate()));
     }
     String from = dates.first();
     String to = dates.last();
@@ -161,14 +160,15 @@ public class AttendanceService {
           throw notEmployed(e, r.getDate());
         }
       }
-      // 2. lock: one read for every month the rows touch
-      periodLockService.assertOpen(shopId, periods);
-      // 3. approved leave of these employees in the range
+      // 2. settings (hours, grace, half-day rule, weekly off, salary-month start day)
+      HrSettings settings = settingsService.effectiveSettings(shopId);
+      // 3. lock: one read for every salary month the rows touch
+      periodLockService.assertOpen(shopId,
+          PayCycle.periodsOf(dates, PayCycle.startDay(settings)));
+      // 4. approved leave of these employees in the range
       Map<String, LeaveRequest> leave = leaveByEmployeeDate(
           approvedLeave(shopId, employeeIds, from, to, HrQueryRunner.SCREEN_MAX_TIME_MS), from,
           to);
-      // 4. settings (hours, grace, half-day rule, weekly off)
-      HrSettings settings = settingsService.effectiveSettings(shopId);
       HolidayCache holidays = new HolidayCache(shopId, from, to);
       for (SaveAttendanceDaysRequest.Row r : rows) {
         LeaveRequest l = leave.get(key(r.getEmployeeId(), r.getDate()));
@@ -262,7 +262,6 @@ public class AttendanceService {
     List<LocalDate> dates = validator.validateMarkUnmarked(request, HrDateUtils.today());
     String from = HrDateUtils.format(dates.get(0));
     String to = HrDateUtils.format(dates.get(dates.size() - 1));
-    String period = HrDateUtils.periodOf(from);
     Set<String> ids = request.getEmployeeIds() == null || request.getEmployeeIds().isEmpty()
         ? null : new LinkedHashSet<>(request.getEmployeeIds());
 
@@ -271,7 +270,8 @@ public class AttendanceService {
       Set<String> holidays = holidayDates(shopId, from, to, HrQueryRunner.MONTH_MAX_TIME_MS);
       List<Employee> employees =
           employeesEmployed(shopId, from, to, ids, HrQueryRunner.MONTH_MAX_TIME_MS);
-      periodLockService.assertOpen(shopId, List.of(period));
+      periodLockService.assertOpen(shopId, PayCycle.periodsOf(
+          dates.stream().map(HrDateUtils::format).toList(), PayCycle.startDay(settings)));
       Collection<String> employeeIds = employees.stream().map(Employee::getId).toList();
       if (employeeIds.isEmpty()) {
         return new MarkUnmarkedPresentResponse(0);
@@ -350,7 +350,10 @@ public class AttendanceService {
           days(shopId, only, from, to, HrQueryRunner.MONTH_MAX_TIME_MS));
       Map<String, LeaveRequest> leave = leaveByEmployeeDate(
           approvedLeave(shopId, only, from, to, HrQueryRunner.MONTH_MAX_TIME_MS), from, to);
-      boolean locked = !periodLockService.lockedPeriods(shopId, List.of(period)).isEmpty();
+      // the register stays on calendar months; a calendar month touches at most two salary
+      // months (those of its first and last day), and is flagged when either is locked
+      boolean locked = !periodLockService.lockedPeriods(shopId,
+          PayCycle.periodsOf(List.of(from, to), PayCycle.startDay(settings))).isEmpty();
 
       MonthRegisterResponse response = new MonthRegisterResponse();
       response.setPeriod(period);
@@ -468,8 +471,8 @@ public class AttendanceService {
   }
 
   private static void employeeFields(Query query) {
-    query.fields().include("code", "name", "designation", "joinDate", "exitDate", "workStart",
-        "workEnd", "status");
+    query.fields().include("code", "name", "designation", "joinDate", "exitDate", "createdAt",
+        "workStart", "workEnd", "status");
   }
 
   private List<AttendanceDay> days(String shopId, Collection<String> employeeIds, String from,

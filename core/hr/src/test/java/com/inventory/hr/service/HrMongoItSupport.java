@@ -153,6 +153,8 @@ final class HrMongoItSupport {
         repos.getRepository(HrSettingsRepository.class));
     PeriodLockService lock = new PeriodLockService();
     ReflectionTestUtils.setField(lock, "mongoTemplate", template);
+    ReflectionTestUtils.setField(lock, "settingsRepository",
+        repos.getRepository(HrSettingsRepository.class));
     HrAuditService audit = new HrAuditService();
     ReflectionTestUtils.setField(audit, "auditEventRepository",
         repos.getRepository(HrAuditEventRepository.class));
@@ -270,6 +272,7 @@ final class HrMongoItSupport {
     ReflectionTestUtils.setField(payments, "metrics", metrics);
     // reopen settles stale payment claims first
     ReflectionTestUtils.setField(payroll, "salaryPaymentService", payments);
+    ReflectionTestUtils.setField(payroll, "periodLockService", lock);
 
     // the real Thymeleaf template and PDF renderer, as documentservice runs them
     PayslipPdfService pdf = new PayslipPdfService();

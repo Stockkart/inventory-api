@@ -25,6 +25,8 @@ public class HrSettingsResponse {
   private BigDecimal overtimeMultiplier;
   private PerDayBasis perDayBasis;
   private LeaveYearStartMonth leaveYearStartMonth;
+  /** Day 1–28 the salary month starts on (default 1 = calendar month). */
+  private Integer payCycleStartDay;
   /** Send back on PUT for lost-update protection; null = never saved. */
   private Long revision;
   private Instant updatedAt;

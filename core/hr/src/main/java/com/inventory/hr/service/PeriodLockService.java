@@ -2,8 +2,11 @@ package com.inventory.hr.service;
 
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
+import com.inventory.hr.domain.model.HrSettings;
 import com.inventory.hr.domain.model.PayrollRun;
 import com.inventory.hr.domain.model.enums.PayrollRunStatus;
+import com.inventory.hr.domain.repository.HrSettingsRepository;
+import com.inventory.hr.utils.PayCycle;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
@@ -21,6 +24,12 @@ import org.springframework.stereotype.Service;
  * reopen that finds paid lines goes back to FINALISED, so a write that slipped in meanwhile would
  * land in a finalised month.
  *
+ * <p>Periods are salary months ({@link PayCycle}): a date is locked when it falls in a locked
+ * run's cycle: callers map dates with {@code PayCycle.periodsOf(dates, startDay(shopId))} (or the
+ * start day of the settings they already read). Using the current start day is exact because the
+ * start day cannot change while any run is FINALISING, FINALISED or REOPENING ({@code
+ * HrSettingsService}), so every locked run was made with the current start day.
+ *
  * <p>Ordering: callers check the lock before they write. A finalise that claims the run between
  * the check and the write is caught by the finalise recheck of {@code markedAt} / {@code
  * decidedAt} after its {@code claimedAt} (design "payroll finalise", task 8.5).
@@ -33,9 +42,11 @@ public class PeriodLockService {
 
   @Autowired private MongoTemplate mongoTemplate;
 
+  @Autowired private HrSettingsRepository settingsRepository;
+
   /**
    * @param shopId tenant shop
-   * @param period {@code YYYY-MM}
+   * @param period salary month {@code YYYY-MM}
    */
   public void assertOpen(String shopId, String period) {
     assertOpen(shopId, List.of(period));
@@ -66,5 +77,18 @@ public class PeriodLockService {
       locked.add(run.getPeriod());
     }
     return locked;
+  }
+
+  /** The shop has a run that is FINALISING, FINALISED or REOPENING (pay-cycle change guard). */
+  public boolean hasLockedRun(String shopId) {
+    Query query = Query.query(Criteria.where("shopId").is(shopId).and("status").in(LOCKED));
+    query.maxTimeMsec(HrQueryRunner.SCREEN_MAX_TIME_MS);
+    return mongoTemplate.exists(query, PayrollRun.class);
+  }
+
+  /** The shop's salary-month start day (1 when nothing is stored). */
+  public int startDay(String shopId) {
+    HrSettings settings = settingsRepository.findByShopId(shopId).orElse(null);
+    return PayCycle.startDay(settings);
   }
 }

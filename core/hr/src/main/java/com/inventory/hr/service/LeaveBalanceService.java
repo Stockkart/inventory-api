@@ -120,7 +120,8 @@ public class LeaveBalanceService {
   static Balance balance(LeaveType type, Employee employee, LocalDate start, LocalDate end,
       BigDecimal used) {
     BigDecimal quota = type.getYearlyQuotaDays() == null ? null
-        : proratedQuota(type.getYearlyQuotaDays(), employee.getJoinDate(), start, end);
+        : proratedQuota(type.getYearlyQuotaDays(),
+            HrDateUtils.effectiveJoinDateText(employee), start, end);
     return new Balance(quota, used, quota == null ? null : quota.subtract(used));
   }
 
@@ -207,7 +208,7 @@ public class LeaveBalanceService {
         new Criteria().orOperator(Criteria.where("exitDate").is(null),
             Criteria.where("exitDate").gte(HrDateUtils.format(start)))))
         .with(Sort.by(Sort.Direction.ASC, "name"));
-    query.fields().include("code", "name", "joinDate", "exitDate");
+    query.fields().include("code", "name", "joinDate", "exitDate", "createdAt");
     query.maxTimeMsec(HrQueryRunner.SCREEN_MAX_TIME_MS);
     return mongoTemplate.find(query, Employee.class);
   }

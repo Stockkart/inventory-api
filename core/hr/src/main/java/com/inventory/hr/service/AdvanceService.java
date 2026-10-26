@@ -23,13 +23,13 @@ import com.inventory.hr.rest.dto.response.AdvanceStatementResponse;
 import com.inventory.hr.service.HrAuditService.AuditEntry;
 import com.inventory.hr.utils.HrDateUtils;
 import com.inventory.hr.utils.HrMoneyUtils;
+import com.inventory.hr.utils.PayCycle;
 import com.inventory.hr.utils.constants.HrMetricsConstants;
 import com.inventory.hr.validation.AdvanceValidator;
 import com.inventory.metrics.MetricsWrapper;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.YearMonth;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -258,7 +258,7 @@ public class AdvanceService {
       if (!advances.isEmpty() && !finalised.isEmpty()) {
         Query linesQuery = Query.query(Criteria.where("shopId").is(shopId).and("employeeId")
             .is(employeeId).and("runId").in(finalised).and("advanceRecoveries.0").exists(true));
-        linesQuery.fields().include("period", "advanceRecoveries");
+        linesQuery.fields().include("period", "fromDate", "toDate", "advanceRecoveries");
         linesQuery.maxTimeMsec(HrQueryRunner.SCREEN_MAX_TIME_MS);
         lines = mongoTemplate.find(linesQuery, PayrollLine.class);
       }
@@ -275,7 +275,8 @@ public class AdvanceService {
           a.getId(), null, a.getAmount(), null, a.getStatus() == AdvanceStatus.CANCELLED));
     }
     for (PayrollLine l : lines) {
-      String date = HrDateUtils.format(YearMonth.parse(l.getPeriod()).atEndOfMonth());
+      // recovered on the last day of the line's salary month (PayCycle)
+      String date = PayCycle.stored(l.getPeriod(), l.getFromDate(), l.getToDate()).toText();
       for (PayrollLine.AdvanceRecovery r : l.getAdvanceRecoveries()) {
         rows.add(new AdvanceStatementResponse.Row(date, AdvanceStatementResponse.Kind.RECOVERED,
             r.getAdvanceId(), l.getPeriod(), r.getAmount(), null, false));
@@ -418,7 +419,7 @@ public class AdvanceService {
 
   private Employee employee(String shopId, String employeeId) {
     Query query = Query.query(Criteria.where("shopId").is(shopId).and("_id").is(employeeId));
-    query.fields().include("code", "name", "joinDate", "exitDate");
+    query.fields().include("code", "name", "joinDate", "exitDate", "createdAt");
     query.maxTimeMsec(HrQueryRunner.SCREEN_MAX_TIME_MS);
     Employee e = mongoTemplate.findOne(query, Employee.class);
     if (e == null) {

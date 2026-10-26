@@ -15,11 +15,11 @@ import com.inventory.hr.domain.model.PayrollLine;
 import com.inventory.hr.domain.model.PayrollRun;
 import com.inventory.hr.domain.model.enums.HrPaymentMethod;
 import com.inventory.hr.utils.HrDateUtils;
+import com.inventory.hr.utils.PayCycle;
 import com.inventory.hr.utils.constants.HrMetricsConstants;
 import com.inventory.metrics.MetricsWrapper;
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -101,7 +101,8 @@ public class HrAccountingPoster {
       out.add(credit(SystemAccountCode.STAFF_ADVANCES, t.recovered(), memo));
     }
     PostJournalRequest req = request(JournalSource.PAYROLL_RUN, runSourceId(run),
-        YearMonth.parse(run.getPeriod()).atEndOfMonth(),
+        // dated the last day of the salary month (PayCycle), as stored on the run
+        PayCycle.stored(run.getPeriod(), run.getFromDate(), run.getToDate()).to(),
         "Payroll " + run.getPeriod() + " (revision " + revisionOf(run) + ")", out);
     return post(shopId, userId, req);
   }

@@ -264,7 +264,7 @@ class AttendanceServiceTest {
       Document doc = u.getUpdateObject();
       assertEquals(Set.of("$setOnInsert"), doc.keySet(), "never overwrites an existing day");
     }
-    verify(periodLockService).assertOpen(SHOP, List.of("2025-04"));
+    verify(periodLockService).assertOpen(SHOP, Set.of("2025-04"));
     verify(auditService).recordAll(anyList());
   }
 

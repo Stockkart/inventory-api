@@ -76,13 +76,13 @@ class AttendanceDayValidatorTest {
   }
 
   @Test
-  void markUnmarkedTakesUpTo31DatesOfOneMonth() {
+  void markUnmarkedTakesUpTo31Dates() {
     List<LocalDate> dates = validator.validateMarkUnmarked(new MarkUnmarkedPresentRequest(
         new ArrayList<>(List.of("2025-04-02", "2025-04-01", "2025-04-02")), null), TODAY);
     assertEquals(List.of(LocalDate.of(2025, 4, 1), LocalDate.of(2025, 4, 2)), dates);
-    assertThrows(ValidationException.class, () -> validator.validateMarkUnmarked(
-        new MarkUnmarkedPresentRequest(new ArrayList<>(List.of("2025-03-31", "2025-04-01")),
-            null), TODAY));
+    // a salary month (PayCycle) may span two calendar months, so that is allowed now
+    assertEquals(2, validator.validateMarkUnmarked(new MarkUnmarkedPresentRequest(
+        new ArrayList<>(List.of("2025-03-31", "2025-04-01")), null), TODAY).size());
     assertThrows(ValidationException.class, () -> validator.validateMarkUnmarked(
         new MarkUnmarkedPresentRequest(new ArrayList<>(List.of("2025-04-16")), null), TODAY));
     assertThrows(ValidationException.class, () -> validator.validateMarkUnmarked(

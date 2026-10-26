@@ -100,6 +100,9 @@ class EmployeeServiceIT {
     ReflectionTestUtils.setField(service, "membershipService", members);
     PeriodLockService periodLockService = new PeriodLockService();
     ReflectionTestUtils.setField(periodLockService, "mongoTemplate", template);
+    ReflectionTestUtils.setField(periodLockService, "settingsRepository",
+        new MongoRepositoryFactory(template).getRepository(
+            com.inventory.hr.domain.repository.HrSettingsRepository.class));
     ReflectionTestUtils.setField(service, "periodLockService", periodLockService);
     ReflectionTestUtils.setField(service, "auditService", mock(HrAuditService.class));
   }

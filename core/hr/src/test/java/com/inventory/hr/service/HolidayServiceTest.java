@@ -75,6 +75,21 @@ class HolidayServiceTest {
   }
 
   @Test
+  void aDateIsLockedByTheSalaryMonthItFallsInUnderTheShopsStartDay() {
+    // start day 26: 27 Sep 2026 is in salary month 2026-10 (26 Sep – 25 Oct), whose run is
+    // finalised, so a holiday on it is refused although September itself has no run
+    when(periodLockService.startDay(SHOP)).thenReturn(26);
+    doThrow(new BaseException(ErrorCode.HR_PERIOD_LOCKED, "locked"))
+        .when(periodLockService).assertOpen(SHOP, "2026-10");
+
+    BaseException e = assertThrows(BaseException.class,
+        () -> service.create(USER, SHOP, request("2026-09-27", "Navratri")));
+
+    assertEquals(ErrorCode.HR_PERIOD_LOCKED, e.getErrorCode());
+    verify(holidayRepository, never()).save(any());
+  }
+
+  @Test
   void aSecondHolidayOnTheSameDateIs409() {
     when(holidayRepository.existsByShopIdAndDate(SHOP, "2025-10-20")).thenReturn(true);
 

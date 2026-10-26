@@ -135,6 +135,55 @@ class HrSettingsServiceTest {
   }
 
   @Test
+  void theSalaryMonthStartCannotChangeOnceAnyPayrollIsFinalised() {
+    HrSettings stored = new HrSettings();
+    stored.setShopId(SHOP);
+    stored.setRevision(1L);
+    when(settingsRepository.findByShopId(SHOP)).thenReturn(Optional.of(stored));
+    when(periodLockService.hasLockedRun(SHOP)).thenReturn(true);
+    UpdateHrSettingsRequest request = new UpdateHrSettingsRequest();
+    request.setRevision(1L);
+    request.setPayCycleStartDay(26);
+
+    BaseException e = assertThrows(BaseException.class, () -> service.update(USER, SHOP, request));
+
+    assertEquals(ErrorCode.HR_RUN_STATE_CONFLICT, e.getErrorCode());
+    assertEquals("The salary month start can be changed only before any payroll is finalised.",
+        e.getMessage());
+    verify(settingsRepository, never()).save(any());
+  }
+
+  @Test
+  void theSalaryMonthStartChangesWhileOnlyDraftsExistAndDefaultsToOne() {
+    when(settingsRepository.findByShopId(SHOP)).thenReturn(Optional.empty());
+    when(settingsRepository.save(any(HrSettings.class))).thenAnswer(i -> i.getArgument(0));
+    assertEquals(1, service.get(USER, SHOP).getPayCycleStartDay());
+    UpdateHrSettingsRequest request = new UpdateHrSettingsRequest();
+    request.setPayCycleStartDay(26);
+
+    HrSettingsResponse response = service.update(USER, SHOP, request);
+
+    assertEquals(26, response.getPayCycleStartDay());
+    verify(periodLockService).hasLockedRun(SHOP);
+  }
+
+  @Test
+  void sendingTheSameStartDayDoesNotNeedTheRunCheck() {
+    HrSettings stored = new HrSettings();
+    stored.setShopId(SHOP);
+    stored.setRevision(1L);
+    stored.setPayCycleStartDay(26);
+    when(settingsRepository.findByShopId(SHOP)).thenReturn(Optional.of(stored));
+    when(settingsRepository.save(any(HrSettings.class))).thenAnswer(i -> i.getArgument(0));
+    UpdateHrSettingsRequest request = new UpdateHrSettingsRequest();
+    request.setRevision(1L);
+    request.setPayCycleStartDay(26);
+
+    assertEquals(26, service.update(USER, SHOP, request).getPayCycleStartDay());
+    verify(periodLockService, never()).hasLockedRun(SHOP);
+  }
+
+  @Test
   void aStaleRevisionIsAConflict() {
     HrSettings stored = new HrSettings();
     stored.setShopId(SHOP);

@@ -21,8 +21,15 @@ public class PayrollRun {
 
   @Id private String id;
   private String shopId;
-  /** YYYY-MM. */
+  /** YYYY-MM: the salary month, named by the month it ends in ({@code PayCycle}). */
   private String period;
+  /**
+   * yyyy-MM-dd, first and last day of the salary month as of the last calculation (set at
+   * creation, recalculation and finalise). Null on runs calculated before pay cycles existed =
+   * the calendar month.
+   */
+  private String fromDate;
+  private String toDate;
   private PayrollRunStatus status;
   /** +1 on each reopen; null = 0. */
   private Integer revision;

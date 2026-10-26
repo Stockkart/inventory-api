@@ -61,7 +61,10 @@ public class EmployeeValidator {
     } else if (!creating) {
       throw new ValidationException("Employee code is required");
     }
-    if (request.getJoinDate() != null && !HrDateUtils.isDate(request.getJoinDate())) {
+    if (!StringUtils.hasText(request.getJoinDate())) {
+      throw new ValidationException("Join date is required");
+    }
+    if (!HrDateUtils.isDate(request.getJoinDate())) {
       throw new ValidationException("Join date must be a date like 2025-04-01");
     }
     validateHours(request.getWorkStart(), request.getWorkEnd());

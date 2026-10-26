@@ -69,4 +69,18 @@ class HrSettingsValidatorTest {
     assertThrows(ValidationException.class, () -> validator.validateHours("09:00", "09:00"));
     assertDoesNotThrow(() -> validator.validateHours("09:00", "21:00"));
   }
+
+  @Test
+  void theSalaryMonthStartsOnADayFrom1To28() {
+    for (int day : new int[] {0, 29, 31, -1}) {
+      UpdateHrSettingsRequest r = new UpdateHrSettingsRequest();
+      r.setPayCycleStartDay(day);
+      assertThrows(ValidationException.class, () -> validator.validate(r), "day " + day);
+    }
+    for (int day : new int[] {1, 26, 28}) {
+      UpdateHrSettingsRequest r = new UpdateHrSettingsRequest();
+      r.setPayCycleStartDay(day);
+      assertDoesNotThrow(() -> validator.validate(r), "day " + day);
+    }
+  }
 }

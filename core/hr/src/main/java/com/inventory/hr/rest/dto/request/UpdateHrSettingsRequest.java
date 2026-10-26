@@ -23,6 +23,11 @@ public class UpdateHrSettingsRequest {
   private PerDayBasis perDayBasis;
   private LeaveYearStartMonth leaveYearStartMonth;
   /**
+   * Day 1–28 the salary month starts on; null = unchanged. Refused (409 HR_RUN_STATE_CONFLICT)
+   * once any payroll run is FINALISING, FINALISED or REOPENING.
+   */
+  private Integer payCycleStartDay;
+  /**
    * Revision the client last read; required once settings are saved (stale = 409), null on the
    * first save.
    */

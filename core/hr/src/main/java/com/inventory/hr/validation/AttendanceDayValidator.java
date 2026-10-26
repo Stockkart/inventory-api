@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 /**
- * Attendance input (design "Memory" caps): at most 500 rows per save and 31 dates of one month
+ * Attendance input (design "Memory" caps): at most 500 rows per save and 31 dates
  * per mark-unmarked call, strict dates and times, in-time before out-time, no future dates
  * ("today" is Asia/Kolkata).
  */
@@ -82,7 +82,7 @@ public class AttendanceDayValidator {
     }
   }
 
-  /** Sorted distinct dates of one month, none in the future. */
+  /** Sorted distinct dates (at most 31), none in the future. */
   public List<LocalDate> validateMarkUnmarked(MarkUnmarkedPresentRequest request,
       LocalDate today) {
     if (request == null || request.getDates() == null || request.getDates().isEmpty()) {
@@ -97,9 +97,8 @@ public class AttendanceDayValidator {
     if (dates.size() > MAX_DATES) {
       throw new ValidationException("Send at most " + MAX_DATES + " dates at a time");
     }
-    if (!YearMonth.from(dates.first()).equals(YearMonth.from(dates.last()))) {
-      throw new ValidationException("All dates must be in the same month");
-    }
+    // no same-calendar-month rule: a salary month (PayCycle) may span two calendar months, and
+    // the lock check covers every salary month the dates touch
     if (request.getEmployeeIds() != null) {
       for (String id : request.getEmployeeIds()) {
         if (!StringUtils.hasText(id)) {

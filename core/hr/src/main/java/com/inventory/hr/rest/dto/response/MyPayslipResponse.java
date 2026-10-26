@@ -20,4 +20,8 @@ public class MyPayslipResponse {
   private SalaryPaymentStatus paymentStatus;
   /** yyyy-MM-dd; null = not paid yet. */
   private String paidAt;
+  /** yyyy-MM-dd, first day of the salary month. */
+  private String fromDate;
+  /** yyyy-MM-dd, last day of the salary month. */
+  private String toDate;
 }
