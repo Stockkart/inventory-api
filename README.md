@@ -277,7 +277,7 @@ Shops are bound to a **vertical** (`Shop.verticalId` + `Shop.pluginVersion`). Fi
 
 ### Rate rules (product, pricing)
 
-A shop can define named rate rules once (for example `Rate-A` = PTR - 8% + 10+1) and every batch gets the matching rates generated from its own PTR or MRP. The rules live in `shop_rate_rules` (`ShopRateRulesDocument`, one per shop, unique `shopId` index made at startup by `RateRulesIndexMigration`). All arithmetic is in `RateRuleCalculator` (`core/pricing`); the settings code only stores rules and previews them.
+A shop can define named rate rules once (for example `Rate-A` = PTR - 8% + 10+1) and every batch gets the matching rates generated from its own PTR or MRP. The rules live in `shop_rate_rules` (`ShopRateRulesDocument`, one per shop, unique `shopId` index `shop_rate_rules_shop_unique_idx`, created by hand on each database). All arithmetic is in `RateRuleCalculator` (`core/pricing`); the settings code only stores rules and previews them.
 
 | Endpoint | Purpose |
 |----------|---------|
