@@ -34,7 +34,10 @@ public class PlanExpiryInterceptor implements HandlerInterceptor {
 
   private static final List<Pattern> ALLOWED_PATTERNS = List.of(
       Pattern.compile("/api/v1/plans/[a-fA-F0-9]{24}"),
-      Pattern.compile("/api/v1/plans/shop/[a-fA-F0-9]{24}/assign")
+      Pattern.compile("/api/v1/plans/shop/[a-fA-F0-9]{24}/assign"),
+      // HR decision 5: staff can still download their own payslips after the plan expired. A
+      // pattern, not a prefix, so "/api/v1/hr/me/payslipsX" is not allowed by accident
+      Pattern.compile("/api/v1/hr/me/payslips(/.*)?")
   );
 
   @Autowired(required = false)
@@ -47,7 +50,10 @@ public class PlanExpiryInterceptor implements HandlerInterceptor {
     }
 
     String requestPath = request.getRequestURI();
-    if (isAllowedWhenExpired(requestPath)) {
+    // allow-list matched on the decoded, semicolon-free path Spring routes on (see RequestPaths);
+    // dot-segment paths never count as allowed
+    String lookupPath = RequestPaths.lookupPath(request);
+    if (!RequestPaths.isSuspicious(request, lookupPath) && isAllowedWhenExpired(lookupPath)) {
       return true;
     }
 

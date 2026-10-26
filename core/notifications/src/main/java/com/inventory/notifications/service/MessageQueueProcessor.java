@@ -20,6 +20,7 @@ import jakarta.annotation.PostConstruct;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @Slf4j
 @Service
@@ -30,6 +31,10 @@ public class MessageQueueProcessor {
 
   @Autowired(required = false)
   private List<ChannelAdapter> adapters;
+
+  /** Renders documents referenced by {@code OutboundMessage.attachmentRef}; none = HR absent. */
+  @Autowired(required = false)
+  private List<AttachmentResolver> attachmentResolvers;
 
   @Autowired
   private MetricsWrapper metrics;
@@ -63,14 +68,29 @@ public class MessageQueueProcessor {
   @Scheduled(fixedDelayString = "${messaging.dispatch-interval-ms:15000}")
   public void processQueue() {
     Instant now = Instant.now();
-    List<OutboundMessage> pending = outboundMessageRepository.findPendingForDispatch(
+    // plain messages (as before: up to a batch) and, apart, the few whose attachment is rendered
+    // this tick, so a queue of payslips never holds other emails back
+    List<OutboundMessage> pending = new java.util.ArrayList<>();
+    List<OutboundMessage> plain = outboundMessageRepository.findPendingPlainForDispatch(
         MessageStatus.PENDING,
         MessagingConstants.MAX_RETRIES,
         now,
         PageRequest.of(0, MessagingConstants.DISPATCH_BATCH_SIZE)
     );
+    if (plain != null) {
+      pending.addAll(plain);
+    }
+    List<OutboundMessage> withAttachment =
+        outboundMessageRepository.findPendingWithAttachmentRefForDispatch(
+            MessageStatus.PENDING,
+            MessagingConstants.MAX_RETRIES,
+            now,
+            PageRequest.of(0, MessagingConstants.MAX_RENDERS_PER_TICK));
+    if (withAttachment != null) {
+      pending.addAll(withAttachment);
+    }
 
-    if (pending == null || pending.isEmpty()) {
+    if (pending.isEmpty()) {
       return;
     }
 
@@ -86,12 +106,31 @@ public class MessageQueueProcessor {
 
     log.info("Message queue processor: processing {} pending messages", pending.size());
 
+    // documents rendered at send time (payslips) cost ~0.1 s of CPU each on the single scheduler
+    // thread, so a tick renders at most MAX_RENDERS_PER_TICK; the rest stay PENDING untouched
+    // (no retry counted) and go out on a later tick (HR decision 1)
+    int renders = 0;
     for (OutboundMessage msg : pending) {
+      boolean rendered = false;
       try {
         ChannelAdapter adapter = adapterMap.get(msg.getChannel());
         if (adapter == null) {
           log.warn("No adapter for channel {} for message {}", msg.getChannel(), msg.getId());
           continue;
+        }
+
+        if (needsRender(msg)) {
+          if (renders >= MessagingConstants.MAX_RENDERS_PER_TICK) {
+            continue;
+          }
+          renders++;
+          rendered = true;
+          String renderError = renderAttachment(msg);
+          if (renderError != null) {
+            handleFailure(msg, renderError, now);
+            recordSent(msg.getChannel(), "error");
+            continue;
+          }
         }
 
         SendResult result = adapter.send(msg);
@@ -101,18 +140,55 @@ public class MessageQueueProcessor {
           msg.setExternalId(result.getExternalId());
           msg.setSentAt(now);
           msg.setErrorMessage(null);
+          // the bytes were only needed for the send
+          msg.setAttachments(null);
           outboundMessageRepository.save(msg);
           log.info("Message {} sent successfully", msg.getId());
           recordSent(msg.getChannel(), "success");
         } else {
+          dropRendered(msg, rendered);
           handleFailure(msg, result.getErrorMessage(), now);
           recordSent(msg.getChannel(), "error");
         }
       } catch (Exception e) {
         log.error("Error processing message {}: {}", msg.getId(), e.getMessage(), e);
+        dropRendered(msg, rendered);
         handleFailure(msg, e.getMessage(), now);
         recordSent(msg.getChannel(), "error");
       }
+    }
+  }
+
+  /** A message with an attachment reference whose file has not been rendered for this send. */
+  private static boolean needsRender(OutboundMessage msg) {
+    return msg.getAttachmentRef() != null
+        && (msg.getAttachments() == null || msg.getAttachments().isEmpty());
+  }
+
+  /**
+   * Renders the referenced document into the message (in memory only).
+   *
+   * @return null when rendered, else the error to record
+   */
+  private String renderAttachment(OutboundMessage msg) {
+    String kind = msg.getAttachmentRef().getKind();
+    AttachmentResolver resolver = attachmentResolvers == null ? null
+        : attachmentResolvers.stream().filter(r -> r.supports(kind)).findFirst().orElse(null);
+    if (resolver == null) {
+      return "No attachment resolver for " + kind;
+    }
+    Optional<OutboundMessage.Attachment> file = resolver.resolve(msg.getAttachmentRef());
+    if (file.isEmpty()) {
+      return "Attachment " + kind + " is not available";
+    }
+    msg.setAttachments(List.of(file.get()));
+    return null;
+  }
+
+  /** Rendered bytes are never stored: a failed send renders again on its retry. */
+  private static void dropRendered(OutboundMessage msg, boolean rendered) {
+    if (rendered) {
+      msg.setAttachments(null);
     }
   }
 

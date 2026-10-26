@@ -16,6 +16,8 @@ public final class SystemAccountCode {
   public static final String CARD_CLEARING = "1120";
   public static final String UPI_CLEARING = "1130";
   public static final String SUNDRY_DEBTORS = "1200";
+  /** Salary paid to staff ahead of payroll (HR advances), recovered from later pay. */
+  public static final String STAFF_ADVANCES = "1250";
   public static final String INVENTORY = "1300";
   public static final String INPUT_CGST = "1400";
   public static final String INPUT_SGST = "1410";
@@ -27,6 +29,8 @@ public final class SystemAccountCode {
   public static final String OUTPUT_SGST = "2210";
   public static final String OUTPUT_IGST = "2220";
   public static final String ROUND_OFF_PAYABLE = "2300";
+  /** Net pay of finalised HR payroll runs not yet paid out. */
+  public static final String SALARY_PAYABLE = "2400";
 
   // Equity
   public static final String OWNERS_CAPITAL = "3100";
@@ -47,5 +51,7 @@ public final class SystemAccountCode {
   public static final String ROUND_OFF_EXPENSE = "5500";
   /** Customer settlement shortfall / bad debt write-off. */
   public static final String BAD_DEBTS_WRITTEN_OFF = "5600";
+  /** HR payroll: pay before the advance deduction and before net-pay rounding (R11.1). */
+  public static final String SALARY_EXPENSE = "5700";
   public static final String OTHER_OPERATING_EXPENSES = "5900";
 }

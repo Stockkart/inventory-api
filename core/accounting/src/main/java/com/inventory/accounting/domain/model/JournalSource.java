@@ -13,6 +13,15 @@ public enum JournalSource {
   VENDOR_CREDIT_CHARGE,
   /** Manual or UI-driven increase in customer receivable (credit charge). */
   CUSTOMER_CREDIT_CHARGE,
+  /** HR payroll run finalised; sourceId {@code runId:revision}. */
+  PAYROLL_RUN,
+  /** HR salary advance given; sourceId = advance id. */
+  STAFF_ADVANCE,
+  /**
+   * HR salary paid; sourceId = payment batch id, or {@code undo:<lineId>:<paymentSeq>} for the
+   * compensating entry of one undone line.
+   */
+  SALARY_PAYMENT,
   INVENTORY_CORRECTION,
   MANUAL,
   REVERSAL

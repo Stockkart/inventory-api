@@ -66,6 +66,7 @@ class HeavyRequestLimiterTest {
     assertThat(l.limit(HeavyKind.ANALYTICS)).isEqualTo(3);
     assertThat(l.limit(HeavyKind.OCR)).isEqualTo(2);
     assertThat(l.limit(HeavyKind.IMPORT)).isEqualTo(1);
+    assertThat(l.limit(HeavyKind.HR)).isEqualTo(2);
   }
 
   @Test
