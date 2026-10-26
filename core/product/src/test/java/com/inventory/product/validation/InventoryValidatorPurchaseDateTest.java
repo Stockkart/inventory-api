@@ -7,25 +7,20 @@ import static org.mockito.Mockito.mock;
 
 import com.inventory.common.exception.ValidationException;
 import com.inventory.product.rest.dto.request.CreateInventoryRequest;
-import com.inventory.product.rest.dto.request.UpdateInventoryRequest;
 import com.inventory.product.service.PackagingUnitService;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import org.junit.jupiter.api.Test;
 
 /**
- * A new stock-in must be dated within 30 days of today. Editing a lot corrects the date it was
- * bought, which can be any day in the past, but never a day still to come.
+ * A new stock-in must be dated within 30 days of today. After that the purchase date is fixed:
+ * an edit may resend the stored day but never change it.
  */
 class InventoryValidatorPurchaseDateTest {
 
-  private final InventoryValidator validator = new InventoryValidator(mock(PackagingUnitService.class));
+  private static final Instant STORED = Instant.parse("2026-02-14T09:30:00Z");
 
-  private static UpdateInventoryRequest update(Instant purchaseDate) {
-    UpdateInventoryRequest r = new UpdateInventoryRequest();
-    r.setPurchaseDate(purchaseDate);
-    return r;
-  }
+  private final InventoryValidator validator = new InventoryValidator(mock(PackagingUnitService.class));
 
   private static CreateInventoryRequest create(Instant purchaseDate) {
     CreateInventoryRequest r = new CreateInventoryRequest();
@@ -36,23 +31,35 @@ class InventoryValidatorPurchaseDateTest {
   }
 
   @Test
-  void anEditMaySetADateMoreThanAYearBack() {
-    Instant longAgo = Instant.parse("2025-01-31T00:00:00Z");
-    assertDoesNotThrow(() -> validator.validateUpdateRequest(update(longAgo)));
+  void anEditWithoutADateIsAllowed() {
+    assertDoesNotThrow(() -> validator.validatePurchaseDateUnchanged(null, STORED));
   }
 
   @Test
-  void anEditMaySetToday() {
-    Instant today = Instant.now().truncatedTo(ChronoUnit.DAYS);
-    assertDoesNotThrow(() -> validator.validateUpdateRequest(update(today)));
+  void anEditMayResendTheStoredDay() {
+    Instant sameDay = Instant.parse("2026-02-14T00:00:00Z");
+    assertDoesNotThrow(() -> validator.validatePurchaseDateUnchanged(sameDay, STORED));
   }
 
   @Test
-  void anEditCannotSetAFutureDay() {
-    Instant tomorrow = Instant.now().plus(2, ChronoUnit.DAYS).truncatedTo(ChronoUnit.DAYS);
-    ValidationException e =
-        assertThrows(ValidationException.class, () -> validator.validateUpdateRequest(update(tomorrow)));
-    assertEquals("Purchase date cannot be in the future", e.getMessage());
+  void anEditCannotMoveTheDateBack() {
+    Instant earlier = Instant.parse("2026-01-31T00:00:00Z");
+    ValidationException e = assertThrows(
+        ValidationException.class, () -> validator.validatePurchaseDateUnchanged(earlier, STORED));
+    assertEquals(InventoryValidator.PURCHASE_DATE_NOT_EDITABLE, e.getMessage());
+  }
+
+  @Test
+  void anEditCannotMoveTheDateForward() {
+    Instant later = Instant.parse("2026-02-15T00:00:00Z");
+    assertThrows(
+        ValidationException.class, () -> validator.validatePurchaseDateUnchanged(later, STORED));
+  }
+
+  @Test
+  void anEditCannotSetADateOnALotWithoutOne() {
+    Instant any = Instant.parse("2026-02-14T00:00:00Z");
+    assertThrows(ValidationException.class, () -> validator.validatePurchaseDateUnchanged(any, null));
   }
 
   @Test

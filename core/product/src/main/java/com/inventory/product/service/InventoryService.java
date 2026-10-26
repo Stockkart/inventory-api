@@ -1569,7 +1569,8 @@ public class InventoryService {
         inventory.setItemTypeDegree(request.getItemTypeDegree());
       }
       if (request.getDiscountApplicable() != null) inventory.setDiscountApplicable(request.getDiscountApplicable());
-      if (request.getPurchaseDate() != null) inventory.setPurchaseDate(request.getPurchaseDate());
+      // Set at stock-in only; an unchanged day may be resent, a new one is rejected.
+      inventoryValidator.validatePurchaseDateUnchanged(request.getPurchaseDate(), inventory.getPurchaseDate());
 
       if (request.getSchemeType() != null) {
         inventory.setSchemeType(request.getSchemeType());
