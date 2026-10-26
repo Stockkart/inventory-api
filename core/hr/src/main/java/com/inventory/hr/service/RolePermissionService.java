@@ -13,6 +13,7 @@ import com.inventory.hr.validation.RolePermissionValidator;
 import com.inventory.user.domain.model.UserRole;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -57,14 +58,21 @@ public class RolePermissionService {
       return fresh;
     });
     Map<String, Object> before = rowsSnapshot(grid);
+    // what this save decides: what the shop decided before, what the client says its grid
+    // shows, and anything ticked for any role; the rest keeps its role default (old clients)
+    Set<HrPermission> known = EnumSet.noneOf(HrPermission.class);
+    known.addAll(HrAccessService.knownPermissions(grid));
+    known.addAll(validator.parseKnown(request));
+    rows.values().forEach(known::addAll);
     Map<UserRole, List<HrPermission>> stored = new LinkedHashMap<>();
     for (UserRole role : HrAccessService.GRID_ROLES) {
       Set<HrPermission> row = rows.containsKey(role)
-          ? HrPermission.closure(rows.get(role))
+          ? HrAccessService.withUnknownDefaults(role, rows.get(role), known)
           : HrAccessService.rowFor(role, grid);
       stored.put(role, new ArrayList<>(row));
     }
     grid.setRoles(stored);
+    grid.setKnownPermissions(new ArrayList<>(known));
     grid.setUpdatedAt(Instant.now());
     grid.setUpdatedByUserId(userId);
     HrRolePermissions saved;

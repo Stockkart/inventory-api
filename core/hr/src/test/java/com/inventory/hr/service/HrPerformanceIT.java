@@ -263,9 +263,10 @@ class HrPerformanceIT {
         .filter(r -> period.equals(r.getPeriod())).findFirst().orElseThrow().getId();
 
     Map<String, Integer> budget = new LinkedHashMap<>();
-    budget.put("daily", 6);
+    // +1 each (self check-in): the punch-flags read of hr_punches (design "Performance")
+    budget.put("daily", 7);
     budget.put("save", 7);
-    budget.put("month", 6);
+    budget.put("month", 7);
     // design 9; +1 employment re-check, +1 leave type read, +2 post-write overlap and balance
     // re-check (run B2: these stand in for transactions) = 13 (design.md Performance)
     budget.put("approve", 13);

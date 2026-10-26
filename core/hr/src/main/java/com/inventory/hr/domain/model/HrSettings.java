@@ -1,6 +1,7 @@
 package com.inventory.hr.domain.model;
 
 import com.inventory.hr.domain.model.enums.LeaveYearStartMonth;
+import com.inventory.hr.domain.model.enums.OutsideAction;
 import com.inventory.hr.domain.model.enums.PerDayBasis;
 import java.math.BigDecimal;
 import java.time.DayOfWeek;
@@ -52,11 +53,35 @@ public class HrSettings {
    * changed only while no payroll run is FINALISING, FINALISED or REOPENING.
    */
   private Integer payCycleStartDay;
+  /** How attendance is captured besides manual marks; null = everything off (defaults below). */
+  private AttendanceCapture attendanceCapture;
   /** Optimistic lock; a lost update returns 409 HR_CONCURRENT_UPDATE. null = never saved. */
   @Version private Long revision;
   private Instant createdAt;
   private Instant updatedAt;
   private String updatedByUserId;
+
+  /**
+   * Self check-in and its location check (R1, R3). The shop's own coordinates are stored; an
+   * employee's never are.
+   */
+  @Data
+  @NoArgsConstructor
+  @AllArgsConstructor
+  public static class AttendanceCapture {
+    /** null = false. */
+    private Boolean selfCheckIn;
+    /** null = false. Needs {@code shopLat}/{@code shopLng}. */
+    private Boolean locationCheck;
+    /** Degrees, −90..90; null = not set. */
+    private Double shopLat;
+    /** Degrees, −180..180; null = not set. */
+    private Double shopLng;
+    /** 30–1,000; null = 100. */
+    private Integer radiusMetres;
+    /** null = BLOCK. */
+    private OutsideAction outsideAction;
+  }
 
   /** Weekly-off days that apply from {@code effectiveFrom} (YYYY-MM) on. */
   @Data

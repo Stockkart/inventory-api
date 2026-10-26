@@ -11,6 +11,7 @@ import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,7 +21,7 @@ import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
 
 /**
- * Effective HR permissions of a member (design "Permissions"): the owner has all ten; a member
+ * Effective HR permissions of a member (design "Permissions"): the owner has all of them; a member
  * whose HR switch ({@code modules.hr}) is off has none (self-service only); everyone else gets the
  * stored grid row for their role, or the R1.4 default row when the shop never saved one.
  */
@@ -38,8 +39,13 @@ public class HrAccessService {
                   HrPermission.VIEW_ATTENDANCE,
                   HrPermission.MARK_ATTENDANCE,
                   HrPermission.APPROVE_LEAVE,
-                  HrPermission.VIEW_EMPLOYEES)),
-          UserRole.CASHIER, Collections.unmodifiableSet(EnumSet.noneOf(HrPermission.class)));
+                  HrPermission.VIEW_EMPLOYEES,
+                  HrPermission.SELF_CHECK_IN)),
+          UserRole.CASHIER, Collections.unmodifiableSet(EnumSet.of(HrPermission.SELF_CHECK_IN)));
+
+  /** Permissions a grid saved without {@code knownPermissions} knew about (all but the new one). */
+  static final Set<HrPermission> LEGACY_KNOWN =
+      Collections.unmodifiableSet(EnumSet.complementOf(EnumSet.of(HrPermission.SELF_CHECK_IN)));
 
   /** Roles that have a row in the grid; OWNER is never stored. */
   public static final List<UserRole> GRID_ROLES =
@@ -117,18 +123,52 @@ public class HrAccessService {
     return rowFor(role, grid);
   }
 
-  /** Stored row for the role (closed), else its R1.4 default; empty for roles not in the grid. */
+  /**
+   * Stored row for the role (closed), else its R1.4 default; empty for roles not in the grid. A
+   * permission the grid did not know when it was saved ({@code knownPermissions}) takes the role
+   * default, so shops that saved the grid earlier still get e.g. SELF_CHECK_IN.
+   */
   public static Set<HrPermission> rowFor(UserRole role, HrRolePermissions grid) {
     if (!GRID_ROLES.contains(role)) {
       // OWNER role without the owner relationship, or a platform role: fail closed
       return EnumSet.noneOf(HrPermission.class);
     }
     if (grid != null && grid.getRoles() != null && grid.getRoles().get(role) != null) {
-      return HrPermission.closure(grid.getRoles().get(role));
+      return withUnknownDefaults(role, HrPermission.closure(grid.getRoles().get(role)),
+          knownOf(grid));
     }
     EnumSet<HrPermission> defaults = EnumSet.noneOf(HrPermission.class);
     defaults.addAll(DEFAULT_ROWS.get(role));
     return defaults;
+  }
+
+  private static Set<HrPermission> knownOf(HrRolePermissions grid) {
+    if (grid.getKnownPermissions() == null) {
+      return LEGACY_KNOWN;
+    }
+    EnumSet<HrPermission> known = EnumSet.noneOf(HrPermission.class);
+    grid.getKnownPermissions().stream().filter(Objects::nonNull).forEach(known::add);
+    return known;
+  }
+
+  /**
+   * Permissions the shop has decided on. Every client knows the original ten, so a grid never
+   * saved (null) or saved before {@code knownPermissions} existed counts as knowing those.
+   */
+  public static Set<HrPermission> knownPermissions(HrRolePermissions grid) {
+    return grid == null ? LEGACY_KNOWN : knownOf(grid);
+  }
+
+  /** {@code row} plus the role default of every permission not in {@code known}, closed. */
+  public static Set<HrPermission> withUnknownDefaults(UserRole role, Set<HrPermission> row,
+      Set<HrPermission> known) {
+    Set<HrPermission> result = HrPermission.closure(row);
+    for (HrPermission p : DEFAULT_ROWS.getOrDefault(role, Set.of())) {
+      if (!known.contains(p)) {
+        result.add(p);
+      }
+    }
+    return HrPermission.closure(result);
   }
 
   private static UserRole parseRole(String role) {

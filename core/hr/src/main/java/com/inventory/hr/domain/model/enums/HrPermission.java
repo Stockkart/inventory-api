@@ -19,7 +19,12 @@ public enum HrPermission {
   RUN_PAYROLL,
   RECORD_PAYMENTS,
   MANAGE_ADVANCES,
-  MANAGE_SETTINGS;
+  MANAGE_SETTINGS,
+  /**
+   * Use "Check in" / "Check out" on My HR (self check-in, R2.2). A self-service permission: it
+   * opens no HR staff screen (see {@code HrPermissionGuard#requireAny}).
+   */
+  SELF_CHECK_IN;
 
   /**
    * Permissions this one cannot work without. Marking attendance or approving leave needs the

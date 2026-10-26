@@ -8,6 +8,7 @@ import com.inventory.hr.domain.model.enums.EmployeeStatus;
 import com.inventory.hr.domain.model.enums.HrAuditAction;
 import com.inventory.hr.domain.model.enums.HrPermission;
 import com.inventory.hr.domain.model.enums.LeaveYearStartMonth;
+import com.inventory.hr.domain.model.enums.OutsideAction;
 import com.inventory.hr.domain.model.enums.PerDayBasis;
 import com.inventory.hr.domain.repository.AttendanceDayRepository;
 import com.inventory.hr.domain.repository.EmployeeRepository;
@@ -50,6 +51,7 @@ public class HrSettingsService {
   static final int DEFAULT_GRACE_MINUTES = 15;
   static final BigDecimal DEFAULT_HALF_DAY_BELOW_HOURS = new BigDecimal("4");
   static final BigDecimal DEFAULT_OVERTIME_MULTIPLIER = new BigDecimal("1.5");
+  static final int DEFAULT_RADIUS_METRES = 100;
   static final String PAY_CYCLE_LOCKED_MESSAGE =
       "The salary month start can be changed only before any payroll is finalised.";
 
@@ -140,8 +142,13 @@ public class HrSettingsService {
       }
       target.setPayCycleStartDay(request.getPayCycleStartDay());
     }
+    if (request.getAttendanceCapture() != null) {
+      target.setAttendanceCapture(
+          applyAttendanceCapture(target.getAttendanceCapture(), request.getAttendanceCapture()));
+    }
     HrSettings merged = withDefaults(target, shopId);
     validator.validateHours(merged.getWorkStart(), merged.getWorkEnd());
+    validator.validateAttendanceCapture(merged.getAttendanceCapture());
 
     target.setUpdatedAt(Instant.now());
     target.setUpdatedByUserId(userId);
@@ -212,7 +219,66 @@ public class HrSettingsService {
     String currentPeriod = PayCycle.currentPeriod(PayCycle.startDay(effective));
     response.setCurrentWeeklyOffDays(weeklyOffFor(effective, currentPeriod));
     response.setCurrentSalaryPeriod(currentPeriod);
+    response.setAttendanceCapture(captureDto(effective.getAttendanceCapture()));
     return response;
+  }
+
+  /**
+   * The stored capture settings with the sent fields applied (null = keep). The stored object is
+   * not changed.
+   */
+  static HrSettings.AttendanceCapture applyAttendanceCapture(HrSettings.AttendanceCapture current,
+      UpdateHrSettingsRequest.AttendanceCaptureChange change) {
+    HrSettings.AttendanceCapture c = current != null
+        ? new HrSettings.AttendanceCapture(current.getSelfCheckIn(), current.getLocationCheck(),
+            current.getShopLat(), current.getShopLng(), current.getRadiusMetres(),
+            current.getOutsideAction())
+        : new HrSettings.AttendanceCapture();
+    if (change.getSelfCheckIn() != null) {
+      c.setSelfCheckIn(change.getSelfCheckIn());
+    }
+    if (change.getLocationCheck() != null) {
+      c.setLocationCheck(change.getLocationCheck());
+    }
+    if (change.getShopLat() != null) {
+      c.setShopLat(change.getShopLat());
+    }
+    if (change.getShopLng() != null) {
+      c.setShopLng(change.getShopLng());
+    }
+    if (change.getRadiusMetres() != null) {
+      c.setRadiusMetres(change.getRadiusMetres());
+    }
+    if (change.getOutsideAction() != null) {
+      c.setOutsideAction(change.getOutsideAction());
+    }
+    return c;
+  }
+
+  /** Capture settings with every null replaced by its default (all off, 100 m, BLOCK). */
+  static HrSettings.AttendanceCapture captureWithDefaults(HrSettings.AttendanceCapture stored) {
+    HrSettings.AttendanceCapture c = new HrSettings.AttendanceCapture();
+    c.setSelfCheckIn(stored != null && Boolean.TRUE.equals(stored.getSelfCheckIn()));
+    c.setLocationCheck(stored != null && Boolean.TRUE.equals(stored.getLocationCheck()));
+    c.setShopLat(stored != null ? stored.getShopLat() : null);
+    c.setShopLng(stored != null ? stored.getShopLng() : null);
+    c.setRadiusMetres(value(stored != null ? stored.getRadiusMetres() : null,
+        DEFAULT_RADIUS_METRES));
+    c.setOutsideAction(value(stored != null ? stored.getOutsideAction() : null,
+        OutsideAction.BLOCK));
+    return c;
+  }
+
+  private static HrSettingsResponse.AttendanceCaptureDto captureDto(
+      HrSettings.AttendanceCapture c) {
+    HrSettingsResponse.AttendanceCaptureDto dto = new HrSettingsResponse.AttendanceCaptureDto();
+    dto.setSelfCheckIn(Boolean.TRUE.equals(c.getSelfCheckIn()));
+    dto.setLocationCheck(Boolean.TRUE.equals(c.getLocationCheck()));
+    dto.setShopLat(c.getShopLat());
+    dto.setShopLng(c.getShopLng());
+    dto.setRadiusMetres(c.getRadiusMetres());
+    dto.setOutsideAction(c.getOutsideAction());
+    return dto;
   }
 
   /** Copy with every null replaced by its default; the stored object is not changed. */
@@ -248,6 +314,8 @@ public class HrSettingsService {
     s.setLeaveYearStartMonth(value(stored != null ? stored.getLeaveYearStartMonth() : null,
         LeaveYearStartMonth.JANUARY));
     s.setPayCycleStartDay(PayCycle.startDay(stored));
+    s.setAttendanceCapture(captureWithDefaults(stored != null ? stored.getAttendanceCapture()
+        : null));
     return s;
   }
 
@@ -271,6 +339,15 @@ public class HrSettingsService {
     m.put("perDayBasis", String.valueOf(s.getPerDayBasis()));
     m.put("leaveYearStartMonth", String.valueOf(s.getLeaveYearStartMonth()));
     m.put("payCycleStartDay", s.getPayCycleStartDay());
+    HrSettings.AttendanceCapture c = s.getAttendanceCapture();
+    if (c != null) {
+      m.put("selfCheckIn", c.getSelfCheckIn());
+      m.put("locationCheck", c.getLocationCheck());
+      // whether the shop location is set, not where it is
+      m.put("shopLocationSet", c.getShopLat() != null && c.getShopLng() != null);
+      m.put("radiusMetres", c.getRadiusMetres());
+      m.put("outsideAction", String.valueOf(c.getOutsideAction()));
+    }
     return m;
   }
 

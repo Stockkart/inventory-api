@@ -36,10 +36,14 @@ public class HrPermissionGuard {
     return effective;
   }
 
-  /** Requires at least one HR permission (read-only HR screens such as settings and holidays). */
+  /**
+   * Requires at least one HR staff permission (read-only HR screens such as settings and
+   * holidays). SELF_CHECK_IN alone does not count: it is self-service, so a Cashier with only it
+   * still sees no HR staff screen.
+   */
   public Set<HrPermission> requireAny(String userId, String shopId) {
     Set<HrPermission> effective = effective(userId, shopId);
-    if (effective.isEmpty()) {
+    if (effective.stream().noneMatch(p -> p != HrPermission.SELF_CHECK_IN)) {
       throw new BaseException(ErrorCode.ACCESS_DENIED, DENIED);
     }
     return effective;

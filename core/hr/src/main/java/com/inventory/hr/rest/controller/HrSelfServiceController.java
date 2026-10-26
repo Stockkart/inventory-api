@@ -3,6 +3,7 @@ package com.inventory.hr.rest.controller;
 import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.hr.rest.dto.request.LeaveDecisionRequest;
 import com.inventory.hr.rest.dto.request.RequestLeaveRequest;
+import com.inventory.hr.rest.dto.request.SelfCheckInRequest;
 import com.inventory.hr.rest.dto.response.EmployeeResponse;
 import com.inventory.hr.rest.dto.response.HrNotificationsResponse;
 import com.inventory.hr.rest.dto.response.LeavePreviewResponse;
@@ -10,7 +11,10 @@ import com.inventory.hr.rest.dto.response.LeaveRequestResponse;
 import com.inventory.hr.rest.dto.response.MonthRegisterResponse;
 import com.inventory.hr.rest.dto.response.MyLeaveResponse;
 import com.inventory.hr.rest.dto.response.MyPayslipResponse;
+import com.inventory.hr.rest.dto.response.PunchResponse;
+import com.inventory.hr.rest.dto.response.SelfCheckInResponse;
 import com.inventory.hr.service.HrSelfService;
+import com.inventory.hr.service.SelfCheckInService;
 import com.inventory.hr.utils.HrFileResponses;
 import com.inventory.hr.utils.HrRequestUtils;
 import com.inventory.metrics.annotation.Latency;
@@ -43,6 +47,8 @@ import org.springframework.web.bind.annotation.RestController;
 public class HrSelfServiceController {
 
   @Autowired private HrSelfService selfService;
+
+  @Autowired private SelfCheckInService selfCheckInService;
 
   @GetMapping
   public ResponseEntity<ApiResponse<EmployeeResponse>> me(HttpServletRequest request) {
@@ -100,6 +106,33 @@ public class HrSelfServiceController {
       HttpServletRequest request) {
     return HrFileResponses.attachment(selfService.payslipPdf(shop(request), user(request),
         lineId));
+  }
+
+  /** State of the Check in / Check out button (R2.1); reasons are plain text, never a 4xx. */
+  @GetMapping("/check-in")
+  public ResponseEntity<ApiResponse<SelfCheckInResponse>> checkInStatus(
+      HttpServletRequest request) {
+    return ResponseEntity.ok(ApiResponse.success(
+        selfCheckInService.status(shop(request), user(request))));
+  }
+
+  /**
+   * One punch at server time (R2, R3). The body's coordinates are used for the distance only and
+   * never stored or logged.
+   */
+  @PostMapping("/check-in")
+  public ResponseEntity<ApiResponse<SelfCheckInResponse>> checkIn(
+      @RequestBody(required = false) SelfCheckInRequest body, HttpServletRequest request) {
+    return ResponseEntity.ok(ApiResponse.success(
+        selfCheckInService.checkIn(shop(request), user(request), body)));
+  }
+
+  /** Own punches of a day (default today). */
+  @GetMapping("/punches")
+  public ResponseEntity<ApiResponse<List<PunchResponse>>> punches(
+      @RequestParam(required = false) String date, HttpServletRequest request) {
+    return ResponseEntity.ok(ApiResponse.success(
+        selfCheckInService.myPunches(shop(request), user(request), date)));
   }
 
   @GetMapping("/notifications")

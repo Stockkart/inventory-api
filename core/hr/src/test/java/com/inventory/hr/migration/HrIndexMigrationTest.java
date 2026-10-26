@@ -43,7 +43,8 @@ class HrIndexMigrationTest {
     Set<String> keys = specs.stream()
         .map(s -> s.type().getSimpleName() + "." + s.name()).collect(Collectors.toSet());
 
-    assertEquals(21, specs.size());
+    // 21 + hr_punches: unique (shopId, dedupeKey) and (shopId, employeeId, localDate)
+    assertEquals(23, specs.size());
     assertEquals(specs.size(), keys.size());
   }
 
@@ -54,6 +55,16 @@ class HrIndexMigrationTest {
     assertEquals(true, options.get("unique"));
     assertEquals(new Document("userId", new Document("$type", 2)),
         options.get("partialFilterExpression"));
+  }
+
+  @Test
+  void punchesAreUniqueByShopAndDedupeKeyAndReadByEmployeeDay() {
+    IndexSpec unique = spec("shop_dedupe_unique", com.inventory.hr.domain.model.Punch.class);
+    assertEquals(new Document("shopId", 1).append("dedupeKey", 1), unique.index().getIndexKeys());
+    assertEquals(true, unique.index().getIndexOptions().get("unique"));
+    assertEquals(new Document("shopId", 1).append("employeeId", 1).append("localDate", 1),
+        spec("shop_employee_date", com.inventory.hr.domain.model.Punch.class).index()
+            .getIndexKeys());
   }
 
   @Test

@@ -47,6 +47,7 @@ import com.inventory.hr.domain.repository.LeaveRequestRepository;
 import com.inventory.hr.domain.repository.LeaveTypeRepository;
 import com.inventory.hr.domain.repository.PayrollLineRepository;
 import com.inventory.hr.domain.repository.PayrollRunRepository;
+import com.inventory.hr.domain.repository.PunchRepository;
 import com.inventory.hr.mapper.HrPayrollMapper;
 import com.inventory.hr.mapper.HrPayrollMapperImpl;
 import com.inventory.hr.migration.HrIndexMigration;
@@ -94,6 +95,8 @@ final class HrMongoItSupport {
   final MongoClient client;
   final MongoTemplate template;
   final AttendanceService attendance;
+  final PunchDayService punchDays;
+  final SelfCheckInService selfCheckIn;
   final LeaveService leave;
   final LeaveBalanceService balances;
   final HrNotificationService notifications;
@@ -177,6 +180,23 @@ final class HrMongoItSupport {
     ReflectionTestUtils.setField(attendance, "metrics", metrics);
     // names are display-only; the user module is not wired here (empty map for every lookup)
     ReflectionTestUtils.setField(attendance, "userNames", mock(HrUserNames.class));
+    punchDays = new PunchDayService();
+    ReflectionTestUtils.setField(punchDays, "mongoTemplate", template);
+    ReflectionTestUtils.setField(punchDays, "punchRepository",
+        repos.getRepository(PunchRepository.class));
+    ReflectionTestUtils.setField(punchDays, "guard", guard);
+    ReflectionTestUtils.setField(punchDays, "settingsService", settings);
+    ReflectionTestUtils.setField(attendance, "punchDays", punchDays);
+    selfCheckIn = new SelfCheckInService();
+    ReflectionTestUtils.setField(selfCheckIn, "settingsService", settings);
+    ReflectionTestUtils.setField(selfCheckIn, "selfServiceResolver", selfService);
+    ReflectionTestUtils.setField(selfCheckIn, "hrAccessService", access);
+    ReflectionTestUtils.setField(selfCheckIn, "attendanceService", attendance);
+    ReflectionTestUtils.setField(selfCheckIn, "periodLockService", lock);
+    ReflectionTestUtils.setField(selfCheckIn, "punchDays", punchDays);
+    ReflectionTestUtils.setField(selfCheckIn, "punchRepository",
+        repos.getRepository(PunchRepository.class));
+    ReflectionTestUtils.setField(selfCheckIn, "metrics", metrics);
 
     balances = new LeaveBalanceService();
     ReflectionTestUtils.setField(balances, "mongoTemplate", template);

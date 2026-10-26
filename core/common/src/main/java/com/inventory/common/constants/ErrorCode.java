@@ -83,7 +83,14 @@ public enum ErrorCode {
       HttpStatus.CONFLICT),
   /** Same 400 the cap returned before it had its own code. */
   HR_ACTIVE_EMPLOYEE_LIMIT(8018, "A shop can have at most 1,000 active employees",
-      HttpStatus.BAD_REQUEST);
+      HttpStatus.BAD_REQUEST),
+  /** Self check-in is switched off in HR settings. */
+  HR_SELF_CHECKIN_OFF(8019, "Self check-in is turned off for this shop", HttpStatus.CONFLICT),
+  /** Location check, BLOCK: farther than the shop radius, or no location given. */
+  HR_OUTSIDE_SHOP(8020, "You're not at the shop", HttpStatus.UNPROCESSABLE_ENTITY),
+  /** Location check, BLOCK: the phone reported an accuracy worse than 200 m (or none). */
+  HR_LOCATION_UNCLEAR(8021, "Location is not clear, please try again near a window",
+      HttpStatus.UNPROCESSABLE_ENTITY);
 
   private final int code;
   private final String message;

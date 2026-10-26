@@ -17,6 +17,7 @@ public interface HrSettingsMapper {
 
   @Mapping(target = "saved", ignore = true)
   @Mapping(target = "currentWeeklyOffDays", ignore = true)
+  @Mapping(target = "attendanceCapture", ignore = true)
   HrSettingsResponse toResponse(HrSettings settings);
 
   HrSettingsResponse.WeeklyOffEntryDto toDto(HrSettings.WeeklyOffEntry entry);

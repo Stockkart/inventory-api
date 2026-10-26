@@ -12,6 +12,7 @@ import com.inventory.hr.domain.model.LeaveRequest;
 import com.inventory.hr.domain.model.LeaveType;
 import com.inventory.hr.domain.model.PayrollLine;
 import com.inventory.hr.domain.model.PayrollRun;
+import com.inventory.hr.domain.model.Punch;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -96,6 +97,9 @@ public class HrIndexMigration {
     s.add(spec(HrAuditEvent.class, "shop_entity_employee_date",
         asc("shopId", "entityType", "employeeId", "date")));
     s.add(spec(HrAuditEvent.class, "shop_at", asc("shopId", "at")));
+    // self check-in: idempotent by dedupeKey; one employee-day read; register flags by $in
+    s.add(spec(Punch.class, "shop_dedupe_unique", asc("shopId", "dedupeKey").unique()));
+    s.add(spec(Punch.class, "shop_employee_date", asc("shopId", "employeeId", "localDate")));
     return s;
   }
 

@@ -8,7 +8,9 @@ import com.inventory.hr.rest.dto.response.AttendanceRowResponse;
 import com.inventory.hr.rest.dto.response.DailyRegisterResponse;
 import com.inventory.hr.rest.dto.response.MarkUnmarkedPresentResponse;
 import com.inventory.hr.rest.dto.response.MonthRegisterResponse;
+import com.inventory.hr.rest.dto.response.PunchResponse;
 import com.inventory.hr.service.AttendanceService;
+import com.inventory.hr.service.PunchDayService;
 import com.inventory.hr.utils.HrRequestUtils;
 import com.inventory.metrics.annotation.Latency;
 import com.inventory.metrics.annotation.RecordRequestRate;
@@ -34,6 +36,8 @@ import org.springframework.web.bind.annotation.RestController;
 public class AttendanceController {
 
   @Autowired private AttendanceService attendanceService;
+
+  @Autowired private PunchDayService punchDayService;
 
   /** VIEW_ATTENDANCE. */
   @GetMapping("/daily")
@@ -67,6 +71,15 @@ public class AttendanceController {
     return ResponseEntity.ok(ApiResponse.success(attendanceService.month(
         HrRequestUtils.requireUserId(request), HrRequestUtils.requireShopId(request), period,
         employeeId)));
+  }
+
+  /** VIEW_ATTENDANCE. One employee's punches of a day, with distance and flags (R3.7). */
+  @GetMapping("/punches")
+  public ResponseEntity<ApiResponse<List<PunchResponse>>> punches(
+      @RequestParam String employeeId, @RequestParam String date, HttpServletRequest request) {
+    return ResponseEntity.ok(ApiResponse.success(punchDayService.listForEmployee(
+        HrRequestUtils.requireUserId(request), HrRequestUtils.requireShopId(request), employeeId,
+        date)));
   }
 
   /** MARK_ATTENDANCE. */

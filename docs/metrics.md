@@ -8,7 +8,7 @@ All metrics are counters recorded through `MetricsWrapper.record(name, amount, t
 every one carries a `module` tag whose value is the module column below. Metrics that add
 further tags list them.
 
-**58 metrics across 14 modules.**
+**59 metrics across 14 modules.**
 
 ## accounting
 
@@ -60,6 +60,7 @@ further tags list them.
 | `inventory_hr_documents_total` | `HrMetricsConstants.DOCUMENTS_TOTAL` | PayslipService, HrReportService (counter, one per file, extra tag `operation`: `payslip_pdf`, `payslip_email_render`, `month_xlsx`, `leave_balance_xlsx`, `salary_register_xlsx`, `salary_register_pdf`) |
 | `inventory_hr_documents_seconds_total` | `HrMetricsConstants.DOCUMENTS_SECONDS_TOTAL` | PayslipService, HrReportService (counter, amount = seconds spent building the file; ÷ `documents_total` = mean; same `operation` tag) |
 | `inventory_hr_account_conflicts_total` | `HrMetricsConstants.ACCOUNT_CONFLICTS_TOTAL` | HrAccountingPoster (counter, extra tag `code`: `1250`, `2400`, `5700`; the post is refused with 409 `HR_ACCOUNT_CONFLICT`) |
+| `inventory_hr_self_checkin_total` | `HrMetricsConstants.SELF_CHECKIN_TOTAL` | SelfCheckInService (counter, one per `POST /hr/me/check-in`, extra tag `result`: `accepted`, `flagged`, `duplicate`, `off`, `not_linked`, `no_permission`, `not_employed`, `on_leave`, `locked`, `outside_shop`, `location_unclear`, `invalid`, `error`) |
 
 ## notifications
 

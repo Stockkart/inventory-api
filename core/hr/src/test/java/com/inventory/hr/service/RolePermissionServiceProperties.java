@@ -61,13 +61,16 @@ class RolePermissionServiceProperties {
 
     service.update(USER, SHOP, request(rows));
     Map<UserRole, List<HrPermission>> first = new LinkedHashMap<>(store.get().getRoles());
+    // the request decides the original ten plus anything ticked; the rest keeps its default
+    Set<HrPermission> known = EnumSet.copyOf(HrAccessService.LEGACY_KNOWN);
+    rows.values().forEach(known::addAll);
 
     for (UserRole role : HrAccessService.GRID_ROLES) {
       Set<HrPermission> saved = EnumSet.noneOf(HrPermission.class);
       saved.addAll(first.get(role));
       assertEquals(HrPermission.closure(saved), saved, role + " row is not closed");
       if (rows.containsKey(role)) {
-        assertEquals(HrPermission.closure(rows.get(role)), saved);
+        assertEquals(HrAccessService.withUnknownDefaults(role, rows.get(role), known), saved);
       }
     }
 

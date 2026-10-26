@@ -38,6 +38,17 @@ public class RolePermissionValidator {
     return parsed;
   }
 
+  /** {@code knownPermissions} parsed (unknown names rejected); empty when not sent. */
+  public Set<HrPermission> parseKnown(UpdateHrRolePermissionsRequest request) {
+    Set<HrPermission> known = EnumSet.noneOf(HrPermission.class);
+    if (request != null && request.getKnownPermissions() != null) {
+      for (String name : request.getKnownPermissions()) {
+        known.add(parsePermission(name));
+      }
+    }
+    return known;
+  }
+
   private static UserRole parseRole(String key) {
     for (UserRole role : HrAccessService.GRID_ROLES) {
       if (role.name().equals(key)) {

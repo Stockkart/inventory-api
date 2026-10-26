@@ -50,6 +50,16 @@ class HrPermissionGuardTest {
   }
 
   @Test
+  void selfCheckInAloneFailsRequireAny() {
+    // a Cashier's default: self-service only, no HR staff screen
+    when(hrAccessService.permissions(USER, SHOP))
+        .thenReturn(EnumSet.of(HrPermission.SELF_CHECK_IN));
+
+    assertEquals(ErrorCode.ACCESS_DENIED,
+        assertThrows(BaseException.class, () -> guard.requireAny(USER, SHOP)).getErrorCode());
+  }
+
+  @Test
   void onlyTheOwnerPassesRequireOwner() {
     when(hrAccessService.isOwner(USER, SHOP)).thenReturn(false);
 

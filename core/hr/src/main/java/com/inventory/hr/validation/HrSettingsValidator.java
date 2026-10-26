@@ -1,6 +1,7 @@
 package com.inventory.hr.validation;
 
 import com.inventory.common.exception.ValidationException;
+import com.inventory.hr.domain.model.HrSettings;
 import com.inventory.hr.rest.dto.request.UpdateHrSettingsRequest;
 import com.inventory.hr.utils.HrDateUtils;
 import com.inventory.hr.utils.PayCycle;
@@ -14,6 +15,8 @@ public class HrSettingsValidator {
 
   static final int MAX_GRACE_MINUTES = 240;
   static final BigDecimal MAX_MULTIPLIER = new BigDecimal("5");
+  public static final int MIN_RADIUS_METRES = 30;
+  public static final int MAX_RADIUS_METRES = 1_000;
 
   /** Field formats and ranges; null fields are not checked (they keep the current value). */
   public void validate(UpdateHrSettingsRequest request) {
@@ -48,6 +51,38 @@ public class HrSettingsValidator {
         && (startDay < PayCycle.MIN_START_DAY || startDay > PayCycle.MAX_START_DAY)) {
       throw new ValidationException("The salary month must start on a day from "
           + PayCycle.MIN_START_DAY + " to " + PayCycle.MAX_START_DAY);
+    }
+    if (request.getAttendanceCapture() != null) {
+      validateAttendanceCaptureChange(request.getAttendanceCapture());
+    }
+  }
+
+  /** Ranges of the fields sent; null fields keep the stored value and are not checked. */
+  static void validateAttendanceCaptureChange(UpdateHrSettingsRequest.AttendanceCaptureChange c) {
+    // written as !(in range) so NaN fails too
+    if (c.getShopLat() != null && !(c.getShopLat() >= -90 && c.getShopLat() <= 90)) {
+      throw new ValidationException("Shop latitude must be between -90 and 90");
+    }
+    if (c.getShopLng() != null && !(c.getShopLng() >= -180 && c.getShopLng() <= 180)) {
+      throw new ValidationException("Shop longitude must be between -180 and 180");
+    }
+    Integer radius = c.getRadiusMetres();
+    if (radius != null && (radius < MIN_RADIUS_METRES || radius > MAX_RADIUS_METRES)) {
+      throw new ValidationException("The shop radius must be between " + MIN_RADIUS_METRES
+          + " and " + MAX_RADIUS_METRES + " metres");
+    }
+  }
+
+  /**
+   * Checked on the merged values (the coordinates may be stored already): the location check
+   * needs the shop's location.
+   */
+  public void validateAttendanceCapture(HrSettings.AttendanceCapture merged) {
+    if (Boolean.TRUE.equals(merged.getLocationCheck())
+        && (merged.getShopLat() == null || merged.getShopLng() == null)) {
+      throw new ValidationException(
+          "Set the shop location (Use my current location, in the shop) before turning on the "
+              + "location check");
     }
   }
 
