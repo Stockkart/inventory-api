@@ -468,8 +468,8 @@ public class AttendanceService {
   }
 
   private static void employeeFields(Query query) {
-    query.fields().include("code", "name", "designation", "joinDate", "exitDate", "workStart",
-        "workEnd", "status");
+    query.fields().include("code", "name", "designation", "joinDate", "exitDate", "createdAt",
+        "workStart", "workEnd", "status");
   }
 
   private List<AttendanceDay> days(String shopId, Collection<String> employeeIds, String from,

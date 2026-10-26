@@ -197,6 +197,22 @@ class PayrollCalculatorTest {
     assertMoney("10000.00", part.getGross());
   }
 
+  @Test
+  void aMissingJoinDateCountsFromTheCreatedDateNotTheStartOfTheMonth() {
+    YearMonth oct = YearMonth.of(2026, 10);
+    Employee e = employee("6", PayType.MONTHLY, "30000", null, null);
+    // 26 Oct 00:30 in Asia/Kolkata
+    e.setCreatedAt(java.time.Instant.parse("2026-10-25T19:00:00Z"));
+    PayrollLine line = calc(input(settings(PerDayBasis.CALENDAR_DAYS, false), oct, Set.of(),
+        new PayrollInput.EmployeeInput(e, Map.of(), Map.of(), List.of(), null, List.of())));
+    // 26–31 Oct (no Sunday): 6 employed, all unmarked; 1–25 Oct neither unmarked nor week-off
+    assertEquals(6, line.getDayCounts().getEmployedDays());
+    assertMoney("6", line.getDayCounts().getUnmarked());
+    assertMoney("0", line.getDayCounts().getWeekOff());
+    assertMoney("0", line.getDayCounts().getPaidDays());
+    assertEquals("2026-10-26", line.getEmployeeSnapshot().getJoinDate());
+  }
+
   private static Map<String, AttendanceDay> presentUntil(String id, YearMonth month, int day) {
     Map<String, AttendanceDay> marks = new HashMap<>();
     for (int i = 1; i <= day; i++) {

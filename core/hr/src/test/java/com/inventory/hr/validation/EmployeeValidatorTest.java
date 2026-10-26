@@ -1,6 +1,7 @@
 package com.inventory.hr.validation;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -54,6 +55,21 @@ class EmployeeValidatorTest {
   @Test
   void aMinimalEmployeeIsValid() {
     assertDoesNotThrow(() -> validator.validate(valid(), true));
+  }
+
+  @Test
+  void joinDateIsRequiredAndMustBeADateOnCreateAndUpdate() {
+    for (boolean creating : new boolean[] {true, false}) {
+      for (String bad : new String[] {null, " ", "26-10-2026", "2026-02-30"}) {
+        SaveEmployeeRequest r = valid();
+        r.setJoinDate(bad);
+        ValidationException ex = assertThrows(ValidationException.class,
+            () -> validator.validate(r, creating));
+        if (bad == null || bad.isBlank()) {
+          assertEquals("Join date is required", ex.getMessage());
+        }
+      }
+    }
   }
 
   @Test

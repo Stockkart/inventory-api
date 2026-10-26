@@ -63,6 +63,20 @@ class DayStatusResolverTest {
   }
 
   @Test
+  void aMissingJoinDateFallsBackToTheCreatedDateInIndia() {
+    Employee e = employee();
+    e.setJoinDate(null);
+    // 2026-10-25T19:00Z is 26 Oct 00:30 in Asia/Kolkata
+    e.setCreatedAt(java.time.Instant.parse("2026-10-25T19:00:00Z"));
+    assertEquals(DayStatus.NOT_EMPLOYED, DayStatusResolver.resolve(LocalDate.of(2026, 10, 23),
+        e, null, null, false, settings()).status());
+    assertEquals(DayStatus.NOT_EMPLOYED, DayStatusResolver.resolve(LocalDate.of(2026, 10, 25),
+        e, null, null, false, settings()).status());
+    assertEquals(DayStatus.UNMARKED, DayStatusResolver.resolve(LocalDate.of(2026, 10, 26),
+        e, null, null, false, settings()).status());
+  }
+
+  @Test
   void beforeJoiningOrAfterExitIsNotEmployed() {
     Employee e = employee();
     e.setExitDate("2025-04-07");

@@ -540,7 +540,8 @@ public class LeaveService {
   /** The employee of this shop, with only what leave needs; another shop's id is a 404. */
   private Employee requireEmployee(String shopId, String employeeId) {
     Query query = Query.query(Criteria.where("shopId").is(shopId).and("_id").is(employeeId));
-    query.fields().include("code", "name", "joinDate", "exitDate", "userId", "status");
+    query.fields().include("code", "name", "joinDate", "exitDate", "createdAt", "userId",
+        "status");
     query.maxTimeMsec(HrQueryRunner.SCREEN_MAX_TIME_MS);
     Employee employee = mongoTemplate.findOne(query, Employee.class);
     if (employee == null) {

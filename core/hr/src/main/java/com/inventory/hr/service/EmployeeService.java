@@ -263,7 +263,7 @@ public class EmployeeService {
     Set<HrPermission> perms = guard.require(userId, shopId, HrPermission.ADD_EDIT_EMPLOYEES);
     Employee employee = find(shopId, id);
     validator.validateExit(request != null ? request.getExitDate() : null,
-        employee.getJoinDate());
+        HrDateUtils.effectiveJoinDateText(employee));
     Map<String, Object> before = snapshot(employee);
     employee.setStatus(EmployeeStatus.EXITED);
     employee.setExitDate(request.getExitDate());

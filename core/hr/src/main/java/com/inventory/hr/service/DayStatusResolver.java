@@ -132,9 +132,12 @@ public final class DayStatusResolver {
         false);
   }
 
-  /** Between join and exit date, both inclusive; a missing join date is the start of time. */
+  /**
+   * Between join and exit date, both inclusive. A missing join date falls back to the
+   * {@code createdAt} date ({@link HrDateUtils#effectiveJoinDate}).
+   */
   public static boolean isEmployed(LocalDate date, Employee employee) {
-    LocalDate join = HrDateUtils.parseDate(employee.getJoinDate());
+    LocalDate join = HrDateUtils.effectiveJoinDate(employee);
     LocalDate exit = HrDateUtils.parseDate(employee.getExitDate());
     return (join == null || !date.isBefore(join)) && (exit == null || !date.isAfter(exit));
   }

@@ -418,7 +418,7 @@ public class AdvanceService {
 
   private Employee employee(String shopId, String employeeId) {
     Query query = Query.query(Criteria.where("shopId").is(shopId).and("_id").is(employeeId));
-    query.fields().include("code", "name", "joinDate", "exitDate");
+    query.fields().include("code", "name", "joinDate", "exitDate", "createdAt");
     query.maxTimeMsec(HrQueryRunner.SCREEN_MAX_TIME_MS);
     Employee e = mongoTemplate.findOne(query, Employee.class);
     if (e == null) {

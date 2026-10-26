@@ -152,8 +152,8 @@ public class PayrollInputReader {
         Criteria.where("exitDate").gte(from)));
     Query query = Query.query(new Criteria().andOperator(and.toArray(new Criteria[0])))
         .with(Sort.by(Sort.Direction.ASC, "name"));
-    query.fields().include("code", "name", "designation", "joinDate", "exitDate", "workStart",
-        "workEnd", "status");
+    query.fields().include("code", "name", "designation", "joinDate", "exitDate", "createdAt",
+        "workStart", "workEnd", "status");
     if (withPay) {
       // amounts only; bank, IFSC and UPI stay in the database
       query.fields().include("salaryRevisions");

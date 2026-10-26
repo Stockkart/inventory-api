@@ -187,7 +187,7 @@ public final class PayrollCalculator {
     line.setEmployeeId(employee.getId());
     line.setPeriod(period);
     line.setEmployeeSnapshot(new PayrollLine.EmployeeSnapshot(employee.getName(),
-        employee.getCode(), employee.getDesignation(), employee.getJoinDate(),
+        employee.getCode(), employee.getDesignation(), HrDateUtils.effectiveJoinDateText(employee),
         employee.getExitDate(), revision != null ? revision.getPayType() : null,
         revision != null ? revision.getAmount() : null, workingMinutes));
     line.setDayCounts(new PayrollLine.DayCounts(c.employed, c.present, c.halfDays, c.paidLeave,

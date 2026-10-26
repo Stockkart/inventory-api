@@ -1,5 +1,7 @@
 package com.inventory.hr.utils;
 
+import com.inventory.hr.domain.model.Employee;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.YearMonth;
@@ -89,5 +91,25 @@ public final class HrDateUtils {
 
   public static String format(LocalDate date) {
     return date.format(DATE);
+  }
+
+  /**
+   * The date the employee counts as employed from: the join date, or for older rows saved without
+   * one, the {@code createdAt} date in the shop's zone (never "start of time"). Null only when both
+   * are missing. Queries feeding this must project {@code createdAt}.
+   */
+  public static LocalDate effectiveJoinDate(Employee employee) {
+    LocalDate join = parseDate(employee.getJoinDate());
+    if (join != null) {
+      return join;
+    }
+    Instant created = employee.getCreatedAt();
+    return created == null ? null : created.atZone(ZONE).toLocalDate();
+  }
+
+  /** {@link #effectiveJoinDate(Employee)} as {@code yyyy-MM-dd}, or null. */
+  public static String effectiveJoinDateText(Employee employee) {
+    LocalDate join = effectiveJoinDate(employee);
+    return join == null ? null : format(join);
   }
 }
