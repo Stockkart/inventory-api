@@ -12,7 +12,8 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 /**
  * Shop-level rate rules: the ordered list that generates each batch's named rates. The unique
- * {@code shopId} index is created by {@code RateRulesIndexMigration}.
+ * {@code shopId} index ({@code shop_rate_rules_shop_unique_idx}) is created by hand on each
+ * database; automatic index creation is off.
  */
 @Data
 @NoArgsConstructor
@@ -35,9 +36,8 @@ public class ShopRateRulesDocument {
 
   /**
    * Optimistic lock: a save holding a stale version fails rather than overwriting a concurrent
-   * one ({@code RateRulesService} answers 409). Documents saved before it existed are given 0 at
-   * startup ({@code RateRulesIndexMigration}): a null version would make Spring Data insert them
-   * again.
+   * one ({@code RateRulesService} answers 409). Documents saved before it existed need 0 set by
+   * hand: a null version would make Spring Data insert them again.
    */
   @Version
   private Long version;
