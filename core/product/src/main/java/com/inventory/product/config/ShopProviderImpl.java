@@ -26,4 +26,10 @@ public class ShopProviderImpl implements ShopProvider {
   public void updatePlan(String shopId, String planId, java.time.Instant expiryDate) {
     shopService.updatePlan(shopId, planId, expiryDate);
   }
+
+  @Override
+  public void forEachShop(java.util.function.Consumer<ShopInfo> action) {
+    shopService.forEachShopPlanInfo(
+        info -> action.accept(new ShopInfo(info.shopId(), info.planId(), info.planExpiryDate())));
+  }
 }

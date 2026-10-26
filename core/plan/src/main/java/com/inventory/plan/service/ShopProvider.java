@@ -11,6 +11,9 @@ public interface ShopProvider {
 
   void updatePlan(String shopId, String planId, java.time.Instant expiryDate);
 
+  /** Visits every shop, page by page. */
+  default void forEachShop(java.util.function.Consumer<ShopInfo> action) {}
+
   /** Minimal shop info needed for plan/usage logic. */
   record ShopInfo(String shopId, String planId, java.time.Instant planExpiryDate) {}
 }
