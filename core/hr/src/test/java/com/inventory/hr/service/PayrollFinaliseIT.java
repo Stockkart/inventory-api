@@ -12,11 +12,13 @@ import com.inventory.accounting.domain.model.JournalStatus;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.hr.domain.model.Employee;
+import com.inventory.hr.domain.model.HrSettings;
 import com.inventory.hr.domain.model.PayrollLine;
 import com.inventory.hr.domain.model.PayrollRun;
 import com.inventory.hr.domain.model.enums.PayrollRunStatus;
 import com.inventory.hr.domain.model.enums.SalaryPaymentStatus;
 import com.inventory.hr.rest.dto.request.CreatePayrollRunRequest;
+import com.inventory.hr.rest.dto.request.MarkUnmarkedPresentRequest;
 import com.inventory.hr.rest.dto.request.SavePayrollAdjustmentsRequest;
 import com.inventory.hr.rest.dto.response.PayrollRunResponse;
 import java.math.BigDecimal;
@@ -88,6 +90,39 @@ class PayrollFinaliseIT {
     BigDecimal payable = entry.getLines().stream().filter(l -> "2400".equals(l.getAccountCode()))
         .map(JournalLine::getCredit).reduce(BigDecimal.ZERO, BigDecimal::add);
     assertEquals(0, net.compareTo(payable), "2400 carries the run's net pay");
+  }
+
+  @Test
+  void aSalaryMonthFromThe26thIsStoredJournalledAtItsEndAndLocksItsDays() {
+    String shop = "shop-cycle-26";
+    HrSettings settings = new HrSettings();
+    settings.setShopId(shop);
+    settings.setPayCycleStartDay(26);
+    it.template.insert(settings);
+    staffed(shop, YearMonth.of(2025, 3), APRIL);
+
+    PayrollRunResponse d = draft(shop, APRIL);
+    // salary month 2025-04 = 26 Mar – 25 Apr: 31 days, all paid
+    assertEquals("2025-03-26", d.getFromDate());
+    assertEquals("2025-04-25", d.getToDate());
+    assertEquals("2025-03-26", d.getLines().get(0).getFromDate());
+    assertEquals(31, d.getLines().get(0).getDayCounts().getBasisDays());
+    assertEquals(0, new BigDecimal("30000.00").compareTo(d.getLines().get(0).getNet()));
+
+    it.payroll.finalise(OWNER, shop, d.getId());
+
+    PayrollRun stored = run(shop, d.getId());
+    assertEquals("2025-03-26", stored.getFromDate());
+    assertEquals("2025-04-25", stored.getToDate());
+    JournalEntry entry = it.liveJournals(shop, JournalSource.PAYROLL_RUN).get(0);
+    assertEquals(java.time.LocalDate.of(2025, 4, 25), entry.getTxnDate());
+    // 27 Mar is in the finalised salary month 2025-04; 25 Mar is in 2025-03 (no run)
+    assertEquals(ErrorCode.HR_PERIOD_LOCKED, assertThrows(BaseException.class,
+        () -> it.attendance.markUnmarkedPresent(OWNER, shop, new MarkUnmarkedPresentRequest(
+            new ArrayList<>(List.of("2025-03-27")), null))).getErrorCode());
+    assertEquals(0, it.attendance.markUnmarkedPresent(OWNER, shop,
+        new MarkUnmarkedPresentRequest(new ArrayList<>(List.of("2025-03-25")), null))
+        .getMarked());
   }
 
   @Test

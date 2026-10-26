@@ -21,6 +21,10 @@ public class PayrollLineResponse {
   private String runId;
   private String employeeId;
   private String period;
+  /** yyyy-MM-dd, first day of the salary month. */
+  private String fromDate;
+  /** yyyy-MM-dd, last day of the salary month. */
+  private String toDate;
   private PayrollLine.EmployeeSnapshot employeeSnapshot;
   private PayrollLine.DayCounts dayCounts;
   private Integer overtimeMinutes;

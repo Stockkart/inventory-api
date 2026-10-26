@@ -25,6 +25,7 @@ import com.inventory.hr.rest.dto.response.LeaveRequestsPageResponse;
 import com.inventory.hr.rest.dto.response.PageMeta;
 import com.inventory.hr.service.HrAuditService.AuditEntry;
 import com.inventory.hr.utils.HrDateUtils;
+import com.inventory.hr.utils.PayCycle;
 import com.inventory.hr.utils.LeaveYearUtils;
 import com.inventory.hr.validation.LeaveRequestValidator;
 import java.math.BigDecimal;
@@ -209,7 +210,8 @@ public class LeaveService {
       Employee employee = requireEmployee(shopId, request.getEmployeeId());
       Plan plan = checkedPlan(shopId, employee, request.getLeaveTypeId(), range);
       // lock before the insert: an approved leave changes the month's paid days
-      periodLockService.assertOpen(shopId, periodsOf(plan));
+      periodLockService.assertOpen(shopId, periodsOf(plan.from(), plan.to(),
+          PayCycle.startDay(plan.settings())));
       Instant now = Instant.now();
       LeaveRequest leave = newRequest(shopId, userId, employee, plan, request.getReason(),
           LeaveOrigin.RECORDED, LeaveRequestStatus.APPROVED, now);
@@ -271,12 +273,14 @@ public class LeaveService {
       LeaveRequestValidator.Range range = new LeaveRequestValidator.Range(
           HrDateUtils.parseDate(request.getFromDate()), HrDateUtils.parseDate(request.getToDate()),
           Boolean.TRUE.equals(request.getHalfDay()));
-      periodLockService.assertOpen(shopId, periodsOf(range.from(), range.to()));
       Employee employee = requireEmployee(shopId, request.getEmployeeId());
       // the exit date may have moved since the request was made
       assertEmployed(employee, range);
       // days are recomputed: a holiday or weekly-off change since the request moves them
       Plan plan = plan(shopId, request.getLeaveTypeId(), range);
+      // lock before the write, with the salary-month start day of the settings just read
+      periodLockService.assertOpen(shopId, periodsOf(range.from(), range.to(),
+          PayCycle.startDay(plan.settings())));
       if (plan.days().signum() == 0) {
         throw new ValidationException(
             "These dates have no working days any more. Reject the request instead");
@@ -371,7 +375,7 @@ public class LeaveService {
     }
     if (observed == LeaveRequestStatus.APPROVED) {
       periodLockService.assertOpen(shopId, periodsOf(HrDateUtils.parseDate(request.getFromDate()),
-          HrDateUtils.parseDate(request.getToDate())));
+          HrDateUtils.parseDate(request.getToDate()), periodLockService.startDay(shopId)));
     }
     Instant now = Instant.now();
     Update update = new Update().set("status", LeaveRequestStatus.CANCELLED)
@@ -619,17 +623,9 @@ public class LeaveService {
     return r;
   }
 
-  private static Collection<String> periodsOf(Plan plan) {
-    return periodsOf(plan.from(), plan.to());
-  }
-
-  /** Every YYYY-MM the range touches (at most four for 90 days). */
-  static Collection<String> periodsOf(LocalDate from, LocalDate to) {
-    Set<String> periods = new TreeSet<>();
-    for (LocalDate d = from.withDayOfMonth(1); !d.isAfter(to); d = d.plusMonths(1)) {
-      periods.add(HrDateUtils.periodOf(HrDateUtils.format(d)));
-    }
-    return periods;
+  /** Every salary month ({@link PayCycle}) the range touches (at most four for 90 days). */
+  static Collection<String> periodsOf(LocalDate from, LocalDate to, int startDay) {
+    return PayCycle.periodsBetween(from, to, startDay);
   }
 
   private void audit(String shopId, String userId, HrAuditAction action, LeaveRequest r,

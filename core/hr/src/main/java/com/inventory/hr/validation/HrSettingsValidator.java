@@ -3,6 +3,7 @@ package com.inventory.hr.validation;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.hr.rest.dto.request.UpdateHrSettingsRequest;
 import com.inventory.hr.utils.HrDateUtils;
+import com.inventory.hr.utils.PayCycle;
 import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.util.HashSet;
@@ -41,6 +42,12 @@ public class HrSettingsValidator {
     if (multiplier != null
         && (multiplier.compareTo(BigDecimal.ONE) < 0 || multiplier.compareTo(MAX_MULTIPLIER) > 0)) {
       throw new ValidationException("Overtime multiplier must be between 1 and 5");
+    }
+    Integer startDay = request.getPayCycleStartDay();
+    if (startDay != null
+        && (startDay < PayCycle.MIN_START_DAY || startDay > PayCycle.MAX_START_DAY)) {
+      throw new ValidationException("The salary month must start on a day from "
+          + PayCycle.MIN_START_DAY + " to " + PayCycle.MAX_START_DAY);
     }
   }
 

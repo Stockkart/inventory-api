@@ -272,8 +272,9 @@ class HrPerformanceIT {
     budget.put("recalculate", 13);
     // design 23 counted ~7 accounting trips; measured HR 22 (claim-then-check run re-read, two
     // still-claimed checks, straggler delete, response read; run B3) + accounting post 8 = 30,
-    // +1 run B5: the system-account check of 1250/2400/5700 before the post (review M3)
-    budget.put("finalise", 31);
+    // +1 run B5: the system-account check of 1250/2400/5700 before the post (review M3),
+    // +1 pay cycle: the settings read for the salary-month start day before the claim
+    budget.put("finalise", 32);
     budget.put("payslip", 2);
     // HR 8 (stale-claim scan and the all:true id read added to the design's 6) + accounting
     // post 10 (AccountingPostingService: accounts, entry, sequence, balances, ledger) = 18,

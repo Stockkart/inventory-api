@@ -528,6 +528,71 @@ class PayrollCalculatorTest {
   }
 
   @Test
+  void aSalaryMonthStartingOnThe26thRunsFrom26SepTo25OctOnA30DayBasis() {
+    HrSettings s = settings(PerDayBasis.CALENDAR_DAYS, false);
+    s.setPayCycleStartDay(26);
+    Employee e = employee("1", PayType.MONTHLY, "15000", "2024-04-01", null);
+    Map<String, AttendanceDay> marks = new HashMap<>();
+    for (LocalDate d = LocalDate.of(2026, 9, 26); !d.isAfter(LocalDate.of(2026, 10, 25));
+        d = d.plusDays(1)) {
+      if (d.getDayOfWeek() != DayOfWeek.SUNDAY) {
+        String date = d.toString();
+        marks.put(date, mark("1", date, date.equals("2026-10-06") ? AttendanceStatus.ABSENT
+            : AttendanceStatus.PRESENT, null, null));
+      }
+    }
+    // a mark outside the cycle (26 Oct is November's) is never counted
+    marks.put("2026-10-26", mark("1", "2026-10-26", AttendanceStatus.ABSENT, null, null));
+
+    PayrollInput.EmployeeInput emp =
+        new PayrollInput.EmployeeInput(e, marks, Map.of(), List.of(), null, List.of());
+    PayrollCalculator.Result result = PayrollCalculator.calculate(
+        input(s, YearMonth.of(2026, 10), Set.of(), emp), emp);
+    PayrollLine line = result.line();
+
+    assertEquals("2026-10", line.getPeriod());
+    assertEquals("2026-09-26", line.getFromDate());
+    assertEquals("2026-10-25", line.getToDate());
+    PayrollLine.DayCounts c = line.getDayCounts();
+    assertEquals(30, c.getEmployedDays());
+    assertEquals(30, c.getBasisDays());
+    // Sundays 27 Sep, 4, 11, 18, 25 Oct; 24 present, 1 absent
+    assertMoney("5", c.getWeekOff());
+    assertMoney("24", c.getPresent());
+    assertMoney("1", c.getAbsent());
+    assertMoney("0", c.getUnmarked());
+    assertMoney("29", c.getPaidDays());
+    assertTrue(result.unmarkedDates().isEmpty());
+    // 15,000 × 29 ÷ 30
+    assertMoney("14500.00", earning(line, EarningKind.BASE));
+  }
+
+  @Test
+  void withAStartDayTheWholeMonthRuleMeansEveryDayOfTheCycle() {
+    HrSettings s = settings(PerDayBasis.FIXED_30, false);
+    s.setPayCycleStartDay(26);
+    // joined 1 Oct: employed 25 of the 30 days of 26 Sep – 25 Oct, so not a whole month
+    Employee e = employee("1", PayType.MONTHLY, "15000", "2026-10-01", null);
+    Map<String, AttendanceDay> marks = new HashMap<>();
+    for (LocalDate d = LocalDate.of(2026, 10, 1); !d.isAfter(LocalDate.of(2026, 10, 25));
+        d = d.plusDays(1)) {
+      if (d.getDayOfWeek() != DayOfWeek.SUNDAY) {
+        marks.put(d.toString(), mark("1", d.toString(), AttendanceStatus.PRESENT, null, null));
+      }
+    }
+    PayrollInput.EmployeeInput emp =
+        new PayrollInput.EmployeeInput(e, marks, Map.of(), List.of(), null, List.of());
+
+    PayrollLine line = PayrollCalculator.calculate(
+        input(s, YearMonth.of(2026, 10), Set.of(), emp), emp).line();
+
+    assertEquals(25, line.getDayCounts().getEmployedDays());
+    assertEquals(30, line.getDayCounts().getBasisDays());
+    // counted days (21 present + 4 Sundays), not basis − loss of pay
+    assertMoney("25", line.getDayCounts().getPaidDays());
+  }
+
+  @Test
   void basisDaysFollowTheSetting() {
     assertEquals(28, PayrollCalculator.basisDays(PerDayBasis.CALENDAR_DAYS, YearMonth.of(2025, 2)));
     assertEquals(30, PayrollCalculator.basisDays(PerDayBasis.FIXED_30, YearMonth.of(2025, 2)));

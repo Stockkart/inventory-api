@@ -33,6 +33,9 @@ public class PayrollLine {
   private String employeeId;
   /** YYYY-MM of the run. */
   private String period;
+  /** yyyy-MM-dd range of the salary month this line was calculated for; null = calendar month. */
+  private String fromDate;
+  private String toDate;
   /** Frozen at finalise. */
   @ToString.Exclude private EmployeeSnapshot employeeSnapshot;
   private DayCounts dayCounts;

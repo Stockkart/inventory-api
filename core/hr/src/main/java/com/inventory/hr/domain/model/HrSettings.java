@@ -47,6 +47,11 @@ public class HrSettings {
   private PerDayBasis perDayBasis;
   /** null = JANUARY. */
   private LeaveYearStartMonth leaveYearStartMonth;
+  /**
+   * Day 1–28 the salary month starts on; null = 1 (calendar month). See {@code PayCycle}. Can be
+   * changed only while no payroll run is FINALISING, FINALISED or REOPENING.
+   */
+  private Integer payCycleStartDay;
   /** Optimistic lock; a lost update returns 409 HR_CONCURRENT_UPDATE. null = never saved. */
   @Version private Long revision;
   private Instant createdAt;

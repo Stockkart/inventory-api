@@ -154,8 +154,11 @@ public class HrReportService {
     List<PayrollLine> lines = new ArrayList<>(loaded.lines());
     lines.sort(Comparator.comparing(l -> l.getEmployeeSnapshot() != null
         ? String.valueOf(l.getEmployeeSnapshot().getCode()) : ""));
+    String label = PayslipService.periodLabel(run.getPeriod(), run.getFromDate(),
+        run.getToDate());
+    // a salary month that is not the calendar month reads "Salary for 26 Sep – 25 Oct 2026"
     MisTabularDocumentRequest doc = base("Salary register", shopId,
-        PayslipService.periodLabel(run.getPeriod()));
+        label.equals(PayslipService.periodLabel(run.getPeriod())) ? label : "Salary for " + label);
     doc.setColumns(new ArrayList<>(List.of("Code", "Name", "Designation", "Paid days", "Gross",
         "Advance recovered", "Other deductions", "Rounding", "Net pay", "Payment", "Paid on")));
     BigDecimal gross = BigDecimal.ZERO;

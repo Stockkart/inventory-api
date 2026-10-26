@@ -17,7 +17,7 @@ import com.inventory.hr.rest.dto.request.UpdateHrSettingsRequest;
 import com.inventory.hr.rest.dto.response.HrSettingsResponse;
 import com.inventory.hr.rest.dto.response.HrSetupStatusResponse;
 import com.inventory.hr.service.HrAuditService.AuditEntry;
-import com.inventory.hr.utils.HrDateUtils;
+import com.inventory.hr.utils.PayCycle;
 import com.inventory.hr.validation.HrSettingsValidator;
 import java.math.BigDecimal;
 import java.time.DayOfWeek;
@@ -50,6 +50,8 @@ public class HrSettingsService {
   static final int DEFAULT_GRACE_MINUTES = 15;
   static final BigDecimal DEFAULT_HALF_DAY_BELOW_HOURS = new BigDecimal("4");
   static final BigDecimal DEFAULT_OVERTIME_MULTIPLIER = new BigDecimal("1.5");
+  static final String PAY_CYCLE_LOCKED_MESSAGE =
+      "The salary month start can be changed only before any payroll is finalised.";
 
   @Autowired private HrSettingsRepository settingsRepository;
 
@@ -129,6 +131,15 @@ public class HrSettingsService {
     if (request.getLeaveYearStartMonth() != null) {
       target.setLeaveYearStartMonth(request.getLeaveYearStartMonth());
     }
+    if (request.getPayCycleStartDay() != null
+        && request.getPayCycleStartDay() != PayCycle.startDay(target)) {
+      // locked runs keep the ranges of the start day they were finalised with; DRAFT runs pick
+      // up the new range on their next recalculation (open / finalise recalculate)
+      if (periodLockService.hasLockedRun(shopId)) {
+        throw new BaseException(ErrorCode.HR_RUN_STATE_CONFLICT, PAY_CYCLE_LOCKED_MESSAGE);
+      }
+      target.setPayCycleStartDay(request.getPayCycleStartDay());
+    }
     HrSettings merged = withDefaults(target, shopId);
     validator.validateHours(merged.getWorkStart(), merged.getWorkEnd());
 
@@ -198,7 +209,8 @@ public class HrSettingsService {
     HrSettings effective = withDefaults(stored, null);
     HrSettingsResponse response = mapper.toResponse(effective);
     response.setSaved(stored != null);
-    response.setCurrentWeeklyOffDays(weeklyOffFor(effective, HrDateUtils.currentPeriod()));
+    response.setCurrentWeeklyOffDays(weeklyOffFor(effective,
+        PayCycle.currentPeriod(PayCycle.startDay(effective))));
     return response;
   }
 
@@ -234,6 +246,7 @@ public class HrSettingsService {
         PerDayBasis.CALENDAR_DAYS));
     s.setLeaveYearStartMonth(value(stored != null ? stored.getLeaveYearStartMonth() : null,
         LeaveYearStartMonth.JANUARY));
+    s.setPayCycleStartDay(PayCycle.startDay(stored));
     return s;
   }
 
@@ -256,6 +269,7 @@ public class HrSettingsService {
     m.put("overtimeMultiplier", Objects.toString(s.getOvertimeMultiplier()));
     m.put("perDayBasis", String.valueOf(s.getPerDayBasis()));
     m.put("leaveYearStartMonth", String.valueOf(s.getLeaveYearStartMonth()));
+    m.put("payCycleStartDay", s.getPayCycleStartDay());
     return m;
   }
 

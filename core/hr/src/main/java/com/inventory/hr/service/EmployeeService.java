@@ -20,6 +20,7 @@ import com.inventory.hr.rest.dto.response.LinkableLoginResponse;
 import com.inventory.hr.rest.dto.response.PageMeta;
 import com.inventory.hr.service.HrAuditService.AuditEntry;
 import com.inventory.hr.utils.HrDateUtils;
+import com.inventory.hr.utils.PayCycle;
 import com.inventory.hr.utils.SalaryRevisionUtils;
 import com.inventory.hr.validation.EmployeeValidator;
 import com.inventory.user.rest.dto.response.LoginContactDto;
@@ -157,11 +158,13 @@ public class EmployeeService {
     employee.setStatus(EmployeeStatus.ACTIVE);
     employee.setSalaryRevisions(new ArrayList<>());
     if (request.getPayType() != null) {
+      // default: the salary month (PayCycle) of the join date, else the current one
+      int startDay = periodLockService.startDay(shopId);
       String from = request.getSalaryEffectiveFrom() != null
           ? request.getSalaryEffectiveFrom()
           : request.getJoinDate() != null
-              ? HrDateUtils.periodOf(request.getJoinDate())
-              : HrDateUtils.currentPeriod();
+              ? PayCycle.periodOf(request.getJoinDate(), startDay)
+              : PayCycle.currentPeriod(startDay);
       employee.getSalaryRevisions().add(new Employee.SalaryRevision(
           from, request.getPayType(), request.getSalaryAmount(), now, userId));
     }

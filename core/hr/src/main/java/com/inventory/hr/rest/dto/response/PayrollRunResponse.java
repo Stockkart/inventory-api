@@ -14,6 +14,10 @@ import lombok.NoArgsConstructor;
 public class PayrollRunResponse {
   private String id;
   private String period;
+  /** yyyy-MM-dd, first day of the salary month. */
+  private String fromDate;
+  /** yyyy-MM-dd, last day of the salary month. */
+  private String toDate;
   private PayrollRunStatus status;
   private Integer revision;
   private PayrollRun.Totals totals;

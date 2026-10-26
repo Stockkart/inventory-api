@@ -30,6 +30,7 @@ import com.inventory.hr.service.payroll.PayrollCalculator;
 import com.inventory.hr.service.payroll.PayrollInput;
 import com.inventory.hr.utils.HrDateUtils;
 import com.inventory.hr.utils.HrMoneyUtils;
+import com.inventory.hr.utils.PayCycle;
 import com.inventory.hr.utils.constants.HrMetricsConstants;
 import com.inventory.hr.validation.PayrollAdjustmentValidator;
 import com.inventory.metrics.MetricsWrapper;
@@ -38,13 +39,16 @@ import com.mongodb.bulk.BulkWriteUpsert;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -89,6 +93,8 @@ public class PayrollService {
   /** A FINALISING or REOPENING claim older than this belongs to a call that died. */
   static final Duration STALE_CLAIM = Duration.ofMinutes(2);
   static final int DUPLICATE_KEY = 11000;
+  private static final DateTimeFormatter LABEL_DATE =
+      DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH);
 
   @Autowired private MongoTemplate mongoTemplate;
 
@@ -113,6 +119,8 @@ public class PayrollService {
   @Autowired private MetricsWrapper metrics;
 
   @Autowired private SalaryPaymentService salaryPaymentService;
+
+  @Autowired private PeriodLockService periodLockService;
 
   // ---- reads -----------------------------------------------------------------------------------
 
@@ -169,8 +177,9 @@ public class PayrollService {
    */
   public PayrollRunResponse create(String userId, String shopId, CreatePayrollRunRequest request) {
     guard.require(userId, shopId, HrPermission.RUN_PAYROLL);
+    // "now" is the salary month (PayCycle) containing today, named by the month it ends in
     YearMonth month = validator.requirePeriod(request != null ? request.getPeriod() : null,
-        YearMonth.now(HrDateUtils.ZONE));
+        YearMonth.parse(PayCycle.currentPeriod(periodLockService.startDay(shopId))));
     String period = HrDateUtils.format(month.atDay(1)).substring(0, 7);
     return queryRunner.read("payroll_create", () -> {
       PayrollRun existing = runRepository.findByShopIdAndPeriod(shopId, period).orElse(null);
@@ -230,6 +239,12 @@ public class PayrollService {
       PayrollInputReader.Snapshot snapshot = inputReader.read(shopId,
           YearMonth.parse(run.getPeriod()), runId, finalisedIds(runs(shopId)),
           Set.of(line.getEmployeeId()), true);
+      if (!snapshot.input().cycle().equals(
+          PayCycle.stored(run.getPeriod(), run.getFromDate(), run.getToDate()))) {
+        // the salary-month start day changed since the draft was calculated: one line on the
+        // new dates next to lines on the old ones would not add up
+        throw stateConflict("The salary month dates have changed. Recalculate the payroll first");
+      }
       PayrollInput.EmployeeInput in = snapshot.input().employees().stream().findFirst()
           .orElseThrow(() -> new ValidationException(
               "This employee was not employed in the month. Recalculate the payroll"));
@@ -247,7 +262,8 @@ public class PayrollService {
           .getModifiedCount() != 1) {
         throw concurrentUpdate();
       }
-      updateDraftTotals(shopId, run, totalsOf(lineRepository.findByShopIdAndRunId(shopId, runId)));
+      updateDraftTotals(shopId, run, totalsOf(lineRepository.findByShopIdAndRunId(shopId, runId)),
+          null);
       computed.setId(lineId);
       computed.setRunId(runId);
       computed.setShopId(shopId);
@@ -305,8 +321,10 @@ public class PayrollService {
       }
     }
     PayrollRun.Totals totals = totalsOf(computed.lines());
-    updateDraftTotals(shopId, run, totals);
+    updateDraftTotals(shopId, run, totals, computed.cycle());
     run.setTotals(totals);
+    run.setFromDate(computed.cycle().fromText());
+    run.setToDate(computed.cycle().toText());
     run.setCalculatedAt(now);
     // the lines as just written: computed fields, our updatedAt, and the payment state they kept
     // (a draft line is never paid)
@@ -341,7 +359,7 @@ public class PayrollService {
         throw stateConflict("This payroll run is being finalised or reopened."
             + " Try again in a minute");
       }
-      assertMonthOver(run);
+      assertMonthOver(PayCycle.range(run.getPeriod(), periodLockService.startDay(shopId)));
       // cheap early answer; repeated after the claim, which is the check that counts
       assertFinaliseOrder(run, runs(shopId));
 
@@ -360,12 +378,15 @@ public class PayrollService {
         long started = System.nanoTime();
         computed = compute(shopId, claimed, finalised);
         recordCalc("finalise", started);
+        // the start day may have changed between the first look and our claim (no change is
+        // accepted after it): the range computed under the claim is the one that counts
+        assertMonthOver(computed.cycle());
         assertFinalisable(computed);
         assertStillClaimed(shopId, runId, now);
         writeFrozenLines(shopId, claimed, computed, now);
         // a mark or leave decision that passed its lock check just before our claim lands with a
         // markedAt / decidedAt after it; recompute once so the frozen lines include it
-        if (changedSince(shopId, YearMonth.parse(claimed.getPeriod()), now)) {
+        if (changedSince(shopId, computed.cycle(), now)) {
           started = System.nanoTime();
           computed = compute(shopId, claimed, finalised);
           recordCalc("finalise", started);
@@ -437,6 +458,7 @@ public class PayrollService {
       Update done = new Update().set("status", PayrollRunStatus.FINALISED).unset("claimedAt")
           .set("journalEntryId", entry != null ? entry.getId() : null)
           .set("journalHistory", history).set("totals", totals).set("calculatedAt", now)
+          .set("fromDate", computed.cycle().fromText()).set("toDate", computed.cycle().toText())
           .set("finalisedAt", now).set("finalisedByUserId", userId);
       PayrollRun finalisedRun = mongoTemplate.findAndModify(ownClaim(shopId, runId,
           PayrollRunStatus.FINALISING, now), done,
@@ -462,16 +484,19 @@ public class PayrollService {
   }
 
   /**
-   * A month whose last day is after today (Asia/Kolkata) cannot be finalised: its later days
-   * cannot be marked yet. Without this the refusal would read as "unmarked days" while the
-   * unmarked list (which leaves future days out) shows nothing to mark.
+   * A salary month whose last day ({@code cycle.to}) is not before today (Asia/Kolkata) cannot
+   * be finalised: its later days cannot be marked yet. Allowed from the day after it. Without
+   * this the refusal would read as "unmarked days" while the unmarked list (which leaves future
+   * days out) shows nothing to mark.
    */
-  static void assertMonthOver(PayrollRun run) {
-    YearMonth month = YearMonth.parse(run.getPeriod());
-    if (month.atEndOfMonth().isAfter(HrDateUtils.today())) {
-      throw new ValidationException("This month is not over yet. Payroll for "
-          + run.getPeriod() + " can be finalised from " + HrDateUtils.format(
-              month.plusMonths(1).atDay(1)));
+  static void assertMonthOver(PayCycle.Range cycle) {
+    assertMonthOver(cycle, HrDateUtils.today());
+  }
+
+  static void assertMonthOver(PayCycle.Range cycle, LocalDate today) {
+    if (!today.isAfter(cycle.to())) {
+      throw new ValidationException("This salary month ends on " + LABEL_DATE.format(cycle.to())
+          + ". You can finalise it from " + LABEL_DATE.format(cycle.to().plusDays(1)) + ".");
     }
   }
 
@@ -515,16 +540,16 @@ public class PayrollService {
    * Any attendance mark of the month or leave decision touching it written after the claim. Both
    * reads use existing indexes ({@code (shopId, date)}, {@code (shopId, status, fromDate)}).
    */
-  private boolean changedSince(String shopId, YearMonth month, Instant claimedAt) {
-    String from = HrDateUtils.format(month.atDay(1));
-    String to = HrDateUtils.format(month.atEndOfMonth());
+  private boolean changedSince(String shopId, PayCycle.Range cycle, Instant claimedAt) {
+    String from = cycle.fromText();
+    String to = cycle.toText();
     Query days = Query.query(Criteria.where("shopId").is(shopId).and("date").gte(from).lte(to)
         .and("markedAt").gt(claimedAt));
     days.maxTimeMsec(HrQueryRunner.MONTH_MAX_TIME_MS);
     if (mongoTemplate.exists(days, AttendanceDay.class)) {
       return true;
     }
-    String lowest = HrDateUtils.format(month.atDay(1)
+    String lowest = HrDateUtils.format(cycle.from()
         .minusDays(AttendanceService.LEAVE_MAX_DAYS - 1));
     Query leave = Query.query(Criteria.where("shopId").is(shopId).and("status")
         .in(LeaveRequestStatus.APPROVED, LeaveRequestStatus.CANCELLED)
@@ -730,7 +755,7 @@ public class PayrollService {
 
   /** Lines of one calculation, the lines stored before it, and who still has unmarked days. */
   record Computed(List<PayrollLine> lines, Map<String, PayrollLine> existing,
-      long unmarkedEmployees) {}
+      long unmarkedEmployees, PayCycle.Range cycle) {}
 
   private Computed compute(String shopId, PayrollRun run, List<String> finalisedRunIds) {
     PayrollInputReader.Snapshot snapshot = inputReader.read(shopId,
@@ -752,7 +777,7 @@ public class PayrollService {
       }
     }
     lines.sort(Comparator.comparing(l -> String.valueOf(l.getEmployeeSnapshot().getCode())));
-    return new Computed(lines, snapshot.existingLines(), unmarked);
+    return new Computed(lines, snapshot.existingLines(), unmarked, snapshot.input().cycle());
   }
 
   /**
@@ -762,6 +787,8 @@ public class PayrollService {
   private static Update lineUpdate(PayrollLine line, Instant now) {
     return new Update()
         .set("period", line.getPeriod())
+        .set("fromDate", line.getFromDate())
+        .set("toDate", line.getToDate())
         .set("employeeSnapshot", line.getEmployeeSnapshot())
         .set("dayCounts", line.getDayCounts())
         .set("overtimeMinutes", line.getOvertimeMinutes())
@@ -800,11 +827,16 @@ public class PayrollService {
     return new PayrollRun.Totals(gross, deductions, recovered, rounding, net, lines.size());
   }
 
-  private void updateDraftTotals(String shopId, PayrollRun run, PayrollRun.Totals totals) {
+  /** Totals of a DRAFT; with a {@code cycle}, also the salary-month range it was calculated for. */
+  private void updateDraftTotals(String shopId, PayrollRun run, PayrollRun.Totals totals,
+      PayCycle.Range cycle) {
     Query draft = Query.query(Criteria.where("shopId").is(shopId).and("_id").is(run.getId())
         .and("status").is(PayrollRunStatus.DRAFT));
-    if (mongoTemplate.updateFirst(draft, new Update().set("totals", totals)
-        .set("calculatedAt", nowMillis()), PayrollRun.class).getMatchedCount() != 1) {
+    Update update = new Update().set("totals", totals).set("calculatedAt", nowMillis());
+    if (cycle != null) {
+      update.set("fromDate", cycle.fromText()).set("toDate", cycle.toText());
+    }
+    if (mongoTemplate.updateFirst(draft, update, PayrollRun.class).getMatchedCount() != 1) {
       throw stateConflict("This payroll run is being finalised. Try again in a minute");
     }
   }

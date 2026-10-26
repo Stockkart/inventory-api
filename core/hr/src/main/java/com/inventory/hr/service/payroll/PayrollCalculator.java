@@ -13,6 +13,7 @@ import com.inventory.hr.domain.model.enums.PerDayBasis;
 import com.inventory.hr.service.DayStatusResolver;
 import com.inventory.hr.utils.HrDateUtils;
 import com.inventory.hr.utils.HrMoneyUtils;
+import com.inventory.hr.utils.PayCycle;
 import com.inventory.hr.utils.SalaryRevisionUtils;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -25,8 +26,9 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * Pay of one employee for one month (design "Payroll calculation", R7.3, R8.3–R8.10, R8.15,
- * R14.2). Pure: works only on a {@link PayrollInput} snapshot, so it is property-tested.
+ * Pay of one employee for one salary month ({@link PayCycle}; design "Payroll calculation",
+ * R7.3, R8.3–R8.10, R8.15, R14.2). Pure: works only on a {@link PayrollInput} snapshot, so it is
+ * property-tested. "Month" below means the salary month; CALENDAR_DAYS uses its day count.
  *
  * <p>Rounding: every earning and deduction is one {@code BigDecimal} expression that multiplies
  * first and divides once, rounded once to paise (scale 2, HALF_UP). Gross and net are exact sums
@@ -81,8 +83,10 @@ public final class PayrollCalculator {
         ? revision.getPayType() : PayType.MONTHLY;
 
     Counts c = countDays(input, in);
-    int basis = basisDays(settings.getPerDayBasis(), month);
-    boolean wholeMonth = c.employed == month.lengthOfMonth();
+    PayCycle.Range cycle = input.cycle();
+    int basis = basisDays(settings.getPerDayBasis(), cycle.days());
+    // "whole month" = employed on every day of the salary month (PayCycle)
+    boolean wholeMonth = c.employed == cycle.days();
     BigDecimal halfDays = HALF.multiply(BigDecimal.valueOf(c.halfDays));
     BigDecimal paidDays;
     if (payType == PayType.DAILY) {
@@ -186,6 +190,8 @@ public final class PayrollCalculator {
     PayrollLine line = new PayrollLine();
     line.setEmployeeId(employee.getId());
     line.setPeriod(period);
+    line.setFromDate(cycle.fromText());
+    line.setToDate(cycle.toText());
     line.setEmployeeSnapshot(new PayrollLine.EmployeeSnapshot(employee.getName(),
         employee.getCode(), employee.getDesignation(), HrDateUtils.effectiveJoinDateText(employee),
         employee.getExitDate(), revision != null ? revision.getPayType() : null,
@@ -255,15 +261,20 @@ public final class PayrollCalculator {
 
   // ---- days ------------------------------------------------------------------------------------
 
-  /** CALENDAR_DAYS = days in the month, FIXED_30 = 30, FIXED_26 = 26. */
+  /** CALENDAR_DAYS = days in the calendar month, FIXED_30 = 30, FIXED_26 = 26. */
   public static int basisDays(PerDayBasis basis, YearMonth month) {
+    return basisDays(basis, month.lengthOfMonth());
+  }
+
+  /** CALENDAR_DAYS = {@code cycleDays} (salary-month length), FIXED_30 = 30, FIXED_26 = 26. */
+  public static int basisDays(PerDayBasis basis, int cycleDays) {
     if (basis == PerDayBasis.FIXED_30) {
       return 30;
     }
     if (basis == PerDayBasis.FIXED_26) {
       return 26;
     }
-    return month.lengthOfMonth();
+    return cycleDays;
   }
 
   /** Minutes of the employee's working day (own hours, else the shop's); null when unusable. */
@@ -299,12 +310,14 @@ public final class PayrollCalculator {
     final List<String> unmarkedDates = new ArrayList<>();
   }
 
-  /** Resolves every day of the month through {@link DayStatusResolver} and counts the statuses. */
+  /**
+   * Resolves every day of the salary month ({@link PayrollInput#cycle()}) through {@link
+   * DayStatusResolver} and counts the statuses.
+   */
   private static Counts countDays(PayrollInput input, PayrollInput.EmployeeInput in) {
     Counts c = new Counts();
-    YearMonth month = input.period();
-    for (LocalDate date = month.atDay(1); !date.isAfter(month.atEndOfMonth());
-        date = date.plusDays(1)) {
+    PayCycle.Range cycle = input.cycle();
+    for (LocalDate date = cycle.from(); !date.isAfter(cycle.to()); date = date.plusDays(1)) {
       String d = HrDateUtils.format(date);
       boolean holiday = input.holidays().contains(d);
       LeaveRequest leave = in.leave().get(d);

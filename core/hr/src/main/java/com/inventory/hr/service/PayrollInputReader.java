@@ -10,6 +10,7 @@ import com.inventory.hr.domain.model.PayrollLine;
 import com.inventory.hr.domain.model.enums.AdvanceStatus;
 import com.inventory.hr.service.payroll.PayrollInput;
 import com.inventory.hr.utils.HrDateUtils;
+import com.inventory.hr.utils.PayCycle;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.YearMonth;
@@ -61,12 +62,13 @@ public class PayrollInputReader {
    */
   public Snapshot read(String shopId, YearMonth month, String runId,
       Collection<String> finalisedRunIds, Set<String> onlyEmployees, boolean withPay) {
-    String from = HrDateUtils.format(month.atDay(1));
-    String to = HrDateUtils.format(month.atEndOfMonth());
     // read here, not in the calculator, so the calculation stays pure (run B7)
     LocalDate today = HrDateUtils.today();
-    // 1–5: what the day resolver needs
+    // 1–5: what the day resolver needs; the settings give the salary-month range (PayCycle)
     HrSettings settings = settingsService.effectiveSettings(shopId);
+    PayCycle.Range cycle = PayCycle.range(month, PayCycle.startDay(settings));
+    String from = cycle.fromText();
+    String to = cycle.toText();
     Set<String> holidays = attendanceService.holidayDates(shopId, from, to, MAX_TIME_MS);
     List<Employee> employees = employees(shopId, from, to, onlyEmployees, withPay);
     if (employees.isEmpty()) {
