@@ -15,10 +15,10 @@ public class Gstr2CdnurTabWriter implements Gstr2TabWriter {
 
   private static final String SHEET_NAME = "cdnur";
   private static final List<String> HEADERS = Arrays.asList(
-      "Note/Voucher Number", "Note/Voucher Date", "Invoice/Advance Payment Voucher num",
-      "Invoice/Advance Payment Voucher dat", "Pre GST", "Document Type", "Reason For Issuing document",
+      "Note/Voucher Number", "Note/Voucher date", "Invoice/Advance Payment Voucher number",
+      "Invoice/Advance Payment Voucher date", "Pre GST", "Document Type", "Reason For Issuing document",
       "Supply Type", "Invoice Type", "Note/Voucher Value", "Rate", "Taxable Value", "Integrated Tax Paid",
-      "Central Tax Paid", "State/UT Tax Paid", "Cess Paid", "Eligibility for ITC", "Availed ITC Integrated Tax",
+      "Central Tax Paid", "State/UT Tax Paid", "Cess Paid", "Eligibility For ITC", "Availed ITC Integrated Tax",
       "Availed ITC Central Tax", "Availed ITC State/UT Tax", "Availed ITC Cess");
 
   @Override

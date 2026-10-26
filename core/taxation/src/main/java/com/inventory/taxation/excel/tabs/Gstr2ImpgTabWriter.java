@@ -17,7 +17,7 @@ public class Gstr2ImpgTabWriter implements Gstr2TabWriter {
   private static final List<String> HEADERS = Arrays.asList(
       "Port Code", "Bill of Entry Number", "Bill Of Entry Date", "Bill Of Entry Value", "Document Type",
       "GSTIN of SEZ Supplier", "Rate", "Taxable Value", "Integrated Tax Paid", "Cess Paid",
-      "Eligibility for ITC", "Availed ITC Integrated Tax", "Availed ITC Cess");
+      "Eligibility For ITC", "Availed ITC Integrated Tax", "Availed ITC Cess");
 
   @Override
   public String getSheetName() {
