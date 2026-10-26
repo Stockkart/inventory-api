@@ -16,7 +16,7 @@ import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.PurchaseRepository;
 import com.inventory.product.domain.repository.RefundRepository;
 import com.inventory.product.service.PurchaseCustomerRequests;
-import com.inventory.product.utils.AmountToWordsConverter;
+import com.inventory.common.util.AmountToWordsConverter;
 import com.inventory.product.utils.CreditNoteFigures;
 import com.inventory.user.domain.model.Customer;
 import com.inventory.user.service.CustomerService;

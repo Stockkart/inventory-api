@@ -195,7 +195,7 @@ MongoDB: "table" means collection, "column" means field.
 | `SHOP_CACHE_ENABLED`, `SHOP_CACHE_TTL_SECONDS`, `SHOP_CACHE_MAX_ENTRIES` | per-instance shop read cache (`ShopReadCache`): on/off, seconds an entry lives, entries | both |
 | `MONGO_POOL_MAX_WAIT_MS` | longest wait for a free MongoDB connection before a 503 "busy" with `Retry-After` (`MongoPoolConfig`) | both |
 | `MONGO_TRANSACTIONS_ENABLED`, `MONGO_TRANSACTIONS_MAX_ATTEMPTS`, `MONGO_TRANSACTIONS_SHOP_WAIT_MS` | MongoDB transactions for the money flows (`MongoTx`): on/off (off = no transactions, as before), runs of a flow after write conflicts, ms a shop's flow waits for its turn before 503 "busy" | both |
-| `HEAVY_<KIND>_LIMIT` / `_QUEUE` / `_WAIT_MS` (`EXPORT`, `ANALYTICS`, `OCR`, `IMPORT`; plus `HEAVY_OCR_BACKGROUND_WAIT_MS`) | heavy requests per container: run at once, web requests waiting, wait before a 503 "busy" (`HeavyRequestLimiter`, `@HeavyRequest`); defaults in `HeavyKind` | both |
+| `HEAVY_<KIND>_LIMIT` / `_QUEUE` / `_WAIT_MS` (`EXPORT`, `ANALYTICS`, `OCR`, `IMPORT`; plus `HEAVY_OCR_BACKGROUND_WAIT_MS`) | heavy requests per container: run at once, web requests waiting, wait before a 503 "busy" (`HeavyRequestLimiter`, `@HeavyRequest`); defaults in `HeavyKind`. Kind `HR` (2 / 4 / 10 s) has no passthrough; `heavy.hr.*` can still be set by relaxed binding (`HEAVY_HR_LIMIT` …) | both |
 | `GRAFANA_CLOUD_OTLP_URL`, `GRAFANA_CLOUD_OTLP_USER` | OTLP metrics export endpoint and user (optional) | both |
 | `GRAFANA_CLOUD_LOKI_URL`, `GRAFANA_CLOUD_LOKI_USER` | Loki log push endpoint and user (optional) | both |
 | `GRAFANA_CLOUD_API_TOKEN` | Grafana Cloud token (secret, never commit) | both |

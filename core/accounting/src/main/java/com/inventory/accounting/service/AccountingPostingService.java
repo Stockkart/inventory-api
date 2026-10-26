@@ -161,6 +161,16 @@ public class AccountingPostingService {
     try {
       entry = journalEntryRepository.save(entry);
     } catch (DuplicateKeyException dup) {
+      // a concurrent post of the same source won the insert (JournalSourceIndexMigration's
+      // unique index): idempotent, so hand back its entry. Without a source (or when the clash
+      // was another unique key and no entry for the source exists) the error stands.
+      if (com.inventory.common.tx.MongoTx.inTransaction()) {
+        // inside MongoTx.run the failed insert has aborted the transaction, so no read may
+        // follow it here (AGENTS.md P8): the flow ends and saves nothing. A clash with another
+        // container's open transaction comes back as a write conflict instead; MongoTx runs the
+        // flow again and the pre-check above then returns the entry that won.
+        throw dup;
+      }
       if (sourceType != null && sourceId != null) {
         JournalEntry existingDup =
             journalEntryRepository

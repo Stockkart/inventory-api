@@ -31,6 +31,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -258,8 +260,27 @@ public class ShopService {
   @Transactional(readOnly = true)
   public com.inventory.user.service.ShopServiceAdapter.ShopSummary getShopSummary(String shopId) {
     return shopRepository.findById(shopId)
-        .map(shop -> new com.inventory.user.service.ShopServiceAdapter.ShopSummary(shop.getName()))
+        .map(shop -> new com.inventory.user.service.ShopServiceAdapter.ShopSummary(shop.getName(),
+            addressLine(shop.getLocation())))
         .orElse(null);
+  }
+
+  /**
+   * The shop address on one line, parts in the same order as on invoices and credit notes
+   * (primary, secondary, city, state, PIN); null when no part is stored.
+   */
+  static String addressLine(Location location) {
+    if (location == null) {
+      return null;
+    }
+    List<String> parts = new ArrayList<>();
+    for (String part : new String[] {location.getPrimaryAddress(), location.getSecondaryAddress(),
+        location.getCity(), location.getState(), location.getPin()}) {
+      if (part != null && !part.isBlank()) {
+        parts.add(part.trim());
+      }
+    }
+    return parts.isEmpty() ? null : String.join(", ", parts);
   }
 
   /** DTO for plan module. */

@@ -72,5 +72,13 @@ public class UpdateInventoryRequest {
   private Integer thresholdCount;
   /** Vertical-specific fields (sport, brand, model, …) keyed by schema field name. */
   private java.util.Map<String, Object> verticalFields;
+
+  /**
+   * Fields to clear. A null field above means "keep it", so a field is cleared only by naming it
+   * here: {@code ProductConstants.CLEARABLE_INVENTORY_FIELDS} plus
+   * {@code PricingConstants.CLEARABLE_FIELDS} (saleAdditionalDiscount, purchaseAdditionalDiscount,
+   * saleScheme, purchaseScheme). A name sent here and a value for the same field is refused.
+   */
+  private java.util.Set<String> clearFields;
 }
 

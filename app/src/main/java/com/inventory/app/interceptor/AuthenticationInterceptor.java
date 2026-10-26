@@ -62,8 +62,10 @@ public class AuthenticationInterceptor implements HandlerInterceptor {
       return true;
     }
 
-    // Check if endpoint is public
-    if (isPublicEndpoint(requestPath)) {
+    // Check if endpoint is public. Matched on the decoded, semicolon-free path Spring routes on;
+    // a path with dot segments or encoded separators is never treated as public.
+    String lookupPath = RequestPaths.lookupPath(request);
+    if (!RequestPaths.isSuspicious(request, lookupPath) && isPublicEndpoint(lookupPath)) {
       log.debug("Public endpoint accessed: {}", requestPath);
       return true;
     }

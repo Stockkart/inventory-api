@@ -20,7 +20,7 @@ import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.pluginengine.VerticalFieldsReader;
 import com.inventory.product.service.estimate.EstimateInventoryPolicy;
 import com.inventory.product.utils.constants.ProductMetricsConstants;
-import com.inventory.product.utils.AmountToWordsConverter;
+import com.inventory.common.util.AmountToWordsConverter;
 import com.inventory.product.utils.SaleTaxBreakdown;
 import com.inventory.user.domain.model.Customer;
 import com.inventory.user.service.CustomerService;

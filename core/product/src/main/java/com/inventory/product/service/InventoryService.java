@@ -15,8 +15,10 @@ import com.inventory.product.domain.model.VendorPurchaseInvoiceLine;
 import com.inventory.product.domain.repository.VendorPurchaseInvoiceRepository;
 import com.inventory.product.utils.PurchaseTaxBasis;
 import com.inventory.product.utils.PurchaseTaxBasisResolver;
+import com.inventory.product.utils.SchemeUpdateUtils;
 import com.inventory.product.utils.VendorInvoiceTotals;
 import com.inventory.product.utils.constants.ProductMetricsConstants;
+import com.inventory.pricing.utils.constants.PricingConstants;
 import com.inventory.user.domain.model.Vendor;
 import com.inventory.user.domain.repository.VendorRepository;
 import com.inventory.product.rest.dto.request.VendorPurchaseInvoiceRequest;
@@ -1536,7 +1538,6 @@ public class InventoryService {
       }
 
       log.debug("Updating inventory with ID: {} for shop: {}", inventoryId, shopId);
-      inventoryValidator.validateUpdateRequest(request);
 
       // Find inventory
       Inventory inventory = inventoryRepository.findById(inventoryId)
@@ -1546,6 +1547,11 @@ public class InventoryService {
       if (!shopId.equals(inventory.getShopId())) {
         throw new ValidationException("Inventory does not belong to the authenticated shop");
       }
+
+      // A deal type sent without its deal is checked against the stored one first, so it can
+      // never replace the stored deal with an empty one.
+      SchemeUpdateUtils.dropOrRefuseTypeOnlyChanges(request, inventory);
+      inventoryValidator.validateUpdateRequest(request);
 
       inventoryVerticalValidationHandler.validateUpdate(shopId, inventory, request);
       int previousPackFactor = LotPackaging.factor(inventory.getUnitConversions());
@@ -1583,6 +1589,7 @@ public class InventoryService {
           inventory.setScheme(request.getScheme());
         }
       }
+      applyClearFields(inventory, request.getClearFields());
 
       if (request.getBaseUnit() != null) {
         String normalizedBaseUnit = normalizeUnitName(request.getBaseUnit());
@@ -1639,6 +1646,45 @@ public class InventoryService {
     } catch (Exception e) {
       log.error("Unexpected error while updating inventory: {}", e.getMessage(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
+    }
+  }
+
+  /**
+   * Nulls the fields named in clearFields (validated by InventoryValidator). Identity fields then
+   * re-resolve the catalog product like any other identity edit; pricing fields are cleared in the
+   * pricing record by InventoryPricingWriteHandler and nulled here for the response.
+   */
+  private void applyClearFields(Inventory inventory, java.util.Set<String> clearFields) {
+    if (clearFields == null) {
+      return;
+    }
+    for (String field : clearFields) {
+      switch (field) {
+        case "barcode" -> inventory.setBarcode(null);
+        case "description" -> inventory.setDescription(null);
+        case "companyName" -> inventory.setCompanyName(null);
+        case "location" -> inventory.setLocation(null);
+        case "hsn" -> inventory.setHsn(null);
+        case "discountApplicable" -> inventory.setDiscountApplicable(null);
+        case "thresholdCount" -> inventory.setThresholdCount(null);
+        case PricingConstants.CLEAR_SALE_ADDITIONAL_DISCOUNT -> inventory.setSaleAdditionalDiscount(null);
+        case PricingConstants.CLEAR_PURCHASE_ADDITIONAL_DISCOUNT ->
+            inventory.setPurchaseAdditionalDiscount(null);
+        case PricingConstants.CLEAR_SALE_SCHEME -> {
+          inventory.setSchemeType(null);
+          inventory.setScheme(null);
+          inventory.setSchemePayFor(null);
+          inventory.setSchemeFree(null);
+          inventory.setSchemePercentage(null);
+        }
+        case PricingConstants.CLEAR_PURCHASE_SCHEME -> {
+          inventory.setPurchaseSchemeType(null);
+          inventory.setPurchaseSchemePayFor(null);
+          inventory.setPurchaseSchemeFree(null);
+          inventory.setPurchaseSchemePercentage(null);
+        }
+        default -> { /* refused by InventoryValidator */ }
+      }
     }
   }
 

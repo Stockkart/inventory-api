@@ -13,9 +13,11 @@ import com.inventory.accounting.api.SaleInvoicePostingRequest;
 import com.inventory.accounting.api.SalesReturnPostingRequest;
 import com.inventory.accounting.api.VendorPurchaseInvoicePostingRequest;
 import com.inventory.accounting.api.VendorPurchaseReturnPostingRequest;
+import com.inventory.accounting.domain.model.Account;
 import com.inventory.accounting.domain.model.JournalEntry;
 import com.inventory.accounting.domain.model.JournalSource;
 import com.inventory.accounting.domain.model.PartyType;
+import com.inventory.accounting.domain.repository.AccountRepository;
 import com.inventory.accounting.domain.repository.JournalEntryRepository;
 import com.inventory.common.exception.ValidationException;
 import java.math.BigDecimal;
@@ -24,8 +26,11 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.TreeSet;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -43,6 +48,7 @@ public class AccountingFacadeImpl implements AccountingFacade {
 
   private final AccountingPostingService postingService;
   private final JournalEntryRepository journalEntryRepository;
+  private final AccountRepository accountRepository;
 
   @Override
   @Transactional
@@ -65,6 +71,20 @@ public class AccountingFacadeImpl implements AccountingFacade {
     }
     return journalEntryRepository.findByShopIdAndSourceTypeAndSourceId(
         shopId, sourceType, sourceId.trim());
+  }
+
+  @Override
+  public Set<String> ownAccountCodes(String shopId, Collection<String> codes) {
+    if (shopId == null || codes == null || codes.isEmpty()) {
+      return Set.of();
+    }
+    Set<String> own = new TreeSet<>();
+    for (Account a : accountRepository.findByShopIdAndCodeIn(shopId, codes)) {
+      if (!a.isSystem() && a.getCode() != null) {
+        own.add(a.getCode());
+      }
+    }
+    return own;
   }
 
   /**

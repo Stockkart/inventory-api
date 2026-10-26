@@ -1,6 +1,7 @@
 package com.inventory.product.validation;
 
 import com.inventory.common.exception.ValidationException;
+import com.inventory.pricing.utils.constants.PricingConstants;
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.enums.ItemType;
 import com.inventory.product.domain.model.enums.SchemeType;
@@ -8,6 +9,7 @@ import com.inventory.product.domain.model.UnitConversion;
 import com.inventory.product.rest.dto.request.CreateInventoryRequest;
 import com.inventory.product.rest.dto.request.UpdateInventoryRequest;
 import com.inventory.product.service.PackagingUnitService;
+import com.inventory.product.utils.constants.ProductConstants;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -98,6 +100,7 @@ public class InventoryValidator {
         throw new ValidationException("Scheme (free units) must be zero or greater");
       }
     }
+    validateClearFields(request);
     validateTaxFieldsOnUpdate(request.getBillingMode(), request.getSgst(), request.getCgst());
     if (request.getBaseUnit() != null || request.getUnitConversions() != null) {
       Integer unitsPerPack = request.getUnitConversions() != null
@@ -190,6 +193,41 @@ public class InventoryValidator {
   /**
    * Purchase date must be within 30 days in the past and not more than 30 days in the future.
    */
+  /** Names in clearFields must be clearable, and not sent with a value for the same field. */
+  private void validateClearFields(UpdateInventoryRequest request) {
+    if (request.getClearFields() == null) {
+      return;
+    }
+    for (String field : request.getClearFields()) {
+      if (!ProductConstants.CLEARABLE_INVENTORY_FIELDS.contains(field)
+          && !PricingConstants.CLEARABLE_FIELDS.contains(field)) {
+        throw new ValidationException("Field cannot be cleared: " + field);
+      }
+      if (valueSentFor(field, request)) {
+        throw new ValidationException("Field is both set and cleared: " + field);
+      }
+    }
+  }
+
+  private static boolean valueSentFor(String field, UpdateInventoryRequest r) {
+    return switch (field) {
+      case "barcode" -> r.getBarcode() != null;
+      case "description" -> r.getDescription() != null;
+      case "companyName" -> r.getCompanyName() != null;
+      case "location" -> r.getLocation() != null;
+      case "hsn" -> r.getHsn() != null;
+      case "discountApplicable" -> r.getDiscountApplicable() != null;
+      case "thresholdCount" -> r.getThresholdCount() != null;
+      case PricingConstants.CLEAR_SALE_ADDITIONAL_DISCOUNT -> r.getSaleAdditionalDiscount() != null;
+      case PricingConstants.CLEAR_PURCHASE_ADDITIONAL_DISCOUNT -> r.getPurchaseAdditionalDiscount() != null;
+      case PricingConstants.CLEAR_SALE_SCHEME -> r.getSchemePayFor() != null
+          || r.getSchemeFree() != null || r.getSchemePercentage() != null || r.getScheme() != null;
+      case PricingConstants.CLEAR_PURCHASE_SCHEME -> r.getPurchaseSchemePayFor() != null
+          || r.getPurchaseSchemeFree() != null || r.getPurchaseSchemePercentage() != null;
+      default -> false;
+    };
+  }
+
   private void validatePurchaseDate(Instant purchaseDate) {
     Instant now = Instant.now();
     Instant minAllowed = now.minus(30, ChronoUnit.DAYS);

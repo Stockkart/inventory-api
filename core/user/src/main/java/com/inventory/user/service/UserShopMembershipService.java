@@ -11,6 +11,8 @@ import com.inventory.user.domain.model.UserShopMembership;
 import com.inventory.user.domain.repository.InvitationRepository;
 import com.inventory.user.domain.repository.UserAccountRepository;
 import com.inventory.user.domain.repository.UserShopMembershipRepository;
+import com.inventory.user.rest.dto.response.LoginContactDto;
+import com.inventory.user.rest.dto.response.ShopMemberSummaryDto;
 import com.inventory.user.rest.dto.response.UserShopDto;
 import com.inventory.user.rest.dto.response.UserShopListResponse;
 import com.inventory.user.mapper.UserShopMembershipMapper;
@@ -25,7 +27,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Slf4j
@@ -201,6 +205,74 @@ public class UserShopMembershipService {
   @Transactional(readOnly = true)
   public int getUserCountForShop(String shopId) {
     return membershipRepository.findByShopIdAndActiveTrue(shopId).size();
+  }
+
+  /**
+   * Active logins of a shop with their name and role, for linking an HR employee to a login. Two
+   * reads (memberships, then accounts by id). Stockkart staff accounts are left out.
+   */
+  @Transactional(readOnly = true)
+  public List<ShopMemberSummaryDto> listActiveMembers(String shopId) {
+    if (shopId == null) {
+      return List.of();
+    }
+    List<UserShopMembership> memberships = membershipRepository.findByShopIdAndActiveTrue(shopId);
+    Map<String, UserAccount> accounts = new HashMap<>();
+    userAccountRepository
+        .findAllById(memberships.stream().map(UserShopMembership::getUserId).toList())
+        .forEach(a -> accounts.put(a.getUserId(), a));
+    List<ShopMemberSummaryDto> members = new ArrayList<>();
+    for (UserShopMembership m : memberships) {
+      UserAccount account = accounts.get(m.getUserId());
+      if (account == null || isPlatformAccount(Optional.of(account))) {
+        continue;
+      }
+      UserRole role = m.getRole() != null ? m.getRole() : account.getRole();
+      members.add(new ShopMemberSummaryDto(
+          m.getUserId(),
+          account.getName(),
+          role != null ? role.name() : null,
+          m.getRelationship() != null ? m.getRelationship() : RELATIONSHIP_INVITED));
+    }
+    return members;
+  }
+
+  /**
+   * Display names of logins by user id, one read (HR shows who marked or changed a record).
+   * Unknown ids are left out; null or empty input reads nothing.
+   */
+  @Transactional(readOnly = true)
+  public Map<String, String> namesOf(java.util.Collection<String> userIds) {
+    if (userIds == null || userIds.isEmpty()) {
+      return Map.of();
+    }
+    Map<String, String> names = new HashMap<>();
+    userAccountRepository.findAllById(new java.util.LinkedHashSet<>(userIds)).forEach(a -> {
+      if (a.getUserId() != null && a.getName() != null) {
+        names.put(a.getUserId(), a.getName());
+      }
+    });
+    return names;
+  }
+
+  /**
+   * Name, email and phone of logins by user id, one read (HR prefills a new employee from a
+   * login). Sibling of {@link #namesOf}: unknown ids are left out; null or empty input reads
+   * nothing. The values are PII, so callers return them only to users allowed to see them.
+   */
+  @Transactional(readOnly = true)
+  public Map<String, LoginContactDto> contactsOf(java.util.Collection<String> userIds) {
+    if (userIds == null || userIds.isEmpty()) {
+      return Map.of();
+    }
+    Map<String, LoginContactDto> contacts = new HashMap<>();
+    userAccountRepository.findAllById(new java.util.LinkedHashSet<>(userIds)).forEach(a -> {
+      if (a.getUserId() != null) {
+        contacts.put(a.getUserId(),
+            new LoginContactDto(a.getUserId(), a.getName(), a.getEmail(), a.getPhone()));
+      }
+    });
+    return contacts;
   }
 
   /**

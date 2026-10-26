@@ -239,6 +239,8 @@ Shops are bound to a **vertical** (`Shop.verticalId` + `Shop.pluginVersion`). Fi
 
 **Remaining:** M8 core field strip migration; scan-sell detail modal schema columns; apparel/cafe vertical (Phase 5); import mappers + widgets (Phase 6).
 
+**Clearing a field on a lot edit.** In `PUT /api/v1/inventory/{id}` a field left out or sent as `null` keeps its value. To empty one, name it in `clearFields`: `barcode`, `description`, `companyName`, `location`, `hsn`, `discountApplicable`, `thresholdCount` (lot) and `saleAdditionalDiscount`, `purchaseAdditionalDiscount`, `saleScheme`, `purchaseScheme` (pricing record). Any other name, or a name also sent with a value, is a 400. A clear needs the same product-search grant as setting the field (`saleScheme` → `schemeType`, `purchaseScheme` → `purchaseSchemeType`).
+
 ### GST reports (taxation)
 
 | Endpoint | Purpose |
@@ -333,6 +335,36 @@ The product entry grid view lays out its columns the way a spreadsheet does: col
 | `POST /api/v1/auth/login`, `GET /api/v1/auth/me` | Any account; return `role` (`SUPER_USER` for staff) and work with no shop. |
 | `POST /api/v1/auth/change-password` | Signed-in account only (Bearer token); body `{ currentPassword, password }`; changes the token's account and logs out its other sessions (the caller's token stays valid). Not public. |
 | `POST /api/v1/shops/admin/shops/{shopId}/approve` | SUPER_USER only; anyone else gets 403. Body `{ approve, userLimit }` (`userLimit` > 0 to approve). |
+
+### HR (hr)
+
+Employees, attendance, leave, salary advances, payroll, salary payments, payslips and HR registers (`core/hr`, spec `.kiro/specs/hr-module`). Every path needs a Bearer token; there is no public HR path. Staff paths sit behind the RBAC module `hr` (member switch `modules.hr`, `null` = on) and an action permission from the shop's HR role grid (owner: all); `/api/v1/hr/me/**` skips the module check and works only on the caller's own linked employee (`404 HR_NOT_LINKED` when the login has none, except notifications). Shop and caller always come from the request attributes. Pay amounts and full bank/UPI details need `VIEW_SALARIES`. Endpoints marked *heavy* run under the heavy-request limiter kind `hr` (2 at once, 4 waiting, 10 s, then 503 with `Retry-After`). Plan expiry blocks HR like the rest of the app, except `/api/v1/hr/me/payslips/**`.
+
+| Endpoint | Permission | Purpose |
+|----------|------------|---------|
+| `GET /api/v1/hr/settings`, `PUT /api/v1/hr/settings`, `GET /api/v1/hr/setup-status` | any HR permission; PUT `MANAGE_SETTINGS` | Weekly off (with `effectiveFrom`), hours, grace, half-day, overtime, per-day basis, leave-year start |
+| `GET`, `PUT /api/v1/hr/role-permissions` | owner | Role grid, closed under the dependency rules on save |
+| `GET`, `POST /api/v1/hr/holidays`, `PUT`, `DELETE /api/v1/hr/holidays/{id}` | GET any HR; writes `MANAGE_SETTINGS` | Holidays per year |
+| `GET`, `POST /api/v1/hr/leave-types`, `PUT /api/v1/hr/leave-types/{id}` | GET any HR; writes `MANAGE_SETTINGS` | Leave types (three seeded defaults) |
+| `GET`, `POST /api/v1/hr/employees`, `GET`, `PUT /api/v1/hr/employees/{id}`, `POST /api/v1/hr/employees/{id}/salary-revisions`, `POST /api/v1/hr/employees/{id}/exit`, `GET /api/v1/hr/employees/designations`, `GET /api/v1/hr/linkable-logins` | `VIEW_EMPLOYEES` / `ADD_EDIT_EMPLOYEES` (+ `VIEW_SALARIES` for pay) | Employees, masked without `VIEW_SALARIES` |
+| `GET /api/v1/hr/attendance/daily?asOf=`, `PUT /api/v1/hr/attendance/days` (≤ 500 rows), `POST /api/v1/hr/attendance/mark-unmarked-present`, `GET /api/v1/hr/attendance/month?period=&employeeId=`, `GET /api/v1/hr/attendance/history?employeeId=&date=` | `VIEW_ATTENDANCE` / `MARK_ATTENDANCE` | Daily and month registers, bulk save, history with actor names |
+| `GET /api/v1/hr/attendance/month/export?period=` *heavy* | `VIEW_ATTENDANCE` | Month attendance register (xlsx) |
+| `GET`, `POST /api/v1/hr/leave-requests`, `GET /api/v1/hr/leave-requests/preview`, `POST /api/v1/hr/leave-requests/{id}/approve`, `/reject`, `/cancel` | `VIEW_ATTENDANCE`, `MARK_ATTENDANCE`, `APPROVE_LEAVE` | Leave requests (with `leaveTypeName`) |
+| `GET /api/v1/hr/leave-balances?year=&employeeId=` | `VIEW_ATTENDANCE` | Prorated quota, used, available per type; one employee with `employeeId` |
+| `GET /api/v1/hr/leave-balances/export?year=` *heavy* | `VIEW_ATTENDANCE` | Leave balance list (xlsx) |
+| `GET`, `POST /api/v1/hr/advances`, `POST /api/v1/hr/advances/{id}/cancel`, `GET /api/v1/hr/employees/{id}/advance-statement` | `MANAGE_ADVANCES` | Salary advances (posted to 1250) and statement |
+| `GET /api/v1/hr/payroll-runs`, `GET /api/v1/hr/payroll-runs/{runId}`, `GET /api/v1/hr/payroll-runs/{runId}/unmarked` | `RUN_PAYROLL` or `RECORD_PAYMENTS` | Runs with lines; who still has unmarked days |
+| `POST /api/v1/hr/payroll-runs` *heavy*, `POST /api/v1/hr/payroll-runs/{runId}/recalculate` *heavy*, `PUT /api/v1/hr/payroll-runs/{runId}/lines/{lineId}/adjustments` | `RUN_PAYROLL` | Draft for a month, recalculation, manual items and advance override |
+| `POST /api/v1/hr/payroll-runs/{runId}/finalise` *heavy*, `POST /api/v1/hr/payroll-runs/{runId}/reopen` | `RUN_PAYROLL` | Finalise (oldest month first, one `PAYROLL_RUN` journal) and reopen with a reason (newest first, refused while anything is paid) |
+| `POST /api/v1/hr/payroll-runs/{runId}/payments` | `RECORD_PAYMENTS` | `{lineIds[] ≤ 50 \| all: true, date, method CASH\|BANK\|UPI, reference?}`: one batch, one `SALARY_PAYMENT` journal; per-line status |
+| `POST /api/v1/hr/payroll-runs/{runId}/lines/{lineId}/payment/undo` | `RECORD_PAYMENTS` | `{reason?}`: compensating journal for that line only, line back to pending |
+| `GET /api/v1/hr/payroll-runs/{runId}/lines/{lineId}/payslip` | `VIEW_SALARIES` | Payslip PDF of a finalised run |
+| `POST /api/v1/hr/payroll-runs/{runId}/payslips/email` | `RUN_PAYROLL` | `{lineIds[] ≤ 300}` → `{queued, skippedNoEmail[]}`; the outbox renders each PDF when it sends (10 per tick) |
+| `GET /api/v1/hr/payroll-runs/{runId}/register?format=xlsx\|pdf` *heavy* | `VIEW_SALARIES` | Salary register |
+| `GET /api/v1/hr/me`, `GET /api/v1/hr/me/attendance?period=`, `GET /api/v1/hr/me/leave?year=`, `GET /api/v1/hr/me/leave/preview` | linked employee | Own profile (own pay shown, bank/UPI masked), month, balances and requests |
+| `POST /api/v1/hr/me/leave-requests`, `POST /api/v1/hr/me/leave-requests/{id}/cancel` | linked employee | Request or cancel own leave |
+| `GET /api/v1/hr/me/payslips`, `GET /api/v1/hr/me/payslips/{lineId}/pdf` | linked employee (allowed while the plan is expired) | Own payslips of finalised months; another employee's line is 404 |
+| `GET /api/v1/hr/me/notifications?since=`, `POST /api/v1/hr/me/notifications/{id}/read`, `POST /api/v1/hr/me/notifications/read-all` | any shop member | HR inbox (polled every 60 s) |
 
 ### Build commands
 
