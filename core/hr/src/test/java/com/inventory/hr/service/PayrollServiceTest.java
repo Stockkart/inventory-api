@@ -164,6 +164,37 @@ class PayrollServiceTest {
         () -> service.create(USER, SHOP, new CreatePayrollRunRequest(next)));
   }
 
+  /** Runs {@code body} with HrDateUtils.today() pinned (PayCycle.currentPeriod reads it). */
+  private static void on(java.time.LocalDate day, Runnable body) {
+    try (org.mockito.MockedStatic<com.inventory.hr.utils.HrDateUtils> dates =
+        org.mockito.Mockito.mockStatic(com.inventory.hr.utils.HrDateUtils.class,
+            org.mockito.Mockito.CALLS_REAL_METHODS)) {
+      dates.when(com.inventory.hr.utils.HrDateUtils::today).thenReturn(day);
+      body.run();
+    }
+  }
+
+  @Test
+  void theStartedSalaryMonthCanBeRunBeforeItsCalendarMonth() {
+    // start 24: on 26 Oct the November salary month (24 Oct – 23 Nov) has begun
+    when(periodLockService.startDay(SHOP)).thenReturn(24);
+    when(runRepository.findByShopIdAndPeriod(SHOP, "2026-11"))
+        .thenReturn(Optional.of(run("r1", "2026-11", PayrollRunStatus.DRAFT)));
+    on(java.time.LocalDate.of(2026, 10, 26), () -> {
+      assertEquals("r1",
+          service.create(USER, SHOP, new CreatePayrollRunRequest("2026-11")).getId());
+      assertThrows(ValidationException.class,
+          () -> service.create(USER, SHOP, new CreatePayrollRunRequest("2026-12")));
+    });
+  }
+
+  @Test
+  void withStartDayOneTheNextCalendarMonthIsStillFuture() {
+    when(periodLockService.startDay(SHOP)).thenReturn(1);
+    on(java.time.LocalDate.of(2026, 10, 26), () -> assertThrows(ValidationException.class,
+        () -> service.create(USER, SHOP, new CreatePayrollRunRequest("2026-11"))));
+  }
+
   @Test
   void onlyADraftCanBeRecalculated() {
     when(runRepository.findByShopIdAndId(SHOP, "r1"))

@@ -84,6 +84,20 @@ class HrSettingsServiceTest {
   }
 
   @Test
+  void theResponseCarriesTheCurrentSalaryPeriod() {
+    HrSettings stored = new HrSettings();
+    stored.setPayCycleStartDay(24);
+    when(settingsRepository.findByShopId(SHOP)).thenReturn(Optional.of(stored));
+    try (org.mockito.MockedStatic<com.inventory.hr.utils.HrDateUtils> dates =
+        org.mockito.Mockito.mockStatic(com.inventory.hr.utils.HrDateUtils.class,
+            org.mockito.Mockito.CALLS_REAL_METHODS)) {
+      dates.when(com.inventory.hr.utils.HrDateUtils::today)
+          .thenReturn(java.time.LocalDate.of(2026, 10, 26));
+      assertEquals("2026-11", service.get(USER, SHOP).getCurrentSalaryPeriod());
+    }
+  }
+
+  @Test
   void readingNeedsSomeHrPermission() {
     doThrow(new BaseException(ErrorCode.ACCESS_DENIED, "no")).when(guard).requireAny(USER, SHOP);
 
