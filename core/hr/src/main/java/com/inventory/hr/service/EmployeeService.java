@@ -22,6 +22,7 @@ import com.inventory.hr.service.HrAuditService.AuditEntry;
 import com.inventory.hr.utils.HrDateUtils;
 import com.inventory.hr.utils.SalaryRevisionUtils;
 import com.inventory.hr.validation.EmployeeValidator;
+import com.inventory.user.rest.dto.response.LoginContactDto;
 import com.inventory.user.rest.dto.response.ShopMemberSummaryDto;
 import com.inventory.user.service.UserShopMembershipService;
 import java.time.Instant;
@@ -307,14 +308,27 @@ public class EmployeeService {
         .toList();
   }
 
-  /** Active logins of the shop and which employee each is linked to (login picker, R4.6). */
+  /**
+   * Active logins of the shop and which employee each is linked to (login picker, R4.6). A caller
+   * with VIEW_SALARIES (who may link) also gets each login's email and phone, read in one batch,
+   * to prefill a new employee; for anyone else both stay null.
+   */
   public List<LinkableLoginResponse> linkableLogins(String userId, String shopId) {
-    guard.require(userId, shopId, HrPermission.ADD_EDIT_EMPLOYEES);
+    Set<HrPermission> perms = guard.require(userId, shopId, HrPermission.ADD_EDIT_EMPLOYEES);
     Map<String, String> linked = new HashMap<>();
     employeeRepository.findLinkedByShopId(shopId).forEach(e -> linked.put(e.getUserId(), e.getId()));
-    return membershipService.listActiveMembers(shopId).stream()
-        .map(m -> new LinkableLoginResponse(m.getUserId(), m.getName(), m.getRole(),
-            linked.get(m.getUserId())))
+    List<ShopMemberSummaryDto> members = membershipService.listActiveMembers(shopId);
+    Map<String, LoginContactDto> contacts = perms.contains(HrPermission.VIEW_SALARIES)
+        ? membershipService.contactsOf(members.stream().map(ShopMemberSummaryDto::getUserId)
+            .toList())
+        : Map.of();
+    return members.stream()
+        .map(m -> {
+          LoginContactDto c = contacts.get(m.getUserId());
+          return new LinkableLoginResponse(m.getUserId(), m.getName(), m.getRole(),
+              linked.get(m.getUserId()), c != null ? c.getEmail() : null,
+              c != null ? c.getPhone() : null);
+        })
         .toList();
   }
 

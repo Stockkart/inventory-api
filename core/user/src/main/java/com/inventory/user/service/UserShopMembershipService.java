@@ -11,6 +11,7 @@ import com.inventory.user.domain.model.UserShopMembership;
 import com.inventory.user.domain.repository.InvitationRepository;
 import com.inventory.user.domain.repository.UserAccountRepository;
 import com.inventory.user.domain.repository.UserShopMembershipRepository;
+import com.inventory.user.rest.dto.response.LoginContactDto;
 import com.inventory.user.rest.dto.response.ShopMemberSummaryDto;
 import com.inventory.user.rest.dto.response.UserShopDto;
 import com.inventory.user.rest.dto.response.UserShopListResponse;
@@ -252,6 +253,26 @@ public class UserShopMembershipService {
       }
     });
     return names;
+  }
+
+  /**
+   * Name, email and phone of logins by user id, one read (HR prefills a new employee from a
+   * login). Sibling of {@link #namesOf}: unknown ids are left out; null or empty input reads
+   * nothing. The values are PII, so callers return them only to users allowed to see them.
+   */
+  @Transactional(readOnly = true)
+  public Map<String, LoginContactDto> contactsOf(java.util.Collection<String> userIds) {
+    if (userIds == null || userIds.isEmpty()) {
+      return Map.of();
+    }
+    Map<String, LoginContactDto> contacts = new HashMap<>();
+    userAccountRepository.findAllById(new java.util.LinkedHashSet<>(userIds)).forEach(a -> {
+      if (a.getUserId() != null) {
+        contacts.put(a.getUserId(),
+            new LoginContactDto(a.getUserId(), a.getName(), a.getEmail(), a.getPhone()));
+      }
+    });
+    return contacts;
   }
 
   /**

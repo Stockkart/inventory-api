@@ -35,10 +35,12 @@ import com.inventory.hr.rest.dto.response.EmployeesPageResponse;
 import com.inventory.hr.rest.dto.response.LinkableLoginResponse;
 import com.inventory.hr.service.HrAuditService.AuditEntry;
 import com.inventory.hr.validation.EmployeeValidator;
+import com.inventory.user.rest.dto.response.LoginContactDto;
 import com.inventory.user.rest.dto.response.ShopMemberSummaryDto;
 import com.inventory.user.service.UserShopMembershipService;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -497,5 +499,67 @@ class EmployeeServiceTest {
 
     assertNull(logins.get(0).getLinkedEmployeeId());
     assertEquals("e1", logins.get(1).getLinkedEmployeeId());
+  }
+
+  @Test
+  void linkableLoginsCarryEmailAndPhoneForAViewSalariesCaller() {
+    grant(all());
+    when(membershipService.listActiveMembers(SHOP)).thenReturn(List.of(
+        new ShopMemberSummaryDto("login-1", "Asha", "CASHIER", "INVITED"),
+        new ShopMemberSummaryDto("login-2", "Mohan", "MANAGER", "INVITED")));
+    when(membershipService.contactsOf(List.of("login-1", "login-2"))).thenReturn(Map.of(
+        "login-1", new LoginContactDto("login-1", "Asha", "asha@example.com", "9000000001")));
+
+    List<LinkableLoginResponse> logins = service.linkableLogins(USER, SHOP);
+
+    assertEquals("asha@example.com", logins.get(0).getEmail());
+    assertEquals("9000000001", logins.get(0).getPhone());
+    // an id the account read did not return keeps null contacts
+    assertNull(logins.get(1).getEmail());
+    assertNull(logins.get(1).getPhone());
+    verify(membershipService, org.mockito.Mockito.times(1)).contactsOf(any());
+  }
+
+  @Test
+  void linkableLoginsHideEmailAndPhoneWithoutViewSalaries() {
+    grant(without(HrPermission.VIEW_SALARIES));
+    when(membershipService.listActiveMembers(SHOP)).thenReturn(List.of(
+        new ShopMemberSummaryDto("login-1", "Asha", "CASHIER", "INVITED")));
+
+    List<LinkableLoginResponse> logins = service.linkableLogins(USER, SHOP);
+
+    assertEquals("Asha", logins.get(0).getName());
+    assertNull(logins.get(0).getEmail());
+    assertNull(logins.get(0).getPhone());
+    verify(membershipService, never()).contactsOf(any());
+  }
+
+  @Test
+  void createWithALinkedLogin() {
+    grant(all());
+    when(membershipService.listActiveMembers(SHOP)).thenReturn(
+        List.of(new ShopMemberSummaryDto("login-1", "Asha", "CASHIER", "INVITED")));
+    when(employeeRepository.findByShopIdAndUserId(SHOP, "login-1")).thenReturn(Optional.empty());
+    when(counterService.nextEmployeeCode(SHOP)).thenReturn("EMP-001");
+    insertReturnsArgument();
+    SaveEmployeeRequest r = create("Asha");
+    r.setUserId("login-1");
+    r.setEmail("asha@example.com");
+    r.setPhone("9000000001");
+
+    EmployeeResponse saved = service.create(USER, SHOP, r);
+
+    assertEquals("login-1", saved.getUserId());
+    ArgumentCaptor<Employee> inserted = ArgumentCaptor.forClass(Employee.class);
+    verify(employeeRepository).insert(inserted.capture());
+    assertEquals("login-1", inserted.getValue().getUserId());
+    assertEquals("asha@example.com", inserted.getValue().getEmail());
+    assertEquals("9000000001", inserted.getValue().getPhone());
+    // linking someone else's login needs no owner check
+    verify(guard, never()).requireOwner(any(), any());
+    ArgumentCaptor<AuditEntry> audits = ArgumentCaptor.forClass(AuditEntry.class);
+    verify(auditService, org.mockito.Mockito.times(2)).record(audits.capture());
+    assertEquals(HrAuditAction.EMPLOYEE_LINK_CHANGED, audits.getAllValues().get(1).action());
+    assertEquals("yes", audits.getAllValues().get(1).after().get("linked"));
   }
 }
