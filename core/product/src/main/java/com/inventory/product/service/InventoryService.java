@@ -15,6 +15,7 @@ import com.inventory.product.domain.model.VendorPurchaseInvoiceLine;
 import com.inventory.product.domain.repository.VendorPurchaseInvoiceRepository;
 import com.inventory.product.utils.PurchaseTaxBasis;
 import com.inventory.product.utils.PurchaseTaxBasisResolver;
+import com.inventory.product.utils.SchemeUpdateUtils;
 import com.inventory.product.utils.VendorInvoiceTotals;
 import com.inventory.product.utils.constants.ProductMetricsConstants;
 import com.inventory.user.domain.model.Vendor;
@@ -1536,7 +1537,6 @@ public class InventoryService {
       }
 
       log.debug("Updating inventory with ID: {} for shop: {}", inventoryId, shopId);
-      inventoryValidator.validateUpdateRequest(request);
 
       // Find inventory
       Inventory inventory = inventoryRepository.findById(inventoryId)
@@ -1546,6 +1546,11 @@ public class InventoryService {
       if (!shopId.equals(inventory.getShopId())) {
         throw new ValidationException("Inventory does not belong to the authenticated shop");
       }
+
+      // A deal type sent without its deal is checked against the stored one first, so it can
+      // never replace the stored deal with an empty one.
+      SchemeUpdateUtils.dropOrRefuseTypeOnlyChanges(request, inventory);
+      inventoryValidator.validateUpdateRequest(request);
 
       inventoryVerticalValidationHandler.validateUpdate(shopId, inventory, request);
       int previousPackFactor = LotPackaging.factor(inventory.getUnitConversions());
