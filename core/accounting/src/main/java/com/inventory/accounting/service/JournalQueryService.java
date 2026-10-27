@@ -1,7 +1,7 @@
 package com.inventory.accounting.service;
 
 import com.inventory.accounting.domain.model.JournalEntry;
-import com.inventory.accounting.domain.model.JournalSource;
+import com.inventory.accounting.api.JournalSource;
 import com.inventory.accounting.domain.repository.JournalEntryRepository;
 import com.inventory.common.exception.ResourceNotFoundException;
 import java.time.LocalDate;

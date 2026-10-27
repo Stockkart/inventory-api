@@ -3,8 +3,7 @@ package com.inventory.product.utils;
 import com.inventory.common.util.GstMath;
 import com.inventory.common.constants.PurchaseTaxTreatment;
 import com.inventory.pricing.domain.model.Pricing;
-import com.inventory.pricing.domain.model.Scheme;
-import com.inventory.pricing.utils.constants.PricingConstants;
+import com.inventory.pricing.utils.PricingUtils;
 import com.inventory.product.domain.model.VendorPurchaseInvoice;
 import com.inventory.product.domain.model.VendorPurchaseInvoiceLine;
 
@@ -144,40 +143,24 @@ public final class PurchaseTaxBasisResolver {
   }
 
   /**
-   * Unit cost after the price reductions that GST recognises — and only those.
+   * Unit cost after the purchase scheme and additional discount, before any GST is taken out.
    *
-   * <p>Deliberately not {@link com.inventory.pricing.utils.PricingUtils#computeEffectiveCostPrice}, which is the landed cost:
-   * it also dilutes the price by free goods, so a "19+1" bonus makes each unit held cost a
-   * twentieth less. That is the right basis for valuation and margin, and the wrong one for tax.
-   * A supplier who ships twenty and charges for nineteen has charged for nineteen; the taxable
-   * value is what was charged, and the free unit does not reduce it.
+   * <p>Both kinds of scheme reduce what was charged for the line. A percentage scheme is a straight
+   * price cut. A "19+1" deal is the vendor billing nineteen of every twenty units, whether the bill
+   * shows it as free goods or as a 5% cut on the quantity, so the line's taxable value is
+   * {@code count × cost × 19/20}. The line count is everything received, free units included.
    *
-   * <p>A percentage scheme and an additional discount are genuine reductions in price, so both
-   * apply. Returns null when nothing reduces the cost, or when there is no cost to reduce.
+   * <p>This is the landed cost, {@link PricingUtils#computeEffectiveCostPrice}, without its GST
+   * step: an inclusive bill has its tax taken out of the whole line by {@link #resolve}. Returns
+   * null when there is no cost to reduce.
    */
   private static BigDecimal discountedUnitCost(Pricing pricing) {
-    if (pricing == null || pricing.getCostPrice() == null) {
+    if (pricing == null) {
       return null;
     }
-    BigDecimal cost = pricing.getCostPrice();
-
-    Scheme scheme = pricing.getPurchaseScheme();
-    if (scheme != null
-        && PricingConstants.SCHEME_TYPE_PERCENTAGE.equalsIgnoreCase(scheme.getSchemeType())
-        && scheme.getSchemePercentage() != null) {
-      BigDecimal pct = scheme.getSchemePercentage();
-      if (pct.signum() > 0 && pct.compareTo(BigDecimal.valueOf(100)) < 0) {
-        cost = cost.multiply(BigDecimal.ONE.subtract(pct.divide(BigDecimal.valueOf(100))));
-      }
-    }
-
-    BigDecimal additional = pricing.getPurchaseAdditionalDiscount();
-    if (additional != null && additional.signum() != 0
-        && additional.compareTo(BigDecimal.valueOf(100)) < 0) {
-      cost = cost.multiply(BigDecimal.ONE.subtract(
-          additional.divide(BigDecimal.valueOf(100))));
-    }
-    return cost.setScale(4, RoundingMode.HALF_UP);
+    return PricingUtils.computeEffectiveCostPrice(
+        pricing.getCostPrice(), pricing.getPurchaseAdditionalDiscount(),
+        pricing.getPurchaseScheme());
   }
 
   private static BigDecimal rateOf(Pricing pricing) {

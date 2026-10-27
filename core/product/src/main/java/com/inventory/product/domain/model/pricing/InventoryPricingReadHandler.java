@@ -6,7 +6,6 @@ import com.inventory.pricing.service.InventoryPricingAdapter;
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.enums.SchemeType;
-import com.inventory.product.domain.repository.ShopRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -19,6 +18,7 @@ import org.bson.Document;
 import org.bson.types.ObjectId;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -36,9 +36,6 @@ public class InventoryPricingReadHandler {
   @Autowired
   private MongoTemplate mongoTemplate;
 
-  @Autowired
-  private ShopRepository shopRepository;
-
   public PricingReadDto resolve(Inventory inventory) {
     if (inventory == null) return null;
     if (StringUtils.hasText(inventory.getPricingId())) {
@@ -49,6 +46,11 @@ public class InventoryPricingReadHandler {
     return readLegacyPricing(inventory.getId());
   }
 
+  /**
+   * Pricing for a list of lots in at most two queries: one for the pricing records, one for the
+   * legacy lots that still carry their price on the inventory document. Reading legacy lots one at
+   * a time made every list read (dashboard, search, low stock) cost one round trip per legacy lot.
+   */
   public Map<String, PricingReadDto> resolveBatch(List<Inventory> inventories) {
     if (inventories == null || inventories.isEmpty()) return Map.of();
 
@@ -57,20 +59,23 @@ public class InventoryPricingReadHandler {
         .filter(StringUtils::hasText)
         .distinct()
         .toList();
+    List<String> legacyIds = inventories.stream()
+        .filter(inv -> inv.getId() != null && !StringUtils.hasText(inv.getPricingId()))
+        .map(Inventory::getId)
+        .distinct()
+        .toList();
 
-    Map<String, PricingReadDto> pricingMap = pricingPort.findByIdIn(pricingIds);
+    Map<String, PricingReadDto> pricingMap = pricingIds.isEmpty() ? Map.of() : pricingPort.findByIdIn(pricingIds);
+    Map<String, PricingReadDto> legacyMap = readLegacyPricingBatch(legacyIds);
     Map<String, PricingReadDto> result = new HashMap<>();
 
     for (Inventory inv : inventories) {
       String invId = inv.getId();
       if (invId == null) continue;
-      if (StringUtils.hasText(inv.getPricingId())) {
-        PricingReadDto p = pricingMap.get(inv.getPricingId());
-        if (p != null) result.put(invId, p);
-      } else {
-        PricingReadDto legacy = readLegacyPricing(invId);
-        if (legacy != null) result.put(invId, legacy);
-      }
+      PricingReadDto p = StringUtils.hasText(inv.getPricingId())
+          ? pricingMap.get(inv.getPricingId())
+          : legacyMap.get(invId);
+      if (p != null) result.put(invId, p);
     }
     return result;
   }
@@ -103,6 +108,34 @@ public class InventoryPricingReadHandler {
       log.debug("readLegacyPricing: no document found for inventoryId={}", inventoryId);
       return null;
     }
+    return legacyPricingFrom(inventoryId, doc);
+  }
+
+  /** Legacy pricing for many lots in one query (price fields only), keyed by inventory id. */
+  private Map<String, PricingReadDto> readLegacyPricingBatch(List<String> inventoryIds) {
+    if (inventoryIds.isEmpty()) return Map.of();
+    List<Object> ids = new ArrayList<>(inventoryIds.size());
+    for (String id : inventoryIds) {
+      ids.add(isValidObjectId(id) ? new ObjectId(id) : id);
+    }
+    Query query = Query.query(Criteria.where("_id").in(ids)).cursorBatchSize(ids.size()); // one reply, no getMore
+    LEGACY_PRICING_FIELDS.forEach(f -> query.fields().include(f));
+    Map<String, PricingReadDto> out = new HashMap<>();
+    for (Document doc : mongoTemplate.find(query, Document.class, "inventory")) {
+      String id = String.valueOf(doc.get("_id"));
+      PricingReadDto p = legacyPricingFrom(id, doc);
+      if (p != null) out.put(id, p);
+    }
+    return out;
+  }
+
+  /** Every field {@link #legacyPricingFrom} reads. */
+  private static final List<String> LEGACY_PRICING_FIELDS = List.of(
+      "maximumRetailPrice", "costPrice", "priceToRetail", "sellingPrice", "additionalDiscount", "sgst", "cgst",
+      "schemeType", "schemePayFor", "schemeFree", "schemePercentage",
+      "purchaseSchemeType", "purchaseSchemePayFor", "purchaseSchemeFree", "purchaseSchemePercentage");
+
+  private PricingReadDto legacyPricingFrom(String inventoryId, Document doc) {
     BigDecimal mrp = getBigDecimal(doc, "maximumRetailPrice");
     BigDecimal cost = getBigDecimal(doc, "costPrice");
     BigDecimal ptr = getBigDecimal(doc, "priceToRetail");
@@ -160,17 +193,9 @@ public class InventoryPricingReadHandler {
       inv.setCgst(null);
       return;
     }
-    String sgst = p.getSgst();
-    String cgst = p.getCgst();
-    if (!StringUtils.hasText(sgst) || !StringUtils.hasText(cgst)) {
-      var shop = shopRepository.findById(inv.getShopId()).orElse(null);
-      if (shop != null) {
-        if (!StringUtils.hasText(sgst)) sgst = shop.getSgst();
-        if (!StringUtils.hasText(cgst)) cgst = shop.getCgst();
-      }
-    }
-    inv.setSgst(sgst);
-    inv.setCgst(cgst);
+    // GST comes from the lot's own pricing only; the shop carries no GST rate.
+    inv.setSgst(p.getSgst());
+    inv.setCgst(p.getCgst());
   }
 
   private static boolean isValidObjectId(String s) {

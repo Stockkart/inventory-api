@@ -14,7 +14,7 @@ import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.rest.dto.request.PreviewInvoiceSettingsRequest;
 import com.inventory.product.rest.dto.request.UpdateInvoiceSettingsRequest;
 import com.inventory.product.rest.dto.response.InvoiceSettingsResponse;
-import com.inventory.product.utils.AmountToWordsConverter;
+import com.inventory.common.util.AmountToWordsConverter;
 import com.inventory.product.validation.ShopValidator;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.user.service.UserShopMembershipService;
