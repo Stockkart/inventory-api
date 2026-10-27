@@ -1,7 +1,7 @@
 package com.inventory.documentservice.preview;
 
 import com.inventory.documentservice.domain.DocumentTemplateFamily;
-import com.inventory.documentservice.domain.PrinterType;
+import com.inventory.documentservice.api.PrinterType;
 import com.inventory.documentservice.rest.dto.GenerateInvoiceRequest;
 import com.inventory.documentservice.rest.dto.InvoiceTaxRateRow;
 import java.math.BigDecimal;
@@ -44,7 +44,7 @@ abstract class AbstractTemplateInvoicePreviewRenderer implements InvoicePreviewR
   @Override
   public String render(GenerateInvoiceRequest request) {
     Context context = prepareTemplateContext(request);
-    String templateName = printerType().getTemplateName(DocumentTemplateFamily.INVOICE);
+    String templateName = DocumentTemplateFamily.INVOICE.templateFor(printerType());
     log.debug("Rendering invoice HTML with printer type {} -> template {}", printerType(), templateName);
     return templateEngine.process(templateName, context);
   }

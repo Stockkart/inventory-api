@@ -2,7 +2,7 @@ package com.inventory.product.service;
 
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
-import com.inventory.documentservice.domain.DotMatrixDocument;
+import com.inventory.documentservice.api.DotMatrixDocument;
 import com.inventory.documentservice.rest.dto.GenerateInvoiceRequest;
 import com.inventory.documentservice.rest.dto.InvoiceItem;
 import com.inventory.documentservice.rest.dto.InvoiceTaxRateRow;

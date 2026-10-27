@@ -11,7 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.inventory.credit.domain.model.CreditAccount;
-import com.inventory.credit.domain.model.CreditPartyType;
+import com.inventory.credit.api.CreditPartyType;
 import com.inventory.credit.domain.repository.CreditAccountRepository;
 import com.inventory.credit.domain.repository.CreditEntryRepository;
 import com.inventory.credit.rest.dto.response.CreditAccountResponse;

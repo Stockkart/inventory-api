@@ -1,6 +1,6 @@
 package com.inventory.credit.rest.dto.request;
 
-import com.inventory.credit.domain.model.CreditPartyType;
+import com.inventory.credit.api.CreditPartyType;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;

@@ -1,7 +1,7 @@
 package com.inventory.credit.rest.dto.response;
 
-import com.inventory.credit.domain.model.CreditBalanceStatus;
-import com.inventory.credit.domain.model.CreditPartyType;
+import com.inventory.credit.api.CreditBalanceStatus;
+import com.inventory.credit.api.CreditPartyType;
 import java.math.BigDecimal;
 import java.time.Instant;
 import lombok.AllArgsConstructor;

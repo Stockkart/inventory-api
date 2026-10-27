@@ -1,6 +1,6 @@
 package com.inventory.documentservice.service;
 
-import com.inventory.documentservice.domain.PrinterType;
+import com.inventory.documentservice.api.PrinterType;
 import com.inventory.documentservice.rest.dto.GenerateInvoiceRequest;
 import com.inventory.documentservice.preview.InvoicePreviewRenderer;
 import com.inventory.documentservice.utils.constants.DocumentMetricsConstants;

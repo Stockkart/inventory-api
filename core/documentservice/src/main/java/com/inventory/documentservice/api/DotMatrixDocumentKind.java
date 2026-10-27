@@ -1,4 +1,4 @@
-package com.inventory.documentservice.domain;
+package com.inventory.documentservice.api;
 
 /**
  * What a dot-matrix document is, as the print bridge is told it. The bridge picks the page

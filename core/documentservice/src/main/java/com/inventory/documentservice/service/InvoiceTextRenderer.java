@@ -29,7 +29,7 @@ import static com.inventory.documentservice.utils.DotMatrixTextUtils.twoColumn;
 import static com.inventory.documentservice.utils.DotMatrixTextUtils.visible;
 import static com.inventory.documentservice.utils.DotMatrixTextUtils.wrap;
 
-import com.inventory.documentservice.domain.DotMatrixDocumentKind;
+import com.inventory.documentservice.api.DotMatrixDocumentKind;
 import com.inventory.documentservice.rest.dto.CreditNoteItem;
 import com.inventory.documentservice.rest.dto.GenerateCreditNoteRequest;
 import com.inventory.documentservice.rest.dto.GenerateInvoiceRequest;

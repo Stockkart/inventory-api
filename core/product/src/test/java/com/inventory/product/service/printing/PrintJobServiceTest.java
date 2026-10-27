@@ -10,8 +10,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.inventory.common.exception.ValidationException;
-import com.inventory.documentservice.domain.DotMatrixDocument;
-import com.inventory.documentservice.domain.DotMatrixDocumentKind;
+import com.inventory.documentservice.api.DotMatrixDocument;
+import com.inventory.documentservice.api.DotMatrixDocumentKind;
 import com.inventory.metrics.MetricsWrapper;
 import com.inventory.product.config.PrintBridgeProperties;
 import com.inventory.product.domain.model.enums.PrintAction;

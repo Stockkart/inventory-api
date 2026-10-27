@@ -16,29 +16,6 @@ DEPENDS analytics -> user : com.inventory.analytics.utils.CustomerAnalyticsUtils
 DEPENDS analytics -> user : com.inventory.analytics.utils.CustomerAnalyticsUtils -> com.inventory.user.domain.repository.CustomerRepository
 DEPENDS analytics -> user : com.inventory.analytics.utils.VendorAnalyticsUtils -> com.inventory.user.domain.model.Vendor
 DEPENDS analytics -> user : com.inventory.analytics.utils.VendorAnalyticsUtils -> com.inventory.user.domain.repository.VendorRepository
-NOT_API analytics -> credit : com.inventory.analytics.mis.service.CustomerMoneyMisService -> com.inventory.credit.domain.model.CreditAccount
-NOT_API analytics -> credit : com.inventory.analytics.mis.service.CustomerMoneyMisService -> com.inventory.credit.domain.model.CreditDirection
-NOT_API analytics -> credit : com.inventory.analytics.mis.service.CustomerMoneyMisService -> com.inventory.credit.domain.model.CreditEntry
-NOT_API analytics -> credit : com.inventory.analytics.mis.service.CustomerMoneyMisService -> com.inventory.credit.domain.model.CreditEntryType
-NOT_API analytics -> credit : com.inventory.analytics.mis.service.CustomerMoneyMisService -> com.inventory.credit.domain.model.CreditPartyType
-NOT_API analytics -> credit : com.inventory.analytics.mis.service.CustomerMoneyMisService -> com.inventory.credit.service.CreditService
-NOT_API analytics -> credit : com.inventory.analytics.mis.service.VendorMoneyMisService -> com.inventory.credit.domain.model.CreditAccount
-NOT_API analytics -> credit : com.inventory.analytics.mis.service.VendorMoneyMisService -> com.inventory.credit.domain.model.CreditDirection
-NOT_API analytics -> credit : com.inventory.analytics.mis.service.VendorMoneyMisService -> com.inventory.credit.domain.model.CreditEntry
-NOT_API analytics -> credit : com.inventory.analytics.mis.service.VendorMoneyMisService -> com.inventory.credit.domain.model.CreditEntryType
-NOT_API analytics -> credit : com.inventory.analytics.mis.service.VendorMoneyMisService -> com.inventory.credit.domain.model.CreditPartyType
-NOT_API analytics -> credit : com.inventory.analytics.mis.service.VendorMoneyMisService -> com.inventory.credit.service.CreditService
-NOT_API analytics -> documentservice : com.inventory.analytics.mis.service.CustomerMoneyMisService -> com.inventory.documentservice.rest.dto.mis.MisTabularDocumentRequest
-NOT_API analytics -> documentservice : com.inventory.analytics.mis.service.CustomerMoneyMisService -> com.inventory.documentservice.service.DocumentService
-NOT_API analytics -> documentservice : com.inventory.analytics.mis.service.SalesMisService -> com.inventory.documentservice.rest.dto.mis.MisTabularDocumentRequest
-NOT_API analytics -> documentservice : com.inventory.analytics.mis.service.SalesMisService -> com.inventory.documentservice.service.DocumentService
-NOT_API analytics -> documentservice : com.inventory.analytics.mis.service.StockMisService -> com.inventory.documentservice.rest.dto.mis.MisTabularDocumentRequest
-NOT_API analytics -> documentservice : com.inventory.analytics.mis.service.StockMisService -> com.inventory.documentservice.service.DocumentService
-NOT_API analytics -> documentservice : com.inventory.analytics.mis.service.VendorMoneyMisService -> com.inventory.documentservice.rest.dto.mis.MisTabularDocumentRequest
-NOT_API analytics -> documentservice : com.inventory.analytics.mis.service.VendorMoneyMisService -> com.inventory.documentservice.service.DocumentService
-NOT_API analytics -> documentservice : com.inventory.analytics.mis.support.MisTabularDocumentFactory -> com.inventory.documentservice.rest.dto.mis.MisDocumentKpi
-NOT_API analytics -> documentservice : com.inventory.analytics.mis.support.MisTabularDocumentFactory -> com.inventory.documentservice.rest.dto.mis.MisDocumentSheet
-NOT_API analytics -> documentservice : com.inventory.analytics.mis.support.MisTabularDocumentFactory -> com.inventory.documentservice.rest.dto.mis.MisTabularDocumentRequest
 NOT_API analytics -> product : com.inventory.analytics.mis.service.CustomerMoneyMisService -> com.inventory.product.domain.model.Purchase
 NOT_API analytics -> product : com.inventory.analytics.mis.service.CustomerMoneyMisService -> com.inventory.product.domain.model.Refund
 NOT_API analytics -> product : com.inventory.analytics.mis.service.CustomerMoneyMisService -> com.inventory.product.service.MisProductQueryService
@@ -85,12 +62,6 @@ NOT_API credit -> user : com.inventory.credit.service.CreditService -> com.inven
 NOT_API credit -> user : com.inventory.credit.service.CreditService -> com.inventory.user.domain.model.Vendor
 NOT_API credit -> user : com.inventory.credit.service.CreditService -> com.inventory.user.domain.repository.CustomerRepository
 NOT_API credit -> user : com.inventory.credit.service.CreditService -> com.inventory.user.domain.repository.VendorRepository
-NOT_API hr -> documentservice : com.inventory.hr.service.HrReportService -> com.inventory.documentservice.rest.dto.mis.MisDocumentKpi
-NOT_API hr -> documentservice : com.inventory.hr.service.HrReportService -> com.inventory.documentservice.rest.dto.mis.MisTabularDocumentRequest
-NOT_API hr -> documentservice : com.inventory.hr.service.HrReportService -> com.inventory.documentservice.service.mis.MisExcelDocumentService
-NOT_API hr -> documentservice : com.inventory.hr.service.HrReportService -> com.inventory.documentservice.service.mis.MisPdfDocumentService
-NOT_API hr -> documentservice : com.inventory.hr.service.PayslipService -> com.inventory.documentservice.rest.dto.hr.PayslipDocumentRequest
-NOT_API hr -> documentservice : com.inventory.hr.service.PayslipService -> com.inventory.documentservice.service.hr.PayslipPdfService
 NOT_API hr -> user : com.inventory.hr.adapter.HrAccessAdapterImpl -> com.inventory.user.rest.dto.response.ShopAccessResponse
 NOT_API hr -> user : com.inventory.hr.adapter.HrAccessAdapterImpl -> com.inventory.user.service.HrAccessAdapter
 NOT_API hr -> user : com.inventory.hr.domain.model.HrRolePermissions -> com.inventory.user.domain.model.UserRole
@@ -106,42 +77,12 @@ NOT_API hr -> user : com.inventory.hr.service.PayslipService -> com.inventory.us
 NOT_API hr -> user : com.inventory.hr.service.RolePermissionService -> com.inventory.user.domain.model.UserRole
 NOT_API hr -> user : com.inventory.hr.validation.RolePermissionValidator -> com.inventory.user.domain.model.UserRole
 NOT_API plan -> user : com.inventory.plan.service.UsageService -> com.inventory.user.service.UserShopMembershipService
-NOT_API product -> credit : com.inventory.product.service.AccountingCreditChargeFacade -> com.inventory.credit.domain.model.CreditEntry
-NOT_API product -> credit : com.inventory.product.service.AccountingCreditChargeFacade -> com.inventory.credit.domain.model.CreditPartyType
-NOT_API product -> credit : com.inventory.product.service.AccountingCreditChargeFacade -> com.inventory.credit.domain.repository.CreditEntryRepository
-NOT_API product -> credit : com.inventory.product.service.AccountingCreditChargeFacade -> com.inventory.credit.rest.dto.request.CreateCreditChargeRequest
-NOT_API product -> credit : com.inventory.product.service.AccountingCreditChargeFacade -> com.inventory.credit.service.CreditChargeFacade
-NOT_API product -> credit : com.inventory.product.service.AccountingCreditChargeFacade -> com.inventory.credit.service.CreditService
-NOT_API product -> credit : com.inventory.product.service.AccountingCreditSettlementFacade -> com.inventory.credit.domain.model.CreditEntry
-NOT_API product -> credit : com.inventory.product.service.AccountingCreditSettlementFacade -> com.inventory.credit.domain.model.CreditPartyType
-NOT_API product -> credit : com.inventory.product.service.AccountingCreditSettlementFacade -> com.inventory.credit.domain.repository.CreditEntryRepository
-NOT_API product -> credit : com.inventory.product.service.AccountingCreditSettlementFacade -> com.inventory.credit.rest.dto.request.CreateCreditSettlementRequest
-NOT_API product -> credit : com.inventory.product.service.AccountingCreditSettlementFacade -> com.inventory.credit.service.CreditService
-NOT_API product -> credit : com.inventory.product.service.AccountingCreditSettlementFacade -> com.inventory.credit.service.CreditSettlementFacade
-NOT_API product -> credit : com.inventory.product.service.CheckoutService -> com.inventory.credit.domain.model.CreditEntry
-NOT_API product -> credit : com.inventory.product.service.CheckoutService -> com.inventory.credit.domain.model.CreditPartyType
-NOT_API product -> credit : com.inventory.product.service.CheckoutService -> com.inventory.credit.rest.dto.request.CreateCreditChargeRequest
-NOT_API product -> credit : com.inventory.product.service.CheckoutService -> com.inventory.credit.service.CreditChargeFacade
-NOT_API product -> credit : com.inventory.product.service.CheckoutService -> com.inventory.credit.service.CreditService
-NOT_API product -> credit : com.inventory.product.service.InventoryService -> com.inventory.credit.domain.model.CreditEntry
-NOT_API product -> credit : com.inventory.product.service.InventoryService -> com.inventory.credit.domain.model.CreditPartyType
-NOT_API product -> credit : com.inventory.product.service.InventoryService -> com.inventory.credit.rest.dto.request.CreateCreditChargeRequest
-NOT_API product -> credit : com.inventory.product.service.InventoryService -> com.inventory.credit.service.CreditService
-NOT_API product -> credit : com.inventory.product.service.RefundService -> com.inventory.credit.domain.model.CreditPartyType
-NOT_API product -> credit : com.inventory.product.service.RefundService -> com.inventory.credit.service.CreditService
-NOT_API product -> credit : com.inventory.product.service.VendorPurchaseReturnService -> com.inventory.credit.domain.model.CreditPartyType
-NOT_API product -> credit : com.inventory.product.service.VendorPurchaseReturnService -> com.inventory.credit.service.CreditService
-NOT_API product -> documentservice : com.inventory.product.rest.dto.response.PrintJobResponse -> com.inventory.documentservice.domain.DotMatrixDocumentKind
-NOT_API product -> documentservice : com.inventory.product.service.CreditNoteService -> com.inventory.documentservice.domain.DotMatrixDocument
-NOT_API product -> documentservice : com.inventory.product.service.CreditNoteService -> com.inventory.documentservice.domain.PrinterType
 NOT_API product -> documentservice : com.inventory.product.service.CreditNoteService -> com.inventory.documentservice.rest.dto.GenerateCreditNoteRequest
 NOT_API product -> documentservice : com.inventory.product.service.CreditNoteService -> com.inventory.documentservice.service.DocumentService
-NOT_API product -> documentservice : com.inventory.product.service.InvoiceService -> com.inventory.documentservice.domain.DotMatrixDocument
 NOT_API product -> documentservice : com.inventory.product.service.InvoiceService -> com.inventory.documentservice.rest.dto.GenerateInvoiceRequest
 NOT_API product -> documentservice : com.inventory.product.service.InvoiceService -> com.inventory.documentservice.rest.dto.InvoiceItem
 NOT_API product -> documentservice : com.inventory.product.service.InvoiceService -> com.inventory.documentservice.rest.dto.InvoiceTaxRateRow
 NOT_API product -> documentservice : com.inventory.product.service.InvoiceService -> com.inventory.documentservice.service.DocumentService
-NOT_API product -> documentservice : com.inventory.product.service.InvoiceSettingsService -> com.inventory.documentservice.domain.PrinterType
 NOT_API product -> documentservice : com.inventory.product.service.InvoiceSettingsService -> com.inventory.documentservice.rest.dto.GenerateCreditNoteRequest
 NOT_API product -> documentservice : com.inventory.product.service.InvoiceSettingsService -> com.inventory.documentservice.rest.dto.GenerateInvoiceRequest
 NOT_API product -> documentservice : com.inventory.product.service.InvoiceSettingsService -> com.inventory.documentservice.rest.dto.InvoiceItem
@@ -153,8 +94,6 @@ NOT_API product -> documentservice : com.inventory.product.service.creditnote.Cu
 NOT_API product -> documentservice : com.inventory.product.service.creditnote.CustomerRefundCreditNoteAssembler -> com.inventory.documentservice.rest.dto.GenerateCreditNoteRequest
 NOT_API product -> documentservice : com.inventory.product.service.creditnote.VendorReturnCreditNoteAssembler -> com.inventory.documentservice.rest.dto.CreditNoteItem
 NOT_API product -> documentservice : com.inventory.product.service.creditnote.VendorReturnCreditNoteAssembler -> com.inventory.documentservice.rest.dto.GenerateCreditNoteRequest
-NOT_API product -> documentservice : com.inventory.product.service.printing.PrintJobService -> com.inventory.documentservice.domain.DotMatrixDocument
-NOT_API product -> documentservice : com.inventory.product.service.printing.PrintJobService -> com.inventory.documentservice.domain.DotMatrixDocumentKind
 NOT_API product -> pricing : com.inventory.product.domain.model.Inventory -> com.inventory.pricing.rest.dto.response.RateDto
 NOT_API product -> pricing : com.inventory.product.domain.model.StockEntryEstimateLine -> com.inventory.pricing.rest.dto.response.RateDto
 NOT_API product -> pricing : com.inventory.product.domain.model.pricing.InventoryPricingReadHandler -> com.inventory.pricing.rest.dto.response.PricingReadDto
@@ -308,13 +247,6 @@ OPTIONAL_DEPENDENCY app -> user : com.inventory.app.interceptor.AuthenticationIn
 OPTIONAL_DEPENDENCY hr -> user : com.inventory.hr.service.HrReportService.shopServiceAdapter (com.inventory.user.service.ShopServiceAdapter)
 OPTIONAL_DEPENDENCY hr -> user : com.inventory.hr.service.PayslipService.shopServiceAdapter (com.inventory.user.service.ShopServiceAdapter)
 OPTIONAL_DEPENDENCY plan -> user : com.inventory.plan.service.UsageService.userShopMembershipService (com.inventory.user.service.UserShopMembershipService)
-OPTIONAL_DEPENDENCY product -> credit : com.inventory.product.service.CheckoutService.creditChargeFacade (com.inventory.credit.service.CreditChargeFacade)
-OPTIONAL_DEPENDENCY product -> credit : com.inventory.product.service.CheckoutService.creditService (com.inventory.credit.service.CreditService)
-OPTIONAL_DEPENDENCY product -> credit : com.inventory.product.service.InventoryService.creditService (com.inventory.credit.service.CreditService)
-OPTIONAL_DEPENDENCY product -> credit : com.inventory.product.service.RefundService.creditService (com.inventory.credit.service.CreditService)
-OPTIONAL_DEPENDENCY product -> credit : com.inventory.product.service.VendorPurchaseReturnService.creditService (com.inventory.credit.service.CreditService)
-PORT_LOCATION credit <- product : com.inventory.product.service.AccountingCreditChargeFacade implements com.inventory.credit.service.CreditChargeFacade
-PORT_LOCATION credit <- product : com.inventory.product.service.AccountingCreditSettlementFacade implements com.inventory.credit.service.CreditSettlementFacade
 PORT_LOCATION pricing <- product : com.inventory.product.service.vertical.VerticalPricingPolicyPortImpl implements com.inventory.pricing.service.VerticalPricingPolicyPort
 PORT_LOCATION user <- hr : com.inventory.hr.adapter.HrAccessAdapterImpl implements com.inventory.user.service.HrAccessAdapter
 PORT_LOCATION user <- product : com.inventory.product.service.ShopServiceAdapterImpl implements com.inventory.user.service.ShopServiceAdapter

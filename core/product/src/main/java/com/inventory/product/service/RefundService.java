@@ -10,7 +10,7 @@ import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.enums.PurchaseStatus;
-import com.inventory.credit.domain.model.CreditPartyType;
+import com.inventory.credit.api.CreditPartyType;
 import com.inventory.product.domain.model.Refund;
 import com.inventory.product.domain.model.RefundItem;
 import com.inventory.product.domain.model.Shop;
@@ -103,8 +103,8 @@ public class RefundService {
   @Autowired
   private com.inventory.accounting.api.AccountingFacade accountingFacade;
 
-  @Autowired(required = false)
-  private com.inventory.credit.service.CreditService creditService;
+  @Autowired
+  private com.inventory.credit.api.CreditLedger creditLedger;
 
   @Autowired
   private ShopCapabilityService shopCapabilityService;
@@ -504,12 +504,12 @@ public class RefundService {
       accountingFacade.postSalesReturn(shopId, userId, req);
     }
 
-    if (creditService != null
+    if (creditLedger != null
         && refund != null
         && refund.getRefundToCredit() != null
         && refund.getRefundToCredit().signum() > 0
         && StringUtils.hasText(refund.getCustomerId())) {
-      creditService.recordReturnDueReduction(
+      creditLedger.recordReturnDueReduction(
           shopId,
           userId,
           CreditPartyType.CUSTOMER,

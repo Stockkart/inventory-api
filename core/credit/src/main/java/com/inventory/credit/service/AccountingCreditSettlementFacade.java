@@ -1,20 +1,17 @@
-package com.inventory.product.service;
+package com.inventory.credit.service;
 
 import com.inventory.accounting.api.AccountingFacade;
 import com.inventory.accounting.api.PartySettlementPostingRequest;
 import com.inventory.accounting.api.JournalSource;
 import com.inventory.credit.domain.model.CreditEntry;
-import com.inventory.credit.domain.model.CreditPartyType;
+import com.inventory.credit.api.CreditPartyType;
 import com.inventory.credit.domain.repository.CreditEntryRepository;
 import com.inventory.credit.rest.dto.request.CreateCreditSettlementRequest;
-import com.inventory.credit.service.CreditService;
-import com.inventory.credit.service.CreditSettlementFacade;
 import com.inventory.common.exception.ValidationException;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -25,7 +22,6 @@ import org.springframework.util.StringUtils;
  * stay aligned.
  */
 @Service
-@Primary
 @RequiredArgsConstructor
 public class AccountingCreditSettlementFacade implements CreditSettlementFacade {
 

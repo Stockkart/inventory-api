@@ -22,6 +22,12 @@
             <artifactId>user</artifactId>
             <version>1.0.0</version>
         </dependency>
+        <!-- a charge or settlement posts its journal entry in the same transaction -->
+        <dependency>
+            <groupId>com.inventory</groupId>
+            <artifactId>accounting</artifactId>
+            <version>1.0.0</version>
+        </dependency>
         <dependency>
             <groupId>com.inventory</groupId>
             <artifactId>metrics</artifactId>

@@ -102,8 +102,8 @@ public class VendorPurchaseReturnService {
   @Autowired
   private com.inventory.accounting.api.AccountingFacade accountingFacade;
 
-  @Autowired(required = false)
-  private com.inventory.credit.service.CreditService creditService;
+  @Autowired
+  private com.inventory.credit.api.CreditLedger creditLedger;
 
   @Autowired
   private ShopCapabilityService shopCapabilityService;
@@ -684,13 +684,13 @@ public class VendorPurchaseReturnService {
               .build());
     }
 
-    if (creditService != null
+    if (creditLedger != null
         && refundToCredit.signum() > 0
         && StringUtils.hasText(vendorId)) {
-      creditService.recordReturnDueReduction(
+      creditLedger.recordReturnDueReduction(
           shopId,
           userId,
-          com.inventory.credit.domain.model.CreditPartyType.VENDOR,
+          com.inventory.credit.api.CreditPartyType.VENDOR,
           vendorId.trim(),
           vendorName,
           refundToCredit,

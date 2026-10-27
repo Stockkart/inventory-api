@@ -160,8 +160,8 @@ public class InventoryService {
   @Autowired(required = false)
   private com.inventory.metrics.MetricsWrapper metrics;
 
-  @Autowired(required = false)
-  private com.inventory.credit.service.CreditService creditService;
+  @Autowired
+  private com.inventory.credit.api.CreditLedger creditLedger;
 
   @Autowired
   private com.inventory.accounting.api.AccountingFacade accountingFacade;
@@ -588,7 +588,7 @@ public class InventoryService {
 
   private String postCreditChargeForVendorInvoice(
       VendorPurchaseInvoice inv, String shopId, String userId) {
-    if (creditService == null || inv == null) {
+    if (creditLedger == null || inv == null) {
       return null;
     }
     BigDecimal total = deriveInvoiceTotalForCredit(inv);
@@ -618,20 +618,22 @@ public class InventoryService {
             .map(String::trim)
             .orElse("Vendor " + vendorId);
 
-    com.inventory.credit.rest.dto.request.CreateCreditChargeRequest charge =
-        new com.inventory.credit.rest.dto.request.CreateCreditChargeRequest();
-    charge.setPartyType(com.inventory.credit.domain.model.CreditPartyType.VENDOR);
-    charge.setPartyId(vendorId);
-    charge.setPartyDisplayName(vendorName);
-    charge.setAmount(outstanding);
-    charge.setReferenceType("PURCHASE");
-    charge.setReferenceId(inv.getId());
-    charge.setSourceKey("PURCHASE:CREDIT:" + inv.getId());
-    charge.setNote(
-        "Vendor payable"
-            + (StringUtils.hasText(inv.getInvoiceNo()) ? " · Inv " + inv.getInvoiceNo().trim() : ""));
-    var entry = creditService.createCharge(shopId, userId, charge);
-    return entry != null ? entry.getId() : null;
+    com.inventory.credit.api.CreditCharge charge =
+        com.inventory.credit.api.CreditCharge.builder()
+            .partyType(com.inventory.credit.api.CreditPartyType.VENDOR)
+            .partyId(vendorId)
+            .partyDisplayName(vendorName)
+            .amount(outstanding)
+            .referenceType("PURCHASE")
+            .referenceId(inv.getId())
+            .sourceKey("PURCHASE:CREDIT:" + inv.getId())
+            .note(
+                "Vendor payable"
+                    + (StringUtils.hasText(inv.getInvoiceNo())
+                        ? " · Inv " + inv.getInvoiceNo().trim()
+                        : ""))
+            .build();
+    return creditLedger.recordCharge(shopId, userId, charge);
   }
 
   /**

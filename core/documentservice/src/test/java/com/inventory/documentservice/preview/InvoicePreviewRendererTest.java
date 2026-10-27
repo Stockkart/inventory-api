@@ -6,7 +6,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
-import com.inventory.documentservice.domain.PrinterType;
+import com.inventory.documentservice.api.PrinterType;
 import com.inventory.documentservice.rest.dto.GenerateInvoiceRequest;
 import com.inventory.documentservice.service.InvoiceTextRenderer;
 import java.util.List;

@@ -1,6 +1,6 @@
 package com.inventory.product.service;
 
-import com.inventory.documentservice.domain.PrinterType;
+import com.inventory.documentservice.api.PrinterType;
 import com.inventory.documentservice.rest.dto.GenerateInvoiceRequest;
 import com.inventory.documentservice.rest.dto.InvoiceItem;
 import com.inventory.documentservice.service.DocumentService;
