@@ -15,8 +15,14 @@ import com.inventory.plan.utils.constants.PlanConstants;
 import com.inventory.plan.validation.PlanValidator;
 import com.inventory.user.service.UserShopMembershipService;
 import lombok.extern.slf4j.Slf4j;
+import org.bson.types.Decimal128;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.mongodb.core.FindAndModifyOptions;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -49,6 +55,9 @@ public class UsageService {
   @Autowired
   private UsageMapper usageMapper;
 
+  @Autowired
+  private MongoTemplate mongoTemplate;
+
   public String getCurrentMonthKey() {
     return PlanUtils.getCurrentMonthKey();
   }
@@ -63,7 +72,10 @@ public class UsageService {
   @Transactional
   public Usage createUsage(String shopId, String month) {
     Usage usage = usageMapper.toUsage(shopId, month);
-    return usageRepository.save(usage);
+    Usage saved = usageRepository.save(usage);
+    // a new month is the only time an old one can fall out of the retained window
+    purgeOldUsage(shopId);
+    return saved;
   }
 
   @Transactional(readOnly = true)
@@ -110,12 +122,49 @@ public class UsageService {
 
     planValidator.validateUsageWithinLimits(plan, usage, request);
 
-    usageMapper.applyRecordUsage(usage, request);
-    usage.setUpdatedAt(Instant.now());
-    usage = usageRepository.save(usage);
+    return planMapper.toUsageResponse(increment(shopId, request));
+  }
 
-    purgeOldUsage(shopId);
-    return planMapper.toUsageResponse(usage);
+  /**
+   * Counts one completed bill against this month's usage, atomically.
+   *
+   * <p>For checkout, which has already run {@link #checkCanAddBill} for this bill: no second read
+   * and no second limit check (the bill is already saved when this runs, so failing here could
+   * only leave a completed bill uncounted). Two bills completed at the same moment are both
+   * counted; read-modify-save used to lose one.
+   */
+  public void recordCompletedBill(String shopId, BigDecimal amount) {
+    RecordUsageRequest request = new RecordUsageRequest();
+    request.setBillingAmount(amount != null ? amount : BigDecimal.ZERO);
+    request.setBillCount(1);
+    increment(shopId, request);
+  }
+
+  /** $inc the request's positive deltas on this month's record (created if missing); returns it. */
+  private Usage increment(String shopId, RecordUsageRequest request) {
+    String month = getCurrentMonthKey();
+    // millisecond precision, as stored, so "created by this call" can be told from the result
+    Instant now = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
+    Update update = new Update().set("updatedAt", now)
+        .setOnInsert("shopId", shopId)
+        .setOnInsert("month", month)
+        .setOnInsert("createdAt", now);
+    boolean amount = request.getBillingAmount() != null && request.getBillingAmount().signum() > 0;
+    update.inc("billingAmountUsed", amount ? new Decimal128(request.getBillingAmount()) : new Decimal128(BigDecimal.ZERO));
+    incIfPositive(update, "billCountUsed", request.getBillCount());
+    incIfPositive(update, "smsUsed", request.getSmsCount());
+    incIfPositive(update, "whatsappUsed", request.getWhatsappCount());
+    Query query = Query.query(Criteria.where("shopId").is(shopId).and("month").is(month));
+    Usage after = mongoTemplate.findAndModify(
+        query, update, FindAndModifyOptions.options().upsert(true).returnNew(true), Usage.class);
+    if (after != null && now.equals(after.getCreatedAt())) {
+      purgeOldUsage(shopId); // this call created the month
+    }
+    return after;
+  }
+
+  private static void incIfPositive(Update update, String field, Integer delta) {
+    update.inc(field, delta != null && delta > 0 ? delta : 0);
   }
 
   private void purgeOldUsage(String shopId) {

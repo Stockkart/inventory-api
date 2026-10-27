@@ -1,5 +1,7 @@
 package com.inventory.ocr.prompt;
 
+import com.inventory.ocr.api.InvoicePricingLayout;
+
 /**
  * Strategy for the vision-model instruction used to extract invoice line items.
  * Add a new implementation + {@link InvoicePricingLayout} constant to support another bill layout.

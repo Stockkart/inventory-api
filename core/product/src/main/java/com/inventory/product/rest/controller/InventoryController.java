@@ -1,5 +1,7 @@
 package com.inventory.product.rest.controller;
 
+import com.inventory.common.heavy.HeavyKind;
+import com.inventory.common.heavy.HeavyRequest;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.metrics.annotation.Latency;
 import com.inventory.metrics.annotation.RecordRequestRate;
@@ -360,6 +362,7 @@ public class InventoryController {
    * @param file the Excel file (.xls or .xlsx) to parse
    * @return list of parsed inventory items
    */
+  @HeavyRequest(HeavyKind.IMPORT)
   @PostMapping(value = "/parse-stock-sheet", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   public ResponseEntity<ApiResponse<ParsedInventoryListResponse>> parseStockSheet(
       @RequestParam("file") MultipartFile file,

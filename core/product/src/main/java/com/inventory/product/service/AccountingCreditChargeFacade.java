@@ -2,7 +2,7 @@ package com.inventory.product.service;
 
 import com.inventory.accounting.api.AccountingFacade;
 import com.inventory.accounting.api.PartyCreditChargePostingRequest;
-import com.inventory.accounting.domain.model.JournalSource;
+import com.inventory.accounting.api.JournalSource;
 import com.inventory.credit.domain.model.CreditEntry;
 import com.inventory.credit.domain.model.CreditPartyType;
 import com.inventory.credit.domain.repository.CreditEntryRepository;
@@ -34,12 +34,26 @@ public class AccountingCreditChargeFacade implements CreditChargeFacade {
   private final CreditService creditService;
   private final CreditEntryRepository creditEntryRepository;
 
-  @Autowired(required = false)
+  @Autowired
   private AccountingFacade accountingFacade;
 
+  @Autowired(required = false)
+  private com.inventory.common.tx.MongoTx mongoTx;
+
+  /**
+   * The journal (when one is needed) and the credit row in one MongoDB transaction; inside a bill
+   * or vendor invoice it is part of that one.
+   */
   @Override
   @Transactional
   public CreditEntry createCharge(String shopId, String userId, CreateCreditChargeRequest body) {
+    if (mongoTx != null) {
+      return mongoTx.run(com.inventory.common.tx.MongoTx.CREDIT_CHARGE, shopId, () -> charge(shopId, userId, body));
+    }
+    return charge(shopId, userId, body);
+  }
+
+  private CreditEntry charge(String shopId, String userId, CreateCreditChargeRequest body) {
     String chargeId = resolveChargeId(body);
     JournalSource journalSource = journalSourceFor(body.getPartyType());
     String creditSourceKey = resolveCreditSourceKey(body, journalSource, chargeId);

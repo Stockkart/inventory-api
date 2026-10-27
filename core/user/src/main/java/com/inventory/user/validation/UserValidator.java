@@ -27,6 +27,9 @@ public class UserValidator {
     if (request.getRole() == null) {
       throw new ValidationException("Role is required");
     }
+    if (request.getRole().isPlatformRole()) {
+      throw new ValidationException("Invalid role. SUPER_USER cannot be granted to a shop member");
+    }
   }
 
   public void validateUpdateUserRequest(String shopId, String userId, UpdateUserRequest request) {
@@ -38,6 +41,10 @@ public class UserValidator {
     }
     if (request == null) {
       throw new ValidationException("Request body is required");
+    }
+    // SUPER_USER is a platform role for Stockkart staff; shop-member role changes cannot grant it
+    if (request.getRole() != null && request.getRole().isPlatformRole()) {
+      throw new ValidationException("Invalid role. SUPER_USER cannot be granted to a shop member");
     }
   }
 
@@ -119,6 +126,21 @@ public class UserValidator {
   public void validateUserHasShopAccess(boolean hasAccess) {
     if (!hasAccess) {
       throw new ValidationException("User does not have access to this shop");
+    }
+  }
+
+  /**
+   * Last line of defence for A3: every path that creates a shop membership (shop registration,
+   * invitation accept, join-request accept, legacy backfill) goes through
+   * {@code UserShopMembershipService.addMembership}, which calls this. A SUPER_USER account is
+   * internal Stockkart staff and never belongs to a shop, and SUPER_USER is never a shop role.
+   */
+  public void validateCanJoinShop(UserAccount account, UserRole role) {
+    if (role != null && role.isPlatformRole()) {
+      throw new ValidationException("Invalid role. SUPER_USER cannot be granted to a shop member");
+    }
+    if (account != null && account.getRole() != null && account.getRole().isPlatformRole()) {
+      throw new ValidationException("Stockkart staff accounts cannot be added to a shop");
     }
   }
 }

@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.product.rest.dto.response.GstRateRowDto;
+import com.inventory.product.rest.dto.response.SaleLineTaxDto;
 import com.inventory.product.rest.dto.response.SaleTaxSummaryDto;
 import java.math.BigDecimal;
 import java.util.List;
@@ -34,6 +35,33 @@ class SaleTaxBreakdownTest {
 
   private static SaleTaxSummaryDto footerOf(PurchaseItem... items) {
     return summaryOf(items).orElseThrow();
+  }
+
+  @Test
+  void eachLineStatesItsOwnTaxableValueAndGst() {
+    // STK-293: Scan & Sell shows these product-wise. Each line's amount has its GST taken out at
+    // its own rate; an untaxed line is all taxable value and no GST; they sum to the footer.
+    SaleTaxSummaryDto footer = footerOf(
+        line("1", "150", "114.28", "6", "2.5", "112.79"),
+        line("1", "90", "67.87", "2", "9", "78.48"),
+        line("1", "40", "40", "0", "0", "40.00"));
+
+    List<SaleLineTaxDto> lines = footer.getLines();
+    assertEquals(3, lines.size());
+    assertEquals(new BigDecimal("107.42"), lines.get(0).getTaxableValue());
+    assertEquals(new BigDecimal("5.37"), lines.get(0).getTaxAmount());
+    assertEquals(0, lines.get(0).getRatePercent().compareTo(new BigDecimal("5")));
+    assertEquals(new BigDecimal("66.51"), lines.get(1).getTaxableValue());
+    assertEquals(new BigDecimal("11.97"), lines.get(1).getTaxAmount());
+    assertEquals(0, lines.get(1).getRatePercent().compareTo(new BigDecimal("18")));
+    assertEquals(new BigDecimal("40.00"), lines.get(2).getTaxableValue());
+    assertEquals(0, lines.get(2).getTaxAmount().signum());
+    assertEquals(0, lines.get(2).getRatePercent().signum());
+
+    BigDecimal taxableSum = lines.stream().map(SaleLineTaxDto::getTaxableValue).reduce(BigDecimal.ZERO, BigDecimal::add);
+    BigDecimal taxSum = lines.stream().map(SaleLineTaxDto::getTaxAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+    assertEquals(footer.getTaxableValue(), taxableSum);
+    assertEquals(footer.getCgstTotal().add(footer.getSgstTotal()), taxSum);
   }
 
   @Test

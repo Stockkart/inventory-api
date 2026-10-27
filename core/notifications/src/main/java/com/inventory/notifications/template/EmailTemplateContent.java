@@ -1,6 +1,6 @@
 package com.inventory.notifications.template;
 
-import com.inventory.notifications.domain.model.EmailTemplate;
+import com.inventory.notifications.api.EmailTemplate;
 
 import java.util.Map;
 
@@ -64,6 +64,23 @@ public final class EmailTemplateContent {
                 <p><a href="{{resetLink}}" style="display: inline-block; background: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin: 16px 0;">Reset Password</a></p>
                 <p>Or copy and paste this URL into your browser:<br><a href="{{resetLink}}">{{resetLink}}</a></p>
                 <p>If you did not request this, you can safely ignore this email.</p>
+                <p>Best regards,<br>The Stock Kart Team</p>
+              </body>
+              </html>
+              """
+      );
+      // names and the month only: amounts stay inside the attached PDF
+      case PAYSLIP -> new TemplateContent(
+          "Your payslip for {{periodLabel}}",
+          """
+              <!DOCTYPE html>
+              <html>
+              <head><meta charset="UTF-8"></head>
+              <body style="font-family: sans-serif; line-height: 1.6; color: #333;">
+                <h2>Your payslip</h2>
+                <p>Hi {{employeeName}},</p>
+                <p>Your payslip from {{shopName}} for {{periodLabel}} is attached as a PDF.</p>
+                <p>If something looks wrong, please talk to {{shopName}}.</p>
                 <p>Best regards,<br>The Stock Kart Team</p>
               </body>
               </html>

@@ -1,0 +1,103 @@
+# Module boundaries: who may depend on whom, and who owns which MongoDB collection.
+# Checked by app/src/test/java/com/inventory/app/boundaries/ModuleBoundariesTest.java and the
+# "Module boundaries" workflow. Rules: docs/architecture/module-boundaries.md.
+#
+# - A module may use another module only if it is listed under `dependsOn` (mirrors pom.xml),
+#   and only through that module's `api` package (com.inventory.<module>.api..).
+# - `libraries` are shared code: every package in them is public, and a module may use one it
+#   gets through another module's pom (the compiler already decides that).
+# - Each collection has exactly one owner. Only the owner may read or write it. A non-owner that
+#   must read it is listed under `readers` with a reason.
+
+libraries: [common, metrics, pluginengine]
+
+modules:
+  common:
+    dependsOn: []
+  metrics:
+    dependsOn: [common]
+  pluginengine:
+    dependsOn: [common]
+  notifications:
+    dependsOn: [common, metrics]
+    collections: [outbound_messages]
+  ocr:
+    dependsOn: [common, metrics]
+  pricing:
+    dependsOn: [common, metrics]
+    collections: [pricing]
+  reminders:
+    dependsOn: [common, metrics]
+    collections: [reminders, events]
+  resource:
+    dependsOn: [common, metrics]
+    collections: [help_videos]
+  documentservice:
+    dependsOn: [metrics]
+  user:
+    dependsOn: [common, notifications, metrics]
+    collections: [users, user_shop_memberships, invitations, join_requests, shop_rbac_policies,
+                  customers, shop_customers, vendors, shop_vendors]
+  accounting:
+    dependsOn: [common, metrics]
+    collections: [coa_accounts, journal_entries, ledger_entries, fiscal_periods, accounting_sequences]
+  credit:
+    dependsOn: [common, user, metrics]
+    collections: [credit_accounts, credit_entries]
+  plan:
+    dependsOn: [common, user, metrics]
+    collections: [plans, plan_transactions, plan_payment_orders, usage]
+  hr:
+    dependsOn: [common, metrics, user, accounting, documentservice, notifications]
+    collections: [hr_employees, hr_attendance_days, hr_leave_types, hr_leave_requests, hr_holidays,
+                  hr_payroll_runs, hr_payroll_lines, hr_advances, hr_settings, hr_role_permissions,
+                  hr_notifications, hr_audit_events, hr_counters, hr_punches]
+  product:
+    dependsOn: [common, metrics, user, credit, accounting, pricing, pluginengine, reminders,
+                documentservice, ocr, plan]
+    collections: [shops, product, inventory, inventory_corrections, purchases, refunds,
+                  vendor_purchase_invoices, vendor_purchase_returns, stock_entry_estimates,
+                  invoice_sequences, barcode_pool, business_types, vertical_schemas,
+                  parsed_inventory_results, upload_tokens, shop_menus, shop_invoice_settings,
+                  shop_barcode_label_layouts, shop_card_layouts, shop_grid_layouts]
+  taxation:
+    dependsOn: [common, metrics, product, user, pricing]
+    collections: [gstin_registry]
+  analytics:
+    dependsOn: [common, metrics, product, credit, documentservice]
+  plugins/medical:
+    dependsOn: [common, pluginengine]
+    collections: [inventory_ext_medical]
+  plugins/grocery:
+    dependsOn: [common, pluginengine]
+    collections: [inventory_ext_grocery]
+  plugins/sports:
+    dependsOn: [common, pluginengine]
+    collections: [inventory_ext_sports]
+  plugins/cafe:
+    dependsOn: [common, pluginengine, metrics]
+    collections: [inventory_ext_cafe]
+  # app wires the program together and may reference any module (see `compositionRoot`).
+  app:
+    dependsOn: [metrics, pluginengine, notifications, pricing, reminders, resource, documentservice,
+                user, accounting, credit, plan, hr, product, taxation, analytics,
+                plugins/medical, plugins/grocery, plugins/sports, plugins/cafe]
+    collections: [sessions]
+
+# Collections created by a library rather than a @Document class.
+unmappedCollections:
+  - sessions  # spring-session-data-mongodb (app)
+
+# Packages of app that only wire beans; they may reference other modules' internals.
+compositionRoot:
+  - com.inventory.app.AppApplication
+  - com.inventory.app.config
+
+# Written exceptions to collection ownership. Each one needs a reason.
+readers:
+  inventory_ext_medical: &extension-readers
+    modules: [product, pluginengine]
+    reason: inventory search joins catalog and vertical extension data by design
+  inventory_ext_grocery: *extension-readers
+  inventory_ext_sports: *extension-readers
+  inventory_ext_cafe: *extension-readers

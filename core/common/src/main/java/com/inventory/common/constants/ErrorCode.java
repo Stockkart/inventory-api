@@ -17,6 +17,8 @@ public enum ErrorCode {
   METHOD_NOT_ALLOWED(1005, "Method not allowed", HttpStatus.METHOD_NOT_ALLOWED),
   VALIDATION_ERROR(1006, "Validation error", HttpStatus.BAD_REQUEST),
   DUPLICATE_RESOURCE(1007, "Resource already exists", HttpStatus.CONFLICT),
+  /** Overloaded for a moment (e.g. no free database connection within mongo.pool.max-wait-ms). */
+  SERVICE_BUSY(1008, "The server is busy, please try again in a moment", HttpStatus.SERVICE_UNAVAILABLE),
 
   // Business errors (2000-2999)
   BUSINESS_VALIDATION_ERROR(2000, "Business validation error", HttpStatus.BAD_REQUEST),
@@ -43,6 +45,54 @@ public enum ErrorCode {
 
   // Taxation / GST errors (7000-7999)
   GST_CONFIGURATION_MISSING(7000, "GST configuration is incomplete",
+      HttpStatus.UNPROCESSABLE_ENTITY),
+
+  // HR errors (8000-8099). Messages are plain sentences and never carry amounts, account
+  // numbers or UPI ids, because GlobalExceptionHandler logs them.
+  HR_NOT_LINKED(8000, "Your login is not linked to an employee in this shop",
+      HttpStatus.NOT_FOUND),
+  HR_EMPLOYEE_CODE_TAKEN(8001, "This employee code is already used in this shop",
+      HttpStatus.CONFLICT),
+  HR_LOGIN_ALREADY_LINKED(8002, "This login is already linked to another employee",
+      HttpStatus.CONFLICT),
+  HR_PERIOD_LOCKED(8003, "Payroll for this month is finalised, so it cannot be changed",
+      HttpStatus.CONFLICT),
+  HR_UNMARKED_DAYS(8004, "Some employees have unmarked days in this month",
+      HttpStatus.UNPROCESSABLE_ENTITY),
+  HR_RUN_STATE_CONFLICT(8005, "This payroll run cannot do that in its current state",
+      HttpStatus.CONFLICT),
+  HR_RUN_HAS_PAYMENTS(8006, "Undo the salary payments of this run first", HttpStatus.CONFLICT),
+  HR_LEAVE_OVERLAP(8007, "This leave overlaps another leave request", HttpStatus.CONFLICT),
+  HR_LEAVE_BALANCE_EXCEEDED(8008, "Not enough leave balance for this leave type",
+      HttpStatus.UNPROCESSABLE_ENTITY),
+  HR_LEAVE_STATE_CONFLICT(8009, "This leave request has already been decided",
+      HttpStatus.CONFLICT),
+  HR_ADVANCE_HAS_RECOVERIES(8010, "Part of this advance has already been recovered",
+      HttpStatus.CONFLICT),
+  HR_EMPLOYEE_NOT_EMPLOYED(8011, "The employee was not employed on this date",
+      HttpStatus.UNPROCESSABLE_ENTITY),
+  HR_NO_EMAIL(8012, "This employee has no email address", HttpStatus.UNPROCESSABLE_ENTITY),
+  HR_CONCURRENT_UPDATE(8013, "Someone else changed this record. Reload and try again",
+      HttpStatus.CONFLICT),
+  HR_DAY_HAS_LEAVE(8014, "Change or cancel the leave first", HttpStatus.CONFLICT),
+  HR_RUN_ORDER(8015, "Payroll months must be finalised oldest first and reopened newest first",
+      HttpStatus.CONFLICT),
+  HR_QUERY_TOO_SLOW(8016,
+      "This HR screen took too long to load. Please try again in a minute.",
+      HttpStatus.SERVICE_UNAVAILABLE),
+  /** A system account code (1250/2400/5700) is taken by the shop's own account. */
+  HR_ACCOUNT_CONFLICT(8017,
+      "An account in your chart of accounts uses a code payroll needs",
+      HttpStatus.CONFLICT),
+  /** Same 400 the cap returned before it had its own code. */
+  HR_ACTIVE_EMPLOYEE_LIMIT(8018, "A shop can have at most 1,000 active employees",
+      HttpStatus.BAD_REQUEST),
+  /** Self check-in is switched off in HR settings. */
+  HR_SELF_CHECKIN_OFF(8019, "Self check-in is turned off for this shop", HttpStatus.CONFLICT),
+  /** Location check, BLOCK: farther than the shop radius, or no location given. */
+  HR_OUTSIDE_SHOP(8020, "You're not at the shop", HttpStatus.UNPROCESSABLE_ENTITY),
+  /** Location check, BLOCK: the phone reported an accuracy worse than 200 m (or none). */
+  HR_LOCATION_UNCLEAR(8021, "Location is not clear, please try again near a window",
       HttpStatus.UNPROCESSABLE_ENTITY);
 
   private final int code;

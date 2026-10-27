@@ -25,6 +25,7 @@ import com.inventory.product.rest.dto.response.RefundListResponse;
 import com.inventory.product.rest.dto.response.RefundResponse;
 import com.inventory.product.rest.dto.response.RefundSummaryDto;
 import com.inventory.product.rest.dto.response.RefundSummaryItemDto;
+import com.inventory.product.utils.CreditNoteFigures;
 import com.inventory.product.utils.constants.ProductMetricsConstants;
 import com.inventory.product.validation.CheckoutValidator;
 import com.inventory.product.service.vertical.ShopCapabilityService;
@@ -32,6 +33,9 @@ import com.inventory.user.service.CustomerService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
+import org.bson.types.ObjectId;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.dao.DataAccessException;
@@ -84,6 +88,9 @@ public class RefundService {
   @Autowired(required = false)
   private com.inventory.metrics.MetricsWrapper metrics;
 
+  @Autowired(required = false)
+  private com.inventory.common.tx.MongoTx mongoTx;
+
   @Autowired
   private com.inventory.user.domain.repository.CustomerRepository customerRepository;
 
@@ -93,7 +100,7 @@ public class RefundService {
   @Autowired
   private MongoTemplate mongoTemplate;
 
-  @Autowired(required = false)
+  @Autowired
   private com.inventory.accounting.api.AccountingFacade accountingFacade;
 
   @Autowired(required = false)
@@ -114,6 +121,17 @@ public class RefundService {
    * @return RefundResponse with refund amount and refunded items
    */
   public RefundResponse processRefund(RefundRequest request, HttpServletRequest httpRequest) {
+    // one MongoDB transaction: stock back, the refund, the return journal and the due change
+    // together or not at all; two refunds of the same bill at once conflict and the second is
+    // checked again against what the first refunded
+    if (mongoTx != null) {
+      return mongoTx.run(com.inventory.common.tx.MongoTx.REFUND, (String) httpRequest.getAttribute("shopId"),
+          () -> refund(request, httpRequest));
+    }
+    return refund(request, httpRequest);
+  }
+
+  private RefundResponse refund(RefundRequest request, HttpServletRequest httpRequest) {
     // Get shopId and userId from request attributes
     String shopId = (String) httpRequest.getAttribute("shopId");
     String userId = (String) httpRequest.getAttribute("userId");
@@ -318,15 +336,18 @@ public class RefundService {
           refundedItems.size());
 
       if (metrics != null) {
-        metrics.record(
-            ProductMetricsConstants.REFUNDS_TOTAL, 1, "module", ProductMetricsConstants.MODULE);
-        if (roundedAmount.compareTo(BigDecimal.ZERO) > 0) {
+        // counted once, and only if the refund is saved
+        com.inventory.common.tx.MongoTx.afterCommit(() -> {
           metrics.record(
-              ProductMetricsConstants.REFUND_AMOUNT,
-              roundedAmount.doubleValue(),
-              "module",
-              ProductMetricsConstants.MODULE);
-        }
+              ProductMetricsConstants.REFUNDS_TOTAL, 1, "module", ProductMetricsConstants.MODULE);
+          if (roundedAmount.compareTo(BigDecimal.ZERO) > 0) {
+            metrics.record(
+                ProductMetricsConstants.REFUND_AMOUNT,
+                roundedAmount.doubleValue(),
+                "module",
+                ProductMetricsConstants.MODULE);
+          }
+        });
       }
 
       return response;
@@ -691,8 +712,6 @@ public class RefundService {
    */
   private List<String> findPurchaseIdsBySearchCriteria(String shopId, String invoiceNo,
                                                         String customerPhone, String customerId, String customerEmail) {
-    List<String> purchaseIds = new ArrayList<>();
-
     // If customer phone provided, find customer IDs first
     if (StringUtils.hasText(customerPhone)) {
       java.util.Optional<com.inventory.user.domain.model.Customer> customerOpt =
@@ -735,29 +754,35 @@ public class RefundService {
       }
     }
 
-    // Find purchases matching criteria
-    List<Purchase> purchases;
-    if (StringUtils.hasText(invoiceNo) && StringUtils.hasText(customerId)) {
-      // Search by both invoice number and customer ID
-      purchases = purchaseRepository.findByShopIdAndInvoiceNoAndCustomerId(shopId, invoiceNo.trim(), customerId);
-    } else if (StringUtils.hasText(invoiceNo)) {
-      // Search by invoice number only
-      purchases = purchaseRepository.findByShopIdAndInvoiceNo(shopId, invoiceNo.trim());
-    } else if (StringUtils.hasText(customerId)) {
-      // Search by customer ID only
-      purchases = purchaseRepository.findByShopIdAndCustomerId(shopId, customerId);
-    } else {
+    // Find the matching bills' ids (only the ids: a regular customer, or the walk-in placeholder,
+    // can have thousands of bills, each a full document with its lines; the {shopId, customerId,
+    // soldAt} index finds them and only the ids come back)
+    String invoice = StringUtils.hasText(invoiceNo) ? invoiceNo.trim() : null;
+    String customer = StringUtils.hasText(customerId) ? customerId : null;
+    if (invoice == null && customer == null) {
       // No valid search criteria
       return new ArrayList<>();
     }
+    return purchaseIdsMatching(shopId, invoice, customer);
+  }
 
-    // Extract purchase IDs
-    purchaseIds = purchases.stream()
-        .map(Purchase::getId)
-        .distinct()
-        .collect(Collectors.toList());
-
-    return purchaseIds;
+  /** Ids of the shop's bills with this invoice number and/or customer (either may be null, not both). */
+  List<String> purchaseIdsMatching(String shopId, String invoiceNo, String customerId) {
+    Criteria match = Criteria.where("shopId").is(shopId);
+    if (invoiceNo != null) {
+      match = match.and("invoiceNo").is(invoiceNo);
+    }
+    if (customerId != null) {
+      match = match.and("customerId").is(customerId);
+    }
+    Query idsOnly = new Query(match);
+    idsOnly.fields().include("_id");
+    java.util.Set<String> ids = new java.util.LinkedHashSet<>();
+    for (Document d : mongoTemplate.find(idsOnly, Document.class, mongoTemplate.getCollectionName(Purchase.class))) {
+      Object id = d.get("_id");
+      ids.add(id instanceof ObjectId oid ? oid.toHexString() : String.valueOf(id));
+    }
+    return new ArrayList<>(ids);
   }
 
   /**
@@ -780,6 +805,15 @@ public class RefundService {
       dto.setRefundedItems(
           lineItems.stream().map(this::toRefundSummaryItemDto).collect(Collectors.toList()));
     }
+    // The same figures the printed credit note states, so history and paper agree.
+    CreditNoteFigures.Totals totals = CreditNoteFigures.totals(refund, lineItems);
+    dto.setTaxableTotal(totals.taxableTotal());
+    dto.setCgstAmount(totals.cgstAmount());
+    dto.setSgstAmount(totals.sgstAmount());
+    dto.setIgstAmount(totals.igstAmount());
+    dto.setTaxTotal(totals.taxTotal());
+    dto.setRoundOff(totals.roundOff());
+    dto.setInterstate(Boolean.TRUE.equals(refund.getInterstate()));
 
     // Fetch purchase details to get invoice number and customer info
     purchaseRepository.findById(refund.getPurchaseId()).ifPresent(purchase -> {
@@ -821,6 +855,7 @@ public class RefundService {
     dto.setSaleAdditionalDiscount(item.getSaleAdditionalDiscount());
     dto.setSgst(item.getSgst());
     dto.setCgst(item.getCgst());
+    dto.setGstRatePct(CreditNoteFigures.lineRatePct(item.getCgst(), item.getSgst()));
     dto.setSchemeType(item.getSchemeType() != null ? item.getSchemeType().name() : null);
     dto.setSchemePayFor(item.getSchemePayFor());
     dto.setSchemeFree(item.getSchemeFree());
@@ -828,6 +863,7 @@ public class RefundService {
     dto.setTaxableValue(item.getTaxableValue());
     dto.setCgstAmount(item.getCgstAmount());
     dto.setSgstAmount(item.getSgstAmount());
+    dto.setIgstAmount(item.getIgstAmount());
     return dto;
   }
 }
