@@ -1,5 +1,7 @@
 package com.inventory.accounting.domain.model;
 
+import com.inventory.accounting.api.JournalSource;
+import com.inventory.accounting.api.JournalStatus;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -21,11 +23,12 @@ import org.springframework.data.mongodb.core.mapping.Document;
 @NoArgsConstructor
 @AllArgsConstructor
 @Document(collection = "journal_entries")
+// Created by JournalSourceIndexMigration as a PARTIAL unique index (sourceId is a string), not
+// sparse: auto-index creation is off, so this annotation documents the keys only.
 @CompoundIndex(
     name = "shop_source_unique",
     def = "{'shopId': 1, 'sourceType': 1, 'sourceId': 1}",
-    unique = true,
-    sparse = true)
+    unique = true)
 @CompoundIndex(name = "shop_txn_date", def = "{'shopId': 1, 'txnDate': -1}")
 @CompoundIndex(
     name = "shop_entry_no",

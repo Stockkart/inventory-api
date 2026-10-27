@@ -1,7 +1,7 @@
 package com.inventory.accounting.rest.dto.response;
 
-import com.inventory.accounting.domain.model.JournalSource;
-import com.inventory.accounting.domain.model.PartyType;
+import com.inventory.accounting.api.JournalSource;
+import com.inventory.accounting.api.PartyType;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;

@@ -11,6 +11,7 @@ import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.enums.ShopType;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.rest.dto.request.UpdateInventoryRequest;
+import com.inventory.pricing.utils.constants.PricingConstants;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -40,8 +41,8 @@ public class InventoryPricingWriteHandler {
             .saleAdditionalDiscount(inventory.getSaleAdditionalDiscount())
             .purchaseAdditionalDiscount(inventory.getPurchaseAdditionalDiscount())
             .costPriceIncludesTax(inventory.getCostPriceIncludesTax())
-            .sgst(resolveSgst(inventory.getSgst(), inventory.getShopId()))
-            .cgst(resolveCgst(inventory.getCgst(), inventory.getShopId()));
+            .sgst(resolveSgst(inventory.getSgst()))
+            .cgst(resolveCgst(inventory.getCgst()));
         if (isRetailerShop(inventory.getShopId())) {
           // Retail: shop enters Rate (cost) + Selling Price; MRP/PTR mirror selling price.
           // Schemes / discounts still persist (unlike cafe simplePricing).
@@ -86,6 +87,7 @@ public class InventoryPricingWriteHandler {
               .saleScheme(buildSaleSchemeFromRequest(req))
               .sgst(req.getSgst())
               .cgst(req.getCgst())
+              .clearFields(pricingClearFields(req))
               .build();
           pricingPort.update(inventory.getPricingId(), cmd);
         }
@@ -132,7 +134,22 @@ public class InventoryPricingWriteHandler {
         || (req.getRates() != null && !req.getRates().isEmpty())
         || StringUtils.hasText(req.getDefaultRate())
         || req.getSellingPrice() != null
-        || StringUtils.hasText(req.getSgst()) || StringUtils.hasText(req.getCgst());
+        || StringUtils.hasText(req.getSgst()) || StringUtils.hasText(req.getCgst())
+        || pricingClearFields(req) != null;
+  }
+
+  /** The request's clearFields that name pricing fields, or null when there are none. */
+  private java.util.Set<String> pricingClearFields(UpdateInventoryRequest req) {
+    if (req.getClearFields() == null) {
+      return null;
+    }
+    java.util.Set<String> pricing = new java.util.LinkedHashSet<>();
+    for (String field : req.getClearFields()) {
+      if (PricingConstants.CLEARABLE_FIELDS.contains(field)) {
+        pricing.add(field);
+      }
+    }
+    return pricing.isEmpty() ? null : pricing;
   }
 
   private boolean hasPricingData(Inventory inv) {
@@ -146,15 +163,14 @@ public class InventoryPricingWriteHandler {
         || inv.getPurchaseSchemeFree() != null || inv.getPurchaseSchemePercentage() != null;
   }
 
-  private String resolveSgst(String fromRequest, String shopId) {
+  private String resolveSgst(String fromRequest) {
     InventoryPricingContext.Context ctx = InventoryPricingContext.get();
     if (ctx != null && ctx.type == InventoryPricingContext.Type.CREATE
         && ctx.createRequest != null && ctx.createRequest.getBillingMode() == BillingMode.BASIC) {
       return null;
     }
-    if (StringUtils.hasText(fromRequest)) return fromRequest;
-    if (!StringUtils.hasText(shopId)) return null;
-    return shopRepository.findById(shopId).map(Shop::getSgst).orElse(null);
+    // GST is the lot's own; there is no shop-level default (the validator requires it on create).
+    return StringUtils.hasText(fromRequest) ? fromRequest : null;
   }
 
   private Scheme buildPurchaseSchemeFromRequest(UpdateInventoryRequest req) {
@@ -212,14 +228,13 @@ public class InventoryPricingWriteHandler {
     return shopRepository.findById(shopId).map(Shop::getVerticalId).orElse(null);
   }
 
-  private String resolveCgst(String fromRequest, String shopId) {
+  private String resolveCgst(String fromRequest) {
     InventoryPricingContext.Context ctx = InventoryPricingContext.get();
     if (ctx != null && ctx.type == InventoryPricingContext.Type.CREATE
         && ctx.createRequest != null && ctx.createRequest.getBillingMode() == BillingMode.BASIC) {
       return null;
     }
-    if (StringUtils.hasText(fromRequest)) return fromRequest;
-    if (!StringUtils.hasText(shopId)) return null;
-    return shopRepository.findById(shopId).map(Shop::getCgst).orElse(null);
+    // GST is the lot's own; there is no shop-level default (the validator requires it on create).
+    return StringUtils.hasText(fromRequest) ? fromRequest : null;
   }
 }

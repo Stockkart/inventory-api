@@ -1,8 +1,8 @@
 package com.inventory.product.mapper;
 
 import com.inventory.reminders.rest.dto.request.CustomReminderRequest;
-import com.inventory.ocr.dto.ParsedInventoryItem;
-import com.inventory.ocr.dto.ParsedReminderDto;
+import com.inventory.ocr.api.ParsedInvoiceItem;
+import com.inventory.ocr.api.ParsedReminder;
 import com.inventory.product.domain.model.ParsedInventoryResult;
 import com.inventory.product.domain.model.UnitConversion;
 import com.inventory.product.domain.model.enums.SchemeType;
@@ -69,21 +69,21 @@ public interface ParsedInventoryMapper {
   @Mapping(target = "reminderAt", source = "reminderAt", qualifiedByName = "parseInstant")
   @Mapping(target = "purchaseDate", source = "purchaseDate", qualifiedByName = "parseInstant")
   @Mapping(target = "customReminders", source = "customReminders", qualifiedByName = "mapCustomReminders")
-  CreateInventoryItemRequest toCreateInventoryItemRequest(ParsedInventoryItem parsedItem);
+  CreateInventoryItemRequest toCreateInventoryItemRequest(ParsedInvoiceItem parsedItem);
 
   @AfterMapping
   default void enrichPackagingFields(
       @MappingTarget CreateInventoryItemRequest target,
-      ParsedInventoryItem source) {
-    if (StringUtils.hasText(source.getBaseUnit())) {
-      target.setBaseUnit(source.getBaseUnit().trim().toUpperCase());
+      ParsedInvoiceItem source) {
+    if (StringUtils.hasText(source.baseUnit())) {
+      target.setBaseUnit(source.baseUnit().trim().toUpperCase());
     }
-    if (source.getUnitsPerPack() != null && source.getUnitsPerPack() > 1) {
-      target.setUnitsPerPack(source.getUnitsPerPack());
-      if (StringUtils.hasText(source.getBaseUnit())) {
+    if (source.unitsPerPack() != null && source.unitsPerPack() > 1) {
+      target.setUnitsPerPack(source.unitsPerPack());
+      if (StringUtils.hasText(source.baseUnit())) {
         UnitConversion conversion = new UnitConversion();
         conversion.setUnit("PAC");
-        conversion.setFactor(source.getUnitsPerPack());
+        conversion.setFactor(source.unitsPerPack());
         target.setUnitConversions(conversion);
       }
     }
@@ -92,28 +92,28 @@ public interface ParsedInventoryMapper {
   @AfterMapping
   default void enrichSchemeFields(
       @MappingTarget CreateInventoryItemRequest target,
-      ParsedInventoryItem source) {
-    if (source.getSchemePayFor() != null || source.getSchemeFree() != null) {
+      ParsedInvoiceItem source) {
+    if (source.schemePayFor() != null || source.schemeFree() != null) {
       target.setSchemeType(SchemeType.FIXED_UNITS);
-      target.setSchemePayFor(source.getSchemePayFor());
-      target.setSchemeFree(source.getSchemeFree());
+      target.setSchemePayFor(source.schemePayFor());
+      target.setSchemeFree(source.schemeFree());
       target.setScheme(null);
-    } else if (source.getScheme() != null) {
-      target.setScheme(source.getScheme());
+    } else if (source.scheme() != null) {
+      target.setScheme(source.scheme());
     }
-    if (source.getPurchaseSchemePayFor() != null || source.getPurchaseSchemeFree() != null) {
+    if (source.purchaseSchemePayFor() != null || source.purchaseSchemeFree() != null) {
       target.setPurchaseSchemeType(SchemeType.FIXED_UNITS);
-      target.setPurchaseSchemePayFor(source.getPurchaseSchemePayFor());
-      target.setPurchaseSchemeFree(source.getPurchaseSchemeFree());
+      target.setPurchaseSchemePayFor(source.purchaseSchemePayFor());
+      target.setPurchaseSchemeFree(source.purchaseSchemeFree());
     }
   }
 
-  default List<CreateInventoryItemRequest> toCreateInventoryItemRequestList(List<ParsedInventoryItem> parsedItems) {
+  default List<CreateInventoryItemRequest> toCreateInventoryItemRequestList(List<ParsedInvoiceItem> parsedItems) {
     if (parsedItems == null) {
       return Collections.emptyList();
     }
     List<CreateInventoryItemRequest> requests = new ArrayList<>();
-    for (ParsedInventoryItem item : parsedItems) {
+    for (ParsedInvoiceItem item : parsedItems) {
       try {
         requests.add(toCreateInventoryItemRequest(item));
       } catch (Exception e) {
@@ -146,19 +146,19 @@ public interface ParsedInventoryMapper {
   }
 
   @Named("mapCustomReminders")
-  default List<CustomReminderRequest> mapCustomReminders(List<ParsedReminderDto> parsedReminders) {
+  default List<CustomReminderRequest> mapCustomReminders(List<ParsedReminder> parsedReminders) {
     if (parsedReminders == null || parsedReminders.isEmpty()) {
       return null;
     }
     List<CustomReminderRequest> reminders = new ArrayList<>();
-    for (ParsedReminderDto r : parsedReminders) {
-      Instant at = parseInstant(r.getReminderAt());
-      Instant end = parseInstant(r.getEndDate());
+    for (ParsedReminder r : parsedReminders) {
+      Instant at = parseInstant(r.reminderAt());
+      Instant end = parseInstant(r.endDate());
       if (at != null || end != null) {
         CustomReminderRequest cr = new CustomReminderRequest();
         cr.setReminderAt(at);
         cr.setEndDate(end);
-        cr.setNotes(r.getNotes());
+        cr.setNotes(r.notes());
         reminders.add(cr);
       }
     }

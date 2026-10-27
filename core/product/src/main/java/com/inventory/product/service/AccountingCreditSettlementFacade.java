@@ -2,9 +2,8 @@ package com.inventory.product.service;
 
 import com.inventory.accounting.api.AccountingFacade;
 import com.inventory.accounting.api.PartySettlementPostingRequest;
-import com.inventory.accounting.domain.model.JournalSource;
+import com.inventory.accounting.api.JournalSource;
 import com.inventory.credit.domain.model.CreditEntry;
-import com.inventory.credit.domain.model.CreditEntryType;
 import com.inventory.credit.domain.model.CreditPartyType;
 import com.inventory.credit.domain.repository.CreditEntryRepository;
 import com.inventory.credit.rest.dto.request.CreateCreditSettlementRequest;
@@ -22,7 +21,8 @@ import org.springframework.util.StringUtils;
 
 /**
  * Posts vendor payment / customer settlement journal entries and credit ledger rows in one
- * transaction so the books and the credit module stay aligned.
+ * MongoDB transaction ({@link com.inventory.common.tx.MongoTx}) so the books and the credit module
+ * stay aligned.
  */
 @Service
 @Primary
@@ -32,13 +32,24 @@ public class AccountingCreditSettlementFacade implements CreditSettlementFacade 
   private final CreditService creditService;
   private final CreditEntryRepository creditEntryRepository;
 
-  @Autowired(required = false)
+  @Autowired
   private AccountingFacade accountingFacade;
 
+  @Autowired(required = false)
+  private com.inventory.common.tx.MongoTx mongoTx;
+
+  /** The journal and the credit row in one MongoDB transaction (both or neither). */
   @Override
   @Transactional
   public CreditEntry createSettlement(
       String shopId, String userId, CreateCreditSettlementRequest body) {
+    if (mongoTx != null) {
+      return mongoTx.run(com.inventory.common.tx.MongoTx.CREDIT_SETTLEMENT, shopId, () -> settle(shopId, userId, body));
+    }
+    return settle(shopId, userId, body);
+  }
+
+  private CreditEntry settle(String shopId, String userId, CreateCreditSettlementRequest body) {
     String settlementId = resolveSettlementId(body);
     String creditSourceKey = creditSourceKey(body.getPartyType(), settlementId);
 

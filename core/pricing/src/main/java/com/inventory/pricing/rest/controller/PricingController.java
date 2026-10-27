@@ -1,6 +1,8 @@
 package com.inventory.pricing.rest.controller;
 
 
+import com.inventory.common.heavy.HeavyKind;
+import com.inventory.common.heavy.HeavyRequest;
 import com.inventory.metrics.annotation.Latency;
 import com.inventory.metrics.annotation.RecordRequestRate;
 import com.inventory.metrics.annotation.RecordStatusCodes;
@@ -69,6 +71,7 @@ public class PricingController {
   /**
    * Bulk update default/selling price for multiple pricing records.
    */
+  @HeavyRequest(HeavyKind.IMPORT)
   @PostMapping("/bulk-update")
   public ResponseEntity<ApiResponse<List<PricingResponse>>> bulkUpdateDefaultPrice(
       @RequestBody BulkUpdateDefaultPriceRequest request,

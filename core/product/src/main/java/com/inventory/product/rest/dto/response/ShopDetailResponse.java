@@ -28,8 +28,6 @@ public class ShopDetailResponse {
   private String verticalId;
   private String pluginVersion;
   private ShopType shopType;
-  private String sgst;
-  private String cgst;
   private String status;
   private Instant createdAt;
 }

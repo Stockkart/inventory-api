@@ -16,8 +16,6 @@ public class RegisterShopRequest {
   private String fssai; // Optional: FSSAI license number
   private String dlNo; // Required for pharmacy/pharm business types
   private String panNo; // Optional: PAN number
-  private String sgst; // Optional: State GST
-  private String cgst; // Optional: Central GST
   private String tagline; // Optional: Shop tagline, banner word, or highlight text
   /** Shop type: RETAILER, DISTRIBUTOR, or WHOLESALER. For retailer, default price is MRP (tax-inclusive). */
   private ShopType shopType;

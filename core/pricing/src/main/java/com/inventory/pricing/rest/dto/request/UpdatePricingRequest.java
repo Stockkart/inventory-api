@@ -23,4 +23,7 @@ public class UpdatePricingRequest {
   private String cgst;
   /** Rate names to regenerate from their rule, clearing a per-batch override. Needs the grant. */
   private List<String> resetRates;
+
+  /** Fields to set to null, from {@code PricingConstants.CLEARABLE_FIELDS}; null fields above are kept. */
+  private java.util.Set<String> clearFields;
 }

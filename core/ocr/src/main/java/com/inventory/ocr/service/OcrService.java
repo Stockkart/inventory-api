@@ -2,7 +2,7 @@ package com.inventory.ocr.service;
 
 import com.inventory.metrics.MetricsWrapper;
 import com.inventory.ocr.dto.ParsedInventoryItem;
-import com.inventory.ocr.prompt.InvoicePricingLayout;
+import com.inventory.ocr.api.InvoicePricingLayout;
 import com.inventory.ocr.provider.OcrProvider;
 import com.inventory.ocr.utils.constants.OcrMetricsConstants;
 import lombok.extern.slf4j.Slf4j;

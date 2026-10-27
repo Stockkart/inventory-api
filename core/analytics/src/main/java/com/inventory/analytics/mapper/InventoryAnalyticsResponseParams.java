@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.util.List;
+import java.util.Map;
 
 @Data
 @Builder
@@ -18,6 +19,8 @@ public class InventoryAnalyticsResponseParams {
   private List<InventoryAnalyticsDto> expiredItems;
   private List<InventoryAnalyticsDto> deadStockItems;
   private List<InventoryAnalyticsDto> allItems;
+  private Map<String, Integer> listTotals;
+  private Integer listLimit;
   private Integer lowStockThreshold;
   private Integer deadStockDays;
   private Integer expiringSoonDays;
