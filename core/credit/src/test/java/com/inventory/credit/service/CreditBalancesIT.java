@@ -3,8 +3,8 @@ package com.inventory.credit.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.inventory.credit.domain.model.CreditAccount;
-import com.inventory.credit.domain.model.CreditBalanceStatus;
-import com.inventory.credit.domain.model.CreditPartyType;
+import com.inventory.credit.api.CreditBalanceStatus;
+import com.inventory.credit.api.CreditPartyType;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.model.IndexOptions;

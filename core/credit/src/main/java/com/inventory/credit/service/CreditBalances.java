@@ -1,8 +1,8 @@
 package com.inventory.credit.service;
 
 import com.inventory.credit.domain.model.CreditAccount;
-import com.inventory.credit.domain.model.CreditBalanceStatus;
-import com.inventory.credit.domain.model.CreditPartyType;
+import com.inventory.credit.api.CreditBalanceStatus;
+import com.inventory.credit.api.CreditPartyType;
 import com.mongodb.MongoWriteException;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.Filters;

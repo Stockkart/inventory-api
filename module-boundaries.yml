@@ -42,7 +42,7 @@ modules:
     dependsOn: [common, metrics]
     collections: [coa_accounts, journal_entries, ledger_entries, fiscal_periods, accounting_sequences]
   credit:
-    dependsOn: [common, user, metrics]
+    dependsOn: [common, user, metrics, accounting]
     collections: [credit_accounts, credit_entries]
   plan:
     dependsOn: [common, user, metrics]

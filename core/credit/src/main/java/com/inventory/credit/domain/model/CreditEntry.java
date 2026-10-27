@@ -1,5 +1,8 @@
 package com.inventory.credit.domain.model;
 
+import com.inventory.credit.api.CreditDirection;
+import com.inventory.credit.api.CreditEntryType;
+import com.inventory.credit.api.CreditPartyType;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;

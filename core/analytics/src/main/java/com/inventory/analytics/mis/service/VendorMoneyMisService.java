@@ -12,12 +12,12 @@ import com.inventory.analytics.mis.support.MisMoneyTenderHelper.TenderSplit;
 import com.inventory.analytics.mis.support.MisReportSupport;
 import com.inventory.analytics.mis.support.MisTabularDocumentFactory;
 import com.inventory.analytics.utils.constants.AnalyticsMetricsConstants;
-import com.inventory.credit.domain.model.CreditAccount;
-import com.inventory.credit.domain.model.CreditDirection;
-import com.inventory.credit.domain.model.CreditEntry;
-import com.inventory.credit.domain.model.CreditEntryType;
-import com.inventory.credit.domain.model.CreditPartyType;
-import com.inventory.credit.service.CreditService;
+import com.inventory.credit.api.CreditAccountView;
+import com.inventory.credit.api.CreditDirection;
+import com.inventory.credit.api.CreditEntryType;
+import com.inventory.credit.api.CreditEntryView;
+import com.inventory.credit.api.CreditLedger;
+import com.inventory.credit.api.CreditPartyType;
 import com.inventory.documentservice.api.MisDocuments;
 import com.inventory.documentservice.api.MisTabularDocument;
 import com.inventory.metrics.MetricsWrapper;
@@ -51,7 +51,7 @@ public class VendorMoneyMisService {
   private static final String RETURN_CREDIT_PREFIX = "RETURN:CREDIT:";
   private static final String SALE_CREDIT_PREFIX = "SALE:CREDIT:";
 
-  private final CreditService creditService;
+  private final CreditLedger creditLedger;
   private final MisProductQueryService misProductQueryService;
   private final MisDocuments misDocuments;
   private final MetricsWrapper metrics;
@@ -160,10 +160,10 @@ public class VendorMoneyMisService {
     Instant fromInst = MisDateRangeHelper.startOfDay(from);
     Instant toInst = MisDateRangeHelper.startOfNextDay(to);
 
-    List<CreditAccount> accounts =
-        creditService.listAccountsByPartyType(shopId, CreditPartyType.VENDOR);
-    List<CreditEntry> allEntries =
-        creditService.listEntriesByPartyType(shopId, CreditPartyType.VENDOR);
+    List<CreditAccountView> accounts =
+        creditLedger.accounts(shopId, CreditPartyType.VENDOR);
+    List<CreditEntryView> allEntries =
+        creditLedger.entries(shopId, CreditPartyType.VENDOR);
 
     List<VendorPurchaseInvoice> invoices =
         misProductQueryService.findVendorInvoicesByInvoiceDate(shopId, fromInst, toInst);
@@ -181,8 +181,8 @@ public class VendorMoneyMisService {
 
     Set<String> vendorIds = new HashSet<>();
     accounts.forEach(a -> {
-      if (StringUtils.hasText(a.getPartyRefId())) {
-        vendorIds.add(a.getPartyRefId().trim());
+      if (StringUtils.hasText(a.partyRefId())) {
+        vendorIds.add(a.partyRefId().trim());
       }
     });
     invoices.forEach(i -> {
@@ -197,8 +197,8 @@ public class VendorMoneyMisService {
       }
     }
     allEntries.forEach(e -> {
-      if (StringUtils.hasText(e.getPartyRefId())) {
-        vendorIds.add(e.getPartyRefId().trim());
+      if (StringUtils.hasText(e.partyRefId())) {
+        vendorIds.add(e.partyRefId().trim());
       }
     });
     if (vendorFilter != null) {
@@ -207,22 +207,22 @@ public class VendorMoneyMisService {
     }
 
     Map<String, String> vendorNames = misProductQueryService.resolveVendorNames(vendorIds);
-    Map<String, CreditAccount> accountByVendor = new HashMap<>();
-    for (CreditAccount a : accounts) {
-      if (StringUtils.hasText(a.getPartyRefId())) {
-        accountByVendor.put(a.getPartyRefId().trim(), a);
+    Map<String, CreditAccountView> accountByVendor = new HashMap<>();
+    for (CreditAccountView a : accounts) {
+      if (StringUtils.hasText(a.partyRefId())) {
+        accountByVendor.put(a.partyRefId().trim(), a);
         vendorNames.putIfAbsent(
-            a.getPartyRefId().trim(),
-            StringUtils.hasText(a.getPartyDisplayName())
-                ? a.getPartyDisplayName().trim()
-                : a.getPartyRefId());
+            a.partyRefId().trim(),
+            StringUtils.hasText(a.partyDisplayName())
+                ? a.partyDisplayName().trim()
+                : a.partyRefId());
       }
     }
 
-    Map<String, List<CreditEntry>> entriesByVendor =
+    Map<String, List<CreditEntryView>> entriesByVendor =
         allEntries.stream()
-            .filter(e -> StringUtils.hasText(e.getPartyRefId()))
-            .collect(Collectors.groupingBy(e -> e.getPartyRefId().trim()));
+            .filter(e -> StringUtils.hasText(e.partyRefId()))
+            .collect(Collectors.groupingBy(e -> e.partyRefId().trim()));
 
     List<MisMoneyRowDto> allRows = new ArrayList<>();
     List<MisMoneyPartySummaryDto> partySummaries = new ArrayList<>();
@@ -236,10 +236,10 @@ public class VendorMoneyMisService {
 
     for (String vendorId : vendorIds.stream().sorted().toList()) {
       String vendorName = vendorNames.getOrDefault(vendorId, "Vendor");
-      CreditAccount account = accountByVendor.get(vendorId);
+      CreditAccountView account = accountByVendor.get(vendorId);
       BigDecimal current =
-          MisMoneyTenderHelper.nz(account != null ? account.getCurrentBalance() : BigDecimal.ZERO);
-      List<CreditEntry> vendorEntries =
+          MisMoneyTenderHelper.nz(account != null ? account.currentBalance() : BigDecimal.ZERO);
+      List<CreditEntryView> vendorEntries =
           entriesByVendor.getOrDefault(vendorId, List.of());
 
       BigDecimal opening = computeOpening(current, vendorEntries, from);
@@ -258,8 +258,8 @@ public class VendorMoneyMisService {
         }
         periodEvents.add(fromReturn(ret, inv, vendorId, vendorName));
       }
-      for (CreditEntry entry : vendorEntries) {
-        LocalDate d = MisDateRangeHelper.businessDate(entry.getTxnDate(), entry.getCreatedAt());
+      for (CreditEntryView entry : vendorEntries) {
+        LocalDate d = MisDateRangeHelper.businessDate(entry.txnDate(), entry.createdAt());
         if (d == null || d.isBefore(from) || d.isAfter(to)) {
           continue;
         }
@@ -359,17 +359,17 @@ public class VendorMoneyMisService {
   }
 
   private static BigDecimal computeOpening(
-      BigDecimal current, List<CreditEntry> entries, LocalDate from) {
+      BigDecimal current, List<CreditEntryView> entries, LocalDate from) {
     BigDecimal netOnOrAfter = BigDecimal.ZERO;
-    for (CreditEntry e : entries) {
-      LocalDate d = MisDateRangeHelper.businessDate(e.getTxnDate(), e.getCreatedAt());
+    for (CreditEntryView e : entries) {
+      LocalDate d = MisDateRangeHelper.businessDate(e.txnDate(), e.createdAt());
       if (d == null || d.isBefore(from)) {
         continue;
       }
-      BigDecimal amt = MisMoneyTenderHelper.nz(e.getAmount());
-      if (e.getDirection() == CreditDirection.INCREASE_DUE) {
+      BigDecimal amt = MisMoneyTenderHelper.nz(e.amount());
+      if (e.direction() == CreditDirection.INCREASE_DUE) {
         netOnOrAfter = netOnOrAfter.add(amt);
-      } else if (e.getDirection() == CreditDirection.DECREASE_DUE) {
+      } else if (e.direction() == CreditDirection.DECREASE_DUE) {
         netOnOrAfter = netOnOrAfter.subtract(amt);
       }
     }
@@ -472,55 +472,55 @@ public class VendorMoneyMisService {
   }
 
   private static MisMoneyRowDto fromCreditEntry(
-      CreditEntry entry, String vendorId, String vendorName) {
-    if (entry.getEntryType() == CreditEntryType.SETTLEMENT) {
+      CreditEntryView entry, String vendorId, String vendorName) {
+    if (entry.entryType() == CreditEntryType.SETTLEMENT) {
       TenderSplit split =
-          MisMoneyTenderHelper.splitPaid(entry.getAmount(), entry.getPaymentMethod());
-      BigDecimal total = MisMoneyTenderHelper.nz(entry.getAmount());
-      boolean adjustment = MisMoneyTenderHelper.isAdjustmentMethod(entry.getPaymentMethod());
+          MisMoneyTenderHelper.splitPaid(entry.amount(), entry.paymentMethod());
+      BigDecimal total = MisMoneyTenderHelper.nz(entry.amount());
+      boolean adjustment = MisMoneyTenderHelper.isAdjustmentMethod(entry.paymentMethod());
       return MisMoneyRowDto.builder()
-          .txnId(MisReportSupport.resolveTxnId(entry.getTxnId(), entry.getId()))
+          .txnId(MisReportSupport.resolveTxnId(entry.txnId(), entry.id()))
           .txnType(MisVendorTxnType.PAYMENT.name())
           .txnTypeLabel(MisVendorTxnType.PAYMENT.label())
           .partyId(vendorId)
           .partyName(vendorName)
-          .txnDate(MisDateRangeHelper.businessDate(entry.getTxnDate(), entry.getCreatedAt()))
-          .postedAt(entry.getCreatedAt())
-          .refNo(entry.getBankRef())
+          .txnDate(MisDateRangeHelper.businessDate(entry.txnDate(), entry.createdAt()))
+          .postedAt(entry.createdAt())
+          .refNo(entry.bankRef())
           .totalAmount(total)
           .cashAmount(adjustment ? BigDecimal.ZERO : split.cash())
           .onlineAmount(adjustment ? BigDecimal.ZERO : split.online())
           .creditAmount(BigDecimal.ZERO)
           .sourceType("CREDIT_SETTLEMENT")
-          .sourceId(entry.getId())
+          .sourceId(entry.id())
           .opening(false)
           .build();
     }
-    if (entry.getEntryType() == CreditEntryType.CHARGE && isManualCharge(entry)) {
-      BigDecimal total = MisMoneyTenderHelper.nz(entry.getAmount());
+    if (entry.entryType() == CreditEntryType.CHARGE && isManualCharge(entry)) {
+      BigDecimal total = MisMoneyTenderHelper.nz(entry.amount());
       return MisMoneyRowDto.builder()
-          .txnId(MisReportSupport.resolveTxnId(entry.getTxnId(), entry.getId()))
+          .txnId(MisReportSupport.resolveTxnId(entry.txnId(), entry.id()))
           .txnType(MisVendorTxnType.CREDIT_CHARGE.name())
           .txnTypeLabel(MisVendorTxnType.CREDIT_CHARGE.label())
           .partyId(vendorId)
           .partyName(vendorName)
-          .txnDate(MisDateRangeHelper.businessDate(entry.getTxnDate(), entry.getCreatedAt()))
-          .postedAt(entry.getCreatedAt())
-          .refNo(entry.getNote())
+          .txnDate(MisDateRangeHelper.businessDate(entry.txnDate(), entry.createdAt()))
+          .postedAt(entry.createdAt())
+          .refNo(entry.note())
           .totalAmount(total)
           .cashAmount(BigDecimal.ZERO)
           .onlineAmount(BigDecimal.ZERO)
           .creditAmount(total)
           .sourceType("CREDIT_CHARGE")
-          .sourceId(entry.getId())
+          .sourceId(entry.id())
           .opening(false)
           .build();
     }
     return null;
   }
 
-  private static boolean isManualCharge(CreditEntry entry) {
-    String sk = entry.getSourceKey();
+  private static boolean isManualCharge(CreditEntryView entry) {
+    String sk = entry.sourceKey();
     if (StringUtils.hasText(sk)) {
       String u = sk.trim().toUpperCase(Locale.ROOT);
       if (u.startsWith(PURCHASE_CREDIT_PREFIX)
@@ -529,7 +529,7 @@ public class VendorMoneyMisService {
         return false;
       }
     }
-    String ref = entry.getReferenceType();
+    String ref = entry.referenceType();
     if (StringUtils.hasText(ref)) {
       String r = ref.trim().toUpperCase(Locale.ROOT);
       if ("PURCHASE".equals(r) || "SALE".equals(r) || "RETURN".equals(r)) {

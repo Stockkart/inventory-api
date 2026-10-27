@@ -1,4 +1,4 @@
-package com.inventory.credit.domain.model;
+package com.inventory.credit.api;
 
 public enum CreditBalanceStatus {
   CLEAR,

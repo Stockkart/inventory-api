@@ -141,11 +141,8 @@ public class CheckoutService {
   @Autowired(required = false)
   private com.inventory.metrics.MetricsWrapper metrics;
 
-  @Autowired(required = false)
-  private com.inventory.credit.service.CreditService creditService;
-
-  @Autowired(required = false)
-  private com.inventory.credit.service.CreditChargeFacade creditChargeFacade;
+  @Autowired
+  private com.inventory.credit.api.CreditLedger creditLedger;
 
   @Autowired
   private com.inventory.accounting.api.AccountingFacade accountingFacade;
@@ -2223,7 +2220,7 @@ public class CheckoutService {
     if (purchase == null) {
       return null;
     }
-    if (creditChargeFacade == null && creditService == null) {
+    if (creditLedger == null) {
       return null;
     }
     BigDecimal total = nzMoney(purchase.getGrandTotal());
@@ -2242,27 +2239,24 @@ public class CheckoutService {
           "Customer must be selected for credit/split sale so due can be tracked.");
     }
 
-    com.inventory.credit.rest.dto.request.CreateCreditChargeRequest charge =
-        new com.inventory.credit.rest.dto.request.CreateCreditChargeRequest();
-    charge.setPartyType(com.inventory.credit.domain.model.CreditPartyType.CUSTOMER);
-    charge.setPartyId(purchase.getCustomerId().trim());
-    charge.setPartyDisplayName(resolveCustomerPartyDisplayNameForCredit(purchase));
-    charge.setPartyPhone(null);
-    charge.setAmount(payment.receivable());
-    charge.setReferenceType("SALE");
-    charge.setReferenceId(purchase.getId());
-    charge.setSourceKey("SALE:CREDIT:" + purchase.getId());
-    charge.setNote(
-        "Sale due"
-            + (StringUtils.hasText(purchase.getInvoiceNo())
-                ? " · Inv " + purchase.getInvoiceNo().trim()
-                : ""));
+    com.inventory.credit.api.CreditCharge charge =
+        com.inventory.credit.api.CreditCharge.builder()
+            .partyType(com.inventory.credit.api.CreditPartyType.CUSTOMER)
+            .partyId(purchase.getCustomerId().trim())
+            .partyDisplayName(resolveCustomerPartyDisplayNameForCredit(purchase))
+            .partyPhone(null)
+            .amount(payment.receivable())
+            .referenceType("SALE")
+            .referenceId(purchase.getId())
+            .sourceKey("SALE:CREDIT:" + purchase.getId())
+            .note(
+                "Sale due"
+                    + (StringUtils.hasText(purchase.getInvoiceNo())
+                        ? " · Inv " + purchase.getInvoiceNo().trim()
+                        : ""))
+            .build();
 
-    com.inventory.credit.domain.model.CreditEntry entry =
-        creditChargeFacade != null
-            ? creditChargeFacade.createCharge(shopId, userId, charge)
-            : creditService.createCharge(shopId, userId, charge);
-    return entry != null ? entry.getId() : null;
+    return creditLedger.charge(shopId, userId, charge);
   }
 
   private static void applyPaymentSplitToPurchase(
