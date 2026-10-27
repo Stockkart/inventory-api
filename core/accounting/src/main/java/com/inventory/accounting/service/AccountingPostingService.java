@@ -9,11 +9,11 @@ import com.inventory.accounting.api.PostJournalRequest;
 import com.inventory.accounting.domain.model.Account;
 import com.inventory.accounting.domain.model.JournalEntry;
 import com.inventory.accounting.domain.model.JournalLine;
-import com.inventory.accounting.domain.model.JournalSource;
-import com.inventory.accounting.domain.model.JournalStatus;
+import com.inventory.accounting.api.JournalSource;
+import com.inventory.accounting.api.JournalStatus;
 import com.inventory.accounting.domain.model.LedgerEntry;
 import com.inventory.accounting.domain.model.NormalBalance;
-import com.inventory.accounting.domain.model.PartyType;
+import com.inventory.accounting.api.PartyType;
 import com.inventory.accounting.domain.repository.JournalEntryRepository;
 import com.inventory.accounting.domain.repository.LedgerEntryRepository;
 import com.inventory.accounting.utils.constants.AccountingMetricsConstants;
@@ -26,14 +26,15 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -57,6 +58,7 @@ public class AccountingPostingService {
   private final AccountService accountService;
   private final JournalEntrySequenceService sequenceService;
   private final MetricsWrapper metrics;
+  private final AccountLedgerBalances ledgerBalances;
 
   /**
    * Optional plug-in tested with {@code @Autowired(required = false)} so callers without a clock
@@ -68,10 +70,11 @@ public class AccountingPostingService {
   @Transactional
   public JournalEntry post(String shopId, String userId, PostJournalRequest req) {
     validateRequest(req);
-    accountService.ensureSeeded(shopId);
+    // the seeding check reads the whole chart; the lines below resolve from it
+    ChartLookup chart = new ChartLookup(accountService.ensureSeededAndList(shopId));
 
-    JournalSource sourceType = req.getSourceType();
-    String sourceId = trim(req.getSourceId());
+    JournalSource sourceType = req.sourceType();
+    String sourceId = trim(req.sourceId());
     if (sourceType != null && sourceId != null) {
       Optional<JournalEntry> existing =
           journalEntryRepository.findByShopIdAndSourceTypeAndSourceId(shopId, sourceType, sourceId);
@@ -88,15 +91,15 @@ public class AccountingPostingService {
     }
 
     Map<String, Account> accountCache = new HashMap<>();
-    List<JournalLine> lines = new ArrayList<>(req.getLines().size());
+    List<JournalLine> lines = new ArrayList<>(req.lines().size());
     BigDecimal totalDebit = zero();
     BigDecimal totalCredit = zero();
 
     int idx = 0;
-    for (PostJournalLine in : req.getLines()) {
-      Account a = resolveAccount(shopId, in, accountCache);
-      BigDecimal debit = nz(in.getDebit());
-      BigDecimal credit = nz(in.getCredit());
+    for (PostJournalLine in : req.lines()) {
+      Account a = resolveAccount(shopId, in, chart, accountCache);
+      BigDecimal debit = nz(in.debit());
+      BigDecimal credit = nz(in.credit());
       if (debit.signum() < 0 || credit.signum() < 0) {
         throw new ValidationException("Journal line amounts must be non-negative");
       }
@@ -118,10 +121,10 @@ public class AccountingPostingService {
               .accountName(a.getName())
               .debit(debit)
               .credit(credit)
-              .partyType(in.getPartyType())
-              .partyRefId(trim(in.getPartyRefId()))
-              .partyDisplayName(trim(in.getPartyDisplayName()))
-              .memo(trim(in.getMemo()))
+              .partyType(in.partyType())
+              .partyRefId(trim(in.partyRefId()))
+              .partyDisplayName(trim(in.partyDisplayName()))
+              .memo(trim(in.memo()))
               .build();
       lines.add(line);
       totalDebit = scale(totalDebit.add(debit));
@@ -138,7 +141,7 @@ public class AccountingPostingService {
 
     Instant now = now();
     LocalDate txnDate =
-        req.getTxnDate() != null ? req.getTxnDate() : LocalDate.ofInstant(now, ZoneOffset.UTC);
+        req.txnDate() != null ? req.txnDate() : LocalDate.ofInstant(now, ZoneOffset.UTC);
 
     JournalEntry entry = new JournalEntry();
     entry.setShopId(shopId);
@@ -147,9 +150,9 @@ public class AccountingPostingService {
     entry.setPostedAt(now);
     entry.setSourceType(sourceType != null ? sourceType : JournalSource.MANUAL);
     entry.setSourceId(sourceId);
-    entry.setSourceKey(trim(req.getSourceKey()));
+    entry.setSourceKey(trim(req.sourceKey()));
     entry.setStatus(JournalStatus.POSTED);
-    entry.setNarration(trim(req.getNarration()));
+    entry.setNarration(trim(req.narration()));
     entry.setLines(lines);
     entry.setTotalDebit(totalDebit);
     entry.setTotalCredit(totalCredit);
@@ -158,6 +161,16 @@ public class AccountingPostingService {
     try {
       entry = journalEntryRepository.save(entry);
     } catch (DuplicateKeyException dup) {
+      // a concurrent post of the same source won the insert (JournalSourceIndexMigration's
+      // unique index): idempotent, so hand back its entry. Without a source (or when the clash
+      // was another unique key and no entry for the source exists) the error stands.
+      if (com.inventory.common.tx.MongoTx.inTransaction()) {
+        // inside MongoTx.run the failed insert has aborted the transaction, so no read may
+        // follow it here (AGENTS.md P8): the flow ends and saves nothing. A clash with another
+        // container's open transaction comes back as a write conflict instead; MongoTx runs the
+        // flow again and the pre-check above then returns the entry that won.
+        throw dup;
+      }
       if (sourceType != null && sourceId != null) {
         JournalEntry existingDup =
             journalEntryRepository
@@ -186,30 +199,32 @@ public class AccountingPostingService {
       throw new ValidationException("Journal entry already reversed");
     }
 
-    PostJournalRequest req = new PostJournalRequest();
-    req.setSourceType(JournalSource.REVERSAL);
-    req.setSourceId("REV:" + original.getId());
-    req.setSourceKey(req.getSourceId());
-    req.setNarration(
-        "Reversal of "
-            + (StringUtils.hasText(original.getEntryNo()) ? original.getEntryNo() : original.getId())
-            + (StringUtils.hasText(reason) ? " — " + reason.trim() : ""));
-    req.setTxnDate(original.getTxnDate() != null ? original.getTxnDate() : LocalDate.now());
-
     List<PostJournalLine> rev = new ArrayList<>();
     for (JournalLine l : original.getLines()) {
-      PostJournalLine rl = new PostJournalLine();
-      rl.setAccountId(l.getAccountId());
-      rl.setAccountCode(l.getAccountCode());
-      rl.setDebit(nz(l.getCredit()));
-      rl.setCredit(nz(l.getDebit()));
-      rl.setPartyType(l.getPartyType());
-      rl.setPartyRefId(l.getPartyRefId());
-      rl.setPartyDisplayName(l.getPartyDisplayName());
-      rl.setMemo(l.getMemo());
+      PostJournalLine rl = PostJournalLine.builder()
+          .accountId(l.getAccountId())
+          .accountCode(l.getAccountCode())
+          .debit(nz(l.getCredit()))
+          .credit(nz(l.getDebit()))
+          .partyType(l.getPartyType())
+          .partyRefId(l.getPartyRefId())
+          .partyDisplayName(l.getPartyDisplayName())
+          .memo(l.getMemo())
+          .build();
       rev.add(rl);
     }
-    req.setLines(rev);
+    String sourceId = "REV:" + original.getId();
+    PostJournalRequest req = PostJournalRequest.builder()
+        .sourceType(JournalSource.REVERSAL)
+        .sourceId(sourceId)
+        .sourceKey(sourceId)
+        .narration(
+            "Reversal of "
+                + (StringUtils.hasText(original.getEntryNo()) ? original.getEntryNo() : original.getId())
+                + (StringUtils.hasText(reason) ? " — " + reason.trim() : ""))
+        .txnDate(original.getTxnDate() != null ? original.getTxnDate() : LocalDate.now())
+        .lines(rev)
+        .build();
 
     JournalEntry reversal = post(shopId, userId, req);
     reversal.setReversesEntryId(original.getId());
@@ -224,61 +239,87 @@ public class AccountingPostingService {
   }
 
   private void persistLedger(JournalEntry entry, Map<String, Account> accountCache) {
-    Map<String, BigDecimal> runningByAccount = new HashMap<>();
-    List<LedgerEntry> rows = new ArrayList<>(entry.getLines().size());
+    // Each account this entry touches moves once, atomically, by the entry's total for it; the
+    // balance after each of its lines is read back from the account's new balance.
+    Map<String, Account> accountsById = new java.util.LinkedHashMap<>();
+    Map<String, BigDecimal> totalByAccount = new java.util.LinkedHashMap<>();
     for (JournalLine l : entry.getLines()) {
       Account a = accountCache.get(l.getAccountId());
       if (a == null) {
         a = accountService.findByIdOrThrow(entry.getShopId(), l.getAccountId());
         accountCache.put(a.getId(), a);
       }
-      final Account account = a;
-      BigDecimal prior =
-          runningByAccount.computeIfAbsent(
-              account.getId(),
-              key -> latestBalanceFor(entry.getShopId(), key, account.getNormalBalance()));
-      BigDecimal delta = signedDelta(a.getNormalBalance(), nz(l.getDebit()), nz(l.getCredit()));
-      BigDecimal balanceAfter = scale(prior.add(delta));
-      runningByAccount.put(a.getId(), balanceAfter);
-
-      LedgerEntry row =
-          LedgerEntry.builder()
-              .shopId(entry.getShopId())
-              .accountId(a.getId())
-              .accountCode(a.getCode())
-              .accountName(a.getName())
-              .accountType(a.getType())
-              .normalBalance(a.getNormalBalance())
-              .journalEntryId(entry.getId())
-              .journalEntryNo(entry.getEntryNo())
-              .lineIndex(l.getLineIndex())
-              .sourceType(entry.getSourceType())
-              .sourceId(entry.getSourceId())
-              .txnDate(entry.getTxnDate())
-              .postedAt(entry.getPostedAt())
-              .debit(nz(l.getDebit()))
-              .credit(nz(l.getCredit()))
-              .balanceAfter(balanceAfter)
-              .partyType(l.getPartyType())
-              .partyRefId(l.getPartyRefId())
-              .partyDisplayName(l.getPartyDisplayName())
-              .narration(StringUtils.hasText(l.getMemo()) ? l.getMemo() : entry.getNarration())
-              .build();
-      rows.add(row);
+      accountsById.put(a.getId(), a);
+      totalByAccount.merge(
+          a.getId(), signedDelta(a.getNormalBalance(), nz(l.getDebit()), nz(l.getCredit())), BigDecimal::add);
     }
-    ledgerEntryRepository.saveAll(rows);
+
+    Map<String, BigDecimal> runningByAccount = new HashMap<>();
+    Map<String, Instant> movedAtByAccount = new HashMap<>();
+    Map<String, BigDecimal> applied = new java.util.LinkedHashMap<>();
+    try {
+      for (Map.Entry<String, BigDecimal> t : totalByAccount.entrySet()) {
+        AccountLedgerBalances.Moved moved = ledgerBalances.add(entry.getShopId(), t.getKey(), t.getValue());
+        applied.put(t.getKey(), t.getValue());
+        runningByAccount.put(t.getKey(), scale(moved.balance().subtract(t.getValue()))); // before this entry
+        movedAtByAccount.put(t.getKey(), moved.at());
+      }
+
+      List<LedgerEntry> rows = new ArrayList<>(entry.getLines().size());
+      for (JournalLine l : entry.getLines()) {
+        Account a = accountsById.get(l.getAccountId());
+        BigDecimal delta = signedDelta(a.getNormalBalance(), nz(l.getDebit()), nz(l.getCredit()));
+        BigDecimal balanceAfter = scale(runningByAccount.get(a.getId()).add(delta));
+        runningByAccount.put(a.getId(), balanceAfter);
+        rows.add(ledgerRow(entry, a, l, balanceAfter, movedAtByAccount.get(a.getId())));
+      }
+      ledgerEntryRepository.saveAll(rows);
+    } catch (RuntimeException e) {
+      if (com.inventory.common.tx.MongoTx.inTransaction()) {
+        throw e; // the transaction takes the balances back with everything else
+      }
+      applied.forEach((accountId, total) -> {
+        try {
+          ledgerBalances.undo(entry.getShopId(), accountId, total);
+        } catch (RuntimeException undoFailed) {
+          log.error(
+              "Could not take back ledger balance {} of account {} (journal {}); balance is ahead of its rows",
+              total, accountId, entry.getId(), undoFailed);
+        }
+      });
+      throw e;
+    }
   }
 
-  private BigDecimal latestBalanceFor(String shopId, String accountId, NormalBalance nb) {
-    var page =
-        ledgerEntryRepository.findByShopIdAndAccountIdOrderByPostedAtAsc(
-            shopId, accountId, PageRequest.of(0, 1, org.springframework.data.domain.Sort.by(
-                org.springframework.data.domain.Sort.Direction.DESC, "postedAt")));
-    if (page.isEmpty()) {
-      return zero();
-    }
-    BigDecimal balanceAfter = page.getContent().get(0).getBalanceAfter();
-    return balanceAfter != null ? scale(balanceAfter) : zero();
+  /**
+   * {@code postedAt} of the row is when its account's balance moved ({@link AccountLedgerBalances}),
+   * a few milliseconds after the journal's own {@code postedAt}: rows then list in the order their
+   * balances were applied.
+   */
+  private static LedgerEntry ledgerRow(
+      JournalEntry entry, Account a, JournalLine l, BigDecimal balanceAfter, Instant movedAt) {
+    return LedgerEntry.builder()
+        .shopId(entry.getShopId())
+        .accountId(a.getId())
+        .accountCode(a.getCode())
+        .accountName(a.getName())
+        .accountType(a.getType())
+        .normalBalance(a.getNormalBalance())
+        .journalEntryId(entry.getId())
+        .journalEntryNo(entry.getEntryNo())
+        .lineIndex(l.getLineIndex())
+        .sourceType(entry.getSourceType())
+        .sourceId(entry.getSourceId())
+        .txnDate(entry.getTxnDate())
+        .postedAt(movedAt != null ? movedAt : entry.getPostedAt())
+        .debit(nz(l.getDebit()))
+        .credit(nz(l.getCredit()))
+        .balanceAfter(balanceAfter)
+        .partyType(l.getPartyType())
+        .partyRefId(l.getPartyRefId())
+        .partyDisplayName(l.getPartyDisplayName())
+        .narration(StringUtils.hasText(l.getMemo()) ? l.getMemo() : entry.getNarration())
+        .build();
   }
 
   private static BigDecimal signedDelta(
@@ -289,30 +330,68 @@ public class AccountingPostingService {
   }
 
   private Account resolveAccount(
-      String shopId, PostJournalLine in, Map<String, Account> cache) {
-    String id = trim(in.getAccountId());
+      String shopId, PostJournalLine in, ChartLookup chart, Map<String, Account> cache) {
+    String id = trim(in.accountId());
     if (id != null) {
       Account a = cache.get(id);
       if (a == null) {
-        a = accountService.findByIdOrThrow(shopId, id);
-        cache.put(a.getId(), a);
+        a = chart.byId(id);
       }
+      if (a == null) {
+        // not this shop's chart (or just created): the lookup that says which
+        a = accountService.findByIdOrThrow(shopId, id);
+      }
+      cache.put(a.getId(), a);
       return a;
     }
-    String code = trim(in.getAccountCode());
+    String code = trim(in.accountCode());
     if (code == null) {
       throw new ValidationException("Either accountCode or accountId is required for every line");
     }
-    Account a = accountService.findByCodeOrThrow(shopId, code);
+    Account a = chart.byCode(code);
+    if (a == null) {
+      // missing or ambiguous in the chart: the lookup that says which
+      a = accountService.findByCodeOrThrow(shopId, code);
+    }
     cache.put(a.getId(), a);
     return a;
+  }
+
+  /** The shop's chart of accounts, read once per posting, by id and by code. */
+  private static final class ChartLookup {
+    private final Map<String, Account> byId = new HashMap<>();
+    private final Map<String, Account> byCode = new HashMap<>();
+    private final Set<String> ambiguousCodes = new HashSet<>();
+
+    ChartLookup(List<Account> accounts) {
+      if (accounts == null) {
+        return;
+      }
+      for (Account a : accounts) {
+        if (a == null || a.getId() == null) {
+          continue;
+        }
+        byId.put(a.getId(), a);
+        if (a.getCode() != null && byCode.putIfAbsent(a.getCode(), a) != null) {
+          ambiguousCodes.add(a.getCode());
+        }
+      }
+    }
+
+    Account byId(String id) {
+      return byId.get(id);
+    }
+
+    Account byCode(String code) {
+      return ambiguousCodes.contains(code) ? null : byCode.get(code);
+    }
   }
 
   private static void validateRequest(PostJournalRequest req) {
     if (req == null) {
       throw new ValidationException("Posting request is required");
     }
-    if (req.getLines() == null || req.getLines().size() < 2) {
+    if (req.lines() == null || req.lines().size() < 2) {
       throw new ValidationException("Journal entry needs at least two lines");
     }
   }

@@ -18,4 +18,10 @@ public class MemberModulePermissions {
   private Boolean paymentPlan;
   /** Explicit grant to edit products from product search / detail modal. */
   private Boolean productSearchEdit;
+  /**
+   * Per-member HR switch. {@code null} = enabled (the default for every role); the shop's HR role
+   * grid then decides which HR actions the member may take. {@code false} leaves only HR
+   * self-service.
+   */
+  private Boolean hr;
 }

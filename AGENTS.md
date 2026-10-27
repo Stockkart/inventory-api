@@ -15,7 +15,7 @@ Cross-repo topics live in the handbook: handbook ARCHITECTURE.md (planned), hand
 - S3. Persist with Spring Data MongoDB only. No SQL or JPA. Ref: `core/pom.xml`
 - S4. Use Lombok (BOM version) and MapStruct 1.5.5.Final for boilerplate and mapping. Ref: `core/pom.xml`
 - S5. Use jqwik 1.9.2 for property tests; it is declared in product only. Ref: `core/product/pom.xml`
-- S6. Use Apache POI 5.2.5, openhtmltopdf 1.0.10 and Thymeleaf for documents, in documentservice only. Ref: `core/documentservice/pom.xml`
+- S6. Use Apache POI 5.2.5, openhtmltopdf 1.0.10 and Thymeleaf for documents, in documentservice only; ocr also uses POI to read Excel stock sheets (`ExcelStockParser`). Ref: `core/documentservice/pom.xml`
 - S7. Build with Maven 3.9+. There is no `mvnw` script; only the wrapper properties file exists. Ref: `app/.mvn/wrapper/maven-wrapper.properties`
 - S8. Test with JUnit 5, Mockito and AssertJ from `spring-boot-starter-test`. Surefire preloads the byte-buddy agent through `argLine`; keep it. Ref: `pom.xml`
 
@@ -28,7 +28,7 @@ Cross-repo topics live in the handbook: handbook ARCHITECTURE.md (planned), hand
 | `pluginengine/` | Vertical plugin SPI and `PluginRegistry` |
 | `plugins/<vertical>/` | medical, grocery, sports, cafe |
 | `docs/` | `deploying.md`, `metrics.md` |
-| `scripts/` | deploy scripts and one manual Mongo script |
+| `scripts/` | deploy scripts and two manual Mongo scripts (lot-id migration; `super-user.mongodb.js`, the only way to grant or revoke SUPER_USER, documented in `docs/deploying.md`) |
 | `grafana/`, `.github/workflows/` | dashboards; CI |
 
 - R1. Lay out a module as `com.inventory.<module>.{domain.model, domain.repository, service, rest.controller, rest.dto.request, rest.dto.response, mapper, validation, utils, utils.constants, migration}`. Ref: `core/user/src/main/java/com/inventory/user/rest/controller/VendorController.java`
@@ -50,7 +50,7 @@ README drift (facts, not rules):
 
 ## Layering and module boundaries
 
-Module dependencies (from each `pom.xml`):
+Module dependencies and collection owners are data in `module-boundaries.yml` (its `dependsOn` mirrors each `pom.xml`); rules B1–B11 are in `docs/architecture/module-boundaries.md`. `ModuleBoundariesTest` (app) and the **Module boundaries** workflow enforce them against the baseline `app/src/test/resources/boundaries/baseline.txt`.
 
 | Module | May depend on |
 |---|---|
@@ -58,7 +58,9 @@ Module dependencies (from each `pom.xml`):
 | `metrics` | common |
 | `notifications`, `ocr`, `pricing`, `reminders`, `resource` | common, metrics |
 | `user` | common, notifications, metrics |
-| `accounting`, `credit`, `plan` | common, user, metrics |
+| `accounting` | common, metrics |
+| `credit`, `plan` | common, user, metrics |
+| `hr` | common, metrics, user, accounting, documentservice, notifications |
 | `documentservice` | metrics |
 | `pluginengine` | common |
 | `plugins/*` | common, pluginengine (cafe also metrics) |
@@ -67,15 +69,15 @@ Module dependencies (from each `pom.xml`):
 | `analytics` | common, metrics, product, credit, documentservice |
 | `app` | everything |
 
-- L1. Call another module only along an existing pom edge. Add a new edge only if it creates no cycle. Nothing but `app` depends on `app` or `plugins/*`. Ref: `core/taxation/pom.xml`
-- L2. To call upward, declare an interface in the lower module and implement it in the higher one as `<Name>Impl`; inject optional implementations with `@Autowired(required = false)`. Ref: `core/user/src/main/java/com/inventory/user/service/ShopServiceAdapter.java`
+- L1. Call another module only along an existing pom edge, and only through its `api` package (`com.inventory.<module>.api..`); `common`, `metrics` and `pluginengine` are libraries and fully public. Add a new edge only if it creates no cycle, in both `pom.xml` and `module-boundaries.yml`. Nothing but `app` depends on `app` or `plugins/*`. Ref: `core/taxation/pom.xml`
+- L2. To call upward, declare a `<Thing>Port` interface in the lower module's `api.port` and implement it in the higher module's `service/api/`. Never inject another module's type with `@Autowired(required = false)`. Existing ports below predate this rule and are listed in the boundary baseline. Ref: `core/user/src/main/java/com/inventory/user/service/ShopServiceAdapter.java`
   - Implemented by `core/product/src/main/java/com/inventory/product/service/ShopServiceAdapterImpl.java`. Other ports (names vary): `core/plan/src/main/java/com/inventory/plan/service/ShopProvider.java`, `core/reminders/src/main/java/com/inventory/reminders/service/InventoryAdapter.java`, `core/pricing/src/main/java/com/inventory/pricing/service/VerticalPricingPolicyPort.java`, `core/common/src/main/java/com/inventory/common/gst/SupplyPlacement.java`, `core/common/src/main/java/com/inventory/common/gst/GstinDirectory.java`.
 - L3. Controllers call services of their own module only. Never inject a repository or `MongoTemplate` into a controller (0 of 54 `@RestController` classes do). Ref: `core/user/src/main/java/com/inventory/user/rest/controller/CustomerController.java`
 - L4. Put business logic, validator calls and mapping in the service, not the controller. Ref: `core/user/src/main/java/com/inventory/user/service/VendorService.java`
   - Validator in controller. Dominant: injected in 33 service files. Exceptions (5): `core/reminders/src/main/java/com/inventory/reminders/rest/controller/EventController.java`, `core/reminders/src/main/java/com/inventory/reminders/rest/controller/ReminderController.java`, `core/plan/src/main/java/com/inventory/plan/rest/controller/PaymentWebhookController.java`, `core/pricing/src/main/java/com/inventory/pricing/rest/controller/PricingController.java`, `core/user/src/main/java/com/inventory/user/rest/controller/UserShopController.java`. List: `grep -rlE '(private|final) +[A-Z]\w*Validator +\w+ *;' --include=*.java core/*/src/main/java | grep /rest/controller/`.
   - Mapper in controller. Exceptions (5): `core/plan/src/main/java/com/inventory/plan/rest/controller/PaymentWebhookController.java`, `core/user/src/main/java/com/inventory/user/rest/controller/AuthController.java`, `core/user/src/main/java/com/inventory/user/rest/controller/VendorController.java`, `core/accounting/src/main/java/com/inventory/accounting/rest/controller/AccountingController.java`, `core/credit/src/main/java/com/inventory/credit/rest/controller/CreditController.java`. List: `grep -lE 'Mapper' $(grep -rlw '@RestController' --include='*Controller.java' core app plugins)`.
-- L5. Use another module through its service or facade. Ref: `core/accounting/src/main/java/com/inventory/accounting/api/AccountingFacade.java`
-  - Exceptions: 24 files read another module's repository directly (product 12, analytics 7, taxation 4, credit 1), e.g. `core/taxation/src/main/java/com/inventory/taxation/service/Gstr1DataAggregator.java`. List: `for m in $(ls core); do grep -rlE '^import com\.inventory\.[a-z]+\.domain\.repository\.' core/$m/src/main/java 2>/dev/null | while read f; do grep -oE '^import com\.inventory\.[a-z]+\.domain\.repository\.' "$f" | grep -vq "inventory\.$m\." && echo "$f"; done; done`.
+- L5. Use another module only through its `api` package; never its repositories, documents, services or HTTP DTOs. Only the owning module (see `module-boundaries.yml`) may map or name a collection. Ref: `core/accounting/src/main/java/com/inventory/accounting/api/AccountingFacade.java`
+  - Exceptions: every existing cross-module use outside `api` is a line in `app/src/test/resources/boundaries/baseline.txt` (376 at introduction). Fixing one means deleting its line; the check fails on new lines and on stale ones. Run: `mvn -pl app -am test -Dtest=ModuleBoundariesTest -Dsurefire.failIfNoSpecifiedTests=false`.
 - L6. Take the tenant shop only from request attribute `shopId`, which `AuthenticationInterceptor` sets (`X-Shop-Id` header if the user is a member, else the active shop). Never scope by a shop id from the body. Shop-owned documents carry `shopId` (40 of 49 `@Document` classes); global ones (Vendor, Customer, Plan, …) link through `shop_vendors`/`shop_customers`. Ref: `app/src/main/java/com/inventory/app/interceptor/AuthenticationInterceptor.java`
 - L7. The request pipeline is `AuthenticationInterceptor` → `RbacModuleInterceptor` (path-prefix module rules) → `PlanExpiryInterceptor` (402 when the plan expired, allow-list), all registered in `CorsConfig`. Spring Security supplies only `BCryptPasswordEncoder` (`app/src/main/java/com/inventory/app/config/SecurityConfig.java`); do not add a security filter chain. Ref: `app/src/main/java/com/inventory/app/config/CorsConfig.java`
 - L8. Plugins reach core only through `pluginengine` SPI types; core reaches plugins only through `PluginRegistry`. Ref: `pluginengine/src/main/java/com/inventory/pluginengine/PluginRegistry.java`
@@ -151,22 +153,22 @@ MongoDB: "table" means collection, "column" means field.
 - P4. Create indexes in an idempotent `ensureIndex` runner. Automatic index creation is off (no `auto-index-creation` property), so `@Indexed`/`@CompoundIndex` on core models do nothing by themselves; plugin extension annotations are created by this runner. Ref: `core/product/src/main/java/com/inventory/product/migration/SearchIndexMigration.java`
 - P5. Add a field by adding it to the model. Existing documents read it as `null`; treat `null` as the old behaviour and Javadoc that default. Ref: `core/user/src/main/java/com/inventory/user/domain/model/Vendor.java`
 - P6. Backfill data with a `@Component` in `<module>/migration/`: an `@EventListener(ApplicationReadyEvent.class)` method with an unused `@Order(n)`, an idempotent query that touches only rows still needing the change, `enabled` (and optionally `dry-run`) via `@Value("${stockkart.<job>.enabled:…}")`, a passthrough `stockkart.<job>.enabled=${<JOB>_ENABLED:…}` in `app/src/main/resources/application.properties` (it sets the effective default), and the affected count logged before and after. Ref: `core/product/src/main/java/com/inventory/product/migration/SellRestrictionBackfillRunner.java`
-  - Orders in use: 5, 6, 10, 12, 20, 25, 30, 30, 40. 30 is duplicated (`LotBaseCountRepairRunner`, `InvoiceSequenceBackfillRunner`).
+  - Orders in use: 5 (`ProductBarcodeIndexMigration`, `GridLayoutIndexMigration`), 6 (`SearchIndexMigration`), 7 (`LedgerIndexMigration`), 8 (`UserTokenIndexMigration`), 9 (`CreditAccountIndexMigration`), 10 (`VerticalSchemaSeeder`), 11 (`ShopPartyIndexMigration`).
   - No `enabled` flag: `core/product/src/main/java/com/inventory/product/migration/VerticalSchemaSeeder.java`, `core/product/src/main/java/com/inventory/product/migration/ProductBarcodeIndexMigration.java`.
   - `enabled` but no passthrough: `core/product/src/main/java/com/inventory/product/migration/InvoiceSequenceBackfillRunner.java`, `core/user/src/main/java/com/inventory/user/migration/VendorPlaceMigration.java`, `core/product/src/main/java/com/inventory/product/migration/SearchIndexMigration.java`.
   - `dry-run` exists only in the 4 runners that also have the passthrough: SellRestriction, TxnId, Product and LotBaseCountRepair backfills.
   - Error handling, no single convention. Propagate (4): `core/product/src/main/java/com/inventory/product/migration/SellRestrictionBackfillRunner.java`, `core/product/src/main/java/com/inventory/product/migration/TxnIdBackfillRunner.java`, `core/product/src/main/java/com/inventory/product/migration/ProductBackfillRunner.java` (catches only inside value parsers), `core/product/src/main/java/com/inventory/product/migration/LotBaseCountRepairRunner.java`. Catch and log (5): `core/user/src/main/java/com/inventory/user/migration/VendorPlaceMigration.java`, `core/product/src/main/java/com/inventory/product/migration/InvoiceSequenceBackfillRunner.java`, `core/product/src/main/java/com/inventory/product/migration/SearchIndexMigration.java`, `core/product/src/main/java/com/inventory/product/migration/ProductBarcodeIndexMigration.java`, `core/product/src/main/java/com/inventory/product/migration/VerticalSchemaSeeder.java`. Choosing one is for a handbook decisions/ ADR (planned).
   - Runner list (split by reading each listener method): `grep -rl ApplicationReadyEvent --include=*.java core/*/src/main/java/com/inventory/*/migration`.
-  - Not a runner: the one-off manual script `scripts/migrate-lot-id-to-stock-in.mongodb.js`.
+  - Not a runner: the one-off manual script `scripts/migrate-lot-id-to-stock-in.mongodb.js`, and the operator script `scripts/super-user.mongodb.js`.
 - P7. Store money as `BigDecimal`; no domain model has a `double`/`float` money field (the only `Double` is `rollColumnGapMm` in `core/product/src/main/java/com/inventory/product/domain/model/LabelLayoutDocument.java`). Converters store it as Decimal128. Ref: `app/src/main/java/com/inventory/app/config/MongoConfig.java`
-- P8. Do not rely on `@Transactional` for multi-document atomicity: it appears in 59 files, but no `MongoTransactionManager` or other `TransactionManager` bean is declared. Ref: `core/user/src/main/java/com/inventory/user/service/VendorService.java`
+- P8. `@Transactional` does nothing (no `TransactionManager` bean; keep it that way, or all ~200 annotations, read-only ones included, go live at once). For all-or-nothing writes across documents call `MongoTx.run(flow, shopId, () -> ...)` (`core/common/.../tx/MongoTx.java`): a real MongoDB transaction; a shop's flows take turns per container, and a write conflict runs the flow again. Inside it, change only the database and local objects; push SSE events, record metrics or send anything through `MongoTx.afterCommit`. Do not catch a database error to try something else inside it (any failed write aborts the transaction). Used by bill completion, refund, vendor invoice and return, credit charge and settlement. Ref: `core/product/src/main/java/com/inventory/product/service/CheckoutService.java`
 - P9. Change vertical schemas by editing `core/product/src/main/resources/seeds/<vertical>-v1.json`. On restart `VerticalSchemaSeeder` overwrites only rows whose `createdBy` starts with `seed:`. Run `VerticalSchemaSeedFilesTest` after. Ref: `core/product/src/main/java/com/inventory/product/migration/VerticalSchemaSeeder.java`
 
 ## Configuration and environment variables
 
 - C1. Read config in Java only through property keys: `@Value("${key:default}")` or `@ConfigurationProperties`. Map env vars only in `application.properties` as `key=${ENV_NAME}` (optional default). Never call `System.getenv` (0 uses in main code). Ref: `core/product/src/main/java/com/inventory/product/config/PrintBridgeProperties.java`
 - C2. Add a variable in three places: the property in `app/src/main/resources/application.properties`, the name in `.env.example`, and a passthrough under `services.app.environment` in `docker-compose.yml`. Ref: `docker-compose.yml`
-  - `.env.example` values: dominant empty (30 of 33). Exceptions: `SPRING_PROFILES_ACTIVE`, `PAYMENT_GATEWAY`, `GSTIN_PROVIDER` carry a non-secret default.
+  - `.env.example` values: dominant empty (30 of 58). Exceptions: `SPRING_PROFILES_ACTIVE`, `PAYMENT_GATEWAY`, `GSTIN_PROVIDER`, the five `AUTH_*`, the three `SHOP_CACHE_*` settings, `MONGO_POOL_MAX_WAIT_MS`, the three `MONGO_TRANSACTIONS_*` and the 13 `HEAVY_*` settings carry a non-secret default (an empty TTL or max-entries value fails boot, C3).
   - In `.env.example` only: `DB_USERNAME`, `DB_PASSWORD` (for the commented-out local `mongodb` service), `GSTIN_PROVIDER`, `GSTINAPI_KEY`. In compose only: `MESSAGING_DISPATCH_INTERVAL_MS`.
 - C3. Give every placeholder without a default a value, or boot fails with "Could not resolve placeholder" (e.g. `OCR_PREPROCESS_MODE`). `UPLOAD_TOKEN_EXPIRY_MINUTES` has no default and must be an integer, so the empty value from `.env.example` fails boot. The API key for the provider chosen by `OCR_PROVIDER` must be non-empty, or boot fails; `core/ocr/src/main/java/com/inventory/ocr/config/OcrConfig.java` maps providers to keys. Ref: `app/src/main/resources/application.properties`
 - C4. Never commit `.env`; CI hygiene fails on tracked `.env` files. `AppApplication` loads `.env` from the process working directory. Ref: `.github/workflows/ci-hygiene.yml`
@@ -190,6 +192,12 @@ MongoDB: "table" means collection, "column" means field.
 | `MESSAGING_EMAIL_ENABLED` | turn email sending on or off | both |
 | `RESEND_API_KEY` | Resend email API key (secret, never commit) | both |
 | `RESEND_FROM_EMAIL`, `RESEND_FROM_NAME` | sender address and name | both |
+| `AUTH_CACHE_ENABLED`, `AUTH_CACHE_TTL_SECONDS`, `AUTH_CACHE_MAX_ENTRIES` | per-instance login check cache (`AuthCache`): on/off, seconds an entry lives, entries per cache | both |
+| `AUTH_TOKEN_CLEANUP_ENABLED`, `AUTH_TOKEN_CLEANUP_CRON` | nightly removal of expired login tokens (`ExpiredTokenCleanupJob`): on/off, Spring cron in Asia/Kolkata | both |
+| `SHOP_CACHE_ENABLED`, `SHOP_CACHE_TTL_SECONDS`, `SHOP_CACHE_MAX_ENTRIES` | per-instance shop read cache (`ShopReadCache`): on/off, seconds an entry lives, entries | both |
+| `MONGO_POOL_MAX_WAIT_MS` | longest wait for a free MongoDB connection before a 503 "busy" with `Retry-After` (`MongoPoolConfig`) | both |
+| `MONGO_TRANSACTIONS_ENABLED`, `MONGO_TRANSACTIONS_MAX_ATTEMPTS`, `MONGO_TRANSACTIONS_SHOP_WAIT_MS` | MongoDB transactions for the money flows (`MongoTx`): on/off (off = no transactions, as before), runs of a flow after write conflicts, ms a shop's flow waits for its turn before 503 "busy" | both |
+| `HEAVY_<KIND>_LIMIT` / `_QUEUE` / `_WAIT_MS` (`EXPORT`, `ANALYTICS`, `OCR`, `IMPORT`; plus `HEAVY_OCR_BACKGROUND_WAIT_MS`) | heavy requests per container: run at once, web requests waiting, wait before a 503 "busy" (`HeavyRequestLimiter`, `@HeavyRequest`); defaults in `HeavyKind`. Kind `HR` (2 / 4 / 10 s) has no passthrough; `heavy.hr.*` can still be set by relaxed binding (`HEAVY_HR_LIMIT` …) | both |
 | `GRAFANA_CLOUD_OTLP_URL`, `GRAFANA_CLOUD_OTLP_USER` | OTLP metrics export endpoint and user (optional) | both |
 | `GRAFANA_CLOUD_LOKI_URL`, `GRAFANA_CLOUD_LOKI_USER` | Loki log push endpoint and user (optional) | both |
 | `GRAFANA_CLOUD_API_TOKEN` | Grafana Cloud token (secret, never commit) | both |
@@ -258,7 +266,7 @@ Reported test totals vary by a few between runs (engine reporting, T5). There is
   - Hand-written (5): `core/credit/src/main/java/com/inventory/credit/service/CreditMapper.java`, `core/accounting/src/main/java/com/inventory/accounting/service/AccountingMapper.java`, `core/accounting/src/main/java/com/inventory/accounting/service/JournalRequestMapper.java`, `core/product/src/main/java/com/inventory/product/service/vertical/CartLineSnapshotMapper.java`, `core/product/src/main/java/com/inventory/product/labels/VerticalValueTypeMapper.java`. List: `find . -name '*Mapper.java' -path '*/src/main/*' | xargs grep -L '@Mapper'`.
 - X6. Don't inject repositories into controllers (L3). Ref: `core/user/src/main/java/com/inventory/user/rest/controller/CustomerController.java`
 - X7. Don't throw `IllegalArgumentException` for user errors; it becomes 500 (E4). Ref: `core/user/src/main/java/com/inventory/user/validation/VendorValidator.java`
-- X8. Don't rely on `@Transactional` (P8) or on `@Indexed` (P4). Ref: `core/product/src/main/java/com/inventory/product/migration/SearchIndexMigration.java`
+- X8. Don't rely on `@Transactional` (use `MongoTx`, P8) or on `@Indexed` (P4). Ref: `core/product/src/main/java/com/inventory/product/migration/SearchIndexMigration.java`
 - X9. Don't read `System.getenv` (C1). Ref: `core/product/src/main/java/com/inventory/product/config/PrintBridgeProperties.java`
 - X10. Don't add a Maven plugin or dependency without a version unless the Spring Boot BOM manages it (S2). Ref: `core/product/pom.xml`
 - X11. Don't log secrets; mask them as `AppApplication` masks the DB URI password. Ref: `app/src/main/java/com/inventory/app/AppApplication.java`

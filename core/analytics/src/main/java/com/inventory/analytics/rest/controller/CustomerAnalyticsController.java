@@ -1,6 +1,8 @@
 package com.inventory.analytics.rest.controller;
 
 
+import com.inventory.common.heavy.HeavyKind;
+import com.inventory.common.heavy.HeavyRequest;
 import com.inventory.metrics.annotation.Latency;
 import com.inventory.metrics.annotation.RecordRequestRate;
 import com.inventory.metrics.annotation.RecordStatusCodes;
@@ -42,6 +44,7 @@ public class CustomerAnalyticsController {
    * - topN: Number of top customers to return (optional, defaults to 10)
    * - includeAll: Whether to include all customers in response (optional, defaults to false)
    */
+  @HeavyRequest(HeavyKind.ANALYTICS)
   @GetMapping
   public ResponseEntity<ApiResponse<CustomerAnalyticsResponse>> getCustomerAnalytics(
       @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant startDate,

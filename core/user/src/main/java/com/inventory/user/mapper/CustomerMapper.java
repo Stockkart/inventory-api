@@ -13,6 +13,7 @@ import org.mapstruct.AfterMapping;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.MappingTarget;
+import org.mapstruct.Named;
 import org.mapstruct.ReportingPolicy;
 
 import java.time.Instant;
@@ -129,13 +130,21 @@ public interface CustomerMapper {
     customer.setUpdatedAt(Instant.now());
   }
 
-  /** Upper-case, no spaces, or null when blank — the shape the registry and indexes expect. */
+  /**
+   * Upper-case, no spaces, or null when blank — the shape the registry and indexes expect.
+   *
+   * <p>{@code @Named} keeps MapStruct from using this as the String-to-String conversion for
+   * every field of {@link #toDto}; without it the customer id, name and email come back
+   * uppercased and the id no longer matches the stored one.
+   */
+  @Named("cleanGstin")
   static String cleanGstin(String raw) {
     String g = Gstin.normalize(raw);
     return g == null || g.isEmpty() ? null : g;
   }
 
   /** Null when every field is blank, so an empty form does not store an empty object. */
+  @Named("cleanAddress")
   static PostalAddress cleanAddress(PostalAddress address) {
     if (address == null) {
       return null;

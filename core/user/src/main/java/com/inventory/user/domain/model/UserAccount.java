@@ -4,10 +4,12 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
@@ -15,7 +17,12 @@ import java.util.Optional;
 @NoArgsConstructor
 @AllArgsConstructor
 @Document(collection = "users")
+// every authenticated request finds its user by token; created by loadtest/tools/ensure_user_token_index.py
+@CompoundIndex(name = "tokens_accessToken", def = "{'tokens.accessToken': 1}")
 public class UserAccount {
+
+  /** Most sessions (devices) one user can have logged in at once; the oldest is dropped beyond this. */
+  public static final int MAX_LIVE_TOKENS = 10;
 
   @Id
   private String userId;
@@ -41,6 +48,25 @@ public class UserAccount {
       tokens = new ArrayList<>();
     }
     return tokens;
+  }
+
+  /**
+   * Adds a newly issued token, first dropping this user's expired tokens and then, if more than
+   * {@link #MAX_LIVE_TOKENS} would remain, the oldest live ones (those sessions are logged out).
+   */
+  public void addToken(UserToken token, Instant now) {
+    List<UserToken> list = getTokens();
+    list.removeIf(t -> t == null || (t.getExpiresAt() != null && !t.getExpiresAt().isAfter(now)));
+    int excess = list.size() + 1 - MAX_LIVE_TOKENS;
+    if (excess > 0) {
+      List<UserToken> oldestFirst = new ArrayList<>(list);
+      oldestFirst.sort(Comparator.comparing(
+          UserToken::getCreatedAt, Comparator.nullsFirst(Comparator.naturalOrder())));
+      java.util.Set<UserToken> drop = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+      drop.addAll(oldestFirst.subList(0, excess));
+      list.removeIf(drop::contains);
+    }
+    list.add(token);
   }
 
   /**

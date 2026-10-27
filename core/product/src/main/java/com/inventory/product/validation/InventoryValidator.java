@@ -1,6 +1,7 @@
 package com.inventory.product.validation;
 
 import com.inventory.common.exception.ValidationException;
+import com.inventory.pricing.utils.constants.PricingConstants;
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.enums.ItemType;
 import com.inventory.product.domain.model.enums.SchemeType;
@@ -8,6 +9,7 @@ import com.inventory.product.domain.model.UnitConversion;
 import com.inventory.product.rest.dto.request.CreateInventoryRequest;
 import com.inventory.product.rest.dto.request.UpdateInventoryRequest;
 import com.inventory.product.service.PackagingUnitService;
+import com.inventory.product.utils.constants.ProductConstants;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -78,9 +80,6 @@ public class InventoryValidator {
         && (request.getItemTypeDegree() == null || request.getItemTypeDegree() <= 0)) {
       throw new ValidationException("When itemType is DEGREE, itemTypeDegree must be present and greater than zero");
     }
-    if (request.getPurchaseDate() != null) {
-      validatePurchaseDate(request.getPurchaseDate());
-    }
     if (request.getSchemeType() == SchemeType.PERCENTAGE) {
       if (request.getSchemePercentage() == null) {
         throw new ValidationException("When schemeType is PERCENTAGE, schemePercentage is required");
@@ -101,9 +100,8 @@ public class InventoryValidator {
         throw new ValidationException("Scheme (free units) must be zero or greater");
       }
     }
-    if (request.getBillingMode() != null) {
-      validateTaxFieldsByBillingMode(request.getBillingMode(), request.getSgst(), request.getCgst());
-    }
+    validateClearFields(request);
+    validateTaxFieldsOnUpdate(request.getBillingMode(), request.getSgst(), request.getCgst());
     if (request.getBaseUnit() != null || request.getUnitConversions() != null) {
       Integer unitsPerPack = request.getUnitConversions() != null
           ? request.getUnitConversions().getFactor()
@@ -141,9 +139,22 @@ public class InventoryValidator {
     }
   }
 
+  static final String GST_REQUIRED =
+      "SGST and CGST are required (enter 0 for a GST-exempt item)";
+
+  static final String PURCHASE_DATE_NOT_EDITABLE = "Purchase date cannot be edited";
+
+  /**
+   * GST belongs to the lot; the shop has no rate to fall back on. A taxable (non-BASIC) lot must
+   * state both SGST and CGST on create, 0 for an exempt item. A BASIC (estimate-only) lot carries
+   * none.
+   */
   private void validateTaxFieldsByBillingMode(BillingMode billingMode, String sgst, String cgst) {
     BillingMode effectiveMode = billingMode != null ? billingMode : BillingMode.REGULAR;
     if (effectiveMode != BillingMode.BASIC) {
+      if (!StringUtils.hasText(sgst) || !StringUtils.hasText(cgst)) {
+        throw new ValidationException(GST_REQUIRED);
+      }
       return;
     }
     if (StringUtils.hasText(sgst) || StringUtils.hasText(cgst)) {
@@ -152,8 +163,71 @@ public class InventoryValidator {
   }
 
   /**
+   * An update leaves GST alone unless it sends it; what it sends must not blank a taxable lot's
+   * rate (BASIC lots carry none).
+   */
+  private void validateTaxFieldsOnUpdate(BillingMode billingMode, String sgst, String cgst) {
+    if (billingMode == BillingMode.BASIC) {
+      validateTaxFieldsByBillingMode(billingMode, sgst, cgst);
+      return;
+    }
+    if ((sgst != null && !StringUtils.hasText(sgst)) || (cgst != null && !StringUtils.hasText(cgst))) {
+      throw new ValidationException(GST_REQUIRED);
+    }
+  }
+
+  /**
+   * A lot's purchase date is set at stock-in and cannot be edited. An update may resend the
+   * stored day (same UTC day), which changes nothing; any other day is rejected.
+   */
+  public void validatePurchaseDateUnchanged(Instant requested, Instant stored) {
+    if (requested == null) {
+      return;
+    }
+    if (stored == null
+        || !requested.truncatedTo(ChronoUnit.DAYS).equals(stored.truncatedTo(ChronoUnit.DAYS))) {
+      throw new ValidationException(PURCHASE_DATE_NOT_EDITABLE);
+    }
+  }
+
+  /**
    * Purchase date must be within 30 days in the past and not more than 30 days in the future.
    */
+  /** Names in clearFields must be clearable, and not sent with a value for the same field. */
+  private void validateClearFields(UpdateInventoryRequest request) {
+    if (request.getClearFields() == null) {
+      return;
+    }
+    for (String field : request.getClearFields()) {
+      if (!ProductConstants.CLEARABLE_INVENTORY_FIELDS.contains(field)
+          && !PricingConstants.CLEARABLE_FIELDS.contains(field)) {
+        throw new ValidationException("Field cannot be cleared: " + field);
+      }
+      if (valueSentFor(field, request)) {
+        throw new ValidationException("Field is both set and cleared: " + field);
+      }
+    }
+  }
+
+  private static boolean valueSentFor(String field, UpdateInventoryRequest r) {
+    return switch (field) {
+      case "barcode" -> r.getBarcode() != null;
+      case "description" -> r.getDescription() != null;
+      case "companyName" -> r.getCompanyName() != null;
+      case "location" -> r.getLocation() != null;
+      case "hsn" -> r.getHsn() != null;
+      case "discountApplicable" -> r.getDiscountApplicable() != null;
+      case "thresholdCount" -> r.getThresholdCount() != null;
+      case PricingConstants.CLEAR_SALE_ADDITIONAL_DISCOUNT -> r.getSaleAdditionalDiscount() != null;
+      case PricingConstants.CLEAR_PURCHASE_ADDITIONAL_DISCOUNT -> r.getPurchaseAdditionalDiscount() != null;
+      case PricingConstants.CLEAR_SALE_SCHEME -> r.getSchemePayFor() != null
+          || r.getSchemeFree() != null || r.getSchemePercentage() != null || r.getScheme() != null;
+      case PricingConstants.CLEAR_PURCHASE_SCHEME -> r.getPurchaseSchemePayFor() != null
+          || r.getPurchaseSchemeFree() != null || r.getPurchaseSchemePercentage() != null;
+      default -> false;
+    };
+  }
+
   private void validatePurchaseDate(Instant purchaseDate) {
     Instant now = Instant.now();
     Instant minAllowed = now.minus(30, ChronoUnit.DAYS);

@@ -123,7 +123,7 @@ public interface UserMapper {
     token.setCreatedAt(Instant.now());
     token.setExpiresAt(Instant.now().plusSeconds(7 * 24 * 60 * 60)); // 7 days
 
-    account.getTokens().add(token);
+    account.addToken(token, Instant.now());
   }
 
   @AfterMapping
@@ -142,7 +142,7 @@ public interface UserMapper {
     token.setCreatedAt(Instant.now());
     token.setExpiresAt(Instant.now().plusSeconds(7 * 24 * 60 * 60)); // 7 days
 
-    account.getTokens().add(token);
+    account.addToken(token, Instant.now());
   }
 
   // LogoutResponse mapping
@@ -176,7 +176,7 @@ public interface UserMapper {
     }
   }
 
-  LoginResponse.ShopInfo toShopInfo(ShopServiceAdapter.ShopTaxInfo taxInfo);
+  LoginResponse.ShopInfo toShopInfo(ShopServiceAdapter.ShopSummary shop);
 
   default UserAccount toUserAccountFromOAuth(String email, String name, SignupRequest request) {
     if (email == null) {
