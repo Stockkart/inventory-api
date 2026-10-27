@@ -12,7 +12,7 @@ import static org.mockito.Mockito.when;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ValidationException;
-import com.inventory.documentservice.service.mis.MisExcelDocumentService;
+import com.inventory.documentservice.api.MisDocuments;
 import com.inventory.hr.domain.model.enums.DayStatus;
 import com.inventory.hr.domain.model.enums.HrPermission;
 import com.inventory.hr.domain.repository.PayrollRunRepository;
@@ -29,7 +29,7 @@ class HrReportServiceTest {
 
   @Mock private HrPermissionGuard guard;
   @Mock private PayrollRunRepository runRepository;
-  @Mock private MisExcelDocumentService excelService;
+  @Mock private MisDocuments misDocuments;
   @InjectMocks private HrReportService service;
 
   @Test
@@ -69,6 +69,6 @@ class HrReportServiceTest {
 
     assertEquals(ErrorCode.ACCESS_DENIED, e.getErrorCode());
     verify(runRepository, never()).findByShopIdAndId(any(), any());
-    verify(excelService, never()).generateExcel(any());
+    verify(misDocuments, never()).excel(any());
   }
 }

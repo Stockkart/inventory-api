@@ -9,8 +9,8 @@ import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.common.util.AmountToWordsConverter;
-import com.inventory.documentservice.rest.dto.hr.PayslipDocumentRequest;
-import com.inventory.documentservice.service.hr.PayslipPdfService;
+import com.inventory.documentservice.api.PayslipDocument;
+import com.inventory.documentservice.api.PayslipDocuments;
 import com.inventory.hr.domain.model.Employee;
 import com.inventory.hr.domain.model.PayrollLine;
 import com.inventory.hr.domain.model.PayrollRun;
@@ -80,7 +80,7 @@ public class PayslipService {
 
   @Autowired private SelfServiceResolver selfServiceResolver;
 
-  @Autowired private PayslipPdfService payslipPdfService;
+  @Autowired private PayslipDocuments payslipDocuments;
 
   @Autowired(required = false) private ShopServiceAdapter shopServiceAdapter;
 
@@ -235,7 +235,7 @@ public class PayslipService {
     long started = System.nanoTime();
     ShopServiceAdapter.ShopSummary shop = shopServiceAdapter != null
         ? shopServiceAdapter.getShopSummary(shopId) : null;
-    byte[] pdf = payslipPdfService.generate(toDocument(line, shop, Instant.now()));
+    byte[] pdf = payslipDocuments.pdf(toDocument(line, shop, Instant.now()));
     recordDocument(operation, started);
     PayrollLine.EmployeeSnapshot snap = line.getEmployeeSnapshot();
     String code = snap != null && snap.getCode() != null ? snap.getCode() : "employee";
@@ -243,51 +243,51 @@ public class PayslipService {
   }
 
   /** The payslip's content (R10.2) from a frozen line: no reads. */
-  static PayslipDocumentRequest toDocument(PayrollLine line, ShopServiceAdapter.ShopSummary shop,
+  static PayslipDocument toDocument(PayrollLine line, ShopServiceAdapter.ShopSummary shop,
       Instant now) {
     PayrollLine.EmployeeSnapshot snap = line.getEmployeeSnapshot() != null
         ? line.getEmployeeSnapshot() : new PayrollLine.EmployeeSnapshot();
-    PayslipDocumentRequest doc = new PayslipDocumentRequest();
-    doc.setShopName(shop != null && shop.getName() != null ? shop.getName() : "");
-    doc.setShopAddress(shop != null ? shop.getAddressLine() : null);
-    doc.setEmployeeName(snap.getName());
-    doc.setEmployeeCode(snap.getCode());
-    doc.setDesignation(StringUtils.hasText(snap.getDesignation()) ? snap.getDesignation() : null);
-    doc.setPeriodLabel(periodLabel(line));
-    doc.setDayRows(dayRows(line.getDayCounts(), snap.getPayType()));
-    List<PayslipDocumentRequest.Item> earnings = new ArrayList<>();
+    PayslipDocument.PayslipDocumentBuilder doc = PayslipDocument.builder();
+    doc.shopName(shop != null && shop.getName() != null ? shop.getName() : "");
+    doc.shopAddress(shop != null ? shop.getAddressLine() : null);
+    doc.employeeName(snap.getName());
+    doc.employeeCode(snap.getCode());
+    doc.designation(StringUtils.hasText(snap.getDesignation()) ? snap.getDesignation() : null);
+    doc.periodLabel(periodLabel(line));
+    doc.dayRows(dayRows(line.getDayCounts(), snap.getPayType()));
+    List<PayslipDocument.Item> earnings = new ArrayList<>();
     if (line.getEarnings() != null) {
       line.getEarnings().forEach(e -> earnings.add(
-          new PayslipDocumentRequest.Item(e.getLabel(), e.getAmount())));
+          new PayslipDocument.Item(e.getLabel(), e.getAmount())));
     }
-    List<PayslipDocumentRequest.Item> deductions = new ArrayList<>();
+    List<PayslipDocument.Item> deductions = new ArrayList<>();
     if (line.getDeductions() != null) {
       line.getDeductions().forEach(d -> deductions.add(
-          new PayslipDocumentRequest.Item(d.getLabel(), d.getAmount())));
+          new PayslipDocument.Item(d.getLabel(), d.getAmount())));
     }
-    doc.setEarnings(earnings);
-    doc.setDeductions(deductions);
-    doc.setGrossPay(line.getGross());
-    doc.setTotalDeductions(line.getTotalDeductions());
-    doc.setNetBeforeRounding(line.getNetBeforeRounding());
-    doc.setRounding(line.getRounding());
-    doc.setNetPay(line.getNet());
-    doc.setNetPayInWords(AmountToWordsConverter.convertAmountToWords(
+    doc.earnings(earnings);
+    doc.deductions(deductions);
+    doc.grossPay(line.getGross());
+    doc.totalDeductions(line.getTotalDeductions());
+    doc.netBeforeRounding(line.getNetBeforeRounding());
+    doc.rounding(line.getRounding());
+    doc.netPay(line.getNet());
+    doc.netPayInWords(AmountToWordsConverter.convertAmountToWords(
         line.getNet() != null ? line.getNet() : BigDecimal.ZERO));
     BigDecimal owed = line.getAdvanceOutstandingAfter();
-    doc.setAdvanceBalance(owed != null && owed.signum() > 0 ? owed : null);
+    doc.advanceBalance(owed != null && owed.signum() > 0 ? owed : null);
     if (line.getPaymentStatus() == SalaryPaymentStatus.PAID && line.getPaidAt() != null) {
-      doc.setPaymentNote("Paid on " + line.getPaidAt()
+      doc.paymentNote("Paid on " + line.getPaidAt()
           + (line.getPaymentMethod() != null ? " (" + methodLabel(line) + ")" : ""));
     }
-    doc.setGeneratedAtLabel("Generated " + GENERATED.format(ZonedDateTime.ofInstant(now,
+    doc.generatedAtLabel("Generated " + GENERATED.format(ZonedDateTime.ofInstant(now,
         HrDateUtils.ZONE)));
-    return doc;
+    return doc.build();
   }
 
   /** Paid-days breakdown; rows that are zero are left out except present and paid days. */
-  static List<PayslipDocumentRequest.Row> dayRows(PayrollLine.DayCounts c, PayType payType) {
-    List<PayslipDocumentRequest.Row> rows = new ArrayList<>();
+  static List<PayslipDocument.Row> dayRows(PayrollLine.DayCounts c, PayType payType) {
+    List<PayslipDocument.Row> rows = new ArrayList<>();
     if (c == null) {
       return rows;
     }
@@ -303,20 +303,20 @@ public class PayslipService {
     if (c.getPaidDays() != null) {
       String paid = number(c.getPaidDays());
       boolean monthly = payType == null || payType == PayType.MONTHLY;
-      rows.add(new PayslipDocumentRequest.Row("Paid days", monthly && c.getBasisDays() != null
+      rows.add(new PayslipDocument.Row("Paid days", monthly && c.getBasisDays() != null
           ? paid + " of " + c.getBasisDays() : paid));
     }
     return rows;
   }
 
-  private static void addRow(List<PayslipDocumentRequest.Row> rows, String label, Object value,
+  private static void addRow(List<PayslipDocument.Row> rows, String label, Object value,
       boolean always) {
     if (value == null) {
       return;
     }
     BigDecimal n = value instanceof BigDecimal b ? b : new BigDecimal(value.toString());
     if (always || n.signum() != 0) {
-      rows.add(new PayslipDocumentRequest.Row(label, number(n)));
+      rows.add(new PayslipDocument.Row(label, number(n)));
     }
   }
 

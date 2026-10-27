@@ -18,8 +18,8 @@ import com.inventory.credit.domain.model.CreditEntry;
 import com.inventory.credit.domain.model.CreditEntryType;
 import com.inventory.credit.domain.model.CreditPartyType;
 import com.inventory.credit.service.CreditService;
-import com.inventory.documentservice.rest.dto.mis.MisTabularDocumentRequest;
-import com.inventory.documentservice.service.DocumentService;
+import com.inventory.documentservice.api.MisDocuments;
+import com.inventory.documentservice.api.MisTabularDocument;
 import com.inventory.metrics.MetricsWrapper;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.Refund;
@@ -53,7 +53,7 @@ public class CustomerMoneyMisService {
 
   private final CreditService creditService;
   private final MisProductQueryService misProductQueryService;
-  private final DocumentService documentService;
+  private final MisDocuments misDocuments;
   private final SalesMisService salesMisService;
   private final MetricsWrapper metrics;
 
@@ -104,7 +104,7 @@ public class CustomerMoneyMisService {
         salesMisService.buildReport(shopId, fromIn, toIn, null, customerId, null);
     MisReportSupport.assertExportSize(built.filteredRows().size());
     MisReportSupport.assertExportSize(sales.rows().size());
-    MisTabularDocumentRequest doc =
+    MisTabularDocument doc =
         MisTabularDocumentFactory.customerMisReport(
             shopName,
             LocalDateTime.now(),
@@ -113,7 +113,7 @@ public class CustomerMoneyMisService {
             built.filteredRows(),
             sales.summary(),
             sales.rows());
-    return documentService.generateMisExcel(doc);
+    return misDocuments.excel(doc);
   }
 
   public byte[] exportPdf(
@@ -128,7 +128,7 @@ public class CustomerMoneyMisService {
     BuiltReport built =
         build(shopId, fromIn, toIn, customerId, txnTypesCsv, moneyFilterRaw, q);
     MisReportSupport.assertExportSize(built.filteredRows().size());
-    MisTabularDocumentRequest doc =
+    MisTabularDocument doc =
         MisTabularDocumentFactory.moneyReport(
             "Customer Money MIS",
             shopName,
@@ -137,7 +137,7 @@ public class CustomerMoneyMisService {
             built.summary(),
             built.filteredRows(),
             false);
-    return documentService.generateMisPdf(doc);
+    return misDocuments.pdf(doc);
   }
 
   private BuiltReport build(

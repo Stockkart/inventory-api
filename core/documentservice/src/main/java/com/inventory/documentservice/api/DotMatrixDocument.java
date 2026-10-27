@@ -1,4 +1,4 @@
-package com.inventory.documentservice.domain;
+package com.inventory.documentservice.api;
 
 /**
  * A document rendered for a dot-matrix printer: the text, what kind of document it is, and the

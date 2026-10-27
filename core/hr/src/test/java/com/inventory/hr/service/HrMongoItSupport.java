@@ -18,6 +18,8 @@ import com.inventory.accounting.service.AccountingPostingService;
 import com.inventory.accounting.service.ChartOfAccountsSeeder;
 import com.inventory.accounting.service.JournalEntrySequenceService;
 import com.inventory.documentservice.service.HtmlToPdfConverter;
+import com.inventory.documentservice.service.api.MisDocumentsImpl;
+import com.inventory.documentservice.service.api.PayslipDocumentsImpl;
 import com.inventory.documentservice.service.hr.PayslipPdfService;
 import com.inventory.documentservice.service.mis.MisExcelDocumentService;
 import com.inventory.documentservice.service.mis.MisPdfDocumentService;
@@ -315,7 +317,7 @@ final class HrMongoItSupport {
         repos.getRepository(PayrollLineRepository.class));
     ReflectionTestUtils.setField(payslips, "guard", guard);
     ReflectionTestUtils.setField(payslips, "selfServiceResolver", selfService);
-    ReflectionTestUtils.setField(payslips, "payslipPdfService", pdf);
+    ReflectionTestUtils.setField(payslips, "payslipDocuments", new PayslipDocumentsImpl(pdf));
     ReflectionTestUtils.setField(payslips, "shopServiceAdapter", shops);
     ReflectionTestUtils.setField(payslips, "messagingService", messaging);
     ReflectionTestUtils.setField(payslips, "queryRunner", runner);
@@ -332,8 +334,7 @@ final class HrMongoItSupport {
         repos.getRepository(PayrollRunRepository.class));
     ReflectionTestUtils.setField(reports, "lineRepository",
         repos.getRepository(PayrollLineRepository.class));
-    ReflectionTestUtils.setField(reports, "excelService", excel);
-    ReflectionTestUtils.setField(reports, "pdfService", misPdf);
+    ReflectionTestUtils.setField(reports, "misDocuments", new MisDocumentsImpl(excel, misPdf));
     ReflectionTestUtils.setField(reports, "shopServiceAdapter", shops);
     ReflectionTestUtils.setField(reports, "queryRunner", runner);
     ReflectionTestUtils.setField(reports, "metrics", metrics);

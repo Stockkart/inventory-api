@@ -1,6 +1,6 @@
 package com.inventory.documentservice.preview;
 
-import com.inventory.documentservice.domain.PrinterType;
+import com.inventory.documentservice.api.PrinterType;
 import com.inventory.documentservice.rest.dto.GenerateInvoiceRequest;
 
 /**

@@ -11,8 +11,8 @@ import static org.mockito.Mockito.when;
 
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
-import com.inventory.documentservice.rest.dto.hr.PayslipDocumentRequest;
-import com.inventory.documentservice.service.hr.PayslipPdfService;
+import com.inventory.documentservice.api.PayslipDocument;
+import com.inventory.documentservice.api.PayslipDocuments;
 import com.inventory.hr.domain.model.Employee;
 import com.inventory.hr.domain.model.PayrollLine;
 import com.inventory.hr.domain.model.enums.DeductionKind;
@@ -41,7 +41,7 @@ class PayslipServiceTest {
 
   @Mock private PayrollLineRepository lineRepository;
   @Mock private SelfServiceResolver selfServiceResolver;
-  @Mock private PayslipPdfService payslipPdfService;
+  @Mock private PayslipDocuments payslipDocuments;
   @Mock private HrPermissionGuard guard;
   @Spy private HrQueryRunner queryRunner = new HrQueryRunner();
   @InjectMocks private PayslipService service;
@@ -85,25 +85,25 @@ class PayslipServiceTest {
 
   @Test
   void thePayslipCarriesEverythingR10_2Asks() {
-    PayslipDocumentRequest doc = PayslipService.toDocument(line(),
+    PayslipDocument doc = PayslipService.toDocument(line(),
         new ShopServiceAdapter.ShopSummary("Shop", "1 Main Road"), Instant.EPOCH);
 
-    assertEquals("Shop", doc.getShopName());
-    assertEquals("1 Main Road", doc.getShopAddress());
-    assertEquals("Asha", doc.getEmployeeName());
-    assertEquals("EMP-001", doc.getEmployeeCode());
-    assertEquals("Helper", doc.getDesignation());
-    assertEquals("April 2025", doc.getPeriodLabel());
+    assertEquals("Shop", doc.shopName());
+    assertEquals("1 Main Road", doc.shopAddress());
+    assertEquals("Asha", doc.employeeName());
+    assertEquals("EMP-001", doc.employeeCode());
+    assertEquals("Helper", doc.designation());
+    assertEquals("April 2025", doc.periodLabel());
     assertEquals("Thirteen Thousands One Hundred and Forty Six Rupees only",
-        doc.getNetPayInWords());
-    assertEquals(0, doc.getAdvanceBalance().compareTo(new BigDecimal("612.67")));
-    assertEquals("Paid on 2025-05-02 (UPI)", doc.getPaymentNote());
-    assertEquals("Basic pay", doc.getEarnings().get(0).getLabel());
-    assertEquals("Advance recovery", doc.getDeductions().get(0).getLabel());
-    List<String> labels = doc.getDayRows().stream().map(PayslipDocumentRequest.Row::getLabel)
+        doc.netPayInWords());
+    assertEquals(0, doc.advanceBalance().compareTo(new BigDecimal("612.67")));
+    assertEquals("Paid on 2025-05-02 (UPI)", doc.paymentNote());
+    assertEquals("Basic pay", doc.earnings().get(0).label());
+    assertEquals("Advance recovery", doc.deductions().get(0).label());
+    List<String> labels = doc.dayRows().stream().map(PayslipDocument.Row::label)
         .toList();
     assertEquals(List.of("Days employed", "Present", "Absent", "Week off", "Paid days"), labels);
-    assertEquals("28 of 30", doc.getDayRows().get(4).getValue());
+    assertEquals("28 of 30", doc.dayRows().get(4).value());
   }
 
   @Test
@@ -112,11 +112,11 @@ class PayslipServiceTest {
     l.setAdvanceOutstandingAfter(BigDecimal.ZERO);
     l.setPaymentStatus(SalaryPaymentStatus.PENDING);
 
-    PayslipDocumentRequest doc = PayslipService.toDocument(l, null, Instant.EPOCH);
+    PayslipDocument doc = PayslipService.toDocument(l, null, Instant.EPOCH);
 
-    assertNull(doc.getShopAddress());
-    assertNull(doc.getAdvanceBalance());
-    assertNull(doc.getPaymentNote());
+    assertNull(doc.shopAddress());
+    assertNull(doc.advanceBalance());
+    assertNull(doc.paymentNote());
   }
 
   @Test
@@ -127,7 +127,7 @@ class PayslipServiceTest {
     when(lineRepository.findByShopIdAndId("s1", "l1")).thenReturn(Optional.of(line()));
 
     assertThrows(ResourceNotFoundException.class, () -> service.ownPayslip("s1", "u1", "l1"));
-    verify(payslipPdfService, never()).generate(any());
+    verify(payslipDocuments, never()).pdf(any());
   }
 
   @Test

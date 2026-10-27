@@ -1,7 +1,7 @@
 package com.inventory.documentservice.service;
 
 import com.inventory.documentservice.domain.DocumentTemplateFamily;
-import com.inventory.documentservice.domain.PrinterType;
+import com.inventory.documentservice.api.PrinterType;
 import com.inventory.documentservice.rest.dto.GenerateCreditNoteRequest;
 import com.inventory.documentservice.utils.constants.DocumentMetricsConstants;
 import com.inventory.metrics.MetricsWrapper;
@@ -51,7 +51,7 @@ public class CreditNotePdfService {
   public String renderCreditNoteHtml(GenerateCreditNoteRequest request) {
     Context context = prepareTemplateContext(request);
     PrinterType printerType = PrinterType.from(request != null ? request.getPrinterType() : null);
-    String templateName = printerType.getTemplateName(DocumentTemplateFamily.CREDIT_NOTE);
+    String templateName = DocumentTemplateFamily.CREDIT_NOTE.templateFor(printerType);
     log.debug(
         "Rendering credit note HTML with printer type {} → template {}", printerType, templateName);
     return templateEngine.process(templateName, context);

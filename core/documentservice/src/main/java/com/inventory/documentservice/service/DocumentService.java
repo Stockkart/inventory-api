@@ -1,18 +1,15 @@
 package com.inventory.documentservice.service;
 
-import com.inventory.documentservice.domain.DotMatrixDocument;
+import com.inventory.documentservice.api.DotMatrixDocument;
 import com.inventory.documentservice.rest.dto.GenerateCreditNoteRequest;
 import com.inventory.documentservice.rest.dto.GenerateInvoiceRequest;
-import com.inventory.documentservice.rest.dto.mis.MisTabularDocumentRequest;
-import com.inventory.documentservice.service.mis.MisExcelDocumentService;
-import com.inventory.documentservice.service.mis.MisPdfDocumentService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
- * Facade for document generation. Delegates to document-specific PDF services
- * and MIS exporters.
+ * Facade for invoice and credit-note generation. Delegates to the document-specific renderers.
+ * MIS reports are rendered through {@link com.inventory.documentservice.api.MisDocuments}.
  */
 @Service
 @Slf4j
@@ -26,12 +23,6 @@ public class DocumentService {
 
   @Autowired
   private CreditNotePdfService creditNotePdfService;
-
-  @Autowired
-  private MisExcelDocumentService misExcelDocumentService;
-
-  @Autowired
-  private MisPdfDocumentService misPdfDocumentService;
 
   /**
    * Generate invoice PDF.
@@ -113,17 +104,5 @@ public class DocumentService {
         "Generating credit note HTML preview for note: {}",
         request != null ? request.getCreditNoteNo() : null);
     return creditNotePdfService.renderCreditNoteHtml(request);
-  }
-
-  /** MIS tabular Excel (.xlsx). */
-  public byte[] generateMisExcel(MisTabularDocumentRequest request) {
-    log.info("Generating MIS Excel: {}", request != null ? request.getTitle() : null);
-    return misExcelDocumentService.generateExcel(request);
-  }
-
-  /** MIS tabular PDF. */
-  public byte[] generateMisPdf(MisTabularDocumentRequest request) {
-    log.info("Generating MIS PDF: {}", request != null ? request.getTitle() : null);
-    return misPdfDocumentService.generatePdf(request);
   }
 }

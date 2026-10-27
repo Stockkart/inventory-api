@@ -1,6 +1,6 @@
 package com.inventory.product.rest.dto.response;
 
-import com.inventory.documentservice.domain.DotMatrixDocumentKind;
+import com.inventory.documentservice.api.DotMatrixDocumentKind;
 import com.inventory.product.domain.model.enums.PrintAction;
 import com.inventory.product.domain.model.enums.PrintActionReason;
 import com.inventory.product.domain.model.enums.PrintBridgeState;

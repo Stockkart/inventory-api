@@ -8,8 +8,8 @@ import com.inventory.analytics.mis.support.MisMoneyTenderHelper;
 import com.inventory.analytics.mis.support.MisReportSupport;
 import com.inventory.analytics.mis.support.MisTabularDocumentFactory;
 import com.inventory.analytics.utils.constants.AnalyticsMetricsConstants;
-import com.inventory.documentservice.rest.dto.mis.MisTabularDocumentRequest;
-import com.inventory.documentservice.service.DocumentService;
+import com.inventory.documentservice.api.MisDocuments;
+import com.inventory.documentservice.api.MisTabularDocument;
 import com.inventory.metrics.MetricsWrapper;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.Refund;
@@ -39,7 +39,7 @@ import org.springframework.util.StringUtils;
 public class SalesMisService {
 
   private final MisProductQueryService misProductQueryService;
-  private final DocumentService documentService;
+  private final MisDocuments misDocuments;
   private final MetricsWrapper metrics;
 
   public MisSalesReportResponse getReport(
@@ -92,7 +92,7 @@ public class SalesMisService {
       String q) {
     BuiltReport built = build(shopId, fromIn, toIn, paymentMethod, customerId, q);
     MisReportSupport.assertExportSize(built.rows().size());
-    MisTabularDocumentRequest doc =
+    MisTabularDocument doc =
         MisTabularDocumentFactory.salesReport(
             "Sales MIS",
             shopName,
@@ -100,7 +100,7 @@ public class SalesMisService {
             built.from() + " to " + built.to(),
             built.summary(),
             built.rows());
-    return documentService.generateMisExcel(doc);
+    return misDocuments.excel(doc);
   }
 
   public byte[] exportPdf(
@@ -113,7 +113,7 @@ public class SalesMisService {
       String q) {
     BuiltReport built = build(shopId, fromIn, toIn, paymentMethod, customerId, q);
     MisReportSupport.assertExportSize(built.rows().size());
-    MisTabularDocumentRequest doc =
+    MisTabularDocument doc =
         MisTabularDocumentFactory.salesReport(
             "Sales MIS",
             shopName,
@@ -121,7 +121,7 @@ public class SalesMisService {
             built.from() + " to " + built.to(),
             built.summary(),
             built.rows());
-    return documentService.generateMisPdf(doc);
+    return misDocuments.pdf(doc);
   }
 
   private BuiltReport build(

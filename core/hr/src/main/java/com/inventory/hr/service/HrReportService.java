@@ -2,10 +2,9 @@ package com.inventory.hr.service;
 
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
-import com.inventory.documentservice.rest.dto.mis.MisDocumentKpi;
-import com.inventory.documentservice.rest.dto.mis.MisTabularDocumentRequest;
-import com.inventory.documentservice.service.mis.MisExcelDocumentService;
-import com.inventory.documentservice.service.mis.MisPdfDocumentService;
+import com.inventory.documentservice.api.MisDocuments;
+import com.inventory.documentservice.api.MisKpi;
+import com.inventory.documentservice.api.MisTabularDocument;
 import com.inventory.hr.domain.model.PayrollLine;
 import com.inventory.hr.domain.model.PayrollRun;
 import com.inventory.hr.domain.model.enums.DayStatus;
@@ -54,9 +53,7 @@ public class HrReportService {
 
   @Autowired private PayrollLineRepository lineRepository;
 
-  @Autowired private MisExcelDocumentService excelService;
-
-  @Autowired private MisPdfDocumentService pdfService;
+  @Autowired private MisDocuments misDocuments;
 
   @Autowired(required = false) private ShopServiceAdapter shopServiceAdapter;
 
@@ -70,7 +67,7 @@ public class HrReportService {
   public HrFile monthExport(String userId, String shopId, String period) {
     guard.require(userId, shopId, HrPermission.VIEW_ATTENDANCE);
     MonthRegisterResponse register = attendanceService.monthRegister(shopId, period, null);
-    MisTabularDocumentRequest doc = base("Attendance register", shopId,
+    MisTabularDocument.MisTabularDocumentBuilder doc = base("Attendance register", shopId,
         PayslipService.periodLabel(register.getPeriod()));
     List<String> columns = new ArrayList<>(List.of("Code", "Name"));
     for (String date : register.getDates()) {
@@ -78,7 +75,9 @@ public class HrReportService {
     }
     columns.addAll(List.of("Present", "Half days", "Absent", "Leave", "Week off", "Holiday",
         "Unmarked", "Late days"));
-    doc.setColumns(columns);
+    doc.columns(columns);
+    List<List<String>> table = new ArrayList<>();
+    doc.rows(table);
     for (MonthRegisterResponse.Row row : register.getRows()) {
       List<String> cells = new ArrayList<>(List.of(text(row.getCode()), text(row.getName())));
       for (MonthRegisterResponse.Cell cell : row.getCells()) {
@@ -88,14 +87,14 @@ public class HrReportService {
       cells.addAll(List.of(number(t.getPresent()), String.valueOf(t.getHalfDays()),
           number(t.getAbsent()), number(t.getLeave()), number(t.getWeekOff()),
           number(t.getHoliday()), number(t.getUnmarked()), String.valueOf(t.getLateDays())));
-      doc.getRows().add(cells);
+      table.add(cells);
     }
-    doc.setKpis(new ArrayList<>(List.of(
-        new MisDocumentKpi("Employees", String.valueOf(register.getRows().size())),
-        new MisDocumentKpi("Key", "P present, A absent, H half day, L leave, W week off,"
+    doc.kpis(new ArrayList<>(List.of(
+        new MisKpi("Employees", String.valueOf(register.getRows().size())),
+        new MisKpi("Key", "P present, A absent, H half day, L leave, W week off,"
             + " Ho holiday, - unmarked"))));
-    doc.setDetailSheetTitle("Attendance");
-    return file("month_xlsx", () -> excelService.generateExcel(doc),
+    MisTabularDocument report = doc.detailSheetTitle("Attendance").build();
+    return file("month_xlsx", () -> misDocuments.excel(report),
         "attendance-" + register.getPeriod() + ".xlsx", HrFile.XLSX);
   }
 
@@ -107,7 +106,7 @@ public class HrReportService {
     List<LeaveBalanceRow> rows = queryRunner.read("leave_balances",
         () -> leaveBalanceService.rows(shopId, year, null));
     String leaveYear = rows.isEmpty() ? (year != null ? year : "") : rows.get(0).getLeaveYear();
-    MisTabularDocumentRequest doc = base("Leave balances", shopId, "Leave year " + leaveYear);
+    MisTabularDocument.MisTabularDocumentBuilder doc = base("Leave balances", shopId, "Leave year " + leaveYear);
     // one column group per leave type, in the order of the first row (all rows share it)
     Map<String, String> types = new LinkedHashMap<>();
     rows.stream().findFirst().ifPresent(r -> r.getBalances()
@@ -115,7 +114,9 @@ public class HrReportService {
     List<String> columns = new ArrayList<>(List.of("Code", "Name"));
     types.values().forEach(name -> columns.addAll(List.of(name + " quota", name + " used",
         name + " available")));
-    doc.setColumns(columns);
+    doc.columns(columns);
+    List<List<String>> table = new ArrayList<>();
+    doc.rows(table);
     for (LeaveBalanceRow row : rows) {
       List<String> cells = new ArrayList<>(List.of(text(row.getCode()), text(row.getName())));
       for (String typeId : types.keySet()) {
@@ -125,12 +126,12 @@ public class HrReportService {
         cells.add(b == null ? "0" : number(b.getUsed()));
         cells.add(b == null || b.getAvailable() == null ? "No limit" : number(b.getAvailable()));
       }
-      doc.getRows().add(cells);
+      table.add(cells);
     }
-    doc.setKpis(new ArrayList<>(List.of(
-        new MisDocumentKpi("Employees", String.valueOf(rows.size())))));
-    doc.setDetailSheetTitle("Balances");
-    return file("leave_balance_xlsx", () -> excelService.generateExcel(doc),
+    doc.kpis(new ArrayList<>(List.of(
+        new MisKpi("Employees", String.valueOf(rows.size())))));
+    MisTabularDocument report = doc.detailSheetTitle("Balances").build();
+    return file("leave_balance_xlsx", () -> misDocuments.excel(report),
         "leave-balances-" + leaveYear + ".xlsx", HrFile.XLSX);
   }
 
@@ -157,9 +158,11 @@ public class HrReportService {
     String label = PayslipService.periodLabel(run.getPeriod(), run.getFromDate(),
         run.getToDate());
     // a salary month that is not the calendar month reads "Salary for 26 Sep – 25 Oct 2026"
-    MisTabularDocumentRequest doc = base("Salary register", shopId,
+    MisTabularDocument.MisTabularDocumentBuilder doc = base("Salary register", shopId,
         label.equals(PayslipService.periodLabel(run.getPeriod())) ? label : "Salary for " + label);
-    doc.setColumns(new ArrayList<>(List.of("Code", "Name", "Designation", "Paid days", "Gross",
+    List<List<String>> table = new ArrayList<>();
+    doc.rows(table);
+    doc.columns(new ArrayList<>(List.of("Code", "Name", "Designation", "Paid days", "Gross",
         "Advance recovered", "Other deductions", "Rounding", "Net pay", "Payment", "Paid on")));
     BigDecimal gross = BigDecimal.ZERO;
     BigDecimal net = BigDecimal.ZERO;
@@ -171,7 +174,7 @@ public class HrReportService {
       BigDecimal other = nz(l.getTotalDeductions()).subtract(recovered);
       SalaryPaymentStatus status = l.getPaymentStatus() != null ? l.getPaymentStatus()
           : SalaryPaymentStatus.PENDING;
-      doc.getRows().add(new ArrayList<>(List.of(text(snap.getCode()), text(snap.getName()),
+      table.add(new ArrayList<>(List.of(text(snap.getCode()), text(snap.getName()),
           text(snap.getDesignation()),
           l.getDayCounts() != null ? number(l.getDayCounts().getPaidDays()) : "",
           money(l.getGross()), money(recovered), money(other), money(l.getRounding()),
@@ -183,33 +186,31 @@ public class HrReportService {
         paid++;
       }
     }
-    doc.setKpis(new ArrayList<>(List.of(
-        new MisDocumentKpi("Status", run.getStatus() != null ? run.getStatus().name() : ""),
-        new MisDocumentKpi("Employees", String.valueOf(lines.size())),
-        new MisDocumentKpi("Gross pay", money(gross)),
-        new MisDocumentKpi("Net pay", money(net)),
-        new MisDocumentKpi("Paid", paid + " of " + lines.size()))));
-    doc.setDetailSheetTitle("Salaries");
+    doc.kpis(new ArrayList<>(List.of(
+        new MisKpi("Status", run.getStatus() != null ? run.getStatus().name() : ""),
+        new MisKpi("Employees", String.valueOf(lines.size())),
+        new MisKpi("Gross pay", money(gross)),
+        new MisKpi("Net pay", money(net)),
+        new MisKpi("Paid", paid + " of " + lines.size()))));
+    MisTabularDocument report = doc.detailSheetTitle("Salaries").build();
     String name = "salary-register-" + run.getPeriod() + (pdf ? ".pdf" : ".xlsx");
     return pdf
-        ? file("salary_register_pdf", () -> pdfService.generatePdf(doc), name, HrFile.PDF)
-        : file("salary_register_xlsx", () -> excelService.generateExcel(doc), name, HrFile.XLSX);
+        ? file("salary_register_pdf", () -> misDocuments.pdf(report), name, HrFile.PDF)
+        : file("salary_register_xlsx", () -> misDocuments.excel(report), name, HrFile.XLSX);
   }
 
   // ---- helpers ---------------------------------------------------------------------------------
 
-  private MisTabularDocumentRequest base(String title, String shopId, String periodLabel) {
-    MisTabularDocumentRequest doc = new MisTabularDocumentRequest();
-    doc.setTitle(title);
-    doc.setColumns(new ArrayList<>());
-    doc.setRows(new ArrayList<>());
-    doc.setKpis(new ArrayList<>());
+  /** The report header; each caller then sets the columns, rows, KPIs and sheet title. */
+  private MisTabularDocument.MisTabularDocumentBuilder base(String title, String shopId,
+      String periodLabel) {
     ShopServiceAdapter.ShopSummary shop = shopServiceAdapter != null
         ? shopServiceAdapter.getShopSummary(shopId) : null;
-    doc.setShopName(shop != null && shop.getName() != null ? shop.getName() : "");
-    doc.setPeriodLabel(periodLabel);
-    doc.setGeneratedAtLabel(GENERATED.format(ZonedDateTime.now(HrDateUtils.ZONE)));
-    return doc;
+    return MisTabularDocument.builder()
+        .title(title)
+        .shopName(shop != null && shop.getName() != null ? shop.getName() : "")
+        .periodLabel(periodLabel)
+        .generatedAtLabel(GENERATED.format(ZonedDateTime.now(HrDateUtils.ZONE)));
   }
 
   private HrFile file(String operation, Supplier<byte[]> build, String name, String type) {

@@ -1,6 +1,6 @@
 package com.inventory.product.service.printing;
 
-import com.inventory.documentservice.domain.DotMatrixDocument;
+import com.inventory.documentservice.api.DotMatrixDocument;
 import com.inventory.metrics.MetricsWrapper;
 import com.inventory.product.config.PrintBridgeProperties;
 import com.inventory.product.domain.model.enums.PrintAction;

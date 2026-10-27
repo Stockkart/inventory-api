@@ -2,7 +2,7 @@ package com.inventory.documentservice.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.inventory.documentservice.domain.DotMatrixDocumentKind;
+import com.inventory.documentservice.api.DotMatrixDocumentKind;
 import com.inventory.documentservice.rest.dto.GenerateCreditNoteRequest;
 import com.inventory.documentservice.rest.dto.GenerateInvoiceRequest;
 import org.junit.jupiter.api.Test;

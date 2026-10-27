@@ -1,8 +1,8 @@
 package com.inventory.product.service;
 
 import com.inventory.common.exception.ResourceNotFoundException;
-import com.inventory.documentservice.domain.DotMatrixDocument;
-import com.inventory.documentservice.domain.PrinterType;
+import com.inventory.documentservice.api.DotMatrixDocument;
+import com.inventory.documentservice.api.PrinterType;
 import com.inventory.documentservice.rest.dto.GenerateCreditNoteRequest;
 import com.inventory.documentservice.service.DocumentService;
 import com.inventory.product.domain.model.Shop;

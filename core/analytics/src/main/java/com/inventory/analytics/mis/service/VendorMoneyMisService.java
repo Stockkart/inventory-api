@@ -18,8 +18,8 @@ import com.inventory.credit.domain.model.CreditEntry;
 import com.inventory.credit.domain.model.CreditEntryType;
 import com.inventory.credit.domain.model.CreditPartyType;
 import com.inventory.credit.service.CreditService;
-import com.inventory.documentservice.rest.dto.mis.MisTabularDocumentRequest;
-import com.inventory.documentservice.service.DocumentService;
+import com.inventory.documentservice.api.MisDocuments;
+import com.inventory.documentservice.api.MisTabularDocument;
 import com.inventory.metrics.MetricsWrapper;
 import com.inventory.product.domain.model.VendorPurchaseInvoice;
 import com.inventory.product.domain.model.VendorPurchaseReturn;
@@ -53,7 +53,7 @@ public class VendorMoneyMisService {
 
   private final CreditService creditService;
   private final MisProductQueryService misProductQueryService;
-  private final DocumentService documentService;
+  private final MisDocuments misDocuments;
   private final MetricsWrapper metrics;
 
   public MisMoneyReportResponse getReport(
@@ -100,7 +100,7 @@ public class VendorMoneyMisService {
     BuiltReport built =
         build(shopId, fromIn, toIn, vendorId, txnTypesCsv, moneyFilterRaw, q);
     MisReportSupport.assertExportSize(built.filteredRows().size());
-    MisTabularDocumentRequest doc =
+    MisTabularDocument doc =
         MisTabularDocumentFactory.moneyReport(
             "Vendor Money MIS",
             shopName,
@@ -109,7 +109,7 @@ public class VendorMoneyMisService {
             built.summary(),
             built.filteredRows(),
             true);
-    return documentService.generateMisExcel(doc);
+    return misDocuments.excel(doc);
   }
 
   public byte[] exportPdf(
@@ -124,7 +124,7 @@ public class VendorMoneyMisService {
     BuiltReport built =
         build(shopId, fromIn, toIn, vendorId, txnTypesCsv, moneyFilterRaw, q);
     MisReportSupport.assertExportSize(built.filteredRows().size());
-    MisTabularDocumentRequest doc =
+    MisTabularDocument doc =
         MisTabularDocumentFactory.moneyReport(
             "Vendor Money MIS",
             shopName,
@@ -133,7 +133,7 @@ public class VendorMoneyMisService {
             built.summary(),
             built.filteredRows(),
             true);
-    return documentService.generateMisPdf(doc);
+    return misDocuments.pdf(doc);
   }
 
   private BuiltReport build(
