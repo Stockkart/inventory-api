@@ -80,9 +80,6 @@ public class InventoryValidator {
         && (request.getItemTypeDegree() == null || request.getItemTypeDegree() <= 0)) {
       throw new ValidationException("When itemType is DEGREE, itemTypeDegree must be present and greater than zero");
     }
-    if (request.getPurchaseDate() != null) {
-      validatePurchaseDate(request.getPurchaseDate());
-    }
     if (request.getSchemeType() == SchemeType.PERCENTAGE) {
       if (request.getSchemePercentage() == null) {
         throw new ValidationException("When schemeType is PERCENTAGE, schemePercentage is required");
@@ -145,6 +142,8 @@ public class InventoryValidator {
   static final String GST_REQUIRED =
       "SGST and CGST are required (enter 0 for a GST-exempt item)";
 
+  static final String PURCHASE_DATE_NOT_EDITABLE = "Purchase date cannot be edited";
+
   /**
    * GST belongs to the lot; the shop has no rate to fall back on. A taxable (non-BASIC) lot must
    * state both SGST and CGST on create, 0 for an exempt item. A BASIC (estimate-only) lot carries
@@ -174,6 +173,20 @@ public class InventoryValidator {
     }
     if ((sgst != null && !StringUtils.hasText(sgst)) || (cgst != null && !StringUtils.hasText(cgst))) {
       throw new ValidationException(GST_REQUIRED);
+    }
+  }
+
+  /**
+   * A lot's purchase date is set at stock-in and cannot be edited. An update may resend the
+   * stored day (same UTC day), which changes nothing; any other day is rejected.
+   */
+  public void validatePurchaseDateUnchanged(Instant requested, Instant stored) {
+    if (requested == null) {
+      return;
+    }
+    if (stored == null
+        || !requested.truncatedTo(ChronoUnit.DAYS).equals(stored.truncatedTo(ChronoUnit.DAYS))) {
+      throw new ValidationException(PURCHASE_DATE_NOT_EDITABLE);
     }
   }
 
