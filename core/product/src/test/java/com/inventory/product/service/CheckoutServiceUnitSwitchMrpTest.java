@@ -58,6 +58,7 @@ class CheckoutServiceUnitSwitchMrpTest {
   @Mock private CustomerService customerService;
   @Mock private CartContributorResolver cartContributorResolver;
   @Spy private PurchaseMapperImpl purchaseMapper;
+  @Spy private CartRateResolver cartRateResolver;
   @InjectMocks private CheckoutService checkoutService;
 
   private Purchase cart;
@@ -81,29 +82,29 @@ class CheckoutServiceUnitSwitchMrpTest {
   }
 
   /**
-   * What a switch stores today for a line below MRP, recorded on main before the fix. The
-   * request is the one ScanSell sends on a unit change: quantity 0 and the price it already
-   * rescaled to the new unit. Lines hold quantity in the sale unit (base / unitFactor, where
-   * unitFactor is the sale unit's factor) and keep the batch's per-strip MRP whatever the unit.
+   * A switch of a line below MRP sends what ScanSell sends on a unit change: quantity 0 and the
+   * price it already rescaled to the new unit. That price goes on as sent, so the line total
+   * stays (140 a strip is 14.00 a tablet, not 1.40). Lines hold quantity in the sale unit (base /
+   * unitFactor, where unitFactor is the sale unit's factor) and keep the batch's per-strip MRP
+   * whatever the unit.
    *
-   * <p>Known bug, out of scope here: these results are wrong. The price ScanSell already
-   * rescaled is rescaled again (1350 a strip becomes 20250), and a 15-tablet line is priced at
-   * the per-strip 90. The test pins them so a change to them is deliberate.
+   * <p>Known bug, out of scope here: a first add by the tablet takes the per-strip 90 as its
+   * per-tablet price. Pinned so a change to it is deliberate.
    */
   @Test
-  void unitSwitchBelowMrpPinsKnownDoubleRescale() {
+  void unitSwitchBelowMrpTakesTheSentPriceAsTheNewUnits() {
     stock("100", "90", 15);
     add("TABLET", 15, 15, null);
     assertLine("90", "100", "15.0000", 15, 1, "1512.00");
     add("STRIP", 0, 0, "1350.00");
-    assertLine("20250.00", "100", "1.0000", 15, 15, "22680.00");
+    assertLine("1350.00", "100", "1.0000", 15, 15, "1512.00");
 
     cart = null;
     stock("150", "140", 10);
     add("STRIP", 1, 10, null);
     assertLine("140", "150", "1.0000", 10, 10, "156.80");
     add("TABLET", 0, 0, "14.00");
-    assertLine("1.40", "150", "10.0000", 10, 1, "15.68");
+    assertLine("14.00", "150", "10.0000", 10, 1, "156.80");
   }
 
   @Test
@@ -198,24 +199,20 @@ class CheckoutServiceUnitSwitchMrpTest {
     assertFalse(CheckoutUtils.isSellingAtMrp(line()));
   }
 
-  /**
-   * A below-MRP line is left to the old switch code: the cart totals below are today's, and
-   * wrong. Known bug (double rescale, see {@link #unitSwitchBelowMrpPinsKnownDoubleRescale}),
-   * out of scope here; pinned so a change to it is deliberate.
-   */
+  /** A below-MRP switch keeps the cart total: the sent price is for the new unit. */
   @Test
-  void belowMrpUnitSwitchPinsKnownDoubleRescale() {
+  void belowMrpUnitSwitchKeepsTheCartTotal() {
     stock("100", "90", 15);
     add("TABLET", 15, 15, null);
     add("STRIP", 0, 0, "1350.00");
-    assertCart("20250.00", "2430.00", "22680");
+    assertCart("1350.00", "162.00", "1512");
     assertFalse(CheckoutUtils.isSellingAtMrp(line()));
 
     cart = null;
     stock("150", "140", 10);
     add("STRIP", 1, 10, null);
     add("TABLET", 0, 0, "14.00");
-    assertCart("14.00", "1.68", "16");
+    assertCart("140.00", "16.80", "157");
     assertFalse(CheckoutUtils.isSellingAtMrp(line()));
   }
 

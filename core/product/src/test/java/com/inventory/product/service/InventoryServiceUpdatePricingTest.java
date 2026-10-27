@@ -99,7 +99,7 @@ class InventoryServiceUpdatePricingTest {
     request.setCgst("6");
     request.setSaleAdditionalDiscount(new BigDecimal("3"));
 
-    InventoryDetailResponse response = inventoryService.update("lot-1", request, "s1");
+    InventoryDetailResponse response = inventoryService.update("lot-1", request, "s1", "u1");
 
     assertEquals(0, new BigDecimal("77.5").compareTo(response.getPriceToRetail()));
     assertEquals(0, new BigDecimal("99.5").compareTo(response.getMaximumRetailPrice()));
@@ -114,7 +114,7 @@ class InventoryServiceUpdatePricingTest {
     UpdateInventoryRequest request = new UpdateInventoryRequest();
     request.setLocation("RACK-2");
 
-    InventoryDetailResponse response = inventoryService.update("lot-1", request, "s1");
+    InventoryDetailResponse response = inventoryService.update("lot-1", request, "s1", "u1");
 
     assertEquals("RACK-2", response.getLocation());
     assertEquals(0, new BigDecimal("77.5").compareTo(response.getPriceToRetail()));

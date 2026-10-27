@@ -39,7 +39,15 @@ public interface PricingMapper {
 
   @Mapping(target = "purchaseScheme", expression = "java(toSchemeDto(pricing.getPurchaseScheme()))")
   @Mapping(target = "saleScheme", expression = "java(toSchemeDto(pricing.getSaleScheme()))")
+  // Mapped inline, not via toRateDtos, so an empty rate list stays [] in the response as before.
+  @Mapping(target = "rates", expression = "java(pricing.getRates() == null ? null : "
+      + "pricing.getRates().stream().map(this::toRateDto).toList())")
+  @Mapping(target = "defaultRateOptions",
+      expression = "java(com.inventory.pricing.utils.PricingUtils.defaultRateOptions(pricing.getRates()))")
   PricingResponse toResponse(Pricing pricing);
+
+  /** A working copy, so rate generation can see a patch's new bases without touching the stored record. */
+  Pricing copy(Pricing pricing);
 
   @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
   @Mapping(target = "id", ignore = true)
@@ -109,7 +117,10 @@ public interface PricingMapper {
     return dto;
   }
 
+  @Mapping(target = "termsText", expression = "java(com.inventory.pricing.utils.RateTermsText.of(rate))")
   RateDto toRateDto(Rate rate);
+
+  @Mapping(target = "scheme", expression = "java(toScheme(dto.getScheme()))")
   Rate toRate(RateDto dto);
 
   default List<RateDto> toRateDtos(List<Rate> rates) {
@@ -127,6 +138,7 @@ public interface PricingMapper {
     UpdateDefaultPriceRequest req = new UpdateDefaultPriceRequest();
     req.setRates(item.getRates());
     req.setDefaultRate(item.getDefaultRate());
+    req.setResetRates(item.getResetRates());
     return req;
   }
 

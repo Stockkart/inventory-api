@@ -1,5 +1,9 @@
 package com.inventory.product.domain.model.pricing;
 
+import com.inventory.common.constants.ErrorCode;
+import com.inventory.common.exception.BaseException;
+import com.inventory.common.exception.ValidationException;
+import com.inventory.pricing.api.port.ShopRateRulesPort;
 import com.inventory.pricing.domain.model.Scheme;
 import com.inventory.pricing.rest.dto.request.PricingCreateCommand;
 import com.inventory.pricing.rest.dto.request.PricingUpdateCommand;
@@ -30,6 +34,9 @@ public class InventoryPricingWriteHandler {
   @Autowired
   private ShopRepository shopRepository;
 
+  @Autowired
+  private ShopRateRulesPort shopRateRulesPort;
+
   public void persistOnSave(Inventory inventory) {
     try {
       String verticalId = resolveVerticalId(inventory.getShopId());
@@ -52,7 +59,9 @@ public class InventoryPricingWriteHandler {
               .maximumRetailPrice(selling)
               .priceToRetail(selling)
               .defaultRate("priceToRetail")
-              .rates(null)
+              // With rate rules the generated rates stay; PricingService rebuilds them from the
+              // selling price. Without rules a retailer has none.
+              .rates(hasRateRules(inventory.getShopId()) ? inventory.getRates() : null)
               .purchaseScheme(buildPurchaseScheme(inventory))
               .saleScheme(buildSaleScheme(inventory));
         } else {
@@ -73,11 +82,21 @@ public class InventoryPricingWriteHandler {
       if (ctx != null && ctx.type == InventoryPricingContext.Type.UPDATE && ctx.updateRequest != null) {
         UpdateInventoryRequest req = ctx.updateRequest;
         if (hasAnyPricingUpdate(req) && StringUtils.hasText(inventory.getPricingId())) {
+          java.math.BigDecimal mrp = req.getMaximumRetailPrice();
+          java.math.BigDecimal ptr = req.getPriceToRetail();
+          // A retailer with rate rules: MRP and PTR mirror a selling price sent alone, as on
+          // create, so rules on the selling price and the at-MRP check see one figure. Shops
+          // without rules keep today's edit behaviour.
+          if (req.getSellingPrice() != null && mrp == null && ptr == null
+              && isRetailerShop(inventory.getShopId()) && hasRateRules(inventory.getShopId())) {
+            mrp = req.getSellingPrice();
+            ptr = req.getSellingPrice();
+          }
           var cmd = PricingUpdateCommand.builder()
               .verticalId(verticalId)
-              .maximumRetailPrice(req.getMaximumRetailPrice())
+              .maximumRetailPrice(mrp)
               .costPrice(req.getCostPrice())
-              .priceToRetail(req.getPriceToRetail())
+              .priceToRetail(ptr)
               .sellingPrice(req.getSellingPrice())
               .rates(req.getRates())
               .defaultRate(req.getDefaultRate())
@@ -89,12 +108,26 @@ public class InventoryPricingWriteHandler {
               .cgst(req.getCgst())
               .clearFields(pricingClearFields(req))
               .build();
-          pricingPort.update(inventory.getPricingId(), cmd);
+          pricingPort.update(inventory.getPricingId(), cmd, ctx.userId);
         }
       }
+    } catch (ValidationException e) {
+      // A rejected rate edit (a case-only clash with a rule, an override on a missing base) must
+      // reach the caller as 400 before the inventory is saved, not drop the pricing update.
+      throw e;
+    } catch (BaseException e) {
+      // A denied rate edit must reach the caller (403), not save the inventory without its pricing.
+      if (e.getErrorCode() == ErrorCode.ACCESS_DENIED) {
+        throw e;
+      }
+      log.warn("Failed to persist pricing for inventory {}: {}", inventory.getId(), e.getMessage());
     } catch (Exception e) {
       log.warn("Failed to persist pricing for inventory {}: {}", inventory.getId(), e.getMessage());
     }
+  }
+
+  private boolean hasRateRules(String shopId) {
+    return !shopRateRulesPort.rulesFor(shopId).isEmpty();
   }
 
   private boolean isRetailerShop(String shopId) {

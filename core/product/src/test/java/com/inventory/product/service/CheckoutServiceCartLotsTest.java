@@ -71,6 +71,8 @@ class CheckoutServiceCartLotsTest {
     ReflectionTestUtils.setField(service, "checkoutValidator", mock(CheckoutValidator.class));
     ReflectionTestUtils.setField(service, "packagingUnitService", mock(PackagingUnitService.class));
     ReflectionTestUtils.setField(service, "purchaseMapper", mapper);
+    ReflectionTestUtils.setField(service, "cartRateResolver",
+        CartRateResolverTest.withLiveRules(new CartRateResolver()));
 
     when(quotationService.resolveTargetCart(any(), anyString(), anyString())).thenReturn(null);
     when(quotationService.quotedBaseQuantitiesForLots(eq(SHOP), any(), anyCollection())).thenReturn(Map.of("aaaaaaaaaaaaaaaaaaaaaaa3", 5));

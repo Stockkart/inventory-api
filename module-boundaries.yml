@@ -59,7 +59,8 @@ modules:
                   vendor_purchase_invoices, vendor_purchase_returns, stock_entry_estimates,
                   invoice_sequences, barcode_pool, business_types, vertical_schemas,
                   parsed_inventory_results, upload_tokens, shop_menus, shop_invoice_settings,
-                  shop_barcode_label_layouts, shop_card_layouts, shop_grid_layouts]
+                  shop_barcode_label_layouts, shop_card_layouts, shop_grid_layouts,
+                  shop_rate_rules]
   taxation:
     dependsOn: [common, metrics, product, user, pricing]
     collections: [gstin_registry]

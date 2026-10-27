@@ -101,6 +101,64 @@ public class PurchaseItem {
   @Transient
   private BigDecimal purchaseSchemePercentage;
 
+  /**
+   * The rate this line is billed at: a picked batch rate's name, a system option picked as a rate
+   * ({@code priceToRetail}, {@code maximumRetailPrice}, {@code costPrice}), or the batch's default
+   * rule rate on a first add. Cleared (null) by a manual price, disc or scheme edit. Stored on
+   * the cart line and returned on cart responses; null on lines saved before rate rules, and on
+   * lines at the batch's own price.
+   */
+  private String appliedRateName;
+
+  /**
+   * Request-scoped: true when this incoming line carries a picked rule rate's terms
+   * ({@code rateName}). The cart merge then takes its disc and scheme as they are, clearing a
+   * scheme the rate does not have, instead of keeping the existing line's. Never stored.
+   */
+  @Transient
+  @JsonIgnore
+  private boolean rateTermsPicked;
+
+  /**
+   * Request-scoped: true when this incoming line is a system pick ({@code priceToRetail},
+   * {@code maximumRetailPrice}, {@code costPrice}). The cart merge resets disc and scheme to the
+   * batch's sale defaults only when the line in the cart is at a rule rate; otherwise it keeps
+   * the line's own (a typed disc survives a PTR pick). Never stored.
+   */
+  @Transient
+  @JsonIgnore
+  private boolean systemRatePicked;
+
+  /** Request-scoped: the {@code rateName} the incoming item carried, if any. Never stored. */
+  @Transient
+  @JsonIgnore
+  private String requestedRateName;
+
+  /**
+   * Request-scoped: this incoming line's price was not sent by the request but filled in from
+   * the batch (its selling price, or its default rule rate's base). When it merges into a line
+   * already in the cart, the existing line keeps its own price. Never stored.
+   */
+  @Transient
+  @JsonIgnore
+  private boolean batchFilledPrice;
+
+  /**
+   * Request-scoped: the disc was not sent but filled in from the batch (its sale disc or its
+   * default rule rate's). A line already in the cart keeps its own. Never stored.
+   */
+  @Transient
+  @JsonIgnore
+  private boolean batchFilledDisc;
+
+  /**
+   * Request-scoped: the scheme was not sent but filled in from the batch (its sale scheme or its
+   * default rule rate's). A line already in the cart keeps its own. Never stored.
+   */
+  @Transient
+  @JsonIgnore
+  private boolean batchFilledScheme;
+
   /** Derived stock lot id for refunds/analytics and API backward compatibility. */
   @JsonProperty("inventoryId")
   public String getInventoryId() {
