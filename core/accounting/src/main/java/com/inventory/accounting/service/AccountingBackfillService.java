@@ -8,7 +8,7 @@ import com.inventory.accounting.api.SalesReturnPostingRequest;
 import com.inventory.accounting.api.VendorPurchaseInvoicePostingRequest;
 import com.inventory.accounting.api.VendorPurchaseReturnPostingRequest;
 import com.inventory.accounting.domain.model.JournalEntry;
-import com.inventory.accounting.domain.model.JournalSource;
+import com.inventory.accounting.api.JournalSource;
 import com.inventory.accounting.domain.repository.JournalEntryRepository;
 import com.inventory.accounting.domain.repository.LedgerEntryRepository;
 import com.inventory.accounting.utils.constants.AccountingMetricsConstants;

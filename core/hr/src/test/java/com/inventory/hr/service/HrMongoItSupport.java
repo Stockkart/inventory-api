@@ -6,8 +6,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.inventory.accounting.domain.model.JournalEntry;
-import com.inventory.accounting.domain.model.JournalSource;
-import com.inventory.accounting.domain.model.JournalStatus;
+import com.inventory.accounting.api.JournalSource;
+import com.inventory.accounting.api.JournalStatus;
 import com.inventory.accounting.domain.repository.AccountRepository;
 import com.inventory.accounting.domain.repository.JournalEntryRepository;
 import com.inventory.accounting.domain.repository.LedgerEntryRepository;
@@ -237,7 +237,8 @@ final class HrMongoItSupport {
     AccountingPostingService posting = new AccountingPostingService(journalRepository,
         ledgerRepository, accountService, new JournalEntrySequenceService(template), metrics,
         new AccountLedgerBalances(template, ledgerRepository));
-    accounting = new AccountingFacadeImpl(posting, journalRepository, accountRepository);
+    accounting = new AccountingFacadeImpl(posting, journalRepository, accountRepository,
+        seeder);
     poster = new HrAccountingPoster();
     ReflectionTestUtils.setField(poster, "accountingFacade", accounting);
     ReflectionTestUtils.setField(poster, "metrics", metrics);
@@ -396,7 +397,7 @@ final class HrMongoItSupport {
         continue;
       }
       for (com.inventory.accounting.domain.model.JournalLine l : e.getLines()) {
-        if (com.inventory.accounting.domain.model.SystemAccountCode.SALARY_PAYABLE
+        if (com.inventory.accounting.api.SystemAccountCode.SALARY_PAYABLE
             .equals(l.getAccountCode())) {
           balance = balance.add(nz(l.getCredit())).subtract(nz(l.getDebit()));
         }

@@ -1,5 +1,6 @@
 package com.inventory.hr.service;
 
+import com.inventory.accounting.api.JournalEntryView;
 import static com.inventory.hr.HrTestFixtures.SHOP;
 import static com.inventory.hr.HrTestFixtures.USER;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -14,8 +15,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.inventory.accounting.domain.model.JournalEntry;
-import com.inventory.accounting.domain.model.JournalSource;
+import com.inventory.accounting.api.JournalSource;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ValidationException;
@@ -121,8 +121,8 @@ class AdvanceServiceTest {
       a.setId("new");
       return a;
     });
-    JournalEntry entry = new JournalEntry();
-    entry.setId("je-1");
+    JournalEntryView entry = new JournalEntryView("je-1", null, null, null, null, null, null,
+        List.of());
     when(poster.postAdvance(eq(SHOP), eq(USER), any(Advance.class), eq("EMP-001")))
         .thenReturn(entry);
   }

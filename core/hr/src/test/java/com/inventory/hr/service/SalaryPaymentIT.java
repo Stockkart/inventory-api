@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.inventory.accounting.domain.model.JournalEntry;
-import com.inventory.accounting.domain.model.JournalSource;
+import com.inventory.accounting.api.JournalSource;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.hr.domain.model.Employee;
@@ -165,7 +165,7 @@ class SalaryPaymentIT {
     PayrollLine line = it.template.findById(ids.get(0), PayrollLine.class);
     assertNull(line.getPaymentBatchId());
     assertEquals(1, line.getPaymentSeq());
-    JournalEntry comp = it.accounting.findBySource(shop, JournalSource.SALARY_PAYMENT,
+    JournalEntry comp = it.accounting.findEntryBySource(shop, JournalSource.SALARY_PAYMENT,
         HrAccountingPoster.undoSourceId(ids.get(0), 1)).orElseThrow();
     assertEquals(0, comp.getTotalDebit().compareTo(line.getNet()), "only that line's net");
     assertEquals(2, it.liveJournals(shop, JournalSource.SALARY_PAYMENT).size(),

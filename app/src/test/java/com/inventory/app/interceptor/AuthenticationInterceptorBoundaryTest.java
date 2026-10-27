@@ -1,5 +1,6 @@
 package com.inventory.app.interceptor;
 
+import com.inventory.accounting.api.AccountingFacade;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
@@ -96,6 +97,8 @@ class AuthenticationInterceptorBoundaryTest {
   @MockBean private ShopMapper shopMapper;
   @MockBean private UserAccountRepository userAccountRepository;
   @MockBean private MetricsWrapper metrics;
+  // ShopService seeds the chart of accounts through the accounting api on registration.
+  @MockBean private AccountingFacade accountingFacade;
 
   private static UserAccount account(String userId, UserRole role, String shopId) {
     UserAccount a = new UserAccount();

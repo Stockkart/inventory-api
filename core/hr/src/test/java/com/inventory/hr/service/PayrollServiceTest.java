@@ -1,5 +1,7 @@
 package com.inventory.hr.service;
 
+import com.inventory.accounting.api.JournalLineView;
+import com.inventory.accounting.api.JournalEntryView;
 import static com.inventory.hr.HrTestFixtures.SHOP;
 import static com.inventory.hr.HrTestFixtures.USER;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -17,9 +19,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.inventory.accounting.domain.model.JournalEntry;
-import com.inventory.accounting.domain.model.JournalLine;
-import com.inventory.accounting.domain.model.JournalSource;
+import com.inventory.accounting.api.JournalSource;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ValidationException;
@@ -273,16 +273,10 @@ class PayrollServiceTest {
   }
 
   /** The entry the one-day snapshot posts: Dr 5700 100 / Cr 2400 100, or another net. */
-  private static JournalEntry entry(String net) {
-    JournalEntry e = new JournalEntry();
-    e.setId("je-1");
-    e.setTotalDebit(new BigDecimal(net));
-    e.setTotalCredit(new BigDecimal(net));
-    JournalLine payable = new JournalLine();
-    payable.setAccountCode("2400");
-    payable.setCredit(new BigDecimal(net));
-    e.setLines(List.of(payable));
-    return e;
+  private static JournalEntryView entry(String net) {
+    JournalLineView payable = new JournalLineView("2400", null, new BigDecimal(net));
+    return new JournalEntryView("je-1", null, null, null, null, new BigDecimal(net),
+        new BigDecimal(net), List.of(payable));
   }
 
   @Test

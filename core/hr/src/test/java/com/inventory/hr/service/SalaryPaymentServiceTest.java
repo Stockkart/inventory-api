@@ -197,9 +197,9 @@ class SalaryPaymentServiceTest {
           .get("$set", org.bson.Document.class).getString("paymentBatchId"));
       return List.of(l);
     });
-    com.inventory.accounting.domain.model.JournalEntry entry =
-        new com.inventory.accounting.domain.model.JournalEntry();
-    entry.setId("j1");
+    com.inventory.accounting.api.JournalEntryView entry =
+        new com.inventory.accounting.api.JournalEntryView("j1", null, null, null, null, null, null,
+            java.util.List.of());
     when(poster.postPaymentBatch(anyString(), anyString(), anyString(), anyCollection(), any(),
         any())).thenReturn(entry);
     when(mongoTemplate.exists(any(Query.class), eq(PayrollLine.class))).thenReturn(false);
@@ -209,7 +209,7 @@ class SalaryPaymentServiceTest {
 
     assertEquals(ErrorCode.HR_RUN_STATE_CONFLICT, e.getErrorCode());
     verify(poster).reverseBySource(eq(SHOP), eq(USER),
-        eq(com.inventory.accounting.domain.model.JournalSource.SALARY_PAYMENT), anyString(),
+        eq(com.inventory.accounting.api.JournalSource.SALARY_PAYMENT), anyString(),
         anyString());
     verify(auditService, never()).recordAll(any());
   }

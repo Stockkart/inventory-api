@@ -1,10 +1,6 @@
 # Module boundary violations that existed when the check was introduced.
 # Fixing one means deleting its line here in the same change. Never add lines by hand.
 # Regenerate: mvn -pl app -am test -Dtest=ModuleBoundariesTest -Dsurefire.failIfNoSpecifiedTests=false -Dboundaries.writeBaseline=true
-API_IMPURE accounting : com.inventory.accounting.api.AccountingFacade -> com.inventory.accounting.domain.model.JournalEntry
-API_IMPURE accounting : com.inventory.accounting.api.AccountingFacade -> com.inventory.accounting.domain.model.JournalSource
-API_IMPURE accounting : com.inventory.accounting.api.PostJournalLine -> com.inventory.accounting.domain.model.PartyType
-API_IMPURE accounting : com.inventory.accounting.api.PostJournalRequest -> com.inventory.accounting.domain.model.JournalSource
 API_KIND accounting : com.inventory.accounting.api.PartyCreditChargePostingRequest must be an interface, record or enum
 API_KIND accounting : com.inventory.accounting.api.PartySettlementPostingRequest must be an interface, record or enum
 API_KIND accounting : com.inventory.accounting.api.PostJournalLine must be an interface, record or enum
@@ -89,18 +85,6 @@ NOT_API credit -> user : com.inventory.credit.service.CreditService -> com.inven
 NOT_API credit -> user : com.inventory.credit.service.CreditService -> com.inventory.user.domain.model.Vendor
 NOT_API credit -> user : com.inventory.credit.service.CreditService -> com.inventory.user.domain.repository.CustomerRepository
 NOT_API credit -> user : com.inventory.credit.service.CreditService -> com.inventory.user.domain.repository.VendorRepository
-NOT_API hr -> accounting : com.inventory.hr.service.AdvanceService -> com.inventory.accounting.domain.model.JournalEntry
-NOT_API hr -> accounting : com.inventory.hr.service.AdvanceService -> com.inventory.accounting.domain.model.JournalSource
-NOT_API hr -> accounting : com.inventory.hr.service.HrAccountingPoster -> com.inventory.accounting.domain.model.JournalEntry
-NOT_API hr -> accounting : com.inventory.hr.service.HrAccountingPoster -> com.inventory.accounting.domain.model.JournalSource
-NOT_API hr -> accounting : com.inventory.hr.service.HrAccountingPoster -> com.inventory.accounting.domain.model.JournalStatus
-NOT_API hr -> accounting : com.inventory.hr.service.HrAccountingPoster -> com.inventory.accounting.domain.model.PartyType
-NOT_API hr -> accounting : com.inventory.hr.service.PayrollService -> com.inventory.accounting.domain.model.JournalEntry
-NOT_API hr -> accounting : com.inventory.hr.service.PayrollService -> com.inventory.accounting.domain.model.JournalLine
-NOT_API hr -> accounting : com.inventory.hr.service.PayrollService -> com.inventory.accounting.domain.model.JournalSource
-NOT_API hr -> accounting : com.inventory.hr.service.SalaryPaymentService -> com.inventory.accounting.domain.model.JournalEntry
-NOT_API hr -> accounting : com.inventory.hr.service.SalaryPaymentService -> com.inventory.accounting.domain.model.JournalSource
-NOT_API hr -> accounting : com.inventory.hr.service.SalaryPaymentService -> com.inventory.accounting.domain.model.JournalStatus
 NOT_API hr -> documentservice : com.inventory.hr.service.HrReportService -> com.inventory.documentservice.rest.dto.mis.MisDocumentKpi
 NOT_API hr -> documentservice : com.inventory.hr.service.HrReportService -> com.inventory.documentservice.rest.dto.mis.MisTabularDocumentRequest
 NOT_API hr -> documentservice : com.inventory.hr.service.HrReportService -> com.inventory.documentservice.service.mis.MisExcelDocumentService
@@ -127,12 +111,6 @@ NOT_API hr -> user : com.inventory.hr.service.PayslipService -> com.inventory.us
 NOT_API hr -> user : com.inventory.hr.service.RolePermissionService -> com.inventory.user.domain.model.UserRole
 NOT_API hr -> user : com.inventory.hr.validation.RolePermissionValidator -> com.inventory.user.domain.model.UserRole
 NOT_API plan -> user : com.inventory.plan.service.UsageService -> com.inventory.user.service.UserShopMembershipService
-NOT_API product -> accounting : com.inventory.product.service.AccountingCreditChargeFacade -> com.inventory.accounting.domain.model.JournalSource
-NOT_API product -> accounting : com.inventory.product.service.AccountingCreditSettlementFacade -> com.inventory.accounting.domain.model.JournalSource
-NOT_API product -> accounting : com.inventory.product.service.InventoryService -> com.inventory.accounting.domain.model.JournalEntry
-NOT_API product -> accounting : com.inventory.product.service.InventoryService -> com.inventory.accounting.domain.model.JournalSource
-NOT_API product -> accounting : com.inventory.product.service.InventoryService -> com.inventory.accounting.domain.model.JournalStatus
-NOT_API product -> accounting : com.inventory.product.service.ShopService -> com.inventory.accounting.service.ChartOfAccountsSeeder
 NOT_API product -> credit : com.inventory.product.service.AccountingCreditChargeFacade -> com.inventory.credit.domain.model.CreditEntry
 NOT_API product -> credit : com.inventory.product.service.AccountingCreditChargeFacade -> com.inventory.credit.domain.model.CreditPartyType
 NOT_API product -> credit : com.inventory.product.service.AccountingCreditChargeFacade -> com.inventory.credit.domain.repository.CreditEntryRepository
@@ -356,13 +334,6 @@ OPTIONAL_DEPENDENCY app -> user : com.inventory.app.interceptor.AuthenticationIn
 OPTIONAL_DEPENDENCY hr -> user : com.inventory.hr.service.HrReportService.shopServiceAdapter (com.inventory.user.service.ShopServiceAdapter)
 OPTIONAL_DEPENDENCY hr -> user : com.inventory.hr.service.PayslipService.shopServiceAdapter (com.inventory.user.service.ShopServiceAdapter)
 OPTIONAL_DEPENDENCY plan -> user : com.inventory.plan.service.UsageService.userShopMembershipService (com.inventory.user.service.UserShopMembershipService)
-OPTIONAL_DEPENDENCY product -> accounting : com.inventory.product.service.AccountingCreditChargeFacade.accountingFacade (com.inventory.accounting.api.AccountingFacade)
-OPTIONAL_DEPENDENCY product -> accounting : com.inventory.product.service.AccountingCreditSettlementFacade.accountingFacade (com.inventory.accounting.api.AccountingFacade)
-OPTIONAL_DEPENDENCY product -> accounting : com.inventory.product.service.CheckoutService.accountingFacade (com.inventory.accounting.api.AccountingFacade)
-OPTIONAL_DEPENDENCY product -> accounting : com.inventory.product.service.InventoryService.accountingFacade (com.inventory.accounting.api.AccountingFacade)
-OPTIONAL_DEPENDENCY product -> accounting : com.inventory.product.service.RefundService.accountingFacade (com.inventory.accounting.api.AccountingFacade)
-OPTIONAL_DEPENDENCY product -> accounting : com.inventory.product.service.ShopService.chartOfAccountsSeeder (com.inventory.accounting.service.ChartOfAccountsSeeder)
-OPTIONAL_DEPENDENCY product -> accounting : com.inventory.product.service.VendorPurchaseReturnService.accountingFacade (com.inventory.accounting.api.AccountingFacade)
 OPTIONAL_DEPENDENCY product -> credit : com.inventory.product.service.CheckoutService.creditChargeFacade (com.inventory.credit.service.CreditChargeFacade)
 OPTIONAL_DEPENDENCY product -> credit : com.inventory.product.service.CheckoutService.creditService (com.inventory.credit.service.CreditService)
 OPTIONAL_DEPENDENCY product -> credit : com.inventory.product.service.InventoryService.creditService (com.inventory.credit.service.CreditService)

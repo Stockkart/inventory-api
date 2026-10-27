@@ -1,7 +1,7 @@
 package com.inventory.accounting.domain.repository;
 
 import com.inventory.accounting.domain.model.JournalEntry;
-import com.inventory.accounting.domain.model.JournalSource;
+import com.inventory.accounting.api.JournalSource;
 import java.time.LocalDate;
 import java.util.Optional;
 import org.springframework.data.domain.Page;

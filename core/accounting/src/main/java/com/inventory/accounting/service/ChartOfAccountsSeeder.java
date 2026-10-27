@@ -1,6 +1,6 @@
 package com.inventory.accounting.service;
 
-import static com.inventory.accounting.domain.model.SystemAccountCode.*;
+import static com.inventory.accounting.api.SystemAccountCode.*;
 
 import com.inventory.accounting.domain.model.Account;
 import com.inventory.accounting.domain.model.AccountType;

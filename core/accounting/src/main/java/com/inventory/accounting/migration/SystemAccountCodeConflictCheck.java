@@ -1,7 +1,7 @@
 package com.inventory.accounting.migration;
 
 import com.inventory.accounting.domain.model.Account;
-import com.inventory.accounting.domain.model.SystemAccountCode;
+import com.inventory.accounting.api.SystemAccountCode;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;

@@ -3,11 +3,11 @@ package com.inventory.hr.service;
 import com.inventory.accounting.api.AccountingFacade;
 import com.inventory.accounting.api.PostJournalLine;
 import com.inventory.accounting.api.PostJournalRequest;
-import com.inventory.accounting.domain.model.JournalEntry;
-import com.inventory.accounting.domain.model.JournalSource;
-import com.inventory.accounting.domain.model.JournalStatus;
-import com.inventory.accounting.domain.model.PartyType;
-import com.inventory.accounting.domain.model.SystemAccountCode;
+import com.inventory.accounting.api.JournalEntryView;
+import com.inventory.accounting.api.JournalSource;
+import com.inventory.accounting.api.JournalStatus;
+import com.inventory.accounting.api.PartyType;
+import com.inventory.accounting.api.SystemAccountCode;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.hr.domain.model.Advance;
@@ -78,7 +78,7 @@ public class HrAccountingPoster {
    *
    * @return the entry (the existing one when already posted), or null for a zero run
    */
-  public JournalEntry postPayrollRun(String shopId, String userId, PayrollRun run,
+  public JournalEntryView postPayrollRun(String shopId, String userId, PayrollRun run,
       Collection<PayrollLine> lines) {
     RunTotals t = runTotals(lines);
     if (t.expense().signum() == 0 && t.net().signum() == 0) {
@@ -141,7 +141,7 @@ public class HrAccountingPoster {
   // ---- advances --------------------------------------------------------------------------------
 
   /** Dr 1250 / Cr cash or bank on the advance date; null when the amount is zero. */
-  public JournalEntry postAdvance(String shopId, String userId, Advance advance,
+  public JournalEntryView postAdvance(String shopId, String userId, Advance advance,
       String employeeCode) {
     BigDecimal amount = nz(advance.getAmount());
     if (amount.signum() <= 0) {
@@ -163,7 +163,7 @@ public class HrAccountingPoster {
    *
    * @return the entry (existing on retry), or null when the batch nets to zero
    */
-  public JournalEntry postPaymentBatch(String shopId, String userId, String batchId,
+  public JournalEntryView postPaymentBatch(String shopId, String userId, String batchId,
       Collection<PayrollLine> lines, HrPaymentMethod method, LocalDate date) {
     BigDecimal total = BigDecimal.ZERO;
     String period = null;
@@ -194,7 +194,7 @@ public class HrAccountingPoster {
    *
    * @return the entry (existing on retry), or null when the line's net is zero
    */
-  public JournalEntry postPaymentUndo(String shopId, String userId, PayrollLine line,
+  public JournalEntryView postPaymentUndo(String shopId, String userId, PayrollLine line,
       int paymentSeq, HrPaymentMethod method, LocalDate date) {
     BigDecimal net = nz(line.getNet());
     if (net.signum() <= 0) {
@@ -222,21 +222,21 @@ public class HrAccountingPoster {
    */
   public String reverseBySource(String shopId, String userId, JournalSource sourceType,
       String sourceId, String reason) {
-    Optional<JournalEntry> original = accountingFacade.findBySource(shopId, sourceType, sourceId);
+    Optional<JournalEntryView> original = accountingFacade.findBySource(shopId, sourceType, sourceId);
     if (original.isEmpty()) {
       return null;
     }
-    JournalEntry entry = original.get();
-    if (entry.getStatus() == JournalStatus.REVERSED) {
-      return entry.getReversedByEntryId();
+    JournalEntryView entry = original.get();
+    if (entry.status() == JournalStatus.REVERSED) {
+      return entry.reversedByEntryId();
     }
-    JournalEntry reversal = accountingFacade.reverse(shopId, userId, entry.getId(), reason);
-    log.info("[hr-accounting] reversed {} {} as {}", sourceType, sourceId, reversal.getId());
-    return reversal.getId();
+    JournalEntryView reversal = accountingFacade.reverse(shopId, userId, entry.id(), reason);
+    log.info("[hr-accounting] reversed {} {} as {}", sourceType, sourceId, reversal.id());
+    return reversal.id();
   }
 
   /** The finalise journal of the run's current revision, if posted. */
-  public Optional<JournalEntry> findRunJournal(String shopId, PayrollRun run) {
+  public Optional<JournalEntryView> findRunJournal(String shopId, PayrollRun run) {
     return accountingFacade.findBySource(shopId, JournalSource.PAYROLL_RUN, runSourceId(run));
   }
 
@@ -244,7 +244,7 @@ public class HrAccountingPoster {
    * The SALARY_PAYMENT entry of a batch ({@code paymentBatchId}) or of an undo ({@link
    * #undoSourceId}), if posted: a failed post may still have saved it (no transactions).
    */
-  public Optional<JournalEntry> findPaymentJournal(String shopId, String sourceId) {
+  public Optional<JournalEntryView> findPaymentJournal(String shopId, String sourceId) {
     return accountingFacade.findBySource(shopId, JournalSource.SALARY_PAYMENT, sourceId);
   }
 
@@ -254,7 +254,7 @@ public class HrAccountingPoster {
    * Posts after checking that every HR code the entry uses is the seeded system account (one
    * read): a shop's own account on 1250/2400/5700 would silently take salary postings.
    */
-  private JournalEntry post(String shopId, String userId, PostJournalRequest req) {
+  private JournalEntryView post(String shopId, String userId, PostJournalRequest req) {
     Set<String> hrCodes = new TreeSet<>();
     for (PostJournalLine l : req.getLines()) {
       if (l.getAccountCode() != null && HR_SYSTEM_CODES.contains(l.getAccountCode())) {

@@ -16,7 +16,7 @@ import com.inventory.accounting.api.PostJournalRequest;
 import com.inventory.accounting.domain.model.Account;
 import com.inventory.accounting.domain.model.AccountType;
 import com.inventory.accounting.domain.model.JournalEntry;
-import com.inventory.accounting.domain.model.JournalSource;
+import com.inventory.accounting.api.JournalSource;
 import com.inventory.accounting.domain.model.LedgerEntry;
 import com.inventory.accounting.domain.model.NormalBalance;
 import com.inventory.accounting.domain.repository.JournalEntryRepository;

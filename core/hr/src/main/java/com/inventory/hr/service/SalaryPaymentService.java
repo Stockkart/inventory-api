@@ -1,8 +1,8 @@
 package com.inventory.hr.service;
 
-import com.inventory.accounting.domain.model.JournalEntry;
-import com.inventory.accounting.domain.model.JournalSource;
-import com.inventory.accounting.domain.model.JournalStatus;
+import com.inventory.accounting.api.JournalEntryView;
+import com.inventory.accounting.api.JournalSource;
+import com.inventory.accounting.api.JournalStatus;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
@@ -165,7 +165,7 @@ public class SalaryPaymentService {
         throw stateConflict("This payroll run is being reopened. Try again in a minute");
       }
 
-      JournalEntry entry = postBatch(userId, shopId, runId, batchId, now, claimed, input);
+      JournalEntryView entry = postBatch(userId, shopId, runId, batchId, now, claimed, input);
       int paid = markPaid(shopId, runId, batchId, entry, now);
       if (paid < claimed.size()) {
         // our claim went stale while we posted and the next call took it over (see
@@ -173,7 +173,7 @@ public class SalaryPaymentService {
         // found none yet and released them, and then our journal must not stay
         settleLostBatch(userId, shopId, runId, batchId, entry);
         response.setPaymentBatchId(batchId);
-        response.setJournalEntryId(entry != null ? entry.getId() : null);
+        response.setJournalEntryId(entry != null ? entry.id() : null);
         response.setPaid(claimed.size());
         response.setLines(outcomes(ids, byId, batchId));
         return response;
@@ -186,7 +186,7 @@ public class SalaryPaymentService {
           batchId, paid);
 
       response.setPaymentBatchId(batchId);
-      response.setJournalEntryId(entry != null ? entry.getId() : null);
+      response.setJournalEntryId(entry != null ? entry.id() : null);
       response.setPaid(claimed.size());
       response.setLines(outcomes(ids, byId, batchId));
       return response;
@@ -198,7 +198,7 @@ public class SalaryPaymentService {
    * is several writes): only when none exists are the claims released; when we cannot tell, the
    * lines stay PAYING and the next call finishes them after {@link #STALE_CLAIM}.
    */
-  private JournalEntry postBatch(String userId, String shopId, String runId, String batchId,
+  private JournalEntryView postBatch(String userId, String shopId, String runId, String batchId,
       Instant claimedAt, List<PayrollLine> claimed, SalaryPaymentValidator.Checked input) {
     try {
       return poster.postPaymentBatch(shopId, userId, batchId, claimed, input.method(),
@@ -214,7 +214,7 @@ public class SalaryPaymentService {
         metrics.increment(HrMetricsConstants.SALARY_PAYMENTS_TOTAL, claimed.size(),
             "module", HrMetricsConstants.MODULE, "outcome", "post_failed");
       }
-      Optional<JournalEntry> saved;
+      Optional<JournalEntryView> saved;
       try {
         saved = poster.findPaymentJournal(shopId, batchId);
       } catch (RuntimeException lookupFailed) {
@@ -234,7 +234,7 @@ public class SalaryPaymentService {
    * told to try again.
    */
   private void settleLostBatch(String userId, String shopId, String runId, String batchId,
-      JournalEntry entry) {
+      JournalEntryView entry) {
     Query paidByUs = batchQuery(shopId, runId, batchId).addCriteria(
         Criteria.where("paymentStatus").is(SalaryPaymentStatus.PAID));
     if (mongoTemplate.exists(paidByUs, PayrollLine.class)) {
@@ -250,10 +250,10 @@ public class SalaryPaymentService {
   }
 
   /** PAYING → PAID for the whole batch in one update; whoever finishes the batch writes it. */
-  private int markPaid(String shopId, String runId, String batchId, JournalEntry entry,
+  private int markPaid(String shopId, String runId, String batchId, JournalEntryView entry,
       Instant now) {
     Update paid = new Update().set("paymentStatus", SalaryPaymentStatus.PAID)
-        .set("paymentJournalEntryId", entry != null ? entry.getId() : null)
+        .set("paymentJournalEntryId", entry != null ? entry.id() : null)
         .unset("paymentClaimedAt").set("updatedAt", now);
     return (int) mongoTemplate.updateMulti(batchQuery(shopId, runId, batchId).addCriteria(
         Criteria.where("paymentStatus").is(SalaryPaymentStatus.PAYING)),
@@ -275,7 +275,7 @@ public class SalaryPaymentService {
   }
 
   private void auditPaid(String shopId, String userId, List<PayrollLine> lines, String batchId,
-      JournalEntry entry, HrPaymentMethod method, String paidAt) {
+      JournalEntryView entry, HrPaymentMethod method, String paidAt) {
     List<AuditEntry> entries = new ArrayList<>();
     for (PayrollLine l : lines) {
       // ids, method and date only: no amounts, reference or payment details
@@ -284,7 +284,7 @@ public class SalaryPaymentService {
       after.put("paymentBatchId", batchId);
       after.put("method", method != null ? method.name() : null);
       after.put("paidAt", paidAt);
-      after.put("journalEntryId", entry != null ? entry.getId() : null);
+      after.put("journalEntryId", entry != null ? entry.id() : null);
       entries.add(new AuditEntry(shopId, userId, HrAuditAction.SALARY_PAID, ENTITY, l.getId(),
           l.getEmployeeId(), null, l.getPeriod(),
           Map.of("paymentStatus", SalaryPaymentStatus.PENDING.name()), after, null));
@@ -405,7 +405,7 @@ public class SalaryPaymentService {
           shopId, e.getClass().getSimpleName());
       metrics.increment(HrMetricsConstants.JOURNAL_POST_FAILURES_TOTAL, 1,
           "module", HrMetricsConstants.MODULE, "source", JournalSource.SALARY_PAYMENT.name());
-      Optional<JournalEntry> saved;
+      Optional<JournalEntryView> saved;
       try {
         saved = poster.findPaymentJournal(shopId, sourceId);
       } catch (RuntimeException lookupFailed) {
@@ -504,7 +504,7 @@ public class SalaryPaymentService {
     if (lines.isEmpty()) {
       return; // someone else took it over first
     }
-    Optional<JournalEntry> posted = livePaymentJournal(shopId, batchId);
+    Optional<JournalEntryView> posted = livePaymentJournal(shopId, batchId);
     if (posted.isEmpty()) {
       releaseClaim(shopId, runId, batchId, now);
       metrics.increment(HrMetricsConstants.SALARY_PAYMENTS_TOTAL, lines.size(),
@@ -555,9 +555,9 @@ public class SalaryPaymentService {
   }
 
   /** The source's SALARY_PAYMENT entry unless it was reversed. */
-  private Optional<JournalEntry> livePaymentJournal(String shopId, String sourceId) {
+  private Optional<JournalEntryView> livePaymentJournal(String shopId, String sourceId) {
     return poster.findPaymentJournal(shopId, sourceId)
-        .filter(e -> e.getStatus() != JournalStatus.REVERSED);
+        .filter(e -> e.status() != JournalStatus.REVERSED);
   }
 
   // ---- helpers ---------------------------------------------------------------------------------

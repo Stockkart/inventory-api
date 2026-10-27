@@ -1,5 +1,6 @@
 package com.inventory.hr.service;
 
+import com.inventory.accounting.api.JournalEntryView;
 import static com.inventory.hr.HrTestFixtures.SHOP;
 import static com.inventory.hr.HrTestFixtures.USER;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -15,10 +16,9 @@ import static org.mockito.Mockito.when;
 import com.inventory.accounting.api.AccountingFacade;
 import com.inventory.accounting.api.PostJournalLine;
 import com.inventory.accounting.api.PostJournalRequest;
-import com.inventory.accounting.domain.model.JournalEntry;
-import com.inventory.accounting.domain.model.JournalSource;
-import com.inventory.accounting.domain.model.JournalStatus;
-import com.inventory.accounting.domain.model.PartyType;
+import com.inventory.accounting.api.JournalSource;
+import com.inventory.accounting.api.JournalStatus;
+import com.inventory.accounting.api.PartyType;
 import com.inventory.hr.domain.model.Advance;
 import com.inventory.hr.domain.model.PayrollLine;
 import com.inventory.hr.domain.model.PayrollRun;
@@ -79,7 +79,7 @@ class HrAccountingPosterTest {
 
   @Test
   void theRunJournalMatchesTheDesignTableWithRoundingOnRoundOffExpense() {
-    when(facade.post(anyString(), anyString(), any())).thenReturn(new JournalEntry());
+    when(facade.post(anyString(), anyString(), any())).thenReturn(new JournalEntryView(null, null, null, null, null, null, null, List.of()));
 
     poster.postPayrollRun(SHOP, USER, run(2), List.of(
         line("13145.83", "0.17", "13146.00", "1000.00"),
@@ -99,7 +99,7 @@ class HrAccountingPosterTest {
 
   @Test
   void netRoundedDownCreditsRoundOffExpense() {
-    when(facade.post(anyString(), anyString(), any())).thenReturn(new JournalEntry());
+    when(facade.post(anyString(), anyString(), any())).thenReturn(new JournalEntryView(null, null, null, null, null, null, null, List.of()));
 
     poster.postPayrollRun(SHOP, USER, run(0), List.of(line("100.40", "-0.40", "100.00", null)));
 
@@ -128,7 +128,7 @@ class HrAccountingPosterTest {
 
   @Test
   void onlyTheHrCodesOfTheEntryAreCheckedInOneRead() {
-    when(facade.post(anyString(), anyString(), any())).thenReturn(new JournalEntry());
+    when(facade.post(anyString(), anyString(), any())).thenReturn(new JournalEntryView(null, null, null, null, null, null, null, List.of()));
 
     poster.postPayrollRun(SHOP, USER, run(0), List.of(line("100.40", "-0.40", "100.00", null)));
 
@@ -143,7 +143,7 @@ class HrAccountingPosterTest {
 
   @Test
   void anUpiAdvanceDebitsStaffAdvancesAndCreditsBank() {
-    when(facade.post(anyString(), anyString(), any())).thenReturn(new JournalEntry());
+    when(facade.post(anyString(), anyString(), any())).thenReturn(new JournalEntryView(null, null, null, null, null, null, null, List.of()));
     Advance a = new Advance();
     a.setId("adv-1");
     a.setDate("2025-03-10");
@@ -170,7 +170,7 @@ class HrAccountingPosterTest {
 
   @Test
   void aPaymentBatchIsOneEntryKeyedByTheBatchId() {
-    when(facade.post(anyString(), anyString(), any())).thenReturn(new JournalEntry());
+    when(facade.post(anyString(), anyString(), any())).thenReturn(new JournalEntryView(null, null, null, null, null, null, null, List.of()));
 
     poster.postPaymentBatch(SHOP, USER, "batch-1", List.of(
         line("100", "0", "100", null), line("250.40", "-0.40", "250", null)),
@@ -185,7 +185,7 @@ class HrAccountingPosterTest {
 
   @Test
   void anUndoIsACompensatingEntryForOneLine() {
-    when(facade.post(anyString(), anyString(), any())).thenReturn(new JournalEntry());
+    when(facade.post(anyString(), anyString(), any())).thenReturn(new JournalEntryView(null, null, null, null, null, null, null, List.of()));
 
     poster.postPaymentUndo(SHOP, USER, line("100", "0", "100", null), 3, HrPaymentMethod.BANK,
         LocalDate.of(2025, 5, 3));
@@ -200,10 +200,8 @@ class HrAccountingPosterTest {
 
   @Test
   void reverseSkipsAnEntryAlreadyReversedAndMissingSources() {
-    JournalEntry reversed = new JournalEntry();
-    reversed.setId("je-1");
-    reversed.setStatus(JournalStatus.REVERSED);
-    reversed.setReversedByEntryId("je-2");
+    JournalEntryView reversed = new JournalEntryView("je-1", null, null, JournalStatus.REVERSED,
+        "je-2", null, null, List.of());
     when(facade.findBySource(SHOP, JournalSource.PAYROLL_RUN, "run-1:0"))
         .thenReturn(Optional.of(reversed));
     when(facade.findBySource(SHOP, JournalSource.PAYROLL_RUN, "run-1:1"))
@@ -218,11 +216,10 @@ class HrAccountingPosterTest {
 
   @Test
   void reverseReversesALiveEntry() {
-    JournalEntry live = new JournalEntry();
-    live.setId("je-1");
-    live.setStatus(JournalStatus.POSTED);
-    JournalEntry reversal = new JournalEntry();
-    reversal.setId("je-9");
+    JournalEntryView live = new JournalEntryView("je-1", null, null, JournalStatus.POSTED, null,
+        null, null, List.of());
+    JournalEntryView reversal = new JournalEntryView("je-9", null, null, null, null, null, null,
+        List.of());
     when(facade.findBySource(SHOP, JournalSource.STAFF_ADVANCE, "adv-1"))
         .thenReturn(Optional.of(live));
     when(facade.reverse(SHOP, USER, "je-1", "cancelled")).thenReturn(reversal);

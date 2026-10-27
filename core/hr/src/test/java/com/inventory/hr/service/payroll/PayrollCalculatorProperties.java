@@ -1,6 +1,7 @@
 // Feature: hr-module, Property 4: Gross − deductions = net before rounding; |rounding| ≤ 0.50; the finalise journal balances incl. 5500
 package com.inventory.hr.service.payroll;
 
+import com.inventory.accounting.api.JournalEntryView;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -12,7 +13,6 @@ import static org.mockito.Mockito.when;
 import com.inventory.accounting.api.AccountingFacade;
 import com.inventory.accounting.api.PostJournalLine;
 import com.inventory.accounting.api.PostJournalRequest;
-import com.inventory.accounting.domain.model.JournalEntry;
 import com.inventory.hr.domain.model.AttendanceDay;
 import com.inventory.hr.domain.model.LeaveRequest;
 import com.inventory.hr.domain.model.PayrollLine;
@@ -112,7 +112,7 @@ class PayrollCalculatorProperties {
     AtomicReference<PostJournalRequest> posted = new AtomicReference<>();
     when(facade.post(anyString(), anyString(), any(PostJournalRequest.class))).thenAnswer(i -> {
       posted.set(i.getArgument(2));
-      return new JournalEntry();
+      return new JournalEntryView(null, null, null, null, null, null, null, List.of());
     });
     HrAccountingPoster poster = new HrAccountingPoster();
     ReflectionTestUtils.setField(poster, "accountingFacade", facade);
@@ -121,7 +121,7 @@ class PayrollCalculatorProperties {
     run.setPeriod(month.toString());
     run.setRevision(0);
 
-    JournalEntry entry = poster.postPayrollRun("shop", "user", run, lines);
+    JournalEntryView entry = poster.postPayrollRun("shop", "user", run, lines);
 
     HrAccountingPoster.RunTotals t = HrAccountingPoster.runTotals(lines);
     if (entry == null) {

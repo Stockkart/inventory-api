@@ -163,7 +163,7 @@ public class InventoryService {
   @Autowired(required = false)
   private com.inventory.credit.service.CreditService creditService;
 
-  @Autowired(required = false)
+  @Autowired
   private com.inventory.accounting.api.AccountingFacade accountingFacade;
 
   @Autowired
@@ -732,16 +732,16 @@ public class InventoryService {
     if (accountingFacade == null || inv == null || !StringUtils.hasText(inv.getVendorId())) {
       return;
     }
-    java.util.Optional<com.inventory.accounting.domain.model.JournalEntry> live =
+    java.util.Optional<com.inventory.accounting.api.JournalEntryView> live =
         accountingFacade.findBySource(
             shopId,
-            com.inventory.accounting.domain.model.JournalSource.VENDOR_PURCHASE_INVOICE,
+            com.inventory.accounting.api.JournalSource.VENDOR_PURCHASE_INVOICE,
             ledgerSourceId(inv));
     if (live.isEmpty()) {
       return;
     }
-    if (live.get().getStatus() != com.inventory.accounting.domain.model.JournalStatus.REVERSED) {
-      accountingFacade.reverse(shopId, userId, live.get().getId(), "Invoice amended: " + reason);
+    if (live.get().status() != com.inventory.accounting.api.JournalStatus.REVERSED) {
+      accountingFacade.reverse(shopId, userId, live.get().id(), "Invoice amended: " + reason);
     }
     inv.setLedgerSourceId(inv.getId() + ":amend:" + Instant.now().toEpochMilli());
     postAccountingForVendorInvoice(inv, shopId, userId);
