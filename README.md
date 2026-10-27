@@ -222,6 +222,7 @@ Shops are bound to a **vertical** (`Shop.verticalId` + `Shop.pluginVersion`). Fi
 | `GET /api/v1/inventory/search` | Unified `q`, `sort`, `limit`, `cursor` → `meta.nextCursor` |
 | `GET /api/v1/inventory/expiry-buckets` | Expiry bucket counts (Analytics) |
 | `GET /api/v1/reminders/expiry-buckets` | Expiry bucket cards (Reminders dashboard) |
+| `PUT /api/v1/inventory/{id}` | Edit one lot (product search Edit). Sent fields only; prices go to the lot's pricing record, and the response carries the prices as stored after the update |
 
 **Removed:** `GET /inventory/near-expiry`, `GET /inventory/fefo`.
 
@@ -238,6 +239,8 @@ Shops are bound to a **vertical** (`Shop.verticalId` + `Shop.pluginVersion`). Fi
 **Frontend (inventory-platform):** consumes schema APIs for onboarding, product registration, scan-sell, product search (cursor pagination), and reminders expiry buckets — see architecture doc § Implementation status.
 
 **Remaining:** M8 core field strip migration; scan-sell detail modal schema columns; apparel/cafe vertical (Phase 5); import mappers + widgets (Phase 6).
+
+**Clearing a field on a lot edit.** In `PUT /api/v1/inventory/{id}` a field left out or sent as `null` keeps its value. To empty one, name it in `clearFields`: `barcode`, `description`, `companyName`, `location`, `hsn`, `discountApplicable`, `thresholdCount` (lot) and `saleAdditionalDiscount`, `purchaseAdditionalDiscount`, `saleScheme`, `purchaseScheme` (pricing record). Any other name, or a name also sent with a value, is a 400. A clear needs the same product-search grant as setting the field (`saleScheme` → `schemeType`, `purchaseScheme` → `purchaseSchemeType`).
 
 ### GST reports (taxation)
 
@@ -257,7 +260,11 @@ Shops are bound to a **vertical** (`Shop.verticalId` + `Shop.pluginVersion`). Fi
 
 **Returns in pieces.** A line may be returned over several returns. Each return's amounts (taxable, each GST head, COGS, refund) are the sold line's amounts for everything returned so far, this return included, less those for what earlier returns took back (`SalesReturnValuation.lineAmounts`, earlier returns read from the sale's refund records by `RefundService`). Each is a share of the sold line's billable quantity, never the scheme worked out again on the returned quantity, and is rounded once, so the pieces of a line add up to returning it whole: an at-MRP line's GST heads to the sale's heads and its refunds to what the customer paid. Refunds cannot be cancelled, so every refund record of the sale counts.
 
-**Purchase tax basis.** GSTR-2 and the purchase journal both take each supplier invoice's tax from `PurchaseTaxBasisResolver` (`core/product/.../utils`), which works it out from the lines: quantity × cost after the percentage scheme and additional discount (free units do not reduce it), less the bill-level discount shared across lines by value, then tax at each lot's rate added on top, or taken out for a bill marked `INCLUSIVE`.
+**Return history states the credit note's figures.** `GET /api/v1/refund` gives each return `taxableTotal`, `cgstAmount`, `sgstAmount`, `igstAmount`, `taxTotal`, `roundOff` and `interstate` beside `refundAmount` (the grand total), and each line `gstRatePct` (CGST + SGST rate, e.g. 5) and `igstAmount`. They come from `CreditNoteFigures` (`core/product/.../utils`), which the printed credit note also reads, so the screen and the paper cannot disagree. A refund saved before its header carried totals is stated from its lines, and its round-off is whatever separates the refund from taxable value plus tax.
+
+**Purchase tax basis.** GSTR-2 and the purchase journal both take each supplier invoice's tax from `PurchaseTaxBasisResolver` (`core/product/.../utils`), which works it out from the lines: quantity × cost after the purchase scheme and additional discount, less the bill-level discount shared across lines by value, then tax at each lot's rate added on top, or taken out for a bill marked `INCLUSIVE`.
+
+A deal ratio counts as a scheme: the line count is everything received, so "19+1" makes the line `count × cost × 19/20`. MAHAMAYA A012392 bills 20 at 121.90 less 19+1 less 8% as 2130.81 taxable, and 600 received as 540 paid + 60 free under 9+1 is taxed on the 540. Bills stocked in from 2026-10-04 until this fix left the deal ratio out, so their stored taxable value and tax are overstated.
 
 **Purchase tax at stock-in.** `POST /api/v1/inventory/bulk` with a `vendorPurchaseInvoice` header:
 
@@ -344,6 +351,68 @@ The shop's invoice settings decide which columns print. `showPack` turns the PAC
 `bridgeRequest` asks the bridge for its own configured copies (`copies: 0`). Nothing is stored: the bridge holds the job, and the browser keeps what it sent in `localStorage` for `print-bridge.in-flight-timeout` (2 minutes, sent as `inFlightTtlMs`) and reports it as `pendingAgeMs`. A job the browser never saw finish within that time is reported `EXPIRED` and comes back `UNCONFIRMED`, which means outcome unknown, not "did not print". Two tabs racing within milliseconds are caught by the bridge's own duplicate check (409, `ALREADY_SENT`); two different PCs are not deduplicated. Physical printing is at-least-once: a refusal from a bridge that was reached (`BRIDGE_REJECTED`) offers no fallback file, because the job may already have printed.
 
 The bridge offered to shops is set per environment: `PRINT_BRIDGE_ORIGIN` (default `http://127.0.0.1:9110`), `PRINT_BRIDGE_HEALTH_TIMEOUT_MS` (default 1200), `PRINT_BRIDGE_PRINT_TIMEOUT_MS` (default 8000), `PRINT_BRIDGE_DOWNLOAD_URL`, `PRINT_BRIDGE_LATEST_VERSION` (default `0.12.0`) and `PRINT_BRIDGE_MINIMUM_VERSION` (default `0.11.0`, the first release that gives an estimate its own page length). The default download URL is the release on Google Drive; it must be shared as "Anyone with the link", or a shop that is not signed in to that Google account cannot download it.
+
+### Shop grid layouts (product)
+
+The product entry grid view lays out its columns the way a spreadsheet does: column order, widths and hidden columns belong to the **shop**, so every member and every device sees the same layout. Scroll position and how many columns fit on screen stay with each browser. Only an **owner or admin** may change the layout (`RbacService.canManageShopLayouts`); everyone else uses it. The list view uses the same hidden columns to hide optional fields (no widths or order there).
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/v1/shops/active-shop/grid-layouts/{gridId}` | The saved layout or the default, plus `catalog` (every column the grid can show, its display `label` and its rules), `canEdit` for the caller, and `revision` (null on the default). |
+| `PATCH /api/v1/shops/active-shop/grid-layouts/{gridId}` | One change: `{ type: "RESIZE", key, widthPx }`, `{ type: "SET_HIDDEN", key, hidden }` or `{ type: "MOVE", key, beforeKey }` (`beforeKey` null = last movable). 400 when it breaks a column rule, 403 for a non-admin. |
+| `DELETE /api/v1/shops/active-shop/grid-layouts/{gridId}` | Reset to the default (owner or admin). |
+
+**Column rules are separate from field rules.** Each catalog entry carries `required` (must be filled in to save: from the vertical schema, or a core stock-in field), and, for layout only, `hideable`, `reorderable` and `position` (`FIRST`, `ANY`, `LAST`). A required column cannot be hidden but can move; `rowNo` is `FIRST` and `actions` is `LAST`, and neither moves nor hides. The catalog (`GridCatalogs` looks up the `GridCatalog` for the grid; product entry is `ProductEntryGridCatalog`, `core/product/.../gridlayout`) lists every column any billing mode can show; vertical schema fields appear as `field:<schemaKey>`, so a new vertical gets its columns with no grid code.
+
+**Another screen.** The layout API, storage, concurrency and permissions are generic over `gridId`. To give another grid a shop-shared layout, add its id to `GridIds` and a Spring bean implementing `GridCatalog` (its columns, in default order; `SchemaGridColumns` turns vertical schema fields into columns). Nothing else on the backend changes.
+
+**Concurrent changes.** A change is applied to the latest saved layout under an optimistic lock (`@Version revision` on `shop_grid_layouts`); if another member saved in between, it is re-applied on top of theirs (up to 3 times, then 409). Changes to different columns both survive; two changes to the same column: the later one wins. Other members' browsers pick the new layout up when they refetch (window focus, after their own change).
+
+**Schema changes.** Stored keys only, one document per shop and grid; the unique `(shopId, gridId)` index is created at startup by `GridLayoutIndexMigration` (automatic index creation is off). On read, unknown keys are dropped, widths are clamped, required columns are shown and new columns are placed after their catalog neighbour (`GridLayoutResolver`), so a shop keeps its layout across schema versions.
+
+### Stockkart staff (SUPER_USER, user)
+
+`SUPER_USER` is a platform role for internal Stockkart staff, not a shop role. A SUPER_USER account has no shop (`shopId` null) and no shop memberships. Stockkart HQ signs these accounts in through `POST /api/v1/auth/login` and admits only `user.role == "SUPER_USER"`.
+
+- No API grants it: signup, invitations, join requests and shop-member role changes reject `SUPER_USER` (400). Invitations, join requests, shop registration and membership creation also reject a SUPER_USER account (400).
+- Shop RBAC denies a SUPER_USER account (`RbacService`, 403), so it cannot act inside any shop. `UserShopMembershipService.hasAccess`/`hasOwnerAccess` are false for it, so an `X-Shop-Id` header from staff is ignored.
+- Only the operator script `scripts/super-user.mongodb.js` grants or revokes it; see [docs/deploying.md](docs/deploying.md#granting-or-revoking-super_user).
+
+| Endpoint | Who |
+|----------|-----|
+| `POST /api/v1/auth/login`, `GET /api/v1/auth/me` | Any account; return `role` (`SUPER_USER` for staff) and work with no shop. |
+| `POST /api/v1/auth/change-password` | Signed-in account only (Bearer token); body `{ currentPassword, password }`; changes the token's account and logs out its other sessions (the caller's token stays valid). Not public. |
+| `POST /api/v1/shops/admin/shops/{shopId}/approve` | SUPER_USER only; anyone else gets 403. Body `{ approve, userLimit }` (`userLimit` > 0 to approve). |
+
+### HR (hr)
+
+Employees, attendance, leave, salary advances, payroll, salary payments, payslips and HR registers (`core/hr`, spec `.kiro/specs/hr-module`). Every path needs a Bearer token; there is no public HR path. Staff paths sit behind the RBAC module `hr` (member switch `modules.hr`, `null` = on) and an action permission from the shop's HR role grid (owner: all); `/api/v1/hr/me/**` skips the module check and works only on the caller's own linked employee (`404 HR_NOT_LINKED` when the login has none, except notifications). Shop and caller always come from the request attributes. Pay amounts and full bank/UPI details need `VIEW_SALARIES`. Endpoints marked *heavy* run under the heavy-request limiter kind `hr` (2 at once, 4 waiting, 10 s, then 503 with `Retry-After`). Plan expiry blocks HR like the rest of the app, except `/api/v1/hr/me/payslips/**`.
+
+| Endpoint | Permission | Purpose |
+|----------|------------|---------|
+| `GET /api/v1/hr/settings`, `PUT /api/v1/hr/settings`, `GET /api/v1/hr/setup-status` | any HR permission; PUT `MANAGE_SETTINGS` | Weekly off (with `effectiveFrom`), hours, grace, half-day, overtime, per-day basis, leave-year start |
+| `GET`, `PUT /api/v1/hr/role-permissions` | owner | Role grid, closed under the dependency rules on save |
+| `GET`, `POST /api/v1/hr/holidays`, `PUT`, `DELETE /api/v1/hr/holidays/{id}` | GET any HR; writes `MANAGE_SETTINGS` | Holidays per year |
+| `GET`, `POST /api/v1/hr/leave-types`, `PUT /api/v1/hr/leave-types/{id}` | GET any HR; writes `MANAGE_SETTINGS` | Leave types (three seeded defaults) |
+| `GET`, `POST /api/v1/hr/employees`, `GET`, `PUT /api/v1/hr/employees/{id}`, `POST /api/v1/hr/employees/{id}/salary-revisions`, `POST /api/v1/hr/employees/{id}/exit`, `GET /api/v1/hr/employees/designations`, `GET /api/v1/hr/linkable-logins` | `VIEW_EMPLOYEES` / `ADD_EDIT_EMPLOYEES` (+ `VIEW_SALARIES` for pay) | Employees, masked without `VIEW_SALARIES` |
+| `GET /api/v1/hr/attendance/daily?asOf=`, `PUT /api/v1/hr/attendance/days` (≤ 500 rows), `POST /api/v1/hr/attendance/mark-unmarked-present`, `GET /api/v1/hr/attendance/month?period=&employeeId=`, `GET /api/v1/hr/attendance/history?employeeId=&date=` | `VIEW_ATTENDANCE` / `MARK_ATTENDANCE` | Daily and month registers, bulk save, history with actor names |
+| `GET /api/v1/hr/attendance/month/export?period=` *heavy* | `VIEW_ATTENDANCE` | Month attendance register (xlsx) |
+| `GET`, `POST /api/v1/hr/leave-requests`, `GET /api/v1/hr/leave-requests/preview`, `POST /api/v1/hr/leave-requests/{id}/approve`, `/reject`, `/cancel` | `VIEW_ATTENDANCE`, `MARK_ATTENDANCE`, `APPROVE_LEAVE` | Leave requests (with `leaveTypeName`) |
+| `GET /api/v1/hr/leave-balances?year=&employeeId=` | `VIEW_ATTENDANCE` | Prorated quota, used, available per type; one employee with `employeeId` |
+| `GET /api/v1/hr/leave-balances/export?year=` *heavy* | `VIEW_ATTENDANCE` | Leave balance list (xlsx) |
+| `GET`, `POST /api/v1/hr/advances`, `POST /api/v1/hr/advances/{id}/cancel`, `GET /api/v1/hr/employees/{id}/advance-statement` | `MANAGE_ADVANCES` | Salary advances (posted to 1250) and statement |
+| `GET /api/v1/hr/payroll-runs`, `GET /api/v1/hr/payroll-runs/{runId}`, `GET /api/v1/hr/payroll-runs/{runId}/unmarked` | `RUN_PAYROLL` or `RECORD_PAYMENTS` | Runs with lines; who still has unmarked days |
+| `POST /api/v1/hr/payroll-runs` *heavy*, `POST /api/v1/hr/payroll-runs/{runId}/recalculate` *heavy*, `PUT /api/v1/hr/payroll-runs/{runId}/lines/{lineId}/adjustments` | `RUN_PAYROLL` | Draft for a month, recalculation, manual items and advance override |
+| `POST /api/v1/hr/payroll-runs/{runId}/finalise` *heavy*, `POST /api/v1/hr/payroll-runs/{runId}/reopen` | `RUN_PAYROLL` | Finalise (oldest month first, one `PAYROLL_RUN` journal) and reopen with a reason (newest first, refused while anything is paid) |
+| `POST /api/v1/hr/payroll-runs/{runId}/payments` | `RECORD_PAYMENTS` | `{lineIds[] ≤ 50 \| all: true, date, method CASH\|BANK\|UPI, reference?}`: one batch, one `SALARY_PAYMENT` journal; per-line status |
+| `POST /api/v1/hr/payroll-runs/{runId}/lines/{lineId}/payment/undo` | `RECORD_PAYMENTS` | `{reason?}`: compensating journal for that line only, line back to pending |
+| `GET /api/v1/hr/payroll-runs/{runId}/lines/{lineId}/payslip` | `VIEW_SALARIES` | Payslip PDF of a finalised run |
+| `POST /api/v1/hr/payroll-runs/{runId}/payslips/email` | `RUN_PAYROLL` | `{lineIds[] ≤ 300}` → `{queued, skippedNoEmail[]}`; the outbox renders each PDF when it sends (10 per tick) |
+| `GET /api/v1/hr/payroll-runs/{runId}/register?format=xlsx\|pdf` *heavy* | `VIEW_SALARIES` | Salary register |
+| `GET /api/v1/hr/me`, `GET /api/v1/hr/me/attendance?period=`, `GET /api/v1/hr/me/leave?year=`, `GET /api/v1/hr/me/leave/preview` | linked employee | Own profile (own pay shown, bank/UPI masked), month, balances and requests |
+| `POST /api/v1/hr/me/leave-requests`, `POST /api/v1/hr/me/leave-requests/{id}/cancel` | linked employee | Request or cancel own leave |
+| `GET /api/v1/hr/me/payslips`, `GET /api/v1/hr/me/payslips/{lineId}/pdf` | linked employee (allowed while the plan is expired) | Own payslips of finalised months; another employee's line is 404 |
+| `GET /api/v1/hr/me/notifications?since=`, `POST /api/v1/hr/me/notifications/{id}/read`, `POST /api/v1/hr/me/notifications/read-all` | any shop member | HR inbox (polled every 60 s) |
 
 ### Build commands
 

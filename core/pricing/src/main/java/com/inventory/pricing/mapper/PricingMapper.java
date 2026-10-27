@@ -15,6 +15,7 @@ import com.inventory.pricing.rest.dto.response.PricingResponse;
 import com.inventory.pricing.rest.dto.response.RateDto;
 import com.inventory.pricing.utils.PricingUtils;
 import com.inventory.pricing.utils.constants.PricingConstants;
+import org.mapstruct.AfterMapping;
 import org.mapstruct.BeanMapping;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
@@ -149,6 +150,25 @@ public interface PricingMapper {
     dto.setSchemeFree(s.getSchemeFree());
     dto.setSchemePercentage(s.getSchemePercentage());
     return dto;
+  }
+
+  /**
+   * A null field in an update means "keep it", so a field is cleared only when the request names
+   * it in {@code clearFields}. Runs after {@link #updateEntity}; the caller then recomputes the
+   * effective cost from what is left.
+   */
+  @AfterMapping
+  default void applyClearFields(UpdatePricingRequest request, @MappingTarget Pricing pricing) {
+    if (request == null || request.getClearFields() == null) return;
+    for (String field : request.getClearFields()) {
+      switch (field) {
+        case PricingConstants.CLEAR_SALE_ADDITIONAL_DISCOUNT -> pricing.setSaleAdditionalDiscount(null);
+        case PricingConstants.CLEAR_PURCHASE_ADDITIONAL_DISCOUNT -> pricing.setPurchaseAdditionalDiscount(null);
+        case PricingConstants.CLEAR_SALE_SCHEME -> pricing.setSaleScheme(null);
+        case PricingConstants.CLEAR_PURCHASE_SCHEME -> pricing.setPurchaseScheme(null);
+        default -> { /* not a pricing field; the caller validated the names */ }
+      }
+    }
   }
 
   default Scheme toScheme(SchemeDto dto) {

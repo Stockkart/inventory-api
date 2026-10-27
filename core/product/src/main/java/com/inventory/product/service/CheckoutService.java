@@ -22,7 +22,6 @@ import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.UnitConversion;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.user.domain.model.Customer;
-import com.inventory.user.rest.dto.request.CreateCustomerRequest;
 import com.inventory.product.domain.repository.PurchaseRepository;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.rest.dto.request.AddToCartRequest;
@@ -34,7 +33,6 @@ import com.inventory.product.rest.dto.response.PurchaseListResponse;
 import com.inventory.product.rest.dto.response.PurchaseSummaryDto;
 import com.inventory.product.mapper.InventoryMapper;
 import com.inventory.product.mapper.PurchaseMapper;
-import com.inventory.plan.rest.dto.request.RecordUsageRequest;
 import com.inventory.plan.service.UsageService;
 import com.inventory.product.util.PurchaseItemRefs;
 import com.inventory.product.utils.CheckoutUtils;
@@ -56,6 +54,11 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
+import org.bson.types.Decimal128;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -66,7 +69,6 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -97,6 +99,14 @@ public class CheckoutService {
   @Autowired
   private PurchaseMapper purchaseMapper;
 
+  /** Guarded stock updates on bill completion (updateInventoryForCompletedPurchase). */
+  @Autowired
+  private MongoTemplate mongoTemplate;
+
+  /** All-or-nothing bill completion (stock, bill, invoice no, usage, dues, journal). */
+  @Autowired(required = false)
+  private com.inventory.common.tx.MongoTx mongoTx;
+
   @Autowired
   private CheckoutValidator checkoutValidator;
 
@@ -108,9 +118,6 @@ public class CheckoutService {
 
   @Autowired
   private com.inventory.user.domain.repository.CustomerRepository customerRepository;
-
-  @Autowired
-  private com.inventory.user.domain.repository.ShopCustomerRepository shopCustomerRepository;
 
   @Autowired
   private ShopRepository shopRepository;
@@ -140,7 +147,7 @@ public class CheckoutService {
   @Autowired(required = false)
   private com.inventory.credit.service.CreditChargeFacade creditChargeFacade;
 
-  @Autowired(required = false)
+  @Autowired
   private com.inventory.accounting.api.AccountingFacade accountingFacade;
 
   @Autowired
@@ -188,14 +195,15 @@ public class CheckoutService {
         customerName = PurchaseCustomerRequests.displayNameOverlay(customerId, request);
       }
 
-      // Process new items
-      List<PurchaseItem> newItems = processCartItems(request.getItems(), shopId, existingCart);
+      // Process new items; their lots are read once here and reused below
+      CartLots lots = new CartLots(lotIdsOf(request.getItems()));
+      List<PurchaseItem> newItems = processCartItems(request.getItems(), shopId, existingCart, lots);
       Purchase stockCheckCart =
           existingCart != null ? existingCart : new Purchase();
       if (existingCart == null) {
         stockCheckCart.setItems(new ArrayList<>());
       }
-      validateStockAvailabilityForCartUpdate(stockCheckCart, newItems, shopId);
+      validateStockAvailabilityForCartUpdate(stockCheckCart, newItems, shopId, lots);
 
       BillingMode cartBillingMode = checkoutValidator.resolveAndValidateCartBillingMode(existingCart, newItems);
       boolean targetIsEstimate =
@@ -209,7 +217,7 @@ public class CheckoutService {
       if (existingCart != null) {
         // Update existing cart - merge items (including quantity-0 update-only items)
         log.info("Updating existing cart with ID: {}", existingCart.getId());
-        purchase = updateCart(existingCart, newItems, request.getBusinessType(), customerId, customerName, cartBillingMode);
+        purchase = updateCart(existingCart, newItems, request.getBusinessType(), customerId, customerName, cartBillingMode, lots);
         if (metrics != null) {
           metrics.record(ProductMetricsConstants.CART_UPDATED, 1, "module", ProductMetricsConstants.MODULE);
         }
@@ -248,8 +256,22 @@ public class CheckoutService {
     }
   }
 
+  /**
+   * Moves a bill to a new status. Completing it runs as one MongoDB transaction ({@link
+   * com.inventory.common.tx.MongoTx}): the stock taken, the bill, its invoice number, the usage
+   * count, the customer's due and the sale journal are saved together or not at all, and a write
+   * conflict with another bill (same lot, same Cash account) runs the completion again.
+   */
   @Transactional
   public CheckoutResponse updatePurchaseStatus(UpdatePurchaseStatusRequest request, HttpServletRequest httpRequest) {
+    if (mongoTx != null && request != null && request.getStatus() == PurchaseStatus.COMPLETED) {
+      return mongoTx.run(com.inventory.common.tx.MongoTx.BILL_COMPLETE, (String) httpRequest.getAttribute("shopId"),
+          () -> changePurchaseStatus(request, httpRequest));
+    }
+    return changePurchaseStatus(request, httpRequest);
+  }
+
+  private CheckoutResponse changePurchaseStatus(UpdatePurchaseStatusRequest request, HttpServletRequest httpRequest) {
     // Get shopId and userId from request attributes (set by AuthenticationInterceptor)
     String shopId = (String) httpRequest.getAttribute("shopId");
     String userId = (String) httpRequest.getAttribute("userId");
@@ -329,31 +351,9 @@ public class CheckoutService {
         recordBillingUsageForPurchase(shopId, purchase);
       }
       if (requestedStatus == PurchaseStatus.COMPLETED && metrics != null) {
-        BigDecimal grandTotal = purchase.getGrandTotal() != null ? purchase.getGrandTotal() : BigDecimal.ZERO;
-        String vertical = checkoutVertical(shopId);
-        if (vertical != null) {
-          metrics.record(
-              ProductMetricsConstants.ORDERS_COMPLETED,
-              1,
-              "module",
-              ProductMetricsConstants.MODULE,
-              "vertical",
-              vertical);
-          if (grandTotal.compareTo(BigDecimal.ZERO) > 0) {
-            metrics.record(
-                ProductMetricsConstants.ORDERS_AMOUNT,
-                grandTotal.doubleValue(),
-                "module",
-                ProductMetricsConstants.MODULE,
-                "vertical",
-                vertical);
-          }
-        } else {
-          metrics.record(ProductMetricsConstants.ORDERS_COMPLETED, 1, "module", ProductMetricsConstants.MODULE);
-          if (grandTotal.compareTo(BigDecimal.ZERO) > 0) {
-            metrics.record(ProductMetricsConstants.ORDERS_AMOUNT, grandTotal.doubleValue(), "module", ProductMetricsConstants.MODULE);
-          }
-        }
+        final Purchase counted = purchase;
+        // counted once, and only if the bill is saved (a write conflict runs the completion again)
+        com.inventory.common.tx.MongoTx.afterCommit(() -> recordCompletedOrderMetrics(shopId, counted));
       }
 
       log.info("Successfully updated purchase status from {} to {} for purchase ID: {}",
@@ -379,7 +379,7 @@ public class CheckoutService {
       }
       return response;
 
-    } catch (ValidationException | ResourceNotFoundException e) {
+    } catch (ValidationException | ResourceNotFoundException | InsufficientStockException e) {
       log.warn("Update purchase status failed: {}", e.getMessage());
       throw e;
     } catch (DataAccessException e) {
@@ -390,6 +390,34 @@ public class CheckoutService {
       log.error("Unexpected error during update purchase status for shop: {}, user: {}", shopId, userId, e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
           "An unexpected error occurred during update purchase status: " + e.getMessage(), e);
+    }
+  }
+
+  private void recordCompletedOrderMetrics(String shopId, Purchase purchase) {
+    BigDecimal grandTotal = purchase.getGrandTotal() != null ? purchase.getGrandTotal() : BigDecimal.ZERO;
+    String vertical = checkoutVertical(shopId);
+    if (vertical != null) {
+      metrics.record(
+          ProductMetricsConstants.ORDERS_COMPLETED,
+          1,
+          "module",
+          ProductMetricsConstants.MODULE,
+          "vertical",
+          vertical);
+      if (grandTotal.compareTo(BigDecimal.ZERO) > 0) {
+        metrics.record(
+            ProductMetricsConstants.ORDERS_AMOUNT,
+            grandTotal.doubleValue(),
+            "module",
+            ProductMetricsConstants.MODULE,
+            "vertical",
+            vertical);
+      }
+    } else {
+      metrics.record(ProductMetricsConstants.ORDERS_COMPLETED, 1, "module", ProductMetricsConstants.MODULE);
+      if (grandTotal.compareTo(BigDecimal.ZERO) > 0) {
+        metrics.record(ProductMetricsConstants.ORDERS_AMOUNT, grandTotal.doubleValue(), "module", ProductMetricsConstants.MODULE);
+      }
     }
   }
 
@@ -463,9 +491,8 @@ public class CheckoutService {
       // Query purchases by shopId
       Page<Purchase> purchasePage = purchaseRepository.findByShopId(shopId, pageable);
 
-      List<PurchaseSummaryDto> purchaseDtos = purchasePage.getContent().stream()
-          .map(purchaseMapper::toPurchaseSummaryDto)
-          .toList();
+      // one customer query for the whole page
+      List<PurchaseSummaryDto> purchaseDtos = purchaseMapper.toPurchaseSummaryDtos(purchasePage.getContent());
 
       PurchaseListResponse response = purchaseMapper.toPurchaseListResponse(
           purchaseDtos, pageNumber + 1, pageSize,
@@ -559,9 +586,8 @@ public class CheckoutService {
           customerIds,
           pageable);
 
-      List<PurchaseSummaryDto> purchaseDtos = purchasePage.getContent().stream()
-          .map(purchaseMapper::toPurchaseSummaryDto)
-          .toList();
+      // one customer query for the whole page
+      List<PurchaseSummaryDto> purchaseDtos = purchaseMapper.toPurchaseSummaryDtos(purchasePage.getContent());
 
       PurchaseListResponse response = purchaseMapper.toPurchaseListResponse(
           purchaseDtos, pageNumber + 1, pageSize,
@@ -599,13 +625,8 @@ public class CheckoutService {
     if (!StringUtils.hasText(term)) {
       return List.of();
     }
-    Set<String> matched = new HashSet<>();
-    for (Customer candidate : customerRepository.searchByQuery(term.trim())) {
-      if (shopCustomerRepository.existsByShopIdAndCustomerId(shopId, candidate.getId())) {
-        matched.add(candidate.getId());
-      }
-    }
-    return new ArrayList<>(matched);
+    // this shop's customers only, matched in MongoDB (was: every shop's customers, then filtered)
+    return customerService.findShopCustomerIdsMatchingQueryIncludingGeneral(shopId, term.trim());
   }
 
   private Sort parseSortOrder(String order) {
@@ -664,8 +685,8 @@ public class CheckoutService {
         "invoiceNo".equals(field);
   }
 
-  private List<PurchaseItem> processCartItems(List<AddToCartRequest.CartItem> items, String shopId,
-      Purchase existingCart) {
+  private List<PurchaseItem> processCartItems(
+      List<AddToCartRequest.CartItem> items, String shopId, Purchase existingCart, CartLots lots) {
     Optional<CartLineContributor> contributor = cartContributorResolver.resolveContributor(shopId);
     if (contributor.isPresent()) {
       List<CartLineInput> inputs = items.stream().map(this::toCartLineInput).toList();
@@ -716,8 +737,7 @@ public class CheckoutService {
 
         if (updateOnly) {
           // Verify inventory exists and belongs to shop; no stock check needed
-          Inventory inventory = inventoryRepository.findById(item.getId())
-              .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", item.getId()));
+          Inventory inventory = lots.require(item.getId());
           if (!shopId.equals(inventory.getShopId())) {
             throw new ValidationException("Inventory lot " + item.getId() + " does not belong to shop " + shopId);
           }
@@ -777,8 +797,7 @@ public class CheckoutService {
             || (item.getBaseQuantity() != null && item.getBaseQuantity() < 0)) {
           // For negative quantities (reduce/remove), verify lotId exists and belongs to the shop
           // Stock validation is not needed for removing items
-          Inventory inventory = inventoryRepository.findById(item.getId())
-              .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", item.getId()));
+          Inventory inventory = lots.require(item.getId());
 
           if (!shopId.equals(inventory.getShopId())) {
             throw new ValidationException("Inventory lot " + item.getId() + " does not belong to shop " + shopId);
@@ -812,8 +831,7 @@ public class CheckoutService {
           purchaseItems.add(purchaseItem);
         } else {
           // Positive quantity - normal flow with stock validation
-          Inventory inventory = inventoryRepository.findById(item.getId())
-              .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", item.getId()));
+          Inventory inventory = lots.require(item.getId());
 
           // Verify the inventory belongs to the shop
           if (!shopId.equals(inventory.getShopId())) {
@@ -947,8 +965,8 @@ public class CheckoutService {
   }
 
   /**
-   * Tax on purchase items at each item's own CGST/SGST rate (shop defaults where an item has
-   * none), summed; on an interstate sale the same total is charged as IGST.
+   * Tax on purchase items at each item's own CGST/SGST rate, summed; on an interstate sale the
+   * same total is charged as IGST.
    */
   private TaxCalculationResult calculateTax(List<PurchaseItem> purchaseItems, String shopId,
       BillingMode billingMode, boolean interstate) {
@@ -958,25 +976,12 @@ public class CheckoutService {
     BigDecimal totalSgstAmount = BigDecimal.ZERO;
     BigDecimal totalCgstAmount = BigDecimal.ZERO;
     
-    // Get shop defaults for items without inventory-level rates
-    String shopSgst = null;
-    String shopCgst = null;
-    if (shopId != null && !shopId.trim().isEmpty()) {
-      Optional<Shop> shopOpt = shopRepository.findById(shopId);
-      if (shopOpt.isPresent()) {
-        Shop shop = shopOpt.get();
-        shopSgst = shop.getSgst();
-        shopCgst = shop.getCgst();
-      }
-    }
-    
     // Calculate tax for each item based on its inventory-level CGST/SGST.
     // A line sold at MRP adds no GST on top, but the GST inside its price is still charged and is
     // stated here: its tax is worked on the price with that GST taken out, so it is the GST the
     // MRP already contains. Skipping it left the bill, the journal and the invoice saying no tax
     // was charged on goods whose price included it.
     for (PurchaseItem item : purchaseItems) {
-      boolean sellingAtMrp = CheckoutUtils.isSellingAtMrp(item);
       // Item total for tax: use paid quantity when scheme is set (billing basis)
       BigDecimal itemTotal = BigDecimal.ZERO;
       if (item.getMaximumRetailPrice() != null && item.getQuantity() != null 
@@ -985,11 +990,9 @@ public class CheckoutService {
         itemTotal = CheckoutUtils.getTaxableLineValue(item, CheckoutUtils.getBillableQuantityAsDecimal(item));
       }
       
-      // Use inventory-level rates if available, otherwise use shop defaults. A line sold at MRP
-      // uses only its own rates: its taxable price was worked from them, and a shop default it
-      // does not carry would charge tax that its price does not contain.
-      String itemSgst = StringUtils.hasText(item.getSgst()) ? item.getSgst() : (sellingAtMrp ? null : shopSgst);
-      String itemCgst = StringUtils.hasText(item.getCgst()) ? item.getCgst() : (sellingAtMrp ? null : shopCgst);
+      // Each line is taxed at its own lot's rates; there is no shop-level GST.
+      String itemSgst = StringUtils.hasText(item.getSgst()) ? item.getSgst() : null;
+      String itemCgst = StringUtils.hasText(item.getCgst()) ? item.getCgst() : null;
       
       // Calculate SGST for this item
       if (itemSgst != null && !itemSgst.trim().isEmpty()) {
@@ -1279,7 +1282,8 @@ public class CheckoutService {
   }
 
   private Purchase updateCart(Purchase existingCart, List<PurchaseItem> newItems, String businessType,
-                              String customerId, String customerName, BillingMode billingMode) {
+                              String customerId, String customerName, BillingMode billingMode,
+                              CartLots lots) {
     try {
       // Merge items - if same inventoryId exists, update quantity; otherwise add new
       List<PurchaseItem> mergedItems = new ArrayList<>(existingCart.getItems() != null ? existingCart.getItems() : new ArrayList<>());
@@ -1302,8 +1306,7 @@ public class CheckoutService {
               }
               boolean wasAtMrp = CheckoutUtils.isSellingAtMrp(existingItem);
               String existingLotId = PurchaseItemRefs.stockLotId(existingItem);
-              Inventory inventory = inventoryRepository.findById(existingLotId)
-                  .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", existingLotId));
+              Inventory inventory = lots.require(existingLotId);
               int existingBaseQuantity = getBaseQuantityOrFallback(existingItem);
               int incomingBaseQuantity = getBaseQuantityOrFallback(newItem);
               int switchBaseQuantity = incomingBaseQuantity > 0 ? incomingBaseQuantity : existingBaseQuantity;
@@ -1411,8 +1414,7 @@ public class CheckoutService {
             // Handle quantity update based on positive or negative
             boolean wasAtMrp = CheckoutUtils.isSellingAtMrp(existingItem);
             String existingLotId = PurchaseItemRefs.stockLotId(existingItem);
-            Inventory inventory = inventoryRepository.findById(existingLotId)
-                .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", existingLotId));
+            Inventory inventory = lots.require(existingLotId);
             int existingBaseQuantity = getBaseQuantityOrFallback(existingItem);
             int incomingBaseQuantity = getBaseQuantityOrFallback(newItem);
             // FE always sends add/subtract deltas (including typed qty and +/-). Never replace.
@@ -1631,12 +1633,24 @@ public class CheckoutService {
     }
   }
 
-  private void validateStockAvailabilityForCartUpdate(Purchase existingCart, List<PurchaseItem> newItems, String shopId) {
+  private void validateStockAvailabilityForCartUpdate(
+      Purchase existingCart, List<PurchaseItem> newItems, String shopId, CartLots lots) {
     // Create a map of existing cart items by inventoryId for quick lookup
     Map<String, PurchaseItem> existingItemsMap = new HashMap<>();
     if (existingCart.getItems() != null) {
       for (PurchaseItem item : existingCart.getItems()) {
         existingItemsMap.put(cartLineKey(item), item);
+      }
+    }
+    // stock held by the shop's other open quotations for the lots this request adds: read once
+    Map<String, Integer> quotedElsewhere = null;
+    List<String> lotsBeingAdded = new ArrayList<>();
+    for (PurchaseItem item : newItems) {
+      if (!"menu".equalsIgnoreCase(item.getSellMode()) && getBaseQuantityOrFallback(item) > 0) {
+        String lotId = PurchaseItemRefs.stockLotId(item);
+        if (StringUtils.hasText(lotId)) {
+          lotsBeingAdded.add(lotId);
+        }
       }
     }
 
@@ -1652,8 +1666,7 @@ public class CheckoutService {
         int addingBaseQuantity = getBaseQuantityOrFallback(newItem);
         // Get inventory to check available stock
         String stockLotId = PurchaseItemRefs.stockLotId(newItem);
-        Inventory inventory = inventoryRepository.findById(stockLotId)
-            .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", stockLotId));
+        Inventory inventory = lots.require(stockLotId);
 
         if (!shopId.equals(inventory.getShopId())) {
           throw new ValidationException("Inventory lot " + stockLotId + " does not belong to shop " + shopId);
@@ -1682,9 +1695,11 @@ public class CheckoutService {
         }
 
         // Check if final quantity exceeds available stock (minus other open quotations)
-        Map<String, Integer> quotedElsewhere =
-            quotationService.quotedBaseQuantitiesByLot(
-                shopId, existingCart != null ? existingCart.getId() : null);
+        if (quotedElsewhere == null) {
+          quotedElsewhere =
+              quotationService.quotedBaseQuantitiesForLots(
+                  shopId, existingCart != null ? existingCart.getId() : null, lotsBeingAdded);
+        }
         int reservedElsewhere = quotedElsewhere.getOrDefault(stockLotId, 0);
         int availableStock = getCurrentBaseCount(inventory) - reservedElsewhere;
         if (finalBaseQuantity > availableStock) {
@@ -1971,6 +1986,51 @@ public class CheckoutService {
         .toList();
   }
 
+  /** Lot ids named by a cart request, without blanks or repeats. */
+  private static List<String> lotIdsOf(List<AddToCartRequest.CartItem> items) {
+    if (items == null || items.isEmpty()) {
+      return List.of();
+    }
+    Set<String> ids = new java.util.LinkedHashSet<>();
+    for (AddToCartRequest.CartItem item : items) {
+      if (item != null && StringUtils.hasText(item.getId())) {
+        ids.add(item.getId());
+      }
+    }
+    return new ArrayList<>(ids);
+  }
+
+  /**
+   * The lots one cart request works on: read together up front (one inventory query, with product
+   * and pricing hydrated in batch by the repository aspects), then reused by line building, the
+   * stock check and the merge. A lot it was not given is read on its own, as before. Lives for one
+   * request only.
+   */
+  private final class CartLots {
+    private final Map<String, Inventory> byId = new HashMap<>();
+
+    CartLots(List<String> lotIds) {
+      if (!lotIds.isEmpty()) {
+        for (Inventory inv : inventoryRepository.findAllById(lotIds)) {
+          if (inv != null && inv.getId() != null) {
+            byId.put(inv.getId(), inv);
+          }
+        }
+      }
+    }
+
+    /** The lot, or {@link ResourceNotFoundException} as a single read would throw. */
+    Inventory require(String lotId) {
+      Inventory inv = lotId != null ? byId.get(lotId) : null;
+      if (inv == null) {
+        inv = inventoryRepository.findById(lotId)
+            .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", lotId));
+        byId.put(lotId, inv);
+      }
+      return inv;
+    }
+  }
+
   private void enrichCartItemPackaging(PurchaseItem item, Inventory inventory) {
     if (item == null || inventory == null) {
       return;
@@ -1993,12 +2053,22 @@ public class CheckoutService {
       return;
     }
     BigDecimal grandTotal = purchase.getGrandTotal() != null ? purchase.getGrandTotal() : BigDecimal.ZERO;
-    RecordUsageRequest usageReq = new RecordUsageRequest();
-    usageReq.setBillingAmount(grandTotal);
-    usageReq.setBillCount(1);
-    usageService.recordUsage(shopId, usageReq);
+    // limits were checked by checkCanAddBill before the bill was saved; this only counts it
+    usageService.recordCompletedBill(shopId, grandTotal);
   }
 
+  /**
+   * Takes a completed bill's quantities off its lots.
+   *
+   * <p>Each lot is changed with one guarded update ("take n, only if at least n is in stock"), so
+   * two bills completing at the same moment cannot both sell the last unit or overwrite each
+   * other's count, and nothing but the four stock counts is written (a price or name edit saved at
+   * the same moment is kept). MongoDB applies updates to one document one at a time and checks the
+   * guard against the current value. There is no transaction across lots (AGENTS.md P8), so if a
+   * later lot fails its guard the lots already taken are put back before the error is thrown.
+   *
+   * <p>Lots with a missing stock count (legacy rows) keep the old read-modify-save.
+   */
   private void updateInventoryForCompletedPurchase(Purchase purchase) {
     if (purchase.getItems() == null || purchase.getItems().isEmpty()) {
       log.warn("Purchase {} has no items to process for inventory update", purchase.getId());
@@ -2007,83 +2077,185 @@ public class CheckoutService {
 
     log.info("Updating inventory for {} items in purchase {}", purchase.getItems().size(), purchase.getId());
 
+    // quantities per lot, in bill order; a lot on two lines is taken once for both
+    Map<String, StockTake> takes = new java.util.LinkedHashMap<>();
     for (PurchaseItem item : purchase.getItems()) {
+      if ("menu".equalsIgnoreCase(item.getSellMode())) {
+        continue;
+      }
       String stockLotId = PurchaseItemRefs.stockLotId(item);
-      try {
-        if ("menu".equalsIgnoreCase(item.getSellMode())) {
-          continue;
-        }
-        if (!StringUtils.hasText(stockLotId)) {
-          continue;
-        }
-        Inventory inventory = inventoryRepository.findById(stockLotId)
-            .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId",
-                "Inventory not found with lotId: " + stockLotId));
+      if (!StringUtils.hasText(stockLotId)) {
+        continue;
+      }
+      takes.computeIfAbsent(stockLotId, StockTake::new).lines.add(item);
+    }
+    if (takes.isEmpty()) {
+      return;
+    }
 
-        if (!purchase.getShopId().equals(inventory.getShopId())) {
-          throw new ValidationException("Inventory lot " + stockLotId +
-              " does not belong to shop " + purchase.getShopId());
-        }
-
-        // Get current values (handle nulls)
-        int currentCount = getCurrentBaseCount(inventory);
-        int soldCount = getSoldBaseCount(inventory);
-        BigDecimal currentDisplayCount = getCurrentDisplayCount(inventory);
-        BigDecimal soldDisplayCount = getSoldDisplayCount(inventory);
-        int baseQuantity = getBaseQuantityOrFallback(item);
-        BigDecimal displayQuantity = toDisplayQuantity(baseQuantity, inventory);
-
-        // Validate that we have enough stock
-        if (currentCount < baseQuantity) {
-          throw new InsufficientStockException(
-              "Insufficient stock to complete purchase for product: " + inventory.getName() +
-                  ". Available: " + currentCount + ", Required in base units: " + baseQuantity,
-              inventory.getBarcode(), currentCount, baseQuantity);
-        }
-
-        // Update inventory counts
-        inventory.setCurrentCount(currentDisplayCount.subtract(displayQuantity).setScale(4, RoundingMode.HALF_UP));
-        inventory.setSoldCount(soldDisplayCount.add(displayQuantity).setScale(4, RoundingMode.HALF_UP));
-        inventory.setCurrentBaseCount(currentCount - baseQuantity);
-        inventory.setSoldBaseCount(soldCount + baseQuantity);
-
-        // Save updated inventory
-        inventoryRepository.save(inventory);
-        Integer threshold = inventory.getThresholdCount() != null
-          ? inventory.getThresholdCount()
-          : 50;
-
-        log.info(
-          "Threshold check -> lotId={}, current={}, threshold={}",
-          inventory.getId(),
-          inventory.getCurrentBaseCount(),
-          threshold
-        );
-
-        if (inventory.getCurrentBaseCount() <= threshold) {
-
-          log.info("THRESHOLD REACHED — triggering INVENTORY_LOW event");
-
-          InventoryEventDto dto =
-            inventoryMapper.toInventoryLowEventDto(inventory, threshold);
-          var eventDto = inventoryMapper.toNotificationEventDto(dto);
-          eventService.recordAndBroadcastInventoryLow(eventDto);
-        }
-
-        log.info("Updated inventory for lotId: {} - decreased currentCount by {} (new: {}), increased soldCount by {} (new: {})",
-            stockLotId, baseQuantity, inventory.getCurrentBaseCount(), baseQuantity, inventory.getSoldBaseCount());
-
-      } catch (ResourceNotFoundException | ValidationException | InsufficientStockException e) {
-        log.error("Error updating inventory for lotId: {} - {}", stockLotId, e.getMessage());
-        throw e;
-      } catch (Exception e) {
-        log.error("Unexpected error updating inventory for lotId: {}", stockLotId, e);
-        throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
-            "Error updating inventory for lotId " + stockLotId + ": " + e.getMessage(), e);
+    // one read for all the bill's lots, then every check before anything is changed
+    Map<String, Inventory> lots = new HashMap<>();
+    for (Inventory inv : inventoryRepository.findAllById(takes.keySet())) {
+      if (inv != null && inv.getId() != null) {
+        lots.put(inv.getId(), inv);
+      }
+    }
+    for (StockTake take : takes.values()) {
+      Inventory inventory = lots.get(take.lotId);
+      if (inventory == null) {
+        throw new ResourceNotFoundException("Inventory", "lotId",
+            "Inventory not found with lotId: " + take.lotId);
+      }
+      if (!purchase.getShopId().equals(inventory.getShopId())) {
+        throw new ValidationException("Inventory lot " + take.lotId +
+            " does not belong to shop " + purchase.getShopId());
+      }
+      take.inventory = inventory;
+      for (PurchaseItem line : take.lines) {
+        int baseQuantity = getBaseQuantityOrFallback(line);
+        take.base += baseQuantity;
+        take.display = take.display.add(toDisplayQuantity(baseQuantity, inventory));
+      }
+      int currentCount = getCurrentBaseCount(inventory);
+      if (currentCount < take.base) {
+        throw insufficientStockToComplete(inventory, currentCount, take.base);
       }
     }
 
+    List<StockTake> taken = new ArrayList<>();
+    try {
+      for (StockTake take : takes.values()) {
+        if (hasAllStockCounts(take.inventory)) {
+          takeGuarded(purchase.getShopId(), take);
+        } else {
+          takeLegacy(take);
+        }
+        taken.add(take);
+      }
+    } catch (RuntimeException e) {
+      if (!com.inventory.common.tx.MongoTx.inTransaction()) {
+        putBack(taken); // without a transaction, give back what was already taken
+      }
+      throw e;
+    }
+
+    for (StockTake take : takes.values()) {
+      raiseInventoryLowIfNeeded(take.inventory);
+      log.info("Updated inventory for lotId: {} - decreased currentCount by {} (new: {}), increased soldCount by {} (new: {})",
+          take.lotId, take.base, take.inventory.getCurrentBaseCount(), take.base, take.inventory.getSoldBaseCount());
+    }
+
     log.info("Successfully updated inventory for all items in purchase {}", purchase.getId());
+  }
+
+  /** One lot's share of a completed bill. */
+  private static final class StockTake {
+    final String lotId;
+    final List<PurchaseItem> lines = new ArrayList<>();
+    Inventory inventory;
+    int base;
+    BigDecimal display = BigDecimal.ZERO;
+
+    StockTake(String lotId) {
+      this.lotId = lotId;
+    }
+  }
+
+  private static boolean hasAllStockCounts(Inventory inventory) {
+    return inventory.getCurrentBaseCount() != null
+        && inventory.getSoldBaseCount() != null
+        && inventory.getCurrentCount() != null
+        && inventory.getSoldCount() != null;
+  }
+
+  /** "Take n, only if at least n is in stock" as one update; nothing but the counts is written. */
+  private void takeGuarded(String shopId, StockTake take) {
+    Query guarded = Query.query(Criteria.where("_id").is(take.lotId)
+        .and("shopId").is(shopId)
+        .and("currentBaseCount").gte(take.base));
+    Update update = new Update()
+        .inc("currentBaseCount", -take.base)
+        .inc("soldBaseCount", take.base)
+        .inc("currentCount", new Decimal128(take.display.negate()))
+        .inc("soldCount", new Decimal128(take.display));
+    long matched;
+    try {
+      matched = mongoTemplate.updateFirst(guarded, update, Inventory.class).getMatchedCount();
+    } catch (RuntimeException e) {
+      log.error("Unexpected error updating inventory for lotId: {}", take.lotId, e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
+          "Error updating inventory for lotId " + take.lotId + ": " + e.getMessage(), e);
+    }
+    if (matched != 1) {
+      // sold elsewhere since it was read: report what is there now
+      Inventory now = inventoryRepository.findById(take.lotId).orElse(take.inventory);
+      int available = getCurrentBaseCount(now);
+      log.warn("Stock for lotId {} changed while completing: available {}, required {}", take.lotId, available, take.base);
+      throw insufficientStockToComplete(now, available, take.base);
+    }
+    Inventory inventory = take.inventory;
+    inventory.setCurrentBaseCount(inventory.getCurrentBaseCount() - take.base);
+    inventory.setSoldBaseCount(inventory.getSoldBaseCount() + take.base);
+    inventory.setCurrentCount(inventory.getCurrentCount().subtract(take.display).setScale(4, RoundingMode.HALF_UP));
+    inventory.setSoldCount(inventory.getSoldCount().add(take.display).setScale(4, RoundingMode.HALF_UP));
+  }
+
+  /** Lots with a missing count: the previous read-modify-save, which also fills the counts in. */
+  private void takeLegacy(StockTake take) {
+    Inventory inventory = take.inventory;
+    int currentCount = getCurrentBaseCount(inventory);
+    int soldCount = getSoldBaseCount(inventory);
+    BigDecimal currentDisplayCount = getCurrentDisplayCount(inventory);
+    BigDecimal soldDisplayCount = getSoldDisplayCount(inventory);
+    inventory.setCurrentCount(currentDisplayCount.subtract(take.display).setScale(4, RoundingMode.HALF_UP));
+    inventory.setSoldCount(soldDisplayCount.add(take.display).setScale(4, RoundingMode.HALF_UP));
+    inventory.setCurrentBaseCount(currentCount - take.base);
+    inventory.setSoldBaseCount(soldCount + take.base);
+    try {
+      inventoryRepository.save(inventory);
+    } catch (RuntimeException e) {
+      log.error("Unexpected error updating inventory for lotId: {}", take.lotId, e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
+          "Error updating inventory for lotId " + take.lotId + ": " + e.getMessage(), e);
+    }
+  }
+
+  /** Gives back what an unfinished completion already took (no transaction across lots). */
+  private void putBack(List<StockTake> taken) {
+    for (StockTake take : taken) {
+      try {
+        Update back = new Update()
+            .inc("currentBaseCount", take.base)
+            .inc("soldBaseCount", -take.base)
+            .inc("currentCount", new Decimal128(take.display))
+            .inc("soldCount", new Decimal128(take.display.negate()));
+        mongoTemplate.updateFirst(Query.query(Criteria.where("_id").is(take.lotId)), back, Inventory.class);
+        log.info("Put back {} (base) on lotId {} after a failed completion", take.base, take.lotId);
+      } catch (RuntimeException e) {
+        log.error("Could not put back {} (base) on lotId {} after a failed completion; stock is now low by that much",
+            take.base, take.lotId, e);
+      }
+    }
+  }
+
+  private InsufficientStockException insufficientStockToComplete(Inventory inventory, int available, int required) {
+    return new InsufficientStockException(
+        "Insufficient stock to complete purchase for product: " + inventory.getName() +
+            ". Available: " + available + ", Required in base units: " + required,
+        inventory.getBarcode(), available, required);
+  }
+
+  private void raiseInventoryLowIfNeeded(Inventory inventory) {
+    Integer threshold = inventory.getThresholdCount() != null ? inventory.getThresholdCount() : 50;
+    log.info("Threshold check -> lotId={}, current={}, threshold={}",
+        inventory.getId(), inventory.getCurrentBaseCount(), threshold);
+    if (inventory.getCurrentBaseCount() != null && inventory.getCurrentBaseCount() <= threshold) {
+      log.info("THRESHOLD REACHED — triggering INVENTORY_LOW event");
+      InventoryEventDto dto = inventoryMapper.toInventoryLowEventDto(inventory, threshold);
+      var eventDto = inventoryMapper.toNotificationEventDto(dto);
+      // pushed to open screens only once the stock change is saved
+      com.inventory.common.tx.MongoTx.afterCommit(() -> eventService.recordAndBroadcastInventoryLow(eventDto));
+    }
   }
 
   /**

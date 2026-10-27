@@ -10,6 +10,18 @@ jobs:
   pr-check:
     runs-on: ubuntu-latest
 
+    # Throwaway MongoDB for the *IT tests (HR decision 4); published on the runner's loopback only
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 127.0.0.1:27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ping: 1})'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -30,6 +42,15 @@ jobs:
 
       - name: Maven test (multi-module)
         run: mvn -pl app -am clean test
+
+      # *IT classes (and the Mongo-backed HR properties) are skipped by surefire's default
+      # pattern; they run only when stockkart.test.mongo.uri names a database
+      - name: Mongo integration tests (*IT)
+        run: >-
+          mvn -pl app -am test
+          -Dtest='*IT,com.inventory.hr.**.*Properties'
+          -Dsurefire.failIfNoSpecifiedTests=false
+          -Dstockkart.test.mongo.uri=mongodb://127.0.0.1:27017/stockkart_test
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

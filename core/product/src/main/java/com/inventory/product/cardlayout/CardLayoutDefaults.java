@@ -48,7 +48,7 @@ public final class CardLayoutDefaults {
   // ---- section ids used by the defaults ------------------------------------------------------
   static final String IDENTITY = "identity";
   static final String STOCK = "stock";
-  static final String PRICING = "pricing";
+  static final String PRICING = "pricing"; // boundaries:not-a-collection
   static final String DATES = "dates";
 
   /** Req 6.1 — today's {@code ProductSearchCard} body. */

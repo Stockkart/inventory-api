@@ -2,14 +2,11 @@ package com.inventory.analytics.utils;
 
 import com.inventory.analytics.rest.dto.response.CustomerAnalyticsDto;
 import com.inventory.analytics.rest.dto.response.CustomerSummaryDto;
-import com.inventory.product.domain.model.Purchase;
-import com.inventory.product.domain.model.enums.PurchaseStatus;
-import com.inventory.product.domain.repository.PurchaseRepository;
+import com.inventory.analytics.utils.AnalyticsSalesQueries.CustomerTotal;
 import com.inventory.user.domain.model.Customer;
 import com.inventory.user.domain.repository.CustomerRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -24,107 +21,46 @@ import java.util.stream.Collectors;
 public class CustomerAnalyticsUtils {
 
   @Autowired
-  private PurchaseRepository purchaseRepository;
-
-  @Autowired
   private CustomerRepository customerRepository;
 
-  /**
-   * Get all completed purchases for a shop.
-   */
-  public List<Purchase> getCompletedPurchases(String shopId) {
-    return purchaseRepository.findByShopId(shopId, Pageable.unpaged())
-        .getContent()
-        .stream()
-        .filter(p -> p.getStatus() == PurchaseStatus.COMPLETED)
-        .filter(p -> p.getSoldAt() != null)
-        .collect(Collectors.toList());
+  /** The customers of these ids, read once per request. */
+  public Map<String, Customer> customersById(List<CustomerTotal> totals) {
+    Set<String> ids = new HashSet<>();
+    for (CustomerTotal t : totals) {
+      if (t.customerId() != null) {
+        ids.add(t.customerId());
+      }
+    }
+    Map<String, Customer> out = new HashMap<>();
+    if (!ids.isEmpty()) {
+      for (Customer c : customerRepository.findAllById(ids)) {
+        out.put(c.getId(), c);
+      }
+    }
+    return out;
   }
 
   /**
-   * Get completed purchases within a date range.
+   * Per-customer analytics from MongoDB's all-time per-customer totals. Bills with a customer id
+   * group by id (name, phone and email from the customer record; the earliest name typed on their
+   * bills if the record is gone); bills with only a typed name group by that name.
    */
-  public List<Purchase> getCompletedPurchases(String shopId, Instant startDate, Instant endDate) {
-    return purchaseRepository.findByShopId(shopId, Pageable.unpaged())
-        .getContent()
-        .stream()
-        .filter(p -> p.getStatus() == PurchaseStatus.COMPLETED)
-        .filter(p -> p.getSoldAt() != null)
-        .filter(p -> !p.getSoldAt().isBefore(startDate) && !p.getSoldAt().isAfter(endDate))
-        .collect(Collectors.toList());
-  }
-
-  /**
-   * Calculate customer analytics from purchases.
-   */
-  public List<CustomerAnalyticsDto> calculateCustomerAnalytics(String shopId, List<Purchase> purchases, Instant startDate, Instant endDate) {
+  public List<CustomerAnalyticsDto> calculateCustomerAnalytics(List<CustomerTotal> totals, Map<String, Customer> customers) {
     Map<String, CustomerPurchaseData> customerMap = new HashMap<>();
-    Set<String> customerIds = new HashSet<>();
-    Set<String> customerNames = new HashSet<>();
-
-    // Collect all customer identifiers
-    for (Purchase purchase : purchases) {
-      if (purchase.getCustomerId() != null) {
-        customerIds.add(purchase.getCustomerId());
-      } else if (purchase.getCustomerName() != null) {
-        customerNames.add(purchase.getCustomerName());
-      }
-    }
-
-    // Get customer details
-    Map<String, Customer> customerMapById = new HashMap<>();
-    for (String customerId : customerIds) {
-      customerRepository.findById(customerId).ifPresent(customer -> customerMapById.put(customerId, customer));
-    }
-
-    // Process purchases
-    for (Purchase purchase : purchases) {
-      String customerKey;
-      String customerId = purchase.getCustomerId();
-      String customerName = purchase.getCustomerName();
-
-      if (customerId != null) {
-        customerKey = "ID:" + customerId;
-      } else if (customerName != null) {
-        customerKey = "NAME:" + customerName;
-      } else {
-        continue; // Skip purchases without customer info
-      }
-
-      CustomerPurchaseData data = customerMap.getOrDefault(customerKey, new CustomerPurchaseData(customerKey, customerId, customerName));
-
-      BigDecimal purchaseTotal = purchase.getGrandTotal() != null ? purchase.getGrandTotal() : BigDecimal.ZERO;
-      Instant soldAt = purchase.getSoldAt() != null ? purchase.getSoldAt() : purchase.getCreatedAt();
-
-      data.totalPurchases++;
-      data.totalRevenue = data.totalRevenue.add(purchaseTotal);
-      data.purchaseDates.add(soldAt);
-
-      // Track purchases in period
-      if (startDate != null && endDate != null && soldAt != null) {
-        if (!soldAt.isBefore(startDate) && !soldAt.isAfter(endDate)) {
-          data.purchaseCountInPeriod++;
-        }
-      }
-
-      // Update first and last purchase dates
-      if (data.firstPurchaseDate == null || soldAt.isBefore(data.firstPurchaseDate)) {
-        data.firstPurchaseDate = soldAt;
-      }
-      if (data.lastPurchaseDate == null || soldAt.isAfter(data.lastPurchaseDate)) {
-        data.lastPurchaseDate = soldAt;
-      }
-
-      // Get customer details if available
-      if (customerId != null && customerMapById.containsKey(customerId)) {
-        Customer customer = customerMapById.get(customerId);
+    for (CustomerTotal t : totals) {
+      String customerKey = t.customerId() != null ? "ID:" + t.customerId() : "NAME:" + t.billName();
+      CustomerPurchaseData data = new CustomerPurchaseData(customerKey, t.customerId(), t.billName());
+      Customer customer = t.customerId() == null ? null : customers.get(t.customerId());
+      if (customer != null) {
         data.customerName = customer.getName();
         data.customerPhone = customer.getPhone();
         data.customerEmail = customer.getEmail();
-      } else if (customerName != null && data.customerName == null) {
-        data.customerName = customerName;
       }
-
+      data.totalPurchases = Math.toIntExact(t.bills());
+      data.totalRevenue = t.grandTotal();
+      data.firstPurchaseDate = t.firstSoldAt();
+      data.lastPurchaseDate = t.lastSoldAt();
+      data.purchaseCountInPeriod = Math.toIntExact(t.billsInPeriod());
       customerMap.put(customerKey, data);
     }
 
@@ -250,7 +186,6 @@ public class CustomerAnalyticsUtils {
     String customerEmail;
     int totalPurchases = 0;
     BigDecimal totalRevenue = BigDecimal.ZERO;
-    List<Instant> purchaseDates = new ArrayList<>();
     Instant firstPurchaseDate;
     Instant lastPurchaseDate;
     int purchaseCountInPeriod = 0;

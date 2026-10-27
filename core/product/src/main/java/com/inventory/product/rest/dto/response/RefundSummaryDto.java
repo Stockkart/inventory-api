@@ -61,6 +61,20 @@ public class RefundSummaryDto {
   private BigDecimal refundAmount;
 
   /**
+   * The note's tax totals, as the printed credit note states them (see {@code CreditNoteFigures}).
+   * {@code refundAmount} is its grand total. A return of an interstate sale carries its tax in
+   * {@code igstAmount}, with CGST and SGST zero.
+   */
+  private BigDecimal taxableTotal;
+  private BigDecimal cgstAmount;
+  private BigDecimal sgstAmount;
+  private BigDecimal igstAmount;
+  private BigDecimal taxTotal;
+  private BigDecimal roundOff;
+  /** True when the sale it reverses was billed as an interstate supply. */
+  private Boolean interstate;
+
+  /**
    * Number of items refunded.
    */
   private Integer totalItemsRefunded;

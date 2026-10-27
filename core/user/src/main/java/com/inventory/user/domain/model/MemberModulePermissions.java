@@ -20,4 +20,11 @@ public class MemberModulePermissions {
   private Boolean productSearchEdit;
   /** Explicit grant to override or reset generated rate-rule rates on a batch. */
   private Boolean rateRulesEdit;
+
+  /**
+   * Per-member HR switch. {@code null} = enabled (the default for every role); the shop's HR role
+   * grid then decides which HR actions the member may take. {@code false} leaves only HR
+   * self-service.
+   */
+  private Boolean hr;
 }

@@ -1,6 +1,8 @@
 package com.inventory.analytics.mis.rest.controller;
 
 
+import com.inventory.common.heavy.HeavyKind;
+import com.inventory.common.heavy.HeavyRequest;
 import com.inventory.metrics.annotation.Latency;
 import com.inventory.metrics.annotation.RecordRequestRate;
 import com.inventory.metrics.annotation.RecordStatusCodes;
@@ -50,6 +52,7 @@ public class CustomerMoneyMisController {
                 shopId, from, to, customerId, txnTypes, moneyFilter, q, page, size)));
   }
 
+  @HeavyRequest(HeavyKind.EXPORT)
   @GetMapping("/excel")
   public ResponseEntity<byte[]> excel(
       @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
@@ -66,6 +69,7 @@ public class CustomerMoneyMisController {
     return attachment(body, "customer-mis.xlsx", MisMedia.XLSX);
   }
 
+  @HeavyRequest(HeavyKind.EXPORT)
   @GetMapping("/pdf")
   public ResponseEntity<byte[]> pdf(
       @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
