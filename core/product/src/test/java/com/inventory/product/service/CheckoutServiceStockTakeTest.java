@@ -19,7 +19,7 @@ import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.mapper.InventoryMapper;
 import com.inventory.product.util.PurchaseItemRefs;
-import com.inventory.reminders.service.EventService;
+import com.inventory.reminders.api.InventoryAlerts;
 import com.mongodb.client.result.UpdateResult;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -48,7 +48,7 @@ class CheckoutServiceStockTakeTest {
 
   private InventoryRepository inventoryRepository;
   private MongoTemplate template;
-  private EventService events;
+  private InventoryAlerts events;
   private InventoryMapper inventoryMapper;
   private CheckoutService service;
 
@@ -56,7 +56,7 @@ class CheckoutServiceStockTakeTest {
   void setUp() {
     inventoryRepository = mock(InventoryRepository.class);
     template = mock(MongoTemplate.class);
-    events = mock(EventService.class);
+    events = mock(InventoryAlerts.class);
     inventoryMapper = mock(InventoryMapper.class);
     service = new CheckoutService();
     ReflectionTestUtils.setField(service, "inventoryRepository", inventoryRepository);

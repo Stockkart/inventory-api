@@ -2,7 +2,6 @@ package com.inventory.product.rest.dto.request;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.inventory.reminders.rest.dto.request.CustomReminderRequest;
 import com.inventory.pricing.rest.dto.response.RateDto;
 import com.inventory.product.domain.model.enums.DiscountApplicable;
 import com.inventory.product.domain.model.enums.BillingMode;

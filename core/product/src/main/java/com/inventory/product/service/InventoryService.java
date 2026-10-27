@@ -1,5 +1,7 @@
 package com.inventory.product.service;
 
+import com.inventory.reminders.api.ReminderScheduling;
+import com.inventory.reminders.api.InventoryReminderRequest;
 import com.inventory.common.constants.PurchaseTaxTreatment;
 import com.inventory.common.heavy.HeavyKind;
 import com.inventory.common.heavy.HeavyRequestLimiter;
@@ -22,8 +24,6 @@ import com.inventory.pricing.utils.constants.PricingConstants;
 import com.inventory.user.domain.model.Vendor;
 import com.inventory.user.domain.repository.VendorRepository;
 import com.inventory.product.rest.dto.request.VendorPurchaseInvoiceRequest;
-import com.inventory.reminders.rest.dto.request.CreateReminderForInventoryRequest;
-import com.inventory.reminders.service.ReminderService;
 import com.inventory.ocr.api.InvoicePricingLayout;
 import com.inventory.ocr.api.InvoiceParser;
 import com.inventory.ocr.api.StockSheetParser;
@@ -137,7 +137,7 @@ public class InventoryService {
   private PackagingUnitService packagingUnitService;
 
   @Autowired
-  private ReminderService reminderService;
+  private ReminderScheduling reminderService;
 
   @Autowired
   private com.inventory.user.domain.repository.ShopVendorRepository shopVendorRepository;
@@ -972,14 +972,13 @@ public class InventoryService {
         });
       }
 
-      CreateReminderForInventoryRequest reminderRequest =
-          inventoryMapper.toCreateReminderForInventoryRequest(request, shopId, inventory.getId());
-      reminderRequest.setExpiryDate(VerticalFieldsReader.expiryDateFrom(request));
+      InventoryReminderRequest reminderRequest = inventoryMapper.toInventoryReminderRequest(
+          request, shopId, inventory.getId(), VerticalFieldsReader.expiryDateFrom(request));
       reminderService.createReminderForInventoryCreate(reminderRequest);
       boolean reminderCreated =
-          reminderRequest.getExpiryDate() != null
-              || (reminderRequest.getCustomReminders() != null
-                  && !reminderRequest.getCustomReminders().isEmpty());
+          reminderRequest.expiryDate() != null
+              || (reminderRequest.customReminders() != null
+                  && !reminderRequest.customReminders().isEmpty());
       return inventoryMapper.toReceiptResponseWithReminder(inventory, reminderCreated);
 
     } catch (ValidationException e) {

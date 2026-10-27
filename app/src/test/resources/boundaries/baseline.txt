@@ -200,19 +200,6 @@ NOT_API product -> pricing : com.inventory.product.service.vertical.VerticalPric
 NOT_API product -> pricing : com.inventory.product.utils.PurchaseTaxBasisResolver -> com.inventory.pricing.domain.model.Pricing
 NOT_API product -> pricing : com.inventory.product.utils.PurchaseTaxBasisResolver -> com.inventory.pricing.utils.PricingUtils
 NOT_API product -> pricing : com.inventory.product.validation.InventoryValidator -> com.inventory.pricing.utils.constants.PricingConstants
-NOT_API product -> reminders : com.inventory.product.mapper.InventoryMapper -> com.inventory.reminders.rest.dto.request.CreateReminderForInventoryRequest
-NOT_API product -> reminders : com.inventory.product.mapper.InventoryMapper -> com.inventory.reminders.rest.dto.response.InventoryLowEventDto
-NOT_API product -> reminders : com.inventory.product.mapper.InventoryMapperImpl -> com.inventory.reminders.rest.dto.request.CreateReminderForInventoryRequest
-NOT_API product -> reminders : com.inventory.product.mapper.InventoryMapperImpl -> com.inventory.reminders.rest.dto.response.InventoryLowEventDto
-NOT_API product -> reminders : com.inventory.product.mapper.ParsedInventoryMapper -> com.inventory.reminders.rest.dto.request.CustomReminderRequest
-NOT_API product -> reminders : com.inventory.product.rest.dto.request.CreateInventoryItemRequest -> com.inventory.reminders.rest.dto.request.CustomReminderRequest
-NOT_API product -> reminders : com.inventory.product.rest.dto.request.CreateInventoryRequest -> com.inventory.reminders.rest.dto.request.CustomReminderRequest
-NOT_API product -> reminders : com.inventory.product.service.CheckoutService -> com.inventory.reminders.service.EventService
-NOT_API product -> reminders : com.inventory.product.service.InventoryAdapterImpl -> com.inventory.reminders.rest.dto.response.ReminderExpiryBucketsResponse
-NOT_API product -> reminders : com.inventory.product.service.InventoryAdapterImpl -> com.inventory.reminders.rest.dto.response.ReminderInventorySummary
-NOT_API product -> reminders : com.inventory.product.service.InventoryAdapterImpl -> com.inventory.reminders.service.InventoryAdapter
-NOT_API product -> reminders : com.inventory.product.service.InventoryService -> com.inventory.reminders.rest.dto.request.CreateReminderForInventoryRequest
-NOT_API product -> reminders : com.inventory.product.service.InventoryService -> com.inventory.reminders.service.ReminderService
 NOT_API product -> user : com.inventory.product.cardlayout.CardLayoutService -> com.inventory.user.service.UserShopMembershipService
 NOT_API product -> user : com.inventory.product.gridlayout.GridLayoutService -> com.inventory.user.service.RbacService
 NOT_API product -> user : com.inventory.product.gridlayout.GridLayoutService -> com.inventory.user.service.UserShopMembershipService
@@ -335,6 +322,5 @@ PORT_LOCATION credit <- product : com.inventory.product.service.AccountingCredit
 PORT_LOCATION credit <- product : com.inventory.product.service.AccountingCreditSettlementFacade implements com.inventory.credit.service.CreditSettlementFacade
 PORT_LOCATION plan <- product : com.inventory.product.config.ShopProviderImpl implements com.inventory.plan.service.ShopProvider
 PORT_LOCATION pricing <- product : com.inventory.product.service.vertical.VerticalPricingPolicyPortImpl implements com.inventory.pricing.service.VerticalPricingPolicyPort
-PORT_LOCATION reminders <- product : com.inventory.product.service.InventoryAdapterImpl implements com.inventory.reminders.service.InventoryAdapter
 PORT_LOCATION user <- hr : com.inventory.hr.adapter.HrAccessAdapterImpl implements com.inventory.user.service.HrAccessAdapter
 PORT_LOCATION user <- product : com.inventory.product.service.ShopServiceAdapterImpl implements com.inventory.user.service.ShopServiceAdapter

@@ -1,5 +1,11 @@
 package com.inventory.reminders.service;
 
+import java.util.ArrayList;
+import com.inventory.reminders.api.port.InventoryPort;
+import com.inventory.reminders.api.ReminderScheduling;
+import com.inventory.reminders.api.InventoryReminderRequest;
+import com.inventory.reminders.api.ExpiryBuckets;
+import com.inventory.reminders.api.CustomReminder;
 import com.inventory.reminders.rest.dto.request.CreateReminderForInventoryRequest;
 import com.inventory.reminders.rest.dto.request.CreateReminderRequest;
 import com.inventory.reminders.rest.dto.request.CustomReminderRequest;
@@ -34,7 +40,7 @@ import java.util.List;
 @Service
 @AllArgsConstructor
 @Transactional
-public class ReminderService {
+public class ReminderService implements ReminderScheduling {
 
 
   @Autowired
@@ -47,14 +53,24 @@ public class ReminderService {
   private ReminderValidator reminderValidator;
 
   @Autowired
-  private InventoryAdapter inventoryAdapter;
+  private InventoryPort inventoryAdapter;
 
   @Autowired
   private MetricsWrapper metrics;
 
   public ReminderExpiryBucketsResponse getExpiryBuckets(String shopId, Integer expiringSoonDays) {
     reminderValidator.validateShopId(shopId);
-    return inventoryAdapter.getExpiryBuckets(shopId, expiringSoonDays);
+    ExpiryBuckets b = inventoryAdapter.getExpiryBuckets(shopId, expiringSoonDays);
+    if (b == null) {
+      return null;
+    }
+    return ReminderExpiryBucketsResponse.builder()
+        .expired(b.expired())
+        .expiringWithin7Days(b.expiringWithin7Days())
+        .expiringWithinSoonDays(b.expiringWithinSoonDays())
+        .expiringSoonTotal(b.expiringSoonTotal())
+        .expiringSoonDays(b.expiringSoonDays())
+        .build();
   }
 
   public ReminderListResponse list(String shopId, int page, int size) {
@@ -79,6 +95,28 @@ public class ReminderService {
   }
 
 
+  @Override
+  public void createReminderForInventoryCreate(InventoryReminderRequest request) {
+    List<CustomReminderRequest> custom = null;
+    if (request.customReminders() != null) {
+      custom = new ArrayList<>();
+      for (CustomReminder c : request.customReminders()) {
+        if (c == null) {
+          custom.add(null);
+          continue;
+        }
+        CustomReminderRequest r = new CustomReminderRequest();
+        r.setReminderAt(c.reminderAt());
+        r.setEndDate(c.endDate());
+        r.setNotes(c.notes());
+        custom.add(r);
+      }
+    }
+    createReminderForInventoryCreate(new CreateReminderForInventoryRequest(request.shopId(),
+        request.inventoryId(), request.expiryDate(), request.reminderAt(), custom));
+  }
+
+  /** {@link #createReminderForInventoryCreate(InventoryReminderRequest)} in this module's types. */
   public void createReminderForInventoryCreate(CreateReminderForInventoryRequest request) {
     // Check if there's anything to create
     boolean hasExpiryReminder = request.getExpiryDate() != null;

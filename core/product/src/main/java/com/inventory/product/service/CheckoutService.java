@@ -127,7 +127,7 @@ public class CheckoutService {
   private org.springframework.beans.factory.ObjectProvider<SupplyPlacement> supplyPlacement;
 
   @Autowired
-  private com.inventory.reminders.service.EventService eventService;
+  private com.inventory.reminders.api.InventoryAlerts eventService;
 
   @Autowired
   private InventoryMapper inventoryMapper;
