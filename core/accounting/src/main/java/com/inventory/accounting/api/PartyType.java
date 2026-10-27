@@ -1,4 +1,4 @@
-package com.inventory.accounting.domain.model;
+package com.inventory.accounting.api;
 
 /**
  * Sub-ledger party against which a journal line is posted (used with control accounts like Sundry

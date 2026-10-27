@@ -148,7 +148,7 @@ public class CheckoutService {
   @Autowired(required = false)
   private com.inventory.credit.service.CreditChargeFacade creditChargeFacade;
 
-  @Autowired(required = false)
+  @Autowired
   private com.inventory.accounting.api.AccountingFacade accountingFacade;
 
   @Autowired

@@ -1,5 +1,7 @@
 package com.inventory.accounting.domain.model;
 
+import com.inventory.accounting.api.JournalSource;
+import com.inventory.accounting.api.JournalStatus;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;

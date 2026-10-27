@@ -1,6 +1,5 @@
 package com.inventory.accounting.api;
 
-import com.inventory.accounting.domain.model.JournalSource;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;

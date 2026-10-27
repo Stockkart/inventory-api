@@ -13,7 +13,7 @@ import static org.mockito.Mockito.verify;
 import com.inventory.accounting.api.PostJournalLine;
 import com.inventory.accounting.api.PostJournalRequest;
 import com.inventory.accounting.domain.model.JournalEntry;
-import com.inventory.accounting.domain.model.JournalSource;
+import com.inventory.accounting.api.JournalSource;
 import com.inventory.accounting.domain.repository.AccountRepository;
 import com.inventory.accounting.domain.repository.JournalEntryRepository;
 import com.inventory.accounting.domain.repository.LedgerEntryRepository;

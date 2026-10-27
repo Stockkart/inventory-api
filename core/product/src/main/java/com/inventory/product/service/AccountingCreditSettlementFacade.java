@@ -2,7 +2,7 @@ package com.inventory.product.service;
 
 import com.inventory.accounting.api.AccountingFacade;
 import com.inventory.accounting.api.PartySettlementPostingRequest;
-import com.inventory.accounting.domain.model.JournalSource;
+import com.inventory.accounting.api.JournalSource;
 import com.inventory.credit.domain.model.CreditEntry;
 import com.inventory.credit.domain.model.CreditEntryType;
 import com.inventory.credit.domain.model.CreditPartyType;
@@ -33,7 +33,7 @@ public class AccountingCreditSettlementFacade implements CreditSettlementFacade 
   private final CreditService creditService;
   private final CreditEntryRepository creditEntryRepository;
 
-  @Autowired(required = false)
+  @Autowired
   private AccountingFacade accountingFacade;
 
   @Autowired(required = false)

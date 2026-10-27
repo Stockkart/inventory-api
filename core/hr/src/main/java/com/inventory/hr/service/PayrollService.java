@@ -1,9 +1,9 @@
 package com.inventory.hr.service;
 
-import com.inventory.accounting.domain.model.JournalEntry;
-import com.inventory.accounting.domain.model.JournalLine;
-import com.inventory.accounting.domain.model.JournalSource;
-import com.inventory.accounting.domain.model.SystemAccountCode;
+import com.inventory.accounting.api.JournalEntryView;
+import com.inventory.accounting.api.JournalLineView;
+import com.inventory.accounting.api.JournalSource;
+import com.inventory.accounting.api.SystemAccountCode;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
@@ -400,7 +400,7 @@ public class PayrollService {
         throw e;
       }
 
-      JournalEntry entry;
+      JournalEntryView entry;
       try {
         entry = poster.postPayrollRun(shopId, userId, claimed, computed.lines());
       } catch (RuntimeException e) {
@@ -419,7 +419,7 @@ public class PayrollService {
         // it. Only when no entry exists is it safe to go back to DRAFT under the same revision;
         // a saved entry is used below (its totals are checked), and when we cannot tell, the
         // claim stays so the next call resumes after STALE_CLAIM.
-        Optional<JournalEntry> saved;
+        Optional<JournalEntryView> saved;
         try {
           saved = poster.findRunJournal(shopId, claimed);
         } catch (RuntimeException lookupFailed) {
@@ -453,10 +453,10 @@ public class PayrollService {
       // a resumed finalise posts the same entry again: keep one history row per revision
       history.removeIf(h -> h.getRevision() != null && h.getRevision() == revision);
       if (entry != null) {
-        history.add(new PayrollRun.JournalHistoryEntry(revision, entry.getId(), null));
+        history.add(new PayrollRun.JournalHistoryEntry(revision, entry.id(), null));
       }
       Update done = new Update().set("status", PayrollRunStatus.FINALISED).unset("claimedAt")
-          .set("journalEntryId", entry != null ? entry.getId() : null)
+          .set("journalEntryId", entry != null ? entry.id() : null)
           .set("journalHistory", history).set("totals", totals).set("calculatedAt", now)
           .set("fromDate", computed.cycle().fromText()).set("toDate", computed.cycle().toText())
           .set("finalisedAt", now).set("finalisedByUserId", userId);
@@ -473,7 +473,7 @@ public class PayrollService {
       after.put("status", PayrollRunStatus.FINALISED.name());
       after.put("revision", revision);
       after.put("employeeCount", totals.getEmployeeCount());
-      after.put("journalEntryId", entry != null ? entry.getId() : null);
+      after.put("journalEntryId", entry != null ? entry.id() : null);
       auditService.record(new AuditEntry(shopId, userId, HrAuditAction.PAYROLL_FINALISED, ENTITY,
           runId, null, null, claimed.getPeriod(),
           Map.of("status", PayrollRunStatus.DRAFT.name()), after, null));
@@ -589,18 +589,18 @@ public class PayrollService {
    * The entry is the one these lines would post: same total debit (5700 + any 5500 debit) and
    * the same Σ net on 2400.
    */
-  static boolean journalMatches(JournalEntry entry, List<PayrollLine> lines) {
+  static boolean journalMatches(JournalEntryView entry, List<PayrollLine> lines) {
     HrAccountingPoster.RunTotals t = HrAccountingPoster.runTotals(lines);
     BigDecimal debit = t.expense().add(t.rounding().max(BigDecimal.ZERO));
     BigDecimal payable = BigDecimal.ZERO;
-    if (entry.getLines() != null) {
-      for (JournalLine l : entry.getLines()) {
-        if (SystemAccountCode.SALARY_PAYABLE.equals(l.getAccountCode())) {
-          payable = payable.add(HrMoneyUtils.nz(l.getCredit()));
+    if (entry.lines() != null) {
+      for (JournalLineView l : entry.lines()) {
+        if (SystemAccountCode.SALARY_PAYABLE.equals(l.accountCode())) {
+          payable = payable.add(HrMoneyUtils.nz(l.credit()));
         }
       }
     }
-    return entry.getTotalDebit() != null && entry.getTotalDebit().compareTo(debit) == 0
+    return entry.totalDebit() != null && entry.totalDebit().compareTo(debit) == 0
         && payable.compareTo(t.net()) == 0;
   }
 
@@ -610,7 +610,7 @@ public class PayrollService {
    * the reversal fails the run stays FINALISING and the stale rule hands it to the next call.
    */
   private void resetToNewRevision(String shopId, String userId, PayrollRun claimed,
-      Instant claimedAt, JournalEntry stale) {
+      Instant claimedAt, JournalEntryView stale) {
     String reversal = poster.reverseBySource(shopId, userId, JournalSource.PAYROLL_RUN,
         HrAccountingPoster.runSourceId(claimed), "Payroll " + claimed.getPeriod()
             + " changed while finalising");
@@ -618,7 +618,7 @@ public class PayrollService {
     List<PayrollRun.JournalHistoryEntry> history = new ArrayList<>(
         claimed.getJournalHistory() != null ? claimed.getJournalHistory() : List.of());
     history.removeIf(h -> h.getRevision() != null && h.getRevision() == revision);
-    history.add(new PayrollRun.JournalHistoryEntry(revision, stale.getId(), reversal));
+    history.add(new PayrollRun.JournalHistoryEntry(revision, stale.id(), reversal));
     mongoTemplate.updateMulti(Query.query(Criteria.where("shopId").is(shopId).and("runId")
         .is(claimed.getId()).and("frozenAt").is(claimedAt)), new Update().unset("frozenAt"),
         PayrollLine.class);

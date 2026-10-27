@@ -1,5 +1,6 @@
 package com.inventory.product.service;
 
+import com.inventory.accounting.api.JournalEntryView;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -12,9 +13,8 @@ import static org.mockito.Mockito.when;
 
 import com.inventory.accounting.api.AccountingFacade;
 import com.inventory.accounting.api.VendorPurchaseInvoicePostingRequest;
-import com.inventory.accounting.domain.model.JournalEntry;
-import com.inventory.accounting.domain.model.JournalSource;
-import com.inventory.accounting.domain.model.JournalStatus;
+import com.inventory.accounting.api.JournalSource;
+import com.inventory.accounting.api.JournalStatus;
 import com.inventory.product.domain.model.VendorPurchaseInvoice;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.user.domain.repository.VendorRepository;
@@ -58,11 +58,8 @@ class InventoryServiceAmendRepostTest {
     when(vendorRepository.findById("v1")).thenReturn(Optional.empty());
   }
 
-  private static JournalEntry entry(String id, JournalStatus status) {
-    JournalEntry e = new JournalEntry();
-    e.setId(id);
-    e.setStatus(status);
-    return e;
+  private static JournalEntryView entry(String id, JournalStatus status) {
+    return new JournalEntryView(id, null, null, status, null, null, null, List.of());
   }
 
   @Test

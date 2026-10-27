@@ -11,7 +11,7 @@ import static org.mockito.Mockito.when;
 import com.inventory.accounting.domain.model.Account;
 import com.inventory.accounting.domain.model.AccountType;
 import com.inventory.accounting.domain.model.NormalBalance;
-import com.inventory.accounting.domain.model.SystemAccountCode;
+import com.inventory.accounting.api.SystemAccountCode;
 import com.inventory.accounting.domain.repository.AccountRepository;
 import com.inventory.accounting.domain.repository.LedgerEntryRepository;
 import java.util.ArrayList;

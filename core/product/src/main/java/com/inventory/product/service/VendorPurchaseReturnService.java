@@ -99,7 +99,7 @@ public class VendorPurchaseReturnService {
   @Autowired
   private MongoTemplate mongoTemplate;
 
-  @Autowired(required = false)
+  @Autowired
   private com.inventory.accounting.api.AccountingFacade accountingFacade;
 
   @Autowired(required = false)

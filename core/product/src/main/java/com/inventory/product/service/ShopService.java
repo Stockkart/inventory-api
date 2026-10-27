@@ -61,8 +61,8 @@ public class ShopService {
   @Value("${plan.trial-days:30}")
   private int trialDays;
 
-  @Autowired(required = false)
-  private com.inventory.accounting.service.ChartOfAccountsSeeder chartOfAccountsSeeder;
+  @Autowired
+  private com.inventory.accounting.api.AccountingFacade accountingFacade;
 
   @Autowired
   private VerticalCatalogService verticalCatalogService;
@@ -129,9 +129,9 @@ public class ShopService {
           "module",
           UserMetricsConstants.MODULE);
 
-      if (chartOfAccountsSeeder != null) {
+      if (accountingFacade != null) {
         try {
-          chartOfAccountsSeeder.seedShop(shop.getShopId());
+          accountingFacade.seedChartOfAccounts(shop.getShopId());
         } catch (Exception ex) {
           log.warn(
               "Failed to seed chart of accounts for shop {}: {}",

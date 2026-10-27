@@ -1,4 +1,4 @@
-package com.inventory.accounting.domain.model;
+package com.inventory.accounting.api;
 
 /** Originating business event a {@code JournalEntry} reflects. */
 public enum JournalSource {

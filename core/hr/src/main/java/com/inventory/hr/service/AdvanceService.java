@@ -1,8 +1,8 @@
 package com.inventory.hr.service;
 
-import com.inventory.accounting.domain.model.JournalEntry;
-import com.inventory.accounting.domain.model.JournalSource;
-import com.inventory.accounting.domain.model.SystemAccountCode;
+import com.inventory.accounting.api.JournalEntryView;
+import com.inventory.accounting.api.JournalSource;
+import com.inventory.accounting.api.SystemAccountCode;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
@@ -360,21 +360,21 @@ public class AdvanceService {
       try {
         if (a.getStatus() == AdvanceStatus.ACTIVE && a.getJournalEntryId() == null) {
           Employee e = employees.get(a.getEmployeeId());
-          JournalEntry entry = poster.postAdvance(shopId, userId, a, e != null ? e.getCode() : null);
+          JournalEntryView entry = poster.postAdvance(shopId, userId, a, e != null ? e.getCode() : null);
           if (entry != null) {
             boolean stillActive = mongoTemplate.updateFirst(Query.query(Criteria.where("shopId")
                 .is(shopId).and("_id").is(a.getId()).and("status").is(AdvanceStatus.ACTIVE)
                 .and("journalEntryId").is(null)),
-                new Update().set("journalEntryId", entry.getId()), Advance.class)
+                new Update().set("journalEntryId", entry.id()), Advance.class)
                 .getMatchedCount() == 1;
-            a.setJournalEntryId(entry.getId());
+            a.setJournalEntryId(entry.id());
             if (!stillActive && cancelledSince(shopId, a.getId())) {
               // cancelled between our read and the post, and that cancel found nothing to
               // reverse yet: take the entry back now
               poster.reverseBySource(shopId, userId, JournalSource.STAFF_ADVANCE, a.getId(),
                   "Advance cancelled");
               mongoTemplate.updateFirst(Query.query(Criteria.where("shopId").is(shopId)
-                  .and("_id").is(a.getId())), new Update().set("journalEntryId", entry.getId())
+                  .and("_id").is(a.getId())), new Update().set("journalEntryId", entry.id())
                   .set("journalReversed", true), Advance.class);
             }
           }

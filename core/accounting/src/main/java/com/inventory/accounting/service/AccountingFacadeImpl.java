@@ -1,10 +1,11 @@
 package com.inventory.accounting.service;
 
-import static com.inventory.accounting.domain.model.SystemAccountCode.*;
+import static com.inventory.accounting.api.SystemAccountCode.*;
 import static com.inventory.accounting.service.MoneyUtil.nz;
 import static com.inventory.accounting.service.MoneyUtil.scale;
 
 import com.inventory.accounting.api.AccountingFacade;
+import com.inventory.accounting.api.JournalEntryView;
 import com.inventory.accounting.api.PostJournalLine;
 import com.inventory.accounting.api.PostJournalRequest;
 import com.inventory.accounting.api.PartyCreditChargePostingRequest;
@@ -15,8 +16,8 @@ import com.inventory.accounting.api.VendorPurchaseInvoicePostingRequest;
 import com.inventory.accounting.api.VendorPurchaseReturnPostingRequest;
 import com.inventory.accounting.domain.model.Account;
 import com.inventory.accounting.domain.model.JournalEntry;
-import com.inventory.accounting.domain.model.JournalSource;
-import com.inventory.accounting.domain.model.PartyType;
+import com.inventory.accounting.api.JournalSource;
+import com.inventory.accounting.api.PartyType;
 import com.inventory.accounting.domain.repository.AccountRepository;
 import com.inventory.accounting.domain.repository.JournalEntryRepository;
 import com.inventory.common.exception.ValidationException;
@@ -49,28 +50,53 @@ public class AccountingFacadeImpl implements AccountingFacade {
   private final AccountingPostingService postingService;
   private final JournalEntryRepository journalEntryRepository;
   private final AccountRepository accountRepository;
+  private final ChartOfAccountsSeeder chartOfAccountsSeeder;
 
   @Override
   @Transactional
-  public JournalEntry post(String shopId, String userId, PostJournalRequest req) {
+  public JournalEntryView post(String shopId, String userId, PostJournalRequest req) {
+    return JournalEntryViews.of(postEntry(shopId, userId, req));
+  }
+
+  /** {@link #post} returning the stored entry, for this module's own controller. */
+  @Transactional
+  public JournalEntry postEntry(String shopId, String userId, PostJournalRequest req) {
     return postingService.post(shopId, userId, req);
   }
 
   @Override
   @Transactional
-  public JournalEntry reverse(
+  public JournalEntryView reverse(
+      String shopId, String userId, String originalEntryId, String reason) {
+    return JournalEntryViews.of(reverseEntry(shopId, userId, originalEntryId, reason));
+  }
+
+  /** {@link #reverse} returning the stored reversal, for this module's own controller. */
+  @Transactional
+  public JournalEntry reverseEntry(
       String shopId, String userId, String originalEntryId, String reason) {
     return postingService.reverse(shopId, userId, originalEntryId, reason);
   }
 
   @Override
-  public Optional<JournalEntry> findBySource(
+  public Optional<JournalEntryView> findBySource(
+      String shopId, JournalSource sourceType, String sourceId) {
+    return findEntryBySource(shopId, sourceType, sourceId).map(JournalEntryViews::of);
+  }
+
+  /** {@link #findBySource} returning the stored entry, for this module's own controller. */
+  public Optional<JournalEntry> findEntryBySource(
       String shopId, JournalSource sourceType, String sourceId) {
     if (sourceType == null || sourceId == null || sourceId.isBlank()) {
       return Optional.empty();
     }
     return journalEntryRepository.findByShopIdAndSourceTypeAndSourceId(
         shopId, sourceType, sourceId.trim());
+  }
+
+  @Override
+  public int seedChartOfAccounts(String shopId) {
+    return chartOfAccountsSeeder.seedShop(shopId);
   }
 
   @Override
@@ -104,7 +130,7 @@ public class AccountingFacadeImpl implements AccountingFacade {
    */
   @Override
   @Transactional
-  public JournalEntry postVendorPurchaseInvoice(
+  public JournalEntryView postVendorPurchaseInvoice(
       String shopId, String userId, VendorPurchaseInvoicePostingRequest in) {
     if (in == null) {
       throw new ValidationException("Vendor purchase invoice posting request is required");
@@ -182,7 +208,7 @@ public class AccountingFacadeImpl implements AccountingFacade {
                 : ""));
     req.setLines(lines);
 
-    return postingService.post(shopId, userId, req);
+    return JournalEntryViews.of(postingService.post(shopId, userId, req));
   }
 
   /**
@@ -203,7 +229,7 @@ public class AccountingFacadeImpl implements AccountingFacade {
    */
   @Override
   @Transactional
-  public JournalEntry postSale(String shopId, String userId, SaleInvoicePostingRequest in) {
+  public JournalEntryView postSale(String shopId, String userId, SaleInvoicePostingRequest in) {
     if (in == null) {
       throw new ValidationException("Sale posting request is required");
     }
@@ -340,7 +366,7 @@ public class AccountingFacadeImpl implements AccountingFacade {
                 : ""));
     req.setLines(lines);
 
-    return postingService.post(shopId, userId, req);
+    return JournalEntryViews.of(postingService.post(shopId, userId, req));
   }
 
   /**
@@ -359,7 +385,7 @@ public class AccountingFacadeImpl implements AccountingFacade {
    */
   @Override
   @Transactional
-  public JournalEntry postSalesReturn(String shopId, String userId, SalesReturnPostingRequest in) {
+  public JournalEntryView postSalesReturn(String shopId, String userId, SalesReturnPostingRequest in) {
     if (in == null) {
       throw new ValidationException("Sales return posting request is required");
     }
@@ -450,7 +476,7 @@ public class AccountingFacadeImpl implements AccountingFacade {
     }
     req.setNarration(narration);
     req.setLines(lines);
-    return postingService.post(shopId, userId, req);
+    return JournalEntryViews.of(postingService.post(shopId, userId, req));
   }
 
   /**
@@ -467,7 +493,7 @@ public class AccountingFacadeImpl implements AccountingFacade {
    */
   @Override
   @Transactional
-  public JournalEntry postVendorPurchaseReturn(
+  public JournalEntryView postVendorPurchaseReturn(
       String shopId, String userId, VendorPurchaseReturnPostingRequest in) {
     if (in == null) {
       throw new ValidationException("Vendor purchase return posting request is required");
@@ -542,7 +568,7 @@ public class AccountingFacadeImpl implements AccountingFacade {
                 ? " · " + in.getSupplierCreditNoteNo().trim()
                 : ""));
     req.setLines(lines);
-    return postingService.post(shopId, userId, req);
+    return JournalEntryViews.of(postingService.post(shopId, userId, req));
   }
 
   /**
@@ -556,16 +582,16 @@ public class AccountingFacadeImpl implements AccountingFacade {
    */
   @Override
   @Transactional
-  public JournalEntry postVendorPayment(
+  public JournalEntryView postVendorPayment(
       String shopId, String userId, PartySettlementPostingRequest in) {
-    return postPartySettlement(
+    return JournalEntryViews.of(postPartySettlement(
         shopId,
         userId,
         in,
         JournalSource.VENDOR_PAYMENT,
         PartyType.VENDOR,
         SUNDRY_CREDITORS,
-        true);
+        true));
   }
 
   /**
@@ -579,16 +605,16 @@ public class AccountingFacadeImpl implements AccountingFacade {
    */
   @Override
   @Transactional
-  public JournalEntry postCustomerSettlement(
+  public JournalEntryView postCustomerSettlement(
       String shopId, String userId, PartySettlementPostingRequest in) {
-    return postPartySettlement(
+    return JournalEntryViews.of(postPartySettlement(
         shopId,
         userId,
         in,
         JournalSource.CUSTOMER_SETTLEMENT,
         PartyType.CUSTOMER,
         SUNDRY_DEBTORS,
-        false);
+        false));
   }
 
   /**
@@ -601,9 +627,9 @@ public class AccountingFacadeImpl implements AccountingFacade {
    */
   @Override
   @Transactional
-  public JournalEntry postVendorCreditCharge(
+  public JournalEntryView postVendorCreditCharge(
       String shopId, String userId, PartyCreditChargePostingRequest in) {
-    return postPartyCreditCharge(shopId, userId, in, JournalSource.VENDOR_CREDIT_CHARGE, true);
+    return JournalEntryViews.of(postPartyCreditCharge(shopId, userId, in, JournalSource.VENDOR_CREDIT_CHARGE, true));
   }
 
   /**
@@ -616,9 +642,9 @@ public class AccountingFacadeImpl implements AccountingFacade {
    */
   @Override
   @Transactional
-  public JournalEntry postCustomerCreditCharge(
+  public JournalEntryView postCustomerCreditCharge(
       String shopId, String userId, PartyCreditChargePostingRequest in) {
-    return postPartyCreditCharge(shopId, userId, in, JournalSource.CUSTOMER_CREDIT_CHARGE, false);
+    return JournalEntryViews.of(postPartyCreditCharge(shopId, userId, in, JournalSource.CUSTOMER_CREDIT_CHARGE, false));
   }
 
   private JournalEntry postPartyCreditCharge(

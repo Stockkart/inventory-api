@@ -1,6 +1,6 @@
 package com.inventory.accounting.rest.dto.response;
 
-import com.inventory.accounting.domain.model.PartyType;
+import com.inventory.accounting.api.PartyType;
 import java.math.BigDecimal;
 import java.util.List;
 import lombok.AllArgsConstructor;

@@ -9,8 +9,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.inventory.accounting.domain.model.JournalEntry;
 import com.inventory.accounting.domain.model.JournalLine;
-import com.inventory.accounting.domain.model.JournalSource;
-import com.inventory.accounting.domain.model.JournalStatus;
+import com.inventory.accounting.api.JournalSource;
+import com.inventory.accounting.api.JournalStatus;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
@@ -77,7 +77,7 @@ class AdvanceServiceIT {
     AdvanceResponse newer = record(shop, e, "2025-03-20", "500", "500", "CASH");
     assertTrue(older.isJournalPosted());
 
-    JournalEntry posted = it.accounting.findBySource(shop, JournalSource.STAFF_ADVANCE,
+    JournalEntry posted = it.accounting.findEntryBySource(shop, JournalSource.STAFF_ADVANCE,
         older.getId()).orElseThrow();
     assertEquals(0, new BigDecimal("3000").compareTo(line(posted, "1250", true)));
     assertEquals(0, new BigDecimal("3000").compareTo(line(posted, "1110", false)), "UPI → Bank");
@@ -123,7 +123,7 @@ class AdvanceServiceIT {
 
     assertEquals(AdvanceStatus.CANCELLED, cancelled.getStatus());
     assertEquals(0, BigDecimal.ZERO.compareTo(again.getOutstanding()));
-    JournalEntry original = it.accounting.findBySource(shop, JournalSource.STAFF_ADVANCE,
+    JournalEntry original = it.accounting.findEntryBySource(shop, JournalSource.STAFF_ADVANCE,
         a.getId()).orElseThrow();
     assertEquals(JournalStatus.REVERSED, original.getStatus());
     assertTrue(it.liveJournals(shop, JournalSource.STAFF_ADVANCE).isEmpty());
