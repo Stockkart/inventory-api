@@ -24,8 +24,9 @@ import com.inventory.user.domain.repository.VendorRepository;
 import com.inventory.product.rest.dto.request.VendorPurchaseInvoiceRequest;
 import com.inventory.reminders.rest.dto.request.CreateReminderForInventoryRequest;
 import com.inventory.reminders.service.ReminderService;
-import com.inventory.ocr.prompt.InvoicePricingLayout;
-import com.inventory.ocr.service.InvoiceParserService;
+import com.inventory.ocr.api.InvoicePricingLayout;
+import com.inventory.ocr.api.InvoiceParser;
+import com.inventory.ocr.api.StockSheetParser;
 import com.inventory.product.service.ocr.InvoicePricingLayoutResolver;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.enums.BillingMode;
@@ -52,7 +53,6 @@ import com.inventory.pluginengine.schema.InventoryVerticalRequestNormalizer;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import com.inventory.product.mapper.InventoryMapper;
-import com.inventory.product.migration.ExcelStockParser;
 import com.inventory.product.mapper.ParsedInventoryMapper;
 import com.inventory.product.utils.InventorySearchQueryParser;
 import com.inventory.product.service.vertical.InventoryVerticalExpiryHandler;
@@ -143,7 +143,7 @@ public class InventoryService {
   private com.inventory.user.domain.repository.ShopVendorRepository shopVendorRepository;
 
   @Autowired
-  private InvoiceParserService invoiceParserService;
+  private InvoiceParser invoiceParserService;
 
   @Autowired
   private ParsedInventoryMapper parsedInventoryMapper;
@@ -155,7 +155,7 @@ public class InventoryService {
   private StockSheetValidator stockSheetValidator;
 
   @Autowired
-  private ExcelStockParser excelStockParser;
+  private StockSheetParser excelStockParser;
 
   @Autowired(required = false)
   private com.inventory.metrics.MetricsWrapper metrics;
@@ -315,7 +315,7 @@ public class InventoryService {
     InvoicePricingLayout resolved = InvoicePricingLayout.orDefault(layout);
 
     try {
-      List<com.inventory.ocr.dto.ParsedInventoryItem> parsedItems =
+      List<com.inventory.ocr.api.ParsedInvoiceItem> parsedItems =
           invoiceParserService.parseInvoiceImage(imageBytes, resolved);
 
       List<CreateInventoryItemRequest> items =
@@ -355,7 +355,7 @@ public class InventoryService {
     stockSheetValidator.validateStockSheet(file);
 
     try {
-      List<com.inventory.ocr.dto.ParsedInventoryItem> parsedItems =
+      List<com.inventory.ocr.api.ParsedInvoiceItem> parsedItems =
           excelStockParser.parse(file.getInputStream(), file.getOriginalFilename());
 
       List<CreateInventoryItemRequest> items =
