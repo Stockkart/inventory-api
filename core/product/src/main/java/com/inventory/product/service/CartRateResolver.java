@@ -1,12 +1,11 @@
 package com.inventory.product.service;
 
 import com.inventory.common.exception.ValidationException;
-import com.inventory.pricing.domain.model.RateRuleSpec;
-import com.inventory.pricing.rest.dto.response.RateDto;
-import com.inventory.pricing.rest.dto.response.SchemeDto;
-import com.inventory.pricing.utils.SystemRateNames;
-import com.inventory.pricing.service.ShopRateRulesPort;
-import com.inventory.pricing.utils.constants.PricingConstants;
+import com.inventory.pricing.api.RateTerms;
+import com.inventory.pricing.api.SchemeTerms;
+import com.inventory.pricing.api.ShopRateRule;
+import com.inventory.pricing.api.SystemRates;
+import com.inventory.pricing.api.port.ShopRateRulesPort;
 import com.inventory.product.domain.model.Inventory;
 import java.math.BigDecimal;
 import java.util.List;
@@ -26,7 +25,7 @@ import org.springframework.util.StringUtils;
 @Component
 public class CartRateResolver {
 
-  @Autowired(required = false)
+  @Autowired
   private ShopRateRulesPort shopRateRulesPort;
 
   /**
@@ -34,7 +33,7 @@ public class CartRateResolver {
    * only when it is a rule rate; a legacy or system default (priceToRetail …) is already the
    * batch's selling price and changes nothing.
    *
-   * <p>A system name ({@link SystemRateNames}: {@code priceToRetail}, {@code MRP} …) means the
+   * <p>A system name ({@link SystemRates}: {@code priceToRetail}, {@code MRP} …) means the
    * batch's own field, never a stored rate of the same name; see {@link LineTerms#systemKey()}.
    *
    * @throws ValidationException when {@code rateName} is set and the batch has no rate by that
@@ -42,11 +41,11 @@ public class CartRateResolver {
    */
   public Optional<LineTerms> resolve(Inventory inventory, String rateName) {
     if (StringUtils.hasText(rateName)) {
-      String systemKey = SystemRateNames.systemKey(rateName);
+      String systemKey = SystemRates.systemKey(rateName);
       if (systemKey != null) {
         return Optional.of(systemTerms(inventory, systemKey));
       }
-      RateDto rate = find(inventory, rateName.trim())
+      RateTerms rate = find(inventory, rateName.trim())
           .orElseThrow(() -> new ValidationException("Unknown rate: " + rateName.trim()));
       return Optional.of(isLiveRuleRate(inventory, rate) ? toTerms(rate) : legacyTerms(rate));
     }
@@ -63,7 +62,7 @@ public class CartRateResolver {
    * rate, its rule still among the shop's). False for null or blank.
    */
   public boolean isRuleRate(Inventory inventory, String rateName) {
-    if (!StringUtils.hasText(rateName) || SystemRateNames.systemKey(rateName) != null) {
+    if (!StringUtils.hasText(rateName) || SystemRates.systemKey(rateName) != null) {
       return false;
     }
     return find(inventory, rateName.trim())
@@ -75,41 +74,37 @@ public class CartRateResolver {
    * Whether a stored rate bills as a rule rate: it has a base, and its rule is still among the
    * shop's rules. A rate whose rule was removed (or the shop's rules cleared) keeps its stored
    * terms until the batch is next saved; here it bills its price only, as a legacy rate, and is
-   * no default rule rate. Without a {@link ShopRateRulesPort} the rules are not checked.
+   * no default rule rate.
    */
-  private boolean isLiveRuleRate(Inventory inventory, RateDto rate) {
-    if (rate.getBaseValue() == null) {
+  private boolean isLiveRuleRate(Inventory inventory, RateTerms rate) {
+    if (rate.baseValue() == null) {
       return false;
     }
-    if (shopRateRulesPort == null) {
-      return true;
-    }
-    List<RateRuleSpec> rules = shopRateRulesPort.rulesFor(inventory.getShopId());
-    return rules != null && rules.stream().anyMatch(r -> rate.getName().equals(r.name()));
+    List<ShopRateRule> rules = shopRateRulesPort.rulesFor(inventory.getShopId());
+    return rules != null && rules.stream().anyMatch(r -> rate.name().equals(r.name()));
   }
 
-  private static LineTerms legacyTerms(RateDto rate) {
-    return new LineTerms(rate.getName(), null, rate.getPrice(), null, null, null, null, null);
+  private static LineTerms legacyTerms(RateTerms rate) {
+    return new LineTerms(rate.name(), null, rate.price(), null, null, null, null, null);
   }
 
-  private static Optional<RateDto> find(Inventory inventory, String name) {
-    List<RateDto> rates = inventory != null ? inventory.getRates() : null;
-    if (rates == null) {
+  private static Optional<RateTerms> find(Inventory inventory, String name) {
+    if (inventory == null) {
       return Optional.empty();
     }
-    return rates.stream()
-        .filter(rate -> rate != null && name.equals(rate.getName()))
+    return inventory.rateTerms().stream()
+        .filter(rate -> name.equals(rate.name()))
         .findFirst();
   }
 
   private static LineTerms systemTerms(Inventory inventory, String systemKey) {
     BigDecimal price = null;
     if (inventory != null) {
-      if (PricingConstants.DEFAULT_RATE_PRICE_TO_RETAIL.equals(systemKey)) {
+      if (SystemRates.PRICE_TO_RETAIL.equals(systemKey)) {
         price = inventory.getPriceToRetail();
-      } else if (PricingConstants.DEFAULT_RATE_MAXIMUM_RETAIL_PRICE.equals(systemKey)) {
+      } else if (SystemRates.MAXIMUM_RETAIL_PRICE.equals(systemKey)) {
         price = inventory.getMaximumRetailPrice();
-      } else if (PricingConstants.DEFAULT_RATE_COST_PRICE.equals(systemKey)) {
+      } else if (SystemRates.COST_PRICE.equals(systemKey)) {
         price = inventory.getCostPrice();
       }
     }
@@ -119,23 +114,23 @@ public class CartRateResolver {
     return new LineTerms(systemKey, systemKey, price, null, null, null, null, null);
   }
 
-  private static LineTerms toTerms(RateDto rate) {
-    String name = rate.getName();
-    if (rate.getBaseValue() == null) {
+  private static LineTerms toTerms(RateTerms rate) {
+    String name = rate.name();
+    if (rate.baseValue() == null) {
       return legacyTerms(rate);
     }
-    BigDecimal disc = rate.getDiscountPercent() != null ? rate.getDiscountPercent() : BigDecimal.ZERO;
-    SchemeDto scheme = rate.getScheme();
-    String type = scheme != null ? scheme.getSchemeType() : null;
-    if (PricingConstants.SCHEME_TYPE_PERCENTAGE.equals(type)) {
-      return new LineTerms(name, null, rate.getBaseValue(), disc, type, null, null,
-          scheme.getSchemePercentage());
+    BigDecimal disc = rate.discountPercent() != null ? rate.discountPercent() : BigDecimal.ZERO;
+    SchemeTerms scheme = rate.scheme();
+    String type = scheme != null ? scheme.schemeType() : null;
+    if (SchemeTerms.TYPE_PERCENTAGE.equals(type)) {
+      return new LineTerms(name, null, rate.baseValue(), disc, type, null, null,
+          scheme.schemePercentage());
     }
-    if (PricingConstants.SCHEME_TYPE_FIXED_UNITS.equals(type)) {
-      return new LineTerms(name, null, rate.getBaseValue(), disc, type, scheme.getSchemePayFor(),
-          scheme.getSchemeFree(), null);
+    if (SchemeTerms.TYPE_FIXED_UNITS.equals(type)) {
+      return new LineTerms(name, null, rate.baseValue(), disc, type, scheme.schemePayFor(),
+          scheme.schemeFree(), null);
     }
-    return new LineTerms(name, null, rate.getBaseValue(), disc, null, null, null, null);
+    return new LineTerms(name, null, rate.baseValue(), disc, null, null, null, null);
   }
 
   /**

@@ -4,13 +4,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.inventory.common.exception.ValidationException;
-import com.inventory.pricing.domain.model.RateRuleSpec;
+import com.inventory.pricing.api.ShopRateRule;
 import com.inventory.pricing.rest.dto.response.RateDto;
-import com.inventory.pricing.service.ShopRateRulesPort;
+import com.inventory.pricing.api.port.ShopRateRulesPort;
 import com.inventory.pricing.rest.dto.response.SchemeDto;
 import com.inventory.pricing.utils.constants.PricingConstants;
 import com.inventory.product.domain.model.Inventory;
@@ -18,12 +19,28 @@ import com.inventory.product.service.CartRateResolver.LineTerms;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
 class CartRateResolverTest {
 
-  private final CartRateResolver resolver = new CartRateResolver();
+  private final CartRateResolver resolver = withLiveRules(new CartRateResolver());
+
+  /**
+   * The resolver with a shop whose rules include every rule name these tests use, so a stored
+   * rule rate counts as live.
+   */
+  static CartRateResolver withLiveRules(CartRateResolver resolver) {
+    ShopRateRulesPort port = mock(ShopRateRulesPort.class);
+    when(port.rulesFor(any())).thenReturn(
+        Stream.of("Rate-A", "Rate-B", "Rate-C", "Rate-D", "Rate-M", "Rate-P",
+                "Rate-S", "Rate-Z")
+            .map(name -> new ShopRateRule(name, ShopRateRule.BASE_PRICE_TO_RETAIL, null, null))
+            .toList());
+    ReflectionTestUtils.setField(resolver, "shopRateRulesPort", port);
+    return resolver;
+  }
 
   @Test
   void ruleRatePutsTheBaseOnTheLineWithItsTerms() {
@@ -133,11 +150,11 @@ class CartRateResolverTest {
     assertEquals("Rate-A", picked.name());
     assertEquals(Optional.empty(), resolver.resolve(batch, null));
 
-    when(port.rulesFor("shop-1")).thenReturn(List.of(new RateRuleSpec("Rate-M",
+    when(port.rulesFor("shop-1")).thenReturn(List.of(new ShopRateRule("Rate-M",
         PricingConstants.RATE_BASE_MAXIMUM_RETAIL_PRICE, new BigDecimal("10"), null)));
     assertNull(resolver.resolve(batch, "Rate-A").orElseThrow().discountPercent());
 
-    when(port.rulesFor("shop-1")).thenReturn(List.of(new RateRuleSpec("Rate-A",
+    when(port.rulesFor("shop-1")).thenReturn(List.of(new ShopRateRule("Rate-A",
         PricingConstants.RATE_BASE_PRICE_TO_RETAIL, new BigDecimal("8"), null)));
     assertTrue(resolver.resolve(batch, "Rate-A").orElseThrow().replacesTerms());
     assertTrue(resolver.resolve(batch, null).isPresent());

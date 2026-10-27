@@ -15,7 +15,7 @@ import com.inventory.common.exception.ValidationException;
 import com.inventory.common.gst.SupplyPlacement;
 import com.inventory.pricing.rest.dto.response.RateDto;
 import com.inventory.pricing.rest.dto.response.SchemeDto;
-import com.inventory.pricing.service.ShopRateRulesPort;
+import com.inventory.pricing.api.port.ShopRateRulesPort;
 import com.inventory.pricing.utils.constants.PricingConstants;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Purchase;
@@ -83,6 +83,7 @@ class CheckoutServiceRateNameTest {
   @BeforeEach
   void setUp() {
     cart = null;
+    CartRateResolverTest.withLiveRules(cartRateResolver);
     when(cartContributorResolver.resolveContributor(any())).thenReturn(Optional.empty());
     when(httpRequest.getAttribute("shopId")).thenReturn(SHOP);
     when(httpRequest.getAttribute("userId")).thenReturn("user-1");
