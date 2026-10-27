@@ -1,5 +1,9 @@
 package com.inventory.hr.service;
 
+import com.inventory.notifications.api.TemplateEmail;
+import com.inventory.notifications.api.Messaging;
+import com.inventory.notifications.api.AttachmentRef;
+import com.inventory.notifications.api.Attachment;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
@@ -23,9 +27,7 @@ import com.inventory.hr.utils.HrDateUtils;
 import com.inventory.hr.utils.PayCycle;
 import com.inventory.hr.utils.constants.HrMetricsConstants;
 import com.inventory.metrics.MetricsWrapper;
-import com.inventory.notifications.domain.model.EmailTemplate;
-import com.inventory.notifications.domain.model.OutboundMessage;
-import com.inventory.notifications.service.MessagingService;
+import com.inventory.notifications.api.EmailTemplate;
 import com.inventory.user.service.ShopServiceAdapter;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -60,7 +62,7 @@ import org.springframework.util.StringUtils;
 @Service
 public class PayslipService {
 
-  /** {@code OutboundMessage.AttachmentRef.kind} of a payslip. */
+  /** {@code AttachmentRef.kind} of a payslip. */
   public static final String ATTACHMENT_KIND = "PAYSLIP";
   static final int MAX_EMAIL_LINES = 300;
   private static final DateTimeFormatter MONTH =
@@ -82,7 +84,7 @@ public class PayslipService {
 
   @Autowired(required = false) private ShopServiceAdapter shopServiceAdapter;
 
-  @Autowired private MessagingService messagingService;
+  @Autowired private Messaging messagingService;
 
   @Autowired private HrQueryRunner queryRunner;
 
@@ -178,7 +180,7 @@ public class PayslipService {
       Map<String, String> emails = emails(shopId,
           found.stream().map(PayrollLine::getEmployeeId).toList());
       String shopName = shopName(shopId);
-      List<MessagingService.TemplateEmail> outbox = new ArrayList<>();
+      List<TemplateEmail> outbox = new ArrayList<>();
       EmailPayslipsResponse response = new EmailPayslipsResponse();
       for (PayrollLine l : found) {
         String email = emails.get(l.getEmployeeId());
@@ -193,8 +195,8 @@ public class PayslipService {
         vars.put("employeeName", snap != null && snap.getName() != null ? snap.getName() : "");
         vars.put("shopName", shopName);
         vars.put("periodLabel", periodLabel(l));
-        outbox.add(new MessagingService.TemplateEmail(email, vars,
-            new OutboundMessage.AttachmentRef(ATTACHMENT_KIND, runId, l.getId(), shopId)));
+        outbox.add(new TemplateEmail(email, vars,
+            new AttachmentRef(ATTACHMENT_KIND, runId, l.getId(), shopId)));
       }
       response.setQueued(outbox.isEmpty() ? 0
           : messagingService.enqueueTemplateEmails(EmailTemplate.PAYSLIP, outbox));
@@ -210,20 +212,20 @@ public class PayslipService {
    * its backoff and gives up after {@code MessagingConstants.MAX_RETRIES} (a run reopened for
    * longer than that needs its payslips emailed again after the next finalise).
    */
-  public OutboundMessage.Attachment renderAttachment(OutboundMessage.AttachmentRef ref) {
-    if (ref == null || !StringUtils.hasText(ref.getShopId()) || !StringUtils.hasText(
-        ref.getLineId())) {
+  public Attachment renderAttachment(AttachmentRef ref) {
+    if (ref == null || !StringUtils.hasText(ref.shopId()) || !StringUtils.hasText(
+        ref.lineId())) {
       return null;
     }
-    PayrollLine line = lineRepository.findByShopIdAndId(ref.getShopId(), ref.getLineId())
-        .filter(l -> l.getRunId() != null && l.getRunId().equals(ref.getRunId()))
+    PayrollLine line = lineRepository.findByShopIdAndId(ref.shopId(), ref.lineId())
+        .filter(l -> l.getRunId() != null && l.getRunId().equals(ref.runId()))
         .orElse(null);
     if (line == null
-        || finalisedRunIds(ref.getShopId(), List.of(line.getRunId())).isEmpty()) {
+        || finalisedRunIds(ref.shopId(), List.of(line.getRunId())).isEmpty()) {
       return null;
     }
-    HrFile file = render(ref.getShopId(), line, "payslip_email_render");
-    return new OutboundMessage.Attachment(file.fileName(), file.contentType(),
+    HrFile file = render(ref.shopId(), line, "payslip_email_render");
+    return new Attachment(file.fileName(), file.contentType(),
         Base64.getEncoder().encodeToString(file.bytes()));
   }
 

@@ -1,5 +1,7 @@
 package com.inventory.notifications.service;
 
+import com.inventory.notifications.api.port.AttachmentPort;
+import com.inventory.notifications.api.Attachment;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
@@ -32,7 +34,7 @@ class MessageQueueProcessorTest {
 
   private final OutboundMessageRepository repository = mock(OutboundMessageRepository.class);
   private final ChannelAdapter email = mock(ChannelAdapter.class);
-  private final AttachmentResolver resolver = mock(AttachmentResolver.class);
+  private final AttachmentPort resolver = mock(AttachmentPort.class);
   private final List<OutboundMessage> saved = new ArrayList<>();
   private MessageQueueProcessor processor;
 
@@ -84,7 +86,7 @@ class MessageQueueProcessorTest {
     batch.add(reset);
     pending(batch);
     when(resolver.resolve(any())).thenReturn(Optional.of(
-        new OutboundMessage.Attachment("payslip.pdf", "application/pdf", "JVBERi0=")));
+        new Attachment("payslip.pdf", "application/pdf", "JVBERi0=")));
     when(email.send(any())).thenReturn(SendResult.success("ext"));
 
     processor.processQueue();
@@ -101,7 +103,7 @@ class MessageQueueProcessorTest {
     }
     pending(batch);
     when(resolver.resolve(any())).thenReturn(Optional.of(
-        new OutboundMessage.Attachment("payslip.pdf", "application/pdf", "JVBERi0=")));
+        new Attachment("payslip.pdf", "application/pdf", "JVBERi0=")));
     when(email.send(any())).thenReturn(SendResult.success("ext"));
 
     processor.processQueue();
@@ -123,7 +125,7 @@ class MessageQueueProcessorTest {
   void theRenderedFileGoesToTheAdapter() {
     pending(List.of(payslip(1)));
     when(resolver.resolve(any())).thenReturn(Optional.of(
-        new OutboundMessage.Attachment("payslip.pdf", "application/pdf", "JVBERi0=")));
+        new Attachment("payslip.pdf", "application/pdf", "JVBERi0=")));
     List<String> sentFiles = new ArrayList<>();
     when(email.send(any())).thenAnswer(inv -> {
       // the processor clears the bytes after a successful send: look at them during it
@@ -141,7 +143,7 @@ class MessageQueueProcessorTest {
   void aFailedSendRetriesWithoutKeepingTheRenderedBytes() {
     pending(List.of(payslip(1)));
     when(resolver.resolve(any())).thenReturn(Optional.of(
-        new OutboundMessage.Attachment("payslip.pdf", "application/pdf", "JVBERi0=")));
+        new Attachment("payslip.pdf", "application/pdf", "JVBERi0=")));
     when(email.send(any())).thenReturn(SendResult.failure("provider down"));
 
     processor.processQueue();

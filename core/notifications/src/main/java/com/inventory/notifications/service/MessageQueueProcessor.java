@@ -1,5 +1,8 @@
 package com.inventory.notifications.service;
 
+import com.inventory.notifications.api.port.AttachmentPort;
+import com.inventory.notifications.api.AttachmentRef;
+import com.inventory.notifications.api.Attachment;
 import com.inventory.notifications.adapter.ChannelAdapter;
 import com.inventory.notifications.adapter.SendResult;
 import com.inventory.notifications.constants.MessagingConstants;
@@ -34,7 +37,7 @@ public class MessageQueueProcessor {
 
   /** Renders documents referenced by {@code OutboundMessage.attachmentRef}; none = HR absent. */
   @Autowired(required = false)
-  private List<AttachmentResolver> attachmentResolvers;
+  private List<AttachmentPort> attachmentResolvers;
 
   @Autowired
   private MetricsWrapper metrics;
@@ -172,16 +175,19 @@ public class MessageQueueProcessor {
    */
   private String renderAttachment(OutboundMessage msg) {
     String kind = msg.getAttachmentRef().getKind();
-    AttachmentResolver resolver = attachmentResolvers == null ? null
+    AttachmentPort resolver = attachmentResolvers == null ? null
         : attachmentResolvers.stream().filter(r -> r.supports(kind)).findFirst().orElse(null);
     if (resolver == null) {
       return "No attachment resolver for " + kind;
     }
-    Optional<OutboundMessage.Attachment> file = resolver.resolve(msg.getAttachmentRef());
+    OutboundMessage.AttachmentRef ref = msg.getAttachmentRef();
+    Optional<Attachment> file = resolver.resolve(
+        new AttachmentRef(ref.getKind(), ref.getRunId(), ref.getLineId(), ref.getShopId()));
     if (file.isEmpty()) {
       return "Attachment " + kind + " is not available";
     }
-    msg.setAttachments(List.of(file.get()));
+    Attachment f = file.get();
+    msg.setAttachments(List.of(new OutboundMessage.Attachment(f.fileName(), f.contentType(), f.base64())));
     return null;
   }
 

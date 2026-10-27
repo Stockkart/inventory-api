@@ -1,5 +1,7 @@
 package com.inventory.hr.service;
 
+import com.inventory.notifications.api.AttachmentRef;
+import com.inventory.notifications.api.Attachment;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -370,9 +372,11 @@ class SalaryPaymentIT {
     assertTrue(msg.getSubject().contains("April 2025"));
 
     // the outbox's send-time render
-    OutboundMessage.Attachment file = it.payslips.renderAttachment(msg.getAttachmentRef());
+    OutboundMessage.AttachmentRef ref = msg.getAttachmentRef();
+    Attachment file = it.payslips.renderAttachment(
+        new AttachmentRef(ref.getKind(), ref.getRunId(), ref.getLineId(), ref.getShopId()));
     assertNotNull(file);
-    assertTrue(file.getBase64().length() > 100);
+    assertTrue(file.base64().length() > 100);
 
     // a draft run has no payslips
     Employee late = it.paidEmployee(shop, "EMP-009", "Late", "2025-01-01", "2025-01", "10000");

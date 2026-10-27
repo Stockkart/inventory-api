@@ -1,4 +1,4 @@
-package com.inventory.notifications.domain.model;
+package com.inventory.notifications.api;
 
 /**
  * Email template identifiers. Maps to Resend template IDs or inline content.

@@ -93,11 +93,6 @@ NOT_API hr -> documentservice : com.inventory.hr.service.HrReportService -> com.
 NOT_API hr -> documentservice : com.inventory.hr.service.HrReportService -> com.inventory.documentservice.service.mis.MisPdfDocumentService
 NOT_API hr -> documentservice : com.inventory.hr.service.PayslipService -> com.inventory.documentservice.rest.dto.hr.PayslipDocumentRequest
 NOT_API hr -> documentservice : com.inventory.hr.service.PayslipService -> com.inventory.documentservice.service.hr.PayslipPdfService
-NOT_API hr -> notifications : com.inventory.hr.adapter.PayslipAttachmentResolver -> com.inventory.notifications.domain.model.OutboundMessage
-NOT_API hr -> notifications : com.inventory.hr.adapter.PayslipAttachmentResolver -> com.inventory.notifications.service.AttachmentResolver
-NOT_API hr -> notifications : com.inventory.hr.service.PayslipService -> com.inventory.notifications.domain.model.EmailTemplate
-NOT_API hr -> notifications : com.inventory.hr.service.PayslipService -> com.inventory.notifications.domain.model.OutboundMessage
-NOT_API hr -> notifications : com.inventory.hr.service.PayslipService -> com.inventory.notifications.service.MessagingService
 NOT_API hr -> user : com.inventory.hr.adapter.HrAccessAdapterImpl -> com.inventory.user.rest.dto.response.ShopAccessResponse
 NOT_API hr -> user : com.inventory.hr.adapter.HrAccessAdapterImpl -> com.inventory.user.service.HrAccessAdapter
 NOT_API hr -> user : com.inventory.hr.domain.model.HrRolePermissions -> com.inventory.user.domain.model.UserRole
@@ -162,14 +157,6 @@ NOT_API product -> documentservice : com.inventory.product.service.creditnote.Ve
 NOT_API product -> documentservice : com.inventory.product.service.creditnote.VendorReturnCreditNoteAssembler -> com.inventory.documentservice.rest.dto.GenerateCreditNoteRequest
 NOT_API product -> documentservice : com.inventory.product.service.printing.PrintJobService -> com.inventory.documentservice.domain.DotMatrixDocument
 NOT_API product -> documentservice : com.inventory.product.service.printing.PrintJobService -> com.inventory.documentservice.domain.DotMatrixDocumentKind
-NOT_API product -> ocr : com.inventory.product.mapper.ParsedInventoryMapper -> com.inventory.ocr.dto.ParsedInventoryItem
-NOT_API product -> ocr : com.inventory.product.mapper.ParsedInventoryMapper -> com.inventory.ocr.dto.ParsedReminderDto
-NOT_API product -> ocr : com.inventory.product.mapper.ParsedInventoryMapperImpl -> com.inventory.ocr.dto.ParsedInventoryItem
-NOT_API product -> ocr : com.inventory.product.migration.ExcelStockParser -> com.inventory.ocr.dto.ParsedInventoryItem
-NOT_API product -> ocr : com.inventory.product.migration.ExcelStockParser -> com.inventory.ocr.dto.ParsedReminderDto
-NOT_API product -> ocr : com.inventory.product.service.InventoryService -> com.inventory.ocr.prompt.InvoicePricingLayout
-NOT_API product -> ocr : com.inventory.product.service.InventoryService -> com.inventory.ocr.service.InvoiceParserService
-NOT_API product -> ocr : com.inventory.product.service.ocr.InvoicePricingLayoutResolver -> com.inventory.ocr.prompt.InvoicePricingLayout
 NOT_API product -> plan : com.inventory.product.config.ShopProviderImpl -> com.inventory.plan.service.ShopProvider
 NOT_API product -> plan : com.inventory.product.service.CheckoutService -> com.inventory.plan.service.UsageService
 NOT_API product -> pricing : com.inventory.product.domain.model.Inventory -> com.inventory.pricing.rest.dto.response.RateDto
@@ -334,8 +321,6 @@ NOT_API taxation -> user : com.inventory.taxation.supply.SupplyPlacementService 
 NOT_API taxation -> user : com.inventory.taxation.supply.SupplyPlacementService -> com.inventory.user.domain.model.Vendor
 NOT_API taxation -> user : com.inventory.taxation.supply.SupplyPlacementService -> com.inventory.user.domain.repository.CustomerRepository
 NOT_API taxation -> user : com.inventory.taxation.supply.SupplyPlacementService -> com.inventory.user.domain.repository.VendorRepository
-NOT_API user -> notifications : com.inventory.user.service.AuthService -> com.inventory.notifications.domain.model.EmailTemplate
-NOT_API user -> notifications : com.inventory.user.service.AuthService -> com.inventory.notifications.service.MessagingService
 OPTIONAL_DEPENDENCY app -> plan : com.inventory.app.interceptor.PlanExpiryInterceptor.shopProvider (com.inventory.plan.service.ShopProvider)
 OPTIONAL_DEPENDENCY app -> user : com.inventory.app.interceptor.AuthenticationInterceptor.membershipService (com.inventory.user.service.UserShopMembershipService)
 OPTIONAL_DEPENDENCY hr -> user : com.inventory.hr.service.HrReportService.shopServiceAdapter (com.inventory.user.service.ShopServiceAdapter)
@@ -346,10 +331,8 @@ OPTIONAL_DEPENDENCY product -> credit : com.inventory.product.service.CheckoutSe
 OPTIONAL_DEPENDENCY product -> credit : com.inventory.product.service.InventoryService.creditService (com.inventory.credit.service.CreditService)
 OPTIONAL_DEPENDENCY product -> credit : com.inventory.product.service.RefundService.creditService (com.inventory.credit.service.CreditService)
 OPTIONAL_DEPENDENCY product -> credit : com.inventory.product.service.VendorPurchaseReturnService.creditService (com.inventory.credit.service.CreditService)
-OPTIONAL_DEPENDENCY user -> notifications : com.inventory.user.service.AuthService.messagingService (com.inventory.notifications.service.MessagingService)
 PORT_LOCATION credit <- product : com.inventory.product.service.AccountingCreditChargeFacade implements com.inventory.credit.service.CreditChargeFacade
 PORT_LOCATION credit <- product : com.inventory.product.service.AccountingCreditSettlementFacade implements com.inventory.credit.service.CreditSettlementFacade
-PORT_LOCATION notifications <- hr : com.inventory.hr.adapter.PayslipAttachmentResolver implements com.inventory.notifications.service.AttachmentResolver
 PORT_LOCATION plan <- product : com.inventory.product.config.ShopProviderImpl implements com.inventory.plan.service.ShopProvider
 PORT_LOCATION pricing <- product : com.inventory.product.service.vertical.VerticalPricingPolicyPortImpl implements com.inventory.pricing.service.VerticalPricingPolicyPort
 PORT_LOCATION reminders <- product : com.inventory.product.service.InventoryAdapterImpl implements com.inventory.reminders.service.InventoryAdapter
