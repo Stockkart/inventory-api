@@ -11,6 +11,7 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -46,6 +47,38 @@ public final class PricingUtils {
           .orElse(dto.getPriceToRetail());
     }
     return dto.getPriceToRetail();
+  }
+
+  /**
+   * Whether {@code rate} may be a batch's default rate. A rate built on the selling price may not:
+   * the selling price would then be derived from a rate derived from it, so a default naming one
+   * falls back to priceToRetail ({@code RateGenerationService}).
+   */
+  public static boolean canBeDefaultRate(Rate rate) {
+    return rate != null && StringUtils.hasText(rate.getName())
+        && !PricingConstants.RATE_BASE_SELLING_PRICE.equals(rate.getBase());
+  }
+
+  /**
+   * The names a batch's default rate may take, in display order: the built-in options
+   * (priceToRetail, maximumRetailPrice, costPrice), then each rate that {@link #canBeDefaultRate},
+   * leaving out any stored rate with a built-in price's name ({@link SystemRateNames}: MRP, PTR,
+   * Cost or a system key, any case), which a pick by that name would never bill.
+   */
+  public static List<String> defaultRateOptions(List<Rate> rates) {
+    List<String> options = new ArrayList<>(List.of(
+        PricingConstants.DEFAULT_RATE_PRICE_TO_RETAIL,
+        PricingConstants.DEFAULT_RATE_MAXIMUM_RETAIL_PRICE,
+        PricingConstants.DEFAULT_RATE_COST_PRICE));
+    if (rates != null) {
+      for (Rate rate : rates) {
+        if (canBeDefaultRate(rate) && !SystemRateNames.isReserved(rate.getName())
+            && !options.contains(rate.getName())) {
+          options.add(rate.getName());
+        }
+      }
+    }
+    return options;
   }
 
   /**

@@ -30,7 +30,7 @@ class SalesReturnValuationTest {
   @Test
   void aLocalReturnReversesCgstAndSgst() {
     SalesReturnValuation.LineAmounts line =
-        SalesReturnValuation.lineAmounts(sold("100", "9"), 1, 1, BillingMode.REGULAR, false);
+        SalesReturnValuation.lineAmounts(sold("100", "9"), 1, 1, BillingMode.REGULAR, false, true);
 
     assertMoney("9.00", line.cgst());
     assertMoney("9.00", line.sgst());
@@ -41,7 +41,7 @@ class SalesReturnValuationTest {
   @Test
   void anInterstateReturnReversesIgstAtTheCombinedRate() {
     SalesReturnValuation.LineAmounts line =
-        SalesReturnValuation.lineAmounts(sold("100", "9"), 1, 1, BillingMode.REGULAR, true);
+        SalesReturnValuation.lineAmounts(sold("100", "9"), 1, 1, BillingMode.REGULAR, true, true);
 
     assertMoney("0", line.cgst());
     assertMoney("0", line.sgst());
@@ -56,7 +56,7 @@ class SalesReturnValuationTest {
   @Test
   void aRateWrittenWithAPercentSignStillCounts() {
     SalesReturnValuation.LineAmounts line =
-        SalesReturnValuation.lineAmounts(sold("100", "9%"), 1, 1, BillingMode.REGULAR, false);
+        SalesReturnValuation.lineAmounts(sold("100", "9%"), 1, 1, BillingMode.REGULAR, false, true);
 
     assertMoney("9.00", line.cgst());
   }

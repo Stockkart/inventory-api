@@ -1530,10 +1530,12 @@ public class InventoryService {
    * @param inventoryId the inventory ID (mandatory)
    * @param request the update request containing optional fields
    * @param shopId the shop ID for authorization
+   * @param userId the user making the change; checked for the grant to edit generated rates
    * @return updated inventory detail response
    */
   @Transactional
-  public InventoryDetailResponse update(String inventoryId, UpdateInventoryRequest request, String shopId) {
+  public InventoryDetailResponse update(String inventoryId, UpdateInventoryRequest request, String shopId,
+      String userId) {
     try {
       inventoryValidator.validateShopId(shopId);
       if (inventoryId == null || inventoryId.trim().isEmpty()) {
@@ -1649,6 +1651,10 @@ public class InventoryService {
     } catch (DataAccessException e) {
       log.error("Database error while updating inventory: {}", e.getMessage(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Error updating inventory");
+    } catch (BaseException e) {
+      // e.g. ACCESS_DENIED from a rate edit without the grant: keep its code, not a 500.
+      log.warn("Update inventory failed: {}", e.getMessage());
+      throw e;
     } catch (Exception e) {
       log.error("Unexpected error while updating inventory: {}", e.getMessage(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
