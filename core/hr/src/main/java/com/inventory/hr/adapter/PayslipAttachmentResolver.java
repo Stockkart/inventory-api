@@ -1,8 +1,9 @@
 package com.inventory.hr.adapter;
 
+import com.inventory.notifications.api.port.AttachmentPort;
+import com.inventory.notifications.api.AttachmentRef;
+import com.inventory.notifications.api.Attachment;
 import com.inventory.hr.service.PayslipService;
-import com.inventory.notifications.domain.model.OutboundMessage;
-import com.inventory.notifications.service.AttachmentResolver;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,7 +15,7 @@ import org.springframework.stereotype.Component;
  */
 @Slf4j
 @Component
-public class PayslipAttachmentResolver implements AttachmentResolver {
+public class PayslipAttachmentResolver implements AttachmentPort {
 
   @Autowired private PayslipService payslipService;
 
@@ -24,13 +25,13 @@ public class PayslipAttachmentResolver implements AttachmentResolver {
   }
 
   @Override
-  public Optional<OutboundMessage.Attachment> resolve(OutboundMessage.AttachmentRef ref) {
+  public Optional<Attachment> resolve(AttachmentRef ref) {
     try {
       return Optional.ofNullable(payslipService.renderAttachment(ref));
     } catch (RuntimeException e) {
       // ids and the exception class only: the outbox retries with its backoff
       log.warn("[hr-payslip] could not render payslip of line {}: {}",
-          ref != null ? ref.getLineId() : null, e.getClass().getSimpleName());
+          ref != null ? ref.lineId() : null, e.getClass().getSimpleName());
       return Optional.empty();
     }
   }

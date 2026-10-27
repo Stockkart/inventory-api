@@ -12,7 +12,7 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.metrics.MetricsWrapper;
-import com.inventory.notifications.service.MessagingService;
+import com.inventory.notifications.api.Messaging;
 import com.inventory.user.domain.model.UserAccount;
 import com.inventory.user.domain.model.UserRole;
 import com.inventory.user.domain.repository.UserAccountRepository;
@@ -48,7 +48,7 @@ class AuthServiceSuperUserLoginTest {
   @Mock private GoogleTokenVerifier googleTokenVerifier;
   @Mock private TokenValidationService tokenValidationService;
   @Mock private ShopServiceAdapter shopServiceAdapter;
-  @Mock private MessagingService messagingService;
+  @Mock private Messaging messagingService;
   @Mock private MetricsWrapper metrics;
   @Spy private UserMapper userMapper = Mappers.getMapper(UserMapper.class);
   @Spy private PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();

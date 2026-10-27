@@ -1,5 +1,6 @@
 package com.inventory.user.service;
 
+import com.inventory.notifications.api.Messaging;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.AuthenticationException;
 import com.inventory.common.exception.BaseException;
@@ -21,8 +22,7 @@ import com.inventory.user.rest.dto.response.LogoutResponse;
 import com.inventory.user.rest.dto.response.ResetPasswordResponse;
 import com.inventory.user.rest.dto.response.SignupResponse;
 import com.inventory.user.validation.AuthValidator;
-import com.inventory.notifications.domain.model.EmailTemplate;
-import com.inventory.notifications.service.MessagingService;
+import com.inventory.notifications.api.EmailTemplate;
 import com.inventory.metrics.MetricsWrapper;
 import com.inventory.user.utils.constants.UserMetricsConstants;
 import lombok.extern.slf4j.Slf4j;
@@ -64,8 +64,8 @@ public class AuthService {
   @Autowired(required = false)
   private ShopServiceAdapter shopServiceAdapter;
 
-  @Autowired(required = false)
-  private MessagingService messagingService;
+  @Autowired
+  private Messaging messagingService;
 
   @Autowired
   private MetricsWrapper metrics;

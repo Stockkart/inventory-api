@@ -1,6 +1,6 @@
 package com.inventory.notifications.template;
 
-import com.inventory.notifications.domain.model.EmailTemplate;
+import com.inventory.notifications.api.EmailTemplate;
 
 import java.util.Map;
 

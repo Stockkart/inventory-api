@@ -1,5 +1,6 @@
 package com.inventory.notifications.domain.model;
 
+import com.inventory.notifications.api.EmailTemplate;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -50,7 +51,7 @@ public class OutboundMessage {
 
   /**
    * A document to render and attach when the message is sent (HR decision 1: payslips are
-   * rendered by an {@code AttachmentResolver} at send time, at most 10 per dispatch tick).
+   * rendered by an {@code AttachmentPort} at send time, at most 10 per dispatch tick).
    * null = nothing to render.
    */
   private AttachmentRef attachmentRef;

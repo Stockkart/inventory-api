@@ -1,6 +1,9 @@
 package com.inventory.notifications.service;
 
-import com.inventory.notifications.domain.model.EmailTemplate;
+import com.inventory.notifications.api.TemplateEmail;
+import com.inventory.notifications.api.Messaging;
+import com.inventory.notifications.api.AttachmentRef;
+import com.inventory.notifications.api.EmailTemplate;
 import com.inventory.notifications.domain.model.MessageChannel;
 import com.inventory.notifications.domain.model.MessageStatus;
 import com.inventory.notifications.domain.model.OutboundMessage;
@@ -26,7 +29,7 @@ import java.util.Map;
  */
 @Slf4j
 @Service
-public class MessagingService {
+public class MessagingService implements Messaging {
 
   @Autowired
   private OutboundMessageRepository outboundMessageRepository;
@@ -41,6 +44,7 @@ public class MessagingService {
    * @param template Template identifier
    * @param variables Template variables (e.g. userName, userEmail)
    */
+  @Override
   @Async
   public void sendEmailWithTemplate(String to, EmailTemplate template, Map<String, Object> variables) {
     if (to == null || to.isBlank()) {
@@ -77,6 +81,7 @@ public class MessagingService {
   /**
    * Enqueue a plain email (subject + HTML body). Processed asynchronously.
    */
+  @Override
   @Async
   public void sendEmail(String to, String subject, String htmlBody, Map<String, Object> metadata) {
     if (to == null || to.isBlank()) {
@@ -113,6 +118,7 @@ public class MessagingService {
    * @param emails one entry per recipient; entries without a recipient are skipped
    * @return messages queued
    */
+  @Override
   public int enqueueTemplateEmails(EmailTemplate template, List<TemplateEmail> emails) {
     List<OutboundMessage> messages = new ArrayList<>();
     Instant now = Instant.now();
@@ -131,7 +137,7 @@ public class MessagingService {
           .templateId(template.name())
           .templateVariables(vars)
           .metadata(Map.of("template", template.name()))
-          .attachmentRef(email.attachmentRef())
+          .attachmentRef(stored(email.attachmentRef()))
           .status(MessageStatus.PENDING)
           .retryCount(0)
           .createdAt(now)
@@ -155,9 +161,11 @@ public class MessagingService {
     }
   }
 
-  /** One recipient of {@link #enqueueTemplateEmails}. */
-  public record TemplateEmail(String to, Map<String, Object> variables,
-      OutboundMessage.AttachmentRef attachmentRef) {}
+  /** The stored form of an api attachment reference; null stays null. */
+  private static OutboundMessage.AttachmentRef stored(AttachmentRef ref) {
+    return ref == null ? null
+        : new OutboundMessage.AttachmentRef(ref.kind(), ref.runId(), ref.lineId(), ref.shopId());
+  }
 
   private static Map<String, Object> stringVars(Map<String, Object> vars) {
     Map<String, Object> out = new HashMap<>();
