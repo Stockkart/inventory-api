@@ -106,19 +106,19 @@ class AccountingPostingServiceTripsTest {
   }
 
   private static PostJournalLine line(String code, String debit, String credit) {
-    PostJournalLine l = new PostJournalLine();
-    l.setAccountCode(code);
-    l.setDebit(debit != null ? new BigDecimal(debit) : null);
-    l.setCredit(credit != null ? new BigDecimal(credit) : null);
-    return l;
+    return PostJournalLine.builder()
+        .accountCode(code)
+        .debit(debit != null ? new BigDecimal(debit) : null)
+        .credit(credit != null ? new BigDecimal(credit) : null)
+        .build();
   }
 
   private static PostJournalRequest sale(PostJournalLine... lines) {
-    PostJournalRequest r = new PostJournalRequest();
-    r.setSourceType(JournalSource.SALE);
-    r.setSourceId("purchase-1");
-    r.setLines(List.of(lines));
-    return r;
+    return PostJournalRequest.builder()
+        .sourceType(JournalSource.SALE)
+        .sourceId("purchase-1")
+        .lines(List.of(lines))
+        .build();
   }
 
   @SuppressWarnings("unchecked")
@@ -224,9 +224,7 @@ class AccountingPostingServiceTripsTest {
     when(accounts.ensureSeededAndList(SHOP)).thenReturn(List.of(cash));
     Account other = account("a-other", "4000", AccountType.REVENUE, NormalBalance.CREDIT);
     when(accounts.findByIdOrThrow(SHOP, "a-other")).thenReturn(other);
-    PostJournalLine byId = new PostJournalLine();
-    byId.setAccountId("a-other");
-    byId.setCredit(new BigDecimal("10"));
+    PostJournalLine byId = PostJournalLine.builder().accountId("a-other").credit(new BigDecimal("10")).build();
 
     service.post(SHOP, "user-1", sale(line("1100", "10", null), byId));
 

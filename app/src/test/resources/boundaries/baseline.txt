@@ -1,14 +1,6 @@
 # Module boundary violations that existed when the check was introduced.
 # Fixing one means deleting its line here in the same change. Never add lines by hand.
 # Regenerate: mvn -pl app -am test -Dtest=ModuleBoundariesTest -Dsurefire.failIfNoSpecifiedTests=false -Dboundaries.writeBaseline=true
-API_KIND accounting : com.inventory.accounting.api.PartyCreditChargePostingRequest must be an interface, record or enum
-API_KIND accounting : com.inventory.accounting.api.PartySettlementPostingRequest must be an interface, record or enum
-API_KIND accounting : com.inventory.accounting.api.PostJournalLine must be an interface, record or enum
-API_KIND accounting : com.inventory.accounting.api.PostJournalRequest must be an interface, record or enum
-API_KIND accounting : com.inventory.accounting.api.SaleInvoicePostingRequest must be an interface, record or enum
-API_KIND accounting : com.inventory.accounting.api.SalesReturnPostingRequest must be an interface, record or enum
-API_KIND accounting : com.inventory.accounting.api.VendorPurchaseInvoicePostingRequest must be an interface, record or enum
-API_KIND accounting : com.inventory.accounting.api.VendorPurchaseReturnPostingRequest must be an interface, record or enum
 COLLECTION_NAME accounting : core/accounting/src/main/java/com/inventory/accounting/service/AccountingBackfillService.java names credit_entries owned by credit
 COLLECTION_NAME accounting : core/accounting/src/main/java/com/inventory/accounting/service/AccountingBackfillService.java names customers owned by user
 COLLECTION_NAME accounting : core/accounting/src/main/java/com/inventory/accounting/service/AccountingBackfillService.java names inventory owned by product

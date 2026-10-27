@@ -110,17 +110,13 @@ class JournalSourceIndexIT {
   }
 
   private static PostJournalRequest request(JournalSource type, String sourceId) {
-    PostJournalLine dr = new PostJournalLine();
-    dr.setAccountCode("1100");
-    dr.setDebit(new BigDecimal("10"));
-    PostJournalLine cr = new PostJournalLine();
-    cr.setAccountCode("4100");
-    cr.setCredit(new BigDecimal("10"));
-    PostJournalRequest r = new PostJournalRequest();
-    r.setSourceType(type);
-    r.setSourceId(sourceId);
-    r.setLines(List.of(dr, cr));
-    return r;
+    PostJournalLine dr = PostJournalLine.builder().accountCode("1100").debit(new BigDecimal("10")).build();
+    PostJournalLine cr = PostJournalLine.builder().accountCode("4100").credit(new BigDecimal("10")).build();
+    return PostJournalRequest.builder()
+        .sourceType(type)
+        .sourceId(sourceId)
+        .lines(List.of(dr, cr))
+        .build();
   }
 
   private static long journals(Document filter) {

@@ -256,9 +256,9 @@ public class HrAccountingPoster {
    */
   private JournalEntryView post(String shopId, String userId, PostJournalRequest req) {
     Set<String> hrCodes = new TreeSet<>();
-    for (PostJournalLine l : req.getLines()) {
-      if (l.getAccountCode() != null && HR_SYSTEM_CODES.contains(l.getAccountCode())) {
-        hrCodes.add(l.getAccountCode());
+    for (PostJournalLine l : req.lines()) {
+      if (l.accountCode() != null && HR_SYSTEM_CODES.contains(l.accountCode())) {
+        hrCodes.add(l.accountCode());
       }
     }
     assertHrAccounts(shopId, hrCodes);
@@ -300,34 +300,26 @@ public class HrAccountingPoster {
 
   private static PostJournalRequest request(JournalSource type, String sourceId, LocalDate date,
       String narration, List<PostJournalLine> lines) {
-    PostJournalRequest req = new PostJournalRequest();
-    req.setSourceType(type);
-    req.setSourceId(sourceId);
-    req.setSourceKey(type.name() + ":" + sourceId);
-    req.setTxnDate(date);
-    req.setNarration(narration);
-    req.setLines(new ArrayList<>(lines));
-    return req;
+    return PostJournalRequest.builder()
+        .sourceType(type)
+        .sourceId(sourceId)
+        .sourceKey(type.name() + ":" + sourceId)
+        .txnDate(date)
+        .narration(narration)
+        .lines(new ArrayList<>(lines))
+        .build();
   }
 
   private static PostJournalLine debit(String code, BigDecimal amount, String memo) {
-    PostJournalLine l = line(code, memo);
-    l.setDebit(amount);
-    return l;
+    return line(code, memo).toBuilder().debit(amount).build();
   }
 
   private static PostJournalLine credit(String code, BigDecimal amount, String memo) {
-    PostJournalLine l = line(code, memo);
-    l.setCredit(amount);
-    return l;
+    return line(code, memo).toBuilder().credit(amount).build();
   }
 
   private static PostJournalLine line(String code, String memo) {
-    PostJournalLine l = new PostJournalLine();
-    l.setAccountCode(code);
-    l.setPartyType(PartyType.SHOP);
-    l.setMemo(memo);
-    return l;
+    return PostJournalLine.builder().accountCode(code).partyType(PartyType.SHOP).memo(memo).build();
   }
 
   private static String memo(String employeeCode) {
