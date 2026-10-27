@@ -4,15 +4,12 @@ import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.AuthenticationException;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
-import com.inventory.common.util.GstMath;
 import com.inventory.metrics.MetricsWrapper;
-import com.inventory.pricing.domain.model.Rate;
-import com.inventory.pricing.domain.model.RateGenerationResult;
-import com.inventory.pricing.domain.model.RateRuleSpec;
-import com.inventory.pricing.domain.model.Scheme;
-import com.inventory.pricing.utils.PricingUtils;
-import com.inventory.pricing.utils.RateRuleCalculator;
-import com.inventory.pricing.utils.RateTermsText;
+import com.inventory.pricing.api.BatchPrices;
+import com.inventory.pricing.api.GeneratedRate;
+import com.inventory.pricing.api.GeneratedRates;
+import com.inventory.pricing.api.RateRuleEngine;
+import com.inventory.pricing.api.ShopRateRule;
 import com.inventory.product.domain.model.RateRule;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.ShopRateRulesDocument;
@@ -25,11 +22,11 @@ import com.inventory.product.rest.dto.request.UpdateRateRulesRequest;
 import com.inventory.product.rest.dto.response.RateRuleDto;
 import com.inventory.product.rest.dto.response.RateRulesPreviewResponse;
 import com.inventory.product.rest.dto.response.RateRulesResponse;
+import com.inventory.product.service.api.ShopRateRulesPortImpl;
 import com.inventory.product.utils.constants.ProductMetricsConstants;
 import com.inventory.product.validation.RateRulesValidator;
 import com.inventory.product.validation.ShopValidator;
-import com.inventory.user.service.RbacService;
-import com.inventory.user.service.UserShopMembershipService;
+import com.inventory.user.api.ShopPermissions;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
@@ -50,9 +47,9 @@ public class RateRulesService {
 
   private final ShopRateRulesRepository rulesRepository;
   private final ShopRepository shopRepository;
-  private final UserShopMembershipService membershipService;
+  private final ShopPermissions shopPermissions;
   private final ShopValidator shopValidator;
-  private final RbacService rbacService;
+  private final RateRuleEngine rateRuleEngine;
   private final RateRulesValidator validator;
   private final RateRulesMapper mapper;
   private final MetricsWrapper metrics;
@@ -60,17 +57,17 @@ public class RateRulesService {
   public RateRulesService(
       ShopRateRulesRepository rulesRepository,
       ShopRepository shopRepository,
-      UserShopMembershipService membershipService,
+      ShopPermissions shopPermissions,
       ShopValidator shopValidator,
-      RbacService rbacService,
+      RateRuleEngine rateRuleEngine,
       RateRulesValidator validator,
       RateRulesMapper mapper,
       MetricsWrapper metrics) {
     this.rulesRepository = rulesRepository;
     this.shopRepository = shopRepository;
-    this.membershipService = membershipService;
+    this.shopPermissions = shopPermissions;
     this.shopValidator = shopValidator;
-    this.rbacService = rbacService;
+    this.rateRuleEngine = rateRuleEngine;
     this.validator = validator;
     this.mapper = mapper;
     this.metrics = metrics;
@@ -78,15 +75,15 @@ public class RateRulesService {
 
   public RateRulesResponse getRules(String shopId, String userId) {
     requireShopId(shopId);
-    shopValidator.validateShopAccess(membershipService.hasAccess(userId, shopId));
+    shopValidator.validateShopAccess(shopPermissions.hasAccess(shopId, userId));
     Shop shop = loadShop(shopId);
     return toResponse(shop, savedRules(shopId), userId);
   }
 
   public RateRulesResponse updateRules(String shopId, String userId, UpdateRateRulesRequest request) {
     requireShopId(shopId);
-    shopValidator.validateShopAccess(membershipService.hasAccess(userId, shopId));
-    if (!rbacService.canEditRates(userId, shopId)) {
+    shopValidator.validateShopAccess(shopPermissions.hasAccess(shopId, userId));
+    if (!shopPermissions.canEditRates(shopId, userId)) {
       throw new BaseException(ErrorCode.ACCESS_DENIED, "You do not have permission to edit rates");
     }
     Shop shop = loadShop(shopId);
@@ -138,7 +135,7 @@ public class RateRulesService {
 
   public RateRulesPreviewResponse preview(String shopId, String userId, PreviewRateRulesRequest request) {
     requireShopId(shopId);
-    shopValidator.validateShopAccess(membershipService.hasAccess(userId, shopId));
+    shopValidator.validateShopAccess(shopPermissions.hasAccess(shopId, userId));
     Shop shop = loadShop(shopId);
     PreviewRateRulesRequest in = request == null ? new PreviewRateRulesRequest() : request;
 
@@ -149,7 +146,7 @@ public class RateRulesService {
     } else {
       rules = savedRules(shopId);
     }
-    List<RateRuleSpec> specs = isCafe(shop) ? List.of() : rules.stream().map(mapper::toSpec).toList();
+    List<ShopRateRule> specs = isCafe(shop) ? List.of() : rules.stream().map(mapper::toSpec).toList();
 
     BigDecimal selling = in.getSellingPrice();
     BigDecimal ptr = in.getPriceToRetail();
@@ -159,25 +156,21 @@ public class RateRulesService {
       ptr = selling;
       mrp = selling;
     }
-    Scheme purchaseScheme = mapper.toScheme(in.getPurchaseScheme());
-    BigDecimal cost = PricingUtils.computeEffectiveCostPrice(in.getCostPrice(),
-        in.getPurchaseAdditionalDiscount(), purchaseScheme,
-        Boolean.TRUE.equals(in.getCostPriceIncludesTax()), in.getSgst(), in.getCgst());
-    BigDecimal gst = GstMath.parseGstRate(in.getSgst()).add(GstMath.parseGstRate(in.getCgst()));
-
-    RateGenerationResult generated = RateRuleCalculator.generate(specs, selling, ptr, mrp, cost, gst);
+    GeneratedRates generated = rateRuleEngine.generate(specs, new BatchPrices(selling, ptr, mrp,
+        in.getCostPrice(), in.getPurchaseAdditionalDiscount(), in.getPurchaseScheme(),
+        Boolean.TRUE.equals(in.getCostPriceIncludesTax()), in.getSgst(), in.getCgst()));
     List<RateRulesPreviewResponse.PreviewRate> rates = new ArrayList<>();
-    for (Rate rate : generated.rates()) {
+    for (GeneratedRate rate : generated.rates()) {
       rates.add(RateRulesPreviewResponse.PreviewRate.builder()
-          .name(rate.getName())
-          .base(rate.getBase())
-          .baseValue(rate.getBaseValue())
-          .afterDiscount(scaled(RateRuleCalculator.afterDiscount(rate.getBaseValue(), rate.getDiscountPercent())))
-          .price(rate.getPrice())
-          .discountPercent(rate.getDiscountPercent())
-          .scheme(mapper.toSchemeDto(rate.getScheme()))
-          .gstMode(rate.getGstMode())
-          .termsText(RateTermsText.of(rate))
+          .name(rate.name())
+          .base(rate.base())
+          .baseValue(rate.baseValue())
+          .afterDiscount(scaled(rate.afterDiscount()))
+          .price(rate.price())
+          .discountPercent(rate.discountPercent())
+          .scheme(rate.scheme())
+          .gstMode(rate.gstMode())
+          .termsText(rate.termsText())
           .build());
     }
     List<RateRulesPreviewResponse.SkippedRateRuleDto> skipped = generated.skipped().stream()
@@ -195,7 +188,7 @@ public class RateRulesService {
         .enabled(!isCafe(shop))
         .baseOptions(RateRulesValidator.baseOptions(shop.getShopType()))
         .rules(mapper.toDtos(rules))
-        .canEdit(rbacService.canEditRates(userId, shop.getShopId()))
+        .canEdit(shopPermissions.canEditRates(shop.getShopId(), userId))
         .build();
   }
 

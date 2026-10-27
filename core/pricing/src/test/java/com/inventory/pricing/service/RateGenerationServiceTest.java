@@ -1,5 +1,6 @@
 package com.inventory.pricing.service;
 
+import static com.inventory.pricing.service.RateGenerationTestFixtures.asRules;
 import static com.inventory.pricing.service.RateGenerationTestFixtures.CASHIER;
 import static com.inventory.pricing.service.RateGenerationTestFixtures.OWNER;
 import static com.inventory.pricing.service.RateGenerationTestFixtures.SHOP;
@@ -25,6 +26,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.inventory.pricing.api.port.ShopRateRulesPort;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ValidationException;
@@ -59,9 +61,9 @@ class RateGenerationServiceTest {
 
   @BeforeEach
   void setUp() {
-    when(port.rulesFor(SHOP)).thenReturn(List.of(rateA()));
-    when(port.canEditRates(OWNER, SHOP)).thenReturn(true);
-    when(port.canEditRates(CASHIER, SHOP)).thenReturn(false);
+    when(port.rulesFor(SHOP)).thenReturn(asRules(rateA()));
+    when(port.canEditRates(SHOP, OWNER)).thenReturn(true);
+    when(port.canEditRates(SHOP, CASHIER)).thenReturn(false);
   }
 
   @Test
@@ -300,7 +302,7 @@ class RateGenerationServiceTest {
 
   @Test
   void sellingPriceFollowsRegeneratedDefaultRate() {
-    when(port.rulesFor(SHOP)).thenReturn(List.of(rateM()));
+    when(port.rulesFor(SHOP)).thenReturn(asRules(rateM()));
     Pricing p = stored("p1", "100", "200", null);
     p.setDefaultRate("Rate-M");
     p.setRates(new ArrayList<>(List.of(Rate.builder().name("Rate-M").price(dec("135.00"))
@@ -327,7 +329,7 @@ class RateGenerationServiceTest {
 
   @Test
   void baseChangeKeepsOverrideTermsAndRegeneratesOthers() {
-    when(port.rulesFor(SHOP)).thenReturn(List.of(rateA(), rateM()));
+    when(port.rulesFor(SHOP)).thenReturn(asRules(rateA(), rateM()));
     Rate m = Rate.builder().name("Rate-M").price(dec("135.00"))
         .base(PricingConstants.RATE_BASE_MAXIMUM_RETAIL_PRICE).baseValue(dec("150")).discountPercent(dec("10"))
         .manual(false).gstMode(PricingConstants.GST_MODE_INCLUSIVE).build();
@@ -360,7 +362,7 @@ class RateGenerationServiceTest {
 
   @Test
   void defaultRateOnSellingPriceBasedRateFallsBack() {
-    when(port.rulesFor(SHOP)).thenReturn(List.of(new com.inventory.pricing.domain.model.RateRuleSpec(
+    when(port.rulesFor(SHOP)).thenReturn(asRules(new com.inventory.pricing.domain.model.RateRuleSpec(
         "Rate-S", PricingConstants.RATE_BASE_SELLING_PRICE, dec("10"), null)));
     Pricing p = stored("p1", "100", "100", null);
     p.setDefaultRate("Rate-S");
@@ -377,7 +379,7 @@ class RateGenerationServiceTest {
 
   @Test
   void echoedZeroDiscIsNotAnOverride() {
-    when(port.rulesFor(SHOP)).thenReturn(List.of(new com.inventory.pricing.domain.model.RateRuleSpec(
+    when(port.rulesFor(SHOP)).thenReturn(asRules(new com.inventory.pricing.domain.model.RateRuleSpec(
         "Rate-D", PricingConstants.RATE_BASE_PRICE_TO_RETAIL, null, RateGenerationTestFixtures.tenPlusOne())));
     Rate storedD = RateGenerationTestFixtures.generated("Rate-D", "90.91", PricingConstants.RATE_BASE_PRICE_TO_RETAIL,
         "100", null, RateGenerationTestFixtures.tenPlusOne(), false, PricingConstants.GST_MODE_EXCLUSIVE);
@@ -397,6 +399,6 @@ class RateGenerationServiceTest {
 
     service.apply(p, List.of(withDisc("Rate-A", "83.64", "5")), null, OWNER);
 
-    verify(port).canEditRates(eq(OWNER), eq(SHOP));
+    verify(port).canEditRates(eq(SHOP), eq(OWNER));
   }
 }

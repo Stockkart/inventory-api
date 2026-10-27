@@ -24,10 +24,12 @@ import com.inventory.common.exception.BaseException;
 import com.inventory.metrics.MetricsWrapper;
 import com.inventory.pricing.domain.model.Pricing;
 import com.inventory.pricing.domain.model.Rate;
-import com.inventory.pricing.domain.model.RateRuleSpec;
+import com.inventory.pricing.api.ShopRateRule;
 import com.inventory.pricing.domain.model.Scheme;
 import com.inventory.pricing.service.RateGenerationService;
-import com.inventory.pricing.service.ShopRateRulesPort;
+import com.inventory.pricing.api.SchemeTerms;
+import com.inventory.pricing.api.port.ShopRateRulesPort;
+import com.inventory.pricing.service.api.RateRuleEngineImpl;
 import com.inventory.pricing.utils.constants.PricingConstants;
 import com.inventory.pricing.validation.PricingValidator;
 import com.inventory.product.domain.model.ShopRateRulesDocument;
@@ -42,9 +44,7 @@ import com.inventory.product.rest.dto.response.RateRulesPreviewResponse;
 import com.inventory.product.rest.dto.response.RateRulesResponse;
 import com.inventory.product.validation.RateRulesValidator;
 import com.inventory.product.validation.ShopValidator;
-import com.inventory.pricing.rest.dto.response.SchemeDto;
-import com.inventory.user.service.RbacService;
-import com.inventory.user.service.UserShopMembershipService;
+import com.inventory.user.api.ShopPermissions;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -65,22 +65,22 @@ import org.springframework.test.util.ReflectionTestUtils;
 class RateRulesServiceTest {
 
   @Mock private ShopRepository shopRepository;
-  @Mock private UserShopMembershipService membershipService;
   @Mock private ShopValidator shopValidator;
-  @Mock private RbacService rbacService;
+  @Mock private ShopPermissions shopPermissions;
   @Mock private MetricsWrapper metrics;
 
   private final InMemoryShopRateRulesRepository rules = new InMemoryShopRateRulesRepository();
+  private static final RateRuleEngineImpl ENGINE = new RateRuleEngineImpl(new PricingValidator());
   private final RateRulesMapper mapper = new RateRulesMapperImpl();
   private RateRulesService service;
 
   @BeforeEach
   void setUp() {
-    service = new RateRulesService(rules.asRepository(), shopRepository, membershipService,
-        shopValidator, rbacService, new RateRulesValidator(new PricingValidator()), mapper, metrics);
-    when(membershipService.hasAccess(anyString(), anyString())).thenReturn(true);
-    when(rbacService.canEditRates(OWNER, SHOP)).thenReturn(true);
-    when(rbacService.canEditRates(CASHIER, SHOP)).thenReturn(false);
+    service = new RateRulesService(rules.asRepository(), shopRepository, shopPermissions,
+        shopValidator, ENGINE, new RateRulesValidator(ENGINE), mapper, metrics);
+    when(shopPermissions.hasAccess(anyString(), anyString())).thenReturn(true);
+    when(shopPermissions.canEditRates(SHOP, OWNER)).thenReturn(true);
+    when(shopPermissions.canEditRates(SHOP, CASHIER)).thenReturn(false);
     shopIs(ShopType.DISTRIBUTOR, "pharmacy");
   }
 
@@ -206,8 +206,8 @@ class RateRulesServiceTest {
   }
 
   private RateRulesService serviceWith(ShopRateRulesRepository repo) {
-    return new RateRulesService(repo, shopRepository, membershipService,
-        shopValidator, rbacService, new RateRulesValidator(new PricingValidator()), mapper, metrics);
+    return new RateRulesService(repo, shopRepository, shopPermissions,
+        shopValidator, ENGINE, new RateRulesValidator(ENGINE), mapper, metrics);
   }
 
   @Test
@@ -291,7 +291,7 @@ class RateRulesServiceTest {
     request.setCostPrice(dec("90"));
     request.setCostPriceIncludesTax(true);
     request.setPurchaseAdditionalDiscount(null);
-    request.setPurchaseScheme(new SchemeDto(PricingConstants.SCHEME_TYPE_FIXED_UNITS, 10, 1, null));
+    request.setPurchaseScheme(new SchemeTerms(PricingConstants.SCHEME_TYPE_FIXED_UNITS, 10, 1, null));
     request.setSgst("6");
     request.setCgst("6");
     request.setRules(ruleDtos);
@@ -301,8 +301,8 @@ class RateRulesServiceTest {
     // The same inputs saved through RateGenerationService.
     ShopRateRulesPort port = mock(ShopRateRulesPort.class);
     when(port.rulesFor(SHOP)).thenReturn(List.of(
-        new RateRuleSpec("Deep", "priceToRetail", dec("30"), null),
-        new RateRuleSpec("Shallow", "priceToRetail", dec("20"), null)));
+        new ShopRateRule("Deep", "priceToRetail", dec("30"), null),
+        new ShopRateRule("Shallow", "priceToRetail", dec("20"), null)));
     RateGenerationService generation = new RateGenerationService();
     ReflectionTestUtils.setField(generation, "shopRateRulesPort", port);
     ReflectionTestUtils.setField(generation, "metrics", metrics);
