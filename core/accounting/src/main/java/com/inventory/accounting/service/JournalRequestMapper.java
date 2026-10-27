@@ -26,31 +26,29 @@ public final class JournalRequestMapper {
   }
 
   private static PostJournalLine fromManualLine(CreateJournalEntryRequest.Line in) {
-    PostJournalLine l = baseLine(in.getAccountCode(), in.getAccountId(), in.getDebit(), in.getCredit());
-    l.setPartyType(in.getPartyType());
-    l.setPartyRefId(trim(in.getPartyRefId()));
-    l.setPartyDisplayName(trim(in.getPartyDisplayName()));
-    l.setMemo(trim(in.getMemo()));
-    return l;
+    return baseLine(in.getAccountCode(), in.getAccountId(), in.getDebit(), in.getCredit())
+        .withParty(in.getPartyType(), trim(in.getPartyRefId()), trim(in.getPartyDisplayName()))
+        .toBuilder()
+        .memo(trim(in.getMemo()))
+        .build();
   }
 
   private static PostJournalLine fromOpeningLine(OpeningBalanceRequest.Line in) {
-    PostJournalLine l = baseLine(in.getAccountCode(), in.getAccountId(), in.getDebit(), in.getCredit());
-    l.setPartyType(in.getPartyType());
-    l.setPartyRefId(trim(in.getPartyRefId()));
-    l.setPartyDisplayName(trim(in.getPartyDisplayName()));
-    l.setMemo(trim(in.getMemo()));
-    return l;
+    return baseLine(in.getAccountCode(), in.getAccountId(), in.getDebit(), in.getCredit())
+        .withParty(in.getPartyType(), trim(in.getPartyRefId()), trim(in.getPartyDisplayName()))
+        .toBuilder()
+        .memo(trim(in.getMemo()))
+        .build();
   }
 
   private static PostJournalLine baseLine(
       String accountCode, String accountId, java.math.BigDecimal debit, java.math.BigDecimal credit) {
-    PostJournalLine l = new PostJournalLine();
-    l.setAccountCode(trim(accountCode));
-    l.setAccountId(trim(accountId));
-    l.setDebit(debit);
-    l.setCredit(credit);
-    return l;
+    return PostJournalLine.builder()
+        .accountCode(trim(accountCode))
+        .accountId(trim(accountId))
+        .debit(debit)
+        .credit(credit)
+        .build();
   }
 
   private static String trim(String raw) {

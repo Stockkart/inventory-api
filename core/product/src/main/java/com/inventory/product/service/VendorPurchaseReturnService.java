@@ -66,6 +66,9 @@ import java.util.stream.Collectors;
 @Transactional
 public class VendorPurchaseReturnService {
 
+  @Autowired(required = false)
+  private com.inventory.common.tx.MongoTx mongoTx;
+
   @Autowired
   private VendorPurchaseInvoiceRepository vendorPurchaseInvoiceRepository;
 
@@ -96,7 +99,7 @@ public class VendorPurchaseReturnService {
   @Autowired
   private MongoTemplate mongoTemplate;
 
-  @Autowired(required = false)
+  @Autowired
   private com.inventory.accounting.api.AccountingFacade accountingFacade;
 
   @Autowired(required = false)
@@ -371,6 +374,16 @@ public class VendorPurchaseReturnService {
 
   public VendorPurchaseReturnResponse processReturn(
       VendorPurchaseReturnRequest request, HttpServletRequest httpRequest) {
+    // one MongoDB transaction: stock out, the return, its journal and the vendor due together
+    if (mongoTx != null) {
+      return mongoTx.run(com.inventory.common.tx.MongoTx.VENDOR_RETURN, (String) httpRequest.getAttribute("shopId"),
+          () -> recordReturn(request, httpRequest));
+    }
+    return recordReturn(request, httpRequest);
+  }
+
+  private VendorPurchaseReturnResponse recordReturn(
+      VendorPurchaseReturnRequest request, HttpServletRequest httpRequest) {
     String shopId = (String) httpRequest.getAttribute("shopId");
     String userId = (String) httpRequest.getAttribute("userId");
     checkoutValidator.validateShopIdAndUserId(shopId, userId);
@@ -573,11 +586,11 @@ public class VendorPurchaseReturnService {
           invoice.getId(),
           shopId);
 
-      metrics.record(
+      com.inventory.common.tx.MongoTx.afterCommit(() -> metrics.record(
           ProductMetricsConstants.VENDOR_RETURNS,
           1,
           "module",
-          ProductMetricsConstants.MODULE);
+          ProductMetricsConstants.MODULE));
       return new VendorPurchaseReturnResponse(
           record.getId(),
           supplierCn,

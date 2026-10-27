@@ -5,6 +5,7 @@ import com.inventory.pricing.domain.model.Rate;
 import com.inventory.pricing.rest.dto.request.CreatePricingRequest;
 import com.inventory.pricing.rest.dto.request.PricingCreateCommand;
 import com.inventory.pricing.rest.dto.request.PricingUpdateCommand;
+import com.inventory.pricing.utils.constants.PricingConstants;
 import com.inventory.pricing.rest.dto.request.UpdateDefaultPriceItem;
 import com.inventory.pricing.rest.dto.request.UpdateDefaultPriceRequest;
 import com.inventory.pricing.rest.dto.request.UpdatePricingRequest;
@@ -86,6 +87,13 @@ public class PricingValidator {
   public void validateUpdateCommand(PricingUpdateCommand command) {
     if (command == null) {
       throw new ValidationException("Update pricing command cannot be null");
+    }
+    if (command.getClearFields() != null) {
+      for (String field : command.getClearFields()) {
+        if (!PricingConstants.CLEARABLE_FIELDS.contains(field)) {
+          throw new ValidationException("Pricing field cannot be cleared: " + field);
+        }
+      }
     }
   }
 
