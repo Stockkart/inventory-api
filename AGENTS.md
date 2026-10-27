@@ -50,7 +50,7 @@ README drift (facts, not rules):
 
 ## Layering and module boundaries
 
-Module dependencies (from each `pom.xml`):
+Module dependencies and collection owners are data in `module-boundaries.yml` (its `dependsOn` mirrors each `pom.xml`); rules B1–B11 are in `docs/architecture/module-boundaries.md`. `ModuleBoundariesTest` (app) and the **Module boundaries** workflow enforce them against the baseline `app/src/test/resources/boundaries/baseline.txt`.
 
 | Module | May depend on |
 |---|---|
@@ -58,7 +58,9 @@ Module dependencies (from each `pom.xml`):
 | `metrics` | common |
 | `notifications`, `ocr`, `pricing`, `reminders`, `resource` | common, metrics |
 | `user` | common, notifications, metrics |
-| `accounting`, `credit`, `plan` | common, user, metrics |
+| `accounting` | common, metrics |
+| `credit`, `plan` | common, user, metrics |
+| `hr` | common, metrics, user, accounting, documentservice, notifications |
 | `documentservice` | metrics |
 | `pluginengine` | common |
 | `plugins/*` | common, pluginengine (cafe also metrics) |
@@ -67,15 +69,15 @@ Module dependencies (from each `pom.xml`):
 | `analytics` | common, metrics, product, credit, documentservice |
 | `app` | everything |
 
-- L1. Call another module only along an existing pom edge. Add a new edge only if it creates no cycle. Nothing but `app` depends on `app` or `plugins/*`. Ref: `core/taxation/pom.xml`
-- L2. To call upward, declare an interface in the lower module and implement it in the higher one as `<Name>Impl`; inject optional implementations with `@Autowired(required = false)`. Ref: `core/user/src/main/java/com/inventory/user/service/ShopServiceAdapter.java`
+- L1. Call another module only along an existing pom edge, and only through its `api` package (`com.inventory.<module>.api..`); `common`, `metrics` and `pluginengine` are libraries and fully public. Add a new edge only if it creates no cycle, in both `pom.xml` and `module-boundaries.yml`. Nothing but `app` depends on `app` or `plugins/*`. Ref: `core/taxation/pom.xml`
+- L2. To call upward, declare a `<Thing>Port` interface in the lower module's `api.port` and implement it in the higher module's `service/api/`. Never inject another module's type with `@Autowired(required = false)`. Existing ports below predate this rule and are listed in the boundary baseline. Ref: `core/user/src/main/java/com/inventory/user/service/ShopServiceAdapter.java`
   - Implemented by `core/product/src/main/java/com/inventory/product/service/ShopServiceAdapterImpl.java`. Other ports (names vary): `core/plan/src/main/java/com/inventory/plan/service/ShopProvider.java`, `core/reminders/src/main/java/com/inventory/reminders/service/InventoryAdapter.java`, `core/pricing/src/main/java/com/inventory/pricing/service/VerticalPricingPolicyPort.java`, `core/common/src/main/java/com/inventory/common/gst/SupplyPlacement.java`, `core/common/src/main/java/com/inventory/common/gst/GstinDirectory.java`.
 - L3. Controllers call services of their own module only. Never inject a repository or `MongoTemplate` into a controller (0 of 54 `@RestController` classes do). Ref: `core/user/src/main/java/com/inventory/user/rest/controller/CustomerController.java`
 - L4. Put business logic, validator calls and mapping in the service, not the controller. Ref: `core/user/src/main/java/com/inventory/user/service/VendorService.java`
   - Validator in controller. Dominant: injected in 33 service files. Exceptions (5): `core/reminders/src/main/java/com/inventory/reminders/rest/controller/EventController.java`, `core/reminders/src/main/java/com/inventory/reminders/rest/controller/ReminderController.java`, `core/plan/src/main/java/com/inventory/plan/rest/controller/PaymentWebhookController.java`, `core/pricing/src/main/java/com/inventory/pricing/rest/controller/PricingController.java`, `core/user/src/main/java/com/inventory/user/rest/controller/UserShopController.java`. List: `grep -rlE '(private|final) +[A-Z]\w*Validator +\w+ *;' --include=*.java core/*/src/main/java | grep /rest/controller/`.
   - Mapper in controller. Exceptions (5): `core/plan/src/main/java/com/inventory/plan/rest/controller/PaymentWebhookController.java`, `core/user/src/main/java/com/inventory/user/rest/controller/AuthController.java`, `core/user/src/main/java/com/inventory/user/rest/controller/VendorController.java`, `core/accounting/src/main/java/com/inventory/accounting/rest/controller/AccountingController.java`, `core/credit/src/main/java/com/inventory/credit/rest/controller/CreditController.java`. List: `grep -lE 'Mapper' $(grep -rlw '@RestController' --include='*Controller.java' core app plugins)`.
-- L5. Use another module through its service or facade. Ref: `core/accounting/src/main/java/com/inventory/accounting/api/AccountingFacade.java`
-  - Exceptions: 24 files read another module's repository directly (product 12, analytics 7, taxation 4, credit 1), e.g. `core/taxation/src/main/java/com/inventory/taxation/service/Gstr1DataAggregator.java`. List: `for m in $(ls core); do grep -rlE '^import com\.inventory\.[a-z]+\.domain\.repository\.' core/$m/src/main/java 2>/dev/null | while read f; do grep -oE '^import com\.inventory\.[a-z]+\.domain\.repository\.' "$f" | grep -vq "inventory\.$m\." && echo "$f"; done; done`.
+- L5. Use another module only through its `api` package; never its repositories, documents, services or HTTP DTOs. Only the owning module (see `module-boundaries.yml`) may map or name a collection. Ref: `core/accounting/src/main/java/com/inventory/accounting/api/AccountingFacade.java`
+  - Exceptions: every existing cross-module use outside `api` is a line in `app/src/test/resources/boundaries/baseline.txt` (376 at introduction). Fixing one means deleting its line; the check fails on new lines and on stale ones. Run: `mvn -pl app -am test -Dtest=ModuleBoundariesTest -Dsurefire.failIfNoSpecifiedTests=false`.
 - L6. Take the tenant shop only from request attribute `shopId`, which `AuthenticationInterceptor` sets (`X-Shop-Id` header if the user is a member, else the active shop). Never scope by a shop id from the body. Shop-owned documents carry `shopId` (40 of 49 `@Document` classes); global ones (Vendor, Customer, Plan, …) link through `shop_vendors`/`shop_customers`. Ref: `app/src/main/java/com/inventory/app/interceptor/AuthenticationInterceptor.java`
 - L7. The request pipeline is `AuthenticationInterceptor` → `RbacModuleInterceptor` (path-prefix module rules) → `PlanExpiryInterceptor` (402 when the plan expired, allow-list), all registered in `CorsConfig`. Spring Security supplies only `BCryptPasswordEncoder` (`app/src/main/java/com/inventory/app/config/SecurityConfig.java`); do not add a security filter chain. Ref: `app/src/main/java/com/inventory/app/config/CorsConfig.java`
 - L8. Plugins reach core only through `pluginengine` SPI types; core reaches plugins only through `PluginRegistry`. Ref: `pluginengine/src/main/java/com/inventory/pluginengine/PluginRegistry.java`
