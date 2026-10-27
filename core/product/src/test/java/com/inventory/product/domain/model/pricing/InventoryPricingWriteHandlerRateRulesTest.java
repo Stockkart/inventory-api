@@ -15,12 +15,12 @@ import static org.mockito.Mockito.when;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ValidationException;
-import com.inventory.pricing.domain.model.RateRuleSpec;
+import com.inventory.pricing.api.ShopRateRule;
+import com.inventory.pricing.api.port.ShopRateRulesPort;
 import com.inventory.pricing.rest.dto.request.PricingCreateCommand;
 import com.inventory.pricing.rest.dto.request.PricingUpdateCommand;
 import com.inventory.pricing.rest.dto.response.RateDto;
 import com.inventory.pricing.service.InventoryPricingAdapter;
-import com.inventory.pricing.service.ShopRateRulesPort;
 import com.inventory.pricing.utils.constants.PricingConstants;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.enums.ShopType;
@@ -136,7 +136,7 @@ class InventoryPricingWriteHandlerRateRulesTest {
   @Test
   void retailerWithRulesSellingPriceUpdateMirrorsIntoMrpAndPtr() {
     when(rateRulesPort.rulesFor(RateRulesTestFixtures.SHOP)).thenReturn(List.of(
-        new RateRuleSpec("Rate-S", PricingConstants.RATE_BASE_SELLING_PRICE, new BigDecimal("5"), null)));
+        new ShopRateRule("Rate-S", PricingConstants.RATE_BASE_SELLING_PRICE, new BigDecimal("5"), null)));
 
     PricingUpdateCommand cmd = updatedWithOnlySellingPrice("120");
 
@@ -160,7 +160,7 @@ class InventoryPricingWriteHandlerRateRulesTest {
   @Test
   void retailerWithRulesKeepsGeneratedRates() {
     when(rateRulesPort.rulesFor(RateRulesTestFixtures.SHOP)).thenReturn(List.of(
-        new RateRuleSpec("Rate-S", PricingConstants.RATE_BASE_SELLING_PRICE, new BigDecimal("5"), null)));
+        new ShopRateRule("Rate-S", PricingConstants.RATE_BASE_SELLING_PRICE, new BigDecimal("5"), null)));
 
     handler.persistOnSave(newInventory());
 
@@ -174,15 +174,6 @@ class InventoryPricingWriteHandlerRateRulesTest {
   @Test
   void retailerWithoutRulesStillNullsRates() {
     when(rateRulesPort.rulesFor(RateRulesTestFixtures.SHOP)).thenReturn(List.of());
-
-    handler.persistOnSave(newInventory());
-
-    assertNull(created().getRates());
-  }
-
-  @Test
-  void retailerWithNoPortStillNullsRates() {
-    ReflectionTestUtils.setField(handler, "shopRateRulesPort", null);
 
     handler.persistOnSave(newInventory());
 

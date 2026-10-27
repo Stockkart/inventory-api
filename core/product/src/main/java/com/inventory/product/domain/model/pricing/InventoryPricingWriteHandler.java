@@ -3,11 +3,11 @@ package com.inventory.product.domain.model.pricing;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.pricing.api.port.ShopRateRulesPort;
 import com.inventory.pricing.domain.model.Scheme;
 import com.inventory.pricing.rest.dto.request.PricingCreateCommand;
 import com.inventory.pricing.rest.dto.request.PricingUpdateCommand;
 import com.inventory.pricing.service.InventoryPricingAdapter;
-import com.inventory.pricing.service.ShopRateRulesPort;
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.enums.SchemeType;
@@ -34,7 +34,7 @@ public class InventoryPricingWriteHandler {
   @Autowired
   private ShopRepository shopRepository;
 
-  @Autowired(required = false)
+  @Autowired
   private ShopRateRulesPort shopRateRulesPort;
 
   public void persistOnSave(Inventory inventory) {
@@ -127,7 +127,7 @@ public class InventoryPricingWriteHandler {
   }
 
   private boolean hasRateRules(String shopId) {
-    return shopRateRulesPort != null && !shopRateRulesPort.rulesFor(shopId).isEmpty();
+    return !shopRateRulesPort.rulesFor(shopId).isEmpty();
   }
 
   private boolean isRetailerShop(String shopId) {

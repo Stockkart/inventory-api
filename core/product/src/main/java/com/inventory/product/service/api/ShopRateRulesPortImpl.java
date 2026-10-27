@@ -1,12 +1,12 @@
-package com.inventory.product.service;
+package com.inventory.product.service.api;
 
-import com.inventory.pricing.domain.model.RateRuleSpec;
-import com.inventory.pricing.service.ShopRateRulesPort;
+import com.inventory.pricing.api.ShopRateRule;
+import com.inventory.pricing.api.port.ShopRateRulesPort;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.ShopRateRulesDocument;
 import com.inventory.product.domain.repository.ShopRateRulesRepository;
 import com.inventory.product.domain.repository.ShopRepository;
-import com.inventory.user.service.RbacService;
+import com.inventory.user.api.ShopPermissions;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.stereotype.Component;
@@ -21,17 +21,18 @@ public class ShopRateRulesPortImpl implements ShopRateRulesPort {
 
   private final ShopRateRulesRepository rulesRepository;
   private final ShopRepository shopRepository;
-  private final RbacService rbacService;
+  private final ShopPermissions shopPermissions;
 
   public ShopRateRulesPortImpl(
-      ShopRateRulesRepository rulesRepository, ShopRepository shopRepository, RbacService rbacService) {
+      ShopRateRulesRepository rulesRepository, ShopRepository shopRepository,
+      ShopPermissions shopPermissions) {
     this.rulesRepository = rulesRepository;
     this.shopRepository = shopRepository;
-    this.rbacService = rbacService;
+    this.shopPermissions = shopPermissions;
   }
 
   @Override
-  public List<RateRuleSpec> rulesFor(String shopId) {
+  public List<ShopRateRule> rulesFor(String shopId) {
     if (!StringUtils.hasText(shopId)) {
       return List.of();
     }
@@ -43,14 +44,14 @@ public class ShopRateRulesPortImpl implements ShopRateRulesPort {
         .map(ShopRateRulesDocument::getRules)
         .map(rules -> rules.stream()
             .filter(r -> r.getBase() != null && StringUtils.hasText(r.getName()))
-            .map(r -> new RateRuleSpec(r.getName().trim(), r.getBase().value(),
+            .map(r -> new ShopRateRule(r.getName().trim(), r.getBase().value(),
                 r.getDiscountPercent(), r.getScheme()))
             .toList())
         .orElseGet(List::of);
   }
 
   @Override
-  public boolean canEditRates(String userId, String shopId) {
-    return rbacService.canEditRates(userId, shopId);
+  public boolean canEditRates(String shopId, String userId) {
+    return shopPermissions.canEditRates(shopId, userId);
   }
 }

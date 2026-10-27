@@ -1,7 +1,7 @@
 package com.inventory.product.utils;
 
 import com.inventory.common.util.GstMath;
-import com.inventory.pricing.utils.SchemePriceUtils;
+import com.inventory.pricing.api.SchemePricing;
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.enums.SchemeType;
 import com.inventory.product.domain.model.Inventory;
@@ -28,7 +28,7 @@ public final class CheckoutUtils {
     if (totalQty.compareTo(BigDecimal.ZERO) <= 0) {
       return BigDecimal.ZERO;
     }
-    return SchemePriceUtils.billableQuantity(totalQty, schemeTypeName(item),
+    return SchemePricing.billableQuantity(totalQty, schemeTypeName(item),
         item.getSchemePayFor(), item.getSchemeFree());
   }
 
@@ -47,7 +47,7 @@ public final class CheckoutUtils {
    */
   public static BigDecimal getEffectiveSellingPricePerUnit(PurchaseItem item) {
     BigDecimal price = item.getPriceToRetail() != null ? item.getPriceToRetail() : BigDecimal.ZERO;
-    return SchemePriceUtils.percentagePrice(price, schemeTypeName(item), item.getSchemePercentage());
+    return SchemePricing.percentagePrice(price, schemeTypeName(item), item.getSchemePercentage());
   }
 
   /** The scheme type as pricing names it, which does not see product's enum. */
@@ -73,7 +73,7 @@ public final class CheckoutUtils {
     if (item == null) {
       return false;
     }
-    return SchemePriceUtils.isAtMrp(item.getPriceToRetail(), item.getMaximumRetailPrice());
+    return SchemePricing.isAtMrp(item.getPriceToRetail(), item.getMaximumRetailPrice());
   }
 
   /**

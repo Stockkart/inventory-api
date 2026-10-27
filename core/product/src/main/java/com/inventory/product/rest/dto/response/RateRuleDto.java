@@ -1,6 +1,6 @@
 package com.inventory.product.rest.dto.response;
 
-import com.inventory.pricing.rest.dto.response.SchemeDto;
+import com.inventory.pricing.api.SchemeTerms;
 import java.math.BigDecimal;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -15,5 +15,5 @@ public class RateRuleDto {
   /** sellingPrice, priceToRetail or maximumRetailPrice. */
   private String base;
   private BigDecimal discountPercent;
-  private SchemeDto scheme;
+  private SchemeTerms scheme;
 }

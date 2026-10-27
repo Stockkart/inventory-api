@@ -2,10 +2,9 @@ package com.inventory.product.validation;
 
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
-import com.inventory.pricing.domain.model.Scheme;
-import com.inventory.pricing.rest.dto.response.SchemeDto;
-import com.inventory.pricing.utils.SystemRateNames;
-import com.inventory.pricing.validation.PricingValidator;
+import com.inventory.pricing.api.RateRuleEngine;
+import com.inventory.pricing.api.SchemeTerms;
+import com.inventory.pricing.api.SystemRates;
 import com.inventory.product.domain.model.enums.RateBase;
 import com.inventory.product.domain.model.enums.ShopType;
 import com.inventory.product.rest.dto.response.RateRuleDto;
@@ -23,10 +22,10 @@ public class RateRulesValidator {
 
   private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
 
-  private final PricingValidator pricingValidator;
+  private final RateRuleEngine rateRuleEngine;
 
-  public RateRulesValidator(PricingValidator pricingValidator) {
-    this.pricingValidator = pricingValidator;
+  public RateRulesValidator(RateRuleEngine rateRuleEngine) {
+    this.rateRuleEngine = rateRuleEngine;
   }
 
   /** The bases a shop type may use, in display order. */
@@ -54,7 +53,7 @@ public class RateRulesValidator {
       }
       String key = name.toLowerCase(Locale.ROOT);
       // The built-in prices' keys and counter labels (priceToRetail, PTR, MRP, Cost …).
-      if (SystemRateNames.isReserved(name)) {
+      if (SystemRates.isReserved(name)) {
         throw invalid("Rate rule name is reserved: " + name);
       }
       if (!seen.add(key)) {
@@ -68,7 +67,7 @@ public class RateRulesValidator {
             "Rate rule base " + rule.getBase() + " is not allowed for this shop type: " + name);
       }
       BigDecimal disc = rule.getDiscountPercent();
-      SchemeDto scheme = rule.getScheme();
+      SchemeTerms scheme = rule.getScheme();
       // A rule with no disc (or 0) and no scheme is its base unchanged: not a rate of its own.
       if ((disc == null || disc.signum() == 0) && scheme == null) {
         throw invalid("Rate rule needs a discount above 0, a scheme, or both: " + name);
@@ -77,14 +76,9 @@ public class RateRulesValidator {
         throw invalid("Rate rule discount must be between 0 and 100: " + name);
       }
       if (scheme != null) {
-        pricingValidator.validateRateTerms(name, null, toScheme(scheme));
+        rateRuleEngine.validateScheme(name, scheme);
       }
     }
-  }
-
-  private static Scheme toScheme(SchemeDto dto) {
-    return new Scheme(dto.getSchemeType(), dto.getSchemePayFor(), dto.getSchemeFree(),
-        dto.getSchemePercentage());
   }
 
   private static BaseException invalid(String message) {

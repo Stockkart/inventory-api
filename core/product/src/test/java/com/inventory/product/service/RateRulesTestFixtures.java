@@ -1,6 +1,6 @@
 package com.inventory.product.service;
 
-import com.inventory.pricing.rest.dto.response.SchemeDto;
+import com.inventory.pricing.api.SchemeTerms;
 import com.inventory.pricing.utils.constants.PricingConstants;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.enums.ShopType;
@@ -20,11 +20,11 @@ public final class RateRulesTestFixtures {
     return value == null ? null : new BigDecimal(value);
   }
 
-  public static SchemeDto tenPlusOne() {
-    return new SchemeDto(PricingConstants.SCHEME_TYPE_FIXED_UNITS, 10, 1, null);
+  public static SchemeTerms tenPlusOne() {
+    return new SchemeTerms(PricingConstants.SCHEME_TYPE_FIXED_UNITS, 10, 1, null);
   }
 
-  public static RateRuleDto rule(String name, String base, String disc, SchemeDto scheme) {
+  public static RateRuleDto rule(String name, String base, String disc, SchemeTerms scheme) {
     return new RateRuleDto(name, base, dec(disc), scheme);
   }
 
