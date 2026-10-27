@@ -72,8 +72,8 @@ class HrAccountingPosterTest {
   }
 
   private static BigDecimal amount(PostJournalRequest req, String code, boolean debit) {
-    return req.getLines().stream().filter(l -> code.equals(l.getAccountCode()))
-        .map(debit ? PostJournalLine::getDebit : PostJournalLine::getCredit)
+    return req.lines().stream().filter(l -> code.equals(l.accountCode()))
+        .map(debit ? PostJournalLine::debit : PostJournalLine::credit)
         .filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
   }
 
@@ -86,15 +86,15 @@ class HrAccountingPosterTest {
         line("999.60", "0.40", "1000.00", null)));
 
     PostJournalRequest req = posted();
-    assertEquals(JournalSource.PAYROLL_RUN, req.getSourceType());
-    assertEquals("run-1:2", req.getSourceId());
-    assertEquals(LocalDate.of(2025, 4, 30), req.getTxnDate());
+    assertEquals(JournalSource.PAYROLL_RUN, req.sourceType());
+    assertEquals("run-1:2", req.sourceId());
+    assertEquals(LocalDate.of(2025, 4, 30), req.txnDate());
     assertEquals(0, new BigDecimal("15145.43").compareTo(amount(req, "5700", true)));
     assertEquals(0, new BigDecimal("0.57").compareTo(amount(req, "5500", true)));
     assertEquals(0, new BigDecimal("14146.00").compareTo(amount(req, "2400", false)));
     assertEquals(0, new BigDecimal("1000.00").compareTo(amount(req, "1250", false)));
-    assertTrue(req.getLines().stream().allMatch(l -> l.getPartyType() == PartyType.SHOP
-        && "Payroll 2025-04".equals(l.getMemo())));
+    assertTrue(req.lines().stream().allMatch(l -> l.partyType() == PartyType.SHOP
+        && "Payroll 2025-04".equals(l.memo())));
   }
 
   @Test
@@ -153,12 +153,12 @@ class HrAccountingPosterTest {
     poster.postAdvance(SHOP, USER, a, "EMP-001");
 
     PostJournalRequest req = posted();
-    assertEquals(JournalSource.STAFF_ADVANCE, req.getSourceType());
-    assertEquals("adv-1", req.getSourceId());
+    assertEquals(JournalSource.STAFF_ADVANCE, req.sourceType());
+    assertEquals("adv-1", req.sourceId());
     assertEquals(0, new BigDecimal("3000").compareTo(amount(req, "1250", true)));
     assertEquals(0, new BigDecimal("3000").compareTo(amount(req, "1110", false)));
-    assertTrue(req.getLines().stream().allMatch(l -> "EMP-001".equals(l.getMemo())));
-    assertTrue(req.getNarration().contains("EMP-001"));
+    assertTrue(req.lines().stream().allMatch(l -> "EMP-001".equals(l.memo())));
+    assertTrue(req.narration().contains("EMP-001"));
   }
 
   @Test
@@ -177,8 +177,8 @@ class HrAccountingPosterTest {
         HrPaymentMethod.CASH, LocalDate.of(2025, 5, 2));
 
     PostJournalRequest req = posted();
-    assertEquals(JournalSource.SALARY_PAYMENT, req.getSourceType());
-    assertEquals("batch-1", req.getSourceId());
+    assertEquals(JournalSource.SALARY_PAYMENT, req.sourceType());
+    assertEquals("batch-1", req.sourceId());
     assertEquals(0, new BigDecimal("350").compareTo(amount(req, "2400", true)));
     assertEquals(0, new BigDecimal("350").compareTo(amount(req, "1100", false)));
   }
@@ -191,10 +191,10 @@ class HrAccountingPosterTest {
         LocalDate.of(2025, 5, 3));
 
     PostJournalRequest req = posted();
-    assertEquals("undo:line-1:3", req.getSourceId());
+    assertEquals("undo:line-1:3", req.sourceId());
     assertEquals(0, new BigDecimal("100").compareTo(amount(req, "1110", true)));
     assertEquals(0, new BigDecimal("100").compareTo(amount(req, "2400", false)));
-    assertTrue(req.getLines().stream().allMatch(l -> "EMP-001".equals(l.getMemo())),
+    assertTrue(req.lines().stream().allMatch(l -> "EMP-001".equals(l.memo())),
         "employee code only, never the name");
   }
 

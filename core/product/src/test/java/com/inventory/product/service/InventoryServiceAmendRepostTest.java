@@ -73,9 +73,9 @@ class InventoryServiceAmendRepostTest {
     ArgumentCaptor<VendorPurchaseInvoicePostingRequest> posted =
         ArgumentCaptor.forClass(VendorPurchaseInvoicePostingRequest.class);
     verify(accountingFacade).postVendorPurchaseInvoice(eq("s1"), eq("u1"), posted.capture());
-    assertTrue(posted.getValue().getSourceId().startsWith("inv-1:amend:"));
-    assertEquals(invoice.getLedgerSourceId(), posted.getValue().getSourceId());
-    assertEquals(0, new BigDecimal("1050.00").compareTo(posted.getValue().getInvoiceTotal()));
+    assertTrue(posted.getValue().sourceId().startsWith("inv-1:amend:"));
+    assertEquals(invoice.getLedgerSourceId(), posted.getValue().sourceId());
+    assertEquals(0, new BigDecimal("1050.00").compareTo(posted.getValue().invoiceTotal()));
   }
 
   @Test

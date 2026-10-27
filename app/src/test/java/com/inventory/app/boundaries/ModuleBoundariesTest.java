@@ -61,6 +61,11 @@ class ModuleBoundariesTest {
       Set.of("org.springframework.", "org.bson.", "com.mongodb.", "lombok.");
   private static final Pattern STRING_CONSTANT =
       Pattern.compile("static\\s+final\\s+String\\s+\\w+\\s*=\\s*\"([a-z_]+)\"");
+  private static final Pattern PACKAGE = Pattern.compile("(?m)^package\\s+([\\w.]+)\\s*;");
+  // import a.b.C;  import static a.b.C.X;  import a.b.*;  (comments are not parsed: a commented-out
+  // import line starts with "//" and does not match ^import)
+  private static final Pattern IMPORT =
+      Pattern.compile("(?m)^import\\s+(?:static\\s+)?(com\\.inventory\\.[\\w.]+(?:\\.\\*)?)\\s*;");
   private static final Pattern MONGO_CALL = Pattern.compile(
       "mongoTemplate|MongoTemplate|getCollection\\(|indexOps\\(|Aggregation|lookup\\(|\\$lookup|MongoCollection");
 
@@ -103,9 +108,21 @@ class ModuleBoundariesTest {
   }
 
   @Test
+  void importedClassIsTheTopLevelClassOfAnImport() {
+    assertEquals("com.inventory.user.domain.model.Vendor",
+        importedClass("com.inventory.user.domain.model.Vendor"));
+    assertEquals("com.inventory.user.service.CustomerService",
+        importedClass("com.inventory.user.service.CustomerService.GUEST_CUSTOMER_DISPLAY_NAME"));
+    assertEquals("com.inventory.product.rest.dto.request.AddToCartRequest",
+        importedClass("com.inventory.product.rest.dto.request.AddToCartRequest.CartItem"));
+    assertEquals("com.inventory.user.domain.model.*", importedClass("com.inventory.user.domain.model.*"));
+  }
+
+  @Test
   void noNewBoundaryViolations() throws IOException {
     Set<String> found = new TreeSet<>();
     found.addAll(dependencyViolations());
+    found.addAll(importViolations());
     found.addAll(apiPackageViolations());
     found.addAll(portViolations());
     found.addAll(optionalDependencyViolations());
@@ -168,6 +185,72 @@ class ModuleBoundariesTest {
       }
     }
     return out;
+  }
+
+  /**
+   * DEPENDS and NOT_API seen in source imports. Bytecode misses a class used only for its
+   * {@code static final} constants (the compiler copies the values into the caller), and imports
+   * that are unused or only serve Javadoc. Lines use the same text as {@link
+   * #dependencyViolations}, so a dependency seen both ways is reported once.
+   */
+  private Set<String> importViolations() throws IOException {
+    Set<String> out = new TreeSet<>();
+    for (Path file : mainSourceFiles()) {
+      String from = moduleOfSource(file);
+      if (from == null) {
+        continue;
+      }
+      String src = Files.readString(file, StandardCharsets.UTF_8);
+      Matcher pkg = PACKAGE.matcher(src);
+      if (!pkg.find()) {
+        continue;
+      }
+      String fileName = file.getFileName().toString();
+      String origin = pkg.group(1) + "." + fileName.substring(0, fileName.length() - ".java".length());
+      if (config.compositionRoot.stream().anyMatch(p -> origin.equals(p) || origin.startsWith(p + "."))) {
+        continue;
+      }
+      Matcher imp = IMPORT.matcher(src);
+      while (imp.find()) {
+        String target = importedClass(imp.group(1));
+        String to = moduleOf(target);
+        if (to == null || to.equals(from) || config.libraries.contains(to)) {
+          continue;
+        }
+        String pair = origin + " -> " + target;
+        if (!config.dependsOn.getOrDefault(from, Set.of()).contains(to)) {
+          out.add("DEPENDS " + from + " -> " + to + " : " + pair);
+        } else if (!inApiPackage(target, to)) {
+          out.add("NOT_API " + from + " -> " + to + " : " + pair);
+        }
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Top-level class named by an import: the name up to its first capitalised segment
+   * ({@code a.b.Outer.Inner} and {@code a.b.Outer.CONSTANT} give {@code a.b.Outer}); a wildcard
+   * package import keeps its {@code .*}.
+   */
+  static String importedClass(String imported) {
+    String[] parts = imported.split("\\.");
+    StringBuilder name = new StringBuilder();
+    for (String part : parts) {
+      if (name.length() > 0) {
+        name.append('.');
+      }
+      name.append(part);
+      if (!part.isEmpty() && Character.isUpperCase(part.charAt(0))) {
+        return name.toString();
+      }
+    }
+    return name.toString();
+  }
+
+  private static boolean inApiPackage(String className, String module) {
+    String api = apiPackage(module);
+    return className.startsWith(api + ".");
   }
 
   /** API_KIND and API_IMPURE for every class inside a module's own api package. */

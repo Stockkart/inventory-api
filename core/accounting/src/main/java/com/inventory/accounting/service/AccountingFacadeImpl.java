@@ -135,26 +135,26 @@ public class AccountingFacadeImpl implements AccountingFacade {
     if (in == null) {
       throw new ValidationException("Vendor purchase invoice posting request is required");
     }
-    if (in.getSourceId() == null || in.getSourceId().isBlank()) {
+    if (in.sourceId() == null || in.sourceId().isBlank()) {
       throw new ValidationException("sourceId (vendor purchase invoice id) is required");
     }
-    if (in.getVendorId() == null || in.getVendorId().isBlank()) {
+    if (in.vendorId() == null || in.vendorId().isBlank()) {
       throw new ValidationException("vendorId is required for vendor purchase invoice posting");
     }
 
-    BigDecimal goodsValue = nz(in.getGoodsValue());
-    BigDecimal cgst = nz(in.getInputCgst());
-    BigDecimal sgst = nz(in.getInputSgst());
-    BigDecimal igst = nz(in.getInputIgst());
-    BigDecimal shipping = nz(in.getShippingCharge());
-    BigDecimal otherCharges = nz(in.getOtherCharges());
-    BigDecimal roundOff = nz(in.getRoundOff());
+    BigDecimal goodsValue = nz(in.goodsValue());
+    BigDecimal cgst = nz(in.inputCgst());
+    BigDecimal sgst = nz(in.inputSgst());
+    BigDecimal igst = nz(in.inputIgst());
+    BigDecimal shipping = nz(in.shippingCharge());
+    BigDecimal otherCharges = nz(in.otherCharges());
+    BigDecimal roundOff = nz(in.roundOff());
 
     BigDecimal computedTotal =
         scale(goodsValue.add(cgst).add(sgst).add(igst).add(shipping).add(otherCharges));
     BigDecimal invoiceTotal =
-        in.getInvoiceTotal() != null && in.getInvoiceTotal().signum() > 0
-            ? scale(in.getInvoiceTotal())
+        in.invoiceTotal() != null && in.invoiceTotal().signum() > 0
+            ? scale(in.invoiceTotal())
             : computedTotal;
 
     if (invoiceTotal.signum() <= 0) {
@@ -162,8 +162,8 @@ public class AccountingFacadeImpl implements AccountingFacade {
     }
 
     BigDecimal paid =
-        in.getPaidAmount() != null && in.getPaidAmount().signum() > 0
-            ? scale(in.getPaidAmount())
+        in.paidAmount() != null && in.paidAmount().signum() > 0
+            ? scale(in.paidAmount())
             : MoneyUtil.zero();
     if (paid.compareTo(invoiceTotal) > 0) {
       paid = invoiceTotal;
@@ -184,29 +184,28 @@ public class AccountingFacadeImpl implements AccountingFacade {
     if (roundLoss.signum() > 0) lines.add(debit(ROUND_OFF_EXPENSE, roundLoss));
 
     if (paid.signum() > 0) {
-      lines.add(credit(resolvePaidAccount(in.getPaymentMethod()), paid));
+      lines.add(credit(resolvePaidAccount(in.paymentMethod()), paid));
     }
     if (outstanding.signum() > 0) {
-      PostJournalLine line = credit(SUNDRY_CREDITORS, outstanding);
-      line.setPartyType(PartyType.VENDOR);
-      line.setPartyRefId(in.getVendorId().trim());
-      line.setPartyDisplayName(
-          in.getVendorDisplayName() != null ? in.getVendorDisplayName().trim() : null);
+      PostJournalLine line = credit(SUNDRY_CREDITORS, outstanding).withParty(
+          PartyType.VENDOR,
+          in.vendorId().trim(),
+          in.vendorDisplayName() != null ? in.vendorDisplayName().trim() : null);
       lines.add(line);
     }
     if (roundGain.signum() > 0) lines.add(credit(ROUND_OFF_PAYABLE, roundGain));
 
-    PostJournalRequest req = new PostJournalRequest();
-    req.setSourceType(JournalSource.VENDOR_PURCHASE_INVOICE);
-    req.setSourceId(in.getSourceId().trim());
-    req.setSourceKey("VENDOR_PURCHASE_INVOICE:" + in.getSourceId().trim());
-    req.setTxnDate(resolveTxnDate(in.getTxnDate()));
-    req.setNarration(
-        "Vendor purchase invoice"
-            + (in.getInvoiceNo() != null && !in.getInvoiceNo().isBlank()
-                ? " · " + in.getInvoiceNo().trim()
-                : ""));
-    req.setLines(lines);
+    PostJournalRequest req = PostJournalRequest.builder()
+        .sourceType(JournalSource.VENDOR_PURCHASE_INVOICE)
+        .sourceId(in.sourceId().trim())
+        .sourceKey("VENDOR_PURCHASE_INVOICE:" + in.sourceId().trim())
+        .txnDate(resolveTxnDate(in.txnDate()))
+        .narration("Vendor purchase invoice"
+        + (in.invoiceNo() != null && !in.invoiceNo().isBlank()
+        ? " · " + in.invoiceNo().trim()
+        : ""))
+        .lines(lines)
+        .build();
 
     return JournalEntryViews.of(postingService.post(shopId, userId, req));
   }
@@ -233,40 +232,40 @@ public class AccountingFacadeImpl implements AccountingFacade {
     if (in == null) {
       throw new ValidationException("Sale posting request is required");
     }
-    if (in.getSourceId() == null || in.getSourceId().isBlank()) {
+    if (in.sourceId() == null || in.sourceId().isBlank()) {
       throw new ValidationException("sourceId (sale / purchase id) is required");
     }
 
-    BigDecimal revenue = nz(in.getTaxableRevenue());
-    BigDecimal cgst = nz(in.getOutputCgst());
-    BigDecimal sgst = nz(in.getOutputSgst());
-    BigDecimal igst = nz(in.getOutputIgst());
-    BigDecimal cogs = nz(in.getCogsAmount());
-    BigDecimal roundOff = nz(in.getRoundOff());
+    BigDecimal revenue = nz(in.taxableRevenue());
+    BigDecimal cgst = nz(in.outputCgst());
+    BigDecimal sgst = nz(in.outputSgst());
+    BigDecimal igst = nz(in.outputIgst());
+    BigDecimal cogs = nz(in.cogsAmount());
+    BigDecimal roundOff = nz(in.roundOff());
 
     BigDecimal computedTotal = scale(revenue.add(cgst).add(sgst).add(igst).add(roundOff));
     BigDecimal saleTotal =
-        in.getSaleTotal() != null && in.getSaleTotal().signum() > 0
-            ? scale(in.getSaleTotal())
+        in.saleTotal() != null && in.saleTotal().signum() > 0
+            ? scale(in.saleTotal())
             : computedTotal;
 
     if (saleTotal.signum() <= 0) {
       throw new ValidationException("Sale total must be greater than zero to post");
     }
 
-    BigDecimal paidCash = nz(in.getPaidCash());
-    BigDecimal paidOnline = nz(in.getPaidOnline());
-    boolean splitTender = in.getPaidCash() != null || in.getPaidOnline() != null;
+    BigDecimal paidCash = nz(in.paidCash());
+    BigDecimal paidOnline = nz(in.paidOnline());
+    boolean splitTender = in.paidCash() != null || in.paidOnline() != null;
 
     BigDecimal outstanding;
-    if (in.getReceivableAmount() != null) {
-      outstanding = scale(in.getReceivableAmount());
+    if (in.receivableAmount() != null) {
+      outstanding = scale(in.receivableAmount());
     } else if (splitTender) {
       outstanding = scale(saleTotal.subtract(paidCash).subtract(paidOnline));
     } else {
       BigDecimal paid =
-          in.getPaidAmount() != null && in.getPaidAmount().signum() > 0
-              ? scale(in.getPaidAmount())
+          in.paidAmount() != null && in.paidAmount().signum() > 0
+              ? scale(in.paidAmount())
               : MoneyUtil.zero();
       if (paid.compareTo(saleTotal) > 0) {
         paid = saleTotal;
@@ -274,7 +273,7 @@ public class AccountingFacadeImpl implements AccountingFacade {
       outstanding = scale(saleTotal.subtract(paid));
       if (paid.signum() > 0) {
         String legacyMethod =
-            in.getPaymentMethod() != null ? in.getPaymentMethod().trim().toUpperCase() : "CASH";
+            in.paymentMethod() != null ? in.paymentMethod().trim().toUpperCase() : "CASH";
         if (resolvePaidAccount(legacyMethod).equals(BANK)) {
           paidOnline = paid;
         } else {
@@ -325,15 +324,14 @@ public class AccountingFacadeImpl implements AccountingFacade {
       lines.add(debit(BANK, scale(paidOnline)));
     }
     if (outstanding.signum() > 0) {
-      if (in.getCustomerId() == null || in.getCustomerId().isBlank()) {
+      if (in.customerId() == null || in.customerId().isBlank()) {
         throw new ValidationException(
             "customerId is required when sale has an outstanding receivable");
       }
-      PostJournalLine debtors = debit(SUNDRY_DEBTORS, outstanding);
-      debtors.setPartyType(PartyType.CUSTOMER);
-      debtors.setPartyRefId(in.getCustomerId().trim());
-      debtors.setPartyDisplayName(
-          in.getCustomerDisplayName() != null ? in.getCustomerDisplayName().trim() : null);
+      PostJournalLine debtors = debit(SUNDRY_DEBTORS, outstanding).withParty(
+          PartyType.CUSTOMER,
+          in.customerId().trim(),
+          in.customerDisplayName() != null ? in.customerDisplayName().trim() : null);
       lines.add(debtors);
     }
     if (roundLoss.signum() > 0) {
@@ -354,17 +352,17 @@ public class AccountingFacadeImpl implements AccountingFacade {
 
     absorbPostingRoundingDrift(lines);
 
-    PostJournalRequest req = new PostJournalRequest();
-    req.setSourceType(JournalSource.SALE);
-    req.setSourceId(in.getSourceId().trim());
-    req.setSourceKey("SALE:" + in.getSourceId().trim());
-    req.setTxnDate(resolveTxnDate(in.getTxnDate()));
-    req.setNarration(
-        "Sale"
-            + (in.getInvoiceNo() != null && !in.getInvoiceNo().isBlank()
-                ? " · " + in.getInvoiceNo().trim()
-                : ""));
-    req.setLines(lines);
+    PostJournalRequest req = PostJournalRequest.builder()
+        .sourceType(JournalSource.SALE)
+        .sourceId(in.sourceId().trim())
+        .sourceKey("SALE:" + in.sourceId().trim())
+        .txnDate(resolveTxnDate(in.txnDate()))
+        .narration("Sale"
+        + (in.invoiceNo() != null && !in.invoiceNo().isBlank()
+        ? " · " + in.invoiceNo().trim()
+        : ""))
+        .lines(lines)
+        .build();
 
     return JournalEntryViews.of(postingService.post(shopId, userId, req));
   }
@@ -389,30 +387,30 @@ public class AccountingFacadeImpl implements AccountingFacade {
     if (in == null) {
       throw new ValidationException("Sales return posting request is required");
     }
-    if (in.getSourceId() == null || in.getSourceId().isBlank()) {
+    if (in.sourceId() == null || in.sourceId().isBlank()) {
       throw new ValidationException("sourceId (refund id) is required");
     }
 
-    BigDecimal taxable = nz(in.getTaxableRevenue());
-    BigDecimal cgst = nz(in.getOutputCgst());
-    BigDecimal sgst = nz(in.getOutputSgst());
-    BigDecimal igst = nz(in.getOutputIgst());
-    BigDecimal cogs = nz(in.getCogsAmount());
-    BigDecimal roundOff = nz(in.getRoundOff());
+    BigDecimal taxable = nz(in.taxableRevenue());
+    BigDecimal cgst = nz(in.outputCgst());
+    BigDecimal sgst = nz(in.outputSgst());
+    BigDecimal igst = nz(in.outputIgst());
+    BigDecimal cogs = nz(in.cogsAmount());
+    BigDecimal roundOff = nz(in.roundOff());
 
     BigDecimal computedTotal = scale(taxable.add(cgst).add(sgst).add(igst).add(roundOff));
     BigDecimal returnTotal =
-        in.getReturnTotal() != null && in.getReturnTotal().signum() > 0
-            ? scale(in.getReturnTotal())
+        in.returnTotal() != null && in.returnTotal().signum() > 0
+            ? scale(in.returnTotal())
             : computedTotal;
 
     if (returnTotal.signum() <= 0) {
       throw new ValidationException("Return total must be greater than zero to post");
     }
 
-    BigDecimal refundCash = nz(in.getRefundCash());
-    BigDecimal refundOnline = nz(in.getRefundOnline());
-    BigDecimal refundToCredit = nz(in.getRefundToCredit());
+    BigDecimal refundCash = nz(in.refundCash());
+    BigDecimal refundOnline = nz(in.refundOnline());
+    BigDecimal refundToCredit = nz(in.refundToCredit());
     RefundTenderSplit tenders =
         normalizeRefundTendersToReturnTotal(returnTotal, refundCash, refundOnline, refundToCredit);
     refundCash = tenders.cash();
@@ -448,34 +446,34 @@ public class AccountingFacadeImpl implements AccountingFacade {
     if (refundCash.signum() > 0) lines.add(credit(CASH, scale(refundCash)));
     if (refundOnline.signum() > 0) lines.add(credit(BANK, scale(refundOnline)));
     if (refundToCredit.signum() > 0) {
-      if (in.getCustomerId() == null || in.getCustomerId().isBlank()) {
+      if (in.customerId() == null || in.customerId().isBlank()) {
         throw new ValidationException(
             "customerId is required when return reduces customer receivable");
       }
-      PostJournalLine debtors = credit(SUNDRY_DEBTORS, scale(refundToCredit));
-      debtors.setPartyType(PartyType.CUSTOMER);
-      debtors.setPartyRefId(in.getCustomerId().trim());
-      debtors.setPartyDisplayName(
-          in.getCustomerDisplayName() != null ? in.getCustomerDisplayName().trim() : null);
+      PostJournalLine debtors = credit(SUNDRY_DEBTORS, scale(refundToCredit)).withParty(
+          PartyType.CUSTOMER,
+          in.customerId().trim(),
+          in.customerDisplayName() != null ? in.customerDisplayName().trim() : null);
       lines.add(debtors);
     }
     if (roundGain.signum() > 0) lines.add(credit(ROUND_OFF_PAYABLE, roundGain));
 
     absorbPostingRoundingDrift(lines);
 
-    PostJournalRequest req = new PostJournalRequest();
-    req.setSourceType(JournalSource.SALES_RETURN);
-    req.setSourceId(in.getSourceId().trim());
-    req.setSourceKey("SALES_RETURN:" + in.getSourceId().trim());
-    req.setTxnDate(resolveTxnDate(in.getTxnDate()));
     String narration = "Sales return";
-    if (in.getCreditNoteNo() != null && !in.getCreditNoteNo().isBlank()) {
-      narration = narration + " · " + in.getCreditNoteNo().trim();
-    } else if (in.getOriginalInvoiceNo() != null && !in.getOriginalInvoiceNo().isBlank()) {
-      narration = narration + " · vs " + in.getOriginalInvoiceNo().trim();
+    if (in.creditNoteNo() != null && !in.creditNoteNo().isBlank()) {
+      narration = narration + " · " + in.creditNoteNo().trim();
+    } else if (in.originalInvoiceNo() != null && !in.originalInvoiceNo().isBlank()) {
+      narration = narration + " · vs " + in.originalInvoiceNo().trim();
     }
-    req.setNarration(narration);
-    req.setLines(lines);
+    PostJournalRequest req = PostJournalRequest.builder()
+        .sourceType(JournalSource.SALES_RETURN)
+        .sourceId(in.sourceId().trim())
+        .sourceKey("SALES_RETURN:" + in.sourceId().trim())
+        .txnDate(resolveTxnDate(in.txnDate()))
+        .narration(narration)
+        .lines(lines)
+        .build();
     return JournalEntryViews.of(postingService.post(shopId, userId, req));
   }
 
@@ -498,32 +496,32 @@ public class AccountingFacadeImpl implements AccountingFacade {
     if (in == null) {
       throw new ValidationException("Vendor purchase return posting request is required");
     }
-    if (in.getSourceId() == null || in.getSourceId().isBlank()) {
+    if (in.sourceId() == null || in.sourceId().isBlank()) {
       throw new ValidationException("sourceId (vendor return id) is required");
     }
-    if (in.getVendorId() == null || in.getVendorId().isBlank()) {
+    if (in.vendorId() == null || in.vendorId().isBlank()) {
       throw new ValidationException("vendorId is required for vendor purchase return posting");
     }
 
-    BigDecimal goods = nz(in.getGoodsValue());
-    BigDecimal cgst = nz(in.getInputCgst());
-    BigDecimal sgst = nz(in.getInputSgst());
-    BigDecimal igst = nz(in.getInputIgst());
-    BigDecimal roundOff = nz(in.getRoundOff());
+    BigDecimal goods = nz(in.goodsValue());
+    BigDecimal cgst = nz(in.inputCgst());
+    BigDecimal sgst = nz(in.inputSgst());
+    BigDecimal igst = nz(in.inputIgst());
+    BigDecimal roundOff = nz(in.roundOff());
 
     BigDecimal computedTotal = scale(goods.add(cgst).add(sgst).add(igst).add(roundOff));
     BigDecimal returnTotal =
-        in.getReturnTotal() != null && in.getReturnTotal().signum() > 0
-            ? scale(in.getReturnTotal())
+        in.returnTotal() != null && in.returnTotal().signum() > 0
+            ? scale(in.returnTotal())
             : computedTotal;
 
     if (returnTotal.signum() <= 0) {
       throw new ValidationException("Vendor return total must be greater than zero to post");
     }
 
-    BigDecimal refundCash = nz(in.getRefundCash());
-    BigDecimal refundOnline = nz(in.getRefundOnline());
-    BigDecimal refundToCredit = nz(in.getRefundToCredit());
+    BigDecimal refundCash = nz(in.refundCash());
+    BigDecimal refundOnline = nz(in.refundOnline());
+    BigDecimal refundToCredit = nz(in.refundToCredit());
     RefundTenderSplit tenders =
         normalizeRefundTendersToReturnTotal(returnTotal, refundCash, refundOnline, refundToCredit);
     refundCash = tenders.cash();
@@ -535,11 +533,10 @@ public class AccountingFacadeImpl implements AccountingFacade {
 
     List<PostJournalLine> lines = new ArrayList<>();
     if (refundToCredit.signum() > 0) {
-      PostJournalLine creditors = debit(SUNDRY_CREDITORS, scale(refundToCredit));
-      creditors.setPartyType(PartyType.VENDOR);
-      creditors.setPartyRefId(in.getVendorId().trim());
-      creditors.setPartyDisplayName(
-          in.getVendorDisplayName() != null ? in.getVendorDisplayName().trim() : null);
+      PostJournalLine creditors = debit(SUNDRY_CREDITORS, scale(refundToCredit)).withParty(
+          PartyType.VENDOR,
+          in.vendorId().trim(),
+          in.vendorDisplayName() != null ? in.vendorDisplayName().trim() : null);
       lines.add(creditors);
     }
     if (refundCash.signum() > 0) {
@@ -557,17 +554,17 @@ public class AccountingFacadeImpl implements AccountingFacade {
 
     absorbPostingRoundingDrift(lines);
 
-    PostJournalRequest req = new PostJournalRequest();
-    req.setSourceType(JournalSource.VENDOR_PURCHASE_RETURN);
-    req.setSourceId(in.getSourceId().trim());
-    req.setSourceKey("VENDOR_PURCHASE_RETURN:" + in.getSourceId().trim());
-    req.setTxnDate(resolveTxnDate(in.getTxnDate()));
-    req.setNarration(
-        "Vendor purchase return"
-            + (in.getSupplierCreditNoteNo() != null && !in.getSupplierCreditNoteNo().isBlank()
-                ? " · " + in.getSupplierCreditNoteNo().trim()
-                : ""));
-    req.setLines(lines);
+    PostJournalRequest req = PostJournalRequest.builder()
+        .sourceType(JournalSource.VENDOR_PURCHASE_RETURN)
+        .sourceId(in.sourceId().trim())
+        .sourceKey("VENDOR_PURCHASE_RETURN:" + in.sourceId().trim())
+        .txnDate(resolveTxnDate(in.txnDate()))
+        .narration("Vendor purchase return"
+        + (in.supplierCreditNoteNo() != null && !in.supplierCreditNoteNo().isBlank()
+        ? " · " + in.supplierCreditNoteNo().trim()
+        : ""))
+        .lines(lines)
+        .build();
     return JournalEntryViews.of(postingService.post(shopId, userId, req));
   }
 
@@ -656,13 +653,13 @@ public class AccountingFacadeImpl implements AccountingFacade {
     if (in == null) {
       throw new ValidationException("Credit charge posting request is required");
     }
-    if (in.getSourceId() == null || in.getSourceId().isBlank()) {
+    if (in.sourceId() == null || in.sourceId().isBlank()) {
       throw new ValidationException("sourceId is required for credit charge posting");
     }
-    if (in.getPartyId() == null || in.getPartyId().isBlank()) {
+    if (in.partyId() == null || in.partyId().isBlank()) {
       throw new ValidationException("partyId is required for credit charge posting");
     }
-    BigDecimal amount = nz(in.getAmount());
+    BigDecimal amount = nz(in.amount());
     if (amount.signum() <= 0) {
       throw new ValidationException("Credit charge amount must be greater than zero");
     }
@@ -670,33 +667,31 @@ public class AccountingFacadeImpl implements AccountingFacade {
     List<PostJournalLine> lines = new ArrayList<>();
     if (vendorCharge) {
       lines.add(debit(PURCHASES, amount));
-      PostJournalLine creditors = credit(SUNDRY_CREDITORS, amount);
-      creditors.setPartyType(PartyType.VENDOR);
-      creditors.setPartyRefId(in.getPartyId().trim());
-      creditors.setPartyDisplayName(
-          in.getPartyDisplayName() != null ? in.getPartyDisplayName().trim() : null);
+      PostJournalLine creditors = credit(SUNDRY_CREDITORS, amount).withParty(
+          PartyType.VENDOR,
+          in.partyId().trim(),
+          in.partyDisplayName() != null ? in.partyDisplayName().trim() : null);
       lines.add(creditors);
     } else {
-      PostJournalLine debtors = debit(SUNDRY_DEBTORS, amount);
-      debtors.setPartyType(PartyType.CUSTOMER);
-      debtors.setPartyRefId(in.getPartyId().trim());
-      debtors.setPartyDisplayName(
-          in.getPartyDisplayName() != null ? in.getPartyDisplayName().trim() : null);
+      PostJournalLine debtors = debit(SUNDRY_DEBTORS, amount).withParty(
+          PartyType.CUSTOMER,
+          in.partyId().trim(),
+          in.partyDisplayName() != null ? in.partyDisplayName().trim() : null);
       lines.add(debtors);
       lines.add(credit(SALES, amount));
     }
 
-    String sourceId = in.getSourceId().trim();
-    PostJournalRequest req = new PostJournalRequest();
-    req.setSourceType(sourceType);
-    req.setSourceId(sourceId);
-    req.setSourceKey(sourceType.name() + ":" + sourceId);
-    req.setTxnDate(resolveTxnDate(in.getTxnDate()));
-    req.setNarration(
-        in.getNarration() != null && !in.getNarration().isBlank()
-            ? in.getNarration().trim()
-            : (vendorCharge ? "Vendor payable increase" : "Customer receivable increase"));
-    req.setLines(lines);
+    String sourceId = in.sourceId().trim();
+    PostJournalRequest req = PostJournalRequest.builder()
+        .sourceType(sourceType)
+        .sourceId(sourceId)
+        .sourceKey(sourceType.name() + ":" + sourceId)
+        .txnDate(resolveTxnDate(in.txnDate()))
+        .narration(in.narration() != null && !in.narration().isBlank()
+        ? in.narration().trim()
+        : (vendorCharge ? "Vendor payable increase" : "Customer receivable increase"))
+        .lines(lines)
+        .build();
     return postingService.post(shopId, userId, req);
   }
 
@@ -711,19 +706,19 @@ public class AccountingFacadeImpl implements AccountingFacade {
     if (in == null) {
       throw new ValidationException("Settlement posting request is required");
     }
-    if (in.getSourceId() == null || in.getSourceId().isBlank()) {
+    if (in.sourceId() == null || in.sourceId().isBlank()) {
       throw new ValidationException("sourceId is required for settlement posting");
     }
-    if (in.getPartyId() == null || in.getPartyId().isBlank()) {
+    if (in.partyId() == null || in.partyId().isBlank()) {
       throw new ValidationException("partyId is required for settlement posting");
     }
-    BigDecimal amount = nz(in.getAmount());
+    BigDecimal amount = nz(in.amount());
     if (amount.signum() <= 0) {
       throw new ValidationException("Settlement amount must be greater than zero");
     }
 
     String method =
-        in.getPaymentMethod() != null ? in.getPaymentMethod().trim().toUpperCase() : "CASH";
+        in.paymentMethod() != null ? in.paymentMethod().trim().toUpperCase() : "CASH";
     boolean adjustment = "ADJUSTMENT".equals(method);
 
     List<PostJournalLine> lines = new ArrayList<>();
@@ -733,10 +728,10 @@ public class AccountingFacadeImpl implements AccountingFacade {
     } else {
       controlLine = credit(controlAccountCode, amount);
     }
-    controlLine.setPartyType(partyType);
-    controlLine.setPartyRefId(in.getPartyId().trim());
-    controlLine.setPartyDisplayName(
-        in.getPartyDisplayName() != null ? in.getPartyDisplayName().trim() : null);
+    controlLine = controlLine.withParty(
+        partyType,
+        in.partyId().trim(),
+        in.partyDisplayName() != null ? in.partyDisplayName().trim() : null);
     lines.add(controlLine);
 
     if (vendorPayment) {
@@ -753,24 +748,25 @@ public class AccountingFacadeImpl implements AccountingFacade {
       }
     }
 
-    String sourceId = in.getSourceId().trim();
-    PostJournalRequest req = new PostJournalRequest();
-    req.setSourceType(sourceType);
-    req.setSourceId(sourceId);
-    req.setSourceKey(sourceType.name() + ":" + sourceId);
-    req.setTxnDate(resolveTxnDate(in.getTxnDate()));
-    String narration = in.getNarration();
+    String sourceId = in.sourceId().trim();
+    String narration = in.narration();
     if (narration == null || narration.isBlank()) {
       narration =
           vendorPayment
               ? "Vendor payment"
               : "Customer settlement";
     }
-    if (in.getBankRef() != null && !in.getBankRef().isBlank()) {
-      narration = narration + " · Ref " + in.getBankRef().trim();
+    if (in.bankRef() != null && !in.bankRef().isBlank()) {
+      narration = narration + " · Ref " + in.bankRef().trim();
     }
-    req.setNarration(narration);
-    req.setLines(lines);
+    PostJournalRequest req = PostJournalRequest.builder()
+        .sourceType(sourceType)
+        .sourceId(sourceId)
+        .sourceKey(sourceType.name() + ":" + sourceId)
+        .txnDate(resolveTxnDate(in.txnDate()))
+        .narration(narration)
+        .lines(lines)
+        .build();
     return postingService.post(shopId, userId, req);
   }
 
@@ -845,8 +841,8 @@ public class AccountingFacadeImpl implements AccountingFacade {
     BigDecimal totalDebit = MoneyUtil.zero();
     BigDecimal totalCredit = MoneyUtil.zero();
     for (PostJournalLine in : lines) {
-      BigDecimal debit = nz(in.getDebit());
-      BigDecimal credit = nz(in.getCredit());
+      BigDecimal debit = nz(in.debit());
+      BigDecimal credit = nz(in.credit());
       if (debit.signum() == 0 && credit.signum() == 0) {
         continue;
       }
@@ -865,16 +861,10 @@ public class AccountingFacadeImpl implements AccountingFacade {
   }
 
   private static PostJournalLine debit(String code, BigDecimal amount) {
-    PostJournalLine l = new PostJournalLine();
-    l.setAccountCode(code);
-    l.setDebit(amount);
-    return l;
+    return PostJournalLine.builder().accountCode(code).debit(amount).build();
   }
 
   private static PostJournalLine credit(String code, BigDecimal amount) {
-    PostJournalLine l = new PostJournalLine();
-    l.setAccountCode(code);
-    l.setCredit(amount);
-    return l;
+    return PostJournalLine.builder().accountCode(code).credit(amount).build();
   }
 }

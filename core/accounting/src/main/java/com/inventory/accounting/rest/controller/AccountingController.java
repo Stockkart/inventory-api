@@ -145,11 +145,12 @@ public class AccountingController {
     String shopId = resolveShop(request);
     String userId = (String) request.getAttribute("userId");
 
-    PostJournalRequest req = new PostJournalRequest();
-    req.setSourceType(JournalSource.MANUAL);
-    req.setTxnDate(body.getTxnDate());
-    req.setNarration(body.getNarration());
-    req.setLines(JournalRequestMapper.fromManual(body));
+    PostJournalRequest req = PostJournalRequest.builder()
+        .sourceType(JournalSource.MANUAL)
+        .txnDate(body.getTxnDate())
+        .narration(body.getNarration())
+        .lines(JournalRequestMapper.fromManual(body))
+        .build();
 
     JournalEntry posted = accountingFacade.postEntry(shopId, userId, req);
     return ResponseEntity.ok(ApiResponse.success(AccountingMapper.toResponse(posted)));
@@ -161,16 +162,17 @@ public class AccountingController {
     String shopId = resolveShop(request);
     String userId = (String) request.getAttribute("userId");
 
-    PostJournalRequest req = new PostJournalRequest();
-    req.setSourceType(JournalSource.OPENING_BALANCE);
-    req.setSourceId("opening");
-    req.setSourceKey("OPENING_BALANCE:" + shopId);
-    req.setTxnDate(body.getTxnDate());
-    req.setNarration(
-        body.getNarration() != null && !body.getNarration().isBlank()
-            ? body.getNarration().trim()
-            : "Opening balances");
-    req.setLines(JournalRequestMapper.fromOpening(body));
+    PostJournalRequest req = PostJournalRequest.builder()
+        .sourceType(JournalSource.OPENING_BALANCE)
+        .sourceId("opening")
+        .sourceKey("OPENING_BALANCE:" + shopId)
+        .txnDate(body.getTxnDate())
+        .narration(
+            body.getNarration() != null && !body.getNarration().isBlank()
+                ? body.getNarration().trim()
+                : "Opening balances")
+        .lines(JournalRequestMapper.fromOpening(body))
+        .build();
 
     JournalEntry posted = accountingFacade.postEntry(shopId, userId, req);
     return ResponseEntity.ok(ApiResponse.success(AccountingMapper.toResponse(posted)));

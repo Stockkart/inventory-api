@@ -1,14 +1,6 @@
 # Module boundary violations that existed when the check was introduced.
 # Fixing one means deleting its line here in the same change. Never add lines by hand.
 # Regenerate: mvn -pl app -am test -Dtest=ModuleBoundariesTest -Dsurefire.failIfNoSpecifiedTests=false -Dboundaries.writeBaseline=true
-API_KIND accounting : com.inventory.accounting.api.PartyCreditChargePostingRequest must be an interface, record or enum
-API_KIND accounting : com.inventory.accounting.api.PartySettlementPostingRequest must be an interface, record or enum
-API_KIND accounting : com.inventory.accounting.api.PostJournalLine must be an interface, record or enum
-API_KIND accounting : com.inventory.accounting.api.PostJournalRequest must be an interface, record or enum
-API_KIND accounting : com.inventory.accounting.api.SaleInvoicePostingRequest must be an interface, record or enum
-API_KIND accounting : com.inventory.accounting.api.SalesReturnPostingRequest must be an interface, record or enum
-API_KIND accounting : com.inventory.accounting.api.VendorPurchaseInvoicePostingRequest must be an interface, record or enum
-API_KIND accounting : com.inventory.accounting.api.VendorPurchaseReturnPostingRequest must be an interface, record or enum
 COLLECTION_NAME accounting : core/accounting/src/main/java/com/inventory/accounting/service/AccountingBackfillService.java names credit_entries owned by credit
 COLLECTION_NAME accounting : core/accounting/src/main/java/com/inventory/accounting/service/AccountingBackfillService.java names customers owned by user
 COLLECTION_NAME accounting : core/accounting/src/main/java/com/inventory/accounting/service/AccountingBackfillService.java names inventory owned by product
@@ -18,6 +10,8 @@ COLLECTION_NAME accounting : core/accounting/src/main/java/com/inventory/account
 COLLECTION_NAME accounting : core/accounting/src/main/java/com/inventory/accounting/service/AccountingBackfillService.java names vendor_purchase_invoices owned by product
 COLLECTION_NAME accounting : core/accounting/src/main/java/com/inventory/accounting/service/AccountingBackfillService.java names vendor_purchase_returns owned by product
 COLLECTION_NAME accounting : core/accounting/src/main/java/com/inventory/accounting/service/AccountingBackfillService.java names vendors owned by user
+DEPENDS analytics -> user : com.inventory.analytics.mis.service.SalesMisService -> com.inventory.user.service.CustomerService
+DEPENDS analytics -> user : com.inventory.analytics.service.VendorAnalyticsService -> com.inventory.user.domain.model.Vendor
 DEPENDS analytics -> user : com.inventory.analytics.utils.CustomerAnalyticsUtils -> com.inventory.user.domain.model.Customer
 DEPENDS analytics -> user : com.inventory.analytics.utils.CustomerAnalyticsUtils -> com.inventory.user.domain.repository.CustomerRepository
 DEPENDS analytics -> user : com.inventory.analytics.utils.VendorAnalyticsUtils -> com.inventory.user.domain.model.Vendor
@@ -34,9 +28,13 @@ NOT_API analytics -> credit : com.inventory.analytics.mis.service.VendorMoneyMis
 NOT_API analytics -> credit : com.inventory.analytics.mis.service.VendorMoneyMisService -> com.inventory.credit.domain.model.CreditEntryType
 NOT_API analytics -> credit : com.inventory.analytics.mis.service.VendorMoneyMisService -> com.inventory.credit.domain.model.CreditPartyType
 NOT_API analytics -> credit : com.inventory.analytics.mis.service.VendorMoneyMisService -> com.inventory.credit.service.CreditService
+NOT_API analytics -> documentservice : com.inventory.analytics.mis.service.CustomerMoneyMisService -> com.inventory.documentservice.rest.dto.mis.MisTabularDocumentRequest
 NOT_API analytics -> documentservice : com.inventory.analytics.mis.service.CustomerMoneyMisService -> com.inventory.documentservice.service.DocumentService
+NOT_API analytics -> documentservice : com.inventory.analytics.mis.service.SalesMisService -> com.inventory.documentservice.rest.dto.mis.MisTabularDocumentRequest
 NOT_API analytics -> documentservice : com.inventory.analytics.mis.service.SalesMisService -> com.inventory.documentservice.service.DocumentService
+NOT_API analytics -> documentservice : com.inventory.analytics.mis.service.StockMisService -> com.inventory.documentservice.rest.dto.mis.MisTabularDocumentRequest
 NOT_API analytics -> documentservice : com.inventory.analytics.mis.service.StockMisService -> com.inventory.documentservice.service.DocumentService
+NOT_API analytics -> documentservice : com.inventory.analytics.mis.service.VendorMoneyMisService -> com.inventory.documentservice.rest.dto.mis.MisTabularDocumentRequest
 NOT_API analytics -> documentservice : com.inventory.analytics.mis.service.VendorMoneyMisService -> com.inventory.documentservice.service.DocumentService
 NOT_API analytics -> documentservice : com.inventory.analytics.mis.support.MisTabularDocumentFactory -> com.inventory.documentservice.rest.dto.mis.MisDocumentKpi
 NOT_API analytics -> documentservice : com.inventory.analytics.mis.support.MisTabularDocumentFactory -> com.inventory.documentservice.rest.dto.mis.MisDocumentSheet
@@ -52,8 +50,11 @@ NOT_API analytics -> product : com.inventory.analytics.mis.service.StockMisServi
 NOT_API analytics -> product : com.inventory.analytics.mis.service.VendorMoneyMisService -> com.inventory.product.domain.model.VendorPurchaseInvoice
 NOT_API analytics -> product : com.inventory.analytics.mis.service.VendorMoneyMisService -> com.inventory.product.domain.model.VendorPurchaseReturn
 NOT_API analytics -> product : com.inventory.analytics.mis.service.VendorMoneyMisService -> com.inventory.product.service.MisProductQueryService
+NOT_API analytics -> product : com.inventory.analytics.service.InventoryAnalyticsService -> com.inventory.product.domain.model.Inventory
 NOT_API analytics -> product : com.inventory.analytics.service.InventoryAnalyticsService -> com.inventory.product.rest.dto.response.InventoryExpiryBucketsResponse
 NOT_API analytics -> product : com.inventory.analytics.service.InventoryAnalyticsService -> com.inventory.product.service.vertical.InventoryVerticalExpiryHandler
+NOT_API analytics -> product : com.inventory.analytics.service.ProfitAnalyticsService -> com.inventory.product.domain.model.Inventory
+NOT_API analytics -> product : com.inventory.analytics.service.SalesAnalyticsService -> com.inventory.product.domain.model.Inventory
 NOT_API analytics -> product : com.inventory.analytics.service.VendorAnalyticsService -> com.inventory.product.domain.model.Inventory
 NOT_API analytics -> product : com.inventory.analytics.service.VendorAnalyticsService -> com.inventory.product.service.vertical.InventoryVerticalExtensionHandler
 NOT_API analytics -> product : com.inventory.analytics.utils.AnalyticsSalesQueries -> com.inventory.product.domain.model.Inventory
@@ -80,6 +81,7 @@ NOT_API app -> plan : com.inventory.app.interceptor.PlanExpiryInterceptor -> com
 NOT_API app -> user : com.inventory.app.interceptor.AuthenticationInterceptor -> com.inventory.user.domain.model.UserAccount
 NOT_API app -> user : com.inventory.app.interceptor.AuthenticationInterceptor -> com.inventory.user.service.TokenValidationService
 NOT_API app -> user : com.inventory.app.interceptor.AuthenticationInterceptor -> com.inventory.user.service.UserShopMembershipService
+NOT_API app -> user : com.inventory.app.interceptor.RbacModuleInterceptor -> com.inventory.user.rest.dto.response.ShopAccessResponse
 NOT_API app -> user : com.inventory.app.interceptor.RbacModuleInterceptor -> com.inventory.user.service.RbacService
 NOT_API credit -> user : com.inventory.credit.service.CreditService -> com.inventory.user.domain.model.Customer
 NOT_API credit -> user : com.inventory.credit.service.CreditService -> com.inventory.user.domain.model.Vendor
@@ -194,6 +196,8 @@ NOT_API product -> pricing : com.inventory.product.rest.dto.response.InventoryDe
 NOT_API product -> pricing : com.inventory.product.rest.dto.response.InventorySummaryDto -> com.inventory.pricing.rest.dto.response.RateDto
 NOT_API product -> pricing : com.inventory.product.service.BarcodeService -> com.inventory.pricing.domain.model.Pricing
 NOT_API product -> pricing : com.inventory.product.service.BarcodeService -> com.inventory.pricing.domain.repository.PricingRepository
+NOT_API product -> pricing : com.inventory.product.service.InventoryService -> com.inventory.pricing.utils.constants.PricingConstants
+NOT_API product -> pricing : com.inventory.product.service.PurchaseTaxPreviewService -> com.inventory.pricing.domain.model.Pricing
 NOT_API product -> pricing : com.inventory.product.service.PurchaseTaxRecorder -> com.inventory.pricing.domain.model.Pricing
 NOT_API product -> pricing : com.inventory.product.service.PurchaseTaxRecorder -> com.inventory.pricing.domain.repository.PricingRepository
 NOT_API product -> pricing : com.inventory.product.service.VendorPurchaseReturnService -> com.inventory.pricing.domain.model.Pricing
@@ -233,6 +237,7 @@ NOT_API product -> user : com.inventory.product.mapper.ShopMapper -> com.invento
 NOT_API product -> user : com.inventory.product.mapper.ShopMapper -> com.inventory.user.domain.model.UserRole
 NOT_API product -> user : com.inventory.product.rest.controller.InventoryController -> com.inventory.user.service.RbacService
 NOT_API product -> user : com.inventory.product.rest.controller.InventoryCorrectionController -> com.inventory.user.service.RbacService
+NOT_API product -> user : com.inventory.product.rest.controller.ShopController -> com.inventory.user.domain.model.UserRole
 NOT_API product -> user : com.inventory.product.service.CheckoutService -> com.inventory.user.domain.model.Customer
 NOT_API product -> user : com.inventory.product.service.CheckoutService -> com.inventory.user.domain.repository.CustomerRepository
 NOT_API product -> user : com.inventory.product.service.CheckoutService -> com.inventory.user.service.CustomerService
@@ -253,6 +258,7 @@ NOT_API product -> user : com.inventory.product.service.MisProductQueryService -
 NOT_API product -> user : com.inventory.product.service.MisProductQueryService -> com.inventory.user.domain.repository.VendorRepository
 NOT_API product -> user : com.inventory.product.service.PurchaseCustomerRequests -> com.inventory.user.domain.model.enums.CustomerPartyType
 NOT_API product -> user : com.inventory.product.service.PurchaseCustomerRequests -> com.inventory.user.rest.dto.request.CreateCustomerRequest
+NOT_API product -> user : com.inventory.product.service.PurchaseCustomerRequests -> com.inventory.user.service.CustomerService
 NOT_API product -> user : com.inventory.product.service.PurchaseTaxTreatmentResolver -> com.inventory.user.domain.model.Vendor
 NOT_API product -> user : com.inventory.product.service.PurchaseTaxTreatmentResolver -> com.inventory.user.domain.repository.VendorRepository
 NOT_API product -> user : com.inventory.product.service.QuotationService -> com.inventory.user.domain.model.Customer
@@ -266,6 +272,7 @@ NOT_API product -> user : com.inventory.product.service.ShopService -> com.inven
 NOT_API product -> user : com.inventory.product.service.ShopService -> com.inventory.user.domain.repository.UserAccountRepository
 NOT_API product -> user : com.inventory.product.service.ShopService -> com.inventory.user.service.ShopServiceAdapter
 NOT_API product -> user : com.inventory.product.service.ShopService -> com.inventory.user.service.UserShopMembershipService
+NOT_API product -> user : com.inventory.product.service.ShopService -> com.inventory.user.utils.constants.UserMetricsConstants
 NOT_API product -> user : com.inventory.product.service.ShopServiceAdapterImpl -> com.inventory.user.service.ShopServiceAdapter
 NOT_API product -> user : com.inventory.product.service.VendorPurchaseInvoiceSearch -> com.inventory.user.domain.model.Vendor
 NOT_API product -> user : com.inventory.product.service.VendorPurchaseInvoiceService -> com.inventory.user.domain.model.Vendor

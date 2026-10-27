@@ -132,13 +132,13 @@ class PayrollCalculatorProperties {
     BigDecimal debit = BigDecimal.ZERO;
     BigDecimal credit = BigDecimal.ZERO;
     BigDecimal roundOff = BigDecimal.ZERO;
-    for (PostJournalLine l : posted.get().getLines()) {
-      BigDecimal d = l.getDebit() != null ? l.getDebit() : BigDecimal.ZERO;
-      BigDecimal c = l.getCredit() != null ? l.getCredit() : BigDecimal.ZERO;
+    for (PostJournalLine l : posted.get().lines()) {
+      BigDecimal d = l.debit() != null ? l.debit() : BigDecimal.ZERO;
+      BigDecimal c = l.credit() != null ? l.credit() : BigDecimal.ZERO;
       assertTrue(d.signum() >= 0 && c.signum() >= 0);
       debit = debit.add(d);
       credit = credit.add(c);
-      if ("5500".equals(l.getAccountCode())) {
+      if ("5500".equals(l.accountCode())) {
         roundOff = roundOff.add(d).subtract(c);
       }
     }

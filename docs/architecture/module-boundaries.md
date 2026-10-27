@@ -35,6 +35,11 @@ build and in the **Module boundaries** workflow.
   module. The rest of `app` follows B2.
 - **B11. No optional cross-module beans.** Never `@Autowired(required = false)` on another
   module's type; a missing bean must stop startup, not skip work silently.
+- **B12. Imports count.** The check reads compiled classes and also every `import` line in main
+  source. An import of another module's private class fails even when compiled code no longer
+  shows it: a class used only for its constants (the compiler copies them in), only as a
+  generic type argument or local variable type, or not at all. Delete unused imports; in
+  Javadoc, write the fully qualified name instead of importing it.
 
 ## Existing violations
 

@@ -73,8 +73,8 @@ public class AccountingPostingService {
     // the seeding check reads the whole chart; the lines below resolve from it
     ChartLookup chart = new ChartLookup(accountService.ensureSeededAndList(shopId));
 
-    JournalSource sourceType = req.getSourceType();
-    String sourceId = trim(req.getSourceId());
+    JournalSource sourceType = req.sourceType();
+    String sourceId = trim(req.sourceId());
     if (sourceType != null && sourceId != null) {
       Optional<JournalEntry> existing =
           journalEntryRepository.findByShopIdAndSourceTypeAndSourceId(shopId, sourceType, sourceId);
@@ -91,15 +91,15 @@ public class AccountingPostingService {
     }
 
     Map<String, Account> accountCache = new HashMap<>();
-    List<JournalLine> lines = new ArrayList<>(req.getLines().size());
+    List<JournalLine> lines = new ArrayList<>(req.lines().size());
     BigDecimal totalDebit = zero();
     BigDecimal totalCredit = zero();
 
     int idx = 0;
-    for (PostJournalLine in : req.getLines()) {
+    for (PostJournalLine in : req.lines()) {
       Account a = resolveAccount(shopId, in, chart, accountCache);
-      BigDecimal debit = nz(in.getDebit());
-      BigDecimal credit = nz(in.getCredit());
+      BigDecimal debit = nz(in.debit());
+      BigDecimal credit = nz(in.credit());
       if (debit.signum() < 0 || credit.signum() < 0) {
         throw new ValidationException("Journal line amounts must be non-negative");
       }
@@ -121,10 +121,10 @@ public class AccountingPostingService {
               .accountName(a.getName())
               .debit(debit)
               .credit(credit)
-              .partyType(in.getPartyType())
-              .partyRefId(trim(in.getPartyRefId()))
-              .partyDisplayName(trim(in.getPartyDisplayName()))
-              .memo(trim(in.getMemo()))
+              .partyType(in.partyType())
+              .partyRefId(trim(in.partyRefId()))
+              .partyDisplayName(trim(in.partyDisplayName()))
+              .memo(trim(in.memo()))
               .build();
       lines.add(line);
       totalDebit = scale(totalDebit.add(debit));
@@ -141,7 +141,7 @@ public class AccountingPostingService {
 
     Instant now = now();
     LocalDate txnDate =
-        req.getTxnDate() != null ? req.getTxnDate() : LocalDate.ofInstant(now, ZoneOffset.UTC);
+        req.txnDate() != null ? req.txnDate() : LocalDate.ofInstant(now, ZoneOffset.UTC);
 
     JournalEntry entry = new JournalEntry();
     entry.setShopId(shopId);
@@ -150,9 +150,9 @@ public class AccountingPostingService {
     entry.setPostedAt(now);
     entry.setSourceType(sourceType != null ? sourceType : JournalSource.MANUAL);
     entry.setSourceId(sourceId);
-    entry.setSourceKey(trim(req.getSourceKey()));
+    entry.setSourceKey(trim(req.sourceKey()));
     entry.setStatus(JournalStatus.POSTED);
-    entry.setNarration(trim(req.getNarration()));
+    entry.setNarration(trim(req.narration()));
     entry.setLines(lines);
     entry.setTotalDebit(totalDebit);
     entry.setTotalCredit(totalCredit);
@@ -199,30 +199,32 @@ public class AccountingPostingService {
       throw new ValidationException("Journal entry already reversed");
     }
 
-    PostJournalRequest req = new PostJournalRequest();
-    req.setSourceType(JournalSource.REVERSAL);
-    req.setSourceId("REV:" + original.getId());
-    req.setSourceKey(req.getSourceId());
-    req.setNarration(
-        "Reversal of "
-            + (StringUtils.hasText(original.getEntryNo()) ? original.getEntryNo() : original.getId())
-            + (StringUtils.hasText(reason) ? " — " + reason.trim() : ""));
-    req.setTxnDate(original.getTxnDate() != null ? original.getTxnDate() : LocalDate.now());
-
     List<PostJournalLine> rev = new ArrayList<>();
     for (JournalLine l : original.getLines()) {
-      PostJournalLine rl = new PostJournalLine();
-      rl.setAccountId(l.getAccountId());
-      rl.setAccountCode(l.getAccountCode());
-      rl.setDebit(nz(l.getCredit()));
-      rl.setCredit(nz(l.getDebit()));
-      rl.setPartyType(l.getPartyType());
-      rl.setPartyRefId(l.getPartyRefId());
-      rl.setPartyDisplayName(l.getPartyDisplayName());
-      rl.setMemo(l.getMemo());
+      PostJournalLine rl = PostJournalLine.builder()
+          .accountId(l.getAccountId())
+          .accountCode(l.getAccountCode())
+          .debit(nz(l.getCredit()))
+          .credit(nz(l.getDebit()))
+          .partyType(l.getPartyType())
+          .partyRefId(l.getPartyRefId())
+          .partyDisplayName(l.getPartyDisplayName())
+          .memo(l.getMemo())
+          .build();
       rev.add(rl);
     }
-    req.setLines(rev);
+    String sourceId = "REV:" + original.getId();
+    PostJournalRequest req = PostJournalRequest.builder()
+        .sourceType(JournalSource.REVERSAL)
+        .sourceId(sourceId)
+        .sourceKey(sourceId)
+        .narration(
+            "Reversal of "
+                + (StringUtils.hasText(original.getEntryNo()) ? original.getEntryNo() : original.getId())
+                + (StringUtils.hasText(reason) ? " — " + reason.trim() : ""))
+        .txnDate(original.getTxnDate() != null ? original.getTxnDate() : LocalDate.now())
+        .lines(rev)
+        .build();
 
     JournalEntry reversal = post(shopId, userId, req);
     reversal.setReversesEntryId(original.getId());
@@ -329,7 +331,7 @@ public class AccountingPostingService {
 
   private Account resolveAccount(
       String shopId, PostJournalLine in, ChartLookup chart, Map<String, Account> cache) {
-    String id = trim(in.getAccountId());
+    String id = trim(in.accountId());
     if (id != null) {
       Account a = cache.get(id);
       if (a == null) {
@@ -342,7 +344,7 @@ public class AccountingPostingService {
       cache.put(a.getId(), a);
       return a;
     }
-    String code = trim(in.getAccountCode());
+    String code = trim(in.accountCode());
     if (code == null) {
       throw new ValidationException("Either accountCode or accountId is required for every line");
     }
@@ -389,7 +391,7 @@ public class AccountingPostingService {
     if (req == null) {
       throw new ValidationException("Posting request is required");
     }
-    if (req.getLines() == null || req.getLines().size() < 2) {
+    if (req.lines() == null || req.lines().size() < 2) {
       throw new ValidationException("Journal entry needs at least two lines");
     }
   }
