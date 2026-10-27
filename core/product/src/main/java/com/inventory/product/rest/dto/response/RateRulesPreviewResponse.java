@@ -1,6 +1,6 @@
 package com.inventory.product.rest.dto.response;
 
-import com.inventory.pricing.rest.dto.response.SchemeDto;
+import com.inventory.pricing.api.SchemeTerms;
 import java.math.BigDecimal;
 import java.util.List;
 import lombok.AllArgsConstructor;
@@ -30,7 +30,7 @@ public class RateRulesPreviewResponse {
     /** The per-unit figure that would be stored. */
     private BigDecimal price;
     private BigDecimal discountPercent;
-    private SchemeDto scheme;
+    private SchemeTerms scheme;
     private String gstMode;
     private String termsText;
   }

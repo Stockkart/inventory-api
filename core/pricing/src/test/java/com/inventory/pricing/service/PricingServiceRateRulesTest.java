@@ -1,5 +1,6 @@
 package com.inventory.pricing.service;
 
+import static com.inventory.pricing.service.RateGenerationTestFixtures.asRules;
 import static com.inventory.pricing.service.RateGenerationTestFixtures.CASHIER;
 import static com.inventory.pricing.service.RateGenerationTestFixtures.OWNER;
 import static com.inventory.pricing.service.RateGenerationTestFixtures.SHOP;
@@ -21,6 +22,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.inventory.pricing.api.ShopRateRule;
+import com.inventory.pricing.api.port.ShopRateRulesPort;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ValidationException;
@@ -77,9 +80,9 @@ class PricingServiceRateRulesTest {
     ReflectionTestUtils.setField(rateGenerationService, "metrics", metrics);
     ReflectionTestUtils.setField(rateGenerationService, "pricingValidator", pricingValidator);
     ReflectionTestUtils.setField(pricingService, "rateGenerationService", rateGenerationService);
-    when(port.rulesFor(SHOP)).thenReturn(List.of(rateA()));
-    when(port.canEditRates(OWNER, SHOP)).thenReturn(true);
-    when(port.canEditRates(CASHIER, SHOP)).thenReturn(false);
+    when(port.rulesFor(SHOP)).thenReturn(asRules(rateA()));
+    when(port.canEditRates(SHOP, OWNER)).thenReturn(true);
+    when(port.canEditRates(SHOP, CASHIER)).thenReturn(false);
     when(pricingRepository.save(any(Pricing.class))).thenAnswer(i -> i.getArgument(0));
   }
 
@@ -303,7 +306,7 @@ class PricingServiceRateRulesTest {
 
   @Test
   void retailerPatchDefaultRateOnSellingPriceRateFallsBack() {
-    when(port.rulesFor(SHOP)).thenReturn(List.of(rateS()));
+    when(port.rulesFor(SHOP)).thenReturn(asRules(rateS()));
     givenStored(stored("p1", "100", "150", null, storedRateS100()));
     UpdateDefaultPriceRequest req = new UpdateDefaultPriceRequest();
     req.setDefaultRate("Rate-S");
@@ -316,7 +319,7 @@ class PricingServiceRateRulesTest {
 
   @Test
   void retailerUpdateDefaultRateOnSellingPriceRateFallsBack() {
-    when(port.rulesFor(SHOP)).thenReturn(List.of(rateS()));
+    when(port.rulesFor(SHOP)).thenReturn(asRules(rateS()));
     givenStored(stored("p1", "100", "150", null, storedRateS100()));
     UpdatePricingRequest req = new UpdatePricingRequest();
     req.setDefaultRate("Rate-S");
@@ -563,7 +566,7 @@ class PricingServiceRateRulesTest {
   /** T5: PATCH rejects a rate named like a built-in option, rules or not. */
   @Test
   void patchWithAReservedRateNameIsRejected() {
-    for (List<RateRuleSpec> rules : List.<List<RateRuleSpec>>of(List.of(rateA()), List.of())) {
+    for (List<ShopRateRule> rules : List.<List<ShopRateRule>>of(asRules(rateA()), List.of())) {
       when(port.rulesFor(SHOP)).thenReturn(rules);
       givenStored(stored("p1", "100", "150", null));
       for (String name : List.of("MRP", "ptr", "Cost", "priceToRetail")) {
@@ -582,7 +585,7 @@ class PricingServiceRateRulesTest {
    */
   @Test
   void inventoryCreateAndUpdateWithAReservedRateNameAreRejected() {
-    for (List<RateRuleSpec> rules : List.<List<RateRuleSpec>>of(List.of(rateA()), List.of())) {
+    for (List<ShopRateRule> rules : List.<List<ShopRateRule>>of(asRules(rateA()), List.of())) {
       when(port.rulesFor(SHOP)).thenReturn(rules);
       givenStored(stored("p1", "100", "150", null));
       for (String name : List.of("MRP", "ptr", "Cost", "priceToRetail")) {
@@ -603,7 +606,7 @@ class PricingServiceRateRulesTest {
   /** An override of a rate built on a base the batch has no value for cannot be priced: 400. */
   @Test
   void overrideOfARateOnAMissingBaseIsRejected() {
-    when(port.rulesFor(SHOP)).thenReturn(List.of(RateGenerationTestFixtures.rateM()));
+    when(port.rulesFor(SHOP)).thenReturn(asRules(RateGenerationTestFixtures.rateM()));
     givenStored(stored("p1", "100", null, null));
     UpdateDefaultPriceRequest req = new UpdateDefaultPriceRequest();
     req.setRates(new ArrayList<>(List.of(withDisc("Rate-M", "0", "5"))));

@@ -1,12 +1,12 @@
 package com.inventory.product.domain.model.enums;
 
-import com.inventory.pricing.utils.constants.PricingConstants;
+import com.inventory.pricing.api.ShopRateRule;
 
 /** The price a rate rule starts from. {@link #value()} is the wire and pricing name. */
 public enum RateBase {
-  SELLING_PRICE(PricingConstants.RATE_BASE_SELLING_PRICE),
-  PRICE_TO_RETAIL(PricingConstants.RATE_BASE_PRICE_TO_RETAIL),
-  MAXIMUM_RETAIL_PRICE(PricingConstants.RATE_BASE_MAXIMUM_RETAIL_PRICE);
+  SELLING_PRICE(ShopRateRule.BASE_SELLING_PRICE),
+  PRICE_TO_RETAIL(ShopRateRule.BASE_PRICE_TO_RETAIL),
+  MAXIMUM_RETAIL_PRICE(ShopRateRule.BASE_MAXIMUM_RETAIL_PRICE);
 
   private final String value;
 

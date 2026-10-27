@@ -1,6 +1,6 @@
 package com.inventory.product.rest.dto.request;
 
-import com.inventory.pricing.rest.dto.response.SchemeDto;
+import com.inventory.pricing.api.SchemeTerms;
 import com.inventory.product.rest.dto.response.RateRuleDto;
 import java.math.BigDecimal;
 import java.util.List;
@@ -18,7 +18,7 @@ public class PreviewRateRulesRequest {
   private BigDecimal costPrice;
   private Boolean costPriceIncludesTax;
   private BigDecimal purchaseAdditionalDiscount;
-  private SchemeDto purchaseScheme;
+  private SchemeTerms purchaseScheme;
   private String sgst;
   private String cgst;
   private List<RateRuleDto> rules;
