@@ -3,15 +3,15 @@ package com.inventory.product.service;
 import com.inventory.product.utils.PurchaseTaxBasisResolver;
 import com.inventory.common.util.GstStateCode;
 import com.inventory.common.util.GstMath;
-import com.inventory.pricing.domain.model.Scheme;
+import com.inventory.pricing.api.SchemeTerms;
 import com.inventory.user.domain.model.Vendor;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.common.util.TxnIdGenerator;
-import com.inventory.pricing.domain.model.Pricing;
-import com.inventory.pricing.domain.repository.PricingRepository;
+import com.inventory.pricing.api.PricingView;
+import com.inventory.pricing.api.PricingLookup;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.UnitConversion;
 import com.inventory.product.domain.model.VendorPurchaseInvoice;
@@ -79,7 +79,7 @@ public class VendorPurchaseReturnService {
   private InventoryRepository inventoryRepository;
 
   @Autowired
-  private PricingRepository pricingRepository;
+  private PricingLookup pricingLookup;
 
   @Autowired
   private CheckoutValidator checkoutValidator;
@@ -473,9 +473,9 @@ public class VendorPurchaseReturnService {
                   + payload.getInventoryId());
         }
 
-        Pricing pricing =
+        PricingView pricing =
             StringUtils.hasText(inventory.getPricingId())
-                ? pricingRepository.findById(inventory.getPricingId()).orElse(null)
+                ? pricingLookup.findById(inventory.getPricingId()).orElse(null)
                 : null;
         VendorPurchaseInvoiceLine originalLine = invoiceLinesByInventoryId.get(
             payload.getInventoryId());
@@ -485,8 +485,8 @@ public class VendorPurchaseReturnService {
         // after the bill's scheme and discount, and with the tax taken out where the supplier
         // billed at MRP. Reading costPrice raw and adding tax on top credited the supplier for
         // more than was ever paid them: on a scheme-discounted inclusive bill, by over a third.
-        BigDecimal rate = GstMath.parseGstRate(pricing != null ? pricing.getSgst() : null)
-            .add(GstMath.parseGstRate(pricing != null ? pricing.getCgst() : null));
+        BigDecimal rate = GstMath.parseGstRate(pricing != null ? pricing.sgst() : null)
+            .add(GstMath.parseGstRate(pricing != null ? pricing.cgst() : null));
 
         BigDecimal unitTaxable = unitTaxableFromInvoiceLine(originalLine);
         if (unitTaxable == null) {
@@ -534,14 +534,14 @@ public class VendorPurchaseReturnService {
           lineItem.setPriceToRetail(originalLine.getPriceToRetail());
         }
         if (pricing != null) {
-          lineItem.setMaximumRetailPrice(pricing.getMaximumRetailPrice());
-          lineItem.setPurchaseAdditionalDiscount(pricing.getPurchaseAdditionalDiscount());
-          Scheme purchaseScheme = pricing.getPurchaseScheme();
+          lineItem.setMaximumRetailPrice(pricing.maximumRetailPrice());
+          lineItem.setPurchaseAdditionalDiscount(pricing.purchaseAdditionalDiscount());
+          SchemeTerms purchaseScheme = pricing.purchaseScheme();
           if (purchaseScheme != null) {
-            lineItem.setPurchaseSchemeType(purchaseScheme.getSchemeType());
-            lineItem.setPurchaseSchemePayFor(purchaseScheme.getSchemePayFor());
-            lineItem.setPurchaseSchemeFree(purchaseScheme.getSchemeFree());
-            lineItem.setPurchaseSchemePercentage(purchaseScheme.getSchemePercentage());
+            lineItem.setPurchaseSchemeType(purchaseScheme.schemeType());
+            lineItem.setPurchaseSchemePayFor(purchaseScheme.schemePayFor());
+            lineItem.setPurchaseSchemeFree(purchaseScheme.schemeFree());
+            lineItem.setPurchaseSchemePercentage(purchaseScheme.schemePercentage());
           }
         }
         aggregates.put(payload.getInventoryId(), lineItem);

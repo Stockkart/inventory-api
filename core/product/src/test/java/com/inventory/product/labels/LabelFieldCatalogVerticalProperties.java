@@ -12,7 +12,7 @@ import static org.mockito.Mockito.when;
 import com.inventory.pluginengine.schema.VerticalEntitySchema;
 import com.inventory.pluginengine.schema.VerticalSchema;
 import com.inventory.pluginengine.schema.VerticalSchemaField;
-import com.inventory.pricing.domain.repository.PricingRepository;
+import com.inventory.pricing.api.PricingLookup;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.enums.ShopType;
 import com.inventory.product.domain.repository.ShopRepository;
@@ -220,9 +220,9 @@ class LabelFieldCatalogVerticalProperties {
     schema.setEntities(Map.of(LabelFieldCatalogService.INVENTORY_ENTITY, entity));
 
     ShopRepository shopRepository = mock(ShopRepository.class);
-    PricingRepository pricingRepository = mock(PricingRepository.class);
+    PricingLookup pricingRepository = mock(PricingLookup.class);
     SchemaLoader schemaLoader = mock(SchemaLoader.class);
-    when(pricingRepository.findDistinctRateNamesByShopId(SHOP_ID)).thenReturn(List.of());
+    when(pricingRepository.rateNames(SHOP_ID)).thenReturn(List.of());
     when(schemaLoader.load(anyString(), any())).thenReturn(schema);
     return new LabelFieldCatalogService(
         shopRepository, pricingRepository, schemaLoader, new VerticalValueTypeMapper());

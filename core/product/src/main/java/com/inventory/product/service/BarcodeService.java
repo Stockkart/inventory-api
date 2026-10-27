@@ -2,8 +2,8 @@ package com.inventory.product.service;
 
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
-import com.inventory.pricing.domain.model.Pricing;
-import com.inventory.pricing.domain.repository.PricingRepository;
+import com.inventory.pricing.api.PricingView;
+import com.inventory.pricing.api.PricingLookup;
 import com.inventory.product.domain.model.BarcodePool;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Product;
@@ -88,7 +88,7 @@ public class BarcodeService {
   private ShopRepository shopRepository;
 
   @Autowired
-  private PricingRepository pricingRepository;
+  private PricingLookup pricingLookup;
 
   @Autowired
   private LabelFieldCatalogService catalogService;
@@ -418,11 +418,11 @@ public class BarcodeService {
         lotIds.add(lot.getId());
       }
     }
-    Map<String, Pricing> pricingById = new HashMap<>();
+    Map<String, PricingView> pricingById = new HashMap<>();
     if (!pricingIds.isEmpty()) {
-      for (Pricing pricing : pricingRepository.findAllById(pricingIds)) {
-        if (pricing != null && pricing.getId() != null) {
-          pricingById.put(pricing.getId(), pricing);
+      for (PricingView pricing : pricingLookup.findAllById(pricingIds)) {
+        if (pricing != null && pricing.id() != null) {
+          pricingById.put(pricing.id(), pricing);
         }
       }
     }
@@ -431,7 +431,7 @@ public class BarcodeService {
     for (Map.Entry<String, BarcodeLabelsResponse.BarcodeLabelDto> entry : byCode.entrySet()) {
       LabelSource source = sources.get(entry.getKey());
       Inventory lot = chosenLot.get(entry.getKey());
-      Pricing pricing =
+      PricingView pricing =
           lot == null || lot.getPricingId() == null ? null : pricingById.get(lot.getPricingId());
       Map<String, Object> extensionRow = lot == null ? null : extRows.get(lot.getId());
       LabelTarget target =

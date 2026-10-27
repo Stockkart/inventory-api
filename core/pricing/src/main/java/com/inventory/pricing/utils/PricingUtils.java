@@ -1,6 +1,7 @@
 package com.inventory.pricing.utils;
 
-import com.inventory.common.util.GstMath;
+import com.inventory.pricing.api.LandedCost;
+import com.inventory.pricing.api.SchemeTerms;
 import com.inventory.pricing.rest.dto.response.PricingReadDto;
 import com.inventory.pricing.rest.dto.response.RateDto;
 import com.inventory.pricing.domain.model.Pricing;
@@ -10,7 +11,6 @@ import com.inventory.pricing.utils.constants.PricingConstants;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -134,45 +134,16 @@ public final class PricingUtils {
   public static BigDecimal computeEffectiveCostPrice(
       BigDecimal costPrice, BigDecimal purchaseAdditionalDiscount, Scheme purchaseScheme,
       boolean costPriceIncludesTax, String sgst, String cgst) {
-    if (costPrice == null) {
-      return null;
-    }
-    BigDecimal effective = costPrice;
+    // the arithmetic lives in the api so other modules work landed cost out the same way
+    return LandedCost.perUnit(
+        costPrice, purchaseAdditionalDiscount, toTerms(purchaseScheme),
+        costPriceIncludesTax, sgst, cgst);
+  }
 
-    if (purchaseScheme != null) {
-      if (PricingConstants.SCHEME_TYPE_PERCENTAGE.equalsIgnoreCase(purchaseScheme.getSchemeType())) {
-        BigDecimal pct = purchaseScheme.getSchemePercentage();
-        if (pct != null && pct.signum() > 0 && pct.compareTo(BigDecimal.valueOf(100)) < 0) {
-          effective = effective.multiply(
-              BigDecimal.ONE.subtract(pct.divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP)));
-        }
-      } else {
-        Integer payFor = purchaseScheme.getSchemePayFor();
-        Integer free = purchaseScheme.getSchemeFree();
-        if (payFor != null && payFor > 0 && free != null && free >= 0) {
-          effective = effective.multiply(BigDecimal.valueOf(payFor))
-              .divide(BigDecimal.valueOf(payFor + (long) free), 6, RoundingMode.HALF_UP);
-        }
-      }
-    }
-
-    if (purchaseAdditionalDiscount != null && purchaseAdditionalDiscount.signum() != 0) {
-      effective = effective.multiply(BigDecimal.ONE.subtract(
-          purchaseAdditionalDiscount.divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP)));
-    }
-
-    if (costPriceIncludesTax) {
-      BigDecimal gstRate = GstMath.parseGstRate(sgst).add(GstMath.parseGstRate(cgst));
-      if (gstRate.signum() > 0) {
-        effective = effective.multiply(BigDecimal.valueOf(100))
-            .divide(BigDecimal.valueOf(100).add(gstRate), 6, RoundingMode.HALF_UP);
-      }
-    }
-
-    if (effective.signum() < 0) {
-      effective = BigDecimal.ZERO;
-    }
-    return effective.setScale(4, RoundingMode.HALF_UP);
+  private static SchemeTerms toTerms(Scheme s) {
+    return s == null ? null
+        : new SchemeTerms(s.getSchemeType(), s.getSchemePayFor(), s.getSchemeFree(),
+            s.getSchemePercentage());
   }
 
   /** Landed cost before GST for a pricing record; the entered cost when nothing reduces it. */
