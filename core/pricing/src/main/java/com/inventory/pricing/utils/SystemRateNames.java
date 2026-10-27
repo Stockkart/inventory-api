@@ -1,8 +1,6 @@
 package com.inventory.pricing.utils;
 
-import com.inventory.pricing.utils.constants.PricingConstants;
-import java.util.Locale;
-import java.util.Map;
+import com.inventory.pricing.api.SystemRates;
 
 /**
  * The batch's built-in rate options -- PTR, MRP and cost -- by every name they go by: the system
@@ -15,29 +13,15 @@ import java.util.Map;
  */
 public final class SystemRateNames {
 
-  private static final Map<String, String> KEYS = Map.of(
-      PricingConstants.DEFAULT_RATE_PRICE_TO_RETAIL.toLowerCase(Locale.ROOT),
-      PricingConstants.DEFAULT_RATE_PRICE_TO_RETAIL,
-      PricingConstants.DEFAULT_RATE_MAXIMUM_RETAIL_PRICE.toLowerCase(Locale.ROOT),
-      PricingConstants.DEFAULT_RATE_MAXIMUM_RETAIL_PRICE,
-      PricingConstants.DEFAULT_RATE_COST_PRICE.toLowerCase(Locale.ROOT),
-      PricingConstants.DEFAULT_RATE_COST_PRICE,
-      "ptr", PricingConstants.DEFAULT_RATE_PRICE_TO_RETAIL,
-      "mrp", PricingConstants.DEFAULT_RATE_MAXIMUM_RETAIL_PRICE,
-      "cost", PricingConstants.DEFAULT_RATE_COST_PRICE);
-
   private SystemRateNames() {}
 
   /** The system key ({@code priceToRetail} …) {@code name} stands for, or null if none. */
   public static String systemKey(String name) {
-    if (name == null) {
-      return null;
-    }
-    return KEYS.get(name.trim().toLowerCase(Locale.ROOT));
+    return SystemRates.systemKey(name);
   }
 
   /** Whether {@code name} is one of the built-in options' names, in any case. */
   public static boolean isReserved(String name) {
-    return systemKey(name) != null;
+    return SystemRates.isReserved(name);
   }
 }

@@ -108,7 +108,7 @@ final class SalesReturnValuation {
                   BigDecimal.ONE.subtract(
                       purchaseItem
                           .getSaleAdditionalDiscount()
-                          .divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP)))
+                          .divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP)))
               .setScale(2, RoundingMode.HALF_UP);
     }
 
