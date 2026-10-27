@@ -157,14 +157,6 @@ NOT_API product -> documentservice : com.inventory.product.service.creditnote.Ve
 NOT_API product -> documentservice : com.inventory.product.service.creditnote.VendorReturnCreditNoteAssembler -> com.inventory.documentservice.rest.dto.GenerateCreditNoteRequest
 NOT_API product -> documentservice : com.inventory.product.service.printing.PrintJobService -> com.inventory.documentservice.domain.DotMatrixDocument
 NOT_API product -> documentservice : com.inventory.product.service.printing.PrintJobService -> com.inventory.documentservice.domain.DotMatrixDocumentKind
-NOT_API product -> ocr : com.inventory.product.mapper.ParsedInventoryMapper -> com.inventory.ocr.dto.ParsedInventoryItem
-NOT_API product -> ocr : com.inventory.product.mapper.ParsedInventoryMapper -> com.inventory.ocr.dto.ParsedReminderDto
-NOT_API product -> ocr : com.inventory.product.mapper.ParsedInventoryMapperImpl -> com.inventory.ocr.dto.ParsedInventoryItem
-NOT_API product -> ocr : com.inventory.product.migration.ExcelStockParser -> com.inventory.ocr.dto.ParsedInventoryItem
-NOT_API product -> ocr : com.inventory.product.migration.ExcelStockParser -> com.inventory.ocr.dto.ParsedReminderDto
-NOT_API product -> ocr : com.inventory.product.service.InventoryService -> com.inventory.ocr.prompt.InvoicePricingLayout
-NOT_API product -> ocr : com.inventory.product.service.InventoryService -> com.inventory.ocr.service.InvoiceParserService
-NOT_API product -> ocr : com.inventory.product.service.ocr.InvoicePricingLayoutResolver -> com.inventory.ocr.prompt.InvoicePricingLayout
 NOT_API product -> plan : com.inventory.product.config.ShopProviderImpl -> com.inventory.plan.service.ShopProvider
 NOT_API product -> plan : com.inventory.product.service.CheckoutService -> com.inventory.plan.service.UsageService
 NOT_API product -> pricing : com.inventory.product.domain.model.Inventory -> com.inventory.pricing.rest.dto.response.RateDto

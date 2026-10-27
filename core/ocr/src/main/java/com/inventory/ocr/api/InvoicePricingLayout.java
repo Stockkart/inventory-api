@@ -1,4 +1,4 @@
-package com.inventory.ocr.prompt;
+package com.inventory.ocr.api;
 
 /**
  * Which invoice price columns the vision model should read.
@@ -6,23 +6,9 @@ package com.inventory.ocr.prompt;
  */
 public enum InvoicePricingLayout {
   /** PTS → costPrice, PTR → priceToRetail, MRP → maximumRetailPrice. */
-  WHOLESALER(new WholesalerInvoiceOcrPrompt()),
+  WHOLESALER,
   /** Price/Unit → costPrice, MRP → maximumRetailPrice and priceToRetail (selling = MRP). */
-  RETAILER(new RetailerInvoiceOcrPrompt());
-
-  private final InvoiceOcrPrompt prompt;
-
-  InvoicePricingLayout(InvoiceOcrPrompt prompt) {
-    this.prompt = prompt;
-  }
-
-  public InvoiceOcrPrompt prompt() {
-    return prompt;
-  }
-
-  public String promptText() {
-    return prompt.text();
-  }
+  RETAILER;
 
   public static InvoicePricingLayout orDefault(InvoicePricingLayout layout) {
     return layout != null ? layout : WHOLESALER;

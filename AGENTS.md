@@ -15,7 +15,7 @@ Cross-repo topics live in the handbook: handbook ARCHITECTURE.md (planned), hand
 - S3. Persist with Spring Data MongoDB only. No SQL or JPA. Ref: `core/pom.xml`
 - S4. Use Lombok (BOM version) and MapStruct 1.5.5.Final for boilerplate and mapping. Ref: `core/pom.xml`
 - S5. Use jqwik 1.9.2 for property tests; it is declared in product only. Ref: `core/product/pom.xml`
-- S6. Use Apache POI 5.2.5, openhtmltopdf 1.0.10 and Thymeleaf for documents, in documentservice only. Ref: `core/documentservice/pom.xml`
+- S6. Use Apache POI 5.2.5, openhtmltopdf 1.0.10 and Thymeleaf for documents, in documentservice only; ocr also uses POI to read Excel stock sheets (`ExcelStockParser`). Ref: `core/documentservice/pom.xml`
 - S7. Build with Maven 3.9+. There is no `mvnw` script; only the wrapper properties file exists. Ref: `app/.mvn/wrapper/maven-wrapper.properties`
 - S8. Test with JUnit 5, Mockito and AssertJ from `spring-boot-starter-test`. Surefire preloads the byte-buddy agent through `argLine`; keep it. Ref: `pom.xml`
 

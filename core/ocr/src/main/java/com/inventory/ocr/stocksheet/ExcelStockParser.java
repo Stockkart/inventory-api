@@ -1,7 +1,10 @@
-package com.inventory.product.migration;
+package com.inventory.ocr.stocksheet;
 
+import com.inventory.ocr.api.ParsedInvoiceItem;
+import com.inventory.ocr.api.StockSheetParser;
 import com.inventory.ocr.dto.ParsedInventoryItem;
 import com.inventory.ocr.dto.ParsedReminderDto;
+import com.inventory.ocr.service.ParsedItems;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 import org.springframework.stereotype.Component;
@@ -26,7 +29,7 @@ import java.util.regex.Pattern;
  */
 @Slf4j
 @Component
-public class ExcelStockParser {
+public class ExcelStockParser implements StockSheetParser {
 
   private static final int MAX_ROWS = 5000;
   private static final int HEADER_SEARCH_ROWS = 5;
@@ -47,7 +50,13 @@ public class ExcelStockParser {
    * @param filename    original filename for logging
    * @return list of parsed inventory items
    */
-  public List<ParsedInventoryItem> parse(InputStream inputStream, String filename) throws IOException {
+  @Override
+  public List<ParsedInvoiceItem> parse(InputStream inputStream, String filename) throws IOException {
+    return ParsedItems.toApi(parseItems(inputStream, filename));
+  }
+
+  /** {@link #parse} in ocr's working type. */
+  List<ParsedInventoryItem> parseItems(InputStream inputStream, String filename) throws IOException {
     List<ParsedInventoryItem> items = new ArrayList<>();
     try (Workbook workbook = createWorkbook(inputStream, filename)) {
       for (int s = 0; s < workbook.getNumberOfSheets(); s++) {
