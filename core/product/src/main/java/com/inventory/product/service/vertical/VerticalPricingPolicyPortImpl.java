@@ -11,7 +11,6 @@ import com.inventory.pluginengine.pricing.PricingPolicyContext;
 import com.inventory.pluginengine.pricing.PricingRateEntry;
 import com.inventory.pluginengine.pricing.PricingSchemeEntry;
 import com.inventory.pluginengine.pricing.VerticalPricingPolicy;
-import com.inventory.pricing.rest.dto.response.RateDto;
 import java.util.List;
 import org.springframework.stereotype.Component;
 

@@ -18,5 +18,11 @@ public class InventoryAnalyticsResponse {
   private List<InventoryAnalyticsDto> expiredItems;
   private List<InventoryAnalyticsDto> deadStockItems;
   private List<InventoryAnalyticsDto> allItems;
+  /**
+   * Rows each paged list has in full ({@code lowStockItems}, {@code notSellingItems}, {@code
+   * deadStockItems}, and {@code allItems} when asked for); the lists above carry the first page
+   * ({@code meta.listLimit} rows). Further pages: {@code GET /analytics/inventory/items}.
+   */
+  private Map<String, Integer> listTotals;
   private Map<String, Object> meta;
 }

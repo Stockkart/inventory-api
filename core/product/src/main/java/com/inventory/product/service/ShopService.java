@@ -31,6 +31,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -59,8 +61,8 @@ public class ShopService {
   @Value("${plan.trial-days:30}")
   private int trialDays;
 
-  @Autowired(required = false)
-  private com.inventory.accounting.service.ChartOfAccountsSeeder chartOfAccountsSeeder;
+  @Autowired
+  private com.inventory.accounting.api.AccountingFacade accountingFacade;
 
   @Autowired
   private VerticalCatalogService verticalCatalogService;
@@ -88,6 +90,8 @@ public class ShopService {
 
       com.inventory.user.domain.model.UserAccount userAccount = userAccountRepository.findById(userId)
           .orElseThrow(() -> new ResourceNotFoundException("User", "userId", userId));
+      // Checked before the shop is saved so a rejected staff account leaves no orphan shop behind
+      shopValidator.validateUserCanRegisterShop(userAccount);
 
       // Multi-shop: user can own multiple shops - no "already has shop" check
 
@@ -125,9 +129,9 @@ public class ShopService {
           "module",
           UserMetricsConstants.MODULE);
 
-      if (chartOfAccountsSeeder != null) {
+      if (accountingFacade != null) {
         try {
-          chartOfAccountsSeeder.seedShop(shop.getShopId());
+          accountingFacade.seedChartOfAccounts(shop.getShopId());
         } catch (Exception ex) {
           log.warn(
               "Failed to seed chart of accounts for shop {}: {}",
@@ -150,8 +154,15 @@ public class ShopService {
     }
   }
 
+  /**
+   * Approve or reject a shop. Platform-admin action: only a SUPER_USER caller may run it.
+   *
+   * @param callerRole role of the authenticated caller (request attribute {@code userRole})
+   */
   @Transactional
-  public ShopApprovalResponse approve(String shopId, ShopApprovalRequest request) {
+  public ShopApprovalResponse approve(String shopId, ShopApprovalRequest request, UserRole callerRole) {
+    // Outside the try block so the 403 is not re-wrapped as a 500 by the catch-all below
+    shopValidator.validateCanApproveShops(callerRole);
     try {
       // Input validation using ShopValidator
       shopValidator.validateApprovalRequest(shopId, request);
@@ -244,14 +255,32 @@ public class ShopService {
   }
 
   /**
-   * Get shop tax info. Used by ShopServiceAdapterImpl.
+   * Shop summary for the login response. Used by ShopServiceAdapterImpl.
    */
   @Transactional(readOnly = true)
-  public com.inventory.user.service.ShopServiceAdapter.ShopTaxInfo getShopTaxInfo(String shopId) {
+  public com.inventory.user.service.ShopServiceAdapter.ShopSummary getShopSummary(String shopId) {
     return shopRepository.findById(shopId)
-        .map(shop -> new com.inventory.user.service.ShopServiceAdapter.ShopTaxInfo(
-            shop.getSgst(), shop.getCgst(), shop.getName()))
+        .map(shop -> new com.inventory.user.service.ShopServiceAdapter.ShopSummary(shop.getName(),
+            addressLine(shop.getLocation())))
         .orElse(null);
+  }
+
+  /**
+   * The shop address on one line, parts in the same order as on invoices and credit notes
+   * (primary, secondary, city, state, PIN); null when no part is stored.
+   */
+  static String addressLine(Location location) {
+    if (location == null) {
+      return null;
+    }
+    List<String> parts = new ArrayList<>();
+    for (String part : new String[] {location.getPrimaryAddress(), location.getSecondaryAddress(),
+        location.getCity(), location.getState(), location.getPin()}) {
+      if (part != null && !part.isBlank()) {
+        parts.add(part.trim());
+      }
+    }
+    return parts.isEmpty() ? null : String.join(", ", parts);
   }
 
   /** DTO for plan module. */

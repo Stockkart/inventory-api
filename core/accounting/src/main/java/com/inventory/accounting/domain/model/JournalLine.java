@@ -1,5 +1,6 @@
 package com.inventory.accounting.domain.model;
 
+import com.inventory.accounting.api.PartyType;
 import java.math.BigDecimal;
 import lombok.AllArgsConstructor;
 import lombok.Builder;

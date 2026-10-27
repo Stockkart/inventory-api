@@ -4,6 +4,7 @@ import com.inventory.common.util.GstMath;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.product.rest.dto.response.GstRateRowDto;
+import com.inventory.product.rest.dto.response.SaleLineTaxDto;
 import com.inventory.product.rest.dto.response.SaleTaxSummaryDto;
 
 import java.math.BigDecimal;
@@ -25,7 +26,9 @@ import java.util.Optional;
  * where the GST was added on top, and for one sold at MRP, where it was already inside -- and it
  * is why bills saved before MRP-inclusive tax was stated still come out right.
  *
- * <p>Any rate works: each rate a line carries becomes its own row.
+ * <p>Any rate works: each rate a line carries becomes its own row. Each line also states its own
+ * taxable value and GST ({@link SaleTaxSummaryDto#getLines()}), so the billing screen can show
+ * them product-wise exactly as the invoice will.
  */
 public final class SaleTaxBreakdown {
 
@@ -42,6 +45,7 @@ public final class SaleTaxBreakdown {
     Map<String, GstRateRowDto> rows = new LinkedHashMap<>();
     Map<String, BigDecimal> rowTax = new LinkedHashMap<>();
     List<BigDecimal> lineRates = new ArrayList<>();
+    List<SaleLineTaxDto> lines = new ArrayList<>();
     BigDecimal gross = BigDecimal.ZERO;
     BigDecimal taxable = BigDecimal.ZERO;
     for (PurchaseItem item : purchase.getItems()) {
@@ -56,6 +60,7 @@ public final class SaleTaxBreakdown {
           ? amount.multiply(BigDecimal.valueOf(100)).divide(BigDecimal.valueOf(100).add(rate), 2, RoundingMode.HALF_UP)
           : amount;
       lineRates.add(taxableRate(item));
+      lines.add(new SaleLineTaxDto(lineTaxable, amount.subtract(lineTaxable), rate));
       // At the price the RATE column prints, so Total Amount is that column times quantity.
       gross = gross.add(CheckoutUtils.getTaxablePricePerUnit(item).setScale(2, RoundingMode.HALF_UP)
           .multiply(CheckoutUtils.getBillableQuantityAsDecimal(item))
@@ -110,7 +115,8 @@ public final class SaleTaxBreakdown {
         sgst,
         grand.subtract(taxable).subtract(cgst).subtract(sgst).subtract(igst),
         lineRates,
-        igst));
+        igst,
+        lines));
   }
 
   /**

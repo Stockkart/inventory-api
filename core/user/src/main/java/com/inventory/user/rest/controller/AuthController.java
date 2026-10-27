@@ -57,8 +57,17 @@ public class AuthController {
 
   @PostMapping("/change-password")
   public ResponseEntity<ApiResponse<ChangePasswordResponse>> changePassword(
-      @RequestBody ChangePasswordRequest request) {
-    return ResponseEntity.ok(ApiResponse.success(authService.changePassword(request)));
+      @RequestBody ChangePasswordRequest request, HttpServletRequest httpRequest) {
+    // Authenticated endpoint: the account is the token's (set by AuthenticationInterceptor)
+    String userId = (String) httpRequest.getAttribute("userId");
+    String accessToken = (String) httpRequest.getAttribute("accessToken");
+    if (userId == null) {
+      throw new com.inventory.common.exception.AuthenticationException(
+          com.inventory.common.constants.ErrorCode.UNAUTHORIZED,
+          "User not authenticated");
+    }
+    // The caller's token survives; the account's other sessions are logged out
+    return ResponseEntity.ok(ApiResponse.success(authService.changePassword(userId, accessToken, request)));
   }
 
   @PostMapping("/forgot-password")

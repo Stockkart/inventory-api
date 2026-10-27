@@ -1,29 +1,28 @@
 package com.inventory.accounting.api;
 
-import com.inventory.accounting.domain.model.PartyType;
 import java.math.BigDecimal;
-import lombok.Data;
+import lombok.Builder;
 
 /**
  * One line for {@link PostJournalRequest}. Identify the target account via {@code accountCode}
  * (resolves through the chart of accounts), or pass {@code accountId} directly. Exactly one of
  * {@code debit} / {@code credit} must be positive.
  */
-@Data
-public class PostJournalLine {
+@Builder(toBuilder = true)
+public record PostJournalLine(
+    /** Preferred way to reference an account. */
+    String accountCode,
+    /** Alternative; takes precedence over {@code accountCode} if set. */
+    String accountId,
+    BigDecimal debit,
+    BigDecimal credit,
+    PartyType partyType,
+    String partyRefId,
+    String partyDisplayName,
+    String memo) {
 
-  /** Preferred way to reference an account. */
-  private String accountCode;
-
-  /** Alternative; takes precedence over {@code accountCode} if set. */
-  private String accountId;
-
-  private BigDecimal debit;
-  private BigDecimal credit;
-
-  private PartyType partyType;
-  private String partyRefId;
-  private String partyDisplayName;
-
-  private String memo;
+  /** This line with the party (customer, vendor or shop) it is booked against. */
+  public PostJournalLine withParty(PartyType type, String refId, String displayName) {
+    return toBuilder().partyType(type).partyRefId(refId).partyDisplayName(displayName).build();
+  }
 }
