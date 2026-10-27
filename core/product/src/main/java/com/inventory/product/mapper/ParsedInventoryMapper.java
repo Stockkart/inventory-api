@@ -1,6 +1,6 @@
 package com.inventory.product.mapper;
 
-import com.inventory.reminders.rest.dto.request.CustomReminderRequest;
+import com.inventory.product.rest.dto.request.CustomReminderRequest;
 import com.inventory.ocr.api.ParsedInvoiceItem;
 import com.inventory.ocr.api.ParsedReminder;
 import com.inventory.product.domain.model.ParsedInventoryResult;

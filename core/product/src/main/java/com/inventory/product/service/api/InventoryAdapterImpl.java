@@ -1,9 +1,9 @@
-package com.inventory.product.service;
+package com.inventory.product.service.api;
 
 import com.inventory.common.exception.ResourceNotFoundException;
-import com.inventory.reminders.rest.dto.response.ReminderExpiryBucketsResponse;
-import com.inventory.reminders.rest.dto.response.ReminderInventorySummary;
-import com.inventory.reminders.service.InventoryAdapter;
+import com.inventory.reminders.api.ExpiryBuckets;
+import com.inventory.reminders.api.LotSummary;
+import com.inventory.reminders.api.port.InventoryPort;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.pluginengine.VerticalFieldsReader;
@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
 import java.util.Map;
 
 @Component
-public class InventoryAdapterImpl implements InventoryAdapter {
+public class InventoryAdapterImpl implements InventoryPort {
 
   @Autowired private InventoryRepository inventoryRepository;
 
@@ -25,7 +25,7 @@ public class InventoryAdapterImpl implements InventoryAdapter {
   @Autowired private InventoryVerticalExpiryHandler inventoryVerticalExpiryHandler;
 
   @Override
-  public ReminderInventorySummary getInventorySummary(String inventoryId) {
+  public LotSummary getInventorySummary(String inventoryId) {
 
     if (inventoryId == null) {
       return null;
@@ -38,18 +38,17 @@ public class InventoryAdapterImpl implements InventoryAdapter {
               Map<String, Object> extensionFields =
                   inventoryVerticalExtensionHandler.loadExtensionFields(
                       inv.getShopId(), inv.getId());
-              ReminderInventorySummary dto = new ReminderInventorySummary();
-              dto.setId(inv.getId());
-              dto.setLotId(inv.getLotId());
-              dto.setName(inv.getName());
-              dto.setCompanyName(inv.getCompanyName());
-              dto.setLocation(inv.getLocation());
-              dto.setVendorId(inv.getVendorId());
-              dto.setBatchNo(VerticalFieldsReader.batchNoFrom(extensionFields));
-              dto.setMaximumRetailPrice(inv.getMaximumRetailPrice());
-              dto.setCostPrice(inv.getCostPrice());
-              dto.setPriceToRetail(inv.getPriceToRetail());
-              return dto;
+              return new LotSummary(
+                  inv.getId(),
+                  inv.getLotId(),
+                  inv.getName(),
+                  inv.getCompanyName(),
+                  inv.getLocation(),
+                  inv.getVendorId(),
+                  VerticalFieldsReader.batchNoFrom(extensionFields),
+                  inv.getMaximumRetailPrice(),
+                  inv.getCostPrice(),
+                  inv.getPriceToRetail());
             })
         .orElse(null);
   }
@@ -60,19 +59,18 @@ public class InventoryAdapterImpl implements InventoryAdapter {
   }
 
   @Override
-  public ReminderExpiryBucketsResponse getExpiryBuckets(String shopId, Integer expiringSoonDays) {
+  public ExpiryBuckets getExpiryBuckets(String shopId, Integer expiringSoonDays) {
     if (shopId == null) {
-      return ReminderExpiryBucketsResponse.builder().expiringSoonDays(30).build();
+      return new ExpiryBuckets(0, 0, 0, 0, 30);
     }
     int days = expiringSoonDays != null && expiringSoonDays > 0 ? expiringSoonDays : 30;
     InventoryExpiryBucketsResponse buckets =
         inventoryVerticalExpiryHandler.getExpiryBuckets(shopId, days);
-    return ReminderExpiryBucketsResponse.builder()
-        .expired(buckets.getExpired())
-        .expiringWithin7Days(buckets.getExpiringWithin7Days())
-        .expiringWithinSoonDays(buckets.getExpiringWithinSoonDays())
-        .expiringSoonTotal(buckets.getExpiringSoonTotal())
-        .expiringSoonDays(buckets.getExpiringSoonDays())
-        .build();
+    return new ExpiryBuckets(
+        buckets.getExpired(),
+        buckets.getExpiringWithin7Days(),
+        buckets.getExpiringWithinSoonDays(),
+        buckets.getExpiringSoonTotal(),
+        buckets.getExpiringSoonDays());
   }
 }

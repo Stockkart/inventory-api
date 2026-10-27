@@ -1,6 +1,6 @@
-package com.inventory.product.config;
+package com.inventory.product.service.api;
 
-import com.inventory.plan.service.ShopProvider;
+import com.inventory.plan.api.port.ShopPort;
 import com.inventory.product.service.ShopService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -11,7 +11,7 @@ import java.util.Optional;
  * Adapter implementation for plan module. Delegates to ShopService (not repository).
  */
 @Component
-public class ShopProviderImpl implements ShopProvider {
+public class ShopProviderImpl implements ShopPort {
 
   @Autowired
   private ShopService shopService;

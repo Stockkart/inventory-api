@@ -1,7 +1,10 @@
 package com.inventory.product.mapper;
 
-import com.inventory.reminders.rest.dto.request.CreateReminderForInventoryRequest;
-import com.inventory.reminders.rest.dto.response.InventoryLowEventDto;
+import java.time.Instant;
+import com.inventory.product.rest.dto.request.CustomReminderRequest;
+import com.inventory.reminders.api.InventoryReminderRequest;
+import com.inventory.reminders.api.InventoryLowAlert;
+import com.inventory.reminders.api.CustomReminder;
 import com.inventory.pricing.domain.model.Pricing;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.VendorPurchaseInvoiceLine;
@@ -213,25 +216,30 @@ public interface InventoryMapper {
   @Mapping(target = "cgst", source = "cgst")
   InventoryDetailResponse toDetail(Inventory inventory);
 
-  @Mapping(target = "shopId", source = "shopId")
-  @Mapping(target = "inventoryId", source = "inventoryId")
-  @Mapping(target = "expiryDate", ignore = true)
-  @Mapping(target = "reminderAt", source = "request.reminderAt")
-  @Mapping(target = "customReminders", source = "request.customReminders")
-  CreateReminderForInventoryRequest toCreateReminderForInventoryRequest(
-      CreateInventoryRequest request,
-      String shopId,
-      String inventoryId
-  );
+  /**
+   * Reminders for a new lot. The expiry date comes from the lot's vertical fields, so the caller
+   * passes it in. A missing list stays null; otherwise each entry is copied, a null one as null.
+   */
+  default InventoryReminderRequest toInventoryReminderRequest(
+      CreateInventoryRequest request, String shopId, String inventoryId, Instant expiryDate) {
+    List<CustomReminder> custom = null;
+    if (request != null && request.getCustomReminders() != null) {
+      custom = new ArrayList<>();
+      for (CustomReminderRequest r : request.getCustomReminders()) {
+        custom.add(r == null ? null : new CustomReminder(r.getReminderAt(), r.getEndDate(), r.getNotes()));
+      }
+    }
+    return new InventoryReminderRequest(shopId, inventoryId, expiryDate,
+        request != null ? request.getReminderAt() : null, custom);
+  }
 
-  @Mapping(target = "shopId", source = "shopId")
-  @Mapping(target = "inventoryId", source = "inventoryId")
-  @Mapping(target = "productName", source = "productName")
-  @Mapping(target = "currentCount", source = "currentCount")
-  @Mapping(target = "threshold", source = "threshold")
-  InventoryLowEventDto toNotificationEventDto(
-    InventoryEventDto source
-  );
+  default InventoryLowAlert toNotificationEventDto(InventoryEventDto source) {
+    if (source == null) {
+      return null;
+    }
+    return new InventoryLowAlert(source.getShopId(), source.getInventoryId(),
+        source.getProductName(), source.getCurrentCount(), source.getThreshold());
+  }
 
   @Mapping(target = "shopId", source = "inventory.shopId")
   @Mapping(target = "inventoryId", source = "inventory.id")

@@ -1,9 +1,8 @@
 package com.inventory.app.interceptor;
 
+import com.inventory.plan.api.PlanStatus;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
-import com.inventory.plan.service.ShopProvider;
-import com.inventory.plan.utils.PlanUtils;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -40,8 +39,8 @@ public class PlanExpiryInterceptor implements HandlerInterceptor {
       Pattern.compile("/api/v1/hr/me/payslips(/.*)?")
   );
 
-  @Autowired(required = false)
-  private ShopProvider shopProvider;
+  @Autowired
+  private PlanStatus planStatus;
 
   @Override
   public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
@@ -58,12 +57,11 @@ public class PlanExpiryInterceptor implements HandlerInterceptor {
     }
 
     String shopId = (String) request.getAttribute("shopId");
-    if (!StringUtils.hasText(shopId) || shopProvider == null) {
+    if (!StringUtils.hasText(shopId) || planStatus == null) {
       return true;
     }
 
-    ShopProvider.ShopInfo shopInfo = shopProvider.getShop(shopId).orElse(null);
-    if (shopInfo == null || !PlanUtils.isExpired(shopInfo.planExpiryDate())) {
+    if (!planStatus.isPlanExpired(shopId)) {
       return true;
     }
 

@@ -1,5 +1,6 @@
 package com.inventory.product.service;
 
+import com.inventory.plan.api.UsageGate;
 import com.inventory.common.gst.SupplyPlacement;
 import com.inventory.common.util.GstStateCode;
 import com.inventory.common.constants.ErrorCode;
@@ -33,7 +34,6 @@ import com.inventory.product.rest.dto.response.PurchaseListResponse;
 import com.inventory.product.rest.dto.response.PurchaseSummaryDto;
 import com.inventory.product.mapper.InventoryMapper;
 import com.inventory.product.mapper.PurchaseMapper;
-import com.inventory.plan.service.UsageService;
 import com.inventory.product.util.PurchaseItemRefs;
 import com.inventory.product.utils.CheckoutUtils;
 import com.inventory.product.utils.constants.ProductMetricsConstants;
@@ -127,7 +127,7 @@ public class CheckoutService {
   private org.springframework.beans.factory.ObjectProvider<SupplyPlacement> supplyPlacement;
 
   @Autowired
-  private com.inventory.reminders.service.EventService eventService;
+  private com.inventory.reminders.api.InventoryAlerts eventService;
 
   @Autowired
   private InventoryMapper inventoryMapper;
@@ -136,7 +136,7 @@ public class CheckoutService {
   private InvoiceSequenceService invoiceSequenceService;
 
   @Autowired
-  private UsageService usageService;
+  private UsageGate usageService;
 
   @Autowired(required = false)
   private com.inventory.metrics.MetricsWrapper metrics;

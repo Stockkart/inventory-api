@@ -1,5 +1,7 @@
 package com.inventory.reminders.service;
 
+import com.inventory.reminders.api.InventoryLowAlert;
+import com.inventory.reminders.api.InventoryAlerts;
 import com.inventory.reminders.domain.model.Event;
 import com.inventory.reminders.domain.model.Reminder;
 import com.inventory.reminders.domain.model.ReminderStatus;
@@ -38,7 +40,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 @Slf4j
 @Service
 @Transactional
-public class EventService {
+public class EventService implements InventoryAlerts {
 
   @Autowired
   private EventRepository eventRepository;
@@ -471,6 +473,18 @@ public class EventService {
     }
   }
 
+  @Override
+  public void recordAndBroadcastInventoryLow(InventoryLowAlert alert) {
+    InventoryLowEventDto dto = new InventoryLowEventDto();
+    dto.setShopId(alert.shopId());
+    dto.setInventoryId(alert.inventoryId());
+    dto.setProductName(alert.productName());
+    dto.setCurrentCount(alert.currentCount());
+    dto.setThreshold(alert.threshold());
+    recordAndBroadcastInventoryLow(dto);
+  }
+
+  /** {@link #recordAndBroadcastInventoryLow(InventoryLowAlert)} in this module's types. */
   public void recordAndBroadcastInventoryLow(InventoryLowEventDto dto) {
     Event event = eventMapper.toEventFromInventoryLow(dto);
     Event saved = eventRepository.save(event);
