@@ -38,4 +38,7 @@ public final class ProductMetricsConstants {
   public static final String PRINT_JOBS = "inventory_product_print_jobs_total";
   public static final String PRINT_JOB_OUTCOMES = "inventory_product_print_job_outcomes_total";
   public static final String PRINT_BRIDGE_CHECKS = "inventory_product_print_bridge_checks_total";
+
+  // Rate rules settings
+  public static final String RATE_RULES_UPDATES = "inventory_product_rate_rules_updates_total";
 }

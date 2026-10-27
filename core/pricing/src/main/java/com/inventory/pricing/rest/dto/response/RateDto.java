@@ -1,5 +1,7 @@
 package com.inventory.pricing.rest.dto.response;
 
+import com.inventory.pricing.api.RateTerms;
+import com.inventory.pricing.api.SchemeTerms;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -24,5 +26,12 @@ public class RateDto {
   public RateDto(String name, BigDecimal price) {
     this.name = name;
     this.price = price;
+  }
+
+  /** This rate as {@link RateTerms}, for other modules. */
+  public RateTerms toTerms() {
+    SchemeTerms terms = scheme == null ? null : new SchemeTerms(scheme.getSchemeType(),
+        scheme.getSchemePayFor(), scheme.getSchemeFree(), scheme.getSchemePercentage());
+    return new RateTerms(name, price, base, baseValue, discountPercent, terms);
   }
 }

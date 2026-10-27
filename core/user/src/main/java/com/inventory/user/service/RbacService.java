@@ -48,6 +48,8 @@ public class RbacService {
   public static final String MODULE_MARKETING = "marketing";
   public static final String MODULE_PAYMENT_PLAN = "paymentPlan";
   public static final String MODULE_PRODUCT_SEARCH_EDIT = "productSearchEdit";
+  public static final String MODULE_RATE_RULES_EDIT = "rateRulesEdit";
+
   /** HR module (prefix {@code /api/v1/hr}); on for every role unless the member's switch is off. */
   public static final String MODULE_HR = "hr";
 
@@ -243,6 +245,13 @@ public class RbacService {
       return access;
     }
     throw new BaseException(ErrorCode.ACCESS_DENIED, "You do not have access to this module");
+  }
+
+  /** True when the user may override or reset a generated rate's terms: owner, or granted. */
+  @Transactional(readOnly = true)
+  public boolean canEditRates(String userId, String shopId) {
+    ShopAccessResponse access = getEffectiveAccess(userId, shopId);
+    return Boolean.TRUE.equals(access.getModules().get(MODULE_RATE_RULES_EDIT));
   }
 
   public void requireTeamAccess(String userId, String shopId, String teamKey) {
@@ -446,6 +455,7 @@ public class RbacService {
   private ShopAccessResponse ownerAccess() {
     Map<String, Boolean> allModules = defaultModulesForRole(UserRole.OWNER, null);
     allModules.put(MODULE_PRODUCT_SEARCH_EDIT, true);
+    allModules.put(MODULE_RATE_RULES_EDIT, true);
     return ShopAccessResponse.builder()
         .role(UserRole.OWNER.name())
         .relationship(UserShopMembershipService.RELATIONSHIP_OWNER)
@@ -490,6 +500,8 @@ public class RbacService {
     applyOverride(resolved, MODULE_MARKETING, overrides.getMarketing());
     applyOverride(resolved, MODULE_PAYMENT_PLAN, overrides.getPaymentPlan());
     applyOverride(resolved, MODULE_PRODUCT_SEARCH_EDIT, overrides.getProductSearchEdit());
+    applyOverride(resolved, MODULE_RATE_RULES_EDIT, overrides.getRateRulesEdit());
+
     // null = on (role default); only an explicit false switches HR off for the member
     applyOverride(resolved, MODULE_HR, overrides.getHr());
     return resolved;
@@ -513,6 +525,8 @@ public class RbacService {
     modules.put(MODULE_MARKETING, fullStaff && !cashier);
     modules.put(MODULE_PAYMENT_PLAN, fullStaff && !cashier);
     modules.put(MODULE_PRODUCT_SEARCH_EDIT, false);
+    modules.put(MODULE_RATE_RULES_EDIT, false);
+
     // HR is on for every shop role: what a member may do inside HR is decided by the shop's HR
     // role grid (Cashier's default row is empty), so this switch alone grants nothing. Allow-listed
     // so a non-shop role (SUPER_USER) still gets no module.
