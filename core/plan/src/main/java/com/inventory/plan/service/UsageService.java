@@ -1,5 +1,7 @@
 package com.inventory.plan.service;
 
+import com.inventory.plan.api.UsageGate;
+import com.inventory.plan.api.port.ShopPort;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.plan.domain.model.Plan;
 import com.inventory.plan.domain.model.Usage;
@@ -9,7 +11,7 @@ import com.inventory.plan.mapper.PlanMapper;
 import com.inventory.plan.mapper.UsageMapper;
 import com.inventory.plan.rest.dto.request.RecordUsageRequest;
 import com.inventory.plan.rest.dto.response.UsageResponse;
-import com.inventory.plan.service.ShopProvider.ShopInfo;
+import com.inventory.plan.api.port.ShopPort.ShopInfo;
 import com.inventory.plan.utils.PlanUtils;
 import com.inventory.plan.utils.constants.PlanConstants;
 import com.inventory.plan.validation.PlanValidator;
@@ -32,7 +34,7 @@ import java.util.List;
 
 @Service
 @Slf4j
-public class UsageService {
+public class UsageService implements UsageGate {
 
   @Autowired
   private UsageRepository usageRepository;
@@ -40,8 +42,8 @@ public class UsageService {
   @Autowired
   private PlanRepository planRepository;
 
-  @Autowired(required = false)
-  private ShopProvider shopProvider;
+  @Autowired
+  private ShopPort shopProvider;
 
   @Autowired
   private PlanMapper planMapper;
@@ -84,6 +86,7 @@ public class UsageService {
     return planMapper.toUsageResponse(usage);
   }
 
+  @Override
   @Transactional(readOnly = true)
   public void checkCanAddBill(String shopId, BigDecimal amount, int countDelta) {
     ShopInfo shopInfo = getShopInfo(shopId);
@@ -133,6 +136,7 @@ public class UsageService {
    * only leave a completed bill uncounted). Two bills completed at the same moment are both
    * counted; read-modify-save used to lose one.
    */
+  @Override
   public void recordCompletedBill(String shopId, BigDecimal amount) {
     RecordUsageRequest request = new RecordUsageRequest();
     request.setBillingAmount(amount != null ? amount : BigDecimal.ZERO);

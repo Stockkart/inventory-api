@@ -1,5 +1,6 @@
 package com.inventory.plan.service;
 
+import com.inventory.plan.api.port.ShopPort;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.plan.domain.model.Plan;
 import com.inventory.plan.domain.model.PlanTransaction;
@@ -14,7 +15,7 @@ import com.inventory.plan.rest.dto.response.PlanResponse;
 import com.inventory.plan.rest.dto.response.PlanTransactionResponse;
 import com.inventory.plan.rest.dto.response.ShopPlanStatusResponse;
 import com.inventory.plan.rest.dto.response.UsageResponse;
-import com.inventory.plan.service.ShopProvider.ShopInfo;
+import com.inventory.plan.api.port.ShopPort.ShopInfo;
 import com.inventory.plan.utils.PlanUtils;
 import com.inventory.plan.utils.PlanUtils;
 import com.inventory.plan.validation.PlanValidator;
@@ -38,8 +39,8 @@ public class PlanService {
   @Autowired
   private PlanRepository planRepository;
 
-  @Autowired(required = false)
-  private ShopProvider shopProvider;
+  @Autowired
+  private ShopPort shopProvider;
 
   @Autowired
   private UsageRepository usageRepository;

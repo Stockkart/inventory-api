@@ -9,10 +9,8 @@ import static org.mockito.Mockito.when;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.AuthenticationException;
 import com.inventory.common.exception.BaseException;
-import com.inventory.plan.service.ShopProvider;
+import com.inventory.plan.api.PlanStatus;
 import com.inventory.user.service.TokenValidationService;
-import java.time.Instant;
-import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -55,10 +53,9 @@ class InterceptorPathMatchingTest {
   @Test
   void theAllowListOfPlanExpiryIgnoresDotSegments() {
     PlanExpiryInterceptor planExpiry = new PlanExpiryInterceptor();
-    ShopProvider shops = org.mockito.Mockito.mock(ShopProvider.class);
-    when(shops.getShop("s1")).thenReturn(Optional.of(
-        new ShopProvider.ShopInfo("s1", "p1", Instant.now().minusSeconds(60))));
-    org.springframework.test.util.ReflectionTestUtils.setField(planExpiry, "shopProvider", shops);
+    PlanStatus plans = org.mockito.Mockito.mock(PlanStatus.class);
+    when(plans.isPlanExpired("s1")).thenReturn(true);
+    org.springframework.test.util.ReflectionTestUtils.setField(planExpiry, "planStatus", plans);
 
     MockHttpServletRequest sneaky =
         new MockHttpServletRequest("GET", "/api/v1/plans/../accounting/journals");
@@ -137,10 +134,9 @@ class InterceptorPathMatchingTest {
 
   private static PlanExpiryInterceptor expiredPlanInterceptor() {
     PlanExpiryInterceptor planExpiry = new PlanExpiryInterceptor();
-    ShopProvider shops = org.mockito.Mockito.mock(ShopProvider.class);
-    org.mockito.Mockito.lenient().when(shops.getShop("s1")).thenReturn(Optional.of(
-        new ShopProvider.ShopInfo("s1", "p1", Instant.now().minusSeconds(60))));
-    org.springframework.test.util.ReflectionTestUtils.setField(planExpiry, "shopProvider", shops);
+    PlanStatus plans = org.mockito.Mockito.mock(PlanStatus.class);
+    org.mockito.Mockito.lenient().when(plans.isPlanExpired("s1")).thenReturn(true);
+    org.springframework.test.util.ReflectionTestUtils.setField(planExpiry, "planStatus", plans);
     return planExpiry;
   }
 }

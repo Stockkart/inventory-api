@@ -76,8 +76,6 @@ NOT_API analytics -> product : com.inventory.analytics.utils.VendorAnalyticsUtil
 NOT_API analytics -> product : com.inventory.analytics.utils.VendorAnalyticsUtils -> com.inventory.product.domain.model.PurchaseItem
 NOT_API analytics -> product : com.inventory.analytics.utils.VendorLotTotals -> com.inventory.product.domain.model.Inventory
 NOT_API analytics -> product : com.inventory.analytics.utils.VendorLotTotals -> com.inventory.product.domain.model.UnitConversion
-NOT_API app -> plan : com.inventory.app.interceptor.PlanExpiryInterceptor -> com.inventory.plan.service.ShopProvider
-NOT_API app -> plan : com.inventory.app.interceptor.PlanExpiryInterceptor -> com.inventory.plan.utils.PlanUtils
 NOT_API app -> user : com.inventory.app.interceptor.AuthenticationInterceptor -> com.inventory.user.domain.model.UserAccount
 NOT_API app -> user : com.inventory.app.interceptor.AuthenticationInterceptor -> com.inventory.user.service.TokenValidationService
 NOT_API app -> user : com.inventory.app.interceptor.AuthenticationInterceptor -> com.inventory.user.service.UserShopMembershipService
@@ -157,8 +155,6 @@ NOT_API product -> documentservice : com.inventory.product.service.creditnote.Ve
 NOT_API product -> documentservice : com.inventory.product.service.creditnote.VendorReturnCreditNoteAssembler -> com.inventory.documentservice.rest.dto.GenerateCreditNoteRequest
 NOT_API product -> documentservice : com.inventory.product.service.printing.PrintJobService -> com.inventory.documentservice.domain.DotMatrixDocument
 NOT_API product -> documentservice : com.inventory.product.service.printing.PrintJobService -> com.inventory.documentservice.domain.DotMatrixDocumentKind
-NOT_API product -> plan : com.inventory.product.config.ShopProviderImpl -> com.inventory.plan.service.ShopProvider
-NOT_API product -> plan : com.inventory.product.service.CheckoutService -> com.inventory.plan.service.UsageService
 NOT_API product -> pricing : com.inventory.product.domain.model.Inventory -> com.inventory.pricing.rest.dto.response.RateDto
 NOT_API product -> pricing : com.inventory.product.domain.model.StockEntryEstimateLine -> com.inventory.pricing.rest.dto.response.RateDto
 NOT_API product -> pricing : com.inventory.product.domain.model.pricing.InventoryPricingReadHandler -> com.inventory.pricing.rest.dto.response.PricingReadDto
@@ -308,7 +304,6 @@ NOT_API taxation -> user : com.inventory.taxation.supply.SupplyPlacementService 
 NOT_API taxation -> user : com.inventory.taxation.supply.SupplyPlacementService -> com.inventory.user.domain.model.Vendor
 NOT_API taxation -> user : com.inventory.taxation.supply.SupplyPlacementService -> com.inventory.user.domain.repository.CustomerRepository
 NOT_API taxation -> user : com.inventory.taxation.supply.SupplyPlacementService -> com.inventory.user.domain.repository.VendorRepository
-OPTIONAL_DEPENDENCY app -> plan : com.inventory.app.interceptor.PlanExpiryInterceptor.shopProvider (com.inventory.plan.service.ShopProvider)
 OPTIONAL_DEPENDENCY app -> user : com.inventory.app.interceptor.AuthenticationInterceptor.membershipService (com.inventory.user.service.UserShopMembershipService)
 OPTIONAL_DEPENDENCY hr -> user : com.inventory.hr.service.HrReportService.shopServiceAdapter (com.inventory.user.service.ShopServiceAdapter)
 OPTIONAL_DEPENDENCY hr -> user : com.inventory.hr.service.PayslipService.shopServiceAdapter (com.inventory.user.service.ShopServiceAdapter)
@@ -320,7 +315,6 @@ OPTIONAL_DEPENDENCY product -> credit : com.inventory.product.service.RefundServ
 OPTIONAL_DEPENDENCY product -> credit : com.inventory.product.service.VendorPurchaseReturnService.creditService (com.inventory.credit.service.CreditService)
 PORT_LOCATION credit <- product : com.inventory.product.service.AccountingCreditChargeFacade implements com.inventory.credit.service.CreditChargeFacade
 PORT_LOCATION credit <- product : com.inventory.product.service.AccountingCreditSettlementFacade implements com.inventory.credit.service.CreditSettlementFacade
-PORT_LOCATION plan <- product : com.inventory.product.config.ShopProviderImpl implements com.inventory.plan.service.ShopProvider
 PORT_LOCATION pricing <- product : com.inventory.product.service.vertical.VerticalPricingPolicyPortImpl implements com.inventory.pricing.service.VerticalPricingPolicyPort
 PORT_LOCATION user <- hr : com.inventory.hr.adapter.HrAccessAdapterImpl implements com.inventory.user.service.HrAccessAdapter
 PORT_LOCATION user <- product : com.inventory.product.service.ShopServiceAdapterImpl implements com.inventory.user.service.ShopServiceAdapter

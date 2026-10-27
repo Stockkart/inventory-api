@@ -1,5 +1,6 @@
 package com.inventory.app.interceptor;
 
+import com.inventory.plan.api.PlanStatus;
 import com.inventory.accounting.api.AccountingFacade;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -99,6 +100,8 @@ class AuthenticationInterceptorBoundaryTest {
   @MockBean private MetricsWrapper metrics;
   // ShopService seeds the chart of accounts through the accounting api on registration.
   @MockBean private AccountingFacade accountingFacade;
+  // PlanExpiryInterceptor asks the plan api; an unexpired answer (the mock's false) lets requests through.
+  @MockBean private PlanStatus planStatus;
 
   private static UserAccount account(String userId, UserRole role, String shopId) {
     UserAccount a = new UserAccount();
