@@ -4,10 +4,10 @@ import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.pricing.api.port.ShopRateRulesPort;
-import com.inventory.pricing.domain.model.Scheme;
-import com.inventory.pricing.rest.dto.request.PricingCreateCommand;
-import com.inventory.pricing.rest.dto.request.PricingUpdateCommand;
-import com.inventory.pricing.service.InventoryPricingAdapter;
+import com.inventory.pricing.api.SchemeTerms;
+import com.inventory.pricing.api.PricingCreate;
+import com.inventory.pricing.api.PricingUpdate;
+import com.inventory.pricing.api.InventoryPricing;
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.enums.SchemeType;
@@ -15,7 +15,7 @@ import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.enums.ShopType;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.rest.dto.request.UpdateInventoryRequest;
-import com.inventory.pricing.utils.constants.PricingConstants;
+import com.inventory.pricing.api.PricingClearFields;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -29,7 +29,7 @@ import org.springframework.util.StringUtils;
 public class InventoryPricingWriteHandler {
 
   @Autowired
-  private InventoryPricingAdapter pricingPort;
+  private InventoryPricing pricingPort;
 
   @Autowired
   private ShopRepository shopRepository;
@@ -41,7 +41,7 @@ public class InventoryPricingWriteHandler {
     try {
       String verticalId = resolveVerticalId(inventory.getShopId());
       if (inventory.getId() == null && hasPricingData(inventory) && StringUtils.hasText(inventory.getShopId())) {
-        var builder = PricingCreateCommand.builder()
+        var builder = PricingCreate.builder()
             .shopId(inventory.getShopId())
             .verticalId(verticalId)
             .costPrice(inventory.getCostPrice())
@@ -92,7 +92,7 @@ public class InventoryPricingWriteHandler {
             mrp = req.getSellingPrice();
             ptr = req.getSellingPrice();
           }
-          var cmd = PricingUpdateCommand.builder()
+          var cmd = PricingUpdate.builder()
               .verticalId(verticalId)
               .maximumRetailPrice(mrp)
               .costPrice(req.getCostPrice())
@@ -178,7 +178,7 @@ public class InventoryPricingWriteHandler {
     }
     java.util.Set<String> pricing = new java.util.LinkedHashSet<>();
     for (String field : req.getClearFields()) {
-      if (PricingConstants.CLEARABLE_FIELDS.contains(field)) {
+      if (PricingClearFields.ALL.contains(field)) {
         pricing.add(field);
       }
     }
@@ -206,7 +206,7 @@ public class InventoryPricingWriteHandler {
     return StringUtils.hasText(fromRequest) ? fromRequest : null;
   }
 
-  private Scheme buildPurchaseSchemeFromRequest(UpdateInventoryRequest req) {
+  private SchemeTerms buildPurchaseSchemeFromRequest(UpdateInventoryRequest req) {
     SchemeType st = req.getPurchaseSchemeType();
     Integer payFor = req.getPurchaseSchemePayFor();
     Integer free = req.getPurchaseSchemeFree();
@@ -215,10 +215,10 @@ public class InventoryPricingWriteHandler {
       return null;
     }
     String schemeTypeStr = st != null ? st.name() : null;
-    return new Scheme(schemeTypeStr, payFor, free, pct);
+    return new SchemeTerms(schemeTypeStr, payFor, free, pct);
   }
 
-  private Scheme buildPurchaseScheme(Inventory inv) {
+  private SchemeTerms buildPurchaseScheme(Inventory inv) {
     SchemeType st = inv.getPurchaseSchemeType();
     Integer payFor = inv.getPurchaseSchemePayFor();
     Integer free = inv.getPurchaseSchemeFree();
@@ -227,10 +227,10 @@ public class InventoryPricingWriteHandler {
       return null;
     }
     String schemeTypeStr = st != null ? st.name() : null;
-    return new Scheme(schemeTypeStr, payFor, free, pct);
+    return new SchemeTerms(schemeTypeStr, payFor, free, pct);
   }
 
-  private Scheme buildSaleScheme(Inventory inv) {
+  private SchemeTerms buildSaleScheme(Inventory inv) {
     SchemeType st = inv.getSchemeType();
     Integer payFor = inv.getSchemePayFor();
     Integer free = inv.getSchemeFree();
@@ -239,10 +239,10 @@ public class InventoryPricingWriteHandler {
       return null;
     }
     String schemeTypeStr = st != null ? st.name() : null;
-    return new Scheme(schemeTypeStr, payFor, free, pct);
+    return new SchemeTerms(schemeTypeStr, payFor, free, pct);
   }
 
-  private Scheme buildSaleSchemeFromRequest(UpdateInventoryRequest req) {
+  private SchemeTerms buildSaleSchemeFromRequest(UpdateInventoryRequest req) {
     SchemeType st = req.getSchemeType();
     Integer payFor = req.getSchemePayFor();
     Integer free = req.getSchemeFree();
@@ -251,7 +251,7 @@ public class InventoryPricingWriteHandler {
       return null;
     }
     String schemeTypeStr = st != null ? st.name() : null;
-    return new Scheme(schemeTypeStr, payFor, free, pct);
+    return new SchemeTerms(schemeTypeStr, payFor, free, pct);
   }
 
   private String resolveVerticalId(String shopId) {

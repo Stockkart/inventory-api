@@ -2,8 +2,8 @@ package com.inventory.pricing.utils;
 
 import com.inventory.pricing.api.LandedCost;
 import com.inventory.pricing.api.SchemeTerms;
+import com.inventory.pricing.service.api.InventoryPricingImpl;
 import com.inventory.pricing.rest.dto.response.PricingReadDto;
-import com.inventory.pricing.rest.dto.response.RateDto;
 import com.inventory.pricing.domain.model.Pricing;
 import com.inventory.pricing.domain.model.Rate;
 import com.inventory.pricing.domain.model.Scheme;
@@ -25,28 +25,8 @@ public final class PricingUtils {
    * Resolve effective selling price from PricingReadDto using defaultRate: maximumRetailPrice, priceToRetail, costPrice, or rate name.
    */
   public static BigDecimal resolveEffectivePriceFromReadDto(PricingReadDto dto) {
-    if (dto == null) return null;
-    if (dto.getSellingPrice() != null) return dto.getSellingPrice();
-    if (!StringUtils.hasText(dto.getDefaultRate())) return dto.getPriceToRetail();
-    String dr = dto.getDefaultRate().trim();
-    if (PricingConstants.DEFAULT_RATE_MAXIMUM_RETAIL_PRICE.equalsIgnoreCase(dr)) {
-      return dto.getMaximumRetailPrice() != null ? dto.getMaximumRetailPrice() : dto.getPriceToRetail();
-    }
-    if (PricingConstants.DEFAULT_RATE_COST_PRICE.equalsIgnoreCase(dr)) {
-      return dto.getCostPrice() != null ? dto.getCostPrice() : dto.getPriceToRetail();
-    }
-    if (PricingConstants.DEFAULT_RATE_PRICE_TO_RETAIL.equalsIgnoreCase(dr)) {
-      return dto.getPriceToRetail();
-    }
-    List<RateDto> rates = dto.getRates();
-    if (rates != null && !rates.isEmpty()) {
-      return rates.stream()
-          .filter(r -> dr.equals(r.getName()))
-          .map(RateDto::getPrice)
-          .findFirst()
-          .orElse(dto.getPriceToRetail());
-    }
-    return dto.getPriceToRetail();
+    // one implementation, in the api record other modules read
+    return dto == null ? null : InventoryPricingImpl.toLotPricing(dto).effectivePrice();
   }
 
   /**

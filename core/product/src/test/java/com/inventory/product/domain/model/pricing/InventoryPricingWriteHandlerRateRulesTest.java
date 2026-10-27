@@ -17,10 +17,10 @@ import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.pricing.api.ShopRateRule;
 import com.inventory.pricing.api.port.ShopRateRulesPort;
-import com.inventory.pricing.rest.dto.request.PricingCreateCommand;
-import com.inventory.pricing.rest.dto.request.PricingUpdateCommand;
-import com.inventory.pricing.rest.dto.response.RateDto;
-import com.inventory.pricing.service.InventoryPricingAdapter;
+import com.inventory.pricing.api.PricingCreate;
+import com.inventory.pricing.api.PricingUpdate;
+import com.inventory.pricing.api.RateLine;
+import com.inventory.pricing.api.InventoryPricing;
 import com.inventory.pricing.utils.constants.PricingConstants;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.enums.ShopType;
@@ -44,7 +44,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 @MockitoSettings(strictness = Strictness.LENIENT)
 class InventoryPricingWriteHandlerRateRulesTest {
 
-  @Mock private InventoryPricingAdapter pricingPort;
+  @Mock private InventoryPricing pricingPort;
   @Mock private ShopRepository shopRepository;
   @Mock private ShopRateRulesPort rateRulesPort;
 
@@ -64,21 +64,18 @@ class InventoryPricingWriteHandlerRateRulesTest {
     inventory.setShopId(RateRulesTestFixtures.SHOP);
     inventory.setSellingPrice(new BigDecimal("100"));
     inventory.setCostPrice(new BigDecimal("60"));
-    RateDto rate = new RateDto();
-    rate.setName("Rate-S");
-    rate.setPrice(new BigDecimal("95"));
-    inventory.setRates(List.of(rate));
+    inventory.setRates(List.of(RateLine.of("Rate-S", new BigDecimal("95"))));
     return inventory;
   }
 
-  private PricingCreateCommand created() {
-    ArgumentCaptor<PricingCreateCommand> captor = ArgumentCaptor.forClass(PricingCreateCommand.class);
+  private PricingCreate created() {
+    ArgumentCaptor<PricingCreate> captor = ArgumentCaptor.forClass(PricingCreate.class);
     verify(pricingPort).create(captor.capture());
     return captor.getValue();
   }
 
   /** An inventory update of a saved retailer batch that sends only the selling price. */
-  private PricingUpdateCommand updatedWithOnlySellingPrice(String sellingPrice) {
+  private PricingUpdate updatedWithOnlySellingPrice(String sellingPrice) {
     Inventory inventory = newInventory();
     inventory.setId("inv-1");
     inventory.setPricingId("p-1");
@@ -90,13 +87,13 @@ class InventoryPricingWriteHandlerRateRulesTest {
     } finally {
       InventoryPricingContext.clear();
     }
-    ArgumentCaptor<PricingUpdateCommand> captor = ArgumentCaptor.forClass(PricingUpdateCommand.class);
+    ArgumentCaptor<PricingUpdate> captor = ArgumentCaptor.forClass(PricingUpdate.class);
     verify(pricingPort).update(eq("p-1"), captor.capture(), eq("owner-1"));
     return captor.getValue();
   }
 
   private void updateRatesWhilePricingThrows(RuntimeException failure) {
-    doThrow(failure).when(pricingPort).update(anyString(), any(PricingUpdateCommand.class), any());
+    doThrow(failure).when(pricingPort).update(anyString(), any(PricingUpdate.class), any());
     Inventory inventory = newInventory();
     inventory.setId("inv-1");
     inventory.setPricingId("p-1");
@@ -138,11 +135,11 @@ class InventoryPricingWriteHandlerRateRulesTest {
     when(rateRulesPort.rulesFor(RateRulesTestFixtures.SHOP)).thenReturn(List.of(
         new ShopRateRule("Rate-S", PricingConstants.RATE_BASE_SELLING_PRICE, new BigDecimal("5"), null)));
 
-    PricingUpdateCommand cmd = updatedWithOnlySellingPrice("120");
+    PricingUpdate cmd = updatedWithOnlySellingPrice("120");
 
-    assertEquals(new BigDecimal("120"), cmd.getSellingPrice());
-    assertEquals(new BigDecimal("120"), cmd.getPriceToRetail());
-    assertEquals(new BigDecimal("120"), cmd.getMaximumRetailPrice());
+    assertEquals(new BigDecimal("120"), cmd.sellingPrice());
+    assertEquals(new BigDecimal("120"), cmd.priceToRetail());
+    assertEquals(new BigDecimal("120"), cmd.maximumRetailPrice());
   }
 
   /** A retailer without rules keeps today's edit: only the selling price is sent on. */
@@ -150,11 +147,11 @@ class InventoryPricingWriteHandlerRateRulesTest {
   void retailerWithoutRulesSellingPriceUpdateIsUnchanged() {
     when(rateRulesPort.rulesFor(RateRulesTestFixtures.SHOP)).thenReturn(List.of());
 
-    PricingUpdateCommand cmd = updatedWithOnlySellingPrice("120");
+    PricingUpdate cmd = updatedWithOnlySellingPrice("120");
 
-    assertEquals(new BigDecimal("120"), cmd.getSellingPrice());
-    assertNull(cmd.getPriceToRetail());
-    assertNull(cmd.getMaximumRetailPrice());
+    assertEquals(new BigDecimal("120"), cmd.sellingPrice());
+    assertNull(cmd.priceToRetail());
+    assertNull(cmd.maximumRetailPrice());
   }
 
   @Test
@@ -164,11 +161,11 @@ class InventoryPricingWriteHandlerRateRulesTest {
 
     handler.persistOnSave(newInventory());
 
-    PricingCreateCommand cmd = created();
-    assertEquals(1, cmd.getRates().size());
-    assertEquals("Rate-S", cmd.getRates().get(0).getName());
-    assertEquals(new BigDecimal("100"), cmd.getPriceToRetail());
-    assertEquals(new BigDecimal("100"), cmd.getMaximumRetailPrice());
+    PricingCreate cmd = created();
+    assertEquals(1, cmd.rates().size());
+    assertEquals("Rate-S", cmd.rates().get(0).name());
+    assertEquals(new BigDecimal("100"), cmd.priceToRetail());
+    assertEquals(new BigDecimal("100"), cmd.maximumRetailPrice());
   }
 
   @Test
@@ -177,6 +174,6 @@ class InventoryPricingWriteHandlerRateRulesTest {
 
     handler.persistOnSave(newInventory());
 
-    assertNull(created().getRates());
+    assertNull(created().rates());
   }
 }

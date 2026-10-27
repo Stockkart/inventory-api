@@ -1,7 +1,7 @@
 package com.inventory.product.validation;
 
 import com.inventory.common.exception.ValidationException;
-import com.inventory.pricing.utils.constants.PricingConstants;
+import com.inventory.pricing.api.PricingClearFields;
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.enums.ItemType;
 import com.inventory.product.domain.model.enums.SchemeType;
@@ -200,7 +200,7 @@ public class InventoryValidator {
     }
     for (String field : request.getClearFields()) {
       if (!ProductConstants.CLEARABLE_INVENTORY_FIELDS.contains(field)
-          && !PricingConstants.CLEARABLE_FIELDS.contains(field)) {
+          && !PricingClearFields.ALL.contains(field)) {
         throw new ValidationException("Field cannot be cleared: " + field);
       }
       if (valueSentFor(field, request)) {
@@ -218,11 +218,11 @@ public class InventoryValidator {
       case "hsn" -> r.getHsn() != null;
       case "discountApplicable" -> r.getDiscountApplicable() != null;
       case "thresholdCount" -> r.getThresholdCount() != null;
-      case PricingConstants.CLEAR_SALE_ADDITIONAL_DISCOUNT -> r.getSaleAdditionalDiscount() != null;
-      case PricingConstants.CLEAR_PURCHASE_ADDITIONAL_DISCOUNT -> r.getPurchaseAdditionalDiscount() != null;
-      case PricingConstants.CLEAR_SALE_SCHEME -> r.getSchemePayFor() != null
+      case PricingClearFields.SALE_ADDITIONAL_DISCOUNT -> r.getSaleAdditionalDiscount() != null;
+      case PricingClearFields.PURCHASE_ADDITIONAL_DISCOUNT -> r.getPurchaseAdditionalDiscount() != null;
+      case PricingClearFields.SALE_SCHEME -> r.getSchemePayFor() != null
           || r.getSchemeFree() != null || r.getSchemePercentage() != null || r.getScheme() != null;
-      case PricingConstants.CLEAR_PURCHASE_SCHEME -> r.getPurchaseSchemePayFor() != null
+      case PricingClearFields.PURCHASE_SCHEME -> r.getPurchaseSchemePayFor() != null
           || r.getPurchaseSchemeFree() != null || r.getPurchaseSchemePercentage() != null;
       default -> false;
     };

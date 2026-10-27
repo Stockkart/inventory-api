@@ -20,7 +20,7 @@ import com.inventory.product.utils.PurchaseTaxBasisResolver;
 import com.inventory.product.utils.SchemeUpdateUtils;
 import com.inventory.product.utils.VendorInvoiceTotals;
 import com.inventory.product.utils.constants.ProductMetricsConstants;
-import com.inventory.pricing.utils.constants.PricingConstants;
+import com.inventory.pricing.api.PricingClearFields;
 import com.inventory.user.domain.model.Vendor;
 import com.inventory.user.domain.repository.VendorRepository;
 import com.inventory.product.rest.dto.request.VendorPurchaseInvoiceRequest;
@@ -1681,17 +1681,17 @@ public class InventoryService {
         case "hsn" -> inventory.setHsn(null);
         case "discountApplicable" -> inventory.setDiscountApplicable(null);
         case "thresholdCount" -> inventory.setThresholdCount(null);
-        case PricingConstants.CLEAR_SALE_ADDITIONAL_DISCOUNT -> inventory.setSaleAdditionalDiscount(null);
-        case PricingConstants.CLEAR_PURCHASE_ADDITIONAL_DISCOUNT ->
+        case PricingClearFields.SALE_ADDITIONAL_DISCOUNT -> inventory.setSaleAdditionalDiscount(null);
+        case PricingClearFields.PURCHASE_ADDITIONAL_DISCOUNT ->
             inventory.setPurchaseAdditionalDiscount(null);
-        case PricingConstants.CLEAR_SALE_SCHEME -> {
+        case PricingClearFields.SALE_SCHEME -> {
           inventory.setSchemeType(null);
           inventory.setScheme(null);
           inventory.setSchemePayFor(null);
           inventory.setSchemeFree(null);
           inventory.setSchemePercentage(null);
         }
-        case PricingConstants.CLEAR_PURCHASE_SCHEME -> {
+        case PricingClearFields.PURCHASE_SCHEME -> {
           inventory.setPurchaseSchemeType(null);
           inventory.setPurchaseSchemePayFor(null);
           inventory.setPurchaseSchemeFree(null);
