@@ -51,7 +51,7 @@ modules:
     dependsOn: [common, metrics, user, accounting, documentservice, notifications]
     collections: [hr_employees, hr_attendance_days, hr_leave_types, hr_leave_requests, hr_holidays,
                   hr_payroll_runs, hr_payroll_lines, hr_advances, hr_settings, hr_role_permissions,
-                  hr_notifications, hr_audit_events, hr_counters]
+                  hr_notifications, hr_audit_events, hr_counters, hr_punches]
   product:
     dependsOn: [common, metrics, user, credit, accounting, pricing, pluginengine, reminders,
                 documentservice, ocr, plan]
