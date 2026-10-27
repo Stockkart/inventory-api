@@ -20,6 +20,7 @@ import com.inventory.hr.domain.model.HrSettings;
 import com.inventory.hr.domain.model.enums.EmployeeStatus;
 import com.inventory.hr.domain.model.enums.HrAuditAction;
 import com.inventory.hr.domain.model.enums.HrPermission;
+import com.inventory.hr.domain.model.enums.OutsideAction;
 import com.inventory.hr.domain.model.enums.PerDayBasis;
 import com.inventory.hr.domain.repository.AttendanceDayRepository;
 import com.inventory.hr.domain.repository.EmployeeRepository;
@@ -81,6 +82,79 @@ class HrSettingsServiceTest {
     assertEquals(List.of(DayOfWeek.SUNDAY), response.getCurrentWeeklyOffDays());
     assertNull(response.getRevision());
     verify(settingsRepository, never()).save(any());
+  }
+
+  @Test
+  void attendanceCaptureDefaultsToEverythingOff() {
+    when(settingsRepository.findByShopId(SHOP)).thenReturn(Optional.empty());
+
+    HrSettingsResponse.AttendanceCaptureDto c = service.get(USER, SHOP).getAttendanceCapture();
+
+    assertFalse(c.isSelfCheckIn());
+    assertFalse(c.isLocationCheck());
+    assertNull(c.getShopLat());
+    assertNull(c.getShopLng());
+    assertEquals(100, c.getRadiusMetres());
+    assertEquals(OutsideAction.BLOCK, c.getOutsideAction());
+  }
+
+  @Test
+  void attendanceCaptureIsAPartialUpdate() {
+    HrSettings stored = new HrSettings();
+    stored.setRevision(3L);
+    stored.setAttendanceCapture(new HrSettings.AttendanceCapture(true, false, 12.97, 77.59, 250,
+        OutsideAction.FLAG));
+    when(settingsRepository.findByShopId(SHOP)).thenReturn(Optional.of(stored));
+    when(settingsRepository.save(any(HrSettings.class))).thenAnswer(i -> i.getArgument(0));
+    UpdateHrSettingsRequest request = new UpdateHrSettingsRequest();
+    request.setRevision(3L);
+    UpdateHrSettingsRequest.AttendanceCaptureChange change =
+        new UpdateHrSettingsRequest.AttendanceCaptureChange();
+    change.setLocationCheck(true);
+    request.setAttendanceCapture(change);
+
+    HrSettingsResponse.AttendanceCaptureDto c =
+        service.update(USER, SHOP, request).getAttendanceCapture();
+
+    assertTrue(c.isSelfCheckIn(), "kept");
+    assertTrue(c.isLocationCheck(), "changed");
+    assertEquals(12.97, c.getShopLat());
+    assertEquals(250, c.getRadiusMetres());
+    assertEquals(OutsideAction.FLAG, c.getOutsideAction());
+  }
+
+  @Test
+  void theLocationCheckCannotBeTurnedOnWithoutTheShopLocation() {
+    when(settingsRepository.findByShopId(SHOP)).thenReturn(Optional.empty());
+    UpdateHrSettingsRequest request = new UpdateHrSettingsRequest();
+    UpdateHrSettingsRequest.AttendanceCaptureChange change =
+        new UpdateHrSettingsRequest.AttendanceCaptureChange();
+    change.setSelfCheckIn(true);
+    change.setLocationCheck(true);
+    request.setAttendanceCapture(change);
+
+    assertThrows(ValidationException.class, () -> service.update(USER, SHOP, request));
+    verify(settingsRepository, never()).save(any());
+  }
+
+  @Test
+  void theAuditSaysWhetherTheShopLocationIsSetButNotWhere() {
+    when(settingsRepository.findByShopId(SHOP)).thenReturn(Optional.empty());
+    when(settingsRepository.save(any(HrSettings.class))).thenAnswer(i -> i.getArgument(0));
+    UpdateHrSettingsRequest request = new UpdateHrSettingsRequest();
+    UpdateHrSettingsRequest.AttendanceCaptureChange change =
+        new UpdateHrSettingsRequest.AttendanceCaptureChange();
+    change.setShopLat(12.97);
+    change.setShopLng(77.59);
+    request.setAttendanceCapture(change);
+
+    service.update(USER, SHOP, request);
+
+    ArgumentCaptor<AuditEntry> entry = ArgumentCaptor.forClass(AuditEntry.class);
+    verify(auditService).record(entry.capture());
+    assertEquals(HrAuditAction.SETTINGS_CHANGED, entry.getValue().action());
+    assertEquals(true, entry.getValue().after().get("shopLocationSet"));
+    assertFalse(entry.getValue().after().toString().contains("12.97"));
   }
 
   @Test

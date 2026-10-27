@@ -15,6 +15,7 @@ import com.inventory.hr.domain.model.enums.AttendanceStatus;
 import com.inventory.hr.domain.model.enums.HrAuditAction;
 import com.inventory.hr.domain.model.enums.HrPermission;
 import com.inventory.hr.domain.model.enums.LeaveRequestStatus;
+import com.inventory.hr.domain.model.enums.PunchFlag;
 import com.inventory.hr.rest.dto.request.MarkUnmarkedPresentRequest;
 import com.inventory.hr.rest.dto.request.SaveAttendanceDaysRequest;
 import com.inventory.hr.rest.dto.response.AttendanceHistoryResponse;
@@ -66,7 +67,8 @@ import org.springframework.util.StringUtils;
  *
  * <p>Round trips (design "Endpoint budgets"): every collection is read at most once per request,
  * with {@code $in} or a date range and a projection, never with a {@code findById} loop. Daily
- * register 6 HR queries, save 7, month 6, mark-unmarked 8. Screen reads carry a 3 s {@code
+ * register 7 HR queries (incl. one punch-flags read), save 7 (+2 only when a hand-made mark is
+ * cleared: punches read and re-derive), month 7, mark-unmarked 8. Screen reads carry a 3 s {@code
  * maxTimeMS}, month-wide reads 10 s; a read over its limit is 503 {@code HR_QUERY_TOO_SLOW}.
  */
 @Slf4j
@@ -97,6 +99,8 @@ public class AttendanceService {
 
   @Autowired private HrUserNames userNames;
 
+  @Autowired private PunchDayService punchDays;
+
   // ---- daily register ------------------------------------------------------------------------
 
   /** Everyone employed on {@code asOf} (default today), resolved (R5.2–R5.4). */
@@ -115,10 +119,15 @@ public class AttendanceService {
       Set<String> holidays = holidayDates(shopId, d, d, HrQueryRunner.SCREEN_MAX_TIME_MS);
       boolean locked = !periodLockService.lockedPeriods(shopId,
           List.of(PayCycle.periodOf(d, PayCycle.startDay(settings)))).isEmpty();
+      Map<String, Set<PunchFlag>> flags = punchDays.flagsByEmployeeDate(shopId,
+          employees.stream().map(Employee::getId).toList(), d, d,
+          HrQueryRunner.SCREEN_MAX_TIME_MS);
       List<AttendanceRowResponse> rows = new ArrayList<>(employees.size());
       for (Employee e : employees) {
-        rows.add(row(e, date, marks.get(key(e.getId(), d)), leave.get(key(e.getId(), d)),
-            holidays.contains(d), settings, locked));
+        AttendanceRowResponse row = row(e, date, marks.get(key(e.getId(), d)),
+            leave.get(key(e.getId(), d)), holidays.contains(d), settings, locked);
+        addPunchFlags(row, flags.get(key(e.getId(), d)));
+        rows.add(row);
       }
       return new DailyRegisterResponse(d, locked, rows);
     });
@@ -193,6 +202,8 @@ public class AttendanceService {
       TreeSet<String> firstMarkDates = new TreeSet<>();
       int firstMarks = 0;
       Map<String, AttendanceDay> after = new HashMap<>();
+      // cleared hand-made marks: the day is worked out from punches again afterwards (R4.6)
+      List<String[]> rederive = new ArrayList<>();
       for (SaveAttendanceDaysRequest.Row r : rows) {
         String k = key(r.getEmployeeId(), r.getDate());
         AttendanceDay old = existing.get(k);
@@ -203,6 +214,10 @@ public class AttendanceService {
             bulk.remove(dayKey(shopId, r.getEmployeeId(), r.getDate()));
             writes++;
             changes.add(changeEntry(shopId, userId, r, snapshot(old), null));
+            if (old.getSource() != AttendanceSource.SELF_CHECK_IN) {
+              // a cleared self check-in day stays cleared until the next punch
+              rederive.add(new String[] {r.getEmployeeId(), r.getDate()});
+            }
           }
           after.put(k, null);
           continue;
@@ -227,6 +242,11 @@ public class AttendanceService {
         executeSave(bulk);
         metrics.increment(HrMetricsConstants.ATTENDANCE_WRITES_TOTAL, writes,
             "module", HrMetricsConstants.MODULE, "operation", "save");
+      }
+      // 6b. only when hand-made marks were cleared: one punches read, then derived upserts
+      // (not audited: the clear is, and the punches are their own record)
+      if (!rederive.isEmpty()) {
+        after.putAll(punchDays.rederive(shopId, employees, rederive, settings));
       }
       // 7. one insertMany: the summary of first marks plus one row per changed existing mark
       if (firstMarks > 0) {
@@ -354,7 +374,9 @@ public class AttendanceService {
       // months (those of its first and last day), and is flagged when either is locked
       boolean locked = !periodLockService.lockedPeriods(shopId,
           PayCycle.periodsOf(List.of(from, to), PayCycle.startDay(settings))).isEmpty();
-
+      Map<String, Set<PunchFlag>> flags = punchDays.flagsByEmployeeDate(shopId,
+          employees.stream().map(Employee::getId).toList(), from, to,
+          HrQueryRunner.MONTH_MAX_TIME_MS);
       MonthRegisterResponse response = new MonthRegisterResponse();
       response.setPeriod(period);
       response.setLocked(locked);
@@ -377,9 +399,23 @@ public class AttendanceService {
           DayStatusResolver.Resolution r = DayStatusResolver.resolve(date, e, marks.get(k),
               leave.get(k), holidays.contains(d), settings);
           boolean future = date.isAfter(today);
-          row.getCells().add(new MonthRegisterResponse.Cell(r.status(),
+          MonthRegisterResponse.Cell cell = new MonthRegisterResponse.Cell(r.status(),
               r.late() ? Boolean.TRUE : null, r.halfDayLeave() ? Boolean.TRUE : null,
-              r.otherHalf(), future ? Boolean.TRUE : null));
+              r.otherHalf(), future ? Boolean.TRUE : null);
+          AttendanceDay mark = marks.get(k);
+          if (mark != null && showsMark(r)) {
+            // MANUAL (or a mark stored without a source) is left out to keep cells small
+            cell.setMarkSource(mark.getSource() == AttendanceSource.MANUAL ? null
+                : mark.getSource());
+            if (PunchDayService.missingCheckOut(mark, e, settings)) {
+              cell.setMissingCheckOut(Boolean.TRUE);
+            }
+          }
+          Set<PunchFlag> dayFlags = flags.get(k);
+          if (dayFlags != null && !dayFlags.isEmpty()) {
+            cell.setFlags(new ArrayList<>(dayFlags));
+          }
+          row.getCells().add(cell);
           addToTotals(totals, r, future);
         }
         row.setTotals(totals);
@@ -479,7 +515,7 @@ public class AttendanceService {
       String to, long maxTimeMs) {
     Query query = Query.query(dayRange(shopId, employeeIds, from, to));
     query.fields().include("employeeId", "date", "status", "inTime", "outTime", "workedMinutes",
-        "autoHalfDay", "source", "note", "markedAt", "markedByUserId");
+        "autoHalfDay", "source", "note", "markedAt", "markedByUserId", "punchCount");
     query.maxTimeMsec(maxTimeMs).cursorBatchSize(HrQueryRunner.BULK_BATCH_SIZE);
     return mongoTemplate.find(query, AttendanceDay.class);
   }
@@ -606,6 +642,9 @@ public class AttendanceService {
         .set("period", day.getPeriod())
         .set("markedAt", day.getMarkedAt())
         .set("markedByUserId", day.getMarkedByUserId())
+        // a hand-made mark replacing a self check-in day carries no punch fields (R4.5)
+        .unset("punchCount")
+        .unset("missingCheckOut")
         .setOnInsert("shopId", day.getShopId())
         .setOnInsert("employeeId", day.getEmployeeId())
         .setOnInsert("date", day.getDate());
@@ -658,7 +697,9 @@ public class AttendanceService {
   }
 
   private static boolean sameMark(AttendanceDay old, AttendanceDay now) {
-    return old.getStatus() == now.getStatus()
+    // saving over a self check-in day makes it a hand-made mark (R4.5), even with equal values
+    return old.getSource() != AttendanceSource.SELF_CHECK_IN
+        && old.getStatus() == now.getStatus()
         && Objects.equals(old.getInTime(), now.getInTime())
         && Objects.equals(old.getOutTime(), now.getOutTime())
         && Objects.equals(old.getNote(), now.getNote());
@@ -715,15 +756,28 @@ public class AttendanceService {
     row.setOvertimeMinutes(r.overtimeMinutes());
     row.setAutoHalfDay(r.autoHalfDay());
     // the stored mark is shown only when it is what the day shows (a full-day leave hides it)
-    if (mark != null && (r.source() == DayStatusResolver.Source.MARK || r.halfDayLeave())) {
+    if (mark != null && showsMark(r)) {
       row.setInTime(mark.getInTime());
       row.setOutTime(mark.getOutTime());
       row.setNote(mark.getNote());
       row.setMarkedAt(mark.getMarkedAt());
       row.setMarkedByUserId(mark.getMarkedByUserId());
+      row.setMarkSource(mark.getSource() != null ? mark.getSource() : AttendanceSource.MANUAL);
+      row.setMissingCheckOut(PunchDayService.missingCheckOut(mark, e, settings));
     }
     row.setLocked(locked);
     return row;
+  }
+
+  /** The resolved day shows the stored mark (not hidden by a full-day leave). */
+  private static boolean showsMark(DayStatusResolver.Resolution r) {
+    return r.source() == DayStatusResolver.Source.MARK || r.halfDayLeave();
+  }
+
+  private static void addPunchFlags(AttendanceRowResponse row, Set<PunchFlag> flags) {
+    if (flags != null && !flags.isEmpty()) {
+      row.setFlags(new ArrayList<>(flags));
+    }
   }
 
   /**

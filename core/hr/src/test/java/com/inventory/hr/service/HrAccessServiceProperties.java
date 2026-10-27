@@ -44,6 +44,14 @@ class HrAccessServiceProperties {
       expected = EnumSet.noneOf(HrPermission.class);
     } else if (grid.getRoles().containsKey(role)) {
       expected = HrPermission.closure(grid.getRoles().get(role));
+      // a permission the grid did not know when saved takes the role default
+      Set<HrPermission> known = grid.getKnownPermissions() != null
+          ? EnumSet.copyOf(grid.getKnownPermissions()) : HrAccessService.LEGACY_KNOWN;
+      for (HrPermission p : HrAccessService.DEFAULT_ROWS.get(role)) {
+        if (!known.contains(p)) {
+          expected.add(p);
+        }
+      }
     } else {
       expected = EnumSet.noneOf(HrPermission.class);
       expected.addAll(HrAccessService.DEFAULT_ROWS.get(role));
@@ -83,10 +91,12 @@ class HrAccessServiceProperties {
         Arbitraries.of(HrPermission.class).list().ofMaxSize(10).map(ArrayList::new);
     return Arbitraries.maps(Arbitraries.of(UserRole.ADMIN, UserRole.MANAGER, UserRole.CASHIER), row)
         .ofMaxSize(3)
-        .map(roles -> {
+        .flatMap(roles -> Arbitraries.of(true, false).map(knowsAll -> {
           HrRolePermissions grid = new HrRolePermissions();
           grid.setRoles(new LinkedHashMap<>(roles));
+          // saved before SELF_CHECK_IN existed (null) or after (every permission known)
+          grid.setKnownPermissions(knowsAll ? List.of(HrPermission.values()) : null);
           return grid;
-        });
+        }));
   }
 }

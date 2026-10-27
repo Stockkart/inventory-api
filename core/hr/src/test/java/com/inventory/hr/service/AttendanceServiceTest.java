@@ -4,6 +4,7 @@ import static com.inventory.hr.HrTestFixtures.SHOP;
 import static com.inventory.hr.HrTestFixtures.USER;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -24,21 +25,28 @@ import com.inventory.hr.domain.model.AttendanceDay;
 import com.inventory.hr.domain.model.Employee;
 import com.inventory.hr.domain.model.Holiday;
 import com.inventory.hr.domain.model.LeaveRequest;
+import com.inventory.hr.domain.model.enums.AttendanceSource;
 import com.inventory.hr.domain.model.enums.AttendanceStatus;
 import com.inventory.hr.domain.model.enums.DayStatus;
 import com.inventory.hr.domain.model.enums.HrAuditAction;
 import com.inventory.hr.domain.model.enums.HrPermission;
+import com.inventory.hr.domain.model.enums.PunchFlag;
 import com.inventory.hr.rest.dto.request.MarkUnmarkedPresentRequest;
 import com.inventory.hr.rest.dto.request.SaveAttendanceDaysRequest;
 import com.inventory.hr.rest.dto.response.AttendanceRowResponse;
 import com.inventory.hr.rest.dto.response.DailyRegisterResponse;
+import com.inventory.hr.rest.dto.response.MonthRegisterResponse;
 import com.inventory.hr.service.HrAuditService.AuditEntry;
+import com.inventory.hr.utils.HrDateUtils;
 import com.inventory.hr.validation.AttendanceDayValidator;
 import com.inventory.metrics.MetricsWrapper;
 import com.mongodb.bulk.BulkWriteResult;
 import com.mongodb.bulk.BulkWriteUpsert;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.bson.BsonObjectId;
 import org.bson.Document;
@@ -74,6 +82,7 @@ class AttendanceServiceTest {
   @Mock private MetricsWrapper metrics;
   @Mock private BulkOperations bulk;
   @Mock private HrUserNames userNames;
+  @Mock private PunchDayService punchDays;
   @Spy private AttendanceDayValidator validator = new AttendanceDayValidator();
   @Spy private HrQueryRunner queryRunner = new HrQueryRunner();
   @InjectMocks private AttendanceService service;
@@ -220,6 +229,123 @@ class AttendanceServiceTest {
 
     verify(bulk).remove(any(Query.class));
     assertEquals(DayStatus.UNMARKED, rows.get(0).getStatus());
+  }
+
+  @SuppressWarnings("unchecked")
+  @Test
+  void clearingAHandMadeMarkReDerivesTheDayFromPunches() {
+    when(mongoTemplate.find(any(Query.class), eq(AttendanceDay.class)))
+        .thenReturn(List.of(stored("e1", TUE, AttendanceStatus.ABSENT)));
+    when(bulk.execute()).thenReturn(mock(BulkWriteResult.class));
+    AttendanceDay derived = stored("e1", TUE, AttendanceStatus.PRESENT);
+    derived.setSource(AttendanceSource.SELF_CHECK_IN);
+    derived.setInTime("09:05");
+    derived.setPunchCount(1);
+    when(punchDays.rederive(eq(SHOP), any(), anyCollection(), any()))
+        .thenReturn(Map.of(AttendanceService.key("e1", TUE), derived));
+
+    List<AttendanceRowResponse> rows =
+        service.saveDays(USER, SHOP, save(row("e1", TUE, "UNMARKED")));
+
+    ArgumentCaptor<Collection<String[]>> keys = ArgumentCaptor.forClass(Collection.class);
+    verify(punchDays).rederive(eq(SHOP), any(), keys.capture(), any());
+    assertEquals(1, keys.getValue().size());
+    assertEquals("e1", keys.getValue().iterator().next()[0]);
+    assertEquals(DayStatus.PRESENT, rows.get(0).getStatus());
+    assertEquals(AttendanceSource.SELF_CHECK_IN, rows.get(0).getMarkSource());
+    assertEquals("09:05", rows.get(0).getInTime());
+  }
+
+  @Test
+  void clearingASelfCheckInDayDoesNotReDeriveIt() {
+    AttendanceDay self = stored("e1", TUE, AttendanceStatus.PRESENT);
+    self.setSource(AttendanceSource.SELF_CHECK_IN);
+    when(mongoTemplate.find(any(Query.class), eq(AttendanceDay.class))).thenReturn(List.of(self));
+    when(bulk.execute()).thenReturn(mock(BulkWriteResult.class));
+
+    service.saveDays(USER, SHOP, save(row("e1", TUE, "UNMARKED")));
+
+    verify(bulk).remove(any(Query.class));
+    verify(punchDays, never()).rederive(any(), any(), anyCollection(), any());
+  }
+
+  @Test
+  void aSaveWithoutClearsReadsNoPunches() {
+    when(bulk.execute()).thenReturn(mock(BulkWriteResult.class));
+
+    service.saveDays(USER, SHOP, save(row("e1", TUE, "PRESENT")));
+
+    verify(punchDays, never()).rederive(any(), any(), anyCollection(), any());
+  }
+
+  @Test
+  void savingTheSameValuesOverASelfCheckInDayMakesItHandMade() {
+    AttendanceDay self = stored("e1", TUE, AttendanceStatus.PRESENT);
+    self.setSource(AttendanceSource.SELF_CHECK_IN);
+    self.setPunchCount(2);
+    when(mongoTemplate.find(any(Query.class), eq(AttendanceDay.class))).thenReturn(List.of(self));
+    when(bulk.execute()).thenReturn(mock(BulkWriteResult.class));
+
+    service.saveDays(USER, SHOP, save(row("e1", TUE, "PRESENT")));
+
+    ArgumentCaptor<Update> update = ArgumentCaptor.forClass(Update.class);
+    verify(bulk).upsert(any(Query.class), update.capture());
+    Document set = (Document) update.getValue().getUpdateObject().get("$set");
+    assertEquals(AttendanceSource.MANUAL, set.get("source"));
+    Document unset = (Document) update.getValue().getUpdateObject().get("$unset");
+    assertTrue(unset.containsKey("punchCount"));
+    assertTrue(unset.containsKey("missingCheckOut"));
+  }
+
+  @Test
+  void theDailyRegisterShowsMarkSourceMissingCheckOutAndPunchFlags() {
+    String yesterday = HrDateUtils.format(HrDateUtils.today().minusDays(1));
+    AttendanceDay self = stored("e1", yesterday, AttendanceStatus.PRESENT);
+    self.setSource(AttendanceSource.SELF_CHECK_IN);
+    self.setInTime("09:00");
+    self.setPunchCount(1);
+    when(mongoTemplate.find(any(Query.class), eq(AttendanceDay.class))).thenReturn(List.of(self,
+        stored("e2", yesterday, AttendanceStatus.ABSENT)));
+    when(punchDays.flagsByEmployeeDate(eq(SHOP), anyCollection(), eq(yesterday), eq(yesterday),
+        org.mockito.ArgumentMatchers.anyLong()))
+        .thenReturn(Map.of(AttendanceService.key("e1", yesterday),
+            EnumSet.of(PunchFlag.OUTSIDE_SHOP)));
+
+    DailyRegisterResponse r = service.daily(USER, SHOP, yesterday);
+
+    AttendanceRowResponse e1 = r.getRows().get(0);
+    assertEquals(AttendanceSource.SELF_CHECK_IN, e1.getMarkSource());
+    assertTrue(e1.isMissingCheckOut(), "one punch on a past day");
+    assertEquals(List.of(PunchFlag.OUTSIDE_SHOP), e1.getFlags());
+    AttendanceRowResponse e2 = r.getRows().get(1);
+    // a mark stored before sources existed reads as MANUAL
+    assertEquals(AttendanceSource.MANUAL, e2.getMarkSource());
+    assertFalse(e2.isMissingCheckOut());
+    assertTrue(e2.getFlags().isEmpty());
+  }
+
+  @Test
+  void monthCellsCarryTheSelfCheckInSourceAndFlagsButNotManual() {
+    AttendanceDay self = stored("e1", "2025-04-08", AttendanceStatus.PRESENT);
+    self.setSource(AttendanceSource.SELF_CHECK_IN);
+    self.setPunchCount(1);
+    when(mongoTemplate.find(any(Query.class), eq(AttendanceDay.class))).thenReturn(List.of(self,
+        stored("e1", "2025-04-09", AttendanceStatus.PRESENT)));
+    when(punchDays.flagsByEmployeeDate(eq(SHOP), anyCollection(), any(), any(),
+        org.mockito.ArgumentMatchers.anyLong()))
+        .thenReturn(Map.of(AttendanceService.key("e1", "2025-04-08"),
+            EnumSet.of(PunchFlag.LOW_ACCURACY)));
+
+    MonthRegisterResponse m = service.month(USER, SHOP, "2025-04", "e1");
+
+    MonthRegisterResponse.Cell tue = m.getRows().get(0).getCells().get(7);
+    assertEquals(AttendanceSource.SELF_CHECK_IN, tue.getMarkSource());
+    assertEquals(Boolean.TRUE, tue.getMissingCheckOut());
+    assertEquals(List.of(PunchFlag.LOW_ACCURACY), tue.getFlags());
+    MonthRegisterResponse.Cell wed = m.getRows().get(0).getCells().get(8);
+    assertNull(wed.getMarkSource());
+    assertNull(wed.getMissingCheckOut());
+    assertNull(wed.getFlags());
   }
 
   @Test

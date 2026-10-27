@@ -21,4 +21,10 @@ public final class HrMetricsConstants {
   public static final String DOCUMENTS_TOTAL = "inventory_hr_documents_total";
   /** An HR post refused because the shop has its own account on 1250/2400/5700; tag code. */
   public static final String ACCOUNT_CONFLICTS_TOTAL = "inventory_hr_account_conflicts_total";
+  /**
+   * Self check-in attempts; tag {@code result} = accepted | flagged | duplicate | off |
+   * not_linked | no_permission | not_employed | on_leave | locked | outside_shop |
+   * location_unclear | invalid | error.
+   */
+  public static final String SELF_CHECKIN_TOTAL = "inventory_hr_self_checkin_total";
 }

@@ -1,8 +1,12 @@
 package com.inventory.hr.rest.dto.response;
 
+import com.inventory.hr.domain.model.enums.AttendanceSource;
 import com.inventory.hr.domain.model.enums.DayStatus;
+import com.inventory.hr.domain.model.enums.PunchFlag;
 import com.inventory.hr.service.DayStatusResolver;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -35,4 +39,14 @@ public class AttendanceRowResponse {
   private String markedByUserId;
   /** The day's month is locked by payroll. */
   private boolean locked;
+  /**
+   * Where the stored mark shown came from (MANUAL, BULK_PRESENT or SELF_CHECK_IN; a mark stored
+   * without one is MANUAL); null = no stored mark shown. Not the same as {@code source}, which
+   * says what decided the status.
+   */
+  private AttendanceSource markSource;
+  /** Self check-in day with one punch that is over (R4.4). */
+  private boolean missingCheckOut;
+  /** Flags of the day's punches (OUTSIDE_SHOP, LOW_ACCURACY, NO_LOCATION…); empty = none. */
+  private List<PunchFlag> flags = new ArrayList<>();
 }

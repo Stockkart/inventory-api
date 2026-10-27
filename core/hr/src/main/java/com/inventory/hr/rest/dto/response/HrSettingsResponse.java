@@ -1,6 +1,7 @@
 package com.inventory.hr.rest.dto.response;
 
 import com.inventory.hr.domain.model.enums.LeaveYearStartMonth;
+import com.inventory.hr.domain.model.enums.OutsideAction;
 import com.inventory.hr.domain.model.enums.PerDayBasis;
 import java.math.BigDecimal;
 import java.time.DayOfWeek;
@@ -29,9 +30,23 @@ public class HrSettingsResponse {
   private LeaveYearStartMonth leaveYearStartMonth;
   /** Day 1–28 the salary month starts on (default 1 = calendar month). */
   private Integer payCycleStartDay;
+  /** Self check-in and location check, defaults filled in. */
+  private AttendanceCaptureDto attendanceCapture;
   /** Send back on PUT for lost-update protection; null = never saved. */
   private Long revision;
   private Instant updatedAt;
+
+  @Data
+  @NoArgsConstructor
+  public static class AttendanceCaptureDto {
+    private boolean selfCheckIn;
+    private boolean locationCheck;
+    /** null = shop location not set yet. */
+    private Double shopLat;
+    private Double shopLng;
+    private int radiusMetres;
+    private OutsideAction outsideAction;
+  }
 
   @Data
   @NoArgsConstructor

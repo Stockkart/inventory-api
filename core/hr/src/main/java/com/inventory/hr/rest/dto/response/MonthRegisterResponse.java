@@ -1,7 +1,9 @@
 package com.inventory.hr.rest.dto.response;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.inventory.hr.domain.model.enums.AttendanceSource;
 import com.inventory.hr.domain.model.enums.DayStatus;
+import com.inventory.hr.domain.model.enums.PunchFlag;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
@@ -51,10 +53,24 @@ public class MonthRegisterResponse {
      * in {@code totals.unmarked} and is shown blank.
      */
     private Boolean future;
+    /**
+     * Where the stored mark shown came from, when it is not a hand-made one (SELF_CHECK_IN,
+     * BULK_PRESENT); null = no stored mark shown, or a MANUAL one.
+     */
+    private AttendanceSource markSource;
+    /** Self check-in day with one punch that is over (R4.4); null = false. */
+    private Boolean missingCheckOut;
+    /** Flags of the day's punches; null = none. */
+    private List<PunchFlag> flags;
 
     /** A cell for a day up to today. */
     public Cell(DayStatus status, Boolean late, Boolean halfDayLeave, DayStatus otherHalf) {
       this(status, late, halfDayLeave, otherHalf, null);
+    }
+
+    public Cell(DayStatus status, Boolean late, Boolean halfDayLeave, DayStatus otherHalf,
+        Boolean future) {
+      this(status, late, halfDayLeave, otherHalf, future, null, null, null);
     }
   }
 

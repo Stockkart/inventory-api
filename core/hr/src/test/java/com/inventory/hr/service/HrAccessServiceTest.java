@@ -66,9 +66,37 @@ class HrAccessServiceTest {
     grid.setRoles(Map.of(UserRole.CASHIER, List.of(HrPermission.MARK_ATTENDANCE)));
     when(rolePermissionsRepository.findByShopId(SHOP)).thenReturn(Optional.of(grid));
 
-    // stored rows are closed again on read: MARK_ATTENDANCE brings VIEW_ATTENDANCE
-    assertEquals(EnumSet.of(HrPermission.MARK_ATTENDANCE, HrPermission.VIEW_ATTENDANCE),
+    // stored rows are closed again on read: MARK_ATTENDANCE brings VIEW_ATTENDANCE; the grid was
+    // saved before SELF_CHECK_IN existed (no knownPermissions), so that one takes the default
+    assertEquals(EnumSet.of(HrPermission.MARK_ATTENDANCE, HrPermission.VIEW_ATTENDANCE,
+            HrPermission.SELF_CHECK_IN),
         service.permissionsFor(access(false, "CASHIER", true), SHOP));
+  }
+
+  @Test
+  void anOldSavedGridGetsTheDefaultOfAPermissionAddedLater() {
+    HrRolePermissions grid = new HrRolePermissions();
+    grid.setRoles(Map.of(UserRole.ADMIN, List.of(HrPermission.VIEW_ATTENDANCE),
+        UserRole.MANAGER, List.of(), UserRole.CASHIER, List.of()));
+
+    for (UserRole role : HrAccessService.GRID_ROLES) {
+      assertTrue(HrAccessService.rowFor(role, grid).contains(HrPermission.SELF_CHECK_IN),
+          role + " gets the SELF_CHECK_IN default");
+    }
+    // nothing else is added: the ten known permissions keep what was stored
+    assertEquals(EnumSet.of(HrPermission.VIEW_ATTENDANCE, HrPermission.SELF_CHECK_IN),
+        HrAccessService.rowFor(UserRole.ADMIN, grid));
+    assertEquals(EnumSet.of(HrPermission.SELF_CHECK_IN),
+        HrAccessService.rowFor(UserRole.MANAGER, grid));
+  }
+
+  @Test
+  void aGridSavedKnowingSelfCheckInKeepsItUnticked() {
+    HrRolePermissions grid = new HrRolePermissions();
+    grid.setRoles(Map.of(UserRole.CASHIER, List.of()));
+    grid.setKnownPermissions(List.of(HrPermission.values()));
+
+    assertTrue(HrAccessService.rowFor(UserRole.CASHIER, grid).isEmpty());
   }
 
   @Test
@@ -78,9 +106,10 @@ class HrAccessServiceTest {
     assertEquals(EnumSet.complementOf(EnumSet.of(HrPermission.MANAGE_SETTINGS)),
         service.permissionsFor(access(false, "ADMIN", null), SHOP));
     assertEquals(EnumSet.of(HrPermission.VIEW_ATTENDANCE, HrPermission.MARK_ATTENDANCE,
-            HrPermission.APPROVE_LEAVE, HrPermission.VIEW_EMPLOYEES),
+            HrPermission.APPROVE_LEAVE, HrPermission.VIEW_EMPLOYEES, HrPermission.SELF_CHECK_IN),
         service.permissionsFor(access(false, "MANAGER", true), SHOP));
-    assertTrue(service.permissionsFor(access(false, "CASHIER", true), SHOP).isEmpty());
+    assertEquals(EnumSet.of(HrPermission.SELF_CHECK_IN),
+        service.permissionsFor(access(false, "CASHIER", true), SHOP));
   }
 
   @Test

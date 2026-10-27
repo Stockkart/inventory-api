@@ -26,6 +26,12 @@ public class HrRolePermissions {
   @Id private String id;
   private String shopId;
   private Map<UserRole, List<HrPermission>> roles = new LinkedHashMap<>();
+  /**
+   * Every permission that existed when the grid was last saved. A permission missing here was
+   * added later, so a stored row takes its role default for it ({@code HrAccessService.rowFor}).
+   * null = saved before this field existed: the original ten (everything but SELF_CHECK_IN).
+   */
+  private List<HrPermission> knownPermissions;
   private Instant createdAt;
   private Instant updatedAt;
   private String updatedByUserId;
