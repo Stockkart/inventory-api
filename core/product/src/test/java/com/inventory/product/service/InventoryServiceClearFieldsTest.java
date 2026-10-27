@@ -75,7 +75,7 @@ class InventoryServiceClearFieldsTest {
     request.setClearFields(
         Set.of("location", "thresholdCount", "discountApplicable", "saleAdditionalDiscount"));
 
-    inventoryService.update("lot-1", request, "s1");
+    inventoryService.update("lot-1", request, "s1", "u1");
 
     ArgumentCaptor<Inventory> saved = ArgumentCaptor.forClass(Inventory.class);
     verify(inventoryRepository).save(saved.capture());
@@ -93,7 +93,7 @@ class InventoryServiceClearFieldsTest {
     request.setThresholdCount(null);
     request.setHsn("30049099");
 
-    inventoryService.update("lot-1", request, "s1");
+    inventoryService.update("lot-1", request, "s1", "u1");
 
     ArgumentCaptor<Inventory> saved = ArgumentCaptor.forClass(Inventory.class);
     verify(inventoryRepository).save(saved.capture());
