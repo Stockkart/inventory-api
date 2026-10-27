@@ -49,7 +49,7 @@ public class PricingService {
   private PricingValidator pricingValidator;
 
   @Autowired
-  private VerticalPricingPolicyPort pricingPolicyPort;
+  private VerticalPricingPolicies pricingPolicyPort;
 
   @Autowired
   private RateGenerationService rateGenerationService;

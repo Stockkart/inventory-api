@@ -94,13 +94,6 @@ NOT_API product -> documentservice : com.inventory.product.service.creditnote.Cu
 NOT_API product -> documentservice : com.inventory.product.service.creditnote.CustomerRefundCreditNoteAssembler -> com.inventory.documentservice.rest.dto.GenerateCreditNoteRequest
 NOT_API product -> documentservice : com.inventory.product.service.creditnote.VendorReturnCreditNoteAssembler -> com.inventory.documentservice.rest.dto.CreditNoteItem
 NOT_API product -> documentservice : com.inventory.product.service.creditnote.VendorReturnCreditNoteAssembler -> com.inventory.documentservice.rest.dto.GenerateCreditNoteRequest
-NOT_API product -> pricing : com.inventory.product.service.vertical.VerticalPricingPolicyPortImpl -> com.inventory.pricing.domain.model.Pricing
-NOT_API product -> pricing : com.inventory.product.service.vertical.VerticalPricingPolicyPortImpl -> com.inventory.pricing.domain.model.Rate
-NOT_API product -> pricing : com.inventory.product.service.vertical.VerticalPricingPolicyPortImpl -> com.inventory.pricing.domain.model.Scheme
-NOT_API product -> pricing : com.inventory.product.service.vertical.VerticalPricingPolicyPortImpl -> com.inventory.pricing.rest.dto.request.CreatePricingRequest
-NOT_API product -> pricing : com.inventory.product.service.vertical.VerticalPricingPolicyPortImpl -> com.inventory.pricing.rest.dto.request.UpdatePricingRequest
-NOT_API product -> pricing : com.inventory.product.service.vertical.VerticalPricingPolicyPortImpl -> com.inventory.pricing.rest.dto.response.SchemeDto
-NOT_API product -> pricing : com.inventory.product.service.vertical.VerticalPricingPolicyPortImpl -> com.inventory.pricing.service.VerticalPricingPolicyPort
 NOT_API product -> user : com.inventory.product.cardlayout.CardLayoutService -> com.inventory.user.service.UserShopMembershipService
 NOT_API product -> user : com.inventory.product.gridlayout.GridLayoutService -> com.inventory.user.service.RbacService
 NOT_API product -> user : com.inventory.product.gridlayout.GridLayoutService -> com.inventory.user.service.UserShopMembershipService
@@ -211,6 +204,5 @@ OPTIONAL_DEPENDENCY app -> user : com.inventory.app.interceptor.AuthenticationIn
 OPTIONAL_DEPENDENCY hr -> user : com.inventory.hr.service.HrReportService.shopServiceAdapter (com.inventory.user.service.ShopServiceAdapter)
 OPTIONAL_DEPENDENCY hr -> user : com.inventory.hr.service.PayslipService.shopServiceAdapter (com.inventory.user.service.ShopServiceAdapter)
 OPTIONAL_DEPENDENCY plan -> user : com.inventory.plan.service.UsageService.userShopMembershipService (com.inventory.user.service.UserShopMembershipService)
-PORT_LOCATION pricing <- product : com.inventory.product.service.vertical.VerticalPricingPolicyPortImpl implements com.inventory.pricing.service.VerticalPricingPolicyPort
 PORT_LOCATION user <- hr : com.inventory.hr.adapter.HrAccessAdapterImpl implements com.inventory.user.service.HrAccessAdapter
 PORT_LOCATION user <- product : com.inventory.product.service.ShopServiceAdapterImpl implements com.inventory.user.service.ShopServiceAdapter
