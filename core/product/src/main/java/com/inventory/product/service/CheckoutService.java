@@ -22,7 +22,6 @@ import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.UnitConversion;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.user.domain.model.Customer;
-import com.inventory.user.rest.dto.request.CreateCustomerRequest;
 import com.inventory.product.domain.repository.PurchaseRepository;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.rest.dto.request.AddToCartRequest;
