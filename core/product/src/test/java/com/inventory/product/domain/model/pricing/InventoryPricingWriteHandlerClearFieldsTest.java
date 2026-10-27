@@ -51,12 +51,12 @@ class InventoryPricingWriteHandlerClearFieldsTest {
     UpdateInventoryRequest req = new UpdateInventoryRequest();
     req.setClearFields(new LinkedHashSet<>(
         List.of("location", "saleAdditionalDiscount", "purchaseScheme")));
-    InventoryPricingContext.setUpdate(req);
+    InventoryPricingContext.setUpdate(req, "owner-1");
 
     handler.persistOnSave(savedLot());
 
     ArgumentCaptor<PricingUpdateCommand> cmd = ArgumentCaptor.forClass(PricingUpdateCommand.class);
-    verify(pricingPort).update(eq("pr-1"), cmd.capture());
+    verify(pricingPort).update(eq("pr-1"), cmd.capture(), eq("owner-1"));
     assertEquals(Set.of("saleAdditionalDiscount", "purchaseScheme"), cmd.getValue().getClearFields());
   }
 
@@ -64,10 +64,10 @@ class InventoryPricingWriteHandlerClearFieldsTest {
   void lotClearsAloneLeaveThePricingRecordAlone() {
     UpdateInventoryRequest req = new UpdateInventoryRequest();
     req.setClearFields(Set.of("location", "thresholdCount"));
-    InventoryPricingContext.setUpdate(req);
+    InventoryPricingContext.setUpdate(req, "owner-1");
 
     handler.persistOnSave(savedLot());
 
-    verify(pricingPort, never()).update(any(), any());
+    verify(pricingPort, never()).update(any(), any(), any());
   }
 }
