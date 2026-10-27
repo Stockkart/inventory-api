@@ -180,6 +180,10 @@ public class InventoryService {
       inventoryProductReadHandler;
 
   @Autowired
+  private com.inventory.product.domain.model.pricing.InventoryPricingReadHandler
+      inventoryPricingReadHandler;
+
+  @Autowired
   private InventoryVerticalSearchHandler inventoryVerticalSearchHandler;
 
   @Autowired
@@ -1626,6 +1630,9 @@ public class InventoryService {
       inventory.setUpdatedAt(Instant.now());
 
       inventory = inventoryRepository.save(inventory);
+      // Saving just wrote the request's prices to the pricing record (InventoryPricingWriteAspect);
+      // re-read it so the response carries the stored prices, not those loaded before the update.
+      inventoryPricingReadHandler.enrich(inventory);
       inventoryVerticalExtensionHandler.persistAfterUpdate(shopId, inventory, request);
       log.info("Successfully updated inventory with ID: {}", inventoryId);
 
