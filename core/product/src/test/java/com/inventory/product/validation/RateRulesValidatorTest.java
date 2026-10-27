@@ -10,7 +10,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
-import com.inventory.pricing.rest.dto.response.SchemeDto;
+import com.inventory.pricing.api.SchemeTerms;
+import com.inventory.pricing.service.api.RateRuleEngineImpl;
 import com.inventory.pricing.utils.constants.PricingConstants;
 import com.inventory.pricing.validation.PricingValidator;
 import com.inventory.product.domain.model.enums.ShopType;
@@ -22,7 +23,7 @@ class RateRulesValidatorTest {
 
   private static final String PTR = PricingConstants.RATE_BASE_PRICE_TO_RETAIL;
 
-  private final RateRulesValidator validator = new RateRulesValidator(new PricingValidator());
+  private final RateRulesValidator validator = new RateRulesValidator(new RateRuleEngineImpl(new PricingValidator()));
 
   private BaseException rejected(ShopType type, com.inventory.product.rest.dto.response.RateRuleDto... rules) {
     return assertThrows(BaseException.class, () -> validator.validate(List.of(rules), type));
@@ -127,13 +128,13 @@ class RateRulesValidatorTest {
   @Test
   void rejectsBadSchemeShape() {
     assertThrows(BaseException.class, () -> validator.validate(List.of(
-        rule("Rate-A", PTR, null, new SchemeDto(PricingConstants.SCHEME_TYPE_FIXED_UNITS, 0, 1, null))),
+        rule("Rate-A", PTR, null, new SchemeTerms(PricingConstants.SCHEME_TYPE_FIXED_UNITS, 0, 1, null))),
         ShopType.DISTRIBUTOR));
     assertThrows(BaseException.class, () -> validator.validate(List.of(
-        rule("Rate-A", PTR, null, new SchemeDto(PricingConstants.SCHEME_TYPE_PERCENTAGE, null, null,
+        rule("Rate-A", PTR, null, new SchemeTerms(PricingConstants.SCHEME_TYPE_PERCENTAGE, null, null,
             new BigDecimal("100")))), ShopType.DISTRIBUTOR));
     assertThrows(BaseException.class, () -> validator.validate(List.of(
-        rule("Rate-A", PTR, null, new SchemeDto("BOGUS", null, null, null))), ShopType.DISTRIBUTOR));
+        rule("Rate-A", PTR, null, new SchemeTerms("BOGUS", null, null, null))), ShopType.DISTRIBUTOR));
   }
 
   @Test

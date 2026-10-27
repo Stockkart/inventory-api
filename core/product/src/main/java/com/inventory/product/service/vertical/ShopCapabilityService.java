@@ -1,7 +1,7 @@
 package com.inventory.product.service.vertical;
 
 import com.inventory.common.exception.ResourceNotFoundException;
-import com.inventory.pricing.service.ShopRateRulesPort;
+import com.inventory.pricing.api.port.ShopRateRulesPort;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.pluginengine.PluginRegistry;
 import com.inventory.pluginengine.VerticalPlugin;

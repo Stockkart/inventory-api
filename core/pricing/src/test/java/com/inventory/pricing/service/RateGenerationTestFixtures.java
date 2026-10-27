@@ -2,7 +2,9 @@ package com.inventory.pricing.service;
 
 import com.inventory.pricing.domain.model.Pricing;
 import com.inventory.pricing.domain.model.Rate;
+import com.inventory.pricing.api.ShopRateRule;
 import com.inventory.pricing.domain.model.RateRuleSpec;
+import com.inventory.pricing.utils.RateRuleTermsConverter;
 import com.inventory.pricing.domain.model.Scheme;
 import com.inventory.pricing.utils.constants.PricingConstants;
 
@@ -90,5 +92,13 @@ final class RateGenerationTestFixtures {
 
   static Rate find(List<Rate> rates, String name) {
     return rates.stream().filter(r -> name.equals(r.getName())).findFirst().orElse(null);
+  }
+
+  /** The rules as the shop's port hands them to pricing. */
+  static List<ShopRateRule> asRules(RateRuleSpec... specs) {
+    return java.util.Arrays.stream(specs)
+        .map(r -> new ShopRateRule(r.name(), r.base(), r.discountPercent(),
+            RateRuleTermsConverter.toTerms(r.scheme())))
+        .toList();
   }
 }

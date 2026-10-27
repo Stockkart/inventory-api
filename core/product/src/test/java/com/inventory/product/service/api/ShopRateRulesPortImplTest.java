@@ -1,4 +1,4 @@
-package com.inventory.product.service;
+package com.inventory.product.service.api;
 
 import static com.inventory.product.service.RateRulesTestFixtures.OWNER;
 import static com.inventory.product.service.RateRulesTestFixtures.SHOP;
@@ -7,14 +7,16 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
-import com.inventory.pricing.domain.model.RateRuleSpec;
+import com.inventory.pricing.api.ShopRateRule;
 import com.inventory.pricing.utils.constants.PricingConstants;
 import com.inventory.product.domain.model.RateRule;
 import com.inventory.product.domain.model.ShopRateRulesDocument;
 import com.inventory.product.domain.model.enums.RateBase;
 import com.inventory.product.domain.model.enums.ShopType;
 import com.inventory.product.domain.repository.ShopRepository;
-import com.inventory.user.service.RbacService;
+import com.inventory.product.service.InMemoryShopRateRulesRepository;
+import com.inventory.product.service.RateRulesTestFixtures;
+import com.inventory.user.api.ShopPermissions;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -31,14 +33,14 @@ import org.mockito.quality.Strictness;
 class ShopRateRulesPortImplTest {
 
   @Mock private ShopRepository shopRepository;
-  @Mock private RbacService rbacService;
+  @Mock private ShopPermissions shopPermissions;
 
   private final InMemoryShopRateRulesRepository rules = new InMemoryShopRateRulesRepository();
   private ShopRateRulesPortImpl port;
 
   @BeforeEach
   void setUp() {
-    port = new ShopRateRulesPortImpl(rules.asRepository(), shopRepository, rbacService);
+    port = new ShopRateRulesPortImpl(rules.asRepository(), shopRepository, shopPermissions);
   }
 
   private void saveOneRule() {
@@ -58,7 +60,7 @@ class ShopRateRulesPortImplTest {
         .thenReturn(Optional.of(RateRulesTestFixtures.shop(ShopType.DISTRIBUTOR, "pharmacy")));
     saveOneRule();
 
-    List<RateRuleSpec> specs = port.rulesFor(SHOP);
+    List<ShopRateRule> specs = port.rulesFor(SHOP);
 
     assertEquals(1, specs.size());
     assertEquals("Rate-A", specs.get(0).name());
@@ -85,10 +87,10 @@ class ShopRateRulesPortImplTest {
 
   @Test
   void canEditRatesFollowsRbac() {
-    when(rbacService.canEditRates(OWNER, SHOP)).thenReturn(true);
-    when(rbacService.canEditRates("cashier-1", SHOP)).thenReturn(false);
+    when(shopPermissions.canEditRates(SHOP, OWNER)).thenReturn(true);
+    when(shopPermissions.canEditRates(SHOP, "cashier-1")).thenReturn(false);
 
-    assertTrue(port.canEditRates(OWNER, SHOP));
-    assertFalse(port.canEditRates("cashier-1", SHOP));
+    assertTrue(port.canEditRates(SHOP, OWNER));
+    assertFalse(port.canEditRates(SHOP, "cashier-1"));
   }
 }

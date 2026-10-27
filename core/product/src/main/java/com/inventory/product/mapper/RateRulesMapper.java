@@ -1,8 +1,6 @@
 package com.inventory.product.mapper;
 
-import com.inventory.pricing.domain.model.Scheme;
-import com.inventory.pricing.domain.model.RateRuleSpec;
-import com.inventory.pricing.rest.dto.response.SchemeDto;
+import com.inventory.pricing.api.ShopRateRule;
 import com.inventory.product.domain.model.RateRule;
 import com.inventory.product.domain.model.enums.RateBase;
 import com.inventory.product.rest.dto.response.RateRuleDto;
@@ -22,10 +20,6 @@ public interface RateRulesMapper {
 
   List<RateRule> toEntities(List<RateRuleDto> dtos);
 
-  Scheme toScheme(SchemeDto dto);
-
-  SchemeDto toSchemeDto(Scheme scheme);
-
   default String baseToWire(RateBase base) {
     return base == null ? null : base.value();
   }
@@ -34,9 +28,9 @@ public interface RateRulesMapper {
     return RateBase.fromValue(wire);
   }
 
-  /** A saved or previewed rule as the calculator reads it; the name is trimmed. */
-  default RateRuleSpec toSpec(RateRule rule) {
-    return new RateRuleSpec(
+  /** A saved or previewed rule as pricing reads it; the name is trimmed. */
+  default ShopRateRule toSpec(RateRule rule) {
+    return new ShopRateRule(
         StringUtils.hasText(rule.getName()) ? rule.getName().trim() : rule.getName(),
         baseToWire(rule.getBase()), rule.getDiscountPercent(), rule.getScheme());
   }

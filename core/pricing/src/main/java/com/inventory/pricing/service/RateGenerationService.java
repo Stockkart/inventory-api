@@ -5,6 +5,8 @@ import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.common.util.GstMath;
 import com.inventory.metrics.MetricsWrapper;
+import com.inventory.pricing.api.ShopRateRule;
+import com.inventory.pricing.api.port.ShopRateRulesPort;
 import com.inventory.pricing.domain.model.Pricing;
 import com.inventory.pricing.domain.model.Rate;
 import com.inventory.pricing.domain.model.RateGenerationResult;
@@ -13,6 +15,7 @@ import com.inventory.pricing.domain.model.Scheme;
 import com.inventory.pricing.domain.model.SkippedRateRule;
 import com.inventory.pricing.utils.PricingUtils;
 import com.inventory.pricing.utils.RateRuleCalculator;
+import com.inventory.pricing.utils.RateRuleTermsConverter;
 import com.inventory.pricing.utils.constants.PricingConstants;
 import com.inventory.pricing.utils.constants.PricingMetricsConstants;
 import com.inventory.pricing.validation.PricingValidator;
@@ -168,8 +171,8 @@ public class RateGenerationService {
     if (shopRateRulesPort == null || !StringUtils.hasText(shopId)) {
       return List.of();
     }
-    List<RateRuleSpec> rules = shopRateRulesPort.rulesFor(shopId);
-    return rules == null ? List.of() : rules;
+    List<ShopRateRule> rules = shopRateRulesPort.rulesFor(shopId);
+    return rules == null ? List.of() : rules.stream().map(RateRuleTermsConverter::toSpec).toList();
   }
 
   /**
@@ -287,7 +290,7 @@ public class RateGenerationService {
   }
 
   private void requireGrant(String userId, String shopId) {
-    if (!shopRateRulesPort.canEditRates(userId, shopId)) {
+    if (!shopRateRulesPort.canEditRates(shopId, userId)) {
       throw new BaseException(ErrorCode.ACCESS_DENIED, "You do not have permission to edit rates");
     }
   }
