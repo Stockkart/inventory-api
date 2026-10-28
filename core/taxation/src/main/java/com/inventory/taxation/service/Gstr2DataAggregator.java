@@ -22,8 +22,8 @@ import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.user.domain.model.Vendor;
 import com.inventory.user.domain.repository.VendorRepository;
-import com.inventory.pricing.domain.model.Pricing;
-import com.inventory.pricing.domain.repository.PricingRepository;
+import com.inventory.pricing.api.PricingView;
+import com.inventory.pricing.api.PricingLookup;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -52,7 +52,7 @@ public class Gstr2DataAggregator {
   @Autowired
   private VendorRepository vendorRepository;
   @Autowired
-  private PricingRepository pricingRepository;
+  private PricingLookup pricingLookup;
   @Autowired
   private ShopRepository shopRepository;
   @Autowired
@@ -169,8 +169,8 @@ public class Gstr2DataAggregator {
         .map(Inventory::getPricingId)
         .filter(StringUtils::hasText)
         .collect(Collectors.toSet());
-    Map<String, Pricing> pricingMap = pricingIds.isEmpty() ? Map.of()
-        : pricingRepository.findAllById(pricingIds).stream().collect(Collectors.toMap(Pricing::getId, p -> p));
+    Map<String, PricingView> pricingMap = pricingIds.isEmpty() ? Map.of()
+        : pricingLookup.findAllById(pricingIds).stream().collect(Collectors.toMap(PricingView::id, p -> p));
 
     Set<String> purchaseInvoiceDocIds = new HashSet<>();
     for (Inventory inv : inventories) {
@@ -216,11 +216,11 @@ public class Gstr2DataAggregator {
       LocalDate invDate = null;
 
       for (Inventory inv : lotItems) {
-        Pricing pricing = inv.getPricingId() != null ? pricingMap.get(inv.getPricingId()) : null;
-        BigDecimal costPrice = pricing != null ? pricing.getCostPrice() : null;
+        PricingView pricing = inv.getPricingId() != null ? pricingMap.get(inv.getPricingId()) : null;
+        BigDecimal costPrice = pricing != null ? pricing.costPrice() : null;
         if (costPrice == null) costPrice = BigDecimal.ZERO;
-        String sgstStr = pricing != null ? pricing.getSgst() : null;
-        String cgstStr = pricing != null ? pricing.getCgst() : null;
+        String sgstStr = pricing != null ? pricing.sgst() : null;
+        String cgstStr = pricing != null ? pricing.cgst() : null;
         if (!StringUtils.hasText(sgstStr)) sgstStr = "0";
         if (!StringUtils.hasText(cgstStr)) cgstStr = "0";
         BigDecimal sgstRate = parseRate(sgstStr);
@@ -392,8 +392,8 @@ public class Gstr2DataAggregator {
    * and only the split between its lines is arithmetic.
    */
   /** The pricing behind an invoice line, reached through the lot the line was stocked into. */
-  private Pricing pricingOfLine(
-      String inventoryId, Map<String, Inventory> lotMap, Map<String, Pricing> pricingMap) {
+  private PricingView pricingOfLine(
+      String inventoryId, Map<String, Inventory> lotMap, Map<String, PricingView> pricingMap) {
     Inventory lot = lotMap.get(inventoryId);
     return lot == null ? null : pricingMap.get(lot.getPricingId());
   }
@@ -406,12 +406,12 @@ public class Gstr2DataAggregator {
             .collect(Collectors.toMap(Product::getId, product -> product));
   }
 
-  private Map<String, Pricing> pricingOf(List<Inventory> lots) {
+  private Map<String, PricingView> pricingOf(List<Inventory> lots) {
     Set<String> ids = lots.stream().map(Inventory::getPricingId)
         .filter(StringUtils::hasText).collect(Collectors.toSet());
     return ids.isEmpty() ? Map.of()
-        : pricingRepository.findAllById(ids).stream()
-            .collect(Collectors.toMap(Pricing::getId, pricing -> pricing));
+        : pricingLookup.findAllById(ids).stream()
+            .collect(Collectors.toMap(PricingView::id, pricing -> pricing));
   }
 
   /** The state the shop supplies from: its GSTIN, else its address (see GstStateCode). */
@@ -421,9 +421,9 @@ public class Gstr2DataAggregator {
   }
 
   /** The tax the goods on this line attract, read from what they were priced at. */
-  private BigDecimal rateOf(Pricing pricing) {
+  private BigDecimal rateOf(PricingView pricing) {
     return pricing == null ? BigDecimal.ZERO
-        : parseRate(pricing.getSgst()).add(parseRate(pricing.getCgst()));
+        : parseRate(pricing.sgst()).add(parseRate(pricing.cgst()));
   }
 
   /**
@@ -452,7 +452,7 @@ public class Gstr2DataAggregator {
         .collect(Collectors.toMap(Inventory::getId, lot -> lot));
 
     Map<String, Product> productMap = productsOf(purchasedLots);
-    Map<String, Pricing> pricingMap = pricingOf(purchasedLots);
+    Map<String, PricingView> pricingMap = pricingOf(purchasedLots);
 
     Set<String> vendorIds = invoices.stream()
         .map(VendorPurchaseInvoice::getVendorId)

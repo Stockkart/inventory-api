@@ -6,7 +6,7 @@ import com.inventory.product.domain.model.enums.InventorySellRestriction;
 import com.inventory.product.domain.model.enums.ItemType;
 import com.inventory.product.domain.model.enums.SchemeType;
 import com.inventory.pricing.api.RateTerms;
-import com.inventory.pricing.rest.dto.response.RateDto;
+import com.inventory.pricing.api.RateLine;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -147,7 +147,7 @@ public class Inventory {
   @Transient
   private BigDecimal sellingPrice;
   @Transient
-  private List<RateDto> rates;
+  private List<RateLine> rates;
   @Transient
   private String defaultRate;
   @Transient
@@ -174,7 +174,7 @@ public class Inventory {
   public List<RateTerms> rateTerms() {
     return rates == null ? List.of() : rates.stream()
         .filter(Objects::nonNull)
-        .map(RateDto::toTerms)
+        .map(RateLine::toTerms)
         .toList();
   }
 }

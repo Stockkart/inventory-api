@@ -13,8 +13,8 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.inventory.pricing.domain.model.Pricing;
-import com.inventory.pricing.domain.repository.PricingRepository;
+import com.inventory.pricing.api.PricingView;
+import com.inventory.pricing.api.PricingLookup;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.VendorPurchaseInvoice;
 import com.inventory.product.domain.model.VendorPurchaseInvoiceLine;
@@ -30,17 +30,17 @@ import com.inventory.common.gst.SupplyPlacement;
 class PurchaseTaxRecorderTest {
 
   private InventoryRepository inventoryRepository;
-  private PricingRepository pricingRepository;
+  private PricingLookup pricingRepository;
   private SupplyPlacement placement;
   private PurchaseTaxRecorder recorder;
   private final List<Inventory> lots = new ArrayList<>();
-  private final List<Pricing> pricings = new ArrayList<>();
+  private final List<PricingView> pricings = new ArrayList<>();
   private final List<VendorPurchaseInvoiceLine> lines = new ArrayList<>();
 
   @BeforeEach
   void setUp() {
     inventoryRepository = mock(InventoryRepository.class);
-    pricingRepository = mock(PricingRepository.class);
+    pricingRepository = mock(PricingLookup.class);
     when(inventoryRepository.findAllById(anyIterable())).thenReturn(lots);
     when(pricingRepository.findAllById(anyIterable())).thenReturn(pricings);
     placement = mock(SupplyPlacement.class);
@@ -57,12 +57,12 @@ class PurchaseTaxRecorderTest {
     lot.setId("inv-" + n);
     lot.setPricingId("pr-" + n);
     lots.add(lot);
-    Pricing pricing = new Pricing();
-    pricing.setId("pr-" + n);
-    pricing.setCostPrice(new BigDecimal(cost));
-    pricing.setCgst(halfGst);
-    pricing.setSgst(halfGst);
-    pricings.add(pricing);
+    pricings.add(PricingView.builder()
+        .id("pr-" + n)
+        .costPrice(new BigDecimal(cost))
+        .cgst(halfGst)
+        .sgst(halfGst)
+        .build());
     VendorPurchaseInvoiceLine line = new VendorPurchaseInvoiceLine();
     line.setLineIndex(lines.size());
     line.setCount(count);

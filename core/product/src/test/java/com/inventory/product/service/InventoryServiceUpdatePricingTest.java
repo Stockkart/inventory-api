@@ -6,8 +6,8 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
-import com.inventory.pricing.rest.dto.response.PricingReadDto;
-import com.inventory.pricing.service.InventoryPricingAdapter;
+import com.inventory.pricing.api.LotPricing;
+import com.inventory.pricing.api.InventoryPricing;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.catalog.InventoryProductReadHandler;
 import com.inventory.product.domain.model.pricing.InventoryPricingReadHandler;
@@ -47,12 +47,14 @@ class InventoryServiceUpdatePricingTest {
   @Mock private InventoryVerticalValidationHandler inventoryVerticalValidationHandler;
   @Mock private InventoryVerticalExtensionHandler inventoryVerticalExtensionHandler;
   @Mock private InventoryProductReadHandler inventoryProductReadHandler;
-  @Mock private InventoryPricingAdapter pricingPort;
+  @Mock private InventoryPricing pricingPort;
   @Spy private InventoryMapper inventoryMapper = Mappers.getMapper(InventoryMapper.class);
   @InjectMocks private InventoryService inventoryService;
 
   /** Pricing record as the write aspect leaves it after the update. */
-  private final PricingReadDto stored = new PricingReadDto();
+  private final LotPricing stored = new LotPricing(new BigDecimal("99.5"), new BigDecimal("55.25"),
+      null, new BigDecimal("77.5"), null, null, null, new BigDecimal("3"), null, null, null, "6",
+      "6", null);
 
   @BeforeEach
   void setUp() {
@@ -75,12 +77,6 @@ class InventoryServiceUpdatePricingTest {
     when(inventoryVerticalExtensionHandler.mergeDetail(eq("s1"), any(), any()))
         .thenAnswer(inv -> inv.getArgument(2));
 
-    stored.setPriceToRetail(new BigDecimal("77.5"));
-    stored.setMaximumRetailPrice(new BigDecimal("99.5"));
-    stored.setCostPrice(new BigDecimal("55.25"));
-    stored.setSgst("6");
-    stored.setCgst("6");
-    stored.setSaleAdditionalDiscount(new BigDecimal("3"));
     when(pricingPort.findById("pr-1")).thenReturn(Optional.of(stored));
 
     InventoryPricingReadHandler pricingReadHandler = new InventoryPricingReadHandler();

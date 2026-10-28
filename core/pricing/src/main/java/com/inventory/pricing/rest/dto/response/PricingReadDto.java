@@ -1,5 +1,6 @@
 package com.inventory.pricing.rest.dto.response;
 
+import com.inventory.pricing.service.api.InventoryPricingImpl;
 import com.inventory.pricing.utils.PricingUtils;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -34,38 +35,14 @@ public class PricingReadDto {
         && saleAdditionalDiscount == null && sgst == null && cgst == null;
   }
 
+  /** The price the lot sells at; see {@link com.inventory.pricing.api.LotPricing#effectivePrice}. */
   public BigDecimal getEffectivePrice() {
     return PricingUtils.resolveEffectivePriceFromReadDto(this);
   }
 
-  /**
-   * Landed cost per unit: the cost after the vendor's purchase scheme and additional discount, and
-   * before GST -- taken out here when the cost was entered off a tax-inclusive bill.
-   *
-   * <p>Derived from those fields whenever they are there to derive from, and only then falling
-   * back to the stored {@code effectiveCostPrice}. The stored figure is a cache of this same
-   * arithmetic, so the two agree on every record written through pricing -- but a cache that wins
-   * over its own inputs is silently wrong everywhere at once when the two ever part, and a landed
-   * cost is read by margin, stock valuation and COGS alike. Deriving makes the inputs the answer
-   * and the cache the fallback, which is the way round that cannot go stale.
-   *
-   * <p>The fallback still matters: a record with no cost price has nothing to derive from, and one
-   * written before this field existed has nothing stored. Both are answered correctly here.
-   */
+  /** Landed cost per unit; see {@link com.inventory.pricing.api.LotPricing#resolveEffectiveCostPrice}. */
   public BigDecimal resolveEffectiveCostPrice() {
-    BigDecimal derived = PricingUtils.computeEffectiveCostPrice(
-        costPrice,
-        purchaseAdditionalDiscount,
-        purchaseScheme == null
-            ? null
-            : new com.inventory.pricing.domain.model.Scheme(
-                purchaseScheme.getSchemeType(),
-                purchaseScheme.getSchemePayFor(),
-                purchaseScheme.getSchemeFree(),
-                purchaseScheme.getSchemePercentage()),
-        Boolean.TRUE.equals(costPriceIncludesTax),
-        sgst,
-        cgst);
-    return derived != null ? derived : effectiveCostPrice;
+    // one implementation, in the api record other modules read
+    return InventoryPricingImpl.toLotPricing(this).resolveEffectiveCostPrice();
   }
 }

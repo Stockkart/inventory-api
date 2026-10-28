@@ -9,6 +9,8 @@ import com.inventory.pricing.domain.model.Pricing;
 import com.inventory.pricing.domain.model.Rate;
 import com.inventory.pricing.domain.model.Scheme;
 import com.inventory.pricing.rest.dto.request.CreatePricingRequest;
+import com.inventory.pricing.service.VerticalPricingPolicies;
+import com.inventory.product.service.api.VerticalPricingPolicyPortImpl;
 import java.math.BigDecimal;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -28,12 +30,13 @@ class VerticalPricingPolicyPortImplRateFieldsTest {
     }
   };
 
-  private final VerticalPricingPolicyPortImpl port =
+  // pricing's side of the port and product's implementation together: the full round trip
+  private final VerticalPricingPolicies port = new VerticalPricingPolicies(
       new VerticalPricingPolicyPortImpl(new PricingPolicyResolver(null, null) {
         @Override public VerticalPricingPolicy resolve(String verticalId) {
           return PASS_THROUGH;
         }
-      });
+      }));
 
   @Test
   void everyRateFieldSurvivesPolicyRoundTrip() {

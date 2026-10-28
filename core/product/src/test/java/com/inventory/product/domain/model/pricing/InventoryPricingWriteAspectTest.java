@@ -18,6 +18,7 @@ import com.inventory.pricing.mapper.PricingMapperImpl;
 import com.inventory.pricing.rest.dto.request.UpdatePricingRequest;
 import com.inventory.pricing.service.InventoryPricingAdapterImpl;
 import com.inventory.pricing.service.PricingService;
+import com.inventory.pricing.service.api.InventoryPricingImpl;
 import com.inventory.pricing.validation.PricingValidator;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.repository.ShopRepository;
@@ -53,7 +54,8 @@ class InventoryPricingWriteAspectTest {
 
   @BeforeEach
   void setUp() {
-    ReflectionTestUtils.setField(handler, "pricingPort", adapter);
+    // the real pricing path, through the api the handler now uses
+    ReflectionTestUtils.setField(handler, "pricingPort", new InventoryPricingImpl(adapter));
     ReflectionTestUtils.setField(handler, "shopRepository", shopRepository);
     ReflectionTestUtils.setField(aspect, "handler", handler);
     when(shopRepository.findById(anyString())).thenReturn(Optional.empty());

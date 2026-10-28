@@ -1,7 +1,7 @@
 package com.inventory.product.rest.dto.request;
 
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.inventory.pricing.rest.dto.response.RateDto;
+import com.inventory.pricing.api.RateLine;
 import com.inventory.product.domain.model.enums.DiscountApplicable;
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.enums.ItemType;
@@ -31,7 +31,7 @@ public class CreateInventoryItemRequest {
   private BigDecimal costPrice;
   private BigDecimal priceToRetail;
   private BigDecimal sellingPrice;
-  private List<RateDto> rates;
+  private List<RateLine> rates;
   private String defaultRate;
   private BigDecimal saleAdditionalDiscount; // Optional: Additional discount amount
   private String businessType;

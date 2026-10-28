@@ -2,8 +2,8 @@ package com.inventory.product.utils;
 
 import com.inventory.common.util.GstMath;
 import com.inventory.common.constants.PurchaseTaxTreatment;
-import com.inventory.pricing.domain.model.Pricing;
-import com.inventory.pricing.utils.PricingUtils;
+import com.inventory.pricing.api.PricingView;
+import com.inventory.pricing.api.LandedCost;
 import com.inventory.product.domain.model.VendorPurchaseInvoice;
 import com.inventory.product.domain.model.VendorPurchaseInvoiceLine;
 
@@ -35,7 +35,7 @@ public final class PurchaseTaxBasisResolver {
    */
   public static PurchaseTaxBasis resolve(
       VendorPurchaseInvoice invoice,
-      Function<String, Pricing> pricingByInventoryId,
+      Function<String, PricingView> pricingByInventoryId,
       PurchaseTaxTreatment treatment,
       boolean interstate) {
 
@@ -48,7 +48,7 @@ public final class PurchaseTaxBasisResolver {
     List<BigDecimal> rates = new ArrayList<>(lines.size());
     List<BigDecimal> values = new ArrayList<>(lines.size());
     for (VendorPurchaseInvoiceLine line : lines) {
-      Pricing pricing = line.getInventoryId() == null ? null
+      PricingView pricing = line.getInventoryId() == null ? null
           : pricingByInventoryId.apply(line.getInventoryId());
       rates.add(rateOf(pricing));
       values.add(lineValue(line, pricing));
@@ -80,12 +80,12 @@ public final class PurchaseTaxBasisResolver {
    * Quantity times cost after the line's price reductions, or its list cost where none was
    * recorded.
    */
-  private static BigDecimal lineValue(VendorPurchaseInvoiceLine line, Pricing pricing) {
+  private static BigDecimal lineValue(VendorPurchaseInvoiceLine line, PricingView pricing) {
     BigDecimal qty = line.getCount() == null
         ? BigDecimal.ZERO : BigDecimal.valueOf(line.getCount());
     BigDecimal discounted = discountedUnitCost(pricing);
-    if (discounted != null && pricing.getCostPrice() != null
-        && discounted.compareTo(pricing.getCostPrice()) < 0) {
+    if (discounted != null && pricing.costPrice() != null
+        && discounted.compareTo(pricing.costPrice()) < 0) {
       return money(discounted.multiply(qty));
     }
     BigDecimal listCost = line.getCostPrice() == null ? BigDecimal.ZERO : line.getCostPrice();
@@ -129,12 +129,12 @@ public final class PurchaseTaxBasisResolver {
    * out -- the two things a raw {@code costPrice} does not account for, and between them worth
    * more than a third of the figure on a scheme-discounted inclusive bill.
    */
-  public static BigDecimal unitTaxable(Pricing pricing, PurchaseTaxTreatment treatment,
+  public static BigDecimal unitTaxable(PricingView pricing, PurchaseTaxTreatment treatment,
       BigDecimal ratePct) {
     BigDecimal cost = discountedUnitCost(pricing);
     if (cost == null) {
-      cost = pricing != null && pricing.getCostPrice() != null
-          ? pricing.getCostPrice() : BigDecimal.ZERO;
+      cost = pricing != null && pricing.costPrice() != null
+          ? pricing.costPrice() : BigDecimal.ZERO;
     }
     if (PurchaseTaxTreatment.orDefault(treatment) == PurchaseTaxTreatment.INCLUSIVE) {
       return GstMath.extractFromInclusive(cost, ratePct).taxable();
@@ -154,18 +154,18 @@ public final class PurchaseTaxBasisResolver {
    * step: an inclusive bill has its tax taken out of the whole line by {@link #resolve}. Returns
    * null when there is no cost to reduce.
    */
-  private static BigDecimal discountedUnitCost(Pricing pricing) {
+  private static BigDecimal discountedUnitCost(PricingView pricing) {
     if (pricing == null) {
       return null;
     }
-    return PricingUtils.computeEffectiveCostPrice(
-        pricing.getCostPrice(), pricing.getPurchaseAdditionalDiscount(),
-        pricing.getPurchaseScheme());
+    return LandedCost.perUnit(
+        pricing.costPrice(), pricing.purchaseAdditionalDiscount(),
+        pricing.purchaseScheme());
   }
 
-  private static BigDecimal rateOf(Pricing pricing) {
+  private static BigDecimal rateOf(PricingView pricing) {
     return pricing == null ? BigDecimal.ZERO
-        : GstMath.parseGstRate(pricing.getSgst()).add(GstMath.parseGstRate(pricing.getCgst()));
+        : GstMath.parseGstRate(pricing.sgst()).add(GstMath.parseGstRate(pricing.cgst()));
   }
 
   private static BigDecimal sum(List<BigDecimal> values) {

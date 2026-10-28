@@ -10,9 +10,9 @@ import static org.mockito.Mockito.when;
 
 import com.inventory.common.exception.ValidationException;
 import com.inventory.pricing.api.ShopRateRule;
-import com.inventory.pricing.rest.dto.response.RateDto;
+import com.inventory.pricing.api.RateLine;
 import com.inventory.pricing.api.port.ShopRateRulesPort;
-import com.inventory.pricing.rest.dto.response.SchemeDto;
+import com.inventory.pricing.api.SchemeTerms;
 import com.inventory.pricing.utils.constants.PricingConstants;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.service.CartRateResolver.LineTerms;
@@ -57,7 +57,7 @@ class CartRateResolverTest {
 
   @Test
   void ruleRateWithoutDiscountOrSchemeStatesZeroAndNone() {
-    RateDto schemeOnly = rule("Rate-C", "100", null, null);
+    RateLine schemeOnly = rule("Rate-C", "100", null, null);
 
     LineTerms terms = resolver.resolve(batch(null, schemeOnly), "Rate-C").orElseThrow();
 
@@ -70,8 +70,8 @@ class CartRateResolverTest {
 
   @Test
   void percentageSchemeCarriesOnlyItsPercentage() {
-    RateDto pct = rule("Rate-P", "100", "2",
-        new SchemeDto(PricingConstants.SCHEME_TYPE_PERCENTAGE, 10, 1, new BigDecimal("5")));
+    RateLine pct = rule("Rate-P", "100", "2",
+        new SchemeTerms(PricingConstants.SCHEME_TYPE_PERCENTAGE, 10, 1, new BigDecimal("5")));
 
     LineTerms terms = resolver.resolve(batch(null, pct), "Rate-P").orElseThrow();
 
@@ -160,25 +160,22 @@ class CartRateResolverTest {
     assertTrue(resolver.resolve(batch, null).isPresent());
   }
 
-  static RateDto rateA() {
+  static RateLine rateA() {
     return rule("Rate-A", "100", "8",
-        new SchemeDto(PricingConstants.SCHEME_TYPE_FIXED_UNITS, 10, 1, null));
+        new SchemeTerms(PricingConstants.SCHEME_TYPE_FIXED_UNITS, 10, 1, null));
   }
 
-  static RateDto rule(String name, String baseValue, String disc, SchemeDto scheme) {
-    RateDto rate = new RateDto(name, new BigDecimal("83.64"));
-    rate.setBase(PricingConstants.RATE_BASE_PRICE_TO_RETAIL);
-    rate.setBaseValue(new BigDecimal(baseValue));
-    rate.setDiscountPercent(disc != null ? new BigDecimal(disc) : null);
-    rate.setScheme(scheme);
-    return rate;
+  static RateLine rule(String name, String baseValue, String disc, SchemeTerms scheme) {
+    return new RateLine(name, new BigDecimal("83.64"), PricingConstants.RATE_BASE_PRICE_TO_RETAIL,
+        new BigDecimal(baseValue), disc != null ? new BigDecimal(disc) : null, scheme, null, null,
+        null);
   }
 
-  static RateDto legacy() {
-    return new RateDto("Old", new BigDecimal("95"));
+  static RateLine legacy() {
+    return RateLine.of("Old", new BigDecimal("95"));
   }
 
-  private static Inventory batch(String defaultRate, RateDto... rates) {
+  private static Inventory batch(String defaultRate, RateLine... rates) {
     Inventory inventory = new Inventory();
     inventory.setId("lot-1");
     inventory.setDefaultRate(defaultRate);

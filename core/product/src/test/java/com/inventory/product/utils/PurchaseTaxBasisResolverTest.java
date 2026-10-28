@@ -2,8 +2,8 @@ package com.inventory.product.utils;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.inventory.pricing.domain.model.Pricing;
-import com.inventory.pricing.domain.model.Scheme;
+import com.inventory.pricing.api.PricingView;
+import com.inventory.pricing.api.SchemeTerms;
 import com.inventory.product.domain.model.VendorPurchaseInvoice;
 import com.inventory.product.domain.model.VendorPurchaseInvoiceLine;
 import com.inventory.common.constants.PurchaseTaxTreatment;
@@ -16,7 +16,8 @@ import org.junit.jupiter.api.Test;
 
 class PurchaseTaxBasisResolverTest {
 
-  private final Map<String, Pricing> pricing = new HashMap<>();
+  // builders, so a deal line can add its scheme after the line is made
+  private final Map<String, PricingView.PricingViewBuilder> pricing = new HashMap<>();
   private final List<VendorPurchaseInvoiceLine> lines = new ArrayList<>();
 
   private static BigDecimal bd(String value) {
@@ -37,18 +38,15 @@ class PurchaseTaxBasisResolverTest {
     line.setInventoryId(inventoryId);
     lines.add(line);
 
-    Pricing p = new Pricing();
-    p.setCostPrice(bd(cost));
-    p.setCgst(halfGst);
-    p.setSgst(halfGst);
+    PricingView.PricingViewBuilder p = PricingView.builder();
+    p.costPrice(bd(cost));
+    p.cgst(halfGst);
+    p.sgst(halfGst);
     if (schemePct != null) {
-      Scheme scheme = new Scheme();
-      scheme.setSchemeType("PERCENTAGE");
-      scheme.setSchemePercentage(bd(schemePct));
-      p.setPurchaseScheme(scheme);
+      p.purchaseScheme(new SchemeTerms("PERCENTAGE", null, null, bd(schemePct)));
     }
     if (additional != null) {
-      p.setPurchaseAdditionalDiscount(bd(additional));
+      p.purchaseAdditionalDiscount(bd(additional));
     }
     pricing.put(inventoryId, p);
   }
@@ -57,11 +55,8 @@ class PurchaseTaxBasisResolverTest {
   private void dealLine(int count, String cost, String halfGst, int payFor, int free,
       String additional) {
     line(count, cost, halfGst, null, additional);
-    Scheme scheme = new Scheme();
-    scheme.setSchemeType("FIXED_UNITS");
-    scheme.setSchemePayFor(payFor);
-    scheme.setSchemeFree(free);
-    pricing.get(lines.get(lines.size() - 1).getInventoryId()).setPurchaseScheme(scheme);
+    pricing.get(lines.get(lines.size() - 1).getInventoryId())
+        .purchaseScheme(new SchemeTerms("FIXED_UNITS", payFor, free, null));
   }
 
   private PurchaseTaxBasis resolve(
@@ -69,7 +64,9 @@ class PurchaseTaxBasisResolverTest {
     VendorPurchaseInvoice invoice = new VendorPurchaseInvoice();
     invoice.setOverallDiscount(overallDiscount == null ? null : bd(overallDiscount));
     invoice.setLines(lines);
-    return PurchaseTaxBasisResolver.resolve(invoice, pricing::get, treatment, interstate);
+    return PurchaseTaxBasisResolver.resolve(
+        invoice, id -> pricing.containsKey(id) ? pricing.get(id).build() : null, treatment,
+        interstate);
   }
 
   private static BigDecimal central(PurchaseTaxBasis basis) {

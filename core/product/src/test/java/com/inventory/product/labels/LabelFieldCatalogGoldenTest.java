@@ -6,7 +6,7 @@ import static org.mockito.Mockito.when;
 import com.inventory.pluginengine.schema.VerticalEntitySchema;
 import com.inventory.pluginengine.schema.VerticalSchema;
 import com.inventory.pluginengine.schema.VerticalSchemaField;
-import com.inventory.pricing.domain.repository.PricingRepository;
+import com.inventory.pricing.api.PricingLookup;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.enums.ShopType;
 import com.inventory.product.domain.repository.ShopRepository;
@@ -35,7 +35,7 @@ class LabelFieldCatalogGoldenTest {
   private static final String SHOP_ID = "golden-shop";
 
   @Mock private ShopRepository shopRepository;
-  @Mock private PricingRepository pricingRepository;
+  @Mock private PricingLookup pricingRepository;
   @Mock private SchemaLoader schemaLoader;
 
   private LabelFieldCatalogService service;
@@ -49,7 +49,7 @@ class LabelFieldCatalogGoldenTest {
 
   @Test
   void retailerWithoutVerticalMatchesPreCardCatalog() {
-    when(pricingRepository.findDistinctRateNamesByShopId(SHOP_ID)).thenReturn(List.of());
+    when(pricingRepository.rateNames(SHOP_ID)).thenReturn(List.of());
 
     FieldCatalogResponse response = FieldCatalogResponse.from(service.catalog(shop(ShopType.RETAILER, null)));
 
@@ -84,7 +84,7 @@ class LabelFieldCatalogGoldenTest {
 
   @Test
   void wholesalerWithRatesAndVerticalMatchesPreCardCatalog() {
-    when(pricingRepository.findDistinctRateNamesByShopId(SHOP_ID))
+    when(pricingRepository.rateNames(SHOP_ID))
         .thenReturn(List.of("Retail", "Wholesale"));
     when(schemaLoader.load("medical", "1.0.0"))
         .thenReturn(

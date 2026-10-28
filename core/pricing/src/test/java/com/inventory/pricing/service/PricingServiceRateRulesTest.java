@@ -64,7 +64,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 class PricingServiceRateRulesTest {
 
   @Mock private PricingRepository pricingRepository;
-  @Mock private VerticalPricingPolicyPort pricingPolicyPort;
+  @Mock private VerticalPricingPolicies pricingPolicyPort;
   @Mock private ShopRateRulesPort port;
   @Mock private MetricsWrapper metrics;
   @Spy private PricingMapper pricingMapper = new PricingMapperImpl();

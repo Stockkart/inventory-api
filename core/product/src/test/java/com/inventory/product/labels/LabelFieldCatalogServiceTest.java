@@ -15,7 +15,7 @@ import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.pluginengine.schema.VerticalEntitySchema;
 import com.inventory.pluginengine.schema.VerticalSchema;
 import com.inventory.pluginengine.schema.VerticalSchemaField;
-import com.inventory.pricing.domain.repository.PricingRepository;
+import com.inventory.pricing.api.PricingLookup;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.enums.ShopType;
 import com.inventory.product.domain.repository.ShopRepository;
@@ -41,7 +41,7 @@ class LabelFieldCatalogServiceTest {
   private static final String SHOP_ID = "shop-1";
 
   @Mock private ShopRepository shopRepository;
-  @Mock private PricingRepository pricingRepository;
+  @Mock private PricingLookup pricingRepository;
   @Mock private SchemaLoader schemaLoader;
 
   private LabelFieldCatalogService service;
@@ -60,14 +60,14 @@ class LabelFieldCatalogServiceTest {
     when(shopRepository.findById(SHOP_ID)).thenReturn(Optional.empty());
 
     assertThrows(ResourceNotFoundException.class, () -> service.catalog(SHOP_ID));
-    verify(pricingRepository, never()).findDistinctRateNamesByShopId(anyString());
+    verify(pricingRepository, never()).rateNames(anyString());
   }
 
   @Test
   void catalogByShopIdLoadsShopAndDelegates() {
     Shop shop = shop(ShopType.RETAILER, null, null);
     when(shopRepository.findById(SHOP_ID)).thenReturn(Optional.of(shop));
-    when(pricingRepository.findDistinctRateNamesByShopId(SHOP_ID)).thenReturn(List.of());
+    when(pricingRepository.rateNames(SHOP_ID)).thenReturn(List.of());
 
     FieldCatalog catalog = service.catalog(SHOP_ID);
 
@@ -80,7 +80,7 @@ class LabelFieldCatalogServiceTest {
   @Test
   void assemblesStaticGroupsInCatalogOrderWithStickerSizes() {
     Shop shop = shop(ShopType.RETAILER, null, null);
-    when(pricingRepository.findDistinctRateNamesByShopId(SHOP_ID)).thenReturn(List.of());
+    when(pricingRepository.rateNames(SHOP_ID)).thenReturn(List.of());
 
     FieldCatalog catalog = service.catalog(shop);
 
@@ -103,7 +103,7 @@ class LabelFieldCatalogServiceTest {
   @Test
   void cardViewInterleavesCardOnlyFieldsAfterEachGroupAndExcludesShopFields() {
     Shop shop = shop(ShopType.RETAILER, null, null);
-    when(pricingRepository.findDistinctRateNamesByShopId(SHOP_ID)).thenReturn(List.of("Retail"));
+    when(pricingRepository.rateNames(SHOP_ID)).thenReturn(List.of("Retail"));
 
     FieldCatalog catalog = service.catalog(shop);
 
@@ -127,7 +127,7 @@ class LabelFieldCatalogServiceTest {
   @Test
   void cardViewMarksShopInternalFields() {
     Shop shop = shop(ShopType.RETAILER, null, null);
-    when(pricingRepository.findDistinctRateNamesByShopId(SHOP_ID)).thenReturn(List.of());
+    when(pricingRepository.rateNames(SHOP_ID)).thenReturn(List.of());
 
     FieldCatalog catalog = service.catalog(shop);
 
@@ -148,7 +148,7 @@ class LabelFieldCatalogServiceTest {
   @Test
   void verticalFieldsAreUsableOnCardsViaVerticalFieldsPath() {
     Shop shop = shop(ShopType.RETAILER, "sports", "1.0.0");
-    when(pricingRepository.findDistinctRateNamesByShopId(SHOP_ID)).thenReturn(List.of());
+    when(pricingRepository.rateNames(SHOP_ID)).thenReturn(List.of());
     when(schemaLoader.load("sports", "1.0.0"))
         .thenReturn(
             schema(
@@ -166,7 +166,7 @@ class LabelFieldCatalogServiceTest {
   @Test
   void nullShopTypeNormalizesToRetailer() {
     Shop shop = shop(null, null, null);
-    when(pricingRepository.findDistinctRateNamesByShopId(SHOP_ID)).thenReturn(List.of());
+    when(pricingRepository.rateNames(SHOP_ID)).thenReturn(List.of());
 
     assertEquals(ShopType.RETAILER, service.catalog(shop).effectiveShopType());
   }
@@ -174,7 +174,7 @@ class LabelFieldCatalogServiceTest {
   @Test
   void keepsDistributorShopType() {
     Shop shop = shop(ShopType.DISTRIBUTOR, null, null);
-    when(pricingRepository.findDistinctRateNamesByShopId(SHOP_ID)).thenReturn(List.of());
+    when(pricingRepository.rateNames(SHOP_ID)).thenReturn(List.of());
 
     assertEquals(ShopType.DISTRIBUTOR, service.catalog(shop).effectiveShopType());
   }
@@ -185,7 +185,7 @@ class LabelFieldCatalogServiceTest {
   @EnumSource(ShopType.class)
   void coreLotShopAndUnrestrictedPricingFieldsAvailableForEveryShopType(ShopType shopType) {
     Shop shop = shop(shopType, null, null);
-    when(pricingRepository.findDistinctRateNamesByShopId(SHOP_ID)).thenReturn(List.of());
+    when(pricingRepository.rateNames(SHOP_ID)).thenReturn(List.of());
 
     FieldCatalog catalog = service.catalog(shop);
 
@@ -206,7 +206,7 @@ class LabelFieldCatalogServiceTest {
   @EnumSource(ShopType.class)
   void tradePricingFieldsAvailableOnlyForDistributorAndWholesaler(ShopType shopType) {
     Shop shop = shop(shopType, null, null);
-    when(pricingRepository.findDistinctRateNamesByShopId(SHOP_ID)).thenReturn(List.of("Retail"));
+    when(pricingRepository.rateNames(SHOP_ID)).thenReturn(List.of("Retail"));
 
     FieldCatalog catalog = service.catalog(shop);
 
@@ -229,7 +229,7 @@ class LabelFieldCatalogServiceTest {
   @Test
   void restrictedFieldsStillListedInRetailerCatalog() {
     Shop shop = shop(ShopType.RETAILER, null, null);
-    when(pricingRepository.findDistinctRateNamesByShopId(SHOP_ID)).thenReturn(List.of("Trade"));
+    when(pricingRepository.rateNames(SHOP_ID)).thenReturn(List.of("Trade"));
 
     List<String> keys = keys(service.catalog(shop));
 
@@ -244,7 +244,7 @@ class LabelFieldCatalogServiceTest {
   @EnumSource(ShopType.class)
   void everyResponseCarriesAllStickerSizePresetsWithMaxLines(ShopType shopType) {
     Shop shop = shop(shopType, null, null);
-    when(pricingRepository.findDistinctRateNamesByShopId(SHOP_ID)).thenReturn(List.of());
+    when(pricingRepository.rateNames(SHOP_ID)).thenReturn(List.of());
 
     List<StickerSizeSpec> sizes = service.catalog(shop).stickerSizes();
 
@@ -261,7 +261,7 @@ class LabelFieldCatalogServiceTest {
   @Test
   void stickerSizesPresentWhenVerticalSchemaLoaded() {
     Shop shop = shop(ShopType.RETAILER, "medical", "1.0.0");
-    when(pricingRepository.findDistinctRateNamesByShopId(SHOP_ID)).thenReturn(List.of());
+    when(pricingRepository.rateNames(SHOP_ID)).thenReturn(List.of());
     when(schemaLoader.load("medical", "1.0.0"))
         .thenReturn(
             schema(
@@ -277,7 +277,7 @@ class LabelFieldCatalogServiceTest {
   @Test
   void newSchemaFromLoaderIsReflectedOnNextCallWithoutRestart() {
     Shop shop = shop(ShopType.RETAILER, "medical", "1.0.0");
-    when(pricingRepository.findDistinctRateNamesByShopId(SHOP_ID)).thenReturn(List.of());
+    when(pricingRepository.rateNames(SHOP_ID)).thenReturn(List.of());
     VerticalSchema schemaA =
         schema(
             Map.of(
@@ -316,7 +316,7 @@ class LabelFieldCatalogServiceTest {
   @Test
   void loaderRecoveryAfterFailureIsReflectedOnNextCall() {
     Shop shop = shop(ShopType.RETAILER, "medical", "1.0.0");
-    when(pricingRepository.findDistinctRateNamesByShopId(SHOP_ID)).thenReturn(List.of());
+    when(pricingRepository.rateNames(SHOP_ID)).thenReturn(List.of());
     when(schemaLoader.load("medical", "1.0.0"))
         .thenThrow(new IllegalStateException("plugin unavailable"))
         .thenReturn(
@@ -339,7 +339,7 @@ class LabelFieldCatalogServiceTest {
   @Test
   void appendsNamedRateFieldsAfterStaticPricingAndBeforeLot() {
     Shop shop = shop(ShopType.WHOLESALER, null, null);
-    when(pricingRepository.findDistinctRateNamesByShopId(SHOP_ID))
+    when(pricingRepository.rateNames(SHOP_ID))
         .thenReturn(List.of("Retail", "Wholesale"));
 
     List<String> keys = keys(service.catalog(shop));
@@ -358,7 +358,7 @@ class LabelFieldCatalogServiceTest {
   @Test
   void verticalFieldsPlacedBetweenLotAndShopWithMappedTypesAndApiKey() {
     Shop shop = shop(ShopType.RETAILER, "medical", "1.0.0");
-    when(pricingRepository.findDistinctRateNamesByShopId(SHOP_ID)).thenReturn(List.of());
+    when(pricingRepository.rateNames(SHOP_ID)).thenReturn(List.of());
 
     VerticalSchemaField schedule = field("schedule", null, "Drug schedule", "enum");
     VerticalSchemaField mfgDate = field("mfgDate", "manufacturingDate", "Mfg. date", "date");
@@ -414,7 +414,7 @@ class LabelFieldCatalogServiceTest {
   @Test
   void skipsExcludedTypesAndCoreLotBackedFields() {
     Shop shop = shop(ShopType.RETAILER, "medical", "1.0.0");
-    when(pricingRepository.findDistinctRateNamesByShopId(SHOP_ID)).thenReturn(List.of());
+    when(pricingRepository.rateNames(SHOP_ID)).thenReturn(List.of());
     when(schemaLoader.load("medical", "1.0.0"))
         .thenReturn(
             schema(
@@ -445,7 +445,7 @@ class LabelFieldCatalogServiceTest {
   @Test
   void truncatesLongLabelsToSixtyChars() {
     Shop shop = shop(ShopType.RETAILER, "medical", "1.0.0");
-    when(pricingRepository.findDistinctRateNamesByShopId(SHOP_ID)).thenReturn(List.of());
+    when(pricingRepository.rateNames(SHOP_ID)).thenReturn(List.of());
     String longLabel = "x".repeat(75);
     when(schemaLoader.load("medical", "1.0.0"))
         .thenReturn(
@@ -463,7 +463,7 @@ class LabelFieldCatalogServiceTest {
   @Test
   void inventoryEntityFieldsPrecedeProductEntityFields() {
     Shop shop = shop(ShopType.RETAILER, "apparel", "2.0.0");
-    when(pricingRepository.findDistinctRateNamesByShopId(SHOP_ID)).thenReturn(List.of());
+    when(pricingRepository.rateNames(SHOP_ID)).thenReturn(List.of());
     Map<String, VerticalEntitySchema> entities = new LinkedHashMap<>();
     entities.put(
         LabelFieldCatalogService.PRODUCT_ENTITY, entity(field("brand", null, "Brand", "string")));
@@ -482,7 +482,7 @@ class LabelFieldCatalogServiceTest {
   @Test
   void blankVerticalIdYieldsEmptyVerticalSetWithoutLoading() {
     Shop shop = shop(ShopType.RETAILER, "   ", "1.0.0");
-    when(pricingRepository.findDistinctRateNamesByShopId(SHOP_ID)).thenReturn(List.of());
+    when(pricingRepository.rateNames(SHOP_ID)).thenReturn(List.of());
 
     FieldCatalog catalog = service.catalog(shop);
 
@@ -494,7 +494,7 @@ class LabelFieldCatalogServiceTest {
   @Test
   void schemaLoadFailureYieldsEmptyVerticalSetAndFlag() {
     Shop shop = shop(ShopType.RETAILER, "medical", "9.9.9");
-    when(pricingRepository.findDistinctRateNamesByShopId(SHOP_ID)).thenReturn(List.of());
+    when(pricingRepository.rateNames(SHOP_ID)).thenReturn(List.of());
     when(schemaLoader.load("medical", "9.9.9"))
         .thenThrow(new ResourceNotFoundException("VerticalSchema", "verticalId", "medical"));
 
@@ -513,7 +513,7 @@ class LabelFieldCatalogServiceTest {
   @Test
   void schemaWithoutEntitiesIsLoadedButContributesNothing() {
     Shop shop = shop(ShopType.RETAILER, "cafe", "1.0.0");
-    when(pricingRepository.findDistinctRateNamesByShopId(SHOP_ID)).thenReturn(List.of());
+    when(pricingRepository.rateNames(SHOP_ID)).thenReturn(List.of());
     when(schemaLoader.load("cafe", "1.0.0")).thenReturn(new VerticalSchema());
 
     FieldCatalog catalog = service.catalog(shop);
@@ -527,7 +527,7 @@ class LabelFieldCatalogServiceTest {
   @Test
   void fieldKeysAreUniqueKeepingFirstOccurrence() {
     Shop shop = shop(ShopType.RETAILER, "medical", "1.0.0");
-    when(pricingRepository.findDistinctRateNamesByShopId(SHOP_ID))
+    when(pricingRepository.rateNames(SHOP_ID))
         .thenReturn(List.of("Retail", "Retail"));
     when(schemaLoader.load("medical", "1.0.0"))
         .thenReturn(

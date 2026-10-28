@@ -6,8 +6,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.ArgumentMatchers.any;
 
-import com.inventory.pricing.rest.dto.request.PricingUpdateCommand;
-import com.inventory.pricing.service.InventoryPricingAdapter;
+import com.inventory.pricing.api.PricingUpdate;
+import com.inventory.pricing.api.InventoryPricing;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.rest.dto.request.UpdateInventoryRequest;
@@ -29,7 +29,7 @@ import org.mockito.quality.Strictness;
 @MockitoSettings(strictness = Strictness.LENIENT)
 class InventoryPricingWriteHandlerClearFieldsTest {
 
-  @Mock private InventoryPricingAdapter pricingPort;
+  @Mock private InventoryPricing pricingPort;
   @Mock private ShopRepository shopRepository;
   @InjectMocks private InventoryPricingWriteHandler handler;
 
@@ -55,9 +55,9 @@ class InventoryPricingWriteHandlerClearFieldsTest {
 
     handler.persistOnSave(savedLot());
 
-    ArgumentCaptor<PricingUpdateCommand> cmd = ArgumentCaptor.forClass(PricingUpdateCommand.class);
+    ArgumentCaptor<PricingUpdate> cmd = ArgumentCaptor.forClass(PricingUpdate.class);
     verify(pricingPort).update(eq("pr-1"), cmd.capture(), eq("owner-1"));
-    assertEquals(Set.of("saleAdditionalDiscount", "purchaseScheme"), cmd.getValue().getClearFields());
+    assertEquals(Set.of("saleAdditionalDiscount", "purchaseScheme"), cmd.getValue().clearFields());
   }
 
   @Test

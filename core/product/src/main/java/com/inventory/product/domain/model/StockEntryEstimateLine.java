@@ -4,7 +4,7 @@ import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.enums.DiscountApplicable;
 import com.inventory.product.domain.model.enums.ItemType;
 import com.inventory.product.domain.model.enums.SchemeType;
-import com.inventory.pricing.rest.dto.response.RateDto;
+import com.inventory.pricing.api.RateLine;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -31,7 +31,7 @@ public class StockEntryEstimateLine {
   private BigDecimal costPrice;
   private BigDecimal priceToRetail;
   private BigDecimal sellingPrice;
-  private List<RateDto> rates;
+  private List<RateLine> rates;
   private String defaultRate;
   private BigDecimal saleAdditionalDiscount;
   private String businessType;

@@ -5,7 +5,8 @@ import com.inventory.product.rest.dto.request.CustomReminderRequest;
 import com.inventory.reminders.api.InventoryReminderRequest;
 import com.inventory.reminders.api.InventoryLowAlert;
 import com.inventory.reminders.api.CustomReminder;
-import com.inventory.pricing.domain.model.Pricing;
+import com.inventory.pricing.api.PricingView;
+import com.inventory.pricing.api.SchemeTerms;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.VendorPurchaseInvoiceLine;
 import com.inventory.product.utils.PurchaseTaxBasis;
@@ -43,17 +44,25 @@ public interface InventoryMapper {
    * The purchase side of the pricing stock-in writes for an item: cost, GST rates, purchase scheme
    * and additional discount. Used to resolve an item's tax before it is stocked in.
    */
-  @BeanMapping(ignoreByDefault = true)
-  @Mapping(target = "costPrice", source = "costPrice")
-  @Mapping(target = "priceToRetail", source = "priceToRetail")
-  @Mapping(target = "sgst", source = "sgst")
-  @Mapping(target = "cgst", source = "cgst")
-  @Mapping(target = "purchaseAdditionalDiscount", source = "purchaseAdditionalDiscount")
-  @Mapping(target = "purchaseScheme.schemeType", source = "purchaseSchemeType")
-  @Mapping(target = "purchaseScheme.schemePayFor", source = "purchaseSchemePayFor")
-  @Mapping(target = "purchaseScheme.schemeFree", source = "purchaseSchemeFree")
-  @Mapping(target = "purchaseScheme.schemePercentage", source = "purchaseSchemePercentage")
-  Pricing toPurchasePricing(CreateInventoryItemRequest source);
+  // Written by hand since PricingView is a record; the same fields MapStruct copied before, and
+  // like before the purchase scheme is always present (its fields may all be null).
+  default PricingView toPurchasePricing(CreateInventoryItemRequest source) {
+    if (source == null) {
+      return null;
+    }
+    return PricingView.builder()
+        .purchaseScheme(new SchemeTerms(
+            source.getPurchaseSchemeType() != null ? source.getPurchaseSchemeType().name() : null,
+            source.getPurchaseSchemePayFor(),
+            source.getPurchaseSchemeFree(),
+            source.getPurchaseSchemePercentage()))
+        .costPrice(source.getCostPrice())
+        .priceToRetail(source.getPriceToRetail())
+        .sgst(source.getSgst())
+        .cgst(source.getCgst())
+        .purchaseAdditionalDiscount(source.getPurchaseAdditionalDiscount())
+        .build();
+  }
 
   @Mapping(target = "tax", expression = "java(line.tax())")
   PurchaseTaxPreviewLineDto toPreviewLine(PurchaseTaxBasis.Line line);

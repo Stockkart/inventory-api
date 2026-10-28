@@ -1,9 +1,9 @@
 package com.inventory.product.labels;
 
 import com.inventory.pluginengine.schema.VerticalSchemaField;
-import com.inventory.pricing.domain.model.Pricing;
-import com.inventory.pricing.domain.model.Rate;
-import com.inventory.pricing.domain.model.Scheme;
+import com.inventory.pricing.api.PricingView;
+import com.inventory.pricing.api.RateView;
+import com.inventory.pricing.api.SchemeTerms;
 import com.inventory.product.domain.model.BarcodePool;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Location;
@@ -49,7 +49,7 @@ public class LabelDataResolver {
       String code,
       Product product,
       Inventory lot,
-      Pricing pricing,
+      PricingView pricing,
       Map<String, Object> extensionRow,
       BarcodePool poolRow) {}
 
@@ -271,7 +271,7 @@ public class LabelDataResolver {
   // ---------------------------------------------------------------------------------------------
 
   private static Object pricingValue(
-      String fieldKey, Pricing pricing, Product product, BarcodePool poolRow) {
+      String fieldKey, PricingView pricing, Product product, BarcodePool poolRow) {
     if (pricing == null) {
       // Pool-only code exposes its stored price as MRP (Req 6.8).
       if (product == null && poolRow != null && LabelFieldKeys.MRP.equals(fieldKey)) {
@@ -280,36 +280,36 @@ public class LabelDataResolver {
       return null;
     }
     return switch (fieldKey) {
-      case LabelFieldKeys.MRP -> pricing.getMaximumRetailPrice();
-      case LabelFieldKeys.SELLING_PRICE -> pricing.getSellingPrice();
-      case LabelFieldKeys.PTR -> pricing.getPriceToRetail();
-      case LabelFieldKeys.COST_PRICE -> pricing.getCostPrice();
-      case LabelFieldKeys.SALE_SCHEME -> schemeText(pricing.getSaleScheme());
-      case LabelFieldKeys.GST_RATE -> gstRate(pricing.getSgst(), pricing.getCgst());
+      case LabelFieldKeys.MRP -> pricing.maximumRetailPrice();
+      case LabelFieldKeys.SELLING_PRICE -> pricing.sellingPrice();
+      case LabelFieldKeys.PTR -> pricing.priceToRetail();
+      case LabelFieldKeys.COST_PRICE -> pricing.costPrice();
+      case LabelFieldKeys.SALE_SCHEME -> schemeText(pricing.saleScheme());
+      case LabelFieldKeys.GST_RATE -> gstRate(pricing.sgst(), pricing.cgst());
       default -> null;
     };
   }
 
   /** {@code "7+1"} for fixed-unit schemes, {@code "10%"} for percentage schemes, else null. */
-  static String schemeText(Scheme scheme) {
+  static String schemeText(SchemeTerms scheme) {
     if (scheme == null) {
       return null;
     }
-    String type = scheme.getSchemeType() == null ? "" : scheme.getSchemeType().trim();
+    String type = scheme.schemeType() == null ? "" : scheme.schemeType().trim();
     boolean percentage = SchemeType.PERCENTAGE.name().equalsIgnoreCase(type);
     boolean fixed = SchemeType.FIXED_UNITS.name().equalsIgnoreCase(type);
     if (percentage) {
-      BigDecimal pct = scheme.getSchemePercentage();
+      BigDecimal pct = scheme.schemePercentage();
       return pct == null ? null : LabelValueFormatter.format(pct, ValueType.PERCENTAGE);
     }
     if (fixed || type.isEmpty()) {
-      Integer payFor = scheme.getSchemePayFor();
-      Integer free = scheme.getSchemeFree();
+      Integer payFor = scheme.schemePayFor();
+      Integer free = scheme.schemeFree();
       if (payFor != null && free != null) {
         return payFor + "+" + free;
       }
-      if (!fixed && scheme.getSchemePercentage() != null) {
-        return LabelValueFormatter.format(scheme.getSchemePercentage(), ValueType.PERCENTAGE);
+      if (!fixed && scheme.schemePercentage() != null) {
+        return LabelValueFormatter.format(scheme.schemePercentage(), ValueType.PERCENTAGE);
       }
     }
     return null;
@@ -336,14 +336,14 @@ public class LabelDataResolver {
     }
   }
 
-  private static Object rateValue(Pricing pricing, String fieldKey) {
-    if (pricing == null || pricing.getRates() == null) {
+  private static Object rateValue(PricingView pricing, String fieldKey) {
+    if (pricing == null || pricing.rates() == null) {
       return null;
     }
     String rateName = fieldKey.substring(LabelFieldKeys.PRICING_RATE_PREFIX.length());
-    for (Rate rate : pricing.getRates()) {
-      if (rate != null && rateName.equals(rate.getName())) {
-        return rate.getPrice();
+    for (RateView rate : pricing.rates()) {
+      if (rate != null && rateName.equals(rate.name())) {
+        return rate.price();
       }
     }
     return null;

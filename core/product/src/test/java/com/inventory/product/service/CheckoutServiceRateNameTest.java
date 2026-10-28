@@ -13,8 +13,8 @@ import static org.mockito.Mockito.when;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.common.gst.SupplyPlacement;
-import com.inventory.pricing.rest.dto.response.RateDto;
-import com.inventory.pricing.rest.dto.response.SchemeDto;
+import com.inventory.pricing.api.RateLine;
+import com.inventory.pricing.api.SchemeTerms;
 import com.inventory.pricing.api.port.ShopRateRulesPort;
 import com.inventory.pricing.utils.constants.PricingConstants;
 import com.inventory.product.domain.model.Inventory;
@@ -201,7 +201,7 @@ class CheckoutServiceRateNameTest {
   /** A legacy rate picked with a quantity change on an at-MRP line takes the rate's price. */
   @Test
   void legacyPickWithAQuantityOnALineAtMrpTakesTheRatePrice() {
-    RateDto old = new RateDto("Old", new BigDecimal("120"));
+    RateLine old = RateLine.of("Old", new BigDecimal("120"));
     stock("100", "150", "150", null, old);
     add(1, null);
     assertEquals(true, CheckoutUtils.isSellingAtMrp(line()));
@@ -218,8 +218,7 @@ class CheckoutServiceRateNameTest {
    */
   @Test
   void strippedOrphanRateBillsItsPriceAsALegacyRate() {
-    RateDto orphan = new RateDto("Orphan", new BigDecimal("120"));
-    orphan.setManual(true);
+    RateLine orphan = withManual(RateLine.of("Orphan", new BigDecimal("120")), true);
     stock("100", "150", "130", null, orphan);
 
     add(1, "Orphan");
@@ -241,7 +240,7 @@ class CheckoutServiceRateNameTest {
 
   @Test
   void legacyRateKeepsOldBehaviour() {
-    RateDto old = new RateDto("Old", new BigDecimal("95"));
+    RateLine old = RateLine.of("Old", new BigDecimal("95"));
     stock("100", "150", "95", "Old", old);
     batch.setSaleAdditionalDiscount(new BigDecimal("5"));
 
@@ -319,10 +318,11 @@ class CheckoutServiceRateNameTest {
 
   @Test
   void defaultRateThenDiscEditThenPlusOneKeepsEdit() {
-    RateDto schemeOnly = rate("Rate-C", PricingConstants.RATE_BASE_PRICE_TO_RETAIL, "100", "0",
+    RateLine schemeOnly = rate("Rate-C", PricingConstants.RATE_BASE_PRICE_TO_RETAIL, "100", "0",
         PricingConstants.GST_MODE_EXCLUSIVE);
-    schemeOnly.setDiscountPercent(null);
-    schemeOnly.setScheme(new SchemeDto(PricingConstants.SCHEME_TYPE_FIXED_UNITS, 10, 1, null));
+    schemeOnly = withDiscount(schemeOnly, null);
+    schemeOnly = withScheme(schemeOnly,
+        new SchemeTerms(PricingConstants.SCHEME_TYPE_FIXED_UNITS, 10, 1, null));
     stock("100", "150", "90.91", "Rate-C", schemeOnly);
     add(11, null);
     assertTerms("100", "0", 10, 1);
@@ -339,7 +339,7 @@ class CheckoutServiceRateNameTest {
 
   @Test
   void defaultMrpRateThenPickPtrRateThenPlusOneKeepsPtrPrice() {
-    RateDto rateM = rate("Rate-M", PricingConstants.RATE_BASE_MAXIMUM_RETAIL_PRICE, "150", "25",
+    RateLine rateM = rate("Rate-M", PricingConstants.RATE_BASE_MAXIMUM_RETAIL_PRICE, "150", "25",
         PricingConstants.GST_MODE_INCLUSIVE);
     stock("100", "150", "112.50", "Rate-M", rateM, rateA());
     add(1, null);
@@ -479,7 +479,7 @@ class CheckoutServiceRateNameTest {
    */
   @Test
   void atMrpRatePickedOnAnUnevenTabletLineStaysAtMrp() {
-    RateDto rateM = rate("Rate-M", PricingConstants.RATE_BASE_MAXIMUM_RETAIL_PRICE, "100", "10",
+    RateLine rateM = rate("Rate-M", PricingConstants.RATE_BASE_MAXIMUM_RETAIL_PRICE, "100", "10",
         PricingConstants.GST_MODE_INCLUSIVE);
     stock("80", "100", "90", null, 15, rateM);
     add(1, null);
@@ -490,7 +490,7 @@ class CheckoutServiceRateNameTest {
     PurchaseItem line = line();
     assertMoney("6.66", line.getPriceToRetail());
     assertMoney("6.66", line.getMaximumRetailPrice());
-    assertEquals(PricingConstants.GST_MODE_INCLUSIVE, rateM.getGstMode());
+    assertEquals(PricingConstants.GST_MODE_INCLUSIVE, rateM.gstMode());
     assertEquals(true, CheckoutUtils.isSellingAtMrp(line));
     assertEquals(15, line.getBaseQuantity());
     BigDecimal mrpLessRateDisc = line.getMaximumRetailPrice().multiply(line.getQuantity())
@@ -589,7 +589,7 @@ class CheckoutServiceRateNameTest {
   /** A price sent with a switch of a line held at MRP is ignored, so it keeps the rate. */
   @Test
   void unitSwitchOfAnAtMrpRateLineIgnoresTheSentPriceAndKeepsTheRate() {
-    RateDto rateM = rate("Rate-M", PricingConstants.RATE_BASE_MAXIMUM_RETAIL_PRICE, "150", "25",
+    RateLine rateM = rate("Rate-M", PricingConstants.RATE_BASE_MAXIMUM_RETAIL_PRICE, "150", "25",
         PricingConstants.GST_MODE_INCLUSIVE);
     stock("100", "150", "112.50", null, rateM);
     add(1, "Rate-M");
@@ -653,9 +653,9 @@ class CheckoutServiceRateNameTest {
    */
   @Test
   void threeDecimalRuleRateBillsItsOwnPrice() {
-    RateDto rateD = rate("Rate-D", PricingConstants.RATE_BASE_PRICE_TO_RETAIL, "100", "7.125",
+    RateLine rateD = rate("Rate-D", PricingConstants.RATE_BASE_PRICE_TO_RETAIL, "100", "7.125",
         PricingConstants.GST_MODE_EXCLUSIVE);
-    assertMoney("92.88", rateD.getPrice());
+    assertMoney("92.88", rateD.price());
     stock("100", "150", "100", null, rateD);
 
     add(1, "Rate-D");
@@ -781,8 +781,8 @@ class CheckoutServiceRateNameTest {
   /** T5: a stored hand-typed rate named like a system option never shadows it. */
   @Test
   void systemNameWinsOverAStoredRateOfTheSameName() {
-    RateDto ptr = new RateDto("priceToRetail", new BigDecimal("120"));
-    RateDto mrp = new RateDto("MRP", new BigDecimal("140"));
+    RateLine ptr = RateLine.of("priceToRetail", new BigDecimal("120"));
+    RateLine mrp = RateLine.of("MRP", new BigDecimal("140"));
     stock("100", "150", "90", null, ptr, mrp);
 
     add(1, "priceToRetail");
@@ -875,9 +875,9 @@ class CheckoutServiceRateNameTest {
   /** A system pick after a rule rate with a percentage scheme drops that scheme too. */
   @Test
   void systemPickAfterAPercentageSchemeRuleRateResetsToTheBatchDefaults() {
-    RateDto rateP = rate("Rate-P", PricingConstants.RATE_BASE_PRICE_TO_RETAIL, "100", "3",
+    RateLine rateP = rate("Rate-P", PricingConstants.RATE_BASE_PRICE_TO_RETAIL, "100", "3",
         PricingConstants.GST_MODE_EXCLUSIVE);
-    rateP.setScheme(new SchemeDto(PricingConstants.SCHEME_TYPE_PERCENTAGE, null, null,
+    rateP = withScheme(rateP, new SchemeTerms(PricingConstants.SCHEME_TYPE_PERCENTAGE, null, null,
         new BigDecimal("5")));
     stock("100", "150", "90", null, rateP);
     batch.setSchemeType(SchemeType.FIXED_UNITS);
@@ -954,50 +954,44 @@ class CheckoutServiceRateNameTest {
     send(item);
   }
 
-  private void gstRow(String ptr, String mrp, RateDto rate, String customerPays, String gst) {
+  private void gstRow(String ptr, String mrp, RateLine rate, String customerPays, String gst) {
     cart = null;
-    stock(ptr, mrp, rate.getPrice().toPlainString(), null, rate);
+    stock(ptr, mrp, rate.price().toPlainString(), null, rate);
 
-    add(1, rate.getName());
+    add(1, rate.name());
 
     PurchaseItem line = line();
-    boolean inclusive = PricingConstants.GST_MODE_INCLUSIVE.equals(rate.getGstMode());
-    assertEquals(inclusive, CheckoutUtils.isSellingAtMrp(line), rate.getName() + " gstMode");
+    boolean inclusive = PricingConstants.GST_MODE_INCLUSIVE.equals(rate.gstMode());
+    assertEquals(inclusive, CheckoutUtils.isSellingAtMrp(line), rate.name() + " gstMode");
     assertMoney(customerPays, line.getTotalAmount());
     assertMoney(gst, cart.getTaxTotal());
   }
 
-  private static RateDto rateA() {
-    RateDto rate = rate("Rate-A", PricingConstants.RATE_BASE_PRICE_TO_RETAIL, "100", "8",
+  private static RateLine rateA() {
+    RateLine rate = rate("Rate-A", PricingConstants.RATE_BASE_PRICE_TO_RETAIL, "100", "8",
         PricingConstants.GST_MODE_EXCLUSIVE);
-    rate.setScheme(new SchemeDto(PricingConstants.SCHEME_TYPE_FIXED_UNITS, 10, 1, null));
-    rate.setPrice(new BigDecimal("83.64"));
-    return rate;
+    rate = withScheme(rate, new SchemeTerms(PricingConstants.SCHEME_TYPE_FIXED_UNITS, 10, 1, null));
+    return withPrice(rate, new BigDecimal("83.64"));
   }
 
-  private static RateDto rateB() {
+  private static RateLine rateB() {
     return rate("Rate-B", PricingConstants.RATE_BASE_PRICE_TO_RETAIL, "100", "7",
         PricingConstants.GST_MODE_EXCLUSIVE);
   }
 
-  private static RateDto rate(String name, String base, String baseValue, String disc, String gstMode) {
+  private static RateLine rate(String name, String base, String baseValue, String disc, String gstMode) {
     BigDecimal value = new BigDecimal(baseValue);
     BigDecimal price = value.multiply(BigDecimal.ONE.subtract(new BigDecimal(disc).movePointLeft(2)))
         .setScale(2, RoundingMode.HALF_UP);
-    RateDto rate = new RateDto(name, price);
-    rate.setBase(base);
-    rate.setBaseValue(value);
-    rate.setDiscountPercent(new BigDecimal(disc));
-    rate.setGstMode(gstMode);
-    return rate;
+    return new RateLine(name, price, base, value, new BigDecimal(disc), null, null, gstMode, null);
   }
 
-  private void stock(String ptr, String mrp, String sell, String defaultRate, RateDto... rates) {
+  private void stock(String ptr, String mrp, String sell, String defaultRate, RateLine... rates) {
     stock(ptr, mrp, sell, defaultRate, 10, rates);
   }
 
   private void stock(String ptr, String mrp, String sell, String defaultRate, int pack,
-      RateDto... rates) {
+      RateLine... rates) {
     batch = new Inventory();
     batch.setId(LOT);
     batch.setShopId(SHOP);
@@ -1072,5 +1066,26 @@ class CheckoutServiceRateNameTest {
 
   private static void assertMoney(String expected, BigDecimal actual) {
     assertEquals(0, new BigDecimal(expected).compareTo(actual), "expected " + expected + " got " + actual);
+  }
+
+  // RateLine is a record: these return a copy with one field changed.
+  private static RateLine withManual(RateLine r, Boolean manual) {
+    return new RateLine(r.name(), r.price(), r.base(), r.baseValue(), r.discountPercent(),
+        r.scheme(), manual, r.gstMode(), r.termsText());
+  }
+
+  private static RateLine withDiscount(RateLine r, BigDecimal discountPercent) {
+    return new RateLine(r.name(), r.price(), r.base(), r.baseValue(), discountPercent,
+        r.scheme(), r.manual(), r.gstMode(), r.termsText());
+  }
+
+  private static RateLine withScheme(RateLine r, SchemeTerms scheme) {
+    return new RateLine(r.name(), r.price(), r.base(), r.baseValue(), r.discountPercent(),
+        scheme, r.manual(), r.gstMode(), r.termsText());
+  }
+
+  private static RateLine withPrice(RateLine r, BigDecimal price) {
+    return new RateLine(r.name(), price, r.base(), r.baseValue(), r.discountPercent(),
+        r.scheme(), r.manual(), r.gstMode(), r.termsText());
   }
 }
