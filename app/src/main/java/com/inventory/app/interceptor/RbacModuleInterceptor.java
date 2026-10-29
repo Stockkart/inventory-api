@@ -7,6 +7,7 @@ import com.inventory.user.service.RbacService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.List;
+import java.util.Set;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -58,6 +59,17 @@ public class RbacModuleInterceptor implements HandlerInterceptor {
       List.of(
           Pattern.compile("/api/v1/inventory-corrections/[^/]+/lines/[^/]+/approve"),
           Pattern.compile("/api/v1/inventory-corrections/[^/]+/lines/[^/]+/reject"));
+
+  /**
+   * Pricing writes change a lot's rates and default rate, so they need the same product-search
+   * grant as sending those fields to {@code PUT /api/v1/inventory/{id}}. The body is not read
+   * here: both endpoints only set rates (including resets) and the default rate.
+   */
+  private static final Pattern PRICING_PATCH_PATH = Pattern.compile("/api/v1/pricing/[^/]+");
+
+  private static final String PRICING_BULK_UPDATE_PATH = "/api/v1/pricing/bulk-update";
+
+  static final Set<String> PRICING_WRITE_FIELDS = Set.of("rates", "defaultRate");
 
   private static final List<TeamRule> TEAM_RULES =
       List.of(
@@ -123,7 +135,19 @@ public class RbacModuleInterceptor implements HandlerInterceptor {
       rbacService.requireStockCorrectionApproval(userId, shopId);
     }
 
+    if (isPricingWrite(request.getMethod(), path)) {
+      log.debug("RBAC pricing write: user={} shop={} path={}", userId, shopId, path);
+      rbacService.validateProductSearchFieldUpdates(userId, shopId, PRICING_WRITE_FIELDS);
+    }
+
     return true;
+  }
+
+  private static boolean isPricingWrite(String method, String path) {
+    if ("POST".equals(method)) {
+      return PRICING_BULK_UPDATE_PATH.equals(path);
+    }
+    return "PATCH".equals(method) && PRICING_PATCH_PATH.matcher(path).matches();
   }
 
   private static boolean requiresStockCorrectionApproval(String path) {
