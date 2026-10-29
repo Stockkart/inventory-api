@@ -201,7 +201,7 @@ public class RbacService {
     }
     if (request.getProductSearchEditableFields() != null) {
       permissions.setProductSearchEditableFields(
-          new LinkedHashSet<>(request.getProductSearchEditableFields()));
+          grantableFields(request.getProductSearchEditableFields(), permissions));
     }
     ProductSearchEditMode editMode = getOrDefaultPolicy(shopId).getProductSearchEditMode();
     syncProductSearchEditFlag(permissions, editMode);
@@ -574,6 +574,29 @@ public class RbacService {
       return !editableFields.isEmpty();
     }
     return Boolean.TRUE.equals(modules.get(MODULE_PRODUCT_SEARCH_EDIT));
+  }
+
+  /**
+   * The member's new product-search grants. Only {@link #CORE_PRODUCT_SEARCH_FIELDS} can be
+   * granted: a name outside it that the member did not already hold is refused (400) rather than
+   * accepted and ignored. One the member already held (stored before it stopped being grantable)
+   * is dropped, so the access screen, which sends back what it read, can still save the member.
+   */
+  private static Set<String> grantableFields(
+      Iterable<String> requested, MemberPermissions current) {
+    Set<String> held =
+        current.getProductSearchEditableFields() != null
+            ? current.getProductSearchEditableFields()
+            : Set.of();
+    Set<String> fields = new LinkedHashSet<>();
+    for (String field : requested) {
+      if (CORE_PRODUCT_SEARCH_FIELDS.contains(field)) {
+        fields.add(field);
+      } else if (!held.contains(field)) {
+        throw new ValidationException("Product search field cannot be granted: " + field);
+      }
+    }
+    return fields;
   }
 
   /**

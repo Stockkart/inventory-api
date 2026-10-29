@@ -242,6 +242,8 @@ Shops are bound to a **vertical** (`Shop.verticalId` + `Shop.pluginVersion`). Fi
 
 **Clearing a field on a lot edit.** In `PUT /api/v1/inventory/{id}` a field left out or sent as `null` keeps its value. To empty one, name it in `clearFields`: `barcode`, `description`, `companyName`, `location`, `hsn`, `discountApplicable`, `thresholdCount` (lot) and `saleAdditionalDiscount`, `purchaseAdditionalDiscount`, `saleScheme`, `purchaseScheme` (pricing record). Any other name, or a name also sent with a value, is a 400. A clear needs the same product-search grant as setting the field (`saleScheme` → `schemeType`, `purchaseScheme` → `purchaseSchemeType`).
 
+**Granting product-search fields to a member.** In a permission-based shop the owner grants each member fields with `PATCH /api/v1/shops/{shopId}/rbac/members/{userId}` (`productSearchEditableFields`). Only the fields in `RbacService.CORE_PRODUCT_SEARCH_FIELDS` can be granted (name, description, company, location, batch, expiry, cost, PTR, MRP, selling price, HSN, CGST, SGST, barcode, base unit, pack size). Any other name is a 400 naming it. The exception is a name the member already held, which is dropped, so the access screen can still save a member whose stored grants predate the list. Rates, the default rate, discounts and schemes are therefore editable only by the owner, or by members with edit access in a full-edit shop.
+
 ### GST reports (taxation)
 
 | Endpoint | Purpose |
