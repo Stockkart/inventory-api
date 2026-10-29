@@ -65,12 +65,16 @@ public class RbacService {
   public static final String TEAM_MANAGE_SHOP_USERS = "manageShopUsers";
   public static final String TEAM_VIEW_MY_INVITATIONS = "viewMyInvitations";
 
+  /**
+   * Product-search fields an owner can grant a member. Stock quantity is not one: a lot edit
+   * cannot change it (stock changes go through stock corrections), so a {@code count} grant was
+   * accepted and did nothing. A stored {@code count} grant is ignored.
+   */
   public static final List<String> CORE_PRODUCT_SEARCH_FIELDS =
       List.of(
           "name",
           "description",
           "companyName",
-          "count",
           "location",
           "batchNo",
           "expiryDate",
