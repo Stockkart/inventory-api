@@ -92,7 +92,7 @@ public class OrderPricingService {
         .multiply(BigDecimal.valueOf(line.getQuantity()))).toList());
     BigDecimal discountTotal = sum(items.stream().map(OrderLine::getDiscount).toList());
     BigDecimal walletCredit = Boolean.TRUE.equals(request.getApplyWalletCredit()) && StringUtils.hasText(shopId)
-        ? applyWallet(items, walletService.available(shopId))
+        ? applyWallet(items, walletService.available(shopId), plan.getBasePrice())
         : BigDecimal.ZERO;
     return new PricedCart(plan, List.copyOf(items), subtotal, discountTotal, walletCredit,
         subtotal.subtract(discountTotal).subtract(walletCredit), durationMonths);
@@ -100,16 +100,18 @@ public class OrderPricingService {
 
   /**
    * Spends the balance line by line after vouchers (§24): the plan line first, then add-ons. OCR
-   * top-ups are never paid from the wallet. Only reads the balance; checkout reserves it.
+   * top-ups are never paid from the wallet. The plan line is never taken below {@code planFloor}
+   * (the plan's base price; null = no floor); credit it cannot take flows on to add-ons. Only reads
+   * the balance; checkout reserves it.
    */
-  static BigDecimal applyWallet(List<OrderLine> items, BigDecimal available) {
+  static BigDecimal applyWallet(List<OrderLine> items, BigDecimal available, BigDecimal planFloor) {
     BigDecimal remaining = available == null ? BigDecimal.ZERO : available.max(BigDecimal.ZERO);
     BigDecimal applied = BigDecimal.ZERO;
     for (OrderLine line : items) {
       if (PricingConstants.ITEM_TYPE_OCR_TOPUP.equals(line.getType()) || remaining.signum() <= 0) {
         continue;
       }
-      BigDecimal take = remaining.min(line.getLineTotal());
+      BigDecimal take = remaining.min(walletRoom(line, planFloor));
       if (take.signum() > 0) {
         line.setWalletCredit(take);
         remaining = remaining.subtract(take);
@@ -117,6 +119,14 @@ public class OrderPricingService {
       }
     }
     return applied;
+  }
+
+  /** How much wallet credit a line can take: all of it, except the plan line stops at its floor. */
+  private static BigDecimal walletRoom(OrderLine line, BigDecimal planFloor) {
+    if (planFloor == null || !PricingConstants.ITEM_TYPE_PLAN.equals(line.getType())) {
+      return line.getLineTotal();
+    }
+    return line.getLineTotal().subtract(planFloor).max(BigDecimal.ZERO);
   }
 
   /**

@@ -54,6 +54,10 @@ public class PlanAdminValidator {
       throw new ValidationException("Annual price is required");
     }
     nonNegative(request.getArcPrice(), "Annual price");
+    nonNegative(request.getBasePrice(), "Base price");
+    if (request.getBasePrice() != null && request.getBasePrice().compareTo(request.getArcPrice()) > 0) {
+      throw new ValidationException("Base price cannot be more than the annual price");
+    }
     nonNegative(request.getPrice(), "Service fee");
     nonNegative(request.getBillingLimit(), "Billing limit");
     nonNegative(request.getBillCountLimit(), "Bill count limit");
