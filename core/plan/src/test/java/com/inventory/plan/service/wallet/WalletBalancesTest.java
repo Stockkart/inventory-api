@@ -43,6 +43,12 @@ class WalletBalancesTest {
   }
 
   @Test
+  void manualDebitNeedsEnoughAvailableAndLeavesReservedAlone() {
+    assertThat(balances("300", "100", "0").debit(amount("200"))).contains(balances("100", "100", "0"));
+    assertThat(balances("100", "500", "0").debit(amount("200"))).isEmpty();
+  }
+
+  @Test
   void amountsAreKeptToPaise() {
     assertThat(balances("1.005", "0", "0").available()).isEqualByComparingTo("1.01");
   }

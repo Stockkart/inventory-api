@@ -26,6 +26,8 @@ public class ReferralIndexes {
         .named("referee_unique"));
     attributions.ensureIndex(new Index().on("referrerShopId", Sort.Direction.ASC).on("status", Sort.Direction.ASC)
         .named("referrer_status"));
+    attributions.ensureIndex(new Index().on("status", Sort.Direction.ASC).on("createdAt", Sort.Direction.ASC)
+        .named("status_createdAt"));
 
     var rewards = mongoTemplate.indexOps(ReferralReward.class);
     rewards.ensureIndex(new Index().on("orderId", Sort.Direction.ASC).unique().named("order_unique"));
@@ -34,5 +36,7 @@ public class ReferralIndexes {
         .named("referrer_createdAt"));
     rewards.ensureIndex(new Index().on("status", Sort.Direction.ASC).on("holdUntil", Sort.Direction.ASC)
         .named("status_holdUntil"));
+    rewards.ensureIndex(new Index().on("status", Sort.Direction.ASC).on("createdAt", Sort.Direction.DESC)
+        .named("status_createdAt"));
   }
 }
