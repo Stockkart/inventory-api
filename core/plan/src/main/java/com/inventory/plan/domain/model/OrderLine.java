@@ -29,4 +29,6 @@ public class OrderLine {
   private String itemSource;
   /** Voucher that added or discounted this line; one voucher per line. */
   private String voucherCode;
+  /** Wallet credit applied to this line, on top of {@code lineTotal}. Feeds the referral reward base (§24). */
+  private BigDecimal walletCredit;
 }

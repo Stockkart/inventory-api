@@ -21,7 +21,9 @@ import com.inventory.plan.domain.repository.PlanRepository;
 import com.inventory.plan.exception.VoucherRejectedException;
 import com.inventory.plan.rest.dto.request.QuoteRequest;
 import com.inventory.plan.rest.dto.response.QuoteResponse;
+import com.inventory.plan.domain.model.OrderLine;
 import com.inventory.plan.service.voucher.VoucherService;
+import com.inventory.plan.service.wallet.WalletService;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.List;
@@ -45,6 +47,9 @@ class OrderPricingServiceTest {
 
   @Mock
   private VoucherService voucherService;
+
+  @Mock
+  private WalletService walletService;
 
   @InjectMocks
   private OrderPricingService pricing;
@@ -71,7 +76,7 @@ class OrderPricingServiceTest {
     assertThat(quote.isTaxInclusive()).isTrue();
     assertThat(quote.getCurrency()).isEqualTo("INR");
     assertThat(quote.getDurationMonths()).isEqualTo(12);
-    assertThat(quote.getPricingVersion()).isEqualTo(1);
+    assertThat(quote.getPricingVersion()).isEqualTo(2);
     assertThat(Duration.between(quote.getQuotedAt(), quote.getExpiresAt())).isEqualTo(Duration.ofMinutes(15));
   }
 
@@ -307,15 +312,121 @@ class OrderPricingServiceTest {
   }
 
   @Test
-  void walletFlagIsAcceptedAndAppliesNothingYet() {
+  void walletCreditReducesTheTotalAndIsShownOnThePlanLine() {
     when(planRepository.findByCode("PROFESSIONAL")).thenReturn(Optional.of(plan("PROFESSIONAL", "9999", null)));
+    when(walletService.available("shop-1")).thenReturn(new BigDecimal("2000"));
     QuoteRequest request = request("PROFESSIONAL");
     request.setApplyWalletCredit(true);
 
     QuoteResponse quote = pricing.quote("shop-1", request);
 
-    assertThat(quote.getWalletCredit()).isEqualByComparingTo("0");
-    assertThat(quote.getGrandTotal()).isEqualByComparingTo("9999");
+    assertThat(quote.getWalletCredit()).isEqualByComparingTo("2000");
+    assertThat(quote.getGrandTotal()).isEqualByComparingTo("7999");
+    assertThat(quote.getItems().get(0).getWalletCredit()).isEqualByComparingTo("2000");
+  }
+
+  @Test
+  void walletIsUntouchedWithoutTheFlag() {
+    when(planRepository.findByCode("PROFESSIONAL")).thenReturn(Optional.of(plan("PROFESSIONAL", "9999", null)));
+
+    assertThat(pricing.quote("shop-1", request("PROFESSIONAL")).getWalletCredit()).isEqualByComparingTo("0");
+    verify(walletService, never()).available(anyString());
+  }
+
+  @Test
+  void walletPaysThePlanFirstThenAddOnsButNeverOcrTopUps() {
+    List<OrderLine> items = List.of(
+        line("PLAN", "9999"),
+        line("OCR_TOPUP", "499"),
+        line("ADDON", "1500"));
+
+    BigDecimal applied = OrderPricingService.applyWallet(items, new BigDecimal("10500"), null);
+
+    assertThat(applied).isEqualByComparingTo("10500");
+    assertThat(items.get(0).getWalletCredit()).isEqualByComparingTo("9999");
+    assertThat(items.get(1).getWalletCredit()).isNull();
+    assertThat(items.get(2).getWalletCredit()).isEqualByComparingTo("501");
+  }
+
+  @Test
+  void walletNeverExceedsWhatIsPayable() {
+    List<OrderLine> items = List.of(line("PLAN", "9999"));
+
+    assertThat(OrderPricingService.applyWallet(items, new BigDecimal("50000"), null)).isEqualByComparingTo("9999");
+    assertThat(OrderPricingService.applyWallet(List.of(line("PLAN", "9999")), null, null)).isEqualByComparingTo("0");
+  }
+
+  @Test
+  void walletLargerThanTheGapStopsThePlanLineAtItsBasePrice() {
+    List<OrderLine> items = List.of(line("PLAN", "9999"));
+
+    BigDecimal applied = OrderPricingService.applyWallet(items, new BigDecimal("5000"), new BigDecimal("7999"));
+
+    assertThat(applied).isEqualByComparingTo("2000");
+    assertThat(items.get(0).getWalletCredit()).isEqualByComparingTo("2000");
+  }
+
+  @Test
+  void walletSmallerThanTheGapIsSpentInFull() {
+    List<OrderLine> items = List.of(line("PLAN", "9999"));
+
+    BigDecimal applied = OrderPricingService.applyWallet(items, new BigDecimal("1500"), new BigDecimal("7999"));
+
+    assertThat(applied).isEqualByComparingTo("1500");
+    assertThat(items.get(0).getWalletCredit()).isEqualByComparingTo("1500");
+  }
+
+  @Test
+  void planWithoutABasePriceCanBePaidInFull() {
+    List<OrderLine> items = List.of(line("PLAN", "9999"));
+
+    assertThat(OrderPricingService.applyWallet(items, new BigDecimal("20000"), null)).isEqualByComparingTo("9999");
+  }
+
+  @Test
+  void basePriceEqualToThePriceTakesNoCreditOnThePlanLine() {
+    List<OrderLine> items = List.of(line("PLAN", "9999"));
+
+    assertThat(OrderPricingService.applyWallet(items, new BigDecimal("3000"), new BigDecimal("9999"))).isEqualByComparingTo("0");
+    assertThat(items.get(0).getWalletCredit()).isNull();
+  }
+
+  @Test
+  void creditThePlanLineCannotTakeFlowsOnToAddOnsButNotOcrTopUps() {
+    List<OrderLine> items = List.of(
+        line("PLAN", "9999"),
+        line("OCR_TOPUP", "499"),
+        line("ADDON", "1999"),
+        line("ADDON", "500"));
+
+    BigDecimal applied = OrderPricingService.applyWallet(items, new BigDecimal("3000"), new BigDecimal("7999"));
+
+    assertThat(applied).isEqualByComparingTo("3000");
+    assertThat(items.get(0).getWalletCredit()).isEqualByComparingTo("2000");
+    assertThat(items.get(1).getWalletCredit()).isNull();
+    assertThat(items.get(2).getWalletCredit()).isEqualByComparingTo("1000");
+    assertThat(items.get(3).getWalletCredit()).isNull();
+  }
+
+  @Test
+  void quoteNeverChargesThePlanBelowItsBasePrice() {
+    Plan plan = plan("PROFESSIONAL", "9999", null);
+    plan.setBasePrice(new BigDecimal("7999"));
+    when(planRepository.findByCode("PROFESSIONAL")).thenReturn(Optional.of(plan));
+    when(walletService.available("shop-1")).thenReturn(new BigDecimal("10000"));
+    QuoteRequest request = request("PROFESSIONAL");
+    request.setApplyWalletCredit(true);
+
+    QuoteResponse quote = pricing.quote("shop-1", request);
+
+    assertThat(quote.getWalletCredit()).isEqualByComparingTo("2000");
+    assertThat(quote.getGrandTotal()).isEqualByComparingTo("7999");
+    assertThat(quote.getItems().get(0).getWalletCredit()).isEqualByComparingTo("2000");
+  }
+
+  private static OrderLine line(String type, String lineTotal) {
+    return OrderLine.builder().type(type).quantity(1).unitPrice(new BigDecimal(lineTotal))
+        .discount(BigDecimal.ZERO).lineTotal(new BigDecimal(lineTotal)).build();
   }
 
   @Test

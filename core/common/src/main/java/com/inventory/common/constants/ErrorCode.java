@@ -42,7 +42,8 @@ public enum ErrorCode {
   FEATURE_NOT_IN_PLAN(6001, "Feature is not included in the current plan", HttpStatus.PAYMENT_REQUIRED),
   SEAT_LIMIT_REACHED(6002, "User seat limit reached for the current plan", HttpStatus.PAYMENT_REQUIRED),
   OCR_QUOTA_EXCEEDED(6003, "OCR quota exhausted for the current period", HttpStatus.PAYMENT_REQUIRED),
-  VOUCHER_REJECTED(6010, "Voucher cannot be applied", HttpStatus.BAD_REQUEST);
+  VOUCHER_REJECTED(6010, "Voucher cannot be applied", HttpStatus.BAD_REQUEST),
+  WALLET_BALANCE_CHANGED(6011, "Wallet balance changed; refresh the quote", HttpStatus.CONFLICT);
 
   private final int code;
   private final String message;
