@@ -31,6 +31,7 @@ public enum ErrorCode {
   INVALID_CREDENTIALS(4001, "Invalid credentials", HttpStatus.UNAUTHORIZED),
   USER_ALREADY_EXISTS(4002, "User already exists", HttpStatus.CONFLICT),
   ACCOUNT_DISABLED(4003, "Account is disabled", HttpStatus.UNAUTHORIZED), // 401 Unauthorized is more appropriate than 403 Forbidden for login attempts
+  PASSWORD_CHANGE_REQUIRED(4004, "Set a new password to continue", HttpStatus.FORBIDDEN),
 
   // Order related errors (5000-5999)
   ORDER_NOT_FOUND(5000, "Order not found", HttpStatus.NOT_FOUND),

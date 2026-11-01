@@ -66,8 +66,8 @@ public class ShopController {
   public ResponseEntity<ApiResponse<ShopApprovalResponse>> approve(@PathVariable String shopId,
                                                                    @RequestBody ShopApprovalRequest request,
                                                                    HttpServletRequest httpRequest) {
-    String actorUserId = (String) httpRequest.getAttribute("userId");
-    return ResponseEntity.ok(ApiResponse.success(shopService.approve(shopId, request, actorUserId)));
+    String actorAdminId = (String) httpRequest.getAttribute("adminId");
+    return ResponseEntity.ok(ApiResponse.success(shopService.approve(shopId, request, actorAdminId)));
   }
 
   @GetMapping("/active-shop")

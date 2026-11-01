@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Platform admins only: PlatformRoleInterceptor guards /api/v1/admin/**. */
+/** Admins only: AdminAuthenticationInterceptor guards /api/v1/admin/**. */
 @RestController
 @RequestMapping("/api/v1/admin/addons")
 @Latency(module = "plan")
@@ -70,6 +70,6 @@ public class AddOnAdminController {
   }
 
   private static String actor(HttpServletRequest request) {
-    return (String) request.getAttribute("userId");
+    return (String) request.getAttribute("adminId");
   }
 }

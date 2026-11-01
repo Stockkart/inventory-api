@@ -71,6 +71,21 @@ Optional (for AWS Textract):
 
 - `AWS_ACCESS_KEY`, `AWS_SECRET_ACCESS`, `AWS_REGION`
 
+Optional (for the admin app):
+
+StockKart admins are separate from shop users: they live in `admin_users`, sign in at
+`POST /api/v1/admin/auth/login`, and their sessions work only on `/api/v1/admin/**` and
+`/api/v1/shops/admin/**`. Shop-user tokens get 401 on those paths, and admin tokens get 401
+everywhere else.
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `PLATFORM_ADMIN_EMAILS` | Comma-separated emails; each one without an admin account gets one on startup | `ops@stockkart.in` |
+| `PLATFORM_ADMIN_BOOTSTRAP_PASSWORD` | Starting password for those accounts (10–128 characters); changed on first sign-in. Without it no account is created | |
+| `ADMIN_CLIENT_URL` | Admin app origin; the only origin CORS allows on admin paths | `https://admin.stockkart.in` |
+
+Further admins are added from the admin app, which issues a one-time temporary password.
+
 ### 2. Run with Docker Compose
 
 Build and start the app (and image-preprocess if configured):
