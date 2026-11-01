@@ -28,6 +28,11 @@ public class Plan {
   private BigDecimal price;
   /** Annual subscription price (per year). This is what customers pay for the plan. */
   private BigDecimal arcPrice;
+  /**
+   * Lowest yearly amount the plan line may be charged after wallet credit; at most arcPrice.
+   * Null = no floor (legacy rows).
+   */
+  private BigDecimal basePrice;
   /** Monthly billing amount cap in rupees. null = unlimited. */
   private BigDecimal billingLimit;
   /** Maximum bill count per month. null = unlimited. */

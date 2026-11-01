@@ -58,6 +58,21 @@ class PlanAdminValidatorTest {
   }
 
   @Test
+  void acceptsBasePriceUpToTheAnnualPrice() {
+    PlanAdminRequest request = valid();
+    request.setBasePrice(new BigDecimal("7999"));
+    assertThatCode(() -> validator.validateCreate(request)).doesNotThrowAnyException();
+    request.setBasePrice(new BigDecimal("4999"));
+    assertThatCode(() -> validator.validateCreate(request)).doesNotThrowAnyException();
+  }
+
+  @Test
+  void rejectsBasePriceAboveTheAnnualPriceOrNegative() {
+    rejects(r -> r.setBasePrice(new BigDecimal("8000")));
+    rejects(r -> r.setBasePrice(new BigDecimal("-1")));
+  }
+
+  @Test
   void rejectsBadBadge() {
     rejects(r -> r.setBadge("most popular"));
   }
