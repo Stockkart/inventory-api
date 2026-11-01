@@ -96,6 +96,17 @@ public class WalletService {
         b -> Optional.of(b.credit(scale(amount))));
   }
 
+  /** Takes back a credited referral reward. Idempotent per reward. */
+  public Outcome clawback(String shopId, BigDecimal amount, String rewardId, String note, String actorUserId) {
+    return apply(shopId, "clawback:" + rewardId, ShopCreditSource.CLAWBACK, rewardId, amount, note, actorUserId,
+        b -> Optional.of(b.clawback(scale(amount))));
+  }
+
+  /** True once the order's reservation has been spent (fulfilment ran its wallet step). */
+  public boolean consumed(String orderId) {
+    return entryRepository.existsByReferenceId("order-consume:" + orderId);
+  }
+
   Outcome apply(String shopId, String referenceId, ShopCreditSource source, String sourceId, BigDecimal amount,
       String note, String actorUserId, Function<WalletBalances, Optional<WalletBalances>> change) {
     if (scale(amount).signum() <= 0) {

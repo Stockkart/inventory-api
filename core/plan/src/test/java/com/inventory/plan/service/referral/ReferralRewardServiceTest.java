@@ -178,6 +178,57 @@ class ReferralRewardServiceTest {
     verify(mongoTemplate, never()).updateFirst(any(Query.class), any(Update.class), eq(ReferralReward.class));
   }
 
+  private static ReferralReward reward(ReferralRewardStatus status) {
+    return ReferralReward.builder().id("r1").orderId("order-1").referrerShopId("referrer")
+        .rewardAmount(new BigDecimal("900.00")).status(status).build();
+  }
+
+  @Test
+  void aRefundVoidsARewardNotYetCredited() {
+    ReferralReward voided = reward(ReferralRewardStatus.VOID);
+    when(rewardRepository.findByOrderId("order-1")).thenReturn(Optional.of(reward(ReferralRewardStatus.PENDING)));
+    when(mongoTemplate.findAndModify(any(Query.class), any(Update.class), any(FindAndModifyOptions.class),
+        eq(ReferralReward.class))).thenReturn(voided);
+
+    assertThat(service.reverseForOrder("order-1", "ORDER_REFUNDED", null)).contains(voided);
+    verify(walletService, never()).clawback(any(), any(), any(), any(), any());
+  }
+
+  @Test
+  void aRefundClawsBackACreditedReward() {
+    ReferralReward clawedBack = reward(ReferralRewardStatus.CLAWED_BACK);
+    when(rewardRepository.findByOrderId("order-1")).thenReturn(Optional.of(reward(ReferralRewardStatus.CREDITED)));
+    when(mongoTemplate.findAndModify(any(Query.class), any(Update.class), any(FindAndModifyOptions.class),
+        eq(ReferralReward.class))).thenReturn(clawedBack);
+
+    assertThat(service.reverseForOrder("order-1", "ORDER_REFUNDED", "admin-1")).contains(clawedBack);
+    verify(walletService).clawback(eq("referrer"), eq(new BigDecimal("900.00")), eq("r1"), anyString(), eq("admin-1"));
+  }
+
+  @Test
+  void aRewardBeingCreditedIsFinishedThenClawedBack() {
+    ReferralReward clawedBack = reward(ReferralRewardStatus.CLAWED_BACK);
+    when(rewardRepository.findByOrderId("order-1")).thenReturn(
+        Optional.of(reward(ReferralRewardStatus.CREDITING)), Optional.of(reward(ReferralRewardStatus.CREDITED)));
+    when(mongoTemplate.updateFirst(any(Query.class), any(Update.class), eq(ReferralReward.class)))
+        .thenReturn(UpdateResult.acknowledged(1, 1L, null));
+    when(mongoTemplate.findAndModify(any(Query.class), any(Update.class), any(FindAndModifyOptions.class),
+        eq(ReferralReward.class))).thenReturn(clawedBack);
+
+    assertThat(service.reverseForOrder("order-1", "ORDER_REFUNDED", null)).contains(clawedBack);
+    verify(walletService).credit(eq("referrer"), any(), eq(ShopCreditSource.REFERRAL_REWARD), eq("r1"), anyString(), isNull());
+    verify(walletService).clawback(eq("referrer"), any(), eq("r1"), anyString(), isNull());
+  }
+
+  @Test
+  void aVoidedRewardNeedsNothingMore() {
+    when(rewardRepository.findByOrderId("order-1")).thenReturn(Optional.of(reward(ReferralRewardStatus.VOID)));
+
+    assertThat(service.reverseForOrder("order-1", "ORDER_REFUNDED", null)).isPresent();
+    verify(mongoTemplate, never()).findAndModify(any(Query.class), any(Update.class), any(FindAndModifyOptions.class),
+        eq(ReferralReward.class));
+  }
+
   @Test
   void theReferrerSeesPendingAndCreditedTotals() {
     when(rewardRepository.findByReferrerShopIdOrderByCreatedAtDesc(eq("referrer"), any(Pageable.class))).thenReturn(List.of(

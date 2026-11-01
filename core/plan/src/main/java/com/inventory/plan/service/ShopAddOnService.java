@@ -98,6 +98,24 @@ public class ShopAddOnService {
     entitlementService.invalidate(order.getShopId());
   }
 
+  /**
+   * Ends every add-on a refunded order granted, now. Unused purchased OCR credits are forfeited;
+   * credits already spent are not recovered. Safe to repeat.
+   */
+  public void revokeForOrder(PlanPaymentOrder order) {
+    Instant now = clock.instant();
+    Criteria granted = Criteria.where("sourceOrderId").is(order.getId()).and("revokedAt").is(null);
+    mongoTemplate.updateMulti(new Query(Criteria.where("sourceOrderId").is(order.getId()).and("revokedAt").is(null)
+            .and("grantType").is(AddOnGrantType.OCR_CREDITS)),
+        new Update().set("remainingCredits", 0), ShopAddOn.class);
+    long revoked = mongoTemplate.updateMulti(new Query(granted),
+        new Update().set("revokedAt", now).set("expiresAt", now), ShopAddOn.class).getModifiedCount();
+    if (revoked > 0) {
+      log.info("Revoked {} add-on(s) of refunded order {} for shop {}", revoked, order.getId(), order.getShopId());
+    }
+    entitlementService.invalidate(order.getShopId());
+  }
+
   /** Platform-admin grant outside an order. {@code expiresAt} is ignored for OCR credits. */
   public ShopAddOn grantByAdmin(String shopId, AddOn addOn, int quantity, Instant expiresAt,
       String actorUserId, String note) {

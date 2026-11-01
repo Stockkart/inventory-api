@@ -49,6 +49,15 @@ public class RazorpayApiClient {
     return get(PAYMENTS_URL_PREFIX + paymentId);
   }
 
+  public JsonNode refundPayment(String paymentId, int amountPaise, Map<String, String> notes) throws IOException {
+    Map<String, Object> body = new HashMap<>();
+    body.put("amount", amountPaise);
+    if (notes != null && !notes.isEmpty()) {
+      body.put("notes", notes);
+    }
+    return post(PAYMENTS_URL_PREFIX + paymentId + "/refund", body);
+  }
+
   private JsonNode post(String url, Object body) throws IOException {
     byte[] payload = objectMapper.writeValueAsBytes(body);
     HttpURLConnection connection = openConnection(url, "POST");

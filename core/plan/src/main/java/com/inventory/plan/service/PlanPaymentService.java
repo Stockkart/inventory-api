@@ -27,6 +27,7 @@ import com.inventory.plan.rest.dto.response.VerifyPlanPaymentResponse;
 import com.inventory.plan.service.order.OrderFulfilmentService;
 import com.inventory.plan.service.order.OrderReservations;
 import com.inventory.plan.service.order.PaymentOrderStateService;
+import com.inventory.plan.service.refund.OrderRefundService;
 import com.inventory.plan.utils.CheckoutRequestHash;
 import com.inventory.plan.utils.constants.PlanMetricsConstants;
 import com.inventory.plan.utils.constants.PlanPaymentConstants;
@@ -85,6 +86,9 @@ public class PlanPaymentService {
 
   @Autowired
   private OrderFulfilmentService fulfilmentService;
+
+  @Autowired
+  private OrderRefundService orderRefundService;
 
   @Value("${plan.checkout.order-ttl-minutes:30}")
   long orderTtlMinutes = 30;
@@ -195,6 +199,11 @@ public class PlanPaymentService {
         .headers(headers != null ? headers : new HashMap<>())
         .build());
 
+    if (result.isProcessed()
+        && result.effectiveEventType() != WebhookHandleResult.EventType.PAYMENT_CAPTURED) {
+      orderRefundService.onGatewayEvent(provider, result);
+      return;
+    }
     if (!result.isProcessed()
         || !StringUtils.hasText(result.getProviderOrderId())
         || !StringUtils.hasText(result.getProviderPaymentId())) {

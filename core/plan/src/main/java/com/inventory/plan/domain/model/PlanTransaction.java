@@ -45,4 +45,6 @@ public class PlanTransaction {
   private BigDecimal walletCredit;
   private Instant termStartsAt;
   private Instant termEndsAt;
+  /** Set when the order was refunded and this term taken back. */
+  private Instant refundedAt;
 }

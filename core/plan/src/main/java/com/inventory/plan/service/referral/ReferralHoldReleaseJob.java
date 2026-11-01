@@ -7,8 +7,8 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * Credits referral rewards whose hold has ended. Off by default: a credited reward must be reversible
- * by a refund first (§27.1). Safe on several instances: each reward is claimed with a conditional write.
+ * Credits referral rewards whose hold has ended; a later refund claws them back (§24). Safe on several
+ * instances: each reward is claimed with a conditional write.
  */
 @Slf4j
 @Component
@@ -19,8 +19,8 @@ public class ReferralHoldReleaseJob {
   @Autowired
   private ReferralRewardService rewardService;
 
-  @Value("${referral.hold-release.enabled:false}")
-  boolean enabled;
+  @Value("${referral.hold-release.enabled:true}")
+  boolean enabled = true;
 
   @Scheduled(
       fixedDelayString = "${referral.hold-release.interval-ms:3600000}",
