@@ -8,7 +8,7 @@ public final class PricingConstants {
   private PricingConstants() {}
 
   /** Bump whenever a pricing rule changes, so old orders can be reasoned about under their own rules. */
-  public static final int PRICING_VERSION = 1;
+  public static final int PRICING_VERSION = 2;
   public static final Duration QUOTE_TTL = Duration.ofMinutes(15);
   /** listPrice = arcPrice + this, derived at read time (§7, §26.6). */
   public static final BigDecimal LIST_PRICE_MARKUP = new BigDecimal("3000");

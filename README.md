@@ -201,6 +201,19 @@ inventory-api/
 - [Vertical Plugin Architecture v4.9](docs/VERTICAL_PLUGIN_ARCHITECTURE.md) — architecture, **implementation status**, phases 1–7 roadmap
 - [Vertical Plugin Architecture (HTML)](docs/VERTICAL_PLUGIN_ARCHITECTURE.html) — same doc for browser / print / PDF
 
+### Plan pricing rules
+
+`core/plan` `OrderPricingService.price()` is the only place a plan cart becomes money; quote and
+checkout both call it, and clients show the quote without recomputing it.
+
+- Vouchers apply to add-on lines only, never the plan line.
+- Wallet credit pays the plan line first, then add-ons, never OCR top-ups.
+- A plan's `basePrice` is the floor for its line: wallet credit stops at `arcPrice - basePrice`, and
+  the rest flows on to add-ons. Admins set it on the plan (`basePrice <= arcPrice`); null means no
+  floor. Add-ons and OCR top-ups have no floor.
+- `listPrice` (`arcPrice` + ₹3,000) is a struck-through display anchor and is never charged.
+- `PricingConstants.PRICING_VERSION` is stored on every order; bump it when a rule changes (2 = base-price floor).
+
 ### Implementation status (vertical plugins)
 
 | Phase | Status |
