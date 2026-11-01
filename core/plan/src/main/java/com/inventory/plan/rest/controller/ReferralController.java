@@ -5,9 +5,11 @@ import com.inventory.metrics.annotation.Latency;
 import com.inventory.metrics.annotation.RecordRequestRate;
 import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.plan.rest.dto.response.ReferralCodeCheckResponse;
+import com.inventory.plan.rest.dto.response.ReferralRewardsResponse;
 import com.inventory.plan.rest.dto.response.ReferralSummaryResponse;
 import com.inventory.plan.service.referral.ReferralAttributionService;
 import com.inventory.plan.service.referral.ReferralCheckRateLimiter;
+import com.inventory.plan.service.referral.ReferralRewardService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -30,6 +32,9 @@ public class ReferralController {
   @Autowired
   private ReferralCheckRateLimiter rateLimiter;
 
+  @Autowired
+  private ReferralRewardService rewardService;
+
   /** Used while registering a shop, so the caller may not have a shop yet. Rate-limited per user. */
   @GetMapping("/validate")
   public ResponseEntity<ApiResponse<ReferralCodeCheckResponse>> validate(
@@ -43,5 +48,11 @@ public class ReferralController {
   public ResponseEntity<ApiResponse<ReferralSummaryResponse>> me(HttpServletRequest httpRequest) {
     String shopId = (String) httpRequest.getAttribute("shopId");
     return ResponseEntity.ok(ApiResponse.success(attributionService.summary(shopId)));
+  }
+
+  @GetMapping("/rewards")
+  public ResponseEntity<ApiResponse<ReferralRewardsResponse>> rewards(HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    return ResponseEntity.ok(ApiResponse.success(rewardService.listForReferrer(shopId)));
   }
 }

@@ -1,6 +1,7 @@
 package com.inventory.plan.migration;
 
 import com.inventory.plan.domain.model.ReferralAttribution;
+import com.inventory.plan.domain.model.ReferralReward;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
@@ -25,5 +26,13 @@ public class ReferralIndexes {
         .named("referee_unique"));
     attributions.ensureIndex(new Index().on("referrerShopId", Sort.Direction.ASC).on("status", Sort.Direction.ASC)
         .named("referrer_status"));
+
+    var rewards = mongoTemplate.indexOps(ReferralReward.class);
+    rewards.ensureIndex(new Index().on("orderId", Sort.Direction.ASC).unique().named("order_unique"));
+    rewards.ensureIndex(new Index().on("refereeShopId", Sort.Direction.ASC).unique().named("referee_unique"));
+    rewards.ensureIndex(new Index().on("referrerShopId", Sort.Direction.ASC).on("createdAt", Sort.Direction.DESC)
+        .named("referrer_createdAt"));
+    rewards.ensureIndex(new Index().on("status", Sort.Direction.ASC).on("holdUntil", Sort.Direction.ASC)
+        .named("status_holdUntil"));
   }
 }
