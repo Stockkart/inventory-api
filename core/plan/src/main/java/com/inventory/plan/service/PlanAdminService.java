@@ -93,6 +93,7 @@ public class PlanAdminService {
     Update update = new Update()
         .set("planName", request.getPlanName())
         .set("arcPrice", request.getArcPrice())
+        .set("basePrice", request.getBasePrice())
         .set("price", request.getPrice())
         .set("billingLimit", request.getBillingLimit())
         .set("billCountLimit", request.getBillCountLimit())
@@ -178,6 +179,7 @@ public class PlanAdminService {
     map.put("code", plan.getCode());
     map.put("planName", plan.getPlanName());
     map.put("arcPrice", plan.getArcPrice());
+    map.put("basePrice", plan.getBasePrice());
     map.put("price", plan.getPrice());
     map.put("billingLimit", plan.getBillingLimit());
     map.put("billCountLimit", plan.getBillCountLimit());
