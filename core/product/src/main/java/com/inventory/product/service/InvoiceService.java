@@ -2,25 +2,25 @@ package com.inventory.product.service;
 
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.documentservice.api.DotMatrixDocument;
 import com.inventory.documentservice.rest.dto.GenerateInvoiceRequest;
 import com.inventory.documentservice.rest.dto.InvoiceItem;
 import com.inventory.documentservice.rest.dto.InvoiceTaxRateRow;
 import com.inventory.documentservice.service.DocumentService;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.DocumentTypes;
+import com.inventory.product.domain.model.ShopInvoiceSettingsDocument;
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.product.domain.model.enums.SchemeType;
 import com.inventory.product.domain.model.Shop;
-import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.PurchaseRepository;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.pluginengine.VerticalFieldsReader;
 import com.inventory.product.service.estimate.EstimateInventoryPolicy;
-import com.inventory.product.service.vertical.InventoryVerticalExtensionHandler;
 import com.inventory.product.utils.constants.ProductMetricsConstants;
-import com.inventory.product.utils.AmountToWordsConverter;
+import com.inventory.common.util.AmountToWordsConverter;
 import com.inventory.product.utils.SaleTaxBreakdown;
 import com.inventory.user.domain.model.Customer;
 import com.inventory.user.service.CustomerService;
@@ -56,11 +56,7 @@ public class InvoiceService {
   private ShopRepository shopRepository;
 
   @Autowired
-  private InventoryRepository inventoryRepository;
-
-  @Autowired
-  private com.inventory.product.service.vertical.InventoryVerticalExtensionHandler
-      inventoryVerticalExtensionHandler;
+  private DocumentLots documentLots;
 
   @Autowired
   private CustomerService customerService;
@@ -89,6 +85,87 @@ public class InvoiceService {
   public byte[] generateInvoicePdf(String purchaseId, String shopId, String printerType) {
     log.info("Generating invoice PDF for purchase: {}, shop: {}", purchaseId, shopId);
 
+    PurchaseInvoiceContext context = loadAndValidate(purchaseId, shopId);
+    GenerateInvoiceRequest request =
+        buildGenerateInvoiceRequest(context.purchase(), context.shop(), context.settings());
+
+    String resolvedPrinter =
+        (printerType != null && !printerType.isBlank())
+            ? printerType
+            : context.settings().getDefaultPrinterType();
+    request.setPrinterType(resolvedPrinter);
+
+    byte[] pdf = documentService.generateInvoice(request);
+    if (metrics != null) {
+      metrics.record(ProductMetricsConstants.INVOICES_GENERATED, 1, "module", ProductMetricsConstants.MODULE);
+    }
+    return pdf;
+  }
+
+  /**
+   * Render the invoice as fixed-width plain text for the dot matrix print bridge.
+   *
+   * @param purchaseId the purchase ID
+   * @param shopId the shop ID for validation
+   * @return 80-column plain text
+   */
+  public String generateInvoiceText(String purchaseId, String shopId) {
+    return renderInvoiceForPrint(purchaseId, shopId).text();
+  }
+
+  /**
+   * Render the sale for the print bridge: the text, whether it is an invoice or an estimate, and
+   * its number. Shop-scoped like every other invoice entry point.
+   */
+  public DotMatrixDocument renderInvoiceForPrint(String purchaseId, String shopId) {
+    log.info("Generating invoice text for purchase: {}, shop: {}", purchaseId, shopId);
+
+    PurchaseInvoiceContext context = loadAndValidate(purchaseId, shopId);
+    GenerateInvoiceRequest request =
+        buildGenerateInvoiceRequest(context.purchase(), context.shop(), context.settings());
+    request.setPrinterType("DOT_MATRIX");
+
+    DotMatrixDocument document = documentService.renderInvoiceForPrint(request);
+    if (metrics != null) {
+      metrics.record(
+          ProductMetricsConstants.INVOICES_GENERATED, 1, "module", ProductMetricsConstants.MODULE);
+    }
+    return document;
+  }
+
+  /**
+   * Look up the purchase and its shop, verify the purchase belongs to {@code shopId}, and
+   * resolve the shop's invoice settings. Shared by every invoice-rendering entry point
+   * (PDF, text, ...) so the lookup and shop-scoping logic exists exactly once.
+   *
+   * @param purchaseId the purchase ID
+   * @param shopId the shop ID the purchase must belong to
+   * @return the purchase, its shop, and the shop's invoice settings
+   * @throws ResourceNotFoundException if the purchase or shop cannot be found
+   * @throws ValidationException if the purchase does not belong to {@code shopId}
+   */
+  /**
+   * How the goods are packed, as a trade bill's PACK column states it.
+   *
+   * <p>Built from the pack the stock was registered in: a hundred and twenty pieces to a box
+   * reads "1X120", two hundred millilitres to a bottle "1X200 ML". The unit is stated only when
+   * it is a measure - a count of pieces is what "1X120" already means, and printing "1X120 PCS"
+   * spends four characters of a column the bill can barely afford.
+   */
+  private static String packLabel(Inventory inventory) {
+    if (inventory.getUnitConversions() == null
+        || inventory.getUnitConversions().getFactor() == null) {
+      return null;
+    }
+    String label = "1X" + inventory.getUnitConversions().getFactor();
+    String base = inventory.getBaseUnit();
+    if (StringUtils.hasText(base) && !"PCS".equalsIgnoreCase(base.trim())) {
+      label = label + " " + base.trim().toUpperCase();
+    }
+    return label;
+  }
+
+  private PurchaseInvoiceContext loadAndValidate(String purchaseId, String shopId) {
     Purchase purchase = purchaseRepository.findById(purchaseId)
         .orElseThrow(() -> new ResourceNotFoundException("Purchase", "id", purchaseId));
 
@@ -104,20 +181,14 @@ public class InvoiceService {
         .orElseThrow(() -> new ResourceNotFoundException("Shop", "shopId", purchase.getShopId()));
 
     var settings = invoiceSettingsService.getOrDefaultForShop(shopId);
-    GenerateInvoiceRequest request = buildGenerateInvoiceRequest(purchase, shop, settings);
-
-    String resolvedPrinter =
-        (printerType != null && !printerType.isBlank())
-            ? printerType
-            : settings.getDefaultPrinterType();
-    request.setPrinterType(resolvedPrinter);
-
-    byte[] pdf = documentService.generateInvoice(request);
-    if (metrics != null) {
-      metrics.record(ProductMetricsConstants.INVOICES_GENERATED, 1, "module", ProductMetricsConstants.MODULE);
-    }
-    return pdf;
+    return new PurchaseInvoiceContext(purchase, shop, settings);
   }
+
+  /** Purchase, shop, and invoice settings resolved and shop-validated by {@link #loadAndValidate}. */
+  private record PurchaseInvoiceContext(
+      Purchase purchase,
+      Shop shop,
+      ShopInvoiceSettingsDocument settings) {}
 
   /**
    * Build GenerateInvoiceRequest from Purchase, Shop, and shop invoice settings.
@@ -126,7 +197,7 @@ public class InvoiceService {
   private GenerateInvoiceRequest buildGenerateInvoiceRequest(
       Purchase purchase,
       Shop shop,
-      com.inventory.product.domain.model.ShopInvoiceSettingsDocument settings) {
+      ShopInvoiceSettingsDocument settings) {
     GenerateInvoiceRequest request = new GenerateInvoiceRequest();
     BillingMode billingMode = purchase.getBillingMode() != null ? purchase.getBillingMode() : BillingMode.REGULAR;
     request.setBillingMode(billingMode.name());
@@ -235,6 +306,13 @@ public class InvoiceService {
 
     List<InvoiceItem> invoiceItems = new ArrayList<>();
     if (purchase.getItems() != null) {
+      // Every line's lot and its vertical fields, read once for the bill (product and pricing are
+      // filled in by the repository's read aspects in one batch each), not four reads per line.
+      List<String> lotIds = new ArrayList<>();
+      for (PurchaseItem line : purchase.getItems()) {
+        lotIds.add(line.getInventoryId());
+      }
+      DocumentLots.Loaded lots = documentLots.load(lotIds);
       for (PurchaseItem purchaseItem : purchase.getItems()) {
         InvoiceItem invoiceItem = new InvoiceItem();
         invoiceItem.setQuantity(purchaseItem.getQuantity());
@@ -272,12 +350,10 @@ public class InvoiceService {
         invoiceItem.setExpiryDate(purchaseItem.getExpiryDate());
 
         if (purchaseItem.getInventoryId() != null) {
-          Optional<Inventory> inventoryOpt = inventoryRepository.findById(purchaseItem.getInventoryId());
+          Optional<Inventory> inventoryOpt = lots.lot(purchaseItem.getInventoryId());
           if (inventoryOpt.isPresent()) {
             Inventory inventory = inventoryOpt.get();
-            Map<String, Object> extensionFields =
-                inventoryVerticalExtensionHandler.loadExtensionFields(
-                    inventory.getShopId(), inventory.getId());
+            Map<String, Object> extensionFields = lots.extensionFields(inventory);
             if (!StringUtils.hasText(invoiceItem.getHsn())) {
               invoiceItem.setHsn(inventory.getHsn());
             }
@@ -287,6 +363,7 @@ public class InvoiceService {
             if (!StringUtils.hasText(invoiceItem.getBatchNo())) {
               invoiceItem.setBatchNo(VerticalFieldsReader.batchNoFrom(extensionFields));
             }
+            invoiceItem.setPack(packLabel(inventory));
             if (inventory.getSchemeType() == SchemeType.PERCENTAGE
                 && inventory.getSchemePercentage() != null
                 && inventory.getReceivedCount() != null

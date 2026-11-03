@@ -30,17 +30,14 @@ public class SearchMetrics {
   static final String LATENCY_BUCKET = "inventory_product_search_latency_bucket_total";
   /** Sum of matched lots; average matches per search = this / ok requests. */
   static final String MATCHED = "inventory_product_search_matched_total";
-  /** Sampled {@code explain}: documents Mongo examined vs returned (read amplification). */
-  static final String DOCS_EXAMINED = "inventory_product_search_docs_examined_total";
-  static final String DOCS_RETURNED = "inventory_product_search_docs_returned_total";
   /** Facets requested, by field. */
   static final String FACETS = "inventory_product_search_facets_total";
   /** Searches slower than {@link #SLOW_THRESHOLD_MS}. */
   static final String SLOW = "inventory_product_search_slow_total";
 
   static final long SLOW_THRESHOLD_MS = 500;
-  static final int EXPLAIN_SAMPLE_EVERY = 50;
-  static final long[] LATENCY_LE_MS = {50, 100, 250, 500, 1_000, 2_500, 5_000};
+  // up to 30 s: under load a search took 7–17 s, which a 5 s top bucket hides
+  static final long[] LATENCY_LE_MS = {50, 100, 250, 500, 1_000, 2_500, 5_000, 10_000, 30_000};
 
   private static final String MODULE = ProductMetricsConstants.MODULE;
 
@@ -102,20 +99,19 @@ public class SearchMetrics {
     metrics.increment(FACETS, 1, "module", MODULE, "facet", fieldKey);
   }
 
-  public void explainSample(String surface, long examined, long returned) {
-    metrics.increment(DOCS_EXAMINED, Math.max(examined, 0), "module", MODULE, "surface", surface);
-    metrics.increment(DOCS_RETURNED, Math.max(returned, 0), "module", MODULE, "surface", surface);
-  }
-
-  /** Counts and logs a slow search with its shape — field keys and operators, never values (R11.2). */
-  public void slow(ValidatedSearch s, SearchPlan plan, long dbMillis, long totalMillis, long examined, long returned, String shopId) {
+  /**
+   * Counts and logs a slow search with its shape — field keys and operators, never values (R11.2).
+   * The shape is enough to reproduce it and run {@code explain} by hand; the app no longer re-runs
+   * searches to measure them (that doubled the database work exactly when searches were slow).
+   */
+  public void slow(ValidatedSearch s, SearchPlan plan, long dbMillis, long totalMillis, String shopId) {
     metrics.increment(SLOW, 1, "module", MODULE, "surface", s.surface());
     String shape =
         s.clauses().stream()
             .map((Clause c) -> c.field().fieldKey() + ":" + c.op().wireName())
             .collect(Collectors.joining(","));
     log.warn(
-        "[search-slow] surface={} mode={} hasText={} filters=[{}] match={} facets={} stages={} dbMs={} totalMs={} examined={} returned={} shop={}",
+        "[search-slow] surface={} mode={} hasText={} filters=[{}] match={} facets={} stages={} dbMs={} totalMs={} shop={}",
         s.surface(),
         s.text() != null ? s.text().mode().wireName() : "-",
         s.hasText(),
@@ -125,12 +121,6 @@ public class SearchMetrics {
         plan.stages().size(),
         dbMillis,
         totalMillis,
-        examined,
-        returned,
         shopId);
-  }
-
-  public static boolean shouldSampleExplain(long counter) {
-    return counter % EXPLAIN_SAMPLE_EVERY == 0;
   }
 }

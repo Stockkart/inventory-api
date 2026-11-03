@@ -7,7 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.inventory.product.rest.dto.request.BulkCreateInventoryRequest;
 import com.inventory.product.rest.dto.request.CreateInventoryItemRequest;
-import com.inventory.reminders.rest.dto.request.CustomReminderRequest;
+import com.inventory.product.rest.dto.request.CustomReminderRequest;
 import java.time.Instant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

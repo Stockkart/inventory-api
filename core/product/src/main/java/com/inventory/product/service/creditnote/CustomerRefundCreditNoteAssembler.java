@@ -5,6 +5,7 @@ import com.inventory.common.exception.ValidationException;
 import com.inventory.documentservice.rest.dto.CreditNoteItem;
 import com.inventory.product.domain.model.enums.SchemeType;
 import com.inventory.documentservice.rest.dto.GenerateCreditNoteRequest;
+import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.Refund;
 import com.inventory.product.domain.model.RefundItem;
@@ -15,20 +16,24 @@ import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.PurchaseRepository;
 import com.inventory.product.domain.repository.RefundRepository;
 import com.inventory.product.service.PurchaseCustomerRequests;
-import com.inventory.product.utils.AmountToWordsConverter;
+import com.inventory.common.util.AmountToWordsConverter;
+import com.inventory.product.utils.CreditNoteFigures;
 import com.inventory.user.domain.model.Customer;
 import com.inventory.user.service.CustomerService;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Assembles printable credit notes from customer sales returns ({@link Refund}).
@@ -109,35 +114,18 @@ public class CustomerRefundCreditNoteAssembler implements CreditNoteDocumentAsse
     List<CreditNoteItem> items = mapItems(refund);
     request.setItems(items);
 
-    BigDecimal taxable = nz(refund.getTaxableTotal());
-    BigDecimal cgst = nz(refund.getCgstAmount());
-    BigDecimal sgst = nz(refund.getSgstAmount());
-    BigDecimal igst = nz(refund.getIgstAmount());
-    if (taxable.signum() == 0 && !items.isEmpty()) {
-      for (CreditNoteItem item : items) {
-        taxable = taxable.add(nz(item.getTaxableValue()));
-        cgst = cgst.add(nz(item.getCgstAmount()));
-        sgst = sgst.add(nz(item.getSgstAmount()));
-      }
-    }
-    BigDecimal grand = nz(refund.getRefundAmount());
-    BigDecimal taxTotal = cgst.add(sgst).add(igst);
-    BigDecimal roundOff = nz(refund.getRoundOff());
-    if (roundOff.signum() == 0 && taxable.signum() > 0) {
-      roundOff = grand.subtract(taxable.add(taxTotal)).setScale(2, RoundingMode.HALF_UP);
-    }
-
-    request.setTaxableTotal(taxable.setScale(2, RoundingMode.HALF_UP));
-    request.setCgstAmount(cgst.setScale(2, RoundingMode.HALF_UP));
-    request.setSgstAmount(sgst.setScale(2, RoundingMode.HALF_UP));
+    CreditNoteFigures.Totals totals = CreditNoteFigures.totals(refund, refund.getRefundedItems());
+    request.setTaxableTotal(totals.taxableTotal());
+    request.setCgstAmount(totals.cgstAmount());
+    request.setSgstAmount(totals.sgstAmount());
     // A return of an interstate sale reverses IGST, and the note states it under that head.
-    request.setIgstAmount(igst.setScale(2, RoundingMode.HALF_UP));
+    request.setIgstAmount(totals.igstAmount());
     request.setInterstate(Boolean.TRUE.equals(refund.getInterstate()));
-    request.setTaxTotal(taxTotal.setScale(2, RoundingMode.HALF_UP));
-    request.setRoundOff(roundOff);
-    request.setGrandTotal(grand.setScale(2, RoundingMode.HALF_UP));
+    request.setTaxTotal(totals.taxTotal());
+    request.setRoundOff(totals.roundOff());
+    request.setGrandTotal(totals.grandTotal());
     applyTaxPercents(request, items);
-    request.setAmountInWords(AmountToWordsConverter.convertAmountToWords(grand));
+    request.setAmountInWords(AmountToWordsConverter.convertAmountToWords(totals.grandTotal()));
 
     return request;
   }
@@ -181,6 +169,23 @@ public class CustomerRefundCreditNoteAssembler implements CreditNoteDocumentAsse
     if (refund.getRefundedItems() == null) {
       return out;
     }
+    // The note's lots and their vertical fields, read once for the note rather than per line
+    Set<String> lotIds = new LinkedHashSet<>();
+    for (RefundItem line : refund.getRefundedItems()) {
+      if (line != null && StringUtils.hasText(line.getInventoryId())) {
+        lotIds.add(line.getInventoryId().trim());
+      }
+    }
+    Map<String, Inventory> lots = new HashMap<>();
+    if (!lotIds.isEmpty()) {
+      for (Inventory inv : inventoryRepository.findAllById(lotIds)) {
+        if (inv != null && inv.getId() != null) {
+          lots.put(inv.getId(), inv);
+        }
+      }
+    }
+    Map<String, Map<String, Object>> fieldsByLot = requestSupport.extensionFields(lots.values());
+
     for (RefundItem line : refund.getRefundedItems()) {
       if (line == null) {
         continue;
@@ -212,16 +217,14 @@ public class CustomerRefundCreditNoteAssembler implements CreditNoteDocumentAsse
       item.setSgst(line.getSgst());
 
       if (StringUtils.hasText(line.getInventoryId())) {
-        inventoryRepository
-            .findById(line.getInventoryId().trim())
-            .ifPresent(
-                inv -> {
-                  item.setHsn(inv.getHsn());
-                  item.setCompanyName(inv.getCompanyName());
-                  requestSupport.applyBatchAndExpiry(item, inv);
-                });
+        Inventory inv = lots.get(line.getInventoryId().trim());
+        if (inv != null) {
+          item.setHsn(inv.getHsn());
+          item.setCompanyName(inv.getCompanyName());
+          requestSupport.applyBatchAndExpiry(item, fieldsByLot.getOrDefault(inv.getId(), Map.of()));
+        }
       }
-      item.setGstPercent(sumAmountsAsPercent(item.getCgst(), item.getSgst()));
+      item.setGstPercent(CreditNoteFigures.lineRatePct(item.getCgst(), item.getSgst()));
       out.add(item);
     }
     return out;
@@ -269,22 +272,4 @@ public class CustomerRefundCreditNoteAssembler implements CreditNoteDocumentAsse
     }
   }
 
-  private static BigDecimal sumAmountsAsPercent(String cgst, String sgst) {
-    return parseRate(cgst).add(parseRate(sgst));
-  }
-
-  private static BigDecimal parseRate(String rate) {
-    if (!StringUtils.hasText(rate)) {
-      return BigDecimal.ZERO;
-    }
-    try {
-      return new BigDecimal(rate.trim());
-    } catch (NumberFormatException e) {
-      return BigDecimal.ZERO;
-    }
-  }
-
-  private static BigDecimal nz(BigDecimal v) {
-    return v != null ? v : BigDecimal.ZERO;
-  }
 }

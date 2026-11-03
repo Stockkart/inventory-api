@@ -1,9 +1,13 @@
 package com.inventory.product.domain.model.pricing;
 
-import com.inventory.pricing.domain.model.Scheme;
-import com.inventory.pricing.rest.dto.request.PricingCreateCommand;
-import com.inventory.pricing.rest.dto.request.PricingUpdateCommand;
-import com.inventory.pricing.service.InventoryPricingAdapter;
+import com.inventory.common.constants.ErrorCode;
+import com.inventory.common.exception.BaseException;
+import com.inventory.common.exception.ValidationException;
+import com.inventory.pricing.api.port.ShopRateRulesPort;
+import com.inventory.pricing.api.SchemeTerms;
+import com.inventory.pricing.api.PricingCreate;
+import com.inventory.pricing.api.PricingUpdate;
+import com.inventory.pricing.api.InventoryPricing;
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.enums.SchemeType;
@@ -11,6 +15,7 @@ import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.enums.ShopType;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.rest.dto.request.UpdateInventoryRequest;
+import com.inventory.pricing.api.PricingClearFields;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -24,24 +29,27 @@ import org.springframework.util.StringUtils;
 public class InventoryPricingWriteHandler {
 
   @Autowired
-  private InventoryPricingAdapter pricingPort;
+  private InventoryPricing pricingPort;
 
   @Autowired
   private ShopRepository shopRepository;
+
+  @Autowired
+  private ShopRateRulesPort shopRateRulesPort;
 
   public void persistOnSave(Inventory inventory) {
     try {
       String verticalId = resolveVerticalId(inventory.getShopId());
       if (inventory.getId() == null && hasPricingData(inventory) && StringUtils.hasText(inventory.getShopId())) {
-        var builder = PricingCreateCommand.builder()
+        var builder = PricingCreate.builder()
             .shopId(inventory.getShopId())
             .verticalId(verticalId)
             .costPrice(inventory.getCostPrice())
             .saleAdditionalDiscount(inventory.getSaleAdditionalDiscount())
             .purchaseAdditionalDiscount(inventory.getPurchaseAdditionalDiscount())
             .costPriceIncludesTax(inventory.getCostPriceIncludesTax())
-            .sgst(resolveSgst(inventory.getSgst(), inventory.getShopId()))
-            .cgst(resolveCgst(inventory.getCgst(), inventory.getShopId()));
+            .sgst(resolveSgst(inventory.getSgst()))
+            .cgst(resolveCgst(inventory.getCgst()));
         // Cafe shops are registered as RETAILER too; their pricing policy rejects MRP/PTR,
         // so they must take the vertical-owned branch below.
         if (!"cafe".equalsIgnoreCase(verticalId) && isRetailerShop(inventory.getShopId())) {
@@ -53,7 +61,9 @@ public class InventoryPricingWriteHandler {
               .maximumRetailPrice(selling)
               .priceToRetail(selling)
               .defaultRate("priceToRetail")
-              .rates(null)
+              // With rate rules the generated rates stay; PricingService rebuilds them from the
+              // selling price. Without rules a retailer has none.
+              .rates(hasRateRules(inventory.getShopId()) ? inventory.getRates() : null)
               .purchaseScheme(buildPurchaseScheme(inventory))
               .saleScheme(buildSaleScheme(inventory));
         } else {
@@ -74,11 +84,21 @@ public class InventoryPricingWriteHandler {
       if (ctx != null && ctx.type == InventoryPricingContext.Type.UPDATE && ctx.updateRequest != null) {
         UpdateInventoryRequest req = ctx.updateRequest;
         if (hasAnyPricingUpdate(req) && StringUtils.hasText(inventory.getPricingId())) {
-          var cmd = PricingUpdateCommand.builder()
+          java.math.BigDecimal mrp = req.getMaximumRetailPrice();
+          java.math.BigDecimal ptr = req.getPriceToRetail();
+          // A retailer with rate rules: MRP and PTR mirror a selling price sent alone, as on
+          // create, so rules on the selling price and the at-MRP check see one figure. Shops
+          // without rules keep today's edit behaviour.
+          if (req.getSellingPrice() != null && mrp == null && ptr == null
+              && isRetailerShop(inventory.getShopId()) && hasRateRules(inventory.getShopId())) {
+            mrp = req.getSellingPrice();
+            ptr = req.getSellingPrice();
+          }
+          var cmd = PricingUpdate.builder()
               .verticalId(verticalId)
-              .maximumRetailPrice(req.getMaximumRetailPrice())
+              .maximumRetailPrice(mrp)
               .costPrice(req.getCostPrice())
-              .priceToRetail(req.getPriceToRetail())
+              .priceToRetail(ptr)
               .sellingPrice(req.getSellingPrice())
               .rates(req.getRates())
               .defaultRate(req.getDefaultRate())
@@ -88,13 +108,28 @@ public class InventoryPricingWriteHandler {
               .saleScheme(buildSaleSchemeFromRequest(req))
               .sgst(req.getSgst())
               .cgst(req.getCgst())
+              .clearFields(pricingClearFields(req))
               .build();
-          pricingPort.update(inventory.getPricingId(), cmd);
+          pricingPort.update(inventory.getPricingId(), cmd, ctx.userId);
         }
       }
+    } catch (ValidationException e) {
+      // A rejected rate edit (a case-only clash with a rule, an override on a missing base) must
+      // reach the caller as 400 before the inventory is saved, not drop the pricing update.
+      throw e;
+    } catch (BaseException e) {
+      // A denied rate edit must reach the caller (403), not save the inventory without its pricing.
+      if (e.getErrorCode() == ErrorCode.ACCESS_DENIED) {
+        throw e;
+      }
+      log.warn("Failed to persist pricing for inventory {}: {}", inventory.getId(), e.getMessage());
     } catch (Exception e) {
       log.warn("Failed to persist pricing for inventory {}: {}", inventory.getId(), e.getMessage());
     }
+  }
+
+  private boolean hasRateRules(String shopId) {
+    return !shopRateRulesPort.rulesFor(shopId).isEmpty();
   }
 
   private boolean isRetailerShop(String shopId) {
@@ -134,7 +169,22 @@ public class InventoryPricingWriteHandler {
         || (req.getRates() != null && !req.getRates().isEmpty())
         || StringUtils.hasText(req.getDefaultRate())
         || req.getSellingPrice() != null
-        || StringUtils.hasText(req.getSgst()) || StringUtils.hasText(req.getCgst());
+        || StringUtils.hasText(req.getSgst()) || StringUtils.hasText(req.getCgst())
+        || pricingClearFields(req) != null;
+  }
+
+  /** The request's clearFields that name pricing fields, or null when there are none. */
+  private java.util.Set<String> pricingClearFields(UpdateInventoryRequest req) {
+    if (req.getClearFields() == null) {
+      return null;
+    }
+    java.util.Set<String> pricing = new java.util.LinkedHashSet<>();
+    for (String field : req.getClearFields()) {
+      if (PricingClearFields.ALL.contains(field)) {
+        pricing.add(field);
+      }
+    }
+    return pricing.isEmpty() ? null : pricing;
   }
 
   private boolean hasPricingData(Inventory inv) {
@@ -148,18 +198,17 @@ public class InventoryPricingWriteHandler {
         || inv.getPurchaseSchemeFree() != null || inv.getPurchaseSchemePercentage() != null;
   }
 
-  private String resolveSgst(String fromRequest, String shopId) {
+  private String resolveSgst(String fromRequest) {
     InventoryPricingContext.Context ctx = InventoryPricingContext.get();
     if (ctx != null && ctx.type == InventoryPricingContext.Type.CREATE
         && ctx.createRequest != null && ctx.createRequest.getBillingMode() == BillingMode.BASIC) {
       return null;
     }
-    if (StringUtils.hasText(fromRequest)) return fromRequest;
-    if (!StringUtils.hasText(shopId)) return null;
-    return shopRepository.findById(shopId).map(Shop::getSgst).orElse(null);
+    // GST is the lot's own; there is no shop-level default (the validator requires it on create).
+    return StringUtils.hasText(fromRequest) ? fromRequest : null;
   }
 
-  private Scheme buildPurchaseSchemeFromRequest(UpdateInventoryRequest req) {
+  private SchemeTerms buildPurchaseSchemeFromRequest(UpdateInventoryRequest req) {
     SchemeType st = req.getPurchaseSchemeType();
     Integer payFor = req.getPurchaseSchemePayFor();
     Integer free = req.getPurchaseSchemeFree();
@@ -168,10 +217,10 @@ public class InventoryPricingWriteHandler {
       return null;
     }
     String schemeTypeStr = st != null ? st.name() : null;
-    return new Scheme(schemeTypeStr, payFor, free, pct);
+    return new SchemeTerms(schemeTypeStr, payFor, free, pct);
   }
 
-  private Scheme buildPurchaseScheme(Inventory inv) {
+  private SchemeTerms buildPurchaseScheme(Inventory inv) {
     SchemeType st = inv.getPurchaseSchemeType();
     Integer payFor = inv.getPurchaseSchemePayFor();
     Integer free = inv.getPurchaseSchemeFree();
@@ -180,10 +229,10 @@ public class InventoryPricingWriteHandler {
       return null;
     }
     String schemeTypeStr = st != null ? st.name() : null;
-    return new Scheme(schemeTypeStr, payFor, free, pct);
+    return new SchemeTerms(schemeTypeStr, payFor, free, pct);
   }
 
-  private Scheme buildSaleScheme(Inventory inv) {
+  private SchemeTerms buildSaleScheme(Inventory inv) {
     SchemeType st = inv.getSchemeType();
     Integer payFor = inv.getSchemePayFor();
     Integer free = inv.getSchemeFree();
@@ -192,10 +241,10 @@ public class InventoryPricingWriteHandler {
       return null;
     }
     String schemeTypeStr = st != null ? st.name() : null;
-    return new Scheme(schemeTypeStr, payFor, free, pct);
+    return new SchemeTerms(schemeTypeStr, payFor, free, pct);
   }
 
-  private Scheme buildSaleSchemeFromRequest(UpdateInventoryRequest req) {
+  private SchemeTerms buildSaleSchemeFromRequest(UpdateInventoryRequest req) {
     SchemeType st = req.getSchemeType();
     Integer payFor = req.getSchemePayFor();
     Integer free = req.getSchemeFree();
@@ -204,7 +253,7 @@ public class InventoryPricingWriteHandler {
       return null;
     }
     String schemeTypeStr = st != null ? st.name() : null;
-    return new Scheme(schemeTypeStr, payFor, free, pct);
+    return new SchemeTerms(schemeTypeStr, payFor, free, pct);
   }
 
   private String resolveVerticalId(String shopId) {
@@ -214,14 +263,13 @@ public class InventoryPricingWriteHandler {
     return shopRepository.findById(shopId).map(Shop::getVerticalId).orElse(null);
   }
 
-  private String resolveCgst(String fromRequest, String shopId) {
+  private String resolveCgst(String fromRequest) {
     InventoryPricingContext.Context ctx = InventoryPricingContext.get();
     if (ctx != null && ctx.type == InventoryPricingContext.Type.CREATE
         && ctx.createRequest != null && ctx.createRequest.getBillingMode() == BillingMode.BASIC) {
       return null;
     }
-    if (StringUtils.hasText(fromRequest)) return fromRequest;
-    if (!StringUtils.hasText(shopId)) return null;
-    return shopRepository.findById(shopId).map(Shop::getCgst).orElse(null);
+    // GST is the lot's own; there is no shop-level default (the validator requires it on create).
+    return StringUtils.hasText(fromRequest) ? fromRequest : null;
   }
 }

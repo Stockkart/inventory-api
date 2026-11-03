@@ -1,6 +1,6 @@
 package com.inventory.product.rest.dto.response;
 
-import com.inventory.pricing.rest.dto.response.RateDto;
+import com.inventory.pricing.api.RateLine;
 import com.inventory.product.domain.model.enums.DiscountApplicable;
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.enums.InventorySellRestriction;
@@ -38,7 +38,7 @@ public class InventoryDetailResponse {
   BigDecimal priceToRetail;
   /** Effective selling price (from defaultRate). */
   BigDecimal sellingPrice;
-  List<RateDto> rates;
+  List<RateLine> rates;
   String defaultRate;
   BigDecimal saleAdditionalDiscount;
   BigDecimal receivedCount;

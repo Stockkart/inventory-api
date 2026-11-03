@@ -1,11 +1,12 @@
 package com.inventory.ocr.provider.impl;
 
+import com.inventory.ocr.prompt.InvoicePrompts;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.inventory.ocr.constants.OcrConstants;
 import com.inventory.ocr.dto.ParsedInventoryItem;
 import com.inventory.ocr.preprocess.ImagePreprocessor;
-import com.inventory.ocr.prompt.InvoicePricingLayout;
+import com.inventory.ocr.api.InvoicePricingLayout;
 import com.inventory.ocr.provider.OcrProvider;
 import com.inventory.ocr.util.OcrResponseJsonParser;
 import lombok.extern.slf4j.Slf4j;
@@ -55,7 +56,7 @@ public class ChatGptOcrProvider implements OcrProvider {
     String dataUrl = "data:image/jpeg;base64," + base64;
 
     List<Map<String, Object>> content = List.of(
-        Map.<String, Object>of("type", "input_text", "text", resolved.promptText()),
+        Map.<String, Object>of("type", "input_text", "text", InvoicePrompts.text(resolved)),
         Map.<String, Object>of("type", "input_image", "image_url", dataUrl)
     );
     Map<String, Object> userMessage = Map.of("role", "user", "content", content);

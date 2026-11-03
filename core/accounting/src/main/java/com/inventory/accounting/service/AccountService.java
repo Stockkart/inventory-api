@@ -11,6 +11,10 @@ import com.inventory.metrics.MetricsWrapper;
 import java.time.Instant;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -26,6 +30,7 @@ public class AccountService {
   private final AccountRepository accountRepository;
   private final ChartOfAccountsSeeder seeder;
   private final MetricsWrapper metrics;
+  private final MongoTemplate mongoTemplate;
 
   @Transactional(readOnly = true)
   public List<Account> list(String shopId) {
@@ -63,6 +68,14 @@ public class AccountService {
    */
   public void ensureSeeded(String shopId) {
     seeder.seedShop(shopId);
+  }
+
+  /**
+   * {@link #ensureSeeded(String)} that also returns the shop's chart of accounts, read in the same
+   * query, for callers that resolve accounts next (journal posting).
+   */
+  public List<Account> ensureSeededAndList(String shopId) {
+    return seeder.seedShopAndList(shopId);
   }
 
   @Transactional
@@ -125,7 +138,13 @@ public class AccountService {
       a.setActive(active);
     }
     a.setUpdatedAt(Instant.now());
-    return accountRepository.save(a);
+    // Only the edited fields: a whole-document save would drop the account's ledgerBalance
+    // (kept by AccountLedgerBalances, not mapped here) or rewind it to the value read above.
+    mongoTemplate.updateFirst(
+        Query.query(Criteria.where("_id").is(a.getId()).and("shopId").is(shopId)),
+        new Update().set("name", a.getName()).set("active", a.isActive()).set("updatedAt", a.getUpdatedAt()),
+        Account.class);
+    return a;
   }
 
   static NormalBalance defaultNormalBalance(AccountType type) {

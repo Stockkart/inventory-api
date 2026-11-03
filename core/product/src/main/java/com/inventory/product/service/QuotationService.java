@@ -22,18 +22,25 @@ import com.inventory.product.util.PurchaseItemRefs;
 import com.inventory.product.service.vertical.QuotationCreateOrchestrator;
 import com.inventory.metrics.MetricsWrapper;
 import com.inventory.product.utils.constants.ProductMetricsConstants;
+import com.inventory.pluginengine.ref.SellableRef;
 import com.inventory.user.domain.model.Customer;
 import com.inventory.user.service.CustomerService;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -47,6 +54,7 @@ public class QuotationService {
   private static final int MAX_OPEN_QUOTATIONS_PER_USER = 30;
 
   private final PurchaseRepository purchaseRepository;
+  private final MongoTemplate mongoTemplate;
   private final PurchaseMapper purchaseMapper;
   private final CustomerService customerService;
   private final QuotationCreateOrchestrator quotationCreateOrchestrator;
@@ -217,6 +225,47 @@ public class QuotationService {
   public Map<String, Integer> quotedBaseQuantitiesByLot(String shopId, String excludePurchaseId) {
     List<Purchase> open =
         purchaseRepository.findByShopIdAndStatus(shopId, PurchaseStatus.CREATED);
+    return sumReserved(open, excludePurchaseId, null);
+  }
+
+  /**
+   * {@link #quotedBaseQuantitiesByLot} for the given lots only: reads just the open documents that
+   * hold one of them, and only the line fields the sum needs. Same numbers for those lots; lots not
+   * asked for are absent. Search and the cart stock check need a page or a cart of lots, not the
+   * whole shop's open quotations (hundreds of documents in a busy shop).
+   */
+  @Transactional(readOnly = true)
+  public Map<String, Integer> quotedBaseQuantitiesForLots(
+      String shopId, String excludePurchaseId, Collection<String> lotIds) {
+    Set<String> lots = new HashSet<>();
+    if (lotIds != null) {
+      for (String id : lotIds) {
+        if (StringUtils.hasText(id)) {
+          lots.add(id.trim());
+        }
+      }
+    }
+    if (lots.isEmpty()) {
+      return Map.of();
+    }
+    List<String> refs = lots.stream().map(id -> SellableRef.inventory(id).encode()).toList();
+    Query query = Query.query(Criteria.where("shopId").is(shopId)
+        .and("status").is(PurchaseStatus.CREATED)
+        .orOperator(
+            Criteria.where("items.stockRef").in(refs),
+            Criteria.where("items.sellableRef").in(refs),
+            // legacy lines before refs: their lot id in the inventoryId field
+            Criteria.where("items.inventoryId").in(lots)));
+    query.fields()
+        .include("documentType", "estimateState",
+            "items.sellMode", "items.sellableRef", "items.stockRef", "items.inventoryId",
+            "items.menuItemId", "items.baseQuantity", "items.quantity");
+    return sumReserved(mongoTemplate.find(query, Purchase.class), excludePurchaseId, lots);
+  }
+
+  /** Base quantities per lot over these open documents; {@code onlyLots} null means every lot. */
+  private static Map<String, Integer> sumReserved(
+      List<Purchase> open, String excludePurchaseId, Set<String> onlyLots) {
     Map<String, Integer> reserved = new HashMap<>();
     for (Purchase purchase : open) {
       if (excludePurchaseId != null && excludePurchaseId.equals(purchase.getId())) {
@@ -237,7 +286,7 @@ public class QuotationService {
         }
         PurchaseItemRefs.normalize(item);
         String lotId = PurchaseItemRefs.stockLotId(item);
-        if (!StringUtils.hasText(lotId)) {
+        if (!StringUtils.hasText(lotId) || (onlyLots != null && !onlyLots.contains(lotId))) {
           continue;
         }
         int baseQty = baseQuantityOrZero(item);

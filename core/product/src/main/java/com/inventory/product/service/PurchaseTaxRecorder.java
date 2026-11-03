@@ -1,7 +1,8 @@
 package com.inventory.product.service;
 
-import com.inventory.pricing.domain.model.Pricing;
-import com.inventory.pricing.domain.repository.PricingRepository;
+import com.inventory.common.gst.SupplyPlacement;
+import com.inventory.pricing.api.PricingView;
+import com.inventory.pricing.api.PricingLookup;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.VendorPurchaseInvoice;
 import com.inventory.product.domain.model.VendorPurchaseInvoiceLine;
@@ -15,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -32,13 +34,15 @@ import org.springframework.util.StringUtils;
 public class PurchaseTaxRecorder {
 
   private final InventoryRepository inventoryRepository;
-  private final PricingRepository pricingRepository;
+  private final PricingLookup pricingLookup;
+  /** Who is where; absent only in slices of the app that do not wire the taxation module. */
+  private final ObjectProvider<SupplyPlacement> placement;
 
   /**
    * The pricing behind each line's lot, keyed by inventory id, in two queries whatever the number
    * of lines. A line whose lot or pricing is missing is simply absent from the map.
    */
-  public Map<String, Pricing> pricingByInventoryId(List<VendorPurchaseInvoiceLine> lines) {
+  public Map<String, PricingView> pricingByInventoryId(List<VendorPurchaseInvoiceLine> lines) {
     Set<String> inventoryIds = new LinkedHashSet<>();
     if (lines != null) {
       for (VendorPurchaseInvoiceLine line : lines) {
@@ -57,14 +61,14 @@ public class PurchaseTaxRecorder {
         pricingIdByInventoryId.put(lot.getId(), lot.getPricingId());
       }
     }
-    Map<String, Pricing> pricingById = new HashMap<>();
-    for (Pricing pricing : pricingRepository.findAllById(pricingIdByInventoryId.values())) {
-      pricingById.put(pricing.getId(), pricing);
+    Map<String, PricingView> pricingById = new HashMap<>();
+    for (PricingView pricing : pricingLookup.findAllById(pricingIdByInventoryId.values())) {
+      pricingById.put(pricing.id(), pricing);
     }
 
-    Map<String, Pricing> out = new HashMap<>();
+    Map<String, PricingView> out = new HashMap<>();
     pricingIdByInventoryId.forEach((inventoryId, pricingId) -> {
-      Pricing pricing = pricingById.get(pricingId);
+      PricingView pricing = pricingById.get(pricingId);
       if (pricing != null) {
         out.put(inventoryId, pricing);
       }
@@ -81,18 +85,31 @@ public class PurchaseTaxRecorder {
    */
   public void record(VendorPurchaseInvoice invoice) {
     try {
-      Map<String, Pricing> pricing = pricingByInventoryId(invoice.getLines());
-      // Interstate is not decided here. It turns on the supplier's state against the shop's, and
-      // the tax heads are a property of the return rather than of the purchase, so the split is
-      // left to the aggregator that knows both ends. The totals do not change either way.
+      Map<String, PricingView> pricing = pricingByInventoryId(invoice.getLines());
+      // Decided here, once, and written on the invoice: the ledger, the returns and GSTR-2 all
+      // read the same answer. The totals do not change either way; only which heads carry them.
+      boolean interstate = isInterstate(invoice);
+      invoice.setInterstate(interstate);
       PurchaseTaxBasis basis = PurchaseTaxBasisResolver.resolve(
-          invoice, pricing::get, invoice.getTaxTreatment(), false);
+          invoice, pricing::get, invoice.getTaxTreatment(), interstate);
       apply(invoice, basis);
     } catch (RuntimeException e) {
       log.error("Could not work out the totals of invoice {} (shop {}); "
               + "the reports will resolve its lines on read",
           invoice.getInvoiceNo(), invoice.getShopId(), e);
     }
+  }
+
+  /**
+   * Whether this invoice's supplier is in another state than the shop. The stored answer wins;
+   * an invoice without one (recorded before the flag existed) is placed now.
+   */
+  public boolean isInterstate(VendorPurchaseInvoice invoice) {
+    if (invoice.getInterstate() != null) {
+      return invoice.getInterstate();
+    }
+    SupplyPlacement p = placement.getIfAvailable();
+    return p != null && p.isInterstatePurchase(invoice.getShopId(), invoice.getVendorId());
   }
 
   /**

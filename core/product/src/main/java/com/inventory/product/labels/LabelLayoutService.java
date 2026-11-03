@@ -11,8 +11,11 @@ import com.inventory.user.service.UserShopMembershipService;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.springframework.stereotype.Service;
 
 /**
@@ -108,11 +111,10 @@ public class LabelLayoutService {
     doc.setTemplate(config.template().name());
     doc.setBarcodePosition(config.barcodePosition().name());
     doc.setCurrencyStyle(config.currencyStyle().name());
-    doc.setFieldZones(config.fieldZones().isEmpty() ? null : new LinkedHashMap<>(config.fieldZones()));
-    doc.setFieldLabelOverrides(
-        config.fieldLabelOverrides().isEmpty()
-            ? null
-            : new LinkedHashMap<>(config.fieldLabelOverrides()));
+    // Field keys go in a list, not map keys: Mongo rejects a map key with a dot (vertical.size).
+    doc.setFieldSettings(fieldSettingsOf(config.fieldZones(), config.fieldLabelOverrides()));
+    doc.setFieldZones(null);
+    doc.setFieldLabelOverrides(null);
     doc.setUpdatedAt(Instant.now());
     doc.setUpdatedByUserId(userId);
     LabelLayoutDocument saved = repository.save(doc);
@@ -358,9 +360,57 @@ public class LabelLayoutService {
         template,
         barcodePosition,
         currencyStyle,
-        doc.getFieldZones(),
-        doc.getFieldLabelOverrides(),
+        fieldZonesOf(doc),
+        fieldLabelOverridesOf(doc),
         rollSetup);
+  }
+
+  /** The zones and label overrides as one list entry per field key, or {@code null} when empty. */
+  private static List<LabelLayoutDocument.FieldSettingDoc> fieldSettingsOf(
+      Map<String, String> zones, Map<String, Boolean> labelOverrides) {
+    Set<String> keys = new LinkedHashSet<>(zones.keySet());
+    keys.addAll(labelOverrides.keySet());
+    if (keys.isEmpty()) {
+      return null;
+    }
+    List<LabelLayoutDocument.FieldSettingDoc> settings = new ArrayList<>(keys.size());
+    for (String key : keys) {
+      settings.add(
+          new LabelLayoutDocument.FieldSettingDoc(key, zones.get(key), labelOverrides.get(key)));
+    }
+    return settings;
+  }
+
+  /** Stored zones: the legacy map first, then {@code fieldSettings}, which wins per key. */
+  private static Map<String, String> fieldZonesOf(LabelLayoutDocument doc) {
+    Map<String, String> zones =
+        doc.getFieldZones() == null
+            ? new LinkedHashMap<>()
+            : new LinkedHashMap<>(doc.getFieldZones());
+    if (doc.getFieldSettings() != null) {
+      for (LabelLayoutDocument.FieldSettingDoc setting : doc.getFieldSettings()) {
+        if (setting.getFieldKey() != null && setting.getZone() != null) {
+          zones.put(setting.getFieldKey(), setting.getZone());
+        }
+      }
+    }
+    return zones;
+  }
+
+  /** Stored label overrides: the legacy map, then {@code fieldSettings}, which wins per key. */
+  private static Map<String, Boolean> fieldLabelOverridesOf(LabelLayoutDocument doc) {
+    Map<String, Boolean> overrides =
+        doc.getFieldLabelOverrides() == null
+            ? new LinkedHashMap<>()
+            : new LinkedHashMap<>(doc.getFieldLabelOverrides());
+    if (doc.getFieldSettings() != null) {
+      for (LabelLayoutDocument.FieldSettingDoc setting : doc.getFieldSettings()) {
+        if (setting.getFieldKey() != null && setting.getShowLabel() != null) {
+          overrides.put(setting.getFieldKey(), setting.getShowLabel());
+        }
+      }
+    }
+    return overrides;
   }
 
   /**
