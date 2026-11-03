@@ -1,7 +1,7 @@
 package com.inventory.product.rest.dto.request;
 
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.inventory.pricing.rest.dto.response.RateDto;
+import com.inventory.pricing.api.RateLine;
 import com.inventory.common.jackson.FlexibleInstantDeserializer;
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.enums.DiscountApplicable;
@@ -33,7 +33,7 @@ public class UpdateInventoryRequest {
   private BigDecimal costPrice;
   private BigDecimal priceToRetail;
   private BigDecimal sellingPrice;
-  private List<RateDto> rates;
+  private List<RateLine> rates;
   private String defaultRate;
   private BigDecimal saleAdditionalDiscount;
   private BigDecimal purchaseAdditionalDiscount;
@@ -72,5 +72,13 @@ public class UpdateInventoryRequest {
   private Integer thresholdCount;
   /** Vertical-specific fields (sport, brand, model, …) keyed by schema field name. */
   private java.util.Map<String, Object> verticalFields;
+
+  /**
+   * Fields to clear. A null field above means "keep it", so a field is cleared only by naming it
+   * here: {@code ProductConstants.CLEARABLE_INVENTORY_FIELDS} plus
+   * {@code PricingConstants.CLEARABLE_FIELDS} (saleAdditionalDiscount, purchaseAdditionalDiscount,
+   * saleScheme, purchaseScheme). A name sent here and a value for the same field is refused.
+   */
+  private java.util.Set<String> clearFields;
 }
 

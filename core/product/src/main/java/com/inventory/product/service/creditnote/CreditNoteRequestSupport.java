@@ -7,6 +7,7 @@ import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.ShopInvoiceSettingsDocument;
 import com.inventory.product.domain.model.enums.BillingMode;
+import com.inventory.product.service.DocumentLots;
 import com.inventory.product.service.InvoiceSettingsService;
 import com.inventory.product.service.vertical.InventoryVerticalExtensionHandler;
 import org.springframework.stereotype.Component;
@@ -15,6 +16,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
@@ -48,12 +50,25 @@ public class CreditNoteRequestSupport {
     if (item == null || inventory == null) {
       return;
     }
-    Map<String, Object> fields =
-        inventoryVerticalExtensionHandler.loadExtensionFields(
-            inventory.getShopId(), inventory.getId());
-    item.setBatchNo(VerticalFieldsReader.batchNoFrom(fields));
-    Instant expiry = VerticalFieldsReader.expiryDateFrom(fields);
+    applyBatchAndExpiry(
+        item,
+        inventoryVerticalExtensionHandler.loadExtensionFields(inventory.getShopId(), inventory.getId()));
+  }
+
+  /** Same, from the lot's vertical fields already read (see {@link #extensionFields}). */
+  public void applyBatchAndExpiry(CreditNoteItem item, Map<String, Object> fields) {
+    if (item == null) {
+      return;
+    }
+    Map<String, Object> f = fields != null ? fields : Map.of();
+    item.setBatchNo(VerticalFieldsReader.batchNoFrom(f));
+    Instant expiry = VerticalFieldsReader.expiryDateFrom(f);
     item.setExpiryDate(expiry != null ? EXPIRY_FORMAT.format(expiry) : null);
+  }
+
+  /** The vertical fields of a note's lots by lot id, read once per shop rather than once per line. */
+  public Map<String, Map<String, Object>> extensionFields(Collection<Inventory> lots) {
+    return DocumentLots.extensionFields(inventoryVerticalExtensionHandler, lots);
   }
 
   public void applyShopAndVisibility(

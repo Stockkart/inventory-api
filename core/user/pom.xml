@@ -53,6 +53,11 @@
             <artifactId>google-api-client</artifactId>
             <version>2.2.0</version>
         </dependency>
+        <!-- 60 s in-memory login cache (AuthCache); version from the Spring Boot BOM (3.1.8) -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

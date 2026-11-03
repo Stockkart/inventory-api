@@ -28,7 +28,7 @@ public class AuthenticationInterceptor implements HandlerInterceptor {
   private static final List<String> PUBLIC_ENDPOINTS = Arrays.asList(
       "/api/v1/auth/login",
       "/api/v1/auth/signup",
-      "/api/v1/auth/change-password",
+      // change-password is NOT public: it needs the caller's Bearer token and current password
       "/api/v1/auth/forgot-password",
       "/api/v1/auth/reset-password",
       "/api/v1/auth/accept-invite",
@@ -62,8 +62,10 @@ public class AuthenticationInterceptor implements HandlerInterceptor {
       return true;
     }
 
-    // Check if endpoint is public
-    if (isPublicEndpoint(requestPath)) {
+    // Check if endpoint is public. Matched on the decoded, semicolon-free path Spring routes on;
+    // a path with dot segments or encoded separators is never treated as public.
+    String lookupPath = RequestPaths.lookupPath(request);
+    if (!RequestPaths.isSuspicious(request, lookupPath) && isPublicEndpoint(lookupPath)) {
       log.debug("Public endpoint accessed: {}", requestPath);
       return true;
     }

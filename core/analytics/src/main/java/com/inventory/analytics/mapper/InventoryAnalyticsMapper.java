@@ -23,6 +23,7 @@ public interface InventoryAnalyticsMapper {
     meta.put("expiringSoonDays", params.getExpiringSoonDays());
     meta.put("includeAll", params.getIncludeAll());
     meta.put("totalItems", params.getTotalItems());
+    meta.put("listLimit", params.getListLimit());
     response.setMeta(meta);
   }
 }

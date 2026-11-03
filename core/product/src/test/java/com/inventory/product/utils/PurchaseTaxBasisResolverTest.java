@@ -2,8 +2,8 @@ package com.inventory.product.utils;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.inventory.pricing.domain.model.Pricing;
-import com.inventory.pricing.domain.model.Scheme;
+import com.inventory.pricing.api.PricingView;
+import com.inventory.pricing.api.SchemeTerms;
 import com.inventory.product.domain.model.VendorPurchaseInvoice;
 import com.inventory.product.domain.model.VendorPurchaseInvoiceLine;
 import com.inventory.common.constants.PurchaseTaxTreatment;
@@ -16,7 +16,8 @@ import org.junit.jupiter.api.Test;
 
 class PurchaseTaxBasisResolverTest {
 
-  private final Map<String, Pricing> pricing = new HashMap<>();
+  // builders, so a deal line can add its scheme after the line is made
+  private final Map<String, PricingView.PricingViewBuilder> pricing = new HashMap<>();
   private final List<VendorPurchaseInvoiceLine> lines = new ArrayList<>();
 
   private static BigDecimal bd(String value) {
@@ -37,20 +38,25 @@ class PurchaseTaxBasisResolverTest {
     line.setInventoryId(inventoryId);
     lines.add(line);
 
-    Pricing p = new Pricing();
-    p.setCostPrice(bd(cost));
-    p.setCgst(halfGst);
-    p.setSgst(halfGst);
+    PricingView.PricingViewBuilder p = PricingView.builder();
+    p.costPrice(bd(cost));
+    p.cgst(halfGst);
+    p.sgst(halfGst);
     if (schemePct != null) {
-      Scheme scheme = new Scheme();
-      scheme.setSchemeType("PERCENTAGE");
-      scheme.setSchemePercentage(bd(schemePct));
-      p.setPurchaseScheme(scheme);
+      p.purchaseScheme(new SchemeTerms("PERCENTAGE", null, null, bd(schemePct)));
     }
     if (additional != null) {
-      p.setPurchaseAdditionalDiscount(bd(additional));
+      p.purchaseAdditionalDiscount(bd(additional));
     }
     pricing.put(inventoryId, p);
+  }
+
+  /** A line of {@code count} at list {@code cost} under a "{@code payFor}+{@code free}" deal. */
+  private void dealLine(int count, String cost, String halfGst, int payFor, int free,
+      String additional) {
+    line(count, cost, halfGst, null, additional);
+    pricing.get(lines.get(lines.size() - 1).getInventoryId())
+        .purchaseScheme(new SchemeTerms("FIXED_UNITS", payFor, free, null));
   }
 
   private PurchaseTaxBasis resolve(
@@ -58,7 +64,9 @@ class PurchaseTaxBasisResolverTest {
     VendorPurchaseInvoice invoice = new VendorPurchaseInvoice();
     invoice.setOverallDiscount(overallDiscount == null ? null : bd(overallDiscount));
     invoice.setLines(lines);
-    return PurchaseTaxBasisResolver.resolve(invoice, pricing::get, treatment, interstate);
+    return PurchaseTaxBasisResolver.resolve(
+        invoice, id -> pricing.containsKey(id) ? pricing.get(id).build() : null, treatment,
+        interstate);
   }
 
   private static BigDecimal central(PurchaseTaxBasis basis) {
@@ -92,6 +100,38 @@ class PurchaseTaxBasisResolverTest {
     // 100 less 5% scheme less 10% discount = 85.50 a unit.
     assertMoney("855.00", basis.totalTaxable());
     assertMoney("42.76", basis.totalTax());
+  }
+
+  /**
+   * MAHAMAYA A012392: a "19+1" deal is one unit in twenty off the price, so it comes off the line
+   * before the trade discount. Each line is the bill's own: 20 × 121.90 less 19+1 less 8% is
+   * 2130.81. The paper prints 7050.95 for the three because it rounds the subtotal and the discount
+   * column separately; the lines themselves add to 7050.94.
+   */
+  @Test
+  void aDealRatioComesOffTheLine() {
+    dealLine(20, "121.90", "2.5", 19, 1, "8");
+    dealLine(15, "192.76", "2.5", 19, 1, "9");
+    dealLine(15, "186.66", "2.5", 19, 1, "9");
+
+    PurchaseTaxBasis basis = resolve(null, PurchaseTaxTreatment.EXCLUSIVE, false);
+
+    assertMoney("2130.81", basis.lines().get(0).taxable());
+    assertMoney("2499.62", basis.lines().get(1).taxable());
+    assertMoney("2420.51", basis.lines().get(2).taxable());
+    assertMoney("176.27", central(basis));
+    assertMoney("176.27", state(basis));
+  }
+
+  /** 540 bought and 60 free, entered as 600 received under 9+1: tax is on the 540 paid for. */
+  @Test
+  void freeUnitsReceivedAreNotTaxed() {
+    dealLine(600, "10", "6", 9, 1, null);
+
+    PurchaseTaxBasis basis = resolve(null, PurchaseTaxTreatment.EXCLUSIVE, false);
+
+    assertMoney("5400.00", basis.totalTaxable());
+    assertMoney("648.00", basis.totalTax());
   }
 
   /** PARAS A00000999: 36 at 99, 24% scheme, rates including 5% GST. */

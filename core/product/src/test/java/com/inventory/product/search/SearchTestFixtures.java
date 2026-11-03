@@ -10,7 +10,7 @@ import com.inventory.pluginengine.schema.VerticalEntitySearchConfig;
 import com.inventory.pluginengine.schema.VerticalSchema;
 import com.inventory.pluginengine.schema.VerticalSchemaField;
 import com.inventory.pluginengine.schema.VerticalSearchSortField;
-import com.inventory.pricing.domain.repository.PricingRepository;
+import com.inventory.pricing.api.PricingLookup;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.enums.ShopType;
 import com.inventory.product.domain.repository.ShopRepository;
@@ -73,8 +73,8 @@ final class SearchTestFixtures {
 
     ShopRepository shops = mock(ShopRepository.class);
     when(shops.findById(SHOP_ID)).thenReturn(Optional.of(shop));
-    PricingRepository pricing = mock(PricingRepository.class);
-    when(pricing.findDistinctRateNamesByShopId(anyString())).thenReturn(List.of());
+    PricingLookup pricing = mock(PricingLookup.class);
+    when(pricing.rateNames(anyString())).thenReturn(List.of());
     SchemaLoader loader = mock(SchemaLoader.class);
     when(loader.load(anyString(), any())).thenReturn(schema);
 

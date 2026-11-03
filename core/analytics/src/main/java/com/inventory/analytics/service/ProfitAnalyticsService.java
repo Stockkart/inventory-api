@@ -6,14 +6,16 @@ import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.analytics.mapper.ProfitAnalyticsMapper;
 import com.inventory.analytics.mapper.ProfitAnalyticsResponseParams;
+import com.inventory.analytics.utils.AnalyticsSalesQueries;
+import com.inventory.analytics.utils.AnalyticsSalesQueries.BucketTotal;
+import com.inventory.analytics.utils.AnalyticsSalesQueries.LineGroup;
 import com.inventory.analytics.utils.ProfitAnalyticsUtils;
-import com.inventory.analytics.utils.SalesAnalyticsUtils;
 import com.inventory.analytics.utils.constants.AnalyticsMetricsConstants;
 import com.inventory.metrics.MetricsWrapper;
 import com.inventory.analytics.rest.dto.response.ProfitAnalyticsResponse;
 import com.inventory.analytics.rest.dto.response.ProductProfitDto;
 import com.inventory.analytics.rest.dto.response.ProfitByGroupDto;
-import com.inventory.product.domain.model.Purchase;
+import com.inventory.product.domain.model.Inventory;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
@@ -25,6 +27,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -35,7 +38,7 @@ public class ProfitAnalyticsService {
   private ProfitAnalyticsUtils profitUtils;
 
   @Autowired
-  private SalesAnalyticsUtils salesUtils;
+  private AnalyticsSalesQueries salesQueries;
 
   @Autowired
   private ProfitAnalyticsMapper profitAnalyticsMapper;
@@ -91,11 +94,15 @@ public class ProfitAnalyticsService {
 
       log.debug("Getting profit analytics for shop: {} from {} to {}", shopId, startDate, endDate);
 
-      // Get all completed purchases in date range
-      List<Purchase> purchases = salesUtils.getCompletedPurchases(shopId, startDate, endDate);
+      // MongoDB groups identical lines (per IST bucket when a chart is asked for); lots read once
+      boolean withTrends = StringUtils.hasText(timeSeriesGranularity);
+      List<LineGroup> lines = salesQueries.lineGroups(
+          shopId, startDate, endDate, withTrends ? timeSeriesGranularity : null, false);
+      Map<String, Inventory> lots = salesQueries.lotsOf(lines);
+      long bills = salesQueries.billTotals(shopId, startDate, endDate).bills();
 
       // Calculate product-level profits
-      List<ProductProfitDto> productProfits = profitUtils.calculateProductProfits(purchases);
+      List<ProductProfitDto> productProfits = profitUtils.calculateProductProfits(lines, lots);
 
       // Calculate overall summary
       BigDecimal totalRevenue = productProfits.stream()
@@ -125,31 +132,31 @@ public class ProfitAnalyticsService {
       if (StringUtils.hasText(groupBy)) {
         switch (groupBy.toLowerCase()) {
           case "product":
-            profitByProduct = profitUtils.calculateProfitByProduct(purchases);
+            profitByProduct = profitUtils.calculateProfitByProduct(lines, lots);
             profitByLotId = null;
             profitByBusinessType = null;
             break;
           case "lotid":
           case "lot":
             profitByProduct = null;
-            profitByLotId = profitUtils.calculateProfitByLotId(purchases);
+            profitByLotId = profitUtils.calculateProfitByLotId(lines, lots);
             profitByBusinessType = null;
             break;
           case "businesstype":
           case "business":
             profitByProduct = null;
             profitByLotId = null;
-            profitByBusinessType = profitUtils.calculateProfitByBusinessType(purchases);
+            profitByBusinessType = profitUtils.calculateProfitByBusinessType(lines, lots);
             break;
           default:
-            profitByProduct = profitUtils.calculateProfitByProduct(purchases);
-            profitByLotId = profitUtils.calculateProfitByLotId(purchases);
-            profitByBusinessType = profitUtils.calculateProfitByBusinessType(purchases);
+            profitByProduct = profitUtils.calculateProfitByProduct(lines, lots);
+            profitByLotId = profitUtils.calculateProfitByLotId(lines, lots);
+            profitByBusinessType = profitUtils.calculateProfitByBusinessType(lines, lots);
         }
       } else {
-        profitByProduct = profitUtils.calculateProfitByProduct(purchases);
-        profitByLotId = profitUtils.calculateProfitByLotId(purchases);
-        profitByBusinessType = profitUtils.calculateProfitByBusinessType(purchases);
+        profitByProduct = profitUtils.calculateProfitByProduct(lines, lots);
+        profitByLotId = profitUtils.calculateProfitByLotId(lines, lots);
+        profitByBusinessType = profitUtils.calculateProfitByBusinessType(lines, lots);
       }
 
       ProfitAnalyticsResponseParams params = ProfitAnalyticsResponseParams.builder()
@@ -157,9 +164,14 @@ public class ProfitAnalyticsService {
           .profitByProduct(profitByProduct)
           .profitByLotId(profitByLotId)
           .profitByBusinessType(profitByBusinessType)
-          .discountImpact(profitUtils.calculateDiscountImpact(purchases))
-          .costPriceTrends(StringUtils.hasText(timeSeriesGranularity)
-              ? profitUtils.calculateCostPriceTrends(purchases, startDate, endDate, timeSeriesGranularity)
+          .discountImpact(profitUtils.calculateDiscountImpact(lines))
+          .costPriceTrends(withTrends
+              ? profitUtils.calculateCostPriceTrends(
+                  lines,
+                  salesQueries.bucketTotals(shopId, startDate, endDate, timeSeriesGranularity).stream()
+                      .map(BucketTotal::bucket).toList(),
+                  lots,
+                  timeSeriesGranularity)
               : null)
           .lowMarginProducts(profitUtils.getLowMarginProducts(productProfits, lowMarginThreshold))
           .totalRevenue(totalRevenue)
@@ -167,7 +179,7 @@ public class ProfitAnalyticsService {
           .totalGrossProfit(totalGrossProfit)
           .overallMarginPercent(overallMarginPercent)
           .totalItemsSold(totalItemsSold)
-          .totalPurchases(purchases.size())
+          .totalPurchases(Math.toIntExact(bills))
           .startDate(startDate)
           .endDate(endDate)
           .lowMarginThreshold(lowMarginThreshold)
@@ -180,10 +192,10 @@ public class ProfitAnalyticsService {
       throw e;
     } catch (DataAccessException e) {
       log.error("Database error while getting profit analytics: {}", e.getMessage(), e);
-      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Error retrieving profit analytics");
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Error retrieving profit analytics", e);
     } catch (Exception e) {
       log.error("Unexpected error while getting profit analytics: {}", e.getMessage(), e);
-      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Failed to retrieve profit analytics");
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Failed to retrieve profit analytics", e);
     }
   }
 }

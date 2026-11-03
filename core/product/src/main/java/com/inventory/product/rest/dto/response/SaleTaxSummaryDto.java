@@ -28,4 +28,6 @@ public class SaleTaxSummaryDto {
   private List<BigDecimal> lineRates;
   /** IGST on an interstate sale; zero otherwise (and CGST and SGST are zero when it is not). */
   private BigDecimal igstTotal;
+  /** Each line's taxable value and GST, in line order. */
+  private List<SaleLineTaxDto> lines;
 }

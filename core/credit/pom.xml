@@ -22,6 +22,12 @@
             <artifactId>user</artifactId>
             <version>1.0.0</version>
         </dependency>
+        <!-- a charge or settlement posts its journal entry in the same transaction -->
+        <dependency>
+            <groupId>com.inventory</groupId>
+            <artifactId>accounting</artifactId>
+            <version>1.0.0</version>
+        </dependency>
         <dependency>
             <groupId>com.inventory</groupId>
             <artifactId>metrics</artifactId>
@@ -30,6 +36,11 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-mongodb</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 </project>
