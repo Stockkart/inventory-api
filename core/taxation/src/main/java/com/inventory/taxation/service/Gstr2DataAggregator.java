@@ -16,13 +16,14 @@ import com.inventory.product.domain.repository.VendorPurchaseInvoiceRepository;
 import com.inventory.product.domain.repository.VendorPurchaseReturnRepository;
 import com.inventory.taxation.domain.gstr2.*;
 import com.inventory.taxation.domain.model.GstHsnLine;
+import com.inventory.common.gst.SupplyPlacement;
 import com.inventory.common.util.GstStateCode;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.user.domain.model.Vendor;
 import com.inventory.user.domain.repository.VendorRepository;
-import com.inventory.pricing.domain.model.Pricing;
-import com.inventory.pricing.domain.repository.PricingRepository;
+import com.inventory.pricing.api.PricingView;
+import com.inventory.pricing.api.PricingLookup;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -51,7 +52,7 @@ public class Gstr2DataAggregator {
   @Autowired
   private VendorRepository vendorRepository;
   @Autowired
-  private PricingRepository pricingRepository;
+  private PricingLookup pricingLookup;
   @Autowired
   private ShopRepository shopRepository;
   @Autowired
@@ -60,6 +61,8 @@ public class Gstr2DataAggregator {
   private VendorPurchaseInvoiceRepository vendorPurchaseInvoiceRepository;
   @Autowired
   private HsnSacCatalog hsnSacCatalog;
+  @Autowired
+  private SupplyPlacement supplyPlacement;
 
   public Gstr2ReportContext buildContext(String shopId, String period) {
     Shop shop = shopRepository.findById(shopId)
@@ -166,8 +169,8 @@ public class Gstr2DataAggregator {
         .map(Inventory::getPricingId)
         .filter(StringUtils::hasText)
         .collect(Collectors.toSet());
-    Map<String, Pricing> pricingMap = pricingIds.isEmpty() ? Map.of()
-        : pricingRepository.findAllById(pricingIds).stream().collect(Collectors.toMap(Pricing::getId, p -> p));
+    Map<String, PricingView> pricingMap = pricingIds.isEmpty() ? Map.of()
+        : pricingLookup.findAllById(pricingIds).stream().collect(Collectors.toMap(PricingView::id, p -> p));
 
     Set<String> purchaseInvoiceDocIds = new HashSet<>();
     for (Inventory inv : inventories) {
@@ -213,11 +216,11 @@ public class Gstr2DataAggregator {
       LocalDate invDate = null;
 
       for (Inventory inv : lotItems) {
-        Pricing pricing = inv.getPricingId() != null ? pricingMap.get(inv.getPricingId()) : null;
-        BigDecimal costPrice = pricing != null ? pricing.getCostPrice() : null;
+        PricingView pricing = inv.getPricingId() != null ? pricingMap.get(inv.getPricingId()) : null;
+        BigDecimal costPrice = pricing != null ? pricing.costPrice() : null;
         if (costPrice == null) costPrice = BigDecimal.ZERO;
-        String sgstStr = pricing != null ? pricing.getSgst() : null;
-        String cgstStr = pricing != null ? pricing.getCgst() : null;
+        String sgstStr = pricing != null ? pricing.sgst() : null;
+        String cgstStr = pricing != null ? pricing.cgst() : null;
         if (!StringUtils.hasText(sgstStr)) sgstStr = "0";
         if (!StringUtils.hasText(cgstStr)) cgstStr = "0";
         BigDecimal sgstRate = parseRate(sgstStr);
@@ -389,8 +392,8 @@ public class Gstr2DataAggregator {
    * and only the split between its lines is arithmetic.
    */
   /** The pricing behind an invoice line, reached through the lot the line was stocked into. */
-  private Pricing pricingOfLine(
-      String inventoryId, Map<String, Inventory> lotMap, Map<String, Pricing> pricingMap) {
+  private PricingView pricingOfLine(
+      String inventoryId, Map<String, Inventory> lotMap, Map<String, PricingView> pricingMap) {
     Inventory lot = lotMap.get(inventoryId);
     return lot == null ? null : pricingMap.get(lot.getPricingId());
   }
@@ -403,12 +406,12 @@ public class Gstr2DataAggregator {
             .collect(Collectors.toMap(Product::getId, product -> product));
   }
 
-  private Map<String, Pricing> pricingOf(List<Inventory> lots) {
+  private Map<String, PricingView> pricingOf(List<Inventory> lots) {
     Set<String> ids = lots.stream().map(Inventory::getPricingId)
         .filter(StringUtils::hasText).collect(Collectors.toSet());
     return ids.isEmpty() ? Map.of()
-        : pricingRepository.findAllById(ids).stream()
-            .collect(Collectors.toMap(Pricing::getId, pricing -> pricing));
+        : pricingLookup.findAllById(ids).stream()
+            .collect(Collectors.toMap(PricingView::id, pricing -> pricing));
   }
 
   /** The state the shop supplies from: its GSTIN, else its address (see GstStateCode). */
@@ -417,30 +420,10 @@ public class Gstr2DataAggregator {
         shop.getLocation() == null ? null : shop.getLocation().getState());
   }
 
-  /**
-   * The state a supplier supplies from, as a two-digit code.
-   *
-   * <p>A registered supplier is placed by their GSTIN. An unregistered one has no
-   * GSTIN to read -- which is the whole reason they are reported on b2bur rather
-   * than b2b -- so they are placed by the state named on their address. Reading
-   * the state from the GSTIN alone left every b2bur line saying "Intra State",
-   * because the only suppliers that sheet carries are the ones with no GSTIN.
-   *
-   * <p>Empty when neither says: an unplaceable supplier is treated as local,
-   * which is what the far more common case actually is.
-   */
-  private String supplierState(Vendor vendor, String supplierGstin) {
-    String fromGstin = GstStateCode.codeFromGstin(supplierGstin);
-    if (StringUtils.hasText(fromGstin)) {
-      return fromGstin;
-    }
-    return vendor == null ? "" : GstStateCode.codeFromAddress(vendor.getAddress());
-  }
-
   /** The tax the goods on this line attract, read from what they were priced at. */
-  private BigDecimal rateOf(Pricing pricing) {
+  private BigDecimal rateOf(PricingView pricing) {
     return pricing == null ? BigDecimal.ZERO
-        : parseRate(pricing.getSgst()).add(parseRate(pricing.getCgst()));
+        : parseRate(pricing.sgst()).add(parseRate(pricing.cgst()));
   }
 
   /**
@@ -469,12 +452,7 @@ public class Gstr2DataAggregator {
         .collect(Collectors.toMap(Inventory::getId, lot -> lot));
 
     Map<String, Product> productMap = productsOf(purchasedLots);
-    Map<String, Pricing> pricingMap = pricingOf(purchasedLots);
-
-    // Inward supply from another state is taxed as IGST rather than split in two,
-    // so both ends have to be placed. The shop is placed by its own GSTIN, and by
-    // its address where it has not registered one.
-    String shopState = shopState(shop);
+    Map<String, PricingView> pricingMap = pricingOf(purchasedLots);
 
     Set<String> vendorIds = invoices.stream()
         .map(VendorPurchaseInvoice::getVendorId)
@@ -501,8 +479,11 @@ public class Gstr2DataAggregator {
       LocalDate invoiceDate = invoice.getInvoiceDate() != null
           ? LocalDateTime.ofInstant(invoice.getInvoiceDate(), ZoneId.systemDefault()).toLocalDate()
           : LocalDate.now();
-      String supplierState = supplierState(vendor, supplierGstin);
-      boolean interstate = GstStateCode.isInterstate(shopState, supplierState);
+      // The invoice says where its goods came from, decided at stock-in; older invoices are placed
+      // now by the same rule, so the return and the ledger read one answer.
+      boolean interstate = invoice.getInterstate() != null
+          ? invoice.getInterstate()
+          : supplyPlacement.isInterstatePurchase(shopId, invoice.getVendorId());
 
       // What the invoice is worth for tax, worked out from its lines.
       PurchaseTaxBasis taxBasis = PurchaseTaxBasisResolver.resolve(

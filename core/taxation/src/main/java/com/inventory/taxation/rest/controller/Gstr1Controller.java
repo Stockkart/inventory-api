@@ -1,6 +1,8 @@
 package com.inventory.taxation.rest.controller;
 
 
+import com.inventory.common.heavy.HeavyKind;
+import com.inventory.common.heavy.HeavyRequest;
 import com.inventory.metrics.annotation.Latency;
 import com.inventory.metrics.annotation.RecordRequestRate;
 import com.inventory.metrics.annotation.RecordStatusCodes;
@@ -63,6 +65,7 @@ public class Gstr1Controller {
    *
    * @param period period in YYYY-MM format (e.g. 2025-12)
    */
+  @HeavyRequest(HeavyKind.EXPORT)
   @GetMapping("/download")
   public ResponseEntity<byte[]> downloadExcel(
       @RequestParam String period,
@@ -90,6 +93,7 @@ public class Gstr1Controller {
    * Download GSTR-1 as offline-return JSON matching the GST utility layout (gstin/fp/version/hash/
    * b2b/b2cs/hsn/doc_issue).
    */
+  @HeavyRequest(HeavyKind.EXPORT)
   @GetMapping("/download/offline-return")
   public ResponseEntity<byte[]> downloadOfflinePortalJson(
       @RequestParam String period,

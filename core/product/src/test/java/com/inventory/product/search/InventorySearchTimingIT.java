@@ -7,7 +7,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.inventory.pluginengine.schema.VerticalSchema;
-import com.inventory.pricing.domain.repository.PricingRepository;
+import com.inventory.pricing.api.PricingLookup;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.enums.ShopType;
 import com.inventory.product.domain.repository.ShopRepository;
@@ -75,8 +75,8 @@ class InventorySearchTimingIT {
     shop.setPluginVersion("1.0.0");
     ShopRepository shops = mock(ShopRepository.class);
     when(shops.findById(SHOP)).thenReturn(Optional.of(shop));
-    PricingRepository pricing = mock(PricingRepository.class);
-    when(pricing.findDistinctRateNamesByShopId(anyString())).thenReturn(List.of());
+    PricingLookup pricing = mock(PricingLookup.class);
+    when(pricing.rateNames(anyString())).thenReturn(List.of());
     SchemaLoader loader = mock(SchemaLoader.class);
     VerticalSchema schema =
         SearchTestFixtures.schema(

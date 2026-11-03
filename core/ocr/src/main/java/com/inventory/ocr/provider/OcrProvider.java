@@ -1,7 +1,7 @@
 package com.inventory.ocr.provider;
 
 import com.inventory.ocr.dto.ParsedInventoryItem;
-import com.inventory.ocr.prompt.InvoicePricingLayout;
+import com.inventory.ocr.api.InvoicePricingLayout;
 
 import java.io.IOException;
 import java.util.List;

@@ -23,7 +23,7 @@ public class GenerateInvoiceRequest {
   private String documentType;
   /**
    * Printer layout: {@code NORMAL}, {@code DOT_MATRIX}, or {@code THERMAL_3INCH}.
-   * Resolved via {@link com.inventory.documentservice.domain.PrinterType}.
+   * Resolved via {@link com.inventory.documentservice.api.PrinterType}.
    */
   private String printerType;
   private Boolean showSellerDetails;
@@ -51,6 +51,7 @@ public class GenerateInvoiceRequest {
   private Boolean showAmountInWords;
   private Boolean showAmountSaved;
   private Boolean showAdditionalDiscount;
+  private Boolean showPack;
   private Boolean showHsn;
   private Boolean showMfg;
   private Boolean showExpiry;

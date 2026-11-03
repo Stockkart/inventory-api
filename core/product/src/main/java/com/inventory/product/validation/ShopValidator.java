@@ -1,10 +1,14 @@
 package com.inventory.product.validation;
 
+import com.inventory.common.constants.ErrorCode;
+import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.product.rest.dto.request.RegisterShopRequest;
 import com.inventory.product.rest.dto.request.ShopApprovalRequest;
 import com.inventory.product.rest.dto.request.UpdateShopRequest;
 import com.inventory.product.rest.dto.response.LocationDto;
+import com.inventory.user.domain.model.UserAccount;
+import com.inventory.user.domain.model.UserRole;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -87,6 +91,24 @@ public class ShopValidator {
     }
     if (request.isApprove() && (request.getUserLimit() == null || request.getUserLimit() <= 0)) {
       throw new ValidationException("User limit must be greater than 0 when approving a shop");
+    }
+  }
+
+  /**
+   * Shop approval is a platform-admin action, so only Stockkart staff (SUPER_USER) may call it.
+   * The role comes from the authenticated account (request attribute {@code userRole}); a missing
+   * role is denied (403).
+   */
+  public void validateCanApproveShops(UserRole callerRole) {
+    if (callerRole == null || !callerRole.isPlatformRole()) {
+      throw new BaseException(ErrorCode.ACCESS_DENIED, "Only Stockkart staff can approve or reject shops");
+    }
+  }
+
+  /** Stockkart staff (SUPER_USER) accounts never belong to a shop, so they cannot register one. */
+  public void validateUserCanRegisterShop(UserAccount account) {
+    if (account != null && account.getRole() != null && account.getRole().isPlatformRole()) {
+      throw new ValidationException("Stockkart staff accounts cannot register a shop");
     }
   }
 }

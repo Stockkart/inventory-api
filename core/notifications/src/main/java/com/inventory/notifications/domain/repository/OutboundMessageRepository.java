@@ -17,4 +17,16 @@ public interface OutboundMessageRepository extends MongoRepository<OutboundMessa
    */
   @Query("{ 'status' : ?0, 'retryCount' : { $lt : ?1 }, $or: [ { 'nextRetryAt' : null }, { 'nextRetryAt' : { $lte : ?2 } } ] }")
   List<OutboundMessage> findPendingForDispatch(MessageStatus status, int maxRetries, Instant now, Pageable pageable);
+
+  /**
+   * As {@link #findPendingForDispatch}, messages without an attachment to render (every message
+   * before HR payslips). Fetched apart from the rendering ones so a queue of payslips, of which
+   * only a few render per tick, never holds other emails back.
+   */
+  @Query("{ 'status' : ?0, 'retryCount' : { $lt : ?1 }, 'attachmentRef' : null, $or: [ { 'nextRetryAt' : null }, { 'nextRetryAt' : { $lte : ?2 } } ] }")
+  List<OutboundMessage> findPendingPlainForDispatch(MessageStatus status, int maxRetries, Instant now, Pageable pageable);
+
+  /** As {@link #findPendingForDispatch}, messages whose attachment is rendered at send time. */
+  @Query("{ 'status' : ?0, 'retryCount' : { $lt : ?1 }, 'attachmentRef' : { $ne : null }, $or: [ { 'nextRetryAt' : null }, { 'nextRetryAt' : { $lte : ?2 } } ] }")
+  List<OutboundMessage> findPendingWithAttachmentRefForDispatch(MessageStatus status, int maxRetries, Instant now, Pageable pageable);
 }

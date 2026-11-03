@@ -3,6 +3,7 @@ package com.inventory.user.validation;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.user.domain.model.Invitation;
 import com.inventory.user.domain.model.InvitationStatus;
+import com.inventory.user.domain.model.UserAccount;
 import com.inventory.user.domain.model.UserRole;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -33,6 +34,10 @@ public class InvitationValidator {
       }
       if (role == null) {
         throw new ValidationException("Role is required");
+      }
+      // SUPER_USER is a platform role for Stockkart staff; it is never granted through a shop
+      if (role.isPlatformRole()) {
+        throw new ValidationException("Invalid role. SUPER_USER cannot be granted through invitations");
       }
       if (!isValidRole(role)) {
         throw new ValidationException("Invalid role. Must be one of: ADMIN, MANAGER, CASHIER");
@@ -66,6 +71,13 @@ public class InvitationValidator {
     if (invitation != null && invitation.getExpiresAt() != null
         && invitation.getExpiresAt().isBefore(Instant.now())) {
       throw new ValidationException("Invitation has expired");
+    }
+  }
+
+  /** Stockkart staff (SUPER_USER) accounts are never shop people, so they cannot be invited. */
+  public void validateInviteeCanJoinShop(UserAccount invitee) {
+    if (invitee != null && invitee.getRole() != null && invitee.getRole().isPlatformRole()) {
+      throw new ValidationException("Stockkart staff accounts cannot be invited to a shop");
     }
   }
 

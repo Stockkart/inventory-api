@@ -9,4 +9,6 @@ import java.util.List;
 public class UpdateDefaultPriceRequest {
   private List<Rate> rates;
   private String defaultRate;
+  /** Rate names to regenerate from their rule, clearing a per-batch override. Needs the grant. */
+  private List<String> resetRates;
 }

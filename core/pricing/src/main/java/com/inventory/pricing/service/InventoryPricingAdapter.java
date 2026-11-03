@@ -23,6 +23,6 @@ public interface InventoryPricingAdapter {
   /** Create pricing and return the new pricing ID. */
   String create(PricingCreateCommand command);
 
-  /** Update pricing by ID. */
-  void update(String pricingId, PricingUpdateCommand command);
+  /** Update pricing by ID. {@code userId} is checked for the grant to edit generated rates. */
+  void update(String pricingId, PricingUpdateCommand command, String userId);
 }

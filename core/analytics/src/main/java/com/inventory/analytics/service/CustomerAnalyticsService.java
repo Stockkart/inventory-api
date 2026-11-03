@@ -6,13 +6,14 @@ import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.analytics.mapper.CustomerAnalyticsMapper;
 import com.inventory.analytics.mapper.CustomerAnalyticsResponseParams;
+import com.inventory.analytics.utils.AnalyticsSalesQueries;
+import com.inventory.analytics.utils.AnalyticsSalesQueries.CustomerTotal;
 import com.inventory.analytics.utils.CustomerAnalyticsUtils;
 import com.inventory.analytics.utils.constants.AnalyticsMetricsConstants;
 import com.inventory.metrics.MetricsWrapper;
 import com.inventory.analytics.rest.dto.response.CustomerAnalyticsDto;
 import com.inventory.analytics.rest.dto.response.CustomerAnalyticsResponse;
 import com.inventory.analytics.rest.dto.response.CustomerSummaryDto;
-import com.inventory.product.domain.model.Purchase;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
@@ -32,6 +33,9 @@ public class CustomerAnalyticsService {
 
   @Autowired
   private CustomerAnalyticsUtils customerUtils;
+
+  @Autowired
+  private AnalyticsSalesQueries salesQueries;
 
   @Autowired
   private CustomerAnalyticsMapper customerAnalyticsMapper;
@@ -88,15 +92,13 @@ public class CustomerAnalyticsService {
 
       log.debug("Getting customer analytics for shop: {} from {} to {}", shopId, startDate, endDate);
 
-      // Get all completed purchases (for lifetime value calculation)
-      List<Purchase> allPurchases = customerUtils.getCompletedPurchases(shopId);
+      // MongoDB totals every customer's bills over all time (lifetime value) and counts the period's
+      List<CustomerTotal> customerTotals = salesQueries.customerTotals(shopId, startDate, endDate);
+      long billsInPeriod = salesQueries.billTotals(shopId, startDate, endDate).bills();
+      long billsAllTime = salesQueries.allTimeBills(shopId);
 
-      // Get purchases in date range (for period-specific analytics)
-      List<Purchase> purchasesInPeriod = customerUtils.getCompletedPurchases(shopId, startDate, endDate);
-
-      // Calculate customer analytics (using all purchases for lifetime value, but tracking period purchases)
       List<CustomerAnalyticsDto> allCustomerAnalytics = customerUtils.calculateCustomerAnalytics(
-          shopId, allPurchases, startDate, endDate);
+          customerTotals, customerUtils.customersById(customerTotals));
 
       // Calculate summary
       CustomerSummaryDto summary = customerUtils.calculateCustomerSummary(allCustomerAnalytics);
@@ -113,8 +115,8 @@ public class CustomerAnalyticsService {
           .allCustomers(includeAll != null && includeAll ? allCustomerAnalytics : null)
           .startDate(startDate)
           .endDate(endDate)
-          .totalPurchases(purchasesInPeriod.size())
-          .totalAllPurchases(allPurchases.size())
+          .totalPurchases(Math.toIntExact(billsInPeriod))
+          .totalAllPurchases(Math.toIntExact(billsAllTime))
           .topN(topN)
           .includeAll(Boolean.TRUE.equals(includeAll))
           .totalCustomers(allCustomerAnalytics.size())
@@ -127,10 +129,10 @@ public class CustomerAnalyticsService {
       throw e;
     } catch (DataAccessException e) {
       log.error("Database error while getting customer analytics: {}", e.getMessage(), e);
-      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Error retrieving customer analytics");
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Error retrieving customer analytics", e);
     } catch (Exception e) {
       log.error("Unexpected error while getting customer analytics: {}", e.getMessage(), e);
-      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Failed to retrieve customer analytics");
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Failed to retrieve customer analytics", e);
     }
   }
 }

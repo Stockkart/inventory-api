@@ -1,6 +1,6 @@
 package com.inventory.accounting.rest.dto.request;
 
-import com.inventory.accounting.domain.model.PartyType;
+import com.inventory.accounting.api.PartyType;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Size;

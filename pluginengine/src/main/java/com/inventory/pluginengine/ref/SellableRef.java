@@ -32,7 +32,7 @@ import org.springframework.util.StringUtils;
  */
 public record SellableRef(String kind, String id, String variant) {
 
-  public static final String KIND_INVENTORY = "inventory";
+  public static final String KIND_INVENTORY = "inventory"; // boundaries:not-a-collection
   public static final String KIND_MENU = "menu";
 
   private static final String SEPARATOR = ":";

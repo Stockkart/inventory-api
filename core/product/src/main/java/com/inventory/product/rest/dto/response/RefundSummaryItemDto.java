@@ -30,6 +30,8 @@ public class RefundSummaryItemDto {
   /** GST rates as charged, e.g. "2.5" each. */
   private String sgst;
   private String cgst;
+  /** The two rates together, e.g. 5 for 2.5 + 2.5; worked out here so every screen reads one figure. */
+  private BigDecimal gstRatePct;
   /** Sale scheme as billed: FIXED_UNITS with payFor/free, or PERCENTAGE. */
   private String schemeType;
   private Integer schemePayFor;
@@ -39,4 +41,6 @@ public class RefundSummaryItemDto {
   private BigDecimal taxableValue;
   private BigDecimal cgstAmount;
   private BigDecimal sgstAmount;
+  /** IGST reversed on this line, when the sale was interstate. */
+  private BigDecimal igstAmount;
 }
