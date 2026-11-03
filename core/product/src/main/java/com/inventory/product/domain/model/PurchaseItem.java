@@ -72,6 +72,12 @@ public class PurchaseItem {
   private String baseUnit;
   private String packUnitUqc;
   private Integer baseQuantity;
+
+  /** Kitchen station, resolved and frozen when the line was added. */
+  private String department;
+
+  /** Preparation instruction for the kitchen, e.g. "no onion". Never blank — blank means null. */
+  private String note;
   private Integer unitFactor;
   private List<AvailableUnit> availableUnits;
   private BigDecimal maximumRetailPrice;

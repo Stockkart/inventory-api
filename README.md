@@ -242,6 +242,12 @@ Shops are bound to a **vertical** (`Shop.verticalId` + `Shop.pluginVersion`). Fi
 
 **Clearing a field on a lot edit.** In `PUT /api/v1/inventory/{id}` a field left out or sent as `null` keeps its value. To empty one, name it in `clearFields`: `barcode`, `description`, `companyName`, `location`, `hsn`, `discountApplicable`, `thresholdCount` (lot) and `saleAdditionalDiscount`, `purchaseAdditionalDiscount`, `saleScheme`, `purchaseScheme` (pricing record). Any other name, or a name also sent with a value, is a 400. A clear needs the same product-search grant as setting the field (`saleScheme` → `schemeType`, `purchaseScheme` → `purchaseSchemeType`).
 
+### Cafe menu portions
+
+A cafe menu item is priced **either** by one `sellingPrice` **or** by named portions (`rates`: Qtr / Half / Full, each a `MenuRate { id, name, price }`), never both. The portion `id` is a slug frozen when the portion is first named (`MenuRates.normalize`, run on save before validation), so renaming "Half" never orphans a cart line. A cart line names its portion in the sellable ref, `menu:<itemId>@<rateId>` (`SellableRef`), and the price is always resolved from the menu on the server, never taken from the request. Validation (`CafeMenuVerticalValidator`): every portion needs an id, a name and a positive price, ids and names unique within the item.
+
+Menu lines also carry the kitchen `department` (station, blank means `KITCHEN`, see `MenuDepartments`) and an optional `note`, frozen onto the cart line when it is added.
+
 ### GST reports (taxation)
 
 | Endpoint | Purpose |

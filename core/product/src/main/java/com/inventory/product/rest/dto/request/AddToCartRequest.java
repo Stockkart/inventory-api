@@ -43,6 +43,8 @@ public class AddToCartRequest {
     private Integer baseQuantity;
     /** Optional sale/display unit (e.g. STRIP, PACK). Defaults to inventory baseUnit when omitted. */
     private String unit;
+    /** Optional: preparation instruction for the kitchen, e.g. "no onion" (cafe only). */
+    private String note;
     private BigDecimal priceToRetail;
     /** Optional: additional discount percentage for this item (0–100). Overrides inventory default when provided. */
     private BigDecimal saleAdditionalDiscount;
