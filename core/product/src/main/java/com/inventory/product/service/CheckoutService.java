@@ -48,6 +48,7 @@ import com.inventory.product.service.vertical.CheckoutCompletionOrchestrator;
 import com.inventory.product.validation.CheckoutValidator;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.bson.Document;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.domain.Page;
@@ -74,6 +75,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
+import java.nio.charset.StandardCharsets;
 
 @Service
 @Slf4j
@@ -165,6 +168,14 @@ public class CheckoutService {
   @Autowired
   private com.inventory.product.service.estimate.EstimateInventoryPolicy estimateInventoryPolicy;
 
+  /**
+   * Writes a purchase by the fields that changed instead of replacing the document. See
+   * {@link PurchaseTargetedWriter} for why every save on this path is a lost update waiting for a
+   * cafe flush to land in the gap.
+   */
+  @Autowired
+  private PurchaseTargetedWriter purchaseTargetedWriter;
+
   @Transactional
   public AddToCartResponse addToCart(AddToCartRequest request, HttpServletRequest httpRequest) {
     // Get shopId and userId from request attributes (set by AuthenticationInterceptor)
@@ -181,6 +192,12 @@ public class CheckoutService {
 
     try {
       Purchase existingCart = quotationService.resolveTargetCart(request, userId, shopId);
+      // The pre-image, taken before anything in this request touches the cart: the difference
+      // between it and the cart at the end is what this request actually changed, and only that
+      // is written. See PurchaseTargetedWriter for why the alternative -- save(existingCart) --
+      // deletes a round another tab flushed onto the same bill in the meantime.
+      Document cartBeforeUpdate =
+          existingCart == null ? null : purchaseTargetedWriter.snapshot(existingCart);
 
       String customerId;
       String customerName;
@@ -214,7 +231,7 @@ public class CheckoutService {
       if (existingCart != null) {
         // Update existing cart - merge items (including quantity-0 update-only items)
         log.info("Updating existing cart with ID: {}", existingCart.getId());
-        purchase = updateCart(existingCart, newItems, request.getBusinessType(), customerId, customerName, cartBillingMode, lots);
+        purchase = updateCart(existingCart, cartBeforeUpdate, newItems, request.getBusinessType(), customerId, customerName, cartBillingMode, lots);
         if (metrics != null) {
           metrics.record(ProductMetricsConstants.CART_UPDATED, 1, "module", ProductMetricsConstants.MODULE);
         }
@@ -292,6 +309,12 @@ public class CheckoutService {
       Purchase purchase = purchaseRepository.findById(request.getPurchaseId())
           .orElseThrow(() -> new ResourceNotFoundException("Purchase", "id",
               "No purchase found with ID " + request.getPurchaseId()));
+      // The pre-image, for the same reason as the cart path: settlement changes the status, the
+      // invoice number and the payment split, and nothing else. Writing the whole document would
+      // additionally delete what a punch recorded on this bill while it was being settled -- the
+      // cafeKotPunches entry a retry reads its deltas off, and the advanced kotSentQuantity that
+      // stops the next press of Print KOT re-sending food already cooking.
+      Document purchaseBeforeStatusChange = purchaseTargetedWriter.snapshot(purchase);
 
       // Verify purchase belongs to the user's shop
       if (!shopId.equals(purchase.getShopId()) || !userId.equals(purchase.getUserId())) {
@@ -316,8 +339,11 @@ public class CheckoutService {
         if (usageService != null) {
           usageService.checkCanAddBill(shopId, grandTotal, 1);
         }
-        log.info("Processing inventory updates for completed purchase ID: {}", purchase.getId());
-        updateInventoryForCompletedPurchase(purchase);
+        // Check stock now, while refusing is still free; take it off only after the guarded write
+        // below has succeeded. MongoTx may be off (MONGO_TRANSACTIONS_ENABLED), and then nothing
+        // undoes a decrement, so a settlement the guard refuses -- and the cashier's retry -- must
+        // not have moved any stock.
+        updateInventoryForCompletedPurchase(purchase, false);
         // Sale date for GSTR and reporting: when the sale was completed (invoice date)
         purchase.setSoldAt(Instant.now());
         // Assign invoice number only on completion (avoids wasting sequence when cart changes before purchase)
@@ -341,7 +367,39 @@ public class CheckoutService {
         applyPaymentSplitToPurchase(purchase, request);
       }
       purchase.setUpdatedAt(Instant.now());
-      purchase = purchaseRepository.save(purchase);
+      // Only the fields this settlement changed. The invoice number and the stock decrement are
+      // decided above and are unaffected by how the document is stored -- a targeted write issues
+      // neither of them a second time -- but items is left entirely alone, so a concurrently
+      // flushed round stays on the bill instead of being deleted by the settlement.
+      if (purchaseTargetedWriter.writeChangedFields(shopId, purchase, purchaseBeforeStatusChange)
+          == 0) {
+        // Zero is not a warning. It means this settlement wrote NOTHING: the guard refused it
+        // because the bill changed underneath -- for a cafe bill, a tab flushed a round onto it
+        // between the read at the top of this method and here, so the stored total is no longer
+        // the total this settlement priced, split into payments and is about to post -- or the
+        // bill is gone, which is just as fatal.
+        //
+        // Nothing irreversible has happened yet: stock was only checked above (it is taken off
+        // below, once this write has succeeded), the invoice number drawn above is not stored on
+        // the bill (the sequence may skip that one number), and no money has been taken.
+        // Everything below is not: billing usage, the ledger, the credit entry and the printed
+        // receipt would all be posted against a document still CREATED, with no invoiceNo, still
+        // in the open-bill strip -- and therefore settleable a second time, decrementing stock
+        // again and burning a second invoice number on top of this attempt's accounting.
+        // So the request fails here, at the last point where failing is cheap.
+        log.error(
+            "Settlement of purchase {} in shop {} was refused: the bill changed underneath it "
+                + "(a round was flushed onto it, or it is gone) after its total was computed",
+            purchase.getId(),
+            shopId);
+        throw new ValidationException(
+            "This bill changed while it was being settled - a new round was added to it. "
+                + "Nothing has been charged. Reload the bill and settle it again.");
+      }
+      if (requestedStatus == PurchaseStatus.COMPLETED) {
+        log.info("Processing inventory updates for completed purchase ID: {}", purchase.getId());
+        updateInventoryForCompletedPurchase(purchase, true);
+      }
 
       // Record billing usage after successful completion
       if (requestedStatus == PurchaseStatus.COMPLETED && usageService != null) {
@@ -369,8 +427,12 @@ public class CheckoutService {
                 result -> {
                   response.setTokenNo(result.getTokenNo());
                   if (StringUtils.hasText(result.getTokenNo())) {
+                    // One field. A replace here would delete, at the very last step of the sale,
+                    // whatever landed on the bill during the rest of the settlement.
+                    Document beforeToken = purchaseTargetedWriter.snapshot(completedPurchase);
                     completedPurchase.setTokenNo(result.getTokenNo());
-                    purchaseRepository.save(completedPurchase);
+                    purchaseTargetedWriter.writeChangedFields(
+                        shopId, completedPurchase, beforeToken);
                   }
                 });
       }
@@ -1168,6 +1230,40 @@ public class CheckoutService {
         .setScale(2, RoundingMode.HALF_UP);
   }
 
+  /**
+   * Stores {@code items} on the cart and recomputes every money field from them — line totals
+   * first, then subtotal, tax, discounts, grand total and the margin breakdown.
+   *
+   * <p>Extracted from {@code updateCart}, which is the only path that had it, so that any other
+   * path onto the same bill can reach the identical arithmetic rather than a second copy of it:
+   * a writer that computed its own totals differently would make the bill's number change the
+   * moment the cashier added anything in Sell.
+   */
+  public void applyCartTotals(Purchase cart, List<PurchaseItem> items, BillingMode billingMode) {
+    recalculateLineTotalsForBillingMode(items, billingMode);
+    cart.setItems(items);
+    BigDecimal newSubTotal = calculateSubtotal(items);
+    cart.setSubTotal(newSubTotal);
+
+    TaxCalculationResult taxResult =
+        calculateTax(items, cart.getShopId(), billingMode, cart.getCustomerId());
+    cart.setTaxTotal(taxResult.getTaxTotal());
+    cart.setSgstAmount(taxResult.getSgstAmount());
+    cart.setCgstAmount(taxResult.getCgstAmount());
+    cart.setIgstAmount(taxResult.getIgstAmount());
+    cart.setInterstate(taxResult.isInterstate());
+
+    BigDecimal discountTotal = calculateTotalDiscount(items);
+    BigDecimal additionalDiscountTotal = calculateAdditionalDiscountTotal(items);
+    cart.setDiscountTotal(discountTotal);
+    cart.setSaleAdditionalDiscountTotal(additionalDiscountTotal);
+    BigDecimal calculatedTotal = newSubTotal
+        .add(taxResult.getTaxTotal())
+        .subtract(additionalDiscountTotal);
+    cart.setGrandTotal(roundOffToWholeRupee(calculatedTotal));
+    setPurchaseMarginDetails(cart);
+  }
+
   private void recalculateLineTotalsForBillingMode(List<PurchaseItem> items, BillingMode billingMode) {
     if (items == null || items.isEmpty()) {
       return;
@@ -1278,7 +1374,19 @@ public class CheckoutService {
         shopId, request.getCustomerId(), PurchaseCustomerRequests.fromCart(request));
   }
 
-  private Purchase updateCart(Purchase existingCart, List<PurchaseItem> newItems, String businessType,
+  /** For tests: no lots read up front, so each lot is read on its own as it is needed. */
+  Purchase updateCart(Purchase existingCart, Document cartBeforeUpdate, List<PurchaseItem> newItems, String businessType,
+                      String customerId, String customerName, BillingMode billingMode) {
+    return updateCart(existingCart, cartBeforeUpdate, newItems, businessType, customerId, customerName,
+        billingMode, new CartLots(List.of()));
+  }
+
+  /**
+   * Package-private, not private, so {@code CheckoutServiceCartWriteTest} can drive the merge and
+   * the write directly -- the same reason {@link #mergeMenuCartLine} is. {@code cartBeforeUpdate}
+   * is the document as it stood before this request touched it; see {@link PurchaseTargetedWriter}.
+   */
+  Purchase updateCart(Purchase existingCart, Document cartBeforeUpdate, List<PurchaseItem> newItems, String businessType,
                               String customerId, String customerName, BillingMode billingMode,
                               CartLots lots) {
     try {
@@ -1357,6 +1465,7 @@ public class CheckoutService {
                       ? perUnitDiscount.multiply(saleQty)
                       : BigDecimal.ZERO
               );
+              carryKitchenState(existingItem, switchedItem);
               // Terms the batch filled in (the request sent none) never replace the line's own.
               PurchaseItem termsSource = newItem.isBatchFilledScheme() ? existingItem : newItem;
               switchedItem.setSaleAdditionalDiscount(newItem.getSaleAdditionalDiscount() != null && !newItem.isBatchFilledDisc()
@@ -1513,6 +1622,7 @@ public class CheckoutService {
                 priceToRetail,
                 newDiscount.compareTo(BigDecimal.ZERO) > 0 ? newDiscount : BigDecimal.ZERO
             );
+            carryKitchenState(existingItem, updatedItem);
             updatedItem.setSaleAdditionalDiscount(additionalDiscount);
             updatedItem.setAppliedRateName(appliedRateName);
             updatedItem.setSchemeType(schemeType);
@@ -1589,34 +1699,44 @@ public class CheckoutService {
       existingCart.setUpdatedAt(Instant.now());
 
       // Recalculate totals
-      recalculateLineTotalsForBillingMode(mergedItems, billingMode);
-      existingCart.setItems(mergedItems);
-      BigDecimal newSubTotal = calculateSubtotal(mergedItems);
-      existingCart.setSubTotal(newSubTotal);
-      
-      TaxCalculationResult taxResult = calculateTax(
-          mergedItems, existingCart.getShopId(), billingMode, existingCart.getCustomerId());
-      existingCart.setTaxTotal(taxResult.getTaxTotal());
-      existingCart.setSgstAmount(taxResult.getSgstAmount());
-      existingCart.setCgstAmount(taxResult.getCgstAmount());
-      existingCart.setIgstAmount(taxResult.getIgstAmount());
-      existingCart.setInterstate(taxResult.isInterstate());
-      
-      BigDecimal discountTotal = calculateTotalDiscount(mergedItems);
-      BigDecimal additionalDiscountTotal = calculateAdditionalDiscountTotal(mergedItems);
-      existingCart.setDiscountTotal(discountTotal);
-      existingCart.setSaleAdditionalDiscountTotal(additionalDiscountTotal);
-      BigDecimal calculatedTotal = newSubTotal
-          .add(taxResult.getTaxTotal())
-          .subtract(additionalDiscountTotal);
-      existingCart.setGrandTotal(roundOffToWholeRupee(calculatedTotal));
-      setPurchaseMarginDetails(existingCart);
+      applyCartTotals(existingCart, mergedItems, billingMode);
 
       // If cart is empty after updates, we can either delete it or keep it with empty items
       // For now, we'll keep it with empty items (status remains CREATED)
       // You can add logic here to delete the cart if needed
 
-      return purchaseRepository.save(existingCart);
+      // Nothing is told to the kitchen here. A line reduced below what the kitchen already has
+      // stays on the cart at quantity zero (see mergeMenuCartLine), and the next press of Print
+      // KOT computes a negative delta for it and issues the CANCEL slip. One path, the punch's,
+      // rather than an eager cancel racing it through kotSentQuantity.
+
+      // Write what this request changed, field by field and line by line -- never the whole
+      // document. A full replace here writes items as this request read them several inventory
+      // round-trips ago, so a punch that landed on the same bill in the meantime -- its
+      // cafeKotPunches record and the kotSentQuantity it advanced -- is deleted: the kitchen is
+      // cooking food the bill no longer knows was sent, and the next press sends it again.
+      // Nothing about what the cart computes changes; only how it is stored.
+      // No pre-image means no way to tell what this request changed, so there is nothing to aim
+      // a targeted write with. The caller always supplies one for an existing cart; this is only
+      // the guard that keeps a future caller from silently re-pushing every line it read.
+      PurchaseTargetedWriter.CartWrite written =
+          cartBeforeUpdate == null
+              ? PurchaseTargetedWriter.CartWrite.UNADDRESSABLE
+              : purchaseTargetedWriter.writeCart(
+                  existingCart.getShopId(), existingCart, cartBeforeUpdate);
+      if (written == PurchaseTargetedWriter.CartWrite.UNADDRESSABLE) {
+        // Lines that share an identity, or have none, cannot be aimed at. A full-document save
+        // would write items as this request read them and wipe cafeKotPunches / kotSentQuantity
+        // a punch stored in the meantime. Refuse instead of replacing the bill.
+        log.warn(
+            "Cart {} in shop {} has lines that cannot be addressed individually; "
+                + "refusing the update",
+            existingCart.getId(),
+            existingCart.getShopId());
+        throw new ValidationException(
+            "This cart has lines that cannot be updated individually. Refresh and try again.");
+      }
+      return existingCart;
     } catch (ValidationException | ResourceNotFoundException e) {
       throw e;
     } catch (DataAccessException e) {
@@ -2055,18 +2175,23 @@ public class CheckoutService {
   }
 
   /**
-   * Takes a completed bill's quantities off its lots.
+   * Takes a completed bill's quantities off its lots, or with {@code apply == false} only checks
+   * that it could.
+   *
+   * <p>Called once with {@code false} before the settlement's guarded write (so a missing lot or
+   * short stock still refuses the sale before anything is stored) and once with {@code true} after
+   * that write has succeeded, so a settlement the guard refuses has moved no stock.
    *
    * <p>Each lot is changed with one guarded update ("take n, only if at least n is in stock"), so
    * two bills completing at the same moment cannot both sell the last unit or overwrite each
    * other's count, and nothing but the four stock counts is written (a price or name edit saved at
    * the same moment is kept). MongoDB applies updates to one document one at a time and checks the
-   * guard against the current value. There is no transaction across lots (AGENTS.md P8), so if a
-   * later lot fails its guard the lots already taken are put back before the error is thrown.
+   * guard against the current value. Outside a transaction (AGENTS.md P8), if a later lot fails its
+   * guard the lots already taken are put back before the error is thrown.
    *
    * <p>Lots with a missing stock count (legacy rows) keep the old read-modify-save.
    */
-  private void updateInventoryForCompletedPurchase(Purchase purchase) {
+  private void updateInventoryForCompletedPurchase(Purchase purchase, boolean apply) {
     if (purchase.getItems() == null || purchase.getItems().isEmpty()) {
       log.warn("Purchase {} has no items to process for inventory update", purchase.getId());
       return;
@@ -2117,6 +2242,9 @@ public class CheckoutService {
       if (currentCount < take.base) {
         throw insufficientStockToComplete(inventory, currentCount, take.base);
       }
+    }
+    if (!apply) {
+      return;
     }
 
     List<StockTake> taken = new ArrayList<>();
@@ -2630,6 +2758,7 @@ public class CheckoutService {
         .quantity(item.getQuantity())
         .baseQuantity(item.getBaseQuantity())
         .unit(item.getUnit())
+        .note(item.getNote())
         .priceToRetail(item.getPriceToRetail())
         .saleAdditionalDiscount(item.getSaleAdditionalDiscount())
         .schemeType(item.getSchemeType() != null ? item.getSchemeType().name() : null)
@@ -2637,6 +2766,18 @@ public class CheckoutService {
         .schemeFree(item.getSchemeFree())
         .schemePercentage(item.getSchemePercentage())
         .build();
+  }
+
+  /**
+   * A stock line changed in quantity or sale unit is rebuilt from scratch. What the kitchen side
+   * owns on it must come across: the station frozen when the line was first added (a later menu
+   * edit must not re-route it, and a missing one falls back to KITCHEN), the quantity the kitchen
+   * has already been sent (without it the next punch re-sends the whole line), and the note.
+   */
+  private static void carryKitchenState(PurchaseItem existing, PurchaseItem rebuilt) {
+    rebuilt.setDepartment(existing.getDepartment());
+    rebuilt.setKotSentQuantity(existing.getKotSentQuantity());
+    rebuilt.setNote(existing.getNote());
   }
 
   private static boolean sameCartLine(PurchaseItem a, PurchaseItem b) {
@@ -2647,7 +2788,16 @@ public class CheckoutService {
     return PurchaseItemRefs.lineKey(item);
   }
 
-  private void mergeMenuCartLine(List<PurchaseItem> mergedItems, PurchaseItem newItem) {
+  /**
+   * Folds one menu line into the cart.
+   *
+   * <p>Nothing is told to the kitchen from here. A reduction reaches it as the negative delta of
+   * the next punch, computed from {@code baseQuantity - kotSentQuantity} on the stored line -- so
+   * a line reduced to zero is kept on the cart at zero rather than removed, because deleting it
+   * would destroy the only record from which that cancellation can be computed. The punch drops
+   * it once it has been cancelled.
+   */
+  void mergeMenuCartLine(List<PurchaseItem> mergedItems, PurchaseItem newItem) {
     for (int i = 0; i < mergedItems.size(); i++) {
       PurchaseItem existing = mergedItems.get(i);
       if (!sameCartLine(existing, newItem)) {
@@ -2657,6 +2807,17 @@ public class CheckoutService {
       int addQty = newItem.getBaseQuantity() != null ? newItem.getBaseQuantity() : 0;
       int combined = existingQty + addQty;
       if (combined <= 0) {
+        int sent =
+            existing.getKotSentQuantity() != null ? existing.getKotSentQuantity() : 0;
+        if (sent > 0) {
+          // The kitchen has this food. Deleting the line would destroy the only record from
+          // which its cancellation can be computed, so keep it at zero until the next punch
+          // sends the negative delta and sweeps it away.
+          existing.setBaseQuantity(0);
+          existing.setQuantity(BigDecimal.ZERO);
+          existing.setTotalAmount(BigDecimal.ZERO);
+          return;
+        }
         mergedItems.remove(i);
         return;
       }

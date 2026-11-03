@@ -95,7 +95,7 @@ class CheckoutServiceStockTakeTest {
   }
 
   private void complete(Purchase p) {
-    ReflectionTestUtils.invokeMethod(service, "updateInventoryForCompletedPurchase", p);
+    ReflectionTestUtils.invokeMethod(service, "updateInventoryForCompletedPurchase", p, true);
   }
 
   private static UpdateResult matched(long n) {
