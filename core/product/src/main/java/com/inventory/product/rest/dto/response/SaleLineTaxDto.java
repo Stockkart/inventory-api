@@ -24,4 +24,9 @@ public class SaleLineTaxDto {
   private BigDecimal taxAmount;
   /** The line's combined GST rate, e.g. 5 for 2.5 + 2.5; zero when it carries none. */
   private BigDecimal ratePercent;
+  /**
+   * The line's amount with its GST inside: {@code taxableValue + taxAmount}. Scan &amp; Sell shows
+   * this one figure under the line instead of the taxable value and GST apart.
+   */
+  private BigDecimal totalAmount;
 }
