@@ -5,7 +5,8 @@ import com.inventory.product.domain.model.enums.DiscountApplicable;
 import com.inventory.product.domain.model.enums.InventorySellRestriction;
 import com.inventory.product.domain.model.enums.ItemType;
 import com.inventory.product.domain.model.enums.SchemeType;
-import com.inventory.pricing.rest.dto.response.RateDto;
+import com.inventory.pricing.api.RateTerms;
+import com.inventory.pricing.api.RateLine;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -18,6 +19,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 
 @Data
 @NoArgsConstructor
@@ -145,7 +147,7 @@ public class Inventory {
   @Transient
   private BigDecimal sellingPrice;
   @Transient
-  private List<RateDto> rates;
+  private List<RateLine> rates;
   @Transient
   private String defaultRate;
   @Transient
@@ -167,5 +169,12 @@ public class Inventory {
   public BigDecimal costForValuation() {
     return effectiveCostPrice != null ? effectiveCostPrice : costPrice;
   }
-}
 
+  /** The batch's rates as pricing's api terms; empty when none are loaded. */
+  public List<RateTerms> rateTerms() {
+    return rates == null ? List.of() : rates.stream()
+        .filter(Objects::nonNull)
+        .map(RateLine::toTerms)
+        .toList();
+  }
+}

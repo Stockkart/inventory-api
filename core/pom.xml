@@ -20,6 +20,7 @@
         <module>credit</module>
         <module>accounting</module>
         <module>resource</module>
+        <module>hr</module>
     </modules>
 
     <properties>

@@ -5,7 +5,7 @@ import org.springframework.util.StringUtils;
 /** Typed sellable identity encoded as {@code kind:id} (e.g. {@code inventory:lot-uuid}, {@code menu:item-uuid}). */
 public record SellableRef(String kind, String id) {
 
-  public static final String KIND_INVENTORY = "inventory";
+  public static final String KIND_INVENTORY = "inventory"; // boundaries:not-a-collection
   public static final String KIND_MENU = "menu";
 
   private static final String SEPARATOR = ":";

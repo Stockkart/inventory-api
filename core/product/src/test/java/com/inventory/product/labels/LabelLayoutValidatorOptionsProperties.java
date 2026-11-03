@@ -30,7 +30,8 @@ import net.jqwik.api.Tuple;
  */
 class LabelLayoutValidatorOptionsProperties {
 
-  private static final String STICKER_SIZE_ERROR = "stickerSize must be one of 50x25, 38x25, 100x50";
+  private static final String STICKER_SIZE_ERROR =
+      "stickerSize must be one of 50x25, 38x25, 38x38, 100x50";
   private static final String BLANK_VALUE_BEHAVIOR_ERROR =
       "blankValueBehavior must be HIDE_LINE or PRINT_BLANK";
 

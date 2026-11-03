@@ -18,25 +18,28 @@ public final class InventoryPricingContext {
     public final CreateInventoryRequest createRequest;
     public final UpdateInventoryRequest updateRequest;
     public final String shopId;
+    /** The user making an update; checked for the grant to edit generated rates. Null on create. */
+    public final String userId;
 
     Context(Type type, CreateInventoryRequest createRequest,
-        UpdateInventoryRequest updateRequest, String shopId) {
+        UpdateInventoryRequest updateRequest, String shopId, String userId) {
       this.type = type;
       this.createRequest = createRequest;
       this.updateRequest = updateRequest;
       this.shopId = shopId;
+      this.userId = userId;
     }
   }
 
   public static void setCreate(CreateInventoryRequest request, String shopId) {
     if (request != null && StringUtils.hasText(shopId)) {
-      HOLDER.set(new Context(Type.CREATE, request, null, shopId));
+      HOLDER.set(new Context(Type.CREATE, request, null, shopId, null));
     }
   }
 
-  public static void setUpdate(UpdateInventoryRequest request) {
+  public static void setUpdate(UpdateInventoryRequest request, String userId) {
     if (request != null) {
-      HOLDER.set(new Context(Type.UPDATE, null, request, null));
+      HOLDER.set(new Context(Type.UPDATE, null, request, null, userId));
     }
   }
 

@@ -58,6 +58,12 @@ public class AddToCartRequest {
     private Integer schemeFree;
     /** Optional when schemeType is PERCENTAGE: e.g. 10 = 10% extra free. */
     private BigDecimal schemePercentage;
+    /**
+     * Optional: name of a batch rate to bill this line at. A rule rate puts its base on the line
+     * with its disc and scheme, which win over disc/scheme fields sent in the same item; a legacy
+     * rate puts its price. Unknown names are rejected.
+     */
+    private String rateName;
   }
 }
 

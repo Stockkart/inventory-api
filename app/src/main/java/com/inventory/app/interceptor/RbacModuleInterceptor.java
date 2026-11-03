@@ -1,5 +1,8 @@
 package com.inventory.app.interceptor;
 
+import com.inventory.common.constants.ErrorCode;
+import com.inventory.common.exception.BaseException;
+import com.inventory.user.rest.dto.response.ShopAccessResponse;
 import com.inventory.user.service.RbacService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -27,7 +30,11 @@ public class RbacModuleInterceptor implements HandlerInterceptor {
           Pattern.compile("/api/v1/plans/[a-fA-F0-9]{24}$"),
           Pattern.compile("/api/v1/plans/shop/status"),
           Pattern.compile("/api/v1/plans/payment/config"),
-          Pattern.compile("/api/v1/plans/payment/webhook/.*"));
+          Pattern.compile("/api/v1/plans/payment/webhook/.*"),
+          // HR self-service: every linked employee may see their own HR data whatever their role
+          // or HR switch (R1.5). It still needs a bearer token and a shop; the handlers resolve
+          // the employee from (shopId, caller userId) only, never from the path or body.
+          Pattern.compile("/api/v1/hr/me(/.*)?"));
 
   private static final List<ModuleRule> MODULE_RULES =
       List.of(
@@ -35,6 +42,7 @@ public class RbacModuleInterceptor implements HandlerInterceptor {
           new ModuleRule("/api/v1/analytics", RbacService.MODULE_ANALYTICS),
           new ModuleRule("/api/v1/mis", RbacService.MODULE_MIS),
           new ModuleRule("/api/v1/taxation", RbacService.MODULE_TAXES),
+          new ModuleRule("/api/v1/hr", RbacService.MODULE_HR),
           new ModuleRule("/api/v1/plans/shop/transactions", RbacService.MODULE_PAYMENT_PLAN),
           new ModuleRule("/api/v1/plans/shop/usage", RbacService.MODULE_PAYMENT_PLAN),
           new ModuleRule("/api/v1/plans/payment/checkout", RbacService.MODULE_PAYMENT_PLAN),
@@ -74,7 +82,15 @@ public class RbacModuleInterceptor implements HandlerInterceptor {
       return true;
     }
 
-    String path = request.getRequestURI();
+    // Rules match the decoded path Spring routes on, not the raw URI: a raw
+    // "/api/v1/accounting;jsessionid=1/x" reaches the accounting controller but does not start
+    // with "/api/v1/accounting/". Dot segments and encoded separators are refused (403) because
+    // the container and Spring may disagree about where such a path leads.
+    String path = RequestPaths.lookupPath(request);
+    if (RequestPaths.isSuspicious(request, path)) {
+      log.warn("RBAC refused a request path with dot segments or encoded separators");
+      throw new BaseException(ErrorCode.ACCESS_DENIED, "Access denied");
+    }
     if (shouldSkip(path)) {
       return true;
     }
@@ -88,7 +104,10 @@ public class RbacModuleInterceptor implements HandlerInterceptor {
     String moduleKey = resolveModuleKey(path);
     if (moduleKey != null) {
       log.debug("RBAC module check: user={} shop={} module={} path={}", userId, shopId, moduleKey, path);
-      rbacService.requireModule(userId, shopId, moduleKey);
+      ShopAccessResponse access = rbacService.requireModule(userId, shopId, moduleKey);
+      // Kept for the rest of the request so module services (HR permission checks) do not
+      // resolve the same access again. Request-scoped only; nothing is cached across requests.
+      request.setAttribute(RbacService.ACCESS_ATTRIBUTE, access);
       return true;
     }
 
@@ -112,6 +131,13 @@ public class RbacModuleInterceptor implements HandlerInterceptor {
   }
 
   private static boolean shouldSkip(String path) {
+    // getRequestURI() is not normalised: a "/hr/me/../employees" or ";param" URI would match a
+    // skip pattern yet be dispatched elsewhere, so such URIs never skip the checks.
+    // preHandle now passes the decoded, semicolon-free path and refuses dot segments before this
+    // runs; the check stays as a second line of defence.
+    if (path.contains("..") || path.contains(";")) {
+      return false;
+    }
     return SKIP_PATHS.stream().anyMatch(pattern -> pattern.matcher(path).matches());
   }
 

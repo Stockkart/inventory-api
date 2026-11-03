@@ -1,5 +1,7 @@
 package com.inventory.product.service;
 
+import com.inventory.plan.api.UsageGate;
+import com.inventory.common.gst.SupplyPlacement;
 import com.inventory.common.util.GstStateCode;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
@@ -21,7 +23,6 @@ import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.UnitConversion;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.user.domain.model.Customer;
-import com.inventory.user.rest.dto.request.CreateCustomerRequest;
 import com.inventory.product.domain.repository.PurchaseRepository;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.rest.dto.request.AddToCartRequest;
@@ -33,8 +34,6 @@ import com.inventory.product.rest.dto.response.PurchaseListResponse;
 import com.inventory.product.rest.dto.response.PurchaseSummaryDto;
 import com.inventory.product.mapper.InventoryMapper;
 import com.inventory.product.mapper.PurchaseMapper;
-import com.inventory.plan.rest.dto.request.RecordUsageRequest;
-import com.inventory.plan.service.UsageService;
 import com.inventory.product.util.PurchaseItemRefs;
 import com.inventory.product.utils.CheckoutUtils;
 import com.inventory.product.utils.constants.ProductMetricsConstants;
@@ -55,6 +54,11 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
+import org.bson.types.Decimal128;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -65,7 +69,6 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -96,6 +99,14 @@ public class CheckoutService {
   @Autowired
   private PurchaseMapper purchaseMapper;
 
+  /** Guarded stock updates on bill completion (updateInventoryForCompletedPurchase). */
+  @Autowired
+  private MongoTemplate mongoTemplate;
+
+  /** All-or-nothing bill completion (stock, bill, invoice no, usage, dues, journal). */
+  @Autowired(required = false)
+  private com.inventory.common.tx.MongoTx mongoTx;
+
   @Autowired
   private CheckoutValidator checkoutValidator;
 
@@ -109,13 +120,14 @@ public class CheckoutService {
   private com.inventory.user.domain.repository.CustomerRepository customerRepository;
 
   @Autowired
-  private com.inventory.user.domain.repository.ShopCustomerRepository shopCustomerRepository;
-
-  @Autowired
   private ShopRepository shopRepository;
 
+  /** Who is where (taxation module); the one rule shared with purchases and the GST returns. */
   @Autowired
-  private com.inventory.reminders.service.EventService eventService;
+  private org.springframework.beans.factory.ObjectProvider<SupplyPlacement> supplyPlacement;
+
+  @Autowired
+  private com.inventory.reminders.api.InventoryAlerts eventService;
 
   @Autowired
   private InventoryMapper inventoryMapper;
@@ -124,22 +136,22 @@ public class CheckoutService {
   private InvoiceSequenceService invoiceSequenceService;
 
   @Autowired
-  private UsageService usageService;
+  private UsageGate usageService;
 
   @Autowired(required = false)
   private com.inventory.metrics.MetricsWrapper metrics;
 
-  @Autowired(required = false)
-  private com.inventory.credit.service.CreditService creditService;
+  @Autowired
+  private com.inventory.credit.api.CreditLedger creditLedger;
 
-  @Autowired(required = false)
-  private com.inventory.credit.service.CreditChargeFacade creditChargeFacade;
-
-  @Autowired(required = false)
+  @Autowired
   private com.inventory.accounting.api.AccountingFacade accountingFacade;
 
   @Autowired
   private CartContributorResolver cartContributorResolver;
+
+  @Autowired
+  private CartRateResolver cartRateResolver;
 
   @Autowired
   private CartLineSnapshotMapper cartLineSnapshotMapper;
@@ -180,14 +192,15 @@ public class CheckoutService {
         customerName = PurchaseCustomerRequests.displayNameOverlay(customerId, request);
       }
 
-      // Process new items
-      List<PurchaseItem> newItems = processCartItems(request.getItems(), shopId);
+      // Process new items; their lots are read once here and reused below
+      CartLots lots = new CartLots(lotIdsOf(request.getItems()));
+      List<PurchaseItem> newItems = processCartItems(request.getItems(), shopId, existingCart, lots);
       Purchase stockCheckCart =
           existingCart != null ? existingCart : new Purchase();
       if (existingCart == null) {
         stockCheckCart.setItems(new ArrayList<>());
       }
-      validateStockAvailabilityForCartUpdate(stockCheckCart, newItems, shopId);
+      validateStockAvailabilityForCartUpdate(stockCheckCart, newItems, shopId, lots);
 
       BillingMode cartBillingMode = checkoutValidator.resolveAndValidateCartBillingMode(existingCart, newItems);
       boolean targetIsEstimate =
@@ -201,7 +214,7 @@ public class CheckoutService {
       if (existingCart != null) {
         // Update existing cart - merge items (including quantity-0 update-only items)
         log.info("Updating existing cart with ID: {}", existingCart.getId());
-        purchase = updateCart(existingCart, newItems, request.getBusinessType(), customerId, customerName, cartBillingMode);
+        purchase = updateCart(existingCart, newItems, request.getBusinessType(), customerId, customerName, cartBillingMode, lots);
         if (metrics != null) {
           metrics.record(ProductMetricsConstants.CART_UPDATED, 1, "module", ProductMetricsConstants.MODULE);
         }
@@ -240,8 +253,22 @@ public class CheckoutService {
     }
   }
 
+  /**
+   * Moves a bill to a new status. Completing it runs as one MongoDB transaction ({@link
+   * com.inventory.common.tx.MongoTx}): the stock taken, the bill, its invoice number, the usage
+   * count, the customer's due and the sale journal are saved together or not at all, and a write
+   * conflict with another bill (same lot, same Cash account) runs the completion again.
+   */
   @Transactional
   public CheckoutResponse updatePurchaseStatus(UpdatePurchaseStatusRequest request, HttpServletRequest httpRequest) {
+    if (mongoTx != null && request != null && request.getStatus() == PurchaseStatus.COMPLETED) {
+      return mongoTx.run(com.inventory.common.tx.MongoTx.BILL_COMPLETE, (String) httpRequest.getAttribute("shopId"),
+          () -> changePurchaseStatus(request, httpRequest));
+    }
+    return changePurchaseStatus(request, httpRequest);
+  }
+
+  private CheckoutResponse changePurchaseStatus(UpdatePurchaseStatusRequest request, HttpServletRequest httpRequest) {
     // Get shopId and userId from request attributes (set by AuthenticationInterceptor)
     String shopId = (String) httpRequest.getAttribute("shopId");
     String userId = (String) httpRequest.getAttribute("userId");
@@ -321,31 +348,9 @@ public class CheckoutService {
         recordBillingUsageForPurchase(shopId, purchase);
       }
       if (requestedStatus == PurchaseStatus.COMPLETED && metrics != null) {
-        BigDecimal grandTotal = purchase.getGrandTotal() != null ? purchase.getGrandTotal() : BigDecimal.ZERO;
-        String vertical = checkoutVertical(shopId);
-        if (vertical != null) {
-          metrics.record(
-              ProductMetricsConstants.ORDERS_COMPLETED,
-              1,
-              "module",
-              ProductMetricsConstants.MODULE,
-              "vertical",
-              vertical);
-          if (grandTotal.compareTo(BigDecimal.ZERO) > 0) {
-            metrics.record(
-                ProductMetricsConstants.ORDERS_AMOUNT,
-                grandTotal.doubleValue(),
-                "module",
-                ProductMetricsConstants.MODULE,
-                "vertical",
-                vertical);
-          }
-        } else {
-          metrics.record(ProductMetricsConstants.ORDERS_COMPLETED, 1, "module", ProductMetricsConstants.MODULE);
-          if (grandTotal.compareTo(BigDecimal.ZERO) > 0) {
-            metrics.record(ProductMetricsConstants.ORDERS_AMOUNT, grandTotal.doubleValue(), "module", ProductMetricsConstants.MODULE);
-          }
-        }
+        final Purchase counted = purchase;
+        // counted once, and only if the bill is saved (a write conflict runs the completion again)
+        com.inventory.common.tx.MongoTx.afterCommit(() -> recordCompletedOrderMetrics(shopId, counted));
       }
 
       log.info("Successfully updated purchase status from {} to {} for purchase ID: {}",
@@ -371,7 +376,7 @@ public class CheckoutService {
       }
       return response;
 
-    } catch (ValidationException | ResourceNotFoundException e) {
+    } catch (ValidationException | ResourceNotFoundException | InsufficientStockException e) {
       log.warn("Update purchase status failed: {}", e.getMessage());
       throw e;
     } catch (DataAccessException e) {
@@ -382,6 +387,34 @@ public class CheckoutService {
       log.error("Unexpected error during update purchase status for shop: {}, user: {}", shopId, userId, e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
           "An unexpected error occurred during update purchase status: " + e.getMessage(), e);
+    }
+  }
+
+  private void recordCompletedOrderMetrics(String shopId, Purchase purchase) {
+    BigDecimal grandTotal = purchase.getGrandTotal() != null ? purchase.getGrandTotal() : BigDecimal.ZERO;
+    String vertical = checkoutVertical(shopId);
+    if (vertical != null) {
+      metrics.record(
+          ProductMetricsConstants.ORDERS_COMPLETED,
+          1,
+          "module",
+          ProductMetricsConstants.MODULE,
+          "vertical",
+          vertical);
+      if (grandTotal.compareTo(BigDecimal.ZERO) > 0) {
+        metrics.record(
+            ProductMetricsConstants.ORDERS_AMOUNT,
+            grandTotal.doubleValue(),
+            "module",
+            ProductMetricsConstants.MODULE,
+            "vertical",
+            vertical);
+      }
+    } else {
+      metrics.record(ProductMetricsConstants.ORDERS_COMPLETED, 1, "module", ProductMetricsConstants.MODULE);
+      if (grandTotal.compareTo(BigDecimal.ZERO) > 0) {
+        metrics.record(ProductMetricsConstants.ORDERS_AMOUNT, grandTotal.doubleValue(), "module", ProductMetricsConstants.MODULE);
+      }
     }
   }
 
@@ -455,9 +488,8 @@ public class CheckoutService {
       // Query purchases by shopId
       Page<Purchase> purchasePage = purchaseRepository.findByShopId(shopId, pageable);
 
-      List<PurchaseSummaryDto> purchaseDtos = purchasePage.getContent().stream()
-          .map(purchaseMapper::toPurchaseSummaryDto)
-          .toList();
+      // one customer query for the whole page
+      List<PurchaseSummaryDto> purchaseDtos = purchaseMapper.toPurchaseSummaryDtos(purchasePage.getContent());
 
       PurchaseListResponse response = purchaseMapper.toPurchaseListResponse(
           purchaseDtos, pageNumber + 1, pageSize,
@@ -551,9 +583,8 @@ public class CheckoutService {
           customerIds,
           pageable);
 
-      List<PurchaseSummaryDto> purchaseDtos = purchasePage.getContent().stream()
-          .map(purchaseMapper::toPurchaseSummaryDto)
-          .toList();
+      // one customer query for the whole page
+      List<PurchaseSummaryDto> purchaseDtos = purchaseMapper.toPurchaseSummaryDtos(purchasePage.getContent());
 
       PurchaseListResponse response = purchaseMapper.toPurchaseListResponse(
           purchaseDtos, pageNumber + 1, pageSize,
@@ -591,13 +622,8 @@ public class CheckoutService {
     if (!StringUtils.hasText(term)) {
       return List.of();
     }
-    Set<String> matched = new HashSet<>();
-    for (Customer candidate : customerRepository.searchByQuery(term.trim())) {
-      if (shopCustomerRepository.existsByShopIdAndCustomerId(shopId, candidate.getId())) {
-        matched.add(candidate.getId());
-      }
-    }
-    return new ArrayList<>(matched);
+    // this shop's customers only, matched in MongoDB (was: every shop's customers, then filtered)
+    return customerService.findShopCustomerIdsMatchingQueryIncludingGeneral(shopId, term.trim());
   }
 
   private Sort parseSortOrder(String order) {
@@ -656,7 +682,8 @@ public class CheckoutService {
         "invoiceNo".equals(field);
   }
 
-  private List<PurchaseItem> processCartItems(List<AddToCartRequest.CartItem> items, String shopId) {
+  private List<PurchaseItem> processCartItems(
+      List<AddToCartRequest.CartItem> items, String shopId, Purchase existingCart, CartLots lots) {
     Optional<CartLineContributor> contributor = cartContributorResolver.resolveContributor(shopId);
     if (contributor.isPresent()) {
       List<CartLineInput> inputs = items.stream().map(this::toCartLineInput).toList();
@@ -702,16 +729,21 @@ public class CheckoutService {
           || (item.getQuantity() != null && item.getQuantity() != 0);
       boolean updateOnly = (item.getQuantity() == null || item.getQuantity() == 0)
           && !hasQuantityChange
-          && (item.getSaleAdditionalDiscount() != null || hasSchemeChange || item.getPriceToRetail() != null);
+          && (item.getSaleAdditionalDiscount() != null || hasSchemeChange || item.getPriceToRetail() != null
+              || StringUtils.hasText(item.getRateName()));
 
         if (updateOnly) {
           // Verify inventory exists and belongs to shop; no stock check needed
-          Inventory inventory = inventoryRepository.findById(item.getId())
-              .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", item.getId()));
+          Inventory inventory = lots.require(item.getId());
           if (!shopId.equals(inventory.getShopId())) {
             throw new ValidationException("Inventory lot " + item.getId() + " does not belong to shop " + shopId);
           }
-          String saleUnit = normalizeSaleUnit(item.getUnit(), inventory);
+          // No unit sent: the edit is for the line already in the cart, at its unit (a pick on a
+          // tablet line is not a switch back to strips).
+          String saleUnit = StringUtils.hasText(item.getUnit())
+              ? normalizeSaleUnit(item.getUnit(), inventory)
+              : cartLineSaleUnit(existingCart, item.getId())
+                  .orElseGet(() -> normalizeSaleUnit(null, inventory));
           int saleUnitFactor = getConversionFactorToBase(inventory, saleUnit);
           int pricingFactor = getDisplayToBaseFactor(inventory);
           int baseQuantity = resolveRequestedBaseQuantity(item, inventory, saleUnit, saleUnitFactor);
@@ -745,6 +777,13 @@ public class CheckoutService {
             if (item.getSchemeFree() != null) purchaseItem.setSchemeFree(item.getSchemeFree());
             purchaseItem.setSchemePercentage(null);
           }
+          // A rate picked on a line already in the cart replaces its price, disc and scheme.
+          // Only an explicit pick: an edit without rateName must not snap back to the default rate.
+          if (StringUtils.hasText(item.getRateName())) {
+            cartRateResolver.resolve(inventory, item.getRateName())
+                .ifPresent(terms -> applyPickedRateTerms(purchaseItem, terms, inventory, saleUnit));
+            purchaseItem.setRequestedRateName(item.getRateName().trim());
+          }
           purchaseItem.setSaleUnit(saleUnit);
           purchaseItem.setBaseQuantity(baseQuantity);
           purchaseItem.setUnitFactor(saleUnitFactor);
@@ -755,8 +794,7 @@ public class CheckoutService {
             || (item.getBaseQuantity() != null && item.getBaseQuantity() < 0)) {
           // For negative quantities (reduce/remove), verify lotId exists and belongs to the shop
           // Stock validation is not needed for removing items
-          Inventory inventory = inventoryRepository.findById(item.getId())
-              .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", item.getId()));
+          Inventory inventory = lots.require(item.getId());
 
           if (!shopId.equals(inventory.getShopId())) {
             throw new ValidationException("Inventory lot " + item.getId() + " does not belong to shop " + shopId);
@@ -781,6 +819,7 @@ public class CheckoutService {
               BigDecimal.ZERO, // Not used for negative quantities
               BigDecimal.ZERO
           );
+          purchaseItem.setBatchFilledPrice(true);
           purchaseItem.setSaleUnit(saleUnit);
           purchaseItem.setBaseQuantity(baseQuantity);
           purchaseItem.setUnitFactor(factor);
@@ -789,8 +828,7 @@ public class CheckoutService {
           purchaseItems.add(purchaseItem);
         } else {
           // Positive quantity - normal flow with stock validation
-          Inventory inventory = inventoryRepository.findById(item.getId())
-              .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", item.getId()));
+          Inventory inventory = lots.require(item.getId());
 
           // Verify the inventory belongs to the shop
           if (!shopId.equals(inventory.getShopId())) {
@@ -833,10 +871,34 @@ public class CheckoutService {
           purchaseItem.setQuantity(toSaleQuantityDecimal(Math.abs(baseQuantity), factor));
           purchaseItem.setMaximumRetailPrice(maximumRetailPrice);
           purchaseItem.setPriceToRetail(sellingPrice);
+          // Without a rateName the price is always the batch's; disc and scheme are the batch's
+          // unless the request sent them. A line already in the cart keeps its own (merge).
+          boolean schemeSent = item.getSchemePayFor() != null || item.getSchemeFree() != null
+              || item.getSchemeType() != null || item.getSchemePercentage() != null;
+          purchaseItem.setBatchFilledPrice(true);
+          purchaseItem.setBatchFilledDisc(item.getSaleAdditionalDiscount() == null);
+          purchaseItem.setBatchFilledScheme(!schemeSent);
+          // A picked rate, or a default rate that is a rule rate, puts its base on the line with its
+          // disc and scheme in place of the batch's own sale defaults (never 83.64 with them on top).
+          Optional<CartRateResolver.LineTerms> rateTerms = cartRateResolver.resolve(inventory, item.getRateName());
+          if (rateTerms.isPresent()) {
+            if (StringUtils.hasText(item.getRateName())) {
+              applyPickedRateTerms(purchaseItem, rateTerms.get(), inventory, saleUnit);
+              purchaseItem.setRequestedRateName(item.getRateName().trim());
+            } else {
+              applyDefaultRateTerms(purchaseItem, rateTerms.get(), item, inventory, saleUnit);
+            }
+          }
+          if (rateTerms.isPresent()) {
+            // A rate's base went on per sale unit, so the line MRP is the one for that unit (a
+            // tablet line's per-tablet MRP), also when a typed disc or scheme left no applied rate.
+            maximumRetailPrice = purchaseItem.getMaximumRetailPrice();
+          }
+          BigDecimal linePrice = purchaseItem.getPriceToRetail();
           purchaseItem.setCostPrice(costPrice);
           purchaseItem.setUnitFactor(factor);
           BigDecimal perUnitDiscount = maximumRetailPrice
-              .subtract(sellingPrice != null ? sellingPrice : BigDecimal.ZERO);
+              .subtract(linePrice != null ? linePrice : BigDecimal.ZERO);
           if (perUnitDiscount.compareTo(BigDecimal.ZERO) > 0) {
             purchaseItem.setDiscount(perUnitDiscount.multiply(CheckoutUtils.getQuantityAsPricingUnits(purchaseItem)));
           } else {
@@ -900,8 +962,8 @@ public class CheckoutService {
   }
 
   /**
-   * Tax on purchase items at each item's own CGST/SGST rate (shop defaults where an item has
-   * none), summed; on an interstate sale the same total is charged as IGST.
+   * Tax on purchase items at each item's own CGST/SGST rate, summed; on an interstate sale the
+   * same total is charged as IGST.
    */
   private TaxCalculationResult calculateTax(List<PurchaseItem> purchaseItems, String shopId,
       BillingMode billingMode, boolean interstate) {
@@ -911,56 +973,33 @@ public class CheckoutService {
     BigDecimal totalSgstAmount = BigDecimal.ZERO;
     BigDecimal totalCgstAmount = BigDecimal.ZERO;
     
-    // Get shop defaults for items without inventory-level rates
-    String shopSgst = null;
-    String shopCgst = null;
-    if (shopId != null && !shopId.trim().isEmpty()) {
-      Optional<Shop> shopOpt = shopRepository.findById(shopId);
-      if (shopOpt.isPresent()) {
-        Shop shop = shopOpt.get();
-        shopSgst = shop.getSgst();
-        shopCgst = shop.getCgst();
-      }
-    }
-    
     // Calculate tax for each item based on its inventory-level CGST/SGST.
     // A line sold at MRP adds no GST on top, but the GST inside its price is still charged and is
     // stated here: its tax is worked on the price with that GST taken out, so it is the GST the
     // MRP already contains. Skipping it left the bill, the journal and the invoice saying no tax
     // was charged on goods whose price included it.
     for (PurchaseItem item : purchaseItems) {
-      boolean sellingAtMrp = CheckoutUtils.isSellingAtMrp(item);
       // Item total for tax: use paid quantity when scheme is set (billing basis)
       BigDecimal itemTotal = BigDecimal.ZERO;
       if (item.getMaximumRetailPrice() != null && item.getQuantity() != null 
           && item.getPriceToRetail() != null) {
-        BigDecimal effectivePrice = CheckoutUtils.getTaxablePricePerUnit(item);
-        BigDecimal billableQty = CheckoutUtils.getBillableQuantityAsDecimal(item);
-        itemTotal = effectivePrice.multiply(billableQty);
-        // Apply additional discount if present
-        if (item.getSaleAdditionalDiscount() != null && item.getSaleAdditionalDiscount().compareTo(BigDecimal.ZERO) > 0) {
-          itemTotal = itemTotal.multiply(new BigDecimal(1).subtract(item.getSaleAdditionalDiscount().divide(new BigDecimal(
-              "100"), 4, RoundingMode.HALF_UP)));
-        }
+        // Shared with returns (SalesReturnValuation), so a return reverses this exact tax.
+        itemTotal = CheckoutUtils.getTaxableLineValue(item, CheckoutUtils.getBillableQuantityAsDecimal(item));
       }
       
-      // Use inventory-level rates if available, otherwise use shop defaults. A line sold at MRP
-      // uses only its own rates: its taxable price was worked from them, and a shop default it
-      // does not carry would charge tax that its price does not contain.
-      String itemSgst = StringUtils.hasText(item.getSgst()) ? item.getSgst() : (sellingAtMrp ? null : shopSgst);
-      String itemCgst = StringUtils.hasText(item.getCgst()) ? item.getCgst() : (sellingAtMrp ? null : shopCgst);
+      // Each line is taxed at its own lot's rates; there is no shop-level GST.
+      String itemSgst = StringUtils.hasText(item.getSgst()) ? item.getSgst() : null;
+      String itemCgst = StringUtils.hasText(item.getCgst()) ? item.getCgst() : null;
       
       // Calculate SGST for this item
       if (itemSgst != null && !itemSgst.trim().isEmpty()) {
-        BigDecimal sgstRate = GstMath.parseGstRate(itemSgst).divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
-        BigDecimal itemSgstAmount = itemTotal.multiply(sgstRate).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal itemSgstAmount = CheckoutUtils.gstHeadAmount(itemTotal, itemSgst);
         totalSgstAmount = totalSgstAmount.add(itemSgstAmount);
       }
       
       // Calculate CGST for this item
       if (itemCgst != null && !itemCgst.trim().isEmpty()) {
-        BigDecimal cgstRate = GstMath.parseGstRate(itemCgst).divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
-        BigDecimal itemCgstAmount = itemTotal.multiply(cgstRate).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal itemCgstAmount = CheckoutUtils.gstHeadAmount(itemTotal, itemCgst);
         totalCgstAmount = totalCgstAmount.add(itemCgstAmount);
       }
     }
@@ -993,29 +1032,8 @@ public class CheckoutService {
     if (!StringUtils.hasText(customerId)) {
       return false;
     }
-    try {
-      Customer customer = customerRepository.findById(customerId.trim()).orElse(null);
-      if (customer == null) {
-        return false;
-      }
-      String customerState = GstStateCode.codeFromGstin(customer.getGstin());
-      if (!StringUtils.hasText(customerState)) {
-        customerState = GstStateCode.codeFromAddress(customer.getAddress());
-      }
-      if (!StringUtils.hasText(customerState)) {
-        return false;
-      }
-      String shopState = shopRepository.findById(shopId)
-          .map(shop -> GstStateCode.shopState(shop.getGstinNo(),
-              shop.getLocation() != null ? shop.getLocation().getState() : null))
-          .orElse("");
-
-      return GstStateCode.isInterstate(shopState, customerState);
-    } catch (RuntimeException e) {
-      log.warn("Could not place the sale for interstate tax (shop {}, customer {}); "
-          + "treating it as local", shopId, customerId, e);
-      return false;
-    }
+    SupplyPlacement p = supplyPlacement.getIfAvailable();
+    return p != null && p.isInterstateSale(shopId, customerId);
   }
 
   /** Inner class to hold tax calculation results. */
@@ -1098,10 +1116,11 @@ public class CheckoutService {
     }
     // Step 1: Calculate discounted/marked-up selling price per unit
     // Formula: price * (1 - additionalDiscount/100). Negative discount = markup (e.g. -2% => 1.02)
+    // The % is divided at 6 dp, as rate rules and the purchase cost divide it (7.125% => 0.07125).
     BigDecimal discountedPricePerUnit = priceToRetail;
     if (additionalDiscount != null && additionalDiscount.compareTo(BigDecimal.ZERO) != 0) {
       BigDecimal discountMultiplier = BigDecimal.ONE.subtract(
-          additionalDiscount.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP)
+          additionalDiscount.divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP)
       );
       discountedPricePerUnit = priceToRetail.multiply(discountMultiplier);
     }
@@ -1142,7 +1161,7 @@ public class CheckoutService {
           BigDecimal additionalDiscount = item.getSaleAdditionalDiscount() != null ? item.getSaleAdditionalDiscount() : BigDecimal.ZERO;
           BigDecimal billableQty = CheckoutUtils.getBillableQuantityAsDecimal(item);
           BigDecimal itemTotal = effectivePrice.multiply(billableQty);
-          BigDecimal discountAmount = itemTotal.multiply(additionalDiscount.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP));
+          BigDecimal discountAmount = itemTotal.multiply(additionalDiscount.divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP));
           return discountAmount;
         })
         .reduce(BigDecimal.ZERO, BigDecimal::add)
@@ -1260,7 +1279,8 @@ public class CheckoutService {
   }
 
   private Purchase updateCart(Purchase existingCart, List<PurchaseItem> newItems, String businessType,
-                              String customerId, String customerName, BillingMode billingMode) {
+                              String customerId, String customerName, BillingMode billingMode,
+                              CartLots lots) {
     try {
       // Merge items - if same inventoryId exists, update quantity; otherwise add new
       List<PurchaseItem> mergedItems = new ArrayList<>(existingCart.getItems() != null ? existingCart.getItems() : new ArrayList<>());
@@ -1277,9 +1297,13 @@ public class CheckoutService {
             String existingSaleUnit = existingItem.getSaleUnit() != null ? existingItem.getSaleUnit() : "UNIT";
             String incomingSaleUnit = newItem.getSaleUnit() != null ? newItem.getSaleUnit() : existingSaleUnit;
             if (!existingSaleUnit.equals(incomingSaleUnit)) {
+              if (StringUtils.hasText(newItem.getRequestedRateName())) {
+                throw new ValidationException("rateName cannot be sent with a unit change for "
+                    + existingItem.getName() + ": switch the unit first, then pick the rate");
+              }
+              boolean wasAtMrp = CheckoutUtils.isSellingAtMrp(existingItem);
               String existingLotId = PurchaseItemRefs.stockLotId(existingItem);
-              Inventory inventory = inventoryRepository.findById(existingLotId)
-                  .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", existingLotId));
+              Inventory inventory = lots.require(existingLotId);
               int existingBaseQuantity = getBaseQuantityOrFallback(existingItem);
               int incomingBaseQuantity = getBaseQuantityOrFallback(newItem);
               int switchBaseQuantity = incomingBaseQuantity > 0 ? incomingBaseQuantity : existingBaseQuantity;
@@ -1293,19 +1317,32 @@ public class CheckoutService {
                 switchBaseQuantity = roundedWholeUnits * targetFactor;
               }
               BigDecimal saleQty = toSaleQuantityDecimal(switchBaseQuantity, targetFactor);
-              BigDecimal priceToRetail = newItem.getPriceToRetail() != null ? newItem.getPriceToRetail() : existingItem.getPriceToRetail();
-              if (priceToRetail != null
+              // The line's own price is for its old unit: rescale it so the line total stays. A
+              // price sent with the switch is already for the new unit (ScanSell rescales it
+              // before sending), so it goes on as sent, not rescaled a second time.
+              BigDecimal rescaledLinePrice = existingItem.getPriceToRetail();
+              if (rescaledLinePrice != null
                   && existingItem.getQuantity() != null
                   && existingItem.getQuantity().compareTo(BigDecimal.ZERO) > 0
                   && saleQty.compareTo(BigDecimal.ZERO) > 0) {
-                BigDecimal lineTotal = priceToRetail.multiply(existingItem.getQuantity());
-                priceToRetail = lineTotal.divide(saleQty, 2, RoundingMode.HALF_UP);
+                BigDecimal lineTotal = rescaledLinePrice.multiply(existingItem.getQuantity());
+                rescaledLinePrice = lineTotal.divide(saleQty, 2, RoundingMode.HALF_UP);
               }
+              boolean priceSent = newItem.getPriceToRetail() != null && !newItem.isBatchFilledPrice();
+              BigDecimal priceToRetail = priceSent ? newItem.getPriceToRetail() : rescaledLinePrice;
               BigDecimal maximumRetailPrice = resolveInventoryMaximumRetailPrice(
                   inventory,
                   existingItem.getMaximumRetailPrice(),
                   newItem.getMaximumRetailPrice(),
                   priceToRetail);
+              // A line sold at MRP has the GST inside its price. Rescaling the price while the
+              // MRP stays the batch's would part the two and add GST on top, billing above MRP,
+              // so it stays at MRP for the new unit instead.
+              if (wasAtMrp && inventory.getMaximumRetailPrice() != null) {
+                // Any price sent with the switch is ignored here: the line stays at MRP.
+                maximumRetailPrice = resolveMaximumRetailPriceForSaleUnit(inventory, incomingSaleUnit);
+                priceToRetail = maximumRetailPrice;
+              }
               BigDecimal costPrice = inventory.costForValuation();
               BigDecimal unitPrice = priceToRetail != null ? priceToRetail : BigDecimal.ZERO;
               BigDecimal perUnitDiscount = maximumRetailPrice.subtract(unitPrice);
@@ -1320,22 +1357,31 @@ public class CheckoutService {
                       ? perUnitDiscount.multiply(saleQty)
                       : BigDecimal.ZERO
               );
-              switchedItem.setSaleAdditionalDiscount(newItem.getSaleAdditionalDiscount() != null
+              // Terms the batch filled in (the request sent none) never replace the line's own.
+              PurchaseItem termsSource = newItem.isBatchFilledScheme() ? existingItem : newItem;
+              switchedItem.setSaleAdditionalDiscount(newItem.getSaleAdditionalDiscount() != null && !newItem.isBatchFilledDisc()
                   ? newItem.getSaleAdditionalDiscount()
                   : existingItem.getSaleAdditionalDiscount());
-              SchemeType switchedSchemeType = newItem.getSchemeType() != null ? newItem.getSchemeType() : existingItem.getSchemeType();
+              SchemeType switchedSchemeType = termsSource.getSchemeType() != null ? termsSource.getSchemeType() : existingItem.getSchemeType();
               switchedItem.setSchemeType(switchedSchemeType);
-              switchedItem.setSchemePercentage(newItem.getSchemePercentage() != null
-                  ? newItem.getSchemePercentage()
+              switchedItem.setSchemePercentage(termsSource.getSchemePercentage() != null
+                  ? termsSource.getSchemePercentage()
                   : existingItem.getSchemePercentage());
               if (switchedSchemeType == SchemeType.PERCENTAGE) {
                 switchedItem.setSchemePayFor(null);
                 switchedItem.setSchemeFree(null);
               } else {
-                switchedItem.setSchemePayFor(newItem.getSchemePayFor() != null ? newItem.getSchemePayFor() : existingItem.getSchemePayFor());
-                switchedItem.setSchemeFree(newItem.getSchemeFree() != null ? newItem.getSchemeFree() : existingItem.getSchemeFree());
+                switchedItem.setSchemePayFor(termsSource.getSchemePayFor() != null ? termsSource.getSchemePayFor() : existingItem.getSchemePayFor());
+                switchedItem.setSchemeFree(termsSource.getSchemeFree() != null ? termsSource.getSchemeFree() : existingItem.getSchemeFree());
                 switchedItem.setSchemePercentage(null);
               }
+              // A switch keeps the line's rate; a price, disc or scheme edit sent with it clears it.
+              // A price sent to a line held at MRP is ignored above, so it edits nothing.
+              boolean priceEdited = priceSent
+                  && !sameMoney(newItem.getPriceToRetail(), rescaledLinePrice)
+                  && !(wasAtMrp && inventory.getMaximumRetailPrice() != null);
+              switchedItem.setAppliedRateName(priceEdited || discOrSchemeEdited(existingItem, newItem)
+                  ? null : existingItem.getAppliedRateName());
               switchedItem.setSgst(existingItem.getSgst());
               switchedItem.setCgst(existingItem.getCgst());
               switchedItem.setCostPrice(costPrice);
@@ -1363,9 +1409,9 @@ public class CheckoutService {
               break;
             }
             // Handle quantity update based on positive or negative
+            boolean wasAtMrp = CheckoutUtils.isSellingAtMrp(existingItem);
             String existingLotId = PurchaseItemRefs.stockLotId(existingItem);
-            Inventory inventory = inventoryRepository.findById(existingLotId)
-                .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", existingLotId));
+            Inventory inventory = lots.require(existingLotId);
             int existingBaseQuantity = getBaseQuantityOrFallback(existingItem);
             int incomingBaseQuantity = getBaseQuantityOrFallback(newItem);
             // FE always sends add/subtract deltas (including typed qty and +/-). Never replace.
@@ -1378,17 +1424,34 @@ public class CheckoutService {
               break;
             }
 
-            // Case 1 & 2: Update quantity (positive adds, negative decreases). Use payload priceToRetail when provided (update-only or add); for negative qty we only remove, keep existing price.
-            BigDecimal priceToRetail = ((newItem.getQuantity() == null || newItem.getQuantity().compareTo(BigDecimal.ZERO) >= 0)
-                && newItem.getPriceToRetail() != null)
-                ? newItem.getPriceToRetail()
-                : existingItem.getPriceToRetail();
+            // Case 1 & 2: Update quantity (positive adds, negative decreases). A line already in
+            // the cart keeps its own price, disc and scheme unless the request sent them: a price
+            // the batch filled in (every add without rateName) or a negative quantity never
+            // replaces it, nor do disc or scheme the batch filled in.
+            boolean priceSent = (newItem.getQuantity() == null || newItem.getQuantity().compareTo(BigDecimal.ZERO) >= 0)
+                && newItem.getPriceToRetail() != null && !newItem.isBatchFilledPrice();
+            BigDecimal priceToRetail = priceSent ? newItem.getPriceToRetail() : existingItem.getPriceToRetail();
             int saleUnitFactor = getConversionFactorToBase(inventory, existingSaleUnit);
             BigDecimal maximumRetailPrice = resolveInventoryMaximumRetailPrice(
                 inventory,
                 existingItem.getMaximumRetailPrice(),
                 newItem.getMaximumRetailPrice(),
                 priceToRetail);
+            if (StringUtils.hasText(newItem.getRequestedRateName()) && newItem.getMaximumRetailPrice() != null) {
+              // A picked rate brings the MRP for the line's sale unit with its price.
+              maximumRetailPrice = newItem.getMaximumRetailPrice();
+            }
+            // A quantity change on a line sold at MRP keeps it at MRP for its sale unit. Taking the
+            // batch's per-pack MRP (or the per-pack selling price) instead would drop a tablet line
+            // off MRP and add GST on top. A price edit sends no quantity and is left as typed.
+            // A rate picked with the quantity change (rule or legacy) brings its own price and is
+            // not held at MRP.
+            if (wasAtMrp && incomingBaseQuantity != 0
+                && !StringUtils.hasText(newItem.getRequestedRateName())
+                && inventory.getMaximumRetailPrice() != null) {
+              maximumRetailPrice = resolveMaximumRetailPriceForSaleUnit(inventory, existingSaleUnit);
+              priceToRetail = maximumRetailPrice;
+            }
             BigDecimal costPrice = inventory.costForValuation();
             BigDecimal newQuantity = toSaleQuantityDecimal(newBaseQuantity, saleUnitFactor);
             BigDecimal unitPrice = priceToRetail != null ? priceToRetail : BigDecimal.ZERO;
@@ -1397,15 +1460,50 @@ public class CheckoutService {
                 perUnitDiscount.compareTo(BigDecimal.ZERO) > 0
                     ? perUnitDiscount.multiply(newQuantity)
                     : BigDecimal.ZERO;
-            // Use payload additionalDiscount when provided (so changing discount updates the line); otherwise keep existing
-            BigDecimal additionalDiscount = newItem.getSaleAdditionalDiscount() != null
+            boolean discSent = newItem.getSaleAdditionalDiscount() != null && !newItem.isBatchFilledDisc();
+            BigDecimal additionalDiscount = discSent
                 ? newItem.getSaleAdditionalDiscount()
                 : existingItem.getSaleAdditionalDiscount();
-            // Use payload scheme when provided; otherwise keep existing
-            Integer schemePayFor = newItem.getSchemePayFor() != null ? newItem.getSchemePayFor() : existingItem.getSchemePayFor();
-            Integer schemeFree = newItem.getSchemeFree() != null ? newItem.getSchemeFree() : existingItem.getSchemeFree();
-            SchemeType schemeType = newItem.getSchemeType() != null ? newItem.getSchemeType() : existingItem.getSchemeType();
-            BigDecimal schemePercentage = newItem.getSchemePercentage() != null ? newItem.getSchemePercentage() : existingItem.getSchemePercentage();
+            Integer schemePayFor = existingItem.getSchemePayFor();
+            Integer schemeFree = existingItem.getSchemeFree();
+            SchemeType schemeType = existingItem.getSchemeType();
+            BigDecimal schemePercentage = existingItem.getSchemePercentage();
+            if (!newItem.isBatchFilledScheme()) {
+              // Use payload scheme fields when provided; otherwise keep existing
+              if (newItem.getSchemePayFor() != null) schemePayFor = newItem.getSchemePayFor();
+              if (newItem.getSchemeFree() != null) schemeFree = newItem.getSchemeFree();
+              if (newItem.getSchemeType() != null) schemeType = newItem.getSchemeType();
+              if (newItem.getSchemePercentage() != null) schemePercentage = newItem.getSchemePercentage();
+            }
+            // A picked rate's terms are the line's terms: a scheme it lacks is cleared, not kept.
+            if (newItem.isRateTermsPicked()) {
+              additionalDiscount = newItem.getSaleAdditionalDiscount();
+              schemePayFor = newItem.getSchemePayFor();
+              schemeFree = newItem.getSchemeFree();
+              schemeType = newItem.getSchemeType();
+              schemePercentage = newItem.getSchemePercentage();
+            }
+            // A system pick (PTR, MRP, cost) leaves a rule rate's terms: the line goes back to the
+            // batch's own sale disc and scheme. On any other line its disc and scheme stay.
+            if (newItem.isSystemRatePicked()
+                && cartRateResolver.isRuleRate(inventory, existingItem.getAppliedRateName())) {
+              PurchaseItem defaults = purchaseMapper.toPurchaseItemFromCartItem(
+                  new AddToCartRequest.CartItem(), inventory);
+              additionalDiscount = defaults.getSaleAdditionalDiscount();
+              schemePayFor = defaults.getSchemePayFor();
+              schemeFree = defaults.getSchemeFree();
+              schemeType = defaults.getSchemeType();
+              schemePercentage = defaults.getSchemePercentage();
+            }
+            // The line keeps the rate it is billed at until a pick replaces it or a manual price,
+            // disc or scheme edit (a sent value that differs from the line's) clears it.
+            String appliedRateName = existingItem.getAppliedRateName();
+            if (StringUtils.hasText(newItem.getRequestedRateName())) {
+              appliedRateName = newItem.getAppliedRateName();
+            } else if ((priceSent && !sameMoney(newItem.getPriceToRetail(), existingItem.getPriceToRetail()))
+                || discOrSchemeEdited(existingItem, newItem)) {
+              appliedRateName = null;
+            }
 
             PurchaseItem updatedItem = purchaseMapper.createPurchaseItem(
                 existingLotId,
@@ -1416,6 +1514,7 @@ public class CheckoutService {
                 newDiscount.compareTo(BigDecimal.ZERO) > 0 ? newDiscount : BigDecimal.ZERO
             );
             updatedItem.setSaleAdditionalDiscount(additionalDiscount);
+            updatedItem.setAppliedRateName(appliedRateName);
             updatedItem.setSchemeType(schemeType);
             updatedItem.setSchemePercentage(schemePercentage);
             // Normalize: PERCENTAGE -> payFor/free null; FIXED_UNITS -> schemePercentage null
@@ -1459,6 +1558,11 @@ public class CheckoutService {
         if (!found && getBaseQuantityOrFallback(newItem) > 0) {
           CheckoutUtils.applyItemTaxMode(newItem, billingMode);
           mergedItems.add(newItem);
+        }
+        // A rate picked for a lot that is not in the cart has no line to price.
+        if (!found && getBaseQuantityOrFallback(newItem) == 0
+            && StringUtils.hasText(newItem.getRequestedRateName())) {
+          throw new ResourceNotFoundException("Cart line", "lotId", PurchaseItemRefs.stockLotId(newItem));
         }
         // Case 2 & 3: If item not found and quantity is negative, throw error (can't remove what doesn't exist)
         if (!found && getBaseQuantityOrFallback(newItem) < 0) {
@@ -1513,6 +1617,8 @@ public class CheckoutService {
       // You can add logic here to delete the cart if needed
 
       return purchaseRepository.save(existingCart);
+    } catch (ValidationException | ResourceNotFoundException e) {
+      throw e;
     } catch (DataAccessException e) {
       log.error("Database error while updating cart: {}", existingCart.getId(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
@@ -1524,12 +1630,24 @@ public class CheckoutService {
     }
   }
 
-  private void validateStockAvailabilityForCartUpdate(Purchase existingCart, List<PurchaseItem> newItems, String shopId) {
+  private void validateStockAvailabilityForCartUpdate(
+      Purchase existingCart, List<PurchaseItem> newItems, String shopId, CartLots lots) {
     // Create a map of existing cart items by inventoryId for quick lookup
     Map<String, PurchaseItem> existingItemsMap = new HashMap<>();
     if (existingCart.getItems() != null) {
       for (PurchaseItem item : existingCart.getItems()) {
         existingItemsMap.put(cartLineKey(item), item);
+      }
+    }
+    // stock held by the shop's other open quotations for the lots this request adds: read once
+    Map<String, Integer> quotedElsewhere = null;
+    List<String> lotsBeingAdded = new ArrayList<>();
+    for (PurchaseItem item : newItems) {
+      if (!"menu".equalsIgnoreCase(item.getSellMode()) && getBaseQuantityOrFallback(item) > 0) {
+        String lotId = PurchaseItemRefs.stockLotId(item);
+        if (StringUtils.hasText(lotId)) {
+          lotsBeingAdded.add(lotId);
+        }
       }
     }
 
@@ -1545,8 +1663,7 @@ public class CheckoutService {
         int addingBaseQuantity = getBaseQuantityOrFallback(newItem);
         // Get inventory to check available stock
         String stockLotId = PurchaseItemRefs.stockLotId(newItem);
-        Inventory inventory = inventoryRepository.findById(stockLotId)
-            .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", stockLotId));
+        Inventory inventory = lots.require(stockLotId);
 
         if (!shopId.equals(inventory.getShopId())) {
           throw new ValidationException("Inventory lot " + stockLotId + " does not belong to shop " + shopId);
@@ -1575,9 +1692,11 @@ public class CheckoutService {
         }
 
         // Check if final quantity exceeds available stock (minus other open quotations)
-        Map<String, Integer> quotedElsewhere =
-            quotationService.quotedBaseQuantitiesByLot(
-                shopId, existingCart != null ? existingCart.getId() : null);
+        if (quotedElsewhere == null) {
+          quotedElsewhere =
+              quotationService.quotedBaseQuantitiesForLots(
+                  shopId, existingCart != null ? existingCart.getId() : null, lotsBeingAdded);
+        }
         int reservedElsewhere = quotedElsewhere.getOrDefault(stockLotId, 0);
         int availableStock = getCurrentBaseCount(inventory) - reservedElsewhere;
         if (finalBaseQuantity > availableStock) {
@@ -1591,6 +1710,19 @@ public class CheckoutService {
         }
       }
     }
+  }
+
+  /** Sale unit of the cart's line for this lot, if the lot is in the cart. */
+  private static Optional<String> cartLineSaleUnit(Purchase cart, String lotId) {
+    if (cart == null || cart.getItems() == null || !StringUtils.hasText(lotId)) {
+      return Optional.empty();
+    }
+    String key = SellableRef.inventory(lotId).encode();
+    return cart.getItems().stream()
+        .filter(line -> key.equals(PurchaseItemRefs.lineKey(line)))
+        .map(PurchaseItem::getSaleUnit)
+        .filter(StringUtils::hasText)
+        .findFirst();
   }
 
   private String normalizeSaleUnit(String requestedUnit, Inventory inventory) {
@@ -1660,13 +1792,27 @@ public class CheckoutService {
     return conversion.getFactor();
   }
 
+  /**
+   * The batch MRP for one {@code saleUnit}. The batch MRP is per pack; a base unit's share of it
+   * rounds down, so the units of a pack never bill above the pack's MRP (MRP 100 for 15 tablets
+   * is 6.66 a tablet, where 6.67 would make the strip 100.05).
+   */
   private BigDecimal resolveMaximumRetailPriceForSaleUnit(Inventory inventory, String saleUnit) {
     BigDecimal maximumRetailPrice = inventory.getMaximumRetailPrice() != null
         ? inventory.getMaximumRetailPrice()
         : BigDecimal.ZERO;
+    return perPackToSaleUnit(inventory, saleUnit, maximumRetailPrice);
+  }
+
+  /**
+   * A per-pack figure (the batch's pricing unit, e.g. a strip) for one {@code saleUnit}: the
+   * same for the pack, divided by the pack factor and rounded down for the base unit, so the
+   * units of a pack never bill above the pack's figure.
+   */
+  private BigDecimal perPackToSaleUnit(Inventory inventory, String saleUnit, BigDecimal perPack) {
     UnitConversion conversion = getConfiguredUnitConversion(inventory);
     if (conversion == null) {
-      return maximumRetailPrice;
+      return perPack;
     }
     String conversionUnit = conversion.getUnit().trim().toUpperCase();
     int factor = conversion.getFactor();
@@ -1677,10 +1823,10 @@ public class CheckoutService {
         ? inventory.getBaseUnit().trim().toUpperCase()
         : "UNIT";
     if (saleUnit.equals(conversionUnit)) {
-      return maximumRetailPrice;
+      return perPack;
     }
     if (saleUnit.equals(baseUnit)) {
-      return maximumRetailPrice.divide(BigDecimal.valueOf(factor), 2, RoundingMode.HALF_UP);
+      return perPack.divide(BigDecimal.valueOf(factor), 2, RoundingMode.DOWN);
     }
     throw new ValidationException("Unit " + saleUnit + " is not configured for product " + inventory.getName());
   }
@@ -1837,6 +1983,51 @@ public class CheckoutService {
         .toList();
   }
 
+  /** Lot ids named by a cart request, without blanks or repeats. */
+  private static List<String> lotIdsOf(List<AddToCartRequest.CartItem> items) {
+    if (items == null || items.isEmpty()) {
+      return List.of();
+    }
+    Set<String> ids = new java.util.LinkedHashSet<>();
+    for (AddToCartRequest.CartItem item : items) {
+      if (item != null && StringUtils.hasText(item.getId())) {
+        ids.add(item.getId());
+      }
+    }
+    return new ArrayList<>(ids);
+  }
+
+  /**
+   * The lots one cart request works on: read together up front (one inventory query, with product
+   * and pricing hydrated in batch by the repository aspects), then reused by line building, the
+   * stock check and the merge. A lot it was not given is read on its own, as before. Lives for one
+   * request only.
+   */
+  private final class CartLots {
+    private final Map<String, Inventory> byId = new HashMap<>();
+
+    CartLots(List<String> lotIds) {
+      if (!lotIds.isEmpty()) {
+        for (Inventory inv : inventoryRepository.findAllById(lotIds)) {
+          if (inv != null && inv.getId() != null) {
+            byId.put(inv.getId(), inv);
+          }
+        }
+      }
+    }
+
+    /** The lot, or {@link ResourceNotFoundException} as a single read would throw. */
+    Inventory require(String lotId) {
+      Inventory inv = lotId != null ? byId.get(lotId) : null;
+      if (inv == null) {
+        inv = inventoryRepository.findById(lotId)
+            .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId", lotId));
+        byId.put(lotId, inv);
+      }
+      return inv;
+    }
+  }
+
   private void enrichCartItemPackaging(PurchaseItem item, Inventory inventory) {
     if (item == null || inventory == null) {
       return;
@@ -1859,12 +2050,22 @@ public class CheckoutService {
       return;
     }
     BigDecimal grandTotal = purchase.getGrandTotal() != null ? purchase.getGrandTotal() : BigDecimal.ZERO;
-    RecordUsageRequest usageReq = new RecordUsageRequest();
-    usageReq.setBillingAmount(grandTotal);
-    usageReq.setBillCount(1);
-    usageService.recordUsage(shopId, usageReq);
+    // limits were checked by checkCanAddBill before the bill was saved; this only counts it
+    usageService.recordCompletedBill(shopId, grandTotal);
   }
 
+  /**
+   * Takes a completed bill's quantities off its lots.
+   *
+   * <p>Each lot is changed with one guarded update ("take n, only if at least n is in stock"), so
+   * two bills completing at the same moment cannot both sell the last unit or overwrite each
+   * other's count, and nothing but the four stock counts is written (a price or name edit saved at
+   * the same moment is kept). MongoDB applies updates to one document one at a time and checks the
+   * guard against the current value. There is no transaction across lots (AGENTS.md P8), so if a
+   * later lot fails its guard the lots already taken are put back before the error is thrown.
+   *
+   * <p>Lots with a missing stock count (legacy rows) keep the old read-modify-save.
+   */
   private void updateInventoryForCompletedPurchase(Purchase purchase) {
     if (purchase.getItems() == null || purchase.getItems().isEmpty()) {
       log.warn("Purchase {} has no items to process for inventory update", purchase.getId());
@@ -1873,83 +2074,185 @@ public class CheckoutService {
 
     log.info("Updating inventory for {} items in purchase {}", purchase.getItems().size(), purchase.getId());
 
+    // quantities per lot, in bill order; a lot on two lines is taken once for both
+    Map<String, StockTake> takes = new java.util.LinkedHashMap<>();
     for (PurchaseItem item : purchase.getItems()) {
+      if ("menu".equalsIgnoreCase(item.getSellMode())) {
+        continue;
+      }
       String stockLotId = PurchaseItemRefs.stockLotId(item);
-      try {
-        if ("menu".equalsIgnoreCase(item.getSellMode())) {
-          continue;
-        }
-        if (!StringUtils.hasText(stockLotId)) {
-          continue;
-        }
-        Inventory inventory = inventoryRepository.findById(stockLotId)
-            .orElseThrow(() -> new ResourceNotFoundException("Inventory", "lotId",
-                "Inventory not found with lotId: " + stockLotId));
+      if (!StringUtils.hasText(stockLotId)) {
+        continue;
+      }
+      takes.computeIfAbsent(stockLotId, StockTake::new).lines.add(item);
+    }
+    if (takes.isEmpty()) {
+      return;
+    }
 
-        if (!purchase.getShopId().equals(inventory.getShopId())) {
-          throw new ValidationException("Inventory lot " + stockLotId +
-              " does not belong to shop " + purchase.getShopId());
-        }
-
-        // Get current values (handle nulls)
-        int currentCount = getCurrentBaseCount(inventory);
-        int soldCount = getSoldBaseCount(inventory);
-        BigDecimal currentDisplayCount = getCurrentDisplayCount(inventory);
-        BigDecimal soldDisplayCount = getSoldDisplayCount(inventory);
-        int baseQuantity = getBaseQuantityOrFallback(item);
-        BigDecimal displayQuantity = toDisplayQuantity(baseQuantity, inventory);
-
-        // Validate that we have enough stock
-        if (currentCount < baseQuantity) {
-          throw new InsufficientStockException(
-              "Insufficient stock to complete purchase for product: " + inventory.getName() +
-                  ". Available: " + currentCount + ", Required in base units: " + baseQuantity,
-              inventory.getBarcode(), currentCount, baseQuantity);
-        }
-
-        // Update inventory counts
-        inventory.setCurrentCount(currentDisplayCount.subtract(displayQuantity).setScale(4, RoundingMode.HALF_UP));
-        inventory.setSoldCount(soldDisplayCount.add(displayQuantity).setScale(4, RoundingMode.HALF_UP));
-        inventory.setCurrentBaseCount(currentCount - baseQuantity);
-        inventory.setSoldBaseCount(soldCount + baseQuantity);
-
-        // Save updated inventory
-        inventoryRepository.save(inventory);
-        Integer threshold = inventory.getThresholdCount() != null
-          ? inventory.getThresholdCount()
-          : 50;
-
-        log.info(
-          "Threshold check -> lotId={}, current={}, threshold={}",
-          inventory.getId(),
-          inventory.getCurrentBaseCount(),
-          threshold
-        );
-
-        if (inventory.getCurrentBaseCount() <= threshold) {
-
-          log.info("THRESHOLD REACHED — triggering INVENTORY_LOW event");
-
-          InventoryEventDto dto =
-            inventoryMapper.toInventoryLowEventDto(inventory, threshold);
-          var eventDto = inventoryMapper.toNotificationEventDto(dto);
-          eventService.recordAndBroadcastInventoryLow(eventDto);
-        }
-
-        log.info("Updated inventory for lotId: {} - decreased currentCount by {} (new: {}), increased soldCount by {} (new: {})",
-            stockLotId, baseQuantity, inventory.getCurrentBaseCount(), baseQuantity, inventory.getSoldBaseCount());
-
-      } catch (ResourceNotFoundException | ValidationException | InsufficientStockException e) {
-        log.error("Error updating inventory for lotId: {} - {}", stockLotId, e.getMessage());
-        throw e;
-      } catch (Exception e) {
-        log.error("Unexpected error updating inventory for lotId: {}", stockLotId, e);
-        throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
-            "Error updating inventory for lotId " + stockLotId + ": " + e.getMessage(), e);
+    // one read for all the bill's lots, then every check before anything is changed
+    Map<String, Inventory> lots = new HashMap<>();
+    for (Inventory inv : inventoryRepository.findAllById(takes.keySet())) {
+      if (inv != null && inv.getId() != null) {
+        lots.put(inv.getId(), inv);
+      }
+    }
+    for (StockTake take : takes.values()) {
+      Inventory inventory = lots.get(take.lotId);
+      if (inventory == null) {
+        throw new ResourceNotFoundException("Inventory", "lotId",
+            "Inventory not found with lotId: " + take.lotId);
+      }
+      if (!purchase.getShopId().equals(inventory.getShopId())) {
+        throw new ValidationException("Inventory lot " + take.lotId +
+            " does not belong to shop " + purchase.getShopId());
+      }
+      take.inventory = inventory;
+      for (PurchaseItem line : take.lines) {
+        int baseQuantity = getBaseQuantityOrFallback(line);
+        take.base += baseQuantity;
+        take.display = take.display.add(toDisplayQuantity(baseQuantity, inventory));
+      }
+      int currentCount = getCurrentBaseCount(inventory);
+      if (currentCount < take.base) {
+        throw insufficientStockToComplete(inventory, currentCount, take.base);
       }
     }
 
+    List<StockTake> taken = new ArrayList<>();
+    try {
+      for (StockTake take : takes.values()) {
+        if (hasAllStockCounts(take.inventory)) {
+          takeGuarded(purchase.getShopId(), take);
+        } else {
+          takeLegacy(take);
+        }
+        taken.add(take);
+      }
+    } catch (RuntimeException e) {
+      if (!com.inventory.common.tx.MongoTx.inTransaction()) {
+        putBack(taken); // without a transaction, give back what was already taken
+      }
+      throw e;
+    }
+
+    for (StockTake take : takes.values()) {
+      raiseInventoryLowIfNeeded(take.inventory);
+      log.info("Updated inventory for lotId: {} - decreased currentCount by {} (new: {}), increased soldCount by {} (new: {})",
+          take.lotId, take.base, take.inventory.getCurrentBaseCount(), take.base, take.inventory.getSoldBaseCount());
+    }
+
     log.info("Successfully updated inventory for all items in purchase {}", purchase.getId());
+  }
+
+  /** One lot's share of a completed bill. */
+  private static final class StockTake {
+    final String lotId;
+    final List<PurchaseItem> lines = new ArrayList<>();
+    Inventory inventory;
+    int base;
+    BigDecimal display = BigDecimal.ZERO;
+
+    StockTake(String lotId) {
+      this.lotId = lotId;
+    }
+  }
+
+  private static boolean hasAllStockCounts(Inventory inventory) {
+    return inventory.getCurrentBaseCount() != null
+        && inventory.getSoldBaseCount() != null
+        && inventory.getCurrentCount() != null
+        && inventory.getSoldCount() != null;
+  }
+
+  /** "Take n, only if at least n is in stock" as one update; nothing but the counts is written. */
+  private void takeGuarded(String shopId, StockTake take) {
+    Query guarded = Query.query(Criteria.where("_id").is(take.lotId)
+        .and("shopId").is(shopId)
+        .and("currentBaseCount").gte(take.base));
+    Update update = new Update()
+        .inc("currentBaseCount", -take.base)
+        .inc("soldBaseCount", take.base)
+        .inc("currentCount", new Decimal128(take.display.negate()))
+        .inc("soldCount", new Decimal128(take.display));
+    long matched;
+    try {
+      matched = mongoTemplate.updateFirst(guarded, update, Inventory.class).getMatchedCount();
+    } catch (RuntimeException e) {
+      log.error("Unexpected error updating inventory for lotId: {}", take.lotId, e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
+          "Error updating inventory for lotId " + take.lotId + ": " + e.getMessage(), e);
+    }
+    if (matched != 1) {
+      // sold elsewhere since it was read: report what is there now
+      Inventory now = inventoryRepository.findById(take.lotId).orElse(take.inventory);
+      int available = getCurrentBaseCount(now);
+      log.warn("Stock for lotId {} changed while completing: available {}, required {}", take.lotId, available, take.base);
+      throw insufficientStockToComplete(now, available, take.base);
+    }
+    Inventory inventory = take.inventory;
+    inventory.setCurrentBaseCount(inventory.getCurrentBaseCount() - take.base);
+    inventory.setSoldBaseCount(inventory.getSoldBaseCount() + take.base);
+    inventory.setCurrentCount(inventory.getCurrentCount().subtract(take.display).setScale(4, RoundingMode.HALF_UP));
+    inventory.setSoldCount(inventory.getSoldCount().add(take.display).setScale(4, RoundingMode.HALF_UP));
+  }
+
+  /** Lots with a missing count: the previous read-modify-save, which also fills the counts in. */
+  private void takeLegacy(StockTake take) {
+    Inventory inventory = take.inventory;
+    int currentCount = getCurrentBaseCount(inventory);
+    int soldCount = getSoldBaseCount(inventory);
+    BigDecimal currentDisplayCount = getCurrentDisplayCount(inventory);
+    BigDecimal soldDisplayCount = getSoldDisplayCount(inventory);
+    inventory.setCurrentCount(currentDisplayCount.subtract(take.display).setScale(4, RoundingMode.HALF_UP));
+    inventory.setSoldCount(soldDisplayCount.add(take.display).setScale(4, RoundingMode.HALF_UP));
+    inventory.setCurrentBaseCount(currentCount - take.base);
+    inventory.setSoldBaseCount(soldCount + take.base);
+    try {
+      inventoryRepository.save(inventory);
+    } catch (RuntimeException e) {
+      log.error("Unexpected error updating inventory for lotId: {}", take.lotId, e);
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR,
+          "Error updating inventory for lotId " + take.lotId + ": " + e.getMessage(), e);
+    }
+  }
+
+  /** Gives back what an unfinished completion already took (no transaction across lots). */
+  private void putBack(List<StockTake> taken) {
+    for (StockTake take : taken) {
+      try {
+        Update back = new Update()
+            .inc("currentBaseCount", take.base)
+            .inc("soldBaseCount", -take.base)
+            .inc("currentCount", new Decimal128(take.display))
+            .inc("soldCount", new Decimal128(take.display.negate()));
+        mongoTemplate.updateFirst(Query.query(Criteria.where("_id").is(take.lotId)), back, Inventory.class);
+        log.info("Put back {} (base) on lotId {} after a failed completion", take.base, take.lotId);
+      } catch (RuntimeException e) {
+        log.error("Could not put back {} (base) on lotId {} after a failed completion; stock is now low by that much",
+            take.base, take.lotId, e);
+      }
+    }
+  }
+
+  private InsufficientStockException insufficientStockToComplete(Inventory inventory, int available, int required) {
+    return new InsufficientStockException(
+        "Insufficient stock to complete purchase for product: " + inventory.getName() +
+            ". Available: " + available + ", Required in base units: " + required,
+        inventory.getBarcode(), available, required);
+  }
+
+  private void raiseInventoryLowIfNeeded(Inventory inventory) {
+    Integer threshold = inventory.getThresholdCount() != null ? inventory.getThresholdCount() : 50;
+    log.info("Threshold check -> lotId={}, current={}, threshold={}",
+        inventory.getId(), inventory.getCurrentBaseCount(), threshold);
+    if (inventory.getCurrentBaseCount() != null && inventory.getCurrentBaseCount() <= threshold) {
+      log.info("THRESHOLD REACHED — triggering INVENTORY_LOW event");
+      InventoryEventDto dto = inventoryMapper.toInventoryLowEventDto(inventory, threshold);
+      var eventDto = inventoryMapper.toNotificationEventDto(dto);
+      // pushed to open screens only once the stock change is saved
+      com.inventory.common.tx.MongoTx.afterCommit(() -> eventService.recordAndBroadcastInventoryLow(eventDto));
+    }
   }
 
   /**
@@ -2066,7 +2369,7 @@ public class CheckoutService {
     if (purchase == null) {
       return null;
     }
-    if (creditChargeFacade == null && creditService == null) {
+    if (creditLedger == null) {
       return null;
     }
     BigDecimal total = nzMoney(purchase.getGrandTotal());
@@ -2085,27 +2388,24 @@ public class CheckoutService {
           "Customer must be selected for credit/split sale so due can be tracked.");
     }
 
-    com.inventory.credit.rest.dto.request.CreateCreditChargeRequest charge =
-        new com.inventory.credit.rest.dto.request.CreateCreditChargeRequest();
-    charge.setPartyType(com.inventory.credit.domain.model.CreditPartyType.CUSTOMER);
-    charge.setPartyId(purchase.getCustomerId().trim());
-    charge.setPartyDisplayName(resolveCustomerPartyDisplayNameForCredit(purchase));
-    charge.setPartyPhone(null);
-    charge.setAmount(payment.receivable());
-    charge.setReferenceType("SALE");
-    charge.setReferenceId(purchase.getId());
-    charge.setSourceKey("SALE:CREDIT:" + purchase.getId());
-    charge.setNote(
-        "Sale due"
-            + (StringUtils.hasText(purchase.getInvoiceNo())
-                ? " · Inv " + purchase.getInvoiceNo().trim()
-                : ""));
+    com.inventory.credit.api.CreditCharge charge =
+        com.inventory.credit.api.CreditCharge.builder()
+            .partyType(com.inventory.credit.api.CreditPartyType.CUSTOMER)
+            .partyId(purchase.getCustomerId().trim())
+            .partyDisplayName(resolveCustomerPartyDisplayNameForCredit(purchase))
+            .partyPhone(null)
+            .amount(payment.receivable())
+            .referenceType("SALE")
+            .referenceId(purchase.getId())
+            .sourceKey("SALE:CREDIT:" + purchase.getId())
+            .note(
+                "Sale due"
+                    + (StringUtils.hasText(purchase.getInvoiceNo())
+                        ? " · Inv " + purchase.getInvoiceNo().trim()
+                        : ""))
+            .build();
 
-    com.inventory.credit.domain.model.CreditEntry entry =
-        creditChargeFacade != null
-            ? creditChargeFacade.createCharge(shopId, userId, charge)
-            : creditService.createCharge(shopId, userId, charge);
-    return entry != null ? entry.getId() : null;
+    return creditLedger.charge(shopId, userId, charge);
   }
 
   private static void applyPaymentSplitToPurchase(
@@ -2221,6 +2521,104 @@ public class CheckoutService {
     item.setUnitFactor(1);
     PurchaseItemRefs.normalize(item);
     return item;
+  }
+
+  /**
+   * Puts a picked rate on the line. A rule rate's base, disc and scheme replace whatever the line
+   * had -- the batch's sale defaults and any disc/scheme sent with the pick. A system pick (PTR,
+   * MRP, cost) puts that batch field on the line; its disc and scheme go back to the batch's own
+   * sale defaults only when the line was at a rule rate (see the cart merge), so a typed disc on
+   * any other line survives. A legacy rate gives only its price.
+   *
+   * <p>A rate's figures are per pack (the batch's pricing unit). On a line sold by another unit
+   * (a tablet line) the price goes on for that unit, rounded down as the per-unit MRP is, and the
+   * line MRP becomes the MRP for that unit; disc and scheme apply unchanged.
+   */
+  private void applyPickedRateTerms(PurchaseItem line, CartRateResolver.LineTerms terms,
+      Inventory inventory, String saleUnit) {
+    if (terms.price() != null) {
+      line.setPriceToRetail(perPackToSaleUnit(inventory, saleUnit, terms.price()));
+      if (inventory.getMaximumRetailPrice() != null) {
+        line.setMaximumRetailPrice(resolveMaximumRetailPriceForSaleUnit(inventory, saleUnit));
+      }
+      line.setBatchFilledPrice(false);
+    }
+    line.setAppliedRateName(terms.name());
+    if (terms.isSystem()) {
+      // Disc and scheme are left as the request and batch set them; the merge resets them to
+      // the batch's sale defaults only when the line in the cart is at a rule rate.
+      line.setSystemRatePicked(true);
+      return;
+    }
+    if (!terms.replacesTerms()) {
+      return;
+    }
+    line.setSaleAdditionalDiscount(terms.discountPercent());
+    setRateScheme(line, terms);
+    line.setRateTermsPicked(true);
+  }
+
+  /**
+   * Puts the batch's default rule rate on a new line: its base (per sale unit, as a pick), and
+   * its disc and scheme in place of the batch's sale defaults. Disc or scheme sent with the item
+   * still win, as they do today, and then the line is not at the rate's terms, so it records no
+   * applied rate. The price stays marked batch-filled: if the lot is already in the cart, the
+   * merge keeps that line's own price and any disc/scheme the request did not send.
+   */
+  private void applyDefaultRateTerms(PurchaseItem line, CartRateResolver.LineTerms terms,
+      AddToCartRequest.CartItem item, Inventory inventory, String saleUnit) {
+    if (terms.price() != null) {
+      line.setPriceToRetail(perPackToSaleUnit(inventory, saleUnit, terms.price()));
+      if (inventory.getMaximumRetailPrice() != null) {
+        line.setMaximumRetailPrice(resolveMaximumRetailPriceForSaleUnit(inventory, saleUnit));
+      }
+    }
+    boolean discSent = item.getSaleAdditionalDiscount() != null;
+    if (!discSent) {
+      line.setSaleAdditionalDiscount(terms.discountPercent());
+    }
+    boolean schemeSent = item.getSchemePayFor() != null || item.getSchemeFree() != null
+        || item.getSchemeType() != null || item.getSchemePercentage() != null;
+    if (!schemeSent) {
+      setRateScheme(line, terms);
+    }
+    line.setAppliedRateName(discSent || schemeSent ? null : terms.name());
+  }
+
+  /**
+   * Whether an incoming line edits the disc or scheme of the line in the cart: it sent one (not
+   * batch-filled, not a pick) that differs from the line's. ScanSell's + resends the line's own
+   * disc and scheme, which is no edit.
+   */
+  private static boolean discOrSchemeEdited(PurchaseItem existing, PurchaseItem incoming) {
+    if (StringUtils.hasText(incoming.getRequestedRateName())) {
+      return false;
+    }
+    if (incoming.getSaleAdditionalDiscount() != null && !incoming.isBatchFilledDisc()
+        && !sameMoney(incoming.getSaleAdditionalDiscount(), existing.getSaleAdditionalDiscount())) {
+      return true;
+    }
+    if (incoming.isBatchFilledScheme()) {
+      return false;
+    }
+    return (incoming.getSchemeType() != null && incoming.getSchemeType() != existing.getSchemeType())
+        || (incoming.getSchemePayFor() != null && !incoming.getSchemePayFor().equals(existing.getSchemePayFor()))
+        || (incoming.getSchemeFree() != null && !incoming.getSchemeFree().equals(existing.getSchemeFree()))
+        || (incoming.getSchemePercentage() != null
+            && !sameMoney(incoming.getSchemePercentage(), existing.getSchemePercentage()));
+  }
+
+  private static boolean sameMoney(BigDecimal a, BigDecimal b) {
+    BigDecimal x = a != null ? a : BigDecimal.ZERO;
+    BigDecimal y = b != null ? b : BigDecimal.ZERO;
+    return x.compareTo(y) == 0;
+  }
+
+  private static void setRateScheme(PurchaseItem line, CartRateResolver.LineTerms terms) {
+    line.setSchemeType(terms.schemeType() != null ? SchemeType.valueOf(terms.schemeType()) : null);
+    line.setSchemePayFor(terms.payFor());
+    line.setSchemeFree(terms.free());
+    line.setSchemePercentage(terms.percentage());
   }
 
   private CartLineInput toCartLineInput(AddToCartRequest.CartItem item) {

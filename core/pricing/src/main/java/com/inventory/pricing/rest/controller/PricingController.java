@@ -1,6 +1,8 @@
 package com.inventory.pricing.rest.controller;
 
 
+import com.inventory.common.heavy.HeavyKind;
+import com.inventory.common.heavy.HeavyRequest;
 import com.inventory.metrics.annotation.Latency;
 import com.inventory.metrics.annotation.RecordRequestRate;
 import com.inventory.metrics.annotation.RecordStatusCodes;
@@ -60,21 +62,25 @@ public class PricingController {
       @RequestBody UpdateDefaultPriceRequest request,
       HttpServletRequest httpRequest) {
     String shopId = (String) httpRequest.getAttribute("shopId");
+    String userId = (String) httpRequest.getAttribute("userId");
     pricingValidator.validateShopId(shopId);
-    return ResponseEntity.ok(ApiResponse.success(pricingService.updateDefaultPrice(pricingId, request, shopId)));
+    return ResponseEntity.ok(ApiResponse.success(
+        pricingService.updateDefaultPrice(pricingId, request, shopId, userId)));
   }
 
   /**
    * Bulk update default/selling price for multiple pricing records.
    */
+  @HeavyRequest(HeavyKind.IMPORT)
   @PostMapping("/bulk-update")
   public ResponseEntity<ApiResponse<List<PricingResponse>>> bulkUpdateDefaultPrice(
       @RequestBody BulkUpdateDefaultPriceRequest request,
       HttpServletRequest httpRequest) {
     String shopId = (String) httpRequest.getAttribute("shopId");
+    String userId = (String) httpRequest.getAttribute("userId");
     pricingValidator.validateShopId(shopId);
     pricingValidator.validateBulkUpdateRequest(request != null ? request.getUpdates() : null);
-    List<PricingResponse> results = pricingService.bulkUpdateDefaultPrice(request.getUpdates(), shopId);
+    List<PricingResponse> results = pricingService.bulkUpdateDefaultPrice(request.getUpdates(), shopId, userId);
     return ResponseEntity.ok(ApiResponse.success(results));
   }
 }

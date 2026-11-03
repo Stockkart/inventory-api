@@ -53,6 +53,16 @@ public final class ProductSearchUpdateFields {
     if (request.getBaseUnit() != null) fields.add("baseUnit");
     if (request.getUnitConversions() != null) fields.add("unitsPerPack");
     if (request.getThresholdCount() != null) fields.add("thresholdCount");
+    if (request.getClearFields() != null) {
+      // A clear needs the same grant as setting the field; schemes are granted by their type.
+      for (String field : request.getClearFields()) {
+        switch (field) {
+          case "saleScheme" -> fields.add("schemeType");
+          case "purchaseScheme" -> fields.add("purchaseSchemeType");
+          default -> fields.add(field);
+        }
+      }
+    }
     Map<String, Object> vertical = request.getVerticalFields();
     if (vertical != null) {
       for (String key : vertical.keySet()) {

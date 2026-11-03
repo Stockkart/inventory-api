@@ -1,12 +1,11 @@
 package com.inventory.product.domain.model.pricing;
 
-import com.inventory.pricing.rest.dto.response.SchemeDto;
-import com.inventory.pricing.rest.dto.response.PricingReadDto;
-import com.inventory.pricing.service.InventoryPricingAdapter;
+import com.inventory.pricing.api.SchemeTerms;
+import com.inventory.pricing.api.LotPricing;
+import com.inventory.pricing.api.InventoryPricing;
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.enums.SchemeType;
-import com.inventory.product.domain.repository.ShopRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -19,6 +18,7 @@ import org.bson.Document;
 import org.bson.types.ObjectId;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,15 +31,12 @@ import java.util.Map;
 public class InventoryPricingReadHandler {
 
   @Autowired
-  private InventoryPricingAdapter pricingPort;
+  private InventoryPricing pricingPort;
 
   @Autowired
   private MongoTemplate mongoTemplate;
 
-  @Autowired
-  private ShopRepository shopRepository;
-
-  public PricingReadDto resolve(Inventory inventory) {
+  public LotPricing resolve(Inventory inventory) {
     if (inventory == null) return null;
     if (StringUtils.hasText(inventory.getPricingId())) {
       log.debug("Resolving pricing from Pricing table for inventory {} (pricingId={})", inventory.getId(), inventory.getPricingId());
@@ -49,7 +46,12 @@ public class InventoryPricingReadHandler {
     return readLegacyPricing(inventory.getId());
   }
 
-  public Map<String, PricingReadDto> resolveBatch(List<Inventory> inventories) {
+  /**
+   * Pricing for a list of lots in at most two queries: one for the pricing records, one for the
+   * legacy lots that still carry their price on the inventory document. Reading legacy lots one at
+   * a time made every list read (dashboard, search, low stock) cost one round trip per legacy lot.
+   */
+  public Map<String, LotPricing> resolveBatch(List<Inventory> inventories) {
     if (inventories == null || inventories.isEmpty()) return Map.of();
 
     List<String> pricingIds = inventories.stream()
@@ -57,43 +59,46 @@ public class InventoryPricingReadHandler {
         .filter(StringUtils::hasText)
         .distinct()
         .toList();
+    List<String> legacyIds = inventories.stream()
+        .filter(inv -> inv.getId() != null && !StringUtils.hasText(inv.getPricingId()))
+        .map(Inventory::getId)
+        .distinct()
+        .toList();
 
-    Map<String, PricingReadDto> pricingMap = pricingPort.findByIdIn(pricingIds);
-    Map<String, PricingReadDto> result = new HashMap<>();
+    Map<String, LotPricing> pricingMap = pricingIds.isEmpty() ? Map.of() : pricingPort.findByIdIn(pricingIds);
+    Map<String, LotPricing> legacyMap = readLegacyPricingBatch(legacyIds);
+    Map<String, LotPricing> result = new HashMap<>();
 
     for (Inventory inv : inventories) {
       String invId = inv.getId();
       if (invId == null) continue;
-      if (StringUtils.hasText(inv.getPricingId())) {
-        PricingReadDto p = pricingMap.get(inv.getPricingId());
-        if (p != null) result.put(invId, p);
-      } else {
-        PricingReadDto legacy = readLegacyPricing(invId);
-        if (legacy != null) result.put(invId, legacy);
-      }
+      LotPricing p = StringUtils.hasText(inv.getPricingId())
+          ? pricingMap.get(inv.getPricingId())
+          : legacyMap.get(invId);
+      if (p != null) result.put(invId, p);
     }
     return result;
   }
 
   public void enrich(Inventory inventory) {
     if (inventory == null) return;
-    PricingReadDto p = resolve(inventory);
+    LotPricing p = resolve(inventory);
     if (p != null) {
-      log.debug("enrich inventory {} applying sgst={} cgst={}", inventory.getId(), p.getSgst(), p.getCgst());
+      log.debug("enrich inventory {} applying sgst={} cgst={}", inventory.getId(), p.sgst(), p.cgst());
       applyPricing(inventory, p);
     }
   }
 
   public void enrich(List<Inventory> inventories) {
     if (inventories == null || inventories.isEmpty()) return;
-    Map<String, PricingReadDto> map = resolveBatch(inventories);
+    Map<String, LotPricing> map = resolveBatch(inventories);
     for (Inventory inv : inventories) {
-      PricingReadDto p = map.get(inv.getId());
+      LotPricing p = map.get(inv.getId());
       if (p != null) applyPricing(inv, p);
     }
   }
 
-  private PricingReadDto readLegacyPricing(String inventoryId) {
+  private LotPricing readLegacyPricing(String inventoryId) {
     Object idQuery = isValidObjectId(inventoryId) ? new ObjectId(inventoryId) : inventoryId;
     Document doc = mongoTemplate.findOne(
         Query.query(Criteria.where("_id").is(idQuery)),
@@ -103,6 +108,34 @@ public class InventoryPricingReadHandler {
       log.debug("readLegacyPricing: no document found for inventoryId={}", inventoryId);
       return null;
     }
+    return legacyPricingFrom(inventoryId, doc);
+  }
+
+  /** Legacy pricing for many lots in one query (price fields only), keyed by inventory id. */
+  private Map<String, LotPricing> readLegacyPricingBatch(List<String> inventoryIds) {
+    if (inventoryIds.isEmpty()) return Map.of();
+    List<Object> ids = new ArrayList<>(inventoryIds.size());
+    for (String id : inventoryIds) {
+      ids.add(isValidObjectId(id) ? new ObjectId(id) : id);
+    }
+    Query query = Query.query(Criteria.where("_id").in(ids)).cursorBatchSize(ids.size()); // one reply, no getMore
+    LEGACY_PRICING_FIELDS.forEach(f -> query.fields().include(f));
+    Map<String, LotPricing> out = new HashMap<>();
+    for (Document doc : mongoTemplate.find(query, Document.class, "inventory")) {
+      String id = String.valueOf(doc.get("_id"));
+      LotPricing p = legacyPricingFrom(id, doc);
+      if (p != null) out.put(id, p);
+    }
+    return out;
+  }
+
+  /** Every field {@link #legacyPricingFrom} reads. */
+  private static final List<String> LEGACY_PRICING_FIELDS = List.of(
+      "maximumRetailPrice", "costPrice", "priceToRetail", "sellingPrice", "additionalDiscount", "sgst", "cgst",
+      "schemeType", "schemePayFor", "schemeFree", "schemePercentage",
+      "purchaseSchemeType", "purchaseSchemePayFor", "purchaseSchemeFree", "purchaseSchemePercentage");
+
+  private LotPricing legacyPricingFrom(String inventoryId, Document doc) {
     BigDecimal mrp = getBigDecimal(doc, "maximumRetailPrice");
     BigDecimal cost = getBigDecimal(doc, "costPrice");
     BigDecimal ptr = getBigDecimal(doc, "priceToRetail");
@@ -110,67 +143,59 @@ public class InventoryPricingReadHandler {
     BigDecimal discount = getBigDecimal(doc, "additionalDiscount");
     String sgst = toStringOrNull(doc.get("sgst"));
     String cgst = toStringOrNull(doc.get("cgst"));
-    SchemeDto saleScheme = buildLegacySaleScheme(doc);
-    SchemeDto purchaseScheme = buildLegacyPurchaseScheme(doc);
+    SchemeTerms saleScheme = buildLegacySaleScheme(doc);
+    SchemeTerms purchaseScheme = buildLegacyPurchaseScheme(doc);
     log.debug("readLegacyPricing inventoryId={} docKeys={} sgst={} (raw={}) cgst={} (raw={})",
         inventoryId, doc.keySet(), sgst, doc.get("sgst"), cgst, doc.get("cgst"));
     if (mrp == null && cost == null && ptr == null && discount == null && sgst == null && cgst == null
         && saleScheme == null && purchaseScheme == null) {
       return null;
     }
-    return new PricingReadDto(mrp, cost, null, ptr, null, null, ptr, discount, null, purchaseScheme, saleScheme, sgst, cgst, null);
+    return new LotPricing(mrp, cost, null, ptr, null, null, ptr, discount, null, purchaseScheme, saleScheme, sgst, cgst, null);
   }
 
-  private void applyPricing(Inventory inv, PricingReadDto p) {
-    inv.setMaximumRetailPrice(p.getMaximumRetailPrice());
-    inv.setCostPrice(p.getCostPrice());
+  private void applyPricing(Inventory inv, LotPricing p) {
+    inv.setMaximumRetailPrice(p.maximumRetailPrice());
+    inv.setCostPrice(p.costPrice());
     inv.setEffectiveCostPrice(p.resolveEffectiveCostPrice());
-    inv.setRates(p.getRates());
-    inv.setDefaultRate(StringUtils.hasText(p.getDefaultRate())
-        ? p.getDefaultRate()
-        : (p.getPriceToRetail() != null ? "priceToRetail" : null));
-    inv.setPriceToRetail(p.getPriceToRetail());
-    inv.setSellingPrice(p.getEffectivePrice());
-    inv.setSaleAdditionalDiscount(p.getSaleAdditionalDiscount());
-    inv.setPurchaseAdditionalDiscount(p.getPurchaseAdditionalDiscount());
-    if (p.getSaleScheme() != null) {
-      var ss = p.getSaleScheme();
-      if (StringUtils.hasText(ss.getSchemeType())) {
+    inv.setRates(p.rates());
+    inv.setDefaultRate(StringUtils.hasText(p.defaultRate())
+        ? p.defaultRate()
+        : (p.priceToRetail() != null ? "priceToRetail" : null));
+    inv.setPriceToRetail(p.priceToRetail());
+    inv.setSellingPrice(p.effectivePrice());
+    inv.setSaleAdditionalDiscount(p.saleAdditionalDiscount());
+    inv.setPurchaseAdditionalDiscount(p.purchaseAdditionalDiscount());
+    if (p.saleScheme() != null) {
+      var ss = p.saleScheme();
+      if (StringUtils.hasText(ss.schemeType())) {
         try {
-          inv.setSchemeType(SchemeType.valueOf(ss.getSchemeType()));
+          inv.setSchemeType(SchemeType.valueOf(ss.schemeType()));
         } catch (IllegalArgumentException ignored) { /* keep null */ }
       }
-      inv.setSchemePayFor(ss.getSchemePayFor());
-      inv.setSchemeFree(ss.getSchemeFree());
-      inv.setSchemePercentage(ss.getSchemePercentage());
+      inv.setSchemePayFor(ss.schemePayFor());
+      inv.setSchemeFree(ss.schemeFree());
+      inv.setSchemePercentage(ss.schemePercentage());
     }
-    if (p.getPurchaseScheme() != null) {
-      var ps = p.getPurchaseScheme();
-      if (StringUtils.hasText(ps.getSchemeType())) {
+    if (p.purchaseScheme() != null) {
+      var ps = p.purchaseScheme();
+      if (StringUtils.hasText(ps.schemeType())) {
         try {
-          inv.setPurchaseSchemeType(SchemeType.valueOf(ps.getSchemeType()));
+          inv.setPurchaseSchemeType(SchemeType.valueOf(ps.schemeType()));
         } catch (IllegalArgumentException ignored) { /* keep null */ }
       }
-      inv.setPurchaseSchemePayFor(ps.getSchemePayFor());
-      inv.setPurchaseSchemeFree(ps.getSchemeFree());
-      inv.setPurchaseSchemePercentage(ps.getSchemePercentage());
+      inv.setPurchaseSchemePayFor(ps.schemePayFor());
+      inv.setPurchaseSchemeFree(ps.schemeFree());
+      inv.setPurchaseSchemePercentage(ps.schemePercentage());
     }
     if (inv.getBillingMode() == BillingMode.BASIC) {
       inv.setSgst(null);
       inv.setCgst(null);
       return;
     }
-    String sgst = p.getSgst();
-    String cgst = p.getCgst();
-    if (!StringUtils.hasText(sgst) || !StringUtils.hasText(cgst)) {
-      var shop = shopRepository.findById(inv.getShopId()).orElse(null);
-      if (shop != null) {
-        if (!StringUtils.hasText(sgst)) sgst = shop.getSgst();
-        if (!StringUtils.hasText(cgst)) cgst = shop.getCgst();
-      }
-    }
-    inv.setSgst(sgst);
-    inv.setCgst(cgst);
+    // GST comes from the lot's own pricing only; the shop carries no GST rate.
+    inv.setSgst(p.sgst());
+    inv.setCgst(p.cgst());
   }
 
   private static boolean isValidObjectId(String s) {
@@ -194,32 +219,22 @@ public class InventoryPricingReadHandler {
     }
   }
 
-  private static SchemeDto buildLegacySaleScheme(Document doc) {
+  private static SchemeTerms buildLegacySaleScheme(Document doc) {
     String schemeType = toStringOrNull(doc.get("schemeType"));
     Integer payFor = getInt(doc, "schemePayFor");
     Integer free = getInt(doc, "schemeFree");
     BigDecimal pct = getBigDecimal(doc, "schemePercentage");
     if (schemeType == null && payFor == null && free == null && pct == null) return null;
-    SchemeDto dto = new SchemeDto();
-    dto.setSchemeType(schemeType);
-    dto.setSchemePayFor(payFor);
-    dto.setSchemeFree(free);
-    dto.setSchemePercentage(pct);
-    return dto;
+    return new SchemeTerms(schemeType, payFor, free, pct);
   }
 
-  private static SchemeDto buildLegacyPurchaseScheme(Document doc) {
+  private static SchemeTerms buildLegacyPurchaseScheme(Document doc) {
     String schemeType = toStringOrNull(doc.get("purchaseSchemeType"));
     Integer payFor = getInt(doc, "purchaseSchemePayFor");
     Integer free = getInt(doc, "purchaseSchemeFree");
     BigDecimal pct = getBigDecimal(doc, "purchaseSchemePercentage");
     if (schemeType == null && payFor == null && free == null && pct == null) return null;
-    SchemeDto dto = new SchemeDto();
-    dto.setSchemeType(schemeType);
-    dto.setSchemePayFor(payFor);
-    dto.setSchemeFree(free);
-    dto.setSchemePercentage(pct);
-    return dto;
+    return new SchemeTerms(schemeType, payFor, free, pct);
   }
 
   private static Integer getInt(Document doc, String key) {

@@ -5,8 +5,8 @@ import com.inventory.credit.rest.dto.request.CreateCreditSettlementRequest;
 
 /**
  * Settlement entry point used by {@link com.inventory.credit.rest.controller.CreditController}.
- * The product module supplies an implementation that posts accounting journal entries in the
- * same transaction; a credit-only fallback is registered when accounting is not wired.
+ * Implemented by {@link AccountingCreditSettlementFacade}, which posts the journal entry in the
+ * same transaction.
  */
 public interface CreditSettlementFacade {
 

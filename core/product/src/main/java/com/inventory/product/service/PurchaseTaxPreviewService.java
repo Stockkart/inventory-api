@@ -1,7 +1,7 @@
 package com.inventory.product.service;
 
 import com.inventory.common.constants.PurchaseTaxTreatment;
-import com.inventory.pricing.domain.model.Pricing;
+import com.inventory.pricing.api.PricingView;
 import com.inventory.product.domain.model.VendorPurchaseInvoice;
 import com.inventory.product.domain.model.VendorPurchaseInvoiceLine;
 import com.inventory.product.mapper.InventoryMapper;
@@ -43,7 +43,7 @@ public class PurchaseTaxPreviewService {
 
     VendorPurchaseInvoice invoice = new VendorPurchaseInvoice();
     List<VendorPurchaseInvoiceLine> lines = new ArrayList<>();
-    Map<String, Pricing> pricingByRow = new HashMap<>();
+    Map<String, PricingView> pricingByRow = new HashMap<>();
     int totalQuantity = 0;
     for (CreateInventoryItemRequest item : request.getItems()) {
       String rowId = "row-" + lines.size();

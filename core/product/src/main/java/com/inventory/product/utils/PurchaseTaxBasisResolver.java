@@ -2,9 +2,8 @@ package com.inventory.product.utils;
 
 import com.inventory.common.util.GstMath;
 import com.inventory.common.constants.PurchaseTaxTreatment;
-import com.inventory.pricing.domain.model.Pricing;
-import com.inventory.pricing.domain.model.Scheme;
-import com.inventory.pricing.utils.constants.PricingConstants;
+import com.inventory.pricing.api.PricingView;
+import com.inventory.pricing.api.LandedCost;
 import com.inventory.product.domain.model.VendorPurchaseInvoice;
 import com.inventory.product.domain.model.VendorPurchaseInvoiceLine;
 
@@ -36,7 +35,7 @@ public final class PurchaseTaxBasisResolver {
    */
   public static PurchaseTaxBasis resolve(
       VendorPurchaseInvoice invoice,
-      Function<String, Pricing> pricingByInventoryId,
+      Function<String, PricingView> pricingByInventoryId,
       PurchaseTaxTreatment treatment,
       boolean interstate) {
 
@@ -49,7 +48,7 @@ public final class PurchaseTaxBasisResolver {
     List<BigDecimal> rates = new ArrayList<>(lines.size());
     List<BigDecimal> values = new ArrayList<>(lines.size());
     for (VendorPurchaseInvoiceLine line : lines) {
-      Pricing pricing = line.getInventoryId() == null ? null
+      PricingView pricing = line.getInventoryId() == null ? null
           : pricingByInventoryId.apply(line.getInventoryId());
       rates.add(rateOf(pricing));
       values.add(lineValue(line, pricing));
@@ -81,12 +80,12 @@ public final class PurchaseTaxBasisResolver {
    * Quantity times cost after the line's price reductions, or its list cost where none was
    * recorded.
    */
-  private static BigDecimal lineValue(VendorPurchaseInvoiceLine line, Pricing pricing) {
+  private static BigDecimal lineValue(VendorPurchaseInvoiceLine line, PricingView pricing) {
     BigDecimal qty = line.getCount() == null
         ? BigDecimal.ZERO : BigDecimal.valueOf(line.getCount());
     BigDecimal discounted = discountedUnitCost(pricing);
-    if (discounted != null && pricing.getCostPrice() != null
-        && discounted.compareTo(pricing.getCostPrice()) < 0) {
+    if (discounted != null && pricing.costPrice() != null
+        && discounted.compareTo(pricing.costPrice()) < 0) {
       return money(discounted.multiply(qty));
     }
     BigDecimal listCost = line.getCostPrice() == null ? BigDecimal.ZERO : line.getCostPrice();
@@ -130,12 +129,12 @@ public final class PurchaseTaxBasisResolver {
    * out -- the two things a raw {@code costPrice} does not account for, and between them worth
    * more than a third of the figure on a scheme-discounted inclusive bill.
    */
-  public static BigDecimal unitTaxable(Pricing pricing, PurchaseTaxTreatment treatment,
+  public static BigDecimal unitTaxable(PricingView pricing, PurchaseTaxTreatment treatment,
       BigDecimal ratePct) {
     BigDecimal cost = discountedUnitCost(pricing);
     if (cost == null) {
-      cost = pricing != null && pricing.getCostPrice() != null
-          ? pricing.getCostPrice() : BigDecimal.ZERO;
+      cost = pricing != null && pricing.costPrice() != null
+          ? pricing.costPrice() : BigDecimal.ZERO;
     }
     if (PurchaseTaxTreatment.orDefault(treatment) == PurchaseTaxTreatment.INCLUSIVE) {
       return GstMath.extractFromInclusive(cost, ratePct).taxable();
@@ -144,45 +143,29 @@ public final class PurchaseTaxBasisResolver {
   }
 
   /**
-   * Unit cost after the price reductions that GST recognises — and only those.
+   * Unit cost after the purchase scheme and additional discount, before any GST is taken out.
    *
-   * <p>Deliberately not {@link com.inventory.pricing.utils.PricingUtils#computeEffectiveCostPrice}, which is the landed cost:
-   * it also dilutes the price by free goods, so a "19+1" bonus makes each unit held cost a
-   * twentieth less. That is the right basis for valuation and margin, and the wrong one for tax.
-   * A supplier who ships twenty and charges for nineteen has charged for nineteen; the taxable
-   * value is what was charged, and the free unit does not reduce it.
+   * <p>Both kinds of scheme reduce what was charged for the line. A percentage scheme is a straight
+   * price cut. A "19+1" deal is the vendor billing nineteen of every twenty units, whether the bill
+   * shows it as free goods or as a 5% cut on the quantity, so the line's taxable value is
+   * {@code count × cost × 19/20}. The line count is everything received, free units included.
    *
-   * <p>A percentage scheme and an additional discount are genuine reductions in price, so both
-   * apply. Returns null when nothing reduces the cost, or when there is no cost to reduce.
+   * <p>This is the landed cost, {@link PricingUtils#computeEffectiveCostPrice}, without its GST
+   * step: an inclusive bill has its tax taken out of the whole line by {@link #resolve}. Returns
+   * null when there is no cost to reduce.
    */
-  private static BigDecimal discountedUnitCost(Pricing pricing) {
-    if (pricing == null || pricing.getCostPrice() == null) {
+  private static BigDecimal discountedUnitCost(PricingView pricing) {
+    if (pricing == null) {
       return null;
     }
-    BigDecimal cost = pricing.getCostPrice();
-
-    Scheme scheme = pricing.getPurchaseScheme();
-    if (scheme != null
-        && PricingConstants.SCHEME_TYPE_PERCENTAGE.equalsIgnoreCase(scheme.getSchemeType())
-        && scheme.getSchemePercentage() != null) {
-      BigDecimal pct = scheme.getSchemePercentage();
-      if (pct.signum() > 0 && pct.compareTo(BigDecimal.valueOf(100)) < 0) {
-        cost = cost.multiply(BigDecimal.ONE.subtract(pct.divide(BigDecimal.valueOf(100))));
-      }
-    }
-
-    BigDecimal additional = pricing.getPurchaseAdditionalDiscount();
-    if (additional != null && additional.signum() != 0
-        && additional.compareTo(BigDecimal.valueOf(100)) < 0) {
-      cost = cost.multiply(BigDecimal.ONE.subtract(
-          additional.divide(BigDecimal.valueOf(100))));
-    }
-    return cost.setScale(4, RoundingMode.HALF_UP);
+    return LandedCost.perUnit(
+        pricing.costPrice(), pricing.purchaseAdditionalDiscount(),
+        pricing.purchaseScheme());
   }
 
-  private static BigDecimal rateOf(Pricing pricing) {
+  private static BigDecimal rateOf(PricingView pricing) {
     return pricing == null ? BigDecimal.ZERO
-        : GstMath.parseGstRate(pricing.getSgst()).add(GstMath.parseGstRate(pricing.getCgst()));
+        : GstMath.parseGstRate(pricing.sgst()).add(GstMath.parseGstRate(pricing.cgst()));
   }
 
   private static BigDecimal sum(List<BigDecimal> values) {

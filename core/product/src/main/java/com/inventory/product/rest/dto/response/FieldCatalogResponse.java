@@ -17,7 +17,7 @@ import java.util.List;
  *   "fields": [{ "fieldKey": "mrp", "label": "MRP", "sourceGroup": "pricing",
  *                "valueType": "currency", "availableForShopTypes": ["RETAILER", ...],
  *                "schemaApiKey": null }],
- *   "stickerSizes": [{ "size": "50x25", "widthMm": 50, "heightMm": 25, "maxLines": 3 }],
+ *   "stickerSizes": [{ "size": "50x25", "widthMm": 50, "heightMm": 25, "maxLines": 4 }],
  *   "shopType": "RETAILER",
  *   "verticalSchemaLoaded": true,
  *   "sheetPresets": [{ "id": "A4_PLAIN", "label": "A4 (plain)", "plain": true,
