@@ -5,8 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.inventory.pricing.rest.dto.request.PricingCreateCommand;
-import com.inventory.pricing.service.InventoryPricingAdapter;
+import com.inventory.pricing.api.InventoryPricing;
+import com.inventory.pricing.api.PricingCreate;
+import com.inventory.pricing.api.port.ShopRateRulesPort;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.enums.ShopType;
@@ -26,7 +27,10 @@ class InventoryPricingWriteHandlerTest {
   private static final String SHOP = "shop1";
 
   @Mock
-  private InventoryPricingAdapter pricingPort;
+  private InventoryPricing pricingPort;
+
+  @Mock
+  private ShopRateRulesPort shopRateRulesPort;
 
   @Mock
   private ShopRepository shopRepository;
@@ -45,13 +49,13 @@ class InventoryPricingWriteHandlerTest {
 
     handler.persistOnSave(inventory);
 
-    PricingCreateCommand cmd = capturedCreate();
-    assertEquals("cafe", cmd.getVerticalId());
-    assertEquals(new BigDecimal("18"), cmd.getCostPrice());
-    assertEquals(new BigDecimal("20"), cmd.getSellingPrice());
-    assertNull(cmd.getMaximumRetailPrice());
-    assertNull(cmd.getPriceToRetail());
-    assertNull(cmd.getDefaultRate());
+    PricingCreate cmd = capturedCreate();
+    assertEquals("cafe", cmd.verticalId());
+    assertEquals(new BigDecimal("18"), cmd.costPrice());
+    assertEquals(new BigDecimal("20"), cmd.sellingPrice());
+    assertNull(cmd.maximumRetailPrice());
+    assertNull(cmd.priceToRetail());
+    assertNull(cmd.defaultRate());
     assertEquals("pricing1", inventory.getPricingId());
   }
 
@@ -62,11 +66,11 @@ class InventoryPricingWriteHandlerTest {
 
     handler.persistOnSave(newInventory("18", "20"));
 
-    PricingCreateCommand cmd = capturedCreate();
-    assertEquals(new BigDecimal("20"), cmd.getSellingPrice());
-    assertEquals(new BigDecimal("20"), cmd.getMaximumRetailPrice());
-    assertEquals(new BigDecimal("20"), cmd.getPriceToRetail());
-    assertEquals("priceToRetail", cmd.getDefaultRate());
+    PricingCreate cmd = capturedCreate();
+    assertEquals(new BigDecimal("20"), cmd.sellingPrice());
+    assertEquals(new BigDecimal("20"), cmd.maximumRetailPrice());
+    assertEquals(new BigDecimal("20"), cmd.priceToRetail());
+    assertEquals("priceToRetail", cmd.defaultRate());
   }
 
   private void givenShop(ShopType type, String verticalId) {
@@ -84,8 +88,8 @@ class InventoryPricingWriteHandlerTest {
     return inventory;
   }
 
-  private PricingCreateCommand capturedCreate() {
-    ArgumentCaptor<PricingCreateCommand> captor = ArgumentCaptor.forClass(PricingCreateCommand.class);
+  private PricingCreate capturedCreate() {
+    ArgumentCaptor<PricingCreate> captor = ArgumentCaptor.forClass(PricingCreate.class);
     verify(pricingPort).create(captor.capture());
     return captor.getValue();
   }
