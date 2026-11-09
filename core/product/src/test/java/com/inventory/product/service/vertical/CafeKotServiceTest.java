@@ -12,9 +12,9 @@ import static org.mockito.Mockito.when;
 
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
-import com.inventory.documentservice.domain.KotStamp;
-import com.inventory.documentservice.rest.dto.GenerateKotRequest;
-import com.inventory.documentservice.service.KotPdfService;
+import com.inventory.documentservice.api.KotStamp;
+import com.inventory.documentservice.api.KotDocument;
+import com.inventory.documentservice.api.KotDocuments;
 import com.inventory.pluginengine.PluginRegistry;
 import com.inventory.pluginengine.VerticalPlugin;
 import com.inventory.pluginengine.kot.CafeKotPort;
@@ -29,7 +29,7 @@ import org.mockito.ArgumentCaptor;
 class CafeKotServiceTest {
 
   private CafeKotPort port;
-  private KotPdfService kotPdfService;
+  private KotDocuments kotDocuments;
   private CafeKotService service;
   private com.inventory.product.domain.repository.ShopRepository shopRepository;
   private com.inventory.product.domain.repository.PurchaseRepository purchaseRepository;
@@ -37,7 +37,7 @@ class CafeKotServiceTest {
   @BeforeEach
   void setUp() {
     port = mock(CafeKotPort.class);
-    kotPdfService = mock(KotPdfService.class);
+    kotDocuments = mock(KotDocuments.class);
 
     PluginRegistry registry = mock(PluginRegistry.class);
     VerticalPlugin plugin = mock(VerticalPlugin.class);
@@ -49,7 +49,7 @@ class CafeKotServiceTest {
     givenShop("s1", "cafe");
     givenBill("p1", "s1", com.inventory.product.domain.model.enums.PurchaseStatus.CREATED);
 
-    service = new CafeKotService(registry, kotPdfService, shopRepository, purchaseRepository);
+    service = new CafeKotService(registry, kotDocuments, shopRepository, purchaseRepository);
   }
 
   private void givenShop(String shopId, String verticalId) {
@@ -133,15 +133,15 @@ class CafeKotServiceTest {
             .lines(List.of(CafeKotTicketLine.builder().name("Tea").quantity(2).build()))
             .build();
     when(port.findKot("s1", "k1")).thenReturn(Optional.of(ticket));
-    when(kotPdfService.generateKotPdf(any())).thenReturn(new byte[] {1});
+    when(kotDocuments.pdf(any())).thenReturn(new byte[] {1});
 
     byte[] result = service.kotDocument("s1", "k1");
 
     assertEquals(1, result.length);
-    ArgumentCaptor<GenerateKotRequest> captor = ArgumentCaptor.forClass(GenerateKotRequest.class);
-    verify(kotPdfService).generateKotPdf(captor.capture());
-    assertEquals(KotStamp.NONE, captor.getValue().getStamp());
-    assertEquals(7, captor.getValue().getKotNo());
+    ArgumentCaptor<KotDocument> captor = ArgumentCaptor.forClass(KotDocument.class);
+    verify(kotDocuments).pdf(captor.capture());
+    assertEquals(KotStamp.NONE, captor.getValue().stamp());
+    assertEquals(7, captor.getValue().kotNo());
   }
 
   @Test
@@ -159,14 +159,14 @@ class CafeKotServiceTest {
             .lines(List.of(CafeKotTicketLine.builder().name("Tea").quantity(2).build()))
             .build();
     when(port.findKot("s1", "k1")).thenReturn(Optional.of(ticket));
-    when(kotPdfService.generateKotPdf(any())).thenReturn(new byte[] {1});
+    when(kotDocuments.pdf(any())).thenReturn(new byte[] {1});
 
     service.kotDocument("s1", "k1");
 
-    ArgumentCaptor<GenerateKotRequest> captor = ArgumentCaptor.forClass(GenerateKotRequest.class);
-    verify(kotPdfService).generateKotPdf(captor.capture());
-    assertEquals("T4", captor.getValue().getTableLabel());
-    assertEquals("12", captor.getValue().getTokenNo());
+    ArgumentCaptor<KotDocument> captor = ArgumentCaptor.forClass(KotDocument.class);
+    verify(kotDocuments).pdf(captor.capture());
+    assertEquals("T4", captor.getValue().tableLabel());
+    assertEquals("12", captor.getValue().tokenNo());
   }
 
   @Test
@@ -176,13 +176,13 @@ class CafeKotServiceTest {
     CafeKotTicket ticket =
         CafeKotTicket.builder().kotId("k3").shopId("s1").status("ISSUED").lines(List.of()).build();
     when(port.findKot("s1", "k3")).thenReturn(Optional.of(ticket));
-    when(kotPdfService.generateKotPdf(any())).thenReturn(new byte[] {1});
+    when(kotDocuments.pdf(any())).thenReturn(new byte[] {1});
 
     service.kotDocument("s1", "k3");
 
-    ArgumentCaptor<GenerateKotRequest> captor = ArgumentCaptor.forClass(GenerateKotRequest.class);
-    verify(kotPdfService).generateKotPdf(captor.capture());
-    assertEquals(KotStamp.NONE, captor.getValue().getStamp());
+    ArgumentCaptor<KotDocument> captor = ArgumentCaptor.forClass(KotDocument.class);
+    verify(kotDocuments).pdf(captor.capture());
+    assertEquals(KotStamp.NONE, captor.getValue().stamp());
   }
 
   @Test
@@ -190,13 +190,13 @@ class CafeKotServiceTest {
     CafeKotTicket ticket =
         CafeKotTicket.builder().kotId("k2").shopId("s1").kind("CANCEL").lines(List.of()).build();
     when(port.findKot("s1", "k2")).thenReturn(Optional.of(ticket));
-    when(kotPdfService.generateKotPdf(any())).thenReturn(new byte[] {1});
+    when(kotDocuments.pdf(any())).thenReturn(new byte[] {1});
 
     service.kotDocument("s1", "k2");
 
-    ArgumentCaptor<GenerateKotRequest> captor = ArgumentCaptor.forClass(GenerateKotRequest.class);
-    verify(kotPdfService).generateKotPdf(captor.capture());
-    assertEquals(KotStamp.CANCELLED, captor.getValue().getStamp());
+    ArgumentCaptor<KotDocument> captor = ArgumentCaptor.forClass(KotDocument.class);
+    verify(kotDocuments).pdf(captor.capture());
+    assertEquals(KotStamp.CANCELLED, captor.getValue().stamp());
   }
 
   @Test
@@ -237,15 +237,15 @@ class CafeKotServiceTest {
             .lines(List.of(CafeKotTicketLine.builder().name("Tea").quantity(2).build()))
             .build();
     when(port.reprint("s1", "k1", "idem-1")).thenReturn(ticket);
-    when(kotPdfService.generateKotPdf(any())).thenReturn(new byte[] {9});
+    when(kotDocuments.pdf(any())).thenReturn(new byte[] {9});
 
     byte[] result = service.reprint("s1", "k1", "idem-1");
 
     assertArrayEquals(new byte[] {9}, result);
-    ArgumentCaptor<GenerateKotRequest> captor = ArgumentCaptor.forClass(GenerateKotRequest.class);
-    verify(kotPdfService).generateKotPdf(captor.capture());
-    assertEquals(KotStamp.REPRINT, captor.getValue().getStamp());
-    assertEquals(7, captor.getValue().getKotNo());
+    ArgumentCaptor<KotDocument> captor = ArgumentCaptor.forClass(KotDocument.class);
+    verify(kotDocuments).pdf(captor.capture());
+    assertEquals(KotStamp.REPRINT, captor.getValue().stamp());
+    assertEquals(7, captor.getValue().kotNo());
     // The port's reprint is the only ticket-producing call: no findKot, flush, or cancel — a
     // reprint never creates a new ticket, only bumps the count on the existing one.
     verify(port).reprint("s1", "k1", "idem-1");
@@ -268,7 +268,7 @@ class CafeKotServiceTest {
             .lines(List.of())
             .build();
     when(port.reprint("s1", "k1", "idem-1")).thenReturn(ticket);
-    when(kotPdfService.generateKotPdf(any())).thenReturn(new byte[] {1});
+    when(kotDocuments.pdf(any())).thenReturn(new byte[] {1});
 
     service.reprint("s1", "k1", "idem-1");
 
@@ -287,14 +287,14 @@ class CafeKotServiceTest {
             .lines(List.of())
             .build();
     when(port.reprint("s1", "k2", "idem-1")).thenReturn(ticket);
-    when(kotPdfService.generateKotPdf(any())).thenReturn(new byte[] {1});
+    when(kotDocuments.pdf(any())).thenReturn(new byte[] {1});
 
     service.reprint("s1", "k2", "idem-1");
 
-    ArgumentCaptor<GenerateKotRequest> captor = ArgumentCaptor.forClass(GenerateKotRequest.class);
-    verify(kotPdfService).generateKotPdf(captor.capture());
+    ArgumentCaptor<KotDocument> captor = ArgumentCaptor.forClass(KotDocument.class);
+    verify(kotDocuments).pdf(captor.capture());
     // Not REPRINT, and not a second CANCELLED-of-CANCELLED signal either: the ticket is already
     // unmistakably dead, and stamping REPRINT over it would read as a fresh order.
-    assertEquals(KotStamp.CANCELLED, captor.getValue().getStamp());
+    assertEquals(KotStamp.CANCELLED, captor.getValue().stamp());
   }
 }

@@ -1,5 +1,6 @@
-package com.inventory.plugins.cafe;
+package com.inventory.product.service.vertical;
 
+import com.inventory.product.domain.model.CafeKotPunchStatus;
 import java.time.Instant;
 import java.util.Date;
 import java.util.List;
@@ -48,8 +49,7 @@ public class CafeCartPuncher {
 
   private static final String COLLECTION = "purchases";
 
-  /** {@code CafeKotPunchStatus.PENDING_KOT_CREATION}; a literal here — cafe does not see core. */
-  private static final String PENDING_KOT_CREATION = "PENDING_KOT_CREATION";
+  private static final String PENDING_KOT_CREATION = CafeKotPunchStatus.PENDING_KOT_CREATION.name();
 
   private final MongoTemplate mongoTemplate;
 

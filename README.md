@@ -242,7 +242,7 @@ Shops are bound to a **vertical** (`Shop.verticalId` + `Shop.pluginVersion`). Fi
 
 ### Cafe kitchen tickets
 
-Cafe KOT lives in `plugins/cafe`. Calls between it and `core/product` go through `pluginengine` (`CafeKotPort`, implemented by `CafeKotAdapter`); the plugin imports nothing from core. One known exception, kept for a follow-up: the punch reads and updates the bill's `items[].kotSentQuantity` and `cafeKotPunches` directly in the `purchases` collection (`CafeCartPuncher`, `CafeKotPunchService`) rather than through a core port.
+Cafe KOT lives in `plugins/cafe`. Calls between it and `core/product` go through `pluginengine` (`CafeKotPort`, implemented by `CafeKotAdapter`); the plugin imports nothing from core. The punch reads and updates the bill (`items[].kotSentQuantity` and `cafeKotPunches` in `purchases`) only through `CafeCartPunchPort`, which `core/product` implements (`CafeCartPunchPortImpl`, with the single-write pipeline in `CafeCartPuncher`). Ticket PDFs are rendered through `documentservice`'s `KotDocuments` api.
 
 The Sell screen punches a cart and the server owns the delta: each line sends `baseQuantity - kotSentQuantity`, so a second press sends only what was added, and a press with nothing new creates nothing. Only an open bill (`CREATED` / `PENDING`) of a cafe shop can be punched. Tickets are grouped by station (`department`) and have deterministic ids (`punchId:department:kind`); they are **inserted**, never saved, so a concurrent recovery of the same punch reads the stored ticket back instead of renumbering it. Reprint is a field-level update of `reprintCount` plus `reprintIdempotencyKey` -- a replay of the same key does not bump the count.
 

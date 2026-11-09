@@ -1,7 +1,7 @@
 package com.inventory.documentservice.service;
 
 import com.inventory.documentservice.domain.DocumentTemplateFamily;
-import com.inventory.documentservice.domain.KotStamp;
+import com.inventory.documentservice.api.KotStamp;
 import com.inventory.documentservice.api.PrinterType;
 import com.inventory.documentservice.rest.dto.GenerateKotRequest;
 import com.inventory.documentservice.utils.constants.DocumentMetricsConstants;

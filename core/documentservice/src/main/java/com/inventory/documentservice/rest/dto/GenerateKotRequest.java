@@ -1,6 +1,6 @@
 package com.inventory.documentservice.rest.dto;
 
-import com.inventory.documentservice.domain.KotStamp;
+import com.inventory.documentservice.api.KotStamp;
 import java.util.List;
 import lombok.Data;
 

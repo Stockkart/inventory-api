@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
-import com.inventory.documentservice.domain.KotStamp;
+import com.inventory.documentservice.api.KotStamp;
 import com.inventory.documentservice.rest.dto.GenerateKotRequest;
 import com.inventory.documentservice.rest.dto.KotItem;
 import com.inventory.metrics.MetricsWrapper;
