@@ -4,7 +4,7 @@ import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.pluginengine.schema.VerticalEntitySchema;
 import com.inventory.pluginengine.schema.VerticalSchema;
 import com.inventory.pluginengine.schema.VerticalSchemaField;
-import com.inventory.pricing.domain.repository.PricingRepository;
+import com.inventory.pricing.api.PricingLookup;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.enums.ShopType;
 import com.inventory.product.domain.repository.ShopRepository;
@@ -60,17 +60,17 @@ public class LabelFieldCatalogService {
       Set.of(ShopType.RETAILER, ShopType.DISTRIBUTOR, ShopType.WHOLESALER);
 
   private final ShopRepository shopRepository;
-  private final PricingRepository pricingRepository;
+  private final PricingLookup pricingLookup;
   private final SchemaLoader schemaLoader;
   private final VerticalValueTypeMapper valueTypeMapper;
 
   public LabelFieldCatalogService(
       ShopRepository shopRepository,
-      PricingRepository pricingRepository,
+      PricingLookup pricingLookup,
       SchemaLoader schemaLoader,
       VerticalValueTypeMapper valueTypeMapper) {
     this.shopRepository = shopRepository;
-    this.pricingRepository = pricingRepository;
+    this.pricingLookup = pricingLookup;
     this.schemaLoader = schemaLoader;
     this.valueTypeMapper = valueTypeMapper;
   }
@@ -123,7 +123,7 @@ public class LabelFieldCatalogService {
   // ---- pricing -------------------------------------------------------------------------------
 
   private List<PrintableField> namedRateFields(String shopId) {
-    List<String> rateNames = pricingRepository.findDistinctRateNamesByShopId(shopId);
+    List<String> rateNames = pricingLookup.rateNames(shopId);
     if (rateNames == null || rateNames.isEmpty()) {
       return List.of();
     }

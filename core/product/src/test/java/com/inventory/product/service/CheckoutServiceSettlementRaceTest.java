@@ -11,7 +11,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.inventory.common.exception.ValidationException;
-import com.inventory.plan.rest.dto.request.RecordUsageRequest;
 import com.inventory.plan.service.UsageService;
 import com.inventory.product.domain.model.Purchase;
 import com.inventory.product.domain.model.PurchaseItem;
@@ -64,6 +63,7 @@ class CheckoutServiceSettlementRaceTest {
   private UsageService usageService;
   private CheckoutCompletionOrchestrator orchestrator;
   private com.inventory.product.domain.repository.InventoryRepository inventoryRepository;
+  private org.springframework.data.mongodb.core.MongoTemplate inventoryTemplate;
 
   @BeforeEach
   void setUp() {
@@ -96,21 +96,34 @@ class CheckoutServiceSettlementRaceTest {
         "purchaseTargetedWriter",
         new PurchaseTargetedWriter(purchases.mongoTemplate()));
     inventoryRepository = mock(com.inventory.product.domain.repository.InventoryRepository.class);
+    inventoryTemplate = mock(org.springframework.data.mongodb.core.MongoTemplate.class);
     ReflectionTestUtils.setField(checkoutService, "inventoryRepository", inventoryRepository);
+    // Stock is taken with one guarded update per lot (main #279), not by saving the lot.
+    ReflectionTestUtils.setField(checkoutService, "mongoTemplate", inventoryTemplate);
+    org.mockito.Mockito.lenient()
+        .when(
+            inventoryTemplate.updateFirst(
+                any(org.springframework.data.mongodb.core.query.Query.class),
+                any(org.springframework.data.mongodb.core.query.UpdateDefinition.class),
+                org.mockito.ArgumentMatchers.eq(com.inventory.product.domain.model.Inventory.class)))
+        .thenReturn(com.mongodb.client.result.UpdateResult.acknowledged(1, 1L, null));
   }
 
   @Test
   void aRefusedSettlementTakesNoStockOff() {
-    // There is no Mongo transaction to undo a decrement. Stock must move only once the guarded
-    // write has succeeded, or a refused settle -- and the cashier's retry -- takes it off twice.
+    // With MongoTx off nothing undoes a decrement. Stock must move only once the guarded write
+    // has succeeded, or a refused settle -- and the cashier's retry -- takes it off twice.
     purchases.seed(billWithStockLine());
     stockLotOnHand(10);
     repriceTheBillDuringTheSettlementWrite();
 
     assertThrows(ValidationException.class, () -> settle(PurchaseStatus.COMPLETED));
 
-    verify(inventoryRepository, never())
-        .save(any(com.inventory.product.domain.model.Inventory.class));
+    verify(inventoryTemplate, never())
+        .updateFirst(
+            any(org.springframework.data.mongodb.core.query.Query.class),
+            any(org.springframework.data.mongodb.core.query.UpdateDefinition.class),
+            org.mockito.ArgumentMatchers.eq(com.inventory.product.domain.model.Inventory.class));
   }
 
   @Test
@@ -120,7 +133,11 @@ class CheckoutServiceSettlementRaceTest {
 
     settle(PurchaseStatus.COMPLETED);
 
-    verify(inventoryRepository).save(lot);
+    verify(inventoryTemplate)
+        .updateFirst(
+            any(org.springframework.data.mongodb.core.query.Query.class),
+            any(org.springframework.data.mongodb.core.query.UpdateDefinition.class),
+            org.mockito.ArgumentMatchers.eq(com.inventory.product.domain.model.Inventory.class));
     assertEquals(8, lot.getCurrentBaseCount());
   }
 
@@ -135,6 +152,7 @@ class CheckoutServiceSettlementRaceTest {
     lot.setSoldCount(BigDecimal.ZERO);
     lot.setThresholdCount(1); // keep the low-stock alert out of a settlement-ordering test
     when(inventoryRepository.findById("lot-coke")).thenReturn(Optional.of(lot));
+    when(inventoryRepository.findAllById(any())).thenReturn(java.util.List.of(lot));
     return lot;
   }
 
@@ -170,7 +188,7 @@ class CheckoutServiceSettlementRaceTest {
 
     // Nothing downstream of the write ran. These are the irreversible half of the settlement --
     // posting them against a bill that is still open is the whole of the defect.
-    verify(usageService, never()).recordUsage(anyString(), any(RecordUsageRequest.class));
+    verify(usageService, never()).recordCompletedBill(anyString(), any(BigDecimal.class));
     verify(orchestrator, never()).onPurchaseCompleted(any(Purchase.class));
   }
 
@@ -202,7 +220,7 @@ class CheckoutServiceSettlementRaceTest {
     Purchase stored = purchases.read(BILL_ID);
     assertEquals(PurchaseStatus.COMPLETED, stored.getStatus());
     assertEquals("INV-0001", stored.getInvoiceNo());
-    verify(usageService).recordUsage(anyString(), any(RecordUsageRequest.class));
+    verify(usageService).recordCompletedBill(anyString(), any(BigDecimal.class));
   }
 
   @Test

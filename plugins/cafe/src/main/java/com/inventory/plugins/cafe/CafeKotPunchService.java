@@ -2,6 +2,10 @@ package com.inventory.plugins.cafe;
 
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.pluginengine.kot.CafeCartPunchPort;
+import com.inventory.pluginengine.kot.CafeCartPunchPort.Cart;
+import com.inventory.pluginengine.kot.CafeCartPunchPort.Delta;
+import com.inventory.pluginengine.kot.CafeCartPunchPort.Punch;
 import com.inventory.pluginengine.menu.MenuDepartments;
 import com.inventory.plugins.cafe.domain.CafeKot;
 import com.inventory.plugins.cafe.domain.CafeKotKind;
@@ -16,16 +20,10 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
-import org.bson.Document;
 import org.springframework.dao.DuplicateKeyException;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -54,35 +52,22 @@ import org.springframework.util.StringUtils;
  * the same document rather than duplicating it. A ticket number allocated for a ticket that turns
  * out to exist is a burnt sequence number, which is cheaper than a duplicate ticket.
  *
- * <p>The punch record's Java model ({@code CafeKotPunch} and friends) lives in {@code core/product},
- * which this module does not depend on. As in {@link CafeCartPuncher}, the document shape is read
- * directly off {@link Document} and the two status values are string literals here.
+ * <p>The cart is a {@code purchases} document, which {@code core/product} owns. Every read and
+ * write of it goes through {@link CafeCartPunchPort}; this class never names the collection.
  */
 @Service
 @Slf4j
 public class CafeKotPunchService {
 
-  private static final String PURCHASES = "purchases";
-  private static final String PUNCHES = "cafeKotPunches";
-
-  /** {@code CafeKotPunchStatus.PENDING_KOT_CREATION}; a literal — cafe does not see core. */
-  private static final String PENDING_KOT_CREATION = "PENDING_KOT_CREATION";
-
-  /** {@code CafeKotPunchStatus.COMPLETE}. */
-  private static final String COMPLETE = "COMPLETE";
-
-  private final MongoTemplate mongoTemplate;
-  private final CafeCartPuncher puncher;
+  private final CafeCartPunchPort cartPort;
   private final CafeKotRepository kotRepository;
   private final CafeSequenceService sequenceService;
 
   public CafeKotPunchService(
-      MongoTemplate mongoTemplate,
-      CafeCartPuncher puncher,
+      CafeCartPunchPort cartPort,
       CafeKotRepository kotRepository,
       CafeSequenceService sequenceService) {
-    this.mongoTemplate = mongoTemplate;
-    this.puncher = puncher;
+    this.cartPort = cartPort;
     this.kotRepository = kotRepository;
     this.sequenceService = sequenceService;
   }
@@ -101,18 +86,18 @@ public class CafeKotPunchService {
       throw new ValidationException("Idempotency-Key is required when punching a cart");
     }
 
-    Document purchase = requirePurchase(shopId, purchaseId);
-    Document punch = findPunch(purchase, idempotencyKey);
+    Cart purchase = requirePurchase(shopId, purchaseId);
+    Punch punch = findPunch(purchase, idempotencyKey);
 
     if (punch == null) {
       // No punch with this key yet: claim the cart and reconcile its lines, in one write.
-      Optional<Document> preImage =
-          puncher.claimAndReconcile(
+      boolean claimed =
+          cartPort.claimAndReconcile(
               shopId, purchaseId, UUID.randomUUID().toString(), idempotencyKey, userId);
 
-      // claimAndReconcile returns empty for BOTH "no such cart" and "this key is already punched",
-      // and the pre-image it returns on success does not carry the deltas the pipeline computed
-      // server-side. Either way the answer is on the document, so re-read it and look again.
+      // claimAndReconcile returns false for BOTH "no such cart" and "this key is already punched",
+      // and its success does not carry the deltas the pipeline computed server-side. Either way
+      // the answer is on the document, so re-read it and look again.
       purchase = requirePurchase(shopId, purchaseId);
       punch = findPunch(purchase, idempotencyKey);
       if (punch == null) {
@@ -123,14 +108,14 @@ public class CafeKotPunchService {
             purchaseId,
             shopId,
             idempotencyKey,
-            preImage.isPresent() ? "matched" : "matched nothing");
+            claimed ? "matched" : "matched nothing");
         throw new ValidationException(
             "Punch " + idempotencyKey + " could not be claimed; retry the request");
       }
     }
 
-    String punchId = punch.getString("punchId");
-    if (COMPLETE.equals(punch.getString("status"))) {
+    String punchId = punch.punchId();
+    if (punch.complete()) {
       List<CafeKot> done = kotRepository.findByShopIdAndPunchId(shopId, punchId);
       log.info("Replayed complete cafe punch {} on shop {}: {} tickets", punchId, shopId, done.size());
       return done;
@@ -146,9 +131,9 @@ public class CafeKotPunchService {
    * already advanced.
    */
   private List<CafeKot> finish(
-      String shopId, String userId, String purchaseId, Document purchase, Document punch) {
+      String shopId, String userId, String purchaseId, Cart purchase, Punch punch) {
 
-    String punchId = punch.getString("punchId");
+    String punchId = punch.punchId();
     List<CafeKot> desired = tickets(shopId, userId, purchaseId, purchase, punch);
 
     // `punch.kotIds` alone is not proof of what is missing: an attempt can die after saveAll (:162
@@ -158,7 +143,7 @@ public class CafeKotPunchService {
     // holding. So the actual repository contents for this punch are the source of truth for what
     // exists; kotIds is consulted too only because it can name tickets a stale read might miss.
     List<CafeKot> existing = kotRepository.findByShopIdAndPunchId(shopId, punchId);
-    Set<String> alreadyWritten = new LinkedHashSet<>(stringList(punch, "kotIds"));
+    Set<String> alreadyWritten = new LinkedHashSet<>(punch.kotIds());
     existing.forEach(k -> alreadyWritten.add(k.getId()));
 
     List<CafeKot> missing = desired.stream().filter(k -> !alreadyWritten.contains(k.getId())).toList();
@@ -181,7 +166,7 @@ public class CafeKotPunchService {
 
     // Every ticket the punch stands for, in the order the deltas named them.
     List<String> kotIds = desired.stream().map(CafeKot::getId).toList();
-    markComplete(shopId, purchaseId, punchId, kotIds);
+    cartPort.markPunchComplete(shopId, purchaseId, punchId, kotIds);
 
     if (alreadyWritten.isEmpty()) {
       return created;
@@ -217,21 +202,21 @@ public class CafeKotPunchService {
    * been edited to name.
    */
   private List<CafeKot> tickets(
-      String shopId, String userId, String purchaseId, Document purchase, Document punch) {
+      String shopId, String userId, String purchaseId, Cart purchase, Punch punch) {
 
-    String punchId = punch.getString("punchId");
+    String punchId = punch.punchId();
     String businessDate = LocalDate.now().toString();
     int roundNo = roundNo(purchase, punchId);
     Instant now = Instant.now();
 
     Map<String, CafeKot> byKey = new LinkedHashMap<>();
-    for (Document delta : deltas(punch)) {
-      int quantity = intValue(delta.get("quantity"));
+    for (Delta delta : punch.deltas()) {
+      int quantity = delta.quantity();
       if (quantity == 0) {
         continue;
       }
       CafeKotKind kind = quantity > 0 ? CafeKotKind.ISSUE : CafeKotKind.CANCEL;
-      String department = MenuDepartments.resolve(delta.getString("department"));
+      String department = MenuDepartments.resolve(delta.department());
       if (!MenuDepartments.emitsTicket(department)) {
         // Claimed with the rest (kotSentQuantity already advanced), but nothing goes to paper.
         continue;
@@ -250,8 +235,8 @@ public class CafeKotPunchService {
                 fresh.setKind(kind);
                 fresh.setRoundNo(roundNo);
                 fresh.setStatus(CafeKotStatus.ISSUED);
-                fresh.setTableLabel(purchase.getString("tableLabel"));
-                fresh.setTokenNo(purchase.getString("tokenNo"));
+                fresh.setTableLabel(purchase.tableLabel());
+                fresh.setTokenNo(purchase.tokenNo());
                 fresh.setPunchId(punchId);
                 fresh.setBusinessDate(businessDate);
                 fresh.setCreatedAt(now);
@@ -261,45 +246,25 @@ public class CafeKotPunchService {
               });
 
       CafeKotLine line = new CafeKotLine();
-      line.setLineId(delta.getString("sellableRef"));
-      line.setName(delta.getString("name"));
+      line.setLineId(delta.sellableRef());
+      line.setName(delta.name());
       // A cancellation tells the station how many to stop, which is never a negative count.
       line.setQuantity(Math.abs(quantity));
-      line.setNote(delta.getString("note"));
+      line.setNote(delta.note());
       kot.getLines().add(line);
     }
     return List.copyOf(byKey.values());
   }
 
-  /** Finishes the punch in place. Scoped by shop, and matched by punchId so {@code $} is that punch. */
-  private void markComplete(String shopId, String purchaseId, String punchId, List<String> kotIds) {
-    Query query =
-        Query.query(
-            Criteria.where("_id")
-                .is(purchaseId)
-                .and("shopId")
-                .is(shopId)
-                .and(PUNCHES + ".punchId")
-                .is(punchId));
-    Update update = new Update().set(PUNCHES + ".$.status", COMPLETE).set(PUNCHES + ".$.kotIds", kotIds);
-    mongoTemplate.updateFirst(query, update, PURCHASES);
+  private Cart requirePurchase(String shopId, String purchaseId) {
+    return cartPort
+        .findCart(shopId, purchaseId)
+        .orElseThrow(() -> new ResourceNotFoundException("Purchase", "id", purchaseId));
   }
 
-  private Document requirePurchase(String shopId, String purchaseId) {
-    Document purchase =
-        mongoTemplate.findOne(
-            Query.query(Criteria.where("_id").is(purchaseId).and("shopId").is(shopId)),
-            Document.class,
-            PURCHASES);
-    if (purchase == null) {
-      throw new ResourceNotFoundException("Purchase", "id", purchaseId);
-    }
-    return purchase;
-  }
-
-  private static Document findPunch(Document purchase, String idempotencyKey) {
-    for (Document punch : punches(purchase)) {
-      if (idempotencyKey.equals(punch.getString("idempotencyKey"))) {
+  private static Punch findPunch(Cart purchase, String idempotencyKey) {
+    for (Punch punch : purchase.punches()) {
+      if (idempotencyKey.equals(punch.idempotencyKey())) {
         return punch;
       }
     }
@@ -307,10 +272,10 @@ public class CafeKotPunchService {
   }
 
   /** The punch's position on the cart, one-based: the round the kitchen sees on the paper. */
-  private static int roundNo(Document purchase, String punchId) {
-    List<Document> punches = punches(purchase);
+  private static int roundNo(Cart purchase, String punchId) {
+    List<Punch> punches = purchase.punches();
     for (int i = 0; i < punches.size(); i++) {
-      if (punchId != null && punchId.equals(punches.get(i).getString("punchId"))) {
+      if (punchId != null && punchId.equals(punches.get(i).punchId())) {
         return i + 1;
       }
     }
@@ -318,34 +283,6 @@ public class CafeKotPunchService {
     // document, so it must be found above. Silently falling back to punches.size() would hand out
     // a duplicate round number instead of surfacing the inconsistency.
     throw new IllegalStateException(
-        "Punch " + punchId + " is not among the punches on purchase " + purchase.get("_id"));
-  }
-
-  @SuppressWarnings("unchecked")
-  private static List<Document> punches(Document purchase) {
-    List<Document> punches = (List<Document>) purchase.get(PUNCHES);
-    return punches == null ? List.of() : punches;
-  }
-
-  @SuppressWarnings("unchecked")
-  private static List<Document> deltas(Document punch) {
-    List<Document> deltas = (List<Document>) punch.get("deltas");
-    return deltas == null ? List.of() : deltas;
-  }
-
-  @SuppressWarnings("unchecked")
-  private static List<String> stringList(Document punch, String field) {
-    List<String> values = (List<String>) punch.get(field);
-    return values == null ? List.of() : values;
-  }
-
-  /** Mongo returns whatever numeric width the pipeline produced; an Integer is not guaranteed. */
-  private static int intValue(Object raw) {
-    if (raw instanceof Number number) {
-      return number.intValue();
-    }
-    // $subtract always yields a number, so this is unreachable today; but a malformed delta
-    // quantity must fail loudly rather than be silently treated as zero and dropped.
-    throw new IllegalStateException("Cafe KOT delta quantity is not a number: " + raw);
+        "Punch " + punchId + " is not among the punches on purchase " + purchase.id());
   }
 }

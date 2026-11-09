@@ -26,7 +26,7 @@ import java.util.Map;
  * {
  *   "enabledFields": [{ "fieldKey": "productName", "label": "Product name", "valueType": "text" }],
  *   "stickerSize": "50x25",
- *   "stickerSizeSpec": { "size": "50x25", "widthMm": 50, "heightMm": 25, "maxLines": 3 },
+ *   "stickerSizeSpec": { "size": "50x25", "widthMm": 50, "heightMm": 25, "maxLines": 4 },
  *   "showBarcodeText": true,
  *   "showFieldLabels": false,
  *   "blankValueBehavior": "HIDE_LINE",

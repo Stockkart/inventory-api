@@ -28,4 +28,6 @@ public class PricingUpdateCommand {
   private Scheme saleScheme;
   private String sgst;
   private String cgst;
+  /** Fields to set to null, from {@code PricingConstants.CLEARABLE_FIELDS}; null fields above are kept. */
+  private java.util.Set<String> clearFields;
 }

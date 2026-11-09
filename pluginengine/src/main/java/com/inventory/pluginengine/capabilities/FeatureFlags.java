@@ -20,4 +20,6 @@ public class FeatureFlags {
    * backend sets MRP = PTR = Selling Price.
    */
   @Builder.Default private boolean retailPricing = false;
+  /** True when the shop has at least one rate rule and its vertical supports them (not cafe). */
+  @Builder.Default private boolean rateRules = false;
 }

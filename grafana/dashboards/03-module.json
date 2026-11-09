@@ -867,74 +867,6 @@
           ]
         },
         {
-          "id": 103,
-          "type": "timeseries",
-          "title": "Documents examined per document returned (sampled)",
-          "description": "Read load on the database: how many documents Mongo had to look at for each one it returned (1 in 50 searches is explained). Close to 1 is ideal; a jump means an index stopped being used.",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 12,
-            "y": 37
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
-              "custom": {
-                "axisBorderShow": false,
-                "axisCenteredZero": false,
-                "drawStyle": "line",
-                "fillOpacity": 8,
-                "gradientMode": "none",
-                "lineWidth": 1,
-                "pointSize": 5,
-                "showPoints": "never",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                }
-              },
-              "unit": "short"
-            },
-            "overrides": []
-          },
-          "options": {
-            "legend": {
-              "calcs": [
-                "mean",
-                "lastNotNull"
-              ],
-              "displayMode": "table",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "multi",
-              "sort": "desc"
-            }
-          },
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "${DS_PROMETHEUS}"
-              },
-              "editorMode": "code",
-              "expr": "sum by (surface) (increase(inventory_product_search_docs_examined_total{service=\"inventory-api\", env=\"$env\", module=\"$module\"}[5m])) / sum by (surface) (increase(inventory_product_search_docs_returned_total{service=\"inventory-api\", env=\"$env\", module=\"$module\"}[5m]))",
-              "legendFormat": "{{surface}}",
-              "refId": "A",
-              "range": true
-            }
-          ]
-        },
-        {
           "id": 104,
           "type": "timeseries",
           "title": "Average matches per search",
@@ -1334,7 +1266,7 @@
         "name": "module",
         "label": "module",
         "type": "custom",
-        "query": "accounting,analytics,cafe,credit,documentservice,notifications,ocr,plan,pricing,product,reminders,resource,taxation,user",
+        "query": "accounting,analytics,cafe,credit,documentservice,hr,notifications,ocr,plan,pricing,product,reminders,resource,taxation,user",
         "options": [
           {
             "selected": false,
@@ -1360,6 +1292,11 @@
             "selected": false,
             "text": "documentservice",
             "value": "documentservice"
+          },
+          {
+            "selected": false,
+            "text": "hr",
+            "value": "hr"
           },
           {
             "selected": false,

@@ -3,10 +3,9 @@ package com.inventory.product.service.vertical;
 import com.inventory.common.validation.IdempotencyKeys;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
-import com.inventory.documentservice.domain.KotStamp;
-import com.inventory.documentservice.rest.dto.GenerateKotRequest;
-import com.inventory.documentservice.rest.dto.KotItem;
-import com.inventory.documentservice.service.KotPdfService;
+import com.inventory.documentservice.api.KotDocument;
+import com.inventory.documentservice.api.KotDocuments;
+import com.inventory.documentservice.api.KotStamp;
 import com.inventory.pluginengine.PluginRegistry;
 import com.inventory.pluginengine.kot.CafeKotPort;
 import com.inventory.pluginengine.kot.CafeKotTicket;
@@ -41,17 +40,17 @@ public class CafeKotService {
   private static final DateTimeFormatter PRINTED_AT = DateTimeFormatter.ofPattern("dd/MM HH:mm");
 
   private final PluginRegistry pluginRegistry;
-  private final KotPdfService kotPdfService;
+  private final KotDocuments kotDocuments;
   private final ShopRepository shopRepository;
   private final PurchaseRepository purchaseRepository;
 
   public CafeKotService(
       PluginRegistry pluginRegistry,
-      KotPdfService kotPdfService,
+      KotDocuments kotDocuments,
       ShopRepository shopRepository,
       PurchaseRepository purchaseRepository) {
     this.pluginRegistry = pluginRegistry;
-    this.kotPdfService = kotPdfService;
+    this.kotDocuments = kotDocuments;
     this.shopRepository = shopRepository;
     this.purchaseRepository = purchaseRepository;
   }
@@ -132,7 +131,7 @@ public class CafeKotService {
   public byte[] reprint(String shopId, String kotId, String idempotencyKey) {
     CafeKotTicket ticket = port(shopId).reprint(shopId, kotId, idempotencyKey);
     KotStamp stamp = isCancelled(ticket) ? KotStamp.CANCELLED : KotStamp.REPRINT;
-    return kotPdfService.generateKotPdf(toDocumentRequest(ticket, stamp));
+    return kotDocuments.pdf(toDocument(ticket, stamp));
   }
 
   /** The ticket's document. Renders unstamped for an issued ticket, CANCELLED for a voided one. */
@@ -142,7 +141,7 @@ public class CafeKotService {
             .findKot(shopId, kotId)
             .orElseThrow(() -> new ResourceNotFoundException("CafeKot", "id", kotId));
     KotStamp stamp = isCancelled(ticket) ? KotStamp.CANCELLED : KotStamp.NONE;
-    return kotPdfService.generateKotPdf(toDocumentRequest(ticket, stamp));
+    return kotDocuments.pdf(toDocument(ticket, stamp));
   }
 
   /**
@@ -157,27 +156,20 @@ public class CafeKotService {
     return "CANCEL".equals(ticket.getKind());
   }
 
-  private GenerateKotRequest toDocumentRequest(CafeKotTicket ticket, KotStamp stamp) {
-    GenerateKotRequest request = new GenerateKotRequest();
-    request.setKotNo(ticket.getKotNo());
-    request.setDepartment(ticket.getDepartment());
-    request.setRoundNo(ticket.getRoundNo());
-    request.setTableLabel(ticket.getTableLabel());
-    request.setTokenNo(ticket.getTokenNo());
-    request.setPrintedAt(LocalDateTime.now().format(PRINTED_AT));
-    request.setStamp(stamp);
-    request.setItems(
-        (ticket.getLines() == null ? List.<CafeKotTicketLine>of() : ticket.getLines())
-            .stream()
-                .map(
-                    line -> {
-                      KotItem item = new KotItem();
-                      item.setName(line.getName());
-                      item.setQuantity(line.getQuantity());
-                      item.setNote(line.getNote());
-                      return item;
-                    })
-                .toList());
-    return request;
+  private KotDocument toDocument(CafeKotTicket ticket, KotStamp stamp) {
+    return KotDocument.builder()
+        .kotNo(ticket.getKotNo())
+        .department(ticket.getDepartment())
+        .roundNo(ticket.getRoundNo())
+        .tableLabel(ticket.getTableLabel())
+        .tokenNo(ticket.getTokenNo())
+        .printedAt(LocalDateTime.now().format(PRINTED_AT))
+        .stamp(stamp)
+        .items(
+            (ticket.getLines() == null ? List.<CafeKotTicketLine>of() : ticket.getLines())
+                .stream()
+                    .map(line -> new KotDocument.Item(line.getName(), line.getQuantity(), line.getNote()))
+                    .toList())
+        .build();
   }
 }

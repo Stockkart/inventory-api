@@ -30,8 +30,11 @@ public class HttpServerExtraMetricsFilter extends OncePerRequestFilter {
   static final String DURATION = "inventory_http_duration_seconds_total";
   static final String LATENCY_BUCKET = "inventory_http_latency_bucket_total";
 
-  /** Cumulative Prometheus-style latency buckets (seconds). */
-  private static final double[] LATENCY_LE = {0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10};
+  /**
+   * Cumulative Prometheus-style latency buckets (seconds). Up to 120 s so slow reports under load
+   * still land in a bucket (with 10 s as the top, Grafana's p95/p99 read exactly 10.000 s).
+   */
+  static final double[] LATENCY_LE = {0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120};
 
   private final MeterRegistry registry;
   private final AtomicInteger active = new AtomicInteger();
@@ -68,7 +71,11 @@ public class HttpServerExtraMetricsFilter extends OncePerRequestFilter {
     String module = HttpServerModuleTags.module(request);
     String status = String.valueOf(response.getStatus());
     double seconds = (System.nanoTime() - startNanos) / (double) TimeUnit.SECONDS.toNanos(1);
+    record(method, uri, status, module, seconds);
+  }
 
+  /** Counts one finished request that took {@code seconds}. */
+  void record(String method, String uri, String status, String module, double seconds) {
     Counter.builder(REQUESTS)
         .description("API request count")
         .tag("endpoint", uri)

@@ -15,6 +15,10 @@ import static org.mockito.Mockito.when;
 
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.pluginengine.kot.CafeCartPunchPort;
+import com.inventory.pluginengine.kot.CafeCartPunchPort.Cart;
+import com.inventory.pluginengine.kot.CafeCartPunchPort.Delta;
+import com.inventory.pluginengine.kot.CafeCartPunchPort.Punch;
 import com.inventory.plugins.cafe.domain.CafeKot;
 import com.inventory.plugins.cafe.domain.CafeKotKind;
 import com.inventory.plugins.cafe.domain.CafeKotLine;
@@ -24,14 +28,9 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import org.bson.Document;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
-import org.springframework.data.mongodb.core.query.UpdateDefinition;
 
 /**
  * The punch service turns a reconciled cart into kitchen tickets, and makes an interrupted punch
@@ -41,26 +40,23 @@ import org.springframework.data.mongodb.core.query.UpdateDefinition;
  * already advanced; a second reconcile would compute every delta as zero and silently drop the
  * tickets the kitchen is owed.
  *
- * <p>Note on types: the punch record's Java model ({@code CafeKotPunch}, {@code CafeKotPunchDelta},
- * {@code CafeKotPunchStatus}) lives in {@code core/product}, which {@code plugins/cafe} does not
- * depend on. Exactly as {@link CafeCartPuncher} does, these tests speak the document shape
- * directly, with the two status values as string literals.
+ * <p>The cart itself is reached through {@link CafeCartPunchPort}, which {@code core/product}
+ * implements; its document shape and shop scoping are tested there ({@code
+ * CafeCartPunchPortImplTest}).
  */
 class CafeKotPunchServiceTest {
 
-  private MongoTemplate mongoTemplate;
-  private CafeCartPuncher puncher;
+  private CafeCartPunchPort cartPort;
   private CafeKotRepository kotRepository;
   private CafeSequenceService sequenceService;
   private CafeKotPunchService service;
 
   @BeforeEach
   void setUp() {
-    mongoTemplate = mock(MongoTemplate.class);
-    puncher = mock(CafeCartPuncher.class);
+    cartPort = mock(CafeCartPunchPort.class);
     kotRepository = mock(CafeKotRepository.class);
     sequenceService = mock(CafeSequenceService.class);
-    service = new CafeKotPunchService(mongoTemplate, puncher, kotRepository, sequenceService);
+    service = new CafeKotPunchService(cartPort, kotRepository, sequenceService);
 
     when(sequenceService.allocate(anyString(), any(LocalDate.class), any())).thenReturn(7);
     when(kotRepository.insert(any(CafeKot.class))).thenAnswer(i -> i.getArgument(0));
@@ -68,52 +64,42 @@ class CafeKotPunchServiceTest {
 
   // ---------------------------------------------------------------- fixtures
 
-  private static Document delta(String ref, String name, String department, int quantity) {
-    return new Document("sellableRef", ref)
-        .append("name", name)
-        .append("department", department)
-        .append("quantity", quantity)
-        .append("note", null);
+  private static Delta delta(String ref, String name, String department, int quantity) {
+    return new Delta(ref, name, department, null, quantity);
   }
 
-  private static Document punchDoc(String status, List<Document> deltas, List<String> kotIds) {
-    return new Document("punchId", "punch-1")
-        .append("idempotencyKey", "key-1")
-        .append("status", status)
-        .append("deltas", deltas)
-        .append("kotIds", kotIds);
+  private static Punch punchDoc(boolean complete, List<Delta> deltas, List<String> kotIds) {
+    return new Punch("punch-1", "key-1", complete, kotIds, deltas);
   }
 
-  private static Document purchase(List<Document> punches) {
-    return new Document("_id", "p1").append("shopId", "shop-1").append("cafeKotPunches", punches);
+  private static Optional<Cart> purchase(List<Punch> punches) {
+    return dineInPurchase(punches, null, null);
   }
 
-  private static Document dineInPurchase(List<Document> punches, String tableLabel, String tokenNo) {
-    return purchase(punches).append("tableLabel", tableLabel).append("tokenNo", tokenNo);
+  private static Optional<Cart> dineInPurchase(
+      List<Punch> punches, String tableLabel, String tokenNo) {
+    return Optional.of(new Cart("p1", tableLabel, tokenNo, punches));
   }
 
   /** Like {@link #purchaseGainsPunchOnClaim} but the cart carries a table and a token. */
-  private void dineInPurchaseGainsPunchOnClaim(Document appended, String tableLabel, String tokenNo) {
-    when(mongoTemplate.findOne(any(Query.class), eq(Document.class), eq("purchases")))
+  private void dineInPurchaseGainsPunchOnClaim(Punch appended, String tableLabel, String tokenNo) {
+    when(cartPort.findCart("shop-1", "p1"))
         .thenReturn(
             dineInPurchase(List.of(), tableLabel, tokenNo),
             dineInPurchase(List.of(appended), tableLabel, tokenNo));
-    when(puncher.claimAndReconcile(any(), any(), any(), any(), any()))
-        .thenReturn(Optional.of(dineInPurchase(List.of(), tableLabel, tokenNo)));
+    when(cartPort.claimAndReconcile(any(), any(), any(), any(), any())).thenReturn(true);
   }
 
   /** Every read of the purchase in this test sees exactly this punch already on the cart. */
-  private void purchaseHasPunch(Document punch) {
-    when(mongoTemplate.findOne(any(Query.class), eq(Document.class), eq("purchases")))
-        .thenReturn(purchase(List.of(punch)));
+  private void purchaseHasPunch(Punch punch) {
+    when(cartPort.findCart("shop-1", "p1")).thenReturn(purchase(List.of(punch)));
   }
 
   /** No punch yet on the first read; after claimAndReconcile the pipeline has appended one. */
-  private void purchaseGainsPunchOnClaim(Document appended) {
-    when(mongoTemplate.findOne(any(Query.class), eq(Document.class), eq("purchases")))
+  private void purchaseGainsPunchOnClaim(Punch appended) {
+    when(cartPort.findCart("shop-1", "p1"))
         .thenReturn(purchase(List.of()), purchase(List.of(appended)));
-    when(puncher.claimAndReconcile(any(), any(), any(), any(), any()))
-        .thenReturn(Optional.of(purchase(List.of())));
+    when(cartPort.claimAndReconcile(any(), any(), any(), any(), any())).thenReturn(true);
   }
 
   /** Tickets are inserted one by one, never saved: an insert cannot overwrite a stored ticket. */
@@ -128,17 +114,12 @@ class CafeKotPunchServiceTest {
     return savedKots().stream().map(CafeKot::getId).toList();
   }
 
-  private Update capturedPurchaseUpdate() {
-    ArgumentCaptor<UpdateDefinition> update = ArgumentCaptor.forClass(UpdateDefinition.class);
-    verify(mongoTemplate).updateFirst(any(Query.class), update.capture(), eq("purchases"));
-    return (Update) update.getValue();
-  }
-
-  /** The query markComplete matched the punch subdocument by, so a caller can assert its shop scoping. */
-  private Query capturedPurchaseUpdateQuery() {
-    ArgumentCaptor<Query> query = ArgumentCaptor.forClass(Query.class);
-    verify(mongoTemplate).updateFirst(query.capture(), any(UpdateDefinition.class), eq("purchases"));
-    return query.getValue();
+  /** The kotIds the punch was marked COMPLETE with, in this shop; fails unless marked once. */
+  @SuppressWarnings("unchecked")
+  private List<String> completedKotIds() {
+    ArgumentCaptor<List<String>> kotIds = ArgumentCaptor.forClass(List.class);
+    verify(cartPort).markPunchComplete(eq("shop-1"), eq("p1"), eq("punch-1"), kotIds.capture());
+    return kotIds.getValue();
   }
 
   // ------------------------------------------------------------------- tests
@@ -147,13 +128,14 @@ class CafeKotPunchServiceTest {
   void aFreshPunchReconcilesThenCreatesOneTicketPerStation() {
     purchaseGainsPunchOnClaim(
         punchDoc(
-            "PENDING_KOT_CREATION",
+            false,
             List.of(delta("menu:m1", "Biryani", "KITCHEN", 2), delta("menu:m2", "Coke", "BAR", 1)),
             List.of()));
 
     List<CafeKot> kots = service.punch("shop-1", "user-1", "p1", "key-1");
 
-    verify(puncher).claimAndReconcile(eq("shop-1"), eq("p1"), anyString(), eq("key-1"), eq("user-1"));
+    verify(cartPort)
+        .claimAndReconcile(eq("shop-1"), eq("p1"), anyString(), eq("key-1"), eq("user-1"));
     assertEquals(
         List.of("punch-1:KITCHEN:ISSUE", "punch-1:BAR:ISSUE"), newlyCreatedKotIds());
     assertEquals(2, kots.size());
@@ -174,24 +156,15 @@ class CafeKotPunchServiceTest {
     assertEquals(2, line.getQuantity());
     assertEquals("menu:m1", line.getLineId());
 
-    // And the punch is finished, carrying the ids of the tickets that now exist.
-    Update update = capturedPurchaseUpdate();
-    Document set = update.getUpdateObject().get("$set", Document.class);
-    assertEquals("COMPLETE", set.get("cafeKotPunches.$.status"));
-    assertEquals(
-        List.of("punch-1:KITCHEN:ISSUE", "punch-1:BAR:ISSUE"),
-        set.get("cafeKotPunches.$.kotIds"));
-
-    // markComplete's own match is shop-scoped too, not just the initial punch lookup: the query
-    // captured by capturedPurchaseUpdate() above is otherwise verified only with any(Query.class).
-    assertEquals("shop-1", capturedPurchaseUpdateQuery().getQueryObject().get("shopId"));
+    // And the punch is finished, in this shop, carrying the ids of the tickets that now exist.
+    assertEquals(List.of("punch-1:KITCHEN:ISSUE", "punch-1:BAR:ISSUE"), completedKotIds());
   }
 
   @Test
   void aDineInCartsTicketCarriesItsTableAndToken() {
     dineInPurchaseGainsPunchOnClaim(
         punchDoc(
-            "PENDING_KOT_CREATION",
+            false,
             List.of(delta("menu:m1", "Biryani", "KITCHEN", 2)),
             List.of()),
         "T4",
@@ -208,7 +181,7 @@ class CafeKotPunchServiceTest {
   void aNegativeDeltaBecomesACancelTicketCarryingTheAbsoluteQuantity() {
     purchaseGainsPunchOnClaim(
         punchDoc(
-            "PENDING_KOT_CREATION",
+            false,
             List.of(delta("menu:m1", "Biryani", "KITCHEN", 2), delta("menu:m3", "Fries", "KITCHEN", -3)),
             List.of()));
 
@@ -224,7 +197,7 @@ class CafeKotPunchServiceTest {
 
   @Test
   void aCartWithNoDeltasCreatesNothingAndBurnsNoTicketNumber() {
-    purchaseGainsPunchOnClaim(punchDoc("PENDING_KOT_CREATION", List.of(), List.of()));
+    purchaseGainsPunchOnClaim(punchDoc(false, List.of(), List.of()));
 
     List<CafeKot> kots = service.punch("shop-1", "user-1", "p1", "key-1");
 
@@ -232,15 +205,14 @@ class CafeKotPunchServiceTest {
     verify(kotRepository, never()).insert(any(CafeKot.class));
     verify(sequenceService, never()).allocate(anyString(), any(LocalDate.class), any());
     // The punch is still finished: nothing is owed, so nothing must be redriven later.
-    assertEquals("COMPLETE", capturedPurchaseUpdate().getUpdateObject()
-        .get("$set", Document.class).get("cafeKotPunches.$.status"));
+    assertEquals(List.of(), completedKotIds());
   }
 
   @Test
   void aNoneLineIsClaimedButPrintsNoTicket() {
     purchaseGainsPunchOnClaim(
         punchDoc(
-            "PENDING_KOT_CREATION",
+            false,
             List.of(
                 delta("inventory:coke", "Coca-Cola", "NONE", 1),
                 delta("inventory:lassi", "Lassi", "BAR", 1),
@@ -260,7 +232,7 @@ class CafeKotPunchServiceTest {
   void aPunchOfOnlyNoneLinesCompletesWithNoTicketAndNoNumber() {
     purchaseGainsPunchOnClaim(
         punchDoc(
-            "PENDING_KOT_CREATION",
+            false,
             List.of(
                 delta("inventory:coke", "Coca-Cola", "NONE", 2),
                 delta("inventory:sprite", "Sprite", "NONE", -1)),
@@ -271,8 +243,7 @@ class CafeKotPunchServiceTest {
     assertTrue(kots.isEmpty());
     verify(kotRepository, never()).insert(any(CafeKot.class));
     verify(sequenceService, never()).allocate(anyString(), any(LocalDate.class), any());
-    assertEquals("COMPLETE", capturedPurchaseUpdate().getUpdateObject()
-        .get("$set", Document.class).get("cafeKotPunches.$.status"));
+    assertEquals(List.of(), completedKotIds());
   }
 
   @Test
@@ -281,7 +252,7 @@ class CafeKotPunchServiceTest {
     // prints it there and never looks the station up again.
     purchaseGainsPunchOnClaim(
         punchDoc(
-            "PENDING_KOT_CREATION",
+            false,
             List.of(delta("inventory:lassi", "Lassi", "KITCHEN", 1)),
             List.of()));
 
@@ -296,7 +267,7 @@ class CafeKotPunchServiceTest {
     // overwrite the first: that renumbers paper a cook may already hold and resets reprintCount.
     purchaseGainsPunchOnClaim(
         punchDoc(
-            "PENDING_KOT_CREATION",
+            false,
             List.of(delta("menu:m1", "Biryani", "KITCHEN", 2)),
             List.of()));
     CafeKot written = new CafeKot();
@@ -321,7 +292,7 @@ class CafeKotPunchServiceTest {
     existing.setId("punch-1:KITCHEN:ISSUE");
     purchaseHasPunch(
         punchDoc(
-            "COMPLETE",
+            true,
             List.of(delta("menu:m1", "Biryani", "KITCHEN", 2)),
             List.of("punch-1:KITCHEN:ISSUE")));
     when(kotRepository.findByShopIdAndPunchId("shop-1", "punch-1")).thenReturn(List.of(existing));
@@ -329,34 +300,31 @@ class CafeKotPunchServiceTest {
     List<CafeKot> kots = service.punch("shop-1", "user-1", "p1", "key-1");
 
     assertEquals(List.of("punch-1:KITCHEN:ISSUE"), kots.stream().map(CafeKot::getId).toList());
-    verifyNoInteractions(puncher);
+    verify(cartPort, never()).claimAndReconcile(any(), any(), any(), any(), any());
     verify(kotRepository, never()).insert(any(CafeKot.class));
-    verify(mongoTemplate, never()).updateFirst(any(Query.class), any(UpdateDefinition.class), anyString());
+    verify(cartPort, never()).markPunchComplete(any(), any(), any(), any());
   }
 
   @Test
   void aPendingReplayFinishesFromTheStoredDeltasAndNeverReconcilesAgain() {
-    Document kitchen = delta("menu:m1", "Biryani", "KITCHEN", 2);
-    Document bar = delta("menu:m2", "Coke", "BAR", 1);
+    Delta kitchen = delta("menu:m1", "Biryani", "KITCHEN", 2);
+    Delta bar = delta("menu:m2", "Coke", "BAR", 1);
     // KITCHEN already written by the attempt that died.
     purchaseHasPunch(
-        punchDoc("PENDING_KOT_CREATION", List.of(kitchen, bar), List.of("punch-1:KITCHEN:ISSUE")));
+        punchDoc(false, List.of(kitchen, bar), List.of("punch-1:KITCHEN:ISSUE")));
 
     List<CafeKot> kots = service.punch("shop-1", "user-1", "p1", "key-1");
 
     // The cart advanced during the attempt that died. Reconciling again would compute
     // every delta as zero and silently drop the food the kitchen is owed.
-    verify(puncher, never()).claimAndReconcile(any(), any(), any(), any(), any());
+    verify(cartPort, never()).claimAndReconcile(any(), any(), any(), any(), any());
     assertEquals(List.of("punch-1:BAR:ISSUE"), newlyCreatedKotIds());
 
     // Only the missing ticket gets a number; the KITCHEN ticket keeps the one it was printed with.
     verify(sequenceService, times(1)).allocate(eq("shop-1"), any(LocalDate.class), eq(CafeSequenceSeries.KOT));
 
     // The punch now records every ticket of the punch, not just the one written this time.
-    Document set = capturedPurchaseUpdate().getUpdateObject().get("$set", Document.class);
-    assertEquals(
-        List.of("punch-1:KITCHEN:ISSUE", "punch-1:BAR:ISSUE"), set.get("cafeKotPunches.$.kotIds"));
-    assertEquals("COMPLETE", set.get("cafeKotPunches.$.status"));
+    assertEquals(List.of("punch-1:KITCHEN:ISSUE", "punch-1:BAR:ISSUE"), completedKotIds());
     assertEquals(1, kots.size(), "only the ticket written here is returned when the rest are absent");
   }
 
@@ -366,9 +334,9 @@ class CafeKotPunchServiceTest {
     // KITCHEN ticket in the repository, but the process died before markComplete (:174) ever
     // recorded it in kotIds. kotIds is therefore still empty on this replay, even though the
     // ticket — with a kotNo already printed and in the kitchen's hands — exists.
-    Document kitchen = delta("menu:m1", "Biryani", "KITCHEN", 2);
-    Document bar = delta("menu:m2", "Coke", "BAR", 1);
-    purchaseHasPunch(punchDoc("PENDING_KOT_CREATION", List.of(kitchen, bar), List.of()));
+    Delta kitchen = delta("menu:m1", "Biryani", "KITCHEN", 2);
+    Delta bar = delta("menu:m2", "Coke", "BAR", 1);
+    purchaseHasPunch(punchDoc(false, List.of(kitchen, bar), List.of()));
     CafeKot alreadySaved = new CafeKot();
     alreadySaved.setId("punch-1:KITCHEN:ISSUE");
     alreadySaved.setKotNo(42);
@@ -396,16 +364,16 @@ class CafeKotPunchServiceTest {
   void anEmptyClaimWithThePunchAlreadyOnTheCartIsAReplayNotAMissingCart() {
     // claimAndReconcile returns empty for BOTH "no such cart" and "already punched". Treating
     // empty as not-found would fail a perfectly recoverable retry.
-    when(mongoTemplate.findOne(any(Query.class), eq(Document.class), eq("purchases")))
+    when(cartPort.findCart("shop-1", "p1"))
         .thenReturn(
             purchase(List.of()),
             purchase(
                 List.of(
                     punchDoc(
-                        "PENDING_KOT_CREATION",
+                        false,
                         List.of(delta("menu:m2", "Coke", "BAR", 1)),
                         List.of()))));
-    when(puncher.claimAndReconcile(any(), any(), any(), any(), any())).thenReturn(Optional.empty());
+    when(cartPort.claimAndReconcile(any(), any(), any(), any(), any())).thenReturn(false);
 
     List<CafeKot> kots = service.punch("shop-1", "user-1", "p1", "key-1");
 
@@ -414,19 +382,18 @@ class CafeKotPunchServiceTest {
 
   @Test
   void anAbsentCartIsNotFound() {
-    when(mongoTemplate.findOne(any(Query.class), eq(Document.class), eq("purchases")))
-        .thenReturn(null);
+    when(cartPort.findCart("shop-1", "p1")).thenReturn(Optional.empty());
 
     assertThrows(
         ResourceNotFoundException.class, () -> service.punch("shop-1", "user-1", "p1", "key-1"));
-    verifyNoInteractions(puncher);
+    verify(cartPort, never()).claimAndReconcile(any(), any(), any(), any(), any());
   }
 
   @Test
   void aClaimThatLandsNoPunchOnAnExistingCartIsAnError() {
-    when(mongoTemplate.findOne(any(Query.class), eq(Document.class), eq("purchases")))
+    when(cartPort.findCart("shop-1", "p1"))
         .thenReturn(purchase(List.of()), purchase(List.of()));
-    when(puncher.claimAndReconcile(any(), any(), any(), any(), any())).thenReturn(Optional.empty());
+    when(cartPort.claimAndReconcile(any(), any(), any(), any(), any())).thenReturn(false);
 
     assertThrows(
         ValidationException.class, () -> service.punch("shop-1", "user-1", "p1", "key-1"));
@@ -437,14 +404,14 @@ class CafeKotPunchServiceTest {
   void anIdempotencyKeyIsRequired() {
     assertThrows(
         ValidationException.class, () -> service.punch("shop-1", "user-1", "p1", "  "));
-    verifyNoInteractions(mongoTemplate, puncher, kotRepository);
+    verifyNoInteractions(cartPort, kotRepository);
   }
 
   @Test
   void aZeroDeltaContributesNothing() {
     purchaseGainsPunchOnClaim(
         punchDoc(
-            "PENDING_KOT_CREATION",
+            false,
             List.of(delta("menu:m1", "Biryani", "KITCHEN", 0), delta("menu:m2", "Coke", "BAR", 1)),
             List.of()));
 
@@ -455,26 +422,19 @@ class CafeKotPunchServiceTest {
 
   @Test
   void everyPurchaseReadIsScopedByShop() {
-    purchaseHasPunch(punchDoc("COMPLETE", List.of(), List.of()));
+    purchaseHasPunch(punchDoc(true, List.of(), List.of()));
 
     service.punch("shop-1", "user-1", "p1", "key-1");
 
-    ArgumentCaptor<Query> query = ArgumentCaptor.forClass(Query.class);
-    verify(mongoTemplate).findOne(query.capture(), eq(Document.class), eq("purchases"));
-    assertEquals("shop-1", query.getValue().getQueryObject().get("shopId"));
-    assertEquals("p1", query.getValue().getQueryObject().get("_id"));
+    // The shop scoping of the read itself is pinned in CafeCartPunchPortImplTest.
+    verify(cartPort).findCart("shop-1", "p1");
   }
 
   @Test
-  void anIntegerQuantityOfAnyBsonWidthIsHonoured() {
-    // Mongo hands back whatever numeric type the pipeline produced; a Long must not be dropped.
-    Document longDelta =
-        new Document("sellableRef", "menu:m1")
-            .append("name", "Biryani")
-            .append("department", "KITCHEN")
-            .append("quantity", 2L)
-            .append("note", "extra spicy");
-    purchaseGainsPunchOnClaim(punchDoc("PENDING_KOT_CREATION", List.of(longDelta), List.of()));
+  void aLineNoteReachesTheTicket() {
+    // The numeric width of the stored quantity is CafeCartPunchPortImplTest's concern.
+    Delta noted = new Delta("menu:m1", "Biryani", "KITCHEN", "extra spicy", 2);
+    purchaseGainsPunchOnClaim(punchDoc(false, List.of(noted), List.of()));
 
     List<CafeKot> kots = service.punch("shop-1", "user-1", "p1", "key-1");
 
@@ -485,7 +445,7 @@ class CafeKotPunchServiceTest {
   @Test
   void aBlankDepartmentFallsBackToTheDefaultStation() {
     purchaseGainsPunchOnClaim(
-        punchDoc("PENDING_KOT_CREATION", List.of(delta("menu:m1", "Biryani", null, 1)), List.of()));
+        punchDoc(false, List.of(delta("menu:m1", "Biryani", null, 1)), List.of()));
 
     service.punch("shop-1", "user-1", "p1", "key-1");
 
@@ -496,7 +456,7 @@ class CafeKotPunchServiceTest {
   void ticketNumbersAreAllocatedOncePerCreatedTicket() {
     purchaseGainsPunchOnClaim(
         punchDoc(
-            "PENDING_KOT_CREATION",
+            false,
             List.of(delta("menu:m1", "Biryani", "KITCHEN", 2), delta("menu:m2", "Coke", "BAR", -1)),
             List.of()));
 
@@ -516,20 +476,18 @@ class CafeKotPunchServiceTest {
 
   @Test
   void aLaterPunchCarriesItsRoundNumber() {
-    Document earlier =
-        new Document("punchId", "punch-0").append("idempotencyKey", "key-0").append("status", "COMPLETE");
-    when(mongoTemplate.findOne(any(Query.class), eq(Document.class), eq("purchases")))
+    Punch earlier = new Punch("punch-0", "key-0", true, List.of(), List.of());
+    when(cartPort.findCart("shop-1", "p1"))
         .thenReturn(
             purchase(List.of(earlier)),
             purchase(
                 List.of(
                     earlier,
                     punchDoc(
-                        "PENDING_KOT_CREATION",
+                        false,
                         List.of(delta("menu:m2", "Coke", "BAR", 1)),
                         List.of()))));
-    when(puncher.claimAndReconcile(any(), any(), any(), any(), any()))
-        .thenReturn(Optional.of(purchase(List.of(earlier))));
+    when(cartPort.claimAndReconcile(any(), any(), any(), any(), any())).thenReturn(true);
 
     List<CafeKot> kots = service.punch("shop-1", "user-1", "p1", "key-1");
 
@@ -544,7 +502,7 @@ class CafeKotPunchServiceTest {
     fresh.setId("punch-1:BAR:ISSUE");
     purchaseHasPunch(
         punchDoc(
-            "PENDING_KOT_CREATION",
+            false,
             List.of(delta("menu:m1", "Biryani", "KITCHEN", 2), delta("menu:m2", "Coke", "BAR", 1)),
             List.of("punch-1:KITCHEN:ISSUE")));
     when(kotRepository.findByShopIdAndPunchId("shop-1", "punch-1"))

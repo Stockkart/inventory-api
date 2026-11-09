@@ -1,5 +1,6 @@
 package com.inventory.reminders.mapper;
 
+import com.inventory.reminders.service.InventorySummaryLookup;
 import com.inventory.reminders.domain.model.Reminder;
 import com.inventory.reminders.domain.model.ReminderType;
 import com.inventory.reminders.rest.dto.request.CreateReminderRequest;
@@ -10,7 +11,6 @@ import com.inventory.reminders.rest.dto.response.ReminderDetailListResponse;
 import com.inventory.reminders.rest.dto.response.ReminderDetailListWrapper;
 import com.inventory.reminders.rest.dto.response.ReminderListResponse;
 import com.inventory.reminders.rest.dto.response.ReminderResponse;
-import com.inventory.reminders.service.InventoryAdapter;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.MappingTarget;
@@ -20,7 +20,7 @@ import org.springframework.data.domain.Page;
 import java.time.Instant;
 import java.util.List;
 
-@Mapper(componentModel = "spring", uses = {InventoryAdapter.class}, nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
+@Mapper(componentModel = "spring", uses = {InventorySummaryLookup.class}, nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
 public interface ReminderMapper {
 
   @Mapping(target = "reminderId", source = "id")

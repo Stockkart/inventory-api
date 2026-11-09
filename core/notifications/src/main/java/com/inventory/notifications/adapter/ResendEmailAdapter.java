@@ -4,6 +4,7 @@ import com.inventory.notifications.domain.model.OutboundMessage;
 import com.inventory.notifications.utils.MessagingUtils;
 import com.resend.Resend;
 import com.resend.core.exception.ResendException;
+import com.resend.services.emails.model.Attachment;
 import com.resend.services.emails.model.CreateEmailOptions;
 import com.resend.services.emails.model.CreateEmailResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -12,6 +13,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PostConstruct;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -55,12 +58,16 @@ public class ResendEmailAdapter implements ChannelAdapter {
         return SendResult.failure("Email body is empty");
       }
 
-      CreateEmailOptions params = CreateEmailOptions.builder()
+      CreateEmailOptions.Builder builder = CreateEmailOptions.builder()
           .from(fromName + " <" + fromEmail + ">")
           .to(to)
           .subject(subject != null ? subject : "Notification")
-          .html(html)
-          .build();
+          .html(html);
+      List<Attachment> files = attachments(message);
+      if (!files.isEmpty()) {
+        builder.attachments(files);
+      }
+      CreateEmailOptions params = builder.build();
 
       CreateEmailResponse response = resend.emails().send(params);
 
@@ -70,12 +77,33 @@ public class ResendEmailAdapter implements ChannelAdapter {
       return SendResult.failure("Resend returned no message ID");
 
     } catch (ResendException e) {
-      log.warn("Resend send failed for {}: {}", message.getRecipient(), e.getMessage());
+      // message id only: the recipient address is personal data and stays out of logs
+      log.warn("Resend send failed for message {}: {}", message.getId(), e.getMessage());
       return SendResult.failure(e.getMessage());
     } catch (Exception e) {
-      log.error("Unexpected error sending email to {}: {}", message.getRecipient(), e.getMessage(), e);
+      log.error("Unexpected error sending email for message {}: {}", message.getId(),
+          e.getMessage(), e);
       return SendResult.failure(e.getMessage());
     }
+  }
+
+  /** Resend takes each file as base64 content plus a file name and content type. */
+  static List<Attachment> attachments(OutboundMessage message) {
+    if (message.getAttachments() == null) {
+      return List.of();
+    }
+    List<Attachment> out = new ArrayList<>();
+    for (OutboundMessage.Attachment a : message.getAttachments()) {
+      if (a == null || a.getBase64() == null || a.getBase64().isBlank()) {
+        continue;
+      }
+      out.add(Attachment.builder()
+          .fileName(a.getFileName())
+          .contentType(a.getContentType())
+          .content(a.getBase64())
+          .build());
+    }
+    return out;
   }
 
   private String resolveBody(OutboundMessage message) {

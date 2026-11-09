@@ -1,5 +1,8 @@
 package com.inventory.product.rest.controller;
 
+import com.inventory.common.constants.ErrorCode;
+import com.inventory.common.exception.AuthenticationException;
+import org.springframework.util.StringUtils;
 import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.metrics.annotation.Latency;
 import com.inventory.metrics.annotation.RecordRequestRate;
@@ -12,6 +15,7 @@ import com.inventory.product.service.RefundService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import java.nio.charset.StandardCharsets;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -90,6 +94,9 @@ public class RefundController {
       @RequestParam(required = false) String printerType,
       HttpServletRequest httpRequest) {
     String shopId = (String) httpRequest.getAttribute("shopId");
+    if (!StringUtils.hasText(shopId)) {
+      throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "Shop context required");
+    }
     log.info(
         "Generating customer credit note PDF for refund={}, shop={}, printerType={}",
         refundId,
@@ -105,5 +112,27 @@ public class RefundController {
     headers.setContentLength(pdfBytes.length);
 
     return ResponseEntity.ok().headers(headers).body(pdfBytes);
+  }
+
+  /**
+   * Render the customer credit note as condensed plain text for the dot matrix print bridge.
+   *
+   * <p>Mirrors the invoice's own dot-matrix endpoint. The bridge speaks characters, not PDFs, so
+   * a note printed through it has to arrive this way.
+   */
+  @GetMapping(value = "/{refundId}/dot-matrix", produces = "text/plain;charset=UTF-8")
+  public ResponseEntity<String> generateCreditNoteDotMatrixText(
+      @PathVariable String refundId, HttpServletRequest httpRequest) {
+    String shopId = (String) httpRequest.getAttribute("shopId");
+    if (!StringUtils.hasText(shopId)) {
+      throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "Shop context required");
+    }
+    log.info("Generating dot matrix credit note text for refund={}, shop={}", refundId, shopId);
+
+    String text = creditNoteService.generateCustomerCreditNoteText(refundId, shopId);
+
+    return ResponseEntity.ok()
+        .contentType(new MediaType(MediaType.TEXT_PLAIN, StandardCharsets.UTF_8))
+        .body(text);
   }
 }

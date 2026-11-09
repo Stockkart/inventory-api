@@ -98,6 +98,33 @@ scripts/deploy/verify-backend.sh https://<prod-host> <sha> 15
 See `.do/README.md` for how the DigitalOcean app spec is handled and the
 production environment variables.
 
+## Granting or revoking SUPER_USER
+
+`SUPER_USER` (internal Stockkart staff, used by Stockkart HQ) cannot be granted
+through any API. An operator runs `scripts/super-user.mongodb.js` with mongosh
+against the environment's database. The script reads everything from
+environment variables and contains no credentials; the connection string is the
+same `DB_URI` the app uses (it must name the database):
+
+```bash
+# DB_URI comes from the environment's secret store; never paste it into a committed file
+SUPER_USER_EMAIL=staff@example.com SUPER_USER_ACTION=grant \
+  mongosh "$DB_URI" --quiet scripts/super-user.mongodb.js
+
+SUPER_USER_EMAIL=staff@example.com SUPER_USER_ACTION=revoke \
+  mongosh "$DB_URI" --quiet scripts/super-user.mongodb.js
+```
+
+- Add `SUPER_USER_DRY_RUN=true` to see what would change without writing.
+- `grant` refuses an account that has a `shopId` or any `user_shop_memberships`
+  row: use a dedicated staff account that never joined a shop (sign it up, but do
+  not register or join a shop).
+- `revoke` sets the role back to `CASHIER` and drops all of the account's login
+  tokens. Each instance's login cache can still accept a dropped token for up to
+  `AUTH_CACHE_TTL_SECONDS` (60 s by default).
+- The script exits 1 and prints `REFUSED: …` when it changes nothing because of a
+  problem.
+
 ## GitHub configuration this relies on
 
 Environments (Settings → Environments):

@@ -130,7 +130,7 @@ class LabelLayoutServiceReadsProperties {
     assertEquals("50x25", r.stickerSizeSpec().size());
     assertEquals(50, r.stickerSizeSpec().widthMm());
     assertEquals(25, r.stickerSizeSpec().heightMm());
-    assertEquals(3, r.stickerSizeSpec().maxLines());
+    assertEquals(4, r.stickerSizeSpec().maxLines());
     assertEquals(d.showBarcodeText(), r.showBarcodeText());
     assertEquals(d.showFieldLabels(), r.showFieldLabels());
     assertEquals(d.blankValueBehavior(), r.blankValueBehavior());

@@ -1,5 +1,7 @@
 package com.inventory.reminders.service;
 
+import com.inventory.reminders.api.InventoryLowAlert;
+import com.inventory.reminders.api.InventoryAlerts;
 import com.inventory.reminders.domain.model.Event;
 import com.inventory.reminders.domain.model.Reminder;
 import com.inventory.reminders.domain.model.ReminderStatus;
@@ -14,6 +16,9 @@ import com.inventory.reminders.utils.SseEmitterUtils;
 import com.inventory.reminders.utils.constants.EventConstants;
 import com.inventory.reminders.utils.constants.ReminderMetricsConstants;
 import com.inventory.metrics.MetricsWrapper;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -35,7 +40,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 @Slf4j
 @Service
 @Transactional
-public class EventService {
+public class EventService implements InventoryAlerts {
 
   @Autowired
   private EventRepository eventRepository;
@@ -52,8 +57,35 @@ public class EventService {
   @Autowired
   private MetricsWrapper metrics;
 
-  // support multiple tabs/devices per shop
+  /**
+   * Open notification streams per shop (several tabs/devices each). Per-instance, in memory: a
+   * stream lives on the instance that accepted it. An entry leaves when its client is gone — a
+   * failed write (the keep-alive below finds it within one interval), completion or timeout.
+   */
   private final Map<String, List<SseEmitter>> emittersByShop = new ConcurrentHashMap<>();
+
+  /** A shop's newest streams kept open; opening one more closes the oldest. */
+  static final int MAX_EMITTERS_PER_SHOP = 20;
+
+  @Autowired(required = false)
+  private MeterRegistry meterRegistry;
+
+  @PostConstruct
+  void registerGauge() {
+    if (meterRegistry != null) {
+      Gauge.builder("sse.emitters.open", this, EventService::openEmitters)
+          .description("notification streams open on this instance")
+          .register(meterRegistry);
+    }
+  }
+
+  int openEmitters() {
+    int n = 0;
+    for (List<SseEmitter> list : emittersByShop.values()) {
+      n += list.size();
+    }
+    return n;
+  }
 
   @Value("${sse.emitter-timeout-ms:1800000}")
   private long sseEmitterTimeoutMs;
@@ -64,9 +96,12 @@ public class EventService {
   public SseEmitter subscribe(String shopId) {
     SseEmitter emitter = new SseEmitter(sseEmitterTimeoutMs);
 
-    emittersByShop
-      .computeIfAbsent(shopId, k -> new CopyOnWriteArrayList<>())
-      .add(emitter);
+    List<SseEmitter> shopEmitters = emittersByShop.computeIfAbsent(shopId, k -> new CopyOnWriteArrayList<>());
+    shopEmitters.add(emitter);
+    while (shopEmitters.size() > MAX_EMITTERS_PER_SHOP) {
+      SseEmitter oldest = shopEmitters.remove(0);
+      SseEmitterUtils.safeComplete(oldest);
+    }
 
     emitter.onCompletion(() -> removeEmitter(shopId, emitter));
     emitter.onTimeout(() -> removeEmitter(shopId, emitter));
@@ -91,7 +126,9 @@ public class EventService {
   private void sendPendingEventsToSingleEmitter(String shopId, SseEmitter emitter) {
     List<Event> pending;
     try {
-      pending = eventRepository.findByShopIdAndDeliveredFalseOrderByTriggeredAtAsc(shopId);
+      // only reminder events are replayed (low-stock alerts never were), so only they are read:
+      // a shop's undelivered low-stock alerts pile up and were loaded on every reconnect
+      pending = eventRepository.findByShopIdAndDeliveredFalseAndReminderIdNotNullOrderByTriggeredAtAsc(shopId);
     } catch (Exception e) {
       log.error("Failed loading pending events for shop {}: {}", shopId, e.getMessage(), e);
       pending = Collections.emptyList();
@@ -296,6 +333,27 @@ public class EventService {
   }
 
   /**
+   * Keep-alive: a comment line to every open stream every {@code sse.heartbeat-interval-ms}
+   * (default 25 s). The browser's EventSource gives up and reconnects after 45 s of silence, and
+   * the server only notices a client is gone when a write fails — with nothing written after
+   * "connected", every reconnect left the old stream open for its full 30-minute timeout. A failed
+   * write here removes it.
+   */
+  @Scheduled(fixedDelayString = "${sse.heartbeat-interval-ms:25000}")
+  public void heartbeat() {
+    for (Map.Entry<String, List<SseEmitter>> e : emittersByShop.entrySet()) {
+      for (SseEmitter emitter : e.getValue()) {
+        try {
+          emitter.send(SseEmitter.event().comment("ping"));
+        } catch (IOException | IllegalStateException gone) {
+          SseEmitterUtils.safeComplete(emitter);
+          removeEmitter(e.getKey(), emitter);
+        }
+      }
+    }
+  }
+
+  /**
    * Single scheduler that:
    * 1) Finds due reminders (PENDING and reminderAt <= now), creates events and attempts delivery.
    * 2) Finds existing undelivered events whose nextRetryAt <= now and retryCount < max retries and retries them.
@@ -415,6 +473,18 @@ public class EventService {
     }
   }
 
+  @Override
+  public void recordAndBroadcastInventoryLow(InventoryLowAlert alert) {
+    InventoryLowEventDto dto = new InventoryLowEventDto();
+    dto.setShopId(alert.shopId());
+    dto.setInventoryId(alert.inventoryId());
+    dto.setProductName(alert.productName());
+    dto.setCurrentCount(alert.currentCount());
+    dto.setThreshold(alert.threshold());
+    recordAndBroadcastInventoryLow(dto);
+  }
+
+  /** {@link #recordAndBroadcastInventoryLow(InventoryLowAlert)} in this module's types. */
   public void recordAndBroadcastInventoryLow(InventoryLowEventDto dto) {
     Event event = eventMapper.toEventFromInventoryLow(dto);
     Event saved = eventRepository.save(event);

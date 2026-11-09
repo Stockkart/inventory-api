@@ -1,5 +1,7 @@
 package com.inventory.documentservice.domain;
 
+import com.inventory.documentservice.api.PrinterType;
+
 /**
  * Logical document families that share printer layouts but use different
  * Thymeleaf template bases. Extensible for future document types (debit notes, etc.).

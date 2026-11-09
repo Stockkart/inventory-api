@@ -15,7 +15,7 @@ import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.VendorPurchaseInvoiceRepository;
 import com.inventory.product.domain.repository.VendorPurchaseReturnRepository;
-import com.inventory.product.utils.AmountToWordsConverter;
+import com.inventory.common.util.AmountToWordsConverter;
 import com.inventory.user.domain.model.Vendor;
 import com.inventory.user.domain.repository.VendorRepository;
 import org.springframework.stereotype.Component;
@@ -175,6 +175,8 @@ public class VendorReturnCreditNoteAssembler implements CreditNoteDocumentAssemb
       }
     }
 
+    Map<String, Map<String, Object>> fieldsByLot = requestSupport.extensionFields(inventoryById.values());
+
     Map<String, VendorPurchaseInvoiceLine> invoiceLineByInventoryId = new HashMap<>();
     if (invoice != null && invoice.getLines() != null) {
       for (VendorPurchaseInvoiceLine line : invoice.getLines()) {
@@ -227,7 +229,7 @@ public class VendorReturnCreditNoteAssembler implements CreditNoteDocumentAssemb
       if (inventory != null) {
         item.setHsn(inventory.getHsn());
         item.setCompanyName(inventory.getCompanyName());
-        requestSupport.applyBatchAndExpiry(item, inventory);
+        requestSupport.applyBatchAndExpiry(item, fieldsByLot.getOrDefault(inventory.getId(), Map.of()));
       }
       // Restate the purchase in its own terms. The cost as billed, not the line total divided
       // by quantity: dividing back gave a figure that appears on no document, and on a bill

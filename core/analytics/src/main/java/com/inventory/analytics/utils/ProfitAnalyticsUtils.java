@@ -1,361 +1,122 @@
 package com.inventory.analytics.utils;
 
 import com.inventory.analytics.rest.dto.response.*;
-import com.inventory.product.domain.model.Purchase;
-import com.inventory.product.domain.model.PurchaseItem;
-import com.inventory.product.domain.repository.InventoryRepository;
+import com.inventory.analytics.utils.AnalyticsSalesQueries.LineGroup;
+import com.inventory.product.domain.model.Inventory;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.time.temporal.ChronoUnit;
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
+/**
+ * Profit-tab numbers from grouped sale lines ({@link AnalyticsSalesQueries}) and the lots they sold
+ * from (read once). Cost is the lot's current valuation cost, as before; per-line rules unchanged.
+ */
 @Component
 @Slf4j
 public class ProfitAnalyticsUtils {
 
-  @Autowired
-  private InventoryRepository inventoryRepository;
-
-  /**
-   * Calculate product-level profit metrics.
-   */
-  public List<ProductProfitDto> calculateProductProfits(List<Purchase> purchases) {
+  /** Product-level profit, one row per lot sold. */
+  public List<ProductProfitDto> calculateProductProfits(List<LineGroup> groups, Map<String, Inventory> lots) {
     Map<String, ProductProfitData> productMap = new HashMap<>();
 
-    for (Purchase purchase : purchases) {
-      if (purchase.getItems() != null) {
-        for (PurchaseItem item : purchase.getItems()) {
-          String inventoryId = item.getInventoryId();
-          ProductProfitData data = productMap.getOrDefault(inventoryId, new ProductProfitData(inventoryId));
-
-          // Get inventory details (cost price, lotId, businessType, etc.)
-          if (data.costPrice == null) {
-            inventoryRepository.findById(inventoryId).ifPresent(inv -> {
-              data.costPrice = inv.costForValuation() != null ? inv.costForValuation() : BigDecimal.ZERO;
-              data.productName = inv.getName();
-              data.lotId = inv.getLotId();
-              data.companyName = inv.getCompanyName();
-              data.businessType = inv.getBusinessType();
-            });
-          }
-
-          // Calculate metrics
-          Integer quantity = getBaseQuantity(item);
-          BigDecimal pricingQuantity = getPricingQuantity(item);
-          BigDecimal priceToRetail = item.getPriceToRetail() != null ? item.getPriceToRetail() : BigDecimal.ZERO;
-          BigDecimal costPrice = data.costPrice != null ? data.costPrice : BigDecimal.ZERO;
-
-          BigDecimal itemRevenue = priceToRetail.multiply(pricingQuantity);
-          BigDecimal itemCost = costPrice.multiply(pricingQuantity);
-          BigDecimal itemProfit = itemRevenue.subtract(itemCost);
-
-          data.totalQuantitySold += quantity;
-          data.totalRevenue = data.totalRevenue.add(itemRevenue);
-          data.totalCost = data.totalCost.add(itemCost);
-          data.grossProfit = data.grossProfit.add(itemProfit);
-          data.numberOfSales++;
-
-          productMap.put(inventoryId, data);
+    for (LineGroup g : groups) {
+      String inventoryId = g.lotId();
+      ProductProfitData data = productMap.computeIfAbsent(inventoryId, id -> {
+        ProductProfitData d = new ProductProfitData(id);
+        Inventory inv = lot(lots, id);
+        if (inv != null) {
+          d.costPrice = cost(inv);
+          d.productName = inv.getName();
+          d.lotId = inv.getLotId();
+          d.companyName = inv.getCompanyName();
+          d.businessType = inv.getBusinessType();
         }
-      }
+        return d;
+      });
+      BigDecimal costPrice = data.costPrice != null ? data.costPrice : BigDecimal.ZERO;
+      data.add(g, costPrice);
     }
 
     return productMap.values().stream()
-        .map(data -> {
-          BigDecimal marginPercent = BigDecimal.ZERO;
-          if (data.totalRevenue.compareTo(BigDecimal.ZERO) > 0) {
-            marginPercent = data.grossProfit
-                .divide(data.totalRevenue, 4, RoundingMode.HALF_UP)
-                .multiply(BigDecimal.valueOf(100));
-          }
-
-          return new ProductProfitDto(
-              data.inventoryId,
-              data.productName,
-              data.lotId,
-              data.companyName,
-              data.businessType,
-              data.totalQuantitySold,
-              data.totalRevenue,
-              data.totalCost,
-              data.grossProfit,
-              marginPercent,
-              data.numberOfSales
-          );
-        })
+        .map(data -> new ProductProfitDto(
+            data.inventoryId,
+            data.productName,
+            data.lotId,
+            data.companyName,
+            data.businessType,
+            data.totalQuantitySold,
+            data.totalRevenue,
+            data.totalCost,
+            data.grossProfit,
+            margin(data.grossProfit, data.totalRevenue),
+            data.numberOfSales))
         .sorted((a, b) -> b.getGrossProfit().compareTo(a.getGrossProfit()))
         .collect(Collectors.toList());
   }
 
-  /**
-   * Calculate profit grouped by product name.
-   */
-  public List<ProfitByGroupDto> calculateProfitByProduct(List<Purchase> purchases) {
-    Map<String, ProfitGroupData> productMap = new HashMap<>();
-    Set<String> inventoryIds = new HashSet<>();
+  /** Grouped by the lot's product name ("Unknown" when missing or the lot is gone). */
+  public List<ProfitByGroupDto> calculateProfitByProduct(List<LineGroup> groups, Map<String, Inventory> lots) {
+    return byGroup(groups, lots, inv -> inv == null || inv.getName() == null ? "Unknown" : inv.getName());
+  }
 
-    // Collect all inventory IDs
-    for (Purchase purchase : purchases) {
-      if (purchase.getItems() != null) {
-        for (PurchaseItem item : purchase.getItems()) {
-          inventoryIds.add(item.getInventoryId());
-        }
-      }
+  /** Grouped by the lot's lotId ("Unknown" when the lot is gone). */
+  public List<ProfitByGroupDto> calculateProfitByLotId(List<LineGroup> groups, Map<String, Inventory> lots) {
+    return byGroup(groups, lots, inv -> inv == null ? "Unknown" : inv.getLotId());
+  }
+
+  /** Grouped by the lot's business type ("Unknown" when missing or the lot is gone). */
+  public List<ProfitByGroupDto> calculateProfitByBusinessType(List<LineGroup> groups, Map<String, Inventory> lots) {
+    return byGroup(groups, lots, inv -> inv == null || inv.getBusinessType() == null ? "Unknown" : inv.getBusinessType());
+  }
+
+  private List<ProfitByGroupDto> byGroup(
+      List<LineGroup> groups, Map<String, Inventory> lots, Function<Inventory, String> keyOf) {
+    Map<String, ProductProfitData> map = new HashMap<>();
+    for (LineGroup g : groups) {
+      Inventory inv = lot(lots, g.lotId());
+      String key = keyOf.apply(inv);
+      map.computeIfAbsent(key, ProductProfitData::new).add(g, inv == null ? BigDecimal.ZERO : cost(inv));
     }
-
-    // Get cost prices from inventory
-    Map<String, BigDecimal> inventoryToCostPrice = new HashMap<>();
-    Map<String, String> inventoryToProductName = new HashMap<>();
-    for (String inventoryId : inventoryIds) {
-      inventoryRepository.findById(inventoryId).ifPresent(inv -> {
-        inventoryToCostPrice.put(inventoryId, inv.costForValuation() != null ? inv.costForValuation() : BigDecimal.ZERO);
-        inventoryToProductName.put(inventoryId, inv.getName() != null ? inv.getName() : "Unknown");
-      });
-    }
-
-    // Aggregate by product name
-    for (Purchase purchase : purchases) {
-      if (purchase.getItems() != null) {
-        for (PurchaseItem item : purchase.getItems()) {
-          String productName = inventoryToProductName.getOrDefault(item.getInventoryId(), "Unknown");
-          ProfitGroupData data = productMap.getOrDefault(productName, new ProfitGroupData(productName));
-
-          Integer quantity = getBaseQuantity(item);
-          BigDecimal pricingQuantity = getPricingQuantity(item);
-          BigDecimal priceToRetail = item.getPriceToRetail() != null ? item.getPriceToRetail() : BigDecimal.ZERO;
-          BigDecimal costPrice = inventoryToCostPrice.getOrDefault(item.getInventoryId(), BigDecimal.ZERO);
-
-          BigDecimal itemRevenue = priceToRetail.multiply(pricingQuantity);
-          BigDecimal itemCost = costPrice.multiply(pricingQuantity);
-          BigDecimal itemProfit = itemRevenue.subtract(itemCost);
-
-          data.totalQuantitySold += quantity;
-          data.totalRevenue = data.totalRevenue.add(itemRevenue);
-          data.totalCost = data.totalCost.add(itemCost);
-          data.grossProfit = data.grossProfit.add(itemProfit);
-          data.numberOfSales++;
-
-          productMap.put(productName, data);
-        }
-      }
-    }
-
-    return productMap.values().stream()
-        .map(data -> {
-          BigDecimal marginPercent = BigDecimal.ZERO;
-          if (data.totalRevenue.compareTo(BigDecimal.ZERO) > 0) {
-            marginPercent = data.grossProfit
-                .divide(data.totalRevenue, 4, RoundingMode.HALF_UP)
-                .multiply(BigDecimal.valueOf(100));
-          }
-
-          return new ProfitByGroupDto(
-              data.groupKey,
-              data.totalQuantitySold,
-              data.totalRevenue,
-              data.totalCost,
-              data.grossProfit,
-              marginPercent,
-              data.numberOfSales
-          );
-        })
+    return map.values().stream()
+        .map(data -> new ProfitByGroupDto(
+            data.inventoryId,
+            data.totalQuantitySold,
+            data.totalRevenue,
+            data.totalCost,
+            data.grossProfit,
+            margin(data.grossProfit, data.totalRevenue),
+            data.numberOfSales))
         .sorted((a, b) -> b.getGrossProfit().compareTo(a.getGrossProfit()))
         .collect(Collectors.toList());
   }
 
-  /**
-   * Calculate profit grouped by lotId.
-   */
-  public List<ProfitByGroupDto> calculateProfitByLotId(List<Purchase> purchases) {
-    Map<String, ProfitGroupData> lotMap = new HashMap<>();
-    Set<String> inventoryIds = new HashSet<>();
-
-    // Collect all inventory IDs
-    for (Purchase purchase : purchases) {
-      if (purchase.getItems() != null) {
-        for (PurchaseItem item : purchase.getItems()) {
-          inventoryIds.add(item.getInventoryId());
-        }
-      }
-    }
-
-    // Get lotIds and cost prices from inventory
-    Map<String, String> inventoryToLotId = new HashMap<>();
-    Map<String, BigDecimal> inventoryToCostPrice = new HashMap<>();
-    for (String inventoryId : inventoryIds) {
-      inventoryRepository.findById(inventoryId).ifPresent(inv -> {
-        inventoryToLotId.put(inventoryId, inv.getLotId());
-        inventoryToCostPrice.put(inventoryId, inv.costForValuation() != null ? inv.costForValuation() : BigDecimal.ZERO);
-      });
-    }
-
-    // Aggregate by lotId
-    for (Purchase purchase : purchases) {
-      if (purchase.getItems() != null) {
-        for (PurchaseItem item : purchase.getItems()) {
-          String lotId = inventoryToLotId.getOrDefault(item.getInventoryId(), "Unknown");
-          ProfitGroupData data = lotMap.getOrDefault(lotId, new ProfitGroupData(lotId));
-
-          Integer quantity = getBaseQuantity(item);
-          BigDecimal pricingQuantity = getPricingQuantity(item);
-          BigDecimal priceToRetail = item.getPriceToRetail() != null ? item.getPriceToRetail() : BigDecimal.ZERO;
-          BigDecimal costPrice = inventoryToCostPrice.getOrDefault(item.getInventoryId(), BigDecimal.ZERO);
-
-          BigDecimal itemRevenue = priceToRetail.multiply(pricingQuantity);
-          BigDecimal itemCost = costPrice.multiply(pricingQuantity);
-          BigDecimal itemProfit = itemRevenue.subtract(itemCost);
-
-          data.totalQuantitySold += quantity;
-          data.totalRevenue = data.totalRevenue.add(itemRevenue);
-          data.totalCost = data.totalCost.add(itemCost);
-          data.grossProfit = data.grossProfit.add(itemProfit);
-          data.numberOfSales++;
-
-          lotMap.put(lotId, data);
-        }
-      }
-    }
-
-    return lotMap.values().stream()
-        .map(data -> {
-          BigDecimal marginPercent = BigDecimal.ZERO;
-          if (data.totalRevenue.compareTo(BigDecimal.ZERO) > 0) {
-            marginPercent = data.grossProfit
-                .divide(data.totalRevenue, 4, RoundingMode.HALF_UP)
-                .multiply(BigDecimal.valueOf(100));
-          }
-
-          return new ProfitByGroupDto(
-              data.groupKey,
-              data.totalQuantitySold,
-              data.totalRevenue,
-              data.totalCost,
-              data.grossProfit,
-              marginPercent,
-              data.numberOfSales
-          );
-        })
-        .sorted((a, b) -> b.getGrossProfit().compareTo(a.getGrossProfit()))
-        .collect(Collectors.toList());
-  }
-
-  /**
-   * Calculate profit grouped by businessType.
-   */
-  public List<ProfitByGroupDto> calculateProfitByBusinessType(List<Purchase> purchases) {
-    Map<String, ProfitGroupData> businessTypeMap = new HashMap<>();
-    Set<String> inventoryIds = new HashSet<>();
-
-    // Collect all inventory IDs
-    for (Purchase purchase : purchases) {
-      if (purchase.getItems() != null) {
-        for (PurchaseItem item : purchase.getItems()) {
-          inventoryIds.add(item.getInventoryId());
-        }
-      }
-    }
-
-    // Get businessTypes and cost prices from inventory
-    Map<String, String> inventoryToBusinessType = new HashMap<>();
-    Map<String, BigDecimal> inventoryToCostPrice = new HashMap<>();
-    for (String inventoryId : inventoryIds) {
-      inventoryRepository.findById(inventoryId).ifPresent(inv -> {
-        inventoryToBusinessType.put(inventoryId, inv.getBusinessType() != null ? inv.getBusinessType() : "Unknown");
-        inventoryToCostPrice.put(inventoryId, inv.costForValuation() != null ? inv.costForValuation() : BigDecimal.ZERO);
-      });
-    }
-
-    // Aggregate by businessType
-    for (Purchase purchase : purchases) {
-      if (purchase.getItems() != null) {
-        for (PurchaseItem item : purchase.getItems()) {
-          String businessType = inventoryToBusinessType.getOrDefault(item.getInventoryId(), "Unknown");
-          ProfitGroupData data = businessTypeMap.getOrDefault(businessType, new ProfitGroupData(businessType));
-
-          Integer quantity = getBaseQuantity(item);
-          BigDecimal pricingQuantity = getPricingQuantity(item);
-          BigDecimal priceToRetail = item.getPriceToRetail() != null ? item.getPriceToRetail() : BigDecimal.ZERO;
-          BigDecimal costPrice = inventoryToCostPrice.getOrDefault(item.getInventoryId(), BigDecimal.ZERO);
-
-          BigDecimal itemRevenue = priceToRetail.multiply(pricingQuantity);
-          BigDecimal itemCost = costPrice.multiply(pricingQuantity);
-          BigDecimal itemProfit = itemRevenue.subtract(itemCost);
-
-          data.totalQuantitySold += quantity;
-          data.totalRevenue = data.totalRevenue.add(itemRevenue);
-          data.totalCost = data.totalCost.add(itemCost);
-          data.grossProfit = data.grossProfit.add(itemProfit);
-          data.numberOfSales++;
-
-          businessTypeMap.put(businessType, data);
-        }
-      }
-    }
-
-    return businessTypeMap.values().stream()
-        .map(data -> {
-          BigDecimal marginPercent = BigDecimal.ZERO;
-          if (data.totalRevenue.compareTo(BigDecimal.ZERO) > 0) {
-            marginPercent = data.grossProfit
-                .divide(data.totalRevenue, 4, RoundingMode.HALF_UP)
-                .multiply(BigDecimal.valueOf(100));
-          }
-
-          return new ProfitByGroupDto(
-              data.groupKey,
-              data.totalQuantitySold,
-              data.totalRevenue,
-              data.totalCost,
-              data.grossProfit,
-              marginPercent,
-              data.numberOfSales
-          );
-        })
-        .sorted((a, b) -> b.getGrossProfit().compareTo(a.getGrossProfit()))
-        .collect(Collectors.toList());
-  }
-
-  /**
-   * Calculate discount impact analysis.
-   */
-  public DiscountImpactDto calculateDiscountImpact(List<Purchase> purchases) {
+  /** Discount impact over the period's lines. */
+  public DiscountImpactDto calculateDiscountImpact(List<LineGroup> groups) {
     BigDecimal totalDiscountGiven = BigDecimal.ZERO;
     BigDecimal totalRevenueWithDiscount = BigDecimal.ZERO;
     BigDecimal estimatedRevenueWithoutDiscount = BigDecimal.ZERO;
     int totalItemsWithDiscount = 0;
     int totalItemsSold = 0;
 
-    for (Purchase purchase : purchases) {
-      if (purchase.getItems() != null) {
-        for (PurchaseItem item : purchase.getItems()) {
-          Integer quantity = getBaseQuantity(item);
-          BigDecimal pricingQuantity = getPricingQuantity(item);
-          BigDecimal priceToRetail = item.getPriceToRetail() != null ? item.getPriceToRetail() : BigDecimal.ZERO;
-          BigDecimal discount = item.getDiscount() != null ? item.getDiscount() : BigDecimal.ZERO;
-          BigDecimal mrp = item.getMaximumRetailPrice() != null ? item.getMaximumRetailPrice() : priceToRetail;
+    for (LineGroup g : groups) {
+      int quantity = g.baseQuantity();
+      BigDecimal pricingQuantity = g.pricingQuantity();
+      BigDecimal priceToRetail = g.line().getPriceToRetail() != null ? g.line().getPriceToRetail() : BigDecimal.ZERO;
+      BigDecimal discount = g.line().getDiscount() != null ? g.line().getDiscount() : BigDecimal.ZERO;
+      BigDecimal mrp = g.line().getMaximumRetailPrice() != null ? g.line().getMaximumRetailPrice() : priceToRetail;
 
-          BigDecimal itemRevenue = priceToRetail.multiply(pricingQuantity);
-          BigDecimal itemDiscount = discount.multiply(pricingQuantity);
-          BigDecimal itemRevenueWithoutDiscount = mrp.multiply(pricingQuantity);
-
-          totalRevenueWithDiscount = totalRevenueWithDiscount.add(itemRevenue);
-          totalDiscountGiven = totalDiscountGiven.add(itemDiscount);
-          estimatedRevenueWithoutDiscount = estimatedRevenueWithoutDiscount.add(itemRevenueWithoutDiscount);
-          totalItemsSold += quantity;
-
-          if (discount.compareTo(BigDecimal.ZERO) > 0) {
-            totalItemsWithDiscount += quantity;
-          }
-        }
+      totalRevenueWithDiscount = totalRevenueWithDiscount.add(g.times(priceToRetail.multiply(pricingQuantity)));
+      totalDiscountGiven = totalDiscountGiven.add(g.times(discount.multiply(pricingQuantity)));
+      estimatedRevenueWithoutDiscount = estimatedRevenueWithoutDiscount.add(g.times(mrp.multiply(pricingQuantity)));
+      totalItemsSold += g.times(quantity);
+      if (discount.compareTo(BigDecimal.ZERO) > 0) {
+        totalItemsWithDiscount += g.times(quantity);
       }
     }
 
@@ -386,63 +147,31 @@ public class ProfitAnalyticsUtils {
   }
 
   /**
-   * Calculate cost vs selling price trends (time-series).
+   * Cost vs selling price per chart bucket (IST). {@code groups} must be bucketed
+   * ({@link AnalyticsSalesQueries#lineGroups} with buckets); {@code billBuckets} are the buckets that
+   * have bills, so a bucket whose bills have no lines still shows (with zeros), as before.
    */
   public List<CostPriceTrendDto> calculateCostPriceTrends(
-      List<Purchase> purchases,
-      Instant startDate,
-      Instant endDate,
+      List<LineGroup> groups,
+      Collection<String> billBuckets,
+      Map<String, Inventory> lots,
       String granularity) {
 
     Map<String, CostTrendData> trendMap = new HashMap<>();
-    Set<String> inventoryIds = new HashSet<>();
-
-    // Collect all inventory IDs
-    for (Purchase purchase : purchases) {
-      if (purchase.getItems() != null) {
-        for (PurchaseItem item : purchase.getItems()) {
-          inventoryIds.add(item.getInventoryId());
-        }
-      }
+    for (String bucket : billBuckets) {
+      trendMap.computeIfAbsent(AnalyticsPeriods.keyOf(bucket, granularity), CostTrendData::new);
     }
+    for (LineGroup g : groups) {
+      CostTrendData data = trendMap.computeIfAbsent(AnalyticsPeriods.keyOf(g.bucket(), granularity), CostTrendData::new);
+      Inventory inv = lot(lots, g.lotId());
+      BigDecimal costPrice = inv == null ? BigDecimal.ZERO : cost(inv);
+      BigDecimal pricingQuantity = g.pricingQuantity();
+      BigDecimal priceToRetail = g.line().getPriceToRetail() != null ? g.line().getPriceToRetail() : BigDecimal.ZERO;
 
-    // Get cost prices from inventory
-    Map<String, BigDecimal> inventoryToCostPrice = new HashMap<>();
-    for (String inventoryId : inventoryIds) {
-      inventoryRepository.findById(inventoryId).ifPresent(inv -> {
-        inventoryToCostPrice.put(inventoryId, inv.costForValuation() != null ? inv.costForValuation() : BigDecimal.ZERO);
-      });
-    }
-
-    // Aggregate by time period
-    for (Purchase purchase : purchases) {
-      if (purchase.getSoldAt() == null) continue;
-
-      String periodKey = getPeriodKey(purchase.getSoldAt(), granularity);
-      CostTrendData data = trendMap.getOrDefault(periodKey, new CostTrendData(periodKey));
-
-      if (purchase.getItems() != null) {
-        for (PurchaseItem item : purchase.getItems()) {
-          Integer quantity = getBaseQuantity(item);
-          BigDecimal pricingQuantity = getPricingQuantity(item);
-          BigDecimal priceToRetail = item.getPriceToRetail() != null ? item.getPriceToRetail() : BigDecimal.ZERO;
-          BigDecimal costPrice = inventoryToCostPrice.getOrDefault(item.getInventoryId(), BigDecimal.ZERO);
-
-          BigDecimal itemRevenue = priceToRetail.multiply(pricingQuantity);
-          BigDecimal itemCost = costPrice.multiply(pricingQuantity);
-          BigDecimal itemProfit = itemRevenue.subtract(itemCost);
-
-          data.totalQuantitySold += quantity;
-          data.totalRevenue = data.totalRevenue.add(itemRevenue);
-          data.totalCost = data.totalCost.add(itemCost);
-          data.totalProfit = data.totalProfit.add(itemProfit);
-          data.totalPriceToRetail = data.totalPriceToRetail.add(priceToRetail.multiply(pricingQuantity));
-          data.totalCostPrice = data.totalCostPrice.add(costPrice.multiply(pricingQuantity));
-          data.totalPricingQuantity = data.totalPricingQuantity.add(pricingQuantity);
-        }
-      }
-
-      trendMap.put(periodKey, data);
+      data.totalQuantitySold += g.times(g.baseQuantity());
+      data.totalPriceToRetail = data.totalPriceToRetail.add(g.times(priceToRetail.multiply(pricingQuantity)));
+      data.totalCostPrice = data.totalCostPrice.add(g.times(costPrice.multiply(pricingQuantity)));
+      data.totalPricingQuantity = data.totalPricingQuantity.add(g.times(pricingQuantity));
     }
 
     return trendMap.values().stream()
@@ -465,8 +194,8 @@ public class ProfitAnalyticsUtils {
                 .multiply(BigDecimal.valueOf(100));
           }
 
-          Instant periodStart = parsePeriodKey(data.periodKey, granularity);
-          Instant periodEnd = getNextPeriod(periodStart, granularity);
+          Instant periodStart = AnalyticsPeriods.start(data.periodKey, granularity);
+          Instant periodEnd = AnalyticsPeriods.end(periodStart, granularity);
 
           return new CostPriceTrendDto(
               data.periodKey,
@@ -497,63 +226,22 @@ public class ProfitAnalyticsUtils {
         .collect(Collectors.toList());
   }
 
-  // Helper methods for time-series
-  private String getPeriodKey(Instant instant, String granularity) {
-    LocalDateTime dateTime = LocalDateTime.ofInstant(instant, ZoneId.systemDefault());
-
-    switch (granularity.toLowerCase()) {
-      case "hour":
-        return dateTime.truncatedTo(ChronoUnit.HOURS).toString();
-      case "day":
-        return dateTime.toLocalDate().toString();
-      case "week":
-        LocalDate weekStart = dateTime.toLocalDate().with(java.time.DayOfWeek.MONDAY);
-        return weekStart.toString() + "_week";
-      case "month":
-        return dateTime.getYear() + "-" + String.format("%02d", dateTime.getMonthValue());
-      default:
-        return dateTime.toLocalDate().toString();
-    }
+  private static Inventory lot(Map<String, Inventory> lots, String id) {
+    return id == null ? null : lots.get(id);
   }
 
-  private Instant parsePeriodKey(String periodKey, String granularity) {
-    try {
-      switch (granularity.toLowerCase()) {
-        case "hour":
-          return LocalDateTime.parse(periodKey).atZone(ZoneId.systemDefault()).toInstant();
-        case "day":
-          return LocalDate.parse(periodKey).atStartOfDay(ZoneId.systemDefault()).toInstant();
-        case "week":
-          String dateStr = periodKey.replace("_week", "");
-          return LocalDate.parse(dateStr).atStartOfDay(ZoneId.systemDefault()).toInstant();
-        case "month":
-          String[] parts = periodKey.split("-");
-          return LocalDate.of(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]), 1)
-              .atStartOfDay(ZoneId.systemDefault()).toInstant();
-        default:
-          return LocalDate.parse(periodKey).atStartOfDay(ZoneId.systemDefault()).toInstant();
-      }
-    } catch (Exception e) {
-      return Instant.now();
-    }
+  private static BigDecimal cost(Inventory inv) {
+    return inv.costForValuation() != null ? inv.costForValuation() : BigDecimal.ZERO;
   }
 
-  private Instant getNextPeriod(Instant current, String granularity) {
-    switch (granularity.toLowerCase()) {
-      case "hour":
-        return current.plus(1, ChronoUnit.HOURS);
-      case "day":
-        return current.plus(1, ChronoUnit.DAYS);
-      case "week":
-        return current.plus(7, ChronoUnit.DAYS);
-      case "month":
-        return current.plus(30, ChronoUnit.DAYS);
-      default:
-        return current.plus(1, ChronoUnit.DAYS);
+  private static BigDecimal margin(BigDecimal grossProfit, BigDecimal totalRevenue) {
+    if (totalRevenue.compareTo(BigDecimal.ZERO) > 0) {
+      return grossProfit.divide(totalRevenue, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100));
     }
+    return BigDecimal.ZERO;
   }
 
-  // Helper classes
+  /** Running sums for one row (a lot, or a group key held in {@code inventoryId}). */
   private static class ProductProfitData {
     String inventoryId;
     String productName;
@@ -570,27 +258,24 @@ public class ProfitAnalyticsUtils {
     ProductProfitData(String inventoryId) {
       this.inventoryId = inventoryId;
     }
-  }
 
-  private static class ProfitGroupData {
-    String groupKey;
-    int totalQuantitySold = 0;
-    BigDecimal totalRevenue = BigDecimal.ZERO;
-    BigDecimal totalCost = BigDecimal.ZERO;
-    BigDecimal grossProfit = BigDecimal.ZERO;
-    int numberOfSales = 0;
-
-    ProfitGroupData(String groupKey) {
-      this.groupKey = groupKey;
+    /** One group of identical lines at {@code costPrice}: the old per-line sums, times the count. */
+    void add(LineGroup g, BigDecimal costPrice) {
+      BigDecimal pricingQuantity = g.pricingQuantity();
+      BigDecimal priceToRetail = g.line().getPriceToRetail() != null ? g.line().getPriceToRetail() : BigDecimal.ZERO;
+      BigDecimal itemRevenue = priceToRetail.multiply(pricingQuantity);
+      BigDecimal itemCost = costPrice.multiply(pricingQuantity);
+      totalQuantitySold += g.times(g.baseQuantity());
+      totalRevenue = totalRevenue.add(g.times(itemRevenue));
+      totalCost = totalCost.add(g.times(itemCost));
+      grossProfit = grossProfit.add(g.times(itemRevenue.subtract(itemCost)));
+      numberOfSales += g.times(1);
     }
   }
 
   private static class CostTrendData {
     String periodKey;
     int totalQuantitySold = 0;
-    BigDecimal totalRevenue = BigDecimal.ZERO;
-    BigDecimal totalCost = BigDecimal.ZERO;
-    BigDecimal totalProfit = BigDecimal.ZERO;
     BigDecimal totalPriceToRetail = BigDecimal.ZERO;
     BigDecimal totalCostPrice = BigDecimal.ZERO;
     BigDecimal totalPricingQuantity = BigDecimal.ZERO;
@@ -603,28 +288,4 @@ public class ProfitAnalyticsUtils {
       return periodKey;
     }
   }
-
-  private int getBaseQuantity(PurchaseItem item) {
-    if (item.getBaseQuantity() != null) {
-      return item.getBaseQuantity();
-    }
-    if (item.getQuantity() == null) {
-      return 0;
-    }
-    int factor = item.getUnitFactor() != null && item.getUnitFactor() > 0 ? item.getUnitFactor() : 1;
-    return item.getQuantity().multiply(BigDecimal.valueOf(factor)).setScale(0, RoundingMode.HALF_UP).intValue();
-  }
-
-  private BigDecimal getPricingQuantity(PurchaseItem item) {
-    if (item.getQuantity() != null) {
-      return item.getQuantity();
-    }
-    if (item.getBaseQuantity() != null) {
-      int factor = item.getUnitFactor() != null && item.getUnitFactor() > 0 ? item.getUnitFactor() : 1;
-      return BigDecimal.valueOf(item.getBaseQuantity())
-          .divide(BigDecimal.valueOf(factor), 4, RoundingMode.HALF_UP);
-    }
-    return BigDecimal.ZERO;
-  }
 }
-

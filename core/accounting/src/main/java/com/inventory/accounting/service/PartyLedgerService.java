@@ -4,7 +4,7 @@ import static com.inventory.accounting.service.MoneyUtil.nz;
 import static com.inventory.accounting.service.MoneyUtil.scale;
 
 import com.inventory.accounting.domain.model.LedgerEntry;
-import com.inventory.accounting.domain.model.PartyType;
+import com.inventory.accounting.api.PartyType;
 import com.inventory.accounting.domain.repository.LedgerEntryRepository;
 import java.math.BigDecimal;
 import java.time.Instant;
