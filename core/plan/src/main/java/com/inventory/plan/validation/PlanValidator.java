@@ -6,7 +6,6 @@ import com.inventory.plan.domain.model.Plan;
 import com.inventory.plan.domain.model.Usage;
 import com.inventory.plan.rest.dto.request.AssignPlanRequest;
 import com.inventory.plan.rest.dto.request.CreatePlanCheckoutRequest;
-import com.inventory.plan.rest.dto.request.PaymentWebhookPayload;
 import com.inventory.plan.rest.dto.request.RecordUsageRequest;
 import com.inventory.plan.rest.dto.request.VerifyPlanPaymentRequest;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -60,18 +59,6 @@ public class PlanValidator {
     }
     if (request.getBillingAmount() != null && request.getBillingAmount().signum() < 0) {
       throw new ValidationException("Billing amount cannot be negative");
-    }
-  }
-
-  public void validatePaymentWebhookPayload(PaymentWebhookPayload payload) {
-    if (payload == null) {
-      throw new ValidationException("Webhook payload cannot be null");
-    }
-    if (!StringUtils.hasText(payload.getShopId())) {
-      throw new ValidationException("Shop ID is required in webhook");
-    }
-    if (!StringUtils.hasText(payload.getPlanId())) {
-      throw new ValidationException("Plan ID is required in webhook");
     }
   }
 

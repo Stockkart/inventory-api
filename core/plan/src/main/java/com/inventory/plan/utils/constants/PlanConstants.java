@@ -15,7 +15,4 @@ public final class PlanConstants {
 
   /** Default payment method when not specified. */
   public static final String DEFAULT_PAYMENT_METHOD = "CARD";
-
-  /** Default duration in months for webhook. */
-  public static final int WEBHOOK_DEFAULT_DURATION_MONTHS = 12;
 }
