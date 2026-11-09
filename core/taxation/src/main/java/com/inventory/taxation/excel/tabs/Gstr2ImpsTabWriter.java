@@ -16,7 +16,7 @@ public class Gstr2ImpsTabWriter implements Gstr2TabWriter {
   private static final String SHEET_NAME = "imps";
   private static final List<String> HEADERS = Arrays.asList(
       "Invoice Number of Reg Recipient", "Invoice Date", "Invoice Value", "Place Of Supply", "Rate",
-      "Taxable Value", "Integrated Tax Paid", "Cess Paid", "Eligibility for ITC", "Availed ITC Integrated Tax", "Availed ITC Cess");
+      "Taxable Value", "Integrated Tax Paid", "Cess Paid", "Eligibility For ITC", "Availed ITC Integrated Tax", "Availed ITC Cess");
 
   @Override
   public String getSheetName() {
