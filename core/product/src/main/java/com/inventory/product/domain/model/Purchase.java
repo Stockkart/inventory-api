@@ -109,7 +109,8 @@ public class Purchase {
   /**
    * Cafe kitchen punches against this cart, in the order they were pressed.
    *
-   * <p>Embedded, and written by {@code plugins/cafe}'s {@code CafeCartPuncher} as raw BSON, so
+   * <p>Embedded, and written by {@code CafeCartPuncher} (reached from {@code plugins/cafe} through
+   * {@code CafeCartPunchPort}) as raw BSON, so
    * that a punch and the line advance it caused are one atomic operation: there is no
    * {@code MongoTransactionManager} here, and a crash between two writes would advance the lines
    * while losing the deltas forever.

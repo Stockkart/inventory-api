@@ -238,7 +238,22 @@ Shops are bound to a **vertical** (`Shop.verticalId` + `Shop.pluginVersion`). Fi
 
 **Frontend (inventory-platform):** consumes schema APIs for onboarding, product registration, scan-sell, product search (cursor pagination), and reminders expiry buckets — see architecture doc § Implementation status.
 
-**Remaining:** M8 core field strip migration; scan-sell detail modal schema columns; apparel/cafe vertical (Phase 5); import mappers + widgets (Phase 6).
+**Remaining:** M8 core field strip migration; scan-sell detail modal schema columns; apparel vertical (Phase 5); import mappers + widgets (Phase 6).
+
+### Cafe kitchen tickets
+
+Cafe KOT lives in `plugins/cafe`. Calls between it and `core/product` go through `pluginengine` (`CafeKotPort`, implemented by `CafeKotAdapter`); the plugin imports nothing from core. The punch reads and updates the bill (`items[].kotSentQuantity` and `cafeKotPunches` in `purchases`) only through `CafeCartPunchPort`, which `core/product` implements (`CafeCartPunchPortImpl`, with the single-write pipeline in `CafeCartPuncher`). Ticket PDFs are rendered through `documentservice`'s `KotDocuments` api.
+
+The Sell screen punches a cart and the server owns the delta: each line sends `baseQuantity - kotSentQuantity`, so a second press sends only what was added, and a press with nothing new creates nothing. Only an open bill (`CREATED` / `PENDING`) of a cafe shop can be punched. Tickets are grouped by station (`department`) and have deterministic ids (`punchId:department:kind`); they are **inserted**, never saved, so a concurrent recovery of the same punch reads the stored ticket back instead of renumbering it. Reprint is a field-level update of `reprintCount` plus `reprintIdempotencyKey` -- a replay of the same key does not bump the count.
+
+Deploy **before** the app: `scripts/cafe-kot-indexes.mongodb.js` (KOT indexes, and stamps legacy `cafe_token_counters` rows with `scope: BILL`).
+
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /api/v1/cafe/purchases/{purchaseId}/kots` | Punch the cart. Requires `Idempotency-Key`. No body. |
+| `GET /api/v1/cafe/purchases/{purchaseId}/kots` | Tickets this bill has issued, newest first (the Sell screen's "Sent rounds"). |
+| `GET /api/v1/cafe/kots/{kotId}/document` | Thermal PDF for a ticket. |
+| `POST /api/v1/cafe/kots/{kotId}/reprint` | Reprint stamp. Requires `Idempotency-Key`. Same key is a no-op bump. |
 
 **Clearing a field on a lot edit.** In `PUT /api/v1/inventory/{id}` a field left out or sent as `null` keeps its value. To empty one, name it in `clearFields`: `barcode`, `description`, `companyName`, `location`, `hsn`, `discountApplicable`, `thresholdCount` (lot) and `saleAdditionalDiscount`, `purchaseAdditionalDiscount`, `saleScheme`, `purchaseScheme` (pricing record). Any other name, or a name also sent with a value, is a 400. A clear needs the same product-search grant as setting the field (`saleScheme` → `schemeType`, `purchaseScheme` → `purchaseSchemeType`).
 
@@ -247,6 +262,12 @@ Shops are bound to a **vertical** (`Shop.verticalId` + `Shop.pluginVersion`). Fi
 A cafe menu item is priced **either** by one `sellingPrice` **or** by named portions (`rates`: Qtr / Half / Full, each a `MenuRate { id, name, price }`), never both. The portion `id` is a slug frozen when the portion is first named (`MenuRates.normalize`, run on save before validation), so renaming "Half" never orphans a cart line. A cart line names its portion in the sellable ref, `menu:<itemId>@<rateId>` (`SellableRef`), and the price is always resolved from the menu on the server, never taken from the request. Validation (`CafeMenuVerticalValidator`): every portion needs an id, a name and a positive price, ids and names unique within the item.
 
 Menu lines also carry the kitchen `department` (station, blank means `KITCHEN`, see `MenuDepartments`) and an optional `note`, frozen onto the cart line when it is added.
+
+### Cafe stock items in menu sections
+
+A sell-direct stock lot can be placed in a menu section as a `MenuItem` with `sellMode: direct` and `inventoryId` (no new collection). The lot keeps owning price and stock: `MenuDirectLinks.normalize` clears any price, portions or GST sent on a placement, and the cart still sells it by its `inventory:` ref, so checkout, stock decrement and refunds are unchanged. The placement decides only the station: a stock cart line freezes the placement's `department` (`ShopMenuLookup.findDirectLink`), and an unplaced lot keeps `KITCHEN`. A placement's own `menu:` ref is refused for sale.
+
+`NONE` is a real station meaning "billed, but no ticket" (a bottle from the counter fridge): the punch claims the line but creates no KOT and burns no number (`MenuDepartments.emitsTicket`). Saving the menu: a lot may be placed once ("Lassi is already in Beverages"), a save over a stored menu must carry its revision, and a placement whose lot was deleted stays saveable.
 
 ### Cart and settlement writes
 

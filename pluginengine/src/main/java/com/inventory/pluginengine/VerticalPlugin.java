@@ -5,6 +5,7 @@ import com.inventory.pluginengine.cards.CardSurfaceContributor;
 import com.inventory.pluginengine.cart.CartLineContributor;
 import com.inventory.pluginengine.cart.CheckoutCompletionHandler;
 import com.inventory.pluginengine.cart.QuotationCreateHandler;
+import com.inventory.pluginengine.kot.CafeKotPort;
 import com.inventory.pluginengine.menu.MenuVerticalValidator;
 import com.inventory.pluginengine.pricing.VerticalPricingPolicy;
 import java.util.Optional;
@@ -58,6 +59,11 @@ public interface VerticalPlugin {
 
   /** Surfaces and default layouts this vertical contributes to configurable product cards. */
   default Optional<CardSurfaceContributor> getCardSurfaceContributor() {
+    return Optional.empty();
+  }
+
+  /** Composes and sends cafe kitchen tickets. Empty for verticals with no kitchen. */
+  default Optional<CafeKotPort> getCafeKotPort() {
     return Optional.empty();
   }
 }
