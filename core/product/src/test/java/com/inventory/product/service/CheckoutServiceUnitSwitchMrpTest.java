@@ -57,6 +57,7 @@ class CheckoutServiceUnitSwitchMrpTest {
   @Mock private HttpServletRequest httpRequest;
   @Mock private CustomerService customerService;
   @Mock private CartContributorResolver cartContributorResolver;
+  @Mock private PurchaseTargetedWriter purchaseTargetedWriter;
   @Spy private PurchaseMapperImpl purchaseMapper;
   @Spy private CartRateResolver cartRateResolver;
   @InjectMocks private CheckoutService checkoutService;
@@ -77,6 +78,13 @@ class CheckoutServiceUnitSwitchMrpTest {
       Purchase saved = i.getArgument(0);
       cart = saved;
       return saved;
+    });
+    // An existing cart is written by changed field, not saved whole; the line under test is the
+    // same object either way.
+    when(purchaseTargetedWriter.snapshot(any(Purchase.class))).thenReturn(new org.bson.Document());
+    when(purchaseTargetedWriter.writeCart(any(), any(Purchase.class), any())).thenAnswer(i -> {
+      cart = i.getArgument(1);
+      return PurchaseTargetedWriter.CartWrite.WRITTEN;
     });
     doReturn(new AddToCartResponse()).when(purchaseMapper).toAddToCartResponse(any());
   }
