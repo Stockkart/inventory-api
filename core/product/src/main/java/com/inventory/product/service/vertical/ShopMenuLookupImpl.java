@@ -1,6 +1,7 @@
 package com.inventory.product.service.vertical;
 
 import com.inventory.pluginengine.integration.ShopMenuLookup;
+import com.inventory.pluginengine.menu.MenuDirectLinks;
 import com.inventory.pluginengine.menu.MenuItem;
 import com.inventory.pluginengine.menu.MenuSection;
 import com.inventory.product.domain.model.Shop;
@@ -39,6 +40,32 @@ public class ShopMenuLookupImpl implements ShopMenuLookup {
     return shopMenuRepository
         .findByShopIdAndVerticalId(shopId, shop.getVerticalId())
         .flatMap(doc -> findItemInSections(doc.getSections(), menuItemId.trim()));
+  }
+
+  @Override
+  public Optional<MenuItem> findDirectLink(String shopId, String inventoryId) {
+    if (!StringUtils.hasText(shopId) || !StringUtils.hasText(inventoryId)) {
+      return Optional.empty();
+    }
+    Shop shop = shopRepository.findById(shopId).orElse(null);
+    if (shop == null || !StringUtils.hasText(shop.getVerticalId())) {
+      return Optional.empty();
+    }
+    String wanted = inventoryId.trim();
+    return shopMenuRepository
+        .findByShopIdAndVerticalId(shopId, shop.getVerticalId())
+        .flatMap(
+            doc ->
+                doc.getSections() == null
+                    ? Optional.empty()
+                    : doc.getSections().stream()
+                        .filter(section -> section != null && section.getItems() != null)
+                        .flatMap(section -> section.getItems().stream())
+                        .filter(
+                            item ->
+                                MenuDirectLinks.isDirect(item)
+                                    && wanted.equals(item.getInventoryId()))
+                        .findFirst());
   }
 
   private static Optional<MenuItem> findItemInSections(
