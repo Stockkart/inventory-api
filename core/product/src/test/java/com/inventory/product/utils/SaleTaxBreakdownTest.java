@@ -51,12 +51,14 @@ class SaleTaxBreakdownTest {
     assertEquals(new BigDecimal("107.42"), lines.get(0).getTaxableValue());
     assertEquals(new BigDecimal("5.37"), lines.get(0).getTaxAmount());
     assertEquals(0, lines.get(0).getRatePercent().compareTo(new BigDecimal("5")));
+    assertEquals(new BigDecimal("112.79"), lines.get(0).getTotalAmount());
     assertEquals(new BigDecimal("66.51"), lines.get(1).getTaxableValue());
     assertEquals(new BigDecimal("11.97"), lines.get(1).getTaxAmount());
     assertEquals(0, lines.get(1).getRatePercent().compareTo(new BigDecimal("18")));
     assertEquals(new BigDecimal("40.00"), lines.get(2).getTaxableValue());
     assertEquals(0, lines.get(2).getTaxAmount().signum());
     assertEquals(0, lines.get(2).getRatePercent().signum());
+    assertEquals(new BigDecimal("40.00"), lines.get(2).getTotalAmount());
 
     BigDecimal taxableSum = lines.stream().map(SaleLineTaxDto::getTaxableValue).reduce(BigDecimal.ZERO, BigDecimal::add);
     BigDecimal taxSum = lines.stream().map(SaleLineTaxDto::getTaxAmount).reduce(BigDecimal.ZERO, BigDecimal::add);

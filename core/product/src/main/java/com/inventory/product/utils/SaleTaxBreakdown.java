@@ -60,7 +60,7 @@ public final class SaleTaxBreakdown {
           ? amount.multiply(BigDecimal.valueOf(100)).divide(BigDecimal.valueOf(100).add(rate), 2, RoundingMode.HALF_UP)
           : amount;
       lineRates.add(taxableRate(item));
-      lines.add(new SaleLineTaxDto(lineTaxable, amount.subtract(lineTaxable), rate));
+      lines.add(new SaleLineTaxDto(lineTaxable, amount.subtract(lineTaxable), rate, amount));
       // At the price the RATE column prints, so Total Amount is that column times quantity.
       gross = gross.add(CheckoutUtils.getTaxablePricePerUnit(item).setScale(2, RoundingMode.HALF_UP)
           .multiply(CheckoutUtils.getBillableQuantityAsDecimal(item))

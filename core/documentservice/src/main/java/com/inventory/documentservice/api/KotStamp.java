@@ -1,4 +1,4 @@
-package com.inventory.documentservice.domain;
+package com.inventory.documentservice.api;
 
 /** The single switch behind all three KOT print paths: normal, reprint and cancellation. */
 public enum KotStamp {
