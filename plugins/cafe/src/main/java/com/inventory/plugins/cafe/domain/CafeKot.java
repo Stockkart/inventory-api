@@ -17,11 +17,15 @@ import org.springframework.data.mongodb.core.mapping.Document;
  */
 @Data
 @Document(collection = "cafe_kots")
-// One index, and it is the one scripts/cafe-kot-indexes.mongodb.js creates. shopId needs none
-// of its own: the two queries on this collection are findByIdAndShopId, served by _id, and
-// findByShopIdAndPunchId, served by this -- of which shopId is the prefix.
+// Indexes are created by hand before deploy (see README, Cafe KOT). The three queries on this
+// collection: findByIdAndShopId, served by _id; findByShopIdAndPunchId, served by shop_punch;
+// findByShopIdAndPurchaseIdOrderByCreatedAtDesc, served by shop_purchase_created, so listing a
+// bill's tickets reads only that bill's tickets, already in order.
 @CompoundIndexes({
-  @CompoundIndex(name = "shop_punch", def = "{'shopId': 1, 'punchId': 1}")
+  @CompoundIndex(name = "shop_punch", def = "{'shopId': 1, 'punchId': 1}"),
+  @CompoundIndex(
+      name = "shop_purchase_created",
+      def = "{'shopId': 1, 'purchaseId': 1, 'createdAt': -1}")
 })
 public class CafeKot {
 

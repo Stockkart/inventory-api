@@ -246,7 +246,7 @@ Cafe KOT lives in `plugins/cafe`. Calls between it and `core/product` go through
 
 The Sell screen punches a cart and the server owns the delta: each line sends `baseQuantity - kotSentQuantity`, so a second press sends only what was added, and a press with nothing new creates nothing. Only an open bill (`CREATED` / `PENDING`) of a cafe shop can be punched. Tickets are grouped by station (`department`) and have deterministic ids (`punchId:department:kind`); they are **inserted**, never saved, so a concurrent recovery of the same punch reads the stored ticket back instead of renumbering it. Reprint is a field-level update of `reprintCount` plus `reprintIdempotencyKey` -- a replay of the same key does not bump the count.
 
-Deploy **before** the app: `scripts/cafe-kot-indexes.mongodb.js` (KOT indexes, and stamps legacy `cafe_token_counters` rows with `scope: BILL`).
+Indexes are not created by the app. Before deploying, create the indexes declared on `CafeKot` (`shop_punch`, `shop_purchase_created`), `cafe_sequences` (`shop_date_series_unique`, unique `{shopId, businessDate, series}`) and `cafe_token_counters` (`shop_date_scope_unique`, unique `{shopId, businessDate, scope}`), and stamp legacy `cafe_token_counters` rows that have no `scope` with `scope: BILL`. These are run by hand against the database; no script is kept in the repo.
 
 | Endpoint | Purpose |
 |----------|---------|
