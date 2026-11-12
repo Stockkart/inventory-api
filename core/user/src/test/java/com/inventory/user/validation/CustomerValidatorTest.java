@@ -10,6 +10,7 @@ import com.inventory.common.gst.PostalAddress;
 import com.inventory.user.rest.dto.request.UpdateCustomerRequest;
 import com.inventory.user.domain.model.enums.CustomerPartyType;
 import com.inventory.user.rest.dto.request.CreateCustomerRequest;
+import java.time.LocalDate;
 import org.junit.jupiter.api.Test;
 
 class CustomerValidatorTest {
@@ -80,5 +81,17 @@ class CustomerValidatorTest {
     assertThrows(ValidationException.class, () -> validator.validateUpdateRequest(request));
     request.setPostalAddress(PostalAddress.builder().stateCode("10").build());
     assertDoesNotThrow(() -> validator.validateUpdateRequest(request));
+  }
+
+  @Test
+  void aDlNumberNeedsItsExpiryDate() {
+    assertThrows(ValidationException.class, () -> validator.validateDrugLicence("20B/123", null));
+    assertDoesNotThrow(() -> validator.validateDrugLicence("20B/123", LocalDate.of(2028, 3, 31)));
+  }
+
+  @Test
+  void noDlNumberNeedsNoExpiryDate() {
+    assertDoesNotThrow(() -> validator.validateDrugLicence(null, null));
+    assertDoesNotThrow(() -> validator.validateDrugLicence("", null));
   }
 }

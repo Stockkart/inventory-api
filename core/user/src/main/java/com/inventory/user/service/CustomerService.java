@@ -72,6 +72,9 @@ public class CustomerService {
   private GstinDirectory gstinDirectory;
 
   public CustomerDto createCustomerDto(String shopId, CreateCustomerRequest request) {
+    if (request != null) {
+      customerValidator.validateDrugLicence(request.getDlNo(), request.getDlExpiry());
+    }
     CustomerDto dto = customerMapper.toDto(findOrCreateCustomer(shopId, request));
     metrics.record(
         UserMetricsConstants.CUSTOMERS_TOTAL,
@@ -381,6 +384,10 @@ public class CustomerService {
 
     String gstinBefore = customer.getGstin();
     customerMapper.applyUpdate(request, customer);
+    // Rows saved before the expiry was asked for keep working until someone edits their D.L.
+    if (request.getDlNo() != null || request.getDlExpiry() != null) {
+      customerValidator.validateDrugLicence(customer.getDlNo(), customer.getDlExpiry());
+    }
     if (!Objects.equals(gstinBefore, customer.getGstin())) {
       verifyGstin(customer);
     }

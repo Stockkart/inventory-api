@@ -23,6 +23,7 @@ import com.inventory.user.rest.dto.response.VendorListResponse;
 import com.inventory.user.mapper.VendorMapper;
 import com.inventory.user.validation.VendorValidator;
 import com.inventory.metrics.MetricsWrapper;
+import com.inventory.user.utils.DrugLicence;
 import com.inventory.user.utils.constants.UserMetricsConstants;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,8 +33,10 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 import org.springframework.data.domain.Page;
@@ -131,6 +134,14 @@ public class VendorService {
         existingVendor.setDlNo(StringUtils.hasText(vendor.getDlNo()) ? vendor.getDlNo().trim() : null);
         updated = true;
       }
+      LocalDate dlExpiry =
+          DrugLicence.expiryToStore(
+              existingVendor.getDlNo(),
+              vendor.getDlExpiry() != null ? vendor.getDlExpiry() : existingVendor.getDlExpiry());
+      if (!Objects.equals(dlExpiry, existingVendor.getDlExpiry())) {
+        existingVendor.setDlExpiry(dlExpiry);
+        updated = true;
+      }
       if (vendor.getDefaultTaxTreatment() != null
           && vendor.getDefaultTaxTreatment() != existingVendor.getDefaultTaxTreatment()) {
         existingVendor.setDefaultTaxTreatment(vendor.getDefaultTaxTreatment());
@@ -223,6 +234,7 @@ public class VendorService {
 
     try {
       Vendor vendor = vendorMapper.toEntity(request);
+      vendor.setDlExpiry(DrugLicence.expiryToStore(vendor.getDlNo(), vendor.getDlExpiry()));
       vendorMapper.setTimestamps(vendor);
 
       // Create vendor and link to shop
@@ -522,6 +534,18 @@ public class VendorService {
         vendor.setDlNo(StringUtils.hasText(dlNo) ? dlNo : null);
         updated = true;
       }
+    }
+    LocalDate dlExpiry =
+        DrugLicence.expiryToStore(
+            vendor.getDlNo(),
+            request.getDlExpiry() != null ? request.getDlExpiry() : vendor.getDlExpiry());
+    if (!Objects.equals(dlExpiry, vendor.getDlExpiry())) {
+      vendor.setDlExpiry(dlExpiry);
+      updated = true;
+    }
+    // Rows saved before the expiry was asked for keep working until someone edits their D.L.
+    if (request.getDlNo() != null || request.getDlExpiry() != null) {
+      vendorValidator.validateDrugLicence(vendor.getDlNo(), vendor.getDlExpiry());
     }
     // Null leaves the default alone; an explicit choice replaces it.
     if (request.getDefaultTaxTreatment() != null

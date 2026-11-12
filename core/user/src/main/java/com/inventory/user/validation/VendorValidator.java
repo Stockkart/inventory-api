@@ -6,6 +6,8 @@ import com.inventory.common.gst.PostalAddress;
 import com.inventory.common.util.GstStateCode;
 import com.inventory.user.rest.dto.request.CreateVendorRequest;
 import com.inventory.user.rest.dto.request.SearchVendorRequest;
+import com.inventory.user.utils.DrugLicence;
+import java.time.LocalDate;
 import java.util.Optional;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -32,6 +34,14 @@ public class VendorValidator {
     validateGstin(request.getGstinUin());
     validateAddress(request.getPostalAddress());
     validatePlace(request.getGstinUin(), request.getPostalAddress());
+    validateDrugLicence(request.getDlNo(), request.getDlExpiry());
+  }
+
+  /** A D.L. No. needs its expiry date; without a D.L. No. the expiry is not asked for. */
+  public void validateDrugLicence(String dlNo, LocalDate dlExpiry) {
+    if (DrugLicence.missingExpiry(dlNo, dlExpiry)) {
+      throw new ValidationException(DrugLicence.EXPIRY_REQUIRED);
+    }
   }
 
   /**

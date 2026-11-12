@@ -10,6 +10,7 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
+import java.time.LocalDate;
 
 @Data
 @NoArgsConstructor
@@ -34,6 +35,8 @@ public class Vendor {
   /** The network's status at that time: Active, Cancelled, Suspended, … */
   private String gstinStatus;
   private String dlNo; // Drug licence number, as printed on a pharmacy bill
+  /** Last day the D.L. is valid. Required when {@code dlNo} is set; null on rows saved before it was asked for. */
+  private LocalDate dlExpiry;
   /** Optional link to UserAccount when vendor is a registered user. */
   private String userId;
   /**

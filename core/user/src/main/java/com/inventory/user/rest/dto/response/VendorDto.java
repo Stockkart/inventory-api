@@ -8,6 +8,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.Instant;
+import java.time.LocalDate;
 
 @Data
 @NoArgsConstructor
@@ -25,6 +26,9 @@ public class VendorDto {
   private Instant gstinVerifiedAt;
   private String gstinStatus;
   private String dlNo;
+  private LocalDate dlExpiry;
+  /** True when the D.L. expired before today (India); null when there is no expiry date. */
+  private Boolean dlExpired;
   /** INCLUSIVE when this supplier bills at MRP with GST inside the line amount. */
   private PurchaseTaxTreatment defaultTaxTreatment;
   /** Optional. Set when vendor is linked to a registered user. */

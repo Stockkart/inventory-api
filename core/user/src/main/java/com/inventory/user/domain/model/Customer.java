@@ -10,6 +10,7 @@ import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
+import java.time.LocalDate;
 
 @Data
 @NoArgsConstructor
@@ -37,6 +38,8 @@ public class Customer {
   private String gstinStatus;
   @Indexed(sparse = true)
   private String dlNo;
+  /** Last day the D.L. is valid. Required when {@code dlNo} is set; null on rows saved before it was asked for. */
+  private LocalDate dlExpiry;
   @Indexed(sparse = true)
   private String pan;
   /** Optional link to UserAccount when customer is a registered user. */

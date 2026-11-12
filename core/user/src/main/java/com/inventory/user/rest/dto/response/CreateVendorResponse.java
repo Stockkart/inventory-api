@@ -7,6 +7,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.Instant;
+import java.time.LocalDate;
 
 @Data
 @NoArgsConstructor
@@ -24,6 +25,9 @@ public class CreateVendorResponse {
   private Instant gstinVerifiedAt;
   private String gstinStatus;
   private String dlNo;
+  private LocalDate dlExpiry;
+  /** True when the D.L. expired before today (India); null when there is no expiry date. */
+  private Boolean dlExpired;
   private Instant createdAt;
   private Instant updatedAt;
 }

@@ -3,6 +3,7 @@ package com.inventory.user.rest.dto.request;
 import com.inventory.common.gst.PostalAddress;
 
 import com.inventory.common.constants.PurchaseTaxTreatment;
+import java.time.LocalDate;
 import lombok.Data;
 
 @Data
@@ -17,6 +18,8 @@ public class UpdateVendorRequest {
   private String businessType;
   private String gstinUin;
   private String dlNo;
+  /** Last day the D.L. is valid (yyyy-MM-dd). Null leaves it unchanged; cleared with the D.L. No. */
+  private LocalDate dlExpiry;
   /** INCLUSIVE when this supplier bills at MRP with GST inside the line amount. */
   private PurchaseTaxTreatment defaultTaxTreatment;
 }
