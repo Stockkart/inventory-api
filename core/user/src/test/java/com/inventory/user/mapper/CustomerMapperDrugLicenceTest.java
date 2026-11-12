@@ -77,4 +77,14 @@ class CustomerMapperDrugLicenceTest {
     assertFalse(mapper.toDto(valid).getDlExpired());
     assertNull(mapper.toDto(new Customer()).getDlExpired());
   }
+
+  @Test
+  void theModelSaysWhetherTheLicenceHasExpired() {
+    Customer c = new Customer();
+    assertNull(c.dlExpiredToday());
+    c.setDlExpiry(DrugLicence.today());
+    assertFalse(c.dlExpiredToday());
+    c.setDlExpiry(DrugLicence.today().minusDays(1));
+    assertTrue(c.dlExpiredToday());
+  }
 }

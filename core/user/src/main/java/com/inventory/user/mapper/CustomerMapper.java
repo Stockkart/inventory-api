@@ -39,7 +39,7 @@ public interface CustomerMapper {
     if (dto.getIsGeneral() == null) {
       dto.setIsGeneral(Boolean.FALSE);
     }
-    dto.setDlExpired(DrugLicence.isExpired(customer.getDlExpiry(), DrugLicence.today()));
+    dto.setDlExpired(customer.dlExpiredToday());
   }
 
   default Customer toCustomer(CreateCustomerRequest request) {
@@ -126,8 +126,11 @@ public interface CustomerMapper {
     if (cleanGstin(request.getGstin()) != null) {
       customer.setGstin(cleanGstin(request.getGstin()));
     }
-    if (TextUtils.trimToNull(request.getDlNo()) != null) {
-      customer.setDlNo(TextUtils.trimToNull(request.getDlNo()));
+    String dlNo = TextUtils.trimToNull(request.getDlNo());
+    if (dlNo != null && !dlNo.equals(customer.getDlNo())) {
+      // a new number does not inherit the old one's expiry
+      customer.setDlNo(dlNo);
+      customer.setDlExpiry(request.getDlExpiry());
     }
     if (request.getDlExpiry() != null) {
       customer.setDlExpiry(DrugLicence.expiryToStore(customer.getDlNo(), request.getDlExpiry()));

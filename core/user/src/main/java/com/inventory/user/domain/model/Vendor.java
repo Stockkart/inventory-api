@@ -10,6 +10,7 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
+import com.inventory.user.utils.DrugLicence;
 import java.time.LocalDate;
 
 @Data
@@ -52,5 +53,9 @@ public class Vendor {
   private PurchaseTaxTreatment defaultTaxTreatment;
   private Instant createdAt;
   private Instant updatedAt;
-}
 
+  /** True once the D.L. expiry date has passed (India date); null when there is no expiry date. */
+  public Boolean dlExpiredToday() {
+    return DrugLicence.isExpired(dlExpiry, DrugLicence.today());
+  }
+}

@@ -10,6 +10,7 @@ import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
+import com.inventory.user.utils.DrugLicence;
 import java.time.LocalDate;
 
 @Data
@@ -60,5 +61,10 @@ public class Customer {
 
   public CustomerPartyType resolvedPartyType() {
     return partyType != null ? partyType : CustomerPartyType.CONSUMER;
+  }
+
+  /** True once the D.L. expiry date has passed (India date); null when there is no expiry date. */
+  public Boolean dlExpiredToday() {
+    return DrugLicence.isExpired(dlExpiry, DrugLicence.today());
   }
 }

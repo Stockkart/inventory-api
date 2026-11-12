@@ -72,9 +72,6 @@ public class CustomerService {
   private GstinDirectory gstinDirectory;
 
   public CustomerDto createCustomerDto(String shopId, CreateCustomerRequest request) {
-    if (request != null) {
-      customerValidator.validateDrugLicence(request.getDlNo(), request.getDlExpiry());
-    }
     CustomerDto dto = customerMapper.toDto(findOrCreateCustomer(shopId, request));
     metrics.record(
         UserMetricsConstants.CUSTOMERS_TOTAL,
@@ -123,6 +120,7 @@ public class CustomerService {
 
     if (customer == null) {
       customer = customerMapper.toCustomer(request);
+      customerValidator.validateDrugLicence(customer.getDlNo(), customer.getDlExpiry());
       verifyGstin(customer);
       customer = customerRepository.save(customer);
       log.info("Created new customer with ID: {}", customer.getId());
@@ -254,7 +252,12 @@ public class CustomerService {
 
   private void updateExistingCustomerFromCreateRequest(CreateCustomerRequest request, Customer customer) {
     String before = customer.getGstin();
+    String dlNoBefore = customer.getDlNo();
     customerMapper.applyCreateRequest(request, customer);
+    // A D.L. set or changed here needs its expiry; an unchanged older one keeps billing.
+    if (!Objects.equals(dlNoBefore, customer.getDlNo()) || request.getDlExpiry() != null) {
+      customerValidator.validateDrugLicence(customer.getDlNo(), customer.getDlExpiry());
+    }
     if (!Objects.equals(before, customer.getGstin())) {
       verifyGstin(customer);
     }

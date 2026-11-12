@@ -402,6 +402,7 @@ public class QuotationService {
     cartRequest.setCustomerEmail(request.getCustomerEmail());
     cartRequest.setCustomerGstin(request.getCustomerGstin());
     cartRequest.setCustomerDlNo(request.getCustomerDlNo());
+    cartRequest.setCustomerDlExpiry(request.getCustomerDlExpiry());
     cartRequest.setCustomerPan(request.getCustomerPan());
     cartRequest.setCustomerPartyType(request.getCustomerPartyType());
     cartRequest.setCustomerUserId(request.getCustomerUserId());
