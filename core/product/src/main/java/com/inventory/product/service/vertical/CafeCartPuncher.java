@@ -30,7 +30,9 @@ import org.springframework.stereotype.Service;
  *
  * <ol>
  *   <li>append a punch to {@code cafeKotPunches}, with deltas computed from the lines <b>as they
- *       still are</b>;
+ *       still are</b> -- but only when at least one line moved. A press with nothing new leaves
+ *       the punches as they are, so repeated presses do not grow the bill or push up the round
+ *       number printed on the next ticket;
  *   <li>set every line's {@code kotSentQuantity} to its own {@code baseQuantity}, dropping the
  *       lines that end up empty on both counts.
  * </ol>
@@ -62,7 +64,8 @@ public class CafeCartPuncher {
    *
    * @return the purchase's <b>pre-image</b> — the lines as they were before reconciliation — or
    *     {@link Optional#empty()} when nothing matched, which means either no such cart in this
-   *     shop or this idempotency key has already been punched.
+   *     shop or this idempotency key has already been punched. A match with nothing to send
+   *     returns the pre-image too, but stores no punch.
    */
   public Optional<Document> claimAndReconcile(
       String shopId, String purchaseId, String punchId, String idempotencyKey, String userId) {
@@ -110,10 +113,16 @@ public class CafeCartPuncher {
   }
 
   /**
-   * Stage 1 — append one punch, its deltas read off the lines as they stand right now.
+   * Stage 1 — append one punch, its deltas read off the lines as they stand right now, but only
+   * when there is at least one.
    *
-   * <p>{@code $concatArrays} onto {@code $ifNull: ["$cafeKotPunches", []]} so a cart that has
-   * never been punched (field absent) appends just as cleanly as one that has.
+   * <p>The deltas are computed once, in a {@code $let}, so the condition and the stored record
+   * see the same list. {@code $concatArrays} onto {@code $ifNull: ["$cafeKotPunches", []]} so a
+   * cart that has never been punched (field absent) appends just as cleanly as one that has. With
+   * nothing to send, the field is set to itself; on a cart that never had it, it stays absent.
+   *
+   * <p>Not storing an empty punch loses nothing: a retry of the same key finds no record and
+   * claims again, and the lines' {@code kotSentQuantity} already stops anything being sent twice.
    */
   private static Document appendPunchStage(String punchId, String idempotencyKey, String userId) {
     Document punch =
@@ -124,17 +133,29 @@ public class CafeCartPuncher {
             .append("createdBy", userId)
             // Filled in by ticket creation, once the KOTs exist.
             .append("kotIds", List.of())
-            .append("deltas", deltasExpression());
+            .append("deltas", "$$deltas");
+
+    Document appended =
+        new Document(
+            "$concatArrays",
+            List.of(
+                new Document("$ifNull", List.of("$cafeKotPunches", List.of())), List.of(punch)));
+
+    Document appendIfAnyMoved =
+        new Document(
+            "$cond",
+            new Document("if", new Document("$gt", List.of(new Document("$size", "$$deltas"), 0)))
+                .append("then", appended)
+                .append("else", "$cafeKotPunches"));
 
     return new Document(
         "$set",
         new Document(
             "cafeKotPunches",
             new Document(
-                "$concatArrays",
-                List.of(
-                    new Document("$ifNull", List.of("$cafeKotPunches", List.of())),
-                    List.of(punch)))));
+                "$let",
+                new Document("vars", new Document("deltas", deltasExpression()))
+                    .append("in", appendIfAnyMoved))));
   }
 
   /**

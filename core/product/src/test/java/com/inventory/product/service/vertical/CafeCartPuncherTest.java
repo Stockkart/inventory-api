@@ -246,10 +246,7 @@ class CafeCartPuncherTest {
   void deltasAreFilteredToExactlyTheLinesThatMoved() {
     stub(new Document("_id", "pur-1"));
 
-    Document filter =
-        appendedPunch(capturePipeline())
-            .get("deltas", Document.class)
-            .get("$filter", Document.class);
+    Document filter = deltasExpr(capturePipeline()).get("$filter", Document.class);
 
     assertEquals("delta", filter.get("as"));
     // $ne and not, say, $gt: a negative delta is a cancellation the kitchen must still be told of.
@@ -276,10 +273,38 @@ class CafeCartPuncherTest {
   void appendPreservesExistingPunches() {
     stub(new Document("_id", "pur-1"));
 
-    String json = stageSetting(capturePipeline(), "cafeKotPunches").toJson();
+    String json = appendCond(capturePipeline()).get("then", Document.class).toJson();
 
     assertTrue(json.contains("$concatArrays"), json);
     assertTrue(json.contains("cafeKotPunches"), json);
+  }
+
+  /**
+   * A press with nothing new must not grow the cart. Every such press used to append an empty
+   * punch record, so a waiter tapping Send repeatedly made the bill heavier without bound, and
+   * every later round number on the kitchen's paper was pushed up by the empty presses.
+   */
+  @Test
+  void aPunchIsAppendedOnlyWhenTheCartHasSomethingToSend() {
+    stub(new Document("_id", "pur-1"));
+
+    List<Document> pipeline = capturePipeline();
+    Document cond = appendCond(pipeline);
+
+    assertEquals(
+        new Document("$gt", List.of(new Document("$size", "$$deltas"), 0)),
+        cond.get("if"),
+        "append only when at least one line moved");
+    assertEquals(
+        "$cafeKotPunches", cond.get("else"), "with nothing to send, the punches stay as they are");
+  }
+
+  /** The record carries the very deltas the condition looked at, computed once. */
+  @Test
+  void theAppendedPunchCarriesTheDeltasTheConditionChecked() {
+    stub(new Document("_id", "pur-1"));
+
+    assertEquals("$$deltas", appendedPunch(capturePipeline()).get("deltas"));
   }
 
   /**
@@ -343,18 +368,31 @@ class CafeCartPuncherTest {
 
   /** The per-line delta expression, i.e. the {@code in} of the deltas' inner {@code $map}. */
   private Document mappedDelta(List<Document> pipeline) {
-    return appendedPunch(pipeline)
-        .get("deltas", Document.class)
+    return deltasExpr(pipeline)
         .get("$filter", Document.class)
         .get("input", Document.class)
         .get("$map", Document.class)
         .get("in", Document.class);
   }
 
+  /** The {@code $let} that computes the deltas once and decides whether to append. */
+  private Document punchLet(List<Document> pipeline) {
+    return stageSetting(pipeline, "cafeKotPunches").get("$let", Document.class);
+  }
+
+  /** The deltas expression, bound once as {@code $$deltas}. */
+  private Document deltasExpr(List<Document> pipeline) {
+    return punchLet(pipeline).get("vars", Document.class).get("deltas", Document.class);
+  }
+
+  private Document appendCond(List<Document> pipeline) {
+    return punchLet(pipeline).get("in", Document.class).get("$cond", Document.class);
+  }
+
   @SuppressWarnings("unchecked")
   private Document appendedPunch(List<Document> pipeline) {
     List<Object> parts =
-        (List<Object>) stageSetting(pipeline, "cafeKotPunches").get("$concatArrays");
+        (List<Object>) appendCond(pipeline).get("then", Document.class).get("$concatArrays");
     List<Object> appended = (List<Object>) parts.get(1);
     return (Document) appended.get(0);
   }

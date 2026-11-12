@@ -37,6 +37,7 @@ import org.springframework.util.StringUtils;
  *     punch with this key is COMPLETE              -&gt; return its tickets; reconcile nothing
  *     punch with this key is PENDING_KOT_CREATION  -&gt; create only the MISSING tickets, then COMPLETE
  *     no punch with this key                       -&gt; claimAndReconcile, then tickets, then COMPLETE
+ *       (nothing new on the cart                   -&gt; no punch is stored; return no tickets)
  * </pre>
  *
  * <p><b>A replay must never reconcile again.</b> The cart has already advanced: its lines'
@@ -100,6 +101,16 @@ public class CafeKotPunchService {
       // the answer is on the document, so re-read it and look again.
       purchase = requirePurchase(shopId, purchaseId);
       punch = findPunch(purchase, idempotencyKey);
+      if (punch == null && claimed) {
+        // The write matched but the cart had nothing new, so no punch was stored: there is
+        // nothing to ticket and nothing to recover. Any later lines go out on the next press.
+        log.debug(
+            "Cafe punch of purchase {} in shop {} with key {}: nothing new to send",
+            purchaseId,
+            shopId,
+            idempotencyKey);
+        return List.of();
+      }
       if (punch == null) {
         // The cart exists, the write did not land, and no punch carries this key. Nothing was
         // reconciled, so there is nothing to recover; the caller may safely retry.
