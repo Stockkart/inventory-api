@@ -1,6 +1,7 @@
 package com.inventory.product.rest.dto.request;
 
 import com.inventory.product.domain.model.enums.SchemeType;
+import java.time.LocalDate;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -24,6 +25,8 @@ public class AddToCartRequest {
   private String customerEmail;
   private String customerGstin; // Optional: Customer GSTIN
   private String customerDlNo; // Optional: Customer D.L No.
+  /** Last day the D.L. is valid; needed when this request gives the customer a new D.L. No. */
+  private LocalDate customerDlExpiry;
   private String customerPan; // Optional: Customer PAN
   /** CONSUMER | RETAILER | DISTRIBUTOR | WHOLESALER */
   private String customerPartyType;

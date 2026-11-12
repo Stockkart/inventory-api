@@ -6,8 +6,10 @@ import com.inventory.user.rest.dto.request.CreateVendorRequest;
 import com.inventory.user.rest.dto.request.SearchVendorRequest;
 import com.inventory.user.rest.dto.response.CreateVendorResponse;
 import com.inventory.user.rest.dto.response.VendorDto;
+import org.mapstruct.AfterMapping;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
+import org.mapstruct.MappingTarget;
 import org.mapstruct.ReportingPolicy;
 import org.springframework.util.StringUtils;
 
@@ -22,10 +24,22 @@ public interface VendorMapper {
   Vendor toEntity(CreateVendorRequest request);
 
   @Mapping(target = "vendorId", source = "id")
+  @Mapping(target = "dlExpired", ignore = true)
   CreateVendorResponse toCreateResponse(Vendor vendor);
 
   @Mapping(target = "vendorId", source = "id")
+  @Mapping(target = "dlExpired", ignore = true)
   VendorDto toDto(Vendor vendor);
+
+  @AfterMapping
+  default void setDlExpired(@MappingTarget VendorDto dto, Vendor vendor) {
+    dto.setDlExpired(vendor.dlExpiredToday());
+  }
+
+  @AfterMapping
+  default void setDlExpired(@MappingTarget CreateVendorResponse response, Vendor vendor) {
+    response.setDlExpired(vendor.dlExpiredToday());
+  }
 
   default SearchVendorRequest toSearchVendorRequest(String query) {
     SearchVendorRequest r = new SearchVendorRequest();
