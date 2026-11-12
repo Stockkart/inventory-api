@@ -390,6 +390,22 @@ class CafeKotPunchServiceTest {
   }
 
   @Test
+  void aPressWithNothingNewReturnsNoTicketsAndLeavesNoPunchOnTheCart() {
+    // The claim matched (cart exists, key unused) but the cart had nothing to send, so the
+    // pipeline stored no punch record. That is "nothing to send", not a failed claim.
+    when(cartPort.findCart("shop-1", "p1"))
+        .thenReturn(purchase(List.of()), purchase(List.of()));
+    when(cartPort.claimAndReconcile(any(), any(), any(), any(), any())).thenReturn(true);
+
+    List<CafeKot> kots = service.punch("shop-1", "user-1", "p1", "key-1");
+
+    assertTrue(kots.isEmpty());
+    verify(kotRepository, never()).insert(any(CafeKot.class));
+    verify(sequenceService, never()).allocate(anyString(), any(LocalDate.class), any());
+    verify(cartPort, never()).markPunchComplete(any(), any(), any(), any());
+  }
+
+  @Test
   void aClaimThatLandsNoPunchOnAnExistingCartIsAnError() {
     when(cartPort.findCart("shop-1", "p1"))
         .thenReturn(purchase(List.of()), purchase(List.of()));
