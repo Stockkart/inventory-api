@@ -5,10 +5,13 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.inventory.documentservice.api.KotDocument;
+import com.inventory.documentservice.api.KotStamp;
 import com.inventory.documentservice.api.MisKpi;
 import com.inventory.documentservice.api.MisSheet;
 import com.inventory.documentservice.api.MisTabularDocument;
 import com.inventory.documentservice.api.PayslipDocument;
+import com.inventory.documentservice.rest.dto.GenerateKotRequest;
 import com.inventory.documentservice.rest.dto.hr.PayslipDocumentRequest;
 import com.inventory.documentservice.rest.dto.mis.MisTabularDocumentRequest;
 import java.lang.reflect.Field;
@@ -63,6 +66,52 @@ class ApiMappingTest {
     assertNull(request.getRows());
     assertNull(request.getExtraSheets());
     assertNull(MisDocumentsImpl.toRequest(null));
+  }
+
+  @Test
+  void kotDocumentIsCopiedFieldForField() {
+    KotDocument doc =
+        KotDocument.builder()
+            .kotNo(7)
+            .department("BAR")
+            .roundNo(2)
+            .tableLabel("T4")
+            .tokenNo("12")
+            .printedAt("09/11 13:05")
+            .stamp(KotStamp.REPRINT)
+            .items(
+                List.of(
+                    new KotDocument.Item("Coke", 2, "no ice"),
+                    new KotDocument.Item("Lassi", 1, null)))
+            .build();
+
+    GenerateKotRequest request = KotDocumentsImpl.toRequest(doc);
+
+    assertEquals(7, request.getKotNo());
+    assertEquals("BAR", request.getDepartment());
+    assertEquals(2, request.getRoundNo());
+    assertEquals("T4", request.getTableLabel());
+    assertEquals("12", request.getTokenNo());
+    assertEquals("09/11 13:05", request.getPrintedAt());
+    assertEquals(KotStamp.REPRINT, request.getStamp());
+    assertEquals(2, request.getItems().size());
+    assertEquals("Coke", request.getItems().get(0).getName());
+    assertEquals(2, request.getItems().get(0).getQuantity());
+    assertEquals("no ice", request.getItems().get(0).getNote());
+    assertEquals("Lassi", request.getItems().get(1).getName());
+    assertNull(request.getItems().get(1).getNote());
+    // Fields the cafe path never sets stay unset.
+    assertNull(request.getOrderNo());
+    assertNull(request.getVoidReason());
+  }
+
+  @Test
+  void kotDocumentKeepsNullsAsNulls() {
+    GenerateKotRequest request = KotDocumentsImpl.toRequest(KotDocument.builder().kotNo(1).build());
+
+    assertNull(request.getStamp());
+    assertNull(request.getItems());
+    assertNull(KotDocumentsImpl.toRequest(null));
   }
 
   @Test

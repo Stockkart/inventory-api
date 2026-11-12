@@ -77,7 +77,7 @@ modules:
     collections: [inventory_ext_sports]
   plugins/cafe:
     dependsOn: [common, pluginengine, metrics]
-    collections: [inventory_ext_cafe]
+    collections: [inventory_ext_cafe, cafe_kots]
   # app wires the program together and may reference any module (see `compositionRoot`).
   app:
     dependsOn: [metrics, pluginengine, notifications, pricing, reminders, resource, documentservice,

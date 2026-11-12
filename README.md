@@ -238,11 +238,44 @@ Shops are bound to a **vertical** (`Shop.verticalId` + `Shop.pluginVersion`). Fi
 
 **Frontend (inventory-platform):** consumes schema APIs for onboarding, product registration, scan-sell, product search (cursor pagination), and reminders expiry buckets — see architecture doc § Implementation status.
 
-**Remaining:** M8 core field strip migration; scan-sell detail modal schema columns; apparel/cafe vertical (Phase 5); import mappers + widgets (Phase 6).
+**Remaining:** M8 core field strip migration; scan-sell detail modal schema columns; apparel vertical (Phase 5); import mappers + widgets (Phase 6).
+
+### Cafe kitchen tickets
+
+Cafe KOT lives in `plugins/cafe`. Calls between it and `core/product` go through `pluginengine` (`CafeKotPort`, implemented by `CafeKotAdapter`); the plugin imports nothing from core. The punch reads and updates the bill (`items[].kotSentQuantity` and `cafeKotPunches` in `purchases`) only through `CafeCartPunchPort`, which `core/product` implements (`CafeCartPunchPortImpl`, with the single-write pipeline in `CafeCartPuncher`). Ticket PDFs are rendered through `documentservice`'s `KotDocuments` api.
+
+The Sell screen punches a cart and the server owns the delta: each line sends `baseQuantity - kotSentQuantity`, so a second press sends only what was added, and a press with nothing new creates nothing. Only an open bill (`CREATED` / `PENDING`) of a cafe shop can be punched. Tickets are grouped by station (`department`) and have deterministic ids (`punchId:department:kind`); they are **inserted**, never saved, so a concurrent recovery of the same punch reads the stored ticket back instead of renumbering it. Reprint is a field-level update of `reprintCount` plus `reprintIdempotencyKey` -- a replay of the same key does not bump the count.
+
+Indexes are not created by the app. Before deploying, create the indexes declared on `CafeKot` (`shop_punch`, `shop_purchase_created`), `cafe_sequences` (`shop_date_series_unique`, unique `{shopId, businessDate, series}`) and `cafe_token_counters` (`shop_date_scope_unique`, unique `{shopId, businessDate, scope}`), and stamp legacy `cafe_token_counters` rows that have no `scope` with `scope: BILL`. These are run by hand against the database; no script is kept in the repo.
+
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /api/v1/cafe/purchases/{purchaseId}/kots` | Punch the cart. Requires `Idempotency-Key`. No body. |
+| `GET /api/v1/cafe/purchases/{purchaseId}/kots` | Tickets this bill has issued, newest first (the Sell screen's "Sent rounds"). |
+| `GET /api/v1/cafe/kots/{kotId}/document` | Thermal PDF for a ticket. |
+| `POST /api/v1/cafe/kots/{kotId}/reprint` | Reprint stamp. Requires `Idempotency-Key`. Same key is a no-op bump. |
 
 **Clearing a field on a lot edit.** In `PUT /api/v1/inventory/{id}` a field left out or sent as `null` keeps its value. To empty one, name it in `clearFields`: `barcode`, `description`, `companyName`, `location`, `hsn`, `discountApplicable`, `thresholdCount` (lot) and `saleAdditionalDiscount`, `purchaseAdditionalDiscount`, `saleScheme`, `purchaseScheme` (pricing record). Any other name, or a name also sent with a value, is a 400. A clear needs the same product-search grant as setting the field (`saleScheme` → `schemeType`, `purchaseScheme` → `purchaseSchemeType`).
 
 **Granting product-search fields to a member.** In a permission-based shop the owner grants each member fields with `PATCH /api/v1/shops/{shopId}/rbac/members/{userId}` (`productSearchEditableFields`). Only the fields in `RbacService.CORE_PRODUCT_SEARCH_FIELDS` can be granted (name, description, company, location, batch, expiry, cost, PTR, MRP, selling price, HSN, CGST, SGST, barcode, base unit, pack size). Any other name is a 400 naming it. The exception is a name the member already held, which is dropped, so the access screen can still save a member whose stored grants predate the list. Rates, the default rate, discounts and schemes are therefore editable only by the owner, or by members with edit access in a full-edit shop.
+
+### Cafe menu portions
+
+A cafe menu item is priced **either** by one `sellingPrice` **or** by named portions (`rates`: Qtr / Half / Full, each a `MenuRate { id, name, price }`), never both. The portion `id` is a slug frozen when the portion is first named (`MenuRates.normalize`, run on save before validation), so renaming "Half" never orphans a cart line. A cart line names its portion in the sellable ref, `menu:<itemId>@<rateId>` (`SellableRef`), and the price is always resolved from the menu on the server, never taken from the request. Validation (`CafeMenuVerticalValidator`): every portion needs an id, a name and a positive price, ids and names unique within the item.
+
+Menu lines also carry the kitchen `department` (station, blank means `KITCHEN`, see `MenuDepartments`) and an optional `note`, frozen onto the cart line when it is added.
+
+### Cafe stock items in menu sections
+
+A sell-direct stock lot can be placed in a menu section as a `MenuItem` with `sellMode: direct` and `inventoryId` (no new collection). The lot keeps owning price and stock: `MenuDirectLinks.normalize` clears any price, portions or GST sent on a placement, and the cart still sells it by its `inventory:` ref, so checkout, stock decrement and refunds are unchanged. The placement decides only the station: a stock cart line freezes the placement's `department` (`ShopMenuLookup.findDirectLink`), and an unplaced lot keeps `KITCHEN`. A placement's own `menu:` ref is refused for sale.
+
+`NONE` is a real station meaning "billed, but no ticket" (a bottle from the counter fridge): the punch claims the line but creates no KOT and burns no number (`MenuDepartments.emitsTicket`). Saving the menu: a lot may be placed once ("Lassi is already in Beverages"), a save over a stored menu must carry its revision, and a placement whose lot was deleted stays saveable.
+
+### Cart and settlement writes
+
+`CheckoutService` no longer replaces a bill with `purchaseRepository.save`. Cart edits and settlement go through `PurchaseTargetedWriter`, which writes only the fields that changed (lines addressed by `lineRef`, else `sellableRef`), so a concurrent writer -- a kitchen punch recording `kotSentQuantity` -- is never deleted by a cart write. A cart write that cannot address its line is refused rather than replacing the bill.
+
+Settlement is guarded: if the bill changed after its total was computed, the write is refused (400, "This bill changed while it was being settled") and nothing irreversible has happened. Stock is only checked before that write and taken off after it succeeds, so a refused settle and its retry never decrement stock twice. There is no Mongo transaction manager; nothing here relies on multi-document atomicity.
 
 ### GST reports (taxation)
 
@@ -300,7 +333,7 @@ A rule needs a discount above 0 (up to 100), a scheme, or both. Names are unique
 
 - **New batch** (`PricingService.createAndReturnEntity`, including stock-in): create always generates rule rates from the rules; rule rates sent by the client, with any disc % or scheme they carry, are replaced by generated ones, and no grant is checked. Overrides are made on saved batches only (the pricing screen, `PATCH`).
 - **Inventory update** (`PricingService.update`): when the request sends rates or a `defaultRate`, or changes `priceToRetail`, `maximumRetailPrice` or `sellingPrice` (a value differing from the stored one; a base sent unchanged does not count), rule rates are recalculated against the new bases. This path takes no `resetRates`; reset a rate with `PATCH`.
-- **`PATCH /api/v1/pricing/{id}` and `POST /api/v1/pricing/bulk-update`:** when the request sends `rates`, `resetRates` or a `defaultRate`. Each rate sent needs a `price`, even for a terms-only override (send the current price; it is ignored for a rule rate).
+- **`PATCH /api/v1/pricing/{id}` and `POST /api/v1/pricing/bulk-update`:** when the request sends `rates`, `resetRates` or a `defaultRate`. Each rate sent needs a `price`, even for a terms-only override (send the current price; it is ignored for a rule rate). Both writes need the product-search grant for `rates` and `defaultRate`, as sending those fields to `PUT /api/v1/inventory/{id}` does (`RbacModuleInterceptor`): the owner, or a member with edit access when the shop's mode is full edit; else 403 `ACCESS_DENIED`. `GET /api/v1/pricing/{id}` stays open to shop members.
 - **A retailer with rules** keeps generated rates on inventory save (`InventoryPricingWriteHandler`) and they are rebuilt from the selling price; an inventory update that sends only the selling price sends it as MRP and PTR too, as create does. A retailer without rules still has no rates and keeps today's edit behaviour. A shop without rules is otherwise untouched.
 
 Rates that match no rule are stored with their name and price only, marked `manual`; any other field sent with them (`base`, `baseValue`, disc %, scheme, `gstMode`) is dropped, so checkout bills them as legacy rates. They need no grant. A shop without rules stores every rate sent the same way, on create, `PATCH` and inventory update. A stored rule rate whose rule is gone (a rule removed, or `PUT` with `rules: []`) is stripped the same way on the batch's next write that would regenerate; until then checkout (`CartRateResolver`, which checks the shop's live rules) bills it as a legacy rate, price only, and does not apply it as a default rule rate. A rule skipped for a batch (base value missing) produces no rate. A rule that takes over a hand-typed rate's name replaces it and the `PATCH` / bulk-update response warns `{name, reason: "REPLACED_BY_RULE"}`. On a saved batch a rate sent whose name differs from a rule's only in case (`rate-a` against `Rate-A`) is 400 (also on an inventory update, which then saves nothing; other pricing failures there are still logged and skipped); so is (on inventory create and update, `PATCH` and bulk-update, rules or not) a rate sent with a built-in price's name (`MRP`, `PTR`, `Cost`, `priceToRetail` ...).
