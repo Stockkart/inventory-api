@@ -3,6 +3,7 @@ package com.inventory.product.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -63,7 +64,8 @@ class InventoryServiceClearFieldsTest {
 
     when(inventoryRepository.findById("lot-1")).thenReturn(Optional.of(lot));
     when(inventoryRepository.save(any(Inventory.class))).thenAnswer(inv -> inv.getArgument(0));
-    when(productService.resolveForRegistration(anyString(), any(), eq("s1"))).thenReturn("p1");
+    when(productService.resolveForRegistration(anyString(), any(), eq("s1"), anyBoolean()))
+        .thenReturn("p1");
     when(productService.findInShop(eq("s1"), anyString())).thenReturn(Optional.empty());
     when(inventoryVerticalExtensionHandler.mergeDetail(eq("s1"), any(), any()))
         .thenAnswer(inv -> inv.getArgument(2));
@@ -100,5 +102,25 @@ class InventoryServiceClearFieldsTest {
     assertEquals("E4", saved.getValue().getLocation());
     assertEquals(9, saved.getValue().getThresholdCount());
     assertEquals("30049099", saved.getValue().getHsn());
+  }
+
+  @Test
+  void aClearedBarcodeIsPassedOnSoTheProductLosesIt() {
+    UpdateInventoryRequest request = new UpdateInventoryRequest();
+    request.setClearFields(Set.of("barcode"));
+
+    inventoryService.update("lot-1", request, "s1", "u1");
+
+    verify(productService).resolveForRegistration(eq("p1"), any(), eq("s1"), eq(true));
+  }
+
+  @Test
+  void anEditWithoutABarcodeClearKeepsTheProductsBarcode() {
+    UpdateInventoryRequest request = new UpdateInventoryRequest();
+    request.setHsn("30049099");
+
+    inventoryService.update("lot-1", request, "s1", "u1");
+
+    verify(productService).resolveForRegistration(eq("p1"), any(), eq("s1"), eq(false));
   }
 }

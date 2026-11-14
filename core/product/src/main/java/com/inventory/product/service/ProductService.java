@@ -4,6 +4,7 @@ import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Product;
 import com.inventory.product.domain.model.UnitConversion;
+import com.inventory.product.domain.model.enums.ItemType;
 import com.inventory.product.domain.repository.ProductRepository;
 import com.inventory.product.rest.dto.response.ProductSuggestionDto;
 import com.inventory.product.validation.ProductValidator;
@@ -16,9 +17,16 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Owns shop-scoped catalog {@link Product} lifecycle: typeahead suggest and the
@@ -30,6 +38,12 @@ import java.util.Optional;
 public class ProductService {
 
   private static final int SUGGEST_LIMIT = 10;
+  /** Read past {@link #SUGGEST_LIMIT} so copies folded into one row still leave ten rows. */
+  private static final int SUGGEST_FETCH_LIMIT = 50;
+  private static final String KEY_SEPARATOR = "\u0001";
+  private static final String MEDICAL = "MEDICAL";
+  /** Business types written before the medical vertical settled on {@code MEDICAL}. */
+  private static final Set<String> MEDICAL_ALIASES = Set.of("PHARMACEUTICAL", "PHARMACY");
 
   @Autowired
   private ProductRepository productRepository;
@@ -41,17 +55,48 @@ public class ProductService {
   @Lazy
   private BarcodeService barcodeService;
 
-  /** Typeahead for the registration screen. Empty/blank query returns no rows. */
+  /**
+   * Typeahead for the registration screen. Empty/blank query returns no rows.
+   *
+   * <p>Copies of one catalog product are offered once, as the copy registration would reuse, so
+   * the user cannot keep picking a stale copy. Copies with different barcodes stay separate rows:
+   * a different barcode is a different product.
+   */
   @Transactional(readOnly = true)
   public List<ProductSuggestionDto> suggest(String shopId, String query) {
     if (!StringUtils.hasText(shopId) || !StringUtils.hasText(query)) {
       return Collections.emptyList();
     }
-    return productRepository
-        .suggestByShopIdAndQuery(shopId, query.trim(), PageRequest.of(0, SUGGEST_LIMIT))
-        .stream()
+    List<Product> found = productRepository.suggestByShopIdAndQuery(
+        shopId, query.trim(), PageRequest.of(0, SUGGEST_FETCH_LIMIT));
+    return onePerProduct(found).stream()
+        .limit(SUGGEST_LIMIT)
         .map(ProductService::toSuggestion)
         .toList();
+  }
+
+  /** One row per catalog product: each barcode once, and blank copies only when none has one. */
+  private static List<Product> onePerProduct(List<Product> found) {
+    Map<String, List<Product>> sameItems = new LinkedHashMap<>();
+    for (Product p : found) {
+      sameItems.computeIfAbsent(sameItemKey(p), k -> new ArrayList<>()).add(p);
+    }
+    List<Product> rows = new ArrayList<>();
+    for (List<Product> copies : sameItems.values()) {
+      Map<String, List<Product>> byBarcode = new LinkedHashMap<>();
+      for (Product p : copies) {
+        String barcode = nz(p.getBarcode());
+        if (barcode != null) {
+          byBarcode.computeIfAbsent(barcode, k -> new ArrayList<>()).add(p);
+        }
+      }
+      if (byBarcode.isEmpty()) {
+        rows.add(preferredCopy(copies));
+      } else {
+        byBarcode.values().forEach(sameCode -> rows.add(preferredCopy(sameCode)));
+      }
+    }
+    return rows;
   }
 
   /** Full identity for prefill when the UI resolves a selected suggestion. */
@@ -89,12 +134,30 @@ public class ProductService {
   /**
    * Resolve the {@link Product} for a registration line and return its id.
    *
-   * <p>A product is reused only when its full identity (barcode, name, company, packaging, …)
-   * matches; otherwise a new product is created. Barcodes are not unique, so the same code on a
-   * different pack size or variant becomes its own product rather than joining one whose
-   * packaging would misread the stock count.
+   * <p>The shop's existing product is reused whenever the entry describes the same item
+   * ({@link #sameItemKey}: name, company, description, business type, HSN, unit, item type and
+   * pack size, compared loosely) and the barcodes agree. A blank barcode on either side agrees, so
+   * an entry without a barcode reuses the product that has one, and an entry with a barcode gives
+   * it to a product that had none. Barcodes are not unique, so the same code on a different pack
+   * size or variant still becomes its own product rather than joining one whose packaging would
+   * misread the stock count; two different barcodes are two products.
+   *
+   * <p>A picked product ({@code requestedProductId}) the entry matches loosely is kept and takes
+   * the entry's barcode and spellings ({@link #correctInPlace}). One that no longer matches is not
+   * forked blindly: the shop is searched for a matching product first, and a new one is created
+   * only when none exists.
    */
   public String resolveForRegistration(String requestedProductId, Inventory inventory, String shopId) {
+    return resolveForRegistration(requestedProductId, inventory, shopId, false);
+  }
+
+  /**
+   * As {@link #resolveForRegistration(String, Inventory, String)}; {@code barcodeCleared} is true
+   * when a lot edit cleared the barcode ({@code clearFields}), so a blank barcode empties the picked
+   * product's. Otherwise a blank barcode means none was given and the product keeps its own.
+   */
+  public String resolveForRegistration(
+      String requestedProductId, Inventory inventory, String shopId, boolean barcodeCleared) {
     normalizeInventoryBarcode(inventory);
     productValidator.validateBarcode(inventory.getBarcode());
 
@@ -104,27 +167,85 @@ public class ProductService {
       Product existing = productRepository.findByIdAndShopId(requestedProductId.trim(), shopId)
           .orElse(null);
       if (existing != null) {
-        if (identityMatches(existing, candidate)) {
-          return existing.getId();
+        if (sameItemKey(existing).equals(sameItemKey(candidate))) {
+          return correctInPlace(existing, candidate, shopId, barcodeCleared);
         }
-        if (onlyBarcodeChanged(existing, candidate)) {
-          existing.setBarcode(candidate.getBarcode());
-          existing.setUpdatedAt(Instant.now());
-          productRepository.save(existing);
-          barcodeService.claimPoolForProduct(shopId, existing.getId(), existing.getBarcode());
-          return existing.getId();
-        }
-        log.info("Product identity changed for {} in shop {}; forking new product",
+        log.info("Product identity changed for {} in shop {}; looking for a matching product",
             existing.getId(), shopId);
-        return persistNew(candidate).getId();
       }
     }
 
     Product matched = findByIdentity(candidate, shopId);
     if (matched != null) {
-      return matched.getId();
+      return reuse(matched, candidate, shopId);
     }
     return persistNew(candidate).getId();
+  }
+
+  /**
+   * The entry is the picked product, possibly with corrections that apply to the product itself:
+   * <ul>
+   *   <li>Barcode: a new one replaces it, unless another copy of the same item already carries that
+   *       code (that copy is reused). A blank one empties it only when {@code barcodeCleared}.
+   *   <li>Company, description, unit: the entry's spelling.
+   *   <li>Business type and item type: only upgraded from an older spelling ({@code PHARMACEUTICAL},
+   *       {@code PHARMACY}, a missing item type), never downgraded to one.
+   * </ul>
+   */
+  private String correctInPlace(
+      Product existing, Product candidate, String shopId, boolean barcodeCleared) {
+    String oldBarcode = nz(existing.getBarcode());
+    String newBarcode = nz(candidate.getBarcode());
+    if (newBarcode == null && !barcodeCleared) {
+      newBarcode = oldBarcode;
+    }
+    if (newBarcode != null && !newBarcode.equals(oldBarcode)) {
+      Product holder = findByIdentity(candidate, shopId);
+      if (holder != null && !holder.getId().equals(existing.getId())
+          && newBarcode.equals(nz(holder.getBarcode()))) {
+        return holder.getId();
+      }
+    }
+    String businessType = isOlderSpelling(existing.getBusinessType())
+        && !isOlderSpelling(candidate.getBusinessType())
+        ? candidate.getBusinessType()
+        : existing.getBusinessType();
+    ItemType itemType = existing.getItemType() != null
+        ? existing.getItemType()
+        : candidate.getItemType();
+    boolean changed = !Objects.equals(oldBarcode, newBarcode)
+        || !Objects.equals(nz(existing.getCompanyName()), nz(candidate.getCompanyName()))
+        || !Objects.equals(nz(existing.getDescription()), nz(candidate.getDescription()))
+        || !Objects.equals(nz(existing.getBaseUnit()), nz(candidate.getBaseUnit()))
+        || !Objects.equals(existing.getBusinessType(), businessType)
+        || existing.getItemType() != itemType;
+    if (!changed) {
+      return existing.getId();
+    }
+    existing.setBarcode(newBarcode);
+    existing.setCompanyName(candidate.getCompanyName());
+    existing.setDescription(candidate.getDescription());
+    existing.setBusinessType(businessType);
+    existing.setBaseUnit(candidate.getBaseUnit());
+    existing.setItemType(itemType);
+    existing.setUpdatedAt(Instant.now());
+    productRepository.save(existing);
+    if (!Objects.equals(oldBarcode, newBarcode)) {
+      barcodeService.claimPoolForProduct(shopId, existing.getId(), existing.getBarcode());
+    }
+    return existing.getId();
+  }
+
+  /** Reuse {@code existing}; an entry barcode fills a product that has none, never replaces one. */
+  private String reuse(Product existing, Product candidate, String shopId) {
+    String incoming = nz(candidate.getBarcode());
+    if (incoming != null && nz(existing.getBarcode()) == null) {
+      existing.setBarcode(incoming);
+      existing.setUpdatedAt(Instant.now());
+      productRepository.save(existing);
+      barcodeService.claimPoolForProduct(shopId, existing.getId(), incoming);
+    }
+    return existing.getId();
   }
 
   /**
@@ -141,25 +262,30 @@ public class ProductService {
     return productRepository.save(product);
   }
 
+  /**
+   * The shop product the entry is, or null. Among several copies the one carrying the entry's own
+   * barcode wins, then {@link #preferredCopy}.
+   */
   private Product findByIdentity(Product candidate, String shopId) {
     List<Product> sameName =
         productRepository.findByShopIdAndNormalizedName(shopId, candidate.getNormalizedName());
-    String candidateKey = identityKey(candidate);
-    for (Product p : sameName) {
-      if (candidateKey.equals(identityKey(p))) {
-        return p;
-      }
+    List<Product> matches = sameName.stream().filter(p -> sameItem(p, candidate)).toList();
+    if (matches.isEmpty()) {
+      return null;
     }
-    return null;
+    String barcode = nz(candidate.getBarcode());
+    List<Product> sameCode = barcode == null
+        ? List.of()
+        : matches.stream().filter(p -> barcode.equals(nz(p.getBarcode()))).toList();
+    return preferredCopy(sameCode.isEmpty() ? matches : sameCode);
   }
 
-  /**
-   * Canonical identity key for a live inventory row. Two rows sharing this key belong to the same
-   * catalog product. Used by the backfill to group existing inventory (dry-run preview) and mirrors
-   * the fields compared during {@link #resolveForRegistration}.
-   */
-  public String identityKey(Inventory inventory, String shopId) {
-    return identityKey(fromInventory(inventory, shopId));
+  /** The copy to reuse or offer: one with a barcode first, then the oldest. */
+  private static Product preferredCopy(List<Product> copies) {
+    return copies.stream()
+        .min(Comparator.comparing((Product p) -> nz(p.getBarcode()) == null)
+            .thenComparing(Product::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())))
+        .orElseThrow();
   }
 
   private Product persistNew(Product candidate) {
@@ -171,49 +297,50 @@ public class ProductService {
     return saved;
   }
 
-  /** True when every catalog identity field is equal (fork otherwise). */
-  private static boolean identityMatches(Product a, Product b) {
-    return identityKey(a).equals(identityKey(b));
+  /** Same item ({@link #sameItemKey}) and barcodes that agree: equal, or blank on either side. */
+  private static boolean sameItem(Product a, Product b) {
+    if (!sameItemKey(a).equals(sameItemKey(b))) {
+      return false;
+    }
+    String codeA = nz(a.getBarcode());
+    String codeB = nz(b.getBarcode());
+    return codeA == null || codeB == null || codeA.equals(codeB);
   }
 
-  /** True when all identity fields match except barcode. */
-  private static boolean onlyBarcodeChanged(Product existing, Product candidate) {
-    Product withoutBarcode = copyIdentity(existing);
-    withoutBarcode.setBarcode(nz(candidate.getBarcode()));
-    Product candidateNorm = copyIdentity(candidate);
-    return identityKey(withoutBarcode).equals(identityKey(candidateNorm))
-        && !java.util.Objects.equals(nz(existing.getBarcode()), nz(candidate.getBarcode()));
-  }
-
-  private static Product copyIdentity(Product src) {
-    Product p = new Product();
-    p.setNormalizedName(src.getNormalizedName());
-    p.setCompanyName(src.getCompanyName());
-    p.setBarcode(src.getBarcode());
-    p.setDescription(src.getDescription());
-    p.setBusinessType(src.getBusinessType());
-    p.setHsn(src.getHsn());
-    p.setBaseUnit(src.getBaseUnit());
-    p.setItemType(src.getItemType());
-    p.setItemTypeDegree(src.getItemTypeDegree());
-    p.setUnitConversions(src.getUnitConversions());
-    return p;
-  }
-
-  /** Stable string over all catalog identity fields; equal keys mean the same product. */
-  private static String identityKey(Product p) {
+  /**
+   * Every catalog identity field except the barcode, compared loosely: company, description and
+   * unit ignore case and repeated spaces; the business type ignores case and reads the older
+   * spellings {@code PHARMACEUTICAL} and {@code PHARMACY} as {@code MEDICAL}; a missing item type
+   * is {@code NORMAL}. Equal keys describe the same item.
+   */
+  private static String sameItemKey(Product p) {
     return String.join(
-        "\u0001",
+        KEY_SEPARATOR,
         String.valueOf(p.getNormalizedName()),
-        String.valueOf(nz(p.getCompanyName())),
-        String.valueOf(nz(p.getBarcode())),
-        String.valueOf(nz(p.getDescription())),
-        String.valueOf(nz(p.getBusinessType())),
+        String.valueOf(looseText(p.getCompanyName())),
+        String.valueOf(looseText(p.getDescription())),
+        String.valueOf(businessTypeKey(p.getBusinessType())),
         String.valueOf(nz(p.getHsn())),
-        String.valueOf(nz(p.getBaseUnit())),
-        String.valueOf(p.getItemType()),
+        String.valueOf(looseText(p.getBaseUnit())),
+        String.valueOf(p.getItemType() != null ? p.getItemType() : ItemType.NORMAL),
         String.valueOf(p.getItemTypeDegree()),
         String.valueOf(packFactor(p.getUnitConversions())));
+  }
+
+  private static String looseText(String value) {
+    String trimmed = nz(value);
+    return trimmed == null ? null : trimmed.replaceAll("\\s+", " ").toUpperCase(Locale.ROOT);
+  }
+
+  /** Blank, or a business type written before the medical vertical settled on {@code MEDICAL}. */
+  private static boolean isOlderSpelling(String businessType) {
+    String type = looseText(businessType);
+    return type == null || MEDICAL_ALIASES.contains(type);
+  }
+
+  private static String businessTypeKey(String businessType) {
+    String type = looseText(businessType);
+    return type != null && MEDICAL_ALIASES.contains(type) ? MEDICAL : type;
   }
 
   private void normalizeInventoryBarcode(Inventory inventory) {
