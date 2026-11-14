@@ -271,6 +271,18 @@ A sell-direct stock lot can be placed in a menu section as a `MenuItem` with `se
 
 `NONE` is a real station meaning "billed, but no ticket" (a bottle from the counter fridge): the punch claims the line but creates no KOT and burns no number (`MenuDepartments.emitsTicket`). Saving the menu: a lot may be placed once ("Lassi is already in Beverages"), a save over a stored menu must carry its revision, and a placement whose lot was deleted stays saveable.
 
+### Catalog products at stock-in (product)
+
+Every stock-in line is linked to a shop `product` (catalog identity: name, company, barcode, HSN, packaging, …) by `ProductService.resolveForRegistration`; lot edits (`PUT /api/v1/inventory/{id}`) go through it too. It reuses the shop's existing product whenever the line describes the same item, so one medicine is not stored as several products:
+
+- **Loose comparison.** Company, description and unit ignore case and repeated spaces; the business type ignores case and reads `PHARMACEUTICAL` and `PHARMACY` as `MEDICAL`; a missing item type is `NORMAL`. Name, HSN, item type and pack size must still agree.
+- **Barcodes.** A blank barcode on either side agrees: a line without one reuses the product that has one, and a line with one gives it to a product that had none. Two different barcodes are two products (a different pack or variant).
+- **Picked product.** When the user picked a product (or edits a lot) and the line still matches it, that product is kept and corrected in place: a new barcode replaces its own, unless another copy of the item already carries that code (that copy is reused instead); company, description and unit take the line's spelling; business type and item type are only upgraded from an older spelling (`PHARMACEUTICAL`, `PHARMACY`, missing), never downgraded. A blank barcode keeps the product's own; only a lot edit with `barcode` in `clearFields` empties it. When the line no longer matches, the shop is searched for a matching product before a new one is created.
+
+`GET /api/v1/products/suggest?q=` offers each product once: copies of one item fold into the copy that would be reused (one with a barcode first, then the oldest), while copies with different barcodes stay separate rows. Up to 10 rows.
+
+Products duplicated before this rule are not merged automatically.
+
 ### Cart and settlement writes
 
 `CheckoutService` no longer replaces a bill with `purchaseRepository.save`. Cart edits and settlement go through `PurchaseTargetedWriter`, which writes only the fields that changed (lines addressed by `lineRef`, else `sellableRef`), so a concurrent writer -- a kitchen punch recording `kotSentQuantity` -- is never deleted by a cart write. A cart write that cannot address its line is refused rather than replacing the bill.
