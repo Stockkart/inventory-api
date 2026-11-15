@@ -2,6 +2,7 @@ package com.inventory.product.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
@@ -72,7 +73,8 @@ class InventoryServiceUpdatePricingTest {
 
     when(inventoryRepository.findById("lot-1")).thenReturn(Optional.of(lot));
     when(inventoryRepository.save(any(Inventory.class))).thenAnswer(inv -> inv.getArgument(0));
-    when(productService.resolveForRegistration(anyString(), any(), eq("s1"))).thenReturn("p1");
+    when(productService.resolveForRegistration(anyString(), any(), eq("s1"), anyBoolean()))
+        .thenReturn("p1");
     when(productService.findInShop(eq("s1"), anyString())).thenReturn(Optional.empty());
     when(inventoryVerticalExtensionHandler.mergeDetail(eq("s1"), any(), any()))
         .thenAnswer(inv -> inv.getArgument(2));

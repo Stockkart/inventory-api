@@ -1621,8 +1621,10 @@ public class InventoryService {
 
       // Identity edits are not persisted on the inventory doc; re-resolve the catalog product so an
       // identity change forks/links a new product while unchanged identity keeps the same one.
-      inventory.setProductId(
-          productService.resolveForRegistration(inventory.getProductId(), inventory, shopId));
+      boolean barcodeCleared =
+          request.getClearFields() != null && request.getClearFields().contains("barcode");
+      inventory.setProductId(productService.resolveForRegistration(
+          inventory.getProductId(), inventory, shopId, barcodeCleared));
       adoptProductPackaging(inventory, shopId);
       int newPackFactor = LotPackaging.factor(inventory.getUnitConversions());
       if (newPackFactor != previousPackFactor) {
