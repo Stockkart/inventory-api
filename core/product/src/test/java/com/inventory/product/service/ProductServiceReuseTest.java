@@ -98,16 +98,15 @@ class ProductServiceReuseTest {
   }
 
   @Test
-  void anEntryWithoutABarcodeReusesTheProductThatHasOne() {
+  void anUnpickedEntryWithoutABarcodeDoesNotJoinTheProductThatHasOne() {
     Product existing = product("with-code", BARCODE);
     when(productRepository.findByShopIdAndNormalizedName(SHOP, "m2tone 200ml 1x36"))
         .thenReturn(List.of(existing));
 
     String id = productService.resolveForRegistration(null, entry(null), SHOP);
 
-    assertEquals("with-code", id);
+    assertEquals("new-product", id);
     assertEquals(BARCODE, existing.getBarcode());
-    verify(productRepository, never()).save(any(Product.class));
   }
 
   @Test
@@ -123,11 +122,23 @@ class ProductServiceReuseTest {
   }
 
   @Test
-  void aStockInLineWithoutABarcodeKeepsThePickedProductsBarcode() {
+  void aStockInLineWithoutABarcodeSavesThePickedProductWithoutOne() {
     Product existing = product("with-code", BARCODE);
     when(productRepository.findByIdAndShopId("with-code", SHOP)).thenReturn(Optional.of(existing));
 
     String id = productService.resolveForRegistration("with-code", entry(null), SHOP);
+
+    assertEquals("with-code", id);
+    assertEquals(null, existing.getBarcode());
+    verify(productRepository).save(existing);
+  }
+
+  @Test
+  void aLotEditThatDoesNotClearTheBarcodeKeepsThePickedProductsBarcode() {
+    Product existing = product("with-code", BARCODE);
+    when(productRepository.findByIdAndShopId("with-code", SHOP)).thenReturn(Optional.of(existing));
+
+    String id = productService.resolveForRegistration("with-code", entry(null), SHOP, false);
 
     assertEquals("with-code", id);
     assertEquals(BARCODE, existing.getBarcode());
@@ -202,17 +213,15 @@ class ProductServiceReuseTest {
   }
 
   @Test
-  void anEntryBarcodeIsGivenToTheProductThatHadNone() {
+  void anUnpickedEntryWithABarcodeDoesNotTakeOverAProductWithoutOne() {
     Product existing = product("no-code", null);
     when(productRepository.findByShopIdAndNormalizedName(SHOP, "m2tone 200ml 1x36"))
         .thenReturn(List.of(existing));
 
     String id = productService.resolveForRegistration(null, entry(BARCODE), SHOP);
 
-    assertEquals("no-code", id);
-    assertEquals(BARCODE, existing.getBarcode());
-    verify(productRepository).save(existing);
-    verify(barcodeService).claimPoolForProduct(SHOP, "no-code", BARCODE);
+    assertEquals("new-product", id);
+    assertEquals(null, existing.getBarcode());
   }
 
   @Test
@@ -229,17 +238,31 @@ class ProductServiceReuseTest {
   }
 
   @Test
-  void aBlankEntryPrefersTheCopyThatHasABarcode() {
+  void anUnpickedEntryWithoutABarcodeReusesTheCopyWithoutOne() {
     Product blank = product("blank", null);
     blank.setCreatedAt(Instant.parse("2025-01-01T00:00:00Z"));
     Product coded = product("coded", BARCODE);
-    coded.setCreatedAt(Instant.parse("2026-09-24T00:00:00Z"));
+    coded.setCreatedAt(Instant.parse("2024-09-24T00:00:00Z"));
     when(productRepository.findByShopIdAndNormalizedName(SHOP, "m2tone 200ml 1x36"))
-        .thenReturn(List.of(blank, coded));
+        .thenReturn(List.of(coded, blank));
 
     String id = productService.resolveForRegistration(null, entry(null), SHOP);
 
-    assertEquals("coded", id);
+    assertEquals("blank", id);
+  }
+
+  @Test
+  void amongSeveralMatchingCopiesTheFirstOneFoundIsReused() {
+    Product newer = product("newer", null);
+    newer.setCreatedAt(Instant.parse("2026-10-01T00:00:00Z"));
+    Product older = product("older", null);
+    older.setCreatedAt(Instant.parse("2025-01-01T00:00:00Z"));
+    when(productRepository.findByShopIdAndNormalizedName(SHOP, "m2tone 200ml 1x36"))
+        .thenReturn(List.of(newer, older));
+
+    String id = productService.resolveForRegistration(null, entry(null), SHOP);
+
+    assertEquals("newer", id);
   }
 
   @Test

@@ -136,28 +136,30 @@ public class ProductService {
    *
    * <p>The shop's existing product is reused whenever the entry describes the same item
    * ({@link #sameItemKey}: name, company, description, business type, HSN, unit, item type and
-   * pack size, compared loosely) and the barcodes agree. A blank barcode on either side agrees, so
-   * an entry without a barcode reuses the product that has one, and an entry with a barcode gives
-   * it to a product that had none. Barcodes are not unique, so the same code on a different pack
-   * size or variant still becomes its own product rather than joining one whose packaging would
-   * misread the stock count; two different barcodes are two products.
+   * pack size, compared loosely) and has the same barcode, or none on both ({@link #sameItem}).
+   * A barcode separates variants that share a name (sports model or size, pack size), so an entry
+   * that was not picked never takes over a product with a different barcode or none. Barcodes are
+   * not unique: the same code on a different pack size or variant is its own product.
    *
    * <p>A picked product ({@code requestedProductId}) the entry matches loosely is kept and takes
-   * the entry's barcode and spellings ({@link #correctInPlace}). One that no longer matches is not
+   * the entry's barcode and spellings ({@link #correctInPlace}). A stock-in line is saved as the
+   * user sees it, so a blank barcode leaves the picked product without one (the product entry
+   * screen fills the barcode in when a suggestion is picked). One that no longer matches is not
    * forked blindly: the shop is searched for a matching product first, and a new one is created
    * only when none exists.
    */
   public String resolveForRegistration(String requestedProductId, Inventory inventory, String shopId) {
-    return resolveForRegistration(requestedProductId, inventory, shopId, false);
+    return resolveForRegistration(requestedProductId, inventory, shopId, true);
   }
 
   /**
-   * As {@link #resolveForRegistration(String, Inventory, String)}; {@code barcodeCleared} is true
-   * when a lot edit cleared the barcode ({@code clearFields}), so a blank barcode empties the picked
-   * product's. Otherwise a blank barcode means none was given and the product keeps its own.
+   * As {@link #resolveForRegistration(String, Inventory, String)}; {@code blankBarcodeClears} says
+   * whether a blank barcode empties the picked product's. Stock-in passes true. A lot edit passes
+   * true only when it cleared the barcode ({@code clearFields}); otherwise the barcode was not part
+   * of the edit and the product keeps its own.
    */
   public String resolveForRegistration(
-      String requestedProductId, Inventory inventory, String shopId, boolean barcodeCleared) {
+      String requestedProductId, Inventory inventory, String shopId, boolean blankBarcodeClears) {
     normalizeInventoryBarcode(inventory);
     productValidator.validateBarcode(inventory.getBarcode());
 
@@ -168,7 +170,7 @@ public class ProductService {
           .orElse(null);
       if (existing != null) {
         if (sameItemKey(existing).equals(sameItemKey(candidate))) {
-          return correctInPlace(existing, candidate, shopId, barcodeCleared);
+          return correctInPlace(existing, candidate, shopId, blankBarcodeClears);
         }
         log.info("Product identity changed for {} in shop {}; looking for a matching product",
             existing.getId(), shopId);
@@ -177,7 +179,7 @@ public class ProductService {
 
     Product matched = findByIdentity(candidate, shopId);
     if (matched != null) {
-      return reuse(matched, candidate, shopId);
+      return matched.getId();
     }
     return persistNew(candidate).getId();
   }
@@ -186,17 +188,17 @@ public class ProductService {
    * The entry is the picked product, possibly with corrections that apply to the product itself:
    * <ul>
    *   <li>Barcode: a new one replaces it, unless another copy of the same item already carries that
-   *       code (that copy is reused). A blank one empties it only when {@code barcodeCleared}.
+   *       code (that copy is reused). A blank one empties it only when {@code blankBarcodeClears}.
    *   <li>Company, description, unit: the entry's spelling.
    *   <li>Business type and item type: only upgraded from an older spelling ({@code PHARMACEUTICAL},
    *       {@code PHARMACY}, a missing item type), never downgraded to one.
    * </ul>
    */
   private String correctInPlace(
-      Product existing, Product candidate, String shopId, boolean barcodeCleared) {
+      Product existing, Product candidate, String shopId, boolean blankBarcodeClears) {
     String oldBarcode = nz(existing.getBarcode());
     String newBarcode = nz(candidate.getBarcode());
-    if (newBarcode == null && !barcodeCleared) {
+    if (newBarcode == null && !blankBarcodeClears) {
       newBarcode = oldBarcode;
     }
     if (newBarcode != null && !newBarcode.equals(oldBarcode)) {
@@ -236,18 +238,6 @@ public class ProductService {
     return existing.getId();
   }
 
-  /** Reuse {@code existing}; an entry barcode fills a product that has none, never replaces one. */
-  private String reuse(Product existing, Product candidate, String shopId) {
-    String incoming = nz(candidate.getBarcode());
-    if (incoming != null && nz(existing.getBarcode()) == null) {
-      existing.setBarcode(incoming);
-      existing.setUpdatedAt(Instant.now());
-      productRepository.save(existing);
-      barcodeService.claimPoolForProduct(shopId, existing.getId(), incoming);
-    }
-    return existing.getId();
-  }
-
   /**
    * Set barcode on an existing product without forking. Used by pool attach and regenerate.
    */
@@ -262,25 +252,16 @@ public class ProductService {
     return productRepository.save(product);
   }
 
-  /**
-   * The shop product the entry is, or null. Among several copies the one carrying the entry's own
-   * barcode wins, then {@link #preferredCopy}.
-   */
+  /** The shop product the entry is, or null; among several copies the first one found. */
   private Product findByIdentity(Product candidate, String shopId) {
-    List<Product> sameName =
-        productRepository.findByShopIdAndNormalizedName(shopId, candidate.getNormalizedName());
-    List<Product> matches = sameName.stream().filter(p -> sameItem(p, candidate)).toList();
-    if (matches.isEmpty()) {
-      return null;
-    }
-    String barcode = nz(candidate.getBarcode());
-    List<Product> sameCode = barcode == null
-        ? List.of()
-        : matches.stream().filter(p -> barcode.equals(nz(p.getBarcode()))).toList();
-    return preferredCopy(sameCode.isEmpty() ? matches : sameCode);
+    return productRepository.findByShopIdAndNormalizedName(shopId, candidate.getNormalizedName())
+        .stream()
+        .filter(p -> sameItem(p, candidate))
+        .findFirst()
+        .orElse(null);
   }
 
-  /** The copy to reuse or offer: one with a barcode first, then the oldest. */
+  /** The copy the typeahead offers: one with a barcode first, then the oldest. */
   private static Product preferredCopy(List<Product> copies) {
     return copies.stream()
         .min(Comparator.comparing((Product p) -> nz(p.getBarcode()) == null)
@@ -297,14 +278,10 @@ public class ProductService {
     return saved;
   }
 
-  /** Same item ({@link #sameItemKey}) and barcodes that agree: equal, or blank on either side. */
-  private static boolean sameItem(Product a, Product b) {
-    if (!sameItemKey(a).equals(sameItemKey(b))) {
-      return false;
-    }
-    String codeA = nz(a.getBarcode());
-    String codeB = nz(b.getBarcode());
-    return codeA == null || codeB == null || codeA.equals(codeB);
+  /** The entry is {@code existing}: same item ({@link #sameItemKey}) and the same barcode, or none. */
+  private static boolean sameItem(Product existing, Product entry) {
+    return sameItemKey(existing).equals(sameItemKey(entry))
+        && Objects.equals(nz(existing.getBarcode()), nz(entry.getBarcode()));
   }
 
   /**
