@@ -4,6 +4,7 @@ import com.inventory.product.domain.model.PurchaseItem;
 import com.inventory.product.domain.model.enums.PurchaseStatus;
 import com.inventory.product.domain.model.enums.BillingMode;
 import lombok.AllArgsConstructor;
+import java.time.LocalDate;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -44,6 +45,10 @@ public class AddToCartResponse {
   String tokenNo;
   String customerGstin;
   String customerDlNo;
+  /** The linked customer's D.L. expiry date; null without one. */
+  LocalDate customerDlExpiry;
+  /** True once that date has passed (India date); null without an expiry. */
+  Boolean customerDlExpired;
   String customerPan;
   String paymentMethod;
   /** SALE (default) or ESTIMATE. */

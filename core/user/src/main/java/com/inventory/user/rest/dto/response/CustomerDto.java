@@ -7,6 +7,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.Instant;
+import java.time.LocalDate;
 
 @Data
 @NoArgsConstructor
@@ -22,6 +23,9 @@ public class CustomerDto {
   private Instant gstinVerifiedAt;
   private String gstinStatus;
   private String dlNo;
+  private LocalDate dlExpiry;
+  /** True when the D.L. expired before today (India); null when there is no expiry date. */
+  private Boolean dlExpired;
   private String pan;
   /** PAN derived from GSTIN: 10 chars from 3rd character (1-based). */
   private String panNo;

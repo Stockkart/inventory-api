@@ -2,6 +2,7 @@ package com.inventory.user.rest.dto.request;
 
 import com.inventory.common.gst.PostalAddress;
 import com.inventory.user.domain.model.enums.CustomerPartyType;
+import java.time.LocalDate;
 import lombok.Data;
 
 @Data
@@ -14,6 +15,8 @@ public class CreateCustomerRequest {
   private PostalAddress postalAddress;
   private String gstin;
   private String dlNo;
+  /** Last day the D.L. is valid (yyyy-MM-dd). Required when a D.L. No. is given. */
+  private LocalDate dlExpiry;
   private String pan;
   /** Defaults to CONSUMER when omitted. */
   private CustomerPartyType partyType;
