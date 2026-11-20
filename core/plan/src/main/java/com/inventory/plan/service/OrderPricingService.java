@@ -15,7 +15,7 @@ import com.inventory.plan.domain.repository.PlanRepository;
 import com.inventory.plan.exception.VoucherRejectedException;
 import com.inventory.plan.rest.dto.request.QuoteRequest;
 import com.inventory.plan.rest.dto.response.QuoteResponse;
-import com.inventory.plan.service.voucher.PlanVoucherPricing;
+import com.inventory.plan.utils.PlanVoucherPricing;
 import com.inventory.plan.service.voucher.VoucherService;
 import com.inventory.plan.service.wallet.WalletService;
 import com.inventory.plan.utils.CartUtils;
@@ -30,6 +30,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -286,7 +287,7 @@ public class OrderPricingService {
       throw notApplicable(code, "Voucher " + code + " is for " + voucherPlanName(voucher)
           + "; add the plan to use it.");
     }
-    if (!line.getCode().equals(voucher.getPlanCode())) {
+    if (!Objects.equals(voucher.getPlanCode(), line.getCode())) {
       throw notApplicable(code, "Voucher " + code + " is for " + voucherPlanName(voucher) + ", not "
           + line.getName() + ".");
     }

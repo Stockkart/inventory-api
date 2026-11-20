@@ -1,4 +1,4 @@
-package com.inventory.plan.service.voucher;
+package com.inventory.plan.utils;
 
 import java.math.BigDecimal;
 

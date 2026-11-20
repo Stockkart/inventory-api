@@ -475,6 +475,19 @@ class OrderPricingServiceTest {
   }
 
   @Test
+  void planVoucherOnLegacyPlanWithoutCodeRejectedNotCrashed() {
+    Plan legacy = plan(null, null, "4999");
+    when(voucherService.requireUsable("PLAN-1K", "shop-1"))
+        .thenReturn(planVoucher("PLAN-1K", "STARTER", "1000"));
+    QuoteRequest request = new QuoteRequest();
+    request.setVoucherCodes(List.of("PLAN-1K"));
+
+    assertThatThrownBy(() -> pricing.price(legacy, request, "shop-1"))
+        .isInstanceOfSatisfying(VoucherRejectedException.class,
+            e -> assertThat(e.getReason()).isEqualTo(VoucherRejection.NOT_APPLICABLE_TO_CART));
+  }
+
+  @Test
   void planVoucherCappedAfterPriceChange() {
     when(planRepository.findByCode("STARTER")).thenReturn(Optional.of(starter("5999")));
     when(voucherService.requireUsable("PLAN-3K", "shop-1"))

@@ -1,9 +1,10 @@
-package com.inventory.plan.service.voucher;
+package com.inventory.plan.utils;
 
 import com.inventory.plan.domain.model.AddOnVoucher;
 import com.inventory.plan.domain.model.OrderLine;
 import com.inventory.plan.domain.model.Plan;
 import com.inventory.plan.domain.model.VoucherType;
+import com.inventory.plan.service.voucher.VoucherService;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 
