@@ -15,6 +15,7 @@ import com.inventory.plan.domain.repository.PlanRepository;
 import com.inventory.plan.exception.VoucherRejectedException;
 import com.inventory.plan.rest.dto.request.QuoteRequest;
 import com.inventory.plan.rest.dto.response.QuoteResponse;
+import com.inventory.plan.service.voucher.PlanVoucherPricing;
 import com.inventory.plan.service.voucher.VoucherService;
 import com.inventory.plan.service.wallet.WalletService;
 import com.inventory.plan.utils.CartUtils;
@@ -333,7 +334,7 @@ public class OrderPricingService {
 
   /** Yearly price of a plan. Checkout charges exactly this, so a quote and its checkout agree. */
   public BigDecimal planPrice(Plan plan) {
-    return plan.getArcPrice() != null ? plan.getArcPrice() : plan.getPrice();
+    return PlanVoucherPricing.planPrice(plan);
   }
 
   private static QuoteResponse toQuote(PricedCart cart) {
