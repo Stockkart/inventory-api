@@ -139,6 +139,7 @@ class PurchaseHistoryServiceTest {
   void assignRowWithFakePaymentIdIsAssigned() {
     PlanTransaction t = tx("t1", "p1", T1, null);
     t.setProviderPaymentId("pay_fake");
+    t.setPaymentOrderId("o-other");
     given(List.of(t), List.of());
 
     PlanTransactionResponse r = service.forShop(SHOP).get(0);
@@ -238,12 +239,75 @@ class PurchaseHistoryServiceTest {
 
   @Test
   void usesOneQueryPerSource() {
-    given(List.of(), List.of());
+    given(List.of(tx("t1", "p1", T1, "o-missing")), List.of());
 
     service.forShop(SHOP);
 
     verify(transactionRepository).findByShopId(eq(SHOP), any(Sort.class));
     verify(orderRepository).findByShopIdAndStatusIn(eq(SHOP), any());
     verifyNoMoreInteractions(transactionRepository, orderRepository);
+  }
+
+  @Test
+  void snapshotAndSnapshotlessOnSameOrderCountOnce() {
+    PlanTransaction snap = tx("t1", "p1", T2, "o1");
+    snap.setItems(List.of(line()));
+    PlanTransaction plain = tx("t2", "p1", T1, "o1");
+    given(List.of(snap, plain), List.of(order("o1", "p1", "FULFILLED", false, "4999.00")));
+
+    List<PlanTransactionResponse> rows = service.forShop(SHOP);
+
+    assertThat(rows).hasSize(2);
+    assertThat(rows).filteredOn(r -> r.getKind().equals("PLAN")).hasSize(1);
+    assertThat(rows).filteredOn(r -> r.getKind().equals("ASSIGNED")).singleElement()
+        .satisfies(r -> assertThat(r.getAmount()).isNull());
+  }
+
+  @Test
+  void twoSnapshotlessOnSameOrderEarliestWins() {
+    PlanTransaction later = tx("t2", "p1", T3, "o1");
+    PlanTransaction earlier = tx("t1", "p1", T1, "o1");
+    given(List.of(later, earlier), List.of(order("o1", "p1", "FULFILLED", false, "4999.00")));
+
+    List<PlanTransactionResponse> rows = service.forShop(SHOP);
+
+    assertThat(rows).hasSize(2);
+    assertThat(rows).filteredOn(r -> r.getKind().equals("PLAN")).singleElement()
+        .satisfies(r -> assertThat(r.getId()).isEqualTo("t1"));
+    assertThat(rows).filteredOn(r -> r.getKind().equals("ASSIGNED")).singleElement()
+        .satisfies(r -> assertThat(r.getId()).isEqualTo("t2"));
+  }
+
+  @Test
+  void refundFiguresShownOnTransactionRow() {
+    PlanTransaction t = tx("t1", "p1", T1, "o1");
+    t.setItems(List.of(line()));
+    t.setRefundedAt(T3);
+    PlanPaymentOrder o = order("o1", "p1", "REFUNDED", false, "4999.00");
+    o.setRefundedAmount(new BigDecimal("4999"));
+    o.setWalletCredit(new BigDecimal("2000"));
+    given(List.of(t), List.of(o));
+
+    PlanTransactionResponse r = service.forShop(SHOP).get(0);
+
+    assertThat(r.getKind()).isEqualTo("PLAN");
+    assertThat(r.getRefundedToPaymentMethod()).isEqualByComparingTo("4999");
+    assertThat(r.getWalletCreditReturned()).isEqualByComparingTo("2000");
+    assertThat(r.getRefundedAt()).isEqualTo(T3);
+  }
+
+  @Test
+  void verifiedSnapshotlessRowTakesBreakdownFromOrder() {
+    PlanPaymentOrder o = order("o1", "p1", "FULFILLED", false, "4849.00");
+    o.setItems(List.of(line()));
+    o.setSubtotal(new BigDecimal("4999.00"));
+    o.setDiscountTotal(new BigDecimal("150.00"));
+    given(List.of(tx("t1", "p1", T1, "o1")), List.of(o));
+
+    PlanTransactionResponse r = service.forShop(SHOP).get(0);
+
+    assertThat(r.getAmount()).isEqualByComparingTo("4849.00");
+    assertThat(r.getItems()).hasSize(1);
+    assertThat(r.getDiscountTotal()).isEqualByComparingTo("150.00");
   }
 }

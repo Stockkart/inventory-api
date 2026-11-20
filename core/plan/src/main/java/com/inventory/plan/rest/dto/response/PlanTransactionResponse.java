@@ -22,6 +22,7 @@ public class PlanTransactionResponse {
   private String paymentMethod;
   private String provider;
   private String providerPaymentId;
+  /** Purchase date shown; paidAt (else createdAt) for order-only rows. Clients sort by {@code sortAt}. */
   private Instant createdAt;
   /** Null unless the payment was refunded. */
   private Instant refundedAt;

@@ -55,21 +55,31 @@ public class PurchaseHistoryService {
 
     List<PlanTransactionResponse> rows = new ArrayList<>();
     Set<String> covered = new HashSet<>();
+    // Snapshot transactions own their orders, whatever else points at them.
+    for (PlanTransaction tx : transactions) {
+      if (tx.getItems() != null && tx.getPaymentOrderId() != null && orders.containsKey(tx.getPaymentOrderId())) {
+        covered.add(tx.getPaymentOrderId());
+      }
+    }
+    // Snapshot-less transactions claim an unclaimed order oldest first, so the outcome is stable.
+    List<PlanTransaction> claimOrder = new ArrayList<>(transactions);
+    claimOrder.sort(Comparator.comparing(PlanTransaction::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())));
+    Set<PlanTransaction> claimed = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+    for (PlanTransaction tx : claimOrder) {
+      PlanPaymentOrder order = tx.getPaymentOrderId() != null ? orders.get(tx.getPaymentOrderId()) : null;
+      if (tx.getItems() == null && isVerifiedPlanOrder(tx, order) && covered.add(order.getId())) {
+        claimed.add(tx);
+      }
+    }
     for (PlanTransaction tx : transactions) {
       PlanPaymentOrder order = tx.getPaymentOrderId() != null ? orders.get(tx.getPaymentOrderId()) : null;
       if (tx.getItems() != null) {
-        // The transaction carries the order's snapshot, so it is the row for that order.
-        if (order != null) {
-          covered.add(order.getId());
-        }
-        rows.add(planTransactionMapper.toResponse(tx, order, KIND_PLAN, tx.getAmount()));
-      } else if (isVerifiedPlanOrder(tx, order)) {
-        // No snapshot, but a real order of this shop and plan: show what was charged, not the list price.
-        covered.add(order.getId());
-        rows.add(planTransactionMapper.toResponse(tx, order, KIND_PLAN, order.getAmount()));
+        rows.add(planTransactionMapper.toResponse(tx, order, KIND_PLAN));
+      } else if (claimed.contains(tx)) {
+        rows.add(planTransactionMapper.toResponse(tx, order, KIND_PLAN));
       } else {
         // Payment ids on assigned rows come from the request body, so they prove nothing.
-        rows.add(planTransactionMapper.toResponse(tx, null, KIND_ASSIGNED, null));
+        rows.add(planTransactionMapper.toResponse(tx, null, KIND_ASSIGNED));
       }
     }
     for (PlanPaymentOrder order : orders.values()) {

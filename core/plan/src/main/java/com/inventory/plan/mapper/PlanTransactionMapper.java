@@ -6,6 +6,7 @@ import com.inventory.plan.domain.model.PlanPaymentOrder;
 import com.inventory.plan.domain.model.PlanTransaction;
 import com.inventory.plan.rest.dto.request.AssignPlanRequest;
 import com.inventory.plan.rest.dto.response.PlanTransactionResponse;
+import com.inventory.plan.service.PurchaseHistoryService;
 import com.inventory.plan.rest.dto.response.PurchaseLineResponse;
 import com.inventory.plan.utils.PlanUtils;
 import com.inventory.plan.utils.constants.PlanPaymentConstants;
@@ -62,10 +63,14 @@ public interface PlanTransactionMapper {
   PurchaseLineResponse toLineResponse(OrderLine line);
 
   /**
-   * History row for a transaction. {@code order} is the shop's paid order behind it, when verified;
-   * {@code amount} is null for assigned rows (no verified charge).
+   * History row for a transaction. {@code order} is the shop's paid order behind it, when verified.
+   * Assigned rows carry no amount (no verified charge); a snapshot-less verified row shows what the
+   * order charged, with the order's breakdown.
    */
-  default PlanTransactionResponse toResponse(PlanTransaction tx, PlanPaymentOrder order, String kind, BigDecimal amount) {
+  default PlanTransactionResponse toResponse(PlanTransaction tx, PlanPaymentOrder order, String kind) {
+    boolean assigned = PurchaseHistoryService.KIND_ASSIGNED.equals(kind);
+    boolean fromOrder = !assigned && tx.getItems() == null && order != null;
+    BigDecimal amount = assigned ? null : (fromOrder ? order.getAmount() : tx.getAmount());
     PlanTransactionResponse r = new PlanTransactionResponse();
     r.setId(tx.getId());
     r.setShopId(tx.getShopId());
@@ -88,6 +93,13 @@ public interface PlanTransactionMapper {
       r.setSubtotal(tx.getSubtotal());
       r.setDiscountTotal(tx.getDiscountTotal());
       r.setWalletCredit(tx.getWalletCredit());
+    } else if (fromOrder) {
+      if (order.getItems() != null) {
+        r.setItems(order.getItems().stream().map(this::toLineResponse).collect(Collectors.toList()));
+      }
+      r.setSubtotal(order.getSubtotal());
+      r.setDiscountTotal(order.getDiscountTotal());
+      r.setWalletCredit(order.getWalletCredit());
     }
     if (tx.getTermEndsAt() != null) {
       r.setTermStartsAt(tx.getTermStartsAt());
