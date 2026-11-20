@@ -19,6 +19,8 @@ public interface VoucherMapper {
   @Mapping(target = "code", source = "voucher.code")
   @Mapping(target = "valid", source = "valid")
   @Mapping(target = "reason", source = "reason")
+  @Mapping(target = "target", expression = "java(voucher.effectiveTarget())")
+  @Mapping(target = "planName", ignore = true)
   VoucherCheckResponse toCheckResponse(AddOnVoucher voucher, boolean valid, VoucherRejection reason);
 
   @Mapping(target = "active", expression = "java(voucher.isActive())")
@@ -41,6 +43,11 @@ public interface VoucherMapper {
   // MapStruct reads a builder method named addOn... as an adder and skips it, so copy it by hand.
   @AfterMapping
   default void copyAddOnCode(AddOnVoucher voucher, @MappingTarget AdminVoucherResponse.AdminVoucherResponseBuilder target) {
+    target.addOnCode(voucher.getAddOnCode());
+  }
+
+  @AfterMapping
+  default void copyAddOnCode(AddOnVoucher voucher, @MappingTarget VoucherCheckResponse.VoucherCheckResponseBuilder target) {
     target.addOnCode(voucher.getAddOnCode());
   }
 

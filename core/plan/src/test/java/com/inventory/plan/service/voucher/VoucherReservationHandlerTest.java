@@ -15,6 +15,7 @@ import com.inventory.plan.domain.model.PlanPaymentOrder;
 import com.inventory.plan.domain.model.VoucherRedemption;
 import com.inventory.plan.domain.model.VoucherRedemptionStatus;
 import com.inventory.plan.domain.model.VoucherRejection;
+import com.inventory.plan.domain.model.VoucherTarget;
 import com.inventory.plan.domain.repository.AddOnVoucherRepository;
 import com.inventory.plan.domain.repository.VoucherRedemptionRepository;
 import com.inventory.plan.exception.VoucherRejectedException;
@@ -131,6 +132,46 @@ class VoucherReservationHandlerTest {
     ArgumentCaptor<Update> counters = ArgumentCaptor.forClass(Update.class);
     verify(mongoTemplate, times(1)).updateFirst(any(Query.class), counters.capture(), eq(AddOnVoucher.class));
     assertThat(counters.getValue().getUpdateObject().toString()).contains("reservedCount=-1").contains("redemptionCount=1");
+  }
+
+  @Test
+  void reservesPlanVoucherWithPlanCode() {
+    AddOnVoucher planVoucher = AddOnVoucher.builder().id("v-2").code("PLN-1").target(VoucherTarget.PLAN)
+        .planCode("STARTER").maxRedemptions(1).build();
+    PlanPaymentOrder order = new PlanPaymentOrder();
+    order.setId("order-1");
+    order.setShopId("shop-1");
+    order.setItems(List.of(OrderLine.builder().type("PLAN").code("STARTER").quantity(1)
+        .discount(new BigDecimal("500")).voucherCode("PLN-1").build()));
+    when(voucherRepository.findByCode("PLN-1")).thenReturn(Optional.of(planVoucher));
+    when(redemptionRepository.findByVoucherIdAndOrderId("v-2", "order-1")).thenReturn(Optional.empty());
+    when(mongoTemplate.insert(any(VoucherRedemption.class))).thenAnswer(inv -> inv.getArgument(0));
+    when(mongoTemplate.updateFirst(any(Query.class), any(Update.class), eq(AddOnVoucher.class))).thenReturn(updated(1));
+
+    handler.reserve(order, null);
+
+    ArgumentCaptor<VoucherRedemption> row = ArgumentCaptor.forClass(VoucherRedemption.class);
+    verify(mongoTemplate).insert(row.capture());
+    assertThat(row.getValue().getTarget()).isEqualTo(VoucherTarget.PLAN);
+    assertThat(row.getValue().getPlanCode()).isEqualTo("STARTER");
+    assertThat(row.getValue().getAddOnCode()).isNull();
+    assertThat(row.getValue().getDiscount()).isEqualByComparingTo("500");
+  }
+
+  @Test
+  void addOnReservationUnchanged() {
+    when(voucherRepository.findByCode("MKT-1")).thenReturn(Optional.of(voucher));
+    when(redemptionRepository.findByVoucherIdAndOrderId("v-1", "order-1")).thenReturn(Optional.empty());
+    when(mongoTemplate.insert(any(VoucherRedemption.class))).thenAnswer(inv -> inv.getArgument(0));
+    when(mongoTemplate.updateFirst(any(Query.class), any(Update.class), eq(AddOnVoucher.class))).thenReturn(updated(1));
+
+    handler.reserve(order(), null);
+
+    ArgumentCaptor<VoucherRedemption> row = ArgumentCaptor.forClass(VoucherRedemption.class);
+    verify(mongoTemplate).insert(row.capture());
+    assertThat(row.getValue().getTarget()).isEqualTo(VoucherTarget.ADD_ON);
+    assertThat(row.getValue().getAddOnCode()).isEqualTo("MARKETING_MODULE");
+    assertThat(row.getValue().getPlanCode()).isNull();
   }
 
   private static PlanPaymentOrder order() {

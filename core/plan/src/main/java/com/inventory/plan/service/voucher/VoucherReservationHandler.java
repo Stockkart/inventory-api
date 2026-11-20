@@ -7,10 +7,12 @@ import com.inventory.plan.domain.model.PricedCart;
 import com.inventory.plan.domain.model.VoucherRedemption;
 import com.inventory.plan.domain.model.VoucherRedemptionStatus;
 import com.inventory.plan.domain.model.VoucherRejection;
+import com.inventory.plan.domain.model.VoucherTarget;
 import com.inventory.plan.domain.repository.AddOnVoucherRepository;
 import com.inventory.plan.domain.repository.VoucherRedemptionRepository;
 import com.inventory.plan.exception.VoucherRejectedException;
 import com.inventory.plan.service.order.OrderReservationHandler;
+import com.inventory.plan.utils.constants.PricingConstants;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
@@ -115,12 +117,15 @@ public class VoucherReservationHandler implements OrderReservationHandler {
   }
 
   private VoucherRedemption insertReservation(PlanPaymentOrder order, OrderLine line, AddOnVoucher voucher) {
+    boolean planLine = PricingConstants.ITEM_TYPE_PLAN.equals(line.getType());
     VoucherRedemption redemption = VoucherRedemption.builder()
         .voucherId(voucher.getId())
         .voucherCode(voucher.getCode())
         .shopId(order.getShopId())
         .orderId(order.getId())
-        .addOnCode(line.getCode())
+        .target(planLine ? VoucherTarget.PLAN : VoucherTarget.ADD_ON)
+        .addOnCode(planLine ? null : line.getCode())
+        .planCode(planLine ? line.getCode() : null)
         .discount(line.getDiscount())
         .status(VoucherRedemptionStatus.RESERVED)
         .holdsSlot(true)

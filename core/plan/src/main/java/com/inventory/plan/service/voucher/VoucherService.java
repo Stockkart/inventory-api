@@ -3,7 +3,9 @@ package com.inventory.plan.service.voucher;
 import com.inventory.plan.domain.model.AddOnVoucher;
 import com.inventory.plan.domain.model.OrderLine;
 import com.inventory.plan.domain.model.VoucherRejection;
+import com.inventory.plan.domain.model.Plan;
 import com.inventory.plan.domain.repository.AddOnVoucherRepository;
+import com.inventory.plan.domain.repository.PlanRepository;
 import com.inventory.plan.domain.repository.VoucherRedemptionRepository;
 import com.inventory.plan.exception.VoucherRejectedException;
 import com.inventory.plan.mapper.VoucherMapper;
@@ -31,6 +33,9 @@ public class VoucherService {
 
   @Autowired
   private VoucherRedemptionRepository redemptionRepository;
+
+  @Autowired
+  private PlanRepository planRepository;
 
   @Autowired
   private VoucherMapper voucherMapper;
@@ -71,7 +76,13 @@ public class VoucherService {
   /** Non-consuming check for the checkout form. */
   public VoucherCheckResponse check(String rawCode, String shopId) {
     try {
-      return voucherMapper.toCheckResponse(requireUsable(rawCode, shopId), true, null);
+      AddOnVoucher voucher = requireUsable(rawCode, shopId);
+      VoucherCheckResponse response = voucherMapper.toCheckResponse(voucher, true, null);
+      if (voucher.isPlanVoucher()) {
+        response.setPlanName(planRepository.findByCode(voucher.getPlanCode())
+            .map(Plan::getPlanName).orElse(voucher.getPlanCode()));
+      }
+      return response;
     } catch (VoucherRejectedException e) {
       return VoucherCheckResponse.builder().code(normalise(rawCode)).valid(false).reason(e.getReason()).build();
     }
