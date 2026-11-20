@@ -16,6 +16,7 @@ import com.inventory.plan.domain.model.AddOnGrantType;
 import com.inventory.plan.domain.model.AddOnVoucher;
 import com.inventory.plan.domain.model.Plan;
 import com.inventory.plan.domain.model.VoucherRejection;
+import com.inventory.plan.domain.model.VoucherTarget;
 import com.inventory.plan.domain.model.VoucherType;
 import com.inventory.plan.domain.repository.PlanRepository;
 import com.inventory.plan.exception.VoucherRejectedException;
@@ -76,7 +77,7 @@ class OrderPricingServiceTest {
     assertThat(quote.isTaxInclusive()).isTrue();
     assertThat(quote.getCurrency()).isEqualTo("INR");
     assertThat(quote.getDurationMonths()).isEqualTo(12);
-    assertThat(quote.getPricingVersion()).isEqualTo(2);
+    assertThat(quote.getPricingVersion()).isEqualTo(3);
     assertThat(Duration.between(quote.getQuotedAt(), quote.getExpiresAt())).isEqualTo(Duration.ofMinutes(15));
   }
 
@@ -437,6 +438,120 @@ class OrderPricingServiceTest {
 
     verify(planRepository).findByCode("PROFESSIONAL");
     verifyNoMoreInteractions(planRepository);
+  }
+
+  @Test
+  void planVoucherDiscountsPlanLine() {
+    when(planRepository.findByCode("STARTER")).thenReturn(Optional.of(starter("7999")));
+    when(voucherService.requireUsable("PLAN-1K", "shop-1"))
+        .thenReturn(planVoucher("PLAN-1K", "STARTER", "1000"));
+    QuoteRequest request = request("STARTER");
+    request.setVoucherCodes(List.of("PLAN-1K"));
+
+    QuoteResponse quote = pricing.quote("shop-1", request);
+
+    QuoteResponse.QuoteItem line = quote.getItems().get(0);
+    assertThat(line.getDiscount()).isEqualByComparingTo("1000");
+    assertThat(line.getLineTotal()).isEqualByComparingTo("6999");
+    assertThat(line.getVoucherCode()).isEqualTo("PLAN-1K");
+    assertThat(line.getItemSource()).isEqualTo("MANUAL");
+    assertThat(quote.getGrandTotal()).isEqualByComparingTo("6999");
+  }
+
+  @Test
+  void planVoucherForOtherPlanRejected() {
+    when(planRepository.findByCode("STARTER")).thenReturn(Optional.of(starter("7999")));
+    when(planRepository.findByCode("GROWTH")).thenReturn(Optional.of(plan("GROWTH", "9999", null)));
+    when(voucherService.requireUsable("PLAN-1K", "shop-1"))
+        .thenReturn(planVoucher("PLAN-1K", "GROWTH", "1000"));
+    QuoteRequest request = request("STARTER");
+    request.setVoucherCodes(List.of("PLAN-1K"));
+
+    assertThatThrownBy(() -> pricing.quote("shop-1", request))
+        .isInstanceOfSatisfying(VoucherRejectedException.class, e -> {
+          assertThat(e.getReason()).isEqualTo(VoucherRejection.NOT_APPLICABLE_TO_CART);
+          assertThat(e.getMessage()).isEqualTo("Voucher PLAN-1K is for Growth, not Starter.");
+        });
+  }
+
+  @Test
+  void planVoucherCappedAfterPriceChange() {
+    when(planRepository.findByCode("STARTER")).thenReturn(Optional.of(starter("5999")));
+    when(voucherService.requireUsable("PLAN-3K", "shop-1"))
+        .thenReturn(planVoucher("PLAN-3K", "STARTER", "3000"));
+    QuoteRequest request = request("STARTER");
+    request.setVoucherCodes(List.of("PLAN-3K"));
+
+    QuoteResponse.QuoteItem line = pricing.quote("shop-1", request).getItems().get(0);
+
+    assertThat(line.getDiscount()).isEqualByComparingTo("1000");
+    assertThat(line.getLineTotal()).isEqualByComparingTo("4999");
+  }
+
+  @Test
+  void planVoucherWithNothingLeftRejected() {
+    when(planRepository.findByCode("STARTER")).thenReturn(Optional.of(starter("4999")));
+    when(voucherService.requireUsable("PLAN-1K", "shop-1"))
+        .thenReturn(planVoucher("PLAN-1K", "STARTER", "1000"));
+    QuoteRequest request = request("STARTER");
+    request.setVoucherCodes(List.of("PLAN-1K"));
+
+    assertThatThrownBy(() -> pricing.quote("shop-1", request))
+        .isInstanceOfSatisfying(VoucherRejectedException.class, e -> {
+          assertThat(e.getReason()).isEqualTo(VoucherRejection.NOT_APPLICABLE_TO_CART);
+          assertThat(e.getMessage()).isEqualTo("Voucher PLAN-1K gives no discount on Starter right now.");
+        });
+  }
+
+  @Test
+  void planVoucherPlusWalletStopsAtBase() {
+    when(planRepository.findByCode("STARTER")).thenReturn(Optional.of(starter("7999")));
+    when(addOnCatalogue.byCode(Set.of("MARKETING_MODULE"))).thenReturn(Map.of(
+        "MARKETING_MODULE", addOn("MARKETING_MODULE", "999", AddOnGrantType.FEATURE, PlanFeature.MARKETING, false, null)));
+    when(voucherService.requireUsable("PLAN-1K", "shop-1"))
+        .thenReturn(planVoucher("PLAN-1K", "STARTER", "1000"));
+    when(walletService.available("shop-1")).thenReturn(new BigDecimal("5000"));
+    QuoteRequest request = request("STARTER");
+    request.setVoucherCodes(List.of("PLAN-1K"));
+    request.setApplyWalletCredit(true);
+    request.setAddOns(List.of(new QuoteRequest.AddOnLine("MARKETING_MODULE", 1)));
+
+    QuoteResponse quote = pricing.quote("shop-1", request);
+
+    QuoteResponse.QuoteItem plan = quote.getItems().get(0);
+    QuoteResponse.QuoteItem addOn = quote.getItems().get(1);
+    assertThat(plan.getLineTotal()).isEqualByComparingTo("6999");
+    assertThat(plan.getWalletCredit()).isEqualByComparingTo("2000");
+    assertThat(plan.getLineTotal().subtract(plan.getWalletCredit())).isEqualByComparingTo("4999");
+    assertThat(addOn.getWalletCredit()).isEqualByComparingTo("999");
+    assertThat(quote.getWalletCredit()).isEqualByComparingTo("2999");
+    assertThat(quote.getGrandTotal()).isEqualByComparingTo("4999");
+  }
+
+  @Test
+  void secondPlanVoucherRejected() {
+    when(planRepository.findByCode("STARTER")).thenReturn(Optional.of(starter("7999")));
+    when(voucherService.requireUsable("PLAN-A", "shop-1")).thenReturn(planVoucher("PLAN-A", "STARTER", "500"));
+    when(voucherService.requireUsable("PLAN-B", "shop-1")).thenReturn(planVoucher("PLAN-B", "STARTER", "500"));
+    QuoteRequest request = request("STARTER");
+    request.setVoucherCodes(List.of("PLAN-A", "PLAN-B"));
+
+    assertThatThrownBy(() -> pricing.quote("shop-1", request))
+        .isInstanceOfSatisfying(VoucherRejectedException.class, e -> {
+          assertThat(e.getReason()).isEqualTo(VoucherRejection.NOT_APPLICABLE_TO_CART);
+          assertThat(e.getMessage()).isEqualTo("Starter already has voucher PLAN-A");
+        });
+  }
+
+  private static Plan starter(String arcPrice) {
+    Plan plan = plan("STARTER", arcPrice, null);
+    plan.setBasePrice(new BigDecimal("4999"));
+    return plan;
+  }
+
+  private static AddOnVoucher planVoucher(String code, String planCode, String flat) {
+    return AddOnVoucher.builder().code(code).target(VoucherTarget.PLAN).planCode(planCode)
+        .type(VoucherType.FLAT_OFF).value(new BigDecimal(flat)).quantity(1).build();
   }
 
   private static QuoteRequest request(String planCode) {
