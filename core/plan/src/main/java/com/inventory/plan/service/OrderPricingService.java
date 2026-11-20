@@ -105,7 +105,11 @@ public class OrderPricingService {
     // A plan cart may re-buy an add-on the shop holds: the new grant runs to the new term's end.
     items.addAll(addOnLines(plan, request.getAddOns(), Set.of()));
     applyVouchers(plan, items, request.getVoucherCodes(), shopId, Set.of());
-    return total(plan, items, request, shopId, plan.getBasePrice(), durationMonths, false, null);
+    // A voucher-priced plan keeps the voucher floor (base price, or Rs 1) against wallet credit too.
+    boolean vouchered = items.stream().anyMatch(item -> PricingConstants.ITEM_TYPE_PLAN.equals(item.getType())
+        && item.getVoucherCode() != null);
+    BigDecimal planFloor = vouchered ? PlanVoucherPricing.floor(plan) : plan.getBasePrice();
+    return total(plan, items, request, shopId, planFloor, durationMonths, false, null);
   }
 
   /**
@@ -280,7 +284,7 @@ public class OrderPricingService {
         .findFirst().orElse(null);
     if (line == null) {
       throw notApplicable(code, "Voucher " + code + " is for " + voucherPlanName(voucher)
-          + "; add the plan to use it");
+          + "; add the plan to use it.");
     }
     if (!line.getCode().equals(voucher.getPlanCode())) {
       throw notApplicable(code, "Voucher " + code + " is for " + voucherPlanName(voucher) + ", not "

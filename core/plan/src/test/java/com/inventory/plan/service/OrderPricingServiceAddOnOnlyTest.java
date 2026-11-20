@@ -199,8 +199,10 @@ class OrderPricingServiceAddOnOnlyTest {
     request.setVoucherCodes(List.of("PLAN-1K"));
 
     assertThatThrownBy(() -> pricing.priceAddOnOnly("shop-1", request))
-        .isInstanceOfSatisfying(VoucherRejectedException.class,
-            e -> assertThat(e.getReason()).isEqualTo(VoucherRejection.NOT_APPLICABLE_TO_CART));
+        .isInstanceOfSatisfying(VoucherRejectedException.class, e -> {
+          assertThat(e.getReason()).isEqualTo(VoucherRejection.NOT_APPLICABLE_TO_CART);
+          assertThat(e.getMessage()).isEqualTo("Voucher PLAN-1K is for Professional; add the plan to use it.");
+        });
   }
 
   @Test

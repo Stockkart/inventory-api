@@ -543,6 +543,49 @@ class OrderPricingServiceTest {
         });
   }
 
+  @Test
+  void percentPlanVoucherDiscountsPlanLine() {
+    when(planRepository.findByCode("STARTER")).thenReturn(Optional.of(starter("7999")));
+    AddOnVoucher ten = planVoucher("PLAN-10", "STARTER", "10");
+    ten.setType(VoucherType.PERCENT_OFF);
+    when(voucherService.requireUsable("PLAN-10", "shop-1")).thenReturn(ten);
+    QuoteRequest request = request("STARTER");
+    request.setVoucherCodes(List.of("PLAN-10"));
+
+    QuoteResponse.QuoteItem line = pricing.quote("shop-1", request).getItems().get(0);
+
+    assertThat(line.getDiscount()).isEqualByComparingTo("799.90");
+    assertThat(line.getLineTotal()).isEqualByComparingTo("7199.10");
+  }
+
+  @Test
+  void planVoucherPlusWalletOnPlanWithoutBaseStopsAtOneRupee() {
+    when(planRepository.findByCode("STARTER")).thenReturn(Optional.of(plan("STARTER", "7999", null)));
+    when(voucherService.requireUsable("PLAN-BIG", "shop-1"))
+        .thenReturn(planVoucher("PLAN-BIG", "STARTER", "9000"));
+    when(walletService.available("shop-1")).thenReturn(new BigDecimal("50000"));
+    QuoteRequest request = request("STARTER");
+    request.setVoucherCodes(List.of("PLAN-BIG"));
+    request.setApplyWalletCredit(true);
+
+    QuoteResponse quote = pricing.quote("shop-1", request);
+
+    QuoteResponse.QuoteItem line = quote.getItems().get(0);
+    assertThat(line.getLineTotal()).isEqualByComparingTo("1.00");
+    assertThat(line.getWalletCredit()).isNull();
+    assertThat(quote.getGrandTotal()).isEqualByComparingTo("1.00");
+  }
+
+  @Test
+  void walletAloneOnPlanWithoutBaseStillReachesZero() {
+    when(planRepository.findByCode("STARTER")).thenReturn(Optional.of(plan("STARTER", "7999", null)));
+    when(walletService.available("shop-1")).thenReturn(new BigDecimal("50000"));
+    QuoteRequest request = request("STARTER");
+    request.setApplyWalletCredit(true);
+
+    assertThat(pricing.quote("shop-1", request).getGrandTotal()).isEqualByComparingTo("0");
+  }
+
   private static Plan starter(String arcPrice) {
     Plan plan = plan("STARTER", arcPrice, null);
     plan.setBasePrice(new BigDecimal("4999"));
