@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.plan.domain.model.VoucherTarget;
 import com.inventory.plan.domain.model.VoucherType;
+import com.inventory.plan.rest.dto.request.PlanVoucherPreviewRequest;
 import com.inventory.plan.rest.dto.request.VoucherGenerateRequest;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -21,6 +22,29 @@ class VoucherAdminValidatorTest {
     assertThatCode(() -> validator.validateGenerate(base().count(200).prefix("DIWALI").build())).doesNotThrowAnyException();
     assertThatCode(() -> validator.validateGenerate(base().type(VoucherType.PERCENT_OFF).value(new BigDecimal("25")).build()))
         .doesNotThrowAnyException();
+  }
+
+  @Test
+  void planPreviewUsesTheSameRulesAsGenerate() {
+    assertThatCode(() -> validator.validatePlanPreview(preview(VoucherType.FLAT_OFF, "1000"))).doesNotThrowAnyException();
+    assertThatCode(() -> validator.validatePlanPreview(preview(VoucherType.PERCENT_OFF, "100"))).doesNotThrowAnyException();
+    assertPreviewInvalid(preview(VoucherType.FLAT_OFF, "0"));
+    assertPreviewInvalid(preview(VoucherType.FLAT_OFF, null));
+    assertPreviewInvalid(preview(VoucherType.PERCENT_OFF, "101"));
+    assertPreviewInvalid(preview(VoucherType.PERCENT_OFF, "0"));
+    assertPreviewInvalid(preview(VoucherType.FREE_ADDON, null));
+    assertPreviewInvalid(preview(null, "10"));
+    assertPreviewInvalid(PlanVoucherPreviewRequest.builder().type(VoucherType.FLAT_OFF).value(BigDecimal.TEN).build());
+    assertPreviewInvalid(null);
+  }
+
+  private static PlanVoucherPreviewRequest preview(VoucherType type, String value) {
+    return PlanVoucherPreviewRequest.builder().planCode("STARTER").type(type)
+        .value(value == null ? null : new BigDecimal(value)).build();
+  }
+
+  private void assertPreviewInvalid(PlanVoucherPreviewRequest request) {
+    assertThatThrownBy(() -> validator.validatePlanPreview(request)).isInstanceOf(ValidationException.class);
   }
 
   @Test

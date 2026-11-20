@@ -31,6 +31,7 @@ public interface VoucherMapper {
 
   @Mapping(target = "id", ignore = true)
   @Mapping(target = "code", ignore = true)
+  @Mapping(target = "planCode", ignore = true)
   @Mapping(target = "reservedCount", ignore = true)
   @Mapping(target = "redemptionCount", ignore = true)
   @Mapping(target = "active", constant = "true")

@@ -163,11 +163,36 @@ class VoucherAdminServiceTest {
   }
 
   @Test
-  void previewOfUnknownOrUnsoldPlanFailsLikeGenerate() {
+  void previewOfUnknownOrInactiveOrUnsoldPlanFailsLikeGenerate() {
     when(planRepository.findByCode("NOPE")).thenReturn(Optional.empty());
+    assertThatThrownBy(() -> service.previewPlan(previewOf("nope"))).isInstanceOf(ResourceNotFoundException.class);
+
+    Plan hidden = starter("7999", "4999");
+    hidden.setActive(false);
+    when(planRepository.findByCode("HIDDEN")).thenReturn(Optional.of(hidden));
+    assertThatThrownBy(() -> service.previewPlan(previewOf("HIDDEN"))).isInstanceOf(ValidationException.class);
+
+    Plan unsold = starter("7999", "4999");
+    unsold.setArcPrice(null);
+    unsold.setPrice(null);
+    when(planRepository.findByCode("UNSOLD")).thenReturn(Optional.of(unsold));
+    assertThatThrownBy(() -> service.previewPlan(previewOf("UNSOLD"))).isInstanceOf(ValidationException.class);
+  }
+
+  @Test
+  void previewRunsTheShapeValidatorFirst() {
+    PlanVoucherPreviewRequest request = preview("0");
+    org.mockito.Mockito.doThrow(new ValidationException("Flat discount must be greater than 0"))
+        .when(validator).validatePlanPreview(request);
+
+    assertThatThrownBy(() -> service.previewPlan(request)).isInstanceOf(ValidationException.class);
+    verify(planRepository, never()).findByCode(any());
+  }
+
+  private static PlanVoucherPreviewRequest previewOf(String planCode) {
     PlanVoucherPreviewRequest request = preview("1000");
-    request.setPlanCode("nope");
-    assertThatThrownBy(() -> service.previewPlan(request)).isInstanceOf(ResourceNotFoundException.class);
+    request.setPlanCode(planCode);
+    return request;
   }
 
   @Test

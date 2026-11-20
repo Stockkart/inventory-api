@@ -181,12 +181,7 @@ public class VoucherAdminService {
 
   /** Read-only: the figures and verdict the admin form shows while typing. Fails like generate for a bad plan. */
   public PlanVoucherPreviewResponse previewPlan(PlanVoucherPreviewRequest request) {
-    if (request == null || !StringUtils.hasText(request.getPlanCode())) {
-      throw new ValidationException("Plan is required");
-    }
-    if (request.getType() == null || request.getValue() == null) {
-      throw new ValidationException("Discount type and value are required");
-    }
+    validator.validatePlanPreview(request);
     String planCode = request.getPlanCode().trim().toUpperCase(Locale.ROOT);
     Plan plan = requireSellablePlan(planCode);
     PlanVoucherCheck check = PlanVoucherPricing.check(request.getType(), request.getValue(), plan);
