@@ -20,10 +20,11 @@ public final class CartUtils {
   }
 
   /**
-   * An add-on top-up: no plan, at least one add-on. Priced against the shop's current paid plan,
-   * which it neither buys nor extends.
+   * An add-on top-up: no plan, and at least one add-on or voucher code (a free-add-on voucher adds
+   * its own line). Priced against the shop's current paid plan, which it neither buys nor extends.
    */
   public static boolean isAddOnOnly(QuoteRequest request) {
-    return request != null && !hasPlan(request) && !CollectionUtils.isEmpty(request.getAddOns());
+    return request != null && !hasPlan(request)
+        && (!CollectionUtils.isEmpty(request.getAddOns()) || !CollectionUtils.isEmpty(request.getVoucherCodes()));
   }
 }

@@ -212,12 +212,19 @@ checkout both call it, and clients show the quote without recomputing it.
   the rest flows on to add-ons. Admins set it on the plan (`basePrice <= arcPrice`); null means no
   floor. Add-ons and OCR top-ups have no floor.
 - `listPrice` (`arcPrice` + ₹3,000) is a struck-through display anchor and is never charged.
-- Add-on-only orders (no `planCode`/`planId`, at least one add-on) top up a shop on an active paid
-  plan: priced against its current plan (`EntitlementService.paidTerm`), no plan line, no plan
-  floor, `durationMonths` ignored, `addOnOnly: true` on the quote, checkout and order. Trial, expired
-  or undated subscriptions are rejected. Fulfilment grants no plan; annual add-ons end with the
-  subscription's `expiresAt` read at fulfilment; no referral reward.
-- SMS add-ons are not sold in any cart (including via voucher) until StockKart sends SMS.
+- Add-on-only orders (no `planCode`/`planId`, at least one add-on or voucher code) top up a shop on
+  an active paid plan: priced against its current plan (`EntitlementService.paidTerm`) at full
+  price, no proration, no plan line, no plan floor, `durationMonths` ignored, `addOnOnly: true` on
+  the quote, checkout and order. Trial, expired or undated subscriptions are rejected, and so are
+  legacy plans (no catalogue code: they already have every feature with no user or OCR limit).
+  A non-stackable add-on the shop already holds live cannot be bought again; seats and OCR credits
+  can. The priced term's end is `termEndsAt` on the quote, checkout response and order; annual
+  add-ons end then, even if the shop renews before fulfilment. OCR credits never expire, so an
+  OCR-only order always grants; an order with annual add-ons paid after `termEndsAt` grants nothing
+  and goes straight to `FULFILMENT_FAILED` for an operator refund. No referral reward, and referral
+  approval rewards the referee's first fulfilled order that is not add-on-only.
+- SMS add-ons are not sold in any cart until StockKart sends SMS; via a voucher this is a
+  `VOUCHER_REJECTED` (`NOT_APPLICABLE_TO_CART`).
 - `PricingConstants.PRICING_VERSION` is stored on every order; bump it when a rule changes (2 = base-price floor).
 
 ### Implementation status (vertical plugins)

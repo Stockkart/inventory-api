@@ -28,6 +28,11 @@ public class QuoteResponse {
   private int durationMonths;
   /** Add-ons bought on their own: no PLAN line; durationMonths is 0. */
   private boolean addOnOnly;
+  /**
+   * Add-on-only carts: when the annual add-ons end (the current paid term's end; no proration). OCR
+   * credits never expire. Null for plan carts.
+   */
+  private Instant termEndsAt;
   private int pricingVersion;
   private Instant quotedAt;
   private Instant expiresAt;

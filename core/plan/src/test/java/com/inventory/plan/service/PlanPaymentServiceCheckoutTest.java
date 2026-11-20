@@ -54,6 +54,7 @@ import org.springframework.dao.DuplicateKeyException;
 class PlanPaymentServiceCheckoutTest {
 
   private static final Instant NOW = Instant.parse("2026-09-01T10:00:00Z");
+  private static final Instant TERM_END = Instant.parse("2027-03-01T00:00:00Z");
 
   @Mock private PlanRepository planRepository;
   @Mock private PlanPaymentOrderRepository orderRepository;
@@ -201,9 +202,10 @@ class PlanPaymentServiceCheckoutTest {
     OrderLine line = OrderLine.builder().type("OCR_TOPUP").code("OCR_TOPUP_500").quantity(1)
         .unitPrice(new BigDecimal("199")).discount(BigDecimal.ZERO).lineTotal(new BigDecimal("199")).build();
     when(pricing.priceAddOnOnly(eq("shop-1"), any())).thenReturn(new PricedCart(plan, List.of(line),
-        new BigDecimal("199"), BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal("199"), 0, true));
+        new BigDecimal("199"), BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal("199"), 0, true, TERM_END));
     PlanPaymentOrder opened = pending();
     opened.setAddOnOnly(true);
+    opened.setTermEndsAt(TERM_END);
     when(stateService.attachProviderOrder(eq("order-1"), eq("rzp_1"), any())).thenReturn(Optional.of(opened));
     CreatePlanCheckoutRequest request = addOnOnlyRequest();
     request.setDurationMonths(24);
@@ -217,12 +219,14 @@ class PlanPaymentServiceCheckoutTest {
     assertThat(order.getPlanId()).isEqualTo("plan-1");
     assertThat(order.getPlanCode()).isEqualTo("GROWTH");
     assertThat(order.getDurationMonths()).isNull();
+    assertThat(order.getTermEndsAt()).isEqualTo(TERM_END);
     assertThat(order.getAmount()).isEqualByComparingTo("199");
     assertThat(order.getRequestHash()).isEqualTo(CheckoutRequestHash.of("shop-1",
         PricingConstants.ADD_ON_ONLY_CART_KEY, addOnOnlyRequest()));
     verify(pricing, never()).price(any(), any(), anyString());
     verify(planRepository, never()).findByCode(anyString());
     assertThat(response.isAddOnOnly()).isTrue();
+    assertThat(response.getTermEndsAt()).isEqualTo(TERM_END);
   }
 
   @Test
@@ -233,6 +237,7 @@ class PlanPaymentServiceCheckoutTest {
     verify(orderRepository).insert(inserted.capture());
     assertThat(inserted.getValue().isAddOnOnly()).isFalse();
     assertThat(inserted.getValue().getDurationMonths()).isEqualTo(12);
+    assertThat(inserted.getValue().getTermEndsAt()).isNull();
   }
 
   @Test

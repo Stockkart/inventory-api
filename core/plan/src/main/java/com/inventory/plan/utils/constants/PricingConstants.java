@@ -27,6 +27,9 @@ public final class PricingConstants {
   public static final String MSG_EMPTY_CART = "Choose a plan or at least one add-on";
   public static final String MSG_ADD_ON_ONLY_NEEDS_PAID_PLAN =
       "Add-ons can be bought on their own only on an active paid plan";
+  /** Legacy plans are grandfathered into every feature with no user or OCR limits. */
+  public static final String MSG_LEGACY_PLAN_HAS_EVERYTHING =
+      "Your plan already includes every feature with unlimited users and OCR, so add-ons add nothing";
   /** StockKart does not send SMS yet, so SMS packs are not sold in any cart. */
   public static final String MSG_SMS_COMING_SOON = "SMS packs are coming soon";
 }

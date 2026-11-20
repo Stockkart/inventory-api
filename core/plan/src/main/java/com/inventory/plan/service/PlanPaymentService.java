@@ -308,6 +308,7 @@ public class PlanPaymentService {
         .currency(order.getCurrency())
         .planName(order.getPlanName())
         .addOnOnly(order.isAddOnOnly())
+        .termEndsAt(order.getTermEndsAt())
         .items(order.getItems() != null
             ? order.getItems().stream().map(OrderPricingService::toQuoteItem).toList()
             : null)
@@ -344,6 +345,7 @@ public class PlanPaymentService {
     order.setPlanCode(plan.getCode());
     order.setPlanName(plan.getPlanName());
     order.setAddOnOnly(cart.addOnOnly());
+    order.setTermEndsAt(cart.termEndsAt());
     order.setAmount(cart.grandTotal());
     order.setCurrency(PlanPaymentConstants.CURRENCY_INR);
     order.setDurationMonths(cart.addOnOnly() ? null : cart.durationMonths());

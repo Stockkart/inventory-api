@@ -1,11 +1,13 @@
 package com.inventory.plan.validation;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.inventory.common.exception.ValidationException;
 import com.inventory.plan.rest.dto.request.CreatePlanCheckoutRequest;
 import com.inventory.plan.rest.dto.request.QuoteRequest;
+import com.inventory.plan.utils.CartUtils;
 import com.inventory.plan.utils.constants.PricingConstants;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -57,6 +59,16 @@ class PlanValidatorCheckoutDurationTest {
 
     assertThatCode(() -> validator.validateCreateCheckoutRequest("shop-1", request, "key-1"))
         .doesNotThrowAnyException();
+  }
+
+  @Test
+  void acceptsAVoucherOnlyCartWithNoPlanAsAnAddOnOnlyTopUp() {
+    CreatePlanCheckoutRequest request = new CreatePlanCheckoutRequest();
+    request.setVoucherCodes(List.of("MKT-FREE"));
+
+    assertThatCode(() -> validator.validateCreateCheckoutRequest("shop-1", request, "key-1"))
+        .doesNotThrowAnyException();
+    assertThat(CartUtils.isAddOnOnly(request)).isTrue();
   }
 
   @Test

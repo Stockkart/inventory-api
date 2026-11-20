@@ -76,10 +76,7 @@ public class ShopAddOnService {
    * into a no-op.
    */
   public void grantForOrder(PlanPaymentOrder order, Instant termEndsAt) {
-    List<OrderLine> lines = order.getItems() == null ? List.of() : order.getItems().stream()
-        .filter(line -> PricingConstants.ITEM_TYPE_ADDON.equals(line.getType())
-            || PricingConstants.ITEM_TYPE_OCR_TOPUP.equals(line.getType()))
-        .toList();
+    List<OrderLine> lines = grantedLines(order);
     if (lines.isEmpty()) {
       return;
     }
@@ -96,6 +93,32 @@ public class ShopAddOnService {
       insertOnce(grant);
     }
     entitlementService.invalidate(order.getShopId());
+  }
+
+  /**
+   * Whether any add-on the order grants ends with a term (annual, not OCR credits or one-time), so
+   * granting it needs a term end still in the future.
+   */
+  public boolean needsTermEnd(PlanPaymentOrder order) {
+    List<OrderLine> lines = grantedLines(order);
+    if (lines.isEmpty()) {
+      return false;
+    }
+    Map<String, AddOn> addOns = catalogue.byCode(lines.stream().map(OrderLine::getCode).toList());
+    return lines.stream().map(line -> addOns.get(line.getCode()))
+        // An add-on missing from the catalogue fails in grantForOrder; count it as needing a term.
+        .anyMatch(addOn -> addOn == null || endsWithTerm(addOn));
+  }
+
+  private static List<OrderLine> grantedLines(PlanPaymentOrder order) {
+    return order.getItems() == null ? List.of() : order.getItems().stream()
+        .filter(line -> PricingConstants.ITEM_TYPE_ADDON.equals(line.getType())
+            || PricingConstants.ITEM_TYPE_OCR_TOPUP.equals(line.getType()))
+        .toList();
+  }
+
+  private static boolean endsWithTerm(AddOn addOn) {
+    return addOn.getGrantType() != AddOnGrantType.OCR_CREDITS && addOn.getBillingType() != AddOnBillingType.ONE_TIME;
   }
 
   /**
@@ -172,7 +195,7 @@ public class ShopAddOnService {
         .grantedQuantity(granted)
         .remainingCredits(credits ? granted : null)
         .purchasedAt(now)
-        .expiresAt(credits || addOn.getBillingType() == AddOnBillingType.ONE_TIME ? null : termEndsAt)
+        .expiresAt(endsWithTerm(addOn) ? termEndsAt : null)
         .createdAt(now)
         .build();
   }

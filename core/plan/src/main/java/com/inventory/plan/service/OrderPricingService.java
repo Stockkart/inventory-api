@@ -6,8 +6,10 @@ import com.inventory.plan.domain.model.AddOn;
 import com.inventory.plan.domain.model.AddOnGrantType;
 import com.inventory.plan.domain.model.AddOnVoucher;
 import com.inventory.plan.domain.model.OrderLine;
+import com.inventory.plan.domain.model.PaidTerm;
 import com.inventory.plan.domain.model.Plan;
 import com.inventory.plan.domain.model.PricedCart;
+import com.inventory.plan.domain.model.ShopAddOn;
 import com.inventory.plan.domain.model.VoucherRejection;
 import com.inventory.plan.domain.repository.PlanRepository;
 import com.inventory.plan.exception.VoucherRejectedException;
@@ -21,6 +23,7 @@ import com.inventory.plan.utils.constants.PricingConstants;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -53,6 +56,9 @@ public class OrderPricingService {
 
   @Autowired
   private EntitlementService entitlementService;
+
+  @Autowired
+  private ShopAddOnService shopAddOnService;
 
   /**
    * {@code shopId} is needed to check vouchers the shop may use, and for an add-on-only cart (no
@@ -95,35 +101,45 @@ public class OrderPricingService {
         .lineTotal(unitPrice)
         .itemSource(PricingConstants.ITEM_SOURCE_MANUAL)
         .build());
-    items.addAll(addOnLines(plan, request.getAddOns()));
-    applyVouchers(plan, items, request.getVoucherCodes(), shopId);
-    return total(plan, items, request, shopId, plan.getBasePrice(), durationMonths, false);
+    // A plan cart may re-buy an add-on the shop holds: the new grant runs to the new term's end.
+    items.addAll(addOnLines(plan, request.getAddOns(), Set.of()));
+    applyVouchers(plan, items, request.getVoucherCodes(), shopId, Set.of());
+    return total(plan, items, request, shopId, plan.getBasePrice(), durationMonths, false, null);
   }
 
   /**
    * Prices add-ons bought on their own against the shop's current paid plan (§3.3): full price, no
    * proration, no plan line and so no plan floor. {@code durationMonths} is ignored; annual add-ons
-   * end with the current term, and OCR credits never expire.
+   * end with the current term ({@link PricedCart#termEndsAt()}, stored on the order), and OCR
+   * credits never expire. A non-stackable add-on the shop already holds live is rejected.
    */
   public PricedCart priceAddOnOnly(String shopId, QuoteRequest request) {
     if (!CartUtils.isAddOnOnly(request)) {
       throw new ValidationException(PricingConstants.MSG_EMPTY_CART);
     }
-    Plan plan = currentPaidPlan(shopId);
-    List<OrderLine> items = new ArrayList<>(addOnLines(plan, request.getAddOns()));
-    applyVouchers(plan, items, request.getVoucherCodes(), shopId);
-    return total(plan, items, request, shopId, null, 0, true);
+    PaidTerm term = entitlementService.paidTerm(shopId)
+        .orElseThrow(() -> new ValidationException(PricingConstants.MSG_ADD_ON_ONLY_NEEDS_PAID_PLAN));
+    Plan plan = planRepository.findById(term.planId())
+        .orElseThrow(() -> new ValidationException(PricingConstants.MSG_ADD_ON_ONLY_NEEDS_PAID_PLAN));
+    Set<String> held = heldOnce(shopId);
+    List<OrderLine> items = new ArrayList<>(addOnLines(plan, request.getAddOns(), held));
+    applyVouchers(plan, items, request.getVoucherCodes(), shopId, held);
+    return total(plan, items, request, shopId, null, 0, true, term.expiresAt());
   }
 
-  /** The plan a shop is paying for right now; rejects trial, expired and undated subscriptions. */
-  public Plan currentPaidPlan(String shopId) {
-    return entitlementService.paidTerm(shopId)
-        .flatMap(term -> planRepository.findById(term.planId()))
-        .orElseThrow(() -> new ValidationException(PricingConstants.MSG_ADD_ON_ONLY_NEEDS_PAID_PLAN));
+  /** Codes of live add-ons the shop holds that cannot be bought again on top (not stackable). */
+  private Set<String> heldOnce(String shopId) {
+    Set<String> codes = new HashSet<>();
+    for (ShopAddOn held : shopAddOnService.live(shopId, Instant.now())) {
+      if (held.getGrantType() != AddOnGrantType.OCR_CREDITS && held.getAddOnCode() != null) {
+        codes.add(held.getAddOnCode());
+      }
+    }
+    return codes;
   }
 
   private PricedCart total(Plan plan, List<OrderLine> items, QuoteRequest request, String shopId,
-      BigDecimal planFloor, int durationMonths, boolean addOnOnly) {
+      BigDecimal planFloor, int durationMonths, boolean addOnOnly, Instant termEndsAt) {
     BigDecimal subtotal = sum(items.stream().map(line -> line.getUnitPrice()
         .multiply(BigDecimal.valueOf(line.getQuantity()))).toList());
     BigDecimal discountTotal = sum(items.stream().map(OrderLine::getDiscount).toList());
@@ -131,7 +147,7 @@ public class OrderPricingService {
         ? applyWallet(items, walletService.available(shopId), planFloor)
         : BigDecimal.ZERO;
     return new PricedCart(plan, List.copyOf(items), subtotal, discountTotal, walletCredit,
-        subtotal.subtract(discountTotal).subtract(walletCredit), durationMonths, addOnOnly);
+        subtotal.subtract(discountTotal).subtract(walletCredit), durationMonths, addOnOnly, termEndsAt);
   }
 
   /**
@@ -167,9 +183,10 @@ public class OrderPricingService {
 
   /**
    * One line per requested add-on, priced from the catalogue. Rejects unknown or hidden add-ons,
-   * repeats, quantities the add-on does not allow, and add-ons the plan already includes (§10).
+   * repeats, quantities the add-on does not allow, add-ons the plan already includes (§10), and
+   * non-stackable add-ons in {@code held} (already held live by the shop).
    */
-  private List<OrderLine> addOnLines(Plan plan, List<QuoteRequest.AddOnLine> requested) {
+  private List<OrderLine> addOnLines(Plan plan, List<QuoteRequest.AddOnLine> requested, Set<String> held) {
     if (CollectionUtils.isEmpty(requested)) {
       return List.of();
     }
@@ -194,6 +211,7 @@ public class OrderPricingService {
       checkSold(addOn);
       checkQuantity(addOn, quantity);
       checkApplies(plan, addOn);
+      checkNotHeld(addOn, held);
       lines.add(addOnLine(addOn, quantity, PricingConstants.ITEM_SOURCE_MANUAL));
     });
     return lines;
@@ -204,7 +222,8 @@ public class OrderPricingService {
    * cart adds a line of its own ({@code itemSource = VOUCHER}); one voucher per line; never the plan
    * line (r4.8).
    */
-  private void applyVouchers(Plan plan, List<OrderLine> items, List<String> rawCodes, String shopId) {
+  private void applyVouchers(Plan plan, List<OrderLine> items, List<String> rawCodes, String shopId,
+      Set<String> held) {
     if (CollectionUtils.isEmpty(rawCodes)) {
       return;
     }
@@ -227,9 +246,10 @@ public class OrderPricingService {
       if (addOn == null || !addOn.isActive()) {
         throw notApplicable(code, "Voucher " + code + " is for an add-on that is no longer sold");
       }
-      checkSold(addOn);
       try {
+        checkSold(addOn);
         checkApplies(plan, addOn);
+        checkNotHeld(addOn, held);
       } catch (ValidationException e) {
         throw notApplicable(code, e.getMessage());
       }
@@ -267,13 +287,6 @@ public class OrderPricingService {
         .build();
   }
 
-  /** SMS packs stay in the catalogue but cannot be bought until StockKart sends SMS. */
-  private static void checkSold(AddOn addOn) {
-    if (addOn.getGrantType() == AddOnGrantType.SMS) {
-      throw new ValidationException(PricingConstants.MSG_SMS_COMING_SOON);
-    }
-  }
-
   private static void checkQuantity(AddOn addOn, int quantity) {
     if (quantity < 1) {
       throw new ValidationException("Quantity for " + addOn.getCode() + " must be at least 1");
@@ -286,13 +299,35 @@ public class OrderPricingService {
     }
   }
 
+  /** SMS packs stay in the catalogue but cannot be bought until StockKart sends SMS. */
+  private static void checkSold(AddOn addOn) {
+    if (addOn.getGrantType() == AddOnGrantType.SMS) {
+      throw new ValidationException(PricingConstants.MSG_SMS_COMING_SOON);
+    }
+  }
+
+  /**
+   * Rejects add-ons the plan already gives. A legacy plan (no catalogue code) is grandfathered into
+   * every feature, unlimited users and unlimited OCR, so no add-on adds anything to it.
+   */
   private static void checkApplies(Plan plan, AddOn addOn) {
+    if (plan.getCode() == null) {
+      throw new ValidationException(PricingConstants.MSG_LEGACY_PLAN_HAS_EVERYTHING);
+    }
     if (addOn.getGrantType() == AddOnGrantType.FEATURE
         && plan.getFeatures() != null && plan.getFeatures().contains(addOn.getGrantsFeature())) {
       throw new ValidationException(plan.getPlanName() + " already includes " + addOn.getName());
     }
     if (addOn.getGrantType() == AddOnGrantType.SEATS && plan.isUnlimited()) {
       throw new ValidationException(plan.getPlanName() + " already has unlimited users");
+    }
+  }
+
+  /** A non-stackable add-on the shop already holds live cannot be bought again on top (seats, OCR can). */
+  private static void checkNotHeld(AddOn addOn, Set<String> held) {
+    if (!addOn.isStackable() && addOn.getGrantType() != AddOnGrantType.OCR_CREDITS
+        && held.contains(addOn.getCode())) {
+      throw new ValidationException("You already have " + addOn.getName());
     }
   }
 
@@ -313,6 +348,7 @@ public class OrderPricingService {
         .currency(PlanPaymentConstants.CURRENCY_INR)
         .durationMonths(cart.durationMonths())
         .addOnOnly(cart.addOnOnly())
+        .termEndsAt(cart.termEndsAt())
         .pricingVersion(PricingConstants.PRICING_VERSION)
         .quotedAt(now)
         .expiresAt(now.plus(PricingConstants.QUOTE_TTL))

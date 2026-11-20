@@ -69,7 +69,7 @@ public class PlanValidator {
     if (!StringUtils.hasText(shopId)) {
       throw new ValidationException("Shop ID is required");
     }
-    // No plan and at least one add-on is an add-on-only top-up, priced against the shop's current plan.
+    // No plan and at least one add-on or voucher is an add-on-only top-up, priced against the shop's current plan.
     if (!CartUtils.hasPlan(request) && !CartUtils.isAddOnOnly(request)) {
       throw new ValidationException(PricingConstants.MSG_EMPTY_CART);
     }

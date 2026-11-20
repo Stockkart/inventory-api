@@ -2,8 +2,10 @@ package com.inventory.plan.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -17,8 +19,11 @@ import com.inventory.plan.domain.model.AddOnVoucher;
 import com.inventory.plan.domain.model.PaidTerm;
 import com.inventory.plan.domain.model.Plan;
 import com.inventory.plan.domain.model.PricedCart;
+import com.inventory.plan.domain.model.ShopAddOn;
+import com.inventory.plan.domain.model.VoucherRejection;
 import com.inventory.plan.domain.model.VoucherType;
 import com.inventory.plan.domain.repository.PlanRepository;
+import com.inventory.plan.exception.VoucherRejectedException;
 import com.inventory.plan.rest.dto.request.QuoteRequest;
 import com.inventory.plan.rest.dto.response.QuoteResponse;
 import com.inventory.plan.service.voucher.VoucherService;
@@ -48,6 +53,7 @@ class OrderPricingServiceAddOnOnlyTest {
   @Mock private VoucherService voucherService;
   @Mock private WalletService walletService;
   @Mock private EntitlementService entitlementService;
+  @Mock private ShopAddOnService shopAddOnService;
 
   @InjectMocks
   private OrderPricingService pricing;
@@ -202,7 +208,7 @@ class OrderPricingServiceAddOnOnlyTest {
   }
 
   @Test
-  void smsPacksAreComingSoonThroughAVoucher() {
+  void smsPacksAreComingSoonThroughAVoucherAsAVoucherRejection() {
     when(planRepository.findByCode("PROFESSIONAL")).thenReturn(Optional.of(pro));
     when(voucherService.requireUsable("SMS-FREE", "shop-1")).thenReturn(AddOnVoucher.builder().code("SMS-FREE")
         .addOnCode("SMS_PACK").type(VoucherType.FREE_ADDON).quantity(1).build());
@@ -211,7 +217,107 @@ class OrderPricingServiceAddOnOnlyTest {
     request.setVoucherCodes(List.of("SMS-FREE"));
 
     assertThatThrownBy(() -> pricing.quote("shop-1", request))
-        .isExactlyInstanceOf(ValidationException.class).hasMessage(PricingConstants.MSG_SMS_COMING_SOON);
+        .hasMessage(PricingConstants.MSG_SMS_COMING_SOON)
+        .isInstanceOfSatisfying(VoucherRejectedException.class,
+            e -> assertThat(e.getReason()).isEqualTo(VoucherRejection.NOT_APPLICABLE_TO_CART));
+  }
+
+  @Test
+  void quoteShowsWhenAnnualAddOnsEndAndPlanCartsDoNot() {
+    onPaidPlan();
+    assertThat(pricing.quote("shop-1", addOnOnly(new QuoteRequest.AddOnLine("MARKETING_MODULE", 1)))
+        .getTermEndsAt()).isEqualTo(TERM_END);
+    assertThat(pricing.priceAddOnOnly("shop-1", addOnOnly(new QuoteRequest.AddOnLine("OCR_TOPUP_500", 1)))
+        .termEndsAt()).isEqualTo(TERM_END);
+
+    when(planRepository.findByCode("PROFESSIONAL")).thenReturn(Optional.of(pro));
+    QuoteRequest planCart = new QuoteRequest();
+    planCart.setPlanCode("PROFESSIONAL");
+    assertThat(pricing.quote("shop-1", planCart).getTermEndsAt()).isNull();
+  }
+
+  @Test
+  void aLegacyPlanCannotBuyAnyAddOnBecauseItAlreadyHasEverything() {
+    pro.setCode(null);
+    onPaidPlan();
+
+    for (String code : List.of("MARKETING_MODULE", "ADDITIONAL_USER", "OCR_TOPUP_500")) {
+      assertThatThrownBy(() -> pricing.quote("shop-1", addOnOnly(new QuoteRequest.AddOnLine(code, 1))))
+          .isInstanceOf(ValidationException.class).hasMessage(PricingConstants.MSG_LEGACY_PLAN_HAS_EVERYTHING);
+    }
+  }
+
+  @Test
+  void aNonStackableAddOnTheShopAlreadyHoldsCannotBeBoughtAgain() {
+    onPaidPlan();
+    when(shopAddOnService.live(eq("shop-1"), any())).thenReturn(List.of(
+        held("MARKETING_MODULE", AddOnGrantType.FEATURE),
+        held("ADDITIONAL_USER", AddOnGrantType.SEATS),
+        held("OCR_TOPUP_500", AddOnGrantType.OCR_CREDITS)));
+
+    assertThatThrownBy(() -> pricing.quote("shop-1", addOnOnly(new QuoteRequest.AddOnLine("MARKETING_MODULE", 1))))
+        .isInstanceOf(ValidationException.class).hasMessageContaining("already have MARKETING_MODULE");
+
+    // Seats and OCR credits stack, so a shop can always buy more.
+    QuoteResponse more = pricing.quote("shop-1", addOnOnly(
+        new QuoteRequest.AddOnLine("ADDITIONAL_USER", 1), new QuoteRequest.AddOnLine("OCR_TOPUP_500", 1)));
+    assertThat(more.getGrandTotal()).isEqualByComparingTo("699");
+  }
+
+  @Test
+  void aVoucherForAnAddOnTheShopAlreadyHoldsIsNotApplicable() {
+    onPaidPlan();
+    when(shopAddOnService.live(eq("shop-1"), any())).thenReturn(List.of(held("MARKETING_MODULE", AddOnGrantType.FEATURE)));
+    when(voucherService.requireUsable("MKT-FREE", "shop-1")).thenReturn(AddOnVoucher.builder().code("MKT-FREE")
+        .addOnCode("MARKETING_MODULE").type(VoucherType.FREE_ADDON).quantity(1).build());
+    QuoteRequest request = new QuoteRequest();
+    request.setVoucherCodes(List.of("MKT-FREE"));
+
+    assertThatThrownBy(() -> pricing.quote("shop-1", request))
+        .isInstanceOfSatisfying(VoucherRejectedException.class,
+            e -> assertThat(e.getReason()).isEqualTo(VoucherRejection.NOT_APPLICABLE_TO_CART));
+  }
+
+  @Test
+  void aPlanCartMayRebuyAnAddOnTheShopHolds() {
+    when(planRepository.findByCode("PROFESSIONAL")).thenReturn(Optional.of(pro));
+    QuoteRequest request = new QuoteRequest();
+    request.setPlanCode("PROFESSIONAL");
+    request.setAddOns(List.of(new QuoteRequest.AddOnLine("MARKETING_MODULE", 1)));
+
+    assertThat(pricing.quote("shop-1", request).getItems()).hasSize(2);
+    verify(shopAddOnService, never()).live(any(), any());
+  }
+
+  @Test
+  void aVoucherOnlyCartWithNoPlanIsAnAddOnOnlyTopUp() {
+    onPaidPlan();
+    when(voucherService.requireUsable("MKT-FREE", "shop-1")).thenReturn(AddOnVoucher.builder().code("MKT-FREE")
+        .addOnCode("MARKETING_MODULE").type(VoucherType.FREE_ADDON).quantity(1).build());
+    QuoteRequest request = new QuoteRequest();
+    request.setVoucherCodes(List.of("MKT-FREE"));
+
+    QuoteResponse quote = pricing.quote("shop-1", request);
+
+    assertThat(quote.isAddOnOnly()).isTrue();
+    assertThat(quote.getItems()).singleElement()
+        .satisfies(item -> assertThat(item.getItemSource()).isEqualTo("VOUCHER"));
+    assertThat(quote.getGrandTotal()).isEqualByComparingTo("0");
+    assertThat(quote.getTermEndsAt()).isEqualTo(TERM_END);
+  }
+
+  @Test
+  void aVoucherOnlyCartStillNeedsAnActivePaidPlan() {
+    when(entitlementService.paidTerm("shop-1")).thenReturn(Optional.empty());
+    QuoteRequest request = new QuoteRequest();
+    request.setVoucherCodes(List.of("MKT-FREE"));
+
+    assertThatThrownBy(() -> pricing.quote("shop-1", request))
+        .hasMessage(PricingConstants.MSG_ADD_ON_ONLY_NEEDS_PAID_PLAN);
+  }
+
+  private static ShopAddOn held(String code, AddOnGrantType type) {
+    return ShopAddOn.builder().shopId("shop-1").addOnCode(code).grantType(type).expiresAt(TERM_END).build();
   }
 
   private void onPaidPlan() {

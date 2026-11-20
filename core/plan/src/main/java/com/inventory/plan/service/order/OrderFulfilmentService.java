@@ -19,7 +19,8 @@ import org.springframework.stereotype.Service;
  * Runs the effects of a paid order exactly once in outcome: one attempt claims the order, applies
  * every {@link OrderFulfilmentStep}, and completes it. A crashed attempt's claim goes stale after
  * the lease and the maintenance job retries; after {@link #maxAttempts} the order is parked in
- * FULFILMENT_FAILED for an operator.
+ * FULFILMENT_FAILED for an operator. A step that throws {@link OrderNotFulfillableException} parks
+ * it there at once.
  */
 @Service
 @Slf4j
@@ -66,6 +67,11 @@ public class OrderFulfilmentService {
       for (OrderFulfilmentStep step : steps) {
         step.apply(order);
       }
+    } catch (OrderNotFulfillableException e) {
+      // Retrying cannot help: park it for an operator refund now, as a late payment does above.
+      stateService.failFulfilment(orderId, claimedAt, e.getMessage(), now());
+      log.error("Order {} for shop {} needs an operator: {}", orderId, order.getShopId(), e.getMessage());
+      return load(orderId);
     } catch (RuntimeException e) {
       String reason = describe(e);
       if (order.getFulfilmentAttempts() >= maxAttempts) {

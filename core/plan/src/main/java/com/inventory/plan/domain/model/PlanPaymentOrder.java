@@ -33,6 +33,11 @@ public class PlanPaymentOrder {
    * checkout, which the order does not grant or extend.
    */
   private boolean addOnOnly;
+  /**
+   * Add-on-only orders: end of the paid term the cart was priced against. Annual add-ons end then,
+   * even if the shop renews before fulfilment. Null for plan orders (their term comes from the grant).
+   */
+  private Instant termEndsAt;
   /** What the customer is charged: the priced cart's grand total. */
   private BigDecimal amount;
   private String currency;

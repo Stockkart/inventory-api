@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -25,7 +26,9 @@ import com.inventory.plan.service.PlanService;
 import com.inventory.plan.service.ShopAddOnService;
 import com.inventory.plan.utils.constants.PricingConstants;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -40,13 +43,15 @@ import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 
 /**
- * Fulfilment of an add-on-only order: no plan grant, annual add-ons end with the shop's current
- * term, OCR credits never expire, and a lapsed plan fails the step rather than granting.
+ * Fulfilment of an add-on-only order: no plan grant, annual add-ons end with the term priced at
+ * checkout (stored on the order), OCR credits never expire and always grant, and a term that ended
+ * before fulfilment parks an order with annual add-ons for an operator refund.
  */
 @ExtendWith(MockitoExtension.class)
 class AddOnOnlyFulfilmentTest {
 
   private static final Instant TERM_END = Instant.parse("2027-03-01T00:00:00Z");
+  private static final Instant NOW = Instant.parse("2026-11-20T00:00:00Z");
 
   @Mock private PlanService planService;
   @Mock private PlanTransactionRepository planTransactionRepository;
@@ -61,6 +66,7 @@ class AddOnOnlyFulfilmentTest {
   @BeforeEach
   void wire() {
     ReflectionTestUtils.setField(addOnGrantStep, "shopAddOnService", shopAddOnService);
+    addOnGrantStep.clock = Clock.fixed(NOW, ZoneOffset.UTC);
   }
 
   @Test
@@ -81,8 +87,7 @@ class AddOnOnlyFulfilmentTest {
   }
 
   @Test
-  void annualAddOnsEndWithTheCurrentTermAndOcrCreditsNeverExpire() {
-    when(entitlementService.paidTerm("shop-1")).thenReturn(Optional.of(new PaidTerm("plan-pro", TERM_END)));
+  void annualAddOnsEndWithThePricedTermAndOcrCreditsNeverExpire() {
     when(catalogue.byCode(anyCollection())).thenReturn(Map.of(
         "MARKETING_MODULE", addOn("MARKETING_MODULE", AddOnBillingType.ANNUAL, AddOnGrantType.FEATURE, 1),
         "OCR_TOPUP_500", addOn("OCR_TOPUP_500", AddOnBillingType.ONE_TIME, AddOnGrantType.OCR_CREDITS, 500)));
@@ -98,15 +103,56 @@ class AddOnOnlyFulfilmentTest {
     assertThat(credits.getExpiresAt()).isNull();
     assertThat(credits.getRemainingCredits()).isEqualTo(500);
     verify(planTransactionRepository, never()).findFirstByPaymentOrderId(any());
+    // The term priced at checkout, not whatever the subscription says at fulfilment.
+    verify(entitlementService, never()).paidTerm(any());
   }
 
   @Test
-  void aLapsedPlanFailsTheStepInsteadOfGranting() {
-    when(entitlementService.paidTerm("shop-1")).thenReturn(Optional.empty());
+  void aRenewalBeforeFulfilmentDoesNotMoveThePricedEndDate() {
+    when(catalogue.byCode(anyCollection())).thenReturn(Map.of(
+        "MARKETING_MODULE", addOn("MARKETING_MODULE", AddOnBillingType.ANNUAL, AddOnGrantType.FEATURE, 1),
+        "OCR_TOPUP_500", addOn("OCR_TOPUP_500", AddOnBillingType.ONE_TIME, AddOnGrantType.OCR_CREDITS, 500)));
+    // The shop renewed after checkout: its subscription now ends a year later.
+    lenient().when(entitlementService.paidTerm("shop-1"))
+        .thenReturn(Optional.of(new PaidTerm("plan-pro", TERM_END.plusSeconds(365L * 86400))));
 
-    assertThatThrownBy(() -> addOnGrantStep.apply(addOnOnlyOrder()))
-        .isInstanceOf(IllegalStateException.class).hasMessageContaining("no longer on an active paid plan");
+    addOnGrantStep.apply(addOnOnlyOrder());
+
+    ArgumentCaptor<ShopAddOn> grants = ArgumentCaptor.forClass(ShopAddOn.class);
+    verify(mongoTemplate, times(2)).insert(grants.capture());
+    assertThat(grants.getAllValues().get(0).getExpiresAt()).isEqualTo(TERM_END);
+  }
+
+  @Test
+  void annualAddOnsPaidAfterThePricedTermEndedParkTheOrderAndGrantNothing() {
+    when(catalogue.byCode(anyCollection())).thenReturn(Map.of(
+        "MARKETING_MODULE", addOn("MARKETING_MODULE", AddOnBillingType.ANNUAL, AddOnGrantType.FEATURE, 1),
+        "OCR_TOPUP_500", addOn("OCR_TOPUP_500", AddOnBillingType.ONE_TIME, AddOnGrantType.OCR_CREDITS, 500)));
+    PlanPaymentOrder order = addOnOnlyOrder();
+    order.setTermEndsAt(NOW.minusSeconds(1));
+
+    assertThatThrownBy(() -> addOnGrantStep.apply(order))
+        .isInstanceOf(OrderNotFulfillableException.class).hasMessageContaining("Refund it");
     verify(mongoTemplate, never()).insert(any(ShopAddOn.class));
+
+    order.setTermEndsAt(null);
+    assertThatThrownBy(() -> addOnGrantStep.apply(order)).isInstanceOf(OrderNotFulfillableException.class);
+  }
+
+  @Test
+  void ocrOnlyOrdersAlwaysGrantEvenAfterTheTermEnded() {
+    when(catalogue.byCode(anyCollection())).thenReturn(Map.of(
+        "OCR_TOPUP_500", addOn("OCR_TOPUP_500", AddOnBillingType.ONE_TIME, AddOnGrantType.OCR_CREDITS, 500)));
+    PlanPaymentOrder order = addOnOnlyOrder();
+    order.setItems(List.of(line(PricingConstants.ITEM_TYPE_OCR_TOPUP, "OCR_TOPUP_500", "199")));
+    order.setTermEndsAt(NOW.minusSeconds(86400));
+
+    addOnGrantStep.apply(order);
+
+    ArgumentCaptor<ShopAddOn> grants = ArgumentCaptor.forClass(ShopAddOn.class);
+    verify(mongoTemplate).insert(grants.capture());
+    assertThat(grants.getValue().getExpiresAt()).isNull();
+    assertThat(grants.getValue().getRemainingCredits()).isEqualTo(500);
   }
 
   @Test
@@ -134,6 +180,7 @@ class AddOnOnlyFulfilmentTest {
     order.setShopId("shop-1");
     order.setPlanId("plan-pro");
     order.setAddOnOnly(true);
+    order.setTermEndsAt(TERM_END);
     order.setItems(List.of(
         line(PricingConstants.ITEM_TYPE_ADDON, "MARKETING_MODULE", "1999"),
         line(PricingConstants.ITEM_TYPE_OCR_TOPUP, "OCR_TOPUP_500", "199")));

@@ -114,8 +114,8 @@ class ReferralAdminServiceTest {
     order.setId("o1");
     when(attributionRepository.findById("a1")).thenReturn(Optional.of(pending(null)));
     attributionUpdateReturns(resolved);
-    when(orderRepository.findFirstByShopIdAndStatusOrderByFulfilledAtAsc("referee",
-        PlanPaymentConstants.STATUS_FULFILLED)).thenReturn(Optional.of(order));
+    when(orderRepository.findFirstByShopIdAndStatusAndAddOnOnlyNotOrderByFulfilledAtAsc("referee",
+        PlanPaymentConstants.STATUS_FULFILLED, true)).thenReturn(Optional.of(order));
 
     AdminReferralAttributionResponse response = service.approveAttribution("a1", "referrer", "confirmed", "admin");
 
