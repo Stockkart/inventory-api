@@ -30,6 +30,7 @@ import com.inventory.plan.service.order.OrderReservations;
 import com.inventory.plan.service.order.PaymentOrderStateService;
 import com.inventory.plan.utils.CheckoutRequestHash;
 import com.inventory.plan.utils.constants.PlanPaymentConstants;
+import com.inventory.plan.utils.constants.PricingConstants;
 import com.inventory.plan.validation.PlanValidator;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -193,6 +194,65 @@ class PlanPaymentServiceCheckoutTest {
     verify(gateway, never()).createCheckout(any());
     assertThat(response.getStatus()).isEqualTo(PlanPaymentConstants.STATUS_FULFILLED);
     assertThat(response.getRazorpay()).isNull();
+  }
+
+  @Test
+  void anAddOnOnlyCartIsPricedAgainstTheCurrentPlanAndMarkedOnTheOrder() {
+    OrderLine line = OrderLine.builder().type("OCR_TOPUP").code("OCR_TOPUP_500").quantity(1)
+        .unitPrice(new BigDecimal("199")).discount(BigDecimal.ZERO).lineTotal(new BigDecimal("199")).build();
+    when(pricing.priceAddOnOnly(eq("shop-1"), any())).thenReturn(new PricedCart(plan, List.of(line),
+        new BigDecimal("199"), BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal("199"), 0, true));
+    PlanPaymentOrder opened = pending();
+    opened.setAddOnOnly(true);
+    when(stateService.attachProviderOrder(eq("order-1"), eq("rzp_1"), any())).thenReturn(Optional.of(opened));
+    CreatePlanCheckoutRequest request = addOnOnlyRequest();
+    request.setDurationMonths(24);
+
+    PlanCheckoutResponse response = service.createCheckout("shop-1", request, "key-2");
+
+    ArgumentCaptor<PlanPaymentOrder> inserted = ArgumentCaptor.forClass(PlanPaymentOrder.class);
+    verify(orderRepository).insert(inserted.capture());
+    PlanPaymentOrder order = inserted.getValue();
+    assertThat(order.isAddOnOnly()).isTrue();
+    assertThat(order.getPlanId()).isEqualTo("plan-1");
+    assertThat(order.getPlanCode()).isEqualTo("GROWTH");
+    assertThat(order.getDurationMonths()).isNull();
+    assertThat(order.getAmount()).isEqualByComparingTo("199");
+    assertThat(order.getRequestHash()).isEqualTo(CheckoutRequestHash.of("shop-1",
+        PricingConstants.ADD_ON_ONLY_CART_KEY, addOnOnlyRequest()));
+    verify(pricing, never()).price(any(), any(), anyString());
+    verify(planRepository, never()).findByCode(anyString());
+    assertThat(response.isAddOnOnly()).isTrue();
+  }
+
+  @Test
+  void aPlanCartIsNotAddOnOnly() {
+    service.createCheckout("shop-1", request(), "key-1");
+
+    ArgumentCaptor<PlanPaymentOrder> inserted = ArgumentCaptor.forClass(PlanPaymentOrder.class);
+    verify(orderRepository).insert(inserted.capture());
+    assertThat(inserted.getValue().isAddOnOnly()).isFalse();
+    assertThat(inserted.getValue().getDurationMonths()).isEqualTo(12);
+  }
+
+  @Test
+  void anAddOnOnlyRetryReplaysWithoutRepricing() {
+    PlanPaymentOrder existing = pending();
+    existing.setAddOnOnly(true);
+    existing.setRequestHash(CheckoutRequestHash.of("shop-1", PricingConstants.ADD_ON_ONLY_CART_KEY, addOnOnlyRequest()));
+    when(orderRepository.findByShopIdAndIdempotencyKey("shop-1", "key-2")).thenReturn(Optional.of(existing));
+
+    PlanCheckoutResponse response = service.createCheckout("shop-1", addOnOnlyRequest(), "key-2");
+
+    assertThat(response.getOrderId()).isEqualTo("order-1");
+    assertThat(response.isAddOnOnly()).isTrue();
+    verify(pricing, never()).priceAddOnOnly(anyString(), any());
+  }
+
+  private static CreatePlanCheckoutRequest addOnOnlyRequest() {
+    CreatePlanCheckoutRequest request = new CreatePlanCheckoutRequest();
+    request.setAddOns(List.of(new com.inventory.plan.rest.dto.request.QuoteRequest.AddOnLine("OCR_TOPUP_500", 1)));
+    return request;
   }
 
   private String hash() {

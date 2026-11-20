@@ -15,6 +15,7 @@ import com.inventory.plan.rest.dto.request.QuoteRequest;
 import com.inventory.plan.rest.dto.response.QuoteResponse;
 import com.inventory.plan.service.voucher.VoucherService;
 import com.inventory.plan.service.wallet.WalletService;
+import com.inventory.plan.utils.CartUtils;
 import com.inventory.plan.utils.constants.PlanPaymentConstants;
 import com.inventory.plan.utils.constants.PricingConstants;
 import java.math.BigDecimal;
@@ -50,10 +51,19 @@ public class OrderPricingService {
   @Autowired
   private WalletService walletService;
 
-  /** {@code shopId} is needed only to check vouchers the shop may use. */
+  @Autowired
+  private EntitlementService entitlementService;
+
+  /**
+   * {@code shopId} is needed to check vouchers the shop may use, and for an add-on-only cart (no
+   * plan, at least one add-on) to find the plan the add-ons are priced against.
+   */
   public QuoteResponse quote(String shopId, QuoteRequest request) {
-    if (request == null || !StringUtils.hasText(request.getPlanCode())) {
-      throw new ValidationException("planCode is required");
+    if (CartUtils.isAddOnOnly(request)) {
+      return toQuote(priceAddOnOnly(shopId, request));
+    }
+    if (!CartUtils.hasPlan(request)) {
+      throw new ValidationException(PricingConstants.MSG_EMPTY_CART);
     }
     checkCart(request);
     String planCode = request.getPlanCode().trim().toUpperCase(Locale.ROOT);
@@ -87,15 +97,41 @@ public class OrderPricingService {
         .build());
     items.addAll(addOnLines(plan, request.getAddOns()));
     applyVouchers(plan, items, request.getVoucherCodes(), shopId);
+    return total(plan, items, request, shopId, plan.getBasePrice(), durationMonths, false);
+  }
 
+  /**
+   * Prices add-ons bought on their own against the shop's current paid plan (§3.3): full price, no
+   * proration, no plan line and so no plan floor. {@code durationMonths} is ignored; annual add-ons
+   * end with the current term, and OCR credits never expire.
+   */
+  public PricedCart priceAddOnOnly(String shopId, QuoteRequest request) {
+    if (!CartUtils.isAddOnOnly(request)) {
+      throw new ValidationException(PricingConstants.MSG_EMPTY_CART);
+    }
+    Plan plan = currentPaidPlan(shopId);
+    List<OrderLine> items = new ArrayList<>(addOnLines(plan, request.getAddOns()));
+    applyVouchers(plan, items, request.getVoucherCodes(), shopId);
+    return total(plan, items, request, shopId, null, 0, true);
+  }
+
+  /** The plan a shop is paying for right now; rejects trial, expired and undated subscriptions. */
+  public Plan currentPaidPlan(String shopId) {
+    return entitlementService.paidTerm(shopId)
+        .flatMap(term -> planRepository.findById(term.planId()))
+        .orElseThrow(() -> new ValidationException(PricingConstants.MSG_ADD_ON_ONLY_NEEDS_PAID_PLAN));
+  }
+
+  private PricedCart total(Plan plan, List<OrderLine> items, QuoteRequest request, String shopId,
+      BigDecimal planFloor, int durationMonths, boolean addOnOnly) {
     BigDecimal subtotal = sum(items.stream().map(line -> line.getUnitPrice()
         .multiply(BigDecimal.valueOf(line.getQuantity()))).toList());
     BigDecimal discountTotal = sum(items.stream().map(OrderLine::getDiscount).toList());
     BigDecimal walletCredit = Boolean.TRUE.equals(request.getApplyWalletCredit()) && StringUtils.hasText(shopId)
-        ? applyWallet(items, walletService.available(shopId), plan.getBasePrice())
+        ? applyWallet(items, walletService.available(shopId), planFloor)
         : BigDecimal.ZERO;
     return new PricedCart(plan, List.copyOf(items), subtotal, discountTotal, walletCredit,
-        subtotal.subtract(discountTotal).subtract(walletCredit), durationMonths);
+        subtotal.subtract(discountTotal).subtract(walletCredit), durationMonths, addOnOnly);
   }
 
   /**
@@ -155,6 +191,7 @@ public class OrderPricingService {
       if (addOn == null || !addOn.isActive()) {
         throw new ResourceNotFoundException("Add-on", "code", code);
       }
+      checkSold(addOn);
       checkQuantity(addOn, quantity);
       checkApplies(plan, addOn);
       lines.add(addOnLine(addOn, quantity, PricingConstants.ITEM_SOURCE_MANUAL));
@@ -190,6 +227,7 @@ public class OrderPricingService {
       if (addOn == null || !addOn.isActive()) {
         throw notApplicable(code, "Voucher " + code + " is for an add-on that is no longer sold");
       }
+      checkSold(addOn);
       try {
         checkApplies(plan, addOn);
       } catch (ValidationException e) {
@@ -227,6 +265,13 @@ public class OrderPricingService {
         .lineTotal(addOn.getPrice().multiply(BigDecimal.valueOf(quantity)))
         .itemSource(itemSource)
         .build();
+  }
+
+  /** SMS packs stay in the catalogue but cannot be bought until StockKart sends SMS. */
+  private static void checkSold(AddOn addOn) {
+    if (addOn.getGrantType() == AddOnGrantType.SMS) {
+      throw new ValidationException(PricingConstants.MSG_SMS_COMING_SOON);
+    }
   }
 
   private static void checkQuantity(AddOn addOn, int quantity) {
@@ -267,6 +312,7 @@ public class OrderPricingService {
         .grandTotal(cart.grandTotal())
         .currency(PlanPaymentConstants.CURRENCY_INR)
         .durationMonths(cart.durationMonths())
+        .addOnOnly(cart.addOnOnly())
         .pricingVersion(PricingConstants.PRICING_VERSION)
         .quotedAt(now)
         .expiresAt(now.plus(PricingConstants.QUOTE_TTL))

@@ -93,6 +93,10 @@ public class ReferralRewardService {
    * the plan. At most one per referee: a later order never earns a second reward.
    */
   public Optional<ReferralReward> recordForOrder(PlanPaymentOrder order) {
+    // Add-on-only orders have no plan line and never earn a reward (§11); rewardBase would be zero anyway.
+    if (order.isAddOnOnly()) {
+      return Optional.empty();
+    }
     Optional<String> referrer = attributionService.resolvedReferrer(order.getShopId());
     if (referrer.isEmpty() || order.getItems() == null) {
       return Optional.empty();

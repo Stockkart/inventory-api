@@ -212,6 +212,12 @@ checkout both call it, and clients show the quote without recomputing it.
   the rest flows on to add-ons. Admins set it on the plan (`basePrice <= arcPrice`); null means no
   floor. Add-ons and OCR top-ups have no floor.
 - `listPrice` (`arcPrice` + ₹3,000) is a struck-through display anchor and is never charged.
+- Add-on-only orders (no `planCode`/`planId`, at least one add-on) top up a shop on an active paid
+  plan: priced against its current plan (`EntitlementService.paidTerm`), no plan line, no plan
+  floor, `durationMonths` ignored, `addOnOnly: true` on the quote, checkout and order. Trial, expired
+  or undated subscriptions are rejected. Fulfilment grants no plan; annual add-ons end with the
+  subscription's `expiresAt` read at fulfilment; no referral reward.
+- SMS add-ons are not sold in any cart (including via voucher) until StockKart sends SMS.
 - `PricingConstants.PRICING_VERSION` is stored on every order; bump it when a rule changes (2 = base-price floor).
 
 ### Implementation status (vertical plugins)

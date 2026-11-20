@@ -26,6 +26,8 @@ public class QuoteResponse {
   private BigDecimal grandTotal;
   private String currency;
   private int durationMonths;
+  /** Add-ons bought on their own: no PLAN line; durationMonths is 0. */
+  private boolean addOnOnly;
   private int pricingVersion;
   private Instant quotedAt;
   private Instant expiresAt;

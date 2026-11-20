@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 import com.inventory.common.entitlement.PlanFeature;
 import com.inventory.plan.domain.model.AddOnGrantType;
 import com.inventory.plan.domain.model.EntitlementSource;
+import com.inventory.plan.domain.model.PaidTerm;
 import com.inventory.plan.domain.model.Plan;
 import com.inventory.plan.domain.model.ShopEntitlements;
 import com.inventory.plan.domain.model.ShopAddOn;
@@ -166,6 +167,30 @@ class EntitlementServiceTest {
     service.clock = Clock.fixed(NOW.plusSeconds(service.cacheTtlSeconds), ZoneOffset.UTC);
     service.resolve("shop-1");
     verify(shopSubscriptionRepository, times(3)).findById("shop-1");
+  }
+
+  @Test
+  void paidTermIsTheLiveDatedPaidSubscription() {
+    subscription("pro", SubscriptionStatus.ACTIVE, NOW.plusSeconds(3600));
+
+    assertThat(service.paidTerm("shop-1")).contains(new PaidTerm("pro", NOW.plusSeconds(3600)));
+  }
+
+  @Test
+  void noPaidTermOnTrialAfterExpiryOrWithoutAnEndDate() {
+    subscription(null, SubscriptionStatus.TRIAL, NOW.plusSeconds(3600));
+    assertThat(service.paidTerm("shop-1")).isEmpty();
+
+    subscription("pro", SubscriptionStatus.EXPIRED, NOW.minusSeconds(1));
+    assertThat(service.paidTerm("shop-1")).isEmpty();
+
+    subscription("pro", SubscriptionStatus.ACTIVE, NOW.minusSeconds(1));
+    assertThat(service.paidTerm("shop-1")).isEmpty();
+
+    subscription("pro", SubscriptionStatus.ACTIVE, null);
+    assertThat(service.paidTerm("shop-1")).isEmpty();
+
+    assertThat(service.paidTerm(null)).isEmpty();
   }
 
   private static ShopAddOn addOn(String code, AddOnGrantType type, PlanFeature feature, int granted, Instant expiresAt) {

@@ -28,6 +28,7 @@ import com.inventory.plan.service.order.OrderFulfilmentService;
 import com.inventory.plan.service.order.OrderReservations;
 import com.inventory.plan.service.order.PaymentOrderStateService;
 import com.inventory.plan.service.refund.OrderRefundService;
+import com.inventory.plan.utils.CartUtils;
 import com.inventory.plan.utils.CheckoutRequestHash;
 import com.inventory.plan.utils.constants.PlanMetricsConstants;
 import com.inventory.plan.utils.constants.PlanPaymentConstants;
@@ -108,11 +109,17 @@ public class PlanPaymentService {
    */
   public PlanCheckoutResponse createCheckout(String shopId, CreatePlanCheckoutRequest request, String idempotencyKey) {
     planValidator.validateCreateCheckoutRequest(shopId, request, idempotencyKey);
-    Plan plan = resolvePlan(request);
-    if (request.getDurationMonths() == null) {
+    boolean addOnOnly = CartUtils.isAddOnOnly(request);
+    // An add-on-only cart buys no plan: its plan (the shop's current one) is resolved when pricing,
+    // after the replay check, so a retry of a created order does not depend on the plan still being live.
+    Plan plan = addOnOnly ? null : resolvePlan(request);
+    if (addOnOnly) {
+      request.setDurationMonths(null);
+    } else if (request.getDurationMonths() == null) {
       request.setDurationMonths(PlanPaymentConstants.DEFAULT_CHECKOUT_DURATION_MONTHS);
     }
-    String requestHash = CheckoutRequestHash.of(shopId, planKey(plan), request);
+    String requestHash = CheckoutRequestHash.of(shopId,
+        addOnOnly ? PricingConstants.ADD_ON_ONLY_CART_KEY : planKey(plan), request);
     String key = idempotencyKey != null ? idempotencyKey.trim() : null;
 
     // Replays are matched before pricing: the original order already holds its voucher slots, so
@@ -123,7 +130,9 @@ public class PlanPaymentService {
         return replay(existing.get(), requestHash);
       }
     }
-    PricedCart cart = orderPricingService.price(plan, request, shopId);
+    PricedCart cart = addOnOnly
+        ? orderPricingService.priceAddOnOnly(shopId, request)
+        : orderPricingService.price(plan, request, shopId);
 
     boolean walletPaysAll = cart.grandTotal().signum() == 0;
     PaymentGatewayPort gateway = walletPaysAll ? null : paymentGatewayResolver.resolve();
@@ -298,6 +307,7 @@ public class PlanPaymentService {
         .amount(order.getAmount())
         .currency(order.getCurrency())
         .planName(order.getPlanName())
+        .addOnOnly(order.isAddOnOnly())
         .items(order.getItems() != null
             ? order.getItems().stream().map(OrderPricingService::toQuoteItem).toList()
             : null)
@@ -333,9 +343,10 @@ public class PlanPaymentService {
     order.setPlanId(plan.getId());
     order.setPlanCode(plan.getCode());
     order.setPlanName(plan.getPlanName());
+    order.setAddOnOnly(cart.addOnOnly());
     order.setAmount(cart.grandTotal());
     order.setCurrency(PlanPaymentConstants.CURRENCY_INR);
-    order.setDurationMonths(cart.durationMonths());
+    order.setDurationMonths(cart.addOnOnly() ? null : cart.durationMonths());
     order.setItems(cart.items());
     order.setSubtotal(cart.subtotal());
     order.setDiscountTotal(cart.discountTotal());

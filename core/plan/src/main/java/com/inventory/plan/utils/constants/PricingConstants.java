@@ -18,4 +18,15 @@ public final class PricingConstants {
   public static final String ITEM_TYPE_OCR_TOPUP = "OCR_TOPUP";
   public static final String ITEM_SOURCE_MANUAL = "MANUAL";
   public static final String ITEM_SOURCE_VOUCHER = "VOUCHER";
+
+  /**
+   * Plan key an add-on-only cart hashes under (§27.6). Lowercase, so it can never equal a plan code,
+   * which are always uppercase.
+   */
+  public static final String ADD_ON_ONLY_CART_KEY = "addon-only";
+  public static final String MSG_EMPTY_CART = "Choose a plan or at least one add-on";
+  public static final String MSG_ADD_ON_ONLY_NEEDS_PAID_PLAN =
+      "Add-ons can be bought on their own only on an active paid plan";
+  /** StockKart does not send SMS yet, so SMS packs are not sold in any cart. */
+  public static final String MSG_SMS_COMING_SOON = "SMS packs are coming soon";
 }

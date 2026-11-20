@@ -28,6 +28,11 @@ public class PlanPaymentOrder {
   /** Null for legacy plans without a catalogue code. */
   private String planCode;
   private String planName;
+  /**
+   * Add-ons bought on their own (no plan line). planId/planCode/planName are then the shop's plan at
+   * checkout, which the order does not grant or extend.
+   */
+  private boolean addOnOnly;
   /** What the customer is charged: the priced cart's grand total. */
   private BigDecimal amount;
   private String currency;
