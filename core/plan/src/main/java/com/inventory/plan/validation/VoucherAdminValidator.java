@@ -1,6 +1,8 @@
 package com.inventory.plan.validation;
 
 import com.inventory.common.exception.ValidationException;
+import com.inventory.plan.domain.model.VoucherTarget;
+import com.inventory.plan.domain.model.VoucherType;
 import com.inventory.plan.rest.dto.request.VoucherActiveRequest;
 import com.inventory.plan.rest.dto.request.VoucherGenerateRequest;
 import com.inventory.plan.rest.dto.request.VoucherUpdateRequest;
@@ -37,8 +39,15 @@ public class VoucherAdminValidator {
     if (StringUtils.hasText(request.getPrefix()) && !PREFIX.matcher(request.getPrefix()).matches()) {
       throw new ValidationException("Prefix must be 1-8 characters of A-Z or 0-9");
     }
-    if (!StringUtils.hasText(request.getAddOnCode())) {
-      throw new ValidationException("Add-on code is required; vouchers apply to add-ons only");
+    if (request.getTarget() == VoucherTarget.PLAN) {
+      validatePlanTarget(request);
+    } else {
+      if (!StringUtils.hasText(request.getAddOnCode())) {
+        throw new ValidationException("Add-on code is required; vouchers apply to add-ons only");
+      }
+      if (StringUtils.hasText(request.getPlanCode())) {
+        throw new ValidationException("An add-on voucher cannot name a plan");
+      }
     }
     if (request.getType() == null) {
       throw new ValidationException("Voucher type is required");
@@ -69,6 +78,21 @@ public class VoucherAdminValidator {
       throw new ValidationException("Valid-to must be after valid-from");
     }
     validateNote(request.getNote());
+  }
+
+  private static void validatePlanTarget(VoucherGenerateRequest request) {
+    if (!StringUtils.hasText(request.getPlanCode())) {
+      throw new ValidationException("Plan code is required for a plan voucher");
+    }
+    if (StringUtils.hasText(request.getAddOnCode())) {
+      throw new ValidationException("A plan voucher cannot name an add-on");
+    }
+    if (request.getType() == VoucherType.FREE_ADDON) {
+      throw new ValidationException("Plan vouchers are percent or flat off; a plan cannot be free");
+    }
+    if (request.getQuantity() != null) {
+      throw new ValidationException("Quantity does not apply to a plan voucher");
+    }
   }
 
   public void validateUpdate(String id, VoucherUpdateRequest request) {

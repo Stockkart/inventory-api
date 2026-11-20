@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.inventory.common.exception.ValidationException;
+import com.inventory.plan.domain.model.VoucherTarget;
 import com.inventory.plan.domain.model.VoucherType;
 import com.inventory.plan.rest.dto.request.VoucherGenerateRequest;
 import java.math.BigDecimal;
@@ -37,11 +38,40 @@ class VoucherAdminValidatorTest {
     assertInvalid(base().validFrom(Instant.parse("2026-10-01T00:00:00Z")).validTo(Instant.parse("2026-09-01T00:00:00Z")).build());
   }
 
+  @Test
+  void acceptsPlanVoucher() {
+    assertThatCode(() -> validator.validateGenerate(planBase().build())).doesNotThrowAnyException();
+    assertThatCode(() -> validator.validateGenerate(planBase().type(VoucherType.PERCENT_OFF).value(new BigDecimal("25")).build()))
+        .doesNotThrowAnyException();
+  }
+
+  @Test
+  void rejectsBadPlanVouchers() {
+    assertInvalid(planBase().planCode(null).build());
+    assertInvalid(planBase().addOnCode("MARKETING_MODULE").build());
+    assertInvalid(planBase().type(VoucherType.FREE_ADDON).value(null).build());
+    assertInvalid(planBase().quantity(1).build());
+    assertInvalid(planBase().quantity(0).build());
+  }
+
+  @Test
+  void rejectsAddOnVoucherWithPlanCode() {
+    assertInvalid(base().planCode("STARTER").build());
+  }
+
   private void assertInvalid(VoucherGenerateRequest request) {
     assertThatThrownBy(() -> validator.validateGenerate(request)).isInstanceOf(ValidationException.class);
   }
 
   private static VoucherGenerateRequest.VoucherGenerateRequestBuilder base() {
     return VoucherGenerateRequest.builder().addOnCode("MARKETING_MODULE").type(VoucherType.FREE_ADDON);
+  }
+
+  private static VoucherGenerateRequest.VoucherGenerateRequestBuilder planBase() {
+    return VoucherGenerateRequest.builder()
+        .target(VoucherTarget.PLAN)
+        .planCode("STARTER")
+        .type(VoucherType.FLAT_OFF)
+        .value(BigDecimal.valueOf(1000));
   }
 }
