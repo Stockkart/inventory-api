@@ -26,6 +26,8 @@ public interface PlanPaymentOrderRepository extends MongoRepository<PlanPaymentO
   Optional<PlanPaymentOrder> findFirstByShopIdAndStatusAndAddOnOnlyNotOrderByFulfilledAtAsc(String shopId,
       String status, boolean addOnOnly);
 
+  List<PlanPaymentOrder> findByShopIdAndStatusIn(String shopId, Collection<String> statuses);
+
   Optional<PlanPaymentOrder> findByShopIdAndIdempotencyKey(String shopId, String idempotencyKey);
 
   @Query("{ 'status': { $in: ?0 }, 'paidAt': { $gte: ?1, $lt: ?2 } }")

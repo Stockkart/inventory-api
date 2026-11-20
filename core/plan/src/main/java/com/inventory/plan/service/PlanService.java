@@ -12,7 +12,6 @@ import com.inventory.plan.mapper.PlanMapper;
 import com.inventory.plan.mapper.PlanTransactionMapper;
 import com.inventory.plan.rest.dto.request.AssignPlanRequest;
 import com.inventory.plan.rest.dto.response.PlanResponse;
-import com.inventory.plan.rest.dto.response.PlanTransactionResponse;
 import com.inventory.plan.rest.dto.response.ShopPlanStatusResponse;
 import com.inventory.plan.rest.dto.response.UsageResponse;
 import com.inventory.plan.service.ShopProvider.ShopInfo;
@@ -192,17 +191,6 @@ public class PlanService {
     tx.setRefundedAt(now);
     planTransactionRepository.save(tx);
     entitlementService.invalidate(order.getShopId());
-  }
-
-  /**
-   * List plan payment transactions for a shop.
-   */
-  @Transactional(readOnly = true)
-  public List<PlanTransactionResponse> listPlanTransactions(String shopId) {
-    return planTransactionRepository.findByShopId(shopId, Sort.by(Sort.Direction.DESC, "createdAt"))
-        .stream()
-        .map(planTransactionMapper::toResponse)
-        .collect(Collectors.toList());
   }
 
   /**
