@@ -54,6 +54,8 @@ class PlanAdminValidatorTest {
     rejects(r -> r.setOcrLimit(-1));
     rejects(r -> r.setSmsLimit(-1));
     rejects(r -> r.setUserLimit(0));
+    rejects(r -> r.setRoleLimit(0));
+    rejects(r -> r.setAttendanceUserLimit(0));
     rejects(r -> r.setDisplayOrder(-1));
   }
 

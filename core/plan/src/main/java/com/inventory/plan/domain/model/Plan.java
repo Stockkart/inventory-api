@@ -58,6 +58,10 @@ public class Plan {
   private Boolean active;
   /** OCR invoices included per month. Null = not metered. */
   private Integer ocrLimit;
+  /** Staff roles the shop can assign, e.g. 2 for owner + cashier. Null = no cap. Pricing page only. */
+  private Integer roleLimit;
+  /** Users on biometric attendance when the plan includes it. Null = no cap. Pricing page only. */
+  private Integer attendanceUserLimit;
   /**
    * Gated capabilities this plan includes. Stored as "entitlements" because some environments hold
    * rows whose "features" field is a list of display objects.

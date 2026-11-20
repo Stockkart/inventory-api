@@ -28,6 +28,10 @@ public class PlanResponse {
   private String code;
   private Integer displayOrder;
   private Integer ocrLimit;
+  /** Staff roles the plan allows. Null = no cap. */
+  private Integer roleLimit;
+  /** Users on biometric attendance. Null = no cap. */
+  private Integer attendanceUserLimit;
   private Set<PlanFeature> features;
   private String badge;
   /** Struck-through anchor shown beside arcPrice. Display only: never charged. Null on legacy plans. */

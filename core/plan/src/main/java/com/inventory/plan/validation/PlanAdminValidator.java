@@ -67,6 +67,12 @@ public class PlanAdminValidator {
     if (request.getUserLimit() != null && request.getUserLimit() < 1) {
       throw new ValidationException("User limit must be at least 1");
     }
+    if (request.getRoleLimit() != null && request.getRoleLimit() < 1) {
+      throw new ValidationException("Role limit must be at least 1");
+    }
+    if (request.getAttendanceUserLimit() != null && request.getAttendanceUserLimit() < 1) {
+      throw new ValidationException("Attendance user limit must be at least 1");
+    }
     if (request.getDisplayOrder() != null
         && (request.getDisplayOrder() < 0 || request.getDisplayOrder() > MAX_DISPLAY_ORDER)) {
       throw new ValidationException("Display order must be 0-" + MAX_DISPLAY_ORDER);
