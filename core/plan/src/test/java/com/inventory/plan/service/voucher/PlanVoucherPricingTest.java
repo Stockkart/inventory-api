@@ -70,11 +70,29 @@ class PlanVoucherPricingTest {
 
   @Test
   void messageUsesPaiseOnlyWhenNotWhole() {
-    Plan plan = starter("100000", "50000");
-    PlanVoucherCheck check = PlanVoucherPricing.check(VoucherType.FLAT_OFF, new BigDecimal("60000.50"), plan);
+    Plan plan = starter("250000", "200000");
+    PlanVoucherCheck check = PlanVoucherPricing.check(VoucherType.FLAT_OFF, new BigDecimal("100000.50"), plan);
 
     assertThat(PlanVoucherPricing.belowFloorMessage(plan, check)).isEqualTo(
-        "₹60,000.50 off takes Starter to ₹39,999.50, below its base price ₹50,000. Most you can give: ₹50,000 (50.00%).");
+        "₹1,00,000.50 off takes Starter to ₹1,49,999.50, below its base price ₹2,00,000. Most you can give: ₹50,000 (20.00%).");
+  }
+
+  @Test
+  void nonExactMaxPercentStaysAllowed() {
+    Plan plan = starter("7777", "4999");
+
+    assertThat(PlanVoucherPricing.maxPercent(plan)).isEqualByComparingTo("35.72");
+    assertThat(PlanVoucherPricing.rawDiscount(VoucherType.PERCENT_OFF, new BigDecimal("35.72"), plan))
+        .isEqualByComparingTo("2777.94");
+    assertThat(PlanVoucherPricing.check(VoucherType.PERCENT_OFF, new BigDecimal("35.72"), plan).allowed()).isTrue();
+  }
+
+  @Test
+  void extraDecimalsNeverLetVoucherCrossFloor() {
+    Plan plan = starter("7999.999", "4999");
+
+    assertThat(PlanVoucherPricing.room(plan)).isEqualByComparingTo("3000.99");
+    assertThat(PlanVoucherPricing.floor(starter("7999", "4999.001"))).isEqualByComparingTo("4999.01");
   }
 
   private static Plan starter(String arcPrice, String basePrice) {

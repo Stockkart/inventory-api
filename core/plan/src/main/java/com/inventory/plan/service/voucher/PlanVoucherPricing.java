@@ -27,12 +27,12 @@ public final class PlanVoucherPricing {
 
   /** Lowest price a plan voucher may take the plan to: the base price, or Rs 1 when there is none. */
   public static BigDecimal floor(Plan plan) {
-    return plan.getBasePrice() != null ? money(plan.getBasePrice()) : MIN_FLOOR;
+    return plan.getBasePrice() != null ? plan.getBasePrice().setScale(2, RoundingMode.UP) : MIN_FLOOR;
   }
 
-  /** Most a plan voucher may take off: price minus floor, never below 0. */
+  /** Most a plan voucher may take off: price minus floor, never below 0. Floor rounds up and room down, so extra decimals can never let a voucher cross the floor. */
   public static BigDecimal room(Plan plan) {
-    return money(planPrice(plan).subtract(floor(plan)).max(BigDecimal.ZERO));
+    return planPrice(plan).subtract(floor(plan)).max(BigDecimal.ZERO).setScale(2, RoundingMode.DOWN);
   }
 
   /** Highest percent off that stays on the floor, rounded down so it can never cross it. */
@@ -53,6 +53,7 @@ public final class PlanVoucherPricing {
     return money(rawDiscount(type, value, plan).min(room(plan)).max(BigDecimal.ZERO));
   }
 
+  /** Checks a voucher against the plan: the discount, the price after it, the maxima, and whether it stays on the floor. */
   public static PlanVoucherCheck check(VoucherType type, BigDecimal value, Plan plan) {
     BigDecimal price = money(planPrice(plan));
     BigDecimal raw = rawDiscount(type, value, plan);
