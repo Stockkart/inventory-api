@@ -210,7 +210,7 @@ checkout both call it, and clients show the quote without recomputing it.
   migration) with an `addOnCode`, or `PLAN` with a `planCode` and no `addOnCode`. A plan voucher is
   `PERCENT_OFF` or `FLAT_OFF` only (no `FREE_ADDON`, no quantity) and applies to that plan's line;
   add-on vouchers still apply to add-on lines only. Reservations and redemptions record `target` and
-  `planCode`; the admin list filters by `addOnCode`, `planCode` or `target`.
+  `planCode`; the admin list applies one filter at a time: `planCode`, else `addOnCode`, else `target`.
 - A plan voucher may never take a plan below its floor: `basePrice`, or ₹1 when the plan has no base
   price (so a voucher alone, and voucher plus wallet credit, stop at ₹1). The floor and the maximum
   discount come from `PlanVoucherPricing`, used by creation, preview and checkout alike. Creation
@@ -254,8 +254,13 @@ plan transactions and one for its paid or refunded orders, joined in memory on `
 - `ASSIGNED`: set by an admin or the assign endpoint with no verified charge; amount hidden (null).
 
 Rows carry the line breakdown (`PurchaseLineResponse`), subtotal, discount, wallet credit and the paid
-amount, and refund figures (`refundedAt`, `refundedToPaymentMethod`, `walletCreditReturned`) whenever
-`refundedAmount > 0`, including a partial refund on a `FULFILLED` order.
+amount, and refund figures:
+
+- `refundedAt` is the order's `refundedAt`, else the transaction's.
+- `refundedToPaymentMethod` is the order's `refundedAmount` whenever it is above 0, including a
+  partial refund on a `FULFILLED` order.
+- `walletCreditReturned` is the order's `walletCredit`, only when the order is `REFUNDED` and the
+  wallet credit is above 0.
 
 ### Implementation status (vertical plugins)
 
