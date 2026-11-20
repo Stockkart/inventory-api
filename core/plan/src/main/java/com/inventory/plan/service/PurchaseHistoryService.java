@@ -7,14 +7,18 @@ import com.inventory.plan.domain.repository.PlanTransactionRepository;
 import com.inventory.plan.mapper.PlanTransactionMapper;
 import com.inventory.plan.rest.dto.response.PlanTransactionResponse;
 import com.inventory.plan.utils.constants.PlanPaymentConstants;
+import com.inventory.plan.utils.constants.PurchaseKindConstants;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -25,10 +29,6 @@ import java.util.Set;
  */
 @Service
 public class PurchaseHistoryService {
-
-  public static final String KIND_PLAN = "PLAN";
-  public static final String KIND_ADD_ON_ONLY = "ADD_ON_ONLY";
-  public static final String KIND_ASSIGNED = "ASSIGNED";
 
   /** Paid orders, including those refunded afterwards. */
   private static final List<String> HISTORY_STATUSES = List.of(
@@ -63,8 +63,9 @@ public class PurchaseHistoryService {
     }
     // Snapshot-less transactions claim an unclaimed order oldest first, so the outcome is stable.
     List<PlanTransaction> claimOrder = new ArrayList<>(transactions);
-    claimOrder.sort(Comparator.comparing(PlanTransaction::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())));
-    Set<PlanTransaction> claimed = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+    claimOrder.sort(Comparator.comparing(PlanTransaction::getCreatedAt, Comparator.nullsLast(Comparator.<Instant>naturalOrder()))
+        .thenComparing(PlanTransaction::getId, Comparator.nullsLast(Comparator.<String>naturalOrder())));
+    Set<PlanTransaction> claimed = Collections.newSetFromMap(new IdentityHashMap<>());
     for (PlanTransaction tx : claimOrder) {
       PlanPaymentOrder order = tx.getPaymentOrderId() != null ? orders.get(tx.getPaymentOrderId()) : null;
       if (tx.getItems() == null && isVerifiedPlanOrder(tx, order) && covered.add(order.getId())) {
@@ -74,17 +75,17 @@ public class PurchaseHistoryService {
     for (PlanTransaction tx : transactions) {
       PlanPaymentOrder order = tx.getPaymentOrderId() != null ? orders.get(tx.getPaymentOrderId()) : null;
       if (tx.getItems() != null) {
-        rows.add(planTransactionMapper.toResponse(tx, order, KIND_PLAN));
+        rows.add(planTransactionMapper.toResponse(tx, order, PurchaseKindConstants.PLAN));
       } else if (claimed.contains(tx)) {
-        rows.add(planTransactionMapper.toResponse(tx, order, KIND_PLAN));
+        rows.add(planTransactionMapper.toResponse(tx, order, PurchaseKindConstants.PLAN));
       } else {
         // Payment ids on assigned rows come from the request body, so they prove nothing.
-        rows.add(planTransactionMapper.toResponse(tx, null, KIND_ASSIGNED));
+        rows.add(planTransactionMapper.toResponse(tx, null, PurchaseKindConstants.ASSIGNED));
       }
     }
     for (PlanPaymentOrder order : orders.values()) {
       if (!covered.contains(order.getId())) {
-        rows.add(planTransactionMapper.toResponse(order, order.isAddOnOnly() ? KIND_ADD_ON_ONLY : KIND_PLAN));
+        rows.add(planTransactionMapper.toResponse(order, order.isAddOnOnly() ? PurchaseKindConstants.ADD_ON_ONLY : PurchaseKindConstants.PLAN));
       }
     }
     rows.sort(Comparator.comparing(PlanTransactionResponse::getSortAt,

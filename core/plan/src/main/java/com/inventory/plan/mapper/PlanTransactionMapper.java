@@ -6,10 +6,10 @@ import com.inventory.plan.domain.model.PlanPaymentOrder;
 import com.inventory.plan.domain.model.PlanTransaction;
 import com.inventory.plan.rest.dto.request.AssignPlanRequest;
 import com.inventory.plan.rest.dto.response.PlanTransactionResponse;
-import com.inventory.plan.service.PurchaseHistoryService;
 import com.inventory.plan.rest.dto.response.PurchaseLineResponse;
 import com.inventory.plan.utils.PlanUtils;
 import com.inventory.plan.utils.constants.PlanPaymentConstants;
+import com.inventory.plan.utils.constants.PurchaseKindConstants;
 import com.inventory.plan.utils.constants.PlanConstants;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
@@ -68,7 +68,7 @@ public interface PlanTransactionMapper {
    * order charged, with the order's breakdown.
    */
   default PlanTransactionResponse toResponse(PlanTransaction tx, PlanPaymentOrder order, String kind) {
-    boolean assigned = PurchaseHistoryService.KIND_ASSIGNED.equals(kind);
+    boolean assigned = PurchaseKindConstants.ASSIGNED.equals(kind);
     boolean fromOrder = !assigned && tx.getItems() == null && order != null;
     BigDecimal amount = assigned ? null : (fromOrder ? order.getAmount() : tx.getAmount());
     PlanTransactionResponse r = new PlanTransactionResponse();
