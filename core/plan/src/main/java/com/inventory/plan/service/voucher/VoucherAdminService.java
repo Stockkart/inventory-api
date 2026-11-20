@@ -7,16 +7,23 @@ import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.plan.domain.model.AddOn;
 import com.inventory.plan.domain.model.AddOnVoucher;
+import com.inventory.plan.domain.model.Plan;
+import com.inventory.plan.domain.model.VoucherTarget;
 import com.inventory.plan.domain.repository.AddOnRepository;
 import com.inventory.plan.domain.repository.AddOnVoucherRepository;
+import com.inventory.plan.domain.repository.PlanRepository;
 import com.inventory.plan.domain.repository.VoucherRedemptionRepository;
 import com.inventory.plan.mapper.VoucherMapper;
+import com.inventory.plan.rest.dto.request.PlanVoucherPreviewRequest;
 import com.inventory.plan.rest.dto.request.VoucherActiveRequest;
 import com.inventory.plan.rest.dto.request.VoucherGenerateRequest;
 import com.inventory.plan.rest.dto.request.VoucherUpdateRequest;
 import com.inventory.plan.rest.dto.response.AdminVoucherResponse;
+import com.inventory.plan.rest.dto.response.PlanVoucherPreviewResponse;
 import com.inventory.plan.rest.dto.response.VoucherRedemptionResponse;
+import com.inventory.plan.service.EffectivePlanResolver;
 import com.inventory.plan.validation.VoucherAdminValidator;
+import java.math.BigDecimal;
 import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Instant;
@@ -26,6 +33,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
@@ -64,6 +72,9 @@ public class VoucherAdminService {
   private AddOnRepository addOnRepository;
 
   @Autowired
+  private PlanRepository planRepository;
+
+  @Autowired
   private MongoTemplate mongoTemplate;
 
   @Autowired
@@ -77,24 +88,50 @@ public class VoucherAdminService {
 
   Clock clock = Clock.systemUTC();
 
-  public List<AdminVoucherResponse> list(String addOnCode) {
-    List<AddOnVoucher> vouchers = StringUtils.hasText(addOnCode)
-        ? voucherRepository.findByAddOnCode(addOnCode.trim().toUpperCase(Locale.ROOT), NEWEST_FIRST)
-        : voucherRepository.findAll(NEWEST_FIRST);
-    return vouchers.stream().map(voucherMapper::toAdminResponse).toList();
+  /** At most one filter applies, in the order planCode, addOnCode, target, none. */
+  public List<AdminVoucherResponse> list(String addOnCode, String planCode, VoucherTarget target) {
+    List<AddOnVoucher> vouchers;
+    if (StringUtils.hasText(planCode)) {
+      vouchers = voucherRepository.findByPlanCode(planCode.trim().toUpperCase(Locale.ROOT), NEWEST_FIRST);
+    } else if (StringUtils.hasText(addOnCode)) {
+      vouchers = voucherRepository.findByAddOnCode(addOnCode.trim().toUpperCase(Locale.ROOT), NEWEST_FIRST);
+    } else if (target == VoucherTarget.PLAN) {
+      vouchers = voucherRepository.findByTarget(VoucherTarget.PLAN, NEWEST_FIRST);
+    } else if (target == VoucherTarget.ADD_ON) {
+      // Legacy vouchers have no target stored; "not PLAN" matches them as well as ADD_ON.
+      vouchers = voucherRepository.findByTargetNot(VoucherTarget.PLAN, NEWEST_FIRST);
+    } else {
+      vouchers = voucherRepository.findAll(NEWEST_FIRST);
+    }
+    Map<String, String> planNames = vouchers.stream().anyMatch(AddOnVoucher::isPlanVoucher)
+        ? planNamesByCode() : Map.of();
+    return vouchers.stream().map(v -> toResponse(v, v.getPlanCode() == null ? null : planNames.get(v.getPlanCode()))).toList();
   }
 
   public List<AdminVoucherResponse> generate(VoucherGenerateRequest request, String actorUserId) {
     validator.validateGenerate(request);
-    String addOnCode = request.getAddOnCode().trim().toUpperCase(Locale.ROOT);
-    AddOn addOn = addOnRepository.findByCode(addOnCode)
-        .orElseThrow(() -> new ResourceNotFoundException("Add-on", "code", addOnCode));
-    if (!addOn.isActive()) {
-      throw new ValidationException("Add-on " + addOnCode + " is hidden; show it before issuing vouchers");
+    boolean forPlan = request.getTarget() == VoucherTarget.PLAN;
+    String targetCode;
+    String planName = null;
+    if (forPlan) {
+      targetCode = request.getPlanCode().trim().toUpperCase(Locale.ROOT);
+      Plan plan = requireSellablePlan(targetCode);
+      PlanVoucherCheck check = PlanVoucherPricing.check(request.getType(), request.getValue(), plan);
+      if (!check.allowed()) {
+        throw new ValidationException(PlanVoucherPricing.belowFloorMessage(plan, check));
+      }
+      planName = plan.getPlanName();
+    } else {
+      targetCode = request.getAddOnCode().trim().toUpperCase(Locale.ROOT);
+      AddOn addOn = addOnRepository.findByCode(targetCode)
+          .orElseThrow(() -> new ResourceNotFoundException("Add-on", "code", targetCode));
+      if (!addOn.isActive()) {
+        throw new ValidationException("Add-on " + targetCode + " is hidden; show it before issuing vouchers");
+      }
     }
     int count = request.getCount() != null ? request.getCount() : 1;
     String batchId = UUID.randomUUID().toString();
-    String letters = addOnCode.replaceAll("[^A-Z0-9]", "");
+    String letters = targetCode.replaceAll("[^A-Z0-9]", "");
     String prefix = StringUtils.hasText(request.getPrefix())
         ? request.getPrefix()
         : letters.substring(0, Math.min(3, letters.length()));
@@ -103,7 +140,13 @@ public class VoucherAdminService {
     List<AddOnVoucher> created = new ArrayList<>();
     for (int i = 0; i < count; i++) {
       AddOnVoucher voucher = voucherMapper.toEntity(request);
-      voucher.setAddOnCode(addOnCode);
+      if (forPlan) {
+        voucher.setTarget(VoucherTarget.PLAN);
+        voucher.setPlanCode(targetCode);
+        voucher.setAddOnCode(null);
+      } else {
+        voucher.setAddOnCode(targetCode);
+      }
       voucher.setBatchId(batchId);
       voucher.setCreatedByUserId(actorUserId);
       voucher.setCreatedAt(now);
@@ -114,7 +157,12 @@ public class VoucherAdminService {
     }
 
     Map<String, Object> after = new LinkedHashMap<>();
-    after.put("addOnCode", addOnCode);
+    if (forPlan) {
+      after.put("target", VoucherTarget.PLAN);
+      after.put("planCode", targetCode);
+    } else {
+      after.put("addOnCode", targetCode);
+    }
     after.put("type", request.getType());
     after.put("value", request.getValue());
     after.put("count", count);
@@ -125,8 +173,68 @@ public class VoucherAdminService {
     after.put("validTo", request.getValidTo());
     after.put("codes", created.stream().map(AddOnVoucher::getCode).toList());
     audit(actorUserId, "VOUCHER_CREATED", count == 1 ? created.get(0).getId() : batchId, null, after, request.getNote());
-    log.info("{} voucher(s) for {} created by {} (batch {})", count, addOnCode, actorUserId, batchId);
-    return created.stream().map(voucherMapper::toAdminResponse).toList();
+    log.info("{} voucher(s) for {}{} created by {} (batch {})", count, forPlan ? "plan " : "", targetCode,
+        actorUserId, batchId);
+    String name = planName;
+    return created.stream().map(v -> toResponse(v, name)).toList();
+  }
+
+  /** Read-only: the figures and verdict the admin form shows while typing. Fails like generate for a bad plan. */
+  public PlanVoucherPreviewResponse previewPlan(PlanVoucherPreviewRequest request) {
+    if (request == null || !StringUtils.hasText(request.getPlanCode())) {
+      throw new ValidationException("Plan is required");
+    }
+    if (request.getType() == null || request.getValue() == null) {
+      throw new ValidationException("Discount type and value are required");
+    }
+    String planCode = request.getPlanCode().trim().toUpperCase(Locale.ROOT);
+    Plan plan = requireSellablePlan(planCode);
+    PlanVoucherCheck check = PlanVoucherPricing.check(request.getType(), request.getValue(), plan);
+    return PlanVoucherPreviewResponse.builder()
+        .planCode(planCode)
+        .planName(plan.getPlanName())
+        .price(check.price())
+        .discount(check.discount())
+        .priceAfter(check.priceAfter())
+        .basePrice(check.basePrice())
+        .floor(check.floor())
+        .maxFlat(check.maxFlat())
+        .maxPercent(check.maxPercent())
+        .allowed(check.allowed())
+        .message(check.allowed() ? null : PlanVoucherPricing.belowFloorMessage(plan, check))
+        .build();
+  }
+
+  private Plan requireSellablePlan(String planCode) {
+    Plan plan = planRepository.findByCode(planCode)
+        .orElseThrow(() -> new ResourceNotFoundException("Plan", "code", planCode));
+    if (!EffectivePlanResolver.isActive(plan)) {
+      throw new ValidationException("Plan " + planCode + " is hidden; show it before issuing vouchers");
+    }
+    BigDecimal price = PlanVoucherPricing.planPrice(plan);
+    if (price == null || price.signum() <= 0) {
+      throw new ValidationException("Plan " + planCode + " has no sale price, so it cannot take a voucher");
+    }
+    return plan;
+  }
+
+  /** Plan names by code, loaded once per list call. Legacy plans without a code are skipped. */
+  private Map<String, String> planNamesByCode() {
+    return planRepository.findAll().stream()
+        .filter(plan -> plan.getCode() != null)
+        .collect(Collectors.toMap(Plan::getCode, Plan::getPlanName, (a, b) -> a));
+  }
+
+  private String planNameOf(AddOnVoucher voucher) {
+    return voucher.isPlanVoucher()
+        ? planRepository.findByCode(voucher.getPlanCode()).map(Plan::getPlanName).orElse(null)
+        : null;
+  }
+
+  private AdminVoucherResponse toResponse(AddOnVoucher voucher, String planName) {
+    AdminVoucherResponse response = voucherMapper.toAdminResponse(voucher);
+    response.setPlanName(planName);
+    return response;
   }
 
   /** Changes validity, cap or note. The cap cannot drop below the slots already taken. */
@@ -154,7 +262,7 @@ public class VoucherAdminService {
     }
     AddOnVoucher after = load(id);
     audit(actorUserId, "VOUCHER_UPDATED", id, snapshot(before), snapshot(after), request.getNote());
-    return voucherMapper.toAdminResponse(after);
+    return toResponse(after, planNameOf(after));
   }
 
   /** Disabling stops new checkouts; orders already holding a slot keep it. */
@@ -171,7 +279,7 @@ public class VoucherAdminService {
       audit(actorUserId, active ? "VOUCHER_ACTIVATED" : "VOUCHER_DEACTIVATED", id,
           snapshot(before), snapshot(after), request.getReason());
     }
-    return voucherMapper.toAdminResponse(after);
+    return toResponse(after, planNameOf(after));
   }
 
   public List<VoucherRedemptionResponse> redemptions(String id) {

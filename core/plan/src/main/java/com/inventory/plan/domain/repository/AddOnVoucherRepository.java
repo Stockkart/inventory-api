@@ -18,4 +18,7 @@ public interface AddOnVoucherRepository extends MongoRepository<AddOnVoucher, St
   List<AddOnVoucher> findByPlanCode(String planCode, Sort sort);
 
   List<AddOnVoucher> findByTarget(VoucherTarget target, Sort sort);
+
+  /** Mongo $ne matches missing fields too, so this returns ADD_ON and legacy null-target vouchers. */
+  List<AddOnVoucher> findByTargetNot(VoucherTarget target, Sort sort);
 }

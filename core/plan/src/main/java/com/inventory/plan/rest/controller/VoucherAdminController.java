@@ -4,10 +4,13 @@ import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.metrics.annotation.Latency;
 import com.inventory.metrics.annotation.RecordRequestRate;
 import com.inventory.metrics.annotation.RecordStatusCodes;
+import com.inventory.plan.domain.model.VoucherTarget;
+import com.inventory.plan.rest.dto.request.PlanVoucherPreviewRequest;
 import com.inventory.plan.rest.dto.request.VoucherActiveRequest;
 import com.inventory.plan.rest.dto.request.VoucherGenerateRequest;
 import com.inventory.plan.rest.dto.request.VoucherUpdateRequest;
 import com.inventory.plan.rest.dto.response.AdminVoucherResponse;
+import com.inventory.plan.rest.dto.response.PlanVoucherPreviewResponse;
 import com.inventory.plan.rest.dto.response.VoucherRedemptionResponse;
 import com.inventory.plan.service.voucher.VoucherAdminService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -37,8 +40,17 @@ public class VoucherAdminController {
 
   @GetMapping
   public ResponseEntity<ApiResponse<List<AdminVoucherResponse>>> list(
-      @RequestParam(required = false) String addOnCode) {
-    return ResponseEntity.ok(ApiResponse.success(voucherAdminService.list(addOnCode)));
+      @RequestParam(required = false) String addOnCode,
+      @RequestParam(required = false) String planCode,
+      @RequestParam(required = false) VoucherTarget target) {
+    return ResponseEntity.ok(ApiResponse.success(voucherAdminService.list(addOnCode, planCode, target)));
+  }
+
+  /** Read-only figures for the generate form; saves nothing. */
+  @PostMapping("/plan-preview")
+  public ResponseEntity<ApiResponse<PlanVoucherPreviewResponse>> planPreview(
+      @RequestBody PlanVoucherPreviewRequest request) {
+    return ResponseEntity.ok(ApiResponse.success(voucherAdminService.previewPlan(request)));
   }
 
   @PostMapping
