@@ -4,7 +4,6 @@ import com.inventory.plan.domain.model.AddOnVoucher;
 import com.inventory.plan.domain.model.OrderLine;
 import com.inventory.plan.domain.model.Plan;
 import com.inventory.plan.domain.model.VoucherType;
-import com.inventory.plan.service.voucher.VoucherService;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 
@@ -46,7 +45,7 @@ public final class PlanVoucherPricing {
     BigDecimal price = planPrice(plan);
     OrderLine line = OrderLine.builder().quantity(1).unitPrice(price).build();
     AddOnVoucher voucher = AddOnVoucher.builder().type(type).value(value).build();
-    return money(VoucherService.discountFor(voucher, line));
+    return money(VoucherDiscountUtils.discountFor(voucher, line));
   }
 
   /** The discount checkout gives: the raw discount, held to the room above the floor. */

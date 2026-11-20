@@ -10,8 +10,8 @@ import com.inventory.plan.domain.repository.VoucherRedemptionRepository;
 import com.inventory.plan.exception.VoucherRejectedException;
 import com.inventory.plan.mapper.VoucherMapper;
 import com.inventory.plan.rest.dto.response.VoucherCheckResponse;
+import com.inventory.plan.utils.VoucherDiscountUtils;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Locale;
@@ -26,7 +26,6 @@ import org.springframework.util.StringUtils;
 @Service
 public class VoucherService {
 
-  private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
 
   @Autowired
   private AddOnVoucherRepository voucherRepository;
@@ -90,14 +89,7 @@ public class VoucherService {
 
   /** Discount the voucher gives on {@code line}, never more than the line's gross amount. */
   public static BigDecimal discountFor(AddOnVoucher voucher, OrderLine line) {
-    BigDecimal gross = line.getUnitPrice().multiply(BigDecimal.valueOf(line.getQuantity()));
-    BigDecimal discount = switch (voucher.getType()) {
-      case FREE_ADDON -> line.getUnitPrice().multiply(BigDecimal.valueOf(
-          Math.min(line.getQuantity(), Math.max(1, voucher.getQuantity()))));
-      case PERCENT_OFF -> gross.multiply(voucher.getValue()).divide(HUNDRED, 2, RoundingMode.HALF_UP);
-      case FLAT_OFF -> voucher.getValue();
-    };
-    return discount.min(gross).max(BigDecimal.ZERO);
+    return VoucherDiscountUtils.discountFor(voucher, line);
   }
 
   private static VoucherRejectedException reject(String code, VoucherRejection reason, String message) {
