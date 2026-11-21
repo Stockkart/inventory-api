@@ -9,6 +9,8 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.inventory.common.exception.AuthenticationException;
+import com.inventory.common.tx.MongoTx;
 import com.inventory.plan.domain.model.ShopCredit;
 import com.inventory.plan.domain.model.ShopCreditEntry;
 import com.inventory.plan.domain.model.ShopCreditSource;
@@ -23,6 +25,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 import org.bson.Document;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -47,6 +50,7 @@ class WalletServiceTest {
   @Mock private ShopCreditRepository creditRepository;
   @Mock private ShopCreditEntryRepository entryRepository;
   @Mock private MongoTemplate mongoTemplate;
+  @Mock private MongoTx mongoTx;
   @Spy private WalletMapper walletMapper = new WalletMapper() {
     @Override
     public com.inventory.plan.rest.dto.response.WalletEntryResponse toEntryResponse(ShopCreditEntry entry) {
@@ -65,6 +69,23 @@ class WalletServiceTest {
   @BeforeEach
   void setUp() {
     service.clock = Clock.fixed(NOW, ZoneOffset.UTC);
+    when(mongoTx.run(any(), any(), any(Supplier.class))).thenAnswer(inv -> ((Supplier<?>) inv.getArgument(2)).get());
+  }
+
+  /** Ledger rows the order already has: holds (reserve + reacquire), releases, spends. */
+  private void orderRows(long holds, long releases, long consumes) {
+    when(entryRepository.countByShopIdAndSourceIdAndSource("shop-1", "order-1", ShopCreditSource.ORDER_RESERVATION))
+        .thenReturn(holds);
+    when(entryRepository.countByShopIdAndSourceIdAndSource("shop-1", "order-1", ShopCreditSource.RESERVATION_RELEASE))
+        .thenReturn(releases);
+    when(entryRepository.countByShopIdAndSourceIdAndSource("shop-1", "order-1", ShopCreditSource.ORDER_REDEMPTION))
+        .thenReturn(consumes);
+  }
+
+  private String writtenReference() {
+    ArgumentCaptor<ShopCreditEntry> entry = ArgumentCaptor.forClass(ShopCreditEntry.class);
+    verify(entryRepository).insert(entry.capture());
+    return entry.getValue().getReferenceId();
   }
 
   private static ShopCredit wallet(String available, String reserved, long version, String... references) {
@@ -86,7 +107,7 @@ class WalletServiceTest {
 
   @Test
   void reservingMovesAvailableToReservedAndWritesTheLedger() {
-    when(creditRepository.findById("shop-1")).thenReturn(Optional.of(wallet("500", "0", 3)));
+    when(creditRepository.findBalancesById("shop-1")).thenReturn(Optional.of(wallet("500", "0", 3)));
     writes(1);
 
     assertThat(service.reserve("shop-1", "order-1", new BigDecimal("200"))).isTrue();
@@ -109,7 +130,7 @@ class WalletServiceTest {
 
   @Test
   void notEnoughBalanceRejectsWithoutWriting() {
-    when(creditRepository.findById("shop-1")).thenReturn(Optional.of(wallet("100", "0", 0)));
+    when(creditRepository.findBalancesById("shop-1")).thenReturn(Optional.of(wallet("100", "0", 0)));
 
     assertThat(service.reserve("shop-1", "order-1", new BigDecimal("200"))).isFalse();
     verify(mongoTemplate, never()).updateFirst(any(Query.class), any(Update.class), eq(ShopCredit.class));
@@ -117,7 +138,7 @@ class WalletServiceTest {
 
   @Test
   void aConcurrentChangeIsRetriedAgainstTheFreshBalance() {
-    when(creditRepository.findById("shop-1"))
+    when(creditRepository.findBalancesById("shop-1"))
         .thenReturn(Optional.of(wallet("500", "0", 1)), Optional.of(wallet("250", "250", 2)));
     writes(0, 1);
 
@@ -128,9 +149,9 @@ class WalletServiceTest {
 
   @Test
   void aRepeatedChangeIsNotAppliedTwice() {
-    when(creditRepository.findById("shop-1"))
-        .thenReturn(Optional.of(wallet("300", "200", 4, "order-reserve:order-1")));
-    when(entryRepository.existsByReferenceId("order-reserve:order-1")).thenReturn(true);
+    when(creditRepository.findBalancesById("shop-1"))
+        .thenReturn(Optional.of(wallet("300", "200", 4)));
+    when(entryRepository.existsByShopIdAndReferenceId("shop-1", "order-reserve:order-1")).thenReturn(true);
 
     assertThat(service.reserve("shop-1", "order-1", new BigDecimal("200"))).isTrue();
     verify(mongoTemplate, never()).updateFirst(any(Query.class), any(Update.class), eq(ShopCredit.class));
@@ -138,7 +159,8 @@ class WalletServiceTest {
 
   @Test
   void consumingMoreThanIsReservedFailsLoudly() {
-    when(creditRepository.findById("shop-1")).thenReturn(Optional.of(wallet("0", "50", 0)));
+    when(creditRepository.findBalancesById("shop-1")).thenReturn(Optional.of(wallet("0", "50", 0)));
+    orderRows(1, 0, 0);
 
     assertThatThrownBy(() -> service.consume("shop-1", "order-1", new BigDecimal("200")))
         .isInstanceOf(IllegalStateException.class);
@@ -146,7 +168,8 @@ class WalletServiceTest {
 
   @Test
   void aShopWithoutAWalletGetsOneOnItsFirstCredit() {
-    when(creditRepository.findById("shop-1")).thenReturn(Optional.empty());
+    when(creditRepository.findBalancesById("shop-1"))
+        .thenReturn(Optional.empty(), Optional.of(wallet("0", "0", 0)));
     when(creditRepository.insert(any(ShopCredit.class))).thenAnswer(inv -> inv.getArgument(0));
     writes(1);
 
@@ -161,7 +184,87 @@ class WalletServiceTest {
 
   @Test
   void balanceWithoutAWalletIsZero() {
-    when(creditRepository.findById("shop-1")).thenReturn(Optional.empty());
+    when(creditRepository.findBalancesById("shop-1")).thenReturn(Optional.empty());
     assertThat(service.available("shop-1")).isEqualByComparingTo("0");
+  }
+
+  @Test
+  void theWriteSkipsAWalletThatAlreadyRecordedTheReference() {
+    when(creditRepository.findBalancesById("shop-1")).thenReturn(Optional.of(wallet("500", "0", 3)));
+    writes(1);
+
+    service.reserve("shop-1", "order-1", new BigDecimal("200"));
+
+    ArgumentCaptor<Query> query = ArgumentCaptor.forClass(Query.class);
+    verify(mongoTemplate).updateFirst(query.capture(), any(Update.class), eq(ShopCredit.class));
+    assertThat(query.getValue().getQueryObject().get("recentReferences"))
+        .isEqualTo(new Document("$ne", "order-reserve:order-1"));
+  }
+
+  @Test
+  void aReleaseFreesNothingWhenTheOrderHoldsNothing() {
+    when(creditRepository.findBalancesById("shop-1")).thenReturn(Optional.of(wallet("0", "200", 1)));
+    orderRows(0, 0, 0);
+
+    service.release("shop-1", "order-1", new BigDecimal("200"));
+
+    verify(mongoTemplate, never()).updateFirst(any(Query.class), any(Update.class), eq(ShopCredit.class));
+  }
+
+  @Test
+  void aSecondReleaseOfTheSameHoldIsANoOp() {
+    when(creditRepository.findBalancesById("shop-1")).thenReturn(Optional.of(wallet("200", "0", 2)));
+    orderRows(1, 1, 0);
+
+    service.release("shop-1", "order-1", new BigDecimal("200"));
+
+    verify(mongoTemplate, never()).updateFirst(any(Query.class), any(Update.class), eq(ShopCredit.class));
+  }
+
+  @Test
+  void eachReservationCycleIsReleasedWithItsOwnReference() {
+    // reserved, released when the order expired, reacquired for a late payment: holds 2, releases 1
+    when(creditRepository.findBalancesById("shop-1")).thenReturn(Optional.of(wallet("0", "200", 3)));
+    orderRows(2, 1, 0);
+    writes(1);
+
+    service.release("shop-1", "order-1", new BigDecimal("200"));
+
+    assertThat(writtenReference()).isEqualTo("order-release:order-1:2");
+  }
+
+  @Test
+  void reacquiringAfterAReleaseHoldsTheCreditAgain() {
+    when(creditRepository.findBalancesById("shop-1")).thenReturn(Optional.of(wallet("200", "0", 2)));
+    orderRows(1, 1, 0);
+    writes(1);
+
+    assertThat(service.reacquire("shop-1", "order-1", new BigDecimal("200"))).isTrue();
+
+    assertThat(writtenReference()).isEqualTo("order-reacquire:order-1:1");
+  }
+
+  @Test
+  void reacquiringWhatTheOrderStillHoldsWritesNothing() {
+    orderRows(1, 0, 0);
+
+    assertThat(service.reacquire("shop-1", "order-1", new BigDecimal("200"))).isTrue();
+
+    verify(mongoTemplate, never()).updateFirst(any(Query.class), any(Update.class), eq(ShopCredit.class));
+  }
+
+  @Test
+  void consumingAnOrderThatHoldsNothingFailsLoudly() {
+    when(creditRepository.findBalancesById("shop-1")).thenReturn(Optional.of(wallet("0", "500", 1)));
+    orderRows(0, 0, 0);
+
+    assertThatThrownBy(() -> service.consume("shop-1", "order-1", new BigDecimal("200")))
+        .isInstanceOf(IllegalStateException.class);
+    verify(mongoTemplate, never()).updateFirst(any(Query.class), any(Update.class), eq(ShopCredit.class));
+  }
+
+  @Test
+  void theShopWalletNeedsASelectedShop() {
+    assertThatThrownBy(() -> service.describe(null)).isInstanceOf(AuthenticationException.class);
   }
 }

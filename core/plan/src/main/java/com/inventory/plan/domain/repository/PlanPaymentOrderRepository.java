@@ -16,4 +16,8 @@ public interface PlanPaymentOrderRepository extends MongoRepository<PlanPaymentO
   Optional<PlanPaymentOrder> findByProviderAndProviderPaymentId(String provider, String providerPaymentId);
 
   Optional<PlanPaymentOrder> findByShopIdAndIdempotencyKey(String shopId, String idempotencyKey);
+
+  /** The newest still-payable order for the same cart, for checkouts sent without Idempotency-Key. */
+  Optional<PlanPaymentOrder> findFirstByShopIdAndRequestHashAndStatusInAndExpiresAtAfterOrderByCreatedAtDesc(
+      String shopId, String requestHash, java.util.Collection<String> statuses, java.time.Instant now);
 }

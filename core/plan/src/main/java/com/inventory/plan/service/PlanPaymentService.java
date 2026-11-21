@@ -1,10 +1,14 @@
 package com.inventory.plan.service;
 
+import com.inventory.common.audit.AuditEntry;
+import com.inventory.common.audit.AuditService;
+import com.inventory.common.audit.AuditSource;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.metrics.MetricsWrapper;
+import com.inventory.plan.domain.model.OrderPhase;
 import com.inventory.plan.domain.model.Plan;
 import com.inventory.plan.domain.model.PlanPaymentOrder;
 import com.inventory.plan.domain.model.PricedCart;
@@ -23,6 +27,7 @@ import com.inventory.plan.rest.dto.request.CreatePlanCheckoutRequest;
 import com.inventory.plan.rest.dto.request.VerifyPlanPaymentRequest;
 import com.inventory.plan.rest.dto.response.PaymentConfigResponse;
 import com.inventory.plan.rest.dto.response.PlanCheckoutResponse;
+import com.inventory.plan.rest.dto.response.PlanOrderStatusResponse;
 import com.inventory.plan.rest.dto.response.VerifyPlanPaymentResponse;
 import com.inventory.plan.service.order.OrderFulfilmentService;
 import com.inventory.plan.service.order.OrderReservations;
@@ -38,6 +43,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -90,6 +96,12 @@ public class PlanPaymentService {
   @Autowired
   private OrderRefundService orderRefundService;
 
+  @Autowired
+  private PlanService planService;
+
+  @Autowired
+  private AuditService auditService;
+
   @Value("${plan.checkout.order-ttl-minutes:30}")
   long orderTtlMinutes = 30;
 
@@ -104,11 +116,14 @@ public class PlanPaymentService {
 
   /**
    * Creates (or, for a repeated {@code Idempotency-Key}, returns) the order for a cart. The same key
-   * with a different cart is rejected rather than silently charging for the first cart.
+   * with a different cart is rejected rather than silently charging for the first cart. Without a
+   * key, a still-payable order for the same cart (same request hash) is returned instead of opening
+   * a second one.
    */
   public PlanCheckoutResponse createCheckout(String shopId, CreatePlanCheckoutRequest request, String idempotencyKey) {
     planValidator.validateCreateCheckoutRequest(shopId, request, idempotencyKey);
     Plan plan = resolvePlan(request);
+    planService.requirePlanChangeAllowed(shopId, plan);
     if (request.getDurationMonths() == null) {
       request.setDurationMonths(PlanPaymentConstants.DEFAULT_CHECKOUT_DURATION_MONTHS);
     }
@@ -121,6 +136,13 @@ public class PlanPaymentService {
       Optional<PlanPaymentOrder> existing = planPaymentOrderRepository.findByShopIdAndIdempotencyKey(shopId, key);
       if (existing.isPresent()) {
         return replay(existing.get(), requestHash);
+      }
+    } else {
+      Optional<PlanPaymentOrder> open = planPaymentOrderRepository
+          .findFirstByShopIdAndRequestHashAndStatusInAndExpiresAtAfterOrderByCreatedAtDesc(
+              shopId, requestHash, PlanPaymentConstants.OPEN_STATUSES, now());
+      if (open.isPresent()) {
+        return replay(open.get(), requestHash);
       }
     }
     PricedCart cart = orderPricingService.price(plan, request, shopId);
@@ -158,7 +180,10 @@ public class PlanPaymentService {
     PlanPaymentOrder order = planPaymentOrderRepository.findByIdAndShopId(request.getOrderId(), shopId)
         .orElseThrow(() -> new ResourceNotFoundException("Plan payment order", "id", request.getOrderId()));
 
-    if (PlanPaymentConstants.PAID_STATUSES.contains(order.getStatus())) {
+    // A replay of the payment already recorded needs no gateway call. A different payment id on a
+    // paid order is a second capture: verify it, then payAndFulfil records it for a refund.
+    if (PlanPaymentConstants.PAID_STATUSES.contains(order.getStatus())
+        && request.getRazorpayPaymentId().equals(order.getProviderPaymentId())) {
       return verifyResponse(fulfilmentService.fulfil(order.getId()));
     }
 
@@ -176,7 +201,7 @@ public class PlanPaymentService {
     if (!verified.isValid()) {
       if (stateService.endUnpaid(order.getId(), PlanPaymentConstants.STATUS_PAYMENT_FAILED,
           "Payment signature verification failed", now())) {
-        reservations.release(order);
+        reservations.releaseEnded(order, now());
       }
       recordPayment("verify", "error");
       throw new ValidationException("Payment signature verification failed");
@@ -228,12 +253,45 @@ public class PlanPaymentService {
         "success");
   }
 
+  /**
+   * Cancels the caller's own unpaid order and gives back what it holds (voucher slot, wallet
+   * credit). Idempotent: an order that already ended unpaid is returned as it is. A paid order
+   * cannot be cancelled.
+   */
+  public PlanOrderStatusResponse cancelOrder(String shopId, String orderId) {
+    planValidator.validateCancelOrder(shopId, orderId);
+    PlanPaymentOrder order = planPaymentOrderRepository.findByIdAndShopId(orderId, shopId)
+        .orElseThrow(() -> new ResourceNotFoundException("Plan payment order", "id", orderId));
+    if (PlanPaymentConstants.OPEN_STATUSES.contains(order.getStatus())) {
+      Instant now = now();
+      if (stateService.endUnpaid(orderId, PlanPaymentConstants.STATUS_CANCELLED, "Cancelled by the shop", now)) {
+        reservations.releaseEnded(order, now);
+        log.info("Order {} for shop {} cancelled by the shop", orderId, shopId);
+      }
+      order = planPaymentOrderRepository.findById(orderId).orElse(order);
+    }
+    if (PlanPaymentConstants.PAID_STATUSES.contains(order.getStatus())) {
+      throw new BaseException(ErrorCode.ORDER_NOT_CANCELLABLE, ErrorCode.ORDER_NOT_CANCELLABLE.getMessage());
+    }
+    return PlanOrderStatusResponse.builder()
+        .orderId(order.getId())
+        .status(order.getStatus())
+        .phase(OrderPhase.of(order.getStatus()))
+        .build();
+  }
+
   /** Records the payment (a no-op if already recorded) and runs fulfilment. */
   private PlanPaymentOrder payAndFulfil(String orderId, String providerPaymentId, String paymentMethod) {
     Optional<PlanPaymentOrder> paid = stateService.markPaid(orderId, providerPaymentId, paymentMethod, now());
     paid.filter(PlanPaymentOrder::isLatePayment).ifPresent(order ->
         log.warn("Order {} for shop {} was paid after it ended; reacquiring its reservations",
             order.getId(), order.getShopId()));
+    if (paid.isEmpty()) {
+      planPaymentOrderRepository.findById(orderId)
+          .filter(order -> order.getProviderPaymentId() != null
+              && !order.getProviderPaymentId().equals(providerPaymentId))
+          .ifPresent(order -> recordDuplicateCapture(order, providerPaymentId));
+    }
     return fulfilmentService.fulfil(orderId);
   }
 
@@ -242,6 +300,35 @@ public class PlanPaymentService {
     PlanPaymentOrder fulfilled = payAndFulfil(order.getId(), null, PlanPaymentConstants.PAYMENT_METHOD_WALLET);
     recordPayment("checkout", "wallet");
     return fulfilled;
+  }
+
+  /**
+   * A second confirmed payment for an order already paid. Nothing is granted for it; it is logged
+   * and audited so an operator refunds it at the gateway.
+   */
+  private void recordDuplicateCapture(PlanPaymentOrder order, String providerPaymentId) {
+    log.error("Order {} for shop {} received a second payment {} (recorded payment {}); refund it at {}",
+        order.getId(), order.getShopId(), providerPaymentId, order.getProviderPaymentId(), order.getProvider());
+    Map<String, Object> recorded = new LinkedHashMap<>();
+    recorded.put("providerPaymentId", order.getProviderPaymentId());
+    recorded.put("status", order.getStatus());
+    Map<String, Object> second = new LinkedHashMap<>();
+    second.put("providerPaymentId", providerPaymentId);
+    second.put("amount", order.getAmount());
+    try {
+      auditService.record(AuditEntry.builder()
+          .action(PlanPaymentConstants.AUDIT_DUPLICATE_CAPTURE)
+          .targetType(PlanPaymentConstants.AUDIT_TARGET_ORDER)
+          .targetId(order.getId())
+          .before(recorded)
+          .after(second)
+          .reason("Second payment captured for an order already paid; refund it at the gateway")
+          .source(AuditSource.SYSTEM)
+          .build());
+    } catch (RuntimeException e) {
+      log.error("Could not audit the second payment {} of order {}: {}", providerPaymentId, order.getId(), e.getMessage());
+    }
+    recordPayment("capture", "duplicate");
   }
 
   private PlanCheckoutResponse replay(PlanPaymentOrder order, String requestHash) {
@@ -279,7 +366,7 @@ public class PlanPaymentService {
     } catch (RuntimeException e) {
       if (stateService.endUnpaid(order.getId(), PlanPaymentConstants.STATUS_PAYMENT_FAILED,
           "Gateway order could not be created: " + e.getMessage(), now())) {
-        reservations.release(order);
+        reservations.releaseEnded(order, now());
       }
       recordPayment("checkout", "error");
       throw e;
@@ -294,6 +381,7 @@ public class PlanPaymentService {
     PlanCheckoutResponse.PlanCheckoutResponseBuilder response = PlanCheckoutResponse.builder()
         .orderId(order.getId())
         .status(order.getStatus())
+        .phase(OrderPhase.of(order.getStatus()))
         .provider(order.getProvider())
         .amount(order.getAmount())
         .currency(order.getCurrency())
@@ -318,9 +406,10 @@ public class PlanPaymentService {
   private VerifyPlanPaymentResponse verifyResponse(PlanPaymentOrder order) {
     Plan plan = planRepository.findById(order.getPlanId()).orElse(null);
     return VerifyPlanPaymentResponse.builder()
-        .success(!PlanPaymentConstants.STATUS_PAYMENT_FAILED.equals(order.getStatus()))
+        .success(PlanPaymentConstants.STATUS_FULFILLED.equals(order.getStatus()))
         .orderId(order.getId())
         .status(order.getStatus())
+        .phase(OrderPhase.of(order.getStatus()))
         .plan(plan != null ? planMapper.toResponse(plan) : null)
         .build();
   }
@@ -359,6 +448,7 @@ public class PlanPaymentService {
           .orElseThrow(() -> new ResourceNotFoundException("Plan", "code", planCode));
     }
     return planRepository.findById(request.getPlanId())
+        .filter(EffectivePlanResolver::isActive)
         .orElseThrow(() -> new ResourceNotFoundException("Plan", "id", request.getPlanId()));
   }
 

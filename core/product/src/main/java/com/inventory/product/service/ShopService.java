@@ -1,5 +1,6 @@
 package com.inventory.product.service;
 
+import com.inventory.common.audit.AuditActorType;
 import com.inventory.common.audit.AuditEntry;
 import com.inventory.common.audit.AuditService;
 import com.inventory.common.audit.AuditSource;
@@ -206,6 +207,14 @@ public class ShopService {
     return shopRepository.findById(shopId).map(ShopService::toReferralInfo);
   }
 
+  /** Referral info of several shops, read in one query with only the referral fields. */
+  public java.util.List<ShopReferralInfo> getReferralShops(java.util.Collection<String> shopIds) {
+    if (shopIds == null || shopIds.isEmpty()) {
+      return java.util.List.of();
+    }
+    return shopRepository.findReferralFieldsByShopIdIn(shopIds).stream().map(ShopService::toReferralInfo).toList();
+  }
+
   private static ShopReferralInfo toReferralInfo(Shop shop) {
     return new ShopReferralInfo(
         shop.getShopId(), shop.getName(), shop.getReferralCode(), shop.getContactEmail(), shop.getContactPhone());
@@ -269,6 +278,7 @@ public class ShopService {
 
       auditService.record(AuditEntry.builder()
           .actorUserId(actorUserId)
+          .actorType(AuditActorType.USER)
           .action(request.isApprove() ? "SHOP_APPROVED" : "SHOP_REJECTED")
           .targetType("SHOP")
           .targetId(shopId)
