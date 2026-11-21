@@ -65,6 +65,8 @@ class PlanPaymentServiceCheckoutTest {
   @Mock private PaymentOrderStateService stateService;
   @Mock private OrderReservations reservations;
   @Mock private OrderFulfilmentService fulfilmentService;
+  @Mock private PlanService planService;
+  @Mock private com.inventory.common.audit.AuditService auditService;
 
   @InjectMocks
   private PlanPaymentService service;
@@ -169,7 +171,31 @@ class PlanPaymentServiceCheckoutTest {
 
     assertThatThrownBy(() -> service.createCheckout("shop-1", request(), null)).isInstanceOf(IllegalStateException.class);
 
-    verify(reservations).release(any());
+    verify(reservations).releaseEnded(any(), any());
+  }
+
+  @Test
+  void withoutAKeyAnOpenOrderForTheSameCartIsReturned() {
+    when(orderRepository.findFirstByShopIdAndRequestHashAndStatusInAndExpiresAtAfterOrderByCreatedAtDesc(
+        eq("shop-1"), eq(hash()), eq(PlanPaymentConstants.OPEN_STATUSES), eq(NOW))).thenReturn(Optional.of(pending()));
+
+    PlanCheckoutResponse response = service.createCheckout("shop-1", request(), null);
+
+    assertThat(response.getOrderId()).isEqualTo("order-1");
+    assertThat(response.getPhase()).isEqualTo(com.inventory.plan.domain.model.OrderPhase.AWAITING_PAYMENT);
+    verify(orderRepository, never()).insert(any(PlanPaymentOrder.class));
+    verify(gateway, never()).createCheckout(any());
+  }
+
+  @Test
+  void aPlanChangeWhilePaidDaysRemainIsRefusedBeforeAnyOrder() {
+    org.mockito.Mockito.doThrow(new BaseException(ErrorCode.PLAN_CHANGE_NOT_ALLOWED, "no"))
+        .when(planService).requirePlanChangeAllowed("shop-1", plan);
+
+    assertThatThrownBy(() -> service.createCheckout("shop-1", request(), "key-1"))
+        .isInstanceOfSatisfying(BaseException.class,
+            e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.PLAN_CHANGE_NOT_ALLOWED));
+    verify(orderRepository, never()).insert(any(PlanPaymentOrder.class));
   }
 
   private String hash() {

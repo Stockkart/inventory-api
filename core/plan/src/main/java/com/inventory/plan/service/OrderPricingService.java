@@ -46,7 +46,13 @@ public class OrderPricingService {
   @Autowired
   private VoucherService voucherService;
 
-  /** {@code shopId} is needed only to check vouchers the shop may use. */
+  @Autowired
+  private PlanService planService;
+
+  /**
+   * {@code shopId} is needed to check vouchers the shop may use, and to refuse a different plan
+   * while the shop's paid plan still has days left ({@code PLAN_CHANGE_NOT_ALLOWED}), as checkout does.
+   */
   public QuoteResponse quote(String shopId, QuoteRequest request) {
     if (request == null || !StringUtils.hasText(request.getPlanCode())) {
       throw new ValidationException("planCode is required");
@@ -56,6 +62,9 @@ public class OrderPricingService {
     Plan plan = planRepository.findByCode(planCode)
         .filter(EffectivePlanResolver::isActive)
         .orElseThrow(() -> new ResourceNotFoundException("Plan", "code", planCode));
+    if (StringUtils.hasText(shopId)) {
+      planService.requirePlanChangeAllowed(shopId, plan);
+    }
     return toQuote(price(plan, request, shopId));
   }
 
@@ -190,6 +199,10 @@ public class OrderPricingService {
         .discount(BigDecimal.ZERO)
         .lineTotal(addOn.getPrice().multiply(BigDecimal.valueOf(quantity)))
         .itemSource(itemSource)
+        .grantType(addOn.getGrantType())
+        .grantsFeature(addOn.getGrantsFeature())
+        .grantsQuantity(addOn.getGrantsQuantity())
+        .billingType(addOn.getBillingType())
         .build();
   }
 

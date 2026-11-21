@@ -83,7 +83,7 @@ further tags list them.
 |---|---|---|
 | `inventory_plan_assigned_total` | `PlanMetricsConstants.ASSIGNED_TOTAL` | PlanService |
 | `inventory_plan_gateway` | `PlanMetricsConstants.GATEWAY` | RazorpayPaymentGateway |
-| `inventory_plan_payments_total` | `PlanMetricsConstants.PAYMENTS_TOTAL` | PlanPaymentService |
+| `inventory_plan_payments_total` | `PlanMetricsConstants.PAYMENTS_TOTAL` | PlanPaymentService (tags `operation`: `checkout`, `verify`, `capture`; `outcome`: `success`, `error`, `duplicate` = a second payment on a paid order, to refund) |
 | `inventory_plan_webhooks_total` | `PlanMetricsConstants.WEBHOOKS_TOTAL` | PlanPaymentService |
 
 ## pricing
