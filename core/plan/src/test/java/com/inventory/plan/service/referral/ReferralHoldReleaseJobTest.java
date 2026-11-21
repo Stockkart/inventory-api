@@ -1,6 +1,7 @@
 package com.inventory.plan.service.referral;
 
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -30,10 +31,23 @@ class ReferralHoldReleaseJobTest {
   @Test
   void releasesWhenEnabledAndSwallowsFailures() {
     job.enabled = true;
-    when(rewardService.releaseDue(anyInt())).thenThrow(new IllegalStateException("db down"));
+    when(rewardService.releaseDuePage(anyInt())).thenThrow(new IllegalStateException("db down"));
 
     job.run();
 
-    verify(rewardService).releaseDue(ReferralHoldReleaseJob.BATCH);
+    verify(rewardService).releaseDuePage(ReferralHoldReleaseJob.BATCH);
+  }
+
+  @Test
+  void keepsReleasingUntilAShortPage() {
+    job.enabled = true;
+    when(rewardService.releaseDuePage(ReferralHoldReleaseJob.BATCH)).thenReturn(
+        new ReferralRewardService.ReleaseRun(ReferralHoldReleaseJob.BATCH, 200),
+        new ReferralRewardService.ReleaseRun(ReferralHoldReleaseJob.BATCH, 199),
+        new ReferralRewardService.ReleaseRun(7, 7));
+
+    job.run();
+
+    verify(rewardService, times(3)).releaseDuePage(ReferralHoldReleaseJob.BATCH);
   }
 }
