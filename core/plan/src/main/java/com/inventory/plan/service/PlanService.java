@@ -19,6 +19,7 @@ import com.inventory.plan.rest.dto.response.PlanTransactionResponse;
 import com.inventory.plan.rest.dto.response.ShopPlanStatusResponse;
 import com.inventory.plan.rest.dto.response.UsageResponse;
 import com.inventory.plan.api.port.ShopPort.ShopInfo;
+import com.inventory.plan.utils.PlanOptions;
 import com.inventory.plan.utils.PlanUtils;
 import com.inventory.plan.utils.PlanUtils;
 import com.inventory.plan.validation.PlanValidator;
@@ -30,6 +31,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.time.Instant;
 import java.util.List;
@@ -136,8 +138,8 @@ public class PlanService {
     if (currentPlanId.equals(plan.getId())) {
       return true;
     }
-    return plan.getCode() != null && planRepository.findById(currentPlanId)
-        .map(current -> plan.getCode().equals(current.getCode()))
+    return planRepository.findById(currentPlanId)
+        .map(current -> PlanOptions.isSamePlan(current, plan))
         .orElse(false);
   }
 
@@ -242,6 +244,9 @@ public class PlanService {
         limits,
         userLimitReached);
     status.setTrialDays(trialDays);
+    status.setTrialAvailable(!StringUtils.hasText(shopInfo.planId()) && shopInfo.planExpiryDate() == null);
+    status.setPlanOptions(PlanOptions.of(effectivePlanResolver.activeCatalogue(), plan, shopInfo.planExpiryDate(),
+        Instant.now()));
     return status;
   }
 
