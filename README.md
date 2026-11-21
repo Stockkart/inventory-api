@@ -219,7 +219,8 @@ inventory-api/
 checkout both call it, and clients show the quote without recomputing it.
 
 - Vouchers apply to add-on lines only, never the plan line.
-- Wallet credit pays the plan line first, then add-ons, never OCR top-ups.
+- Wallet credit pays the plan line first, then add-ons and OCR scan packs in cart order; a cart the
+  wallet covers in full (a scan pack alone too) is paid with provider `wallet`, no gateway.
 - A plan's `basePrice` is the floor for its line: wallet credit stops at `arcPrice - basePrice`, and
   the rest flows on to add-ons. Admins set it on the plan (`basePrice <= arcPrice`); null means no
   floor. Add-ons and OCR top-ups have no floor.
@@ -534,6 +535,8 @@ A plan purchase is a `plan_payment_orders` row moving CREATED → PAYMENT_PENDIN
 | `POST /api/v1/plans/payment/checkout` | Create the order. `Idempotency-Key` is optional: a repeated key returns its order (a different cart with the same key is `409 IDEMPOTENCY_KEY_REUSED`); without a key, a still-open unexpired order for the same cart is returned instead of a second one. Same plan-change rule as the quote. RBAC module `paymentPlan`. |
 | `POST /api/v1/plans/payment/verify` | Confirm a Razorpay payment. `success` is true only when the order is FULFILLED; `phase` PROCESSING means paid and still being applied. A second payment captured for an order already paid is logged and written to `audit_entries` (`PLAN_PAYMENT_DUPLICATE_CAPTURE`, source SYSTEM) for a refund; nothing more is granted. |
 | `POST /api/v1/plans/orders/{orderId}/cancel` | Cancel the caller's own unpaid order (shop from the request, never the path) and give back its voucher and wallet holds. Repeating it, or cancelling an order that already expired or failed, returns it unchanged; a paid order is `409 ORDER_NOT_CANCELLABLE` (code 5003). RBAC module `paymentPlan`. |
+
+`GET /api/v1/plans/shop/status` also tells the plan cards what to offer, so the apps never compare plans themselves: `trialAvailable` (true only for a shop that never had a plan or a trial; trials start at registration) and `planOptions`, one per catalogue plan in catalogue order, `{planId, planCode, action, actionAvailable, unavailableReason, availableFrom}`. `action` is `CURRENT` (the shop's paid plan, also after it ended: renew), `UPGRADE` (a plan above it in catalogue order; a legacy plan outside the catalogue is ranked by yearly price) or `BUY` (a plan below it, or any plan while the shop has no paid plan). While the paid plan has days left every non-current option has `actionAvailable` false, the `PLAN_CHANGE_NOT_ALLOWED` message as `unavailableReason` and the expiry as `availableFrom`, the same rule quote and checkout apply (`PlanOptions`).
 
 Plan prices are GST-inclusive. Each new order stores its split: `taxableAmount` + `gstAmount` == `amount`, at `gstRatePercent` (`plan.gst-rate-percent`, env `PLAN_GST_RATE_PERCENT`, default 18; `PlanGstUtils`, paise rounded HALF_UP). Orders created before this have no split; readers split `amount` at the configured rate.
 

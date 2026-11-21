@@ -24,6 +24,14 @@ class PlanUtilsDisplayTest {
   }
 
   @Test
+  void rupeesAreGroupedTheIndianWayWithPaiseOnlyWhenNotWhole() {
+    assertThat(PlanUtils.rupees(new BigDecimal("10000.00"))).isEqualTo("₹10,000");
+    assertThat(PlanUtils.rupees(new BigDecimal("100000"))).isEqualTo("₹1,00,000");
+    assertThat(PlanUtils.rupees(new BigDecimal("999.9"))).isEqualTo("₹999.90");
+    assertThat(PlanUtils.rupees(new BigDecimal("-0.01"))).isEqualTo("-₹0.01");
+  }
+
+  @Test
   void billingLimitIsShownInLakh() {
     assertThat(PlanUtils.billingLimitLabel(plan("Starter", "150000", false))).isEqualTo("₹1.5L");
     assertThat(PlanUtils.billingLimitLabel(plan("Starter", "1000000", false))).isEqualTo("₹10.0L");
