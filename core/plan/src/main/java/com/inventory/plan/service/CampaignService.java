@@ -4,12 +4,15 @@ import com.inventory.plan.domain.model.CampaignState;
 import com.inventory.plan.domain.model.SaleCampaign;
 import com.inventory.plan.domain.repository.SaleCampaignRepository;
 import com.inventory.plan.rest.dto.response.CampaignResponse;
+import com.inventory.plan.utils.TimedValue;
 import com.inventory.plan.utils.constants.CampaignConstants;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,6 +40,13 @@ public class CampaignService {
 
   Clock clock = Clock.systemUTC();
 
+  /**
+   * Every page load asks for the sale strip; the not-yet-ended campaigns are kept 60 s per
+   * instance. State is still derived from {@code now} on each call, so a campaign that starts or
+   * ends inside the window changes state on time.
+   */
+  private final TimedValue<List<SaleCampaign>> unended = new TimedValue<>(Duration.ofSeconds(60));
+
   /** Auto index creation is off in this application. */
   @EventListener(ApplicationReadyEvent.class)
   public void ensureIndexes() {
@@ -49,7 +59,7 @@ public class CampaignService {
   /** A live campaign outranks an upcoming one; then higher priority, then the earlier start. */
   public Optional<CampaignResponse> findActive() {
     Instant now = clock.instant();
-    return saleCampaignRepository.findByEndsAtAfter(now).stream()
+    return unended.get(() -> List.copyOf(saleCampaignRepository.findByEndsAtAfter(now))).stream()
         .filter(CampaignService::isWellFormed)
         .map(c -> new Candidate(c, stateOf(c, now)))
         .filter(candidate -> candidate.state() != null)
@@ -60,6 +70,11 @@ public class CampaignService {
             .thenComparing(candidate -> candidate.campaign().getCode(),
                 Comparator.nullsLast(Comparator.naturalOrder())))
         .map(candidate -> toResponse(candidate, now));
+  }
+
+  /** Forget the cached campaigns; campaign admin writes call this. */
+  public void evictActive() {
+    unended.evict();
   }
 
   /** Null when the campaign should not be shown at {@code now}. */
