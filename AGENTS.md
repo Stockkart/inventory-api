@@ -204,6 +204,7 @@ MongoDB: "table" means collection, "column" means field.
 | `PAYMENT_GATEWAY` | which payment gateway plans use | both |
 | `RAZORPAY_KEY_ID` | Razorpay key id | both |
 | `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` | Razorpay API and webhook secrets (secret, never commit) | both |
+| `PLAN_ENTITLEMENTS_ENFORCEMENT` | plan feature, seat and OCR-quota checks (`EntitlementGuard`): `OFF`, `LOG_ONLY` (default: allow, log what would be blocked, once per 10 min per shop and check) or `ENFORCE` (402 with `FEATURE_NOT_IN_PLAN` / `SEAT_LIMIT_REACHED` / `OCR_QUOTA_EXCEEDED`). Switching production to `ENFORCE`: date TBD by owner | both |
 | `GSTIN_PROVIDER` | online GSTIN lookup provider; unset means offline check only | .env.example |
 | `GSTINAPI_KEY` | GSTIN lookup API key (secret, never commit) | .env.example |
 
