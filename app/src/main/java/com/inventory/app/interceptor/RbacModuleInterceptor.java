@@ -53,7 +53,7 @@ public class RbacModuleInterceptor implements HandlerInterceptor {
   private static final List<PatternModuleRule> PATTERN_MODULE_RULES =
       List.of(
           new PatternModuleRule(
-              Pattern.compile("/api/v1/plans/shop/[a-fA-F0-9]{24}/(assign|suggested)"),
+              Pattern.compile("/api/v1/plans/shop/[a-fA-F0-9]{24}/suggested"),
               RbacService.MODULE_PAYMENT_PLAN));
 
   private static final List<Pattern> STOCK_CORRECTION_APPROVAL_PATHS =

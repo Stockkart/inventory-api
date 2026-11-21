@@ -7,7 +7,6 @@ import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.common.exception.AuthenticationException;
-import com.inventory.plan.rest.dto.request.AssignPlanRequest;
 import com.inventory.plan.rest.dto.request.RecordUsageRequest;
 import com.inventory.plan.rest.dto.response.AddOnResponse;
 import com.inventory.plan.rest.dto.response.PlanResponse;
@@ -27,7 +26,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -96,15 +94,6 @@ public class PlanController {
       HttpServletRequest httpRequest) {
     requireAuth(httpRequest);
     return ResponseEntity.ok(ApiResponse.success(planService.getSuggestedPlan(shopId)));
-  }
-
-  @PostMapping("/shop/{shopId}/assign")
-  public ResponseEntity<ApiResponse<PlanResponse>> assignPlan(
-      @PathVariable String shopId,
-      @RequestBody AssignPlanRequest request,
-      HttpServletRequest httpRequest) {
-    requireAuth(httpRequest);
-    return ResponseEntity.ok(ApiResponse.success(planService.assignPlan(shopId, request)));
   }
 
   @GetMapping("/shop/transactions")

@@ -150,4 +150,15 @@ class RbacModuleInterceptorTest {
     verify(rbacService, never()).requireModule(anyString(), anyString(),
         org.mockito.ArgumentMatchers.eq(RbacService.MODULE_HR));
   }
+
+  @Test
+  void theSuggestedPlanPathNeedsThePaymentPlanModule() {
+    when(rbacService.requireModule("u1", "s1", RbacService.MODULE_PAYMENT_PLAN))
+        .thenReturn(new ShopAccessResponse());
+
+    interceptor.preHandle(request("/api/v1/plans/shop/0123456789abcdef01234567/suggested"),
+        new MockHttpServletResponse(), null);
+
+    verify(rbacService).requireModule("u1", "s1", RbacService.MODULE_PAYMENT_PLAN);
+  }
 }
