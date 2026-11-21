@@ -247,14 +247,15 @@ public class PlanService {
     Instant now = Instant.now();
     boolean trial = shop.planId() == null || shop.planId().isBlank();
     planAdminValidator.validateGrantTarget(shop.planId(), shop.planExpiryDate(), plan.getId(), trial, now);
-    boolean extends_ = !trial && plan.getId().equals(shop.planId())
-        && shop.planExpiryDate() != null && shop.planExpiryDate().isAfter(now);
-    Instant termStartsAt = extends_ ? shop.planExpiryDate() : now;
+    // same rule as a paid renewal: a term of the same plan starts when the current one ends
+    Instant termStartsAt = termStart(shop, plan, now);
     Instant termEndsAt = PlanUtils.plusMonths(termStartsAt, durationMonths);
-    shopProvider.updatePlan(shopId, plan.getId(), termEndsAt);
-    syncSubscription(new ShopInfo(shopId, plan.getId(), termEndsAt), null);
-    planTransactionRepository.save(
-        planTransactionMapper.toAdminGrantTransaction(shopId, plan, durationMonths, termStartsAt, termEndsAt, now));
+    mongoTx.run(MongoTx.PLAN_GRANT, shopId, () -> {
+      shopProvider.updatePlan(shopId, plan.getId(), termEndsAt);
+      shopSubscriptionService.recordGrant(new ShopInfo(shopId, plan.getId(), termEndsAt), null);
+      planTransactionRepository.save(
+          planTransactionMapper.toAdminGrantTransaction(shopId, plan, durationMonths, termStartsAt, termEndsAt, now));
+    });
     entitlementService.invalidate(shopId);
     log.info("Admin granted plan {} to shop {} until {}", plan.getPlanName(), shopId, termEndsAt);
     metrics.record(PlanMetricsConstants.ASSIGNED_TOTAL, 1, "module", PlanMetricsConstants.MODULE);

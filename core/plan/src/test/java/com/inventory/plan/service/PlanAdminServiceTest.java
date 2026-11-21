@@ -50,6 +50,8 @@ class PlanAdminServiceTest {
   private AuditService auditService;
   @Mock
   private EntitlementService entitlementService;
+  @Mock
+  private EffectivePlanResolver effectivePlanResolver;
   @Spy
   private PlanMapper planMapper = new PlanMapperImpl();
   @Spy
@@ -142,6 +144,7 @@ class PlanAdminServiceTest {
     assertThat(set).containsKey("entitlements");
     assertThat(set).containsKey("basePrice");
     verify(entitlementService).invalidateAll();
+    verify(effectivePlanResolver).evictCatalogue();
     ArgumentCaptor<AuditEntry> audit = ArgumentCaptor.forClass(AuditEntry.class);
     verify(auditService).record(audit.capture());
     assertThat(audit.getValue().getAction()).isEqualTo("PLAN_UPDATED");

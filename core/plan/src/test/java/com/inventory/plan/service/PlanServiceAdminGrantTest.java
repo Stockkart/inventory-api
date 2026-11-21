@@ -42,6 +42,8 @@ class PlanServiceAdminGrantTest {
   @Mock private ShopSubscriptionService shopSubscriptionService;
   @Mock private EntitlementService entitlementService;
   @Mock private MetricsWrapper metrics;
+  @Mock private com.inventory.common.tx.MongoTx mongoTx;
+  @Mock private com.inventory.plan.domain.repository.PlanRepository planRepository;
   @Spy private PlanAdminValidator planAdminValidator = new PlanAdminValidator();
   @Spy private PlanTransactionMapper planTransactionMapper = Mockito.mock(PlanTransactionMapper.class,
       Mockito.CALLS_REAL_METHODS);
@@ -57,6 +59,11 @@ class PlanServiceAdminGrantTest {
     pro.setId("pro");
     pro.setCode("PROFESSIONAL");
     pro.setPlanName("Professional");
+    org.mockito.Mockito.lenient().doAnswer(inv -> {
+      ((Runnable) inv.getArgument(2)).run();
+      return null;
+    }).when(mongoTx).run(org.mockito.ArgumentMatchers.eq(com.inventory.common.tx.MongoTx.PLAN_GRANT),
+        org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(Runnable.class));
   }
 
   @Test
@@ -68,6 +75,8 @@ class PlanServiceAdminGrantTest {
 
     assertThat(result.expiresAtAfter()).isAfter(expiry.plus(Duration.ofDays(27)));
     verify(shopProvider).updatePlan("s1", "pro", result.expiresAtAfter());
+    // the grant keeps the granted plan's terms on the subscription, like a paid one
+    verify(shopSubscriptionService).recordGrant(new ShopInfo("s1", "pro", result.expiresAtAfter()), null);
     ArgumentCaptor<PlanTransaction> tx = ArgumentCaptor.forClass(PlanTransaction.class);
     verify(planTransactionRepository).save(tx.capture());
     assertThat(tx.getValue().getPaymentMethod()).isEqualTo(PlanConstants.ADMIN_GRANT_PAYMENT_METHOD);

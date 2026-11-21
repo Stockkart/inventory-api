@@ -56,5 +56,10 @@ public class QuoteResponse {
     private String voucherCode;
     /** Wallet credit applied to this line; already included in the quote's {@code walletCredit}. */
     private BigDecimal walletCredit;
+
+    /** unitPrice × quantity, before the line discount; the apps show it as is. */
+    public BigDecimal getGrossAmount() {
+      return unitPrice == null ? null : unitPrice.multiply(BigDecimal.valueOf(quantity));
+    }
   }
 }

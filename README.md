@@ -555,6 +555,10 @@ Employees, attendance, leave, salary advances, payroll, salary payments, payslip
 | `GET /api/v1/hr/me/payslips`, `GET /api/v1/hr/me/payslips/{lineId}/pdf` | linked employee (allowed while the plan is expired) | Own payslips of finalised months; another employee's line is 404 |
 | `GET /api/v1/hr/me/notifications?since=`, `POST /api/v1/hr/me/notifications/{id}/read`, `POST /api/v1/hr/me/notifications/read-all` | any shop member | HR inbox (polled every 60 s) |
 
+### Plan revenue MIS (plan)
+
+`GET /api/v1/admin/mis/plans?from=&to=` (admin session; days inclusive, Asia/Kolkata, at most 366). Amounts are GST-inclusive, and `revenue` also gives each split: `grossRevenue` = `grossTaxable` + `grossGst`, `refundedAmount` = `refundedTaxable` + `refundedGst`, `netRevenue` = `netTaxable` + `netGst` (an order's stored split, or for older orders its amount split at `plan.gst-rate-percent`). A refund counts what the gateway reported (`refundedAmount`); an admin refund or a lost chargeback with nothing counted is the whole order; any other refunded order with no counted amount counts 0 and is logged. OCR top-up credits are counted as priced on the order line. Wallet liability is summed in the database.
+
 ### Plan checkout orders (plan)
 
 A plan purchase is a `plan_payment_orders` row moving CREATED → PAYMENT_PENDING → PAID → FULFILLING → FULFILLED (or PAYMENT_FAILED / EXPIRED / CANCELLED unpaid, FULFILMENT_FAILED for an operator); every move is a conditional update. Responses carry the raw `status` and a `phase` the apps show instead of reading status names: `AWAITING_PAYMENT` (open the gateway), `PROCESSING` (payment received, confirming), `FULFILLED` (done), `FAILED` (no payment taken), `ENDED` (expired or cancelled).
@@ -566,7 +570,41 @@ A plan purchase is a `plan_payment_orders` row moving CREATED → PAYMENT_PENDIN
 | `POST /api/v1/plans/payment/verify` | Confirm a Razorpay payment. `success` is true only when the order is FULFILLED; `phase` PROCESSING means paid and still being applied. A second payment captured for an order already paid is logged and written to `audit_entries` (`PLAN_PAYMENT_DUPLICATE_CAPTURE`, source SYSTEM) for a refund; nothing more is granted. |
 | `POST /api/v1/plans/orders/{orderId}/cancel` | Cancel the caller's own unpaid order (shop from the request, never the path) and give back its voucher and wallet holds. Repeating it, or cancelling an order that already expired or failed, returns it unchanged; a paid order is `409 ORDER_NOT_CANCELLABLE` (code 5003). RBAC module `paymentPlan`. |
 
+Plan prices are GST-inclusive. Each new order stores its split: `taxableAmount` + `gstAmount` == `amount`, at `gstRatePercent` (`plan.gst-rate-percent`, env `PLAN_GST_RATE_PERCENT`, default 18; `PlanGstUtils`, paise rounded HALF_UP). Orders created before this have no split; readers split `amount` at the configured rate.
+
 Granting a paid order runs in one MongoDB transaction (`MongoTx` flow `plan_grant`): the `plan_transactions` row (unique per order, index `paymentOrderId_unique`), the shop's plan fields and its `shop_subscriptions` row. Renewing the same plan starts the new term at the current expiry, so no paid day is lost. An unpaid order that ends gives back its holds only while it is still ended (`reservationsReleasedAt`), so a late payment and the release cannot both win. Indexes (`PaymentOrderStatusMigration`, on startup): `shop_idempotency_key_unique`, `status_expiresAt`, `status_claimedAt`, `provider_providerOrderId_unique`, `shop_status_paidAt`, `shop_status_fulfilledAt`, `shop_requestHash_status` on `plan_payment_orders`; `shop_createdAt` and `paymentOrderId_unique` on `plan_transactions` (if older duplicate rows exist the unique index is skipped and they are logged for an operator).
+
+### Plans, add-ons, referrals and platform admin (plan, user)
+
+Shop-facing paths take the shop from the request (never the path or body) and sit under the plan-expiry allow-list (`/api/v1/plans`, `/api/v1/referrals`); `/api/v1/plans`, `/api/v1/plans/{planId}`, `/api/v1/plans/payment/config`, `/api/v1/plans/payment/webhook/{provider}` and `/api/v1/campaigns/active` are public. Money, tax and derived flags come from the API; the apps only show them.
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/v1/plans`, `GET /api/v1/plans/{planId}` | Active catalogue. Each plan carries `trialDays` (from `plan.trial-days`), `selectable` (false for legacy add-on rows sold at payment) and `billingLimitLabel` ("Unlimited" or lakh rupees such as "₹1.5L"). |
+| `GET /api/v1/plans/addons` | Active add-on catalogue. |
+| `GET /api/v1/campaigns/active` | The running sale campaign, if any (public). |
+| `GET /api/v1/plans/shop/status` | The shop's plan, trial, usage and limits; `trialDays`. Read-only (never writes the subscription). |
+| `GET /api/v1/plans/shop/entitlements` | Features, limits and enforcement mode; `seatLimitReached`, `ocrLimitReached` (included scans and purchased credits both used up). |
+| `GET /api/v1/plans/shop/addons`, `/shop/transactions`, `/shop/usage`, `/shop/wallet` | The shop's add-ons, plan transactions, month usage and referral wallet (RBAC module `paymentPlan` for transactions, usage, wallet). |
+| `GET /api/v1/plans/vouchers/validate` | Check a voucher code for the shop; unknown codes are rate-limited (`429 TOO_MANY_REQUESTS`, code 1009). |
+| `GET /api/v1/referrals/me`, `/referrals/rewards`, `/referrals/validate` | The shop's referral summary and rewards (RBAC module `paymentPlan`), and a referral-code check for sign-up. |
+
+Platform-admin paths (`/api/v1/admin/**`) need an admin session (`POST /api/v1/admin/auth/login`), not a shop sign-in; none of the shop interceptors run there, and the actor of every change is recorded in `audit_entries` (`actorType` ADMIN). Shop approval (`/api/v1/shops/admin/**`) is not one of them: it needs a `SUPER_USER` shop sign-in (see Stockkart staff above).
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/v1/admin/auth/login`, `/logout`, `/change-password`, `GET /auth/me` | Admin sign-in. Failures get one generic 401; too many from one address or overall → `429 TOO_MANY_REQUESTS` (`admin.sign-in.*`). |
+| `POST /api/v1/admin/auth/reset-password` | Public: set a new password with the one-time token from a reset email (valid 30 min, single use; signs out every session). |
+| `GET/POST /api/v1/admin/admins`, `PATCH /admins/{id}/active`, `POST /admins/{id}/reset-password` | Admin accounts. A reset signs the target out, invalidates the old password and emails the target a reset link (`ADMIN_CLIENT_URL/reset-password?token=…`); the response never carries a credential. |
+| `GET/POST /api/v1/admin/plans`, `PUT /plans/{id}`, `PATCH /plans/{id}/active` | Plan catalogue. |
+| `GET/POST /api/v1/admin/addons`, `PUT /addons/{id}`, `PATCH /addons/{id}/active`, `GET/POST /addons/grants` | Add-on catalogue (billing type, stacking and grant quantity default from the grant type) and manual add-on grants. |
+| `POST /api/v1/admin/shops/{shopId}/plan-grants` | Grant a plan without payment: `{planCode, durationMonths (1..36), reason}`; the same plan extends from the current expiry, another plan only once the paid one has ended. Audited `PLAN_GRANTED`; returns the shop's plan status. |
+| `GET/POST /api/v1/admin/campaigns`, `PUT /campaigns/{id}`, `PATCH /campaigns/{id}/active` | Sale campaigns. |
+| `GET/POST /api/v1/admin/vouchers`, `PUT /vouchers/{id}`, `PATCH /vouchers/{id}/active`, `GET /vouchers/{id}/redemptions` | Vouchers; the list takes `page` (from 0) and `size` (1–500, default 100). |
+| `GET /api/v1/admin/referrals/attributions`, `/rewards`; `POST …/{id}/approve`, `/reject`, `/void`, `/clawback` | Referral review. |
+| `GET /api/v1/admin/wallets/{shopId}`, `POST /wallets/{shopId}/adjustments`, `POST /wallets/{shopId}/adjustments/preview` | Wallet balance and manual adjustments (at most ₹10,000 either way); the preview returns `currentBalance` and `resultingBalance` without writing. |
+| `POST /api/v1/admin/plan-orders/{id}/refund` | Refund a plan order. |
+| `GET /api/v1/admin/mis/plans` | Plan revenue MIS (taxable and GST separately). |
 
 ### Build commands
 

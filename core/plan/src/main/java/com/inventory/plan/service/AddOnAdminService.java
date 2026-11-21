@@ -1,5 +1,7 @@
 package com.inventory.plan.service;
 
+import com.inventory.plan.utils.AddOnRules;
+
 import com.inventory.common.audit.AuditEntry;
 import com.inventory.common.audit.AuditService;
 import com.inventory.common.audit.AuditSource;
@@ -74,6 +76,9 @@ public class AddOnAdminService {
   }
 
   public AdminAddOnResponse create(AddOnAdminRequest request, String actorUserId) {
+    if (request != null) {
+      AddOnRules.applyDefaults(request, request.getGrantType());
+    }
     validator.validateCreate(request);
     AddOn addOn = addOnMapper.toEntity(request);
     if (addOn.getGrantType() == AddOnGrantType.FEATURE) {
@@ -94,6 +99,9 @@ public class AddOnAdminService {
   /** Full edit. Code and grant type are fixed at create. */
   public AdminAddOnResponse update(String id, AddOnAdminRequest request, String actorUserId) {
     AddOn current = load(id);
+    if (request != null) {
+      AddOnRules.applyDefaults(request, current.getGrantType());
+    }
     validator.validateUpdate(id, request, current.getGrantType());
     Update update = new Update()
         .set("name", request.getName())
@@ -102,7 +110,7 @@ public class AddOnAdminService {
         .set("billingType", request.getBillingType())
         .set("grantsFeature", request.getGrantsFeature())
         .set("grantsQuantity", current.getGrantType() == AddOnGrantType.FEATURE ? 1 : request.getGrantsQuantity())
-        .set("stackable", request.isStackable())
+        .set("stackable", Boolean.TRUE.equals(request.getStackable()))
         .set("maxQuantity", request.getMaxQuantity())
         .set("displayOrder", request.getDisplayOrder())
         .set("updatedAt", clock.instant());
