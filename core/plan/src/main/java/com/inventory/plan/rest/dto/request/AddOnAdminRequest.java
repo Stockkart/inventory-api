@@ -24,7 +24,8 @@ public class AddOnAdminRequest {
   private AddOnGrantType grantType;
   private PlanFeature grantsFeature;
   private Integer grantsQuantity;
-  private boolean stackable;
+  /** Null: derived from the grant type (feature add-ons are not stackable, the rest are). */
+  private Boolean stackable;
   private Integer maxQuantity;
   private Integer displayOrder;
 }
