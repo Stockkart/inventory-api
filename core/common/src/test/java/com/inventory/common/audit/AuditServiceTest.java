@@ -65,4 +65,20 @@ class AuditServiceTest {
     assertThatThrownBy(() -> auditService.record(AuditEntry.builder().action("X").build()))
         .isInstanceOf(NullPointerException.class);
   }
+
+  @Test
+  void anEntryWithoutActorTypeGetsOneFromItsSource() {
+    when(mongoTemplate.insert(any(AuditEntry.class))).thenAnswer(inv -> inv.getArgument(0));
+
+    AuditEntry byUser = auditService.record(AuditEntry.builder()
+        .actorUserId("u1").action("SHOP_APPROVED").source(AuditSource.ADMIN_UI).build());
+    AuditEntry bySystem = auditService.record(AuditEntry.builder()
+        .action("PLATFORM_ROLE_GRANTED").source(AuditSource.SYSTEM).build());
+    AuditEntry byAdmin = auditService.record(AuditEntry.builder()
+        .actorUserId("a1").actorType(AuditActorType.ADMIN).action("X").source(AuditSource.ADMIN_UI).build());
+
+    assertThat(byUser.getActorType()).isEqualTo(AuditActorType.USER);
+    assertThat(bySystem.getActorType()).isEqualTo(AuditActorType.SYSTEM);
+    assertThat(byAdmin.getActorType()).isEqualTo(AuditActorType.ADMIN);
+  }
 }
