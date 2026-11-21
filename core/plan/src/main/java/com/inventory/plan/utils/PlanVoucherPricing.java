@@ -72,39 +72,14 @@ public final class PlanVoucherPricing {
   /** Creation error text for a voucher that takes the plan below its floor (spec 7.2). */
   public static String belowFloorMessage(Plan plan, PlanVoucherCheck check) {
     String below = check.basePrice() == null
-        ? "the " + rupees(MIN_FLOOR) + " minimum"
-        : "its base price " + rupees(check.basePrice());
-    return rupees(check.discount()) + " off takes " + plan.getPlanName() + " to " + rupees(check.priceAfter())
-        + ", below " + below + ". Most you can give: " + rupees(check.maxFlat())
+        ? "the " + PlanUtils.rupees(MIN_FLOOR) + " minimum"
+        : "its base price " + PlanUtils.rupees(check.basePrice());
+    return PlanUtils.rupees(check.discount()) + " off takes " + plan.getPlanName() + " to " + PlanUtils.rupees(check.priceAfter())
+        + ", below " + below + ". Most you can give: " + PlanUtils.rupees(check.maxFlat())
         + " (" + check.maxPercent().toPlainString() + "%).";
   }
 
   private static BigDecimal money(BigDecimal value) {
     return value.setScale(2, RoundingMode.HALF_UP);
-  }
-
-  /** Rupees with Indian digit grouping (1,00,000); paise shown only when not whole. */
-  private static String rupees(BigDecimal amount) {
-    BigDecimal value = money(amount);
-    boolean whole = value.stripTrailingZeros().scale() <= 0;
-    String plain = value.abs().setScale(whole ? 0 : 2, RoundingMode.HALF_UP).toPlainString();
-    int dot = plain.indexOf('.');
-    String integer = dot < 0 ? plain : plain.substring(0, dot);
-    String fraction = dot < 0 ? "" : plain.substring(dot);
-    StringBuilder grouped = new StringBuilder();
-    int len = integer.length();
-    if (len <= 3) {
-      grouped.append(integer);
-    } else {
-      String head = integer.substring(0, len - 3);
-      for (int i = 0; i < head.length(); i++) {
-        if (i > 0 && (head.length() - i) % 2 == 0) {
-          grouped.append(',');
-        }
-        grouped.append(head.charAt(i));
-      }
-      grouped.append(',').append(integer, len - 3, len);
-    }
-    return (value.signum() < 0 ? "-₹" : "₹") + grouped + fraction;
   }
 }
