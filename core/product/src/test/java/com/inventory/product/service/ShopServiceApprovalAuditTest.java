@@ -53,6 +53,7 @@ class ShopServiceApprovalAuditTest {
     verify(auditService).record(captor.capture());
     AuditEntry entry = captor.getValue();
     assertThat(entry.getActorUserId()).isEqualTo("admin-1");
+    assertThat(entry.getActorType()).isEqualTo(com.inventory.common.audit.AuditActorType.USER);
     assertThat(entry.getAction()).isEqualTo("SHOP_APPROVED");
     assertThat(entry.getTargetId()).isEqualTo(SHOP_ID);
     assertThat(entry.getSource()).isEqualTo(AuditSource.ADMIN_UI);
