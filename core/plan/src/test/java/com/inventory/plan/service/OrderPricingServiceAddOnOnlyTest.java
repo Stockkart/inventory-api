@@ -167,7 +167,7 @@ class OrderPricingServiceAddOnOnlyTest {
   }
 
   @Test
-  void walletPaysAddOnsWithNoPlanFloorButNeverOcrTopUps() {
+  void walletPaysAddOnsAndOcrTopUpsWithNoPlanFloor() {
     pro.setBasePrice(new BigDecimal("9000"));
     onPaidPlan();
     when(walletService.available("shop-1")).thenReturn(new BigDecimal("5000"));
@@ -178,10 +178,23 @@ class OrderPricingServiceAddOnOnlyTest {
 
     QuoteResponse quote = pricing.quote("shop-1", request);
 
-    assertThat(quote.getWalletCredit()).isEqualByComparingTo("1999");
-    assertThat(quote.getItems().get(0).getWalletCredit()).isNull();
+    assertThat(quote.getWalletCredit()).isEqualByComparingTo("2198");
+    assertThat(quote.getItems().get(0).getWalletCredit()).isEqualByComparingTo("199");
     assertThat(quote.getItems().get(1).getWalletCredit()).isEqualByComparingTo("1999");
-    assertThat(quote.getGrandTotal()).isEqualByComparingTo("199");
+    assertThat(quote.getGrandTotal()).isEqualByComparingTo("0");
+  }
+
+  @Test
+  void walletCoversAScanPackBoughtOnItsOwn() {
+    onPaidPlan();
+    when(walletService.available("shop-1")).thenReturn(new BigDecimal("300"));
+    QuoteRequest request = addOnOnly(new QuoteRequest.AddOnLine("OCR_TOPUP_500", 1));
+    request.setApplyWalletCredit(true);
+
+    QuoteResponse quote = pricing.quote("shop-1", request);
+
+    assertThat(quote.getWalletCredit()).isEqualByComparingTo("199");
+    assertThat(quote.getGrandTotal()).isEqualByComparingTo("0");
   }
 
   @Test
