@@ -52,6 +52,20 @@ class OrderPricingServiceTest {
   @InjectMocks
   private OrderPricingService pricing;
 
+  /** Pricing reads all codes at once; answer it from the per-code stubs below. */
+  @org.junit.jupiter.api.BeforeEach
+  void vouchersAnsweredPerCode() {
+    org.mockito.Mockito.lenient().when(voucherService.requireUsableAll(
+            org.mockito.ArgumentMatchers.anyCollection(), anyString()))
+        .thenAnswer(inv -> {
+          java.util.Map<String, AddOnVoucher> usable = new java.util.LinkedHashMap<>();
+          for (Object code : (java.util.Collection<?>) inv.getArgument(0)) {
+            usable.put((String) code, voucherService.requireUsable((String) code, inv.getArgument(1)));
+          }
+          return usable;
+        });
+  }
+
   @Test
   void pricesPlanAtItsYearlyPrice() {
     when(planRepository.findByCode("PROFESSIONAL")).thenReturn(Optional.of(plan("PROFESSIONAL", "9999", null)));
@@ -249,7 +263,7 @@ class OrderPricingServiceTest {
     Plan pro = plan("PROFESSIONAL", "9999", null);
     pro.setFeatures(Set.of(PlanFeature.MARKETING));
     when(planRepository.findByCode("PROFESSIONAL")).thenReturn(Optional.of(pro));
-    when(addOnCatalogue.byCode(List.of("MARKETING_MODULE"))).thenReturn(Map.of("MARKETING_MODULE",
+    when(addOnCatalogue.byCode(Set.of("MARKETING_MODULE"))).thenReturn(Map.of("MARKETING_MODULE",
         addOn("MARKETING_MODULE", "1999", AddOnGrantType.FEATURE, PlanFeature.MARKETING, false, null)));
     when(voucherService.requireUsable("MKT-9F3K2P", "shop-1")).thenReturn(voucher("MKT-9F3K2P", VoucherType.FREE_ADDON, null));
     QuoteRequest request = request("PROFESSIONAL");
