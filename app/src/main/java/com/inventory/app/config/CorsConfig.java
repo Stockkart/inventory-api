@@ -60,7 +60,6 @@ public class CorsConfig implements WebMvcConfigurer {
         .excludePathPatterns(
             "/api/v1/auth/login",
             "/api/v1/auth/signup",
-            "/api/v1/auth/change-password",
             "/api/v1/auth/forgot-password",
             "/api/v1/auth/reset-password",
             "/api/v1/auth/accept-invite",
@@ -78,7 +77,6 @@ public class CorsConfig implements WebMvcConfigurer {
         .excludePathPatterns(
             "/api/v1/auth/login",
             "/api/v1/auth/signup",
-            "/api/v1/auth/change-password",
             "/api/v1/auth/forgot-password",
             "/api/v1/auth/reset-password",
             "/api/v1/auth/accept-invite",
@@ -93,7 +91,6 @@ public class CorsConfig implements WebMvcConfigurer {
         .excludePathPatterns(
             "/api/v1/auth/login",
             "/api/v1/auth/signup",
-            "/api/v1/auth/change-password",
             "/api/v1/auth/forgot-password",
             "/api/v1/auth/reset-password",
             "/api/v1/auth/accept-invite",

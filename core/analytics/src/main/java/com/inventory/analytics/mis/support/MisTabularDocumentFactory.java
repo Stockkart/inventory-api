@@ -7,9 +7,9 @@ import com.inventory.analytics.mis.rest.dto.MisSalesRowDto;
 import com.inventory.analytics.mis.rest.dto.MisSalesSummaryDto;
 import com.inventory.analytics.mis.rest.dto.MisStockRowDto;
 import com.inventory.analytics.mis.rest.dto.MisStockSummaryDto;
-import com.inventory.documentservice.rest.dto.mis.MisDocumentKpi;
-import com.inventory.documentservice.rest.dto.mis.MisDocumentSheet;
-import com.inventory.documentservice.rest.dto.mis.MisTabularDocumentRequest;
+import com.inventory.documentservice.api.MisKpi;
+import com.inventory.documentservice.api.MisSheet;
+import com.inventory.documentservice.api.MisTabularDocument;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -22,7 +22,7 @@ public final class MisTabularDocumentFactory {
 
   private MisTabularDocumentFactory() {}
 
-  public static MisTabularDocumentRequest moneyReport(
+  public static MisTabularDocument moneyReport(
       String title,
       String shopName,
       LocalDateTime generatedAt,
@@ -30,7 +30,7 @@ public final class MisTabularDocumentFactory {
       MisMoneySummaryDto summary,
       List<MisMoneyRowDto> rows,
       boolean vendorPerspective) {
-    List<MisDocumentKpi> kpis = new ArrayList<>();
+    List<MisKpi> kpis = new ArrayList<>();
     if (summary != null) {
       kpis.add(kpi("Opening", MisReportSupport.rupee(summary.getOpeningBalanceTotal())));
       kpis.add(
@@ -88,7 +88,7 @@ public final class MisTabularDocumentFactory {
       }
     }
 
-    return MisTabularDocumentRequest.builder()
+    return MisTabularDocument.builder()
         .title(title)
         .shopName(shopName)
         .periodLabel(periodLabel)
@@ -102,7 +102,7 @@ public final class MisTabularDocumentFactory {
         .build();
   }
 
-  public static MisTabularDocumentRequest customerMisReport(
+  public static MisTabularDocument customerMisReport(
       String shopName,
       LocalDateTime generatedAt,
       String periodLabel,
@@ -110,7 +110,7 @@ public final class MisTabularDocumentFactory {
       List<MisMoneyRowDto> moneyRows,
       MisSalesSummaryDto salesSummary,
       List<MisSalesRowDto> salesRows) {
-    MisTabularDocumentRequest money =
+    MisTabularDocument money =
         moneyReport(
             "Customer MIS",
             shopName,
@@ -120,47 +120,47 @@ public final class MisTabularDocumentFactory {
             moneyRows,
             false);
 
-    List<MisDocumentKpi> kpis = new ArrayList<>();
-    if (money.getKpis() != null) {
-      kpis.addAll(money.getKpis());
+    List<MisKpi> kpis = new ArrayList<>();
+    if (money.kpis() != null) {
+      kpis.addAll(money.kpis());
     }
     kpis.addAll(prefixedSalesKpis(salesSummary));
 
-    List<MisDocumentSheet> extra = new ArrayList<>();
+    List<MisSheet> extra = new ArrayList<>();
     extra.add(
-        MisDocumentSheet.builder()
+        MisSheet.builder()
             .title("Sales")
             .columns(salesDailyColumns())
             .rows(salesDailyRows(salesRows))
             .build());
     extra.add(
-        MisDocumentSheet.builder()
+        MisSheet.builder()
             .title("By party")
-            .columns(money.getSecondaryColumns())
-            .rows(money.getSecondaryRows())
+            .columns(money.secondaryColumns())
+            .rows(money.secondaryRows())
             .build());
 
-    return MisTabularDocumentRequest.builder()
+    return MisTabularDocument.builder()
         .title("Customer MIS")
         .shopName(shopName)
         .periodLabel(periodLabel)
         .generatedAtLabel(generatedAt != null ? TS.format(generatedAt) : "")
         .kpis(kpis)
         .detailSheetTitle("Customer money")
-        .columns(money.getColumns())
-        .rows(money.getRows())
+        .columns(money.columns())
+        .rows(money.rows())
         .extraSheets(extra)
         .build();
   }
 
-  public static MisTabularDocumentRequest salesReport(
+  public static MisTabularDocument salesReport(
       String title,
       String shopName,
       LocalDateTime generatedAt,
       String periodLabel,
       MisSalesSummaryDto summary,
       List<MisSalesRowDto> rows) {
-    return MisTabularDocumentRequest.builder()
+    return MisTabularDocument.builder()
         .title(title)
         .shopName(shopName)
         .periodLabel(periodLabel)
@@ -172,13 +172,13 @@ public final class MisTabularDocumentFactory {
         .build();
   }
 
-  public static MisTabularDocumentRequest stockReport(
+  public static MisTabularDocument stockReport(
       String title,
       String shopName,
       LocalDateTime generatedAt,
       MisStockSummaryDto summary,
       List<MisStockRowDto> rows) {
-    List<MisDocumentKpi> kpis = new ArrayList<>();
+    List<MisKpi> kpis = new ArrayList<>();
     if (summary != null) {
       kpis.add(kpi("Lots", String.valueOf(summary.getLotCount())));
       kpis.add(kpi("On hand", MisReportSupport.money(summary.getOnHandQty())));
@@ -224,7 +224,7 @@ public final class MisTabularDocumentFactory {
       }
     }
 
-    return MisTabularDocumentRequest.builder()
+    return MisTabularDocument.builder()
         .title(title)
         .shopName(shopName)
         .periodLabel("Live snapshot")
@@ -235,8 +235,8 @@ public final class MisTabularDocumentFactory {
         .build();
   }
 
-  private static List<MisDocumentKpi> salesKpis(MisSalesSummaryDto summary) {
-    List<MisDocumentKpi> kpis = new ArrayList<>();
+  private static List<MisKpi> salesKpis(MisSalesSummaryDto summary) {
+    List<MisKpi> kpis = new ArrayList<>();
     if (summary == null) {
       return kpis;
     }
@@ -255,10 +255,10 @@ public final class MisTabularDocumentFactory {
     return kpis;
   }
 
-  private static List<MisDocumentKpi> prefixedSalesKpis(MisSalesSummaryDto summary) {
-    List<MisDocumentKpi> kpis = new ArrayList<>();
-    for (MisDocumentKpi item : salesKpis(summary)) {
-      kpis.add(kpi("Sales - " + item.getLabel(), item.getValue()));
+  private static List<MisKpi> prefixedSalesKpis(MisSalesSummaryDto summary) {
+    List<MisKpi> kpis = new ArrayList<>();
+    for (MisKpi item : salesKpis(summary)) {
+      kpis.add(kpi("Sales - " + item.label(), item.value()));
     }
     return kpis;
   }
@@ -289,8 +289,8 @@ public final class MisTabularDocumentFactory {
     return table;
   }
 
-  private static MisDocumentKpi kpi(String label, String value) {
-    return MisDocumentKpi.builder().label(label).value(value).build();
+  private static MisKpi kpi(String label, String value) {
+    return MisKpi.builder().label(label).value(value).build();
   }
 
   private static String nullToEmpty(String s) {

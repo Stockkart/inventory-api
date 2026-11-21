@@ -1,12 +1,20 @@
 package com.inventory.product.mapper;
 
-import com.inventory.reminders.rest.dto.request.CreateReminderForInventoryRequest;
-import com.inventory.reminders.rest.dto.response.InventoryLowEventDto;
+import java.time.Instant;
+import com.inventory.product.rest.dto.request.CustomReminderRequest;
+import com.inventory.reminders.api.InventoryReminderRequest;
+import com.inventory.reminders.api.InventoryLowAlert;
+import com.inventory.reminders.api.CustomReminder;
+import com.inventory.pricing.api.PricingView;
+import com.inventory.pricing.api.SchemeTerms;
 import com.inventory.product.domain.model.Inventory;
+import com.inventory.product.domain.model.VendorPurchaseInvoiceLine;
+import com.inventory.product.utils.PurchaseTaxBasis;
 import com.inventory.product.domain.model.UnitConversion;
 import com.inventory.product.rest.dto.request.CreateInventoryItemRequest;
 import com.inventory.product.rest.dto.request.CreateInventoryRequest;
 import com.inventory.product.rest.dto.response.*;
+import org.mapstruct.BeanMapping;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.ReportingPolicy;
@@ -22,6 +30,42 @@ public interface InventoryMapper {
   @Mapping(target = "vendorId", ignore = true)
   @Mapping(target = "lotId", ignore = true)
   CreateInventoryRequest toCreateInventoryRequest(CreateInventoryItemRequest source);
+
+  /** The supplier-invoice line stock-in records for an item; index and lot are set by the caller. */
+  @BeanMapping(ignoreByDefault = true)
+  @Mapping(target = "name", source = "name")
+  @Mapping(target = "barcode", source = "barcode")
+  @Mapping(target = "count", source = "count")
+  @Mapping(target = "costPrice", source = "costPrice")
+  @Mapping(target = "priceToRetail", source = "priceToRetail")
+  VendorPurchaseInvoiceLine toInvoiceLine(CreateInventoryItemRequest source);
+
+  /**
+   * The purchase side of the pricing stock-in writes for an item: cost, GST rates, purchase scheme
+   * and additional discount. Used to resolve an item's tax before it is stocked in.
+   */
+  // Written by hand since PricingView is a record; the same fields MapStruct copied before, and
+  // like before the purchase scheme is always present (its fields may all be null).
+  default PricingView toPurchasePricing(CreateInventoryItemRequest source) {
+    if (source == null) {
+      return null;
+    }
+    return PricingView.builder()
+        .purchaseScheme(new SchemeTerms(
+            source.getPurchaseSchemeType() != null ? source.getPurchaseSchemeType().name() : null,
+            source.getPurchaseSchemePayFor(),
+            source.getPurchaseSchemeFree(),
+            source.getPurchaseSchemePercentage()))
+        .costPrice(source.getCostPrice())
+        .priceToRetail(source.getPriceToRetail())
+        .sgst(source.getSgst())
+        .cgst(source.getCgst())
+        .purchaseAdditionalDiscount(source.getPurchaseAdditionalDiscount())
+        .build();
+  }
+
+  @Mapping(target = "tax", expression = "java(line.tax())")
+  PurchaseTaxPreviewLineDto toPreviewLine(PurchaseTaxBasis.Line line);
 
   default CreateInventoryRequest toCreateInventoryRequest(
       CreateInventoryItemRequest source, String vendorId, String lotId) {
@@ -181,25 +225,30 @@ public interface InventoryMapper {
   @Mapping(target = "cgst", source = "cgst")
   InventoryDetailResponse toDetail(Inventory inventory);
 
-  @Mapping(target = "shopId", source = "shopId")
-  @Mapping(target = "inventoryId", source = "inventoryId")
-  @Mapping(target = "expiryDate", ignore = true)
-  @Mapping(target = "reminderAt", source = "request.reminderAt")
-  @Mapping(target = "customReminders", source = "request.customReminders")
-  CreateReminderForInventoryRequest toCreateReminderForInventoryRequest(
-      CreateInventoryRequest request,
-      String shopId,
-      String inventoryId
-  );
+  /**
+   * Reminders for a new lot. The expiry date comes from the lot's vertical fields, so the caller
+   * passes it in. A missing list stays null; otherwise each entry is copied, a null one as null.
+   */
+  default InventoryReminderRequest toInventoryReminderRequest(
+      CreateInventoryRequest request, String shopId, String inventoryId, Instant expiryDate) {
+    List<CustomReminder> custom = null;
+    if (request != null && request.getCustomReminders() != null) {
+      custom = new ArrayList<>();
+      for (CustomReminderRequest r : request.getCustomReminders()) {
+        custom.add(r == null ? null : new CustomReminder(r.getReminderAt(), r.getEndDate(), r.getNotes()));
+      }
+    }
+    return new InventoryReminderRequest(shopId, inventoryId, expiryDate,
+        request != null ? request.getReminderAt() : null, custom);
+  }
 
-  @Mapping(target = "shopId", source = "shopId")
-  @Mapping(target = "inventoryId", source = "inventoryId")
-  @Mapping(target = "productName", source = "productName")
-  @Mapping(target = "currentCount", source = "currentCount")
-  @Mapping(target = "threshold", source = "threshold")
-  InventoryLowEventDto toNotificationEventDto(
-    InventoryEventDto source
-  );
+  default InventoryLowAlert toNotificationEventDto(InventoryEventDto source) {
+    if (source == null) {
+      return null;
+    }
+    return new InventoryLowAlert(source.getShopId(), source.getInventoryId(),
+        source.getProductName(), source.getCurrentCount(), source.getThreshold());
+  }
 
   @Mapping(target = "shopId", source = "inventory.shopId")
   @Mapping(target = "inventoryId", source = "inventory.id")

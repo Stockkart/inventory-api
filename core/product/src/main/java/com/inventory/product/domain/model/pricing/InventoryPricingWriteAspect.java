@@ -28,7 +28,9 @@ public class InventoryPricingWriteAspect {
   public Object setUpdateContext(ProceedingJoinPoint jp) throws Throwable {
     Object[] args = jp.getArgs();
     if (args.length >= 2 && args[1] instanceof UpdateInventoryRequest req) {
-      InventoryPricingContext.setUpdate(req);
+      // update(inventoryId, request, shopId, userId)
+      String userId = args.length >= 4 && args[3] instanceof String u ? u : null;
+      InventoryPricingContext.setUpdate(req, userId);
     }
     try {
       return jp.proceed();
