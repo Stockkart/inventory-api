@@ -52,6 +52,8 @@ class CampaignAdminServiceTest {
   private MongoTemplate mongoTemplate;
   @Mock
   private AuditService auditService;
+  @Mock
+  private CampaignService campaignService;
   @Spy
   private CampaignMapper campaignMapper = new CampaignMapperImpl();
   @Spy
@@ -111,6 +113,7 @@ class CampaignAdminServiceTest {
     assertThat(audit.getSource()).isEqualTo(AuditSource.ADMIN_UI);
     assertThat(audit.getBefore()).isNull();
     assertThat(audit.getAfter()).containsEntry("theme", "MONSOON").containsEntry("active", true);
+    verify(campaignService).evictActive();
   }
 
   @Test
@@ -124,6 +127,7 @@ class CampaignAdminServiceTest {
     assertThatThrownBy(() -> service.create(request().build(), "admin1"))
         .isInstanceOf(ValidationException.class);
     verify(auditService, never()).record(any());
+    verify(campaignService, never()).evictActive();
   }
 
   @Test
