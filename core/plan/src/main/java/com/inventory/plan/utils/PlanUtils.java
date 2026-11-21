@@ -54,4 +54,32 @@ public final class PlanUtils {
         java.math.RoundingMode.HALF_UP);
     return "\u20b9" + lakh.toPlainString() + "L";
   }
+
+  /**
+   * Rupees as messages show them: Indian digit grouping ("₹1,00,000"), paise only when not whole
+   * ("₹999.90").
+   */
+  public static String rupees(BigDecimal amount) {
+    BigDecimal value = amount == null ? BigDecimal.ZERO : amount;
+    boolean whole = value.stripTrailingZeros().scale() <= 0;
+    String plain = value.abs().setScale(whole ? 0 : 2, java.math.RoundingMode.HALF_UP).toPlainString();
+    int dot = plain.indexOf('.');
+    String integer = dot < 0 ? plain : plain.substring(0, dot);
+    String fraction = dot < 0 ? "" : plain.substring(dot);
+    StringBuilder grouped = new StringBuilder();
+    int len = integer.length();
+    if (len <= 3) {
+      grouped.append(integer);
+    } else {
+      String head = integer.substring(0, len - 3);
+      for (int i = 0; i < head.length(); i++) {
+        if (i > 0 && (head.length() - i) % 2 == 0) {
+          grouped.append(',');
+        }
+        grouped.append(head.charAt(i));
+      }
+      grouped.append(',').append(integer, len - 3, len);
+    }
+    return (value.signum() < 0 ? "-\u20b9" : "\u20b9") + grouped + fraction;
+  }
 }

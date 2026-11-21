@@ -2,6 +2,7 @@ package com.inventory.plan.validation;
 
 import com.inventory.common.exception.ValidationException;
 import com.inventory.plan.rest.dto.request.WalletAdjustmentRequest;
+import com.inventory.plan.utils.PlanUtils;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import org.springframework.stereotype.Component;
@@ -17,6 +18,9 @@ public class WalletAdjustmentValidator {
    * adjustments, each with its own reason.
    */
   public static final BigDecimal MAX_ADJUSTMENT = new BigDecimal("10000.00");
+
+  /** Smallest adjustment, one paisa, as stored. */
+  private static final BigDecimal MIN_ADJUSTMENT = new BigDecimal("0.01");
 
   /** Checks an adjustment and returns its amount as stored (2 decimals). */
   public BigDecimal validateAdjustment(WalletAdjustmentRequest request) {
@@ -44,10 +48,11 @@ public class WalletAdjustmentValidator {
     // checked after rounding to paise, as stored: 0.001 would otherwise reach the wallet as 0
     BigDecimal scaled = amount.setScale(2, RoundingMode.HALF_UP);
     if (scaled.signum() == 0) {
-      throw new ValidationException("Adjustment amount must be at least 0.01 either way");
+      throw new ValidationException("Adjustment amount must be at least " + PlanUtils.rupees(MIN_ADJUSTMENT) + " either way");
     }
     if (scaled.abs().compareTo(MAX_ADJUSTMENT) > 0) {
-      throw new ValidationException("A single adjustment can be at most " + MAX_ADJUSTMENT.toPlainString());
+      throw new ValidationException(
+          "A single adjustment can be at most " + PlanUtils.rupees(MAX_ADJUSTMENT) + " either way");
     }
     return scaled;
   }

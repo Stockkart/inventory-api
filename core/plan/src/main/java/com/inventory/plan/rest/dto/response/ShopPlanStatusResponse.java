@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.Instant;
+import java.util.List;
 
 @Data
 @NoArgsConstructor
@@ -20,6 +21,13 @@ public class ShopPlanStatusResponse {
   private boolean trial;
   /** Length of the free trial a new shop gets, in days ({@code plan.trial-days}). */
   private Integer trialDays;
+  /**
+   * True only when this shop could still start a free trial (it never had a plan or a trial); the
+   * plan cards show the trial badge only then.
+   */
+  private boolean trialAvailable;
+  /** What each catalogue plan's card offers this shop (current, upgrade or buy), in catalogue order. */
+  private List<PlanOptionResponse> planOptions;
   private boolean trialExpired;
   /** True when planExpiryDate is in the past (trial or paid subscription). */
   private boolean planExpired;

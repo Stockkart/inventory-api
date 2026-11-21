@@ -351,18 +351,26 @@ class OrderPricingServiceTest {
   }
 
   @Test
-  void walletPaysThePlanFirstThenAddOnsButNeverOcrTopUps() {
+  void walletPaysThePlanFirstThenAddOnsAndOcrTopUpsInCartOrder() {
     List<OrderLine> items = List.of(
         line("PLAN", "9999"),
         line("OCR_TOPUP", "499"),
         line("ADDON", "1500"));
 
-    BigDecimal applied = OrderPricingService.applyWallet(items, new BigDecimal("10500"), null);
+    BigDecimal applied = OrderPricingService.applyWallet(items, new BigDecimal("10600"), null);
 
-    assertThat(applied).isEqualByComparingTo("10500");
+    assertThat(applied).isEqualByComparingTo("10600");
     assertThat(items.get(0).getWalletCredit()).isEqualByComparingTo("9999");
-    assertThat(items.get(1).getWalletCredit()).isNull();
-    assertThat(items.get(2).getWalletCredit()).isEqualByComparingTo("501");
+    assertThat(items.get(1).getWalletCredit()).isEqualByComparingTo("499");
+    assertThat(items.get(2).getWalletCredit()).isEqualByComparingTo("102");
+  }
+
+  @Test
+  void walletPaysAScanPackOnItsOwn() {
+    List<OrderLine> items = List.of(line("OCR_TOPUP", "199"));
+
+    assertThat(OrderPricingService.applyWallet(items, new BigDecimal("300"), null)).isEqualByComparingTo("199");
+    assertThat(items.get(0).getWalletCredit()).isEqualByComparingTo("199");
   }
 
   @Test
@@ -409,7 +417,7 @@ class OrderPricingServiceTest {
   }
 
   @Test
-  void creditThePlanLineCannotTakeFlowsOnToAddOnsButNotOcrTopUps() {
+  void creditThePlanLineCannotTakeFlowsOnToAddOnsAndOcrTopUps() {
     List<OrderLine> items = List.of(
         line("PLAN", "9999"),
         line("OCR_TOPUP", "499"),
@@ -420,8 +428,8 @@ class OrderPricingServiceTest {
 
     assertThat(applied).isEqualByComparingTo("3000");
     assertThat(items.get(0).getWalletCredit()).isEqualByComparingTo("2000");
-    assertThat(items.get(1).getWalletCredit()).isNull();
-    assertThat(items.get(2).getWalletCredit()).isEqualByComparingTo("1000");
+    assertThat(items.get(1).getWalletCredit()).isEqualByComparingTo("499");
+    assertThat(items.get(2).getWalletCredit()).isEqualByComparingTo("501");
     assertThat(items.get(3).getWalletCredit()).isNull();
   }
 
