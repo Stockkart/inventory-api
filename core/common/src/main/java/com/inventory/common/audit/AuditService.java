@@ -45,11 +45,14 @@ public class AuditService {
     if (entry.getSource() == AuditSource.ADMIN_UI && entry.getActorUserId() == null) {
       throw new IllegalArgumentException("ADMIN_UI audit entries need an actor");
     }
+    if (entry.getActorType() == null) {
+      entry.setActorType(entry.getSource() == AuditSource.ADMIN_UI ? AuditActorType.USER : AuditActorType.SYSTEM);
+    }
     entry.setId(null);
     entry.setCreatedAt(Instant.now());
     AuditEntry saved = mongoTemplate.insert(entry);
-    log.info("Audit {} {} {}/{} by {}", saved.getSource(), saved.getAction(),
-        saved.getTargetType(), saved.getTargetId(), saved.getActorUserId());
+    log.info("Audit {} {} {}/{} by {} {}", saved.getSource(), saved.getAction(),
+        saved.getTargetType(), saved.getTargetId(), saved.getActorType(), saved.getActorUserId());
     return saved;
   }
 }
