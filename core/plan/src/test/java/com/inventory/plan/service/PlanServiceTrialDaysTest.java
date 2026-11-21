@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 import com.inventory.plan.api.port.ShopPort;
 import com.inventory.plan.api.port.ShopPort.ShopInfo;
 import com.inventory.plan.domain.model.Plan;
+import com.inventory.plan.domain.model.PlanAction;
 import com.inventory.plan.domain.model.Usage;
 import com.inventory.plan.domain.repository.PlanRepository;
 import com.inventory.plan.mapper.PlanMapper;
@@ -78,5 +79,26 @@ class PlanServiceTrialDaysTest {
         anyBoolean(), any(), any(), any(), anyBoolean())).thenReturn(new ShopPlanStatusResponse());
 
     assertThat(planService.getShopPlanStatus("s1").isCanBuyAddOnsAlone()).isTrue();
+  }
+
+  @Test
+  void aShopOnItsTrialCannotStartAnotherTrialAndMayBuyEveryPlan() {
+    Plan starter = new Plan();
+    starter.setId("p1");
+    when(effectivePlanResolver.activeCatalogue()).thenReturn(List.of(starter));
+    when(shopProvider.getShop("s1")).thenReturn(Optional.of(new ShopInfo("s1", null, Instant.now())));
+    when(effectivePlanResolver.trialPlan()).thenReturn(new Plan());
+    when(usageService.getOrCreateCurrentMonthUsage("s1")).thenReturn(new Usage());
+    when(planMapper.toShopPlanStatusResponse(anyString(), any(), any(), any(), anyBoolean(), anyBoolean(),
+        anyBoolean(), any(), any(), any(), anyBoolean())).thenReturn(new ShopPlanStatusResponse());
+
+    ShopPlanStatusResponse status = planService.getShopPlanStatus("s1");
+
+    assertThat(status.isTrialAvailable()).isFalse();
+    assertThat(status.getPlanOptions()).singleElement().satisfies(option -> {
+      assertThat(option.getPlanId()).isEqualTo("p1");
+      assertThat(option.getAction()).isEqualTo(PlanAction.BUY);
+      assertThat(option.isActionAvailable()).isTrue();
+    });
   }
 }
