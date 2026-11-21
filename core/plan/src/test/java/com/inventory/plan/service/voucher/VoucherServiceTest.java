@@ -39,6 +39,7 @@ class VoucherServiceTest {
   @Mock private VoucherRedemptionRepository redemptionRepository;
   @Spy private VoucherMapper voucherMapper = new VoucherMapperImpl();
   @Mock private PlanRepository planRepository;
+  @Mock private VoucherLookupRateLimiter lookupLimiter;
 
   @InjectMocks
   private VoucherService service;
@@ -79,7 +80,7 @@ class VoucherServiceTest {
     assertRejected("MKT-1", VoucherRejection.EXHAUSTED);
 
     stored(v -> v.setSingleUsePerShop(true));
-    when(redemptionRepository.existsByVoucherCodeAndShopIdAndHoldsSlotTrue("MKT-1", "shop-1")).thenReturn(true);
+    when(redemptionRepository.existsByVoucherCodeAndShopIdAndHoldsSlotTrueAndSingleUsePerShopTrue("MKT-1", "shop-1")).thenReturn(true);
     assertRejected("MKT-1", VoucherRejection.ALREADY_REDEEMED);
   }
 
@@ -148,5 +149,26 @@ class VoucherServiceTest {
   private static AddOnVoucher voucher(VoucherType type, BigDecimal value, int quantity) {
     return AddOnVoucher.builder().code("MKT-1").addOnCode("MARKETING_MODULE").type(type).value(value)
         .quantity(quantity).build();
+  }
+
+  @Test
+  void anUnknownCodeCountsAMissForTheShopAndUser() {
+    when(voucherRepository.findByCode("NOPE")).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> service.requireUsable("nope", "shop-1", "user-1"))
+        .isInstanceOf(VoucherRejectedException.class);
+
+    org.mockito.Mockito.verify(lookupLimiter).checkAllowed("shop:shop-1", "user:user-1");
+    org.mockito.Mockito.verify(lookupLimiter).recordMiss("shop:shop-1", "user:user-1");
+  }
+
+  @Test
+  void aRealCodeNeverCountsAMiss() {
+    stored(v -> {});
+
+    service.requireUsable("MKT-1", "shop-1", "user-1");
+
+    org.mockito.Mockito.verify(lookupLimiter, org.mockito.Mockito.never())
+        .recordMiss(org.mockito.ArgumentMatchers.any(String[].class));
   }
 }

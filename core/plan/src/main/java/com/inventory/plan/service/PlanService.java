@@ -1,7 +1,10 @@
 package com.inventory.plan.service;
 
 import com.inventory.plan.api.port.ShopPort;
+import com.inventory.common.constants.ErrorCode;
+import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
+import com.inventory.common.tx.MongoTx;
 import com.inventory.plan.domain.model.Plan;
 import com.inventory.plan.domain.model.PlanPaymentOrder;
 import com.inventory.plan.domain.model.PlanTransaction;
@@ -11,19 +14,20 @@ import com.inventory.plan.domain.repository.PlanTransactionRepository;
 import com.inventory.plan.domain.repository.UsageRepository;
 import com.inventory.plan.mapper.PlanMapper;
 import com.inventory.plan.mapper.PlanTransactionMapper;
-import com.inventory.plan.rest.dto.request.AssignPlanRequest;
 import com.inventory.plan.rest.dto.response.PlanResponse;
 import com.inventory.plan.rest.dto.response.ShopPlanStatusResponse;
 import com.inventory.plan.rest.dto.response.UsageResponse;
 import com.inventory.plan.api.port.ShopPort.ShopInfo;
 import com.inventory.plan.utils.PlanUtils;
 import com.inventory.plan.utils.PlanUtils;
+import com.inventory.plan.validation.PlanAdminValidator;
 import com.inventory.plan.validation.PlanValidator;
 import com.inventory.metrics.MetricsWrapper;
 import com.inventory.plan.utils.constants.PlanMetricsConstants;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -60,6 +64,9 @@ public class PlanService {
   private PlanValidator planValidator;
 
   @Autowired
+  private PlanAdminValidator planAdminValidator;
+
+  @Autowired
   private UsageService usageService;
 
   @Autowired
@@ -70,6 +77,9 @@ public class PlanService {
 
   @Autowired
   private ShopSubscriptionService shopSubscriptionService;
+
+  @Autowired
+  private MongoTx mongoTx;
   /** Free-trial length for new shops; the same setting ShopService uses at registration. */
   @Value("${plan.trial-days:3}")
   int trialDays = 3;
@@ -96,71 +106,96 @@ public class PlanService {
   }
 
   /**
-   * Assign plan to shop (called after payment). Updates shop's planId and expiryDate.
+   * Refuses a purchase of a different plan while the shop's paid plan still has days left (A2,
+   * owner decision 2026-11-21). Renewing the same plan is always allowed; a shop on its trial or
+   * with an ended plan may buy any plan. Quote and checkout both call this.
+   *
+   * @throws BaseException {@code PLAN_CHANGE_NOT_ALLOWED} (409)
    */
-  @Transactional
-  public PlanResponse assignPlan(String shopId, AssignPlanRequest request) {
-    planValidator.validateAssignPlanRequest(shopId, request);
-
-    if (shopProvider == null) {
-      throw new ResourceNotFoundException("Shop", "id", shopId);
+  public void requirePlanChangeAllowed(String shopId, Plan plan) {
+    ShopInfo shop = getShopInfo(shopId);
+    if (hasPaidDaysLeft(shop, Instant.now()) && !isSamePlan(shop.planId(), plan)) {
+      throw new BaseException(ErrorCode.PLAN_CHANGE_NOT_ALLOWED, ErrorCode.PLAN_CHANGE_NOT_ALLOWED.getMessage());
     }
-    shopProvider.getShop(shopId)
-        .orElseThrow(() -> new ResourceNotFoundException("Shop", "id", shopId));
-
-    Plan plan = planRepository.findById(request.getPlanId())
-        .orElseThrow(() -> new ResourceNotFoundException("Plan", "id", request.getPlanId()));
-
-    int durationMonths = request.getDurationMonths() != null ? request.getDurationMonths() : 1;
-    Instant expiryDate = PlanUtils.plusMonths(Instant.now(), durationMonths);
-    shopProvider.updatePlan(shopId, plan.getId(), expiryDate);
-    syncSubscription(new ShopInfo(shopId, plan.getId(), expiryDate), request.getPaymentOrderId());
-
-    PlanTransaction tx = planTransactionMapper.toTransaction(shopId, plan, request);
-    planTransactionRepository.save(tx);
-
-    log.info("Assigned plan {} to shop {} until {} (tx: {})", plan.getPlanName(), shopId, expiryDate, tx.getId());
-    metrics.record(
-        PlanMetricsConstants.ASSIGNED_TOTAL,
-        1,
-        "module",
-        PlanMetricsConstants.MODULE);
-    return planMapper.toResponse(plan);
   }
 
   /**
-   * Grants the plan an order paid for. Idempotent: an order that already has its transaction is
-   * not granted again, so a retried fulfilment cannot extend the term twice.
+   * When a newly paid term starts: at the current expiry for a renewal of the same plan with days
+   * left (so no paid day is lost), else now.
+   */
+  Instant termStart(ShopInfo shop, Plan plan, Instant now) {
+    if (hasPaidDaysLeft(shop, now) && isSamePlan(shop.planId(), plan)) {
+      return shop.planExpiryDate();
+    }
+    return now;
+  }
+
+  private static boolean hasPaidDaysLeft(ShopInfo shop, Instant now) {
+    return shop.planId() != null && !shop.planId().isBlank()
+        && shop.planExpiryDate() != null && shop.planExpiryDate().isAfter(now);
+  }
+
+  /** Same plan by id, or by code for a legacy duplicate of the same catalogue plan. */
+  private boolean isSamePlan(String currentPlanId, Plan plan) {
+    if (currentPlanId == null) {
+      return false;
+    }
+    if (currentPlanId.equals(plan.getId())) {
+      return true;
+    }
+    return plan.getCode() != null && planRepository.findById(currentPlanId)
+        .map(current -> plan.getCode().equals(current.getCode()))
+        .orElse(false);
+  }
+
+  /**
+   * Grants the plan an order paid for, in one MongoDB transaction: the plan transaction (unique per
+   * order, index {@code paymentOrderId_unique}), the shop's plan fields and its subscription. A
+   * retried or parallel fulfilment finds the transaction and grants nothing; if two attempts race,
+   * the unique index rejects the second. A renewal of the same plan extends from the current
+   * expiry instead of from now.
    */
   public void grantForOrder(PlanPaymentOrder order) {
+    try {
+      mongoTx.run(MongoTx.PLAN_GRANT, order.getShopId(), () -> grantOnce(order));
+    } catch (DuplicateKeyException e) {
+      log.info("Plan for order {} was granted by a parallel attempt", order.getId());
+    }
+  }
+
+  private void grantOnce(PlanPaymentOrder order) {
     if (planTransactionRepository.existsByPaymentOrderId(order.getId())) {
       log.info("Plan for order {} already granted", order.getId());
       return;
     }
-    if (shopProvider == null) {
-      throw new ResourceNotFoundException("Shop", "id", order.getShopId());
-    }
-    shopProvider.getShop(order.getShopId())
+    ShopInfo shop = shopProvider.getShop(order.getShopId())
         .orElseThrow(() -> new ResourceNotFoundException("Shop", "id", order.getShopId()));
     Plan plan = planRepository.findById(order.getPlanId())
         .orElseThrow(() -> new ResourceNotFoundException("Plan", "id", order.getPlanId()));
 
-    Instant termStartsAt = Instant.now();
+    Instant now = Instant.now();
+    Instant termStartsAt = termStart(shop, plan, now);
+    if (hasPaidDaysLeft(shop, now) && !isSamePlan(shop.planId(), plan)) {
+      // checkout refuses this; only a change made between checkout and payment gets here
+      log.warn("Order {} replaces plan {} of shop {} that still had days left until {}",
+          order.getId(), shop.planId(), order.getShopId(), shop.planExpiryDate());
+    }
     int durationMonths = order.getDurationMonths() != null ? order.getDurationMonths() : 1;
     Instant termEndsAt = PlanUtils.plusMonths(termStartsAt, durationMonths);
-    shopProvider.updatePlan(order.getShopId(), plan.getId(), termEndsAt);
-    syncSubscription(new ShopInfo(order.getShopId(), plan.getId(), termEndsAt), order.getId());
 
+    // the claim first: a second attempt fails on the unique index before touching the shop
     PlanTransaction tx = planTransactionMapper.toTransaction(order, plan, termStartsAt, termEndsAt);
-    planTransactionRepository.save(tx);
+    planTransactionRepository.insert(tx);
+    shopProvider.updatePlan(order.getShopId(), plan.getId(), termEndsAt);
+    shopSubscriptionService.recordGrant(new ShopInfo(order.getShopId(), plan.getId(), termEndsAt), order.getId());
 
-    log.info("Granted plan {} to shop {} until {} for order {}",
-        plan.getPlanName(), order.getShopId(), termEndsAt, order.getId());
-    metrics.record(
+    log.info("Granted plan {} to shop {} from {} until {} for order {}",
+        plan.getPlanName(), order.getShopId(), termStartsAt, termEndsAt, order.getId());
+    MongoTx.afterCommit(() -> metrics.record(
         PlanMetricsConstants.ASSIGNED_TOTAL,
         1,
         "module",
-        PlanMetricsConstants.MODULE);
+        PlanMetricsConstants.MODULE));
   }
 
   /**
@@ -200,12 +235,41 @@ public class PlanService {
   }
 
   /**
+   * An admin plan grant without payment. The same plan extends from the later of now and the
+   * current expiry, so remaining days are kept; another plan starts now and is allowed only when the
+   * shop has no paid days left ({@link PlanAdminValidator#validateGrantTarget}). Records a
+   * {@code ADMIN_GRANT} transaction with no order.
+   *
+   * @return the shop's plan and expiry before and after the grant
+   */
+  public GrantResult grantByAdmin(String shopId, Plan plan, int durationMonths) {
+    ShopInfo shop = getShopInfo(shopId);
+    Instant now = Instant.now();
+    boolean trial = shop.planId() == null || shop.planId().isBlank();
+    planAdminValidator.validateGrantTarget(shop.planId(), shop.planExpiryDate(), plan.getId(), trial, now);
+    boolean extends_ = !trial && plan.getId().equals(shop.planId())
+        && shop.planExpiryDate() != null && shop.planExpiryDate().isAfter(now);
+    Instant termStartsAt = extends_ ? shop.planExpiryDate() : now;
+    Instant termEndsAt = PlanUtils.plusMonths(termStartsAt, durationMonths);
+    shopProvider.updatePlan(shopId, plan.getId(), termEndsAt);
+    syncSubscription(new ShopInfo(shopId, plan.getId(), termEndsAt), null);
+    planTransactionRepository.save(
+        planTransactionMapper.toAdminGrantTransaction(shopId, plan, durationMonths, termStartsAt, termEndsAt, now));
+    entitlementService.invalidate(shopId);
+    log.info("Admin granted plan {} to shop {} until {}", plan.getPlanName(), shopId, termEndsAt);
+    metrics.record(PlanMetricsConstants.ASSIGNED_TOTAL, 1, "module", PlanMetricsConstants.MODULE);
+    return new GrantResult(shop.planId(), shop.planExpiryDate(), plan.getId(), termEndsAt);
+  }
+
+  /** Plan and expiry of a shop before and after an admin grant. */
+  public record GrantResult(String planIdBefore, Instant expiresAtBefore, String planIdAfter, Instant expiresAtAfter) {}
+
+  /**
    * Get shop's plan status: plan, trial/expired, usage, suggested upsell plan.
    */
   @Transactional(readOnly = true)
   public ShopPlanStatusResponse getShopPlanStatus(String shopId) {
     ShopInfo shopInfo = getShopInfo(shopId);
-    syncSubscription(shopInfo, null);
 
     Plan plan = null;
     if (shopInfo.planId() != null && !shopInfo.planId().isBlank()) {
@@ -249,15 +313,11 @@ public class PlanService {
   }
 
   /**
-   * Shop fields remain authoritative until read paths move to ShopSubscription, so a failed sync
-   * must not fail the caller; the next sync or the backfill repairs it.
+   * Entitlements are read from the subscription, so a change whose sync failed is not finished: the
+   * error propagates and the payment fulfilment step runs again. Reads never write it.
    */
   private void syncSubscription(ShopInfo shopInfo, String sourceOrderId) {
-    try {
-      shopSubscriptionService.sync(shopInfo, sourceOrderId);
-    } catch (RuntimeException e) {
-      log.warn("Shop subscription sync failed for shop {}: {}", shopInfo.shopId(), e.getMessage());
-    }
+    shopSubscriptionService.sync(shopInfo, sourceOrderId);
   }
 
   private ShopInfo getShopInfo(String shopId) {

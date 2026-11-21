@@ -39,6 +39,9 @@ public class VoucherService {
   @Autowired
   private VoucherMapper voucherMapper;
 
+  @Autowired
+  private VoucherLookupRateLimiter lookupLimiter;
+
   Clock clock = Clock.systemUTC();
 
   public static String normalise(String code) {
@@ -47,9 +50,23 @@ public class VoucherService {
 
   /** The voucher if {@code shopId} may use it now, else a typed rejection. */
   public AddOnVoucher requireUsable(String rawCode, String shopId) {
+    return requireUsable(rawCode, shopId, null);
+  }
+
+  /**
+   * As {@link #requireUsable(String, String)}; unknown codes count against the shop and the user
+   * ({@link VoucherLookupRateLimiter}), and too many of them answer 429.
+   */
+  public AddOnVoucher requireUsable(String rawCode, String shopId, String userId) {
     String code = normalise(rawCode);
-    AddOnVoucher voucher = voucherRepository.findByCode(code)
-        .orElseThrow(() -> new VoucherRejectedException(code, VoucherRejection.NOT_FOUND, "Voucher " + code + " does not exist"));
+    String shopKey = VoucherLookupRateLimiter.shopKey(shopId);
+    String userKey = VoucherLookupRateLimiter.userKey(userId);
+    lookupLimiter.checkAllowed(shopKey, userKey);
+    AddOnVoucher voucher = voucherRepository.findByCode(code).orElse(null);
+    if (voucher == null) {
+      lookupLimiter.recordMiss(shopKey, userKey);
+      throw new VoucherRejectedException(code, VoucherRejection.NOT_FOUND, "Voucher " + code + " does not exist");
+    }
     Instant now = clock.instant();
     if (!voucher.isActive()) {
       throw reject(code, VoucherRejection.INACTIVE, "Voucher " + code + " is no longer active");
@@ -66,7 +83,7 @@ public class VoucherService {
       throw reject(code, VoucherRejection.EXHAUSTED, "Voucher " + code + " has been fully used");
     }
     if (voucher.isSingleUsePerShop() && StringUtils.hasText(shopId)
-        && redemptionRepository.existsByVoucherCodeAndShopIdAndHoldsSlotTrue(code, shopId)) {
+        && redemptionRepository.existsByVoucherCodeAndShopIdAndHoldsSlotTrueAndSingleUsePerShopTrue(code, shopId)) {
       throw reject(code, VoucherRejection.ALREADY_REDEEMED, "You have already used voucher " + code);
     }
     return voucher;
@@ -74,8 +91,13 @@ public class VoucherService {
 
   /** Non-consuming check for the checkout form. */
   public VoucherCheckResponse check(String rawCode, String shopId) {
+    return check(rawCode, shopId, null);
+  }
+
+  /** Non-consuming check for the checkout form; unknown codes count against shop and user. */
+  public VoucherCheckResponse check(String rawCode, String shopId, String userId) {
     try {
-      AddOnVoucher voucher = requireUsable(rawCode, shopId);
+      AddOnVoucher voucher = requireUsable(rawCode, shopId, userId);
       VoucherCheckResponse response = voucherMapper.toCheckResponse(voucher, true, null);
       if (voucher.isPlanVoucher()) {
         response.setPlanName(planRepository.findByCode(voucher.getPlanCode())

@@ -17,6 +17,8 @@ public class PlanCheckoutResponse {
 
   private String orderId;
   private String status;
+  /** What the status means for the buyer; open the gateway only when AWAITING_PAYMENT. */
+  private com.inventory.plan.domain.model.OrderPhase phase;
   private String provider;
   /** Amount charged, after discounts and wallet credit. */
   private BigDecimal amount;

@@ -42,8 +42,10 @@ public class VoucherAdminController {
   public ResponseEntity<ApiResponse<List<AdminVoucherResponse>>> list(
       @RequestParam(required = false) String addOnCode,
       @RequestParam(required = false) String planCode,
-      @RequestParam(required = false) VoucherTarget target) {
-    return ResponseEntity.ok(ApiResponse.success(voucherAdminService.list(addOnCode, planCode, target)));
+      @RequestParam(required = false) VoucherTarget target,
+      @RequestParam(required = false) Integer page,
+      @RequestParam(required = false) Integer size) {
+    return ResponseEntity.ok(ApiResponse.success(voucherAdminService.list(addOnCode, planCode, target, page, size)));
   }
 
   /** Read-only figures for the generate form; saves nothing. */

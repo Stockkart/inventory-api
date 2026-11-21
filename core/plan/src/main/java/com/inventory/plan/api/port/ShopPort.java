@@ -21,6 +21,9 @@ public interface ShopPort {
 
   Optional<ReferralShop> getReferralShop(String shopId);
 
+  /** Referral info of several shops in one read; unknown ids are left out. */
+  java.util.List<ReferralShop> referralShops(java.util.Collection<String> shopIds);
+
   /** Minimal shop info needed for plan/usage logic. */
   record ShopInfo(String shopId, String planId, Instant planExpiryDate) {}
 

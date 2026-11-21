@@ -3,6 +3,8 @@ package com.inventory.plan.service.voucher;
 import com.inventory.common.audit.AuditEntry;
 import com.inventory.common.audit.AuditService;
 import com.inventory.common.audit.AuditSource;
+import com.inventory.common.constants.ErrorCode;
+import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.plan.domain.model.AddOn;
@@ -39,6 +41,8 @@ import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -58,7 +62,8 @@ public class VoucherAdminService {
   static final String TARGET_TYPE = "ADD_ON_VOUCHER";
   /** No 0/O or 1/I, so codes survive being read out over the phone. */
   private static final char[] ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".toCharArray();
-  private static final int RANDOM_LENGTH = 6;
+  /** 31^10 codes per prefix, so guessing one is impractical even before the lookup limiter. */
+  static final int RANDOM_LENGTH = 10;
   private static final int MAX_CODE_ATTEMPTS = 5;
   private static final Sort NEWEST_FIRST = Sort.by(Sort.Direction.DESC, "createdAt");
 
@@ -90,20 +95,28 @@ public class VoucherAdminService {
 
   Clock clock = Clock.systemUTC();
 
-  /** At most one filter applies, in the order planCode, addOnCode, target, none. */
-  public List<AdminVoucherResponse> list(String addOnCode, String planCode, VoucherTarget target) {
+  public static final int DEFAULT_PAGE_SIZE = 100;
+
+  /**
+   * Newest first, one page at a time (page from 0; size 1-500, default 100). At most one filter
+   * applies, in the order planCode, addOnCode, target, none.
+   */
+  public List<AdminVoucherResponse> list(String addOnCode, String planCode, VoucherTarget target,
+      Integer page, Integer size) {
+    validator.validatePage(page, size);
+    Pageable pageable = PageRequest.of(page != null ? page : 0, size != null ? size : DEFAULT_PAGE_SIZE, NEWEST_FIRST);
     List<AddOnVoucher> vouchers;
     if (StringUtils.hasText(planCode)) {
-      vouchers = voucherRepository.findByPlanCode(planCode.trim().toUpperCase(Locale.ROOT), NEWEST_FIRST);
+      vouchers = voucherRepository.findByPlanCode(planCode.trim().toUpperCase(Locale.ROOT), pageable);
     } else if (StringUtils.hasText(addOnCode)) {
-      vouchers = voucherRepository.findByAddOnCode(addOnCode.trim().toUpperCase(Locale.ROOT), NEWEST_FIRST);
+      vouchers = voucherRepository.findByAddOnCode(addOnCode.trim().toUpperCase(Locale.ROOT), pageable);
     } else if (target == VoucherTarget.PLAN) {
-      vouchers = voucherRepository.findByTarget(VoucherTarget.PLAN, NEWEST_FIRST);
+      vouchers = voucherRepository.findByTarget(VoucherTarget.PLAN, pageable);
     } else if (target == VoucherTarget.ADD_ON) {
       // Legacy vouchers have no target stored; "not PLAN" matches them as well as ADD_ON.
-      vouchers = voucherRepository.findByTargetNot(VoucherTarget.PLAN, NEWEST_FIRST);
+      vouchers = voucherRepository.findByTargetNot(VoucherTarget.PLAN, pageable);
     } else {
-      vouchers = voucherRepository.findAll(NEWEST_FIRST);
+      vouchers = voucherRepository.findAll(pageable).getContent();
     }
     Map<String, String> planNames = vouchers.stream().anyMatch(AddOnVoucher::isPlanVoucher)
         ? planNamesByCode() : Map.of();
@@ -139,23 +152,34 @@ public class VoucherAdminService {
         : letters.substring(0, Math.min(3, letters.length()));
     Instant now = clock.instant();
 
+    // All or none: if any insert fails, the batch's earlier vouchers are removed again. Not a MongoTx:
+    // a generated code that collides is retried, and a failed write would abort the transaction.
     List<AddOnVoucher> created = new ArrayList<>();
-    for (int i = 0; i < count; i++) {
-      AddOnVoucher voucher = voucherMapper.toEntity(request);
-      if (forPlan) {
-        voucher.setTarget(VoucherTarget.PLAN);
-        voucher.setPlanCode(targetCode);
-        voucher.setAddOnCode(null);
-      } else {
-        voucher.setAddOnCode(targetCode);
+    try {
+      for (int i = 0; i < count; i++) {
+        AddOnVoucher voucher = voucherMapper.toEntity(request);
+        if (forPlan) {
+          voucher.setTarget(VoucherTarget.PLAN);
+          voucher.setPlanCode(targetCode);
+          voucher.setAddOnCode(null);
+        } else {
+          voucher.setAddOnCode(targetCode);
+        }
+        voucher.setBatchId(batchId);
+        voucher.setCreatedByUserId(actorUserId);
+        voucher.setCreatedAt(now);
+        voucher.setUpdatedAt(now);
+        created.add(StringUtils.hasText(request.getCode())
+            ? insertWithCode(voucher, request.getCode().trim().toUpperCase(Locale.ROOT))
+            : insertWithGeneratedCode(voucher, prefix));
       }
-      voucher.setBatchId(batchId);
-      voucher.setCreatedByUserId(actorUserId);
-      voucher.setCreatedAt(now);
-      voucher.setUpdatedAt(now);
-      created.add(StringUtils.hasText(request.getCode())
-          ? insertWithCode(voucher, request.getCode().trim().toUpperCase(Locale.ROOT))
-          : insertWithGeneratedCode(voucher, prefix));
+    } catch (RuntimeException e) {
+      if (!created.isEmpty()) {
+        mongoTemplate.remove(new Query(Criteria.where("batchId").is(batchId)), AddOnVoucher.class);
+        log.warn("Voucher batch {} for {} stopped after {} of {}; removed them again", batchId, targetCode,
+            created.size(), count);
+      }
+      throw e;
     }
 
     Map<String, Object> after = new LinkedHashMap<>();
@@ -246,11 +270,17 @@ public class VoucherAdminService {
       criteria = criteria.andOperator(Criteria.expr(ComparisonOperators.Lte.valueOf(
           ArithmeticOperators.Add.valueOf("reservedCount").add("redemptionCount")).lessThanEqualToValue(request.getMaxRedemptions())));
     }
-    Update update = new Update()
-        .set("validTo", request.getValidTo())
-        .set("maxRedemptions", request.getMaxRedemptions())
-        .set("note", request.getNote())
-        .set("updatedAt", clock.instant());
+    // only the fields the request sends; an omitted field keeps its value
+    Update update = new Update().set("updatedAt", clock.instant());
+    if (request.getValidTo() != null) {
+      update.set("validTo", request.getValidTo());
+    }
+    if (request.getMaxRedemptions() != null) {
+      update.set("maxRedemptions", request.getMaxRedemptions());
+    }
+    if (request.getNote() != null) {
+      update.set("note", request.getNote());
+    }
     AddOnVoucher before = mongoTemplate.findAndModify(new Query(criteria), update,
         FindAndModifyOptions.options().returnNew(false), AddOnVoucher.class);
     if (before == null) {
@@ -305,7 +335,8 @@ public class VoucherAdminService {
         log.debug("Generated voucher code {} already exists; retrying", voucher.getCode());
       }
     }
-    throw new IllegalStateException("Could not generate a unique voucher code after " + MAX_CODE_ATTEMPTS + " attempts");
+    throw new BaseException(ErrorCode.DUPLICATE_RESOURCE,
+        "Could not generate a unique voucher code after " + MAX_CODE_ATTEMPTS + " attempts; try again");
   }
 
   private String randomPart() {

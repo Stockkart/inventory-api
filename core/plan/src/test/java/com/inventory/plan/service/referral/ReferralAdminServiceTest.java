@@ -3,6 +3,7 @@ package com.inventory.plan.service.referral;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
@@ -27,6 +28,9 @@ import com.inventory.plan.rest.dto.request.WalletAdjustmentRequest;
 import com.inventory.plan.rest.dto.response.AdminReferralAttributionResponse;
 import com.inventory.plan.rest.dto.response.AdminReferralRewardResponse;
 import com.inventory.plan.api.port.ShopPort;
+import com.inventory.plan.rest.dto.response.WalletAdjustmentPreviewResponse;
+import com.inventory.plan.service.wallet.WalletBalances;
+import com.inventory.plan.validation.WalletAdjustmentValidator;
 import com.inventory.plan.service.wallet.WalletService;
 import com.inventory.plan.utils.constants.PlanPaymentConstants;
 import java.math.BigDecimal;
@@ -62,6 +66,7 @@ class ReferralAdminServiceTest {
   @Mock private ShopPort shopProvider;
   @Mock private AuditService auditService;
   @Spy private ReferralAdminMapper mapper = new ReferralAdminMapperImpl();
+  @Spy private WalletAdjustmentValidator walletAdjustmentValidator = new WalletAdjustmentValidator();
 
   @InjectMocks
   private ReferralAdminService service;
@@ -71,6 +76,8 @@ class ReferralAdminServiceTest {
     service.clock = Clock.fixed(NOW, ZoneOffset.UTC);
     lenient().when(shopProvider.getReferralShop(anyString())).thenAnswer(inv -> Optional.of(
         new ShopPort.ReferralShop(inv.getArgument(0), "Shop " + inv.getArgument(0), null, null, null)));
+    lenient().when(shopProvider.referralShops(anyCollection())).thenAnswer(inv -> ((java.util.Collection<String>) inv
+        .getArgument(0)).stream().map(id -> new ShopPort.ReferralShop(id, "Shop " + id, null, null, null)).toList());
   }
 
   private static ReferralAttribution pending(String referrerShopId) {
@@ -189,7 +196,7 @@ class ReferralAdminServiceTest {
   void debitBeyondAvailableIsRejected() {
     when(shopProvider.getShop("s1")).thenReturn(Optional.of(new ShopPort.ShopInfo("s1", null, null)));
     when(walletService.available("s1")).thenReturn(new BigDecimal("50.00"));
-    when(walletService.adjust(eq("s1"), eq(new BigDecimal("-80")), eq("adj-1"), eq("correction"), eq("admin")))
+    when(walletService.adjust(eq("s1"), eq(new BigDecimal("-80.00")), eq("adj-1"), eq("correction"), eq("admin")))
         .thenReturn(WalletService.Outcome.REJECTED);
 
     assertThatThrownBy(() -> service.adjustWallet("s1",
@@ -213,5 +220,48 @@ class ReferralAdminServiceTest {
     ArgumentCaptor<AuditEntry> audit = ArgumentCaptor.forClass(AuditEntry.class);
     verify(auditService).record(audit.capture());
     assertThat(audit.getValue().getAction()).isEqualTo("WALLET_ADJUSTED");
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(strings = {"0.001", "-0.004", "10000.01", "-25000"})
+  void adjustmentsThatRoundToNothingOrPassTheMaximumAreRejected(String amount) {
+    assertThatThrownBy(() -> service.adjustWallet("s1",
+        new WalletAdjustmentRequest(new BigDecimal(amount), "fix", null), "admin"))
+        .isInstanceOf(ValidationException.class);
+    verify(walletService, never()).adjust(any(), any(), any(), any(), any());
+  }
+
+  @Test
+  void aPreviewShowsTheCurrentAndResultingBalance() {
+    when(shopProvider.getShop("s1")).thenReturn(Optional.of(new ShopPort.ShopInfo("s1", null, null)));
+    when(walletService.available("s1")).thenReturn(new BigDecimal("50.00"));
+    when(walletService.previewAdjustment("s1", new BigDecimal("-20.00")))
+        .thenReturn(Optional.of(new WalletBalances(new BigDecimal("30"), BigDecimal.ZERO, BigDecimal.ZERO)));
+    when(walletService.previewAdjustment("s1", new BigDecimal("-80.00"))).thenReturn(Optional.empty());
+
+    WalletAdjustmentPreviewResponse ok = service.previewWalletAdjustment("s1",
+        new WalletAdjustmentRequest(new BigDecimal("-20"), null, null));
+    WalletAdjustmentPreviewResponse tooMuch = service.previewWalletAdjustment("s1",
+        new WalletAdjustmentRequest(new BigDecimal("-80"), null, null));
+
+    assertThat(ok.getCurrentBalance()).isEqualByComparingTo("50");
+    assertThat(ok.getResultingBalance()).isEqualByComparingTo("30");
+    assertThat(ok.isAllowed()).isTrue();
+    assertThat(tooMuch.isAllowed()).isFalse();
+    assertThat(tooMuch.getResultingBalance()).isEqualByComparingTo("50");
+    assertThat(ok.getMaxAdjustment()).isEqualByComparingTo(WalletAdjustmentValidator.MAX_ADJUSTMENT);
+    verify(walletService, never()).adjust(any(), any(), any(), any(), any());
+  }
+
+  @Test
+  void theRewardListReadsShopNamesInOneQuery() {
+    when(rewardRepository.findByStatusOrderByCreatedAtDesc(eq(ReferralRewardStatus.PENDING), any()))
+        .thenReturn(java.util.List.of(reward(ReferralRewardStatus.PENDING), reward(ReferralRewardStatus.PENDING)));
+
+    assertThat(service.listRewards(ReferralRewardStatus.PENDING))
+        .extracting("referrerShopName").containsExactly("Shop referrer", "Shop referrer");
+
+    verify(shopProvider).referralShops(java.util.Set.of("referrer", "referee"));
+    verify(shopProvider, never()).getReferralShop(anyString());
   }
 }

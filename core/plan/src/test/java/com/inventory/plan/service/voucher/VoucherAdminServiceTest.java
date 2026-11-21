@@ -42,7 +42,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.core.MongoTemplate;
 
 @ExtendWith(MockitoExtension.class)
@@ -198,22 +198,22 @@ class VoucherAdminServiceTest {
   @Test
   void listFiltersByPlanCode() {
     AddOnVoucher voucher = AddOnVoucher.builder().code("STA-1").target(VoucherTarget.PLAN).planCode("STARTER").build();
-    when(voucherRepository.findByPlanCode(eq("STARTER"), any(Sort.class))).thenReturn(List.of(voucher));
+    when(voucherRepository.findByPlanCode(eq("STARTER"), any(Pageable.class))).thenReturn(List.of(voucher));
     when(planRepository.findAll()).thenReturn(List.of(starter("7999", "4999")));
 
-    List<AdminVoucherResponse> result = service.list(null, " starter ", null);
+    List<AdminVoucherResponse> result = service.list(null, " starter ", null, null, null);
 
     assertThat(result).hasSize(1);
     assertThat(result.get(0).getPlanName()).isEqualTo("Starter");
-    verify(voucherRepository, never()).findAll(any(Sort.class));
+    verify(voucherRepository, never()).findAll(any(Pageable.class));
   }
 
   @Test
   void listByAddOnTargetIncludesLegacyNullTargetVouchers() {
     AddOnVoucher legacy = AddOnVoucher.builder().code("OLD-1").addOnCode("EXTRA_SMS").build();
-    when(voucherRepository.findByTargetNot(eq(VoucherTarget.PLAN), any(Sort.class))).thenReturn(List.of(legacy));
+    when(voucherRepository.findByTargetNot(eq(VoucherTarget.PLAN), any(Pageable.class))).thenReturn(List.of(legacy));
 
-    List<AdminVoucherResponse> result = service.list(null, null, VoucherTarget.ADD_ON);
+    List<AdminVoucherResponse> result = service.list(null, null, VoucherTarget.ADD_ON, null, null);
 
     assertThat(result).hasSize(1);
     assertThat(result.get(0).getTarget()).isEqualTo(VoucherTarget.ADD_ON);
@@ -221,11 +221,11 @@ class VoucherAdminServiceTest {
 
   @Test
   void listByPlanTargetAndNoFilter() {
-    when(voucherRepository.findByTarget(eq(VoucherTarget.PLAN), any(Sort.class))).thenReturn(List.of());
-    when(voucherRepository.findAll(any(Sort.class))).thenReturn(List.of());
+    when(voucherRepository.findByTarget(eq(VoucherTarget.PLAN), any(Pageable.class))).thenReturn(List.of());
+    when(voucherRepository.findAll(any(Pageable.class))).thenReturn(new org.springframework.data.domain.PageImpl<>(List.of()));
 
-    assertThat(service.list(null, null, VoucherTarget.PLAN)).isEmpty();
-    assertThat(service.list(null, null, null)).isEmpty();
+    assertThat(service.list(null, null, VoucherTarget.PLAN, null, null)).isEmpty();
+    assertThat(service.list(null, null, null, null, null)).isEmpty();
   }
 
   @Test
@@ -236,9 +236,9 @@ class VoucherAdminServiceTest {
     legacyB.setPlanName("Old B");
     when(planRepository.findAll()).thenReturn(List.of(legacyA, legacyB, starter("7999", "4999")));
     AddOnVoucher voucher = AddOnVoucher.builder().code("STA-1").target(VoucherTarget.PLAN).planCode("STARTER").build();
-    when(voucherRepository.findAll(any(Sort.class))).thenReturn(List.of(voucher));
+    when(voucherRepository.findAll(any(Pageable.class))).thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(voucher)));
 
-    assertThat(service.list(null, null, null).get(0).getPlanName()).isEqualTo("Starter");
+    assertThat(service.list(null, null, null, null, null).get(0).getPlanName()).isEqualTo("Starter");
   }
 
   private void echoInserts() {

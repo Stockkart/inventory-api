@@ -28,8 +28,9 @@ import org.springframework.util.StringUtils;
 
 /**
  * The one refund path (r4.6). Gateway refunds, lost disputes and admin refunds all end here: the order
- * moves to REFUNDED, then each {@link OrderRefundStep} undoes part of fulfilment. Vouchers stay
- * redeemed: a refund does not hand the slot back, so a capped voucher cannot be cycled.
+ * moves to REFUNDED, then each {@link OrderRefundStep} undoes part of fulfilment. Redeemed vouchers
+ * stay redeemed: a refund does not hand the slot back, so a capped voucher cannot be cycled. A slot
+ * fulfilment never redeemed (still RESERVED) is released ({@link VoucherRefundStep}).
  *
  * <p>A partial gateway refund is counted on the order and audited but leaves its grants alone; an
  * operator decides, and can finish it with an admin refund that issues nothing further.
@@ -70,8 +71,8 @@ public class OrderRefundService {
     }
     PlanPaymentOrder order = found.get();
     if (event.effectiveEventType() == WebhookHandleResult.EventType.DISPUTE_LOST) {
-      return Optional.of(reverse(order, RefundSource.GATEWAY_DISPUTE,
-          "Chargeback lost (" + event.getProviderRefundId() + ")", null));
+      return Optional.of(reverseForGateway(order, RefundSource.GATEWAY_DISPUTE,
+          "Chargeback lost (" + event.getProviderRefundId() + ")"));
     }
     if (!StringUtils.hasText(event.getProviderRefundId()) || event.getAmount() == null) {
       log.warn("Refund event for order {} has no refund id or amount; ignored", order.getId());
@@ -81,8 +82,8 @@ public class OrderRefundService {
         stateService.recordGatewayRefund(order.getId(), event.getProviderRefundId(), event.getAmount(), clock.instant());
     PlanPaymentOrder current = counted.orElseGet(() -> reload(order.getId()));
     if (PlanPaymentConstants.STATUS_REFUNDED.equals(current.getStatus()) || refundedInFull(current)) {
-      return Optional.of(reverse(current, RefundSource.GATEWAY_REFUND,
-          "Gateway refund " + event.getProviderRefundId(), null));
+      return Optional.of(reverseForGateway(current, RefundSource.GATEWAY_REFUND,
+          "Gateway refund " + event.getProviderRefundId()));
     }
     if (counted.isPresent()) {
       log.warn("Order {} partly refunded ({} of {}); grants kept, needs an operator",
@@ -118,6 +119,26 @@ public class OrderRefundService {
       stateService.recordGatewayRefund(order.getId(), refundId, outstanding, clock.instant());
     }
     return reverse(order, RefundSource.ADMIN, reason.trim(), actorUserId);
+  }
+
+  /**
+   * {@link #reverse} for a gateway event. An order that can never be refunded (never paid, expired,
+   * cancelled) is recorded and audited instead, and the event answered normally: throwing would make
+   * the gateway resend it forever. FULFILLING still throws, so the gateway retries once it settles.
+   */
+  private PlanPaymentOrder reverseForGateway(PlanPaymentOrder order, RefundSource source, String reason) {
+    String status = order.getStatus();
+    boolean reversible = PlanPaymentConstants.REFUNDABLE_STATUSES.contains(status)
+        || PlanPaymentConstants.STATUS_REFUNDED.equals(status)
+        || PlanPaymentConstants.STATUS_FULFILLING.equals(status);
+    if (reversible) {
+      return reverse(order, source, reason, null);
+    }
+    log.error("{} for order {} of shop {} arrived while the order is {}; not applied, needs an operator",
+        reason, order.getId(), order.getShopId(), status);
+    audit("PLAN_ORDER_GATEWAY_REFUND_NOT_APPLIED", order, null, AuditSource.SYSTEM,
+        reason + " (order was " + status + ")");
+    return order;
   }
 
   /**

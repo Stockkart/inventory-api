@@ -83,6 +83,24 @@ class VoucherAdminValidatorTest {
     assertInvalid(base().planCode("STARTER").build());
   }
 
+  @Test
+  void aFlatDiscountHasAtMostTwoDecimals() {
+    assertThatCode(() -> validator.validateGenerate(base().type(VoucherType.FLAT_OFF).value(new BigDecimal("99.50")).build()))
+        .doesNotThrowAnyException();
+    assertThatCode(() -> validator.validateGenerate(base().type(VoucherType.FLAT_OFF).value(new BigDecimal("10.000")).build()))
+        .doesNotThrowAnyException();
+    assertInvalid(base().type(VoucherType.FLAT_OFF).value(new BigDecimal("0.001")).build());
+  }
+
+  @Test
+  void pagesAreBounded() {
+    assertThatCode(() -> validator.validatePage(null, null)).doesNotThrowAnyException();
+    assertThatCode(() -> validator.validatePage(3, 500)).doesNotThrowAnyException();
+    assertThatThrownBy(() -> validator.validatePage(-1, 10)).isInstanceOf(ValidationException.class);
+    assertThatThrownBy(() -> validator.validatePage(0, 501)).isInstanceOf(ValidationException.class);
+    assertThatThrownBy(() -> validator.validatePage(0, 0)).isInstanceOf(ValidationException.class);
+  }
+
   private void assertInvalid(VoucherGenerateRequest request) {
     assertThatThrownBy(() -> validator.validateGenerate(request)).isInstanceOf(ValidationException.class);
   }

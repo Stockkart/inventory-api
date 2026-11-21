@@ -49,8 +49,8 @@ class AdminBootstrapTest {
   }
 
   @Test
-  void createsMissingAdminsWithAForcedPasswordChange() {
-    configure("ops@stockkart.in,dev@x.io", "bootstrap-pass-1");
+  void createsMissingAdminsWithTheirOwnOneTimePasswordAndAForcedChange() {
+    configure("ops@stockkart.in,dev@x.io");
     when(adminUserRepository.existsByEmail("ops@stockkart.in")).thenReturn(false);
     when(adminUserRepository.existsByEmail("dev@x.io")).thenReturn(true);
     when(adminUserRepository.save(any(AdminUser.class))).thenAnswer(i -> {
@@ -67,7 +67,7 @@ class AdminBootstrapTest {
     assertThat(saved.getValue().getName()).isEqualTo("ops");
     assertThat(saved.getValue().isActive()).isTrue();
     assertThat(saved.getValue().isMustChangePassword()).isTrue();
-    assertThat(passwordEncoder.matches("bootstrap-pass-1", saved.getValue().getPasswordHash())).isTrue();
+    assertThat(saved.getValue().getPasswordHash()).isNotBlank();
 
     ArgumentCaptor<AuditEntry> audit = ArgumentCaptor.forClass(AuditEntry.class);
     verify(auditService).record(audit.capture());
@@ -76,18 +76,25 @@ class AdminBootstrapTest {
   }
 
   @Test
-  void createsNothingWithoutAUsablePassword() {
-    configure("ops@stockkart.in", "");
-    bootstrap.onStartup();
-    configure("ops@stockkart.in", "short");
+  void everyNewAdminGetsADifferentPassword() {
+    configure("a@stockkart.in,b@stockkart.in");
+    when(adminUserRepository.save(any(AdminUser.class))).thenAnswer(i -> {
+      AdminUser admin = i.getArgument(0);
+      admin.setId(admin.getEmail());
+      return admin;
+    });
+
     bootstrap.onStartup();
 
-    verifyNoInteractions(adminUserRepository, auditService);
+    ArgumentCaptor<CharSequence> raw = ArgumentCaptor.forClass(CharSequence.class);
+    verify(passwordEncoder, times(2)).encode(raw.capture());
+    assertThat(raw.getAllValues().get(0).toString()).hasSize(16)
+        .isNotEqualTo(raw.getAllValues().get(1).toString());
   }
 
   @Test
   void doesNothingWhenNoEmailsConfigured() {
-    configure("", "bootstrap-pass-1");
+    configure("");
 
     bootstrap.onStartup();
 
@@ -96,7 +103,7 @@ class AdminBootstrapTest {
 
   @Test
   void concurrentInstanceWinningTheInsertIsNotAnError() {
-    configure("ops@stockkart.in", "bootstrap-pass-1");
+    configure("ops@stockkart.in");
     when(adminUserRepository.save(any(AdminUser.class))).thenThrow(new DuplicateKeyException("dup"));
 
     bootstrap.onStartup();
@@ -104,8 +111,7 @@ class AdminBootstrapTest {
     verify(auditService, never()).record(any());
   }
 
-  private void configure(String emails, String password) {
+  private void configure(String emails) {
     ReflectionTestUtils.setField(bootstrap, "adminEmails", emails);
-    ReflectionTestUtils.setField(bootstrap, "bootstrapPassword", password);
   }
 }

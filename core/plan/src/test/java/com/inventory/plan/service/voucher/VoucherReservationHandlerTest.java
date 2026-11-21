@@ -41,6 +41,9 @@ class VoucherReservationHandlerTest {
   @Mock private MongoTemplate mongoTemplate;
   @Mock private AddOnVoucherRepository voucherRepository;
   @Mock private VoucherRedemptionRepository redemptionRepository;
+  /** Transactions off: runs each callback directly, as with mongo.transactions.enabled=false. */
+  @org.mockito.Spy private com.inventory.common.tx.MongoTx mongoTx = new com.inventory.common.tx.MongoTx(
+      org.mockito.Mockito.mock(org.springframework.data.mongodb.MongoDatabaseFactory.class), false, 1, 1, 0);
 
   @InjectMocks
   private VoucherReservationHandler handler;
@@ -132,6 +135,22 @@ class VoucherReservationHandlerTest {
     ArgumentCaptor<Update> counters = ArgumentCaptor.forClass(Update.class);
     verify(mongoTemplate, times(1)).updateFirst(any(Query.class), counters.capture(), eq(AddOnVoucher.class));
     assertThat(counters.getValue().getUpdateObject().toString()).contains("reservedCount=-1").contains("redemptionCount=1");
+    // the status change and the counters run together, once per redemption still reserved
+    verify(mongoTx, times(1)).run(eq(VoucherReservationHandler.SLOT_FLOW), eq("shop-1"),
+        any(java.util.function.Supplier.class));
+  }
+
+  @Test
+  void releaseRunsTheRowAndCounterInOneTransactionPerSlot() {
+    when(redemptionRepository.findByOrderId("order-1")).thenReturn(List.of(
+        VoucherRedemption.builder().id("r-1").voucherId("v-1").shopId("shop-1")
+            .status(VoucherRedemptionStatus.RESERVED).build()));
+    when(mongoTemplate.updateFirst(any(Query.class), any(Update.class), eq(VoucherRedemption.class))).thenReturn(updated(1));
+
+    handler.release(order());
+
+    verify(mongoTx).run(eq(VoucherReservationHandler.SLOT_FLOW), eq("shop-1"), any(java.util.function.Supplier.class));
+    verify(mongoTemplate).updateFirst(any(Query.class), any(Update.class), eq(AddOnVoucher.class));
   }
 
   @Test

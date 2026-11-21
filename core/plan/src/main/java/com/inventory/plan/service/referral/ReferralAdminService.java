@@ -18,6 +18,9 @@ import com.inventory.plan.rest.dto.response.AdminReferralAttributionResponse;
 import com.inventory.plan.rest.dto.response.AdminReferralRewardResponse;
 import com.inventory.plan.rest.dto.response.WalletResponse;
 import com.inventory.plan.api.port.ShopPort;
+import com.inventory.plan.rest.dto.response.WalletAdjustmentPreviewResponse;
+import com.inventory.plan.service.wallet.WalletBalances;
+import com.inventory.plan.validation.WalletAdjustmentValidator;
 import com.inventory.plan.service.wallet.WalletService;
 import com.inventory.plan.utils.constants.PlanPaymentConstants;
 import java.math.BigDecimal;
@@ -82,12 +85,18 @@ public class ReferralAdminService {
   @Autowired
   private AuditService auditService;
 
+  @Autowired
+  private WalletAdjustmentValidator walletAdjustmentValidator;
+
   Clock clock = Clock.systemUTC();
 
   public List<AdminReferralAttributionResponse> listAttributions(ReferralAttributionStatus status) {
     ReferralAttributionStatus wanted = status == null ? ReferralAttributionStatus.PENDING_REVIEW : status;
-    Map<String, String> names = new HashMap<>();
-    return attributionRepository.findByStatusOrderByCreatedAtAsc(wanted, PageRequest.of(0, LIST_LIMIT)).stream()
+    List<ReferralAttribution> attributions =
+        attributionRepository.findByStatusOrderByCreatedAtAsc(wanted, PageRequest.of(0, LIST_LIMIT));
+    Map<String, String> names = names(attributions.stream()
+        .flatMap(a -> java.util.stream.Stream.of(a.getRefereeShopId(), a.getReferrerShopId())));
+    return attributions.stream()
         .map(a -> mapper.toAttributionResponse(a, name(a.getRefereeShopId(), names), name(a.getReferrerShopId(), names)))
         .toList();
   }
@@ -144,7 +153,8 @@ public class ReferralAdminService {
     List<ReferralReward> rewards = status == null
         ? rewardRepository.findAll(page).getContent()
         : rewardRepository.findByStatusOrderByCreatedAtDesc(status, page);
-    Map<String, String> names = new HashMap<>();
+    Map<String, String> names = names(rewards.stream()
+        .flatMap(r -> java.util.stream.Stream.of(r.getRefereeShopId(), r.getReferrerShopId())));
     return rewards.stream()
         .map(r -> mapper.toRewardResponse(r, name(r.getRefereeShopId(), names), name(r.getReferrerShopId(), names)))
         .toList();
@@ -194,12 +204,25 @@ public class ReferralAdminService {
     return walletService.describe(shopId);
   }
 
-  public WalletResponse adjustWallet(String shopId, WalletAdjustmentRequest request, String actorUserId) {
-    requireReason(request.getReason());
-    BigDecimal amount = request.getAmount();
-    if (amount == null || amount.signum() == 0) {
-      throw new ValidationException("Adjustment amount must be non-zero");
+  /** What an adjustment would leave in the wallet; writes nothing. */
+  public WalletAdjustmentPreviewResponse previewWalletAdjustment(String shopId, WalletAdjustmentRequest request) {
+    BigDecimal amount = walletAdjustmentValidator.validatePreview(request);
+    if (shopProvider.getShop(shopId).isEmpty()) {
+      throw new ResourceNotFoundException("Shop", "id", shopId);
     }
+    BigDecimal current = walletService.available(shopId);
+    Optional<WalletBalances> after = walletService.previewAdjustment(shopId, amount);
+    return WalletAdjustmentPreviewResponse.builder()
+        .amount(amount)
+        .currentBalance(current)
+        .resultingBalance(after.map(WalletBalances::available).orElse(current))
+        .allowed(after.isPresent())
+        .maxAdjustment(WalletAdjustmentValidator.MAX_ADJUSTMENT)
+        .build();
+  }
+
+  public WalletResponse adjustWallet(String shopId, WalletAdjustmentRequest request, String actorUserId) {
+    BigDecimal amount = walletAdjustmentValidator.validateAdjustment(request);
     if (shopProvider.getShop(shopId).isEmpty()) {
       throw new ResourceNotFoundException("Shop", "id", shopId);
     }
@@ -249,12 +272,28 @@ public class ReferralAdminService {
     return mapper.toRewardResponse(reward, name(reward.getRefereeShopId(), names), name(reward.getReferrerShopId(), names));
   }
 
+  /** Shop names for a list screen, read in one query; unknown shops map to null. */
+  private Map<String, String> names(java.util.stream.Stream<String> shopIds) {
+    java.util.Set<String> wanted = shopIds.filter(java.util.Objects::nonNull)
+        .collect(java.util.stream.Collectors.toSet());
+    Map<String, String> names = new HashMap<>();
+    wanted.forEach(id -> names.put(id, null));
+    if (!wanted.isEmpty()) {
+      shopProvider.referralShops(wanted).forEach(shop -> names.put(shop.shopId(), shop.name()));
+    }
+    return names;
+  }
+
   private String name(String shopId, Map<String, String> cache) {
     if (shopId == null) {
       return null;
     }
-    return cache.computeIfAbsent(shopId,
-        id -> shopProvider.getReferralShop(id).map(ShopPort.ReferralShop::name).orElse(null));
+    if (cache.containsKey(shopId)) {
+      return cache.get(shopId);
+    }
+    String name = shopProvider.getReferralShop(shopId).map(ShopPort.ReferralShop::name).orElse(null);
+    cache.put(shopId, name);
+    return name;
   }
 
   private static void requireReason(String reason) {

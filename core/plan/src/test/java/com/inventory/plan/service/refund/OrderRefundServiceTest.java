@@ -181,4 +181,34 @@ class OrderRefundServiceTest {
     assertThat(service.onGatewayEvent("razorpay", refundEvent("rfnd_1", "10.00"))).isEmpty();
     verify(planStep, never()).reverse(any());
   }
+
+  @Test
+  void aGatewayRefundForAnOrderThatCanNeverBeRefundedIsAuditedNotRetried() {
+    when(orderRepository.findByProviderAndProviderPaymentId("razorpay", "pay_1")).thenReturn(Optional.of(order(
+        PlanPaymentConstants.STATUS_EXPIRED, null)));
+
+    Optional<PlanPaymentOrder> result = service.onGatewayEvent("razorpay", WebhookHandleResult.builder().processed(true)
+        .eventType(WebhookHandleResult.EventType.DISPUTE_LOST).providerPaymentId("pay_1")
+        .providerRefundId("disp_1").amount(new BigDecimal("9999.00")).build());
+
+    assertThat(result).isPresent();
+    verify(stateService, never()).markRefunded(any(), any(), any(), any(), any());
+    verify(planStep, never()).reverse(any());
+    org.mockito.ArgumentCaptor<AuditEntry> audit = org.mockito.ArgumentCaptor.forClass(AuditEntry.class);
+    verify(auditService).record(audit.capture());
+    assertThat(audit.getValue().getAction()).isEqualTo("PLAN_ORDER_GATEWAY_REFUND_NOT_APPLIED");
+  }
+
+  @Test
+  void aGatewayRefundDuringFulfilmentStillFailsSoTheGatewayRetries() {
+    when(orderRepository.findByProviderAndProviderPaymentId("razorpay", "pay_1")).thenReturn(Optional.of(order(
+        PlanPaymentConstants.STATUS_FULFILLING, null)));
+    when(stateService.markRefunded(any(), any(), any(), any(), any())).thenReturn(Optional.empty());
+    when(orderRepository.findById("order-1")).thenReturn(Optional.of(order(PlanPaymentConstants.STATUS_FULFILLING, null)));
+
+    assertThatThrownBy(() -> service.onGatewayEvent("razorpay", WebhookHandleResult.builder().processed(true)
+        .eventType(WebhookHandleResult.EventType.DISPUTE_LOST).providerPaymentId("pay_1")
+        .providerRefundId("disp_1").amount(new BigDecimal("9999.00")).build()))
+        .isInstanceOf(BaseException.class);
+  }
 }

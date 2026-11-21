@@ -13,7 +13,10 @@ import static org.mockito.Mockito.when;
 import com.inventory.common.audit.AuditEntry;
 import com.inventory.common.audit.AuditService;
 import com.inventory.common.audit.AuditSource;
+import com.inventory.common.audit.AuditActorType;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.notifications.api.Messaging;
+import com.inventory.user.validation.AdminUserValidator;
 import com.inventory.user.domain.model.AdminUser;
 import com.inventory.user.domain.repository.AdminSessionRepository;
 import com.inventory.user.domain.repository.AdminUserRepository;
@@ -58,12 +61,19 @@ class AdminUserServiceTest {
   @Spy
   private PasswordEncoder passwordEncoder = new BCryptPasswordEncoder(4);
 
+  @Spy
+  private AdminUserValidator adminUserValidator = new AdminUserValidator();
+
+  @Mock
+  private Messaging messaging;
+
   @InjectMocks
   private AdminUserService service;
 
   @BeforeEach
   void fixClock() {
     service.clock = Clock.fixed(NOW, ZoneOffset.UTC);
+    service.adminClientUrl = "https://admin.stockkart.in/";
   }
 
   @Test
@@ -90,6 +100,7 @@ class AdminUserServiceTest {
     assertThat(audit.getAction()).isEqualTo(AdminUserService.ACTION_CREATED);
     assertThat(audit.getActorUserId()).isEqualTo("a1");
     assertThat(audit.getSource()).isEqualTo(AuditSource.ADMIN_UI);
+    assertThat(audit.getActorType()).isEqualTo(AuditActorType.ADMIN);
     assertThat(audit.toString()).doesNotContain(response.getTemporaryPassword())
         .doesNotContain(saved.getValue().getPasswordHash());
   }
@@ -160,19 +171,36 @@ class AdminUserServiceTest {
   }
 
   @Test
-  void resetIssuesATemporaryPasswordClearsLockoutAndSignsOut() {
+  void resetEmailsTheTargetAOneTimeLinkAndReturnsNoCredential() {
     when(adminUserRepository.findById("a2")).thenReturn(Optional.of(admin("a2", true)));
 
-    AdminPasswordIssuedResponse response = service.resetPassword("a2", new AdminUserReasonRequest("forgot"), "a1");
+    var response = service.resetPassword("a2", new AdminUserReasonRequest("forgot"), "a1");
 
-    ArgumentCaptor<String> hash = ArgumentCaptor.forClass(String.class);
-    verify(adminUserWriter).setPassword(eq("a2"), hash.capture(), eq(true), eq(NOW));
-    assertThat(passwordEncoder.matches(response.getTemporaryPassword(), hash.getValue())).isTrue();
-    assertThat(response.getAdmin().isMustChangePassword()).isTrue();
+    ArgumentCaptor<String> unusable = ArgumentCaptor.forClass(String.class);
+    ArgumentCaptor<String> tokenHash = ArgumentCaptor.forClass(String.class);
+    verify(adminUserWriter).startPasswordReset(eq("a2"), unusable.capture(), tokenHash.capture(),
+        eq(NOW.plus(AdminUserService.RESET_LINK_LIFETIME)), eq(NOW));
     verify(sessionRepository).deleteByAdminId("a2");
+    ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+    verify(messaging).sendEmail(eq("a2@stockkart.in"), anyString(), body.capture(), any());
+    String token = body.getValue().replaceAll("(?s).*reset-password\\?token=([A-Za-z0-9_-]+).*", "$1");
+    assertThat(body.getValue()).contains("https://admin.stockkart.in/reset-password?token=");
+    assertThat(AdminCredentials.hashToken(token)).isEqualTo(tokenHash.getValue());
+    assertThat(response.getEmail()).isEqualTo("a2@stockkart.in");
+
     AuditEntry audit = captureAudit();
     assertThat(audit.getAction()).isEqualTo(AdminUserService.ACTION_PASSWORD_RESET);
-    assertThat(audit.toString()).doesNotContain(response.getTemporaryPassword());
+    assertThat(audit.getActorUserId()).isEqualTo("a1");
+    assertThat(audit.getTargetId()).isEqualTo("a2");
+    assertThat(audit.toString()).doesNotContain(token);
+  }
+
+  @Test
+  void resetNeedsTheAdminAppAddress() {
+    service.adminClientUrl = "";
+
+    assertThatThrownBy(() -> service.resetPassword("a2", null, "a1")).isInstanceOf(ValidationException.class);
+    verify(adminUserWriter, never()).startPasswordReset(anyString(), anyString(), anyString(), any(), any());
   }
 
   @Test
