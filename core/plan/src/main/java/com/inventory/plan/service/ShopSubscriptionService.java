@@ -9,6 +9,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.data.domain.Sort;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.data.mongodb.core.FindAndModifyOptions;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.index.Index;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -72,6 +74,38 @@ public class ShopSubscriptionService {
     }
     subscription.setUpdatedAt(now);
     return shopSubscriptionRepository.save(subscription);
+  }
+
+  /**
+   * Records the term a paid order granted, in one conditional upsert that never moves
+   * {@code expiresAt} backwards: when two grants race, or a stale one arrives late, the later end
+   * date stays. A grant without an end date always applies. Use {@link #sync} for changes that may
+   * shorten the term (refund revocation, backfill from the shop's fields).
+   */
+  public ShopSubscription recordGrant(ShopInfo shop, String sourceOrderId) {
+    Instant now = Instant.now();
+    SubscriptionStatus status = deriveStatus(shop.planId(), shop.planExpiryDate(), now);
+    Instant expiresAt = shop.planExpiryDate();
+    Criteria byShop = Criteria.where("_id").is(shop.shopId());
+    Query query = new Query(expiresAt == null ? byShop
+        : byShop.orOperator(Criteria.where("expiresAt").is(null), Criteria.where("expiresAt").lte(expiresAt)));
+    Update update = new Update()
+        .set("shopId", shop.shopId())
+        .set("planId", StringUtils.hasText(shop.planId()) ? shop.planId() : null)
+        .set("status", status)
+        .set("expiresAt", expiresAt)
+        .set("sourceOrderId", sourceOrderId)
+        .set("updatedAt", now)
+        .setOnInsert("createdAt", now);
+    try {
+      return mongoTemplate.findAndModify(query, update,
+          FindAndModifyOptions.options().upsert(true).returnNew(true), ShopSubscription.class);
+    } catch (DuplicateKeyException e) {
+      // the stored subscription already ends later: keep it
+      log.warn("Subscription of shop {} already ends after {}; order {} left it unchanged",
+          shop.shopId(), expiresAt, sourceOrderId);
+      return shopSubscriptionRepository.findById(shop.shopId()).orElse(null);
+    }
   }
 
   /**
