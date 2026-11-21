@@ -53,6 +53,9 @@ public class CampaignAdminService {
   @Autowired
   private AuditService auditService;
 
+  @Autowired
+  private CampaignService campaignService;
+
   Clock clock = Clock.systemUTC();
 
   public List<AdminCampaignResponse> list() {
@@ -76,6 +79,7 @@ public class CampaignAdminService {
     } catch (DuplicateKeyException e) {
       throw new ValidationException("A campaign with code " + request.getCode() + " already exists");
     }
+    campaignService.evictActive();
     audit(actorUserId, "CAMPAIGN_CREATED", campaign.getId(), null, snapshot(campaign), null);
     log.info("Campaign {} created by {}", campaign.getCode(), actorUserId);
     return toResponse(campaign, now);
@@ -103,6 +107,7 @@ public class CampaignAdminService {
     if (before == null) {
       throw new ResourceNotFoundException("Campaign", "id", id);
     }
+    campaignService.evictActive();
     SaleCampaign after = load(id);
     audit(actorUserId, "CAMPAIGN_UPDATED", id, snapshot(before), snapshot(after), null);
     return toResponse(after, now);
@@ -123,6 +128,7 @@ public class CampaignAdminService {
         FindAndModifyOptions.options().returnNew(false), SaleCampaign.class);
     SaleCampaign after = load(id);
     if (before != null) {
+      campaignService.evictActive();
       audit(actorUserId, active ? "CAMPAIGN_ACTIVATED" : "CAMPAIGN_DEACTIVATED", id,
           snapshot(before), snapshot(after), request.getReason());
     }
