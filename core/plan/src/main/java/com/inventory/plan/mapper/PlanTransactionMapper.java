@@ -17,8 +17,12 @@ import java.util.List;
 @Mapper(componentModel = "spring")
 public interface PlanTransactionMapper {
 
-  /** Transaction for a paid order, carrying the order's pricing snapshot and the granted term. */
-  default PlanTransaction toTransaction(PlanPaymentOrder order, Plan plan, Instant termStartsAt, Instant termEndsAt) {
+  /**
+   * Transaction for a paid order, carrying the order's pricing snapshot and the granted term.
+   * {@code createdAt} is when the grant happened; a renewal's term can start later.
+   */
+  default PlanTransaction toTransaction(PlanPaymentOrder order, Plan plan, Instant termStartsAt, Instant termEndsAt,
+      Instant now) {
     PlanTransaction tx = new PlanTransaction();
     tx.setShopId(order.getShopId());
     tx.setPlanId(plan.getId());
@@ -37,7 +41,7 @@ public interface PlanTransactionMapper {
     tx.setWalletCredit(order.getWalletCredit());
     tx.setTermStartsAt(termStartsAt);
     tx.setTermEndsAt(termEndsAt);
-    tx.setCreatedAt(termStartsAt);
+    tx.setCreatedAt(now);
     return tx;
   }
 

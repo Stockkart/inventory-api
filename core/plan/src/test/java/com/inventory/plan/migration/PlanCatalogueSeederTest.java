@@ -29,6 +29,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.core.io.DefaultResourceLoader;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.index.Index;
+import org.springframework.data.mongodb.core.index.IndexOperations;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
 class PlanCatalogueSeederTest {
@@ -47,6 +50,33 @@ class PlanCatalogueSeederTest {
 
   @InjectMocks
   private PlanCatalogueSeeder seeder;
+
+  @Mock
+  private IndexOperations planIndexes;
+
+  @Test
+  void ensuresTheUniqueCodeIndexEvenWhenSeedingIsOff() {
+    ReflectionTestUtils.setField(seeder, "seedEnabled", false);
+    when(mongoTemplate.indexOps(Plan.class)).thenReturn(planIndexes);
+
+    seeder.seedOnStartup();
+
+    verify(planIndexes).ensureIndex(any(Index.class));
+    verify(planRepository, never()).save(any(Plan.class));
+  }
+
+  @Test
+  void aCodeIndexThatCannotBeCreatedIsLoggedAndSeedingIsSkipped() {
+    ReflectionTestUtils.setField(seeder, "seedEnabled", true);
+    when(mongoTemplate.indexOps(Plan.class)).thenReturn(planIndexes);
+    when(planIndexes.ensureIndex(any(Index.class)))
+        .thenThrow(new org.springframework.dao.DuplicateKeyException("E11000 duplicate key"));
+
+    seeder.seedOnStartup();
+
+    verify(planRepository, never()).findByCode(any());
+    verify(planRepository, never()).save(any(Plan.class));
+  }
 
   @Test
   void classpathSeedMatchesThePricingMatrix() {
