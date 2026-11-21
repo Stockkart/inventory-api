@@ -20,4 +20,10 @@ public final class MessagingConstants {
 
   /** Default batch size for scheduler processing. */
   public static final int DISPATCH_BATCH_SIZE = 50;
+
+  /**
+   * Attachments rendered at send time (payslip PDFs) per dispatch tick, about 1 s of CPU; the
+   * other referencing messages wait for a later tick without counting a retry.
+   */
+  public static final int MAX_RENDERS_PER_TICK = 10;
 }

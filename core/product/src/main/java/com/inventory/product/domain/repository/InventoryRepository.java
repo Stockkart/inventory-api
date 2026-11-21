@@ -3,6 +3,7 @@ package com.inventory.product.domain.repository;
 import com.inventory.product.domain.model.Inventory;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.Aggregation;
+import org.springframework.data.mongodb.repository.Meta;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.data.mongodb.repository.Query;
 import org.springframework.stereotype.Repository;
@@ -15,6 +16,8 @@ import java.util.Optional;
 @Repository
 public interface InventoryRepository extends MongoRepository<Inventory, String> {
 
+  /** Lots by id, in one reply for up to 5,000 (the driver's default first batch is 101; the rest cost a getMore). */
+  @Meta(cursorBatchSize = 5000)
   List<Inventory> findByIdIn(List<String> ids);
 
   /** Rows not yet linked to a catalog product (used by the one-off product backfill). */

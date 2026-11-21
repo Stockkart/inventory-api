@@ -1,11 +1,12 @@
 package com.inventory.ocr.provider.impl;
 
+import com.inventory.ocr.prompt.InvoicePrompts;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.inventory.ocr.constants.OcrConstants;
 import com.inventory.ocr.dto.ParsedInventoryItem;
 import com.inventory.ocr.preprocess.ImagePreprocessor;
-import com.inventory.ocr.prompt.InvoicePricingLayout;
+import com.inventory.ocr.api.InvoicePricingLayout;
 import com.inventory.ocr.provider.OcrProvider;
 import com.inventory.ocr.util.OcrResponseJsonParser;
 import lombok.extern.slf4j.Slf4j;
@@ -62,7 +63,7 @@ public class GeminiOcrProvider implements OcrProvider {
 
     List<Map<String, Object>> parts = List.of(
         Map.of("inline_data", inlineData),
-        Map.of("text", resolved.promptText())
+        Map.of("text", InvoicePrompts.text(resolved))
     );
 
     Map<String, Object> generationConfig = new HashMap<>();

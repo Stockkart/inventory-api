@@ -73,8 +73,27 @@ public class PackagingUnitService {
     resolveDefinition(baseUnit);
   }
 
+  /**
+   * Units such as PAC, BOX or BTL are their own pack unit, so {@link #buildUnitConversion} never
+   * creates a conversion for them and any pack factor would be silently dropped.
+   */
+  public static boolean isSelfPackUnit(PackagingUnitDefinition def) {
+    return def.isAllowsUnitsPerPack()
+        && StringUtils.hasText(def.getDefaultPackUqc())
+        && def.getDefaultPackUqc().trim().equalsIgnoreCase(def.getUqc());
+  }
+
   public void validateUnitsPerPack(String baseUnitUqc, Integer unitsPerPack) {
     PackagingUnitDefinition def = resolveDefinition(baseUnitUqc);
+    if (isSelfPackUnit(def)) {
+      if (unitsPerPack != null && unitsPerPack > 1) {
+        throw new ValidationException(
+            def.getUqc() + " is already a pack, so 1 × " + unitsPerPack + " " + def.getUqc()
+                + " isn't valid. Choose the unit inside the pack (e.g. PCS, TBS or MLT) with "
+                + unitsPerPack + " per pack, or use 1 × 1 " + def.getUqc());
+      }
+      return;
+    }
     if (def.isAllowsUnitsPerPack()) {
       // PACK_ONLY (e.g. MLT/BTL) needs a pack factor. FRACTIONAL_BASE (e.g. PCS/TBS)
       // treats packaging as optional — "1 × 1 PCS" means loose pieces, no pack conversion.

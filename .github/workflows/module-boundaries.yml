@@ -1,0 +1,47 @@
+# Module boundaries: modules use each other only through their api packages, and each MongoDB
+# collection is used only by its owner. Rules: docs/architecture/module-boundaries.md.
+# Existing violations live in app/src/test/resources/boundaries/baseline.txt; this check fails on
+# a new violation, and on a baseline line that is no longer a violation.
+name: Module boundaries
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: module-boundaries-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  boundaries:
+    name: Module dependencies and collection ownership
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Set up JDK
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Cache Maven repo
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-m2-
+
+      - name: Check module boundaries
+        run: >-
+          mvn -B -pl app -am test
+          -Dtest=ModuleBoundariesTest
+          -Dsurefire.failIfNoSpecifiedTests=false

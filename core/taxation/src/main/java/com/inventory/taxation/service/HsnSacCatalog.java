@@ -1,5 +1,6 @@
 package com.inventory.taxation.service;
 
+import com.inventory.common.util.HsnCodes;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -7,7 +8,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.stereotype.Component;
-import org.springframework.util.StringUtils;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -37,47 +37,7 @@ public class HsnSacCatalog {
   }
 
   public Optional<String> descriptionFor(String hsnOrSac) {
-    String digits = digitsOnly(hsnOrSac);
-    if (!StringUtils.hasText(digits) || "0".equals(digits)) {
-      return Optional.empty();
-    }
-    String exact = byCode.get(digits);
-    if (exact != null) {
-      return Optional.of(exact);
-    }
-    if (digits.length() > 6) {
-      String six = byCode.get(digits.substring(0, 6));
-      if (six != null) {
-        return Optional.of(six);
-      }
-    }
-    if (digits.length() > 4) {
-      String four = byCode.get(digits.substring(0, 4));
-      if (four != null) {
-        return Optional.of(four);
-      }
-    }
-    if (digits.length() > 2) {
-      String two = byCode.get(digits.substring(0, 2));
-      if (two != null) {
-        return Optional.of(two);
-      }
-    }
-    return Optional.empty();
-  }
-
-  static String digitsOnly(String raw) {
-    if (!StringUtils.hasText(raw)) {
-      return "";
-    }
-    StringBuilder out = new StringBuilder(raw.length());
-    for (int i = 0; i < raw.length(); i++) {
-      char c = raw.charAt(i);
-      if (c >= '0' && c <= '9') {
-        out.append(c);
-      }
-    }
-    return out.toString();
+    return HsnCodes.mostSpecific(hsnOrSac, byCode::get, 2);
   }
 
   private static Map<String, String> load(ObjectMapper objectMapper, Resource resource) {
