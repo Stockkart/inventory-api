@@ -27,6 +27,8 @@ public class VoucherIndexes {
     vouchers.ensureIndex(new Index().on("code", Sort.Direction.ASC).unique().named("code_unique"));
     vouchers.ensureIndex(new Index().on("addOnCode", Sort.Direction.ASC).on("createdAt", Sort.Direction.DESC)
         .named("addOnCode_createdAt"));
+    // the unfiltered admin list pages newest first
+    vouchers.ensureIndex(new Index().on("createdAt", Sort.Direction.DESC).named("createdAt_desc"));
 
     var redemptions = mongoTemplate.indexOps(VoucherRedemption.class);
     redemptions.ensureIndex(new Index()
