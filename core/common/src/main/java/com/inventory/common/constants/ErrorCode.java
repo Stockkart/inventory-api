@@ -42,6 +42,9 @@ public enum ErrorCode {
 
   // Plan / subscription errors (6000-6999)
   PLAN_EXPIRED(6000, "Plan or trial has expired", HttpStatus.PAYMENT_REQUIRED),
+  FEATURE_NOT_IN_PLAN(6001, "Feature is not included in the current plan", HttpStatus.PAYMENT_REQUIRED),
+  SEAT_LIMIT_REACHED(6002, "User seat limit reached for the current plan", HttpStatus.PAYMENT_REQUIRED),
+  OCR_QUOTA_EXCEEDED(6003, "OCR quota exhausted for the current period", HttpStatus.PAYMENT_REQUIRED),
 
   // Taxation / GST errors (7000-7999)
   GST_CONFIGURATION_MISSING(7000, "GST configuration is incomplete",

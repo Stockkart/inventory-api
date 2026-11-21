@@ -10,8 +10,10 @@ import com.inventory.common.exception.AuthenticationException;
 import com.inventory.plan.rest.dto.request.RecordUsageRequest;
 import com.inventory.plan.rest.dto.response.PlanResponse;
 import com.inventory.plan.rest.dto.response.PlanTransactionResponse;
+import com.inventory.plan.rest.dto.response.ShopEntitlementsResponse;
 import com.inventory.plan.rest.dto.response.ShopPlanStatusResponse;
 import com.inventory.plan.rest.dto.response.UsageResponse;
+import com.inventory.plan.service.EntitlementGuard;
 import com.inventory.plan.service.PlanService;
 import com.inventory.plan.service.UsageService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -40,6 +42,9 @@ public class PlanController {
   @Autowired
   private UsageService usageService;
 
+  @Autowired
+  private EntitlementGuard entitlementGuard;
+
   @GetMapping
   public ResponseEntity<ApiResponse<List<PlanResponse>>> listPlans() {
     return ResponseEntity.ok(ApiResponse.success(planService.listPlans()));
@@ -54,6 +59,12 @@ public class PlanController {
   public ResponseEntity<ApiResponse<ShopPlanStatusResponse>> getShopPlanStatus(HttpServletRequest httpRequest) {
     String shopId = getShopId(httpRequest);
     return ResponseEntity.ok(ApiResponse.success(planService.getShopPlanStatus(shopId)));
+  }
+
+  @GetMapping("/shop/entitlements")
+  public ResponseEntity<ApiResponse<ShopEntitlementsResponse>> getShopEntitlements(HttpServletRequest httpRequest) {
+    String shopId = getShopId(httpRequest);
+    return ResponseEntity.ok(ApiResponse.success(entitlementGuard.describe(shopId)));
   }
 
   @GetMapping("/shop/{shopId}/suggested")

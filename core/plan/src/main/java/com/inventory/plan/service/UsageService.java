@@ -74,13 +74,13 @@ public class UsageService implements UsageGate {
         .orElseGet(() -> createUsage(shopId, month));
   }
 
-  @Transactional
+  /**
+   * This month's record, created with zero counts if missing. One upsert on (shopId, month), so two
+   * requests at the start of a month find the same record instead of each saving one (the unique
+   * {@code shop_month_idx} from {@code UsageIndexMigration} backs this up).
+   */
   public Usage createUsage(String shopId, String month) {
-    Usage usage = usageMapper.toUsage(shopId, month);
-    Usage saved = usageRepository.save(usage);
-    // a new month is the only time an old one can fall out of the retained window
-    purgeOldUsage(shopId);
-    return saved;
+    return upsertMonth(shopId, month, new Update());
   }
 
   @Transactional(readOnly = true)
@@ -149,18 +149,34 @@ public class UsageService implements UsageGate {
 
   /** $inc the request's positive deltas on this month's record (created if missing); returns it. */
   private Usage increment(String shopId, RecordUsageRequest request) {
-    String month = getCurrentMonthKey();
-    // millisecond precision, as stored, so "created by this call" can be told from the result
-    Instant now = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
-    Update update = new Update().set("updatedAt", now)
-        .setOnInsert("shopId", shopId)
-        .setOnInsert("month", month)
-        .setOnInsert("createdAt", now);
+    Update update = new Update();
     boolean amount = request.getBillingAmount() != null && request.getBillingAmount().signum() > 0;
     update.inc("billingAmountUsed", amount ? new Decimal128(request.getBillingAmount()) : new Decimal128(BigDecimal.ZERO));
     incIfPositive(update, "billCountUsed", request.getBillCount());
     incIfPositive(update, "smsUsed", request.getSmsCount());
     incIfPositive(update, "whatsappUsed", request.getWhatsappCount());
+    return upsertMonth(shopId, getCurrentMonthKey(), update);
+  }
+
+  /**
+   * Applies {@code deltas} to the shop's record for {@code month} in one findAndModify upsert
+   * (created if missing, counts not in {@code deltas} start at 0); returns the record after.
+   */
+  private Usage upsertMonth(String shopId, String month, Update deltas) {
+    // millisecond precision, as stored, so "created by this call" can be told from the result
+    Instant now = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
+    Update update = deltas.set("updatedAt", now)
+        .setOnInsert("shopId", shopId)
+        .setOnInsert("month", month)
+        .setOnInsert("createdAt", now);
+    for (String counter : List.of("billCountUsed", "smsUsed", "whatsappUsed", "ocrUsed")) {
+      if (!deltas.modifies(counter)) {
+        update.setOnInsert(counter, 0);
+      }
+    }
+    if (!deltas.modifies("billingAmountUsed")) {
+      update.setOnInsert("billingAmountUsed", new Decimal128(BigDecimal.ZERO));
+    }
     Query query = Query.query(Criteria.where("shopId").is(shopId).and("month").is(month));
     Usage after = mongoTemplate.findAndModify(
         query, update, FindAndModifyOptions.options().upsert(true).returnNew(true), Usage.class);
@@ -172,6 +188,14 @@ public class UsageService implements UsageGate {
 
   private static void incIfPositive(Update update, String field, Integer delta) {
     update.inc(field, delta != null && delta > 0 ? delta : 0);
+  }
+
+  /**
+   * Counts one scanned invoice against this month's included OCR quota. Atomic, so concurrent
+   * scans are all counted.
+   */
+  public void recordOcrUsage(String shopId) {
+    upsertMonth(shopId, getCurrentMonthKey(), new Update().inc("ocrUsed", 1));
   }
 
   private void purgeOldUsage(String shopId) {

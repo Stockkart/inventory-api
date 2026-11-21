@@ -1,0 +1,51 @@
+package com.inventory.app.interceptor;
+
+import com.inventory.common.constants.ErrorCode;
+import com.inventory.common.entitlement.RequiresEntitlement;
+import com.inventory.common.exception.AuthenticationException;
+import com.inventory.plan.api.Entitlements;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.annotation.AnnotatedElementUtils;
+import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
+import org.springframework.web.method.HandlerMethod;
+import org.springframework.web.servlet.HandlerInterceptor;
+
+/**
+ * Applies {@link RequiresEntitlement} on controllers and handler methods to the current shop.
+ */
+@Component
+public class EntitlementInterceptor implements HandlerInterceptor {
+
+  @Autowired
+  private Entitlements entitlements;
+
+  @Override
+  public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
+    if ("OPTIONS".equals(request.getMethod()) || !(handler instanceof HandlerMethod handlerMethod)) {
+      return true;
+    }
+    RequiresEntitlement required = requiredEntitlement(handlerMethod);
+    if (required == null) {
+      return true;
+    }
+    String shopId = (String) request.getAttribute("shopId");
+    if (!StringUtils.hasText(shopId)) {
+      // a plan-gated endpoint is always a shop endpoint; without a shop there is nothing to allow
+      throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "Shop not selected or user not authenticated");
+    }
+    entitlements.requireFeature(shopId, required.value());
+    return true;
+  }
+
+  static RequiresEntitlement requiredEntitlement(HandlerMethod handlerMethod) {
+    RequiresEntitlement onMethod =
+        AnnotatedElementUtils.findMergedAnnotation(handlerMethod.getMethod(), RequiresEntitlement.class);
+    if (onMethod != null) {
+      return onMethod;
+    }
+    return AnnotatedElementUtils.findMergedAnnotation(handlerMethod.getBeanType(), RequiresEntitlement.class);
+  }
+}
