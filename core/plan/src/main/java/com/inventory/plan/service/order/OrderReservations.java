@@ -2,6 +2,7 @@ package com.inventory.plan.service.order;
 
 import com.inventory.plan.domain.model.PlanPaymentOrder;
 import com.inventory.plan.domain.model.PricedCart;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +19,9 @@ public class OrderReservations {
   @Autowired(required = false)
   private List<OrderReservationHandler> handlers = new ArrayList<>();
 
+  @Autowired
+  private PaymentOrderStateService stateService;
+
   /** On failure, what was already reserved is released before rethrowing. */
   public void reserve(PlanPaymentOrder order, PricedCart cart) {
     List<OrderReservationHandler> taken = new ArrayList<>();
@@ -32,6 +36,20 @@ public class OrderReservations {
     }
   }
 
+  /**
+   * Gives back what an order that has just ended unpaid holds, only if it is still ended and was
+   * not released before (see {@link PaymentOrderStateService#markReservationsReleased}). Call after
+   * moving the order to an ended status.
+   */
+  public boolean releaseEnded(PlanPaymentOrder order, Instant now) {
+    if (!stateService.markReservationsReleased(order.getId(), now)) {
+      return false;
+    }
+    release(order);
+    return true;
+  }
+
+  /** Releases unconditionally; for a checkout that failed before its order was ever open. */
   public void release(PlanPaymentOrder order) {
     handlers.forEach(handler -> releaseQuietly(handler, order));
   }

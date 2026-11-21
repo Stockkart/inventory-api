@@ -99,6 +99,22 @@ class ShopAddOnServiceTest {
   }
 
   @Test
+  void aPricedLineGrantsWhatWasPaidForEvenIfTheCatalogueChanged() {
+    PlanPaymentOrder order = order();
+    OrderLine priced = OrderLine.builder().type("OCR_TOPUP").code("OCR_TOPUP_500").name("OCR 500").quantity(2)
+        .grantType(AddOnGrantType.OCR_CREDITS).grantsQuantity(500).billingType(AddOnBillingType.ONE_TIME).build();
+    order.setItems(List.of(priced));
+
+    service.grantForOrder(order, TERM_END);
+
+    ArgumentCaptor<ShopAddOn> grant = ArgumentCaptor.forClass(ShopAddOn.class);
+    verify(mongoTemplate).insert(grant.capture());
+    assertThat(grant.getValue().getGrantedQuantity()).isEqualTo(1000);
+    assertThat(grant.getValue().getRemainingCredits()).isEqualTo(1000);
+    verifyNoInteractions(catalogue);
+  }
+
+  @Test
   void planOnlyOrderGrantsNothing() {
     PlanPaymentOrder order = order();
     order.setItems(List.of(line("PLAN", "PROFESSIONAL", 1)));
