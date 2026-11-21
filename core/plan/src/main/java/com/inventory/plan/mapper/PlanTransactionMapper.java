@@ -7,6 +7,7 @@ import com.inventory.plan.rest.dto.response.PlanTransactionResponse;
 import com.inventory.plan.utils.constants.PlanConstants;
 import org.mapstruct.Mapper;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 
 @Mapper(componentModel = "spring")
