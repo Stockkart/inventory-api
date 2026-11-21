@@ -155,6 +155,29 @@ public class WalletService {
         b -> Optional.of(b.clawback(scale(amount))));
   }
 
+  /**
+   * An operator's manual adjustment: a positive amount is credited (paying off outstanding first), a
+   * negative one is taken from available only and rejected if not enough is available. Idempotent per
+   * adjustment id within the shop.
+   */
+  public Outcome adjust(String shopId, BigDecimal signedAmount, String adjustmentId, String reason, String actorUserId) {
+    BigDecimal amount = scale(signedAmount.abs());
+    return apply(shopId, "manual_adjustment:" + adjustmentId, ShopCreditSource.MANUAL_ADJUSTMENT, adjustmentId,
+        amount, reason, actorUserId, adjustment(signedAmount));
+  }
+
+  /** The balances an adjustment would leave, or empty when it would be rejected. Writes nothing. */
+  public Optional<WalletBalances> previewAdjustment(String shopId, BigDecimal signedAmount) {
+    return adjustment(signedAmount).apply(balances(shopId));
+  }
+
+  private static Function<WalletBalances, Optional<WalletBalances>> adjustment(BigDecimal signedAmount) {
+    BigDecimal amount = scale(signedAmount.abs());
+    return signedAmount.signum() > 0
+        ? b -> Optional.of(b.credit(amount))
+        : b -> b.debit(amount);
+  }
+
   /** True once the order's reservation has been spent (fulfilment ran its wallet step). */
   public boolean consumed(String orderId) {
     return entryRepository.existsByReferenceId("order-consume:" + orderId);

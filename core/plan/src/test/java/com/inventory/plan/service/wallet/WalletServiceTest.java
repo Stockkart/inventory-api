@@ -264,6 +264,16 @@ class WalletServiceTest {
   }
 
   @Test
+  void aPreviewShowsTheResultingBalanceWithoutWriting() {
+    when(creditRepository.findBalancesById("shop-1")).thenReturn(Optional.of(wallet("100", "0", 1)));
+
+    assertThat(service.previewAdjustment("shop-1", new BigDecimal("-40"))).get()
+        .extracting(WalletBalances::available).isEqualTo(new BigDecimal("60.00"));
+    assertThat(service.previewAdjustment("shop-1", new BigDecimal("-140"))).isEmpty();
+    verify(mongoTemplate, never()).updateFirst(any(Query.class), any(Update.class), eq(ShopCredit.class));
+  }
+
+  @Test
   void theShopWalletNeedsASelectedShop() {
     assertThatThrownBy(() -> service.describe(null)).isInstanceOf(AuthenticationException.class);
   }
