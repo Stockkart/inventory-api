@@ -1,9 +1,8 @@
 package com.inventory.app.interceptor;
 
+import com.inventory.plan.api.PlanStatus;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
-import com.inventory.plan.service.ShopProvider;
-import com.inventory.plan.utils.PlanUtils;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -34,11 +33,14 @@ public class PlanExpiryInterceptor implements HandlerInterceptor {
 
   private static final List<Pattern> ALLOWED_PATTERNS = List.of(
       Pattern.compile("/api/v1/plans/[a-fA-F0-9]{24}"),
-      Pattern.compile("/api/v1/plans/shop/[a-fA-F0-9]{24}/assign")
+      Pattern.compile("/api/v1/plans/shop/[a-fA-F0-9]{24}/assign"),
+      // HR decision 5: staff can still download their own payslips after the plan expired. A
+      // pattern, not a prefix, so "/api/v1/hr/me/payslipsX" is not allowed by accident
+      Pattern.compile("/api/v1/hr/me/payslips(/.*)?")
   );
 
-  @Autowired(required = false)
-  private ShopProvider shopProvider;
+  @Autowired
+  private PlanStatus planStatus;
 
   @Override
   public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
@@ -47,17 +49,19 @@ public class PlanExpiryInterceptor implements HandlerInterceptor {
     }
 
     String requestPath = request.getRequestURI();
-    if (isAllowedWhenExpired(requestPath)) {
+    // allow-list matched on the decoded, semicolon-free path Spring routes on (see RequestPaths);
+    // dot-segment paths never count as allowed
+    String lookupPath = RequestPaths.lookupPath(request);
+    if (!RequestPaths.isSuspicious(request, lookupPath) && isAllowedWhenExpired(lookupPath)) {
       return true;
     }
 
     String shopId = (String) request.getAttribute("shopId");
-    if (!StringUtils.hasText(shopId) || shopProvider == null) {
+    if (!StringUtils.hasText(shopId) || planStatus == null) {
       return true;
     }
 
-    ShopProvider.ShopInfo shopInfo = shopProvider.getShop(shopId).orElse(null);
-    if (shopInfo == null || !PlanUtils.isExpired(shopInfo.planExpiryDate())) {
+    if (!planStatus.isPlanExpired(shopId)) {
       return true;
     }
 

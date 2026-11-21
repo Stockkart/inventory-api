@@ -1,5 +1,7 @@
 package com.inventory.plan.service;
 
+import com.inventory.plan.api.port.ShopPort;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -13,7 +15,7 @@ import com.inventory.plan.domain.model.ShopSubscription;
 import com.inventory.plan.domain.model.SubscriptionStatus;
 import com.inventory.plan.domain.repository.PlanRepository;
 import com.inventory.plan.domain.repository.ShopSubscriptionRepository;
-import com.inventory.plan.service.ShopProvider.ShopInfo;
+import com.inventory.plan.api.port.ShopPort.ShopInfo;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -35,7 +37,7 @@ class EntitlementServiceTest {
   private ShopSubscriptionRepository shopSubscriptionRepository;
 
   @Mock
-  private ShopProvider shopProvider;
+  private ShopPort shopProvider;
 
   @Mock
   private PlanRepository planRepository;

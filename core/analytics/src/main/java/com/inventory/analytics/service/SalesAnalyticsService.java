@@ -7,10 +7,13 @@ import com.inventory.common.exception.ValidationException;
 import com.inventory.analytics.mapper.SalesAnalyticsMapper;
 import com.inventory.analytics.mapper.SalesAnalyticsResponseParams;
 import com.inventory.analytics.rest.dto.response.*;
+import com.inventory.analytics.utils.AnalyticsSalesQueries;
+import com.inventory.analytics.utils.AnalyticsSalesQueries.BillTotals;
+import com.inventory.analytics.utils.AnalyticsSalesQueries.LineGroup;
 import com.inventory.analytics.utils.SalesAnalyticsUtils;
 import com.inventory.analytics.utils.constants.AnalyticsMetricsConstants;
 import com.inventory.metrics.MetricsWrapper;
-import com.inventory.product.domain.model.Purchase;
+import com.inventory.product.domain.model.Inventory;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
@@ -21,6 +24,7 @@ import org.springframework.util.StringUtils;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -29,6 +33,9 @@ public class SalesAnalyticsService {
 
   @Autowired
   private SalesAnalyticsUtils salesUtils;
+
+  @Autowired
+  private AnalyticsSalesQueries salesQueries;
 
   @Autowired
   private SalesAnalyticsMapper salesAnalyticsMapper;
@@ -89,54 +96,57 @@ public class SalesAnalyticsService {
 
       log.debug("Getting sales analytics for shop: {} from {} to {}", shopId, startDate, endDate);
 
-      // Get all completed purchases in date range
-      List<Purchase> purchases = salesUtils.getCompletedPurchases(shopId, startDate, endDate);
+      // MongoDB adds up bills and groups identical lines; the lots are read once
+      BillTotals totals = salesQueries.billTotals(shopId, startDate, endDate);
+      List<LineGroup> lines = salesQueries.lineGroups(shopId, startDate, endDate, null, false);
+      Map<String, Inventory> lots = salesQueries.lotsOf(lines);
 
       // Build response data
-      RevenueSummaryDto summary = salesUtils.calculateRevenueSummary(purchases);
-      List<TopProductDto> topProducts = salesUtils.getTopProducts(purchases, topN);
+      RevenueSummaryDto summary = salesUtils.calculateRevenueSummary(totals);
+      List<TopProductDto> topProducts = salesUtils.getTopProducts(lines, lots, topN);
       List<SalesByGroupDto> salesByProduct;
       List<SalesByGroupDto> salesByLotId;
       List<SalesByGroupDto> salesByCompany;
       if (StringUtils.hasText(groupBy)) {
         switch (groupBy.toLowerCase()) {
           case "product":
-            salesByProduct = salesUtils.getSalesByProduct(purchases);
+            salesByProduct = salesUtils.getSalesByProduct(lines);
             salesByLotId = null;
             salesByCompany = null;
             break;
           case "lotid":
           case "lot":
             salesByProduct = null;
-            salesByLotId = salesUtils.getSalesByLotId(purchases);
+            salesByLotId = salesUtils.getSalesByLotId(lines, lots);
             salesByCompany = null;
             break;
           case "company":
           case "companyname":
             salesByProduct = null;
             salesByLotId = null;
-            salesByCompany = salesUtils.getSalesByCompany(purchases);
+            salesByCompany = salesUtils.getSalesByCompany(lines, lots);
             break;
           default:
-            salesByProduct = salesUtils.getSalesByProduct(purchases);
-            salesByLotId = salesUtils.getSalesByLotId(purchases);
-            salesByCompany = salesUtils.getSalesByCompany(purchases);
+            salesByProduct = salesUtils.getSalesByProduct(lines);
+            salesByLotId = salesUtils.getSalesByLotId(lines, lots);
+            salesByCompany = salesUtils.getSalesByCompany(lines, lots);
         }
       } else {
-        salesByProduct = salesUtils.getSalesByProduct(purchases);
-        salesByLotId = salesUtils.getSalesByLotId(purchases);
-        salesByCompany = salesUtils.getSalesByCompany(purchases);
+        salesByProduct = salesUtils.getSalesByProduct(lines);
+        salesByLotId = salesUtils.getSalesByLotId(lines, lots);
+        salesByCompany = salesUtils.getSalesByCompany(lines, lots);
       }
       List<TimeSeriesDataDto> timeSeries = StringUtils.hasText(timeSeriesGranularity)
-          ? salesUtils.getTimeSeriesData(purchases, startDate, endDate, timeSeriesGranularity)
+          ? salesUtils.getTimeSeriesData(
+              salesQueries.bucketTotals(shopId, startDate, endDate, timeSeriesGranularity), timeSeriesGranularity)
           : null;
       PeriodComparisonDto periodComparison = null;
       if (compareWithPrevious) {
         long periodDays = ChronoUnit.DAYS.between(startDate, endDate);
         Instant previousStartDate = startDate.minus(periodDays, ChronoUnit.DAYS);
         Instant previousEndDate = startDate;
-        List<Purchase> previousPurchases = salesUtils.getCompletedPurchases(shopId, previousStartDate, previousEndDate);
-        periodComparison = salesUtils.calculatePeriodComparison(purchases, previousPurchases);
+        periodComparison = salesUtils.calculatePeriodComparison(
+            totals, salesQueries.billTotals(shopId, previousStartDate, previousEndDate));
       }
 
       SalesAnalyticsResponseParams params = SalesAnalyticsResponseParams.builder()
@@ -149,7 +159,7 @@ public class SalesAnalyticsService {
           .periodComparison(periodComparison)
           .startDate(startDate)
           .endDate(endDate)
-          .totalPurchases(purchases.size())
+          .totalPurchases(Math.toIntExact(totals.bills()))
           .build();
 
       return salesAnalyticsMapper.toResponse(params);
@@ -159,10 +169,10 @@ public class SalesAnalyticsService {
       throw e;
     } catch (DataAccessException e) {
       log.error("Database error while getting sales analytics: {}", e.getMessage(), e);
-      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Error retrieving sales analytics");
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Error retrieving sales analytics", e);
     } catch (Exception e) {
       log.error("Unexpected error while getting sales analytics: {}", e.getMessage(), e);
-      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Failed to retrieve sales analytics");
+      throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Failed to retrieve sales analytics", e);
     }
   }
 }
