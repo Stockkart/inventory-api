@@ -91,4 +91,18 @@ class PlanAdminValidatorTest {
     assertThatThrownBy(() -> validator.validateActive("p1", new PlanActiveRequest(null, "x")))
         .isInstanceOf(ValidationException.class);
   }
+
+  @Test
+  void aPlanGrantReplacesAnotherPlanOnlyWhenNoPaidDaysAreLeft() {
+    PlanAdminValidator v = new PlanAdminValidator();
+    java.time.Instant now = java.time.Instant.parse("2026-11-21T06:00:00Z");
+    org.junit.jupiter.api.Assertions.assertThrows(ValidationException.class,
+        () -> v.validateGrantTarget("starter", now.plusSeconds(60), "pro", false, now));
+    org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+        () -> v.validateGrantTarget("pro", now.plusSeconds(60), "pro", false, now));
+    org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+        () -> v.validateGrantTarget("starter", now.minusSeconds(60), "pro", false, now));
+    org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+        () -> v.validateGrantTarget(null, now.plusSeconds(60), "pro", true, now));
+  }
 }

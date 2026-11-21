@@ -24,6 +24,8 @@ public class AdminIndexes {
   public void ensureIndexes() {
     mongoTemplate.indexOps(AdminUser.class)
         .ensureIndex(new Index().on("email", Sort.Direction.ASC).unique().named("email_unique"));
+    mongoTemplate.indexOps(AdminUser.class)
+        .ensureIndex(new Index().on("resetTokenHash", Sort.Direction.ASC).sparse().named("resetTokenHash"));
 
     var sessions = mongoTemplate.indexOps(AdminSession.class);
     sessions.ensureIndex(new Index().on("tokenHash", Sort.Direction.ASC).unique().named("tokenHash_unique"));

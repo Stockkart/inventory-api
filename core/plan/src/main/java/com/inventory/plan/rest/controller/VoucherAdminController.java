@@ -37,8 +37,10 @@ public class VoucherAdminController {
 
   @GetMapping
   public ResponseEntity<ApiResponse<List<AdminVoucherResponse>>> list(
-      @RequestParam(required = false) String addOnCode) {
-    return ResponseEntity.ok(ApiResponse.success(voucherAdminService.list(addOnCode)));
+      @RequestParam(required = false) String addOnCode,
+      @RequestParam(required = false) Integer page,
+      @RequestParam(required = false) Integer size) {
+    return ResponseEntity.ok(ApiResponse.success(voucherAdminService.list(addOnCode, page, size)));
   }
 
   @PostMapping

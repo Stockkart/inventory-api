@@ -13,6 +13,8 @@ public interface AdminUserRepository extends MongoRepository<AdminUser, String> 
 
   boolean existsByEmail(String email);
 
+  Optional<AdminUser> findByResetTokenHash(String resetTokenHash);
+
   long countByActiveTrue();
 
   List<AdminUser> findAllByOrderByCreatedAtDesc();

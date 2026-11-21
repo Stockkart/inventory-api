@@ -1,11 +1,13 @@
 package com.inventory.user.service;
 
+import com.inventory.common.audit.AuditActorType;
 import com.inventory.common.audit.AuditEntry;
 import com.inventory.common.audit.AuditService;
 import com.inventory.common.audit.AuditSource;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.notifications.api.Messaging;
 import com.inventory.user.domain.model.AdminUser;
 import com.inventory.user.domain.repository.AdminSessionRepository;
 import com.inventory.user.domain.repository.AdminUserRepository;
@@ -16,16 +18,25 @@ import com.inventory.user.rest.dto.request.AdminUserActiveRequest;
 import com.inventory.user.rest.dto.request.AdminUserReasonRequest;
 import com.inventory.user.rest.dto.response.AdminPasswordIssuedResponse;
 import com.inventory.user.rest.dto.response.AdminUserResponse;
+import com.inventory.user.validation.AdminUserValidator;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
-/** Admins managing other admins. Every change is audited; passwords never are. */
+/**
+ * Admins managing other admins. Every change is audited (actor and target); passwords never are.
+ *
+ * <p>A password reset never hands a password to the admin who asks for it: it signs the target out,
+ * makes the old password stop working and emails the target a one-time link to choose a new one, so
+ * only the account owner ever knows the password.
+ */
 @Service
 public class AdminUserService {
 
@@ -34,7 +45,8 @@ public class AdminUserService {
   static final String ACTION_ENABLED = "ADMIN_ENABLED";
   static final String ACTION_DISABLED = "ADMIN_DISABLED";
   static final String ACTION_PASSWORD_RESET = "ADMIN_PASSWORD_RESET";
-  static final int MAX_REASON_LENGTH = 200;
+  /** How long the emailed reset link works. */
+  static final Duration RESET_LINK_LIFETIME = Duration.ofMinutes(30);
 
   @Autowired
   private AdminUserRepository adminUserRepository;
@@ -51,6 +63,16 @@ public class AdminUserService {
   @Autowired
   private AuditService auditService;
 
+  @Autowired
+  private AdminUserValidator adminUserValidator;
+
+  @Autowired
+  private Messaging messaging;
+
+  /** Admin app origin; reset links point at {@code <admin.client.url>/reset-password}. */
+  @Value("${admin.client.url:}")
+  String adminClientUrl = "";
+
   Clock clock = Clock.systemUTC();
 
   public List<AdminUserResponse> list() {
@@ -60,8 +82,9 @@ public class AdminUserService {
   }
 
   public AdminPasswordIssuedResponse create(AdminCreateRequest request, String actorAdminId) {
-    String email = AdminCredentials.requireEmail(request == null ? null : request.getEmail());
-    String name = AdminCredentials.requireName(request.getName());
+    adminUserValidator.validateCreate(request);
+    String email = AdminCredentials.normalizeEmail(request.getEmail());
+    String name = request.getName().trim();
     if (adminUserRepository.existsByEmail(email)) {
       throw duplicateEmail();
     }
@@ -87,9 +110,7 @@ public class AdminUserService {
   }
 
   public AdminUserResponse setActive(String adminId, AdminUserActiveRequest request, String actorAdminId) {
-    if (request == null || request.getActive() == null) {
-      throw new ValidationException("active is required");
-    }
+    adminUserValidator.validateSetActive(request);
     boolean active = request.getActive();
     String reason = reason(request.getReason());
     AdminUser target = find(adminId);
@@ -97,12 +118,7 @@ public class AdminUserService {
       return AdminUserMapper.toResponse(target);
     }
     if (!active) {
-      if (adminId.equals(actorAdminId)) {
-        throw new ValidationException("You cannot turn off your own account");
-      }
-      if (adminUserRepository.countByActiveTrue() <= 1) {
-        throw new ValidationException("At least one admin must stay active");
-      }
+      adminUserValidator.validateDisable(adminId, actorAdminId, adminUserRepository.countByActiveTrue());
     }
     adminUserWriter.setActive(adminId, active, clock.instant());
     if (!active) {
@@ -114,19 +130,36 @@ public class AdminUserService {
     return AdminUserMapper.toResponse(target);
   }
 
-  public AdminPasswordIssuedResponse resetPassword(String adminId, AdminUserReasonRequest request,
-      String actorAdminId) {
-    if (adminId.equals(actorAdminId)) {
-      throw new ValidationException("Use Change password for your own account");
+  /**
+   * Starts a password reset for another admin: their sessions end, their current password stops
+   * working, and a one-time link (valid {@link #RESET_LINK_LIFETIME}) is emailed to their address.
+   * The response carries no credential.
+   */
+  public AdminUserResponse resetPassword(String adminId, AdminUserReasonRequest request, String actorAdminId) {
+    String rawReason = request == null ? null : request.getReason();
+    adminUserValidator.validateReset(adminId, actorAdminId, rawReason);
+    if (adminClientUrl == null || adminClientUrl.isBlank()) {
+      throw new ValidationException("Password reset emails need the admin app address (ADMIN_CLIENT_URL)");
     }
-    String reason = reason(request == null ? null : request.getReason());
     AdminUser target = find(adminId);
-    String temporaryPassword = AdminCredentials.newTemporaryPassword();
-    adminUserWriter.setPassword(adminId, passwordEncoder.encode(temporaryPassword), true, clock.instant());
+    Instant now = clock.instant();
+    String token = AdminCredentials.newSessionToken();
+    adminUserWriter.startPasswordReset(adminId, passwordEncoder.encode(AdminCredentials.newSessionToken()),
+        AdminCredentials.hashToken(token), now.plus(RESET_LINK_LIFETIME), now);
     sessionRepository.deleteByAdminId(adminId);
-    audit(ACTION_PASSWORD_RESET, adminId, actorAdminId, null, Map.of("mustChangePassword", true), reason);
-    target.setMustChangePassword(true);
-    return new AdminPasswordIssuedResponse(AdminUserMapper.toResponse(target), temporaryPassword);
+    String link = adminClientUrl.replaceAll("/+$", "") + "/reset-password?token=" + token;
+    messaging.sendEmail(target.getEmail(), "Set a new StockKart admin password",
+        "<p>Hello " + escape(target.getName()) + ",</p>"
+            + "<p>Another StockKart admin started a password reset for your admin account. Your old "
+            + "password no longer works. Choose a new one within 30 minutes:</p>"
+            + "<p><a href=\"" + link + "\">Set a new password</a></p>"
+            + "<p>If you did not expect this, tell the StockKart team.</p>",
+        Map.of("kind", ACTION_PASSWORD_RESET, "adminId", adminId));
+    audit(ACTION_PASSWORD_RESET, adminId, actorAdminId, null,
+        Map.of("resetLinkEmailed", true, "resetLinkExpiresAt", now.plus(RESET_LINK_LIFETIME).toString()),
+        reason(rawReason));
+    target.setMustChangePassword(false);
+    return AdminUserMapper.toResponse(target);
   }
 
   private AdminUser find(String adminId) {
@@ -138,6 +171,7 @@ public class AdminUserService {
       Map<String, Object> after, String reason) {
     auditService.record(AuditEntry.builder()
         .actorUserId(actorAdminId)
+        .actorType(AuditActorType.ADMIN)
         .action(action)
         .targetType(TARGET_TYPE)
         .targetId(targetId)
@@ -148,15 +182,13 @@ public class AdminUserService {
         .build());
   }
 
+  /** Trimmed reason, or null when blank; the length is checked by {@link AdminUserValidator}. */
   private static String reason(String raw) {
-    if (raw == null || raw.isBlank()) {
-      return null;
-    }
-    String trimmed = raw.trim();
-    if (trimmed.length() > MAX_REASON_LENGTH) {
-      throw new ValidationException("Reason must be at most " + MAX_REASON_LENGTH + " characters");
-    }
-    return trimmed;
+    return raw == null || raw.isBlank() ? null : raw.trim();
+  }
+
+  private static String escape(String text) {
+    return text == null ? "" : text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
   }
 
   private static ValidationException duplicateEmail() {

@@ -7,13 +7,18 @@ import com.inventory.plan.domain.model.PricedCart;
 import com.inventory.plan.service.order.OrderReservationHandler;
 import java.math.BigDecimal;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
  * Wallet credit an order uses (r4.3): reserved at checkout, spent at fulfilment, given back when the
  * order ends unpaid. Never debited at quote time, so an abandoned checkout costs nothing.
+ *
+ * <p>{@code @Order(20)}: reservation handlers run in a fixed order (wallet after the voucher), so
+ * {@code OrderReservations} reserves and unwinds them the same way every time.
  */
 @Component
+@Order(20)
 public class WalletReservationHandler implements OrderReservationHandler {
 
   @Autowired

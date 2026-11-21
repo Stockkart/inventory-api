@@ -1,5 +1,6 @@
 package com.inventory.user.migration;
 
+import com.inventory.common.audit.AuditActorType;
 import com.inventory.common.audit.AuditEntry;
 import com.inventory.common.audit.AuditService;
 import com.inventory.common.audit.AuditSource;
@@ -24,9 +25,10 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
 /**
- * Creates an admin account on startup for each email in {@code platform.admin-emails} that has none,
- * using {@code platform.admin-bootstrap-password} and forcing a password change on first sign-in.
- * Existing admins are never modified, and removing an email does not remove the admin.
+ * Creates an admin account on startup for each email in {@code platform.admin-emails} that has none.
+ * Each new account gets its own random one-time password, written once to the startup log (WARN),
+ * and must change it on first sign-in. Existing admins are never modified, and removing an email does
+ * not remove the admin.
  */
 @Component
 @Slf4j
@@ -46,9 +48,6 @@ public class AdminBootstrap {
   @Value("${platform.admin-emails:}")
   private String adminEmails;
 
-  @Value("${platform.admin-bootstrap-password:}")
-  private String bootstrapPassword;
-
   Clock clock = Clock.systemUTC();
 
   @EventListener(ApplicationReadyEvent.class)
@@ -56,13 +55,6 @@ public class AdminBootstrap {
   public void onStartup() {
     Set<String> emails = parse(adminEmails);
     if (emails.isEmpty()) {
-      return;
-    }
-    if (bootstrapPassword == null || bootstrapPassword.length() < AdminCredentials.MIN_PASSWORD_LENGTH
-        || bootstrapPassword.length() > AdminCredentials.MAX_PASSWORD_LENGTH) {
-      log.warn("PLATFORM_ADMIN_EMAILS is set but PLATFORM_ADMIN_BOOTSTRAP_PASSWORD is missing or not {}-{} "
-              + "characters; no admin accounts were created",
-          AdminCredentials.MIN_PASSWORD_LENGTH, AdminCredentials.MAX_PASSWORD_LENGTH);
       return;
     }
     for (String email : emails) {
@@ -79,12 +71,13 @@ public class AdminBootstrap {
       return;
     }
     Instant now = clock.instant();
+    String oneTimePassword = AdminCredentials.newTemporaryPassword();
     AdminUser saved;
     try {
       saved = adminUserRepository.save(AdminUser.builder()
           .email(email)
           .name(email.substring(0, email.indexOf('@')))
-          .passwordHash(passwordEncoder.encode(bootstrapPassword))
+          .passwordHash(passwordEncoder.encode(oneTimePassword))
           .active(true)
           .mustChangePassword(true)
           .createdAt(now)
@@ -99,9 +92,12 @@ public class AdminBootstrap {
         .targetId(saved.getId())
         .after(Map.of("email", email))
         .reason("platform.admin-emails")
+        .actorType(AuditActorType.SYSTEM)
         .source(AuditSource.SYSTEM)
         .build());
-    log.info("Created admin account {} for {}", saved.getId(), email);
+    // Printed once, here only: the account must replace it at first sign-in
+    log.warn("Created admin account {} for {} with one-time password {} (change it at first sign-in)",
+        saved.getId(), email, oneTimePassword);
   }
 
   static Set<String> parse(String raw) {

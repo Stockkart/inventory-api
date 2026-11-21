@@ -75,17 +75,28 @@ Optional (for AWS Textract):
 Optional (for the admin app):
 
 StockKart admins are separate from shop users: they live in `admin_users`, sign in at
-`POST /api/v1/admin/auth/login`, and their sessions work only on `/api/v1/admin/**` and
-`/api/v1/shops/admin/**`. Shop-user tokens get 401 on those paths, and admin tokens get 401
-everywhere else.
+`POST /api/v1/admin/auth/login`, and their sessions work only on `/api/v1/admin/**`. Shop-user
+tokens get 401 on those paths, and admin tokens get 401 everywhere else. Shop approval
+(`/api/v1/shops/admin/**`) is not an admin-session path: it needs a shop-app `SUPER_USER` sign-in.
+
+Admin sign-in refuses every failure with one message, and failed attempts are limited per container
+(`admin.sign-in.*` in `application.properties`): 5 per client address and account and 20 per client
+address in 15 minutes, 300 per minute overall (then 429); 20 failures on one account lock it for 15
+minutes. Sign-ins, failures, locks, sign-outs and password changes are written to `audit_entries`.
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `PLATFORM_ADMIN_EMAILS` | Comma-separated emails; each one without an admin account gets one on startup | `ops@stockkart.in` |
-| `PLATFORM_ADMIN_BOOTSTRAP_PASSWORD` | Starting password for those accounts (10–128 characters); changed on first sign-in. Without it no account is created | |
-| `ADMIN_CLIENT_URL` | Admin app origin; the only origin CORS allows on admin paths | `https://admin.stockkart.in` |
+| `PLATFORM_ADMIN_EMAILS` | Comma-separated emails; each one without an admin account gets one on startup, with its own one-time password written once to the startup log (WARN); it must be changed on first sign-in | `ops@stockkart.in` |
+| `ADMIN_CLIENT_URL` | Admin app origin; the only origin CORS allows on admin paths, and the base of password-reset links (`<url>/reset-password?token=…`) | `https://admin.stockkart.in` |
 
-Further admins are added from the admin app, which issues a one-time temporary password.
+Further admins are added from the admin app, which shows the new admin's one-time password once.
+
+| Endpoint | Notes |
+|---|---|
+| `POST /api/v1/admin/auth/login` | Public. `{ email, password }` → `{ token, expiresAt, admin }` |
+| `POST /api/v1/admin/auth/reset-password` | Public. `{ token, newPassword }` from the emailed reset link (single use, 30 minutes) → the admin; signs out every session |
+| `POST /api/v1/admin/admins/{id}/reset-password` | Another admin's account only; body `{ reason }`. Signs the account out, its old password stops working, and a reset link is emailed to the account's address. Returns the admin (no password). Needs `ADMIN_CLIENT_URL` |
+| `POST /api/v1/admin/shops/{shopId}/plan-grants` | Admin plan grant without payment. Body `{ planCode, durationMonths (1–36), reason (required, ≤ 200) }`; the plan must be active. The same plan extends from the later of now and the current expiry; another plan is refused while the shop has paid days left. Records an `ADMIN_GRANT` plan transaction and a `PLAN_GRANTED` audit entry; returns the shop's plan status |
 
 ### 2. Run with Docker Compose
 
@@ -488,6 +499,19 @@ Employees, attendance, leave, salary advances, payroll, salary payments, payslip
 | `POST /api/v1/hr/me/leave-requests`, `POST /api/v1/hr/me/leave-requests/{id}/cancel` | linked employee | Request or cancel own leave |
 | `GET /api/v1/hr/me/payslips`, `GET /api/v1/hr/me/payslips/{lineId}/pdf` | linked employee (allowed while the plan is expired) | Own payslips of finalised months; another employee's line is 404 |
 | `GET /api/v1/hr/me/notifications?since=`, `POST /api/v1/hr/me/notifications/{id}/read`, `POST /api/v1/hr/me/notifications/read-all` | any shop member | HR inbox (polled every 60 s) |
+
+### Plan checkout orders (plan)
+
+A plan purchase is a `plan_payment_orders` row moving CREATED → PAYMENT_PENDING → PAID → FULFILLING → FULFILLED (or PAYMENT_FAILED / EXPIRED / CANCELLED unpaid, FULFILMENT_FAILED for an operator); every move is a conditional update. Responses carry the raw `status` and a `phase` the apps show instead of reading status names: `AWAITING_PAYMENT` (open the gateway), `PROCESSING` (payment received, confirming), `FULFILLED` (done), `FAILED` (no payment taken), `ENDED` (expired or cancelled).
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/v1/plans/orders/quote` | Price a cart. For a signed-in shop, a different plan while its paid plan still has days left is refused (`409 PLAN_CHANGE_NOT_ALLOWED`, code 6020); renewing the same plan is allowed. |
+| `POST /api/v1/plans/payment/checkout` | Create the order. `Idempotency-Key` is optional: a repeated key returns its order (a different cart with the same key is `409 IDEMPOTENCY_KEY_REUSED`); without a key, a still-open unexpired order for the same cart is returned instead of a second one. Same plan-change rule as the quote. RBAC module `paymentPlan`. |
+| `POST /api/v1/plans/payment/verify` | Confirm a Razorpay payment. `success` is true only when the order is FULFILLED; `phase` PROCESSING means paid and still being applied. A second payment captured for an order already paid is logged and written to `audit_entries` (`PLAN_PAYMENT_DUPLICATE_CAPTURE`, source SYSTEM) for a refund; nothing more is granted. |
+| `POST /api/v1/plans/orders/{orderId}/cancel` | Cancel the caller's own unpaid order (shop from the request, never the path) and give back its voucher and wallet holds. Repeating it, or cancelling an order that already expired or failed, returns it unchanged; a paid order is `409 ORDER_NOT_CANCELLABLE` (code 5003). RBAC module `paymentPlan`. |
+
+Granting a paid order runs in one MongoDB transaction (`MongoTx` flow `plan_grant`): the `plan_transactions` row (unique per order, index `paymentOrderId_unique`), the shop's plan fields and its `shop_subscriptions` row. Renewing the same plan starts the new term at the current expiry, so no paid day is lost. An unpaid order that ends gives back its holds only while it is still ended (`reservationsReleasedAt`), so a late payment and the release cannot both win. Indexes (`PaymentOrderStatusMigration`, on startup): `shop_idempotency_key_unique`, `status_expiresAt`, `status_claimedAt`, `provider_providerOrderId_unique`, `shop_status_paidAt`, `shop_status_fulfilledAt`, `shop_requestHash_status` on `plan_payment_orders`; `shop_createdAt` and `paymentOrderId_unique` on `plan_transactions` (if older duplicate rows exist the unique index is skipped and they are logged for an operator).
 
 ### Build commands
 
