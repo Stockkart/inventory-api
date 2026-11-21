@@ -206,8 +206,10 @@ public class UsageService implements UsageGate {
     if (monthlyLimit <= 0) {
       return false;
     }
-    Usage usage = getOrCreateCurrentMonthUsage(shopId);
-    Query query = new Query(Criteria.where("_id").is(usage.getId()).orOperator(
+    String month = getCurrentMonthKey();
+    getOrCreateCurrentMonthUsage(shopId); // the month's record exists (one upsert when missing)
+    // the limit is part of the filter: two scans at once cannot both take the last included one
+    Query query = new Query(Criteria.where("shopId").is(shopId).and("month").is(month).orOperator(
         Criteria.where("ocrUsed").lt(monthlyLimit),
         Criteria.where("ocrUsed").is(null)));
     return mongoTemplate.updateFirst(query,
