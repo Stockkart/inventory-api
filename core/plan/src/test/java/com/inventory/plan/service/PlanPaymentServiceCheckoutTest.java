@@ -107,6 +107,10 @@ class PlanPaymentServiceCheckoutTest {
     assertThat(order.getRequestHash()).isEqualTo(hash());
     assertThat(order.getExpiresAt()).isEqualTo(NOW.plusSeconds(30 * 60));
     assertThat(order.getAmount()).isEqualByComparingTo("9999");
+    // the price includes 18% GST; the split is stored on the order and adds up exactly
+    assertThat(order.getTaxableAmount()).isEqualByComparingTo("8473.73");
+    assertThat(order.getGstAmount()).isEqualByComparingTo("1525.27");
+    assertThat(order.getGstRatePercent()).isEqualByComparingTo("18");
     verify(reservations).reserve(eq(order), any());
     assertThat(response.getStatus()).isEqualTo(PlanPaymentConstants.STATUS_PAYMENT_PENDING);
     assertThat(response.getRazorpay().getOrderId()).isEqualTo("rzp_1");

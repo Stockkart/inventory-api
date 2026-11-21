@@ -98,6 +98,8 @@ class AuthenticationInterceptorBoundaryTest {
   @MockBean private VerticalCatalogService verticalCatalogService;
   @MockBean private ShopRepository shopRepository;
   @MockBean private ShopMapper shopMapper;
+  // ShopService pages shops for the plan module through MongoTemplate
+  @MockBean private org.springframework.data.mongodb.core.MongoTemplate mongoTemplate;
   @MockBean private UserAccountRepository userAccountRepository;
   @MockBean private MetricsWrapper metrics;
   // ShopService seeds the chart of accounts through the accounting api on registration.
