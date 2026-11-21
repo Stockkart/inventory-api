@@ -198,6 +198,25 @@ public class UsageService implements UsageGate {
     upsertMonth(shopId, getCurrentMonthKey(), new Update().inc("ocrUsed", 1));
   }
 
+  /**
+   * Counts one scan against the included quota only if the quota has room, in one conditional
+   * write. Returns false when this month's included scans are used up.
+   */
+  public boolean recordIncludedOcrUnit(String shopId, int monthlyLimit) {
+    if (monthlyLimit <= 0) {
+      return false;
+    }
+    String month = getCurrentMonthKey();
+    getOrCreateCurrentMonthUsage(shopId); // the month's record exists (one upsert when missing)
+    // the limit is part of the filter: two scans at once cannot both take the last included one
+    Query query = new Query(Criteria.where("shopId").is(shopId).and("month").is(month).orOperator(
+        Criteria.where("ocrUsed").lt(monthlyLimit),
+        Criteria.where("ocrUsed").is(null)));
+    return mongoTemplate.updateFirst(query,
+        new Update().inc("ocrUsed", 1).set("updatedAt", Instant.now()),
+        Usage.class).getModifiedCount() == 1;
+  }
+
   private void purgeOldUsage(String shopId) {
     List<Usage> usages = usageRepository.findByShopIdOrderByMonthDesc(shopId, PageRequest.of(0, 100));
     if (usages.size() > PlanConstants.MAX_USAGE_MONTHS_RETAINED) {

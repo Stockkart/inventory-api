@@ -2,6 +2,7 @@ package com.inventory.plan.domain.repository;
 
 import com.inventory.plan.domain.model.PlanTransaction;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.repository.MongoRepository;
 
@@ -10,4 +11,6 @@ public interface PlanTransactionRepository extends MongoRepository<PlanTransacti
   List<PlanTransaction> findByShopId(String shopId, Sort sort);
 
   boolean existsByPaymentOrderId(String paymentOrderId);
+
+  Optional<PlanTransaction> findFirstByPaymentOrderId(String paymentOrderId);
 }

@@ -29,6 +29,10 @@ public class ShopEntitlementsResponse {
   private Integer userCount;
   private Integer ocrLimit;
   private Integer ocrUsed;
+  /** Purchased scan credits left; used after the monthly quota. */
+  private Integer ocrTopUpRemaining;
+  /** Codes of live add-ons (OCR top-ups excluded). */
+  private List<String> addOns;
   /** True when the plan caps users and the shop already has that many. */
   private boolean seatLimitReached;
   /** True when the plan caps monthly invoice scans and this month's are used up. */

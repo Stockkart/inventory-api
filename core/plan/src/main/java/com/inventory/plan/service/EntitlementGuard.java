@@ -31,6 +31,9 @@ public class EntitlementGuard {
   private UsageService usageService;
 
   @Autowired
+  private ShopAddOnService shopAddOnService;
+
+  @Autowired
   private EffectivePlanResolver effectivePlanResolver;
 
   static final long LOG_EVERY_MS = 10 * 60 * 1000L;
@@ -96,14 +99,16 @@ public class EntitlementGuard {
     }
     Usage usage = usageService.getOrCreateCurrentMonthUsage(shopId);
     int used = usage.getOcrUsed() != null ? usage.getOcrUsed() : 0;
-    if (used < limit) {
+    if (used < limit || shopAddOnService.ocrCreditsRemaining(shopId) > 0) {
       return;
     }
     Map<String, Object> details = baseDetails(entitlements);
     details.put("ocrLimit", limit);
     details.put("ocrUsed", used);
+    details.put("ocrTopUpRemaining", 0);
     deny(shopId, new EntitlementException(ErrorCode.OCR_QUOTA_EXCEEDED,
-        "You have used all " + limit + " invoice scans for this month. Upgrade to scan more.", details));
+        "You have used all " + limit + " invoice scans for this month. Buy a scan top-up or upgrade to scan more.",
+        details));
   }
 
   public ShopEntitlementsResponse describe(String shopId) {
@@ -111,6 +116,7 @@ public class EntitlementGuard {
     Usage usage = usageService.getOrCreateCurrentMonthUsage(shopId);
     int userCount = usageService.getUserCountForShop(shopId);
     int ocrUsed = usage.getOcrUsed() != null ? usage.getOcrUsed() : 0;
+    int ocrTopUp = shopAddOnService.ocrCreditsRemaining(shopId);
     return ShopEntitlementsResponse.builder()
         .planId(entitlements.planId())
         .planCode(entitlements.planCode())
@@ -122,7 +128,10 @@ public class EntitlementGuard {
         .seatLimitReached(entitlements.userLimit() != null && userCount >= entitlements.userLimit())
         .ocrLimit(entitlements.ocrLimit())
         .ocrUsed(ocrUsed)
-        .ocrLimitReached(entitlements.ocrLimit() != null && ocrUsed >= entitlements.ocrLimit())
+        .ocrTopUpRemaining(ocrTopUp)
+        // scans stop only when the month's included ones and the purchased credits are both used up
+        .ocrLimitReached(entitlements.ocrLimit() != null && ocrUsed >= entitlements.ocrLimit() && ocrTopUp <= 0)
+        .addOns(entitlements.addOnCodes().stream().sorted().toList())
         .expiresAt(entitlements.expiresAt())
         .build();
   }

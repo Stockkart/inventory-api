@@ -35,7 +35,7 @@ public class QuoteResponse {
   @AllArgsConstructor
   @Builder
   public static class QuoteItem {
-    /** PLAN now; ADDON and OCR_TOPUP arrive with add-ons. */
+    /** PLAN, ADDON or OCR_TOPUP. */
     private String type;
     private String code;
     private String name;
