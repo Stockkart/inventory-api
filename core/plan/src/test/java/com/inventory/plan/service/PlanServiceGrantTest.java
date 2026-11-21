@@ -67,10 +67,11 @@ class PlanServiceGrantTest {
     }).when(mongoTx).run(eq(MongoTx.PLAN_GRANT), anyString(), any(Runnable.class));
     when(planRepository.findById("pro-id")).thenReturn(Optional.of(pro));
     when(planRepository.findById("starter-id")).thenReturn(Optional.of(starter));
-    when(planTransactionMapper.toTransaction(any(), any(), any(), any())).thenAnswer(inv -> {
+    when(planTransactionMapper.toTransaction(any(), any(), any(), any(), any())).thenAnswer(inv -> {
       PlanTransaction tx = new PlanTransaction();
       tx.setTermStartsAt(inv.getArgument(2));
       tx.setTermEndsAt(inv.getArgument(3));
+      tx.setCreatedAt(inv.getArgument(4));
       return tx;
     });
   }
@@ -79,12 +80,15 @@ class PlanServiceGrantTest {
   void aRenewalOfTheSamePlanStartsAtTheCurrentExpiry() {
     Instant expiry = Instant.now().plus(40, ChronoUnit.DAYS).truncatedTo(ChronoUnit.MILLIS);
     when(shopProvider.getShop("shop-1")).thenReturn(Optional.of(new ShopInfo("shop-1", "pro-id", expiry)));
+    Instant before = Instant.now();
 
     planService.grantForOrder(order("pro-id"));
 
     ArgumentCaptor<PlanTransaction> tx = ArgumentCaptor.forClass(PlanTransaction.class);
     verify(planTransactionRepository).insert(tx.capture());
     assertThat(tx.getValue().getTermStartsAt()).isEqualTo(expiry);
+    // dated when it was granted, not when its term starts
+    assertThat(tx.getValue().getCreatedAt()).isBetween(before, Instant.now());
     verify(shopProvider).updatePlan("shop-1", "pro-id", tx.getValue().getTermEndsAt());
     assertThat(tx.getValue().getTermEndsAt()).isAfter(expiry.plus(360, ChronoUnit.DAYS));
   }
