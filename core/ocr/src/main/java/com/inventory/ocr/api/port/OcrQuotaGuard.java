@@ -1,8 +1,8 @@
-package com.inventory.ocr.service;
+package com.inventory.ocr.api.port;
 
 /**
- * Meters invoice scans against a shop's OCR quota. Implemented outside this module; when absent,
- * scans are not metered.
+ * Meters invoice scans against a shop's OCR quota. Implemented by the product module
+ * ({@code product/service/api/OcrQuotaGuardImpl}), which delegates to the plan api.
  *
  * <p>Callers check before calling the provider and record only after a successful parse, so failed
  * calls and retries of failed calls cost nothing.

@@ -1,6 +1,7 @@
-package com.inventory.plan.service;
+package com.inventory.plan.service.api;
 
-import com.inventory.user.service.SeatLimitGuard;
+import com.inventory.plan.service.EntitlementGuard;
+import com.inventory.user.api.port.SeatLimitGuard;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 

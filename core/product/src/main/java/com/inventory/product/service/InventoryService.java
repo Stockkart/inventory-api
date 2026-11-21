@@ -145,8 +145,8 @@ public class InventoryService {
   @Autowired
   private InvoiceParser invoiceParserService;
 
-  @Autowired(required = false)
-  private com.inventory.ocr.service.OcrQuotaGuard ocrQuotaGuard;
+  @Autowired
+  private com.inventory.ocr.api.port.OcrQuotaGuard ocrQuotaGuard;
 
   @Autowired
   private ParsedInventoryMapper parsedInventoryMapper;
@@ -266,7 +266,7 @@ public class InventoryService {
       imageValidator.validateInvoiceImageSize(i, bytes.length);
     }
 
-    boolean metered = ocrQuotaGuard != null && StringUtils.hasText(shopId);
+    boolean metered = StringUtils.hasText(shopId);
     if (metered) {
       ocrQuotaGuard.requireUnit(shopId);
     }

@@ -1,5 +1,7 @@
 package com.inventory.user.service;
 
+import com.inventory.user.api.port.SeatLimitGuard;
+
 import com.inventory.common.exception.EntitlementException;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;

@@ -1,4 +1,4 @@
-package com.inventory.user.service;
+package com.inventory.user.api.port;
 
 /**
  * Checks the shop's plan allows one more member. Implemented by the plan module to avoid a
