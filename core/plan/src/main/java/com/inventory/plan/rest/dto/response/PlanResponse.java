@@ -32,4 +32,6 @@ public class PlanResponse {
   private String badge;
   /** Struck-through anchor shown beside arcPrice. Display only: never charged. Null on legacy plans. */
   private BigDecimal listPrice;
+  /** Length of the free trial a new shop gets, in days ({@code plan.trial-days}). */
+  private Integer trialDays;
 }
