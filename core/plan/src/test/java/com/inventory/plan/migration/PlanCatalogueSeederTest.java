@@ -14,6 +14,7 @@ import com.inventory.common.entitlement.PlanFeature;
 import com.inventory.plan.domain.model.Plan;
 import com.inventory.plan.domain.repository.PlanRepository;
 import java.math.BigDecimal;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -92,8 +93,16 @@ class PlanCatalogueSeederTest {
     assertThat(byCode.get("STARTER").getFeatures()).isEmpty();
     assertThat(byCode.get("PROFESSIONAL").getFeatures())
         .containsExactlyInAnyOrder(PlanFeature.CREDIT_BALANCE, PlanFeature.ACCOUNTING,
-            PlanFeature.BARCODE_GENERATOR, PlanFeature.LOW_STOCK_NOTIFICATION);
-    assertThat(byCode.get("ENTERPRISE").getFeatures()).containsExactlyInAnyOrder(PlanFeature.values());
+            PlanFeature.BARCODE_GENERATOR, PlanFeature.LOW_STOCK_NOTIFICATION,
+            PlanFeature.SHOP_BRANDING);
+    // Priority support is for the top tier only (Enterprise Plus in the 2026 brochure).
+    assertThat(byCode.get("ENTERPRISE").getFeatures())
+        .containsExactlyInAnyOrder(EnumSet.complementOf(EnumSet.of(PlanFeature.PRIORITY_SUPPORT))
+            .toArray(PlanFeature[]::new));
+    assertThat(byCode.get("STARTER").getRoleLimit()).isEqualTo(2);
+    assertThat(byCode.get("PROFESSIONAL").getRoleLimit()).isEqualTo(3);
+    assertThat(byCode.get("ENTERPRISE").getRoleLimit()).isNull();
+    assertThat(byCode.get("ENTERPRISE").getAttendanceUserLimit()).isEqualTo(4);
     assertThat(byCode.get("PROFESSIONAL").getBadge()).isEqualTo("MOST_POPULAR");
   }
 

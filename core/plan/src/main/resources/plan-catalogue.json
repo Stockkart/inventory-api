@@ -7,6 +7,7 @@
     "arcPrice": 6999,
     "userLimit": 2,
     "ocrLimit": 100,
+    "roleLimit": 2,
     "bestFor": "Small shops",
     "features": []
   },
@@ -18,13 +19,15 @@
     "arcPrice": 9999,
     "userLimit": 3,
     "ocrLimit": 500,
+    "roleLimit": 3,
     "bestFor": "Growing businesses",
     "badge": "MOST_POPULAR",
     "features": [
       "CREDIT_BALANCE",
       "ACCOUNTING",
       "BARCODE_GENERATOR",
-      "LOW_STOCK_NOTIFICATION"
+      "LOW_STOCK_NOTIFICATION",
+      "SHOP_BRANDING"
     ]
   },
   {
@@ -34,6 +37,7 @@
     "price": 0,
     "arcPrice": 12999,
     "ocrLimit": 2000,
+    "attendanceUserLimit": 4,
     "bestFor": "Medium & large businesses",
     "features": [
       "CREDIT_BALANCE",
@@ -43,7 +47,8 @@
       "MARKETING",
       "SALARY",
       "BIOMETRIC_ATTENDANCE",
-      "ADVANCED_ACCESS_CONTROL"
+      "ADVANCED_ACCESS_CONTROL",
+      "SHOP_BRANDING"
     ]
   }
 ]
