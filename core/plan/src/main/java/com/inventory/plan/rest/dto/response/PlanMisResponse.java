@@ -34,13 +34,22 @@ public class PlanMisResponse {
   @AllArgsConstructor
   public static class Revenue {
     private long paidOrders;
-    /** Charged through the gateway: the orders' grand totals. */
+    /** Charged through the gateway: the orders' grand totals, GST included. */
     private BigDecimal grossRevenue;
+    /** grossRevenue without GST. grossTaxable + grossGst == grossRevenue. */
+    private BigDecimal grossTaxable;
+    private BigDecimal grossGst;
     private BigDecimal discounts;
     private BigDecimal walletCreditApplied;
     private long refundedOrders;
+    /** GST included. refundedTaxable + refundedGst == refundedAmount. */
     private BigDecimal refundedAmount;
+    private BigDecimal refundedTaxable;
+    private BigDecimal refundedGst;
+    /** grossRevenue - refundedAmount, GST included; netTaxable + netGst == netRevenue. */
     private BigDecimal netRevenue;
+    private BigDecimal netTaxable;
+    private BigDecimal netGst;
   }
 
   @Data
