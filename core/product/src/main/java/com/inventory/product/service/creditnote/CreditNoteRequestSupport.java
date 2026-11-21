@@ -1,14 +1,24 @@
 package com.inventory.product.service.creditnote;
 
+import com.inventory.documentservice.rest.dto.CreditNoteItem;
 import com.inventory.documentservice.rest.dto.GenerateCreditNoteRequest;
+import com.inventory.pluginengine.VerticalFieldsReader;
+import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.ShopInvoiceSettingsDocument;
 import com.inventory.product.domain.model.enums.BillingMode;
+import com.inventory.product.service.DocumentLots;
 import com.inventory.product.service.InvoiceSettingsService;
+import com.inventory.product.service.vertical.InventoryVerticalExtensionHandler;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Shared shop chrome + visibility application for credit-note print requests.
@@ -16,10 +26,49 @@ import java.util.List;
 @Component
 public class CreditNoteRequestSupport {
 
-  private final InvoiceSettingsService invoiceSettingsService;
+  /** Expiry is printed as the invoice prints it: month and year on the shop's calendar. */
+  private static final DateTimeFormatter EXPIRY_FORMAT =
+      DateTimeFormatter.ofPattern("MM/yy").withZone(ZoneId.of("Asia/Kolkata"));
 
-  public CreditNoteRequestSupport(InvoiceSettingsService invoiceSettingsService) {
+  private final InvoiceSettingsService invoiceSettingsService;
+  private final InventoryVerticalExtensionHandler inventoryVerticalExtensionHandler;
+
+  public CreditNoteRequestSupport(
+      InvoiceSettingsService invoiceSettingsService,
+      InventoryVerticalExtensionHandler inventoryVerticalExtensionHandler) {
     this.invoiceSettingsService = invoiceSettingsService;
+    this.inventoryVerticalExtensionHandler = inventoryVerticalExtensionHandler;
+  }
+
+  /**
+   * Batch and expiry of the lot a note line reverses.
+   *
+   * <p>They live on the vertical extension, not the lot. A returned batch is how the other party
+   * finds the goods on its own books, so a note without it cannot be matched to anything.
+   */
+  public void applyBatchAndExpiry(CreditNoteItem item, Inventory inventory) {
+    if (item == null || inventory == null) {
+      return;
+    }
+    applyBatchAndExpiry(
+        item,
+        inventoryVerticalExtensionHandler.loadExtensionFields(inventory.getShopId(), inventory.getId()));
+  }
+
+  /** Same, from the lot's vertical fields already read (see {@link #extensionFields}). */
+  public void applyBatchAndExpiry(CreditNoteItem item, Map<String, Object> fields) {
+    if (item == null) {
+      return;
+    }
+    Map<String, Object> f = fields != null ? fields : Map.of();
+    item.setBatchNo(VerticalFieldsReader.batchNoFrom(f));
+    Instant expiry = VerticalFieldsReader.expiryDateFrom(f);
+    item.setExpiryDate(expiry != null ? EXPIRY_FORMAT.format(expiry) : null);
+  }
+
+  /** The vertical fields of a note's lots by lot id, read once per shop rather than once per line. */
+  public Map<String, Map<String, Object>> extensionFields(Collection<Inventory> lots) {
+    return DocumentLots.extensionFields(inventoryVerticalExtensionHandler, lots);
   }
 
   public void applyShopAndVisibility(

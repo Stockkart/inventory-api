@@ -4,8 +4,8 @@ import com.inventory.app.observability.RequestMdc;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.AuthenticationException;
 import com.inventory.common.exception.BaseException;
-import com.inventory.user.service.AdminAuthService;
-import com.inventory.user.service.AdminAuthentication;
+import com.inventory.user.api.AdminSessions;
+import com.inventory.user.api.AdminSessions.AdminPrincipal;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.List;
@@ -16,16 +16,17 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 /**
- * Authenticates admin sessions on admin paths. Shop-user tokens are not admin sessions, so they get
- * 401 here; {@link AuthenticationInterceptor} does not run on these paths.
+ * Authenticates admin sessions on {@code /api/v1/admin/**}. Shop-user tokens are not admin
+ * sessions, so they get 401 here; {@link AuthenticationInterceptor} does not run on these paths.
+ *
+ * <p>Shop approval under {@code /api/v1/shops/admin/**} is not an admin-session path: it keeps the
+ * normal sign-in and the SUPER_USER check ({@code ShopValidator.validateCanApproveShops}).
  */
 @Component
 public class AdminAuthenticationInterceptor implements HandlerInterceptor {
 
   /** Ant-style patterns for {@code InterceptorRegistry}. */
-  public static final List<String> ADMIN_PATH_PATTERNS = List.of(
-      "/api/v1/admin/**",
-      "/api/v1/shops/admin/**");
+  public static final List<String> ADMIN_PATH_PATTERNS = List.of("/api/v1/admin/**");
 
   public static final String LOGIN_PATH = "/api/v1/admin/auth/login";
 
@@ -36,7 +37,7 @@ public class AdminAuthenticationInterceptor implements HandlerInterceptor {
       "/api/v1/admin/auth/logout");
 
   @Autowired
-  private AdminAuthService adminAuthService;
+  private AdminSessions adminSessions;
 
   @Override
   public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
@@ -47,14 +48,17 @@ public class AdminAuthenticationInterceptor implements HandlerInterceptor {
     if (authHeader == null || !authHeader.startsWith("Bearer ")) {
       throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "Admin sign-in required");
     }
-    AdminAuthentication auth = adminAuthService.authenticate(authHeader.substring(7));
+    AdminPrincipal auth = adminSessions.authenticate(authHeader.substring(7));
 
-    if (auth.admin().isMustChangePassword() && !PASSWORD_CHANGE_PATHS.contains(request.getRequestURI())) {
+    String path = RequestPaths.lookupPath(request);
+    if (RequestPaths.isSuspicious(request, path)) {
+      throw new BaseException(ErrorCode.ACCESS_DENIED, "Access denied");
+    }
+    if (auth.mustChangePassword() && !PASSWORD_CHANGE_PATHS.contains(path)) {
       throw new BaseException(ErrorCode.PASSWORD_CHANGE_REQUIRED, ErrorCode.PASSWORD_CHANGE_REQUIRED.getMessage());
     }
 
-    request.setAttribute(AdminAuthentication.REQUEST_ATTRIBUTE, auth);
-    request.setAttribute(AdminAuthentication.ADMIN_ID_ATTRIBUTE, auth.adminId());
+    request.setAttribute(AdminSessions.ADMIN_ID_ATTRIBUTE, auth.adminId());
     MDC.put(RequestMdc.USER_ID, "admin:" + auth.adminId());
     return true;
   }

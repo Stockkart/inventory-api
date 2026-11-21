@@ -1,7 +1,7 @@
 package com.inventory.accounting.domain.repository;
 
 import com.inventory.accounting.domain.model.LedgerEntry;
-import com.inventory.accounting.domain.model.PartyType;
+import com.inventory.accounting.api.PartyType;
 import java.time.LocalDate;
 import java.util.List;
 import org.springframework.data.domain.Page;

@@ -35,8 +35,16 @@ public class Shop {
   private String fssai; // Optional: FSSAI license number
   private String dlNo; // Required for pharmacy/pharm business types
   private String panNo; // Optional: PAN number
-  private String sgst; // Optional: State GST
-  private String cgst; // Optional: Central GST
+  /**
+   * @deprecated GST is set per product/lot, never per shop. Old shops still carry a value here; it
+   * is no longer read anywhere and no longer accepted on registration. Kept only so stored
+   * documents map without loss.
+   */
+  @Deprecated
+  private String sgst;
+  /** @deprecated see {@link #sgst}. */
+  @Deprecated
+  private String cgst;
   private String tagline; // Optional: Shop tagline, banner word, or highlight text
   private String planId; // Plan ID. null = trial.
   @Field("expiryDate")

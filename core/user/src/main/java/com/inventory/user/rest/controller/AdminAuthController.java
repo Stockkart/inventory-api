@@ -54,7 +54,10 @@ public class AdminAuthController {
         adminAuthService.changePassword(auth(httpRequest), request)));
   }
 
-  private static AdminAuthentication auth(HttpServletRequest request) {
-    return (AdminAuthentication) request.getAttribute(AdminAuthentication.REQUEST_ATTRIBUTE);
+  /** The interceptor has already checked the token; this loads the admin and session behind it. */
+  private AdminAuthentication auth(HttpServletRequest request) {
+    String header = request.getHeader("Authorization");
+    return adminAuthService.authenticate(
+        header != null && header.startsWith("Bearer ") ? header.substring(7) : null);
   }
 }
