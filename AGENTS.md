@@ -213,6 +213,7 @@ MongoDB: "table" means collection, "column" means field.
 | `PLATFORM_ADMIN_EMAILS` | comma-separated emails `AdminBootstrap` creates as platform admins on startup (each gets its own random first password, logged once, to be changed at first sign-in) | both |
 | `ADMIN_CLIENT_URL` | origin of the platform-admin app: CORS for `/api/v1/admin/**` and the base of admin password-reset links | both |
 | `PLAN_GST_RATE_PERCENT` | GST rate (percent, default 18) inside tax-inclusive plan prices; each plan order stores `taxableAmount` + `gstAmount` at it, and the plan MIS splits older orders at it | both |
+| `PLAN_BROCHURE_BACKFILL_ENABLED`, `PLAN_BROCHURE_BACKFILL_DRY_RUN` | one-off `PlanBrochureFieldsBackfill`: sets `roleLimit` / `attendanceUserLimit` from `plan-catalogue.json` on catalogue plans where the field was never set (default off; features are ticked in catalogue admin) | both |
 | `GSTIN_PROVIDER` | online GSTIN lookup provider; unset means offline check only | .env.example |
 | `GSTINAPI_KEY` | GSTIN lookup API key (secret, never commit) | .env.example |
 
