@@ -1,5 +1,7 @@
 package com.inventory.plan.service;
 
+import com.inventory.plan.utils.TimedValue;
+
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.plan.domain.model.Plan;
 import com.inventory.plan.domain.repository.PlanRepository;
@@ -25,6 +27,9 @@ public class EffectivePlanResolver {
 
   @Autowired
   private PlanRepository planRepository;
+
+  /** The pricing page and every quote read the catalogue; kept 60 s per instance (O8). */
+  private final TimedValue<List<Plan>> catalogue = new TimedValue<>(java.time.Duration.ofSeconds(60));
 
   /**
    * The plan for a shop's {@code planId}; the trial plan when the shop has none.
@@ -55,10 +60,15 @@ public class EffectivePlanResolver {
    * Plans shown on the pricing page: not deactivated, by display order then price.
    */
   public List<Plan> activeCatalogue() {
-    return planRepository.findAll().stream()
+    return catalogue.get(() -> planRepository.findAll().stream()
         .filter(EffectivePlanResolver::isActive)
         .sorted(CATALOGUE_ORDER)
-        .toList();
+        .toList());
+  }
+
+  /** Forget the cached catalogue; plan admin writes call this. */
+  public void evictCatalogue() {
+    catalogue.evict();
   }
 
   public static boolean isActive(Plan plan) {
