@@ -17,6 +17,7 @@ import com.inventory.plan.domain.model.ShopCreditSource;
 import com.inventory.plan.domain.repository.ShopCreditEntryRepository;
 import com.inventory.plan.domain.repository.ShopCreditRepository;
 import com.inventory.plan.mapper.WalletMapper;
+import com.inventory.plan.rest.dto.response.WalletEntryResponse;
 import com.mongodb.client.result.UpdateResult;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -261,6 +262,23 @@ class WalletServiceTest {
     assertThatThrownBy(() -> service.consume("shop-1", "order-1", new BigDecimal("200")))
         .isInstanceOf(IllegalStateException.class);
     verify(mongoTemplate, never()).updateFirst(any(Query.class), any(Update.class), eq(ShopCredit.class));
+  }
+
+  @Test
+  void theShopWalletLeavesOutRowsThatDidNotMoveTheAvailableBalance() {
+    when(creditRepository.findBalancesById("shop-1")).thenReturn(Optional.of(wallet("0", "0", 3)));
+    WalletEntryResponse held = entry(ShopCreditSource.ORDER_RESERVATION, "-999.90");
+    WalletEntryResponse spent = entry(ShopCreditSource.ORDER_REDEMPTION, "0.00");
+    WalletEntryResponse reward = entry(ShopCreditSource.REFERRAL_REWARD, "999.90");
+    org.mockito.Mockito.doReturn(new ArrayList<>(List.of(spent, held, reward)))
+        .when(walletMapper).toEntryResponses(any());
+
+    assertThat(service.describeForShop("shop-1").getEntries()).containsExactly(held, reward);
+    assertThat(service.describe("shop-1").getEntries()).containsExactly(spent, held, reward);
+  }
+
+  private static WalletEntryResponse entry(ShopCreditSource source, String availableDelta) {
+    return WalletEntryResponse.builder().source(source).availableDelta(new BigDecimal(availableDelta)).build();
   }
 
   @Test

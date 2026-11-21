@@ -86,6 +86,19 @@ public class WalletService {
         entryRepository.findByShopIdOrderByCreatedAtDesc(shopId, PageRequest.of(0, RECENT_ENTRIES)));
   }
 
+  /**
+   * The wallet as the shop sees it: only rows that moved its available balance. A paid order's
+   * {@code ORDER_REDEMPTION} only spends credit its checkout already took from available (the
+   * {@code ORDER_RESERVATION} row), so it would show as a +0 line; it stays in the ledger.
+   */
+  public WalletResponse describeForShop(String shopId) {
+    WalletResponse wallet = describe(shopId);
+    wallet.setEntries(wallet.getEntries().stream()
+        .filter(entry -> entry.getAvailableDelta() != null && entry.getAvailableDelta().signum() != 0)
+        .toList());
+    return wallet;
+  }
+
   /** Holds credit for an order at checkout. False when the balance no longer covers it. */
   public boolean reserve(String shopId, String orderId, BigDecimal amount) {
     return apply(shopId, "order-reserve:" + orderId, ShopCreditSource.ORDER_RESERVATION, orderId, amount,
