@@ -15,6 +15,9 @@ import org.springframework.core.io.ResourceLoader;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Update;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.index.Index;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -88,20 +91,33 @@ public class PlanCatalogueSeeder {
   }
 
   /**
-   * Inserts missing tiers, then links each tier to the next by display order for upsell.
+   * Inserts missing tiers, then links each tier inserted by this run to the next by display order
+   * for upsell. Existing rows are never written: an admin who cleared or changed a link keeps it.
    */
   public List<Plan> seed(List<Plan> seeds) {
     validate(seeds);
     List<Plan> tiers = new ArrayList<>();
+    java.util.Set<String> inserted = new java.util.HashSet<>();
     seeds.stream()
         .sorted(Comparator.comparing(Plan::getDisplayOrder))
-        .forEach(seed -> tiers.add(insertIfMissing(seed)));
+        .forEach(seed -> {
+          boolean existed = planRepository.findByCode(seed.getCode()).isPresent();
+          Plan tier = insertIfMissing(seed);
+          if (!existed) {
+            inserted.add(tier.getId());
+          }
+          tiers.add(tier);
+        });
 
     for (int i = 0; i < tiers.size() - 1; i++) {
       Plan tier = tiers.get(i);
-      if (tier.getLinkedId() == null) {
-        tier.setLinkedId(tiers.get(i + 1).getId());
-        planRepository.save(tier);
+      if (inserted.contains(tier.getId()) && tier.getLinkedId() == null) {
+        String next = tiers.get(i + 1).getId();
+        // only the link field, and only while still unset: never a whole-document save
+        mongoTemplate.updateFirst(
+            Query.query(Criteria.where("_id").is(tier.getId()).and("linkedId").is(null)),
+            new Update().set("linkedId", next), Plan.class);
+        tier.setLinkedId(next);
       }
     }
     return tiers;

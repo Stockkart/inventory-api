@@ -61,6 +61,9 @@ public class PlanAdminService {
   @Autowired
   private EntitlementService entitlementService;
 
+  @Autowired
+  private EffectivePlanResolver effectivePlanResolver;
+
   /** Every plan, hidden ones included, in pricing-page order. */
   public List<AdminPlanResponse> list() {
     return planRepository.findAll().stream()
@@ -81,6 +84,7 @@ public class PlanAdminService {
     } catch (DuplicateKeyException e) {
       throw new ValidationException("A plan with code " + request.getCode() + " already exists");
     }
+    effectivePlanResolver.evictCatalogue();
     audit(actorUserId, "PLAN_CREATED", plan.getId(), null, snapshot(plan), null);
     log.info("Plan {} created by {}", plan.getCode(), actorUserId);
     return planMapper.toAdminResponse(plan);
@@ -114,6 +118,7 @@ public class PlanAdminService {
     }
     Plan after = load(id);
     entitlementService.invalidateAll();
+    effectivePlanResolver.evictCatalogue();
     audit(actorUserId, "PLAN_UPDATED", id, snapshot(before), snapshot(after), null);
     return planMapper.toAdminResponse(after);
   }
@@ -139,6 +144,7 @@ public class PlanAdminService {
     Plan after = load(id);
     if (before != null) {
       entitlementService.invalidateAll();
+      effectivePlanResolver.evictCatalogue();
       audit(actorUserId, active ? "PLAN_ACTIVATED" : "PLAN_DEACTIVATED", id,
           snapshot(before), snapshot(after), request.getReason());
     }
