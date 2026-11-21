@@ -28,12 +28,14 @@ import java.time.Instant;
     @CompoundIndex(
         name = "shop_identity_idx",
         def = "{'shopId': 1, 'normalizedName': 1, 'companyName': 1, 'baseUnit': 1}"),
-    /** Unique non-empty barcodes per shop (sparse: missing/null barcode allowed many times). */
+    /** Barcode lookup; several products may share a barcode (e.g. pack-size variants). */
     @CompoundIndex(
-        name = "shop_barcode_unique_idx",
+        name = "shop_barcode_idx",
         def = "{'shopId': 1, 'barcode': 1}",
-        unique = true,
-        sparse = true)
+        sparse = true),
+    /** Advanced search (R4.7): company filter / facet and HSN prefix match. */
+    @CompoundIndex(name = "shop_company_idx", def = "{'shopId': 1, 'companyName': 1}"),
+    @CompoundIndex(name = "shop_hsn_idx", def = "{'shopId': 1, 'hsn': 1}", sparse = true)
 })
 public class Product {
 
