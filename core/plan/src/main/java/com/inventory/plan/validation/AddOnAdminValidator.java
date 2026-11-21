@@ -96,7 +96,7 @@ public class AddOnAdminValidator {
       if (request.getGrantsFeature() == null) {
         throw new ValidationException("A feature add-on must say which feature it grants");
       }
-      if (request.isStackable()) {
+      if (Boolean.TRUE.equals(request.getStackable())) {
         throw new ValidationException("A feature add-on cannot be bought more than once");
       }
     } else {
