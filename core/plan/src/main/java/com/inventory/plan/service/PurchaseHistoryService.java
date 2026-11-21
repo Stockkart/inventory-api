@@ -8,6 +8,9 @@ import com.inventory.plan.mapper.PlanTransactionMapper;
 import com.inventory.plan.rest.dto.response.PlanTransactionResponse;
 import com.inventory.plan.utils.constants.PlanPaymentConstants;
 import com.inventory.plan.utils.constants.PurchaseKindConstants;
+import java.math.BigDecimal;
+import com.inventory.plan.utils.constants.PlanConstants;
+import com.inventory.plan.utils.PlanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
@@ -75,22 +78,86 @@ public class PurchaseHistoryService {
     for (PlanTransaction tx : transactions) {
       PlanPaymentOrder order = tx.getPaymentOrderId() != null ? orders.get(tx.getPaymentOrderId()) : null;
       if (tx.getItems() != null) {
-        rows.add(planTransactionMapper.toResponse(tx, order, PurchaseKindConstants.PLAN));
+        rows.add(transactionRow(tx, order, PurchaseKindConstants.PLAN));
       } else if (claimed.contains(tx)) {
-        rows.add(planTransactionMapper.toResponse(tx, order, PurchaseKindConstants.PLAN));
+        rows.add(transactionRow(tx, order, PurchaseKindConstants.PLAN));
       } else {
         // Payment ids on assigned rows come from the request body, so they prove nothing.
-        rows.add(planTransactionMapper.toResponse(tx, null, PurchaseKindConstants.ASSIGNED));
+        rows.add(transactionRow(tx, null, PurchaseKindConstants.ASSIGNED));
       }
     }
     for (PlanPaymentOrder order : orders.values()) {
       if (!covered.contains(order.getId())) {
-        rows.add(planTransactionMapper.toResponse(order, order.isAddOnOnly() ? PurchaseKindConstants.ADD_ON_ONLY : PurchaseKindConstants.PLAN));
+        rows.add(orderRow(order, order.isAddOnOnly() ? PurchaseKindConstants.ADD_ON_ONLY : PurchaseKindConstants.PLAN));
       }
     }
     rows.sort(Comparator.comparing(PlanTransactionResponse::getSortAt,
         Comparator.nullsLast(Comparator.reverseOrder())));
     return rows;
+  }
+
+  /**
+   * History row for a transaction. {@code order} is the shop's paid order behind it, when verified.
+   * Assigned rows carry no amount (no verified charge); a snapshot-less verified row shows what the
+   * order charged, with the order's breakdown. A row from before terms were stored gets an
+   * estimated term from its date and duration.
+   */
+  PlanTransactionResponse transactionRow(PlanTransaction tx, PlanPaymentOrder order, String kind) {
+    boolean assigned = PurchaseKindConstants.ASSIGNED.equals(kind);
+    boolean fromOrder = !assigned && tx.getItems() == null && order != null;
+    PlanTransactionResponse r = planTransactionMapper.toRow(tx);
+    r.setKind(kind);
+    r.setStatus(order != null ? order.getStatus() : null);
+    r.setAmount(assigned ? null : (fromOrder ? order.getAmount() : tx.getAmount()));
+    r.setSortAt(tx.getCreatedAt());
+    r.setRefundedAt(order != null && order.getRefundedAt() != null ? order.getRefundedAt() : tx.getRefundedAt());
+    if (tx.getItems() == null) {
+      r.setSubtotal(null);
+      r.setDiscountTotal(null);
+      r.setWalletCredit(null);
+      if (fromOrder) {
+        r.setItems(order.getItems() != null ? planTransactionMapper.toLineResponses(order.getItems()) : null);
+        r.setSubtotal(order.getSubtotal());
+        r.setDiscountTotal(order.getDiscountTotal());
+        r.setWalletCredit(order.getWalletCredit());
+      }
+    }
+    if (tx.getTermEndsAt() == null) {
+      r.setTermStartsAt(null);
+      if (tx.getCreatedAt() != null) {
+        int months = tx.getDurationMonths() != null ? tx.getDurationMonths() : PlanConstants.DEFAULT_DURATION_MONTHS;
+        r.setTermStartsAt(tx.getCreatedAt());
+        r.setTermEndsAt(PlanUtils.plusMonths(tx.getCreatedAt(), months));
+        r.setTermEstimated(true);
+      }
+    }
+    applyRefund(r, order);
+    return r;
+  }
+
+  /** History row for a paid order that has no transaction (add-on-only, or paid but not yet granted). */
+  PlanTransactionResponse orderRow(PlanPaymentOrder order, String kind) {
+    PlanTransactionResponse r = planTransactionMapper.toRow(order);
+    r.setKind(kind);
+    r.setCreatedAt(order.getPaidAt() != null ? order.getPaidAt() : order.getCreatedAt());
+    r.setSortAt(r.getCreatedAt());
+    applyRefund(r, order);
+    return r;
+  }
+
+  /** Money returned on a refunded order: to the payment method, and wallet credit given back. */
+  private static void applyRefund(PlanTransactionResponse r, PlanPaymentOrder order) {
+    if (order == null) {
+      return;
+    }
+    BigDecimal refunded = order.getRefundedAmount();
+    if (refunded != null && refunded.signum() > 0) {
+      r.setRefundedToPaymentMethod(refunded);
+    }
+    BigDecimal wallet = order.getWalletCredit();
+    if (PlanPaymentConstants.STATUS_REFUNDED.equals(order.getStatus()) && wallet != null && wallet.signum() > 0) {
+      r.setWalletCreditReturned(wallet);
+    }
   }
 
   private static boolean isVerifiedPlanOrder(PlanTransaction tx, PlanPaymentOrder order) {
