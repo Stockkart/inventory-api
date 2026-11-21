@@ -30,6 +30,9 @@ class PlanOrderControllerTest {
   @Mock
   private OrderPricingService orderPricingService;
 
+  @Mock
+  private com.inventory.plan.service.PlanPaymentService planPaymentService;
+
   @InjectMocks
   private PlanOrderController controller;
 
@@ -85,5 +88,19 @@ class PlanOrderControllerTest {
 
     assertThat(captor.getValue().getPlanCode()).isEqualTo("PROFESSIONAL");
     assertThat(captor.getValue().getApplyWalletCredit()).isTrue();
+  }
+
+  @Test
+  void cancelContract() throws Exception {
+    when(planPaymentService.cancelOrder("shop-1", "order-1")).thenReturn(
+        com.inventory.plan.rest.dto.response.PlanOrderStatusResponse.builder()
+            .orderId("order-1").status("CANCELLED")
+            .phase(com.inventory.plan.domain.model.OrderPhase.ENDED).build());
+
+    mvc.perform(post("/api/v1/plans/orders/order-1/cancel").requestAttr("shopId", "shop-1"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.orderId").value("order-1"))
+        .andExpect(jsonPath("$.data.status").value("CANCELLED"))
+        .andExpect(jsonPath("$.data.phase").value("ENDED"));
   }
 }

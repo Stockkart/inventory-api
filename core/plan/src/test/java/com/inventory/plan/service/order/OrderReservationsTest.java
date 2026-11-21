@@ -22,8 +22,24 @@ class OrderReservationsTest {
   private final PlanPaymentOrder order = new PlanPaymentOrder();
   private final PricedCart cart = new PricedCart(null, List.of(), null, null, null, null, 12);
 
+  private final PaymentOrderStateService stateService = mock(PaymentOrderStateService.class);
+
   OrderReservationsTest() {
     ReflectionTestUtils.setField(reservations, "handlers", List.of(vouchers, wallet));
+    ReflectionTestUtils.setField(reservations, "stateService", stateService);
+    order.setId("order-1");
+  }
+
+  @Test
+  void anEndedOrderIsReleasedOnlyWhenItsReleaseIsClaimed() {
+    java.time.Instant now = java.time.Instant.parse("2026-11-21T10:00:00Z");
+    when(stateService.markReservationsReleased("order-1", now)).thenReturn(true, false);
+
+    assertThat(reservations.releaseEnded(order, now)).isTrue();
+    assertThat(reservations.releaseEnded(order, now)).isFalse();
+
+    verify(vouchers, org.mockito.Mockito.times(1)).release(order);
+    verify(wallet, org.mockito.Mockito.times(1)).release(order);
   }
 
   @Test
