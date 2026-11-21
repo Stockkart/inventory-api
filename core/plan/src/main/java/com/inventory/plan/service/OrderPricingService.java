@@ -110,8 +110,8 @@ public class OrderPricingService {
   }
 
   /**
-   * Spends the balance line by line after vouchers (§24): the plan line first, then add-ons. OCR
-   * top-ups are never paid from the wallet. The plan line is never taken below {@code planFloor}
+   * Spends the balance line by line after vouchers (§24): the plan line first, then add-ons and OCR
+   * scan packs in cart order (owner decision 2026-11-21: scan packs take credit like any add-on). The plan line is never taken below {@code planFloor}
    * (the plan's base price; null = no floor); credit it cannot take flows on to add-ons. Only reads
    * the balance; checkout reserves it.
    */
@@ -119,7 +119,7 @@ public class OrderPricingService {
     BigDecimal remaining = available == null ? BigDecimal.ZERO : available.max(BigDecimal.ZERO);
     BigDecimal applied = BigDecimal.ZERO;
     for (OrderLine line : items) {
-      if (PricingConstants.ITEM_TYPE_OCR_TOPUP.equals(line.getType()) || remaining.signum() <= 0) {
+      if (remaining.signum() <= 0) {
         continue;
       }
       BigDecimal take = remaining.min(walletRoom(line, planFloor));
