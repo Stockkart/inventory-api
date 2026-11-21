@@ -40,12 +40,17 @@ public enum ErrorCode {
   ORDER_NOT_FOUND(5000, "Order not found", HttpStatus.NOT_FOUND),
   INVALID_ORDER_STATUS(5001, "Invalid order status", HttpStatus.BAD_REQUEST),
   IDEMPOTENCY_KEY_REUSED(5002, "Idempotency key was already used for a different request", HttpStatus.CONFLICT),
+  /** The order was paid (or is being fulfilled), so it can no longer be cancelled. */
+  ORDER_NOT_CANCELLABLE(5003, "This order can no longer be cancelled", HttpStatus.CONFLICT),
 
   // Plan / subscription errors (6000-6999)
   PLAN_EXPIRED(6000, "Plan or trial has expired", HttpStatus.PAYMENT_REQUIRED),
   FEATURE_NOT_IN_PLAN(6001, "Feature is not included in the current plan", HttpStatus.PAYMENT_REQUIRED),
   SEAT_LIMIT_REACHED(6002, "User seat limit reached for the current plan", HttpStatus.PAYMENT_REQUIRED),
   OCR_QUOTA_EXCEEDED(6003, "OCR quota exhausted for the current period", HttpStatus.PAYMENT_REQUIRED),
+  /** A different plan was chosen while the current paid plan still has days left. */
+  PLAN_CHANGE_NOT_ALLOWED(6020, "Your current plan is still active; you can renew it, or change plans after it ends",
+      HttpStatus.CONFLICT),
 
   // Taxation / GST errors (7000-7999)
   GST_CONFIGURATION_MISSING(7000, "GST configuration is incomplete",

@@ -29,6 +29,22 @@ public class OrderPricingService {
   @Autowired
   private PlanRepository planRepository;
 
+  @Autowired
+  private PlanService planService;
+
+  /**
+   * Prices a cart for the shop. A different plan while the shop's paid plan still has days left is
+   * refused here as at checkout ({@code PLAN_CHANGE_NOT_ALLOWED}).
+   */
+  public QuoteResponse quote(String shopId, QuoteRequest request) {
+    if (StringUtils.hasText(shopId) && request != null && StringUtils.hasText(request.getPlanCode())) {
+      planRepository.findByCode(request.getPlanCode().trim().toUpperCase(Locale.ROOT))
+          .filter(EffectivePlanResolver::isActive)
+          .ifPresent(plan -> planService.requirePlanChangeAllowed(shopId, plan));
+    }
+    return quote(request);
+  }
+
   public QuoteResponse quote(QuoteRequest request) {
     if (request == null || !StringUtils.hasText(request.getPlanCode())) {
       throw new ValidationException("planCode is required");
