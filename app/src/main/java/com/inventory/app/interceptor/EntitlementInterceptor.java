@@ -1,7 +1,7 @@
 package com.inventory.app.interceptor;
 
 import com.inventory.common.entitlement.RequiresEntitlement;
-import com.inventory.plan.service.EntitlementGuard;
+import com.inventory.plan.api.Entitlements;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,7 +18,7 @@ import org.springframework.web.servlet.HandlerInterceptor;
 public class EntitlementInterceptor implements HandlerInterceptor {
 
   @Autowired
-  private EntitlementGuard entitlementGuard;
+  private Entitlements entitlements;
 
   @Override
   public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
@@ -33,7 +33,7 @@ public class EntitlementInterceptor implements HandlerInterceptor {
     if (!StringUtils.hasText(shopId)) {
       return true;
     }
-    entitlementGuard.requireFeature(shopId, required.value());
+    entitlements.requireFeature(shopId, required.value());
     return true;
   }
 

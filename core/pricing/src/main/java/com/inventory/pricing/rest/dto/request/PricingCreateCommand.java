@@ -29,4 +29,6 @@ public class PricingCreateCommand {
   private Scheme saleScheme;
   private String sgst;
   private String cgst;
+  /** True when costPrice was entered off a bill whose rates include GST. */
+  private Boolean costPriceIncludesTax;
 }

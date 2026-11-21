@@ -10,4 +10,6 @@ public class UpdateDefaultPriceItem {
   private String pricingId;
   private List<Rate> rates;
   private String defaultRate;
+  /** Rate names to regenerate from their rule, clearing a per-batch override. Needs the grant. */
+  private List<String> resetRates;
 }

@@ -1,6 +1,8 @@
 package com.inventory.analytics.rest.controller;
 
 
+import com.inventory.common.heavy.HeavyKind;
+import com.inventory.common.heavy.HeavyRequest;
 import com.inventory.metrics.annotation.Latency;
 import com.inventory.metrics.annotation.RecordRequestRate;
 import com.inventory.metrics.annotation.RecordStatusCodes;
@@ -44,6 +46,7 @@ public class ProfitAnalyticsController {
    * - timeSeries: Granularity - hour, day, week, month (optional)
    * - lowMarginThreshold: Margin threshold for low margin products in % (optional, defaults to 10%)
    */
+  @HeavyRequest(HeavyKind.ANALYTICS)
   @GetMapping
   public ResponseEntity<ApiResponse<ProfitAnalyticsResponse>> getProfitAnalytics(
       @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant startDate,

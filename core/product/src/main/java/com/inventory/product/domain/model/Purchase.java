@@ -15,6 +15,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 
 @Data
@@ -49,6 +50,10 @@ public class Purchase {
   private String convertedToPurchaseId;
   /** On a SALE cart created from an estimate — points back to the source estimate. */
   private String sourceEstimateId;
+  /** When the estimate was locked for print (estimate documents only). */
+  private Instant lockedAt;
+  /** User who locked the estimate. */
+  private String lockedByUserId;
   private String userId;
   private String shopId;
   private List<PurchaseItem> items;
@@ -56,6 +61,20 @@ public class Purchase {
   private BigDecimal taxTotal;
   private BigDecimal sgstAmount; // Calculated SGST amount
   private BigDecimal cgstAmount; // Calculated CGST amount
+  /** IGST, charged instead of SGST + CGST when the supply crosses a state border. */
+  private BigDecimal igstAmount;
+  /**
+   * Whether this sale was billed as an interstate supply.
+   *
+   * <p>Recorded at checkout rather than worked out again at filing time, because the return has
+   * to say what the invoice said. The customer's registration can change, and a bill already
+   * handed over cannot; re-deriving this later would report one thing while the paper in the
+   * customer's file says another.
+   *
+   * <p>Null on every sale made before this was captured. Those were billed as local supplies
+   * whatever their customer's state, and are reported the way they were billed.
+   */
+  private Boolean interstate;
   private BigDecimal discountTotal;
   private BigDecimal saleAdditionalDiscountTotal;
   private BigDecimal grandTotal;
@@ -83,6 +102,31 @@ public class Purchase {
   private String customerName; // Used when only name is provided without phone
   /** Daily order token (cafe vertical). */
   private String tokenNo;
+
+  /** Dine-in table, free text. There is no table registry. */
+  private String tableLabel;
+
+  /**
+   * Cafe kitchen punches against this cart, in the order they were pressed.
+   *
+   * <p>Embedded, and written by {@code CafeCartPuncher} (reached from {@code plugins/cafe} through
+   * {@code CafeCartPunchPort}) as raw BSON, so
+   * that a punch and the line advance it caused are one atomic operation: there is no
+   * {@code MongoTransactionManager} here, and a crash between two writes would advance the lines
+   * while losing the deltas forever.
+   *
+   * <p>It must be a mapped property and not merely a key the raw pipeline invents: {@code
+   * MongoRepository.save} is a full-document replace, so an unmapped array is silently dropped by
+   * every ordinary save of this document. Three things rest on it surviving: the claim's {@code
+   * $ne} idempotency, a replay's deltas (which are read off this record, never off the
+   * already-advanced lines), and a ticket's round number, which is this list's index of the punch
+   * plus one.
+   *
+   * <p>Left null rather than initialised to an empty list: a grocery, medical or sports bill
+   * should carry no cafe key at all.
+   */
+  private List<CafeKotPunch> cafeKotPunches;
+
   private Instant createdAt;
   private Instant updatedAt;
 }
