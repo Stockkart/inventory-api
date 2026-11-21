@@ -13,6 +13,7 @@ import org.springframework.util.StringUtils;
 public class VoucherAdminValidator {
 
   public static final int MAX_BATCH = 500;
+  public static final int MAX_PAGE_SIZE = 500;
   private static final Pattern CODE = Pattern.compile("^[A-Z0-9][A-Z0-9-]{3,29}$");
   private static final Pattern PREFIX = Pattern.compile("^[A-Z0-9]{1,8}$");
   private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
@@ -58,6 +59,9 @@ public class VoucherAdminValidator {
         if (request.getValue() == null || request.getValue().signum() <= 0) {
           throw new ValidationException("Flat discount must be greater than 0");
         }
+        if (request.getValue().stripTrailingZeros().scale() > 2) {
+          throw new ValidationException("Flat discount can have at most 2 decimal places");
+        }
       }
     }
     if (request.getQuantity() != null && request.getQuantity() < 1) {
@@ -80,6 +84,15 @@ public class VoucherAdminValidator {
     }
     validateCap(request.getMaxRedemptions());
     validateNote(request.getNote());
+  }
+
+  public void validatePage(Integer page, Integer size) {
+    if (page != null && page < 0) {
+      throw new ValidationException("Page must be 0 or more");
+    }
+    if (size != null && (size < 1 || size > MAX_PAGE_SIZE)) {
+      throw new ValidationException("Page size must be 1-" + MAX_PAGE_SIZE);
+    }
   }
 
   public void validateActive(String id, VoucherActiveRequest request) {

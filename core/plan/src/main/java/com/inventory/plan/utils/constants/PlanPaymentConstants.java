@@ -51,6 +51,10 @@ public final class PlanPaymentConstants {
   public static final String IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
   public static final int MAX_IDEMPOTENCY_KEY_LENGTH = 100;
 
+  /** Audit action for a second captured payment on an order already paid (refund it). */
+  public static final String AUDIT_DUPLICATE_CAPTURE = "PLAN_PAYMENT_DUPLICATE_CAPTURE";
+  public static final String AUDIT_TARGET_ORDER = "PLAN_PAYMENT_ORDER";
+
   public static final String CURRENCY_INR = "INR";
   public static final int DEFAULT_CHECKOUT_DURATION_MONTHS = 12;
   /** Razorpay minimum order amount in paise (₹1). */

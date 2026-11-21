@@ -22,6 +22,8 @@ import org.springframework.stereotype.Component;
 public class PaymentOrderMaintenanceJob {
 
   static final int BATCH = 200;
+  /** Upper bound on expiry pages per run, so one run always ends. */
+  static final int MAX_EXPIRY_PAGES = 50;
   /** A just-paid order is normally fulfilled in the same request; give it this long first. */
   static final Duration PAID_GRACE = Duration.ofMinutes(1);
 
@@ -54,14 +56,20 @@ public class PaymentOrderMaintenanceJob {
     }
   }
 
+  /** Pages through expirable orders until a short page; every order it sees leaves the open states. */
   int expireUnpaid() {
     Instant now = now();
-    List<PlanPaymentOrder> expirable = stateService.findExpirable(now, Duration.ofMinutes(orderTtlMinutes), BATCH);
     int expired = 0;
-    for (PlanPaymentOrder order : expirable) {
-      if (stateService.endUnpaid(order.getId(), PlanPaymentConstants.STATUS_EXPIRED, null, now)) {
-        reservations.release(order);
-        expired++;
+    for (int page = 0; page < MAX_EXPIRY_PAGES; page++) {
+      List<PlanPaymentOrder> expirable = stateService.findExpirable(now, Duration.ofMinutes(orderTtlMinutes), BATCH);
+      for (PlanPaymentOrder order : expirable) {
+        if (stateService.endUnpaid(order.getId(), PlanPaymentConstants.STATUS_EXPIRED, null, now)) {
+          reservations.releaseEnded(order, now);
+          expired++;
+        }
+      }
+      if (expirable.size() < BATCH) {
+        break;
       }
     }
     if (expired > 0) {
