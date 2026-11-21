@@ -17,7 +17,7 @@ import com.inventory.plan.rest.dto.request.WalletAdjustmentRequest;
 import com.inventory.plan.rest.dto.response.AdminReferralAttributionResponse;
 import com.inventory.plan.rest.dto.response.AdminReferralRewardResponse;
 import com.inventory.plan.rest.dto.response.WalletResponse;
-import com.inventory.plan.service.ShopProvider;
+import com.inventory.plan.api.port.ShopPort;
 import com.inventory.plan.service.wallet.WalletService;
 import com.inventory.plan.utils.constants.PlanPaymentConstants;
 import java.math.BigDecimal;
@@ -74,7 +74,7 @@ public class ReferralAdminService {
   private MongoTemplate mongoTemplate;
 
   @Autowired
-  private ShopProvider shopProvider;
+  private ShopPort shopProvider;
 
   @Autowired
   private ReferralAdminMapper mapper;
@@ -254,7 +254,7 @@ public class ReferralAdminService {
       return null;
     }
     return cache.computeIfAbsent(shopId,
-        id -> shopProvider.getReferralShop(id).map(ShopProvider.ReferralShop::name).orElse(null));
+        id -> shopProvider.getReferralShop(id).map(ShopPort.ReferralShop::name).orElse(null));
   }
 
   private static void requireReason(String reason) {

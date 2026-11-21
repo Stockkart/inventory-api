@@ -1,5 +1,6 @@
 package com.inventory.user.domain.model;
 
+import com.inventory.common.gst.PostalAddress;
 import com.inventory.user.domain.model.enums.CustomerPartyType;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -22,11 +23,18 @@ public class Customer {
   /** Sparse unique identity keys — application enforces match order; indexes aid lookups. */
   @Indexed(sparse = true)
   private String phone;
+  /** Free-text address as typed; kept for bills and for customers saved before fielded addresses. */
   private String address;
+  /** Fielded address; the state code here is what decides CGST+SGST vs IGST on a sale. */
+  private PostalAddress postalAddress;
   @Indexed(sparse = true)
   private String email;
   @Indexed(sparse = true)
   private String gstin;
+  /** When the GSTIN was last confirmed against the GST network; null if never. */
+  private Instant gstinVerifiedAt;
+  /** Status the GST network reported (Active, Cancelled, ...); null if unverified. */
+  private String gstinStatus;
   @Indexed(sparse = true)
   private String dlNo;
   @Indexed(sparse = true)

@@ -17,7 +17,7 @@ import org.springframework.web.servlet.HandlerInterceptor;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.handler.MappedInterceptor;
 
-/** Admin paths are guarded only by admin sessions; shop paths only by shop-user tokens. */
+/** /api/v1/admin/** is guarded only by admin sessions; shop paths only by shop-user tokens. */
 class CorsConfigInterceptorWiringTest {
 
   private final AdminAuthenticationInterceptor admin = mock(AdminAuthenticationInterceptor.class);
@@ -30,7 +30,14 @@ class CorsConfigInterceptorWiringTest {
   void adminPathsRunOnlyTheAdminInterceptor() {
     assertThat(interceptorsFor("/api/v1/admin/plans")).containsExactly(admin);
     assertThat(interceptorsFor("/api/v1/admin/admins/a1/active")).containsExactly(admin);
-    assertThat(interceptorsFor("/api/v1/shops/admin/shops/s1/approve")).containsExactly(admin);
+  }
+
+  /** Shop approval keeps the normal sign-in; the SUPER_USER check runs in ShopValidator. */
+  @Test
+  void shopApprovalRunsTheShopUserInterceptors() {
+    assertThat(interceptorsFor("/api/v1/shops/admin/shops/s1/approve"))
+        .contains(shop, rbac, planExpiry, entitlement)
+        .doesNotContain(admin);
   }
 
   @Test
