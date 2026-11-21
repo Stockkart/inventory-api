@@ -43,8 +43,10 @@ public class QuoteResponse {
     private BigDecimal unitPrice;
     private BigDecimal discount;
     private BigDecimal lineTotal;
-    /** MANUAL now; VOUCHER arrives with vouchers. */
+    /** MANUAL, or VOUCHER when a voucher added the line. */
     private String itemSource;
+    /** Voucher that added or discounted this line. */
+    private String voucherCode;
 
     /** unitPrice × quantity, before the line discount; the apps show it as is. */
     public BigDecimal getGrossAmount() {

@@ -17,4 +17,5 @@ public final class PricingConstants {
   public static final String ITEM_TYPE_ADDON = "ADDON";
   public static final String ITEM_TYPE_OCR_TOPUP = "OCR_TOPUP";
   public static final String ITEM_SOURCE_MANUAL = "MANUAL";
+  public static final String ITEM_SOURCE_VOUCHER = "VOUCHER";
 }
