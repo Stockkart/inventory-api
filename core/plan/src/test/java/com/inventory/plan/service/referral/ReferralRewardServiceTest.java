@@ -20,8 +20,8 @@ import com.inventory.plan.domain.repository.ReferralRewardRepository;
 import com.inventory.plan.mapper.ReferralRewardMapper;
 import com.inventory.plan.mapper.ReferralRewardMapperImpl;
 import com.inventory.plan.rest.dto.response.ReferralRewardsResponse;
-import com.inventory.plan.service.ShopProvider;
-import com.inventory.plan.service.ShopProvider.ReferralShop;
+import com.inventory.plan.api.port.ShopPort;
+import com.inventory.plan.api.port.ShopPort.ReferralShop;
 import com.inventory.plan.service.wallet.WalletService;
 import com.inventory.plan.utils.constants.PricingConstants;
 import com.mongodb.client.result.UpdateResult;
@@ -55,7 +55,7 @@ class ReferralRewardServiceTest {
   @Mock private ReferralAttributionService attributionService;
   @Mock private WalletService walletService;
   @Mock private MongoTemplate mongoTemplate;
-  @Mock private ShopProvider shopProvider;
+  @Mock private ShopPort shopProvider;
   @Spy private ReferralRewardMapper rewardMapper = new ReferralRewardMapperImpl();
 
   @InjectMocks

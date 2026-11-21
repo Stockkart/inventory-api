@@ -26,7 +26,7 @@ import com.inventory.plan.mapper.ReferralAdminMapperImpl;
 import com.inventory.plan.rest.dto.request.WalletAdjustmentRequest;
 import com.inventory.plan.rest.dto.response.AdminReferralAttributionResponse;
 import com.inventory.plan.rest.dto.response.AdminReferralRewardResponse;
-import com.inventory.plan.service.ShopProvider;
+import com.inventory.plan.api.port.ShopPort;
 import com.inventory.plan.service.wallet.WalletService;
 import com.inventory.plan.utils.constants.PlanPaymentConstants;
 import java.math.BigDecimal;
@@ -59,7 +59,7 @@ class ReferralAdminServiceTest {
   @Mock private ReferralRewardService rewardService;
   @Mock private WalletService walletService;
   @Mock private MongoTemplate mongoTemplate;
-  @Mock private ShopProvider shopProvider;
+  @Mock private ShopPort shopProvider;
   @Mock private AuditService auditService;
   @Spy private ReferralAdminMapper mapper = new ReferralAdminMapperImpl();
 
@@ -70,7 +70,7 @@ class ReferralAdminServiceTest {
   void setUp() {
     service.clock = Clock.fixed(NOW, ZoneOffset.UTC);
     lenient().when(shopProvider.getReferralShop(anyString())).thenAnswer(inv -> Optional.of(
-        new ShopProvider.ReferralShop(inv.getArgument(0), "Shop " + inv.getArgument(0), null, null, null)));
+        new ShopPort.ReferralShop(inv.getArgument(0), "Shop " + inv.getArgument(0), null, null, null)));
   }
 
   private static ReferralAttribution pending(String referrerShopId) {
@@ -187,7 +187,7 @@ class ReferralAdminServiceTest {
 
   @Test
   void debitBeyondAvailableIsRejected() {
-    when(shopProvider.getShop("s1")).thenReturn(Optional.of(new ShopProvider.ShopInfo("s1", null, null)));
+    when(shopProvider.getShop("s1")).thenReturn(Optional.of(new ShopPort.ShopInfo("s1", null, null)));
     when(walletService.available("s1")).thenReturn(new BigDecimal("50.00"));
     when(walletService.adjust(eq("s1"), eq(new BigDecimal("-80")), eq("adj-1"), eq("correction"), eq("admin")))
         .thenReturn(WalletService.Outcome.REJECTED);
@@ -201,7 +201,7 @@ class ReferralAdminServiceTest {
 
   @Test
   void appliedAdjustmentIsAuditedButARepeatIsNot() {
-    when(shopProvider.getShop("s1")).thenReturn(Optional.of(new ShopProvider.ShopInfo("s1", null, null)));
+    when(shopProvider.getShop("s1")).thenReturn(Optional.of(new ShopPort.ShopInfo("s1", null, null)));
     when(walletService.available("s1")).thenReturn(BigDecimal.ZERO);
     when(walletService.adjust(eq("s1"), any(), eq("adj-1"), eq("goodwill"), eq("admin")))
         .thenReturn(WalletService.Outcome.APPLIED, WalletService.Outcome.ALREADY_APPLIED);
