@@ -177,7 +177,7 @@ public class PlanService {
     Instant termEndsAt = PlanUtils.plusMonths(termStartsAt, durationMonths);
 
     // the claim first: a second attempt fails on the unique index before touching the shop
-    PlanTransaction tx = planTransactionMapper.toTransaction(order, plan, termStartsAt, termEndsAt);
+    PlanTransaction tx = planTransactionMapper.toTransaction(order, plan, termStartsAt, termEndsAt, now);
     planTransactionRepository.insert(tx);
     shopProvider.updatePlan(order.getShopId(), plan.getId(), termEndsAt);
     shopSubscriptionService.recordGrant(new ShopInfo(order.getShopId(), plan.getId(), termEndsAt), order.getId());
