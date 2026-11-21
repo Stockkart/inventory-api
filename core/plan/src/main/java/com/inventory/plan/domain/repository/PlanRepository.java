@@ -15,4 +15,6 @@ public interface PlanRepository extends MongoRepository<Plan, String> {
   Optional<Plan> findByCode(String code);
 
   List<Plan> findByCodeIsNull();
+
+  List<Plan> findByCodeIn(java.util.Collection<String> codes);
 }

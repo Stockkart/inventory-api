@@ -218,7 +218,21 @@ inventory-api/
 `core/plan` `OrderPricingService.price()` is the only place a plan cart becomes money; quote and
 checkout both call it, and clients show the quote without recomputing it.
 
-- Vouchers apply to add-on lines only, never the plan line.
+- A voucher has a `target`: `ADD_ON` (the default; a null `target` on an old row means add-on, so no
+  migration) with an `addOnCode`, or `PLAN` with a `planCode` and no `addOnCode`. A plan voucher is
+  `PERCENT_OFF` or `FLAT_OFF` only (no `FREE_ADDON`, no quantity) and applies to that plan's line;
+  add-on vouchers still apply to add-on lines only. Reservations and redemptions record `target` and
+  `planCode`; the admin list applies one filter at a time: `planCode`, else `addOnCode`, else `target`.
+- A plan voucher may never take a plan below its floor: `basePrice`, or ₹1 when the plan has no base
+  price (so a voucher alone, and voucher plus wallet credit, stop at ₹1). The floor and the maximum
+  discount come from `PlanVoucherPricing`, used by creation, preview and checkout alike. Creation
+  rejects a voucher that would cross the floor; `POST /api/v1/admin/vouchers/plan-preview` takes
+  `planCode`, `type`, `value` and returns price, discount, price after voucher, base price, max flat,
+  max percent and whether it is allowed, without writing anything.
+- At checkout a plan voucher is capped at the plan's current floor (the price may have changed since
+  creation) and rejected (`NOT_APPLICABLE_TO_CART`) when the cart has no plan line, has another plan,
+  already carries a voucher, or the capped discount is 0.
+- A refund never gives a voucher slot back (plan vouchers too), so a capped voucher cannot be cycled.
 - Wallet credit pays the plan line first, then add-ons, never OCR top-ups.
 - A plan's `basePrice` is the floor for its line: wallet credit stops at `arcPrice - basePrice`, and
   the rest flows on to add-ons. Admins set it on the plan (`basePrice <= arcPrice`); null means no
@@ -244,7 +258,28 @@ checkout both call it, and clients show the quote without recomputing it.
   `canBuyAddOnsAlone` (an active paid plan).
 - SMS add-ons are not sold in any cart until StockKart sends SMS; via a voucher this is a
   `VOUCHER_REJECTED` (`NOT_APPLICABLE_TO_CART`).
-- `PricingConstants.PRICING_VERSION` is stored on every order; bump it when a rule changes (2 = base-price floor).
+- `PricingConstants.PRICING_VERSION` is stored on every order; bump it when a rule changes (2 = base-price floor, 3 = plan vouchers).
+
+### Shop purchase history
+
+`GET /api/v1/plans/shop/transactions` is served by `PurchaseHistoryService`: one query for the shop's
+plan transactions and one for its paid or refunded orders, joined in memory on `paymentOrderId`
+(each order appears once). Each row has a `kind`:
+
+- `PLAN`: a plan term from a paid order, or an assign row whose `paymentOrderId` matches a real paid
+  or refunded order of the shop; orders not yet granted, failed in fulfilment or refunded before
+  grant also show as `PLAN`, with `status` and no term dates.
+- `ADD_ON_ONLY`: an add-on-only top-up order (term end = the order's `termEndsAt`).
+- `ASSIGNED`: set by an admin or the assign endpoint with no verified charge; amount hidden (null).
+
+Rows carry the line breakdown (`PurchaseLineResponse`), subtotal, discount, wallet credit and the paid
+amount, and refund figures:
+
+- `refundedAt` is the order's `refundedAt`, else the transaction's.
+- `refundedToPaymentMethod` is the order's `refundedAmount` whenever it is above 0, including a
+  partial refund on a `FULFILLED` order.
+- `walletCreditReturned` is the order's `walletCredit`, only when the order is `REFUNDED` and the
+  wallet credit is above 0.
 
 ### Implementation status (vertical plugins)
 

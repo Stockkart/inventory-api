@@ -1,5 +1,6 @@
 package com.inventory.plan.rest.dto.request;
 
+import com.inventory.plan.domain.model.VoucherTarget;
 import com.inventory.plan.domain.model.VoucherType;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -21,7 +22,10 @@ public class VoucherGenerateRequest {
   private String code;
   private Integer count;
   private String prefix;
+  /** Null means ADD_ON, so clients that predate plan vouchers keep working. */
+  private VoucherTarget target;
   private String addOnCode;
+  private String planCode;
   private VoucherType type;
   private BigDecimal value;
   private Integer quantity;

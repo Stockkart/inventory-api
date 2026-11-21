@@ -11,7 +11,12 @@ import com.inventory.plan.domain.model.VoucherType;
 import com.inventory.plan.domain.repository.AddOnVoucherRepository;
 import com.inventory.plan.domain.repository.VoucherRedemptionRepository;
 import com.inventory.plan.exception.VoucherRejectedException;
+import com.inventory.plan.domain.model.Plan;
+import com.inventory.plan.domain.model.VoucherTarget;
+import com.inventory.plan.domain.repository.PlanRepository;
 import com.inventory.plan.mapper.VoucherMapper;
+import com.inventory.plan.mapper.VoucherMapperImpl;
+import org.mockito.Spy;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -32,7 +37,8 @@ class VoucherServiceTest {
 
   @Mock private AddOnVoucherRepository voucherRepository;
   @Mock private VoucherRedemptionRepository redemptionRepository;
-  @Mock private VoucherMapper voucherMapper;
+  @Spy private VoucherMapper voucherMapper = new VoucherMapperImpl();
+  @Mock private PlanRepository planRepository;
   @Mock private VoucherLookupRateLimiter lookupLimiter;
 
   @InjectMocks
@@ -88,6 +94,41 @@ class VoucherServiceTest {
         .isEqualByComparingTo("500.00");
     assertThat(VoucherService.discountFor(voucher(VoucherType.FLAT_OFF, new BigDecimal("9000"), 1), line))
         .isEqualByComparingTo("1500");
+  }
+
+  @Test
+  void checkDescribesPlanVoucher() {
+    stored(v -> {
+      v.setTarget(VoucherTarget.PLAN);
+      v.setPlanCode("STARTER");
+      v.setAddOnCode(null);
+    });
+    Plan plan = new Plan();
+    plan.setCode("STARTER");
+    plan.setPlanName("Starter");
+    when(planRepository.findByCode("STARTER")).thenReturn(Optional.of(plan));
+
+    var response = service.check("MKT-1", "shop-1");
+
+    assertThat(response.isValid()).isTrue();
+    assertThat(response.getTarget()).isEqualTo(VoucherTarget.PLAN);
+    assertThat(response.getPlanCode()).isEqualTo("STARTER");
+    assertThat(response.getPlanName()).isEqualTo("Starter");
+    assertThat(response.getAddOnCode()).isNull();
+  }
+
+  @Test
+  void checkDescribesAddOnVoucherWithoutPlanLookup() {
+    stored(v -> {});
+
+    var response = service.check("MKT-1", "shop-1");
+
+    assertThat(response.isValid()).isTrue();
+    assertThat(response.getTarget()).isEqualTo(VoucherTarget.ADD_ON);
+    assertThat(response.getAddOnCode()).isEqualTo("MARKETING_MODULE");
+    assertThat(response.getPlanCode()).isNull();
+    assertThat(response.getPlanName()).isNull();
+    org.mockito.Mockito.verifyNoInteractions(planRepository);
   }
 
   private void assertRejected(String code, VoucherRejection reason) {

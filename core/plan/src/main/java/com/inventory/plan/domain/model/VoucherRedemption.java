@@ -23,7 +23,10 @@ public class VoucherRedemption {
   private String voucherCode;
   private String shopId;
   private String orderId;
+  /** Null on stored rows means {@link VoucherTarget#ADD_ON}. */
+  private VoucherTarget target;
   private String addOnCode;
+  private String planCode;
   private BigDecimal discount;
   private VoucherRedemptionStatus status;
   /**

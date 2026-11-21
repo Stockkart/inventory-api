@@ -26,6 +26,8 @@ public interface PlanPaymentOrderRepository extends MongoRepository<PlanPaymentO
   Optional<PlanPaymentOrder> findFirstByShopIdAndStatusAndAddOnOnlyNotOrderByFulfilledAtAsc(String shopId,
       String status, boolean addOnOnly);
 
+  List<PlanPaymentOrder> findByShopIdAndStatusIn(String shopId, Collection<String> statuses);
+
   Optional<PlanPaymentOrder> findByShopIdAndIdempotencyKey(String shopId, String idempotencyKey);
 
   /** Only the fields the plan MIS reads (not idempotency, gateway or fulfilment fields). */

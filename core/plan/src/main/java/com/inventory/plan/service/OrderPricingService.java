@@ -16,6 +16,7 @@ import com.inventory.plan.exception.VoucherRejectedException;
 import com.inventory.plan.rest.dto.request.QuoteRequest;
 import com.inventory.plan.rest.dto.response.AddOnResponse;
 import com.inventory.plan.rest.dto.response.QuoteResponse;
+import com.inventory.plan.utils.PlanVoucherPricing;
 import com.inventory.plan.service.voucher.VoucherService;
 import com.inventory.plan.service.wallet.WalletService;
 import com.inventory.plan.utils.AddOnEligibility;
@@ -117,7 +118,11 @@ public class OrderPricingService {
     // A plan cart may re-buy an add-on the shop holds: the new grant runs to the new term's end.
     items.addAll(addOnLines(plan, request.getAddOns(), Set.of()));
     applyVouchers(plan, items, request.getVoucherCodes(), shopId, Set.of());
-    return total(plan, items, request, shopId, plan.getBasePrice(), durationMonths, false, null);
+    // A voucher-priced plan keeps the voucher floor (base price, or Rs 1) against wallet credit too.
+    boolean vouchered = items.stream().anyMatch(item -> PricingConstants.ITEM_TYPE_PLAN.equals(item.getType())
+        && item.getVoucherCode() != null);
+    BigDecimal planFloor = vouchered ? PlanVoucherPricing.floor(plan) : plan.getBasePrice();
+    return total(plan, items, request, shopId, planFloor, durationMonths, false, null);
   }
 
   /**
@@ -260,8 +265,10 @@ public class OrderPricingService {
 
   /**
    * Applies each voucher to its add-on line (§10 Voucher UX): a voucher for an add-on not in the
-   * cart adds a line of its own ({@code itemSource = VOUCHER}); one voucher per line; never the plan
-   * line (r4.8).
+   * cart adds a line of its own ({@code itemSource = VOUCHER}); one voucher per line. A plan voucher
+   * applies to the plan line (r4.8 is reversed for them), capped so the plan never sells below its
+   * base price; it is rejected in an add-on-only cart or for another plan. Rejections happen here,
+   * during pricing, before checkout reserves anything.
    */
   private void applyVouchers(Plan plan, List<OrderLine> items, List<String> rawCodes, String shopId,
       Set<String> held) {
@@ -286,6 +293,10 @@ public class OrderPricingService {
         .map(AddOnVoucher::getAddOnCode).filter(Objects::nonNull).collect(Collectors.toSet()));
     for (String code : codes) {
       AddOnVoucher voucher = vouchers.get(code);
+      if (voucher.isPlanVoucher()) {
+        applyPlanVoucher(plan, items, voucher, code);
+        continue;
+      }
       AddOn addOn = addOns.get(voucher.getAddOnCode());
       if (addOn == null || !addOn.isActive()) {
         throw notApplicable(code, "Voucher " + code + " is for an add-on that is no longer sold");
@@ -307,6 +318,34 @@ public class OrderPricingService {
       line.setLineTotal(line.getUnitPrice().multiply(BigDecimal.valueOf(line.getQuantity())).subtract(discount));
       line.setVoucherCode(code);
     }
+  }
+
+  private void applyPlanVoucher(Plan plan, List<OrderLine> items, AddOnVoucher voucher, String code) {
+    OrderLine line = items.stream().filter(item -> PricingConstants.ITEM_TYPE_PLAN.equals(item.getType()))
+        .findFirst().orElse(null);
+    if (line == null) {
+      throw notApplicable(code, "Voucher " + code + " is for " + voucherPlanName(voucher)
+          + "; add the plan to use it.");
+    }
+    if (!Objects.equals(voucher.getPlanCode(), line.getCode())) {
+      throw notApplicable(code, "Voucher " + code + " is for " + voucherPlanName(voucher) + ", not "
+          + line.getName() + ".");
+    }
+    if (line.getVoucherCode() != null) {
+      throw notApplicable(code, line.getName() + " already has voucher " + line.getVoucherCode());
+    }
+    BigDecimal discount = PlanVoucherPricing.cappedDiscount(voucher.getType(), voucher.getValue(), plan);
+    if (discount.signum() <= 0) {
+      throw notApplicable(code, "Voucher " + code + " gives no discount on " + line.getName() + " right now.");
+    }
+    line.setDiscount(discount);
+    line.setLineTotal(line.getUnitPrice().multiply(BigDecimal.valueOf(line.getQuantity())).subtract(discount));
+    line.setVoucherCode(code);
+  }
+
+  private String voucherPlanName(AddOnVoucher voucher) {
+    return planRepository.findByCode(voucher.getPlanCode()).map(Plan::getPlanName)
+        .orElse(voucher.getPlanCode());
   }
 
   private static VoucherRejectedException notApplicable(String code, String message) {
@@ -347,7 +386,7 @@ public class OrderPricingService {
   /** SMS packs stay in the catalogue but cannot be bought until StockKart sends SMS. */
   /** Yearly price of a plan. Checkout charges exactly this, so a quote and its checkout agree. */
   public BigDecimal planPrice(Plan plan) {
-    return plan.getArcPrice() != null ? plan.getArcPrice() : plan.getPrice();
+    return PlanVoucherPricing.planPrice(plan);
   }
 
   private static QuoteResponse toQuote(PricedCart cart) {

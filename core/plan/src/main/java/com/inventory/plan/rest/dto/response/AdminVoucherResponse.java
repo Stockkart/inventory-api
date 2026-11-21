@@ -1,5 +1,6 @@
 package com.inventory.plan.rest.dto.response;
 
+import com.inventory.plan.domain.model.VoucherTarget;
 import com.inventory.plan.domain.model.VoucherType;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -16,7 +17,11 @@ public class AdminVoucherResponse {
 
   private String id;
   private String code;
+  /** Never null: legacy vouchers without a target read as ADD_ON. */
+  private VoucherTarget target;
   private String addOnCode;
+  private String planCode;
+  private String planName;
   private VoucherType type;
   private BigDecimal value;
   private int quantity;

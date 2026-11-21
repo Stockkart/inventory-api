@@ -27,8 +27,13 @@ public class VoucherIndexes {
     vouchers.ensureIndex(new Index().on("code", Sort.Direction.ASC).unique().named("code_unique"));
     vouchers.ensureIndex(new Index().on("addOnCode", Sort.Direction.ASC).on("createdAt", Sort.Direction.DESC)
         .named("addOnCode_createdAt"));
+    vouchers.ensureIndex(new Index().on("planCode", Sort.Direction.ASC).on("createdAt", Sort.Direction.DESC)
+        .named("planCode_createdAt"));
     // the unfiltered admin list pages newest first
     vouchers.ensureIndex(new Index().on("createdAt", Sort.Direction.DESC).named("createdAt_desc"));
+    // the admin list filtered by target (PLAN, or ADD_ON incl. legacy rows without a target)
+    vouchers.ensureIndex(new Index().on("target", Sort.Direction.ASC).on("createdAt", Sort.Direction.DESC)
+        .named("target_createdAt"));
 
     var redemptions = mongoTemplate.indexOps(VoucherRedemption.class);
     redemptions.ensureIndex(new Index()

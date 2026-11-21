@@ -10,8 +10,9 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 /**
- * A code that grants or discounts one add-on (vouchers are add-on-only in v1, r4.8). The counters
- * enforce the cap; {@code voucher_redemptions} is the record of who used it.
+ * A code that grants or discounts one add-on or a plan. The collection name is historical: it holds
+ * add-on and plan vouchers. The counters enforce the cap; {@code voucher_redemptions} is the record
+ * of who used it.
  */
 @Data
 @Builder
@@ -24,7 +25,11 @@ public class AddOnVoucher {
   private String id;
   /** Uppercase, unique. */
   private String code;
+  /** What the voucher applies to; null on stored rows means {@link VoucherTarget#ADD_ON}. */
+  private VoucherTarget target;
   private String addOnCode;
+  /** The plan a PLAN voucher discounts; unused for add-on vouchers. */
+  private String planCode;
   private VoucherType type;
   /** Percent for PERCENT_OFF, rupees for FLAT_OFF; unused for FREE_ADDON. */
   private BigDecimal value;
@@ -49,6 +54,14 @@ public class AddOnVoucher {
   private String createdByUserId;
   private Instant createdAt;
   private Instant updatedAt;
+
+  public VoucherTarget effectiveTarget() {
+    return target == null ? VoucherTarget.ADD_ON : target;
+  }
+
+  public boolean isPlanVoucher() {
+    return effectiveTarget() == VoucherTarget.PLAN;
+  }
 
   public boolean isActive() {
     return !Boolean.FALSE.equals(active);

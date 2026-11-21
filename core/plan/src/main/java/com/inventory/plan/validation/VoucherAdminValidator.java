@@ -1,6 +1,9 @@
 package com.inventory.plan.validation;
 
 import com.inventory.common.exception.ValidationException;
+import com.inventory.plan.domain.model.VoucherTarget;
+import com.inventory.plan.domain.model.VoucherType;
+import com.inventory.plan.rest.dto.request.PlanVoucherPreviewRequest;
 import com.inventory.plan.rest.dto.request.VoucherActiveRequest;
 import com.inventory.plan.rest.dto.request.VoucherGenerateRequest;
 import com.inventory.plan.rest.dto.request.VoucherUpdateRequest;
@@ -38,32 +41,17 @@ public class VoucherAdminValidator {
     if (StringUtils.hasText(request.getPrefix()) && !PREFIX.matcher(request.getPrefix()).matches()) {
       throw new ValidationException("Prefix must be 1-8 characters of A-Z or 0-9");
     }
-    if (!StringUtils.hasText(request.getAddOnCode())) {
-      throw new ValidationException("Add-on code is required; vouchers apply to add-ons only");
-    }
-    if (request.getType() == null) {
-      throw new ValidationException("Voucher type is required");
-    }
-    switch (request.getType()) {
-      case FREE_ADDON -> {
-        if (request.getValue() != null) {
-          throw new ValidationException("A free add-on voucher has no value");
-        }
+    if (request.getTarget() == VoucherTarget.PLAN) {
+      validatePlanTarget(request);
+    } else {
+      if (!StringUtils.hasText(request.getAddOnCode())) {
+        throw new ValidationException("Add-on code is required; vouchers apply to add-ons only");
       }
-      case PERCENT_OFF -> {
-        if (request.getValue() == null || request.getValue().signum() <= 0 || request.getValue().compareTo(HUNDRED) > 0) {
-          throw new ValidationException("Percent off must be more than 0 and at most 100");
-        }
-      }
-      case FLAT_OFF -> {
-        if (request.getValue() == null || request.getValue().signum() <= 0) {
-          throw new ValidationException("Flat discount must be greater than 0");
-        }
-        if (request.getValue().stripTrailingZeros().scale() > 2) {
-          throw new ValidationException("Flat discount can have at most 2 decimal places");
-        }
+      if (StringUtils.hasText(request.getPlanCode())) {
+        throw new ValidationException("An add-on voucher cannot name a plan");
       }
     }
+    validateDiscount(request.getType(), request.getValue());
     if (request.getQuantity() != null && request.getQuantity() < 1) {
       throw new ValidationException("Quantity must be at least 1");
     }
@@ -73,6 +61,63 @@ public class VoucherAdminValidator {
       throw new ValidationException("Valid-to must be after valid-from");
     }
     validateNote(request.getNote());
+  }
+
+  /** Shape check for the plan-voucher preview: the same plan and discount rules as generate. */
+  public void validatePlanPreview(PlanVoucherPreviewRequest request) {
+    if (request == null) {
+      throw new ValidationException("Request cannot be null");
+    }
+    validatePlanCode(request.getPlanCode(), request.getType());
+    validateDiscount(request.getType(), request.getValue());
+  }
+
+  private static void validateDiscount(VoucherType type, BigDecimal value) {
+    if (type == null) {
+      throw new ValidationException("Voucher type is required");
+    }
+    switch (type) {
+      case FREE_ADDON -> {
+        if (value != null) {
+          throw new ValidationException("A free add-on voucher has no value");
+        }
+      }
+      case PERCENT_OFF -> {
+        if (value == null || value.signum() <= 0 || value.compareTo(HUNDRED) > 0) {
+          throw new ValidationException("Percent off must be more than 0 and at most 100");
+        }
+      }
+      case FLAT_OFF -> {
+        if (value == null || value.signum() <= 0) {
+          throw new ValidationException("Flat discount must be greater than 0");
+        }
+        if (value.stripTrailingZeros().scale() > 2) {
+          throw new ValidationException("Flat discount can have at most 2 decimal places");
+        }
+      }
+    }
+  }
+
+  private static void validatePlanCode(String planCode, VoucherType type) {
+    if (!StringUtils.hasText(planCode)) {
+      throw new ValidationException("Plan code is required for a plan voucher");
+    }
+    if (type == VoucherType.FREE_ADDON) {
+      throw new ValidationException("Plan vouchers are percent or flat off; a plan cannot be free");
+    }
+  }
+
+  private static void validatePlanTarget(VoucherGenerateRequest request) {
+    if (!StringUtils.hasText(request.getPlanCode())) {
+      throw new ValidationException("Plan code is required for a plan voucher");
+    }
+    if (StringUtils.hasText(request.getAddOnCode())) {
+      throw new ValidationException("A plan voucher cannot name an add-on");
+    }
+    validatePlanCode(request.getPlanCode(), request.getType());
+    if (request.getQuantity() != null) {
+      throw new ValidationException("Quantity does not apply to a plan voucher");
+    }
   }
 
   public void validateUpdate(String id, VoucherUpdateRequest request) {
