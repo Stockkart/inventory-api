@@ -1,5 +1,7 @@
 package com.inventory.plan.service;
 
+import com.inventory.plan.api.port.ShopPort;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -11,7 +13,7 @@ import static org.mockito.Mockito.when;
 import com.inventory.plan.domain.model.PlanPaymentOrder;
 import com.inventory.plan.domain.model.PlanTransaction;
 import com.inventory.plan.domain.repository.PlanTransactionRepository;
-import com.inventory.plan.service.ShopProvider.ShopInfo;
+import com.inventory.plan.api.port.ShopPort.ShopInfo;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -31,7 +33,7 @@ class PlanServiceRevokeTest {
   private static final Instant FUTURE = Instant.now().plus(Duration.ofDays(200));
   private static final Instant LATER = Instant.now().plus(Duration.ofDays(365));
 
-  @Mock private ShopProvider shopProvider;
+  @Mock private ShopPort shopProvider;
   @Mock private PlanTransactionRepository planTransactionRepository;
   @Mock private ShopSubscriptionService shopSubscriptionService;
   @Mock private EntitlementService entitlementService;
