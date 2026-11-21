@@ -48,18 +48,33 @@ public class RbacService {
   public static final String MODULE_MARKETING = "marketing";
   public static final String MODULE_PAYMENT_PLAN = "paymentPlan";
   public static final String MODULE_PRODUCT_SEARCH_EDIT = "productSearchEdit";
+  public static final String MODULE_RATE_RULES_EDIT = "rateRulesEdit";
+
+  /** HR module (prefix {@code /api/v1/hr}); on for every role unless the member's switch is off. */
+  public static final String MODULE_HR = "hr";
+
+  /**
+   * Request attribute under which {@code RbacModuleInterceptor} keeps the {@link
+   * ShopAccessResponse} it resolved for the module check, so services of the same request (HR
+   * permission checks) reuse it instead of resolving access again.
+   */
+  public static final String ACCESS_ATTRIBUTE = "rbac.shopAccess";
 
   public static final String TEAM_MANAGE_INVITATIONS = "manageInvitations";
   public static final String TEAM_MANAGE_JOIN_REQUESTS = "manageJoinRequests";
   public static final String TEAM_MANAGE_SHOP_USERS = "manageShopUsers";
   public static final String TEAM_VIEW_MY_INVITATIONS = "viewMyInvitations";
 
+  /**
+   * Product-search fields an owner can grant a member. Stock quantity is not one: a lot edit
+   * cannot change it (stock changes go through stock corrections), so a {@code count} grant was
+   * accepted and did nothing. A stored {@code count} grant is ignored.
+   */
   public static final List<String> CORE_PRODUCT_SEARCH_FIELDS =
       List.of(
           "name",
           "description",
           "companyName",
-          "count",
           "location",
           "batchNo",
           "expiryDate",
@@ -80,6 +95,8 @@ public class RbacService {
   @Autowired private UserShopMembershipService membershipService;
   @Autowired private UserValidator userValidator;
   @Autowired private MetricsWrapper metrics;
+  /** HR block for {@code /shops/me/access}; absent when the HR module is not on the classpath. */
+  @Autowired(required = false) private HrAccessAdapter hrAccessAdapter;
 
   @Transactional(readOnly = true)
   public ShopAccessResponse getEffectiveAccess(String userId, String shopId) {
@@ -87,6 +104,28 @@ public class RbacService {
     MembershipContext ctx = resolveMembershipContext(userId, shopId);
     ProductSearchEditMode editMode = getOrDefaultPolicy(shopId).getProductSearchEditMode();
     return buildAccessResponse(ctx, editMode);
+  }
+
+  /**
+   * {@link #getEffectiveAccess} plus the HR block, for {@code GET /shops/me/access}. The HR block
+   * costs extra reads (role grid, linked employee), so module checks keep using {@link
+   * #getEffectiveAccess}.
+   */
+  public ShopAccessResponse getEffectiveAccessForClient(String userId, String shopId) {
+    ShopAccessResponse access = getEffectiveAccess(userId, shopId);
+    if (hrAccessAdapter != null) {
+      try {
+        access.setHr(hrAccessAdapter.resolve(userId, shopId, access));
+      } catch (RuntimeException e) {
+        // an HR read failure must not break the whole app shell: fall back to "no HR access"
+        log.error("HR access could not be resolved for shop {}: {}", shopId, e.getMessage());
+        access.setHr(ShopAccessResponse.HrAccessDto.builder()
+            .permissions(List.of())
+            .employeeId(null)
+            .build());
+      }
+    }
+    return access;
   }
 
   @Transactional(readOnly = true)
@@ -166,7 +205,7 @@ public class RbacService {
     }
     if (request.getProductSearchEditableFields() != null) {
       permissions.setProductSearchEditableFields(
-          new LinkedHashSet<>(request.getProductSearchEditableFields()));
+          grantableFields(request.getProductSearchEditableFields(), permissions));
     }
     ProductSearchEditMode editMode = getOrDefaultPolicy(shopId).getProductSearchEditMode();
     syncProductSearchEditFlag(permissions, editMode);
@@ -198,12 +237,25 @@ public class RbacService {
         .build();
   }
 
-  public void requireModule(String userId, String shopId, String moduleKey) {
+  /**
+   * Throws 403 unless the module resolves to on for the member.
+   *
+   * @return the access resolved for the check, so the caller can keep it for the rest of the
+   *     request ({@link #ACCESS_ATTRIBUTE})
+   */
+  public ShopAccessResponse requireModule(String userId, String shopId, String moduleKey) {
     ShopAccessResponse access = getEffectiveAccess(userId, shopId);
     if (Boolean.TRUE.equals(access.getModules().get(moduleKey))) {
-      return;
+      return access;
     }
     throw new BaseException(ErrorCode.ACCESS_DENIED, "You do not have access to this module");
+  }
+
+  /** True when the user may override or reset a generated rate's terms: owner, or granted. */
+  @Transactional(readOnly = true)
+  public boolean canEditRates(String userId, String shopId) {
+    ShopAccessResponse access = getEffectiveAccess(userId, shopId);
+    return Boolean.TRUE.equals(access.getModules().get(MODULE_RATE_RULES_EDIT));
   }
 
   public void requireTeamAccess(String userId, String shopId, String teamKey) {
@@ -264,8 +316,29 @@ public class RbacService {
         ErrorCode.ACCESS_DENIED, "Only the owner or manager can approve stock corrections");
   }
 
+  /** Owner or admin may change shop-wide layouts (grid columns) that every member sees. */
+  @Transactional(readOnly = true)
+  public boolean canManageShopLayouts(String userId, String shopId) {
+    ShopAccessResponse access = getEffectiveAccess(userId, shopId);
+    return access.isOwner()
+        || UserRole.OWNER.name().equals(access.getRole())
+        || UserRole.ADMIN.name().equals(access.getRole());
+  }
+
+  public void requireShopLayoutManagement(String userId, String shopId) {
+    if (!canManageShopLayouts(userId, shopId)) {
+      throw new BaseException(
+          ErrorCode.ACCESS_DENIED, "Only the owner or an admin can change the shop's column layout");
+    }
+  }
+
   private void requireOwner(String userId, String shopId) {
-    if (!membershipService.hasOwnerAccess(userId, shopId)) {
+    // Fail closed for SUPER_USER (Stockkart staff): never a shop owner, even with stray shop data
+    boolean platformStaff = userId != null && userAccountRepository.findById(userId)
+        .map(UserAccount::getRole)
+        .filter(UserRole::isPlatformRole)
+        .isPresent();
+    if (platformStaff || !membershipService.hasOwnerAccess(userId, shopId)) {
       throw new BaseException(
           ErrorCode.ACCESS_DENIED, "Only the shop owner can manage access settings");
     }
@@ -288,6 +361,12 @@ public class RbacService {
         userAccountRepository
             .findById(userId)
             .orElseThrow(() -> new ResourceNotFoundException("User", "userId", userId));
+    // Fail closed: SUPER_USER accounts (Stockkart staff) are never shop people, so they get no
+    // shop access even if a stray membership or legacy shopId exists for them.
+    if (account.getRole() != null && account.getRole().isPlatformRole()) {
+      throw new BaseException(
+          ErrorCode.ACCESS_DENIED, "Stockkart staff accounts have no shop access");
+    }
     UserShopMembership membership =
         membershipRepository.findByUserIdAndShopIdAndActiveTrue(userId, shopId).orElse(null);
     if (membership != null) {
@@ -320,7 +399,7 @@ public class RbacService {
   private ShopAccessResponse buildAccessResponse(
       MembershipContext ctx, ProductSearchEditMode editMode) {
     if (ctx.owner()) {
-      return ownerAccess(editMode);
+      return ownerAccess();
     }
     Map<String, Boolean> modules = resolveModules(ctx.role(), ctx.permissions());
     ShopAccessResponse.TeamAccessDto team = resolveTeam(ctx.role());
@@ -371,9 +450,16 @@ public class RbacService {
     return role == UserRole.OWNER || role == UserRole.MANAGER || role == UserRole.ADMIN;
   }
 
-  private ShopAccessResponse ownerAccess(ProductSearchEditMode editMode) {
+  /**
+   * The owner edits every product-search field whatever the member policy says
+   * ({@link #validateProductSearchFieldUpdates} lets the owner through), so the owner's effective
+   * edit mode is {@link ProductSearchEditMode#FULL_EDIT}. The shop's policy itself is reported by
+   * {@link #getAdminView}.
+   */
+  private ShopAccessResponse ownerAccess() {
     Map<String, Boolean> allModules = defaultModulesForRole(UserRole.OWNER, null);
     allModules.put(MODULE_PRODUCT_SEARCH_EDIT, true);
+    allModules.put(MODULE_RATE_RULES_EDIT, true);
     return ShopAccessResponse.builder()
         .role(UserRole.OWNER.name())
         .relationship(UserShopMembershipService.RELATIONSHIP_OWNER)
@@ -383,7 +469,7 @@ public class RbacService {
             ShopAccessResponse.ProductSearchAccessDto.builder()
                 .canView(true)
                 .canEdit(true)
-                .editMode(editMode)
+                .editMode(ProductSearchEditMode.FULL_EDIT)
                 .canEditAll(true)
                 .editableFields(CORE_PRODUCT_SEARCH_FIELDS)
                 .build())
@@ -418,6 +504,10 @@ public class RbacService {
     applyOverride(resolved, MODULE_MARKETING, overrides.getMarketing());
     applyOverride(resolved, MODULE_PAYMENT_PLAN, overrides.getPaymentPlan());
     applyOverride(resolved, MODULE_PRODUCT_SEARCH_EDIT, overrides.getProductSearchEdit());
+    applyOverride(resolved, MODULE_RATE_RULES_EDIT, overrides.getRateRulesEdit());
+
+    // null = on (role default); only an explicit false switches HR off for the member
+    applyOverride(resolved, MODULE_HR, overrides.getHr());
     return resolved;
   }
 
@@ -439,11 +529,18 @@ public class RbacService {
     modules.put(MODULE_MARKETING, fullStaff && !cashier);
     modules.put(MODULE_PAYMENT_PLAN, fullStaff && !cashier);
     modules.put(MODULE_PRODUCT_SEARCH_EDIT, false);
+    modules.put(MODULE_RATE_RULES_EDIT, false);
+
+    // HR is on for every shop role: what a member may do inside HR is decided by the shop's HR
+    // role grid (Cashier's default row is empty), so this switch alone grants nothing. Allow-listed
+    // so a non-shop role (SUPER_USER) still gets no module.
+    modules.put(MODULE_HR, fullStaff || cashier);
     return modules;
   }
 
   private ShopAccessResponse.TeamAccessDto resolveTeam(UserRole role) {
-    boolean staff = role != UserRole.CASHIER;
+    // Allow-list the shop staff roles so a non-shop role (SUPER_USER) gets no team access
+    boolean staff = role == UserRole.OWNER || role == UserRole.ADMIN || role == UserRole.MANAGER;
     return ShopAccessResponse.TeamAccessDto.builder()
         .manageInvitations(staff)
         .manageJoinRequests(staff)
@@ -481,6 +578,29 @@ public class RbacService {
       return !editableFields.isEmpty();
     }
     return Boolean.TRUE.equals(modules.get(MODULE_PRODUCT_SEARCH_EDIT));
+  }
+
+  /**
+   * The member's new product-search grants. Only {@link #CORE_PRODUCT_SEARCH_FIELDS} can be
+   * granted: a name outside it that the member did not already hold is refused (400) rather than
+   * accepted and ignored. One the member already held (stored before it stopped being grantable)
+   * is dropped, so the access screen, which sends back what it read, can still save the member.
+   */
+  private static Set<String> grantableFields(
+      Iterable<String> requested, MemberPermissions current) {
+    Set<String> held =
+        current.getProductSearchEditableFields() != null
+            ? current.getProductSearchEditableFields()
+            : Set.of();
+    Set<String> fields = new LinkedHashSet<>();
+    for (String field : requested) {
+      if (CORE_PRODUCT_SEARCH_FIELDS.contains(field)) {
+        fields.add(field);
+      } else if (!held.contains(field)) {
+        throw new ValidationException("Product search field cannot be granted: " + field);
+      }
+    }
+    return fields;
   }
 
   /**

@@ -1,6 +1,8 @@
 package com.inventory.analytics.rest.controller;
 
 
+import com.inventory.common.heavy.HeavyKind;
+import com.inventory.common.heavy.HeavyRequest;
 import com.inventory.metrics.annotation.Latency;
 import com.inventory.metrics.annotation.RecordRequestRate;
 import com.inventory.metrics.annotation.RecordStatusCodes;
@@ -44,6 +46,7 @@ public class SalesAnalyticsController {
    * - topN: Number of top products (optional, defaults to 10)
    * - compare: Whether to compare with previous period (optional, defaults to false)
    */
+  @HeavyRequest(HeavyKind.ANALYTICS)
   @GetMapping
   public ResponseEntity<ApiResponse<SalesAnalyticsResponse>> getSalesAnalytics(
       @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant startDate,

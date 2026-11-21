@@ -43,6 +43,8 @@ public class AddToCartRequest {
     private Integer baseQuantity;
     /** Optional sale/display unit (e.g. STRIP, PACK). Defaults to inventory baseUnit when omitted. */
     private String unit;
+    /** Optional: preparation instruction for the kitchen, e.g. "no onion" (cafe only). */
+    private String note;
     private BigDecimal priceToRetail;
     /** Optional: additional discount percentage for this item (0–100). Overrides inventory default when provided. */
     private BigDecimal saleAdditionalDiscount;
@@ -58,6 +60,12 @@ public class AddToCartRequest {
     private Integer schemeFree;
     /** Optional when schemeType is PERCENTAGE: e.g. 10 = 10% extra free. */
     private BigDecimal schemePercentage;
+    /**
+     * Optional: name of a batch rate to bill this line at. A rule rate puts its base on the line
+     * with its disc and scheme, which win over disc/scheme fields sent in the same item; a legacy
+     * rate puts its price. Unknown names are rejected.
+     */
+    private String rateName;
   }
 }
 

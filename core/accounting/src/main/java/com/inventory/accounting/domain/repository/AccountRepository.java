@@ -15,4 +15,6 @@ public interface AccountRepository extends MongoRepository<Account, String> {
   List<Account> findByShopIdAndTypeOrderByCodeAsc(String shopId, AccountType type);
 
   boolean existsByShopIdAndCode(String shopId, String code);
+
+  List<Account> findByShopIdAndCodeIn(String shopId, java.util.Collection<String> codes);
 }

@@ -14,6 +14,7 @@ import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.mapper.ShopMapper;
 import com.inventory.product.rest.dto.request.ShopApprovalRequest;
 import com.inventory.product.validation.ShopValidator;
+import com.inventory.user.domain.model.UserRole;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -46,7 +47,7 @@ class ShopServiceApprovalAuditTest {
     ShopApprovalRequest request = new ShopApprovalRequest();
     request.setApprove(true);
     request.setUserLimit(5);
-    shopService.approve(SHOP_ID, request, "admin-1");
+    shopService.approve(SHOP_ID, request, UserRole.SUPER_USER, "admin-1");
 
     ArgumentCaptor<AuditEntry> captor = ArgumentCaptor.forClass(AuditEntry.class);
     verify(auditService).record(captor.capture());
@@ -69,7 +70,7 @@ class ShopServiceApprovalAuditTest {
     ShopApprovalRequest request = new ShopApprovalRequest();
     request.setApprove(true);
     request.setUserLimit(5);
-    shopService.approve(SHOP_ID, request, "admin-1");
+    shopService.approve(SHOP_ID, request, UserRole.SUPER_USER, "admin-1");
 
     verify(auditService, never()).record(any());
   }
