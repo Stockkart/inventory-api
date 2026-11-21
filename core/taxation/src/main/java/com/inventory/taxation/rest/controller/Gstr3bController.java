@@ -1,6 +1,8 @@
 package com.inventory.taxation.rest.controller;
 
 
+import com.inventory.common.heavy.HeavyKind;
+import com.inventory.common.heavy.HeavyRequest;
 import com.inventory.metrics.annotation.Latency;
 import com.inventory.metrics.annotation.RecordRequestRate;
 import com.inventory.metrics.annotation.RecordStatusCodes;
@@ -63,6 +65,7 @@ public class Gstr3bController {
    *
    * @param period period in YYYY-MM format (e.g. 2025-12)
    */
+  @HeavyRequest(HeavyKind.EXPORT)
   @GetMapping("/download")
   public ResponseEntity<byte[]> downloadExcel(
       @RequestParam String period,

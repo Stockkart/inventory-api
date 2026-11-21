@@ -6,9 +6,11 @@ import com.inventory.pluginengine.InventorySearchProvider;
 import com.inventory.pluginengine.InventoryVerticalValidator;
 import com.inventory.pluginengine.SchemaDrivenInventoryValidator;
 import com.inventory.pluginengine.capabilities.VerticalUiContributor;
+import com.inventory.pluginengine.cards.CardSurfaceContributor;
 import com.inventory.pluginengine.cart.CartLineContributor;
 import com.inventory.pluginengine.cart.CheckoutCompletionHandler;
 import com.inventory.pluginengine.cart.QuotationCreateHandler;
+import com.inventory.pluginengine.kot.CafeKotPort;
 import com.inventory.pluginengine.menu.MenuVerticalValidator;
 import com.inventory.pluginengine.pricing.VerticalPricingPolicy;
 import com.inventory.plugins.cafe.repository.CafeInventoryExtensionRepository;
@@ -27,6 +29,8 @@ public class CafePlugin extends ConfiguredVerticalPlugin {
   private final CafeCheckoutCompletionHandler checkoutCompletionHandler;
   private final CafeQuotationCreateHandler quotationCreateHandler;
   private final CafePricingPolicy cafePricingPolicy;
+  private final CafeCardSurfaceContributor cardSurfaceContributor = new CafeCardSurfaceContributor();
+  private final CafeKotAdapter kotAdapter;
 
   public CafePlugin(
       CafeVerticalProperties properties,
@@ -37,7 +41,8 @@ public class CafePlugin extends ConfiguredVerticalPlugin {
       CafeMenuCartLineContributor menuCartLineContributor,
       CafeCheckoutCompletionHandler checkoutCompletionHandler,
       CafeQuotationCreateHandler quotationCreateHandler,
-      CafePricingPolicy cafePricingPolicy) {
+      CafePricingPolicy cafePricingPolicy,
+      CafeKotAdapter kotAdapter) {
     super(properties.getId(), properties.getVersion());
     this.inventoryValidator = new SchemaDrivenInventoryValidator(properties.getId());
     this.extensionRepository = extensionRepository;
@@ -48,6 +53,7 @@ public class CafePlugin extends ConfiguredVerticalPlugin {
     this.checkoutCompletionHandler = checkoutCompletionHandler;
     this.quotationCreateHandler = quotationCreateHandler;
     this.cafePricingPolicy = cafePricingPolicy;
+    this.kotAdapter = kotAdapter;
   }
 
   @Override
@@ -93,5 +99,15 @@ public class CafePlugin extends ConfiguredVerticalPlugin {
   @Override
   public Optional<VerticalPricingPolicy> getPricingPolicy() {
     return Optional.of(cafePricingPolicy);
+  }
+
+  @Override
+  public Optional<CardSurfaceContributor> getCardSurfaceContributor() {
+    return Optional.of(cardSurfaceContributor);
+  }
+
+  @Override
+  public Optional<CafeKotPort> getCafeKotPort() {
+    return Optional.of(kotAdapter);
   }
 }

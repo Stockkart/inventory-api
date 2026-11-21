@@ -1,6 +1,6 @@
 package com.inventory.product.service.ocr;
 
-import com.inventory.ocr.prompt.InvoicePricingLayout;
+import com.inventory.ocr.api.InvoicePricingLayout;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.enums.ShopType;
 

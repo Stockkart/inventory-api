@@ -1,0 +1,66 @@
+# Reusable: build the backend Docker image for a git ref and push it to Docker Hub
+# tagged with the full commit sha. Used by release.yml and branch-staging.yml.
+name: _build-image
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref (branch, tag or sha) to build
+        type: string
+        required: true
+    outputs:
+      sha:
+        description: Full commit sha that was built
+        value: ${{ jobs.build.outputs.sha }}
+      image:
+        description: Image reference that was pushed (repository:sha)
+        value: ${{ jobs.build.outputs.image }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and push image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      sha: ${{ steps.meta.outputs.sha }}
+      image: ${{ steps.meta.outputs.image }}
+    env:
+      IMAGE_REPOSITORY: ${{ vars.IMAGE_REPOSITORY || 'docker.io/myntrack/inventory-backend' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Resolve sha and write commit.txt
+        id: meta
+        run: |
+          sha="$(git rev-parse HEAD)"
+          printf '%s\n' "$sha" > commit.txt
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "image=${IMAGE_REPOSITORY}:${sha}" >> "$GITHUB_OUTPUT"
+          echo "Building ${IMAGE_REPOSITORY}:${sha}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.image }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
