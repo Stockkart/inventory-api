@@ -23,7 +23,6 @@ import com.inventory.plan.domain.repository.AddOnRepository;
 import com.inventory.plan.domain.repository.PlanPaymentOrderRepository;
 import com.inventory.plan.domain.repository.ReferralRewardRepository;
 import com.inventory.plan.domain.repository.ShopCreditEntryRepository;
-import com.inventory.plan.domain.repository.ShopCreditRepository;
 import com.inventory.plan.domain.repository.VoucherRedemptionRepository;
 import com.inventory.plan.rest.dto.response.PlanMisResponse;
 import com.inventory.plan.utils.constants.PlanPaymentConstants;
@@ -51,7 +50,7 @@ class PlanMisServiceTest {
   @Mock private ReferralRewardRepository rewardRepository;
   @Mock private VoucherRedemptionRepository redemptionRepository;
   @Mock private ShopCreditEntryRepository creditEntryRepository;
-  @Mock private ShopCreditRepository creditRepository;
+  @Mock private org.springframework.data.mongodb.core.MongoTemplate mongoTemplate;
   @Mock private AddOnRepository addOnRepository;
 
   @InjectMocks
@@ -62,6 +61,9 @@ class PlanMisServiceTest {
     service.clock = Clock.fixed(Instant.parse("2026-09-30T12:00:00Z"), ZoneOffset.UTC);
     lenient().when(orderRepository.findByStatusInAndPaidAtGreaterThanEqualAndPaidAtLessThan(any(), any(), any()))
         .thenReturn(List.of());
+    lenient().when(mongoTemplate.aggregate(any(org.springframework.data.mongodb.core.aggregation.Aggregation.class),
+        eq(ShopCredit.class), eq(org.bson.Document.class)))
+        .thenReturn(new org.springframework.data.mongodb.core.aggregation.AggregationResults<>(List.of(), new org.bson.Document()));
   }
 
   private static BigDecimal money(String value) {
@@ -114,15 +116,55 @@ class PlanMisServiceTest {
     paid.setWalletCredit(money("200"));
     PlanPaymentOrder gatewayRefund = order("o2", "s2", "8000", SEP_1_IST);
     gatewayRefund.setRefundedAmount(money("8000"));
+    gatewayRefund.setRefundSource(com.inventory.plan.domain.model.RefundSource.GATEWAY_REFUND);
     PlanPaymentOrder offlineRefund = order("o3", "s3", "3000", SEP_1_IST);
+    offlineRefund.setRefundSource(com.inventory.plan.domain.model.RefundSource.ADMIN);
 
-    PlanMisResponse.Revenue revenue = PlanMisService.revenue(List.of(paid), List.of(gatewayRefund, offlineRefund));
+    PlanMisResponse.Revenue revenue =
+        PlanMisService.revenue(List.of(paid), List.of(gatewayRefund, offlineRefund), money("18"));
 
     assertThat(revenue.getGrossRevenue()).isEqualByComparingTo("10000");
     assertThat(revenue.getDiscounts()).isEqualByComparingTo("500");
     assertThat(revenue.getWalletCreditApplied()).isEqualByComparingTo("200");
     assertThat(revenue.getRefundedAmount()).isEqualByComparingTo("11000");
     assertThat(revenue.getNetRevenue()).isEqualByComparingTo("-1000");
+  }
+
+  @Test
+  void revenueIsSplitIntoTaxableAndGstUsingTheStoredSplitOrTheRate() {
+    PlanPaymentOrder stored = order("o1", "s1", "11800", SEP_1_IST);
+    stored.setTaxableAmount(money("10000"));
+    stored.setGstAmount(money("1800"));
+    PlanPaymentOrder legacy = order("o2", "s2", "9999", SEP_1_IST);
+    PlanPaymentOrder refunded = order("o3", "s3", "1180", SEP_1_IST);
+    refunded.setRefundedAmount(money("1180"));
+
+    PlanMisResponse.Revenue revenue = PlanMisService.revenue(List.of(stored, legacy), List.of(refunded), money("18"));
+
+    assertThat(revenue.getGrossTaxable()).isEqualByComparingTo("18473.73");
+    assertThat(revenue.getGrossGst()).isEqualByComparingTo("3325.27");
+    assertThat(revenue.getGrossTaxable().add(revenue.getGrossGst())).isEqualByComparingTo(revenue.getGrossRevenue());
+    assertThat(revenue.getRefundedTaxable()).isEqualByComparingTo("1000");
+    assertThat(revenue.getRefundedGst()).isEqualByComparingTo("180");
+    assertThat(revenue.getNetTaxable()).isEqualByComparingTo("17473.73");
+    assertThat(revenue.getNetGst()).isEqualByComparingTo("3145.27");
+  }
+
+  @Test
+  void aRefundWithNoCountedAmountIsTheWholeOrderOnlyForAFullRefundByOurFlow() {
+    PlanPaymentOrder admin = order("o1", "s1", "5000", SEP_1_IST);
+    admin.setRefundSource(com.inventory.plan.domain.model.RefundSource.ADMIN);
+    PlanPaymentOrder dispute = order("o2", "s1", "4000", SEP_1_IST);
+    dispute.setRefundSource(com.inventory.plan.domain.model.RefundSource.GATEWAY_DISPUTE);
+    PlanPaymentOrder unknown = order("o3", "s1", "3000", SEP_1_IST);
+    PlanPaymentOrder partial = order("o4", "s1", "3000", SEP_1_IST);
+    partial.setRefundSource(com.inventory.plan.domain.model.RefundSource.ADMIN);
+    partial.setRefundedAmount(money("1000"));
+
+    assertThat(PlanMisService.refundValue(admin)).isEqualByComparingTo("5000");
+    assertThat(PlanMisService.refundValue(dispute)).isEqualByComparingTo("4000");
+    assertThat(PlanMisService.refundValue(unknown)).isEqualByComparingTo("0");
+    assertThat(PlanMisService.refundValue(partial)).isEqualByComparingTo("1000");
   }
 
   @Test
@@ -179,6 +221,17 @@ class PlanMisServiceTest {
   }
 
   @Test
+  void ocrCreditsUseTheQuantityAsPricedOnTheLine() {
+    OrderLine priced = line(PricingConstants.ITEM_TYPE_OCR_TOPUP, "OCR_500", 2, "1000");
+    priced.setGrantsQuantity(400);
+
+    PlanMisResponse.OcrTopUps topUps = service.ocrTopUps(List.of(order("o1", "s1", "0", SEP_1_IST, priced)));
+
+    assertThat(topUps.getCredits()).isEqualTo(800);
+    org.mockito.Mockito.verifyNoInteractions(addOnRepository);
+  }
+
+  @Test
   void voucherCostRanksCodesByDiscount() {
     PlanMisResponse.Vouchers vouchers = PlanMisService.vouchers(List.of(
         VoucherRedemption.builder().voucherCode("A").discount(money("100")).build(),
@@ -226,17 +279,28 @@ class PlanMisServiceTest {
             .availableDelta(money("70")).outstandingDelta(money("-30")).build(),
         ShopCreditEntry.builder().source(ShopCreditSource.MANUAL_ADJUSTMENT).amount(money("50"))
             .availableDelta(money("-50")).outstandingDelta(BigDecimal.ZERO).build());
-    List<ShopCredit> wallets = List.of(
-        ShopCredit.builder().availableBalance(money("600")).reservedBalance(money("100"))
-            .outstandingClawback(money("25")).build());
-
-    PlanMisResponse.Wallet wallet = PlanMisService.wallet(entries, wallets);
+    PlanMisResponse.Wallet wallet =
+        PlanMisService.wallet(entries, new PlanMisService.WalletTotals(money("700"), money("25")));
 
     assertThat(wallet.getRewardsCredited()).isEqualByComparingTo("1000");
     assertThat(wallet.getSpentOnOrders()).isEqualByComparingTo("400");
     assertThat(wallet.getManualAdjustmentsNet()).isEqualByComparingTo("50");
     assertThat(wallet.getOutstandingLiability()).isEqualByComparingTo("700");
     assertThat(wallet.getUnrecoveredClawback()).isEqualByComparingTo("25");
+  }
+
+  @Test
+  void walletBalancesAreSummedInTheDatabase() {
+    when(mongoTemplate.aggregate(any(org.springframework.data.mongodb.core.aggregation.Aggregation.class),
+        eq(ShopCredit.class), eq(org.bson.Document.class)))
+        .thenReturn(new org.springframework.data.mongodb.core.aggregation.AggregationResults<>(List.of(
+            new org.bson.Document("liability", new org.bson.types.Decimal128(money("700.50")))
+                .append("clawback", new org.bson.types.Decimal128(money("25")))), new org.bson.Document()));
+
+    PlanMisService.WalletTotals totals = service.walletBalances();
+
+    assertThat(totals.liability()).isEqualByComparingTo("700.50");
+    assertThat(totals.clawback()).isEqualByComparingTo("25");
   }
 
   @Test
