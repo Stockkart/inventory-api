@@ -33,11 +33,13 @@ import com.inventory.plan.service.order.OrderFulfilmentService;
 import com.inventory.plan.service.order.OrderReservations;
 import com.inventory.plan.service.order.PaymentOrderStateService;
 import com.inventory.plan.utils.CheckoutRequestHash;
+import com.inventory.plan.utils.PlanGstUtils;
 import com.inventory.plan.utils.constants.PlanMetricsConstants;
 import com.inventory.plan.utils.constants.PlanPaymentConstants;
 import com.inventory.plan.utils.constants.PricingConstants;
 import com.inventory.plan.validation.PlanValidator;
 import java.time.Clock;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -97,6 +99,10 @@ public class PlanPaymentService {
 
   @Autowired
   private AuditService auditService;
+
+  /** GST rate inside the tax-inclusive plan prices; the order stores its split at this rate. */
+  @Value("${plan.gst-rate-percent:18}")
+  BigDecimal gstRatePercent = new BigDecimal("18");
 
   @Value("${plan.checkout.order-ttl-minutes:30}")
   long orderTtlMinutes = 30;
@@ -400,6 +406,10 @@ public class PlanPaymentService {
     order.setSubtotal(cart.subtotal());
     order.setDiscountTotal(cart.discountTotal());
     order.setWalletCredit(cart.walletCredit());
+    PlanGstUtils.GstSplit gst = PlanGstUtils.splitInclusive(cart.grandTotal(), gstRatePercent);
+    order.setTaxableAmount(gst.taxable());
+    order.setGstAmount(gst.gst());
+    order.setGstRatePercent(gstRatePercent);
     order.setPricingVersion(PricingConstants.PRICING_VERSION);
     order.setIdempotencyKey(key);
     order.setRequestHash(requestHash);
