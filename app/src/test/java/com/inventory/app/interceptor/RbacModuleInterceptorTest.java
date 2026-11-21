@@ -161,4 +161,15 @@ class RbacModuleInterceptorTest {
 
     verify(rbacService).requireModule("u1", "s1", RbacService.MODULE_PAYMENT_PLAN);
   }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"/api/v1/referrals/me", "/api/v1/referrals/me;x=1"})
+  void theShopReferralSummaryNeedsThePaymentPlanModule(String path) {
+    when(rbacService.requireModule("u1", "s1", RbacService.MODULE_PAYMENT_PLAN))
+        .thenReturn(new ShopAccessResponse());
+
+    interceptor.preHandle(request(path), new MockHttpServletResponse(), null);
+
+    verify(rbacService).requireModule("u1", "s1", RbacService.MODULE_PAYMENT_PLAN);
+  }
 }
