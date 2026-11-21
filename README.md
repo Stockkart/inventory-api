@@ -551,9 +551,9 @@ Shop-facing paths take the shop from the request (never the path or body) and si
 | `GET /api/v1/plans`, `GET /api/v1/plans/{planId}` | Active catalogue. Each plan carries `trialDays` (from `plan.trial-days`), `selectable` (false for legacy add-on rows sold at payment) and `billingLimitLabel` ("Unlimited" or lakh rupees such as "₹1.5L"). |
 | `GET /api/v1/plans/addons` | Active add-on catalogue. |
 | `GET /api/v1/campaigns/active` | The running sale campaign, if any (public). |
-| `GET /api/v1/plans/shop/status` | The shop's plan, trial, usage and limits; `trialDays`. Read-only (never writes the subscription). |
+| `GET /api/v1/plans/shop/status` | The shop's plan, trial, usage and limits; `trialDays`, `trialAvailable` and `planOptions` (what each plan card offers: `CURRENT`, `UPGRADE` or `BUY`, and whether it is available now; see Plan checkout orders). Read-only (never writes the subscription). |
 | `GET /api/v1/plans/shop/entitlements` | Features, limits and enforcement mode; `seatLimitReached`, `ocrLimitReached` (included scans and purchased credits both used up). |
-| `GET /api/v1/plans/shop/addons`, `/shop/transactions`, `/shop/usage`, `/shop/wallet` | The shop's add-ons, plan transactions, month usage and referral wallet (RBAC module `paymentPlan` for transactions, usage, wallet). |
+| `GET /api/v1/plans/shop/addons`, `/shop/transactions`, `/shop/usage`, `/shop/wallet` | The shop's add-ons, plan transactions, month usage and referral wallet (RBAC module `paymentPlan` for transactions, usage, wallet). The shop wallet lists only rows that moved the available balance (a paid order's `ORDER_REDEMPTION` only spends what its checkout hold already took); the admin wallet shows every ledger row. |
 | `GET /api/v1/plans/vouchers/validate` | Check a voucher code for the shop; unknown codes are rate-limited (`429 TOO_MANY_REQUESTS`, code 1009). |
 | `GET /api/v1/referrals/me`, `/referrals/rewards`, `/referrals/validate` | The shop's referral summary and rewards (RBAC module `paymentPlan`), and a referral-code check for sign-up. |
 
