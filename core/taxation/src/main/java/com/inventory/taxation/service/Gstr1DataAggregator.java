@@ -9,6 +9,7 @@ import com.inventory.product.domain.model.enums.PurchaseStatus;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Refund;
+import com.inventory.product.api.RefundedLineView;
 import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.PurchaseRepository;
 import com.inventory.product.domain.repository.RefundRepository;
@@ -19,6 +20,7 @@ import com.inventory.taxation.domain.gstr1.Gstr1ReportContext;
 import com.inventory.common.util.GstStateCode;
 import com.inventory.user.domain.model.Customer;
 import com.inventory.user.domain.repository.CustomerRepository;
+import com.inventory.taxation.utils.GstPeriods;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -42,6 +44,10 @@ public class Gstr1DataAggregator {
 
   /** UQC used when the base unit is absent or is not a GST quantity code. */
   private static final String FALLBACK_UQC = "OTH-OTHERS";
+
+  /** Document summary (table 13) natures, as the portal's template spells them. */
+  static final String DOC_INVOICES = "Invoices for outward supply";
+  static final String DOC_CREDIT_NOTES = "Credit Note";
 
   @Autowired
   private PurchaseRepository purchaseRepository;
@@ -70,12 +76,11 @@ public class Gstr1DataAggregator {
       throw new IllegalArgumentException("Invalid period, use YYYY-MM: " + period);
     }
 
-    Instant rangeStart = LocalDate.of(year, month, 1).atStartOfDay(ZoneId.systemDefault()).toInstant();
+    Instant rangeStart = GstPeriods.monthStart(year, month);
     // Exclusive: the first instant of the next month is not part of this one.
-    Instant rangeEnd = LocalDate.of(year, month, 1).plusMonths(1)
-        .atStartOfDay(ZoneId.systemDefault()).toInstant();
+    Instant rangeEnd = GstPeriods.monthEnd(year, month);
 
-    // Include completed purchases with soldAt in period, or with soldAt null but updatedAt in period (legacy/completion date)
+    // Completed sales invoiced in the period (soldAt); updatedAt only for legacy sales without one.
     List<Purchase> purchases = purchaseRepository.findCompletedPurchasesInPeriod(
         shopId, PurchaseStatus.COMPLETED, rangeStart, rangeEnd);
     purchases = purchases.stream()
@@ -85,10 +90,24 @@ public class Gstr1DataAggregator {
     List<Refund> refunds = refundRepository.findByShopIdAndCreatedAtInPeriod(
             shopId, rangeStart, rangeEnd);
 
-    Set<String> customerIds = purchases.stream()
-        .map(Purchase::getCustomerId)
-        .filter(StringUtils::hasText)
-        .collect(Collectors.toSet());
+    // A note issued this month is often against a sale from an earlier one, so the sale and its
+    // buyer are looked up for the note itself. Taking the buyer only from this month's sales
+    // reported a registered buyer's note as unregistered whenever the sale was older.
+    Map<String, Purchase> refundedSales = new HashMap<>();
+    for (Refund refund : refunds) {
+      if (StringUtils.hasText(refund.getPurchaseId())) {
+        purchaseRepository.findById(refund.getPurchaseId())
+            .ifPresent(sale -> refundedSales.put(refund.getPurchaseId(), sale));
+      }
+    }
+
+    Set<String> customerIds = new HashSet<>();
+    for (Purchase p : purchases) {
+      if (StringUtils.hasText(p.getCustomerId())) customerIds.add(p.getCustomerId());
+    }
+    for (Purchase p : refundedSales.values()) {
+      if (StringUtils.hasText(p.getCustomerId())) customerIds.add(p.getCustomerId());
+    }
     Map<String, Customer> customerMap = customerIds.isEmpty() ? Map.of()
         : customerRepository.findAllById(customerIds).stream().collect(Collectors.toMap(Customer::getId, c -> c));
 
@@ -98,6 +117,11 @@ public class Gstr1DataAggregator {
         for (PurchaseItem item : p.getItems()) {
           if (StringUtils.hasText(item.getInventoryId())) inventoryIds.add(item.getInventoryId());
         }
+      }
+    }
+    for (Refund refund : refunds) {
+      for (RefundedLineView line : refund.refundedLineViews()) {
+        if (StringUtils.hasText(line.inventoryId())) inventoryIds.add(line.inventoryId());
       }
     }
     Map<String, Inventory> inventoryMap = inventoryIds.isEmpty() ? Map.of()
@@ -164,9 +188,9 @@ public class Gstr1DataAggregator {
       BigDecimal invValue = purchase.getGrandTotal() != null ? purchase.getGrandTotal() : BigDecimal.ZERO;
 
       LocalDate invDate = purchase.getSoldAt() != null
-          ? LocalDateTime.ofInstant(purchase.getSoldAt(), ZoneId.systemDefault()).toLocalDate()
+          ? GstPeriods.dateOf(purchase.getSoldAt())
           : null;
-      if (invDate == null) invDate = LocalDate.now();
+      if (invDate == null) invDate = LocalDate.now(GstPeriods.ZONE);
 
       String invNo = purchase.getInvoiceNo() != null ? purchase.getInvoiceNo() : ("INV-" + purchase.getId());
 
@@ -196,12 +220,7 @@ public class Gstr1DataAggregator {
         if (b2b) {
           line.setSupplyType(SupplyType.B2B);
           b2bLines.add(line);
-        } else if (invValue.compareTo(B2CL_THRESHOLD) >= 0
-            && (purchase.getInterstate() == null || interstate)) {
-          // B2CL is a large supply to an unregistered buyer in another state; a local one of the
-          // same size belongs on b2cs. Sales made before the supply type was recorded cannot be
-          // told apart, so they keep the routing they have always had rather than moving between
-          // sheets of a return that has already been filed.
+        } else if (isB2cl(purchase, interstate)) {
           line.setSupplyType(SupplyType.B2CL);
           b2clLines.add(line);
         } else {
@@ -219,64 +238,94 @@ public class Gstr1DataAggregator {
       invoiceSerialNos.add(invNo);
     }
 
+    // Credit notes, before the summaries are handed over: a note reverses part of a sale, so it
+    // is taken off the same summaries the sale went into.
+    //   - Registered buyer: reported note by note on cdnr, and taken off the B2B HSN summary.
+    //   - Unregistered buyer of a B2CL sale: reported on cdnur, and taken off the B2C HSN summary.
+    //   - Unregistered buyer of any other sale: no table of its own -- cdnur is only for B2CL and
+    //     exports -- so it is netted out of b2cs and the B2C HSN summary, which is how the portal
+    //     expects a return of a small local sale to be filed.
+    // Every note, whichever table it lands on, is a credit note in the document summary.
+    Set<String> creditNoteNos = new TreeSet<>();
+    for (Refund refund : refunds) {
+      Purchase purchase = StringUtils.hasText(refund.getPurchaseId())
+          ? refundedSales.get(refund.getPurchaseId()) : null;
+      if (purchase != null && !isRegularBillingMode(purchase)) {
+        continue;
+      }
+      String customerId = purchase != null && StringUtils.hasText(purchase.getCustomerId())
+          ? purchase.getCustomerId() : refund.getCustomerId();
+      Customer customer = customerId != null ? customerMap.get(customerId) : null;
+      boolean registered = isRegisteredRecipient(customer);
+      String receiverName = customer != null ? customer.getName() : (purchase != null ? purchase.getCustomerName() : "");
+      if (receiverName == null) receiverName = "";
+      String recipientGstin = customer != null && customer.getGstin() != null ? customer.getGstin() : "";
+      // The note reverses tax under the head the sale charged it.
+      boolean interstate = purchase != null
+          ? Boolean.TRUE.equals(purchase.getInterstate())
+          : Boolean.TRUE.equals(refund.getInterstate());
+      String placeOfSupply = GstStateCode.placeOfSupply(recipientGstin, sellerState);
+
+      BigDecimal noteValue = refund.getRefundAmount() != null ? refund.getRefundAmount() : BigDecimal.ZERO;
+      LocalDate noteDate = refund.getCreatedAt() != null
+          ? GstPeriods.dateOf(refund.getCreatedAt())
+          : LocalDate.now(GstPeriods.ZONE);
+      String noteNumber = StringUtils.hasText(refund.getCreditNoteNo())
+          ? refund.getCreditNoteNo()
+          : ("CN-" + refund.getId());
+      creditNoteNos.add(noteNumber);
+
+      boolean b2cl = !registered && purchase != null && isB2cl(purchase, interstate);
+      for (RateShare share : splitNoteByRate(refund, purchase, interstate)) {
+        if (registered || b2cl) {
+          GstRefundLine rLine = GstRefundLine.builder()
+              .registered(registered)
+              .recipientGstin(recipientGstin)
+              .receiverName(receiverName)
+              .noteNumber(noteNumber)
+              .noteDate(noteDate)
+              .noteType("C")
+              .placeOfSupply(placeOfSupply)
+              .reverseCharge("N")
+              .noteSupplyType("R")
+              .noteValue(noteValue)
+              .applicableTaxPct(share.rate)
+              .rate(parseRate(share.rate))
+              .taxableValue(share.taxableValue)
+              .integratedTaxAmount(share.integratedTax)
+              .centralTaxAmount(share.centralTax)
+              .stateTaxAmount(share.stateTax)
+              .cessAmount(BigDecimal.ZERO)
+              .urType(registered ? "" : "B2CL")
+              .build();
+          if (registered) cdnrLines.add(rLine);
+          else cdnurLines.add(rLine);
+        } else {
+          GstInvoiceLine reversal = GstInvoiceLine.builder()
+              .supplyType(SupplyType.B2CS)
+              .b2csType("OE")
+              .placeOfSupply(placeOfSupply)
+              .applicableTaxPct(share.rate)
+              .rate(parseRate(share.rate))
+              .taxableValue(share.taxableValue.negate())
+              .invoiceValue(BigDecimal.ZERO)
+              .integratedTaxAmount(share.integratedTax.negate())
+              .centralTaxAmount(share.centralTax.negate())
+              .stateTaxAmount(share.stateTax.negate())
+              .cessAmount(BigDecimal.ZERO)
+              .build();
+          b2csAggregate.merge("OE|" + placeOfSupply + "|" + share.rate, reversal, this::mergeB2csLine);
+        }
+      }
+      reverseHsn(refund, purchase, inventoryMap, interstate, registered,
+          registered ? hsnB2bMap : hsnB2cMap);
+    }
+
     ctx.b2bLines(b2bLines)
         .b2clLines(b2clLines)
         .b2csLines(new ArrayList<>(b2csAggregate.values()))
         .hsnB2bLines(new ArrayList<>(hsnB2bMap.values()))
         .hsnB2cLines(new ArrayList<>(hsnB2cMap.values()));
-
-    for (Refund refund : refunds) {
-      Purchase purchase = purchaseRepository.findById(refund.getPurchaseId()).orElse(null);
-      if (purchase != null && !isRegularBillingMode(purchase)) {
-        continue;
-      }
-      Customer customer = purchase != null && purchase.getCustomerId() != null
-          ? customerMap.get(purchase.getCustomerId()) : null;
-      boolean registered = isRegisteredRecipient(customer);
-      String receiverName = customer != null ? customer.getName() : (purchase != null ? purchase.getCustomerName() : "");
-      if (receiverName == null) receiverName = "";
-      String recipientGstin = customer != null && customer.getGstin() != null ? customer.getGstin() : "";
-
-      BigDecimal noteValue = refund.getRefundAmount() != null ? refund.getRefundAmount() : BigDecimal.ZERO;
-      BigDecimal taxableVal = noteValue;
-      if (purchase != null && purchase.getGrandTotal() != null && purchase.getGrandTotal().compareTo(BigDecimal.ZERO) > 0) {
-        BigDecimal ratio = noteValue.divide(purchase.getGrandTotal(), 4, RoundingMode.HALF_UP);
-        if (purchase.getRevenueBeforeTax() != null) {
-          taxableVal = purchase.getRevenueBeforeTax().multiply(ratio).setScale(2, RoundingMode.HALF_UP);
-        }
-      }
-      String rateStr = purchase != null ? dominantRate(purchase) : "0";
-      BigDecimal rate = parseRate(rateStr);
-
-      LocalDate noteDate = refund.getCreatedAt() != null
-          ? LocalDateTime.ofInstant(refund.getCreatedAt(), ZoneId.systemDefault()).toLocalDate()
-          : LocalDate.now();
-      String noteNumber = StringUtils.hasText(refund.getCreditNoteNo())
-          ? refund.getCreditNoteNo()
-          : ("CN-" + refund.getId());
-
-      GstRefundLine rLine = GstRefundLine.builder()
-          .registered(registered)
-          .recipientGstin(recipientGstin)
-          .receiverName(receiverName)
-          .noteNumber(noteNumber)
-          .noteDate(noteDate)
-          .noteType("C")
-          .placeOfSupply(GstStateCode.placeOfSupply(recipientGstin, sellerState))
-          .reverseCharge("N")
-          .noteSupplyType("R")
-          .noteValue(noteValue)
-          .applicableTaxPct(rateStr)
-          .rate(rate)
-          .taxableValue(taxableVal)
-          .cessAmount(BigDecimal.ZERO)
-          .urType(registered ? "" : "UR")
-          .build();
-
-      if (registered) cdnrLines.add(rLine);
-      else cdnurLines.add(rLine);
-    }
-
     ctx.cdnrLines(cdnrLines).cdnurLines(cdnurLines);
 
     List<GstDocumentSummaryLine> docLines = new ArrayList<>();
@@ -288,28 +337,23 @@ public class Gstr1DataAggregator {
       List<String> serials = new ArrayList<>(invoiceSerialNos);
       Collections.sort(serials);
       docLines.add(GstDocumentSummaryLine.builder()
-          .natureOfDocument("Invoices for outward supply")
+          .natureOfDocument(DOC_INVOICES)
           .srNoFrom(serials.get(0))
           .srNoTo(serials.get(serials.size() - 1))
           .totalNumber(serials.size())
           .cancelled(0)
           .build());
     }
-    if (!cdnrLines.isEmpty()) {
+    if (!creditNoteNos.isEmpty()) {
+      // One series for every note, registered buyer or not: the document summary has a single
+      // "Credit Note" row, and a note listed under the registered/unregistered split it used to
+      // carry has no row of its own there to go to.
+      List<String> notes = new ArrayList<>(creditNoteNos);
       docLines.add(GstDocumentSummaryLine.builder()
-          .natureOfDocument("Credit/Debit Notes (Registered)")
-          .srNoFrom(cdnrLines.get(0).getNoteNumber())
-          .srNoTo(cdnrLines.get(cdnrLines.size() - 1).getNoteNumber())
-          .totalNumber(cdnrLines.size())
-          .cancelled(0)
-          .build());
-    }
-    if (!cdnurLines.isEmpty()) {
-      docLines.add(GstDocumentSummaryLine.builder()
-          .natureOfDocument("Credit/Debit Notes (Unregistered)")
-          .srNoFrom(cdnurLines.get(0).getNoteNumber())
-          .srNoTo(cdnurLines.get(cdnurLines.size() - 1).getNoteNumber())
-          .totalNumber(cdnurLines.size())
+          .natureOfDocument(DOC_CREDIT_NOTES)
+          .srNoFrom(notes.get(0))
+          .srNoTo(notes.get(notes.size() - 1))
+          .totalNumber(notes.size())
           .cancelled(0)
           .build());
     }
@@ -334,6 +378,150 @@ public class Gstr1DataAggregator {
         ? purchase.getBillingMode()
         : BillingMode.REGULAR;
     return mode == BillingMode.REGULAR;
+  }
+
+  /**
+   * Whether an unregistered buyer's sale belongs on B2CL: a large supply to another state. A
+   * local one of the same size belongs on b2cs. Sales made before the supply type was recorded
+   * cannot be told apart, so they keep the routing they have always had rather than moving
+   * between sheets of a return that has already been filed.
+   */
+  private static boolean isB2cl(Purchase purchase, boolean interstate) {
+    BigDecimal value = purchase.getGrandTotal() != null ? purchase.getGrandTotal() : BigDecimal.ZERO;
+    return value.compareTo(B2CL_THRESHOLD) >= 0
+        && (purchase.getInterstate() == null || interstate);
+  }
+
+  /**
+   * A credit note broken into one entry per tax rate, the way {@link #splitByRate} breaks a sale.
+   *
+   * <p>Each returned line is backed out of the amount refunded for it, at the rate the sale charged
+   * on it -- the same tax-inclusive reading the sale itself gets -- so a note reverses what its sale
+   * reported, rate by rate. The tax stored on the refund line is not used: a line sold at MRP was
+   * stored with no tax, and the note would then reverse none.
+   *
+   * <p>A note with no line detail (older refunds) falls back to its share of the sale's taxable
+   * value, under the sale's dominant rate.
+   */
+  private List<RateShare> splitNoteByRate(Refund refund, Purchase sale, boolean interstate) {
+    Map<String, RateShare> shares = new LinkedHashMap<>();
+    for (RefundedLineView item : refund.refundedLineViews()) {
+      ReturnedLine line = ReturnedLine.of(item, soldLineFor(sale, item.inventoryId()), interstate);
+      RateShare share = shares.computeIfAbsent(line.rate().stripTrailingZeros().toPlainString(), RateShare::new);
+      share.taxableValue = share.taxableValue.add(line.taxable());
+      share.integratedTax = share.integratedTax.add(line.igst());
+      share.centralTax = share.centralTax.add(line.cgst());
+      share.stateTax = share.stateTax.add(line.sgst());
+    }
+    if (shares.isEmpty()) {
+      BigDecimal noteValue = refund.getRefundAmount() != null ? refund.getRefundAmount() : BigDecimal.ZERO;
+      BigDecimal taxable = noteValue;
+      if (sale != null && sale.getGrandTotal() != null && sale.getGrandTotal().signum() > 0
+          && sale.getRevenueBeforeTax() != null) {
+        BigDecimal ratio = noteValue.divide(sale.getGrandTotal(), 4, RoundingMode.HALF_UP);
+        taxable = sale.getRevenueBeforeTax().multiply(ratio).setScale(2, RoundingMode.HALF_UP);
+      }
+      String rateStr = sale != null ? dominantRate(sale) : "0";
+      BigDecimal rate = parseRate(rateStr);
+      RateShare only = new RateShare(rateStr);
+      only.taxableValue = taxable;
+      if (interstate) {
+        only.integratedTax = GstMath.taxOnExclusive(taxable, rate);
+      } else {
+        BigDecimal half = rate.divide(BigDecimal.valueOf(2));
+        only.centralTax = GstMath.taxOnExclusive(taxable, half);
+        only.stateTax = GstMath.taxOnExclusive(taxable, half);
+      }
+      shares.put(rateStr, only);
+    }
+    return new ArrayList<>(shares.values());
+  }
+
+  /**
+   * One returned line priced for the return: its rate (the refund line's own, else the sale
+   * line's), the taxable value backed out of the amount refunded, and the tax on it under the
+   * head the sale charged.
+   */
+  private record ReturnedLine(BigDecimal rate, BigDecimal taxable, BigDecimal igst,
+                              BigDecimal cgst, BigDecimal sgst) {
+    static ReturnedLine of(RefundedLineView item, PurchaseItem soldLine, boolean interstate) {
+      String cgstRaw = StringUtils.hasText(item.cgstRate()) ? item.cgstRate()
+          : (soldLine != null ? soldLine.getCgst() : null);
+      String sgstRaw = StringUtils.hasText(item.sgstRate()) ? item.sgstRate()
+          : (soldLine != null ? soldLine.getSgst() : null);
+      BigDecimal cgstRate = GstMath.parseGstRate(cgstRaw);
+      BigDecimal sgstRate = GstMath.parseGstRate(sgstRaw);
+      BigDecimal rate = cgstRate.add(sgstRate);
+      BigDecimal taxable = GstMath.extractFromInclusive(item.refundAmount(), rate).taxable();
+      if (interstate) {
+        return new ReturnedLine(rate, taxable, GstMath.taxOnExclusive(taxable, rate),
+            BigDecimal.ZERO, BigDecimal.ZERO);
+      }
+      return new ReturnedLine(rate, taxable, BigDecimal.ZERO,
+          GstMath.taxOnExclusive(taxable, cgstRate), GstMath.taxOnExclusive(taxable, sgstRate));
+    }
+  }
+
+  /** The sale's line for a lot, or null when the sale or the line is not on record. */
+  private static PurchaseItem soldLineFor(Purchase sale, String inventoryId) {
+    if (sale == null || sale.getItems() == null || !StringUtils.hasText(inventoryId)) return null;
+    for (PurchaseItem line : sale.getItems()) {
+      if (inventoryId.equals(line.getInventoryId())) return line;
+    }
+    return null;
+  }
+
+  /**
+   * Takes a credit note's lines off the HSN summary its sale went into, so the summary states the
+   * net supply of each HSN, as the return asks.
+   *
+   * <p>A note against an HSN the period has no sales of leaves a negative row: the reversal is
+   * real and dropping it would overstate the tax, so it is reported rather than hidden.
+   */
+  private void reverseHsn(Refund refund, Purchase sale, Map<String, Inventory> inventoryMap,
+                          boolean interstate, boolean b2b, Map<String, GstHsnLine> hsnMap) {
+    for (RefundedLineView item : refund.refundedLineViews()) {
+      PurchaseItem soldLine = soldLineFor(sale, item.inventoryId());
+      Inventory inv = item.inventoryId() != null ? inventoryMap.get(item.inventoryId()) : null;
+      String hsn = resolveHsn(soldLine != null ? soldLine.getHsn() : null, inv);
+      ReturnedLine line = ReturnedLine.of(item, soldLine, interstate);
+      BigDecimal rate = line.rate();
+      BigDecimal qty = BigDecimal.valueOf(item.quantity());
+
+      GstHsnLine row = hsnMap.computeIfAbsent(hsnRateKey(hsn, rate), k -> GstHsnLine.builder()
+          .hsn(hsn)
+          .description(hsnSacCatalog.descriptionFor(hsn).orElse(item.name() != null ? item.name() : ""))
+          .uqc(resolveUqc(inv, soldLine))
+          .totalQuantity(BigDecimal.ZERO)
+          .totalValue(BigDecimal.ZERO)
+          .rate(rate)
+          .taxableValue(BigDecimal.ZERO)
+          .integratedTaxAmount(BigDecimal.ZERO)
+          .centralTaxAmount(BigDecimal.ZERO)
+          .stateUtTaxAmount(BigDecimal.ZERO)
+          .cessAmount(BigDecimal.ZERO)
+          .b2b(b2b)
+          .build());
+      row.setTotalQuantity(row.getTotalQuantity().subtract(qty));
+      row.setTotalValue(row.getTotalValue().subtract(item.refundAmount()));
+      row.setTaxableValue(row.getTaxableValue().subtract(line.taxable()));
+      row.setIntegratedTaxAmount(row.getIntegratedTaxAmount().subtract(line.igst()));
+      row.setCentralTaxAmount(row.getCentralTaxAmount().subtract(line.cgst()));
+      row.setStateUtTaxAmount(row.getStateUtTaxAmount().subtract(line.sgst()));
+    }
+  }
+
+  /**
+   * The HSN a line is reported under: the line's own, else its lot's, else {@code "0"}.
+   *
+   * <p>The line first, the lot second. A sale line can outlive the delivery it came from -- stock
+   * is consumed, and a migrated sale points at a lot that no longer exists -- and the lot was the
+   * only source, so every such line fell through to "0", which is not a valid HSN and which the
+   * portal rejects. Where the line states its own HSN, that is the authority.
+   */
+  private static String resolveHsn(String lineHsn, Inventory inv) {
+    if (StringUtils.hasText(lineHsn)) return lineHsn;
+    return inv != null && StringUtils.hasText(inv.getHsn()) ? inv.getHsn() : "0";
   }
 
   /** One rate's share of an invoice: what it was charged on and the tax it bore. */
@@ -475,14 +663,7 @@ public class Gstr1DataAggregator {
     if (purchase.getItems() == null) return;
     for (PurchaseItem item : purchase.getItems()) {
       Inventory inv = item.getInventoryId() != null ? inventoryMap.get(item.getInventoryId()) : null;
-      // The line first, the lot second. A sale line can outlive the delivery it
-      // came from -- stock is consumed, and a migrated sale points at a lot that
-      // no longer exists -- and the lot was the only source, so every such line
-      // fell through to "0", which is not a valid HSN and which the portal
-      // rejects. Where the line states its own HSN, that is the authority.
-      String hsn = StringUtils.hasText(item.getHsn())
-          ? item.getHsn()
-          : (inv != null && StringUtils.hasText(inv.getHsn()) ? inv.getHsn() : "0");
+      String hsn = resolveHsn(item.getHsn(), inv);
       String description = hsnSacCatalog.descriptionFor(hsn).orElseGet(() ->
           StringUtils.hasText(item.getName())
               ? item.getName()

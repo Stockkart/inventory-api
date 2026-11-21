@@ -30,6 +30,10 @@ public class GstRefundLine {
   private String applicableTaxPct;
   private BigDecimal rate;
   private BigDecimal taxableValue;
+  /** Tax the note reverses at this rate: IGST for an interstate note, else CGST and SGST. */
+  private BigDecimal integratedTaxAmount;
+  private BigDecimal centralTaxAmount;
+  private BigDecimal stateTaxAmount;
   private BigDecimal cessAmount;
   private String urType;         // For CDNUR
 }

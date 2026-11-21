@@ -110,12 +110,15 @@ public interface PurchaseRepository extends MongoRepository<Purchase, String> {
       String shopId, PurchaseStatus status, Instant startInclusive, Instant endExclusive);
 
   /**
-   * Find completed purchases in a period: soldAt in range, or updatedAt in range (e.g. completed in period).
-   * Ensures purchases completed in the period are included even if soldAt was never set or is from cart-creation.
+   * Completed purchases invoiced in a period: {@code soldAt} in range.
+   *
+   * <p>{@code updatedAt} counts only for a legacy sale that never got a {@code soldAt}. It used to
+   * count for every sale, so a bill edited, paid or renumbered in a later month was filed again in
+   * that month's GSTR-1 -- an invoice already reported, reported twice.
    */
   @Query("{ 'shopId': ?0, 'status': ?1, '$or': [ "
       + "{ 'soldAt': { '$gte': ?2, '$lt': ?3 } }, "
-      + "{ 'updatedAt': { '$gte': ?2, '$lt': ?3 } } "
+      + "{ 'soldAt': null, 'updatedAt': { '$gte': ?2, '$lt': ?3 } } "
       + "] }")
   List<Purchase> findCompletedPurchasesInPeriod(
       String shopId, PurchaseStatus status, Instant startInclusive, Instant endExclusive);

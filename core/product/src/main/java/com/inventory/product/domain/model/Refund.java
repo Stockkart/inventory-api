@@ -1,5 +1,6 @@
 package com.inventory.product.domain.model;
 
+import com.inventory.product.api.RefundedLineView;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -93,5 +94,18 @@ public class Refund {
    * Timestamp when the refund was last updated.
    */
   private Instant updatedAt;
-}
 
+  /** The returned lines as other modules read them ({@link RefundedLineView}); never null. */
+  public List<RefundedLineView> refundedLineViews() {
+    if (refundedItems == null) return List.of();
+    return refundedItems.stream()
+        .map(item -> new RefundedLineView(
+            item.getInventoryId(),
+            item.getName(),
+            item.getQuantity() != null ? item.getQuantity() : 0,
+            item.getItemRefundAmount(),
+            item.getCgst(),
+            item.getSgst()))
+        .toList();
+  }
+}
