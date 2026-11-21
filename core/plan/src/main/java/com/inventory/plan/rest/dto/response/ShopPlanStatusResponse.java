@@ -18,6 +18,8 @@ public class ShopPlanStatusResponse {
   private PlanResponse plan;
   private Instant planExpiryDate;
   private boolean trial;
+  /** Length of the free trial a new shop gets, in days ({@code plan.trial-days}). */
+  private Integer trialDays;
   private boolean trialExpired;
   /** True when planExpiryDate is in the past (trial or paid subscription). */
   private boolean planExpired;
