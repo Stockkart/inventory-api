@@ -46,7 +46,7 @@ class AddOnAdminServiceTest {
   @Mock private AddOnRepository addOnRepository;
   @Mock private MongoTemplate mongoTemplate;
   @Mock private AddOnMapper addOnMapper;
-  @Mock private AddOnAdminValidator validator;
+  @org.mockito.Spy private AddOnAdminValidator validator = new AddOnAdminValidator();
   @Mock private AuditService auditService;
   @Mock private EntitlementService entitlementService;
   @Mock private ShopAddOnService shopAddOnService;

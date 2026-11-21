@@ -46,7 +46,9 @@ public class AuditService {
       throw new IllegalArgumentException("ADMIN_UI audit entries need an actor");
     }
     if (entry.getActorType() == null) {
-      entry.setActorType(entry.getSource() == AuditSource.ADMIN_UI ? AuditActorType.USER : AuditActorType.SYSTEM);
+      // ADMIN_UI changes come from admin sessions (/api/v1/admin/**); shop approval, the one shop-user
+      // path that writes ADMIN_UI entries, sets USER itself
+      entry.setActorType(entry.getSource() == AuditSource.ADMIN_UI ? AuditActorType.ADMIN : AuditActorType.SYSTEM);
     }
     entry.setId(null);
     entry.setCreatedAt(Instant.now());

@@ -71,4 +71,21 @@ class AddOnAdminValidatorTest {
     return AddOnAdminRequest.builder().code("ADDITIONAL_USER").name("Additional user").price(new BigDecimal("500"))
         .billingType(AddOnBillingType.ANNUAL).grantType(AddOnGrantType.SEATS).grantsQuantity(1).stackable(true);
   }
+
+  @Test
+  void aFeatureAddOnIsGrantedOnce() {
+    AddOnAdminValidator v = new AddOnAdminValidator();
+    assertThatThrownBy(() -> v.validateGrantFor(AddOnGrantType.FEATURE, 2)).isInstanceOf(ValidationException.class);
+    assertThatCode(() -> v.validateGrantFor(AddOnGrantType.FEATURE, 1)).doesNotThrowAnyException();
+    assertThatCode(() -> v.validateGrantFor(AddOnGrantType.OCR_CREDITS, 5)).doesNotThrowAnyException();
+  }
+
+  @Test
+  void aTimeBoundGrantNeedsAFutureEnd() {
+    AddOnAdminValidator v = new AddOnAdminValidator();
+    java.time.Instant now = java.time.Instant.parse("2026-11-21T06:00:00Z");
+    assertThatThrownBy(() -> v.validateGrantEnd(null, now)).isInstanceOf(ValidationException.class);
+    assertThatThrownBy(() -> v.validateGrantEnd(now, now)).isInstanceOf(ValidationException.class);
+    assertThatCode(() -> v.validateGrantEnd(now.plusSeconds(1), now)).doesNotThrowAnyException();
+  }
 }
