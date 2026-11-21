@@ -171,4 +171,29 @@ class VoucherServiceTest {
     org.mockito.Mockito.verify(lookupLimiter, org.mockito.Mockito.never())
         .recordMiss(org.mockito.ArgumentMatchers.any(String[].class));
   }
+
+  @Test
+  void severalCodesAreReadOnceAndKeyedInOrder() {
+    AddOnVoucher b = voucher(VoucherType.FREE_ADDON, null, 1);
+    b.setCode("MKT-B");
+    AddOnVoucher a = voucher(VoucherType.FREE_ADDON, null, 1);
+    a.setCode("MKT-A");
+    when(voucherRepository.findByCodeIn(java.util.List.of("MKT-B", "MKT-A")))
+        .thenReturn(java.util.List.of(a, b));
+
+    assertThat(service.requireUsableAll(java.util.List.of("MKT-B", "MKT-A"), "shop-1"))
+        .containsExactly(java.util.Map.entry("MKT-B", b), java.util.Map.entry("MKT-A", a));
+    org.mockito.Mockito.verify(voucherRepository, org.mockito.Mockito.never()).findByCode(org.mockito.ArgumentMatchers.anyString());
+  }
+
+  @Test
+  void anUnknownCodeInABatchIsRejectedAndCountsAMiss() {
+    when(voucherRepository.findByCodeIn(java.util.List.of("MKT-1", "NOPE")))
+        .thenReturn(java.util.List.of(voucher(VoucherType.FREE_ADDON, null, 1)));
+
+    assertThatThrownBy(() -> service.requireUsableAll(java.util.List.of("MKT-1", "NOPE"), "shop-1"))
+        .isInstanceOfSatisfying(VoucherRejectedException.class,
+            e -> assertThat(e.getReason()).isEqualTo(VoucherRejection.NOT_FOUND));
+    org.mockito.Mockito.verify(lookupLimiter).recordMiss("shop:shop-1", VoucherLookupRateLimiter.userKey(null));
+  }
 }

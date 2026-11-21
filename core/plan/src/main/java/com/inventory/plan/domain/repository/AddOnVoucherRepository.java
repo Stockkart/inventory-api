@@ -2,6 +2,7 @@ package com.inventory.plan.domain.repository;
 
 import com.inventory.plan.domain.model.AddOnVoucher;
 import com.inventory.plan.domain.model.VoucherTarget;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Pageable;
@@ -13,6 +14,8 @@ import org.springframework.stereotype.Repository;
 public interface AddOnVoucherRepository extends MongoRepository<AddOnVoucher, String> {
 
   Optional<AddOnVoucher> findByCode(String code);
+
+  List<AddOnVoucher> findByCodeIn(Collection<String> codes);
 
   List<AddOnVoucher> findByPlanCode(String planCode, Pageable pageable);
 

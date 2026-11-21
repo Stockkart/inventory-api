@@ -59,6 +59,19 @@ class OrderPricingServiceAddOnOnlyTest {
   @InjectMocks
   private OrderPricingService pricing;
 
+  /** Pricing reads all codes at once; answer it from the per-code stubs below. */
+  @org.junit.jupiter.api.BeforeEach
+  void vouchersAnsweredPerCode() {
+    lenient().when(voucherService.requireUsableAll(anyCollection(), anyString()))
+        .thenAnswer(inv -> {
+          java.util.Map<String, AddOnVoucher> usable = new java.util.LinkedHashMap<>();
+          for (Object code : (java.util.Collection<?>) inv.getArgument(0)) {
+            usable.put((String) code, voucherService.requireUsable((String) code, inv.getArgument(1)));
+          }
+          return usable;
+        });
+  }
+
   private final Plan pro = plan();
 
   @BeforeEach

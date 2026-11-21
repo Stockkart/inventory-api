@@ -14,7 +14,12 @@ import com.inventory.plan.utils.VoucherDiscountUtils;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -62,7 +67,29 @@ public class VoucherService {
     String shopKey = VoucherLookupRateLimiter.shopKey(shopId);
     String userKey = VoucherLookupRateLimiter.userKey(userId);
     lookupLimiter.checkAllowed(shopKey, userKey);
-    AddOnVoucher voucher = voucherRepository.findByCode(code).orElse(null);
+    return checkUsable(code, voucherRepository.findByCode(code).orElse(null), shopId, shopKey, userKey);
+  }
+
+  /**
+   * {@link #requireUsable(String, String)} for several normalised codes with one catalogue read;
+   * codes are checked in the given order and the first unusable one throws. Keyed by code, in order.
+   */
+  public Map<String, AddOnVoucher> requireUsableAll(Collection<String> codes, String shopId) {
+    String shopKey = VoucherLookupRateLimiter.shopKey(shopId);
+    String userKey = VoucherLookupRateLimiter.userKey(null);
+    Map<String, AddOnVoucher> found = codes.isEmpty() ? Map.of()
+        : voucherRepository.findByCodeIn(codes).stream()
+            .collect(Collectors.toMap(AddOnVoucher::getCode, Function.identity(), (a, b) -> a));
+    Map<String, AddOnVoucher> usable = new LinkedHashMap<>();
+    for (String code : codes) {
+      lookupLimiter.checkAllowed(shopKey, userKey);
+      usable.put(code, checkUsable(code, found.get(code), shopId, shopKey, userKey));
+    }
+    return usable;
+  }
+
+  private AddOnVoucher checkUsable(String code, AddOnVoucher voucher, String shopId, String shopKey,
+      String userKey) {
     if (voucher == null) {
       lookupLimiter.recordMiss(shopKey, userKey);
       throw new VoucherRejectedException(code, VoucherRejection.NOT_FOUND, "Voucher " + code + " does not exist");
