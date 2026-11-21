@@ -10,8 +10,10 @@ import com.inventory.plan.rest.dto.response.UsageResponse;
 import com.inventory.plan.utils.constants.PlanConstants;
 import com.inventory.plan.validation.PlanValidator.LimitReachedResult;
 import com.inventory.plan.utils.PlanUtils;
+import org.mapstruct.AfterMapping;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
+import org.mapstruct.MappingTarget;
 import org.mapstruct.ReportingPolicy;
 
 import java.time.Instant;
@@ -21,6 +23,13 @@ public interface PlanMapper {
 
   @Mapping(target = "listPrice", expression = "java(PlanUtils.listPrice(plan))")
   PlanResponse toResponse(Plan plan);
+
+  /** Display decisions the apps used to make themselves. */
+  @AfterMapping
+  default void derivePlanDisplay(Plan plan, @MappingTarget PlanResponse response) {
+    response.setSelectable(PlanUtils.isSelectable(plan));
+    response.setBillingLimitLabel(PlanUtils.billingLimitLabel(plan));
+  }
 
   UsageResponse toUsageResponse(Usage usage);
 
