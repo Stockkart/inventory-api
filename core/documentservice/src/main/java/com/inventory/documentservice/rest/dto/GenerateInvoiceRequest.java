@@ -23,7 +23,7 @@ public class GenerateInvoiceRequest {
   private String documentType;
   /**
    * Printer layout: {@code NORMAL}, {@code DOT_MATRIX}, or {@code THERMAL_3INCH}.
-   * Resolved via {@link com.inventory.documentservice.domain.PrinterType}.
+   * Resolved via {@link com.inventory.documentservice.api.PrinterType}.
    */
   private String printerType;
   private Boolean showSellerDetails;
@@ -51,6 +51,7 @@ public class GenerateInvoiceRequest {
   private Boolean showAmountInWords;
   private Boolean showAmountSaved;
   private Boolean showAdditionalDiscount;
+  private Boolean showPack;
   private Boolean showHsn;
   private Boolean showMfg;
   private Boolean showExpiry;
@@ -93,7 +94,20 @@ public class GenerateInvoiceRequest {
   private BigDecimal cgstAmount;
   private BigDecimal sgstPercent;
   private BigDecimal cgstPercent;
+  /**
+   * IGST, charged instead of SGST + CGST when the supply crosses a state border.
+   *
+   * <p>The invoice has to print the head the tax was actually charged under: a customer can only
+   * claim a credit under the head their copy states, and a bill showing CGST and SGST on an
+   * interstate supply cannot be matched against the supplier's return.
+   */
+  private BigDecimal igstAmount;
+  /** True when the sale was billed as an interstate supply: print IGST columns and rows, not CGST/SGST. */
+  private boolean interstate;
   private BigDecimal taxTotal;
+  // One row per GST rate on the invoice. Empty when no line carries tax, in which case the
+  // single SGST/CGST amounts above are printed as before.
+  private List<InvoiceTaxRateRow> taxRateRows;
   private BigDecimal roundOff;
   private BigDecimal grandTotal;
   private BigDecimal totalMRPAmount; // Sum of all MRPs (maximumRetailPrice * quantity)

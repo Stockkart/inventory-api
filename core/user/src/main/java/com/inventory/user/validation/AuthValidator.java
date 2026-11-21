@@ -49,6 +49,19 @@ public class AuthValidator {
       throw new ValidationException("Signup request cannot be null");
     }
 
+    // SUPER_USER (Stockkart staff) is granted only by the operator script, never by signup.
+    if (request.getRole() != null && request.getRole().isPlatformRole()) {
+      throw new ValidationException("Invalid role. SUPER_USER cannot be requested at signup");
+    }
+    // A new account joins a shop only by registering one, an accepted invitation or an accepted
+    // join request. A shopId in the body would set UserAccount.shopId, which the legacy access
+    // checks (hasAccess / hasOwnerAccess) and AuthenticationInterceptor treat as owning that shop.
+    if (StringUtils.hasText(request.getShopId())) {
+      throw new ValidationException(
+          "shopId cannot be set at signup. Register a shop or join one after signing up");
+    }
+    request.setShopId(null);
+
     // Either idToken (OAuth) or email/password/name must be provided
     boolean hasIdToken = StringUtils.hasText(request.getIdToken());
     boolean hasEmail = StringUtils.hasText(request.getEmail());
@@ -132,11 +145,17 @@ public class AuthValidator {
   }
 
   public void validateChangePasswordRequest(ChangePasswordRequest request) {
-    if (request == null || request.getEmail() == null || request.getEmail().trim().isEmpty()) {
-      throw new ValidationException("Email is required");
+    if (request == null) {
+      throw new ValidationException("Request body is required");
+    }
+    if (request.getCurrentPassword() == null || request.getCurrentPassword().isEmpty()) {
+      throw new ValidationException("Current password is required");
     }
     if (request.getPassword() == null || request.getPassword().trim().isEmpty()) {
       throw new ValidationException("Password is required");
+    }
+    if (request.getPassword().trim().length() < 8) {
+      throw new ValidationException("Password must be at least 8 characters long");
     }
   }
 

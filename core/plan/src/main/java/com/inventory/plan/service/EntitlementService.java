@@ -1,5 +1,7 @@
 package com.inventory.plan.service;
 
+import com.inventory.plan.api.port.ShopPort;
+
 import com.inventory.plan.domain.model.EntitlementSource;
 import com.inventory.plan.domain.model.Plan;
 import com.inventory.plan.domain.model.ShopEntitlements;
@@ -32,8 +34,8 @@ public class EntitlementService {
   @Autowired
   private ShopSubscriptionRepository shopSubscriptionRepository;
 
-  @Autowired(required = false)
-  private ShopProvider shopProvider;
+  @Autowired
+  private ShopPort shopProvider;
 
   @Autowired
   private PlanRepository planRepository;
@@ -89,9 +91,6 @@ public class EntitlementService {
     if (stored.isPresent()) {
       ShopSubscription s = stored.get();
       return new SubscriptionView(s.getPlanId(), s.getStatus(), s.getExpiresAt());
-    }
-    if (shopProvider == null) {
-      return new SubscriptionView(null, SubscriptionStatus.TRIAL, null);
     }
     return shopProvider.getShop(shopId)
         .map(shop -> new SubscriptionView(
