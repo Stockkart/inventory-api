@@ -1,5 +1,8 @@
 package com.inventory.plan.utils;
 
+import com.inventory.plan.domain.model.Plan;
+import com.inventory.plan.utils.constants.PricingConstants;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.YearMonth;
 import java.time.ZoneOffset;
@@ -23,6 +26,14 @@ public final class PlanUtils {
 
   public static boolean isExpired(Instant planExpiryDate) {
     return planExpiryDate != null && planExpiryDate.isBefore(Instant.now());
+  }
+
+  /** Anchor price for catalogue plans; null for legacy rows, which never show one. */
+  public static BigDecimal listPrice(Plan plan) {
+    if (plan == null || plan.getCode() == null || plan.getArcPrice() == null) {
+      return null;
+    }
+    return plan.getArcPrice().add(PricingConstants.LIST_PRICE_MARKUP);
   }
 
   /** Legacy add-ons stored as plan rows; they are sold at payment, never picked as a plan. */
