@@ -7,8 +7,8 @@ import com.inventory.analytics.mis.support.MisMoneyTenderHelper;
 import com.inventory.analytics.mis.support.MisReportSupport;
 import com.inventory.analytics.mis.support.MisTabularDocumentFactory;
 import com.inventory.analytics.utils.constants.AnalyticsMetricsConstants;
-import com.inventory.documentservice.rest.dto.mis.MisTabularDocumentRequest;
-import com.inventory.documentservice.service.DocumentService;
+import com.inventory.documentservice.api.MisDocuments;
+import com.inventory.documentservice.api.MisTabularDocument;
 import com.inventory.metrics.MetricsWrapper;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.service.MisProductQueryService;
@@ -29,7 +29,7 @@ import org.springframework.util.StringUtils;
 public class StockMisService {
 
   private final MisProductQueryService misProductQueryService;
-  private final DocumentService documentService;
+  private final MisDocuments misDocuments;
   private final MetricsWrapper metrics;
 
   public MisStockReportResponse getReport(
@@ -62,20 +62,20 @@ public class StockMisService {
       String shopId, String shopName, String q, Boolean lowStockOnly, Boolean deadStockOnly) {
     BuiltReport built = build(shopId, q, lowStockOnly, deadStockOnly);
     MisReportSupport.assertExportSize(built.rows().size());
-    MisTabularDocumentRequest doc =
+    MisTabularDocument doc =
         MisTabularDocumentFactory.stockReport(
             "Stock MIS", shopName, LocalDateTime.now(), built.summary(), built.rows());
-    return documentService.generateMisExcel(doc);
+    return misDocuments.excel(doc);
   }
 
   public byte[] exportPdf(
       String shopId, String shopName, String q, Boolean lowStockOnly, Boolean deadStockOnly) {
     BuiltReport built = build(shopId, q, lowStockOnly, deadStockOnly);
     MisReportSupport.assertExportSize(built.rows().size());
-    MisTabularDocumentRequest doc =
+    MisTabularDocument doc =
         MisTabularDocumentFactory.stockReport(
             "Stock MIS", shopName, LocalDateTime.now(), built.summary(), built.rows());
-    return documentService.generateMisPdf(doc);
+    return misDocuments.pdf(doc);
   }
 
   private BuiltReport build(

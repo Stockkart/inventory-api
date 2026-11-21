@@ -1,5 +1,6 @@
 package com.inventory.metrics;
 
+import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -43,6 +44,22 @@ public class MetricsWrapper {
       builder.tag(tags[i], tags[i + 1]);
     }
     builder.register(registry).record(value);
+  }
+
+  /**
+   * Add to a Counter with tags. Format: "key1", "value1", "key2", "value2". Counters survive the
+   * OTLP export as plain Prometheus series (unlike Timer/DistributionSummary histograms), so this is
+   * the right shape for anything a dashboard will {@code rate()} or {@code histogram_quantile()}.
+   */
+  public void increment(String metricName, double amount, String... tags) {
+    if (tags.length % 2 != 0) {
+      throw new IllegalArgumentException("Tags must be key-value pairs");
+    }
+    Counter.Builder builder = Counter.builder(metricName);
+    for (int i = 0; i < tags.length; i += 2) {
+      builder.tag(tags[i], tags[i + 1] != null ? tags[i + 1] : "unknown");
+    }
+    builder.register(registry).increment(amount);
   }
 
   /**

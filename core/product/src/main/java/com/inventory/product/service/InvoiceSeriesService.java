@@ -13,15 +13,8 @@ import com.inventory.product.utils.InvoiceNumberParser;
 import com.inventory.product.validation.ShopValidator;
 import com.inventory.user.service.UserShopMembershipService;
 import java.time.Clock;
-import java.time.Instant;
-import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -29,13 +22,8 @@ import org.springframework.util.StringUtils;
 @Slf4j
 public class InvoiceSeriesService {
 
-  private static final Pattern INV_SUFFIX = Pattern.compile("^INV-(\\d+)$", Pattern.CASE_INSENSITIVE);
-
   @Autowired
   private InvoiceSequenceService invoiceSequenceService;
-
-  @Autowired
-  private MongoTemplate mongoTemplate;
 
   @Autowired
   private ShopRepository shopRepository;
@@ -119,60 +107,6 @@ public class InvoiceSeriesService {
         doc.getPrefix(),
         doc.getSeq());
     return toResponse(shopId, doc);
-  }
-
-  /**
-   * Idempotent backfill: adopt StockKart defaults + current FY on legacy REGULAR docs that lack
-   * {@code fyLabel}, continuing from existing {@code seq} / max INV-* purchase.
-   */
-  public int backfillExistingShops() {
-    String currentFy = FinancialYear.currentLabel(clock);
-    Query legacy =
-        new Query(
-            Criteria.where("fyLabel")
-                .exists(false)
-                .and("_id")
-                .not()
-                .regex(":"));
-    List<InvoiceSequence> docs = mongoTemplate.find(legacy, InvoiceSequence.class);
-    int updated = 0;
-    for (InvoiceSequence doc : docs) {
-      String shopId = doc.getShopId();
-      long maxFromPurchases = maxInvSuffix(shopId);
-      long seq = Math.max(doc.getSeq(), maxFromPurchases);
-      doc.setPrefix(InvoiceSequenceService.DEFAULT_REGULAR_PREFIX);
-      doc.setPadLength(InvoiceSequenceService.DEFAULT_PAD_LENGTH);
-      doc.setSource(InvoiceSequenceSource.STOCKKART);
-      doc.setFyLabel(currentFy);
-      doc.setSeq(seq);
-      if (seq > 0) {
-        doc.setLockedAt(Instant.now(clock));
-      }
-      mongoTemplate.save(doc);
-      updated++;
-      log.info(
-          "Backfilled invoice sequence shopId={} fy={} seq={}", shopId, currentFy, seq);
-    }
-    return updated;
-  }
-
-  private long maxInvSuffix(String shopId) {
-    List<String> invoiceNos = purchaseRepository.findRegularInvoiceNosByShopId(shopId);
-    long max = 0L;
-    for (String invoiceNo : invoiceNos) {
-      if (!StringUtils.hasText(invoiceNo)) {
-        continue;
-      }
-      Matcher matcher = INV_SUFFIX.matcher(invoiceNo.trim());
-      if (matcher.matches()) {
-        try {
-          max = Math.max(max, Long.parseLong(matcher.group(1)));
-        } catch (NumberFormatException ignored) {
-          // skip
-        }
-      }
-    }
-    return max;
   }
 
   private InvoiceSeriesResponse toResponse(String shopId, InvoiceSequence doc) {
