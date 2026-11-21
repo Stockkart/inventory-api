@@ -1,5 +1,7 @@
 package com.inventory.user.service;
 
+import com.inventory.user.api.port.SeatLimitGuard;
+
 import com.inventory.common.exception.EntitlementException;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
@@ -90,6 +92,7 @@ public class InvitationService {
       String inviteeEmail = request.getInviteeEmail().toLowerCase().trim();
       UserAccount invitee = userAccountRepository.findByEmail(inviteeEmail)
           .orElseThrow(() -> new ResourceNotFoundException("User", "email", inviteeEmail));
+      invitationValidator.validateInviteeCanJoinShop(invitee);
 
       // Check if user is already a member of this shop (membership or legacy shopId)
       if (membershipService.hasAccess(invitee.getUserId(), shopId)) {

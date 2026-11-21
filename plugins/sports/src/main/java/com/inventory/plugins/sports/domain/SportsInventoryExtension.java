@@ -29,6 +29,7 @@ public class SportsInventoryExtension implements InventoryExtensionDocument {
   private String sport;
   private String brand;
   private String model;
+  private String size;
   private Integer warrantyMonths;
 
   private Instant createdAt;

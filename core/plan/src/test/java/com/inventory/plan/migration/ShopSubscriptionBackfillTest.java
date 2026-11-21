@@ -8,8 +8,8 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.inventory.plan.service.ShopProvider;
-import com.inventory.plan.service.ShopProvider.ShopInfo;
+import com.inventory.plan.api.port.ShopPort;
+import com.inventory.plan.api.port.ShopPort.ShopInfo;
 import com.inventory.plan.service.ShopSubscriptionService;
 import java.time.Instant;
 import java.util.function.Consumer;
@@ -23,7 +23,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class ShopSubscriptionBackfillTest {
 
   @Mock
-  private ShopProvider shopProvider;
+  private ShopPort shopProvider;
 
   @Mock
   private ShopSubscriptionService shopSubscriptionService;

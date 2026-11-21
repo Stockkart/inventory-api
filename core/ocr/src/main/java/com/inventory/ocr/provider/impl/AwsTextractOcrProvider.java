@@ -3,7 +3,7 @@ package com.inventory.ocr.provider.impl;
 import com.inventory.ocr.dto.ParsedInventoryItem;
 import com.inventory.ocr.model.OcrCell;
 import com.inventory.ocr.model.OcrTable;
-import com.inventory.ocr.prompt.InvoicePricingLayout;
+import com.inventory.ocr.api.InvoicePricingLayout;
 import com.inventory.ocr.provider.OcrProvider;
 import com.inventory.ocr.service.TableToItemsParser;
 import lombok.extern.slf4j.Slf4j;

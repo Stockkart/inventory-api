@@ -14,9 +14,9 @@ import com.inventory.plan.domain.model.ReferralAttributionStatus;
 import com.inventory.plan.domain.model.ReferralReviewReason;
 import com.inventory.plan.domain.repository.ReferralAttributionRepository;
 import com.inventory.plan.mapper.ReferralMapper;
-import com.inventory.plan.service.ShopProvider;
-import com.inventory.plan.service.ShopProvider.ReferralShop;
-import com.inventory.user.service.UserShopMembershipService;
+import com.inventory.plan.api.port.ShopPort;
+import com.inventory.plan.api.port.ShopPort.ReferralShop;
+import com.inventory.user.api.ShopPermissions;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -38,8 +38,8 @@ class ReferralAttributionServiceTest {
       new ReferralShop("referrer", "ABC Store", "SK-AB2CD3", "owner@abc.in", "+91 98765 43210");
 
   @Mock private ReferralAttributionRepository attributionRepository;
-  @Mock private ShopProvider shopProvider;
-  @Mock private UserShopMembershipService membershipService;
+  @Mock private ShopPort shopProvider;
+  @Mock private ShopPermissions shopPermissions;
   @Spy private ReferralMapper referralMapper = new ReferralMapper() {};
 
   @InjectMocks
@@ -87,7 +87,7 @@ class ReferralAttributionServiceTest {
 
   @Test
   void theSameOwnerMatchingEmailOrPhoneGoesToReview() {
-    when(membershipService.hasOwnerAccess("owner", "referrer")).thenReturn(true);
+    when(shopPermissions.hasOwnerAccess("referrer", "owner")).thenReturn(true);
     assertThat(service.attribute("referee", "owner", "SK-AB2CD3", null).orElseThrow().getReviewReason())
         .isEqualTo(ReferralReviewReason.SAME_OWNER);
 

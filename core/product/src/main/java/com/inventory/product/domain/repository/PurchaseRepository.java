@@ -131,21 +131,6 @@ public interface PurchaseRepository extends MongoRepository<Purchase, String> {
       exists = true)
   boolean existsCompletedRegularInvoice(String shopId);
 
-  /** Invoice numbers for completed REGULAR (or legacy) sales — used for sequence backfill. */
-  @Query(
-      value =
-          "{ 'shopId': ?0, 'status': 'COMPLETED', 'invoiceNo': { '$exists': true, '$nin': [null, ''] },"
-              + " '$or': [ { 'billingMode': 'REGULAR' }, { 'billingMode': null }, { 'billingMode': { '$exists': false } } ] }",
-      fields = "{ 'invoiceNo': 1 }")
-  List<Purchase> findCompletedRegularPurchasesForInvoiceNos(String shopId);
-
-  default List<String> findRegularInvoiceNosByShopId(String shopId) {
-    return findCompletedRegularPurchasesForInvoiceNos(shopId).stream()
-        .map(Purchase::getInvoiceNo)
-        .filter(no -> no != null && !no.isBlank())
-        .toList();
-  }
-
   /**
    * A page of the shop's sales narrowed by any combination of invoice number,
    * date and customer.
