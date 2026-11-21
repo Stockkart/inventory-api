@@ -2,6 +2,7 @@ package com.inventory.app.config;
 
 import com.inventory.app.interceptor.AuthenticationInterceptor;
 import com.inventory.app.interceptor.PlanExpiryInterceptor;
+import com.inventory.app.interceptor.PlatformRoleInterceptor;
 import com.inventory.app.interceptor.RbacModuleInterceptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -24,6 +25,9 @@ public class CorsConfig implements WebMvcConfigurer {
 
   @Autowired
   private RbacModuleInterceptor rbacModuleInterceptor;
+
+  @Autowired
+  private PlatformRoleInterceptor platformRoleInterceptor;
 
   @Override
   public void addCorsMappings(CorsRegistry registry) {
@@ -64,8 +68,12 @@ public class CorsConfig implements WebMvcConfigurer {
             "/m/**" // Exclude mobile upload endpoints from authentication
         );
 
+    registry.addInterceptor(platformRoleInterceptor)
+        .addPathPatterns(PlatformRoleInterceptor.ADMIN_PATH_PATTERNS);
+
     registry.addInterceptor(rbacModuleInterceptor)
         .addPathPatterns("/api/**")
+        .excludePathPatterns(PlatformRoleInterceptor.ADMIN_PATH_PATTERNS)
         .excludePathPatterns(
             "/api/v1/auth/login",
             "/api/v1/auth/signup",
@@ -79,6 +87,7 @@ public class CorsConfig implements WebMvcConfigurer {
 
     registry.addInterceptor(planExpiryInterceptor)
         .addPathPatterns("/api/**")
+        .excludePathPatterns(PlatformRoleInterceptor.ADMIN_PATH_PATTERNS)
         .excludePathPatterns(
             "/api/v1/auth/login",
             "/api/v1/auth/signup",

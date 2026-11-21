@@ -70,6 +70,7 @@ class AuthenticationInterceptorBoundaryTest {
       AuthenticationInterceptor.class,
       RbacModuleInterceptor.class,
       PlanExpiryInterceptor.class,
+      PlatformRoleInterceptor.class,
       GlobalExceptionHandler.class,
       ApiErrorMapperImpl.class,
       AuthController.class,
@@ -102,6 +103,9 @@ class AuthenticationInterceptorBoundaryTest {
   @MockBean private AccountingFacade accountingFacade;
   // PlanExpiryInterceptor asks the plan api; an unexpired answer (the mock's false) lets requests through.
   @MockBean private PlanStatus planStatus;
+  // PlatformRoleInterceptor (only /api/v1/admin/**) and the approval audit row
+  @MockBean private com.inventory.user.api.PlatformAdmins platformAdmins;
+  @MockBean private com.inventory.common.audit.AuditService auditService;
 
   private static UserAccount account(String userId, UserRole role, String shopId) {
     UserAccount a = new UserAccount();

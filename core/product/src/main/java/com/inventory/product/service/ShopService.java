@@ -1,5 +1,9 @@
 package com.inventory.product.service;
 
+import com.inventory.common.audit.AuditActorType;
+import com.inventory.common.audit.AuditEntry;
+import com.inventory.common.audit.AuditService;
+import com.inventory.common.audit.AuditSource;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceExistsException;
@@ -32,7 +36,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -69,6 +75,9 @@ public class ShopService {
 
   @Autowired
   private MetricsWrapper metrics;
+
+  @Autowired
+  private AuditService auditService;
 
   @Transactional
   public ShopRegistrationResponse register(RegisterShopRequest request, String userId) {
@@ -158,9 +167,11 @@ public class ShopService {
    * Approve or reject a shop. Platform-admin action: only a SUPER_USER caller may run it.
    *
    * @param callerRole role of the authenticated caller (request attribute {@code userRole})
+   * @param actorUserId the caller, recorded on the audit entry
    */
   @Transactional
-  public ShopApprovalResponse approve(String shopId, ShopApprovalRequest request, UserRole callerRole) {
+  public ShopApprovalResponse approve(String shopId, ShopApprovalRequest request, UserRole callerRole,
+      String actorUserId) {
     // Outside the try block so the 403 is not re-wrapped as a 500 by the catch-all below
     shopValidator.validateCanApproveShops(callerRole);
     try {
@@ -184,6 +195,8 @@ public class ShopService {
         return shopMapper.toApprovalResponse(shop);
       }
 
+      Map<String, Object> before = approvalState(shop);
+
       // Update shop status
       shop.setActive(request.isApprove());
       shop.setStatus(request.isApprove() ? "ACTIVE" : "REJECTED");
@@ -203,6 +216,17 @@ public class ShopService {
       shop = shopRepository.save(shop);
       log.info("Successfully updated shop status to: {}", shop.getStatus());
 
+      auditService.record(AuditEntry.builder()
+          .actorUserId(actorUserId)
+          .actorType(AuditActorType.USER)
+          .action(request.isApprove() ? "SHOP_APPROVED" : "SHOP_REJECTED")
+          .targetType("SHOP")
+          .targetId(shopId)
+          .before(before)
+          .after(approvalState(shop))
+          .source(AuditSource.ADMIN_UI)
+          .build());
+
       return shopMapper.toApprovalResponse(shop);
 
     } catch (ValidationException | ResourceNotFoundException e) {
@@ -215,6 +239,14 @@ public class ShopService {
       log.error("Unexpected error while processing shop approval: {}", e.getMessage(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
     }
+  }
+
+  private static Map<String, Object> approvalState(Shop shop) {
+    Map<String, Object> state = new LinkedHashMap<>();
+    state.put("status", shop.getStatus());
+    state.put("active", shop.isActive());
+    state.put("userLimit", shop.getUserLimit());
+    return state;
   }
 
   /**
