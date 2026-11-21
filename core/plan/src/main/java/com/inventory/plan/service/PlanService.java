@@ -19,6 +19,7 @@ import com.inventory.plan.rest.dto.response.UsageResponse;
 import com.inventory.plan.api.port.ShopPort.ShopInfo;
 import com.inventory.plan.utils.PlanUtils;
 import com.inventory.plan.utils.PlanUtils;
+import com.inventory.plan.validation.PlanAdminValidator;
 import com.inventory.plan.validation.PlanValidator;
 import com.inventory.metrics.MetricsWrapper;
 import com.inventory.plan.utils.constants.PlanMetricsConstants;
@@ -59,6 +60,9 @@ public class PlanService {
 
   @Autowired
   private PlanValidator planValidator;
+
+  @Autowired
+  private PlanAdminValidator planAdminValidator;
 
   @Autowired
   private UsageService usageService;
@@ -199,6 +203,36 @@ public class PlanService {
     planTransactionRepository.save(tx);
     entitlementService.invalidate(order.getShopId());
   }
+
+  /**
+   * An admin plan grant without payment. The same plan extends from the later of now and the
+   * current expiry, so remaining days are kept; another plan starts now and is allowed only when the
+   * shop has no paid days left ({@link PlanAdminValidator#validateGrantTarget}). Records a
+   * {@code ADMIN_GRANT} transaction with no order.
+   *
+   * @return the shop's plan and expiry before and after the grant
+   */
+  public GrantResult grantByAdmin(String shopId, Plan plan, int durationMonths) {
+    ShopInfo shop = getShopInfo(shopId);
+    Instant now = Instant.now();
+    boolean trial = shop.planId() == null || shop.planId().isBlank();
+    planAdminValidator.validateGrantTarget(shop.planId(), shop.planExpiryDate(), plan.getId(), trial, now);
+    boolean extends_ = !trial && plan.getId().equals(shop.planId())
+        && shop.planExpiryDate() != null && shop.planExpiryDate().isAfter(now);
+    Instant termStartsAt = extends_ ? shop.planExpiryDate() : now;
+    Instant termEndsAt = PlanUtils.plusMonths(termStartsAt, durationMonths);
+    shopProvider.updatePlan(shopId, plan.getId(), termEndsAt);
+    syncSubscription(new ShopInfo(shopId, plan.getId(), termEndsAt), null);
+    planTransactionRepository.save(
+        planTransactionMapper.toAdminGrantTransaction(shopId, plan, durationMonths, termStartsAt, termEndsAt, now));
+    entitlementService.invalidate(shopId);
+    log.info("Admin granted plan {} to shop {} until {}", plan.getPlanName(), shopId, termEndsAt);
+    metrics.record(PlanMetricsConstants.ASSIGNED_TOTAL, 1, "module", PlanMetricsConstants.MODULE);
+    return new GrantResult(shop.planId(), shop.planExpiryDate(), plan.getId(), termEndsAt);
+  }
+
+  /** Plan and expiry of a shop before and after an admin grant. */
+  public record GrantResult(String planIdBefore, Instant expiresAtBefore, String planIdAfter, Instant expiresAtAfter) {}
 
   /**
    * List plan payment transactions for a shop.

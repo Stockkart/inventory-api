@@ -96,6 +96,7 @@ Further admins are added from the admin app, which shows the new admin's one-tim
 | `POST /api/v1/admin/auth/login` | Public. `{ email, password }` → `{ token, expiresAt, admin }` |
 | `POST /api/v1/admin/auth/reset-password` | Public. `{ token, newPassword }` from the emailed reset link (single use, 30 minutes) → the admin; signs out every session |
 | `POST /api/v1/admin/admins/{id}/reset-password` | Another admin's account only; body `{ reason }`. Signs the account out, its old password stops working, and a reset link is emailed to the account's address. Returns the admin (no password). Needs `ADMIN_CLIENT_URL` |
+| `POST /api/v1/admin/shops/{shopId}/plan-grants` | Admin plan grant without payment. Body `{ planCode, durationMonths (1–36), reason (required, ≤ 200) }`; the plan must be active. The same plan extends from the later of now and the current expiry; another plan is refused while the shop has paid days left. Records an `ADMIN_GRANT` plan transaction and a `PLAN_GRANTED` audit entry; returns the shop's plan status |
 
 ### 2. Run with Docker Compose
 

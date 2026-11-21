@@ -54,6 +54,23 @@ public interface PlanTransactionMapper {
     return tx;
   }
 
+  /** The transaction of an admin plan grant: no order, no payment, amount zero. */
+  default PlanTransaction toAdminGrantTransaction(String shopId, Plan plan, int durationMonths,
+      Instant termStartsAt, Instant termEndsAt, Instant now) {
+    PlanTransaction tx = new PlanTransaction();
+    tx.setShopId(shopId);
+    tx.setPlanId(plan.getId());
+    tx.setPlanCode(plan.getCode());
+    tx.setPlanName(plan.getPlanName());
+    tx.setAmount(BigDecimal.ZERO);
+    tx.setDurationMonths(durationMonths);
+    tx.setPaymentMethod(PlanConstants.ADMIN_GRANT_PAYMENT_METHOD);
+    tx.setTermStartsAt(termStartsAt);
+    tx.setTermEndsAt(termEndsAt);
+    tx.setCreatedAt(now);
+    return tx;
+  }
+
   PlanTransactionResponse toResponse(PlanTransaction tx);
 
   @Named("planAmount")
