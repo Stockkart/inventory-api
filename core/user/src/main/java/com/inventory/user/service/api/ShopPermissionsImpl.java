@@ -26,4 +26,9 @@ public class ShopPermissionsImpl implements ShopPermissions {
   public boolean canEditRates(String shopId, String userId) {
     return rbacService.canEditRates(userId, shopId);
   }
+
+  @Override
+  public boolean hasOwnerAccess(String shopId, String userId) {
+    return membershipService.hasOwnerAccess(userId, shopId);
+  }
 }
