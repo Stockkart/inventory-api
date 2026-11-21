@@ -199,7 +199,7 @@ class VoucherAdminServiceTest {
   void listFiltersByPlanCode() {
     AddOnVoucher voucher = AddOnVoucher.builder().code("STA-1").target(VoucherTarget.PLAN).planCode("STARTER").build();
     when(voucherRepository.findByPlanCode(eq("STARTER"), any(Pageable.class))).thenReturn(List.of(voucher));
-    when(planRepository.findAll()).thenReturn(List.of(starter("7999", "4999")));
+    when(planRepository.findByCodeIn(any())).thenReturn(List.of(starter("7999", "4999")));
 
     List<AdminVoucherResponse> result = service.list(null, " starter ", null, null, null);
 
@@ -211,7 +211,7 @@ class VoucherAdminServiceTest {
   @Test
   void listByAddOnTargetIncludesLegacyNullTargetVouchers() {
     AddOnVoucher legacy = AddOnVoucher.builder().code("OLD-1").addOnCode("EXTRA_SMS").build();
-    when(voucherRepository.findByTargetNot(eq(VoucherTarget.PLAN), any(Pageable.class))).thenReturn(List.of(legacy));
+    when(voucherRepository.findAddOnTargeted(any(Pageable.class))).thenReturn(List.of(legacy));
 
     List<AdminVoucherResponse> result = service.list(null, null, VoucherTarget.ADD_ON, null, null);
 
@@ -234,11 +234,33 @@ class VoucherAdminServiceTest {
     legacyA.setPlanName("Old A");
     Plan legacyB = new Plan();
     legacyB.setPlanName("Old B");
-    when(planRepository.findAll()).thenReturn(List.of(legacyA, legacyB, starter("7999", "4999")));
+    when(planRepository.findByCodeIn(any())).thenReturn(List.of(legacyA, legacyB, starter("7999", "4999")));
     AddOnVoucher voucher = AddOnVoucher.builder().code("STA-1").target(VoucherTarget.PLAN).planCode("STARTER").build();
     when(voucherRepository.findAll(any(Pageable.class))).thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(voucher)));
 
     assertThat(service.list(null, null, null, null, null).get(0).getPlanName()).isEqualTo("Starter");
+  }
+
+  @Test
+  void theListLooksUpOnlyThePlansItsVouchersName() {
+    AddOnVoucher planVoucher = AddOnVoucher.builder().code("STA-1").target(VoucherTarget.PLAN).planCode("STARTER").build();
+    AddOnVoucher addOnVoucher = AddOnVoucher.builder().code("EXT-1").addOnCode("EXTRA_SMS").build();
+    when(voucherRepository.findAll(any(Pageable.class)))
+        .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(planVoucher, addOnVoucher)));
+    when(planRepository.findByCodeIn(java.util.Set.of("STARTER"))).thenReturn(List.of(starter("7999", "4999")));
+
+    assertThat(service.list(null, null, null, null, null).get(0).getPlanName()).isEqualTo("Starter");
+    verify(planRepository, never()).findAll();
+  }
+
+  @Test
+  void anAddOnOnlyPageLooksUpNoPlans() {
+    when(voucherRepository.findAddOnTargeted(any(Pageable.class)))
+        .thenReturn(List.of(AddOnVoucher.builder().code("EXT-1").addOnCode("EXTRA_SMS").build()));
+
+    service.list(null, null, VoucherTarget.ADD_ON, null, null);
+
+    org.mockito.Mockito.verifyNoInteractions(planRepository);
   }
 
   private void echoInserts() {

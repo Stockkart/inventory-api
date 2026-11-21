@@ -113,13 +113,13 @@ public class VoucherAdminService {
     } else if (target == VoucherTarget.PLAN) {
       vouchers = voucherRepository.findByTarget(VoucherTarget.PLAN, pageable);
     } else if (target == VoucherTarget.ADD_ON) {
-      // Legacy vouchers have no target stored; "not PLAN" matches them as well as ADD_ON.
-      vouchers = voucherRepository.findByTargetNot(VoucherTarget.PLAN, pageable);
+      // Legacy vouchers have no target stored; they are add-on vouchers too.
+      vouchers = voucherRepository.findAddOnTargeted(pageable);
     } else {
       vouchers = voucherRepository.findAll(pageable).getContent();
     }
-    Map<String, String> planNames = vouchers.stream().anyMatch(AddOnVoucher::isPlanVoucher)
-        ? planNamesByCode() : Map.of();
+    Map<String, String> planNames = planNamesByCode(vouchers.stream()
+        .filter(AddOnVoucher::isPlanVoucher).map(AddOnVoucher::getPlanCode).collect(Collectors.toSet()));
     return vouchers.stream().map(v -> toResponse(v, v.getPlanCode() == null ? null : planNames.get(v.getPlanCode()))).toList();
   }
 
@@ -240,8 +240,12 @@ public class VoucherAdminService {
   }
 
   /** Plan names by code, loaded once per list call. Legacy plans without a code are skipped. */
-  private Map<String, String> planNamesByCode() {
-    return planRepository.findAll().stream()
+  /** Names of just the plans this page of vouchers names. */
+  private Map<String, String> planNamesByCode(java.util.Set<String> codes) {
+    if (codes.isEmpty()) {
+      return Map.of();
+    }
+    return planRepository.findByCodeIn(codes).stream()
         .filter(plan -> plan.getCode() != null)
         .collect(Collectors.toMap(Plan::getCode, Plan::getPlanName, (a, b) -> a));
   }
