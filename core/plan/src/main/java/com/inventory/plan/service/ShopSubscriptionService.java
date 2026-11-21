@@ -1,7 +1,9 @@
 package com.inventory.plan.service;
 
+import com.inventory.plan.domain.model.PlanTermsSnapshot;
 import com.inventory.plan.domain.model.ShopSubscription;
 import com.inventory.plan.domain.model.SubscriptionStatus;
+import com.inventory.plan.domain.repository.PlanRepository;
 import com.inventory.plan.domain.repository.ShopSubscriptionRepository;
 import com.inventory.plan.api.port.ShopPort.ShopInfo;
 import lombok.extern.slf4j.Slf4j;
@@ -41,6 +43,9 @@ public class ShopSubscriptionService {
 
   @Autowired
   private EntitlementService entitlementService;
+
+  @Autowired
+  private PlanRepository planRepository;
 
   /**
    * Auto index creation is off in this application, so the sweep index is created here.
@@ -100,11 +105,14 @@ public class ShopSubscriptionService {
         .set("status", status)
         .set("expiresAt", expiresAt)
         .set("sourceOrderId", sourceOrderId)
+        .set("terms", termsOf(shop.planId()))
         .set("updatedAt", now)
         .setOnInsert("createdAt", now);
     try {
-      return mongoTemplate.findAndModify(query, update,
+      ShopSubscription saved = mongoTemplate.findAndModify(query, update,
           FindAndModifyOptions.options().upsert(true).returnNew(true), ShopSubscription.class);
+      entitlementService.invalidate(shop.shopId());
+      return saved;
     } catch (DuplicateKeyException e) {
       // the stored subscription already ends later: keep it
       log.warn("Subscription of shop {} already ends after {}; order {} left it unchanged",
@@ -136,6 +144,23 @@ public class ShopSubscriptionService {
       return SubscriptionStatus.EXPIRED;
     }
     return StringUtils.hasText(planId) ? SubscriptionStatus.ACTIVE : SubscriptionStatus.TRIAL;
+  }
+
+  /** The granted plan's features and limits now, kept on the term (A12); null when unknown. */
+  PlanTermsSnapshot termsOf(String planId) {
+    if (!StringUtils.hasText(planId)) {
+      return null;
+    }
+    return planRepository.findById(planId)
+        .map(plan -> PlanTermsSnapshot.builder()
+            .planId(plan.getId())
+            .planCode(plan.getCode())
+            .features(plan.getFeatures())
+            .userLimit(plan.getUserLimit())
+            .ocrLimit(plan.getOcrLimit())
+            .unlimited(plan.isUnlimited())
+            .build())
+        .orElse(null);
   }
 
   private static boolean matches(ShopSubscription current, ShopInfo shop, SubscriptionStatus status) {

@@ -42,6 +42,9 @@ class ShopSubscriptionServiceTest {
   @Mock
   private EntitlementService entitlementService;
 
+  @Mock
+  private com.inventory.plan.domain.repository.PlanRepository planRepository;
+
   @InjectMocks
   private ShopSubscriptionService service;
 
@@ -184,5 +187,24 @@ class ShopSubscriptionServiceTest {
     when(repository.findById("shop-1")).thenReturn(Optional.of(later));
 
     assertThat(service.recordGrant(new ShopInfo("shop-1", "plan-1", FUTURE), "order-2")).isSameAs(later);
+  }
+
+  @Test
+  void aGrantKeepsTheGrantedPlansFeaturesAndLimits() {
+    com.inventory.plan.domain.model.Plan pro = EntitlementServiceTest.plan(
+        "plan-1", "PROFESSIONAL", java.util.Set.of(com.inventory.common.entitlement.PlanFeature.ACCOUNTING), 5, 100);
+    when(planRepository.findById("plan-1")).thenReturn(Optional.of(pro));
+
+    service.recordGrant(new ShopInfo("shop-1", "plan-1", FUTURE), "order-2");
+
+    ArgumentCaptor<Update> update = ArgumentCaptor.forClass(Update.class);
+    verify(mongoTemplate).findAndModify(any(Query.class), update.capture(),
+        any(org.springframework.data.mongodb.core.FindAndModifyOptions.class), eq(ShopSubscription.class));
+    var terms = (com.inventory.plan.domain.model.PlanTermsSnapshot)
+        ((Document) update.getValue().getUpdateObject().get("$set")).get("terms");
+    assertThat(terms.getPlanCode()).isEqualTo("PROFESSIONAL");
+    assertThat(terms.getUserLimit()).isEqualTo(5);
+    assertThat(terms.getOcrLimit()).isEqualTo(100);
+    verify(entitlementService).invalidate("shop-1");
   }
 }
