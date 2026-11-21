@@ -77,6 +77,9 @@ public class SportsInventoryExtensionRepository implements InventoryExtensionRep
     if (doc.getModel() != null) {
       out.put("model", doc.getModel());
     }
+    if (doc.getSize() != null) {
+      out.put("size", doc.getSize());
+    }
     if (doc.getWarrantyMonths() != null) {
       out.put("warrantyMonths", doc.getWarrantyMonths());
     }
@@ -95,6 +98,9 @@ public class SportsInventoryExtensionRepository implements InventoryExtensionRep
     }
     if (fields.containsKey("model")) {
       doc.setModel(ExtensionFieldCoercion.asString(fields.get("model")));
+    }
+    if (fields.containsKey("size")) {
+      doc.setSize(ExtensionFieldCoercion.asString(fields.get("size")));
     }
     if (fields.containsKey("warrantyMonths")) {
       doc.setWarrantyMonths(ExtensionFieldCoercion.asInteger(fields.get("warrantyMonths")));

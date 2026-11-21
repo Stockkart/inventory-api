@@ -10,7 +10,7 @@ import static org.mockito.Mockito.when;
 import com.inventory.plan.domain.model.ShopSubscription;
 import com.inventory.plan.domain.model.SubscriptionStatus;
 import com.inventory.plan.domain.repository.ShopSubscriptionRepository;
-import com.inventory.plan.service.ShopProvider.ShopInfo;
+import com.inventory.plan.api.port.ShopPort.ShopInfo;
 import com.mongodb.client.result.UpdateResult;
 import java.time.Duration;
 import java.time.Instant;

@@ -86,6 +86,7 @@ public class InvitationService {
       String inviteeEmail = request.getInviteeEmail().toLowerCase().trim();
       UserAccount invitee = userAccountRepository.findByEmail(inviteeEmail)
           .orElseThrow(() -> new ResourceNotFoundException("User", "email", inviteeEmail));
+      invitationValidator.validateInviteeCanJoinShop(invitee);
 
       // Check if user is already a member of this shop (membership or legacy shopId)
       if (membershipService.hasAccess(invitee.getUserId(), shopId)) {

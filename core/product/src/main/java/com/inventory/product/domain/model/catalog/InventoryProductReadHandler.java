@@ -50,7 +50,7 @@ public class InventoryProductReadHandler {
       return;
     }
     Map<String, Product> byId = new HashMap<>();
-    for (Product p : productRepository.findAllById(ids)) {
+    for (Product p : productRepository.findByIdIn(ids)) {
       byId.put(p.getId(), p);
     }
     for (Inventory inv : inventories) {

@@ -4,14 +4,13 @@ package com.inventory.accounting.rest.controller;
 import com.inventory.metrics.annotation.Latency;
 import com.inventory.metrics.annotation.RecordRequestRate;
 import com.inventory.metrics.annotation.RecordStatusCodes;
-import com.inventory.accounting.api.AccountingFacade;
 import com.inventory.accounting.api.PostJournalLine;
 import com.inventory.accounting.api.PostJournalRequest;
 import com.inventory.accounting.domain.model.Account;
 import com.inventory.accounting.domain.model.JournalEntry;
-import com.inventory.accounting.domain.model.JournalSource;
+import com.inventory.accounting.api.JournalSource;
 import com.inventory.accounting.domain.model.LedgerEntry;
-import com.inventory.accounting.domain.model.PartyType;
+import com.inventory.accounting.api.PartyType;
 import com.inventory.accounting.rest.dto.request.CreateAccountRequest;
 import com.inventory.accounting.rest.dto.request.CreateJournalEntryRequest;
 import com.inventory.accounting.rest.dto.request.OpeningBalanceRequest;
@@ -27,6 +26,7 @@ import com.inventory.accounting.rest.dto.response.LedgerPageResponse;
 import com.inventory.accounting.rest.dto.response.PartyStatementResponse;
 import com.inventory.accounting.rest.dto.response.PartySummariesResponse;
 import com.inventory.accounting.rest.dto.response.TrialBalanceResponse;
+import com.inventory.accounting.service.AccountingFacadeImpl;
 import com.inventory.accounting.service.AccountService;
 import com.inventory.accounting.service.AccountingBackfillService;
 import com.inventory.accounting.service.AccountingMapper;
@@ -71,7 +71,8 @@ public class AccountingController {
   private final LedgerService ledgerService;
   private final PartyLedgerService partyLedgerService;
   private final TrialBalanceService trialBalanceService;
-  private final AccountingFacade accountingFacade;
+  // The concrete facade: this controller returns stored entries, which the api does not expose.
+  private final AccountingFacadeImpl accountingFacade;
   private final AccountingBackfillService backfillService;
   private final FinancialReportsService financialReportsService;
 
@@ -144,13 +145,14 @@ public class AccountingController {
     String shopId = resolveShop(request);
     String userId = (String) request.getAttribute("userId");
 
-    PostJournalRequest req = new PostJournalRequest();
-    req.setSourceType(JournalSource.MANUAL);
-    req.setTxnDate(body.getTxnDate());
-    req.setNarration(body.getNarration());
-    req.setLines(JournalRequestMapper.fromManual(body));
+    PostJournalRequest req = PostJournalRequest.builder()
+        .sourceType(JournalSource.MANUAL)
+        .txnDate(body.getTxnDate())
+        .narration(body.getNarration())
+        .lines(JournalRequestMapper.fromManual(body))
+        .build();
 
-    JournalEntry posted = accountingFacade.post(shopId, userId, req);
+    JournalEntry posted = accountingFacade.postEntry(shopId, userId, req);
     return ResponseEntity.ok(ApiResponse.success(AccountingMapper.toResponse(posted)));
   }
 
@@ -160,18 +162,19 @@ public class AccountingController {
     String shopId = resolveShop(request);
     String userId = (String) request.getAttribute("userId");
 
-    PostJournalRequest req = new PostJournalRequest();
-    req.setSourceType(JournalSource.OPENING_BALANCE);
-    req.setSourceId("opening");
-    req.setSourceKey("OPENING_BALANCE:" + shopId);
-    req.setTxnDate(body.getTxnDate());
-    req.setNarration(
-        body.getNarration() != null && !body.getNarration().isBlank()
-            ? body.getNarration().trim()
-            : "Opening balances");
-    req.setLines(JournalRequestMapper.fromOpening(body));
+    PostJournalRequest req = PostJournalRequest.builder()
+        .sourceType(JournalSource.OPENING_BALANCE)
+        .sourceId("opening")
+        .sourceKey("OPENING_BALANCE:" + shopId)
+        .txnDate(body.getTxnDate())
+        .narration(
+            body.getNarration() != null && !body.getNarration().isBlank()
+                ? body.getNarration().trim()
+                : "Opening balances")
+        .lines(JournalRequestMapper.fromOpening(body))
+        .build();
 
-    JournalEntry posted = accountingFacade.post(shopId, userId, req);
+    JournalEntry posted = accountingFacade.postEntry(shopId, userId, req);
     return ResponseEntity.ok(ApiResponse.success(AccountingMapper.toResponse(posted)));
   }
 
@@ -180,7 +183,7 @@ public class AccountingController {
       HttpServletRequest request) {
     String shopId = resolveShop(request);
     return accountingFacade
-        .findBySource(shopId, JournalSource.OPENING_BALANCE, "opening")
+        .findEntryBySource(shopId, JournalSource.OPENING_BALANCE, "opening")
         .map(e -> ResponseEntity.ok(ApiResponse.success(AccountingMapper.toResponse(e))))
         .orElse(ResponseEntity.ok(ApiResponse.success(null)));
   }
@@ -193,7 +196,7 @@ public class AccountingController {
     String shopId = resolveShop(request);
     String userId = (String) request.getAttribute("userId");
     String reason = body != null ? body.getReason() : null;
-    JournalEntry reversal = accountingFacade.reverse(shopId, userId, id, reason);
+    JournalEntry reversal = accountingFacade.reverseEntry(shopId, userId, id, reason);
     return ResponseEntity.ok(ApiResponse.success(AccountingMapper.toResponse(reversal)));
   }
 

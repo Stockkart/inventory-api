@@ -15,7 +15,8 @@ import com.inventory.plan.mapper.PlanMapper;
 import com.inventory.plan.mapper.PlanTransactionMapper;
 import com.inventory.plan.rest.dto.request.AssignPlanRequest;
 import com.inventory.plan.rest.dto.response.PlanResponse;
-import com.inventory.plan.service.ShopProvider.ShopInfo;
+import com.inventory.plan.api.port.ShopPort;
+import com.inventory.plan.api.port.ShopPort.ShopInfo;
 import com.inventory.plan.validation.PlanValidator;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -29,7 +30,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class PlanServiceSubscriptionSyncTest {
 
   @Mock private PlanRepository planRepository;
-  @Mock private ShopProvider shopProvider;
+  @Mock private ShopPort shopProvider;
   @Mock private PlanTransactionRepository planTransactionRepository;
   @Mock private PlanMapper planMapper;
   @Mock private PlanTransactionMapper planTransactionMapper;

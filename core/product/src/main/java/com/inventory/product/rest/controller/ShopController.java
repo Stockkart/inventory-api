@@ -20,6 +20,7 @@ import com.inventory.product.service.vertical.ShopSellCatalogService;
 import com.inventory.product.service.vertical.ShopMenuService;
 import com.inventory.product.service.vertical.VerticalSchemaService;
 import com.inventory.pluginengine.capabilities.ShopUiCapabilities;
+import com.inventory.user.domain.model.UserRole;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -62,10 +63,13 @@ public class ShopController {
     return ResponseEntity.ok(ApiResponse.success(shopService.register(request, userId)));
   }
 
+  /** Platform-admin action: only SUPER_USER (Stockkart staff) callers; others get 403. */
   @PostMapping("/admin/shops/{shopId}/approve")
   public ResponseEntity<ApiResponse<ShopApprovalResponse>> approve(@PathVariable String shopId,
-                                                                   @RequestBody ShopApprovalRequest request) {
-    return ResponseEntity.ok(ApiResponse.success(shopService.approve(shopId, request)));
+                                                                   @RequestBody ShopApprovalRequest request,
+                                                                   HttpServletRequest httpRequest) {
+    UserRole callerRole = (UserRole) httpRequest.getAttribute("userRole");
+    return ResponseEntity.ok(ApiResponse.success(shopService.approve(shopId, request, callerRole)));
   }
 
   @GetMapping("/active-shop")

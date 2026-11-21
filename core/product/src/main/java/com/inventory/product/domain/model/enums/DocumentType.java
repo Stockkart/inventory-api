@@ -6,7 +6,8 @@ package com.inventory.product.domain.model.enums;
  *
  * <ul>
  *   <li>{@link #SALE} — normal sell quotation / invoice path
- *   <li>{@link #ESTIMATE} — printable quote; does not reserve stock; converts one-way to a SALE cart
+ *   <li>{@link #ESTIMATE} — printable quote; OPEN estimates soft-reserve stock; lock then print;
+ *       convert to a SALE cart when lines are invoice-eligible
  * </ul>
  */
 public enum DocumentType {
