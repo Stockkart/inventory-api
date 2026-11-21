@@ -193,7 +193,8 @@ inventory-api/
 checkout both call it, and clients show the quote without recomputing it.
 
 - Vouchers apply to add-on lines only, never the plan line.
-- Wallet credit pays the plan line first, then add-ons, never OCR top-ups.
+- Wallet credit pays the plan line first, then add-ons and OCR scan packs in cart order; a cart the
+  wallet covers in full (a scan pack alone too) is paid with provider `wallet`, no gateway.
 - A plan's `basePrice` is the floor for its line: wallet credit stops at `arcPrice - basePrice`, and
   the rest flows on to add-ons. Admins set it on the plan (`basePrice <= arcPrice`); null means no
   floor. Add-ons and OCR top-ups have no floor.
