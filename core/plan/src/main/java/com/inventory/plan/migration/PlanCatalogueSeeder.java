@@ -63,11 +63,15 @@ public class PlanCatalogueSeeder {
   @EventListener(ApplicationReadyEvent.class)
   @Order(20)
   public void seedOnStartup() {
+    boolean indexed = ensureCodeIndex();
     if (!seedEnabled) {
       log.info("Plan catalogue seeding disabled (plan.catalogue.seed-enabled=false)");
       return;
     }
-    ensureCodeIndex();
+    if (!indexed) {
+      log.error("Plan catalogue not seeded: the unique code index on plans is missing");
+      return;
+    }
     seed(loadSeeds());
     if (deactivateLegacy) {
       deactivateLegacyPlans();
@@ -75,11 +79,22 @@ public class PlanCatalogueSeeder {
   }
 
   /**
-   * Auto index creation is off in this application, so the unique code index is created here.
+   * Auto index creation is off in this application, so the unique code index is created here, on
+   * every startup and whether or not seeding is on: plans are also created through the admin API,
+   * which relies on it to reject a second plan with the same code. If plans already share a code
+   * the index is not created; the codes are logged for an operator to fix, and startup goes on.
+   *
+   * @return whether the index exists
    */
-  void ensureCodeIndex() {
-    mongoTemplate.indexOps(Plan.class)
-        .ensureIndex(new Index().on("code", Sort.Direction.ASC).unique().sparse());
+  boolean ensureCodeIndex() {
+    try {
+      mongoTemplate.indexOps(Plan.class)
+          .ensureIndex(new Index().on("code", Sort.Direction.ASC).unique().sparse());
+      return true;
+    } catch (RuntimeException e) {
+      log.error("Could not ensure the unique code index on plans (duplicate plan codes?): {}", e.getMessage());
+      return false;
+    }
   }
 
   List<Plan> loadSeeds() {
