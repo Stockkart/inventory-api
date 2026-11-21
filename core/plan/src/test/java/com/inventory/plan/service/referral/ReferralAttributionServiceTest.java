@@ -157,4 +157,12 @@ class ReferralAttributionServiceTest {
     assertThat(ReferralAttributionService.normalisePhone("+91 98765-43210")).isEqualTo("9876543210");
     assertThat(ReferralAttributionService.normalisePhone("12345")).isNull();
   }
+
+  @Test
+  void theSummaryNeedsASelectedShop() {
+    assertThatThrownBy(() -> service.summary(null))
+        .isInstanceOf(com.inventory.common.exception.AuthenticationException.class);
+    assertThatThrownBy(() -> service.summary(" "))
+        .isInstanceOf(com.inventory.common.exception.AuthenticationException.class);
+  }
 }

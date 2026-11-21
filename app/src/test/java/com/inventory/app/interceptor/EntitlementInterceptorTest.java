@@ -61,6 +61,16 @@ class EntitlementInterceptorTest {
     verifyNoInteractions(entitlementGuard);
   }
 
+  @Test
+  void aGatedHandlerWithoutAShopIs401() throws Exception {
+    MockHttpServletRequest noShop = new MockHttpServletRequest("GET", "/api/v1/accounting/x");
+
+    org.assertj.core.api.Assertions.assertThatThrownBy(() -> interceptor.preHandle(noShop,
+            new MockHttpServletResponse(), handler(new AccountingLikeController(), "list")))
+        .isInstanceOf(com.inventory.common.exception.AuthenticationException.class);
+    verifyNoInteractions(entitlementGuard);
+  }
+
   private static MockHttpServletRequest request(String method) {
     MockHttpServletRequest request = new MockHttpServletRequest(method, "/api/v1/accounting/x");
     request.setAttribute("shopId", "shop-1");

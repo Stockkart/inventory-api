@@ -48,6 +48,7 @@ public class RbacModuleInterceptor implements HandlerInterceptor {
           new ModuleRule("/api/v1/plans/shop/transactions", RbacService.MODULE_PAYMENT_PLAN),
           new ModuleRule("/api/v1/plans/shop/usage", RbacService.MODULE_PAYMENT_PLAN),
           new ModuleRule("/api/v1/plans/shop/wallet", RbacService.MODULE_PAYMENT_PLAN),
+          new ModuleRule("/api/v1/referrals/me", RbacService.MODULE_PAYMENT_PLAN),
           new ModuleRule("/api/v1/plans/payment/checkout", RbacService.MODULE_PAYMENT_PLAN),
           new ModuleRule("/api/v1/plans/payment/verify", RbacService.MODULE_PAYMENT_PLAN));
 
@@ -55,6 +56,10 @@ public class RbacModuleInterceptor implements HandlerInterceptor {
       List.of(
           new PatternModuleRule(
               Pattern.compile("/api/v1/plans/shop/[a-fA-F0-9]{24}/suggested"),
+              RbacService.MODULE_PAYMENT_PLAN),
+          // same module as checkout, which created the order
+          new PatternModuleRule(
+              Pattern.compile("/api/v1/plans/orders/[^/]+/cancel"),
               RbacService.MODULE_PAYMENT_PLAN));
 
   private static final List<Pattern> STOCK_CORRECTION_APPROVAL_PATHS =
