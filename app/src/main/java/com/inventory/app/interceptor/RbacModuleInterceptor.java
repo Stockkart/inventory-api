@@ -53,6 +53,10 @@ public class RbacModuleInterceptor implements HandlerInterceptor {
       List.of(
           new PatternModuleRule(
               Pattern.compile("/api/v1/plans/shop/[a-fA-F0-9]{24}/suggested"),
+              RbacService.MODULE_PAYMENT_PLAN),
+          // same module as checkout, which created the order
+          new PatternModuleRule(
+              Pattern.compile("/api/v1/plans/orders/[^/]+/cancel"),
               RbacService.MODULE_PAYMENT_PLAN));
 
   private static final List<Pattern> STOCK_CORRECTION_APPROVAL_PATHS =
