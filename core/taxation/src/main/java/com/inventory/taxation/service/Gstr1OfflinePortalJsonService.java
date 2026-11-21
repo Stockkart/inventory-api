@@ -6,6 +6,7 @@ import com.inventory.taxation.domain.gstr1.Gstr1ReportContext;
 import com.inventory.taxation.domain.model.GstDocumentSummaryLine;
 import com.inventory.taxation.domain.model.GstHsnLine;
 import com.inventory.taxation.domain.model.GstInvoiceLine;
+import com.inventory.taxation.domain.model.GstRefundLine;
 import com.inventory.taxation.dto.gstr1offline.Gstr1PortalReturnDto;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -24,7 +25,7 @@ import java.util.stream.Collectors;
 
 /**
  * Builds the offline GSTR-1 JSON matching the GST Return schema style used by the desktop utility /
- * GST portal uploads (same top-level layout as gstin/fp/version/hash/b2b/b2cs/hsn/doc_issue).
+ * GST portal uploads (same top-level layout as gstin/fp/version/hash/b2b/b2cs/cdnr/hsn/doc_issue).
  */
 @Service
 public class Gstr1OfflinePortalJsonService {
@@ -72,6 +73,8 @@ public class Gstr1OfflinePortalJsonService {
     dto.setB2b(buildB2b(b2bSorted, sellerState));
 
     dto.setB2cs(buildB2cs(ctx.getB2csLines(), shopGst));
+
+    dto.setCdnr(buildCdnr(ctx.getCdnrLines(), sellerState));
 
     dto.setHsn(buildHsn(ctx));
 
@@ -195,6 +198,82 @@ public class Gstr1OfflinePortalJsonService {
         .build();
   }
 
+  /**
+   * Credit notes to registered buyers, grouped by buyer and then by note, each note holding an
+   * item per rate -- the same shape as a B2B invoice, which is how the portal reads them.
+   *
+   * <p>They were never written to this file: the workbook had them, the upload did not, so the
+   * tax a note reversed stayed on the return.
+   */
+  private List<Gstr1PortalReturnDto.CdnrByCtinDto> buildCdnr(List<GstRefundLine> lines, String sellerState) {
+    if (lines == null || lines.isEmpty()) return new ArrayList<>();
+    Map<String, Map<String, List<GstRefundLine>>> byCtin = lines.stream()
+        .filter(l -> StringUtils.hasText(l.getRecipientGstin()))
+        .sorted(Comparator
+            .comparing((GstRefundLine l) -> l.getRecipientGstin().trim().toUpperCase())
+            .thenComparing(l -> safe(l.getNoteNumber())))
+        .collect(Collectors.groupingBy(
+            l -> l.getRecipientGstin().trim().toUpperCase(),
+            LinkedHashMap::new,
+            Collectors.groupingBy(l -> trimOrEmpty(l.getNoteNumber()), LinkedHashMap::new, Collectors.toList())));
+
+    List<Gstr1PortalReturnDto.CdnrByCtinDto> out = new ArrayList<>();
+    for (Map.Entry<String, Map<String, List<GstRefundLine>>> e : byCtin.entrySet()) {
+      List<Gstr1PortalReturnDto.CdnrNoteDto> notes = new ArrayList<>();
+      for (List<GstRefundLine> linesOfOneNote : e.getValue().values()) {
+        GstRefundLine head = linesOfOneNote.get(0);
+        String pos = resolvePos(head.getRecipientGstin(), head.getPlaceOfSupply(), sellerState);
+        boolean interstate = interstate(pos, sellerState);
+        Map<Integer, GstRefundLine> merged = new LinkedHashMap<>();
+        for (GstRefundLine line : linesOfOneNote) {
+          merged.merge(slabLineNum(line.getRate()), line, this::addNoteTaxes);
+        }
+        List<Gstr1PortalReturnDto.B2bLineItemDto> items = new ArrayList<>();
+        for (Map.Entry<Integer, GstRefundLine> m : merged.entrySet()) {
+          GstRefundLine line = m.getValue();
+          items.add(Gstr1PortalReturnDto.B2bLineItemDto.builder()
+              .num(m.getKey())
+              .itmDet(buildItemDet(
+                  interstate,
+                  line.getTaxableValue(),
+                  nz(line.getRate()),
+                  nz(line.getIntegratedTaxAmount()),
+                  nz(line.getCentralTaxAmount()),
+                  nz(line.getStateTaxAmount()),
+                  nz(line.getCessAmount())))
+              .build());
+        }
+        notes.add(Gstr1PortalReturnDto.CdnrNoteDto.builder()
+            .ntty(trimOrBlank(head.getNoteType(), "C"))
+            .ntNum(trimOrEmpty(head.getNoteNumber()))
+            .ntDt(head.getNoteDate() != null ? head.getNoteDate().format(INV_DATE) : "")
+            .val(d(head.getNoteValue()))
+            .pos(pos)
+            .rchrg(trimOrBlank(head.getReverseCharge(), "N"))
+            .invTyp("R")
+            .itms(items)
+            .build());
+      }
+      out.add(Gstr1PortalReturnDto.CdnrByCtinDto.builder().ctin(e.getKey()).nt(notes).build());
+    }
+    return out;
+  }
+
+  /** Two lines of one note at one rate, as the single item they amount to. */
+  private GstRefundLine addNoteTaxes(GstRefundLine into, GstRefundLine more) {
+    GstRefundLine sum = GstRefundLine.builder()
+        .recipientGstin(into.getRecipientGstin())
+        .noteNumber(into.getNoteNumber())
+        .rate(into.getRate())
+        .taxableValue(nz(into.getTaxableValue()).add(nz(more.getTaxableValue())))
+        .integratedTaxAmount(nz(into.getIntegratedTaxAmount()).add(nz(more.getIntegratedTaxAmount())))
+        .centralTaxAmount(nz(into.getCentralTaxAmount()).add(nz(more.getCentralTaxAmount())))
+        .stateTaxAmount(nz(into.getStateTaxAmount()).add(nz(more.getStateTaxAmount())))
+        .cessAmount(nz(into.getCessAmount()).add(nz(more.getCessAmount())))
+        .build();
+    return sum;
+  }
+
   private List<Gstr1PortalReturnDto.B2csDto> buildB2cs(List<GstInvoiceLine> lines, String shopGstin) {
     if (lines == null || lines.isEmpty()) return new ArrayList<>();
     String seller = gstinPrefix(shopGstin);
@@ -244,7 +323,10 @@ public class Gstr1OfflinePortalJsonService {
       rows.add(Gstr1PortalReturnDto.HsnSummaryRowDto.builder()
           .num(i++)
           .hsnSc(normalizeHsnCode(line.getHsn()))
-          .desc(line.getDescription() != null ? line.getDescription() : "")
+          // Left blank, as in the returns this shop has filed: the portal takes the description
+          // from the HSN code, and the full HSN-master text -- hundreds of characters -- is far
+          // past what the offline tool accepts in this field. The workbook keeps it.
+          .desc("")
           .uqc(normalizeUqc(line.getUqc()))
           .qty(qtyDouble)
           .rt(d(line.getRate()))
@@ -265,7 +347,6 @@ public class Gstr1OfflinePortalJsonService {
       return outer;
     }
     List<Gstr1PortalReturnDto.DocDetBlockDto> blocks = new ArrayList<>();
-    int docNum = 1;
     for (GstDocumentSummaryLine dl : docLines) {
       int cancel = dl.getCancelled() != null ? dl.getCancelled() : 0;
       int tot = dl.getTotalNumber() != null ? dl.getTotalNumber() : 0;
@@ -278,13 +359,28 @@ public class Gstr1OfflinePortalJsonService {
           .netIssue(tot - cancel)
           .build();
       blocks.add(Gstr1PortalReturnDto.DocDetBlockDto.builder()
-          .docNum(docNum++)
+          .docNum(portalDocNum(dl.getNatureOfDocument()))
           .docTyp(dl.getNatureOfDocument() != null ? dl.getNatureOfDocument() : "")
           .docs(List.of(row))
           .build());
     }
     outer.setDocDet(blocks);
     return outer;
+  }
+
+  /**
+   * The portal's fixed number for a document nature in table 13. It is a code, not a position:
+   * numbering blocks 1, 2, 3 in the order they came put credit notes under 2, which on the portal
+   * is "Invoices for inward supply from unregistered person".
+   */
+  static int portalDocNum(String nature) {
+    if (nature == null) return 12;
+    return switch (nature.trim()) {
+      case Gstr1DataAggregator.DOC_INVOICES -> 1;
+      case "Debit Note" -> 4;
+      case Gstr1DataAggregator.DOC_CREDIT_NOTES -> 5;
+      default -> 12;
+    };
   }
 
   private static String nySply(GstInvoiceLine l, String seller) {

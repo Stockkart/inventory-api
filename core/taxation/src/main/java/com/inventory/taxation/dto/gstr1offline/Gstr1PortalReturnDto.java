@@ -13,14 +13,14 @@ import java.util.List;
 
 /**
  * Offline GSTR-1 JSON shaped like the GST utility / portal return file
- * ({@code gstin}, {@code fp}, {@code b2b}, {@code b2cs}, {@code hsn}, {@code doc_issue}).
+ * ({@code gstin}, {@code fp}, {@code b2b}, {@code b2cs}, {@code cdnr}, {@code hsn}, {@code doc_issue}).
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonPropertyOrder({
-    "gstin", "fp", "version", "hash", "b2b", "b2cs", "hsn", "doc_issue"
+    "gstin", "fp", "version", "hash", "b2b", "b2cs", "cdnr", "hsn", "doc_issue"
 })
 public class Gstr1PortalReturnDto {
 
@@ -35,6 +35,11 @@ public class Gstr1PortalReturnDto {
 
   @Builder.Default
   private List<B2csDto> b2cs = new ArrayList<>();
+
+  /** Credit notes to registered buyers; left out of the file when the period has none. */
+  @Builder.Default
+  @JsonInclude(JsonInclude.Include.NON_EMPTY)
+  private List<CdnrByCtinDto> cdnr = new ArrayList<>();
 
   private HsnAggregateDto hsn;
 
@@ -81,6 +86,44 @@ public class Gstr1PortalReturnDto {
 
     @JsonProperty("itm_det")
     private ItemDetDto itmDet;
+  }
+
+  @Data
+  @Builder
+  @NoArgsConstructor
+  @AllArgsConstructor
+  @JsonPropertyOrder({"ctin", "nt"})
+  public static class CdnrByCtinDto {
+    private String ctin;
+    @Builder.Default
+    private List<CdnrNoteDto> nt = new ArrayList<>();
+  }
+
+  /** One credit or debit note, holding an item per rate like a B2B invoice. */
+  @Data
+  @Builder
+  @NoArgsConstructor
+  @AllArgsConstructor
+  @JsonPropertyOrder({"ntty", "nt_num", "nt_dt", "val", "pos", "rchrg", "inv_typ", "itms"})
+  public static class CdnrNoteDto {
+    /** C = credit note, D = debit note. */
+    private String ntty;
+
+    @JsonProperty("nt_num")
+    private String ntNum;
+
+    @JsonProperty("nt_dt")
+    private String ntDt;
+
+    private Double val;
+    private String pos;
+    private String rchrg;
+
+    @JsonProperty("inv_typ")
+    private String invTyp;
+
+    @Builder.Default
+    private List<B2bLineItemDto> itms = new ArrayList<>();
   }
 
   /** Per GST schema: interstate uses iamt; intra uses camt/samt; cess always csamt when present */
