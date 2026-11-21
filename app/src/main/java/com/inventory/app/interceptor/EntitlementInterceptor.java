@@ -1,6 +1,8 @@
 package com.inventory.app.interceptor;
 
+import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.entitlement.RequiresEntitlement;
+import com.inventory.common.exception.AuthenticationException;
 import com.inventory.plan.api.Entitlements;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -31,7 +33,8 @@ public class EntitlementInterceptor implements HandlerInterceptor {
     }
     String shopId = (String) request.getAttribute("shopId");
     if (!StringUtils.hasText(shopId)) {
-      return true;
+      // a plan-gated endpoint is always a shop endpoint; without a shop there is nothing to allow
+      throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "Shop not selected or user not authenticated");
     }
     entitlements.requireFeature(shopId, required.value());
     return true;

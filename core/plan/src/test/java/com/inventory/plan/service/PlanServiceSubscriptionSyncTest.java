@@ -44,7 +44,7 @@ class PlanServiceSubscriptionSyncTest {
   private PlanService planService;
 
   @Test
-  void assignPlanSyncsSubscriptionWithTheOrderAndSurvivesSyncFailure() {
+  void assignPlanRecordsTheGrantWithItsOrder() {
     Plan plan = new Plan();
     plan.setId("plan-1");
     AssignPlanRequest request = new AssignPlanRequest();
@@ -56,17 +56,32 @@ class PlanServiceSubscriptionSyncTest {
 
     when(shopProvider.getShop("shop-1")).thenReturn(Optional.of(new ShopInfo("shop-1", null, null)));
     when(planRepository.findById("plan-1")).thenReturn(Optional.of(plan));
-    when(shopSubscriptionService.sync(any(), eq("order-1"))).thenThrow(new IllegalStateException("mongo down"));
     when(planTransactionMapper.toTransaction("shop-1", plan, request)).thenReturn(tx);
     when(planMapper.toResponse(plan)).thenReturn(response);
 
     assertThat(planService.assignPlan("shop-1", request)).isSameAs(response);
 
     ArgumentCaptor<ShopInfo> synced = ArgumentCaptor.forClass(ShopInfo.class);
-    verify(shopSubscriptionService).sync(synced.capture(), eq("order-1"));
+    verify(shopSubscriptionService).recordGrant(synced.capture(), eq("order-1"));
     assertThat(synced.getValue().shopId()).isEqualTo("shop-1");
     assertThat(synced.getValue().planId()).isEqualTo("plan-1");
     assertThat(synced.getValue().planExpiryDate()).isNotNull();
     verify(planTransactionRepository).save(tx);
+  }
+
+  @Test
+  void aFailedGrantSyncFailsTheAssignSoFulfilmentRetries() {
+    Plan plan = new Plan();
+    plan.setId("plan-1");
+    AssignPlanRequest request = new AssignPlanRequest();
+    request.setPlanId("plan-1");
+    request.setPaymentOrderId("order-1");
+    when(shopProvider.getShop("shop-1")).thenReturn(Optional.of(new ShopInfo("shop-1", null, null)));
+    when(planRepository.findById("plan-1")).thenReturn(Optional.of(plan));
+    when(shopSubscriptionService.recordGrant(any(), eq("order-1"))).thenThrow(new IllegalStateException("mongo down"));
+
+    org.assertj.core.api.Assertions.assertThatThrownBy(() -> planService.assignPlan("shop-1", request))
+        .isInstanceOf(IllegalStateException.class);
+    verify(planTransactionRepository, org.mockito.Mockito.never()).save(any());
   }
 }

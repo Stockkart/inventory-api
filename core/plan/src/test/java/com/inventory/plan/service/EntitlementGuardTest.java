@@ -60,6 +60,43 @@ class EntitlementGuardTest {
     when(entitlementService.resolve("shop-1")).thenReturn(starter(Set.of(), null, null));
 
     assertThatCode(() -> guard.requireFeature("shop-1", PlanFeature.ACCOUNTING)).doesNotThrowAnyException();
+    // the upgrade hint is only built for a real 402
+    org.mockito.Mockito.verify(effectivePlanResolver, org.mockito.Mockito.never()).activeCatalogue();
+  }
+
+  @Test
+  void logOnlyWritesTheSameWouldBlockLineOncePerWindow() {
+    long t0 = 1_000_000L;
+    assertThat(guard.shouldLog("shop-1|FEATURE_NOT_IN_PLAN|ACCOUNTING", t0)).isTrue();
+    assertThat(guard.shouldLog("shop-1|FEATURE_NOT_IN_PLAN|ACCOUNTING", t0 + 1000)).isFalse();
+    assertThat(guard.shouldLog("shop-2|FEATURE_NOT_IN_PLAN|ACCOUNTING", t0 + 1000)).isTrue();
+    assertThat(guard.shouldLog("shop-1|FEATURE_NOT_IN_PLAN|ACCOUNTING", t0 + EntitlementGuard.LOG_EVERY_MS)).isTrue();
+  }
+
+  @Test
+  void describeSaysWhetherSeatAndScanLimitsAreReached() {
+    when(entitlementService.resolve("shop-1")).thenReturn(starter(Set.of(), 2, 3));
+    when(usageService.getUserCountForShop("shop-1")).thenReturn(2);
+    Usage usage = new Usage();
+    usage.setOcrUsed(1);
+    when(usageService.getOrCreateCurrentMonthUsage("shop-1")).thenReturn(usage);
+
+    var response = guard.describe("shop-1");
+
+    assertThat(response.isSeatLimitReached()).isTrue();
+    assertThat(response.isOcrLimitReached()).isFalse();
+  }
+
+  @Test
+  void describeWithoutLimitsReachesNone() {
+    when(entitlementService.resolve("shop-1")).thenReturn(starter(Set.of(), null, null));
+    when(usageService.getUserCountForShop("shop-1")).thenReturn(50);
+    when(usageService.getOrCreateCurrentMonthUsage("shop-1")).thenReturn(new Usage());
+
+    var response = guard.describe("shop-1");
+
+    assertThat(response.isSeatLimitReached()).isFalse();
+    assertThat(response.isOcrLimitReached()).isFalse();
   }
 
   @Test

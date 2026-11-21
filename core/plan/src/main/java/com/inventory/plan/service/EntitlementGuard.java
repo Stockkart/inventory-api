@@ -33,6 +33,11 @@ public class EntitlementGuard {
   @Autowired
   private EffectivePlanResolver effectivePlanResolver;
 
+  static final long LOG_EVERY_MS = 10 * 60 * 1000L;
+  private static final int MAX_LOG_KEYS = 10_000;
+  private final Map<String, Long> lastLogged = new java.util.concurrent.ConcurrentHashMap<>();
+  java.time.Clock clock = java.time.Clock.systemUTC();
+
   @Value("${plan.entitlements.enforcement:LOG_ONLY}")
   EntitlementEnforcementMode mode = EntitlementEnforcementMode.LOG_ONLY;
 
@@ -50,7 +55,10 @@ public class EntitlementGuard {
     }
     Map<String, Object> details = baseDetails(entitlements);
     details.put("feature", feature.name());
-    cheapestPlanWith(feature).ifPresent(plan -> details.put("requiredPlanCode", plan.getCode()));
+    if (mode == EntitlementEnforcementMode.ENFORCE) {
+      // the upgrade hint is for the 402 the client sees; LOG_ONLY never sends one
+      cheapestPlanWith(feature).ifPresent(plan -> details.put("requiredPlanCode", plan.getCode()));
+    }
     deny(shopId, new EntitlementException(ErrorCode.FEATURE_NOT_IN_PLAN,
         "Your plan does not include " + feature.name() + ". Upgrade to unlock it.", details));
   }
@@ -101,6 +109,8 @@ public class EntitlementGuard {
   public ShopEntitlementsResponse describe(String shopId) {
     ShopEntitlements entitlements = entitlementService.resolve(shopId);
     Usage usage = usageService.getOrCreateCurrentMonthUsage(shopId);
+    int userCount = usageService.getUserCountForShop(shopId);
+    int ocrUsed = usage.getOcrUsed() != null ? usage.getOcrUsed() : 0;
     return ShopEntitlementsResponse.builder()
         .planId(entitlements.planId())
         .planCode(entitlements.planCode())
@@ -108,9 +118,11 @@ public class EntitlementGuard {
         .features(entitlements.effectiveFeatures().stream().sorted().toList())
         .enforcement(mode)
         .userLimit(entitlements.userLimit())
-        .userCount(usageService.getUserCountForShop(shopId))
+        .userCount(userCount)
+        .seatLimitReached(entitlements.userLimit() != null && userCount >= entitlements.userLimit())
         .ocrLimit(entitlements.ocrLimit())
-        .ocrUsed(usage.getOcrUsed() != null ? usage.getOcrUsed() : 0)
+        .ocrUsed(ocrUsed)
+        .ocrLimitReached(entitlements.ocrLimit() != null && ocrUsed >= entitlements.ocrLimit())
         .expiresAt(entitlements.expiresAt())
         .build();
   }
@@ -119,7 +131,25 @@ public class EntitlementGuard {
     if (mode == EntitlementEnforcementMode.ENFORCE) {
       throw denial;
     }
-    log.warn("Entitlement check would block shop {}: {} {}", shopId, denial.getErrorCode(), denial.getDetails());
+    if (shouldLog(shopId + "|" + denial.getErrorCode() + "|" + denial.getDetails().get("feature"), clock.millis())) {
+      log.warn("Entitlement check would block shop {}: {} {}", shopId, denial.getErrorCode(), denial.getDetails());
+    }
+  }
+
+  /**
+   * LOG_ONLY runs on every request of a shop that lacks a feature, so the same would-block line is
+   * written at most once per {@link #LOG_EVERY_MS} per shop and denial (per container).
+   */
+  boolean shouldLog(String key, long nowMs) {
+    if (lastLogged.size() > MAX_LOG_KEYS) {
+      lastLogged.clear();
+    }
+    Long previous = lastLogged.get(key);
+    if (previous != null && nowMs - previous < LOG_EVERY_MS) {
+      return false;
+    }
+    lastLogged.put(key, nowMs);
+    return true;
   }
 
   private Optional<Plan> cheapestPlanWith(PlanFeature feature) {

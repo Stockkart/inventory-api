@@ -42,6 +42,9 @@ class ShopSubscriptionServiceTest {
   @Mock
   private EntitlementService entitlementService;
 
+  @Mock
+  private com.inventory.plan.domain.repository.PlanRepository planRepository;
+
   @InjectMocks
   private ShopSubscriptionService service;
 
@@ -152,5 +155,56 @@ class ShopSubscriptionServiceTest {
         .sourceOrderId(orderId)
         .createdAt(Instant.parse("2026-01-01T00:00:00Z"))
         .build();
+  }
+
+  @Test
+  void aGrantIsOneUpsertThatNeverMovesTheEndBackwards() {
+    when(mongoTemplate.findAndModify(any(Query.class), any(Update.class),
+        any(org.springframework.data.mongodb.core.FindAndModifyOptions.class), eq(ShopSubscription.class)))
+        .thenAnswer(inv -> existing("plan-1", SubscriptionStatus.ACTIVE, FUTURE, "order-2"));
+
+    ShopSubscription saved = service.recordGrant(new ShopInfo("shop-1", "plan-1", FUTURE), "order-2");
+
+    ArgumentCaptor<Query> query = ArgumentCaptor.forClass(Query.class);
+    ArgumentCaptor<Update> update = ArgumentCaptor.forClass(Update.class);
+    verify(mongoTemplate).findAndModify(query.capture(), update.capture(),
+        any(org.springframework.data.mongodb.core.FindAndModifyOptions.class), eq(ShopSubscription.class));
+    Document filter = query.getValue().getQueryObject();
+    assertThat(filter.get("_id")).isEqualTo("shop-1");
+    assertThat(filter.toString()).contains("$or").contains("$lte");
+    org.bson.Document set = (org.bson.Document) update.getValue().getUpdateObject().get("$set");
+    assertThat(set).containsEntry("planId", "plan-1").containsEntry("sourceOrderId", "order-2");
+    assertThat(saved.getSourceOrderId()).isEqualTo("order-2");
+    verify(repository, never()).save(any());
+  }
+
+  @Test
+  void aStaleGrantLeavesTheLaterTermInPlace() {
+    ShopSubscription later = existing("plan-1", SubscriptionStatus.ACTIVE, FUTURE.plusSeconds(3600), "order-3");
+    when(mongoTemplate.findAndModify(any(Query.class), any(Update.class),
+        any(org.springframework.data.mongodb.core.FindAndModifyOptions.class), eq(ShopSubscription.class)))
+        .thenThrow(new org.springframework.dao.DuplicateKeyException("E11000"));
+    when(repository.findById("shop-1")).thenReturn(Optional.of(later));
+
+    assertThat(service.recordGrant(new ShopInfo("shop-1", "plan-1", FUTURE), "order-2")).isSameAs(later);
+  }
+
+  @Test
+  void aGrantKeepsTheGrantedPlansFeaturesAndLimits() {
+    com.inventory.plan.domain.model.Plan pro = EntitlementServiceTest.plan(
+        "plan-1", "PROFESSIONAL", java.util.Set.of(com.inventory.common.entitlement.PlanFeature.ACCOUNTING), 5, 100);
+    when(planRepository.findById("plan-1")).thenReturn(Optional.of(pro));
+
+    service.recordGrant(new ShopInfo("shop-1", "plan-1", FUTURE), "order-2");
+
+    ArgumentCaptor<Update> update = ArgumentCaptor.forClass(Update.class);
+    verify(mongoTemplate).findAndModify(any(Query.class), update.capture(),
+        any(org.springframework.data.mongodb.core.FindAndModifyOptions.class), eq(ShopSubscription.class));
+    var terms = (com.inventory.plan.domain.model.PlanTermsSnapshot)
+        ((Document) update.getValue().getUpdateObject().get("$set")).get("terms");
+    assertThat(terms.getPlanCode()).isEqualTo("PROFESSIONAL");
+    assertThat(terms.getUserLimit()).isEqualTo(5);
+    assertThat(terms.getOcrLimit()).isEqualTo(100);
+    verify(entitlementService).invalidate("shop-1");
   }
 }

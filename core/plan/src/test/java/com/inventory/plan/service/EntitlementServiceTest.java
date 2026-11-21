@@ -70,6 +70,24 @@ class EntitlementServiceTest {
   }
 
   @Test
+  void aSnapshotOfTheGrantedTermWinsOverTheLiveCatalogue() {
+    when(shopSubscriptionRepository.findById("shop-1")).thenReturn(Optional.of(ShopSubscription.builder()
+        .id("shop-1").shopId("shop-1").planId("pro").status(SubscriptionStatus.ACTIVE)
+        .expiresAt(NOW.plusSeconds(3600))
+        .terms(com.inventory.plan.domain.model.PlanTermsSnapshot.builder()
+            .planId("pro").planCode("PROFESSIONAL").features(Set.of(PlanFeature.ACCOUNTING))
+            .userLimit(5).ocrLimit(1000).build())
+        .build()));
+
+    ShopEntitlements result = service.resolve("shop-1");
+
+    assertThat(result.allows(PlanFeature.ACCOUNTING)).isTrue();
+    assertThat(result.userLimit()).isEqualTo(5);
+    assertThat(result.ocrLimit()).isEqualTo(1000);
+    org.mockito.Mockito.verifyNoInteractions(planRepository);
+  }
+
+  @Test
   void expiredSubscriptionFallsBackToTrialSetNotEmpty() {
     subscription("pro", SubscriptionStatus.ACTIVE, NOW.minusSeconds(1));
     when(effectivePlanResolver.findTrialPlan()).thenReturn(Optional.of(
