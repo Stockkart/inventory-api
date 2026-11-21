@@ -22,4 +22,6 @@ public class PlanTransactionResponse {
   private String provider;
   private String providerPaymentId;
   private Instant createdAt;
+  /** Null unless the payment was refunded. */
+  private Instant refundedAt;
 }

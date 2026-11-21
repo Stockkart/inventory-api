@@ -62,6 +62,12 @@ public class PaymentOrderStatusMigration {
         .on("status", Sort.Direction.ASC)
         .on("claimedAt", Sort.Direction.ASC)
         .named("status_claimedAt"));
+    // refund webhooks find the order by the gateway's payment id
+    ensure(orders, new Index()
+        .on("provider", Sort.Direction.ASC)
+        .on("providerPaymentId", Sort.Direction.ASC)
+        .partial(PartialIndexFilter.of(Criteria.where("providerPaymentId").exists(true)))
+        .named("provider_paymentId"));
     // webhook and refund look orders up by the gateway's order id; one order per gateway order
     ensure(orders, new Index()
         .on("provider", Sort.Direction.ASC)

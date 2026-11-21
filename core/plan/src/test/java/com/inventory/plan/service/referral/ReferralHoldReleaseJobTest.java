@@ -22,6 +22,7 @@ class ReferralHoldReleaseJobTest {
 
   @Test
   void doesNothingWhileDisabled() {
+    job.enabled = false;
     job.run();
 
     verifyNoInteractions(rewardService);

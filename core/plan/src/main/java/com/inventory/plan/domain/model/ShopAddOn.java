@@ -44,6 +44,8 @@ public class ShopAddOn {
   private String grantedByUserId;
   private String note;
   private Instant createdAt;
+  /** Taken back because its order was refunded; expiresAt is set to the same instant. */
+  private Instant revokedAt;
 
   public boolean isLive(Instant now) {
     return expiresAt == null || expiresAt.isAfter(now);
