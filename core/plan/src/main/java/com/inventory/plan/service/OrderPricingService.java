@@ -6,26 +6,33 @@ import com.inventory.plan.domain.model.AddOn;
 import com.inventory.plan.domain.model.AddOnGrantType;
 import com.inventory.plan.domain.model.AddOnVoucher;
 import com.inventory.plan.domain.model.OrderLine;
+import com.inventory.plan.domain.model.PaidTerm;
 import com.inventory.plan.domain.model.Plan;
 import com.inventory.plan.domain.model.PricedCart;
+import com.inventory.plan.domain.model.ShopAddOn;
 import com.inventory.plan.domain.model.VoucherRejection;
 import com.inventory.plan.domain.repository.PlanRepository;
 import com.inventory.plan.exception.VoucherRejectedException;
 import com.inventory.plan.rest.dto.request.QuoteRequest;
+import com.inventory.plan.rest.dto.response.AddOnResponse;
 import com.inventory.plan.rest.dto.response.QuoteResponse;
 import com.inventory.plan.service.voucher.VoucherService;
 import com.inventory.plan.service.wallet.WalletService;
+import com.inventory.plan.utils.AddOnEligibility;
+import com.inventory.plan.utils.CartUtils;
 import com.inventory.plan.utils.constants.PlanPaymentConstants;
 import com.inventory.plan.utils.constants.PricingConstants;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -53,15 +60,26 @@ public class OrderPricingService {
   private WalletService walletService;
 
   @Autowired
+  private EntitlementService entitlementService;
+
+  @Autowired
+  private ShopAddOnService shopAddOnService;
+
+  @Autowired
   private PlanService planService;
 
   /**
-   * {@code shopId} is needed to check vouchers the shop may use, and to refuse a different plan
-   * while the shop's paid plan still has days left ({@code PLAN_CHANGE_NOT_ALLOWED}), as checkout does.
+   * {@code shopId} is needed to check vouchers the shop may use, for an add-on-only cart (no
+   * plan, at least one add-on) to find the plan the add-ons are priced against, and to refuse a
+   * different plan while the shop's paid plan still has days left ({@code PLAN_CHANGE_NOT_ALLOWED}),
+   * as checkout does.
    */
   public QuoteResponse quote(String shopId, QuoteRequest request) {
-    if (request == null || !StringUtils.hasText(request.getPlanCode())) {
-      throw new ValidationException("planCode is required");
+    if (CartUtils.isAddOnOnly(request)) {
+      return toQuote(priceAddOnOnly(shopId, request));
+    }
+    if (!CartUtils.hasPlan(request)) {
+      throw new ValidationException(PricingConstants.MSG_EMPTY_CART);
     }
     checkCart(request);
     String planCode = request.getPlanCode().trim().toUpperCase(Locale.ROOT);
@@ -96,17 +114,81 @@ public class OrderPricingService {
         .lineTotal(unitPrice)
         .itemSource(PricingConstants.ITEM_SOURCE_MANUAL)
         .build());
-    items.addAll(addOnLines(plan, request.getAddOns()));
-    applyVouchers(plan, items, request.getVoucherCodes(), shopId);
+    // A plan cart may re-buy an add-on the shop holds: the new grant runs to the new term's end.
+    items.addAll(addOnLines(plan, request.getAddOns(), Set.of()));
+    applyVouchers(plan, items, request.getVoucherCodes(), shopId, Set.of());
+    return total(plan, items, request, shopId, plan.getBasePrice(), durationMonths, false, null);
+  }
 
+  /**
+   * Prices add-ons bought on their own against the shop's current paid plan (§3.3): full price, no
+   * proration, no plan line and so no plan floor. {@code durationMonths} is ignored; annual add-ons
+   * end with the current term ({@link PricedCart#termEndsAt()}, stored on the order), and OCR
+   * credits never expire. A non-stackable add-on the shop already holds live is rejected.
+   */
+  public PricedCart priceAddOnOnly(String shopId, QuoteRequest request) {
+    if (!CartUtils.isAddOnOnly(request)) {
+      throw new ValidationException(PricingConstants.MSG_EMPTY_CART);
+    }
+    PaidTerm term = entitlementService.paidTerm(shopId)
+        .orElseThrow(() -> new ValidationException(PricingConstants.MSG_ADD_ON_ONLY_NEEDS_PAID_PLAN));
+    Plan plan = planRepository.findById(term.planId())
+        .orElseThrow(() -> new ValidationException(PricingConstants.MSG_ADD_ON_ONLY_NEEDS_PAID_PLAN));
+    Set<String> held = heldOnce(shopId);
+    List<OrderLine> items = new ArrayList<>(addOnLines(plan, request.getAddOns(), held));
+    applyVouchers(plan, items, request.getVoucherCodes(), shopId, held);
+    return total(plan, items, request, shopId, null, 0, true, term.expiresAt());
+  }
+
+  /**
+   * The add-ons on sale with whether this shop can buy each on its own now (add-on-only top-up):
+   * the same rules as {@link #priceAddOnOnly}. Without an active paid plan none can be.
+   */
+  public List<AddOnResponse> addOnOptionsForShop(String shopId) {
+    List<AddOn> addOns = addOnCatalogue.activeAddOns();
+    Optional<Plan> plan = entitlementService.paidTerm(shopId).flatMap(term -> planRepository.findById(term.planId()));
+    if (plan.isEmpty()) {
+      Optional<String> reason = Optional.of(PricingConstants.MSG_ADD_ON_ONLY_NEEDS_PAID_PLAN);
+      return addOns.stream().map(addOn -> addOnCatalogue.toOption(addOn, reason)).toList();
+    }
+    Set<String> held = heldOnce(shopId);
+    return addOns.stream()
+        .map(addOn -> addOnCatalogue.toOption(addOn, AddOnEligibility.ineligibleReason(plan.get(), addOn, held)))
+        .toList();
+  }
+
+  /** The add-ons on sale with whether each can go in a cart that buys {@code planCode}. */
+  public List<AddOnResponse> addOnOptionsForPlan(String planCode) {
+    String code = planCode.trim().toUpperCase(Locale.ROOT);
+    Plan plan = planRepository.findByCode(code)
+        .filter(EffectivePlanResolver::isActive)
+        .orElseThrow(() -> new ResourceNotFoundException("Plan", "code", code));
+    return addOnCatalogue.activeAddOns().stream()
+        .map(addOn -> addOnCatalogue.toOption(addOn, AddOnEligibility.ineligibleReason(plan, addOn, Set.of())))
+        .toList();
+  }
+
+  /** Codes of live add-ons the shop holds that cannot be bought again on top (not stackable). */
+  private Set<String> heldOnce(String shopId) {
+    Set<String> codes = new HashSet<>();
+    for (ShopAddOn held : shopAddOnService.live(shopId, Instant.now())) {
+      if (held.getGrantType() != AddOnGrantType.OCR_CREDITS && held.getAddOnCode() != null) {
+        codes.add(held.getAddOnCode());
+      }
+    }
+    return codes;
+  }
+
+  private PricedCart total(Plan plan, List<OrderLine> items, QuoteRequest request, String shopId,
+      BigDecimal planFloor, int durationMonths, boolean addOnOnly, Instant termEndsAt) {
     BigDecimal subtotal = sum(items.stream().map(line -> line.getUnitPrice()
         .multiply(BigDecimal.valueOf(line.getQuantity()))).toList());
     BigDecimal discountTotal = sum(items.stream().map(OrderLine::getDiscount).toList());
     BigDecimal walletCredit = Boolean.TRUE.equals(request.getApplyWalletCredit()) && StringUtils.hasText(shopId)
-        ? applyWallet(items, walletService.available(shopId), plan.getBasePrice())
+        ? applyWallet(items, walletService.available(shopId), planFloor)
         : BigDecimal.ZERO;
     return new PricedCart(plan, List.copyOf(items), subtotal, discountTotal, walletCredit,
-        subtotal.subtract(discountTotal).subtract(walletCredit), durationMonths);
+        subtotal.subtract(discountTotal).subtract(walletCredit), durationMonths, addOnOnly, termEndsAt);
   }
 
   /**
@@ -142,9 +224,10 @@ public class OrderPricingService {
 
   /**
    * One line per requested add-on, priced from the catalogue. Rejects unknown or hidden add-ons,
-   * repeats, quantities the add-on does not allow, and add-ons the plan already includes (§10).
+   * repeats, quantities the add-on does not allow, add-ons the plan already includes (§10), and
+   * non-stackable add-ons in {@code held} (already held live by the shop).
    */
-  private List<OrderLine> addOnLines(Plan plan, List<QuoteRequest.AddOnLine> requested) {
+  private List<OrderLine> addOnLines(Plan plan, List<QuoteRequest.AddOnLine> requested, Set<String> held) {
     if (CollectionUtils.isEmpty(requested)) {
       return List.of();
     }
@@ -167,7 +250,9 @@ public class OrderPricingService {
         throw new ResourceNotFoundException("Add-on", "code", code);
       }
       checkQuantity(addOn, quantity);
-      checkApplies(plan, addOn);
+      AddOnEligibility.ineligibleReason(plan, addOn, held).ifPresent(reason -> {
+        throw new ValidationException(reason);
+      });
       lines.add(addOnLine(addOn, quantity, PricingConstants.ITEM_SOURCE_MANUAL));
     });
     return lines;
@@ -178,7 +263,8 @@ public class OrderPricingService {
    * cart adds a line of its own ({@code itemSource = VOUCHER}); one voucher per line; never the plan
    * line (r4.8).
    */
-  private void applyVouchers(Plan plan, List<OrderLine> items, List<String> rawCodes, String shopId) {
+  private void applyVouchers(Plan plan, List<OrderLine> items, List<String> rawCodes, String shopId,
+      Set<String> held) {
     if (CollectionUtils.isEmpty(rawCodes)) {
       return;
     }
@@ -204,10 +290,9 @@ public class OrderPricingService {
       if (addOn == null || !addOn.isActive()) {
         throw notApplicable(code, "Voucher " + code + " is for an add-on that is no longer sold");
       }
-      try {
-        checkApplies(plan, addOn);
-      } catch (ValidationException e) {
-        throw notApplicable(code, e.getMessage());
+      Optional<String> notForThisCart = AddOnEligibility.ineligibleReason(plan, addOn, held);
+      if (notForThisCart.isPresent()) {
+        throw notApplicable(code, notForThisCart.get());
       }
       OrderLine line = items.stream().filter(item -> addOn.getCode().equals(item.getCode())
           && !PricingConstants.ITEM_TYPE_PLAN.equals(item.getType())).findFirst().orElse(null);
@@ -259,16 +344,7 @@ public class OrderPricingService {
     }
   }
 
-  private static void checkApplies(Plan plan, AddOn addOn) {
-    if (addOn.getGrantType() == AddOnGrantType.FEATURE
-        && plan.getFeatures() != null && plan.getFeatures().contains(addOn.getGrantsFeature())) {
-      throw new ValidationException(plan.getPlanName() + " already includes " + addOn.getName());
-    }
-    if (addOn.getGrantType() == AddOnGrantType.SEATS && plan.isUnlimited()) {
-      throw new ValidationException(plan.getPlanName() + " already has unlimited users");
-    }
-  }
-
+  /** SMS packs stay in the catalogue but cannot be bought until StockKart sends SMS. */
   /** Yearly price of a plan. Checkout charges exactly this, so a quote and its checkout agree. */
   public BigDecimal planPrice(Plan plan) {
     return plan.getArcPrice() != null ? plan.getArcPrice() : plan.getPrice();
@@ -285,6 +361,8 @@ public class OrderPricingService {
         .grandTotal(cart.grandTotal())
         .currency(PlanPaymentConstants.CURRENCY_INR)
         .durationMonths(cart.durationMonths())
+        .addOnOnly(cart.addOnOnly())
+        .termEndsAt(cart.termEndsAt())
         .pricingVersion(PricingConstants.PRICING_VERSION)
         .quotedAt(now)
         .expiresAt(now.plus(PricingConstants.QUOTE_TTL))

@@ -27,4 +27,11 @@ public class AddOnResponse {
   private boolean stackable;
   private Integer maxQuantity;
   private Integer displayOrder;
+  /**
+   * Whether the add-on can be bought in the cart the list was asked for (a plan, or the shop's
+   * add-on-only top-up); null on the plain catalogue list.
+   */
+  private Boolean eligible;
+  /** Why it cannot be bought, when {@code eligible} is false; the apps show it as is. */
+  private String ineligibleReason;
 }

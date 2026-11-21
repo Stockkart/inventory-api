@@ -123,6 +123,16 @@ class ReferralRewardServiceTest {
   }
 
   @Test
+  void anAddOnOnlyOrderNeverEarnsAReward() {
+    PlanPaymentOrder order = order(line(PricingConstants.ITEM_TYPE_ADDON, "1999", null),
+        line(PricingConstants.ITEM_TYPE_OCR_TOPUP, "199", null));
+    order.setAddOnOnly(true);
+
+    assertThat(service.recordForOrder(order)).isEmpty();
+    verify(rewardRepository, never()).insert(any(ReferralReward.class));
+  }
+
+  @Test
   void aReferrerOverTheCapGetsAVoidReward() {
     when(rewardRepository.countByReferrerShopIdAndStatusInAndCreatedAtAfter(eq("referrer"), anyCollection(), any()))
         .thenReturn(20L);

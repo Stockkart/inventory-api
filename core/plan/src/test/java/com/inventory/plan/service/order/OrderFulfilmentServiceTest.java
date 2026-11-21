@@ -94,6 +94,19 @@ class OrderFulfilmentServiceTest {
   }
 
   @Test
+  void anOrderThatCanNeverBeFulfilledIsParkedOnTheFirstAttempt() {
+    PlanPaymentOrder claimed = order(1, false);
+    when(stateService.claim(eq("order-1"), eq(NOW), any())).thenReturn(Optional.of(claimed));
+    doThrow(new OrderNotFulfillableException("term ended")).when(addOns).apply(claimed);
+
+    service.fulfil("order-1");
+
+    verify(stateService).failFulfilment("order-1", NOW, "term ended", NOW);
+    verify(stateService, never()).recordAttemptFailure(anyString(), any(), anyString(), any());
+    verify(stateService, never()).complete(anyString(), any(), any());
+  }
+
+  @Test
   void latePaymentThatCannotReacquireReservationsNeedsAnOperator() {
     PlanPaymentOrder claimed = order(1, true);
     claimed.setReservationsReleasedAt(NOW.minusSeconds(60));

@@ -24,6 +24,10 @@ public class PlanCheckoutResponse {
   private BigDecimal amount;
   private String currency;
   private String planName;
+  /** Add-ons bought on their own: no PLAN line; planName is the shop's current plan. */
+  private boolean addOnOnly;
+  /** Add-on-only orders: when the annual add-ons end. Null for plan orders. */
+  private Instant termEndsAt;
   private List<QuoteResponse.QuoteItem> items;
   private BigDecimal subtotal;
   private BigDecimal discountTotal;

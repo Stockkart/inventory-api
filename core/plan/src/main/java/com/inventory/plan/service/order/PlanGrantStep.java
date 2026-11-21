@@ -7,7 +7,8 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
- * Grants the purchased plan. First, so later steps (add-ons) can read the new term.
+ * Grants the purchased plan. First, so later steps (add-ons) can read the new term. An add-on-only
+ * order buys no plan, so it grants nothing here.
  */
 @Component
 @Order(0)
@@ -18,6 +19,9 @@ public class PlanGrantStep implements OrderFulfilmentStep {
 
   @Override
   public void apply(PlanPaymentOrder order) {
+    if (order.isAddOnOnly()) {
+      return;
+    }
     planService.grantForOrder(order);
   }
 }

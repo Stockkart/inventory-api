@@ -4,6 +4,7 @@ import com.inventory.common.entitlement.PlanFeature;
 import com.inventory.plan.api.port.ShopPort;
 import com.inventory.plan.domain.model.AddOnGrantType;
 import com.inventory.plan.domain.model.EntitlementSource;
+import com.inventory.plan.domain.model.PaidTerm;
 import com.inventory.plan.domain.model.Plan;
 import com.inventory.plan.domain.model.PlanTermsSnapshot;
 import com.inventory.plan.domain.model.ShopEntitlements;
@@ -78,6 +79,23 @@ public class EntitlementService {
 
   public void invalidateAll() {
     cache.clear();
+  }
+
+  /**
+   * The shop's paid term when it is on a paid plan that has not expired and has an end date; empty
+   * on trial, after expiry, or for an undated plan (annual add-ons need a date to end on). Read
+   * fresh, never from the entitlement cache, because orders are priced and fulfilled against it.
+   */
+  public Optional<PaidTerm> paidTerm(String shopId) {
+    if (!StringUtils.hasText(shopId)) {
+      return Optional.empty();
+    }
+    Instant now = clock.instant();
+    SubscriptionView subscription = currentSubscription(shopId, now);
+    if (!subscription.isPaidAndLive(now) || subscription.expiresAt() == null) {
+      return Optional.empty();
+    }
+    return Optional.of(new PaidTerm(subscription.planId(), subscription.expiresAt()));
   }
 
   ShopEntitlements compute(String shopId, Instant now) {

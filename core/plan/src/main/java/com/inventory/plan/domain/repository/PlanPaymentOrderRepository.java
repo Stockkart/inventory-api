@@ -19,7 +19,12 @@ public interface PlanPaymentOrderRepository extends MongoRepository<PlanPaymentO
 
   Optional<PlanPaymentOrder> findByProviderAndProviderPaymentId(String provider, String providerPaymentId);
 
-  Optional<PlanPaymentOrder> findFirstByShopIdAndStatusOrderByFulfilledAtAsc(String shopId, String status);
+  /**
+   * First fulfilled order that bought a plan. {@code addOnOnly} is passed as true: "Not" matches
+   * {@code $ne: true}, so orders saved before the field existed (no addOnOnly) still count.
+   */
+  Optional<PlanPaymentOrder> findFirstByShopIdAndStatusAndAddOnOnlyNotOrderByFulfilledAtAsc(String shopId,
+      String status, boolean addOnOnly);
 
   Optional<PlanPaymentOrder> findByShopIdAndIdempotencyKey(String shopId, String idempotencyKey);
 

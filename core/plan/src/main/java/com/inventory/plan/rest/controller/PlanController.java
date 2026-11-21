@@ -29,6 +29,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import com.inventory.plan.service.OrderPricingService;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -42,6 +44,9 @@ public class PlanController {
 
   @Autowired
   private PlanService planService;
+
+  @Autowired
+  private OrderPricingService orderPricingService;
 
   @Autowired
   private UsageService usageService;
@@ -60,9 +65,16 @@ public class PlanController {
     return ResponseEntity.ok(ApiResponse.success(planService.listPlans()));
   }
 
+  /**
+   * Add-ons on sale. With {@code planCode}, each carries {@code eligible}/{@code ineligibleReason}
+   * for a cart that buys that plan.
+   */
   @GetMapping("/addons")
-  public ResponseEntity<ApiResponse<List<AddOnResponse>>> listAddOns() {
-    return ResponseEntity.ok(ApiResponse.success(addOnCatalogueService.listActive()));
+  public ResponseEntity<ApiResponse<List<AddOnResponse>>> listAddOns(
+      @RequestParam(required = false) String planCode) {
+    return ResponseEntity.ok(ApiResponse.success(StringUtils.hasText(planCode)
+        ? orderPricingService.addOnOptionsForPlan(planCode)
+        : addOnCatalogueService.listActive()));
   }
 
   @GetMapping("/{planId}")
@@ -80,6 +92,13 @@ public class PlanController {
   public ResponseEntity<ApiResponse<ShopEntitlementsResponse>> getShopEntitlements(HttpServletRequest httpRequest) {
     String shopId = getShopId(httpRequest);
     return ResponseEntity.ok(ApiResponse.success(entitlementGuard.describe(shopId)));
+  }
+
+  /** Add-ons on sale with whether the shop can buy each on its own now (top-up on the current plan). */
+  @GetMapping("/shop/addon-options")
+  public ResponseEntity<ApiResponse<List<AddOnResponse>>> getShopAddOnOptions(HttpServletRequest httpRequest) {
+    String shopId = getShopId(httpRequest);
+    return ResponseEntity.ok(ApiResponse.success(orderPricingService.addOnOptionsForShop(shopId)));
   }
 
   @GetMapping("/shop/addons")
