@@ -36,6 +36,15 @@ public class PlanPaymentOrder {
   private BigDecimal subtotal;
   private BigDecimal discountTotal;
   private BigDecimal walletCredit;
+  /**
+   * GST inside {@code amount} (prices are tax-inclusive), split when the order is created:
+   * taxableAmount + gstAmount == amount. Null on orders created before the split was stored; readers
+   * then split {@code amount} at the configured rate ({@code PlanGstUtils}).
+   */
+  private BigDecimal taxableAmount;
+  private BigDecimal gstAmount;
+  /** GST rate the split used, in percent. */
+  private BigDecimal gstRatePercent;
   private Integer pricingVersion;
   /** Client-chosen key; a retry with the same key and cart returns this order. */
   private String idempotencyKey;

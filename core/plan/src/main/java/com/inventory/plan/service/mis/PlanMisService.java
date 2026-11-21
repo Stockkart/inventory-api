@@ -15,7 +15,6 @@ import com.inventory.plan.domain.repository.AddOnRepository;
 import com.inventory.plan.domain.repository.PlanPaymentOrderRepository;
 import com.inventory.plan.domain.repository.ReferralRewardRepository;
 import com.inventory.plan.domain.repository.ShopCreditEntryRepository;
-import com.inventory.plan.domain.repository.ShopCreditRepository;
 import com.inventory.plan.domain.repository.VoucherRedemptionRepository;
 import com.inventory.plan.rest.dto.response.PlanMisResponse;
 import com.inventory.plan.utils.constants.CampaignConstants;
@@ -40,7 +39,17 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import com.inventory.plan.domain.model.RefundSource;
+import com.inventory.plan.utils.PlanGstUtils;
+import lombok.extern.slf4j.Slf4j;
+import org.bson.Document;
+import org.bson.types.Decimal128;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.aggregation.Aggregation;
+import org.springframework.data.mongodb.core.aggregation.ArithmeticOperators;
+import org.springframework.data.mongodb.core.aggregation.ConditionalOperators;
 import org.springframework.stereotype.Service;
 
 /**
@@ -48,6 +57,7 @@ import org.springframework.stereotype.Service;
  * range's documents and totals them here, which keeps attach rate and first-order logic readable.
  */
 @Service
+@Slf4j
 public class PlanMisService {
 
   static final int DEFAULT_DAYS = 30;
@@ -72,10 +82,14 @@ public class PlanMisService {
   private ShopCreditEntryRepository creditEntryRepository;
 
   @Autowired
-  private ShopCreditRepository creditRepository;
+  private AddOnRepository addOnRepository;
 
   @Autowired
-  private AddOnRepository addOnRepository;
+  private MongoTemplate mongoTemplate;
+
+  /** GST rate inside plan prices, for orders created before they stored their own split. */
+  @Value("${plan.gst-rate-percent:18}")
+  BigDecimal gstRatePercent = new BigDecimal("18");
 
   Clock clock = Clock.systemUTC();
 
@@ -102,7 +116,7 @@ public class PlanMisService {
         .from(start)
         .to(end)
         .currency(PlanPaymentConstants.CURRENCY_INR)
-        .revenue(revenue(sold, refunded))
+        .revenue(revenue(sold, refunded, gstRatePercent))
         .planSales(planSales(sold))
         .addOns(addOns(sold))
         .ocrTopUps(ocrTopUps(sold))
@@ -110,30 +124,79 @@ public class PlanMisService {
             VoucherRedemptionStatus.REDEEMED, rangeStart, rangeEnd)))
         .referrals(referrals(rangeStart, rangeEnd, firstOrders))
         .wallet(wallet(creditEntryRepository.findByCreatedAtGreaterThanEqualAndCreatedAtLessThan(rangeStart, rangeEnd),
-            creditRepository.findAll()))
+            walletBalances()))
         .build();
   }
 
-  static PlanMisResponse.Revenue revenue(List<PlanPaymentOrder> sold, List<PlanPaymentOrder> refunded) {
+  /**
+   * Amounts include GST (plan prices are tax-inclusive); each one also comes split into taxable value
+   * and GST: an order's stored split, or for older orders its amount split at {@code ratePercent}.
+   */
+  static PlanMisResponse.Revenue revenue(List<PlanPaymentOrder> sold, List<PlanPaymentOrder> refunded,
+      BigDecimal ratePercent) {
     BigDecimal gross = sum(sold, PlanPaymentOrder::getAmount);
-    BigDecimal refundedAmount = sum(refunded, PlanMisService::refundValue);
+    BigDecimal grossTaxable = BigDecimal.ZERO;
+    BigDecimal grossGst = BigDecimal.ZERO;
+    for (PlanPaymentOrder order : sold) {
+      PlanGstUtils.GstSplit split = splitOf(order, ratePercent);
+      grossTaxable = grossTaxable.add(split.taxable());
+      grossGst = grossGst.add(split.gst());
+    }
+    BigDecimal refundedAmount = BigDecimal.ZERO;
+    BigDecimal refundedTaxable = BigDecimal.ZERO;
+    BigDecimal refundedGst = BigDecimal.ZERO;
+    for (PlanPaymentOrder order : refunded) {
+      BigDecimal value = refundValue(order);
+      PlanGstUtils.GstSplit split = PlanGstUtils.splitInclusive(value, rateOf(order, ratePercent));
+      refundedAmount = refundedAmount.add(value);
+      refundedTaxable = refundedTaxable.add(split.taxable());
+      refundedGst = refundedGst.add(split.gst());
+    }
     return PlanMisResponse.Revenue.builder()
         .paidOrders(sold.size())
         .grossRevenue(gross)
+        .grossTaxable(grossTaxable)
+        .grossGst(grossGst)
         .discounts(sum(sold, PlanPaymentOrder::getDiscountTotal))
         .walletCreditApplied(sum(sold, PlanPaymentOrder::getWalletCredit))
         .refundedOrders(refunded.size())
         .refundedAmount(refundedAmount)
+        .refundedTaxable(refundedTaxable)
+        .refundedGst(refundedGst)
         .netRevenue(gross.subtract(refundedAmount))
+        .netTaxable(grossTaxable.subtract(refundedTaxable))
+        .netGst(grossGst.subtract(refundedGst))
         .build();
   }
 
-  /** An admin refund made outside the gateway records no refundedAmount; a full refund is the whole charge. */
+  /** The order's stored split, else its amount split at the order's or the configured rate. */
+  static PlanGstUtils.GstSplit splitOf(PlanPaymentOrder order, BigDecimal ratePercent) {
+    if (order.getTaxableAmount() != null && order.getGstAmount() != null) {
+      return new PlanGstUtils.GstSplit(order.getTaxableAmount(), order.getGstAmount());
+    }
+    return PlanGstUtils.splitInclusive(order.getAmount(), rateOf(order, ratePercent));
+  }
+
+  private static BigDecimal rateOf(PlanPaymentOrder order, BigDecimal ratePercent) {
+    return order.getGstRatePercent() != null ? order.getGstRatePercent() : ratePercent;
+  }
+
+  /**
+   * What a refund gave back. Gateway refunds are counted into refundedAmount as they arrive. An admin
+   * refund or a lost chargeback is a full refund of the order, so it counts the whole amount when
+   * nothing was counted. Anything else without a counted amount (e.g. an older row with no refund
+   * source) counts 0 and is logged, rather than assuming a full refund.
+   */
   static BigDecimal refundValue(PlanPaymentOrder order) {
     if (order.getRefundedAmount() != null && order.getRefundedAmount().signum() > 0) {
       return order.getRefundedAmount();
     }
-    return order.getAmount();
+    if (order.getRefundSource() == RefundSource.ADMIN || order.getRefundSource() == RefundSource.GATEWAY_DISPUTE) {
+      return orZero(order.getAmount());
+    }
+    log.warn("Refunded order {} has no refunded amount (source {}); counted as 0 in the plan MIS",
+        order.getId(), order.getRefundSource());
+    return BigDecimal.ZERO;
   }
 
   static List<PlanMisResponse.PlanSales> planSales(List<PlanPaymentOrder> sold) {
@@ -187,18 +250,26 @@ public class PlanMisService {
         .build();
   }
 
+  /**
+   * Credits are counted as priced on each order line (its grantsQuantity); only lines priced before the
+   * line kept that number fall back to today's catalogue.
+   */
   PlanMisResponse.OcrTopUps ocrTopUps(List<PlanPaymentOrder> sold) {
     List<OrderLine> topUps = sold.stream()
         .flatMap(order -> lines(order, PricingConstants.ITEM_TYPE_OCR_TOPUP).stream())
         .toList();
-    Map<String, Integer> creditsPerUnit = topUps.isEmpty() ? Map.of()
-        : addOnRepository.findByCodeIn(topUps.stream().map(OrderLine::getCode).collect(Collectors.toSet())).stream()
+    Set<String> unpriced = topUps.stream().filter(l -> l.getGrantsQuantity() == null)
+        .map(OrderLine::getCode).collect(Collectors.toSet());
+    Map<String, Integer> catalogue = unpriced.isEmpty() ? Map.of()
+        : addOnRepository.findByCodeIn(unpriced).stream()
             .filter(a -> a.getGrantsQuantity() != null)
             .collect(Collectors.toMap(AddOn::getCode, AddOn::getGrantsQuantity, (a, b) -> a));
+    Function<OrderLine, Integer> creditsPerUnit = l -> l.getGrantsQuantity() != null
+        ? l.getGrantsQuantity() : catalogue.getOrDefault(l.getCode(), 0);
     return PlanMisResponse.OcrTopUps.builder()
         .orders(sold.stream().filter(o -> !lines(o, PricingConstants.ITEM_TYPE_OCR_TOPUP).isEmpty()).count())
         .units(topUps.stream().mapToLong(OrderLine::getQuantity).sum())
-        .credits(topUps.stream().mapToLong(l -> (long) l.getQuantity() * creditsPerUnit.getOrDefault(l.getCode(), 0)).sum())
+        .credits(topUps.stream().mapToLong(l -> (long) l.getQuantity() * creditsPerUnit.apply(l)).sum())
         .revenue(sum(topUps, OrderLine::getLineTotal))
         .build();
   }
@@ -260,7 +331,28 @@ public class PlanMisService {
         .toList();
   }
 
-  static PlanMisResponse.Wallet wallet(List<ShopCreditEntry> entries, List<ShopCredit> wallets) {
+  /** Current totals across all wallets, summed in the database: liability (available + reserved) and clawback. */
+  WalletTotals walletBalances() {
+    Aggregation totals = Aggregation.newAggregation(
+        Aggregation.group()
+            .sum(ArithmeticOperators.Add.valueOf(ConditionalOperators.ifNull("availableBalance").then(0))
+                .add(ConditionalOperators.ifNull("reservedBalance").then(0))).as("liability")
+            .sum(ConditionalOperators.ifNull("outstandingClawback").then(0)).as("clawback"));
+    Document row = mongoTemplate.aggregate(totals, ShopCredit.class, Document.class).getUniqueMappedResult();
+    return row == null ? new WalletTotals(BigDecimal.ZERO, BigDecimal.ZERO)
+        : new WalletTotals(decimal(row.get("liability")), decimal(row.get("clawback")));
+  }
+
+  record WalletTotals(BigDecimal liability, BigDecimal clawback) {}
+
+  private static BigDecimal decimal(Object value) {
+    if (value instanceof Decimal128 d) {
+      return d.bigDecimalValue();
+    }
+    return value instanceof Number n ? new BigDecimal(n.toString()) : BigDecimal.ZERO;
+  }
+
+  static PlanMisResponse.Wallet wallet(List<ShopCreditEntry> entries, WalletTotals wallets) {
     Map<ShopCreditSource, List<ShopCreditEntry>> bySource = entries.stream()
         .filter(e -> e.getSource() != null)
         .collect(Collectors.groupingBy(ShopCreditEntry::getSource));
@@ -275,8 +367,8 @@ public class PlanMisService {
         .refundedToWallet(total.apply(ShopCreditSource.ORDER_REFUND))
         .clawedBack(total.apply(ShopCreditSource.CLAWBACK))
         .manualAdjustmentsNet(manualNet)
-        .outstandingLiability(sum(wallets, w -> orZero(w.getAvailableBalance()).add(orZero(w.getReservedBalance()))))
-        .unrecoveredClawback(sum(wallets, ShopCredit::getOutstandingClawback))
+        .outstandingLiability(wallets.liability())
+        .unrecoveredClawback(wallets.clawback())
         .build();
   }
 
