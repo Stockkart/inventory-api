@@ -30,4 +30,6 @@ public class PlanResponse {
   private Integer ocrLimit;
   private Set<PlanFeature> features;
   private String badge;
+  /** Length of the free trial a new shop gets, in days ({@code plan.trial-days}). */
+  private Integer trialDays;
 }
