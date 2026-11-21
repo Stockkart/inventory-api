@@ -2,6 +2,8 @@ package com.inventory.plan.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.inventory.plan.domain.model.CampaignState;
@@ -158,5 +160,20 @@ class CampaignServiceTest {
     when(saleCampaignRepository.findByEndsAtAfter(any())).thenReturn(List.of(monsoon().build()));
 
     assertThat(campaignService.findActive()).isEmpty();
+  }
+
+  @Test
+  void keepsTheCampaignsBetweenCallsUntilEvicted() {
+    setNow(ist(2026, 10, 12, 12, 0));
+    when(saleCampaignRepository.findByEndsAtAfter(any())).thenReturn(List.of(monsoon().build()));
+
+    campaignService.findActive();
+    campaignService.findActive();
+    verify(saleCampaignRepository, times(1)).findByEndsAtAfter(any());
+
+    campaignService.evictActive();
+    assertThat(campaignService.findActive()).get()
+        .extracting(CampaignResponse::getState).isEqualTo(CampaignState.LIVE);
+    verify(saleCampaignRepository, times(2)).findByEndsAtAfter(any());
   }
 }

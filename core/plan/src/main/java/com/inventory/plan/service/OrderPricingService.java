@@ -24,7 +24,9 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
@@ -157,9 +159,12 @@ public class OrderPricingService {
         throw new ValidationException("Voucher " + code + " is listed more than once");
       }
     }
+    Map<String, AddOnVoucher> vouchers = voucherService.requireUsableAll(codes, shopId);
+    Map<String, AddOn> addOns = addOnCatalogue.byCode(vouchers.values().stream()
+        .map(AddOnVoucher::getAddOnCode).filter(Objects::nonNull).collect(Collectors.toSet()));
     for (String code : codes) {
-      AddOnVoucher voucher = voucherService.requireUsable(code, shopId);
-      AddOn addOn = addOnCatalogue.byCode(List.of(voucher.getAddOnCode())).get(voucher.getAddOnCode());
+      AddOnVoucher voucher = vouchers.get(code);
+      AddOn addOn = addOns.get(voucher.getAddOnCode());
       if (addOn == null || !addOn.isActive()) {
         throw notApplicable(code, "Voucher " + code + " is for an add-on that is no longer sold");
       }
