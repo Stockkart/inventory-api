@@ -181,12 +181,34 @@ class ShopSubscriptionServiceTest {
   @Test
   void aStaleGrantLeavesTheLaterTermInPlace() {
     ShopSubscription later = existing("plan-1", SubscriptionStatus.ACTIVE, FUTURE.plusSeconds(3600), "order-3");
-    when(mongoTemplate.findAndModify(any(Query.class), any(Update.class),
-        any(org.springframework.data.mongodb.core.FindAndModifyOptions.class), eq(ShopSubscription.class)))
-        .thenThrow(new org.springframework.dao.DuplicateKeyException("E11000"));
     when(repository.findById("shop-1")).thenReturn(Optional.of(later));
 
     assertThat(service.recordGrant(new ShopInfo("shop-1", "plan-1", FUTURE), "order-2")).isSameAs(later);
+    verify(mongoTemplate, never()).findAndModify(any(Query.class), any(Update.class),
+        any(org.springframework.data.mongodb.core.FindAndModifyOptions.class), eq(ShopSubscription.class));
+  }
+
+  @Test
+  void aGrantThatLosesARaceOutsideATransactionKeepsTheLaterTerm() {
+    ShopSubscription later = existing("plan-1", SubscriptionStatus.ACTIVE, FUTURE.plusSeconds(3600), "order-3");
+    when(repository.findById("shop-1")).thenReturn(Optional.empty(), Optional.of(later));
+    when(mongoTemplate.findAndModify(any(Query.class), any(Update.class),
+        any(org.springframework.data.mongodb.core.FindAndModifyOptions.class), eq(ShopSubscription.class)))
+        .thenThrow(new org.springframework.dao.DuplicateKeyException("E11000"));
+
+    assertThat(service.recordGrant(new ShopInfo("shop-1", "plan-1", FUTURE), "order-2")).isSameAs(later);
+  }
+
+  @Test
+  void aGrantOfAnotherPlanReplacesTheTerm() {
+    when(repository.findById("shop-1")).thenReturn(
+        Optional.of(existing("plan-1", SubscriptionStatus.ACTIVE, FUTURE.plusSeconds(3600), "order-3")));
+    when(mongoTemplate.findAndModify(any(Query.class), any(Update.class),
+        any(org.springframework.data.mongodb.core.FindAndModifyOptions.class), eq(ShopSubscription.class)))
+        .thenAnswer(inv -> existing("plan-2", SubscriptionStatus.ACTIVE, FUTURE, "order-4"));
+
+    assertThat(service.recordGrant(new ShopInfo("shop-1", "plan-2", FUTURE), "order-4").getPlanId())
+        .isEqualTo("plan-2");
   }
 
   @Test
