@@ -232,9 +232,16 @@ checkout both call it, and clients show the quote without recomputing it.
   A non-stackable add-on the shop already holds live cannot be bought again; seats and OCR credits
   can. The priced term's end is `termEndsAt` on the quote, checkout response and order; annual
   add-ons end then, even if the shop renews before fulfilment. OCR credits never expire, so an
-  OCR-only order always grants; an order with annual add-ons paid after `termEndsAt` grants nothing
-  and goes straight to `FULFILMENT_FAILED` for an operator refund. No referral reward, and referral
+  OCR-only order always grants; an order with annual add-ons paid after `termEndsAt`, or after the
+  paid plan ended or was refunded, grants nothing and goes straight to `FULFILMENT_FAILED` for an
+  operator refund; so does one whose non-stackable add-on the shop got from another order meanwhile. No referral reward, and referral
   approval rewards the referee's first fulfilled order that is not add-on-only.
+- Which add-ons can be bought is decided by the API (`AddOnEligibility`, the rule checkout uses):
+  `GET /api/v1/plans/addons?planCode=X` (for a cart that buys plan X) and
+  `GET /api/v1/plans/shop/addon-options` (the shop's add-on-only top-up; RBAC module paymentPlan)
+  return each add-on with `eligible` and `ineligibleReason`. Without `planCode`, `/plans/addons`
+  is the plain catalogue (`eligible` null). `GET /api/v1/plans/shop/status` carries
+  `canBuyAddOnsAlone` (an active paid plan).
 - SMS add-ons are not sold in any cart until StockKart sends SMS; via a voucher this is a
   `VOUCHER_REJECTED` (`NOT_APPLICABLE_TO_CART`).
 - `PricingConstants.PRICING_VERSION` is stored on every order; bump it when a rule changes (2 = base-price floor).

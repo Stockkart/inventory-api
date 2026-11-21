@@ -54,6 +54,7 @@ class OrderPricingServiceAddOnOnlyTest {
   @Mock private WalletService walletService;
   @Mock private EntitlementService entitlementService;
   @Mock private ShopAddOnService shopAddOnService;
+  @Mock private PlanService planService;
 
   @InjectMocks
   private OrderPricingService pricing;
@@ -314,6 +315,61 @@ class OrderPricingServiceAddOnOnlyTest {
 
     assertThatThrownBy(() -> pricing.quote("shop-1", request))
         .hasMessage(PricingConstants.MSG_ADD_ON_ONLY_NEEDS_PAID_PLAN);
+  }
+
+  private void catalogueListed() {
+    when(addOnCatalogue.activeAddOns()).thenReturn(List.of(
+        addOn("MARKETING_MODULE", "1999", AddOnGrantType.FEATURE, PlanFeature.MARKETING, false),
+        addOn("ACCOUNTING", "999", AddOnGrantType.FEATURE, PlanFeature.ACCOUNTING, false),
+        addOn("OCR_TOPUP_500", "199", AddOnGrantType.OCR_CREDITS, null, true),
+        addOn("SMS_PACK", "700", AddOnGrantType.SMS, null, true)));
+    when(addOnCatalogue.toOption(any(AddOn.class), any())).thenAnswer(inv -> {
+      AddOn addOn = inv.getArgument(0);
+      Optional<String> reason = inv.getArgument(1);
+      com.inventory.plan.rest.dto.response.AddOnResponse r = new com.inventory.plan.rest.dto.response.AddOnResponse();
+      r.setCode(addOn.getCode());
+      r.setEligible(reason.isEmpty());
+      r.setIneligibleReason(reason.orElse(null));
+      return r;
+    });
+  }
+
+  @Test
+  void topUpOptionsUseTheCheckoutRules() {
+    onPaidPlan();
+    catalogueListed();
+    when(shopAddOnService.live(eq("shop-1"), any())).thenReturn(List.of(held("MARKETING_MODULE", AddOnGrantType.FEATURE)));
+
+    var options = pricing.addOnOptionsForShop("shop-1");
+
+    assertThat(options).extracting(o -> o.getCode() + "=" + o.getEligible()).containsExactly(
+        "MARKETING_MODULE=false", "ACCOUNTING=false", "OCR_TOPUP_500=true", "SMS_PACK=false");
+    assertThat(options.get(0).getIneligibleReason()).isEqualTo("You already have MARKETING_MODULE");
+    assertThat(options.get(1).getIneligibleReason()).isEqualTo("Professional already includes ACCOUNTING");
+    assertThat(options.get(3).getIneligibleReason()).isEqualTo(PricingConstants.MSG_SMS_COMING_SOON);
+  }
+
+  @Test
+  void withoutAPaidPlanNoAddOnCanBeBoughtAlone() {
+    catalogueListed();
+    when(entitlementService.paidTerm("shop-1")).thenReturn(Optional.empty());
+
+    assertThat(pricing.addOnOptionsForShop("shop-1")).allSatisfy(o -> {
+      assertThat(o.getEligible()).isFalse();
+      assertThat(o.getIneligibleReason()).isEqualTo(PricingConstants.MSG_ADD_ON_ONLY_NEEDS_PAID_PLAN);
+    });
+  }
+
+  @Test
+  void planCartOptionsIgnoreWhatTheShopHolds() {
+    catalogueListed();
+    when(planRepository.findByCode("PROFESSIONAL")).thenReturn(Optional.of(pro));
+
+    var options = pricing.addOnOptionsForPlan(" professional ");
+
+    assertThat(options).extracting(o -> o.getCode() + "=" + o.getEligible()).containsExactly(
+        "MARKETING_MODULE=true", "ACCOUNTING=false", "OCR_TOPUP_500=true", "SMS_PACK=false");
+    verify(shopAddOnService, never()).live(any(), any());
   }
 
   private static ShopAddOn held(String code, AddOnGrantType type) {

@@ -29,11 +29,23 @@ public class AddOnCatalogueService {
 
   /** Add-ons on sale, in display order. */
   public List<AddOnResponse> listActive() {
+    return activeAddOns().stream().map(addOnMapper::toResponse).toList();
+  }
+
+  /** Catalogue rows on sale, in display order. */
+  public List<AddOn> activeAddOns() {
     return addOnRepository.findAll().stream()
         .filter(AddOn::isActive)
         .sorted(DISPLAY_ORDER)
-        .map(addOnMapper::toResponse)
         .toList();
+  }
+
+  /** The catalogue row as the apps see it, with whether it can be bought ({@code reason} empty = yes). */
+  public AddOnResponse toOption(AddOn addOn, java.util.Optional<String> reason) {
+    AddOnResponse response = addOnMapper.toResponse(addOn);
+    response.setEligible(reason.isEmpty());
+    response.setIneligibleReason(reason.orElse(null));
+    return response;
   }
 
   /** Catalogue rows for the given codes, hidden ones included, keyed by code. */

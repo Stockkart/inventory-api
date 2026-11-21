@@ -316,6 +316,7 @@ public class PlanService {
         limits,
         userLimitReached);
     status.setTrialDays(trialDays);
+    status.setCanBuyAddOnsAlone(entitlementService.paidTerm(shopId).isPresent());
     return status;
   }
 
