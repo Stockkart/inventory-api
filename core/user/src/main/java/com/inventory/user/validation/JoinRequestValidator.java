@@ -2,6 +2,7 @@ package com.inventory.user.validation;
 
 import com.inventory.common.exception.ValidationException;
 import com.inventory.user.domain.model.JoinRequestStatus;
+import com.inventory.user.domain.model.UserAccount;
 import com.inventory.user.domain.model.UserRole;
 import com.inventory.user.rest.dto.request.AcceptRejectJoinRequestRequest;
 import com.inventory.user.rest.dto.request.SendJoinRequestRequest;
@@ -65,8 +66,15 @@ public class JoinRequestValidator {
     }
   }
 
+  /** Stockkart staff (SUPER_USER) accounts are never shop people, so they cannot ask to join one. */
+  public void validateRequesterCanJoinShop(UserAccount requester) {
+    if (requester != null && requester.getRole() != null && requester.getRole().isPlatformRole()) {
+      throw new ValidationException("Stockkart staff accounts cannot join a shop");
+    }
+  }
+
   private boolean isValidRole(UserRole role) {
-    // OWNER cannot be requested via join request
+    // OWNER cannot be requested via join request; SUPER_USER is not a shop role at all
     return role == UserRole.ADMIN || role == UserRole.MANAGER || role == UserRole.CASHIER;
   }
 }

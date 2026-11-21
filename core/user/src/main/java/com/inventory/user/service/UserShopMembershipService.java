@@ -11,6 +11,8 @@ import com.inventory.user.domain.model.UserShopMembership;
 import com.inventory.user.domain.repository.InvitationRepository;
 import com.inventory.user.domain.repository.UserAccountRepository;
 import com.inventory.user.domain.repository.UserShopMembershipRepository;
+import com.inventory.user.rest.dto.response.LoginContactDto;
+import com.inventory.user.rest.dto.response.ShopMemberSummaryDto;
 import com.inventory.user.rest.dto.response.UserShopDto;
 import com.inventory.user.rest.dto.response.UserShopListResponse;
 import com.inventory.user.mapper.UserShopMembershipMapper;
@@ -25,7 +27,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 @Slf4j
 @Service
@@ -56,42 +61,64 @@ public class UserShopMembershipService {
   @Autowired
   private MetricsWrapper metrics;
 
+  @Autowired(required = false)
+  private AuthCache authCache;
+
   /**
    * Check if user has access to a shop. Backward compatible: returns true if user has
    * membership OR if user.shopId matches (legacy users not yet in memberships).
+   * A SUPER_USER (Stockkart staff) account never has shop access, so AuthenticationInterceptor
+   * never accepts an X-Shop-Id header for staff.
    */
   @Transactional(readOnly = true)
   public boolean hasAccess(String userId, String shopId) {
     if (userId == null || shopId == null) {
       return false;
     }
-    if (membershipRepository.existsByUserIdAndShopIdAndActiveTrue(userId, shopId)) {
-      return true;
+    // asked on every request (X-Shop-Id); remembered ≤ auth.cache.ttl-seconds, evicted on change
+    Boolean cached = authCache != null ? authCache.getShopAccess(userId, shopId) : null;
+    if (cached != null) {
+      return cached;
     }
-    // Backward compatibility: check UserAccount.shopId
-    return userAccountRepository.findById(userId)
-        .map(u -> shopId.equals(u.getShopId()))
-        .orElse(false);
+    Optional<UserAccount> account = userAccountRepository.findById(userId);
+    boolean allowed = !isPlatformAccount(account)
+        && (membershipRepository.existsByUserIdAndShopIdAndActiveTrue(userId, shopId)
+            // Backward compatibility: check UserAccount.shopId
+            || account.map(u -> shopId.equals(u.getShopId())).orElse(false));
+    if (authCache != null) {
+      authCache.putShopAccess(userId, shopId, allowed);
+    }
+    return allowed;
   }
 
   /**
    * Check if user has owner access (can send invitations, manage users) for a shop.
    * Owner = has membership with relationship OWNER, or legacy: user.shopId equals shopId
    * and user is not an invited user (no accepted invitation for this shop - we infer from membership).
+   * A SUPER_USER account is never a shop owner.
    */
   @Transactional(readOnly = true)
   public boolean hasOwnerAccess(String userId, String shopId) {
     if (userId == null || shopId == null) {
       return false;
     }
+    Optional<UserAccount> account = userAccountRepository.findById(userId);
+    if (isPlatformAccount(account)) {
+      return false;
+    }
     return membershipRepository.findByUserIdAndShopIdAndActiveTrue(userId, shopId)
         .map(m -> RELATIONSHIP_OWNER.equals(m.getRelationship()))
         .orElseGet(() -> {
           // Legacy: user.shopId equals shopId implies owner (pre-membership behavior)
-          return userAccountRepository.findById(userId)
+          return account
               .map(u -> shopId.equals(u.getShopId()))
               .orElse(false);
         });
+  }
+
+  /** Stockkart staff (SUPER_USER): platform-level, never a member of any shop. */
+  private static boolean isPlatformAccount(Optional<UserAccount> account) {
+    return account.map(u -> u.getRole() != null && u.getRole().isPlatformRole()).orElse(false);
   }
 
   /**
@@ -140,6 +167,8 @@ public class UserShopMembershipService {
    * Add a membership for a user to a shop. Used when registering a shop or accepting an invitation.
    */
   public UserShopMembership addMembership(String userId, String shopId, UserRole role, String relationship) {
+    // SUPER_USER accounts (Stockkart staff) and the SUPER_USER role never enter a shop (A3)
+    userValidator.validateCanJoinShop(userAccountRepository.findById(userId).orElse(null), role);
     if (membershipRepository.existsByUserIdAndShopIdAndActiveTrue(userId, shopId)) {
       log.debug("User {} already has active membership for shop {}", userId, shopId);
       return membershipRepository.findByUserIdAndShopIdAndActiveTrue(userId, shopId).orElseThrow();
@@ -176,6 +205,74 @@ public class UserShopMembershipService {
   @Transactional(readOnly = true)
   public int getUserCountForShop(String shopId) {
     return membershipRepository.findByShopIdAndActiveTrue(shopId).size();
+  }
+
+  /**
+   * Active logins of a shop with their name and role, for linking an HR employee to a login. Two
+   * reads (memberships, then accounts by id). Stockkart staff accounts are left out.
+   */
+  @Transactional(readOnly = true)
+  public List<ShopMemberSummaryDto> listActiveMembers(String shopId) {
+    if (shopId == null) {
+      return List.of();
+    }
+    List<UserShopMembership> memberships = membershipRepository.findByShopIdAndActiveTrue(shopId);
+    Map<String, UserAccount> accounts = new HashMap<>();
+    userAccountRepository
+        .findAllById(memberships.stream().map(UserShopMembership::getUserId).toList())
+        .forEach(a -> accounts.put(a.getUserId(), a));
+    List<ShopMemberSummaryDto> members = new ArrayList<>();
+    for (UserShopMembership m : memberships) {
+      UserAccount account = accounts.get(m.getUserId());
+      if (account == null || isPlatformAccount(Optional.of(account))) {
+        continue;
+      }
+      UserRole role = m.getRole() != null ? m.getRole() : account.getRole();
+      members.add(new ShopMemberSummaryDto(
+          m.getUserId(),
+          account.getName(),
+          role != null ? role.name() : null,
+          m.getRelationship() != null ? m.getRelationship() : RELATIONSHIP_INVITED));
+    }
+    return members;
+  }
+
+  /**
+   * Display names of logins by user id, one read (HR shows who marked or changed a record).
+   * Unknown ids are left out; null or empty input reads nothing.
+   */
+  @Transactional(readOnly = true)
+  public Map<String, String> namesOf(java.util.Collection<String> userIds) {
+    if (userIds == null || userIds.isEmpty()) {
+      return Map.of();
+    }
+    Map<String, String> names = new HashMap<>();
+    userAccountRepository.findAllById(new java.util.LinkedHashSet<>(userIds)).forEach(a -> {
+      if (a.getUserId() != null && a.getName() != null) {
+        names.put(a.getUserId(), a.getName());
+      }
+    });
+    return names;
+  }
+
+  /**
+   * Name, email and phone of logins by user id, one read (HR prefills a new employee from a
+   * login). Sibling of {@link #namesOf}: unknown ids are left out; null or empty input reads
+   * nothing. The values are PII, so callers return them only to users allowed to see them.
+   */
+  @Transactional(readOnly = true)
+  public Map<String, LoginContactDto> contactsOf(java.util.Collection<String> userIds) {
+    if (userIds == null || userIds.isEmpty()) {
+      return Map.of();
+    }
+    Map<String, LoginContactDto> contacts = new HashMap<>();
+    userAccountRepository.findAllById(new java.util.LinkedHashSet<>(userIds)).forEach(a -> {
+      if (a.getUserId() != null) {
+        contacts.put(a.getUserId(),
+            new LoginContactDto(a.getUserId(), a.getName(), a.getEmail(), a.getPhone()));
+      }
+    });
+    return contacts;
   }
 
   /**

@@ -37,8 +37,8 @@ public class ShopServiceAdapterImpl implements ShopServiceAdapter {
   }
 
   @Override
-  public ShopTaxInfo getShopTaxInfo(String shopId) {
-    return shopService.getShopTaxInfo(shopId);
+  public ShopSummary getShopSummary(String shopId) {
+    return shopService.getShopSummary(shopId);
   }
 }
 

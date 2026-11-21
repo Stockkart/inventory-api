@@ -1,0 +1,180 @@
+# PR → production: adding the label `deploy:production` to a pull request promotes
+# its head commit to production through the approval gate (environment
+# production-manual). Preconditions: same-repo PR, image already built, and
+# staging currently serving that exact sha (so staging cannot be skipped).
+# The label is removed when the run finishes so it never re-fires on pushes.
+name: PR → production
+
+on:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  guard:
+    name: Check label and origin
+    runs-on: ubuntu-latest
+    if: github.event.label.name == 'deploy:production'
+    outputs:
+      allowed: ${{ steps.check.outputs.allowed }}
+    steps:
+      - name: Refuse pull requests from forks
+        id: check
+        env:
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          THIS_REPO: ${{ github.repository }}
+        run: |
+          if [[ "$HEAD_REPO" != "$THIS_REPO" ]]; then
+            echo "allowed=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::fork PR — production promote refused"
+          else
+            echo "allowed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  preflight:
+    name: Image built and live on staging
+    needs: guard
+    if: needs.guard.outputs.allowed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Reads the staging URL; staging has no reviewers so this does not wait.
+    environment: staging
+    env:
+      SHA: ${{ github.event.pull_request.head.sha }}
+      IMAGE_REPOSITORY: ${{ vars.IMAGE_REPOSITORY || 'docker.io/myntrack/inventory-backend' }}
+      STAGING_API_URL: ${{ vars.STAGING_API_URL }}
+    steps:
+      - name: Log in to Docker Hub
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Image for this commit must exist
+        run: |
+          image="${IMAGE_REPOSITORY}:${SHA}"
+          docker manifest inspect "$image" >/dev/null 2>&1 \
+            || { echo "::error::no image '$image' — add the deploy:staging label first so the commit gets built and tested on staging."; exit 1; }
+          echo "found $image"
+
+      - name: Staging must be serving this commit
+        run: |
+          live="$(curl -fsS --max-time 20 "${STAGING_API_URL%/}/commit.txt" | tr -d '[:space:]' || true)"
+          if [[ "$live" != "$SHA" ]]; then
+            echo "::error::staging serves '${live:-<unreachable>}', not '${SHA}'. Deploy this commit to staging first (label deploy:staging) and test it there."
+            exit 1
+          fi
+          echo "staging is on $SHA"
+
+      - name: Summary for the approver
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          {
+            echo "## Promote PR #${{ github.event.pull_request.number }} to production — awaiting approval"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| PR | #${{ github.event.pull_request.number }} — ${PR_TITLE} |"
+            echo "| Requested by | @${{ github.actor }} (added label) |"
+            echo "| Commit | [\`${SHA:0:12}\`](${{ github.server_url }}/${{ github.repository }}/commit/${SHA}) |"
+            echo "| Image | \`${IMAGE_REPOSITORY}:${SHA}\` |"
+            echo "| Staging | serving this commit ✔ |"
+            echo
+            echo "A reviewer of the \`production-manual\` environment must approve the next job."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  request-approval:
+    name: Ask for approval on the PR
+    needs: preflight
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comment with a direct link to the review button
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        env:
+          SHA: ${{ github.event.pull_request.head.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        with:
+          script: |
+            const { SHA, RUN_URL } = process.env;
+            const { owner, repo } = context.repo;
+            const body = [
+              '<!-- production-approval -->',
+              `### 🟡 Production deploy of \`${SHA.slice(0, 12)}\` is waiting for approval`,
+              '',
+              `Staging is serving this commit. A reviewer of the \`production-manual\` environment must approve:`,
+              '',
+              `➡️ **[Review deployments](${RUN_URL})** (button at the top of the run page)`,
+              '',
+              `Requested by @${context.actor} by adding the \`deploy:production\` label.`,
+            ].join('\n');
+            await github.rest.issues.createComment({ owner, repo, issue_number: context.payload.pull_request.number, body });
+
+  deploy-production:
+    name: Production (approval required)
+    needs: preflight
+    uses: ./.github/workflows/_deploy-production.yml
+    with:
+      sha: ${{ github.event.pull_request.head.sha }}
+      environment: production-manual
+      reason: "PR #${{ github.event.pull_request.number }} promoted by @${{ github.actor }}: ${{ github.event.pull_request.title }}"
+    secrets: inherit
+
+  finish:
+    name: Remove label and comment
+    needs: [preflight, deploy-production]
+    if: always() && needs.preflight.result != 'skipped'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove label, post result
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        env:
+          SHA: ${{ github.event.pull_request.head.sha }}
+          PREFLIGHT: ${{ needs.preflight.result }}
+          DEPLOY: ${{ needs.deploy-production.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        with:
+          script: |
+            const { SHA, PREFLIGHT, DEPLOY, RUN_URL } = process.env;
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+
+            try {
+              await github.rest.issues.removeLabel({ owner, repo, issue_number, name: 'deploy:production' });
+            } catch (e) {
+              if (e.status !== 404) throw e;
+            }
+
+            let headline, note;
+            if (PREFLIGHT !== 'success') {
+              headline = '🔴 Production promote refused';
+              note = 'Preconditions failed (image missing or staging not serving this commit). See the run for details.';
+            } else if (DEPLOY === 'success') {
+              headline = '🟢 Production now runs this PR';
+              note = 'Production is running an unmerged commit. Merge this PR soon: any other merge to `main` would replace it.';
+            } else if (DEPLOY === 'cancelled') {
+              headline = '⚪ Production promote rejected or cancelled';
+              note = 'No change to production.';
+            } else {
+              headline = '🔴 Production promote failed';
+              note = 'See the run logs; the summary names the previous sha for a rollback.';
+            }
+
+            const body = [
+              '<!-- production-promote -->',
+              `### ${headline}`,
+              '',
+              `| | |`,
+              `|---|---|`,
+              `| Commit | \`${SHA.slice(0, 12)}\` |`,
+              `| Run | [logs](${RUN_URL}) |`,
+              `| When | ${new Date().toISOString().replace('T', ' ').slice(0, 16)} UTC |`,
+              '',
+              note,
+              '',
+              'Add the `deploy:production` label again to promote a newer commit.',
+            ].join('\n');
+            await github.rest.issues.createComment({ owner, repo, issue_number, body });

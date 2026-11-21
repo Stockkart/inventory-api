@@ -1,5 +1,7 @@
 package com.inventory.user.service;
 
+import com.inventory.user.api.port.SeatLimitGuard;
+
 import com.inventory.common.exception.EntitlementException;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
@@ -108,6 +110,7 @@ public class JoinRequestService {
       // Verify user exists
       UserAccount user = userAccountRepository.findById(userId)
           .orElseThrow(() -> new ResourceNotFoundException("User", "userId", userId));
+      joinRequestValidator.validateRequesterCanJoinShop(user);
 
       // Find owner by email
       String ownerEmail = request.getOwnerEmail().toLowerCase().trim();
@@ -266,6 +269,8 @@ public class JoinRequestService {
     // Find the user who requested to join
     UserAccount user = userAccountRepository.findById(joinRequest.getUserId())
         .orElseThrow(() -> new ResourceNotFoundException("User", "userId", joinRequest.getUserId()));
+    // e.g. a request sent before the account was made SUPER_USER (staff never join shops)
+    joinRequestValidator.validateRequesterCanJoinShop(user);
 
     // Verify user doesn't already have access to this shop (multi-shop)
     if (membershipService != null && membershipService.hasAccess(user.getUserId(), shopId)) {
