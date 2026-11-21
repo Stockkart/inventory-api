@@ -299,6 +299,8 @@ Settlement is guarded: if the bill changed after its total was computed, the wri
 
 **Shop state is required for GSTR-1 and GSTR-2.** The shop's state comes from its GSTIN, else the state on its address. Without either, `GET /taxation/gstr1` and `GET /taxation/gstr2` (and their downloads) return **422** with error code **7000 `GST_CONFIGURATION_MISSING`**, because an interstate supply (IGST) cannot be told from a local one (CGST + SGST). GSTR-1 previously wrote an empty place of supply instead. Set the shop's GSTIN or address state, then generate the return again.
 
+**Return months and dates are Indian time.** GSTR-1, GSTR-2 and GSTR-3B take a month as midnight to midnight in Asia/Kolkata and date every document by its Indian date (`GstPeriods` in `core/taxation/utils`), whatever zone the server runs in. They used the JVM default zone, so on a UTC server a bill made between 00:00 and 05:30 IST on the first of a month went into the previous month, dated the previous day.
+
 **Which sales and notes a GSTR-1 period holds.** A sale belongs to the month of its `soldAt`; `updatedAt` counts only for a legacy sale with no `soldAt`. (Before, any sale edited, paid or renumbered in a later month was filed again in that month.) A credit note belongs to the month it was raised (`createdAt`), whatever month its sale was in. Each note is split per rate from its lines (each line's refund amount, tax backed out at the sale's rate, the same reading the sale gets) and taken off the tables its sale went into:
 
 | Buyer of the sale | Note reported on | Also taken off |

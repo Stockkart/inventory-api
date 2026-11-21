@@ -226,4 +226,24 @@ class Gstr1DataAggregatorCreditNoteTest {
     assertEquals("CN-00006", notes.getSrNoTo());
     assertEquals(2, notes.getTotalNumber());
   }
+
+  @Test
+  void theReturnAsksForTheIndianMonthAndDatesBillsInIndianTime() {
+    java.util.TimeZone serverZone = java.util.TimeZone.getDefault();
+    java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("UTC"));
+    try {
+      Purchase sale = sale("T001337", "10BAHPK9801K1ZS", true,
+          soldLine("inv-a", "30049011", "2.5", "105.00"));
+      sale.setSoldAt(Instant.parse("2026-09-30T19:00:00Z")); // 00:30 IST on 1 October
+
+      Gstr1ReportContext ctx = aggregator.buildContext("s1", "2026-10");
+
+      org.mockito.Mockito.verify(purchaseRepository).findCompletedPurchasesInPeriod(
+          eq("s1"), any(), eq(Instant.parse("2026-09-30T18:30:00Z")),
+          eq(Instant.parse("2026-10-31T18:30:00Z")));
+      assertEquals(java.time.LocalDate.of(2026, 10, 1), ctx.getB2bLines().get(0).getInvoiceDate());
+    } finally {
+      java.util.TimeZone.setDefault(serverZone);
+    }
+  }
 }

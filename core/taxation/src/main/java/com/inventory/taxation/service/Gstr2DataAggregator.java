@@ -24,6 +24,7 @@ import com.inventory.user.domain.model.Vendor;
 import com.inventory.user.domain.repository.VendorRepository;
 import com.inventory.pricing.api.PricingView;
 import com.inventory.pricing.api.PricingLookup;
+import com.inventory.taxation.utils.GstPeriods;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -78,13 +79,12 @@ public class Gstr2DataAggregator {
       throw new IllegalArgumentException("Invalid period, use YYYY-MM: " + period);
     }
 
-    Instant rangeStart = LocalDate.of(year, month, 1).atStartOfDay(ZoneId.systemDefault()).toInstant();
+    Instant rangeStart = GstPeriods.monthStart(year, month);
     // Exclusive: the first instant of the next month is not part of this one.
     // It used to be that instant less a nanosecond, which a BSON date cannot
     // hold -- it truncates to the millisecond and the comparison then dropped
     // the last millisecond of the month as well.
-    Instant rangeEnd = LocalDate.of(year, month, 1).plusMonths(1)
-        .atStartOfDay(ZoneId.systemDefault()).toInstant();
+    Instant rangeEnd = GstPeriods.monthEnd(year, month);
 
     List<VendorPurchaseReturn> vendorReturns =
         vendorPurchaseReturnRepository.findByShopIdAndCreatedAtInPeriod(
@@ -242,7 +242,7 @@ public class Gstr2DataAggregator {
 
         if (invDate == null) {
           Instant ts = inv.getReceivedDate() != null ? inv.getReceivedDate() : inv.getCreatedAt();
-          invDate = ts != null ? LocalDateTime.ofInstant(ts, ZoneId.systemDefault()).toLocalDate() : LocalDate.now();
+          invDate = ts != null ? GstPeriods.dateOf(ts) : LocalDate.now(GstPeriods.ZONE);
         }
 
         String hsn = inv.getHsn() != null && !inv.getHsn().isBlank() ? inv.getHsn() : "0";
@@ -276,7 +276,7 @@ public class Gstr2DataAggregator {
       }
 
       String invoiceNo = resolveGstrPurchaseInvoiceDisplayNo(first, purchaseInvoiceById);
-      if (invDate == null) invDate = LocalDate.now();
+      if (invDate == null) invDate = LocalDate.now(GstPeriods.ZONE);
 
       if (isRegistered) {
         Gstr2B2bLine line = Gstr2B2bLine.builder()
@@ -477,8 +477,8 @@ public class Gstr2DataAggregator {
       if (supplierName == null) supplierName = "Unknown";
 
       LocalDate invoiceDate = invoice.getInvoiceDate() != null
-          ? LocalDateTime.ofInstant(invoice.getInvoiceDate(), ZoneId.systemDefault()).toLocalDate()
-          : LocalDate.now();
+          ? GstPeriods.dateOf(invoice.getInvoiceDate())
+          : LocalDate.now(GstPeriods.ZONE);
       // The invoice says where its goods came from, decided at stock-in; older invoices are placed
       // now by the same rule, so the return and the ledger read one answer.
       boolean interstate = invoice.getInterstate() != null
@@ -774,16 +774,16 @@ public class Gstr2DataAggregator {
 
       LocalDate noteDate =
           vr.getCreatedAt() != null
-              ? LocalDateTime.ofInstant(vr.getCreatedAt(), ZoneId.systemDefault()).toLocalDate()
-              : LocalDate.now();
+              ? GstPeriods.dateOf(vr.getCreatedAt())
+              : LocalDate.now(GstPeriods.ZONE);
       LocalDate origInvDate = null;
       if (inv.getInvoiceDate() != null) {
-        origInvDate = LocalDateTime.ofInstant(inv.getInvoiceDate(), ZoneId.systemDefault()).toLocalDate();
+        origInvDate = GstPeriods.dateOf(inv.getInvoiceDate());
       } else if (inv.getCreatedAt() != null) {
-        origInvDate = LocalDateTime.ofInstant(inv.getCreatedAt(), ZoneId.systemDefault()).toLocalDate();
+        origInvDate = GstPeriods.dateOf(inv.getCreatedAt());
       }
       if (origInvDate == null) {
-        origInvDate = LocalDate.now();
+        origInvDate = LocalDate.now(GstPeriods.ZONE);
       }
       String noteNumber =
           StringUtils.hasText(vr.getSupplierCreditNoteNo())
