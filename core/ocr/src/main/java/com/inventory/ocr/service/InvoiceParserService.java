@@ -1,7 +1,8 @@
 package com.inventory.ocr.service;
 
-import com.inventory.ocr.dto.ParsedInventoryItem;
-import com.inventory.ocr.prompt.InvoicePricingLayout;
+import com.inventory.ocr.api.InvoiceParser;
+import com.inventory.ocr.api.InvoicePricingLayout;
+import com.inventory.ocr.api.ParsedInvoiceItem;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -14,12 +15,12 @@ import java.util.List;
  */
 @Service
 @Slf4j
-public class InvoiceParserService {
+public class InvoiceParserService implements InvoiceParser {
 
   @Autowired
   private OcrService ocrService;
 
-  public List<ParsedInventoryItem> parseInvoiceImage(byte[] imageBytes) {
+  public List<ParsedInvoiceItem> parseInvoiceImage(byte[] imageBytes) {
     return parseInvoiceImage(imageBytes, InvoicePricingLayout.WHOLESALER);
   }
 
@@ -30,11 +31,12 @@ public class InvoiceParserService {
    * @param layout which price columns the model should read
    * @return list of parsed inventory items
    */
-  public List<ParsedInventoryItem> parseInvoiceImage(byte[] imageBytes, InvoicePricingLayout layout) {
+  @Override
+  public List<ParsedInvoiceItem> parseInvoiceImage(byte[] imageBytes, InvoicePricingLayout layout) {
     InvoicePricingLayout resolved = InvoicePricingLayout.orDefault(layout);
     log.info("Parsing invoice image ({} bytes) layout={}", imageBytes.length, resolved);
     try {
-      return ocrService.parseInvoice(imageBytes, resolved);
+      return ParsedItems.toApi(ocrService.parseInvoice(imageBytes, resolved));
     } catch (IOException e) {
       log.error("Error parsing invoice image: {}", e.getMessage(), e);
       throw new RuntimeException("Failed to parse invoice image: " + e.getMessage(), e);

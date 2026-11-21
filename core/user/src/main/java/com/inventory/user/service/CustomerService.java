@@ -12,6 +12,9 @@ import com.inventory.user.rest.dto.response.CustomerDto;
 import com.inventory.user.rest.dto.response.CustomerListResponse;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.common.gst.Gstin;
+import com.inventory.common.gst.GstinDirectory;
+import com.inventory.common.gst.PostalAddress;
 import com.inventory.user.utils.TextUtils;
 import com.inventory.user.validation.CustomerValidator;
 import com.inventory.metrics.MetricsWrapper;
@@ -27,8 +30,14 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.Instant;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 @Service
 @Slf4j
@@ -54,6 +63,13 @@ public class CustomerService {
 
   @Autowired
   private MetricsWrapper metrics;
+
+  /** Absent when the taxation module is not on the classpath; customers then stay unverified. */
+  @Autowired
+  private ShopPartySearch shopPartySearch;
+
+  @Autowired(required = false)
+  private GstinDirectory gstinDirectory;
 
   public CustomerDto createCustomerDto(String shopId, CreateCustomerRequest request) {
     CustomerDto dto = customerMapper.toDto(findOrCreateCustomer(shopId, request));
@@ -104,6 +120,7 @@ public class CustomerService {
 
     if (customer == null) {
       customer = customerMapper.toCustomer(request);
+      verifyGstin(customer);
       customer = customerRepository.save(customer);
       log.info("Created new customer with ID: {}", customer.getId());
     } else {
@@ -198,7 +215,7 @@ public class CustomerService {
   private Optional<Customer> findByUniqueKeys(CreateCustomerRequest request) {
     String phone = TextUtils.trimToNull(request.getPhone());
     String email = TextUtils.trimToNull(request.getEmail());
-    String gstin = TextUtils.trimToNull(request.getGstin());
+    String gstin = TextUtils.trimToNull(Gstin.normalize(request.getGstin()));
     String pan = TextUtils.trimToNull(request.getPan());
     String dlNo = TextUtils.trimToNull(request.getDlNo());
 
@@ -233,7 +250,11 @@ public class CustomerService {
   }
 
   private void updateExistingCustomerFromCreateRequest(CreateCustomerRequest request, Customer customer) {
+    String before = customer.getGstin();
     customerMapper.applyCreateRequest(request, customer);
+    if (!Objects.equals(before, customer.getGstin())) {
+      verifyGstin(customer);
+    }
     customerRepository.save(customer);
     log.info("Updated customer with ID: {}", customer.getId());
   }
@@ -252,6 +273,31 @@ public class CustomerService {
       return Optional.empty();
     }
     return customerRepository.findById(customerId.trim());
+  }
+
+  /**
+   * Customers for many ids in one query (list screens), keyed by id. Blank ids are ignored; ids with
+   * no customer are absent from the map.
+   */
+  @Transactional(readOnly = true)
+  public Map<String, Customer> getCustomersByIds(Collection<String> customerIds) {
+    if (customerIds == null || customerIds.isEmpty()) {
+      return Map.of();
+    }
+    Set<String> ids = new LinkedHashSet<>();
+    for (String id : customerIds) {
+      if (StringUtils.hasText(id)) {
+        ids.add(id.trim());
+      }
+    }
+    if (ids.isEmpty()) {
+      return Map.of();
+    }
+    Map<String, Customer> byId = new HashMap<>();
+    for (Customer c : customerRepository.findAllById(ids)) {
+      byId.put(c.getId(), c);
+    }
+    return byId;
   }
 
   @Transactional(readOnly = true)
@@ -308,29 +354,14 @@ public class CustomerService {
 
   private CustomerListResponse getCustomersByQuery(
       String shopId, int page, int limit, String query, Pageable pageable) {
-    List<String> shopCustomerIds = shopCustomerRepository.findByShopId(shopId).stream()
-        .map(ShopCustomer::getCustomerId)
-        .toList();
-    if (shopCustomerIds.isEmpty()) {
+    // matched, ordered and paged in MongoDB over this shop's customers only
+    ShopPartySearch.CustomerPage found = shopPartySearch.customersMatching(shopId, query, page, limit);
+    if (found.total() == 0) {
       return new CustomerListResponse(List.of(), page, limit, 0, 0);
     }
-    List<Customer> matching = customerRepository.searchByQuery(query);
-    List<Customer> shopCustomers = matching.stream()
-        .filter(c -> shopCustomerIds.contains(c.getId()))
-        .filter(c -> !c.isGeneralCustomer())
-        .sorted((a, b) -> (b.getUpdatedAt() != null ? b.getUpdatedAt() : b.getCreatedAt())
-            .compareTo(a.getUpdatedAt() != null ? a.getUpdatedAt() : a.getCreatedAt()))
-        .toList();
-    if (shopCustomers.isEmpty()) {
-      return new CustomerListResponse(List.of(), page, limit, 0, 0);
-    }
-    long total = shopCustomers.size();
-    int totalPages = (int) Math.ceil((double) total / limit);
-    int from = page * limit;
-    int to = Math.min(from + limit, shopCustomers.size());
-    List<Customer> paged = from < shopCustomers.size() ? shopCustomers.subList(from, to) : List.of();
-    List<CustomerDto> dtos = paged.stream().map(customerMapper::toDto).toList();
-    return new CustomerListResponse(dtos, page, limit, total, totalPages);
+    int totalPages = (int) Math.ceil((double) found.total() / limit);
+    List<CustomerDto> dtos = found.customers().stream().map(customerMapper::toDto).toList();
+    return new CustomerListResponse(dtos, page, limit, found.total(), totalPages);
   }
 
   public CustomerDto updateCustomer(String customerId, String shopId, UpdateCustomerRequest request) {
@@ -348,7 +379,11 @@ public class CustomerService {
       throw new ValidationException("The general customer placeholder cannot be edited");
     }
 
+    String gstinBefore = customer.getGstin();
     customerMapper.applyUpdate(request, customer);
+    if (!Objects.equals(gstinBefore, customer.getGstin())) {
+      verifyGstin(customer);
+    }
 
     boolean stillHasUnique =
         CustomerValidator.hasUniqueIdentifier(
@@ -385,15 +420,47 @@ public class CustomerService {
     if (!StringUtils.hasText(query)) {
       return List.of();
     }
-    List<String> shopCustomerIds =
-        shopCustomerRepository.findByShopId(shopId).stream().map(ShopCustomer::getCustomerId).toList();
-    if (shopCustomerIds.isEmpty()) {
+    return shopPartySearch.customerIdsMatching(shopId, query.trim(), false);
+  }
+
+  /**
+   * Shop-scoped customer ids matching {@code query}, the walk-in placeholder included (what the
+   * bill-history customer filter has always matched).
+   */
+  @Transactional(readOnly = true)
+  public List<String> findShopCustomerIdsMatchingQueryIncludingGeneral(String shopId, String query) {
+    if (!StringUtils.hasText(query)) {
       return List.of();
     }
-    return customerRepository.searchByQuery(query.trim()).stream()
-        .filter(c -> shopCustomerIds.contains(c.getId()))
-        .filter(c -> !c.isGeneralCustomer())
-        .map(Customer::getId)
-        .toList();
+    return shopPartySearch.customerIdsMatching(shopId, query.trim(), true);
+  }
+
+  /**
+   * Records what the GST network says about the customer's GSTIN, when a registry is wired and the
+   * GSTIN is valid. Never blocks the save: an unreachable network leaves the customer unverified.
+   */
+  private void verifyGstin(Customer customer) {
+    customer.setGstinVerifiedAt(null);
+    customer.setGstinStatus(null);
+    if (gstinDirectory == null || !Gstin.isValid(customer.getGstin())) {
+      return;
+    }
+    try {
+      gstinDirectory.lookup(customer.getGstin()).ifPresent(reg -> {
+        customer.setGstinVerifiedAt(reg.lastCheckedAt() != null ? reg.lastCheckedAt() : Instant.now());
+        customer.setGstinStatus(reg.status());
+        // the registry knows the state better than a typed address does
+        if (StringUtils.hasText(reg.stateCode())) {
+          PostalAddress address =
+              customer.getPostalAddress() == null ? new PostalAddress() : customer.getPostalAddress();
+          if (!address.hasState()) {
+            address.setStateCode(reg.stateCode());
+            customer.setPostalAddress(address);
+          }
+        }
+      });
+    } catch (RuntimeException e) {
+      log.warn("GSTIN verification skipped for customer {}: {}", customer.getName(), e.getMessage());
+    }
   }
 }

@@ -8,7 +8,8 @@ import java.util.List;
 
 @Repository
 public interface EventRepository extends MongoRepository<Event, String> {
-  List<Event> findByShopIdAndDeliveredFalseOrderByTriggeredAtAsc(String shopId);
+  /** Undelivered events that belong to a reminder (the only ones replayed to a new stream). */
+  List<Event> findByShopIdAndDeliveredFalseAndReminderIdNotNullOrderByTriggeredAtAsc(String shopId);
 
   List<Event> findByDeliveredFalseAndRetryCountLessThanAndNextRetryAtLessThanEqualOrderByTriggeredAtAsc(
     int maxRetryCount, Instant now);

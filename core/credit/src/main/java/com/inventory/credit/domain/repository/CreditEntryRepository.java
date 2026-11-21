@@ -1,7 +1,7 @@
 package com.inventory.credit.domain.repository;
 
 import com.inventory.credit.domain.model.CreditEntry;
-import com.inventory.credit.domain.model.CreditPartyType;
+import com.inventory.credit.api.CreditPartyType;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;

@@ -3,13 +3,14 @@ package com.inventory.ocr.prompt;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.inventory.ocr.api.InvoicePricingLayout;
 import org.junit.jupiter.api.Test;
 
 class InvoicePricingLayoutTest {
 
   @Test
   void wholesalerPromptMapsPtsPtrMrpAndForbidsTakingCostFromMrp() {
-    String text = InvoicePricingLayout.WHOLESALER.promptText();
+    String text = InvoicePrompts.text(InvoicePricingLayout.WHOLESALER);
     assertTrue(text.contains("PTS"));
     assertTrue(text.contains("PTR"));
     assertTrue(text.contains("must NEVER be taken from MRP"));
@@ -19,7 +20,7 @@ class InvoicePricingLayoutTest {
 
   @Test
   void retailerPromptMapsCostFromPricePerUnitAndSellFromMrp() {
-    String text = InvoicePricingLayout.RETAILER.promptText();
+    String text = InvoicePrompts.text(InvoicePricingLayout.RETAILER);
     assertTrue(text.contains("Price/Unit"));
     assertTrue(text.contains("selling price equals MRP"));
     assertTrue(text.contains("split equally"));

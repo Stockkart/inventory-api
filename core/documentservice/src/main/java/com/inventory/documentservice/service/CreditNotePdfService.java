@@ -1,7 +1,7 @@
 package com.inventory.documentservice.service;
 
 import com.inventory.documentservice.domain.DocumentTemplateFamily;
-import com.inventory.documentservice.domain.PrinterType;
+import com.inventory.documentservice.api.PrinterType;
 import com.inventory.documentservice.rest.dto.GenerateCreditNoteRequest;
 import com.inventory.documentservice.utils.constants.DocumentMetricsConstants;
 import com.inventory.metrics.MetricsWrapper;
@@ -51,7 +51,7 @@ public class CreditNotePdfService {
   public String renderCreditNoteHtml(GenerateCreditNoteRequest request) {
     Context context = prepareTemplateContext(request);
     PrinterType printerType = PrinterType.from(request != null ? request.getPrinterType() : null);
-    String templateName = printerType.getTemplateName(DocumentTemplateFamily.CREDIT_NOTE);
+    String templateName = DocumentTemplateFamily.CREDIT_NOTE.templateFor(printerType);
     log.debug(
         "Rendering credit note HTML with printer type {} → template {}", printerType, templateName);
     return templateEngine.process(templateName, context);
@@ -73,6 +73,9 @@ public class CreditNotePdfService {
             ? request.getPartyRole().trim().toUpperCase()
             : "CUSTOMER");
     boolean vendorNote = "VENDOR".equals(context.getVariable("partyRole"));
+    // The columns differ by role: a debit note states a cost and a price to retail, a credit
+    // note a selling price. The template cannot infer which document it is rendering.
+    context.setVariable("vendorNote", vendorNote);
     context.setVariable("documentTitle", vendorNote ? "Debit Note" : "Credit Note");
     context.setVariable(
         "documentNoLabel", vendorNote ? "Debit Note No." : "Credit Note No.");
@@ -110,9 +113,11 @@ public class CreditNotePdfService {
     context.setVariable(
         "showAmountInWords",
         request.getShowAmountInWords() == null || request.getShowAmountInWords());
+    context.setVariable("showPack", request.getShowPack() == null || request.getShowPack());
     context.setVariable("showHsn", request.getShowHsn() == null || request.getShowHsn());
     context.setVariable("showMfg", request.getShowMfg() == null || request.getShowMfg());
     context.setVariable("showBatch", request.getShowBatch() == null || request.getShowBatch());
+    context.setVariable("showExpiry", request.getShowExpiry() == null || request.getShowExpiry());
     context.setVariable(
         "showSignatures", request.getShowSignatures() == null || request.getShowSignatures());
     context.setVariable("paymentMethod", request.getPaymentMethod());
@@ -145,6 +150,7 @@ public class CreditNotePdfService {
     context.setVariable("taxableTotal", taxableTotal);
     context.setVariable("sgstAmount", nz(request.getSgstAmount()));
     context.setVariable("cgstAmount", nz(request.getCgstAmount()));
+    context.setVariable("interstate", request.isInterstate());
     context.setVariable(
         "sgstPercent",
         request.getSgstPercent() != null ? request.getSgstPercent() : BigDecimal.valueOf(2.5));
@@ -152,6 +158,18 @@ public class CreditNotePdfService {
         "cgstPercent",
         request.getCgstPercent() != null ? request.getCgstPercent() : BigDecimal.valueOf(2.5));
     context.setVariable("taxTotal", taxTotal);
+    // A note that credits an interstate supply reverses IGST, and shows that head instead of
+    // the two halves rather than beside them.
+    BigDecimal igstAmount = nz(request.getIgstAmount());
+    context.setVariable("igstAmount", igstAmount);
+    context.setVariable(
+        "igstPercent",
+        request.getIgstPercent() != null ? request.getIgstPercent() : BigDecimal.ZERO);
+    boolean anyIgst = igstAmount.signum() > 0
+        || (request.getItems() != null
+            && request.getItems().stream()
+                .anyMatch(i -> i.getIgstAmount() != null && i.getIgstAmount().signum() > 0));
+    context.setVariable("anyIgst", anyIgst);
     context.setVariable("roundOff", nz(request.getRoundOff()));
     context.setVariable("grandTotal", grandTotal);
 
