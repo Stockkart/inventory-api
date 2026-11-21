@@ -4,6 +4,8 @@ import com.inventory.plan.domain.model.AddOn;
 import com.inventory.plan.domain.repository.AddOnRepository;
 import com.inventory.plan.mapper.AddOnMapper;
 import com.inventory.plan.rest.dto.response.AddOnResponse;
+import com.inventory.plan.utils.TimedValue;
+import java.time.Duration;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
@@ -27,17 +29,25 @@ public class AddOnCatalogueService {
   @Autowired
   private AddOnMapper addOnMapper;
 
+  /** The pricing and payment pages read the add-on list on every load; kept 60 s per instance. */
+  private final TimedValue<List<AddOn>> active = new TimedValue<>(Duration.ofSeconds(60));
+
   /** Add-ons on sale, in display order. */
   public List<AddOnResponse> listActive() {
     return activeAddOns().stream().map(addOnMapper::toResponse).toList();
   }
 
-  /** Catalogue rows on sale, in display order. */
+  /** Catalogue rows on sale, in display order; kept 60 s per instance. Callers must not change them. */
   public List<AddOn> activeAddOns() {
-    return addOnRepository.findAll().stream()
+    return active.get(() -> addOnRepository.findAll().stream()
         .filter(AddOn::isActive)
         .sorted(DISPLAY_ORDER)
-        .toList();
+        .toList());
+  }
+
+  /** Forget the cached list; add-on admin writes call this. */
+  public void evictActive() {
+    active.evict();
   }
 
   /** The catalogue row as the apps see it, with whether it can be bought ({@code reason} empty = yes). */

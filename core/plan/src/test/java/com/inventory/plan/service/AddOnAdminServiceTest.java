@@ -50,6 +50,7 @@ class AddOnAdminServiceTest {
   @Mock private AuditService auditService;
   @Mock private EntitlementService entitlementService;
   @Mock private ShopAddOnService shopAddOnService;
+  @Mock private AddOnCatalogueService addOnCatalogueService;
 
   @InjectMocks
   private AddOnAdminService service;
