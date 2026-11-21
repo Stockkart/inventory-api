@@ -31,4 +31,14 @@ public class VendorPurchaseInvoiceDetailDto {
   private Boolean synthetic;
   private String legacyLotId;
   private List<VendorPurchaseInvoiceLineDto> lines;
+
+  /** Whether the line amounts on this bill already include GST. */
+  private String taxTreatment;
+
+  /** Set once the header has been corrected against the paper bill. */
+  private Instant amendedAt;
+  private String amendedByUserId;
+  private String amendmentReason;
+  /** The header as it stood before the last correction; null if never corrected. */
+  private InvoiceHeaderFiguresDto previousHeader;
 }

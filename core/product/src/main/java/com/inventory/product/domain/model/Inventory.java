@@ -2,24 +2,37 @@ package com.inventory.product.domain.model;
 
 import com.inventory.product.domain.model.enums.BillingMode;
 import com.inventory.product.domain.model.enums.DiscountApplicable;
+import com.inventory.product.domain.model.enums.InventorySellRestriction;
 import com.inventory.product.domain.model.enums.ItemType;
 import com.inventory.product.domain.model.enums.SchemeType;
-import com.inventory.pricing.rest.dto.response.RateDto;
+import com.inventory.pricing.api.RateTerms;
+import com.inventory.pricing.api.RateLine;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.Transient;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
+import org.springframework.data.mongodb.core.index.CompoundIndexes;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Document(collection = "inventory")
+/** Advanced search indexes (advanced-product-search R4.7): every search starts with {@code shopId}. */
+@CompoundIndexes({
+    @CompoundIndex(name = "shop_product_idx", def = "{'shopId': 1, 'productId': 1}"),
+    @CompoundIndex(name = "shop_location_idx", def = "{'shopId': 1, 'location': 1}"),
+    @CompoundIndex(name = "shop_batch_idx", def = "{'shopId': 1, 'batchNo': 1}", sparse = true),
+    @CompoundIndex(name = "shop_stock_idx", def = "{'shopId': 1, 'currentCount': 1}"),
+    @CompoundIndex(name = "shop_created_idx", def = "{'shopId': 1, 'createdAt': -1}")
+})
 public class Inventory {
 
   @Id
@@ -81,6 +94,11 @@ public class Inventory {
   private String hsn;
   private String batchNo;
   private BillingMode billingMode;
+  /**
+   * Sell path policy for this lot. Null / missing treated as {@link InventorySellRestriction#ANY}.
+   * Locked stock-entry estimates create lots with {@link InventorySellRestriction#ESTIMATE_ONLY}.
+   */
+  private InventorySellRestriction sellRestriction;
   /** Transient: from Pricing.saleScheme. Not persisted on inventory. */
   @Transient
   private SchemeType schemeType;
@@ -119,6 +137,9 @@ public class Inventory {
    */
   @Transient
   private BigDecimal effectiveCostPrice;
+  /** Transient: true when costPrice came off a bill whose rates include GST. Written to Pricing. */
+  @Transient
+  private Boolean costPriceIncludesTax;
   /** Original Price to Retail (PTR). Immutable base from pricing. */
   @Transient
   private BigDecimal priceToRetail;
@@ -126,7 +147,7 @@ public class Inventory {
   @Transient
   private BigDecimal sellingPrice;
   @Transient
-  private List<RateDto> rates;
+  private List<RateLine> rates;
   @Transient
   private String defaultRate;
   @Transient
@@ -148,5 +169,12 @@ public class Inventory {
   public BigDecimal costForValuation() {
     return effectiveCostPrice != null ? effectiveCostPrice : costPrice;
   }
-}
 
+  /** The batch's rates as pricing's api terms; empty when none are loaded. */
+  public List<RateTerms> rateTerms() {
+    return rates == null ? List.of() : rates.stream()
+        .filter(Objects::nonNull)
+        .map(RateLine::toTerms)
+        .toList();
+  }
+}

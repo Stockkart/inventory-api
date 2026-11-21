@@ -1,6 +1,6 @@
 package com.inventory.accounting.rest.dto.response;
 
-import com.inventory.accounting.domain.model.JournalSource;
+import com.inventory.accounting.api.JournalSource;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;

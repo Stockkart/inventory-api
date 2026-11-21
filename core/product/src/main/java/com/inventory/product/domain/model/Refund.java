@@ -61,6 +61,10 @@ public class Refund {
   private BigDecimal taxableTotal;
   private BigDecimal cgstAmount;
   private BigDecimal sgstAmount;
+  /** IGST reversed, when the original sale was interstate; CGST and SGST are then zero. */
+  private BigDecimal igstAmount;
+  /** True when the original sale was billed as an interstate supply. */
+  private Boolean interstate;
   private BigDecimal cogsTotal;
   private BigDecimal roundOff;
 
