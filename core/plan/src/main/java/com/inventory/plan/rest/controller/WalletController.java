@@ -26,6 +26,6 @@ public class WalletController {
   @GetMapping
   public ResponseEntity<ApiResponse<WalletResponse>> wallet(HttpServletRequest httpRequest) {
     String shopId = (String) httpRequest.getAttribute("shopId");
-    return ResponseEntity.ok(ApiResponse.success(walletService.describe(shopId)));
+    return ResponseEntity.ok(ApiResponse.success(walletService.describeForShop(shopId)));
   }
 }
