@@ -1,5 +1,6 @@
 package com.inventory.plan.service.voucher;
 
+import com.inventory.common.tx.MongoTx;
 import com.inventory.plan.domain.model.AddOnVoucher;
 import com.inventory.plan.domain.model.OrderLine;
 import com.inventory.plan.domain.model.PlanPaymentOrder;
@@ -25,15 +26,21 @@ import org.springframework.data.mongodb.core.aggregation.ComparisonOperators;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
  * Takes a voucher slot when checkout creates the order, so a capped voucher can never be charged at
  * its discounted price and then found exhausted after payment (§27.3).
  */
+/** Runs before the wallet handler ({@code @Order(20)}): vouchers are priced before wallet credit. */
 @Component
+@Order(10)
 @Slf4j
 public class VoucherReservationHandler implements OrderReservationHandler {
+
+  /** MongoTx flow name: a redemption row's status and its voucher's counters change together. */
+  static final String SLOT_FLOW = "voucher_slot";
 
   @Autowired
   private MongoTemplate mongoTemplate;
@@ -43,6 +50,9 @@ public class VoucherReservationHandler implements OrderReservationHandler {
 
   @Autowired
   private VoucherRedemptionRepository redemptionRepository;
+
+  @Autowired
+  private MongoTx mongoTx;
 
   Clock clock = Clock.systemUTC();
 
@@ -62,7 +72,7 @@ public class VoucherReservationHandler implements OrderReservationHandler {
   @Override
   public void release(PlanPaymentOrder order) {
     for (VoucherRedemption redemption : redemptionRepository.findByOrderId(order.getId())) {
-      releaseSlot(redemption.getId(), redemption.getVoucherId());
+      releaseSlot(redemption);
     }
   }
 
@@ -84,16 +94,20 @@ public class VoucherReservationHandler implements OrderReservationHandler {
       if (redemption.getStatus() == VoucherRedemptionStatus.REDEEMED) {
         continue;
       }
-      VoucherRedemption redeemed = mongoTemplate.findAndModify(
-          new Query(Criteria.where("_id").is(redemption.getId()).and("status").is(VoucherRedemptionStatus.RESERVED)),
-          new Update().set("status", VoucherRedemptionStatus.REDEEMED).set("redeemedAt", clock.instant()),
-          FindAndModifyOptions.options().returnNew(true), VoucherRedemption.class);
-      if (redeemed == null) {
-        throw new IllegalStateException("Voucher " + redemption.getVoucherCode() + " for order "
-            + order.getId() + " is " + redemption.getStatus() + ", not reserved");
-      }
-      mongoTemplate.updateFirst(new Query(Criteria.where("_id").is(redemption.getVoucherId())),
-          new Update().inc("reservedCount", -1).inc("redemptionCount", 1), AddOnVoucher.class);
+      // status and counters in one transaction: a crash between them would leave the slot counted twice
+      mongoTx.run(SLOT_FLOW, order.getShopId(), () -> {
+        VoucherRedemption redeemed = mongoTemplate.findAndModify(
+            new Query(Criteria.where("_id").is(redemption.getId()).and("status").is(VoucherRedemptionStatus.RESERVED)),
+            new Update().set("status", VoucherRedemptionStatus.REDEEMED).set("redeemedAt", clock.instant()),
+            FindAndModifyOptions.options().returnNew(true), VoucherRedemption.class);
+        if (redeemed == null) {
+          throw new IllegalStateException("Voucher " + redemption.getVoucherCode() + " for order "
+              + order.getId() + " is " + redemption.getStatus() + ", not reserved");
+        }
+        mongoTemplate.updateFirst(new Query(Criteria.where("_id").is(redemption.getVoucherId())),
+            new Update().inc("reservedCount", -1).inc("redemptionCount", 1), AddOnVoucher.class);
+        return null;
+      });
     }
   }
 
@@ -161,11 +175,15 @@ public class VoucherReservationHandler implements OrderReservationHandler {
         .getModifiedCount() == 1;
   }
 
-  private void releaseSlot(String redemptionId, String voucherId) {
-    if (releaseRow(redemptionId)) {
-      mongoTemplate.updateFirst(new Query(Criteria.where("_id").is(voucherId)),
-          new Update().inc("reservedCount", -1), AddOnVoucher.class);
-    }
+  /** RESERVED → RELEASED and the voucher's reservedCount − 1, in one transaction. */
+  private void releaseSlot(VoucherRedemption redemption) {
+    mongoTx.run(SLOT_FLOW, redemption.getShopId(), () -> {
+      if (releaseRow(redemption.getId())) {
+        mongoTemplate.updateFirst(new Query(Criteria.where("_id").is(redemption.getVoucherId())),
+            new Update().inc("reservedCount", -1), AddOnVoucher.class);
+      }
+      return null;
+    });
   }
 
   /** RESERVED → RELEASED, freeing the per-shop slot. Returns whether this call released it. */

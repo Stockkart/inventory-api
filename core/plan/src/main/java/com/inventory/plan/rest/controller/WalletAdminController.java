@@ -5,6 +5,7 @@ import com.inventory.metrics.annotation.Latency;
 import com.inventory.metrics.annotation.RecordRequestRate;
 import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.plan.rest.dto.request.WalletAdjustmentRequest;
+import com.inventory.plan.rest.dto.response.WalletAdjustmentPreviewResponse;
 import com.inventory.plan.rest.dto.response.WalletResponse;
 import com.inventory.plan.service.referral.ReferralAdminService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -31,6 +32,13 @@ public class WalletAdminController {
   @GetMapping("/{shopId}")
   public ResponseEntity<ApiResponse<WalletResponse>> wallet(@PathVariable String shopId) {
     return ResponseEntity.ok(ApiResponse.success(adminService.wallet(shopId)));
+  }
+
+  /** What the adjustment would leave in the wallet. Writes nothing. */
+  @PostMapping("/{shopId}/adjustments/preview")
+  public ResponseEntity<ApiResponse<WalletAdjustmentPreviewResponse>> previewAdjustment(
+      @PathVariable String shopId, @RequestBody WalletAdjustmentRequest request) {
+    return ResponseEntity.ok(ApiResponse.success(adminService.previewWalletAdjustment(shopId, request)));
   }
 
   @PostMapping("/{shopId}/adjustments")

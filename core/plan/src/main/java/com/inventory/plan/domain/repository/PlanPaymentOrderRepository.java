@@ -34,4 +34,7 @@ public interface PlanPaymentOrderRepository extends MongoRepository<PlanPaymentO
   @Query(value = "{ 'shopId': { $in: ?0 }, 'status': { $in: ?1 }, $or: [ { 'paidAt': { $lt: ?2 } },"
       + " { 'paidAt': null, 'createdAt': { $lt: ?2 } } ] }", fields = "{ 'shopId': 1 }")
   List<PlanPaymentOrder> findPaidBefore(Collection<String> shopIds, Collection<String> statuses, Instant before);
+  /** The newest still-payable order for the same cart, for checkouts sent without Idempotency-Key. */
+  Optional<PlanPaymentOrder> findFirstByShopIdAndRequestHashAndStatusInAndExpiresAtAfterOrderByCreatedAtDesc(
+      String shopId, String requestHash, java.util.Collection<String> statuses, java.time.Instant now);
 }

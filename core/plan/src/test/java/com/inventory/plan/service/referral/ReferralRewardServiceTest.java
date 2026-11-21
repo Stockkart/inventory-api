@@ -20,7 +20,9 @@ import com.inventory.plan.domain.repository.ReferralRewardRepository;
 import com.inventory.plan.mapper.ReferralRewardMapper;
 import com.inventory.plan.mapper.ReferralRewardMapperImpl;
 import com.inventory.plan.rest.dto.response.ReferralRewardsResponse;
+import com.inventory.common.tx.MongoTx;
 import com.inventory.plan.api.port.ShopPort;
+import com.inventory.plan.domain.model.ReferralReferrerCounter;
 import com.inventory.plan.api.port.ShopPort.ReferralShop;
 import com.inventory.plan.service.wallet.WalletService;
 import com.inventory.plan.utils.constants.PricingConstants;
@@ -56,6 +58,7 @@ class ReferralRewardServiceTest {
   @Mock private WalletService walletService;
   @Mock private MongoTemplate mongoTemplate;
   @Mock private ShopPort shopProvider;
+  @Mock private MongoTx mongoTx;
   @Spy private ReferralRewardMapper rewardMapper = new ReferralRewardMapperImpl();
 
   @InjectMocks
@@ -66,6 +69,8 @@ class ReferralRewardServiceTest {
     service.clock = Clock.fixed(NOW, ZoneOffset.UTC);
     lenient().when(rewardRepository.insert(any(ReferralReward.class))).thenAnswer(inv -> inv.getArgument(0));
     lenient().when(attributionService.resolvedReferrer("referee")).thenReturn(Optional.of("referrer"));
+    lenient().when(mongoTx.run(any(), any(), any(java.util.function.Supplier.class)))
+        .thenAnswer(inv -> ((java.util.function.Supplier<?>) inv.getArgument(2)).get());
   }
 
   private static OrderLine line(String type, String lineTotal, String walletCredit) {
@@ -127,6 +132,18 @@ class ReferralRewardServiceTest {
 
     assertThat(reward.getStatus()).isEqualTo(ReferralRewardStatus.VOID);
     assertThat(reward.getVoidReason()).isEqualTo(ReferralRewardService.VOID_CAP_REACHED);
+  }
+
+  @Test
+  void theCapCheckRunsInATransactionThatFirstBumpsTheReferrerRow() {
+    service.recordForOrder(order(line(PricingConstants.ITEM_TYPE_PLAN, "1000", null)));
+
+    org.mockito.InOrder inOrder = org.mockito.Mockito.inOrder(mongoTx, mongoTemplate, rewardRepository);
+    inOrder.verify(mongoTx).run(eq(MongoTx.REFERRAL_REWARD), eq("referrer"), any(java.util.function.Supplier.class));
+    inOrder.verify(mongoTemplate).upsert(any(org.springframework.data.mongodb.core.query.Query.class),
+        any(org.springframework.data.mongodb.core.query.Update.class), eq(ReferralReferrerCounter.class));
+    inOrder.verify(rewardRepository).countByReferrerShopIdAndStatusInAndCreatedAtAfter(eq("referrer"), anyCollection(), any());
+    inOrder.verify(rewardRepository).insert(any(ReferralReward.class));
   }
 
   @Test
@@ -235,11 +252,13 @@ class ReferralRewardServiceTest {
         ReferralReward.builder().refereeShopId("a").rewardAmount(new BigDecimal("100")).status(ReferralRewardStatus.PENDING).build(),
         ReferralReward.builder().refereeShopId("b").rewardAmount(new BigDecimal("50")).status(ReferralRewardStatus.CREDITED).build(),
         ReferralReward.builder().refereeShopId("c").rewardAmount(new BigDecimal("70")).status(ReferralRewardStatus.VOID).build()));
-    when(shopProvider.getReferralShop(anyString()))
-        .thenAnswer(inv -> Optional.of(new ReferralShop(inv.getArgument(0), "Shop " + inv.getArgument(0), null, null, null)));
+    when(shopProvider.referralShops(anyCollection())).thenAnswer(inv -> ((java.util.Collection<String>) inv.getArgument(0))
+        .stream().map(id -> new ReferralShop(id, "Shop " + id, null, null, null)).toList());
 
     ReferralRewardsResponse response = service.listForReferrer("referrer");
 
+    verify(shopProvider).referralShops(java.util.Set.of("a", "b", "c"));
+    verify(shopProvider, never()).getReferralShop(anyString());
     assertThat(response.getPendingAmount()).isEqualByComparingTo("100");
     assertThat(response.getCreditedAmount()).isEqualByComparingTo("50");
     assertThat(response.getRewards()).extracting("refereeShopName").containsExactly("Shop a", "Shop b", "Shop c");

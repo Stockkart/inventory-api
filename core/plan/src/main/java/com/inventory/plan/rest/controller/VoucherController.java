@@ -29,6 +29,7 @@ public class VoucherController {
   public ResponseEntity<ApiResponse<VoucherCheckResponse>> validate(
       @RequestParam String code, HttpServletRequest httpRequest) {
     String shopId = (String) httpRequest.getAttribute("shopId");
-    return ResponseEntity.ok(ApiResponse.success(voucherService.check(code, shopId)));
+    String userId = (String) httpRequest.getAttribute("userId");
+    return ResponseEntity.ok(ApiResponse.success(voucherService.check(code, shopId, userId)));
   }
 }
