@@ -23,6 +23,7 @@ import com.inventory.metrics.MetricsWrapper;
 import com.inventory.plan.utils.constants.PlanMetricsConstants;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -68,6 +69,9 @@ public class PlanService {
 
   @Autowired
   private ShopSubscriptionService shopSubscriptionService;
+  /** Free-trial length for new shops; the same setting ShopService uses at registration. */
+  @Value("${plan.trial-days:3}")
+  int trialDays = 3;
 
   /**
    * List all plans (public - can be called before login for pricing page).
@@ -76,6 +80,7 @@ public class PlanService {
   public List<PlanResponse> listPlans() {
     return effectivePlanResolver.activeCatalogue().stream()
         .map(planMapper::toResponse)
+        .map(this::withTrialDays)
         .collect(Collectors.toList());
   }
 
@@ -83,7 +88,7 @@ public class PlanService {
   public PlanResponse getPlan(String planId) {
     Plan plan = planRepository.findById(planId)
         .orElseThrow(() -> new ResourceNotFoundException("Plan", "id", planId));
-    return planMapper.toResponse(plan);
+    return withTrialDays(planMapper.toResponse(plan));
   }
 
   /**
@@ -158,7 +163,7 @@ public class PlanService {
 
     var limits = planValidator.computeLimitsReached(effectivePlan, usage);
 
-    return planMapper.toShopPlanStatusResponse(
+    ShopPlanStatusResponse status = planMapper.toShopPlanStatusResponse(
         shopId,
         shopInfo.planId(),
         plan != null ? planMapper.toResponse(plan) : null,
@@ -170,6 +175,13 @@ public class PlanService {
         suggestedPlan,
         limits,
         userLimitReached);
+    status.setTrialDays(trialDays);
+    return status;
+  }
+
+  private PlanResponse withTrialDays(PlanResponse response) {
+    response.setTrialDays(trialDays);
+    return response;
   }
 
   /**
