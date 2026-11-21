@@ -30,6 +30,10 @@ public class PlanResponse {
   private Integer ocrLimit;
   private Set<PlanFeature> features;
   private String badge;
+  /** False for legacy add-on rows sold at payment; the plan pickers show only selectable plans. */
+  private boolean selectable;
+  /** Monthly billing limit for display: "Unlimited" or lakh rupees such as "₹1.5L". */
+  private String billingLimitLabel;
   /** Length of the free trial a new shop gets, in days ({@code plan.trial-days}). */
   private Integer trialDays;
 }
