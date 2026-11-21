@@ -1,0 +1,8 @@
+# Changes to module contracts and to the boundary rules need an owner's review.
+# Takes effect when branch protection on main requires review from code owners.
+/module-boundaries.yml                                @imf-ali
+/app/src/test/resources/boundaries/                  @imf-ali
+/app/src/test/java/com/inventory/app/boundaries/     @imf-ali
+/docs/architecture/module-boundaries.md              @imf-ali
+**/src/main/java/com/inventory/*/api/                @imf-ali
+**/src/main/java/com/inventory/plugins/*/api/        @imf-ali

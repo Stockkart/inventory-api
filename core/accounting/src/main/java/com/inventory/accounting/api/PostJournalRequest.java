@@ -1,25 +1,26 @@
 package com.inventory.accounting.api;
 
-import com.inventory.accounting.domain.model.JournalSource;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
-import lombok.Data;
+import lombok.Builder;
 
 /**
  * Caller-built journal entry passed to {@link AccountingFacade#post(String, String,
  * PostJournalRequest)}. Sum of debits must equal sum of credits; {@code sourceType} + {@code
  * sourceId} provides idempotency.
  */
-@Data
-public class PostJournalRequest {
+@Builder
+public record PostJournalRequest(
+    JournalSource sourceType,
+    String sourceId,
+    String sourceKey,
+    LocalDate txnDate,
+    String narration,
+    List<PostJournalLine> lines) {
 
-  private JournalSource sourceType;
-  private String sourceId;
-  private String sourceKey;
-
-  private LocalDate txnDate;
-  private String narration;
-
-  private List<PostJournalLine> lines = new ArrayList<>();
+  /** No lines given means an empty, modifiable list, as when this was a mutable class. */
+  public PostJournalRequest {
+    lines = lines == null ? new ArrayList<>() : lines;
+  }
 }

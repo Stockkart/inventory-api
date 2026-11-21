@@ -25,9 +25,12 @@ public class AddToCartResponse {
   BigDecimal taxTotal;
   BigDecimal sgstAmount; // Calculated SGST amount
   BigDecimal cgstAmount; // Calculated CGST amount
+  BigDecimal igstAmount; // IGST on an interstate sale, else zero
+  Boolean interstate; // true when the sale was billed as an interstate supply
   BigDecimal discountTotal;
   BigDecimal saleAdditionalDiscountTotal; // Total additional discount amount
   BigDecimal grandTotal;
+  SaleTaxSummaryDto taxSummary; // Totals as the invoice states them, GST per rate; null when no line is taxed
   BigDecimal totalCost;       // Margin: total cost (inventory cost × quantities)
   BigDecimal revenueBeforeTax; // Margin: subTotal − additionalDiscountTotal
   BigDecimal revenueAfterTax;  // Margin: grandTotal (total received including tax)

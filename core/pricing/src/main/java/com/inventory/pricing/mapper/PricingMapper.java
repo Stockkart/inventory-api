@@ -15,6 +15,7 @@ import com.inventory.pricing.rest.dto.response.PricingResponse;
 import com.inventory.pricing.rest.dto.response.RateDto;
 import com.inventory.pricing.utils.PricingUtils;
 import com.inventory.pricing.utils.constants.PricingConstants;
+import org.mapstruct.AfterMapping;
 import org.mapstruct.BeanMapping;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
@@ -38,7 +39,15 @@ public interface PricingMapper {
 
   @Mapping(target = "purchaseScheme", expression = "java(toSchemeDto(pricing.getPurchaseScheme()))")
   @Mapping(target = "saleScheme", expression = "java(toSchemeDto(pricing.getSaleScheme()))")
+  // Mapped inline, not via toRateDtos, so an empty rate list stays [] in the response as before.
+  @Mapping(target = "rates", expression = "java(pricing.getRates() == null ? null : "
+      + "pricing.getRates().stream().map(this::toRateDto).toList())")
+  @Mapping(target = "defaultRateOptions",
+      expression = "java(com.inventory.pricing.utils.PricingUtils.defaultRateOptions(pricing.getRates()))")
   PricingResponse toResponse(Pricing pricing);
+
+  /** A working copy, so rate generation can see a patch's new bases without touching the stored record. */
+  Pricing copy(Pricing pricing);
 
   @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
   @Mapping(target = "id", ignore = true)
@@ -108,7 +117,10 @@ public interface PricingMapper {
     return dto;
   }
 
+  @Mapping(target = "termsText", expression = "java(com.inventory.pricing.utils.RateTermsText.of(rate))")
   RateDto toRateDto(Rate rate);
+
+  @Mapping(target = "scheme", expression = "java(toScheme(dto.getScheme()))")
   Rate toRate(RateDto dto);
 
   default List<RateDto> toRateDtos(List<Rate> rates) {
@@ -126,6 +138,7 @@ public interface PricingMapper {
     UpdateDefaultPriceRequest req = new UpdateDefaultPriceRequest();
     req.setRates(item.getRates());
     req.setDefaultRate(item.getDefaultRate());
+    req.setResetRates(item.getResetRates());
     return req;
   }
 
@@ -137,6 +150,25 @@ public interface PricingMapper {
     dto.setSchemeFree(s.getSchemeFree());
     dto.setSchemePercentage(s.getSchemePercentage());
     return dto;
+  }
+
+  /**
+   * A null field in an update means "keep it", so a field is cleared only when the request names
+   * it in {@code clearFields}. Runs after {@link #updateEntity}; the caller then recomputes the
+   * effective cost from what is left.
+   */
+  @AfterMapping
+  default void applyClearFields(UpdatePricingRequest request, @MappingTarget Pricing pricing) {
+    if (request == null || request.getClearFields() == null) return;
+    for (String field : request.getClearFields()) {
+      switch (field) {
+        case PricingConstants.CLEAR_SALE_ADDITIONAL_DISCOUNT -> pricing.setSaleAdditionalDiscount(null);
+        case PricingConstants.CLEAR_PURCHASE_ADDITIONAL_DISCOUNT -> pricing.setPurchaseAdditionalDiscount(null);
+        case PricingConstants.CLEAR_SALE_SCHEME -> pricing.setSaleScheme(null);
+        case PricingConstants.CLEAR_PURCHASE_SCHEME -> pricing.setPurchaseScheme(null);
+        default -> { /* not a pricing field; the caller validated the names */ }
+      }
+    }
   }
 
   default Scheme toScheme(SchemeDto dto) {

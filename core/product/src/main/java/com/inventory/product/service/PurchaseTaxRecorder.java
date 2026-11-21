@@ -1,0 +1,150 @@
+package com.inventory.product.service;
+
+import com.inventory.common.gst.SupplyPlacement;
+import com.inventory.pricing.api.PricingView;
+import com.inventory.pricing.api.PricingLookup;
+import com.inventory.product.domain.model.Inventory;
+import com.inventory.product.domain.model.VendorPurchaseInvoice;
+import com.inventory.product.domain.model.VendorPurchaseInvoiceLine;
+import com.inventory.product.domain.repository.InventoryRepository;
+import com.inventory.product.utils.PurchaseTaxBasis;
+import com.inventory.product.utils.PurchaseTaxBasisResolver;
+import java.math.BigDecimal;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
+
+/**
+ * Works out a supplier bill's tax from its lines and writes it on the invoice.
+ *
+ * <p>Each line gets its taxable value and tax. The invoice's line subtotal, tax total and invoice
+ * total are kept as given; any of them left empty is filled from the lines. Shared by stock-in and
+ * by a header correction, so both arrive at the same figures the same way.
+ */
+@Slf4j
+@Component
+@RequiredArgsConstructor
+public class PurchaseTaxRecorder {
+
+  private final InventoryRepository inventoryRepository;
+  private final PricingLookup pricingLookup;
+  /** Who is where; absent only in slices of the app that do not wire the taxation module. */
+  private final ObjectProvider<SupplyPlacement> placement;
+
+  /**
+   * The pricing behind each line's lot, keyed by inventory id, in two queries whatever the number
+   * of lines. A line whose lot or pricing is missing is simply absent from the map.
+   */
+  public Map<String, PricingView> pricingByInventoryId(List<VendorPurchaseInvoiceLine> lines) {
+    Set<String> inventoryIds = new LinkedHashSet<>();
+    if (lines != null) {
+      for (VendorPurchaseInvoiceLine line : lines) {
+        if (StringUtils.hasText(line.getInventoryId())) {
+          inventoryIds.add(line.getInventoryId());
+        }
+      }
+    }
+    if (inventoryIds.isEmpty()) {
+      return Map.of();
+    }
+
+    Map<String, String> pricingIdByInventoryId = new HashMap<>();
+    for (Inventory lot : inventoryRepository.findAllById(inventoryIds)) {
+      if (StringUtils.hasText(lot.getPricingId())) {
+        pricingIdByInventoryId.put(lot.getId(), lot.getPricingId());
+      }
+    }
+    Map<String, PricingView> pricingById = new HashMap<>();
+    for (PricingView pricing : pricingLookup.findAllById(pricingIdByInventoryId.values())) {
+      pricingById.put(pricing.id(), pricing);
+    }
+
+    Map<String, PricingView> out = new HashMap<>();
+    pricingIdByInventoryId.forEach((inventoryId, pricingId) -> {
+      PricingView pricing = pricingById.get(pricingId);
+      if (pricing != null) {
+        out.put(inventoryId, pricing);
+      }
+    });
+    return out;
+  }
+
+  /**
+   * Works out the invoice's totals from its lines and writes them on it (the caller saves).
+   *
+   * <p>Never fatal. Stock already exists by the time this runs, and an invoice that records its
+   * goods but not its totals is recoverable; one that fails half way through leaves the shop with
+   * lots it cannot see. On failure the totals stay empty and the reports resolve the lines on read.
+   */
+  public void record(VendorPurchaseInvoice invoice) {
+    try {
+      Map<String, PricingView> pricing = pricingByInventoryId(invoice.getLines());
+      // Decided here, once, and written on the invoice: the ledger, the returns and GSTR-2 all
+      // read the same answer. The totals do not change either way; only which heads carry them.
+      boolean interstate = isInterstate(invoice);
+      invoice.setInterstate(interstate);
+      PurchaseTaxBasis basis = PurchaseTaxBasisResolver.resolve(
+          invoice, pricing::get, invoice.getTaxTreatment(), interstate);
+      apply(invoice, basis);
+    } catch (RuntimeException e) {
+      log.error("Could not work out the totals of invoice {} (shop {}); "
+              + "the reports will resolve its lines on read",
+          invoice.getInvoiceNo(), invoice.getShopId(), e);
+    }
+  }
+
+  /**
+   * Whether this invoice's supplier is in another state than the shop. The stored answer wins;
+   * an invoice without one (recorded before the flag existed) is placed now.
+   */
+  public boolean isInterstate(VendorPurchaseInvoice invoice) {
+    if (invoice.getInterstate() != null) {
+      return invoice.getInterstate();
+    }
+    SupplyPlacement p = placement.getIfAvailable();
+    return p != null && p.isInterstatePurchase(invoice.getShopId(), invoice.getVendorId());
+  }
+
+  /**
+   * Writes the lines' tax, and fills whichever invoice totals are empty. The line subtotal is
+   * before the bill-level discount, which the journal takes off it; the invoice total adds the
+   * charges and round-off.
+   */
+  static void apply(VendorPurchaseInvoice invoice, PurchaseTaxBasis basis) {
+    List<VendorPurchaseInvoiceLine> lines = invoice.getLines();
+    for (int i = 0; i < lines.size() && i < basis.lines().size(); i++) {
+      VendorPurchaseInvoiceLine line = lines.get(i);
+      PurchaseTaxBasis.Line resolved = basis.lines().get(i);
+      line.setTaxableValue(resolved.taxable());
+      line.setCentralTax(resolved.centralTax());
+      line.setStateTax(resolved.stateTax());
+      line.setIntegratedTax(resolved.integratedTax());
+    }
+    BigDecimal taxable = basis.totalTaxable();
+    BigDecimal tax = basis.totalTax();
+    if (invoice.getLineSubTotal() == null) {
+      invoice.setLineSubTotal(taxable.add(basis.overallDiscount()));
+    }
+    if (invoice.getTaxTotal() == null) {
+      invoice.setTaxTotal(tax);
+    }
+    if (invoice.getInvoiceTotal() == null) {
+      invoice.setInvoiceTotal(taxable
+          .add(tax)
+          .add(nz(invoice.getShippingCharge()))
+          .add(nz(invoice.getOtherCharges()))
+          .add(nz(invoice.getRoundOff())));
+    }
+  }
+
+  private static BigDecimal nz(BigDecimal value) {
+    return value == null ? BigDecimal.ZERO : value;
+  }
+}

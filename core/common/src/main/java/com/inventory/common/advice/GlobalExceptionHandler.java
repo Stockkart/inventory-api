@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
@@ -39,14 +40,93 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
   @Autowired
   private ApiErrorMapper apiErrorMapper;
 
+  /** Named in the "upload too large" answer when the exception does not carry the limit. */
+  @org.springframework.beans.factory.annotation.Value("${spring.servlet.multipart.max-request-size:10MB}")
+  private org.springframework.util.unit.DataSize maxRequestSize;
   @ExceptionHandler(BaseException.class)
   public ResponseEntity<ApiResponse<ApiError>> handleBaseException(BaseException ex, HttpServletRequest request) {
+    if (ex.getErrorCode() == ErrorCode.INTERNAL_SERVER_ERROR && isBusy(ex, request)) {
+      return busy(ex, request);
+    }
     log.error("Business exception: {}", ex.getMessage(), ex);
     ErrorCode errorCode = ex.getErrorCode();
     ApiError apiError = apiErrorMapper.toApiError(ex.getMessage(), errorCode.getHttpStatus().value());
     ApiResponse<ApiError> response = ApiResponse.error(ex.getMessage());
     response.setData(apiError);
-    return new ResponseEntity<>(response, errorCode.getHttpStatus());
+    return json(response, errorCode.getHttpStatus());
+  }
+
+  /**
+   * An error answer as JSON, whatever the request's {@code Accept} says. Without a preset content
+   * type Spring negotiates against {@code Accept}: an SSE open ({@code text/event-stream}) or a
+   * file download asking only for its file type then finds no way to write the JSON body
+   * ({@code HttpMediaTypeNotAcceptableException}) and the answer becomes a 500 — under a burst of
+   * SSE opens, the 503 "busy" answers came out as 500s that way.
+   */
+  static <T> ResponseEntity<T> json(T body, HttpStatusCode status) {
+    return ResponseEntity.status(status).contentType(MediaType.APPLICATION_JSON).body(body);
+  }
+
+  /** Seconds a client is told to wait before retrying a "busy" (503) answer. */
+  static final String BUSY_RETRY_AFTER_SECONDS = "2";
+
+  /**
+   * Request attribute set (by the app's Mongo pool listener) when this request found no free
+   * database connection in time; lets the answer be 503 even when a service rethrew without the
+   * driver's exception as cause.
+   */
+  public static final String MONGO_BUSY_ATTRIBUTE = "inventory.mongo.busy";
+
+  private static boolean isBusy(Throwable ex, HttpServletRequest request) {
+    return isBusy(ex) || (request != null && Boolean.TRUE.equals(request.getAttribute(MONGO_BUSY_ATTRIBUTE)));
+  }
+
+  /**
+   * True when the request failed because MongoDB could not be reached in time: no free pooled
+   * connection within {@code mongo.pool.max-wait-ms}, or no server selectable; or a transaction
+   * still lost a write conflict after its retries. The driver throws
+   * {@code com.mongodb.MongoTimeoutException}; services usually wrap it, so the whole cause chain
+   * is checked (by name: this module does not depend on the driver).
+   */
+  static boolean isBusy(Throwable ex) {
+    if (com.inventory.common.tx.MongoTx.isWriteConflict(ex)) {
+      return true; // another bill kept winning the same documents; nothing was saved, retry works
+    }
+    for (Throwable t = ex; t != null; t = t.getCause() == t ? null : t.getCause()) {
+      if ("com.mongodb.MongoTimeoutException".equals(t.getClass().getName())) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** 503 with Retry-After: overloaded for a moment, not broken. Logged without a stack trace. */
+  private ResponseEntity<ApiResponse<ApiError>> busy(Throwable ex, HttpServletRequest request) {
+    log.warn("Busy (no database connection in time) on {} {}: {}",
+        request != null ? request.getMethod() : "-", request != null ? request.getRequestURI() : "-", ex.getMessage());
+    String message = ErrorCode.SERVICE_BUSY.getMessage();
+    ApiError apiError = apiErrorMapper.toApiError(message, HttpStatus.SERVICE_UNAVAILABLE.value());
+    ApiResponse<ApiError> response = ApiResponse.error(message);
+    response.setData(apiError);
+    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+        .header(HttpHeaders.RETRY_AFTER, BUSY_RETRY_AFTER_SECONDS)
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(response);
+  }
+
+  /** No free heavy-request slot in time (see HeavyRequestLimiter): 503, the kind's message and Retry-After. */
+  @ExceptionHandler(com.inventory.common.heavy.HeavyRequestBusyException.class)
+  public ResponseEntity<ApiResponse<ApiError>> handleHeavyRequestBusy(
+      com.inventory.common.heavy.HeavyRequestBusyException ex, HttpServletRequest request) {
+    log.warn("Busy ({} slots full) on {} {}", ex.getKind().key,
+        request != null ? request.getMethod() : "-", request != null ? request.getRequestURI() : "-");
+    ApiError apiError = apiErrorMapper.toApiError(ex.getMessage(), HttpStatus.SERVICE_UNAVAILABLE.value());
+    ApiResponse<ApiError> response = ApiResponse.error(ex.getMessage());
+    response.setData(apiError);
+    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+        .header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.getKind().retryAfterSeconds))
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(response);
   }
 
   @ExceptionHandler(ValidationException.class)
@@ -64,7 +144,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     ApiError apiError = apiErrorMapper.toApiError(summary, HttpStatus.BAD_REQUEST.value(), errors);
     ApiResponse<ApiError> response = ApiResponse.error(summary);
     response.setData(apiError);
-    return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    return json(response, HttpStatus.BAD_REQUEST);
   }
 
   @ExceptionHandler(AuthenticationException.class)
@@ -73,7 +153,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     ApiError apiError = apiErrorMapper.toApiError(ex.getMessage(), HttpStatus.UNAUTHORIZED.value());
     ApiResponse<ApiError> response = ApiResponse.error(ex.getMessage());
     response.setData(apiError);
-    return new ResponseEntity<>(response, HttpStatus.UNAUTHORIZED);
+    return json(response, HttpStatus.UNAUTHORIZED);
   }
 
   @ExceptionHandler(BadCredentialsException.class)
@@ -82,7 +162,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     ApiError apiError = apiErrorMapper.toApiError("Invalid username or password", HttpStatus.UNAUTHORIZED.value());
     ApiResponse<ApiError> response = ApiResponse.error("Invalid username or password");
     response.setData(apiError);
-    return new ResponseEntity<>(response, HttpStatus.UNAUTHORIZED);
+    return json(response, HttpStatus.UNAUTHORIZED);
   }
 
   @ExceptionHandler(AccessDeniedException.class)
@@ -91,7 +171,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     ApiError apiError = apiErrorMapper.toApiError("You don't have permission to access this resource", HttpStatus.FORBIDDEN.value());
     ApiResponse<ApiError> response = ApiResponse.error("You don't have permission to access this resource");
     response.setData(apiError);
-    return new ResponseEntity<>(response, HttpStatus.FORBIDDEN);
+    return json(response, HttpStatus.FORBIDDEN);
   }
 
   @ExceptionHandler(ConstraintViolationException.class)
@@ -116,16 +196,19 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     ApiError apiError = apiErrorMapper.toApiError("Validation failed", HttpStatus.BAD_REQUEST.value(), errors);
     ApiResponse<ApiError> response = ApiResponse.error("Validation failed");
     response.setData(apiError);
-    return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    return json(response, HttpStatus.BAD_REQUEST);
   }
 
   @ExceptionHandler(Exception.class)
   public ResponseEntity<ApiResponse<ApiError>> handleAllUncaughtException(Exception ex, HttpServletRequest request) {
+    if (isBusy(ex, request)) {
+      return busy(ex, request);
+    }
     log.error("Unhandled exception: {}", ex.getMessage(), ex);
     ApiError apiError = apiErrorMapper.toApiError("An unexpected error occurred", HttpStatus.INTERNAL_SERVER_ERROR.value());
     ApiResponse<ApiError> response = ApiResponse.error("An unexpected error occurred");
     response.setData(apiError);
-    return new ResponseEntity<>(response, HttpStatus.INTERNAL_SERVER_ERROR);
+    return json(response, HttpStatus.INTERNAL_SERVER_ERROR);
   }
 
   @Override
@@ -157,7 +240,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     ApiError apiError = apiErrorMapper.toApiError("Validation failed", HttpStatus.BAD_REQUEST.value(), errors);
     ApiResponse<ApiError> response = ApiResponse.error("Validation failed");
     response.setData(apiError);
-    return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    return json(response, HttpStatus.BAD_REQUEST);
   }
 
   @Override
@@ -171,7 +254,26 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     ApiError apiError = apiErrorMapper.toApiError("Malformed JSON request", HttpStatus.BAD_REQUEST.value());
     ApiResponse<ApiError> response = ApiResponse.error("Malformed JSON request");
     response.setData(apiError);
-    return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    return json(response, HttpStatus.BAD_REQUEST);
+  }
+
+  @Override
+  protected ResponseEntity<Object> handleMaxUploadSizeExceededException(
+      org.springframework.web.multipart.MaxUploadSizeExceededException ex,
+      HttpHeaders headers,
+      HttpStatusCode status,
+      WebRequest request) {
+    log.warn("Upload too large: {}", ex.getMessage());
+    long max = ex.getMaxUploadSize() > 0 ? ex.getMaxUploadSize()
+        : maxRequestSize != null ? maxRequestSize.toBytes() : -1;
+    String message =
+        max > 0
+            ? "Upload too large: the limit is " + (max / (1024 * 1024)) + " MB per upload"
+            : "Upload too large";
+    ApiError apiError = apiErrorMapper.toApiError(message, HttpStatus.PAYLOAD_TOO_LARGE.value());
+    ApiResponse<ApiError> response = ApiResponse.error(message);
+    response.setData(apiError);
+    return json(response, HttpStatus.PAYLOAD_TOO_LARGE);
   }
 
   @ExceptionHandler({
