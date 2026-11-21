@@ -77,21 +77,31 @@ public class ShopSubscriptionService {
   }
 
   /**
-   * Records the term a paid order granted, in one conditional upsert that never moves
-   * {@code expiresAt} backwards: when two grants race, or a stale one arrives late, the later end
-   * date stays. A grant without an end date always applies. Use {@link #sync} for changes that may
-   * shorten the term (refund revocation, backfill from the shop's fields).
+   * Records the term a paid order granted, never moving a term of the same plan backwards: when two
+   * grants race, or a stale one arrives late, the later end date stays. A grant of another plan, or
+   * without an end date, always applies. The check is a read (exact inside a {@code MongoTx}
+   * transaction) and the write is conditional on the same rule, so a race outside one cannot slip
+   * through either. Use {@link #sync} for changes that may shorten the term (refund revocation,
+   * backfill from the shop's fields).
    */
   public ShopSubscription recordGrant(ShopInfo shop, String sourceOrderId) {
     Instant now = Instant.now();
     SubscriptionStatus status = deriveStatus(shop.planId(), shop.planExpiryDate(), now);
     Instant expiresAt = shop.planExpiryDate();
+    String planId = StringUtils.hasText(shop.planId()) ? shop.planId() : null;
+    Optional<ShopSubscription> current = shopSubscriptionRepository.findById(shop.shopId());
+    if (current.isPresent() && endsLaterOnSamePlan(current.get(), planId, expiresAt)) {
+      log.warn("Subscription of shop {} already ends after {}; order {} left it unchanged",
+          shop.shopId(), expiresAt, sourceOrderId);
+      return current.get();
+    }
     Criteria byShop = Criteria.where("_id").is(shop.shopId());
     Query query = new Query(expiresAt == null ? byShop
-        : byShop.orOperator(Criteria.where("expiresAt").is(null), Criteria.where("expiresAt").lte(expiresAt)));
+        : byShop.orOperator(Criteria.where("expiresAt").is(null), Criteria.where("expiresAt").lte(expiresAt),
+            Criteria.where("planId").ne(planId)));
     Update update = new Update()
         .set("shopId", shop.shopId())
-        .set("planId", StringUtils.hasText(shop.planId()) ? shop.planId() : null)
+        .set("planId", planId)
         .set("status", status)
         .set("expiresAt", expiresAt)
         .set("sourceOrderId", sourceOrderId)
@@ -130,6 +140,11 @@ public class ShopSubscriptionService {
       return SubscriptionStatus.EXPIRED;
     }
     return StringUtils.hasText(planId) ? SubscriptionStatus.ACTIVE : SubscriptionStatus.TRIAL;
+  }
+
+  private static boolean endsLaterOnSamePlan(ShopSubscription current, String planId, Instant expiresAt) {
+    return expiresAt != null && current.getExpiresAt() != null && current.getExpiresAt().isAfter(expiresAt)
+        && Objects.equals(current.getPlanId(), planId);
   }
 
   private static boolean matches(ShopSubscription current, ShopInfo shop, SubscriptionStatus status) {
