@@ -116,12 +116,27 @@ public class PaymentOrderStateService {
         PlanPaymentOrder.class).getModifiedCount() > 0;
   }
 
-  /** Open orders past their expiry. Orders from before expiresAt existed use createdAt + ttl. */
+  /**
+   * Marks an ended-unpaid order's reservations as released, only while it is still ended and not
+   * yet released. A late payment moves the order to PAID first, after which this returns false and
+   * nothing is given back. True: the caller must release now.
+   */
+  public boolean markReservationsReleased(String id, Instant now) {
+    Query query = byIdAndStatus(id, PlanPaymentConstants.UNPAID_ENDED_STATUSES);
+    query.addCriteria(Criteria.where("reservationsReleasedAt").is(null));
+    Update update = new Update().set("reservationsReleasedAt", now).set("updatedAt", now);
+    return mongoTemplate.updateFirst(query, update, PlanPaymentOrder.class).getModifiedCount() > 0;
+  }
+
+  /**
+   * Open orders past their expiry, oldest expiry first (served by index status_expiresAt). Orders
+   * from before expiresAt existed use createdAt + ttl.
+   */
   public List<PlanPaymentOrder> findExpirable(Instant now, Duration ttl, int limit) {
     Query query = new Query(Criteria.where("status").in(PlanPaymentConstants.OPEN_STATUSES).orOperator(
         Criteria.where("expiresAt").lt(now),
         Criteria.where("expiresAt").is(null).and("createdAt").lt(now.minus(ttl))))
-        .with(Sort.by("createdAt"))
+        .with(Sort.by("expiresAt"))
         .limit(limit);
     return mongoTemplate.find(query, PlanPaymentOrder.class);
   }
