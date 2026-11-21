@@ -461,6 +461,21 @@ Employees, attendance, leave, salary advances, payroll, salary payments, payslip
 | `GET /api/v1/hr/me/payslips`, `GET /api/v1/hr/me/payslips/{lineId}/pdf` | linked employee (allowed while the plan is expired) | Own payslips of finalised months; another employee's line is 404 |
 | `GET /api/v1/hr/me/notifications?since=`, `POST /api/v1/hr/me/notifications/{id}/read`, `POST /api/v1/hr/me/notifications/read-all` | any shop member | HR inbox (polled every 60 s) |
 
+### Plan checkout orders (plan)
+
+A plan purchase is a `plan_payment_orders` row moving CREATED → PAYMENT_PENDING → PAID → FULFILLING → FULFILLED (or PAYMENT_FAILED / EXPIRED / CANCELLED unpaid, FULFILMENT_FAILED for an operator); every move is a conditional update. Responses carry the raw `status` and a `phase` the apps show instead of reading status names: `AWAITING_PAYMENT` (open the gateway), `PROCESSING` (payment received, confirming), `FULFILLED` (done), `FAILED` (no payment taken), `ENDED` (expired or cancelled).
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/v1/plans/orders/quote` | Price a cart. For a signed-in shop, a different plan while its paid plan still has days left is refused (`409 PLAN_CHANGE_NOT_ALLOWED`, code 6020); renewing the same plan is allowed. |
+| `POST /api/v1/plans/payment/checkout` | Create the order. `Idempotency-Key` is optional: a repeated key returns its order (a different cart with the same key is `409 IDEMPOTENCY_KEY_REUSED`); without a key, a still-open unexpired order for the same cart is returned instead of a second one. Same plan-change rule as the quote. RBAC module `paymentPlan`. |
+| `POST /api/v1/plans/payment/verify` | Confirm a Razorpay payment. `success` is true only when the order is FULFILLED; `phase` PROCESSING means paid and still being applied. A second payment captured for an order already paid is logged and written to `audit_entries` (`PLAN_PAYMENT_DUPLICATE_CAPTURE`, source SYSTEM) for a refund; nothing more is granted. |
+| `POST /api/v1/plans/orders/{orderId}/cancel` | Cancel the caller's own unpaid order (shop from the request, never the path) and give back its voucher and wallet holds. Repeating it, or cancelling an order that already expired or failed, returns it unchanged; a paid order is `409 ORDER_NOT_CANCELLABLE` (code 5003). RBAC module `paymentPlan`. |
+
+Plan prices are GST-inclusive. Each new order stores its split: `taxableAmount` + `gstAmount` == `amount`, at `gstRatePercent` (`plan.gst-rate-percent`, env `PLAN_GST_RATE_PERCENT`, default 18; `PlanGstUtils`, paise rounded HALF_UP). Orders created before this have no split; readers split `amount` at the configured rate.
+
+Granting a paid order runs in one MongoDB transaction (`MongoTx` flow `plan_grant`): the `plan_transactions` row (unique per order, index `paymentOrderId_unique`), the shop's plan fields and its `shop_subscriptions` row. Renewing the same plan starts the new term at the current expiry, so no paid day is lost. An unpaid order that ends gives back its holds only while it is still ended (`reservationsReleasedAt`), so a late payment and the release cannot both win. Indexes (`PaymentOrderStatusMigration`, on startup): `shop_idempotency_key_unique`, `status_expiresAt`, `status_claimedAt`, `provider_providerOrderId_unique`, `shop_status_paidAt`, `shop_status_fulfilledAt`, `shop_requestHash_status` on `plan_payment_orders`; `shop_createdAt` and `paymentOrderId_unique` on `plan_transactions` (if older duplicate rows exist the unique index is skipped and they are logged for an operator).
+
 ### Build commands
 
 ```bash

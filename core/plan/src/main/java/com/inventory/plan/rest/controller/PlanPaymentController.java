@@ -13,6 +13,7 @@ import com.inventory.plan.rest.dto.response.PaymentConfigResponse;
 import com.inventory.plan.rest.dto.response.PlanCheckoutResponse;
 import com.inventory.plan.rest.dto.response.VerifyPlanPaymentResponse;
 import com.inventory.plan.service.PlanPaymentService;
+import com.inventory.plan.utils.constants.PlanPaymentConstants;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -47,9 +49,10 @@ public class PlanPaymentController {
   @PostMapping("/checkout")
   public ResponseEntity<ApiResponse<PlanCheckoutResponse>> createCheckout(
       @RequestBody CreatePlanCheckoutRequest request,
+      @RequestHeader(value = PlanPaymentConstants.IDEMPOTENCY_KEY_HEADER, required = false) String idempotencyKey,
       HttpServletRequest httpRequest) {
     String shopId = getShopId(httpRequest);
-    return ResponseEntity.ok(ApiResponse.success(planPaymentService.createCheckout(shopId, request)));
+    return ResponseEntity.ok(ApiResponse.success(planPaymentService.createCheckout(shopId, request, idempotencyKey)));
   }
 
   @PostMapping("/verify")

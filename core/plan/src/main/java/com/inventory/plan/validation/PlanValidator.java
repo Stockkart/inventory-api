@@ -1,15 +1,12 @@
 package com.inventory.plan.validation;
 
 import com.inventory.common.exception.ValidationException;
-import com.inventory.plan.config.PaymentProperties;
 import com.inventory.plan.domain.model.Plan;
 import com.inventory.plan.domain.model.Usage;
-import com.inventory.plan.rest.dto.request.AssignPlanRequest;
 import com.inventory.plan.rest.dto.request.CreatePlanCheckoutRequest;
-import com.inventory.plan.rest.dto.request.PaymentWebhookPayload;
 import com.inventory.plan.rest.dto.request.RecordUsageRequest;
 import com.inventory.plan.rest.dto.request.VerifyPlanPaymentRequest;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.inventory.plan.utils.constants.PlanPaymentConstants;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -18,26 +15,12 @@ import java.math.BigDecimal;
 @Component
 public class PlanValidator {
 
-  @Autowired(required = false)
-  private PaymentProperties paymentProperties;
-
-  public void validateAssignPlanRequest(String shopId, AssignPlanRequest request) {
+  public void validateCancelOrder(String shopId, String orderId) {
     if (!StringUtils.hasText(shopId)) {
       throw new ValidationException("Shop ID is required");
     }
-    if (request == null) {
-      throw new ValidationException("Request cannot be null");
-    }
-    if (!StringUtils.hasText(request.getPlanId())) {
-      throw new ValidationException("Plan ID is required");
-    }
-    if (request.getDurationMonths() == null || request.getDurationMonths() < 1) {
-      throw new ValidationException("Duration must be at least 1 month");
-    }
-    if (paymentProperties != null
-        && StringUtils.hasText(paymentProperties.getGateway())
-        && !StringUtils.hasText(request.getProviderPaymentId())) {
-      throw new ValidationException("Complete payment checkout before activating a plan");
+    if (!StringUtils.hasText(orderId)) {
+      throw new ValidationException("Order ID is required");
     }
   }
 
@@ -63,27 +46,24 @@ public class PlanValidator {
     }
   }
 
-  public void validatePaymentWebhookPayload(PaymentWebhookPayload payload) {
-    if (payload == null) {
-      throw new ValidationException("Webhook payload cannot be null");
-    }
-    if (!StringUtils.hasText(payload.getShopId())) {
-      throw new ValidationException("Shop ID is required in webhook");
-    }
-    if (!StringUtils.hasText(payload.getPlanId())) {
-      throw new ValidationException("Plan ID is required in webhook");
-    }
-  }
-
-  public void validateCreateCheckoutRequest(String shopId, CreatePlanCheckoutRequest request) {
+  public void validateCreateCheckoutRequest(String shopId, CreatePlanCheckoutRequest request, String idempotencyKey) {
     if (!StringUtils.hasText(shopId)) {
       throw new ValidationException("Shop ID is required");
     }
-    if (request == null || !StringUtils.hasText(request.getPlanId())) {
-      throw new ValidationException("Plan ID is required");
+    if (request == null
+        || (!StringUtils.hasText(request.getPlanCode()) && !StringUtils.hasText(request.getPlanId()))) {
+      throw new ValidationException("Plan code or plan ID is required");
     }
-    if (request.getDurationMonths() != null && request.getDurationMonths() < 1) {
-      throw new ValidationException("Duration must be at least 1 month");
+    if (idempotencyKey != null
+        && (idempotencyKey.isBlank() || idempotencyKey.length() > PlanPaymentConstants.MAX_IDEMPOTENCY_KEY_LENGTH)) {
+      throw new ValidationException(PlanPaymentConstants.IDEMPOTENCY_KEY_HEADER + " must be 1 to "
+          + PlanPaymentConstants.MAX_IDEMPOTENCY_KEY_LENGTH + " characters");
+    }
+    // Checkout charges one annual price, so any other duration would grant time that wasn't paid for.
+    if (request.getDurationMonths() != null
+        && request.getDurationMonths() != PlanPaymentConstants.DEFAULT_CHECKOUT_DURATION_MONTHS) {
+      throw new ValidationException("Plans are sold yearly; duration must be "
+          + PlanPaymentConstants.DEFAULT_CHECKOUT_DURATION_MONTHS + " months");
     }
   }
 

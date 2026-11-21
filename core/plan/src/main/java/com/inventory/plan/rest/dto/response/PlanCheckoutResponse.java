@@ -6,6 +6,8 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.List;
 
 @Data
 @NoArgsConstructor
@@ -14,10 +16,20 @@ import java.math.BigDecimal;
 public class PlanCheckoutResponse {
 
   private String orderId;
+  private String status;
+  /** What the status means for the buyer; open the gateway only when AWAITING_PAYMENT. */
+  private com.inventory.plan.domain.model.OrderPhase phase;
   private String provider;
+  /** Amount charged, after discounts and wallet credit. */
   private BigDecimal amount;
   private String currency;
   private String planName;
+  private List<QuoteResponse.QuoteItem> items;
+  private BigDecimal subtotal;
+  private BigDecimal discountTotal;
+  private BigDecimal walletCredit;
+  /** Pay before this or the order expires and its reservations are released. */
+  private Instant expiresAt;
   private RazorpayPayload razorpay;
 
   @Data
