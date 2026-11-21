@@ -12,7 +12,7 @@ import static org.mockito.Mockito.when;
 
 import com.inventory.common.exception.ValidationException;
 import com.inventory.metrics.MetricsWrapper;
-import com.inventory.plan.service.referral.ReferralAttributionService;
+import com.inventory.plan.api.Referrals;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.mapper.ShopMapper;
@@ -43,7 +43,7 @@ class ShopServiceReferralTest {
   @Mock private UserShopMembershipService membershipService;
   @Mock private VerticalCatalogService verticalCatalogService;
   @Mock private MetricsWrapper metrics;
-  @Mock private ReferralAttributionService referralAttributionService;
+  @Mock private Referrals referralAttributionService;
 
   @InjectMocks private ShopService shopService;
 
@@ -119,8 +119,8 @@ class ShopServiceReferralTest {
       shop.setShopId("shop-new");
       return shop;
     });
-    when(referralAttributionService.attribute(eq("shop-new"), any(), any(), any()))
-        .thenThrow(new IllegalStateException("mongo down"));
+    org.mockito.Mockito.doThrow(new IllegalStateException("mongo down"))
+        .when(referralAttributionService).attribute(eq("shop-new"), any(), any(), any());
 
     shopService.register(request, "user-1");
 

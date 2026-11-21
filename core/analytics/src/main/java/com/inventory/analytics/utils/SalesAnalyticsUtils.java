@@ -1,337 +1,133 @@
 package com.inventory.analytics.utils;
 
 import com.inventory.analytics.rest.dto.response.*;
-import com.inventory.product.domain.model.Purchase;
-import com.inventory.product.domain.model.PurchaseItem;
-import com.inventory.product.domain.model.enums.PurchaseStatus;
-import com.inventory.product.domain.repository.InventoryRepository;
-import com.inventory.product.domain.repository.PurchaseRepository;
+import com.inventory.analytics.utils.AnalyticsSalesQueries.BillTotals;
+import com.inventory.analytics.utils.AnalyticsSalesQueries.BucketTotal;
+import com.inventory.analytics.utils.AnalyticsSalesQueries.LineGroup;
+import com.inventory.product.domain.model.Inventory;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 
+/**
+ * Sales-tab numbers from grouped sale lines ({@link AnalyticsSalesQueries}) and the lots they sold
+ * from (read once). Per-line rules are unchanged; each group counts as {@code lines} identical lines.
+ */
 @Component
 @Slf4j
 public class SalesAnalyticsUtils {
 
-  @Autowired
-  private PurchaseRepository purchaseRepository;
-
-  @Autowired
-  private InventoryRepository inventoryRepository;
-
-  public List<Purchase> getCompletedPurchases(String shopId, Instant startDate, Instant endDate) {
-    return purchaseRepository.findByShopId(shopId, Pageable.unpaged())
-        .getContent()
-        .stream()
-        .filter(p -> p.getStatus() == PurchaseStatus.COMPLETED)
-        .filter(p -> p.getSoldAt() != null)
-        .filter(p -> !p.getSoldAt().isBefore(startDate) && !p.getSoldAt().isAfter(endDate))
-        .collect(Collectors.toList());
-  }
-
-  public RevenueSummaryDto calculateRevenueSummary(List<Purchase> purchases) {
-    BigDecimal totalRevenue = purchases.stream()
-        .map(Purchase::getGrandTotal)
-        .filter(Objects::nonNull)
-        .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-    BigDecimal totalTax = purchases.stream()
-        .map(Purchase::getTaxTotal)
-        .filter(Objects::nonNull)
-        .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-    BigDecimal totalDiscount = purchases.stream()
-        .map(Purchase::getDiscountTotal)
-        .filter(Objects::nonNull)
-        .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-    int purchaseCount = purchases.size();
+  public RevenueSummaryDto calculateRevenueSummary(BillTotals totals) {
+    int purchaseCount = Math.toIntExact(totals.bills());
+    BigDecimal totalRevenue = totals.grandTotal();
     BigDecimal aov = purchaseCount > 0
         ? totalRevenue.divide(BigDecimal.valueOf(purchaseCount), 2, RoundingMode.HALF_UP)
         : BigDecimal.ZERO;
-
-    return new RevenueSummaryDto(totalRevenue, purchaseCount, aov, totalTax, totalDiscount);
+    return new RevenueSummaryDto(totalRevenue, purchaseCount, aov, totals.taxTotal(), totals.discountTotal());
   }
 
-  public List<TopProductDto> getTopProducts(List<Purchase> purchases, int limit) {
+  /**
+   * Per lot sold. The name is the line name on the lot's latest bill (the old code took whichever
+   * line it met last, which depended on the database's return order).
+   */
+  public List<TopProductDto> getTopProducts(List<LineGroup> groups, Map<String, Inventory> lots, int limit) {
     Map<String, TopProductDto> productMap = new HashMap<>();
+    Map<String, Instant> nameSeenAt = new HashMap<>();
 
-    for (Purchase purchase : purchases) {
-      if (purchase.getItems() != null) {
-        for (PurchaseItem item : purchase.getItems()) {
-          String inventoryId = item.getInventoryId();
-          TopProductDto dto = productMap.getOrDefault(inventoryId,
-              new TopProductDto(inventoryId, null, null, null, 0, BigDecimal.ZERO, 0));
-
-          int qty = dto.getTotalQuantitySold() != null ? dto.getTotalQuantitySold() : 0;
-          BigDecimal revenue = dto.getTotalRevenue() != null ? dto.getTotalRevenue() : BigDecimal.ZERO;
-          int sales = dto.getNumberOfSales() != null ? dto.getNumberOfSales() : 0;
-
-          dto.setTotalQuantitySold(qty + getBaseQuantity(item));
-          BigDecimal pricingQuantity = getPricingQuantity(item);
-          BigDecimal itemRevenue = item.getPriceToRetail() != null
-              ? item.getPriceToRetail().multiply(pricingQuantity)
-              : BigDecimal.ZERO;
-          dto.setTotalRevenue(revenue.add(itemRevenue));
-          dto.setNumberOfSales(sales + 1);
-          dto.setProductName(item.getName());
-
-          if (dto.getLotId() == null || dto.getCompanyName() == null) {
-            inventoryRepository.findById(inventoryId).ifPresent(inv -> {
-              dto.setLotId(inv.getLotId());
-              dto.setCompanyName(inv.getCompanyName());
-            });
-          }
-
-          productMap.put(inventoryId, dto);
+    for (LineGroup g : groups) {
+      String inventoryId = g.lotId();
+      TopProductDto dto = productMap.computeIfAbsent(inventoryId, id -> {
+        TopProductDto d = new TopProductDto(id, null, null, null, 0, BigDecimal.ZERO, 0);
+        Inventory inv = id == null ? null : lots.get(id);
+        if (inv != null) {
+          d.setLotId(inv.getLotId());
+          d.setCompanyName(inv.getCompanyName());
         }
+        return d;
+      });
+      dto.setTotalQuantitySold(dto.getTotalQuantitySold() + g.times(g.baseQuantity()));
+      dto.setTotalRevenue(dto.getTotalRevenue().add(g.times(lineRevenue(g))));
+      dto.setNumberOfSales(dto.getNumberOfSales() + g.times(1));
+      Instant seen = nameSeenAt.get(inventoryId);
+      if (seen == null || (g.lastSoldAt() != null && g.lastSoldAt().isAfter(seen))) {
+        dto.setProductName(g.line().getName());
+        nameSeenAt.put(inventoryId, g.lastSoldAt() != null ? g.lastSoldAt() : Instant.MIN);
       }
     }
 
     return productMap.values().stream()
-        .sorted((a, b) -> (b.getTotalRevenue() != null ? b.getTotalRevenue() : BigDecimal.ZERO)
-            .compareTo(a.getTotalRevenue() != null ? a.getTotalRevenue() : BigDecimal.ZERO))
+        .sorted((a, b) -> b.getTotalRevenue().compareTo(a.getTotalRevenue()))
         .limit(limit)
         .collect(Collectors.toList());
   }
 
-  public List<SalesByGroupDto> getSalesByProduct(List<Purchase> purchases) {
-    Map<String, SalesByGroupDto> productMap = new HashMap<>();
+  /** Grouped by the name on the sale line ("Unknown" when blank-null). */
+  public List<SalesByGroupDto> getSalesByProduct(List<LineGroup> groups) {
+    return byGroup(groups, g -> g.line().getName() != null ? g.line().getName() : "Unknown");
+  }
 
-    for (Purchase purchase : purchases) {
-      if (purchase.getItems() != null) {
-        for (PurchaseItem item : purchase.getItems()) {
-          String productName = item.getName() != null ? item.getName() : "Unknown";
-          SalesByGroupDto dto = productMap.getOrDefault(productName,
-              new SalesByGroupDto(productName, 0, BigDecimal.ZERO, 0));
+  /** Grouped by the lot's lotId ("Unknown" when the lot is gone). */
+  public List<SalesByGroupDto> getSalesByLotId(List<LineGroup> groups, Map<String, Inventory> lots) {
+    return byGroup(groups, g -> {
+      Inventory inv = g.lotId() == null ? null : lots.get(g.lotId());
+      return inv == null ? "Unknown" : inv.getLotId();
+    });
+  }
 
-          int qty = dto.getTotalQuantitySold() != null ? dto.getTotalQuantitySold() : 0;
-          BigDecimal revenue = dto.getTotalRevenue() != null ? dto.getTotalRevenue() : BigDecimal.ZERO;
-          int sales = dto.getNumberOfSales() != null ? dto.getNumberOfSales() : 0;
+  /** Grouped by the lot's company ("Unknown" when missing or the lot is gone). */
+  public List<SalesByGroupDto> getSalesByCompany(List<LineGroup> groups, Map<String, Inventory> lots) {
+    return byGroup(groups, g -> {
+      Inventory inv = g.lotId() == null ? null : lots.get(g.lotId());
+      return inv == null || inv.getCompanyName() == null ? "Unknown" : inv.getCompanyName();
+    });
+  }
 
-          BigDecimal pricingQty = getPricingQuantity(item);
-          BigDecimal itemRevenue = item.getPriceToRetail() != null
-              ? item.getPriceToRetail().multiply(pricingQty)
-              : BigDecimal.ZERO;
-
-          dto.setTotalQuantitySold(qty + getBaseQuantity(item));
-          dto.setTotalRevenue(revenue.add(itemRevenue));
-          dto.setNumberOfSales(sales + 1);
-          productMap.put(productName, dto);
-        }
-      }
+  private List<SalesByGroupDto> byGroup(List<LineGroup> groups, java.util.function.Function<LineGroup, String> keyOf) {
+    Map<String, SalesByGroupDto> map = new HashMap<>();
+    for (LineGroup g : groups) {
+      String key = keyOf.apply(g);
+      SalesByGroupDto dto = map.computeIfAbsent(key, k -> new SalesByGroupDto(k, 0, BigDecimal.ZERO, 0));
+      dto.setTotalQuantitySold(dto.getTotalQuantitySold() + g.times(g.baseQuantity()));
+      dto.setTotalRevenue(dto.getTotalRevenue().add(g.times(lineRevenue(g))));
+      dto.setNumberOfSales(dto.getNumberOfSales() + g.times(1));
     }
-
-    return productMap.values().stream()
-        .sorted((a, b) -> (b.getTotalRevenue() != null ? b.getTotalRevenue() : BigDecimal.ZERO)
-            .compareTo(a.getTotalRevenue() != null ? a.getTotalRevenue() : BigDecimal.ZERO))
+    return map.values().stream()
+        .sorted((a, b) -> b.getTotalRevenue().compareTo(a.getTotalRevenue()))
         .collect(Collectors.toList());
   }
 
-  public List<SalesByGroupDto> getSalesByLotId(List<Purchase> purchases) {
-    Map<String, SalesByGroupDto> lotMap = new HashMap<>();
-    Set<String> inventoryIds = new HashSet<>();
-
-    for (Purchase purchase : purchases) {
-      if (purchase.getItems() != null) {
-        for (PurchaseItem item : purchase.getItems()) {
-          inventoryIds.add(item.getInventoryId());
-        }
-      }
-    }
-
-    Map<String, String> inventoryToLotId = new HashMap<>();
-    for (String inventoryId : inventoryIds) {
-      inventoryRepository.findById(inventoryId)
-          .ifPresent(inv -> inventoryToLotId.put(inventoryId, inv.getLotId()));
-    }
-
-    for (Purchase purchase : purchases) {
-      if (purchase.getItems() != null) {
-        for (PurchaseItem item : purchase.getItems()) {
-          String lotId = inventoryToLotId.getOrDefault(item.getInventoryId(), "Unknown");
-          SalesByGroupDto dto = lotMap.getOrDefault(lotId, new SalesByGroupDto(lotId, 0, BigDecimal.ZERO, 0));
-
-          int qty = dto.getTotalQuantitySold() != null ? dto.getTotalQuantitySold() : 0;
-          BigDecimal revenue = dto.getTotalRevenue() != null ? dto.getTotalRevenue() : BigDecimal.ZERO;
-          int sales = dto.getNumberOfSales() != null ? dto.getNumberOfSales() : 0;
-
-          BigDecimal pricingQty = getPricingQuantity(item);
-          BigDecimal itemRevenue = item.getPriceToRetail() != null
-              ? item.getPriceToRetail().multiply(pricingQty)
-              : BigDecimal.ZERO;
-
-          dto.setTotalQuantitySold(qty + getBaseQuantity(item));
-          dto.setTotalRevenue(revenue.add(itemRevenue));
-          dto.setNumberOfSales(sales + 1);
-          lotMap.put(lotId, dto);
-        }
-      }
-    }
-
-    return lotMap.values().stream()
-        .sorted((a, b) -> (b.getTotalRevenue() != null ? b.getTotalRevenue() : BigDecimal.ZERO)
-            .compareTo(a.getTotalRevenue() != null ? a.getTotalRevenue() : BigDecimal.ZERO))
-        .collect(Collectors.toList());
-  }
-
-  public List<SalesByGroupDto> getSalesByCompany(List<Purchase> purchases) {
-    Map<String, SalesByGroupDto> companyMap = new HashMap<>();
-    Set<String> inventoryIds = new HashSet<>();
-
-    for (Purchase purchase : purchases) {
-      if (purchase.getItems() != null) {
-        for (PurchaseItem item : purchase.getItems()) {
-          inventoryIds.add(item.getInventoryId());
-        }
-      }
-    }
-
-    Map<String, String> inventoryToCompany = new HashMap<>();
-    for (String inventoryId : inventoryIds) {
-      inventoryRepository.findById(inventoryId)
-          .ifPresent(inv -> inventoryToCompany.put(inventoryId,
-              inv.getCompanyName() != null ? inv.getCompanyName() : "Unknown"));
-    }
-
-    for (Purchase purchase : purchases) {
-      if (purchase.getItems() != null) {
-        for (PurchaseItem item : purchase.getItems()) {
-          String companyName = inventoryToCompany.getOrDefault(item.getInventoryId(), "Unknown");
-          SalesByGroupDto dto = companyMap.getOrDefault(companyName,
-              new SalesByGroupDto(companyName, 0, BigDecimal.ZERO, 0));
-
-          int qty = dto.getTotalQuantitySold() != null ? dto.getTotalQuantitySold() : 0;
-          BigDecimal revenue = dto.getTotalRevenue() != null ? dto.getTotalRevenue() : BigDecimal.ZERO;
-          int sales = dto.getNumberOfSales() != null ? dto.getNumberOfSales() : 0;
-
-          BigDecimal pricingQty = getPricingQuantity(item);
-          BigDecimal itemRevenue = item.getPriceToRetail() != null
-              ? item.getPriceToRetail().multiply(pricingQty)
-              : BigDecimal.ZERO;
-
-          dto.setTotalQuantitySold(qty + getBaseQuantity(item));
-          dto.setTotalRevenue(revenue.add(itemRevenue));
-          dto.setNumberOfSales(sales + 1);
-          companyMap.put(companyName, dto);
-        }
-      }
-    }
-
-    return companyMap.values().stream()
-        .sorted((a, b) -> (b.getTotalRevenue() != null ? b.getTotalRevenue() : BigDecimal.ZERO)
-            .compareTo(a.getTotalRevenue() != null ? a.getTotalRevenue() : BigDecimal.ZERO))
-        .collect(Collectors.toList());
-  }
-
-  public List<TimeSeriesDataDto> getTimeSeriesData(
-      List<Purchase> purchases,
-      Instant startDate,
-      Instant endDate,
-      String granularity) {
-
+  /** Bills per chart bucket (IST), from MongoDB's per-day (or per-hour) totals. */
+  public List<TimeSeriesDataDto> getTimeSeriesData(List<BucketTotal> buckets, String granularity) {
     Map<String, TimeSeriesDataDto> timeSeriesMap = new HashMap<>();
-
-    for (Purchase purchase : purchases) {
-      if (purchase.getSoldAt() == null) continue;
-
-      String periodKey = getPeriodKey(purchase.getSoldAt(), granularity);
-      TimeSeriesDataDto dto = timeSeriesMap.getOrDefault(periodKey,
-          new TimeSeriesDataDto(periodKey, null, null, BigDecimal.ZERO, 0, null));
-
-      BigDecimal rev = dto.getRevenue() != null ? dto.getRevenue() : BigDecimal.ZERO;
-      int count = dto.getPurchaseCount() != null ? dto.getPurchaseCount() : 0;
-      BigDecimal purchaseTotal = purchase.getGrandTotal() != null ? purchase.getGrandTotal() : BigDecimal.ZERO;
-
-      dto.setRevenue(rev.add(purchaseTotal));
-      dto.setPurchaseCount(count + 1);
-      timeSeriesMap.put(periodKey, dto);
+    for (BucketTotal b : buckets) {
+      String periodKey = AnalyticsPeriods.keyOf(b.bucket(), granularity);
+      TimeSeriesDataDto dto = timeSeriesMap.computeIfAbsent(periodKey,
+          k -> new TimeSeriesDataDto(k, null, null, BigDecimal.ZERO, 0, null));
+      dto.setRevenue(dto.getRevenue().add(b.grandTotal()));
+      dto.setPurchaseCount(dto.getPurchaseCount() + Math.toIntExact(b.bills()));
     }
 
     return timeSeriesMap.values().stream()
         .sorted(Comparator.comparing(TimeSeriesDataDto::getPeriod))
         .map(dto -> {
-          int count = dto.getPurchaseCount() != null ? dto.getPurchaseCount() : 0;
-          BigDecimal rev = dto.getRevenue() != null ? dto.getRevenue() : BigDecimal.ZERO;
+          int count = dto.getPurchaseCount();
+          BigDecimal rev = dto.getRevenue();
           BigDecimal aov = count > 0
               ? rev.divide(BigDecimal.valueOf(count), 2, RoundingMode.HALF_UP)
               : BigDecimal.ZERO;
-
-          Instant periodStart = parsePeriodKey(dto.getPeriod(), granularity);
-          Instant periodEnd = getNextPeriod(periodStart, granularity);
-
+          Instant periodStart = AnalyticsPeriods.start(dto.getPeriod(), granularity);
+          Instant periodEnd = AnalyticsPeriods.end(periodStart, granularity);
           return new TimeSeriesDataDto(dto.getPeriod(), periodStart, periodEnd, rev, count, aov);
         })
         .collect(Collectors.toList());
   }
 
-  public String getPeriodKey(Instant instant, String granularity) {
-    LocalDateTime dateTime = LocalDateTime.ofInstant(instant, ZoneId.systemDefault());
-    switch (granularity.toLowerCase()) {
-      case "hour":
-        return dateTime.truncatedTo(ChronoUnit.HOURS).toString();
-      case "day":
-        return dateTime.toLocalDate().toString();
-      case "week":
-        LocalDate weekStart = dateTime.toLocalDate().with(java.time.DayOfWeek.MONDAY);
-        return weekStart.toString() + "_week";
-      case "month":
-        return dateTime.getYear() + "-" + String.format("%02d", dateTime.getMonthValue());
-      default:
-        return dateTime.toLocalDate().toString();
-    }
-  }
-
-  public Instant parsePeriodKey(String periodKey, String granularity) {
-    try {
-      switch (granularity.toLowerCase()) {
-        case "hour":
-          return LocalDateTime.parse(periodKey).atZone(ZoneId.systemDefault()).toInstant();
-        case "day":
-          return LocalDate.parse(periodKey).atStartOfDay(ZoneId.systemDefault()).toInstant();
-        case "week":
-          String dateStr = periodKey.replace("_week", "");
-          return LocalDate.parse(dateStr).atStartOfDay(ZoneId.systemDefault()).toInstant();
-        case "month":
-          String[] parts = periodKey.split("-");
-          return LocalDate.of(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]), 1)
-              .atStartOfDay(ZoneId.systemDefault()).toInstant();
-        default:
-          return LocalDate.parse(periodKey).atStartOfDay(ZoneId.systemDefault()).toInstant();
-      }
-    } catch (Exception e) {
-      return Instant.now();
-    }
-  }
-
-  public Instant getNextPeriod(Instant current, String granularity) {
-    switch (granularity.toLowerCase()) {
-      case "hour":
-        return current.plus(1, ChronoUnit.HOURS);
-      case "day":
-        return current.plus(1, ChronoUnit.DAYS);
-      case "week":
-        return current.plus(7, ChronoUnit.DAYS);
-      case "month":
-        return current.plus(30, ChronoUnit.DAYS);
-      default:
-        return current.plus(1, ChronoUnit.DAYS);
-    }
-  }
-
-  public PeriodComparisonDto calculatePeriodComparison(List<Purchase> current, List<Purchase> previous) {
+  public PeriodComparisonDto calculatePeriodComparison(BillTotals current, BillTotals previous) {
     RevenueSummaryDto currentSummary = calculateRevenueSummary(current);
     RevenueSummaryDto previousSummary = calculateRevenueSummary(previous);
 
@@ -367,26 +163,10 @@ public class SalesAnalyticsUtils {
     );
   }
 
-  private int getBaseQuantity(PurchaseItem item) {
-    if (item.getBaseQuantity() != null) {
-      return item.getBaseQuantity();
-    }
-    if (item.getQuantity() == null) {
-      return 0;
-    }
-    int factor = item.getUnitFactor() != null && item.getUnitFactor() > 0 ? item.getUnitFactor() : 1;
-    return item.getQuantity().multiply(BigDecimal.valueOf(factor)).setScale(0, RoundingMode.HALF_UP).intValue();
-  }
-
-  private BigDecimal getPricingQuantity(PurchaseItem item) {
-    if (item.getQuantity() != null) {
-      return item.getQuantity();
-    }
-    if (item.getBaseQuantity() != null) {
-      int factor = item.getUnitFactor() != null && item.getUnitFactor() > 0 ? item.getUnitFactor() : 1;
-      return BigDecimal.valueOf(item.getBaseQuantity())
-          .divide(BigDecimal.valueOf(factor), 4, RoundingMode.HALF_UP);
-    }
-    return BigDecimal.ZERO;
+  /** Price × pricing quantity of one line; 0 without a price. */
+  static BigDecimal lineRevenue(LineGroup g) {
+    return g.line().getPriceToRetail() != null
+        ? g.line().getPriceToRetail().multiply(g.pricingQuantity())
+        : BigDecimal.ZERO;
   }
 }

@@ -32,8 +32,6 @@ public class LoginResponse {
 
   @Data
   public static class ShopInfo {
-    String sgst;
-    String cgst;
     String name;
   }
 }

@@ -39,7 +39,8 @@ public class ShopRbacController {
       HttpServletRequest httpRequest) {
     String userId = requireUserId(httpRequest);
     String shopId = requireShopId(httpRequest);
-    return ResponseEntity.ok(ApiResponse.success(rbacService.getEffectiveAccess(userId, shopId)));
+    return ResponseEntity.ok(
+        ApiResponse.success(rbacService.getEffectiveAccessForClient(userId, shopId)));
   }
 
   @GetMapping("/{shopId}/rbac")

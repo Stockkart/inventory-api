@@ -31,13 +31,16 @@ public final class PackagingUnitCatalog {
     all.add(def("BOU", "BILLIONS OF UNITS", "MEASURE", SellUnitRule.FRACTIONAL_BASE, null, false,
         "Stock in billions of units.", "Sell by unit."));
     all.add(def("BOX", "BOX", "MEASURE", SellUnitRule.FRACTIONAL_BASE, "BOX", true,
-        "Optional: units per box (e.g. 10 strips per box).", "Sell by box or base unit."));
+        "Stock whole boxes (1 × 1 BOX). For items per box, use PCS or TBS with the box size.",
+        "Sell by box or base unit."));
     all.add(def("BTL", "BOTTLES", "MEASURE", SellUnitRule.PACK_ONLY, "BTL", true,
-        "Liquid/cream in bottles; set ML per bottle.", "Sell full bottles only."));
+        "Stock whole bottles (1 × 1 BTL). For ML per bottle, use MLT with the bottle size.",
+        "Sell full bottles only."));
     all.add(def("BUN", "BUNCHES", "MEASURE", SellUnitRule.FRACTIONAL_BASE, null, false,
         "Stock in bunches.", "Sell by bunch."));
     all.add(def("CAN", "CANS", "MEASURE", SellUnitRule.PACK_ONLY, "CAN", true,
-        "Set volume per can.", "Sell full cans only."));
+        "Stock whole cans (1 × 1 CAN). For volume per can, use MLT or LTR.",
+        "Sell full cans only."));
     all.add(def("CBM", "CUBIC METER", "VOLUME", SellUnitRule.PACK_ONLY, null, false,
         "Bulk volume.", "Sell by cubic meter."));
     all.add(def("CCM", "CUBIC CENTIMETER", "VOLUME", SellUnitRule.PACK_ONLY, "BTL", true,
@@ -45,21 +48,24 @@ public final class PackagingUnitCatalog {
     all.add(def("CMS", "CENTIMETER", "LENGTH", SellUnitRule.FRACTIONAL_BASE, null, false,
         "Length in cm.", "Sell by cm."));
     all.add(def("CTN", "CARTONS", "MEASURE", SellUnitRule.FRACTIONAL_BASE, "CTN", true,
-        "Optional units per carton.", "Sell by carton."));
+        "Stock whole cartons (1 × 1 CTN). For items per carton, use PCS with the carton size.",
+        "Sell by carton."));
     all.add(def("DOZ", "DOZEN", "MEASURE", SellUnitRule.FRACTIONAL_BASE, "DOZ", true,
-        "12 pieces per dozen.", "Sell by dozen or piece."));
+        "Stock whole dozens (1 × 1 DOZ). To sell single pieces, use 1 × 12 PCS.",
+        "Sell by dozen or piece."));
     all.add(def("DRM", "DRUM", "MEASURE", SellUnitRule.PACK_ONLY, "DRM", true,
-        "Set volume per drum.", "Sell full drums only."));
+        "Stock whole drums (1 × 1 DRM). For volume per drum, use LTR.",
+        "Sell full drums only."));
     all.add(def("GGR", "GREAT GROSS", "MEASURE", SellUnitRule.FRACTIONAL_BASE, null, false,
         "144 dozen units.", "Sell by great gross."));
     all.add(def("GMS", "GRAMS", "WEIGHT", SellUnitRule.FRACTIONAL_BASE, "GMS", true,
-        "Optional grams per pack.", "Sell by gram or pack."));
+        "Stock by weight in grams (1 × 1 GMS).", "Sell by gram or pack."));
     all.add(def("GRS", "GROSS", "MEASURE", SellUnitRule.FRACTIONAL_BASE, null, false,
         "12 dozen.", "Sell by gross."));
     all.add(def("GYD", "GROSS YARDS", "LENGTH", SellUnitRule.FRACTIONAL_BASE, null, false,
         "Gross yards.", "Sell by gross yard."));
     all.add(def("KGS", "KILOGRAMS", "WEIGHT", SellUnitRule.FRACTIONAL_BASE, "KGS", true,
-        "Optional kg per pack.", "Sell by kg or pack."));
+        "Stock by weight in kg (1 × 1 KGS).", "Sell by kg or pack."));
     all.add(def("KLR", "KILOLITER", "VOLUME", SellUnitRule.PACK_ONLY, "BTL", true,
         "Set ML/L per container.", "Sell full containers only."));
     all.add(def("KME", "KILOMETRE", "LENGTH", SellUnitRule.FRACTIONAL_BASE, null, false,
@@ -73,7 +79,8 @@ public final class PackagingUnitCatalog {
     all.add(def("NOS", "NUMBERS", "MEASURE", SellUnitRule.FRACTIONAL_BASE, "PAC", true,
         "Optional units per pack.", "Sell by number or pack."));
     all.add(def("PAC", "PACKS", "MEASURE", SellUnitRule.FRACTIONAL_BASE, "PAC", true,
-        "Optional items per pack.", "Sell by pack or base unit."));
+        "Stock whole packs (1 × 1 PAC). For items per pack, use PCS or TBS with the pack size.",
+        "Sell by pack or base unit."));
     all.add(def("PCS", "PIECES", "MEASURE", SellUnitRule.FRACTIONAL_BASE, "PAC", true,
         "Optional pieces per pack.", "Sell by piece or pack."));
     all.add(def("PRS", "PAIRS", "MEASURE", SellUnitRule.FRACTIONAL_BASE, null, false,
@@ -99,7 +106,8 @@ public final class PackagingUnitCatalog {
     all.add(def("TON", "TONNES", "WEIGHT", SellUnitRule.PACK_ONLY, null, false,
         "Tonnes.", "Sell by tonne."));
     all.add(def("TUB", "TUBES", "MEASURE", SellUnitRule.PACK_ONLY, "TUB", true,
-        "e.g. grams/ML per tube.", "Sell full tubes only."));
+        "Stock whole tubes (1 × 1 TUB). For grams per tube, use GMS.",
+        "Sell full tubes only."));
     all.add(def("UGS", "US GALLONS", "VOLUME", SellUnitRule.PACK_ONLY, "BTL", true,
         "US gallons per container.", "Sell full containers only."));
     all.add(def("UNT", "UNITS", "MEASURE", SellUnitRule.FRACTIONAL_BASE, "PAC", true,
