@@ -19,6 +19,7 @@ public enum ErrorCode {
   DUPLICATE_RESOURCE(1007, "Resource already exists", HttpStatus.CONFLICT),
   /** Overloaded for a moment (e.g. no free database connection within mongo.pool.max-wait-ms). */
   SERVICE_BUSY(1008, "The server is busy, please try again in a moment", HttpStatus.SERVICE_UNAVAILABLE),
+  TOO_MANY_REQUESTS(1009, "Too many requests, try again shortly", HttpStatus.TOO_MANY_REQUESTS),
 
   // Business errors (2000-2999)
   BUSINESS_VALIDATION_ERROR(2000, "Business validation error", HttpStatus.BAD_REQUEST),

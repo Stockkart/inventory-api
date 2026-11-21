@@ -204,6 +204,7 @@ MongoDB: "table" means collection, "column" means field.
 | `PAYMENT_GATEWAY` | which payment gateway plans use | both |
 | `RAZORPAY_KEY_ID` | Razorpay key id | both |
 | `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` | Razorpay API and webhook secrets (secret, never commit) | both |
+| `VOUCHER_LOOKUP_MAX_MISSES_PER_MINUTE` | unknown voucher codes a shop or user may try per minute on validate, quote and checkout before `429 TOO_MANY_REQUESTS` (`VoucherLookupRateLimiter`, per instance; default 10) | both |
 | `GSTIN_PROVIDER` | online GSTIN lookup provider; unset means offline check only | .env.example |
 | `GSTINAPI_KEY` | GSTIN lookup API key (secret, never commit) | .env.example |
 
