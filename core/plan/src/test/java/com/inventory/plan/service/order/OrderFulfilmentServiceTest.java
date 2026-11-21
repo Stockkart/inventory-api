@@ -109,6 +109,7 @@ class OrderFulfilmentServiceTest {
   @Test
   void latePaymentThatCannotReacquireReservationsNeedsAnOperator() {
     PlanPaymentOrder claimed = order(1, true);
+    claimed.setReservationsReleasedAt(NOW.minusSeconds(60));
     when(stateService.claim(eq("order-1"), eq(NOW), any())).thenReturn(Optional.of(claimed));
     when(reservations.reacquire(claimed)).thenReturn(false);
 
@@ -121,6 +122,7 @@ class OrderFulfilmentServiceTest {
   @Test
   void latePaymentThatReacquiresIsFulfilled() {
     PlanPaymentOrder claimed = order(1, true);
+    claimed.setReservationsReleasedAt(NOW.minusSeconds(60));
     when(stateService.claim(eq("order-1"), eq(NOW), any())).thenReturn(Optional.of(claimed));
     when(reservations.reacquire(claimed)).thenReturn(true);
     when(stateService.complete("order-1", NOW, NOW)).thenReturn(true);
@@ -129,6 +131,19 @@ class OrderFulfilmentServiceTest {
 
     verify(grant).apply(claimed);
     verify(stateService).complete("order-1", NOW, NOW);
+  }
+
+  /** Paid after it ended but before its release ran: the holds are still there, nothing to take again. */
+  @Test
+  void latePaymentWhoseReservationsWereNeverReleasedSkipsReacquire() {
+    PlanPaymentOrder claimed = order(1, true);
+    when(stateService.claim(eq("order-1"), eq(NOW), any())).thenReturn(Optional.of(claimed));
+    when(stateService.complete("order-1", NOW, NOW)).thenReturn(true);
+
+    service.fulfil("order-1");
+
+    verify(reservations, never()).reacquire(any());
+    verify(grant).apply(claimed);
   }
 
   private static PlanPaymentOrder order(int attempts, boolean late) {

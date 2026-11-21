@@ -56,7 +56,8 @@ public class OrderFulfilmentService {
     PlanPaymentOrder order = claimed.get();
     Instant claimedAt = order.getClaimedAt();
 
-    if (order.isLatePayment() && !reservations.reacquire(order)) {
+    // Reservations still held (the order was paid before its release ran) need no reacquire.
+    if (order.isLatePayment() && order.getReservationsReleasedAt() != null && !reservations.reacquire(order)) {
       String reason = "Paid after the order ended and its reservations could not be taken again";
       stateService.failFulfilment(orderId, claimedAt, reason, now());
       log.error("Order {} for shop {} needs an operator: {}", orderId, order.getShopId(), reason);

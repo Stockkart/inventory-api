@@ -62,6 +62,12 @@ public class PlanPaymentOrder {
   private Instant expiresAt;
   /** Paid after it had failed, expired or been cancelled; reservations must be taken again. */
   private boolean latePayment;
+  /**
+   * When the order's reservations were given back after it ended unpaid; set atomically while the
+   * order is still ended, so a late payment and the release cannot both win. Null: still held
+   * (or the order ended before this field existed).
+   */
+  private Instant reservationsReleasedAt;
   /** When the current fulfilment attempt claimed the order; stale claims may be re-taken. */
   private Instant claimedAt;
   private int fulfilmentAttempts;

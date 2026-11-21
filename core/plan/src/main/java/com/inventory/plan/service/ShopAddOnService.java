@@ -80,10 +80,12 @@ public class ShopAddOnService {
     if (lines.isEmpty()) {
       return;
     }
-    Map<String, AddOn> addOns = catalogue.byCode(lines.stream().map(OrderLine::getCode).toList());
+    List<String> unsnapshotted = lines.stream().filter(line -> line.getGrantType() == null)
+        .map(OrderLine::getCode).toList();
+    Map<String, AddOn> addOns = unsnapshotted.isEmpty() ? Map.of() : catalogue.byCode(unsnapshotted);
     Instant now = clock.instant();
     for (OrderLine line : lines) {
-      AddOn addOn = addOns.get(line.getCode());
+      AddOn addOn = line.getGrantType() != null ? asPriced(line) : addOns.get(line.getCode());
       if (addOn == null) {
         throw new IllegalStateException("Add-on " + line.getCode() + " on order " + order.getId() + " no longer exists");
       }
@@ -179,6 +181,18 @@ public class ShopAddOnService {
     } catch (DuplicateKeyException e) {
       log.info("Add-on {} for order {} already granted", grant.getAddOnCode(), grant.getSourceOrderId());
     }
+  }
+
+  /** The add-on as it was when the order was priced (orders priced before the copy existed read the catalogue). */
+  static AddOn asPriced(OrderLine line) {
+    return AddOn.builder()
+        .code(line.getCode())
+        .name(line.getName())
+        .grantType(line.getGrantType())
+        .grantsFeature(line.getGrantsFeature())
+        .grantsQuantity(line.getGrantsQuantity())
+        .billingType(line.getBillingType())
+        .build();
   }
 
   private static ShopAddOn newGrant(String shopId, AddOn addOn, int quantity, Instant now, Instant termEndsAt) {

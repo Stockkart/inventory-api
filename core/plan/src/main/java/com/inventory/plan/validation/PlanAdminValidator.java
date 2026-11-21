@@ -1,6 +1,7 @@
 package com.inventory.plan.validation;
 
 import com.inventory.common.exception.ValidationException;
+import com.inventory.plan.rest.dto.request.AdminPlanGrantRequest;
 import com.inventory.plan.rest.dto.request.PlanActiveRequest;
 import com.inventory.plan.rest.dto.request.PlanAdminRequest;
 import java.math.BigDecimal;
@@ -16,6 +17,40 @@ public class PlanAdminValidator {
   private static final int MAX_NAME = 60;
   private static final int MAX_BEST_FOR = 200;
   private static final int MAX_DISPLAY_ORDER = 1000;
+
+  public static final int MIN_GRANT_MONTHS = 1;
+  public static final int MAX_GRANT_MONTHS = 36;
+  public static final int MAX_GRANT_REASON = 200;
+
+  public void validateGrant(String shopId, AdminPlanGrantRequest request) {
+    if (!StringUtils.hasText(shopId)) {
+      throw new ValidationException("Shop ID is required");
+    }
+    if (request == null) {
+      throw new ValidationException("Request cannot be null");
+    }
+    if (!StringUtils.hasText(request.getPlanCode())) {
+      throw new ValidationException("Plan code is required");
+    }
+    if (request.getDurationMonths() == null || request.getDurationMonths() < MIN_GRANT_MONTHS
+        || request.getDurationMonths() > MAX_GRANT_MONTHS) {
+      throw new ValidationException("Duration must be " + MIN_GRANT_MONTHS + " to " + MAX_GRANT_MONTHS + " months");
+    }
+    if (!StringUtils.hasText(request.getReason()) || request.getReason().trim().length() > MAX_GRANT_REASON) {
+      throw new ValidationException("A reason of up to " + MAX_GRANT_REASON + " characters is required for a plan grant");
+    }
+  }
+
+  /** A grant extends the shop's current plan, or starts a new one only when no paid days are left. */
+  public void validateGrantTarget(String currentPlanId, java.time.Instant currentExpiry, String grantedPlanId,
+      boolean currentIsTrial, java.time.Instant now) {
+    boolean paidDaysLeft = !currentIsTrial && currentPlanId != null && currentExpiry != null
+        && currentExpiry.isAfter(now);
+    if (paidDaysLeft && !currentPlanId.equals(grantedPlanId)) {
+      throw new ValidationException(
+          "This shop has paid days left on another plan; grant the same plan, or wait until it ends");
+    }
+  }
 
   public void validateCreate(PlanAdminRequest request) {
     if (request == null) {

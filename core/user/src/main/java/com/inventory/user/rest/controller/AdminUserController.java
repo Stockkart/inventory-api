@@ -53,7 +53,7 @@ public class AdminUserController {
   }
 
   @PostMapping("/{id}/reset-password")
-  public ResponseEntity<ApiResponse<AdminPasswordIssuedResponse>> resetPassword(
+  public ResponseEntity<ApiResponse<AdminUserResponse>> resetPassword(
       @PathVariable String id, @RequestBody(required = false) AdminUserReasonRequest request,
       HttpServletRequest httpRequest) {
     return ResponseEntity.ok(ApiResponse.success(

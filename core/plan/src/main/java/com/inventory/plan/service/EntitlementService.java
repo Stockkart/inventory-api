@@ -6,6 +6,7 @@ import com.inventory.plan.domain.model.AddOnGrantType;
 import com.inventory.plan.domain.model.EntitlementSource;
 import com.inventory.plan.domain.model.PaidTerm;
 import com.inventory.plan.domain.model.Plan;
+import com.inventory.plan.domain.model.PlanTermsSnapshot;
 import com.inventory.plan.domain.model.ShopEntitlements;
 import com.inventory.plan.domain.model.ShopAddOn;
 import com.inventory.plan.domain.model.ShopSubscription;
@@ -104,6 +105,13 @@ public class EntitlementService {
   private ShopEntitlements fromSubscription(String shopId, Instant now) {
     SubscriptionView subscription = currentSubscription(shopId, now);
     if (subscription.isPaidAndLive(now)) {
+      PlanTermsSnapshot terms = subscription.terms();
+      if (terms != null && subscription.planId().equals(terms.getPlanId()) && terms.getPlanCode() != null) {
+        // what the shop paid for, even if the catalogue changed since
+        return new ShopEntitlements(shopId, terms.getPlanId(), terms.getPlanCode(), EntitlementSource.PLAN,
+            terms.getFeatures(), terms.isUnlimited() ? null : terms.getUserLimit(),
+            terms.isUnlimited() ? null : terms.getOcrLimit(), subscription.expiresAt(), Set.of());
+      }
       Optional<Plan> plan = planRepository.findById(subscription.planId());
       if (plan.isPresent()) {
         return fromPlan(shopId, plan.get(), EntitlementSource.PLAN, subscription.expiresAt());
@@ -138,14 +146,14 @@ public class EntitlementService {
     Optional<ShopSubscription> stored = shopSubscriptionRepository.findById(shopId);
     if (stored.isPresent()) {
       ShopSubscription s = stored.get();
-      return new SubscriptionView(s.getPlanId(), s.getStatus(), s.getExpiresAt());
+      return new SubscriptionView(s.getPlanId(), s.getStatus(), s.getExpiresAt(), s.getTerms());
     }
     return shopProvider.getShop(shopId)
         .map(shop -> new SubscriptionView(
             shop.planId(),
             ShopSubscriptionService.deriveStatus(shop.planId(), shop.planExpiryDate(), now),
-            shop.planExpiryDate()))
-        .orElseGet(() -> new SubscriptionView(null, SubscriptionStatus.TRIAL, null));
+            shop.planExpiryDate(), null))
+        .orElseGet(() -> new SubscriptionView(null, SubscriptionStatus.TRIAL, null, null));
   }
 
   private static ShopEntitlements fromPlan(String shopId, Plan plan, EntitlementSource source, Instant expiresAt) {
@@ -166,7 +174,8 @@ public class EntitlementService {
         Set.of());
   }
 
-  private record SubscriptionView(String planId, SubscriptionStatus status, Instant expiresAt) {
+  private record SubscriptionView(String planId, SubscriptionStatus status, Instant expiresAt,
+      PlanTermsSnapshot terms) {
     boolean isPaidAndLive(Instant now) {
       return status == SubscriptionStatus.ACTIVE
           && StringUtils.hasText(planId)

@@ -42,6 +42,8 @@ public enum ErrorCode {
   ORDER_NOT_FOUND(5000, "Order not found", HttpStatus.NOT_FOUND),
   INVALID_ORDER_STATUS(5001, "Invalid order status", HttpStatus.BAD_REQUEST),
   IDEMPOTENCY_KEY_REUSED(5002, "Idempotency key was already used for a different request", HttpStatus.CONFLICT),
+  /** The order was paid (or is being fulfilled), so it can no longer be cancelled. */
+  ORDER_NOT_CANCELLABLE(5003, "This order can no longer be cancelled", HttpStatus.CONFLICT),
 
   // Plan / subscription errors (6000-6999)
   PLAN_EXPIRED(6000, "Plan or trial has expired", HttpStatus.PAYMENT_REQUIRED),
@@ -51,6 +53,9 @@ public enum ErrorCode {
   VOUCHER_REJECTED(6010, "Voucher cannot be applied", HttpStatus.BAD_REQUEST),
   WALLET_BALANCE_CHANGED(6011, "Wallet balance changed; refresh the quote", HttpStatus.CONFLICT),
   ORDER_NOT_REFUNDABLE(6012, "This order cannot be refunded in its current state", HttpStatus.CONFLICT),
+  /** A different plan was chosen while the current paid plan still has days left. */
+  PLAN_CHANGE_NOT_ALLOWED(6020, "Your current plan is still active; you can renew it, or change plans after it ends",
+      HttpStatus.CONFLICT),
 
   // Taxation / GST errors (7000-7999)
   GST_CONFIGURATION_MISSING(7000, "GST configuration is incomplete",

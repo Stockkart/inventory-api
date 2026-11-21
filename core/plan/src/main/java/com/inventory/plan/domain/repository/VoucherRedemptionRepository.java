@@ -17,7 +17,8 @@ public interface VoucherRedemptionRepository extends MongoRepository<VoucherRede
 
   Optional<VoucherRedemption> findByVoucherIdAndOrderId(String voucherId, String orderId);
 
-  boolean existsByVoucherCodeAndShopIdAndHoldsSlotTrue(String voucherCode, String shopId);
+  /** Matches the {@code single_use_per_shop} partial index filter, so the index answers it. */
+  boolean existsByVoucherCodeAndShopIdAndHoldsSlotTrueAndSingleUsePerShopTrue(String voucherCode, String shopId);
 
   List<VoucherRedemption> findByVoucherId(String voucherId, Sort sort);
 

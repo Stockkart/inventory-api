@@ -58,6 +58,40 @@ public class AdminUserWriter {
         .set("updatedAt", now), AdminUser.class);
   }
 
+  /**
+   * Starts a password reset: the current password stops working (replaced by {@code unusableHash}),
+   * and only the emailed one-time token can set a new one until {@code expiresAt}.
+   */
+  public void startPasswordReset(String adminId, String unusableHash, String resetTokenHash,
+      Instant expiresAt, Instant now) {
+    mongoTemplate.updateFirst(byId(adminId), new Update()
+        .set("passwordHash", unusableHash)
+        .set("mustChangePassword", false)
+        .set("resetTokenHash", resetTokenHash)
+        .set("resetTokenExpiresAt", expiresAt)
+        .set("failedLoginCount", 0)
+        .unset("lockedUntil")
+        .set("updatedAt", now), AdminUser.class);
+  }
+
+  /**
+   * Sets the password chosen through a reset link and spends the token. False when the token was
+   * already used (only one of two concurrent uses wins).
+   */
+  public boolean completePasswordReset(String adminId, String resetTokenHash, String passwordHash, Instant now) {
+    return mongoTemplate.updateFirst(
+        new Query(Criteria.where("_id").is(adminId).and("resetTokenHash").is(resetTokenHash)),
+        new Update()
+            .set("passwordHash", passwordHash)
+            .set("mustChangePassword", false)
+            .unset("resetTokenHash")
+            .unset("resetTokenExpiresAt")
+            .set("failedLoginCount", 0)
+            .unset("lockedUntil")
+            .set("updatedAt", now),
+        AdminUser.class).getModifiedCount() == 1;
+  }
+
   public void setActive(String adminId, boolean active, Instant now) {
     mongoTemplate.updateFirst(byId(adminId), new Update()
         .set("active", active)

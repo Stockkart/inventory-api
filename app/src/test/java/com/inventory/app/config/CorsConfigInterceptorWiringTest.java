@@ -43,6 +43,7 @@ class CorsConfigInterceptorWiringTest {
   @Test
   void adminLoginIsPublic() {
     assertThat(interceptorsFor("/api/v1/admin/auth/login")).isEmpty();
+    assertThat(interceptorsFor("/api/v1/admin/auth/reset-password")).isEmpty();
   }
 
   @Test

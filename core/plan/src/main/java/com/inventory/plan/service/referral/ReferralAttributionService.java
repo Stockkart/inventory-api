@@ -1,5 +1,7 @@
 package com.inventory.plan.service.referral;
 
+import com.inventory.common.exception.AuthenticationException;
+import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.plan.domain.model.ReferralAttribution;
 import com.inventory.plan.domain.model.ReferralAttributionStatus;
@@ -162,6 +164,9 @@ public class ReferralAttributionService {
   }
 
   public ReferralSummaryResponse summary(String shopId) {
+    if (!StringUtils.hasText(shopId)) {
+      throw new AuthenticationException(ErrorCode.UNAUTHORIZED, "Shop not selected or user not authenticated");
+    }
     String code = shopProvider.getReferralShop(shopId).map(ReferralShop::referralCode).orElse(null);
     long resolved = attributionRepository.countByReferrerShopIdAndStatus(shopId, ReferralAttributionStatus.RESOLVED);
     long pending = attributionRepository.countByReferrerShopIdAndStatus(shopId, ReferralAttributionStatus.PENDING_REVIEW);

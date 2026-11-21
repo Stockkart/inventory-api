@@ -29,6 +29,10 @@ public class AdminAuthenticationInterceptor implements HandlerInterceptor {
   public static final List<String> ADMIN_PATH_PATTERNS = List.of("/api/v1/admin/**");
 
   public static final String LOGIN_PATH = "/api/v1/admin/auth/login";
+  /** Completes a password reset with the emailed one-time token; the caller has no session. */
+  public static final String RESET_PASSWORD_PATH = "/api/v1/admin/auth/reset-password";
+  /** Admin paths that need no admin session. */
+  public static final List<String> PUBLIC_PATHS = List.of(LOGIN_PATH, RESET_PASSWORD_PATH);
 
   /** Reachable while the admin still has to replace a bootstrap or temporary password. */
   static final Set<String> PASSWORD_CHANGE_PATHS = Set.of(
