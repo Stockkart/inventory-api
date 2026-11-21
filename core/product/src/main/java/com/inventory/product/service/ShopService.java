@@ -8,8 +8,8 @@ import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceExistsException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
-import com.inventory.plan.service.referral.ReferralAttributionService;
-import com.inventory.plan.utils.ReferralCodes;
+import com.inventory.plan.api.Referrals;
+import com.inventory.common.util.ReferralCodes;
 import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.repository.ShopRepository;
 import com.inventory.product.rest.dto.request.RegisterShopRequest;
@@ -41,7 +41,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Consumer;
@@ -72,8 +74,8 @@ public class ShopService {
   @Value("${plan.trial-days:30}")
   private int trialDays;
 
-  @Autowired(required = false)
-  private com.inventory.accounting.service.ChartOfAccountsSeeder chartOfAccountsSeeder;
+  @Autowired
+  private com.inventory.accounting.api.AccountingFacade accountingFacade;
 
   @Autowired
   private VerticalCatalogService verticalCatalogService;
@@ -86,7 +88,7 @@ public class ShopService {
 
   @Autowired
   @Lazy
-  private ReferralAttributionService referralAttributionService;
+  private Referrals referralAttributionService;
 
   @Transactional
   public ShopRegistrationResponse register(RegisterShopRequest request, String userId) {
@@ -108,6 +110,8 @@ public class ShopService {
 
       com.inventory.user.domain.model.UserAccount userAccount = userAccountRepository.findById(userId)
           .orElseThrow(() -> new ResourceNotFoundException("User", "userId", userId));
+      // Checked before the shop is saved so a rejected staff account leaves no orphan shop behind
+      shopValidator.validateUserCanRegisterShop(userAccount);
 
       // Multi-shop: user can own multiple shops - no "already has shop" check
 
@@ -154,9 +158,9 @@ public class ShopService {
         log.error("Failed to record referral attribution for shop {}: {}", shop.getShopId(), ex.getMessage(), ex);
       }
 
-      if (chartOfAccountsSeeder != null) {
+      if (accountingFacade != null) {
         try {
-          chartOfAccountsSeeder.seedShop(shop.getShopId());
+          accountingFacade.seedChartOfAccounts(shop.getShopId());
         } catch (Exception ex) {
           log.warn(
               "Failed to seed chart of accounts for shop {}: {}",
@@ -210,8 +214,17 @@ public class ShopService {
   public record ShopReferralInfo(
       String shopId, String name, String referralCode, String contactEmail, String contactPhone) {}
 
+  /**
+   * Approve or reject a shop. Platform-admin action: only a SUPER_USER caller may run it.
+   *
+   * @param callerRole role of the authenticated caller (request attribute {@code userRole})
+   * @param actorUserId the caller, recorded on the audit entry
+   */
   @Transactional
-  public ShopApprovalResponse approve(String shopId, ShopApprovalRequest request, String actorUserId) {
+  public ShopApprovalResponse approve(String shopId, ShopApprovalRequest request, UserRole callerRole,
+      String actorUserId) {
+    // Outside the try block so the 403 is not re-wrapped as a 500 by the catch-all below
+    shopValidator.validateCanApproveShops(callerRole);
     try {
       // Input validation using ShopValidator
       shopValidator.validateApprovalRequest(shopId, request);
@@ -338,14 +351,32 @@ public class ShopService {
   }
 
   /**
-   * Get shop tax info. Used by ShopServiceAdapterImpl.
+   * Shop summary for the login response. Used by ShopServiceAdapterImpl.
    */
   @Transactional(readOnly = true)
-  public com.inventory.user.service.ShopServiceAdapter.ShopTaxInfo getShopTaxInfo(String shopId) {
+  public com.inventory.user.service.ShopServiceAdapter.ShopSummary getShopSummary(String shopId) {
     return shopRepository.findById(shopId)
-        .map(shop -> new com.inventory.user.service.ShopServiceAdapter.ShopTaxInfo(
-            shop.getSgst(), shop.getCgst(), shop.getName()))
+        .map(shop -> new com.inventory.user.service.ShopServiceAdapter.ShopSummary(shop.getName(),
+            addressLine(shop.getLocation())))
         .orElse(null);
+  }
+
+  /**
+   * The shop address on one line, parts in the same order as on invoices and credit notes
+   * (primary, secondary, city, state, PIN); null when no part is stored.
+   */
+  static String addressLine(Location location) {
+    if (location == null) {
+      return null;
+    }
+    List<String> parts = new ArrayList<>();
+    for (String part : new String[] {location.getPrimaryAddress(), location.getSecondaryAddress(),
+        location.getCity(), location.getState(), location.getPin()}) {
+      if (part != null && !part.isBlank()) {
+        parts.add(part.trim());
+      }
+    }
+    return parts.isEmpty() ? null : String.join(", ", parts);
   }
 
   /** DTO for plan module. */

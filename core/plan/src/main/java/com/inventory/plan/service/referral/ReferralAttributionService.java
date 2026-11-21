@@ -8,10 +8,10 @@ import com.inventory.plan.domain.repository.ReferralAttributionRepository;
 import com.inventory.plan.mapper.ReferralMapper;
 import com.inventory.plan.rest.dto.response.ReferralCodeCheckResponse;
 import com.inventory.plan.rest.dto.response.ReferralSummaryResponse;
-import com.inventory.plan.service.ShopProvider;
-import com.inventory.plan.service.ShopProvider.ReferralShop;
-import com.inventory.plan.utils.ReferralCodes;
-import com.inventory.user.service.UserShopMembershipService;
+import com.inventory.plan.api.port.ShopPort;
+import com.inventory.plan.api.port.ShopPort.ReferralShop;
+import com.inventory.common.util.ReferralCodes;
+import com.inventory.user.api.ShopPermissions;
 import java.time.Clock;
 import java.util.Locale;
 import java.util.Objects;
@@ -39,11 +39,11 @@ public class ReferralAttributionService {
   private ReferralAttributionRepository attributionRepository;
 
   @Autowired
-  private ShopProvider shopProvider;
+  private ShopPort shopProvider;
 
   @Autowired
   @Lazy
-  private UserShopMembershipService membershipService;
+  private ShopPermissions shopPermissions;
 
   @Autowired
   private ReferralMapper referralMapper;
@@ -115,7 +115,7 @@ public class ReferralAttributionService {
    * rather than being rejected; it is never credited automatically (§11 anti-abuse).
    */
   private Optional<ReferralReviewReason> samePartySignal(String refereeShopId, ReferralShop referrer, String userId) {
-    if (StringUtils.hasText(userId) && membershipService.hasOwnerAccess(userId, referrer.shopId())) {
+    if (StringUtils.hasText(userId) && shopPermissions.hasOwnerAccess(referrer.shopId(), userId)) {
       return Optional.of(ReferralReviewReason.SAME_OWNER);
     }
     Optional<ReferralShop> referee = shopProvider.getReferralShop(refereeShopId);

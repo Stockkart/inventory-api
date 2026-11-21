@@ -1,6 +1,6 @@
 package com.inventory.plan.migration;
 
-import com.inventory.plan.service.ShopProvider;
+import com.inventory.plan.api.port.ShopPort;
 import com.inventory.plan.service.ShopSubscriptionService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,8 +20,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Slf4j
 public class ShopSubscriptionBackfill {
 
-  @Autowired(required = false)
-  private ShopProvider shopProvider;
+  @Autowired
+  private ShopPort shopProvider;
 
   @Autowired
   private ShopSubscriptionService shopSubscriptionService;
@@ -32,7 +32,7 @@ public class ShopSubscriptionBackfill {
   @EventListener(ApplicationReadyEvent.class)
   @Order(30)
   public void backfillOnStartup() {
-    if (!backfillEnabled || shopProvider == null) {
+    if (!backfillEnabled) {
       return;
     }
     run();

@@ -1,11 +1,15 @@
 package com.inventory.notifications.service;
 
-import com.inventory.notifications.domain.model.EmailTemplate;
+import com.inventory.notifications.api.TemplateEmail;
+import com.inventory.notifications.api.Messaging;
+import com.inventory.notifications.api.AttachmentRef;
+import com.inventory.notifications.api.EmailTemplate;
 import com.inventory.notifications.domain.model.MessageChannel;
 import com.inventory.notifications.domain.model.MessageStatus;
 import com.inventory.notifications.domain.model.OutboundMessage;
 import com.inventory.notifications.domain.repository.OutboundMessageRepository;
 import com.inventory.notifications.template.EmailTemplateContent;
+import com.inventory.notifications.utils.MessagingUtils;
 import com.inventory.notifications.utils.constants.NotificationMetricsConstants;
 import com.inventory.metrics.MetricsWrapper;
 import lombok.extern.slf4j.Slf4j;
@@ -14,7 +18,9 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -23,7 +29,7 @@ import java.util.Map;
  */
 @Slf4j
 @Service
-public class MessagingService {
+public class MessagingService implements Messaging {
 
   @Autowired
   private OutboundMessageRepository outboundMessageRepository;
@@ -38,6 +44,7 @@ public class MessagingService {
    * @param template Template identifier
    * @param variables Template variables (e.g. userName, userEmail)
    */
+  @Override
   @Async
   public void sendEmailWithTemplate(String to, EmailTemplate template, Map<String, Object> variables) {
     if (to == null || to.isBlank()) {
@@ -63,10 +70,10 @@ public class MessagingService {
 
     try {
       OutboundMessage saved = outboundMessageRepository.save(message);
-      log.debug("Enqueued email template={} to={} id={}", template, to, saved.getId());
+      log.debug("Enqueued email template={} id={}", template, saved.getId());
       recordEnqueued("email", "success");
     } catch (Exception e) {
-      log.error("Failed to enqueue email to {}: {}", to, e.getMessage(), e);
+      log.error("Failed to enqueue email template={}: {}", template, e.getMessage(), e);
       recordEnqueued("email", "error");
     }
   }
@@ -74,6 +81,7 @@ public class MessagingService {
   /**
    * Enqueue a plain email (subject + HTML body). Processed asynchronously.
    */
+  @Override
   @Async
   public void sendEmail(String to, String subject, String htmlBody, Map<String, Object> metadata) {
     if (to == null || to.isBlank()) {
@@ -94,12 +102,75 @@ public class MessagingService {
 
     try {
       OutboundMessage saved = outboundMessageRepository.save(message);
-      log.debug("Enqueued email to={} id={}", to, saved.getId());
+      log.debug("Enqueued email id={}", saved.getId());
       recordEnqueued("email", "success");
     } catch (Exception e) {
-      log.error("Failed to enqueue email to {}: {}", to, e.getMessage(), e);
+      log.error("Failed to enqueue email: {}", e.getMessage(), e);
       recordEnqueued("email", "error");
     }
+  }
+
+  /**
+   * Queues template emails whose attachment is rendered at send time (HR payslips, decision 1),
+   * in one insert. Synchronous so the caller can report how many were queued. Recipients are
+   * never logged.
+   *
+   * @param emails one entry per recipient; entries without a recipient are skipped
+   * @return messages queued
+   */
+  @Override
+  public int enqueueTemplateEmails(EmailTemplate template, List<TemplateEmail> emails) {
+    List<OutboundMessage> messages = new ArrayList<>();
+    Instant now = Instant.now();
+    for (TemplateEmail email : emails) {
+      if (email.to() == null || email.to().isBlank()) {
+        continue;
+      }
+      Map<String, Object> vars =
+          email.variables() != null ? new HashMap<>(email.variables()) : new HashMap<>();
+      EmailTemplateContent.TemplateContent content = EmailTemplateContent.get(template, vars);
+      messages.add(OutboundMessage.builder()
+          .channel(MessageChannel.EMAIL)
+          .recipient(email.to().trim())
+          .subject(MessagingUtils.resolveTemplate(content.subject(), stringVars(vars)))
+          .body(content.htmlBody())
+          .templateId(template.name())
+          .templateVariables(vars)
+          .metadata(Map.of("template", template.name()))
+          .attachmentRef(stored(email.attachmentRef()))
+          .status(MessageStatus.PENDING)
+          .retryCount(0)
+          .createdAt(now)
+          .build());
+    }
+    if (messages.isEmpty()) {
+      return 0;
+    }
+    try {
+      // all new: Spring Data sends one insertMany
+      outboundMessageRepository.saveAll(messages);
+      log.debug("Enqueued {} email(s) template={}", messages.size(), template);
+      metrics.record(NotificationMetricsConstants.ENQUEUED_TOTAL, messages.size(),
+          "module", NotificationMetricsConstants.MODULE, "channel", "email", "outcome", "success");
+      return messages.size();
+    } catch (RuntimeException e) {
+      log.error("Failed to enqueue {} email(s) template={}: {}", messages.size(), template,
+          e.getClass().getSimpleName());
+      recordEnqueued("email", "error");
+      throw e;
+    }
+  }
+
+  /** The stored form of an api attachment reference; null stays null. */
+  private static OutboundMessage.AttachmentRef stored(AttachmentRef ref) {
+    return ref == null ? null
+        : new OutboundMessage.AttachmentRef(ref.kind(), ref.runId(), ref.lineId(), ref.shopId());
+  }
+
+  private static Map<String, Object> stringVars(Map<String, Object> vars) {
+    Map<String, Object> out = new HashMap<>();
+    vars.forEach((k, v) -> out.put(k, v != null ? v.toString() : ""));
+    return out;
   }
 
   private void recordEnqueued(String channel, String outcome) {

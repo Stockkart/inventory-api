@@ -1,7 +1,7 @@
 package com.inventory.credit.rest.dto.response;
 
-import com.inventory.credit.domain.model.CreditDirection;
-import com.inventory.credit.domain.model.CreditEntryType;
+import com.inventory.credit.api.CreditDirection;
+import com.inventory.credit.api.CreditEntryType;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;

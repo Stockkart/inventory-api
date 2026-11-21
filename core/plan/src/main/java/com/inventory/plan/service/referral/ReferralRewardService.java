@@ -8,7 +8,7 @@ import com.inventory.plan.domain.model.ShopCreditSource;
 import com.inventory.plan.domain.repository.ReferralRewardRepository;
 import com.inventory.plan.mapper.ReferralRewardMapper;
 import com.inventory.plan.rest.dto.response.ReferralRewardsResponse;
-import com.inventory.plan.service.ShopProvider;
+import com.inventory.plan.api.port.ShopPort;
 import com.inventory.plan.service.wallet.WalletService;
 import com.inventory.plan.utils.constants.PricingConstants;
 import java.math.BigDecimal;
@@ -69,7 +69,7 @@ public class ReferralRewardService {
   private MongoTemplate mongoTemplate;
 
   @Autowired
-  private ShopProvider shopProvider;
+  private ShopPort shopProvider;
 
   @Autowired
   private ReferralRewardMapper rewardMapper;
@@ -263,7 +263,7 @@ public class ReferralRewardService {
         .map(ReferralReward::getRefereeShopId)
         .distinct()
         .collect(Collectors.toMap(Function.identity(),
-            id -> shopProvider.getReferralShop(id).map(ShopProvider.ReferralShop::name).orElse("")));
+            id -> shopProvider.getReferralShop(id).map(ShopPort.ReferralShop::name).orElse("")));
     return rewardMapper.toRewardsResponse(rewards, refereeNames);
   }
 

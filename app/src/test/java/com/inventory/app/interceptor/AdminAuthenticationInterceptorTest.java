@@ -8,10 +8,8 @@ import static org.mockito.Mockito.when;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.AuthenticationException;
 import com.inventory.common.exception.BaseException;
-import com.inventory.user.domain.model.AdminSession;
-import com.inventory.user.domain.model.AdminUser;
-import com.inventory.user.service.AdminAuthService;
-import com.inventory.user.service.AdminAuthentication;
+import com.inventory.user.api.AdminSessions;
+import com.inventory.user.api.AdminSessions.AdminPrincipal;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -24,7 +22,7 @@ import org.springframework.mock.web.MockHttpServletResponse;
 class AdminAuthenticationInterceptorTest {
 
   @Mock
-  private AdminAuthService adminAuthService;
+  private AdminSessions adminAuthService;
 
   @InjectMocks
   private AdminAuthenticationInterceptor interceptor;
@@ -36,7 +34,6 @@ class AdminAuthenticationInterceptorTest {
 
     assertThat(interceptor.preHandle(request, new MockHttpServletResponse(), null)).isTrue();
     assertThat(request.getAttribute("adminId")).isEqualTo("a1");
-    assertThat(request.getAttribute(AdminAuthentication.REQUEST_ATTRIBUTE)).isNotNull();
     assertThat(request.getAttribute("userId")).isNull();
   }
 
@@ -76,6 +73,18 @@ class AdminAuthenticationInterceptorTest {
   }
 
   @Test
+  void pendingPasswordChangeMatchesTheDecodedPath() {
+    when(adminAuthService.authenticate("admin-token")).thenReturn(auth(true));
+
+    assertThatThrownBy(() -> interceptor.preHandle(
+        request("GET", "/api/v1/admin/auth/me/../../plans", "admin-token"),
+        new MockHttpServletResponse(), null))
+        .isInstanceOf(BaseException.class);
+    assertThat(interceptor.preHandle(request("GET", "/api/v1/admin/auth;x=1/me", "admin-token"),
+        new MockHttpServletResponse(), null)).isTrue();
+  }
+
+  @Test
   void preflightPassesThrough() {
     assertThat(interceptor.preHandle(request("OPTIONS", "/api/v1/admin/plans", null),
         new MockHttpServletResponse(), null)).isTrue();
@@ -89,8 +98,7 @@ class AdminAuthenticationInterceptorTest {
     return request;
   }
 
-  private static AdminAuthentication auth(boolean mustChangePassword) {
-    AdminUser admin = AdminUser.builder().id("a1").active(true).mustChangePassword(mustChangePassword).build();
-    return new AdminAuthentication(admin, AdminSession.builder().id("s1").adminId("a1").build());
+  private static AdminPrincipal auth(boolean mustChangePassword) {
+    return new AdminPrincipal("a1", mustChangePassword);
   }
 }
