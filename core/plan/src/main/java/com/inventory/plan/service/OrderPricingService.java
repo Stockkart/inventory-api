@@ -122,6 +122,10 @@ public class OrderPricingService {
           .discount(BigDecimal.ZERO)
           .lineTotal(lineTotal)
           .itemSource(PricingConstants.ITEM_SOURCE_MANUAL)
+          .grantType(addOn.getGrantType())
+          .grantsFeature(addOn.getGrantsFeature())
+          .grantsQuantity(addOn.getGrantsQuantity())
+          .billingType(addOn.getBillingType())
           .build());
     });
     return lines;
