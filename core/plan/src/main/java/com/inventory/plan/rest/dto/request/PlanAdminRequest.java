@@ -20,6 +20,8 @@ public class PlanAdminRequest {
   private String code;
   private String planName;
   private BigDecimal arcPrice;
+  /** Floor for the plan line after wallet credit. Null = no floor. */
+  private BigDecimal basePrice;
   private BigDecimal price;
   private BigDecimal billingLimit;
   private Integer billCountLimit;

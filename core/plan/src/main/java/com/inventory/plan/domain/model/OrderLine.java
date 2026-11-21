@@ -29,6 +29,8 @@ public class OrderLine {
   private String itemSource;
   /** Voucher that added or discounted this line; one voucher per line. */
   private String voucherCode;
+  /** Wallet credit applied to this line, on top of {@code lineTotal}. Feeds the referral reward base (§24). */
+  private BigDecimal walletCredit;
 
   // What an add-on line grants, copied from the catalogue when the order was priced, so a later
   // catalogue edit cannot change what was paid for. Null on plan lines and on older orders (the
