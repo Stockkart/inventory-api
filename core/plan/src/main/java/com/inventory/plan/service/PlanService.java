@@ -180,7 +180,7 @@ public class PlanService {
     PlanTransaction tx = planTransactionMapper.toTransaction(order, plan, termStartsAt, termEndsAt);
     planTransactionRepository.insert(tx);
     shopProvider.updatePlan(order.getShopId(), plan.getId(), termEndsAt);
-    shopSubscriptionService.sync(new ShopInfo(order.getShopId(), plan.getId(), termEndsAt), order.getId());
+    shopSubscriptionService.recordGrant(new ShopInfo(order.getShopId(), plan.getId(), termEndsAt), order.getId());
 
     log.info("Granted plan {} to shop {} from {} until {} for order {}",
         plan.getPlanName(), order.getShopId(), termStartsAt, termEndsAt, order.getId());
@@ -208,7 +208,6 @@ public class PlanService {
   @Transactional(readOnly = true)
   public ShopPlanStatusResponse getShopPlanStatus(String shopId) {
     ShopInfo shopInfo = getShopInfo(shopId);
-    syncSubscription(shopInfo, null);
 
     Plan plan = null;
     if (shopInfo.planId() != null && !shopInfo.planId().isBlank()) {
@@ -252,15 +251,11 @@ public class PlanService {
   }
 
   /**
-   * Shop fields remain authoritative until read paths move to ShopSubscription, so a failed sync
-   * must not fail the caller; the next sync or the backfill repairs it.
+   * Entitlements are read from the subscription, so a change whose sync failed is not finished: the
+   * error propagates and the payment fulfilment step runs again. Reads never write it.
    */
   private void syncSubscription(ShopInfo shopInfo, String sourceOrderId) {
-    try {
-      shopSubscriptionService.sync(shopInfo, sourceOrderId);
-    } catch (RuntimeException e) {
-      log.warn("Shop subscription sync failed for shop {}: {}", shopInfo.shopId(), e.getMessage());
-    }
+    shopSubscriptionService.sync(shopInfo, sourceOrderId);
   }
 
   private ShopInfo getShopInfo(String shopId) {

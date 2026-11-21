@@ -100,7 +100,7 @@ class PlanServiceGrantTest {
     verify(planTransactionRepository).insert(tx.capture());
     assertThat(tx.getValue().getTermStartsAt()).isBetween(before, Instant.now());
     ArgumentCaptor<ShopInfo> synced = ArgumentCaptor.forClass(ShopInfo.class);
-    verify(shopSubscriptionService).sync(synced.capture(), eq("order-1"));
+    verify(shopSubscriptionService).recordGrant(synced.capture(), eq("order-1"));
     assertThat(synced.getValue().planId()).isEqualTo("pro-id");
   }
 
