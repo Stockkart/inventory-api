@@ -47,5 +47,10 @@ public class QuoteResponse {
     private String itemSource;
     /** Voucher that added or discounted this line. */
     private String voucherCode;
+
+    /** unitPrice × quantity, before the line discount; the apps show it as is. */
+    public BigDecimal getGrossAmount() {
+      return unitPrice == null ? null : unitPrice.multiply(BigDecimal.valueOf(quantity));
+    }
   }
 }

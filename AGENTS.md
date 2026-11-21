@@ -206,6 +206,7 @@ MongoDB: "table" means collection, "column" means field.
 | `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` | Razorpay API and webhook secrets (secret, never commit) | both |
 | `VOUCHER_LOOKUP_MAX_MISSES_PER_MINUTE` | unknown voucher codes a shop or user may try per minute on validate, quote and checkout before `429 TOO_MANY_REQUESTS` (`VoucherLookupRateLimiter`, per instance; default 10) | both |
 | `PLAN_ENTITLEMENTS_ENFORCEMENT` | plan feature, seat and OCR-quota checks (`EntitlementGuard`): `OFF`, `LOG_ONLY` (default: allow, log what would be blocked, once per 10 min per shop and check) or `ENFORCE` (402 with `FEATURE_NOT_IN_PLAN` / `SEAT_LIMIT_REACHED` / `OCR_QUOTA_EXCEEDED`). Switching production to `ENFORCE`: date TBD by owner | both |
+| `PLAN_GST_RATE_PERCENT` | GST rate (percent, default 18) inside tax-inclusive plan prices; each plan order stores `taxableAmount` + `gstAmount` at it, and the plan MIS splits older orders at it | both |
 | `GSTIN_PROVIDER` | online GSTIN lookup provider; unset means offline check only | .env.example |
 | `GSTINAPI_KEY` | GSTIN lookup API key (secret, never commit) | .env.example |
 
