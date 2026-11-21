@@ -92,7 +92,7 @@ public class EntitlementService {
         // what the shop paid for, even if the catalogue changed since
         return new ShopEntitlements(shopId, terms.getPlanId(), terms.getPlanCode(), EntitlementSource.PLAN,
             terms.getFeatures(), terms.isUnlimited() ? null : terms.getUserLimit(),
-            terms.isUnlimited() ? null : terms.getOcrLimit(), subscription.expiresAt());
+            terms.isUnlimited() ? null : terms.getOcrLimit(), subscription.expiresAt(), Set.of());
       }
       Optional<Plan> plan = planRepository.findById(subscription.planId());
       if (plan.isPresent()) {
