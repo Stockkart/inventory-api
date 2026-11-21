@@ -3,6 +3,7 @@ package com.inventory.plan.migration;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -98,6 +99,26 @@ class PlanCatalogueSeederTest {
 
     assertThat(tiers.get(0).getArcPrice()).isEqualByComparingTo("5999");
     verify(planRepository, never()).save(any(Plan.class));
+  }
+
+  @Test
+  void anExistingTierWhoseLinkAnAdminClearedIsNotRelinked() {
+    Plan starter = seedPlan("STARTER", 1, "5999");
+    starter.setId("existing");
+    starter.setLinkedId(null);
+    when(planRepository.findByCode("STARTER")).thenReturn(Optional.of(starter));
+    when(planRepository.findByCode("PROFESSIONAL")).thenReturn(Optional.empty());
+    when(planRepository.save(any(Plan.class))).thenAnswer(inv -> {
+      Plan p = inv.getArgument(0);
+      p.setId("new-pro");
+      return p;
+    });
+
+    List<Plan> tiers = seeder.seed(List.of(seedPlan("STARTER", 1, "6999"), seedPlan("PROFESSIONAL", 2, "9999")));
+
+    assertThat(tiers.get(0).getLinkedId()).isNull();
+    verify(mongoTemplate, never()).updateFirst(any(org.springframework.data.mongodb.core.query.Query.class),
+        any(org.springframework.data.mongodb.core.query.Update.class), eq(Plan.class));
   }
 
   @Test
