@@ -1,0 +1,183 @@
+package com.inventory.product.service;
+
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyIterable;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import com.inventory.pricing.api.PricingView;
+import com.inventory.pricing.api.PricingLookup;
+import com.inventory.product.domain.model.Inventory;
+import com.inventory.product.domain.model.VendorPurchaseInvoice;
+import com.inventory.product.domain.model.VendorPurchaseInvoiceLine;
+import com.inventory.product.domain.repository.InventoryRepository;
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
+import com.inventory.common.gst.SupplyPlacement;
+
+class PurchaseTaxRecorderTest {
+
+  private InventoryRepository inventoryRepository;
+  private PricingLookup pricingRepository;
+  private SupplyPlacement placement;
+  private PurchaseTaxRecorder recorder;
+  private final List<Inventory> lots = new ArrayList<>();
+  private final List<PricingView> pricings = new ArrayList<>();
+  private final List<VendorPurchaseInvoiceLine> lines = new ArrayList<>();
+
+  @BeforeEach
+  void setUp() {
+    inventoryRepository = mock(InventoryRepository.class);
+    pricingRepository = mock(PricingLookup.class);
+    when(inventoryRepository.findAllById(anyIterable())).thenReturn(lots);
+    when(pricingRepository.findAllById(anyIterable())).thenReturn(pricings);
+    placement = mock(SupplyPlacement.class);
+    when(placement.isInterstatePurchase(any(), any())).thenReturn(false);
+    @SuppressWarnings("unchecked")
+    ObjectProvider<SupplyPlacement> provider = mock(ObjectProvider.class);
+    when(provider.getIfAvailable()).thenReturn(placement);
+    recorder = new PurchaseTaxRecorder(inventoryRepository, pricingRepository, provider);
+  }
+
+  private void line(int count, String cost, String halfGst) {
+    String n = String.valueOf(lines.size());
+    Inventory lot = new Inventory();
+    lot.setId("inv-" + n);
+    lot.setPricingId("pr-" + n);
+    lots.add(lot);
+    pricings.add(PricingView.builder()
+        .id("pr-" + n)
+        .costPrice(new BigDecimal(cost))
+        .cgst(halfGst)
+        .sgst(halfGst)
+        .build());
+    VendorPurchaseInvoiceLine line = new VendorPurchaseInvoiceLine();
+    line.setLineIndex(lines.size());
+    line.setCount(count);
+    line.setCostPrice(new BigDecimal(cost));
+    line.setInventoryId(lot.getId());
+    lines.add(line);
+  }
+
+  private VendorPurchaseInvoice invoice() {
+    VendorPurchaseInvoice invoice = new VendorPurchaseInvoice();
+    invoice.setInvoiceNo("A1");
+    invoice.setLines(lines);
+    return invoice;
+  }
+
+  @Test
+  void looksUpEveryLineInTwoQueries() {
+    line(1, "100", "6");
+    line(2, "50", "6");
+    line(3, "10", "9");
+
+    assertEquals(3, recorder.pricingByInventoryId(lines).size());
+
+    verify(inventoryRepository, times(1)).findAllById(anyIterable());
+    verify(pricingRepository, times(1)).findAllById(anyIterable());
+    verify(inventoryRepository, never()).findById(any());
+    verify(pricingRepository, never()).findById(any());
+  }
+
+  @Test
+  void writesTheTotalsTheLinesComeTo() {
+    line(10, "100", "9");
+    VendorPurchaseInvoice invoice = invoice();
+    invoice.setShippingCharge(new BigDecimal("20"));
+    invoice.setRoundOff(new BigDecimal("-0.40"));
+
+    recorder.record(invoice);
+
+    assertEquals(0, new BigDecimal("1000.00").compareTo(invoice.getLineSubTotal()));
+    assertEquals(0, new BigDecimal("180.00").compareTo(invoice.getTaxTotal()));
+    assertEquals(0, new BigDecimal("1199.60").compareTo(invoice.getInvoiceTotal()));
+    assertNotNull(lines.get(0).getTaxableValue());
+  }
+
+  @Test
+  void totalsTheBillWasSavedWithAreKept() {
+    line(10, "100", "9");
+    VendorPurchaseInvoice invoice = invoice();
+    invoice.setLineSubTotal(new BigDecimal("1000.00"));
+    invoice.setTaxTotal(new BigDecimal("180.40"));
+    invoice.setInvoiceTotal(new BigDecimal("1180.40"));
+
+    recorder.record(invoice);
+
+    assertEquals(0, new BigDecimal("180.40").compareTo(invoice.getTaxTotal()));
+    assertEquals(0, new BigDecimal("1180.40").compareTo(invoice.getInvoiceTotal()));
+    assertEquals(0, new BigDecimal("180.00").compareTo(
+        lines.get(0).getCentralTax().add(lines.get(0).getStateTax())));
+  }
+
+  /** The journal takes the bill-level discount off the subtotal, so the subtotal is before it. */
+  @Test
+  void theSubtotalIsBeforeTheBillLevelDiscount() {
+    line(10, "100", "9");
+    VendorPurchaseInvoice invoice = invoice();
+    invoice.setOverallDiscount(new BigDecimal("100"));
+
+    recorder.record(invoice);
+
+    assertEquals(0, new BigDecimal("1000.00").compareTo(invoice.getLineSubTotal()));
+    assertEquals(0, new BigDecimal("162.00").compareTo(invoice.getTaxTotal()));
+    assertEquals(0, new BigDecimal("1062.00").compareTo(invoice.getInvoiceTotal()));
+  }
+
+  @Test
+  void aLookupFailureNeverStopsTheStockIn() {
+    line(1, "100", "9");
+    when(inventoryRepository.findAllById(anyIterable())).thenThrow(new IllegalStateException("db"));
+    VendorPurchaseInvoice invoice = invoice();
+
+    assertDoesNotThrow(() -> recorder.record(invoice));
+
+    assertNull(invoice.getTaxTotal());
+  }
+
+  @Test
+  void anInterstateSupplierPutsTheWholeTaxUnderIgstAndStampsTheInvoice() {
+    when(placement.isInterstatePurchase(any(), any())).thenReturn(true);
+    line(10, "100", "6");
+    VendorPurchaseInvoice invoice = invoice();
+    recorder.record(invoice);
+    VendorPurchaseInvoiceLine l = invoice.getLines().get(0);
+    assertEquals(Boolean.TRUE, invoice.getInterstate());
+    assertEquals(0, l.getCentralTax().signum());
+    assertEquals(0, l.getStateTax().signum());
+    assertEquals(new BigDecimal("120.00"), l.getIntegratedTax().setScale(2, java.math.RoundingMode.HALF_UP));
+  }
+
+  @Test
+  void aLocalSupplierSplitsTheTaxInHalvesAndStampsTheInvoice() {
+    line(10, "100", "6");
+    VendorPurchaseInvoice invoice = invoice();
+    recorder.record(invoice);
+    VendorPurchaseInvoiceLine l = invoice.getLines().get(0);
+    assertEquals(Boolean.FALSE, invoice.getInterstate());
+    assertEquals(new BigDecimal("60.00"), l.getCentralTax().setScale(2, java.math.RoundingMode.HALF_UP));
+    assertEquals(new BigDecimal("60.00"), l.getStateTax().setScale(2, java.math.RoundingMode.HALF_UP));
+    assertEquals(0, l.getIntegratedTax().signum());
+  }
+
+  @Test
+  void theStoredAnswerWinsOverPlacingAgain() {
+    VendorPurchaseInvoice invoice = invoice();
+    invoice.setInterstate(true);
+    when(placement.isInterstatePurchase(any(), any())).thenReturn(false);
+    assertTrue(recorder.isInterstate(invoice));
+  }
+}
