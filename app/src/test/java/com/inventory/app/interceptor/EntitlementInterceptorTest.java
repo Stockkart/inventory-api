@@ -5,7 +5,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.inventory.common.entitlement.PlanFeature;
 import com.inventory.common.entitlement.RequiresEntitlement;
-import com.inventory.plan.service.EntitlementGuard;
+import com.inventory.plan.api.Entitlements;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -19,7 +19,7 @@ import org.springframework.web.method.HandlerMethod;
 class EntitlementInterceptorTest {
 
   @Mock
-  private EntitlementGuard entitlementGuard;
+  private Entitlements entitlementGuard;
 
   @InjectMocks
   private EntitlementInterceptor interceptor;

@@ -3,16 +3,10 @@ package com.inventory.analytics.utils;
 import com.inventory.analytics.rest.dto.response.InventoryAnalyticsDto;
 import com.inventory.analytics.rest.dto.response.InventorySummaryDto;
 import com.inventory.product.domain.model.Inventory;
-import com.inventory.product.domain.model.Purchase;
-import com.inventory.product.domain.model.PurchaseItem;
-import com.inventory.product.domain.model.enums.PurchaseStatus;
 import com.inventory.pluginengine.VerticalFieldsReader;
-import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.service.vertical.InventoryVerticalExtensionHandler;
-import com.inventory.product.domain.repository.PurchaseRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -27,13 +21,10 @@ import java.util.stream.Collectors;
 public class InventoryAnalyticsUtils {
 
   @Autowired
-  private InventoryRepository inventoryRepository;
-
-  @Autowired
   private InventoryVerticalExtensionHandler inventoryVerticalExtensionHandler;
 
   @Autowired
-  private PurchaseRepository purchaseRepository;
+  private AnalyticsSalesQueries salesQueries;
 
   public List<InventoryAnalyticsDto> calculateInventoryAnalytics(
       String shopId,
@@ -41,9 +32,21 @@ public class InventoryAnalyticsUtils {
       Integer lowStockThreshold,
       Integer deadStockDays,
       Integer expiringSoonDays) {
+    return calculateInventoryAnalytics(
+        shopId, allInventories, getLastSoldDates(shopId), Instant.now(),
+        lowStockThreshold, deadStockDays, expiringSoonDays);
+  }
 
-    Map<String, Instant> lastSoldDates = getLastSoldDates(shopId, allInventories);
-    Instant now = Instant.now();
+  /** As above with the shop's last-sold dates and "now" given (one read and one clock for a whole pass). */
+  public List<InventoryAnalyticsDto> calculateInventoryAnalytics(
+      String shopId,
+      List<Inventory> allInventories,
+      Map<String, Instant> lastSoldDates,
+      Instant now,
+      Integer lowStockThreshold,
+      Integer deadStockDays,
+      Integer expiringSoonDays) {
+
     Map<String, Map<String, Object>> extensionByInventoryId =
         inventoryVerticalExtensionHandler.loadExtensionFieldsBatch(
             shopId, allInventories.stream().map(Inventory::getId).toList());
@@ -157,29 +160,9 @@ public class InventoryAnalyticsUtils {
         .collect(Collectors.toList());
   }
 
-  private Map<String, Instant> getLastSoldDates(String shopId, List<Inventory> inventories) {
-    Map<String, Instant> lastSoldDates = new HashMap<>();
-    List<Purchase> purchases = purchaseRepository.findByShopId(shopId, Pageable.unpaged())
-        .getContent()
-        .stream()
-        .filter(p -> p.getStatus() == PurchaseStatus.COMPLETED)
-        .filter(p -> p.getSoldAt() != null)
-        .sorted((a, b) -> b.getSoldAt().compareTo(a.getSoldAt()))
-        .collect(Collectors.toList());
-
-    Set<String> processed = new HashSet<>();
-    for (Purchase purchase : purchases) {
-      if (purchase.getItems() != null) {
-        for (PurchaseItem item : purchase.getItems()) {
-          String inventoryId = item.getInventoryId();
-          if (!processed.contains(inventoryId)) {
-            lastSoldDates.put(inventoryId, purchase.getSoldAt());
-            processed.add(inventoryId);
-          }
-        }
-      }
-    }
-    return lastSoldDates;
+  /** Latest sale time per lot, from one MongoDB aggregation (was: every completed bill loaded). */
+  public Map<String, Instant> getLastSoldDates(String shopId) {
+    return salesQueries.lastSoldByLot(shopId);
   }
 
   private BigDecimal calculateTurnoverRatio(Integer received, Integer sold, Instant receivedDate, Instant now) {

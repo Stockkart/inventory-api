@@ -32,10 +32,17 @@ public class Pricing {
   private BigDecimal costPrice;
 
   /**
-   * Landed cost per unit: costPrice after purchaseScheme and purchaseAdditionalDiscount.
-   * Derived on save; this is the figure margin must be measured against.
+   * Landed cost per unit before GST: costPrice after purchaseScheme and purchaseAdditionalDiscount,
+   * with the GST taken out when {@link #costPriceIncludesTax} is set. Derived on save; this is the
+   * figure margin must be measured against.
    */
   private BigDecimal effectiveCostPrice;
+
+  /**
+   * True when costPrice was entered off a bill whose rates include GST. Null or false means
+   * costPrice is before GST, which is how every record written before this field existed reads.
+   */
+  private Boolean costPriceIncludesTax;
 
   /** Price to Retail (PTR). Immutable after creation. Base price when defaultRate is "priceToRetail". */
   private BigDecimal priceToRetail;
