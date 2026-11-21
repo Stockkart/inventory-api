@@ -66,6 +66,9 @@ public class AddOnAdminService {
   @Autowired
   private ShopAddOnService shopAddOnService;
 
+  @Autowired
+  private AddOnCatalogueService addOnCatalogueService;
+
   Clock clock = Clock.systemUTC();
 
   public List<AdminAddOnResponse> list() {
@@ -92,6 +95,7 @@ public class AddOnAdminService {
     } catch (DuplicateKeyException e) {
       throw new ValidationException("An add-on with code " + request.getCode() + " already exists");
     }
+    addOnCatalogueService.evictActive();
     audit(actorUserId, "ADD_ON_CREATED", TARGET_TYPE, addOn.getId(), null, snapshot(addOn), null);
     return addOnMapper.toAdminResponse(addOn);
   }
@@ -120,6 +124,7 @@ public class AddOnAdminService {
       throw new ResourceNotFoundException("Add-on", "id", id);
     }
     AddOn after = load(id);
+    addOnCatalogueService.evictActive();
     audit(actorUserId, "ADD_ON_UPDATED", TARGET_TYPE, id, snapshot(before), snapshot(after), null);
     return addOnMapper.toAdminResponse(after);
   }
@@ -137,6 +142,7 @@ public class AddOnAdminService {
         FindAndModifyOptions.options().returnNew(false), AddOn.class);
     AddOn after = load(id);
     if (before != null) {
+      addOnCatalogueService.evictActive();
       audit(actorUserId, active ? "ADD_ON_ACTIVATED" : "ADD_ON_DEACTIVATED", TARGET_TYPE, id,
           snapshot(before), snapshot(after), request.getReason());
     }
