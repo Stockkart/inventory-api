@@ -40,6 +40,12 @@ public class UpdateHrSettingsRequest {
   @Data
   public static class AttendanceCaptureChange {
     private Boolean selfCheckIn;
+    /**
+     * Biometric app check-in (R1.1). Independent of {@code selfCheckIn} and {@code locationCheck}:
+     * no server-side coupling (R1.2); the "turn on Location check" warning is a frontend concern
+     * (R1.6).
+     */
+    private Boolean biometricApp;
     private Boolean locationCheck;
     /** The shop's own location ("Use my current location" in the shop), −90..90. */
     private Double shopLat;

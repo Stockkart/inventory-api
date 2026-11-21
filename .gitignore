@@ -40,3 +40,6 @@ build/
 .env.*.local
 # jqwik property-test seed/failure cache
 .jqwik-database
+
+### Load-test fixtures (private keys and owner logins of throwaway accounts, perf/README.md) ###
+perf/attendance-app-fixture.json

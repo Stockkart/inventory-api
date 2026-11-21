@@ -1,6 +1,8 @@
 package com.inventory.hr.service;
 
 import com.inventory.hr.domain.model.Punch;
+import com.inventory.hr.domain.model.enums.PunchFlag;
+import com.inventory.hr.domain.model.enums.PunchSource;
 import com.inventory.hr.utils.HrDateUtils;
 import java.time.Duration;
 import java.time.Instant;
@@ -9,8 +11,10 @@ import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * Punches of one employee-day → what the day shows (R4.1–R4.4). Pure: no repository, clock or
@@ -25,6 +29,8 @@ import java.util.Objects;
  *   <li>{@code punchCount} = number of counted punches. It never goes down when punches are added
  *       (keeping the earliest punch of each 5-minute run is the largest such set), which is what
  *       the derived-write race guard relies on (design D4).
+ *   <li>{@code primarySource} = the source of the earliest counted punch (R8.1–R8.2): a day with
+ *       both My HR and Attendance app punches shows the icon of whichever counted first.
  * </ul>
  */
 public final class PunchDayDeriver {
@@ -42,12 +48,28 @@ public final class PunchDayDeriver {
    * @param outTime HH:mm of the last counted punch; null when fewer than two
    * @param workedMinutes from in/out by the existing rule; null without an out-time
    * @param missingCheckOut one counted punch and the day is over (see {@link #isMissingCheckOut})
+   * @param primarySource source of the earliest counted punch (R8.2: the day's icon); null when
+   *     there is no counted punch
    */
   public record Derived(List<Punch> counted, String inTime, String outTime, Integer workedMinutes,
-      int punchCount, boolean missingCheckOut) {
+      int punchCount, boolean missingCheckOut, PunchSource primarySource) {
 
     public boolean isEmpty() {
       return counted.isEmpty();
+    }
+
+    /**
+     * R8.4, R8.7: the flags of the counted punches only; a flag that appears only on a duplicate
+     * punch is not shown on the day.
+     */
+    public Set<PunchFlag> countedFlags() {
+      Set<PunchFlag> flags = EnumSet.noneOf(PunchFlag.class);
+      for (Punch p : counted) {
+        if (p.getFlags() != null) {
+          flags.addAll(p.getFlags());
+        }
+      }
+      return flags;
     }
   }
 
@@ -81,8 +103,9 @@ public final class PunchDayDeriver {
     String in = counted.isEmpty() ? null : hhmm(counted.get(0).getAt());
     String out = counted.size() < 2 ? null : hhmm(counted.get(counted.size() - 1).getAt());
     Integer worked = DayStatusResolver.workedMinutes(in, out);
+    PunchSource primary = counted.isEmpty() ? null : counted.get(0).getSource();
     return new Derived(List.copyOf(counted), in, out, worked, counted.size(),
-        isMissingCheckOut(counted.size(), date, today, now, workEnd));
+        isMissingCheckOut(counted.size(), date, today, now, workEnd), primary);
   }
 
   /**

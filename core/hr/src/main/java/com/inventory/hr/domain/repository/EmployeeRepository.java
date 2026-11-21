@@ -2,6 +2,7 @@ package com.inventory.hr.domain.repository;
 
 import com.inventory.hr.domain.model.Employee;
 import com.inventory.hr.domain.model.enums.EmployeeStatus;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.mongodb.repository.MongoRepository;
@@ -25,6 +26,9 @@ public interface EmployeeRepository extends MongoRepository<Employee, String> {
   boolean existsByShopIdAndCode(String shopId, String code);
 
   long countByShopIdAndStatus(String shopId, EmployeeStatus status);
+
+  /** How many of the given employees have the given status (R1.9 paired count, one read). */
+  long countByShopIdAndIdInAndStatus(String shopId, Collection<String> ids, EmployeeStatus status);
 
   /** Linked employees of the shop, ids and userIds only (login picker). */
   @Query(value = "{ 'shopId': ?0, 'userId': { $type: 'string' } }", fields = "{ 'userId': 1 }")

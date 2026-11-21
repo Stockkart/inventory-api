@@ -8,7 +8,7 @@ All metrics are counters recorded through `MetricsWrapper.record(name, amount, t
 every one carries a `module` tag whose value is the module column below. Metrics that add
 further tags list them.
 
-**65 metrics across 15 modules.**
+**68 metrics across 15 modules.**
 
 ## accounting
 
@@ -61,6 +61,9 @@ further tags list them.
 | `inventory_hr_documents_seconds_total` | `HrMetricsConstants.DOCUMENTS_SECONDS_TOTAL` | PayslipService, HrReportService (counter, amount = seconds spent building the file; ÷ `documents_total` = mean; same `operation` tag) |
 | `inventory_hr_account_conflicts_total` | `HrMetricsConstants.ACCOUNT_CONFLICTS_TOTAL` | HrAccountingPoster (counter, extra tag `code`: `1250`, `2400`, `5700`; the post is refused with 409 `HR_ACCOUNT_CONFLICT`) |
 | `inventory_hr_self_checkin_total` | `HrMetricsConstants.SELF_CHECKIN_TOTAL` | SelfCheckInService (counter, one per `POST /hr/me/check-in`, extra tag `result`: `accepted`, `flagged`, `duplicate`, `off`, `not_linked`, `no_permission`, `not_employed`, `on_leave`, `locked`, `outside_shop`, `location_unclear`, `invalid`, `error`) |
+| `inventory_hr_app_punches_total` | `HrMetricsConstants.APP_PUNCHES_TOTAL` | AppPunchService, AttendanceAppAuthInterceptor (counter, exactly one per Attendance app punch attempt, extra tags `shop` and `result`: `accepted`, `flagged`, `duplicate`, `replayed`, `off`, `not_paired`, `not_employed`, `on_leave`, `locked`, `outside_shop`, `location_unclear`, `fake_location`, `offline_accepted`, `offline_too_late`, `offline_clock_wrong`, `signature_failed`, `rate_limited`, `invalid`, `error`; the sum over `result` equals the attempts the shop sent) |
+| `inventory_hr_app_pairings_total` | `HrMetricsConstants.APP_PAIRINGS_TOTAL` | DevicePairingService (counter, one per pairing event, extra tags `shop`, `event`: `created`, `completed`, `replaced`, `unpaired`, `failed`, `attestation`, and `reason`: for `failed` one of `code_expired`, `code_used`, `code_cancelled`, `code_wrong`, `app_off`, `employee_exited`, `abandoned`, `locked`; for `unpaired` the `UnpairReason` name; for `attestation` (an Android key attestation chain was sent with `complete`, task 16.4) `ok` or the first failed check from `HrMetricsConstants.AppPairingAttestation` (`chain_unparseable`, `chain_broken`, `untrusted_root`, `no_extension`, `extension_malformed`, `software_level`, `challenge_mismatch`, `not_sign`, `not_ec`, `not_p256`, `no_biometric`, `auth_timeout`, `key_mismatch`, `error`); otherwise `-`) |
+| `inventory_hr_app_offline_backlog_total` | `HrMetricsConstants.APP_OFFLINE_BACKLOG_TOTAL` | AppPunchService (counter, one per accepted offline punch that arrived more than 1 hour after its phone time, extra tag `shop`) |
 
 ## notifications
 
@@ -161,6 +164,9 @@ Some call sites add a second tag beside `module`. The ones that matter for a das
 | `inventory_product_print_job_outcomes_total` | `operation`, `outcome` | the source as above; `printed`, `failed_printer`, `still_queued`, `bridge_unreachable`, `already_sent`, `bridge_rejected`, `unconfirmed` |
 | `inventory_product_print_bridge_checks_total` | `outcome` | `not_detected`, `outdated`, `connected` |
 | `inventory_pricing_rate_rule_skipped_total` | `reason` | `BELOW_COST` |
+| `inventory_hr_app_punches_total` | `shop`, `result` | the shop id; one result per attempt (list above). Grafana `03-module.json` graphs `sum by (result) (rate(...[5m]))` with the `shop` dropdown |
+| `inventory_hr_app_pairings_total` | `shop`, `event`, `reason` | the shop id; `created`, `completed`, `replaced`, `unpaired`, `failed`, `attestation`; `reason` is the R2.14 failure, the `UnpairReason`, or for `attestation` `ok` / the failed check (recorded only; a failed attestation does not refuse the pairing in this version) |
+| `inventory_hr_app_offline_backlog_total` | `shop` | the shop id |
 
 ## Adding a metric
 

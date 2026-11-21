@@ -85,9 +85,22 @@ public class EmployeeService {
 
   @Autowired private HrAuditService auditService;
 
+  @Autowired private DevicePairingService pairingService;
+
   /** Search by name, code or phone ({@code q}), filter by status and designation, by name. */
   public EmployeesPageResponse list(String userId, String shopId, String q, String status,
       String designation, Integer page, Integer size) {
+    return list(userId, shopId, q, status, designation, null, page, size);
+  }
+
+  /**
+   * As above, plus {@code paired} ({@code "true"} / {@code "false"} / null = all): only employees
+   * with / without an active Attendance app phone (R8.12, R1.9 link). Every row carries {@code
+   * appPaired}. Pairings are read once per call: the shop's active set when filtering, else the
+   * page's employees in one {@code $in} read.
+   */
+  public EmployeesPageResponse list(String userId, String shopId, String q, String status,
+      String designation, String paired, Integer page, Integer size) {
     Set<HrPermission> perms = guard.require(userId, shopId, HrPermission.VIEW_EMPLOYEES);
     int p = page != null ? page : 0;
     int s = size != null ? size : DEFAULT_PAGE_SIZE;
@@ -97,6 +110,7 @@ public class EmployeeService {
     if (s < 1 || s > MAX_PAGE_SIZE) {
       throw new ValidationException("size must be between 1 and " + MAX_PAGE_SIZE);
     }
+    Boolean pairedFilter = parsePaired(paired);
     Query query = Query.query(Criteria.where("shopId").is(shopId));
     if (StringUtils.hasText(status)) {
       query.addCriteria(Criteria.where("status").is(parseStatus(status)));
@@ -116,11 +130,29 @@ public class EmployeeService {
           Criteria.where("code").regex(contains),
           Criteria.where("phone").regex(contains)));
     }
+    Set<String> pairedIds = null;
+    if (pairedFilter != null) {
+      // the filter must apply before paging, so the shop's whole active set is read once and
+      // reused below to mark the rows
+      pairedIds = pairingService.activePairedEmployeeIds(shopId);
+      query.addCriteria(pairedFilter
+          ? Criteria.where("_id").in(pairedIds)
+          : Criteria.where("_id").nin(pairedIds));
+    }
     long total = mongoTemplate.count(query, Employee.class);
     query.with(PageRequest.of(p, s, Sort.by(Sort.Direction.ASC, "name")));
     boolean canViewSalaries = perms.contains(HrPermission.VIEW_SALARIES);
-    List<EmployeeResponse> rows = mongoTemplate.find(query, Employee.class).stream()
-        .map(e -> employeeMapper.toListRow(e, canViewSalaries))
+    List<Employee> employees = mongoTemplate.find(query, Employee.class);
+    Set<String> pairedOnPage = pairedIds != null
+        ? pairedIds
+        : pairingService.activePairingsByEmployee(shopId,
+            employees.stream().map(Employee::getId).toList()).keySet();
+    List<EmployeeResponse> rows = employees.stream()
+        .map(e -> {
+          EmployeeResponse row = employeeMapper.toListRow(e, canViewSalaries);
+          row.setAppPaired(pairedOnPage.contains(e.getId()));
+          return row;
+        })
         .toList();
     int totalPages = (int) ((total + s - 1) / s);
     return new EmployeesPageResponse(rows, new PageMeta(p, s, total, totalPages));
@@ -128,7 +160,10 @@ public class EmployeeService {
 
   public EmployeeResponse get(String userId, String shopId, String id) {
     Set<HrPermission> perms = guard.require(userId, shopId, HrPermission.VIEW_EMPLOYEES);
-    return employeeMapper.toDetail(find(shopId, id), perms.contains(HrPermission.VIEW_SALARIES));
+    EmployeeResponse r = employeeMapper.toDetail(find(shopId, id),
+        perms.contains(HrPermission.VIEW_SALARIES));
+    r.setAppPaired(pairingService.activePairing(shopId, id).isPresent());
+    return r;
   }
 
   public EmployeeResponse create(String userId, String shopId, SaveEmployeeRequest request) {
@@ -260,7 +295,10 @@ public class EmployeeService {
     return employeeMapper.toDetail(saved, canViewSalaries);
   }
 
-  /** Marks the employee EXITED from {@code exitDate} (R4.7, R4.11); the row stays for history. */
+  /**
+   * Marks the employee EXITED from {@code exitDate} (R4.7, R4.11); the row stays for history. The
+   * save also unpairs or schedules the unpair of the employee's Attendance app phone (R3.4).
+   */
   public EmployeeResponse exit(String userId, String shopId, String id,
       ExitEmployeeRequest request) {
     Set<HrPermission> perms = guard.require(userId, shopId, HrPermission.ADD_EDIT_EMPLOYEES);
@@ -414,8 +452,9 @@ public class EmployeeService {
   private Employee save(Employee employee, String userId, String shopId) {
     employee.setUpdatedAt(Instant.now());
     employee.setUpdatedByUserId(userId);
+    Employee saved;
     try {
-      return employeeRepository.save(employee);
+      saved = employeeRepository.save(employee);
     } catch (OptimisticLockingFailureException e) {
       throw concurrentUpdate();
     } catch (DuplicateKeyException e) {
@@ -424,6 +463,29 @@ public class EmployeeService {
       log.error("Database error while saving employee {} for shop {}: {}", employee.getId(), shopId,
           e.getMessage());
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Error saving the employee");
+    }
+    syncExitUnpair(saved);
+    return saved;
+  }
+
+  /**
+   * Keeps the Attendance app pairing in step with the employee's exit (R3.4, R3.5): {@code EXITED}
+   * with an exit date today or earlier unpairs the phone now; a later date schedules the unpair for
+   * 00:00 Asia/Kolkata of that day (a changed date moves it); any other status clears a pending
+   * schedule. The employee is already saved, so a failure here is logged and does not undo the
+   * save; a due unpair that failed is finished by {@code PairingExitJob} within a minute.
+   */
+  private void syncExitUnpair(Employee saved) {
+    try {
+      if (saved.getStatus() == EmployeeStatus.EXITED) {
+        pairingService.scheduleExitUnpair(saved.getShopId(), saved.getId(),
+            HrDateUtils.parseDate(saved.getExitDate()));
+      } else {
+        pairingService.clearExitUnpair(saved.getShopId(), saved.getId());
+      }
+    } catch (RuntimeException e) {
+      log.error("Could not update the Attendance app pairing of employee {} (shop {}) after its "
+          + "save: {}", saved.getId(), saved.getShopId(), e.getMessage());
     }
   }
 
@@ -509,6 +571,21 @@ public class EmployeeService {
     } catch (IllegalArgumentException e) {
       throw new ValidationException("status must be ACTIVE or EXITED");
     }
+  }
+
+  /** {@code ?paired=}: null or blank = no filter; anything but true / false is a 400. */
+  static Boolean parsePaired(String paired) {
+    if (!StringUtils.hasText(paired)) {
+      return null;
+    }
+    String v = paired.trim().toLowerCase();
+    if ("true".equals(v)) {
+      return Boolean.TRUE;
+    }
+    if ("false".equals(v)) {
+      return Boolean.FALSE;
+    }
+    throw new ValidationException("paired must be true or false");
   }
 
   private static boolean isLoginClash(DuplicateKeyException e) {

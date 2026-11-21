@@ -1,7 +1,10 @@
 package com.inventory.hr.migration;
 
-import com.inventory.hr.domain.model.AttendanceDay;
 import com.inventory.hr.domain.model.Advance;
+import com.inventory.hr.domain.model.AppHealthAlert;
+import com.inventory.hr.domain.model.AppNonce;
+import com.inventory.hr.domain.model.AttendanceDay;
+import com.inventory.hr.domain.model.DevicePairing;
 import com.inventory.hr.domain.model.Employee;
 import com.inventory.hr.domain.model.Holiday;
 import com.inventory.hr.domain.model.HrAuditEvent;
@@ -10,9 +13,11 @@ import com.inventory.hr.domain.model.HrRolePermissions;
 import com.inventory.hr.domain.model.HrSettings;
 import com.inventory.hr.domain.model.LeaveRequest;
 import com.inventory.hr.domain.model.LeaveType;
+import com.inventory.hr.domain.model.PairingCode;
 import com.inventory.hr.domain.model.PayrollLine;
 import com.inventory.hr.domain.model.PayrollRun;
 import com.inventory.hr.domain.model.Punch;
+import com.inventory.hr.domain.model.enums.PairingStatus;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -41,6 +46,9 @@ public class HrIndexMigration {
 
   /** 90 days, after which Mongo itself removes HR inbox rows (no app job). */
   static final long NOTIFICATION_TTL_SECONDS = Duration.ofDays(90).toSeconds();
+
+  /** 15 minutes: longer than the ±10 min envelope timestamp window, so a replay is always caught. */
+  static final long NONCE_TTL_SECONDS = Duration.ofMinutes(15).toSeconds();
 
   @Autowired private MongoTemplate mongoTemplate;
 
@@ -100,7 +108,32 @@ public class HrIndexMigration {
     // self check-in: idempotent by dedupeKey; one employee-day read; register flags by $in
     s.add(spec(Punch.class, "shop_dedupe_unique", asc("shopId", "dedupeKey").unique()));
     s.add(spec(Punch.class, "shop_employee_date", asc("shopId", "employeeId", "localDate")));
+    // Attendance app pairings (D3, R2.11, R3.10, R10.12). The pairing id is _id, so the per-request
+    // lookup needs no extra index. Partial on status = ACTIVE: any number of UNPAIRED rows may share
+    // an employee or installation; only one phone is active for each at a time.
+    s.add(spec(DevicePairing.class, "shop_employee_active_unique",
+        asc("shopId", "employeeId").unique().partial(activeOnly())));
+    s.add(spec(DevicePairing.class, "shop_employee_status", asc("shopId", "employeeId", "status")));
+    s.add(spec(DevicePairing.class, "installation_active",
+        asc("installationId").partial(activeOnly())));
+    s.add(spec(DevicePairing.class, "scheduled_unpair_active",
+        asc("scheduledUnpairAt").partial(activeOnly())));
+    s.add(spec(DevicePairing.class, "purge_ttl", asc("purgeAt").expire(0)));
+    // Pairing codes: stored hashed; the TTL removes expired codes without an app job (R9.11)
+    s.add(spec(PairingCode.class, "code_hash_unique", asc("codeHash").unique()));
+    s.add(spec(PairingCode.class, "shop_employee_status", asc("shopId", "employeeId", "status")));
+    s.add(spec(PairingCode.class, "expires_ttl", asc("expiresAt").expire(0)));
+    // Request-envelope nonces: replay check, forgotten after the envelope's ±10 min window
+    s.add(spec(AppNonce.class, "pairing_nonce_unique", asc("pairingId", "nonce").unique()));
+    s.add(spec(AppNonce.class, "seen_ttl", asc("seenAt").expire(NONCE_TTL_SECONDS)));
+    // Signature-failure alerts: dashboard reads the open ones per shop
+    s.add(spec(AppHealthAlert.class, "shop_cleared", asc("shopId", "clearedAt")));
     return s;
+  }
+
+  /** {@code partialFilterExpression {status: "ACTIVE"}}: enums are stored as constant names. */
+  private static PartialIndexFilter activeOnly() {
+    return PartialIndexFilter.of(Criteria.where("status").is(PairingStatus.ACTIVE.name()));
   }
 
   private static Index asc(String... keys) {

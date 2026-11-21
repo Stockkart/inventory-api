@@ -37,6 +37,11 @@ public class HrSettingsController {
         HrRequestUtils.requireUserId(request), HrRequestUtils.requireShopId(request))));
   }
 
+  /**
+   * Needs {@code MANAGE_SETTINGS} (checked in the service), for every field including
+   * {@code attendanceCapture.biometricApp} (R1.7); a refused request leaves the settings as they
+   * were. The response carries {@code pairedEmployeeCount} (R1.9).
+   */
   @PutMapping("/settings")
   public ResponseEntity<ApiResponse<HrSettingsResponse>> update(
       @RequestBody UpdateHrSettingsRequest body, HttpServletRequest request) {

@@ -32,6 +32,12 @@ public class MonthRegisterResponse {
     private String employeeId;
     private String code;
     private String name;
+    /**
+     * A hand-made mark, change or clear of any of this employee's days must carry a reason
+     * (R7.2): Biometric app check-in is on for the shop and the employee has an active paired
+     * phone, as of this read.
+     */
+    private boolean markReasonRequired;
     private List<Cell> cells = new ArrayList<>();
     private Totals totals;
   }
@@ -55,12 +61,15 @@ public class MonthRegisterResponse {
     private Boolean future;
     /**
      * Where the stored mark shown came from, when it is not a hand-made one (SELF_CHECK_IN,
-     * BULK_PRESENT); null = no stored mark shown, or a MANUAL one.
+     * BIOMETRIC_APP, BULK_PRESENT); null = no stored mark shown, or a MANUAL one.
      */
     private AttendanceSource markSource;
     /** Self check-in day with one punch that is over (R4.4); null = false. */
     private Boolean missingCheckOut;
-    /** Flags of the day's punches; null = none. */
+    /**
+     * Kept for wire compatibility; no longer filled. Punch flags (chips) are shown on the daily
+     * register only, the month register shows the source icon (R8.1). null = none.
+     */
     private List<PunchFlag> flags;
 
     /** A cell for a day up to today. */

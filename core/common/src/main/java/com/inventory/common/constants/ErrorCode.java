@@ -93,7 +93,52 @@ public enum ErrorCode {
   HR_OUTSIDE_SHOP(8020, "You're not at the shop", HttpStatus.UNPROCESSABLE_ENTITY),
   /** Location check, BLOCK: the phone reported an accuracy worse than 200 m (or none). */
   HR_LOCATION_UNCLEAR(8021, "Location is not clear, please try again near a window",
-      HttpStatus.UNPROCESSABLE_ENTITY);
+      HttpStatus.UNPROCESSABLE_ENTITY),
+
+  // Attendance app (biometric) 8022–8034. The app shows these word for word; the ones a worker
+  // cannot fix themselves end with "Ask your manager to mark your attendance." (R7.10).
+  /** Biometric app check-in is switched off in HR settings (R1.4). */
+  HR_APP_OFF(8022,
+      "Your shop has not turned on the Attendance app. Ask your manager to mark your attendance.",
+      HttpStatus.CONFLICT),
+  /** The pairing is unpaired, replaced or unknown; the app wipes itself on this (R3.2). */
+  HR_APP_NOT_PAIRED(8023, "This phone is no longer paired. Ask your manager.",
+      HttpStatus.FORBIDDEN),
+  /** Signature, envelope or replay-with-changes failure; counted as a security signal (R5.8). */
+  HR_APP_NOT_VERIFIED(8024,
+      "This phone could not be verified. Ask your manager to re-pair it. "
+          + "Ask your manager to mark your attendance.",
+      HttpStatus.UNPROCESSABLE_ENTITY),
+  /** Offline punch whose phone time is more than 24 h before it arrived (R6.11). */
+  HR_APP_TOO_LATE(8025,
+      "Too late to send this check-in. Ask your manager to mark your attendance.",
+      HttpStatus.UNPROCESSABLE_ENTITY),
+  /** Offline punch whose phone time is more than 5 min ahead of the server (R6.12). */
+  HR_APP_CLOCK_WRONG(8026,
+      "Your phone's clock is wrong. Fix the time, then ask your manager to mark your attendance.",
+      HttpStatus.UNPROCESSABLE_ENTITY),
+  /** Location check, BLOCK: the phone reported a mock (faked) location (R4.6). */
+  HR_FAKE_LOCATION(8027, "Fake location detected", HttpStatus.UNPROCESSABLE_ENTITY),
+  /** Over 20 punches per pairing per minute, or over 10 attempts on one code (R9.9, R9.10). */
+  HR_TOO_MANY_ATTEMPTS(8028, "Too many attempts, wait a minute", HttpStatus.TOO_MANY_REQUESTS),
+  /** Pairing code older than 15 minutes (R2.14). */
+  HR_PAIRING_CODE_EXPIRED(8029, "This code has expired. Ask your manager for a new one.",
+      HttpStatus.GONE),
+  /** Pairing code already completed a pairing (R2.5, R2.14). */
+  HR_PAIRING_CODE_USED(8030, "This code has already been used.", HttpStatus.CONFLICT),
+  /** Pairing code cancelled by a newer code, "No" or "Don't agree" (R2.4, R2.14). */
+  HR_PAIRING_CODE_CANCELLED(8031, "This code was cancelled. Ask your manager for a new one.",
+      HttpStatus.CONFLICT),
+  /** No code matches the 8 characters (R2.14). */
+  HR_PAIRING_CODE_WRONG(8032, "This code is not right. Check the 8 characters and try again.",
+      HttpStatus.NOT_FOUND),
+  /** The employee of the code is EXITED (R2.14). */
+  HR_PAIRING_EMPLOYEE_EXITED(8033,
+      "This employee has left the shop, so the phone cannot be paired.",
+      HttpStatus.UNPROCESSABLE_ENTITY),
+  /** 5 refused codes from one installation in 15 minutes; %d = minutes to wait (R2.5). */
+  HR_PAIRING_CODE_LOCKED(8034, "Too many wrong codes. Wait %d minutes and try again.",
+      HttpStatus.TOO_MANY_REQUESTS);
 
   private final int code;
   private final String message;

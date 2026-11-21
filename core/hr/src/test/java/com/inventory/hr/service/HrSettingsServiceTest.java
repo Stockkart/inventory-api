@@ -16,13 +16,16 @@ import static org.mockito.Mockito.when;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.hr.domain.model.DevicePairing;
 import com.inventory.hr.domain.model.HrSettings;
 import com.inventory.hr.domain.model.enums.EmployeeStatus;
 import com.inventory.hr.domain.model.enums.HrAuditAction;
 import com.inventory.hr.domain.model.enums.HrPermission;
 import com.inventory.hr.domain.model.enums.OutsideAction;
+import com.inventory.hr.domain.model.enums.PairingStatus;
 import com.inventory.hr.domain.model.enums.PerDayBasis;
 import com.inventory.hr.domain.repository.AttendanceDayRepository;
+import com.inventory.hr.domain.repository.DevicePairingRepository;
 import com.inventory.hr.domain.repository.EmployeeRepository;
 import com.inventory.hr.domain.repository.HrSettingsRepository;
 import com.inventory.hr.mapper.HrSettingsMapper;
@@ -34,6 +37,7 @@ import com.inventory.hr.validation.HrSettingsValidator;
 import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -51,6 +55,7 @@ class HrSettingsServiceTest {
   @Mock private HrSettingsRepository settingsRepository;
   @Mock private EmployeeRepository employeeRepository;
   @Mock private AttendanceDayRepository attendanceDayRepository;
+  @Mock private DevicePairingRepository pairingRepository;
   @Spy private HrSettingsValidator validator = new HrSettingsValidator();
   @Spy private HrSettingsMapper mapper = new HrSettingsMapperImpl();
   @Mock private HrPermissionGuard guard;
@@ -91,6 +96,7 @@ class HrSettingsServiceTest {
     HrSettingsResponse.AttendanceCaptureDto c = service.get(USER, SHOP).getAttendanceCapture();
 
     assertFalse(c.isSelfCheckIn());
+    assertFalse(c.isBiometricApp(), "off for every shop until saved (R1.1)");
     assertFalse(c.isLocationCheck());
     assertNull(c.getShopLat());
     assertNull(c.getShopLng());
@@ -99,11 +105,138 @@ class HrSettingsServiceTest {
   }
 
   @Test
+  void theBiometricAppSwitchTurnsOnAndOffWithoutTouchingTheOtherCaptureSettings() {
+    HrSettings stored = new HrSettings();
+    stored.setRevision(1L);
+    stored.setAttendanceCapture(new HrSettings.AttendanceCapture(true, null, true, 12.97, 77.59,
+        250, OutsideAction.FLAG));
+    when(settingsRepository.findByShopId(SHOP)).thenReturn(Optional.of(stored));
+    when(settingsRepository.save(any(HrSettings.class))).thenAnswer(i -> i.getArgument(0));
+
+    HrSettingsResponse.AttendanceCaptureDto on =
+        service.update(USER, SHOP, biometricApp(1L, true)).getAttendanceCapture();
+
+    assertTrue(on.isBiometricApp());
+    assertTrue(on.isSelfCheckIn(), "unchanged (R1.2)");
+    assertTrue(on.isLocationCheck(), "unchanged (R1.2)");
+    assertEquals(12.97, on.getShopLat());
+    assertEquals(250, on.getRadiusMetres());
+    assertEquals(OutsideAction.FLAG, on.getOutsideAction());
+
+    HrSettingsResponse.AttendanceCaptureDto off =
+        service.update(USER, SHOP, biometricApp(1L, false)).getAttendanceCapture();
+
+    assertFalse(off.isBiometricApp());
+    assertTrue(off.isSelfCheckIn());
+    assertTrue(off.isLocationCheck());
+    // turning the switch off deletes nothing: pairings are only ever read here (R1.5)
+    verify(pairingRepository, never()).save(any());
+    verify(pairingRepository, never()).delete(any());
+    verify(pairingRepository, never()).deleteAll(any());
+  }
+
+  @Test
+  void theBiometricAppSwitchDoesNotNeedTheSelfCheckInOrTheLocationCheck() {
+    when(settingsRepository.findByShopId(SHOP)).thenReturn(Optional.empty());
+    when(settingsRepository.save(any(HrSettings.class))).thenAnswer(i -> i.getArgument(0));
+
+    HrSettingsResponse.AttendanceCaptureDto c =
+        service.update(USER, SHOP, biometricApp(null, true)).getAttendanceCapture();
+
+    assertTrue(c.isBiometricApp());
+    assertFalse(c.isSelfCheckIn());
+    assertFalse(c.isLocationCheck());
+  }
+
+  @Test
+  void aBiometricAppSwitchChangeIsAuditedWithTheOldAndNewValue() {
+    HrSettings stored = new HrSettings();
+    stored.setId("settings-1");
+    stored.setRevision(2L);
+    stored.setAttendanceCapture(new HrSettings.AttendanceCapture(false, false, false, null, null,
+        null, null));
+    when(settingsRepository.findByShopId(SHOP)).thenReturn(Optional.of(stored));
+    when(settingsRepository.save(any(HrSettings.class))).thenAnswer(i -> i.getArgument(0));
+
+    service.update(USER, SHOP, biometricApp(2L, true));
+
+    ArgumentCaptor<AuditEntry> entry = ArgumentCaptor.forClass(AuditEntry.class);
+    verify(auditService).record(entry.capture());
+    assertEquals(HrAuditAction.SETTINGS_CHANGED, entry.getValue().action());
+    assertEquals(USER, entry.getValue().actorUserId());
+    assertEquals(false, entry.getValue().before().get("biometricApp"));
+    assertEquals(true, entry.getValue().after().get("biometricApp"));
+  }
+
+  @Test
+  void aUserWithoutManageSettingsCannotFlipTheBiometricAppSwitch() {
+    doThrow(new BaseException(ErrorCode.ACCESS_DENIED, "no"))
+        .when(guard).require(USER, SHOP, HrPermission.MANAGE_SETTINGS);
+
+    BaseException e = assertThrows(BaseException.class,
+        () -> service.update(USER, SHOP, biometricApp(null, true)));
+
+    assertEquals(ErrorCode.ACCESS_DENIED, e.getErrorCode());
+    verify(settingsRepository, never()).save(any());
+    verify(auditService, never()).record(any());
+  }
+
+  @Test
+  void thePairedEmployeeCountCountsActivePairingsOfEmployeesWhoHaveNotExited() {
+    when(settingsRepository.findByShopId(SHOP)).thenReturn(Optional.empty());
+    when(pairingRepository.findByShopIdAndStatus(SHOP, PairingStatus.ACTIVE)).thenReturn(List.of(
+        pairing("emp-a"), pairing("emp-b"), pairing("emp-exited")));
+    when(employeeRepository.countByShopIdAndIdInAndStatus(SHOP,
+        new LinkedHashSet<>(List.of("emp-a", "emp-b", "emp-exited")), EmployeeStatus.ACTIVE))
+        .thenReturn(2L);
+
+    assertEquals(2L, service.get(USER, SHOP).getPairedEmployeeCount());
+  }
+
+  @Test
+  void thePairedEmployeeCountIsZeroWithoutAnyPairingAndSkipsTheEmployeeRead() {
+    when(settingsRepository.findByShopId(SHOP)).thenReturn(Optional.empty());
+
+    assertEquals(0L, service.get(USER, SHOP).getPairedEmployeeCount());
+    verify(employeeRepository, never()).countByShopIdAndIdInAndStatus(any(), any(), any());
+  }
+
+  @Test
+  void thePairedEmployeeCountIsReturnedAfterASaveToo() {
+    when(settingsRepository.findByShopId(SHOP)).thenReturn(Optional.empty());
+    when(settingsRepository.save(any(HrSettings.class))).thenAnswer(i -> i.getArgument(0));
+    when(pairingRepository.findByShopIdAndStatus(SHOP, PairingStatus.ACTIVE))
+        .thenReturn(List.of(pairing("emp-a")));
+    when(employeeRepository.countByShopIdAndIdInAndStatus(any(), any(), any())).thenReturn(1L);
+
+    assertEquals(1L, service.update(USER, SHOP, biometricApp(null, false)).getPairedEmployeeCount());
+  }
+
+  private static UpdateHrSettingsRequest biometricApp(Long revision, boolean on) {
+    UpdateHrSettingsRequest request = new UpdateHrSettingsRequest();
+    request.setRevision(revision);
+    UpdateHrSettingsRequest.AttendanceCaptureChange change =
+        new UpdateHrSettingsRequest.AttendanceCaptureChange();
+    change.setBiometricApp(on);
+    request.setAttendanceCapture(change);
+    return request;
+  }
+
+  private static DevicePairing pairing(String employeeId) {
+    DevicePairing p = new DevicePairing();
+    p.setId("pairing-" + employeeId);
+    p.setShopId(SHOP);
+    p.setEmployeeId(employeeId);
+    p.setStatus(PairingStatus.ACTIVE);
+    return p;
+  }
+
+  @Test
   void attendanceCaptureIsAPartialUpdate() {
     HrSettings stored = new HrSettings();
     stored.setRevision(3L);
-    stored.setAttendanceCapture(new HrSettings.AttendanceCapture(true, false, 12.97, 77.59, 250,
-        OutsideAction.FLAG));
+    stored.setAttendanceCapture(new HrSettings.AttendanceCapture(true, null, false, 12.97, 77.59,
+        250, OutsideAction.FLAG));
     when(settingsRepository.findByShopId(SHOP)).thenReturn(Optional.of(stored));
     when(settingsRepository.save(any(HrSettings.class))).thenAnswer(i -> i.getArgument(0));
     UpdateHrSettingsRequest request = new UpdateHrSettingsRequest();

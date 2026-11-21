@@ -11,8 +11,11 @@ import com.inventory.hr.rest.dto.response.LeaveRequestResponse;
 import com.inventory.hr.rest.dto.response.MonthRegisterResponse;
 import com.inventory.hr.rest.dto.response.MyLeaveResponse;
 import com.inventory.hr.rest.dto.response.MyPayslipResponse;
+import com.inventory.hr.rest.dto.response.PairingCodeResponse;
+import com.inventory.hr.rest.dto.response.PairingStateResponse;
 import com.inventory.hr.rest.dto.response.PunchResponse;
 import com.inventory.hr.rest.dto.response.SelfCheckInResponse;
+import com.inventory.hr.service.EmployeePairingService;
 import com.inventory.hr.service.HrSelfService;
 import com.inventory.hr.service.SelfCheckInService;
 import com.inventory.hr.utils.HrFileResponses;
@@ -49,6 +52,8 @@ public class HrSelfServiceController {
   @Autowired private HrSelfService selfService;
 
   @Autowired private SelfCheckInService selfCheckInService;
+
+  @Autowired private EmployeePairingService pairingService;
 
   @GetMapping
   public ResponseEntity<ApiResponse<EmployeeResponse>> me(HttpServletRequest request) {
@@ -133,6 +138,21 @@ public class HrSelfServiceController {
       @RequestParam(required = false) String date, HttpServletRequest request) {
     return ResponseEntity.ok(ApiResponse.success(
         selfCheckInService.myPunches(shop(request), user(request), date)));
+  }
+
+  /** The Attendance app section on My HR: the caller's own phone only (R2.13). */
+  @GetMapping("/pairing")
+  public ResponseEntity<ApiResponse<PairingStateResponse>> pairing(HttpServletRequest request) {
+    return ResponseEntity.ok(ApiResponse.success(
+        pairingService.myState(shop(request), user(request))));
+  }
+
+  /** A pairing code for the caller's own phone; recorded as paired by "self" (R2.13). */
+  @PostMapping("/pairing-codes")
+  public ResponseEntity<ApiResponse<PairingCodeResponse>> createPairingCode(
+      HttpServletRequest request) {
+    return ResponseEntity.ok(ApiResponse.success(
+        pairingService.createMyCode(shop(request), user(request))));
   }
 
   @GetMapping("/notifications")

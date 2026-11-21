@@ -29,4 +29,9 @@ public class PunchResponse {
   private List<PunchFlag> flags;
   /** false = within 5 minutes of the previous counted punch, so it does not count (R4.2). */
   private boolean counted;
+  /**
+   * Attendance app punches: the phone model as recorded at pairing (R8.6). null for My HR
+   * punches.
+   */
+  private String deviceModel;
 }

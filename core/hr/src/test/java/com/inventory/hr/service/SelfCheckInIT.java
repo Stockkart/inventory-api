@@ -72,7 +72,7 @@ class SelfCheckInIT {
     // no weekly off today, whatever weekday the test runs on
     s.getWeeklyOffSchedule().add(new HrSettings.WeeklyOffEntry("0000-01",
         List.of(HrDateUtils.today().plusDays(1).getDayOfWeek())));
-    s.setAttendanceCapture(new HrSettings.AttendanceCapture(true, action != null, SHOP_LAT,
+    s.setAttendanceCapture(new HrSettings.AttendanceCapture(true, null, action != null, SHOP_LAT,
         SHOP_LNG, 100, action));
     it.template.insert(s);
   }

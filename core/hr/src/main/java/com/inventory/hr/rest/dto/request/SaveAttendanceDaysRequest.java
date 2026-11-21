@@ -1,5 +1,6 @@
 package com.inventory.hr.rest.dto.request;
 
+import com.inventory.hr.domain.model.enums.ManualMarkReason;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.AllArgsConstructor;
@@ -29,5 +30,19 @@ public class SaveAttendanceDaysRequest {
     /** HH:mm; optional, after inTime. */
     private String outTime;
     private String note;
+    /**
+     * Why this day is marked by hand (R7.2–R7.3). Required only when Biometric app check-in is on
+     * for the shop and the employee has an active paired phone at save time; ignored otherwise
+     * unless given, in which case it is still recorded in HR history.
+     */
+    private ManualMarkReason reason;
+    /** Free text for {@link ManualMarkReason#OTHER}: 1–200 characters after trimming. */
+    private String reasonText;
+
+    /** A row without a reason (the existing shape). */
+    public Row(String employeeId, String date, String status, String inTime, String outTime,
+        String note) {
+      this(employeeId, date, status, inTime, outTime, note, null, null);
+    }
   }
 }

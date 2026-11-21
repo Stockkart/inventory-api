@@ -33,12 +33,14 @@ import com.inventory.hr.validation.LeaveRequestValidator;
 import com.inventory.metrics.MetricsWrapper;
 import com.mongodb.bulk.BulkWriteError;
 import com.mongodb.bulk.BulkWriteResult;
+import com.mongodb.bulk.BulkWriteUpsert;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -67,9 +69,14 @@ import org.springframework.util.StringUtils;
  *
  * <p>Round trips (design "Endpoint budgets"): every collection is read at most once per request,
  * with {@code $in} or a date range and a projection, never with a {@code findById} loop. Daily
- * register 7 HR queries (incl. one punch-flags read), save 7 (+2 only when a hand-made mark is
+ * register 7 HR queries (incl. one punch read), save 7 (+2 only when a hand-made mark is
  * cleared: punches read and re-derive), month 7, mark-unmarked 8. Screen reads carry a 3 s {@code
  * maxTimeMS}, month-wide reads 10 s; a read over its limit is 503 {@code HR_QUERY_TOO_SLOW}.
+ *
+ * <p>Attendance app (R7): while Biometric app check-in is on for the shop, each of these calls
+ * adds exactly one {@code hr_device_pairings} read (the active pairings of the employees on the
+ * page); a hand-made mark, change or clear of a paired employee's day then needs a reason, which
+ * HR history records (R7.2–R7.6). With the switch off nothing here changes (R7.1).
  */
 @Slf4j
 @Service
@@ -101,6 +108,8 @@ public class AttendanceService {
 
   @Autowired private PunchDayService punchDays;
 
+  @Autowired private DevicePairingService pairingService;
+
   // ---- daily register ------------------------------------------------------------------------
 
   /** Everyone employed on {@code asOf} (default today), resolved (R5.2–R5.4). */
@@ -119,14 +128,22 @@ public class AttendanceService {
       Set<String> holidays = holidayDates(shopId, d, d, HrQueryRunner.SCREEN_MAX_TIME_MS);
       boolean locked = !periodLockService.lockedPeriods(shopId,
           List.of(PayCycle.periodOf(d, PayCycle.startDay(settings)))).isEmpty();
-      Map<String, Set<PunchFlag>> flags = punchDays.flagsByEmployeeDate(shopId,
-          employees.stream().map(Employee::getId).toList(), d, d,
-          HrQueryRunner.SCREEN_MAX_TIME_MS);
+      List<String> employeeIds = employees.stream().map(Employee::getId).toList();
+      Map<String, PunchDayService.DaySummary> punches = punchDays.summaryByEmployeeDate(shopId,
+          employeeIds, d, HrQueryRunner.SCREEN_MAX_TIME_MS);
+      Set<String> paired = pairedEmployeeIds(settings, shopId, employeeIds);
+      boolean today = date.equals(HrDateUtils.today());
       List<AttendanceRowResponse> rows = new ArrayList<>(employees.size());
       for (Employee e : employees) {
-        AttendanceRowResponse row = row(e, date, marks.get(key(e.getId(), d)),
-            leave.get(key(e.getId(), d)), holidays.contains(d), settings, locked);
-        addPunchFlags(row, flags.get(key(e.getId(), d)));
+        String k = key(e.getId(), d);
+        AttendanceDay mark = marks.get(k);
+        AttendanceRowResponse row = row(e, date, mark, leave.get(k), holidays.contains(d),
+            settings, locked, paired.contains(e.getId()));
+        PunchDayService.DaySummary summary = punches.get(k);
+        addPunches(row, summary);
+        // R7.7–R7.8: paired, switch on, today, and neither a punch nor a stored mark
+        row.setNoPunchYet(today && paired.contains(e.getId()) && mark == null
+            && (summary == null || summary.punchCount() == 0));
         rows.add(row);
       }
       return new DailyRegisterResponse(d, locked, rows);
@@ -142,6 +159,13 @@ public class AttendanceService {
    * employee's employment (422 {@code HR_EMPLOYEE_NOT_EMPLOYED}). Unchanged rows are not
    * written. Audit (Decision 7): one {@code ATTENDANCE_BULK_SET} for the first marks of the call,
    * one {@code ATTENDANCE_SET} with before/after per changed or cleared existing mark.
+   *
+   * <p>R7.2–R7.6: when Biometric app check-in is on and a row's employee has an active paired
+   * phone at save time, the row must carry a reason (a quick pick, or OTHER with 1–200 characters
+   * of text); otherwise the whole call is refused before any write with {@code
+   * "A reason is required when the employee uses the Attendance app"}. Every row saved with a
+   * reason gets its own {@code ATTENDANCE_SET} entry carrying it (first marks included), with
+   * {@code before} = the stored day as it was, derived values included.
    */
   public List<AttendanceRowResponse> saveDays(String userId, String shopId,
       SaveAttendanceDaysRequest request) {
@@ -171,6 +195,15 @@ public class AttendanceService {
       }
       // 2. settings (hours, grace, half-day rule, weekly off, salary-month start day)
       HrSettings settings = settingsService.effectiveSettings(shopId);
+      // 2b. R7.2–R7.4: only while the biometric app is on, one pairings read; a paired
+      // employee's row without a complete reason refuses the call before anything is written
+      Set<String> paired = pairedEmployeeIds(settings, shopId, employeeIds);
+      for (SaveAttendanceDaysRequest.Row r : rows) {
+        if (paired.contains(r.getEmployeeId())
+            && !AttendanceDayValidator.isCompleteReason(r.getReason(), r.getReasonText())) {
+          throw new ValidationException(AttendanceDayValidator.REASON_REQUIRED);
+        }
+      }
       // 3. lock: one read for every salary month the rows touch
       periodLockService.assertOpen(shopId,
           PayCycle.periodsOf(dates, PayCycle.startDay(settings)));
@@ -208,14 +241,15 @@ public class AttendanceService {
         String k = key(r.getEmployeeId(), r.getDate());
         AttendanceDay old = existing.get(k);
         AttendanceStatus status = validator.parseStatus(r.getStatus());
+        String reason = AttendanceDayValidator.reasonLabel(r.getReason(), r.getReasonText());
         if (status == null) {
           // UNMARKED: clear a stored mark; nothing to do when none is stored
           if (old != null) {
             bulk.remove(dayKey(shopId, r.getEmployeeId(), r.getDate()));
             writes++;
-            changes.add(changeEntry(shopId, userId, r, snapshot(old), null));
-            if (old.getSource() != AttendanceSource.SELF_CHECK_IN) {
-              // a cleared self check-in day stays cleared until the next punch
+            changes.add(changeEntry(shopId, userId, r, snapshot(old), null, reason));
+            if (!AttendanceSource.isDerived(old.getSource())) {
+              // a cleared derived day stays cleared until the next punch
               rederive.add(new String[] {r.getEmployeeId(), r.getDate()});
             }
           }
@@ -230,11 +264,14 @@ public class AttendanceService {
         }
         bulk.upsert(dayKey(shopId, r.getEmployeeId(), r.getDate()), markUpdate(day));
         writes++;
-        if (old == null) {
+        if (old == null && reason == null) {
           firstMarks++;
           firstMarkDates.add(r.getDate());
         } else {
-          changes.add(changeEntry(shopId, userId, r, snapshot(old), snapshot(day)));
+          // a changed mark, or a first mark with a reason (R7.5): its own row, before = the stored
+          // day as it was, derived values included (R7.6)
+          changes.add(changeEntry(shopId, userId, r, old != null ? snapshot(old) : null,
+              snapshot(day), reason));
         }
       }
       // 6. one bulkWrite for every upsert and clear
@@ -263,7 +300,7 @@ public class AttendanceService {
         // on whether the date is a holiday (a leave never covers a holiday)
         boolean holiday = (day == null || leave.get(k) != null) && holidays.contains(r.getDate());
         response.add(row(employees.get(r.getEmployeeId()), HrDateUtils.parseDate(r.getDate()),
-            day, leave.get(k), holiday, settings, false));
+            day, leave.get(k), holiday, settings, false, paired.contains(r.getEmployeeId())));
       }
       return response;
     });
@@ -275,6 +312,11 @@ public class AttendanceService {
    * Marks every unmarked working day of the given dates Present (R5.10, R8.12). Uses an upsert
    * with only {@code $setOnInsert}: if somebody marks the same day between our read and this
    * write, the upsert matches their row and changes nothing, so a mark is never overwritten.
+   *
+   * <p>R7.2–R7.5: while Biometric app check-in is on, one pairings read for the employees about
+   * to be marked; if any of them has an active paired phone the call needs a reason, else the
+   * whole batch is refused and nothing is written. Each paired employee's inserted day then gets
+   * its own {@code ATTENDANCE_SET} entry with the reason; the others share the usual summary.
    */
   public MarkUnmarkedPresentResponse markUnmarkedPresent(String userId, String shopId,
       MarkUnmarkedPresentRequest request) {
@@ -305,7 +347,9 @@ public class AttendanceService {
       Instant now = Instant.now();
       BulkOperations bulk = mongoTemplate.bulkOps(BulkOperations.BulkMode.UNORDERED,
           AttendanceDay.class);
-      int candidates = 0;
+      // candidate employee-days in bulk order, so an upsert index maps back to its day
+      List<String[]> candidates = new ArrayList<>();
+      Set<String> candidateEmployees = new LinkedHashSet<>();
       for (Employee e : employees) {
         for (LocalDate date : dates) {
           String d = HrDateUtils.format(date);
@@ -321,18 +365,42 @@ public class AttendanceService {
           }
           bulk.upsert(dayKey(shopId, e.getId(), d), presentOnInsert(shopId, userId, e.getId(),
               d, now));
-          candidates++;
+          candidates.add(new String[] {e.getId(), d});
+          candidateEmployees.add(e.getId());
         }
       }
-      if (candidates == 0) {
+      if (candidates.isEmpty()) {
         return new MarkUnmarkedPresentResponse(0);
       }
-      int inserted = executeInsertOnly(bulk);
+      // R7.2–R7.4: a paired employee among those about to be marked needs the batch's reason
+      Set<String> paired = pairedEmployeeIds(settings, shopId, candidateEmployees);
+      String reason = AttendanceDayValidator.reasonLabel(request.getReason(),
+          request.getReasonText());
+      if (!paired.isEmpty() && reason == null) {
+        throw new ValidationException(AttendanceDayValidator.REASON_REQUIRED);
+      }
+      List<Integer> insertedIndexes = executeInsertOnly(bulk);
+      int inserted = insertedIndexes.size();
       if (inserted > 0) {
         metrics.increment(HrMetricsConstants.ATTENDANCE_WRITES_TOTAL, inserted,
             "module", HrMetricsConstants.MODULE, "operation", "mark_unmarked_present");
-        auditService.recordAll(List.of(bulkSummary(shopId, userId, inserted,
-            new TreeSet<>(List.of(from, to)), AttendanceSource.BULK_PRESENT)));
+        List<AuditEntry> entries = new ArrayList<>();
+        int summarised = 0;
+        for (Integer index : insertedIndexes) {
+          String[] day = index != null && index >= 0 && index < candidates.size()
+              ? candidates.get(index) : null;
+          if (day != null && paired.contains(day[0])) {
+            // R7.5: one row per paired employee-day, carrying the reason
+            entries.add(presentEntry(shopId, userId, day[0], day[1], reason));
+          } else {
+            summarised++;
+          }
+        }
+        if (summarised > 0) {
+          entries.add(0, bulkSummary(shopId, userId, summarised,
+              new TreeSet<>(List.of(from, to)), AttendanceSource.BULK_PRESENT));
+        }
+        auditService.recordAll(entries);
       }
       return new MarkUnmarkedPresentResponse(inserted);
     });
@@ -374,9 +442,10 @@ public class AttendanceService {
       // months (those of its first and last day), and is flagged when either is locked
       boolean locked = !periodLockService.lockedPeriods(shopId,
           PayCycle.periodsOf(List.of(from, to), PayCycle.startDay(settings))).isEmpty();
-      Map<String, Set<PunchFlag>> flags = punchDays.flagsByEmployeeDate(shopId,
-          employees.stream().map(Employee::getId).toList(), from, to,
-          HrQueryRunner.MONTH_MAX_TIME_MS);
+      // the month register shows source icons only (R8.1); punch flags (chips) are the daily
+      // register's, so no hr_punches read here and cells keep to one read of hr_attendance_days
+      Set<String> paired = pairedEmployeeIds(settings, shopId,
+          employees.stream().map(Employee::getId).toList());
       MonthRegisterResponse response = new MonthRegisterResponse();
       response.setPeriod(period);
       response.setLocked(locked);
@@ -392,6 +461,7 @@ public class AttendanceService {
         row.setEmployeeId(e.getId());
         row.setCode(e.getCode());
         row.setName(e.getName());
+        row.setMarkReasonRequired(paired.contains(e.getId()));
         MonthRegisterResponse.Totals totals = new MonthRegisterResponse.Totals();
         for (LocalDate date : days) {
           String d = HrDateUtils.format(date);
@@ -410,10 +480,6 @@ public class AttendanceService {
             if (PunchDayService.missingCheckOut(mark, e, settings)) {
               cell.setMissingCheckOut(Boolean.TRUE);
             }
-          }
-          Set<PunchFlag> dayFlags = flags.get(k);
-          if (dayFlags != null && !dayFlags.isEmpty()) {
-            cell.setFlags(new ArrayList<>(dayFlags));
           }
           row.getCells().add(cell);
           addToTotals(totals, r, future);
@@ -678,27 +744,37 @@ public class AttendanceService {
   }
 
   /**
-   * Runs an insert-only bulk and returns how many days it inserted. Two concurrent calls can
-   * both try to insert the same day; the unique index makes the loser fail with a duplicate key,
-   * which here only means "somebody else marked it", so those errors are dropped.
+   * Runs an insert-only bulk and returns the bulk indexes of the days it inserted. Two concurrent
+   * calls can both try to insert the same day; the unique index makes the loser fail with a
+   * duplicate key, which here only means "somebody else marked it", so those errors are dropped.
    */
-  private static int executeInsertOnly(BulkOperations bulk) {
+  private static List<Integer> executeInsertOnly(BulkOperations bulk) {
     try {
-      BulkWriteResult result = bulk.execute();
-      return result.getUpserts().size();
+      return upsertIndexes(bulk.execute());
     } catch (BulkOperationException e) {
       for (BulkWriteError error : e.getErrors()) {
         if (error.getCode() != DUPLICATE_KEY) {
           throw e;
         }
       }
-      return e.getResult().getUpserts().size();
+      return upsertIndexes(e.getResult());
     }
   }
 
+  private static List<Integer> upsertIndexes(BulkWriteResult result) {
+    if (result == null || result.getUpserts() == null) {
+      return List.of();
+    }
+    List<Integer> indexes = new ArrayList<>(result.getUpserts().size());
+    for (BulkWriteUpsert upsert : result.getUpserts()) {
+      indexes.add(upsert != null ? upsert.getIndex() : null);
+    }
+    return indexes;
+  }
+
   private static boolean sameMark(AttendanceDay old, AttendanceDay now) {
-    // saving over a self check-in day makes it a hand-made mark (R4.5), even with equal values
-    return old.getSource() != AttendanceSource.SELF_CHECK_IN
+    // saving over a derived day makes it a hand-made mark (R4.5), even with equal values
+    return !AttendanceSource.isDerived(old.getSource())
         && old.getStatus() == now.getStatus()
         && Objects.equals(old.getInTime(), now.getInTime())
         && Objects.equals(old.getOutTime(), now.getOutTime())
@@ -716,9 +792,23 @@ public class AttendanceService {
   }
 
   private static AuditEntry changeEntry(String shopId, String userId,
-      SaveAttendanceDaysRequest.Row r, Map<String, Object> before, Map<String, Object> after) {
+      SaveAttendanceDaysRequest.Row r, Map<String, Object> before, Map<String, Object> after,
+      String reason) {
     return new AuditEntry(shopId, userId, HrAuditAction.ATTENDANCE_SET, ENTITY, null,
-        r.getEmployeeId(), r.getDate(), HrDateUtils.periodOf(r.getDate()), before, after, null);
+        r.getEmployeeId(), r.getDate(), HrDateUtils.periodOf(r.getDate()), before, after, reason);
+  }
+
+  /** One "marked Present by hand, with a reason" row of a mark-unmarked call (R7.5). */
+  private static AuditEntry presentEntry(String shopId, String userId, String employeeId,
+      String date, String reason) {
+    Map<String, Object> after = new LinkedHashMap<>();
+    after.put("status", AttendanceStatus.PRESENT.name());
+    after.put("inTime", null);
+    after.put("outTime", null);
+    after.put("note", null);
+    after.put("source", AttendanceSource.BULK_PRESENT.name());
+    return new AuditEntry(shopId, userId, HrAuditAction.ATTENDANCE_SET, ENTITY, null, employeeId,
+        date, HrDateUtils.periodOf(date), null, after, reason);
   }
 
   /** One summary row for the first marks of a call: how many and which date range (R5.15). */
@@ -737,7 +827,8 @@ public class AttendanceService {
   // ---- mapping -------------------------------------------------------------------------------
 
   private static AttendanceRowResponse row(Employee e, LocalDate date, AttendanceDay mark,
-      LeaveRequest leave, boolean holiday, HrSettings settings, boolean locked) {
+      LeaveRequest leave, boolean holiday, HrSettings settings, boolean locked,
+      boolean markReasonRequired) {
     DayStatusResolver.Resolution r =
         DayStatusResolver.resolve(date, e, mark, leave, holiday, settings);
     AttendanceRowResponse row = new AttendanceRowResponse();
@@ -766,6 +857,7 @@ public class AttendanceService {
       row.setMissingCheckOut(PunchDayService.missingCheckOut(mark, e, settings));
     }
     row.setLocked(locked);
+    row.setMarkReasonRequired(markReasonRequired);
     return row;
   }
 
@@ -774,10 +866,37 @@ public class AttendanceService {
     return r.source() == DayStatusResolver.Source.MARK || r.halfDayLeave();
   }
 
-  private static void addPunchFlags(AttendanceRowResponse row, Set<PunchFlag> flags) {
+  /** Chips and the earliest counted punch's source from the day's punches (R8.1–R8.4). */
+  private static void addPunches(AttendanceRowResponse row, PunchDayService.DaySummary summary) {
+    if (summary == null) {
+      return;
+    }
+    Set<PunchFlag> flags = summary.countedFlags();
     if (flags != null && !flags.isEmpty()) {
       row.setFlags(new ArrayList<>(flags));
     }
+    row.setPunchSource(summary.primarySource());
+  }
+
+  // ---- attendance app (R7) -------------------------------------------------------------------
+
+  /** R7.1: the switch as the shop has it; off when never saved. */
+  static boolean biometricAppOn(HrSettings settings) {
+    return settings != null && settings.getAttendanceCapture() != null
+        && Boolean.TRUE.equals(settings.getAttendanceCapture().getBiometricApp());
+  }
+
+  /**
+   * The employees among {@code employeeIds} with an active paired phone: one {@code
+   * hr_device_pairings} read, and only while Biometric app check-in is on (R7.1: with the switch
+   * off a paired phone changes nothing on the register, so nothing is read).
+   */
+  private Set<String> pairedEmployeeIds(HrSettings settings, String shopId,
+      Collection<String> employeeIds) {
+    if (!biometricAppOn(settings) || employeeIds == null || employeeIds.isEmpty()) {
+      return Collections.emptySet();
+    }
+    return pairingService.activePairingsByEmployee(shopId, employeeIds).keySet();
   }
 
   /**

@@ -44,6 +44,11 @@ public class EmployeeResponse {
   /** Full, or {@code ra***@okaxis} when masked. */
   @ToString.Exclude private String upiId;
   private boolean payHidden;
+  /**
+   * True when the employee has an active paired Attendance app phone (R8.12). Set on the employee
+   * list and detail; null on self-service views, where it is not computed.
+   */
+  private Boolean appPaired;
   private Long revision;
   private Instant createdAt;
   private Instant updatedAt;

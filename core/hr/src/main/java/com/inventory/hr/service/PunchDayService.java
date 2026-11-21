@@ -10,6 +10,7 @@ import com.inventory.hr.domain.model.enums.AttendanceSource;
 import com.inventory.hr.domain.model.enums.AttendanceStatus;
 import com.inventory.hr.domain.model.enums.HrPermission;
 import com.inventory.hr.domain.model.enums.PunchFlag;
+import com.inventory.hr.domain.model.enums.PunchSource;
 import com.inventory.hr.domain.repository.PunchRepository;
 import com.inventory.hr.rest.dto.response.PunchResponse;
 import com.inventory.hr.utils.HrDateUtils;
@@ -20,7 +21,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
@@ -39,11 +39,13 @@ import org.springframework.util.StringUtils;
 
 /**
  * Punches → derived attendance days (design D2–D4). A derived write lands only when no day is
- * stored yet or the stored day is itself SELF_CHECK_IN with no more counted punches than the new
- * result: one upsert whose filter requires exactly that, so a hand-made mark (MANUAL,
- * BULK_PRESENT or null source) is never changed, and a racing older result never overwrites a
- * newer one. When the filter does not match, the upsert's insert hits the unique {@code (shopId,
- * employeeId, date)} index and is dropped.
+ * stored yet or the stored day is itself derived (SELF_CHECK_IN or BIOMETRIC_APP) with no more
+ * counted punches than the new result: one upsert whose filter requires exactly that, so a
+ * hand-made mark (MANUAL, BULK_PRESENT or null source) is never changed (R7.9), and a racing older
+ * result never overwrites a newer one. When the filter does not match, the upsert's insert hits
+ * the unique {@code (shopId, employeeId, date)} index and is dropped. The day's source is that of
+ * its earliest counted punch (R8.1–R8.2), so a day can move between SELF_CHECK_IN and
+ * BIOMETRIC_APP when an earlier punch arrives late.
  */
 @Slf4j
 @Service
@@ -73,9 +75,9 @@ public class PunchDayService {
         workEnd(employee, settings));
   }
 
-  /** R4.4 on read, for a stored SELF_CHECK_IN day (the stored flag may be out of date). */
+  /** R4.4 on read, for a stored derived day (the stored flag may be out of date). */
   public static boolean missingCheckOut(AttendanceDay day, Employee employee, HrSettings settings) {
-    if (day == null || day.getSource() != AttendanceSource.SELF_CHECK_IN
+    if (day == null || !AttendanceSource.isDerived(day.getSource())
         || day.getOutTime() != null) {
       return false;
     }
@@ -83,6 +85,16 @@ public class PunchDayService {
     return PunchDayDeriver.isMissingCheckOut(day.getPunchCount(),
         HrDateUtils.parseDate(day.getDate()), now.atZone(HrDateUtils.ZONE).toLocalDate(),
         now.atZone(HrDateUtils.ZONE).toLocalTime(), workEnd(employee, settings));
+  }
+
+  /**
+   * The stored day source for a derived day (R8.1–R8.2): BIOMETRIC_APP when the earliest counted
+   * punch came from the Attendance app, else SELF_CHECK_IN (My HR, and any punch without a
+   * source).
+   */
+  public static AttendanceSource derivedSource(PunchSource primary) {
+    return primary == PunchSource.BIOMETRIC_APP ? AttendanceSource.BIOMETRIC_APP
+        : AttendanceSource.SELF_CHECK_IN;
   }
 
   /**
@@ -109,14 +121,14 @@ public class PunchDayService {
         derived.workedMinutes(), settings);
     day.setStatus(auto ? AttendanceStatus.HALF_DAY : AttendanceStatus.PRESENT);
     day.setAutoHalfDay(auto ? Boolean.TRUE : null);
-    day.setSource(AttendanceSource.SELF_CHECK_IN);
+    day.setSource(derivedSource(derived.primarySource()));
     day.setMarkedAt(Instant.now());
     day.setPunchCount(derived.punchCount());
     day.setMissingCheckOut(derived.missingCheckOut());
 
     Query filter = Query.query(Criteria.where("shopId").is(shopId)
         .and("employeeId").is(employee.getId()).and("date").is(date)
-        .and("source").is(AttendanceSource.SELF_CHECK_IN)
+        .and("source").in(AttendanceSource.SELF_CHECK_IN, AttendanceSource.BIOMETRIC_APP)
         .orOperator(Criteria.where("punchCount").lte(derived.punchCount()),
             Criteria.where("punchCount").is(null)));
     Update update = new Update()
@@ -188,27 +200,63 @@ public class PunchDayService {
   }
 
   /**
-   * Flags of the punches of {@code [from, to]} per {@code AttendanceService.key(employeeId,
-   * date)}; only punches that carry a flag are read.
+   * What the daily register needs from one employee-day's punches (R7.7, R8.1–R8.4, R8.7).
+   *
+   * @param countedFlags flags of the counted punches only; a flag only a duplicate carries is
+   *     left out
+   * @param primarySource source of the earliest counted punch; null when none is counted
+   * @param punchCount every punch of the day, duplicates included ("no punch yet" needs zero)
    */
-  public Map<String, Set<PunchFlag>> flagsByEmployeeDate(String shopId,
-      Collection<String> employeeIds, String from, String to, long maxTimeMs) {
+  public record DaySummary(Set<PunchFlag> countedFlags, PunchSource primarySource,
+      int punchCount) {}
+
+  /**
+   * Flags of the <em>counted</em> punches of one day per {@code AttendanceService.key(employeeId,
+   * date)} (R8.4, R8.7): every punch of the day is read for the given employees ({@code $in}),
+   * the 5-minute duplicate rule is applied per employee, and only the flags of counted punches
+   * are kept, so a flag carried by a duplicate alone is not shown on the register. Days whose
+   * counted punches carry no flag have no entry. The month register shows icons only (R8.1).
+   */
+  public Map<String, Set<PunchFlag>> countedFlagsByEmployeeDate(String shopId,
+      Collection<String> employeeIds, String date, long maxTimeMs) {
     Map<String, Set<PunchFlag>> flags = new HashMap<>();
-    if (employeeIds == null || employeeIds.isEmpty()) {
-      return flags;
-    }
-    Query query = Query.query(Criteria.where("shopId").is(shopId).and("employeeId")
-        .in(employeeIds).and("localDate").gte(from).lte(to).and("flags.0").exists(true));
-    query.fields().include("employeeId", "localDate", "flags");
-    query.maxTimeMsec(maxTimeMs).cursorBatchSize(HrQueryRunner.BULK_BATCH_SIZE);
-    for (Punch p : mongoTemplate.find(query, Punch.class)) {
-      if (p.getFlags() == null || p.getFlags().isEmpty()) {
-        continue;
+    for (Map.Entry<String, DaySummary> e
+        : summaryByEmployeeDate(shopId, employeeIds, date, maxTimeMs).entrySet()) {
+      if (!e.getValue().countedFlags().isEmpty()) {
+        flags.put(e.getKey(), e.getValue().countedFlags());
       }
-      flags.computeIfAbsent(AttendanceService.key(p.getEmployeeId(), p.getLocalDate()),
-          x -> EnumSet.noneOf(PunchFlag.class)).addAll(p.getFlags());
     }
     return flags;
+  }
+
+  /**
+   * One read of the day's punches for the given employees, summarised per {@code
+   * AttendanceService.key(employeeId, date)}; employees without a punch that day have no entry.
+   * The daily register calls this for its one date.
+   */
+  public Map<String, DaySummary> summaryByEmployeeDate(String shopId,
+      Collection<String> employeeIds, String date, long maxTimeMs) {
+    Map<String, DaySummary> summaries = new HashMap<>();
+    if (employeeIds == null || employeeIds.isEmpty()) {
+      return summaries;
+    }
+    Query query = Query.query(Criteria.where("shopId").is(shopId).and("employeeId")
+        .in(employeeIds).and("localDate").is(date));
+    query.fields().include("employeeId", "localDate", "at", "flags", "source");
+    query.maxTimeMsec(maxTimeMs).cursorBatchSize(HrQueryRunner.BULK_BATCH_SIZE);
+    Map<String, List<Punch>> byEmployee = new HashMap<>();
+    for (Punch p : mongoTemplate.find(query, Punch.class)) {
+      byEmployee.computeIfAbsent(p.getEmployeeId(), x -> new ArrayList<>()).add(p);
+    }
+    LocalDate day = HrDateUtils.parseDate(date);
+    for (Map.Entry<String, List<Punch>> e : byEmployee.entrySet()) {
+      // which punches count does not depend on the work end, so none is needed here
+      PunchDayDeriver.Derived derived =
+          PunchDayDeriver.derive(e.getValue(), day, day, LocalTime.MIN, null);
+      summaries.put(AttendanceService.key(e.getKey(), date), new DaySummary(
+          derived.countedFlags(), derived.primarySource(), e.getValue().size()));
+    }
+    return summaries;
   }
 
   /**
@@ -250,7 +298,8 @@ public class PunchDayService {
       rows.add(new PunchResponse(p.getId(), p.getEmployeeId(), p.getAt(),
           p.getAt() != null ? PunchDayDeriver.hhmm(p.getAt()) : null, p.getLocalDate(),
           p.getSource(), p.getDirection(), p.getDistanceMetres(), p.getAccuracyMetres(),
-          p.getFlags() != null ? List.copyOf(p.getFlags()) : List.of(), counted.contains(p)));
+          p.getFlags() != null ? List.copyOf(p.getFlags()) : List.of(), counted.contains(p),
+          p.getDeviceModel()));
     }
     return rows;
   }

@@ -19,6 +19,7 @@ import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.hr.domain.model.DevicePairing;
 import com.inventory.hr.domain.model.Employee;
 import com.inventory.hr.domain.model.enums.EmployeeStatus;
 import com.inventory.hr.domain.model.enums.HrAuditAction;
@@ -39,9 +40,13 @@ import com.inventory.user.rest.dto.response.LoginContactDto;
 import com.inventory.user.rest.dto.response.ShopMemberSummaryDto;
 import com.inventory.user.service.UserShopMembershipService;
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import org.bson.Document;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -68,6 +73,7 @@ class EmployeeServiceTest {
   @Mock private UserShopMembershipService membershipService;
   @Mock private PeriodLockService periodLockService;
   @Mock private HrAuditService auditService;
+  @Mock private DevicePairingService pairingService;
   @InjectMocks private EmployeeService service;
 
   private void grant(java.util.Set<HrPermission> perms) {
@@ -453,6 +459,97 @@ class EmployeeServiceTest {
     assertEquals("e1", entry.getValue().employeeId());
   }
 
+  // ---- exit and the Attendance app pairing (R3.4, R3.5) --------------------------------------
+
+  private Employee exitWith(String exitDate) {
+    grant(all());
+    Employee stored = employee("e1");
+    when(employeeRepository.findByShopIdAndId(SHOP, "e1")).thenReturn(Optional.of(stored));
+    when(employeeRepository.save(any(Employee.class))).thenAnswer(i -> i.getArgument(0));
+    ExitEmployeeRequest r = new ExitEmployeeRequest();
+    r.setExitDate(exitDate);
+    service.exit(USER, SHOP, "e1", r);
+    return stored;
+  }
+
+  @Test
+  void exitHandsTheExitDateToThePairingServiceAfterTheSave() {
+    exitWith("2025-05-31");
+
+    // the pairing service decides between "unpair now" and "schedule" from the date and the
+    // clock; the employee service only tells it the saved exit date
+    verify(pairingService).scheduleExitUnpair(SHOP, "e1", LocalDate.parse("2025-05-31"));
+    verify(pairingService, never()).clearExitUnpair(any(), any());
+  }
+
+  @Test
+  void thePairingIsUpdatedOnlyAfterTheEmployeeIsSaved() {
+    exitWith("2024-06-30");
+
+    org.mockito.InOrder order = org.mockito.Mockito.inOrder(employeeRepository, pairingService);
+    order.verify(employeeRepository).save(any(Employee.class));
+    order.verify(pairingService).scheduleExitUnpair(SHOP, "e1", LocalDate.parse("2024-06-30"));
+  }
+
+  @Test
+  void changingTheExitDateMovesTheSchedule() {
+    exitWith("2025-05-31");
+    ExitEmployeeRequest later = new ExitEmployeeRequest();
+    later.setExitDate("2025-06-15");
+
+    service.exit(USER, SHOP, "e1", later);
+
+    verify(pairingService).scheduleExitUnpair(SHOP, "e1", LocalDate.parse("2025-05-31"));
+    verify(pairingService).scheduleExitUnpair(SHOP, "e1", LocalDate.parse("2025-06-15"));
+  }
+
+  @Test
+  void aSaveOfAnActiveEmployeeClearsAnyPendingSchedule() {
+    grant(all());
+    when(employeeRepository.findByShopIdAndId(SHOP, "e1")).thenReturn(Optional.of(employee("e1")));
+    when(employeeRepository.save(any(Employee.class))).thenAnswer(i -> i.getArgument(0));
+    SaveEmployeeRequest r = create("Ravi");
+    r.setCode("EMP-001");
+    r.setRevision(0L);
+
+    service.update(USER, SHOP, "e1", r);
+
+    verify(pairingService).clearExitUnpair(SHOP, "e1");
+    verify(pairingService, never()).scheduleExitUnpair(any(), any(), any());
+  }
+
+  @Test
+  void aFailedSaveNeverTouchesThePairing() {
+    grant(all());
+    when(employeeRepository.findByShopIdAndId(SHOP, "e1")).thenReturn(Optional.of(employee("e1")));
+    when(employeeRepository.save(any(Employee.class)))
+        .thenThrow(new org.springframework.dao.OptimisticLockingFailureException("stale"));
+    ExitEmployeeRequest r = new ExitEmployeeRequest();
+    r.setExitDate("2025-05-31");
+
+    assertThrows(BaseException.class, () -> service.exit(USER, SHOP, "e1", r));
+
+    verify(pairingService, never()).scheduleExitUnpair(any(), any(), any());
+    verify(pairingService, never()).clearExitUnpair(any(), any());
+  }
+
+  @Test
+  void aPairingFailureDoesNotUndoTheExit() {
+    grant(all());
+    Employee stored = employee("e1");
+    when(employeeRepository.findByShopIdAndId(SHOP, "e1")).thenReturn(Optional.of(stored));
+    when(employeeRepository.save(any(Employee.class))).thenAnswer(i -> i.getArgument(0));
+    when(pairingService.scheduleExitUnpair(any(), any(), any()))
+        .thenThrow(new org.springframework.dao.DataAccessResourceFailureException("down"));
+    ExitEmployeeRequest r = new ExitEmployeeRequest();
+    r.setExitDate("2025-05-31");
+
+    EmployeeResponse response = service.exit(USER, SHOP, "e1", r);
+
+    assertEquals(EmployeeStatus.EXITED, response.getStatus());
+    verify(auditService).record(any(AuditEntry.class));
+  }
+
   @Test
   void theListIsPagedAndRowsAreMasked() {
     grant(all());
@@ -482,6 +579,92 @@ class EmployeeServiceTest {
         () -> service.list(USER, SHOP, null, null, null, -1, 20));
     assertThrows(ValidationException.class,
         () -> service.list(USER, SHOP, null, "GONE", null, 0, 20));
+  }
+
+  // ---- Attendance app: appPaired and ?paired= (R8.12, R1.9) ----------------------------------
+
+  @Test
+  void everyListRowSaysWhetherTheEmployeeHasAPairedPhoneFromOneRead() {
+    grant(all());
+    when(mongoTemplate.count(any(Query.class), eq(Employee.class))).thenReturn(2L);
+    when(mongoTemplate.find(any(Query.class), eq(Employee.class)))
+        .thenReturn(List.of(employee("e1"), employee("e2")));
+    DevicePairing paired = new DevicePairing();
+    paired.setEmployeeId("e2");
+    when(pairingService.activePairingsByEmployee(SHOP, List.of("e1", "e2")))
+        .thenReturn(Map.of("e2", paired));
+
+    EmployeesPageResponse page = service.list(USER, SHOP, null, null, null, null, 0, 20);
+
+    assertEquals(Boolean.FALSE, page.getItems().get(0).getAppPaired());
+    assertEquals(Boolean.TRUE, page.getItems().get(1).getAppPaired());
+    verify(pairingService).activePairingsByEmployee(SHOP, List.of("e1", "e2"));
+    verify(pairingService, never()).activePairedEmployeeIds(any());
+  }
+
+  @Test
+  void pairedTrueListsOnlyEmployeesWithAnActivePhone() {
+    grant(all());
+    when(pairingService.activePairedEmployeeIds(SHOP)).thenReturn(Set.of("e2"));
+    when(mongoTemplate.count(any(Query.class), eq(Employee.class))).thenReturn(1L);
+    when(mongoTemplate.find(any(Query.class), eq(Employee.class)))
+        .thenReturn(List.of(employee("e2")));
+
+    EmployeesPageResponse page = service.list(USER, SHOP, null, null, null, "true", 0, 20);
+
+    assertEquals(1, page.getItems().size());
+    assertEquals(Boolean.TRUE, page.getItems().get(0).getAppPaired());
+    ArgumentCaptor<Query> query = ArgumentCaptor.forClass(Query.class);
+    verify(mongoTemplate).count(query.capture(), eq(Employee.class));
+    Document id = (Document) query.getValue().getQueryObject().get("_id");
+    assertEquals(List.of("e2"), new java.util.ArrayList<>((Collection<?>) id.get("$in")));
+    // the shop's active set is read once and reused for the rows
+    verify(pairingService).activePairedEmployeeIds(SHOP);
+    verify(pairingService, never()).activePairingsByEmployee(any(), any());
+  }
+
+  @Test
+  void pairedFalseListsOnlyEmployeesWithoutAnActivePhone() {
+    grant(all());
+    when(pairingService.activePairedEmployeeIds(SHOP)).thenReturn(Set.of("e2"));
+    when(mongoTemplate.count(any(Query.class), eq(Employee.class))).thenReturn(1L);
+    when(mongoTemplate.find(any(Query.class), eq(Employee.class)))
+        .thenReturn(List.of(employee("e1")));
+
+    EmployeesPageResponse page = service.list(USER, SHOP, null, null, null, "FALSE", 0, 20);
+
+    assertEquals(Boolean.FALSE, page.getItems().get(0).getAppPaired());
+    ArgumentCaptor<Query> query = ArgumentCaptor.forClass(Query.class);
+    verify(mongoTemplate).count(query.capture(), eq(Employee.class));
+    Document id = (Document) query.getValue().getQueryObject().get("_id");
+    assertEquals(List.of("e2"), new java.util.ArrayList<>((Collection<?>) id.get("$nin")));
+    assertEquals(SHOP, query.getValue().getQueryObject().get("shopId"));
+  }
+
+  @Test
+  void pairedMustBeTrueOrFalseAndBlankMeansAll() {
+    grant(all());
+    assertThrows(ValidationException.class,
+        () -> service.list(USER, SHOP, null, null, null, "yes", 0, 20));
+    verify(pairingService, never()).activePairedEmployeeIds(any());
+
+    when(mongoTemplate.find(any(Query.class), eq(Employee.class))).thenReturn(List.of());
+    service.list(USER, SHOP, null, null, null, " ", 0, 20);
+    ArgumentCaptor<Query> query = ArgumentCaptor.forClass(Query.class);
+    verify(mongoTemplate).count(query.capture(), eq(Employee.class));
+    assertNull(query.getValue().getQueryObject().get("_id"));
+  }
+
+  @Test
+  void theDetailSaysWhetherTheEmployeeHasAPairedPhone() {
+    grant(all());
+    when(employeeRepository.findByShopIdAndId(SHOP, "e1")).thenReturn(Optional.of(employee("e1")));
+    when(pairingService.activePairing(SHOP, "e1")).thenReturn(Optional.of(new DevicePairing()));
+
+    assertEquals(Boolean.TRUE, service.get(USER, SHOP, "e1").getAppPaired());
+
+    when(pairingService.activePairing(SHOP, "e1")).thenReturn(Optional.empty());
+    assertEquals(Boolean.FALSE, service.get(USER, SHOP, "e1").getAppPaired());
   }
 
   @Test

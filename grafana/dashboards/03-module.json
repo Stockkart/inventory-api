@@ -1233,6 +1233,338 @@
       "repeat": "metric",
       "repeatDirection": "v",
       "maxPerRow": 1
+    },
+    {
+      "id": 200,
+      "type": "timeseries",
+      "title": "Attendance app punches per result",
+      "description": "One increment per punch attempt, one result label each (R10.1–R10.2): accepted, flagged, duplicate, replayed, off, not_paired, not_employed, on_leave, locked, outside_shop, location_unclear, fake_location, offline_accepted, offline_too_late, offline_clock_wrong, signature_failed, rate_limited, invalid, error. signature_failed above 1 % of a shop's attempts points to a tampered app or a broken phone key. The dashed series is the R10.4 signature failure rate per shop (signature_failed ÷ all attempts over a rolling 1 h window, right axis); the red line is the 1 % alert threshold of AppPunchHealthService, which also needs ≥ 20 attempts in the window before it raises an alert. Metric rows: [docs/metrics.md → hr](https://github.com/Stockkart/inventory-api/blob/main/docs/metrics.md#hr).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 38
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            }
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "signature failure rate (1h)"
+              },
+              {
+                "id": "custom.axisSoftMax",
+                "value": 0.02
+              },
+              {
+                "id": "custom.stacking",
+                "value": {
+                  "group": "B",
+                  "mode": "none"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    10
+                  ]
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "red",
+                      "value": 0.01
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.thresholdsStyle",
+                "value": {
+                  "mode": "line"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (result) (rate(inventory_hr_app_punches_total{service=\"inventory-api\", env=\"$env\", shop=~\"$shop\"}[5m]))",
+          "legendFormat": "{{result}}",
+          "refId": "A",
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "(sum by (shop) (rate(inventory_hr_app_punches_total{result=\"signature_failed\", service=\"inventory-api\", env=\"$env\", shop=~\"$shop\"}[1h])) or sum by (shop) (rate(inventory_hr_app_punches_total{service=\"inventory-api\", env=\"$env\", shop=~\"$shop\"}[1h])) * 0) / sum by (shop) (rate(inventory_hr_app_punches_total{service=\"inventory-api\", env=\"$env\", shop=~\"$shop\"}[1h]))",
+          "legendFormat": "signature failure rate 1h · {{shop}}",
+          "refId": "B",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 201,
+      "type": "timeseries",
+      "title": "Attendance app offline backlog",
+      "description": "Accepted offline punches that reached the server more than 1 hour after their phone time (R10.7b), per hour. A rising line means phones are holding punches for a long time: poor signal in the shop or the app not being opened. The legend is the per-shop table: one row per shop (query B) under the all-shops total (query A), with the latest hour, the worst hour and the mean in the time range; sort by Last to find the shop holding punches now. Metric rows: [docs/metrics.md → hr](https://github.com/Stockkart/inventory-api/blob/main/docs/metrics.md#hr).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 38
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "A"
+            },
+            "properties": [
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max",
+            "mean"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum(increase(inventory_hr_app_offline_backlog_total{service=\"inventory-api\", env=\"$env\", shop=~\"$shop\"}[1h]))",
+          "legendFormat": "all shops · late offline punches / 1h",
+          "refId": "A",
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (shop) (increase(inventory_hr_app_offline_backlog_total{service=\"inventory-api\", env=\"$env\", shop=~\"$shop\"}[1h]))",
+          "legendFormat": "shop {{shop}}",
+          "refId": "B",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 202,
+      "type": "timeseries",
+      "title": "Attendance app pairing failures per reason",
+      "description": "Failed pairing attempts by reason (R2.14, R10.3): code_expired, code_used, code_cancelled, code_wrong, app_off, employee_exited, abandoned, locked. Many code_wrong from one shop means workers are mistyping the 8 characters; locked means the installation lockout or the 11th attempt on one code. Metric rows: [docs/metrics.md → hr](https://github.com/Stockkart/inventory-api/blob/main/docs/metrics.md#hr).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 38
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            }
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (reason) (rate(inventory_hr_app_pairings_total{event=\"failed\", service=\"inventory-api\", env=\"$env\", shop=~\"$shop\"}[5m]))",
+          "legendFormat": "{{reason}}",
+          "refId": "A",
+          "range": true
+        }
+      ]
     }
   ],
   "refresh": "1m",
@@ -1365,6 +1697,25 @@
         "includeAll": true,
         "multi": true,
         "hide": 2,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "shop",
+        "label": "shop",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "query": "label_values(inventory_hr_app_punches_total{service=\"inventory-api\", env=\"$env\"}, shop)",
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
         "current": {
           "text": "All",
           "value": "$__all"

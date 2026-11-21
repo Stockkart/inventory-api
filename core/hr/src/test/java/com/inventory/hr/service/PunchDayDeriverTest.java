@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.inventory.hr.domain.model.Punch;
+import com.inventory.hr.domain.model.enums.PunchFlag;
+import com.inventory.hr.domain.model.enums.PunchSource;
 import com.inventory.hr.utils.HrDateUtils;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -13,6 +15,7 @@ import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class PunchDayDeriverTest {
@@ -25,6 +28,14 @@ class PunchDayDeriverTest {
     p.setId(id);
     p.setAt(LocalDateTime.of(date, LocalTime.parse(hhmm)).atZone(HrDateUtils.ZONE).toInstant());
     p.setLocalDate(HrDateUtils.format(date));
+    p.setSource(PunchSource.SELF);
+    return p;
+  }
+
+  static Punch app(String id, LocalDate date, String hhmm, PunchFlag... flags) {
+    Punch p = at(id, date, hhmm);
+    p.setSource(PunchSource.BIOMETRIC_APP);
+    p.setFlags(new ArrayList<>(Arrays.asList(flags)));
     return p;
   }
 
@@ -41,6 +52,51 @@ class PunchDayDeriverTest {
     assertNull(d.outTime());
     assertEquals(0, d.punchCount());
     assertFalse(d.missingCheckOut());
+    assertNull(d.primarySource());
+    assertTrue(d.countedFlags().isEmpty());
+  }
+
+  @Test
+  void thePrimarySourceIsThatOfTheEarliestCountedPunchWhateverTheInputOrder() {
+    // R8.2: My HR at 09:00, app at 13:00 → phone icon; the reverse → fingerprint icon
+    PunchDayDeriver.Derived selfFirst = derive(DAY, LocalTime.NOON,
+        app("b", DAY, "13:00"), at("a", DAY, "09:00"));
+    PunchDayDeriver.Derived appFirst = derive(DAY, LocalTime.NOON,
+        at("b", DAY, "13:00"), app("a", DAY, "09:00"));
+
+    assertEquals(PunchSource.SELF, selfFirst.primarySource());
+    assertEquals(PunchSource.BIOMETRIC_APP, appFirst.primarySource());
+  }
+
+  @Test
+  void aDuplicateAppPunchDoesNotChangeThePrimarySource() {
+    // 09:00 SELF counts; the app punch at 09:03 is a duplicate of it (R8.7)
+    PunchDayDeriver.Derived d = derive(DAY, LocalTime.NOON,
+        at("a", DAY, "09:00"), app("b", DAY, "09:03"), app("c", DAY, "18:00"));
+
+    assertEquals(PunchSource.SELF, d.primarySource());
+    assertEquals(List.of("a", "c"), d.counted().stream().map(Punch::getId).toList());
+  }
+
+  @Test
+  void countedFlagsLeaveOutTheFlagsOfDuplicatePunches() {
+    // R8.4, R8.7: OUTSIDE_SHOP only on the 09:02 duplicate → not a chip; RECORDED_OFFLINE on a
+    // counted punch → chip
+    PunchDayDeriver.Derived d = derive(DAY, LocalTime.NOON,
+        app("a", DAY, "09:00"), app("b", DAY, "09:02", PunchFlag.OUTSIDE_SHOP),
+        app("c", DAY, "18:00", PunchFlag.RECORDED_OFFLINE));
+
+    assertEquals(Set.of(PunchFlag.RECORDED_OFFLINE), d.countedFlags());
+  }
+
+  @Test
+  void countedFlagsAreTheUnionOverCountedPunches() {
+    PunchDayDeriver.Derived d = derive(DAY, LocalTime.NOON,
+        app("a", DAY, "09:00", PunchFlag.FAKE_LOCATION),
+        app("b", DAY, "18:00", PunchFlag.RECORDED_OFFLINE, PunchFlag.LOW_ACCURACY));
+
+    assertEquals(Set.of(PunchFlag.FAKE_LOCATION, PunchFlag.RECORDED_OFFLINE,
+        PunchFlag.LOW_ACCURACY), d.countedFlags());
   }
 
   @Test

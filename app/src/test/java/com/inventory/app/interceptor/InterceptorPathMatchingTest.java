@@ -50,6 +50,32 @@ class InterceptorPathMatchingTest {
         new MockHttpServletResponse(), null));
   }
 
+  /**
+   * Attendance app device paths carry no Bearer token; the signed envelope interceptor in the HR
+   * module authenticates them (AGENTS X3: listed here and excluded in CorsConfig).
+   */
+  @ParameterizedTest
+  @ValueSource(strings = {"/api/v1/hr/attendance-app/pairings/claim",
+      "/api/v1/hr/attendance-app/pairings/complete", "/api/v1/hr/attendance-app/pairings/abandon",
+      "/api/v1/hr/attendance-app/pairings/me/unpair", "/api/v1/hr/attendance-app/me",
+      "/api/v1/hr/attendance-app/punches", "/api/v1/hr/attendance-app/consent",
+      "/api/v1/hr/attendance-app/consent/latest"})
+  void attendanceAppDevicePathsNeedNoBearerToken(String path) throws Exception {
+    assertTrue(authentication.preHandle(new MockHttpServletRequest("POST", path),
+        new MockHttpServletResponse(), null));
+    verifyNoInteractions(tokenValidationService);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"/api/v1/hr/attendance-app/health", "/api/v1/hr/attendance-app",
+      "/api/v1/hr/attendance-app/punches/../health", "/api/v1/hr/attendance-app/mex",
+      "/api/v1/hr/attendance-app/pairings/../../employees"})
+  void attendanceAppHealthAndUnknownPathsStayOnTheBearerChain(String path) {
+    assertThrows(AuthenticationException.class,
+        () -> authentication.preHandle(new MockHttpServletRequest("GET", path),
+            new MockHttpServletResponse(), null));
+  }
+
   @Test
   void theAllowListOfPlanExpiryIgnoresDotSegments() {
     PlanExpiryInterceptor planExpiry = new PlanExpiryInterceptor();
