@@ -159,18 +159,14 @@ public class AddOnAdminService {
     AddOn addOn = addOnRepository.findByCode(code)
         .orElseThrow(() -> new ResourceNotFoundException("Add-on", "code", code));
     int quantity = request.getQuantity() != null ? request.getQuantity() : 1;
-    if (addOn.getGrantType() == AddOnGrantType.FEATURE && quantity != 1) {
-      throw new ValidationException("A feature add-on is granted once");
-    }
+    validator.validateGrantFor(addOn.getGrantType(), quantity);
     Instant now = clock.instant();
     Instant expiresAt = null;
     if (addOn.getGrantType() != AddOnGrantType.OCR_CREDITS) {
       expiresAt = request.getExpiresAt() != null
           ? request.getExpiresAt()
           : entitlementService.resolve(request.getShopId()).expiresAt();
-      if (expiresAt == null || !expiresAt.isAfter(now)) {
-        throw new ValidationException("The shop has no current term to attach this add-on to; give a future expiresAt");
-      }
+      validator.validateGrantEnd(expiresAt, now);
     }
     ShopAddOn granted = shopAddOnService.grantByAdmin(request.getShopId(), addOn, quantity, expiresAt,
         actorUserId, request.getReason());

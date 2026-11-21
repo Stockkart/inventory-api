@@ -75,6 +75,20 @@ public class AddOnAdminValidator {
     }
   }
 
+  /** Rules that need the add-on itself: a feature add-on is granted once. */
+  public void validateGrantFor(AddOnGrantType grantType, int quantity) {
+    if (grantType == AddOnGrantType.FEATURE && quantity != 1) {
+      throw new ValidationException("A feature add-on is granted once");
+    }
+  }
+
+  /** A time-bound grant needs an end in the future (given, or the shop's current term). */
+  public void validateGrantEnd(java.time.Instant expiresAt, java.time.Instant now) {
+    if (expiresAt == null || !expiresAt.isAfter(now)) {
+      throw new ValidationException("The shop has no current term to attach this add-on to; give a future expiresAt");
+    }
+  }
+
   private void validateContent(AddOnAdminRequest request, AddOnGrantType grantType) {
     if (!StringUtils.hasText(request.getName()) || request.getName().length() > MAX_NAME) {
       throw new ValidationException("Name is required, up to " + MAX_NAME + " characters");

@@ -38,7 +38,7 @@ modules:
   user:
     dependsOn: [common, notifications, metrics]
     collections: [users, user_shop_memberships, invitations, join_requests, shop_rbac_policies,
-                  customers, shop_customers, vendors, shop_vendors]
+                  customers, shop_customers, vendors, shop_vendors, admin_users, admin_sessions]
   accounting:
     dependsOn: [common, metrics]
     collections: [coa_accounts, journal_entries, ledger_entries, fiscal_periods, accounting_sequences]
