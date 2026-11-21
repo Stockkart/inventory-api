@@ -1,5 +1,11 @@
 package com.inventory.product.service;
 
+import com.inventory.reminders.api.ReminderScheduling;
+import com.inventory.reminders.api.InventoryReminderRequest;
+import com.inventory.common.constants.PurchaseTaxTreatment;
+import com.inventory.common.heavy.HeavyKind;
+import com.inventory.common.heavy.HeavyRequestLimiter;
+import com.inventory.common.util.GstStateCode;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
@@ -9,14 +15,18 @@ import com.inventory.product.domain.model.Shop;
 import com.inventory.product.domain.model.VendorPurchaseInvoice;
 import com.inventory.product.domain.model.VendorPurchaseInvoiceLine;
 import com.inventory.product.domain.repository.VendorPurchaseInvoiceRepository;
+import com.inventory.product.utils.PurchaseTaxBasis;
+import com.inventory.product.utils.PurchaseTaxBasisResolver;
+import com.inventory.product.utils.SchemeUpdateUtils;
+import com.inventory.product.utils.VendorInvoiceTotals;
 import com.inventory.product.utils.constants.ProductMetricsConstants;
+import com.inventory.pricing.api.PricingClearFields;
 import com.inventory.user.domain.model.Vendor;
 import com.inventory.user.domain.repository.VendorRepository;
 import com.inventory.product.rest.dto.request.VendorPurchaseInvoiceRequest;
-import com.inventory.reminders.rest.dto.request.CreateReminderForInventoryRequest;
-import com.inventory.reminders.service.ReminderService;
-import com.inventory.ocr.prompt.InvoicePricingLayout;
-import com.inventory.ocr.service.InvoiceParserService;
+import com.inventory.ocr.api.InvoicePricingLayout;
+import com.inventory.ocr.api.InvoiceParser;
+import com.inventory.ocr.api.StockSheetParser;
 import com.inventory.product.service.ocr.InvoicePricingLayoutResolver;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.enums.BillingMode;
@@ -43,7 +53,6 @@ import com.inventory.pluginengine.schema.InventoryVerticalRequestNormalizer;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import com.inventory.product.mapper.InventoryMapper;
-import com.inventory.product.migration.ExcelStockParser;
 import com.inventory.product.mapper.ParsedInventoryMapper;
 import com.inventory.product.utils.InventorySearchQueryParser;
 import com.inventory.product.service.vertical.InventoryVerticalExpiryHandler;
@@ -71,6 +80,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -79,8 +89,24 @@ import java.util.stream.Collectors;
 @Transactional
 public class InventoryService {
 
+  @Autowired(required = false)
+  private com.inventory.common.tx.MongoTx mongoTx;
+
+  @Autowired
+  private HeavyRequestLimiter heavyRequestLimiter;
+
   @Autowired
   private InventoryRepository inventoryRepository;
+
+  @Autowired
+  private com.inventory.product.search.InventorySearchEngine searchEngine;
+
+  /**
+   * {@code pipeline} (default) runs the one-query advanced engine; {@code legacy} keeps the old
+   * three-collection handler for one release as a safety switch (advanced-product-search R10.8).
+   */
+  @org.springframework.beans.factory.annotation.Value("${stockkart.search.engine:pipeline}")
+  private String searchEngineMode;
 
   @Autowired
   private VendorPurchaseInvoiceRepository vendorPurchaseInvoiceRepository;
@@ -98,16 +124,26 @@ public class InventoryService {
   private InventoryValidator inventoryValidator;
 
   @Autowired
+  private com.inventory.product.validation.VendorPurchaseInvoiceValidator
+      vendorPurchaseInvoiceValidator;
+
+  @Autowired
+  private PurchaseTaxRecorder purchaseTaxRecorder;
+
+  @Autowired
+  private PurchaseTaxTreatmentResolver purchaseTaxTreatmentResolver;
+
+  @Autowired
   private PackagingUnitService packagingUnitService;
 
   @Autowired
-  private ReminderService reminderService;
+  private ReminderScheduling reminderService;
 
   @Autowired
   private com.inventory.user.domain.repository.ShopVendorRepository shopVendorRepository;
 
   @Autowired
-  private InvoiceParserService invoiceParserService;
+  private InvoiceParser invoiceParserService;
 
   @Autowired
   private ParsedInventoryMapper parsedInventoryMapper;
@@ -119,15 +155,15 @@ public class InventoryService {
   private StockSheetValidator stockSheetValidator;
 
   @Autowired
-  private ExcelStockParser excelStockParser;
+  private StockSheetParser excelStockParser;
 
   @Autowired(required = false)
   private com.inventory.metrics.MetricsWrapper metrics;
 
-  @Autowired(required = false)
-  private com.inventory.credit.service.CreditService creditService;
+  @Autowired
+  private com.inventory.credit.api.CreditLedger creditLedger;
 
-  @Autowired(required = false)
+  @Autowired
   private com.inventory.accounting.api.AccountingFacade accountingFacade;
 
   @Autowired
@@ -144,13 +180,17 @@ public class InventoryService {
       inventoryProductReadHandler;
 
   @Autowired
+  private com.inventory.product.domain.model.pricing.InventoryPricingReadHandler
+      inventoryPricingReadHandler;
+
+  @Autowired
   private InventoryVerticalSearchHandler inventoryVerticalSearchHandler;
 
   @Autowired
   private InventoryVerticalExpiryHandler inventoryVerticalExpiryHandler;
 
   @Autowired
-  private com.inventory.pricing.domain.repository.PricingRepository pricingRepository;
+  private com.inventory.product.domain.repository.ProductRepository productRepository;
 
   @Autowired
   private QuotationService quotationService;
@@ -220,14 +260,21 @@ public class InventoryService {
     for (int i = 0; i < imageBytesList.size(); i++) {
       byte[] bytes = imageBytesList.get(i);
       imageValidator.validateImageBytes(bytes);
-      if (bytes.length > ImageValidator.MAX_INVOICE_IMAGE_BYTES) {
-        throw new ValidationException("Image " + (i + 1) + " exceeds maximum size of 10 MB");
-      }
+      imageValidator.validateInvoiceImageSize(i, bytes.length);
     }
 
     InvoicePricingLayout layout = resolveInvoicePricingLayout(shopId);
     log.info("Processing invoice parsing for {} image(s) shopId={} layout={}",
         imageBytesList.size(), shopId, layout);
+    // at most a few uploads parse at once (images in memory; the OCR provider rate-limits); the
+    // desktop upload waits briefly then gets "busy", the phone upload's background parse waits longer
+    try (HeavyRequestLimiter.Permit ignored = heavyRequestLimiter.acquire(HeavyKind.OCR)) {
+      return parseImages(imageBytesList, layout);
+    }
+  }
+
+  private ParsedInventoryListResponse parseImages(
+      java.util.List<byte[]> imageBytesList, InvoicePricingLayout layout) {
     java.util.List<CreateInventoryItemRequest> mergedItems = new java.util.ArrayList<>();
     com.inventory.product.rest.dto.response.ParsedVendorInvoiceDto vendorInvoice = null;
 
@@ -268,7 +315,7 @@ public class InventoryService {
     InvoicePricingLayout resolved = InvoicePricingLayout.orDefault(layout);
 
     try {
-      List<com.inventory.ocr.dto.ParsedInventoryItem> parsedItems =
+      List<com.inventory.ocr.api.ParsedInvoiceItem> parsedItems =
           invoiceParserService.parseInvoiceImage(imageBytes, resolved);
 
       List<CreateInventoryItemRequest> items =
@@ -308,7 +355,7 @@ public class InventoryService {
     stockSheetValidator.validateStockSheet(file);
 
     try {
-      List<com.inventory.ocr.dto.ParsedInventoryItem> parsedItems =
+      List<com.inventory.ocr.api.ParsedInvoiceItem> parsedItems =
           excelStockParser.parse(file.getInputStream(), file.getOriginalFilename());
 
       List<CreateInventoryItemRequest> items =
@@ -336,16 +383,33 @@ public class InventoryService {
    * @return bulk creation response with created items
    */
   public BulkCreateInventoryResponse bulkCreate(BulkCreateInventoryRequest bulkRequest, String userId, String shopId) {
-    List<InventoryReceiptResponse> createdItems = new ArrayList<>();
-
-    if (!StringUtils.hasText(bulkRequest.getVendorId())) {
-      throw new ValidationException("Vendor is required for bulk inventory registration");
+    // one MongoDB transaction: the invoice, every lot (product, pricing, stock), the vendor due and
+    // the purchase journal together or not at all (a half-registered bill left lots without a journal)
+    if (mongoTx != null) {
+      return mongoTx.run(com.inventory.common.tx.MongoTx.VENDOR_INVOICE, shopId,
+          () -> registerPurchase(bulkRequest, userId, shopId));
     }
-    validateVendorId(bulkRequest.getVendorId(), shopId);
+    return registerPurchase(bulkRequest, userId, shopId);
+  }
+
+  private BulkCreateInventoryResponse registerPurchase(
+      BulkCreateInventoryRequest bulkRequest, String userId, String shopId) {
+    List<InventoryReceiptResponse> createdItems = new ArrayList<>();
 
     List<CreateInventoryItemRequest> itemRequests = bulkRequest.getItems();
     if (itemRequests == null || itemRequests.isEmpty()) {
       throw new ValidationException("At least one product is required for bulk registration");
+    }
+
+    boolean allBasic =
+        itemRequests.stream().allMatch(item -> item.getBillingMode() == BillingMode.BASIC);
+
+    boolean hasVendor = StringUtils.hasText(bulkRequest.getVendorId());
+    if (hasVendor) {
+      validateVendorId(bulkRequest.getVendorId(), shopId);
+    } else if (!allBasic) {
+      // Estimate lock may omit vendor; only BASIC (estimate-only) lots are allowed without one.
+      throw new ValidationException("Vendor is required for bulk inventory registration");
     }
 
     List<String> validationErrors = new ArrayList<>();
@@ -389,8 +453,9 @@ public class InventoryService {
 
     if (userInvoice) {
       String normalizedNo = invReq.getInvoiceNo().trim();
-      if (vendorPurchaseInvoiceRepository.existsByShopIdAndVendorIdAndInvoiceNo(
-          shopId, bulkRequest.getVendorId(), normalizedNo)) {
+      if (hasVendor
+          && vendorPurchaseInvoiceRepository.existsByShopIdAndVendorIdAndInvoiceNo(
+              shopId, bulkRequest.getVendorId(), normalizedNo)) {
         throw new ValidationException(
             "An invoice with this number already exists for this vendor");
       }
@@ -401,6 +466,7 @@ public class InventoryService {
       pendingInvoice.setSynthetic(Boolean.TRUE);
     }
     if (invReq != null) {
+      vendorPurchaseInvoiceValidator.validateHeader(invReq);
       pendingInvoice.setInvoiceDate(invReq.getInvoiceDate());
       pendingInvoice.setLineSubTotal(invReq.getLineSubTotal());
       pendingInvoice.setTaxTotal(invReq.getTaxTotal());
@@ -411,6 +477,15 @@ public class InventoryService {
       pendingInvoice.setInvoiceTotal(invReq.getInvoiceTotal());
       pendingInvoice.setPaymentMethod(invReq.getPaymentMethod());
       pendingInvoice.setPaidAmount(invReq.getPaidAmount());
+      // The bill decides; else its lines (cost at MRP means GST is inside it, cost below MRP
+      // means it is added on top); else the vendor's usual convention. A choice the lines
+      // contradict is refused until the operator confirms it from the paper.
+      PurchaseTaxTreatmentResolver.Resolved treatment = purchaseTaxTreatmentResolver.resolve(
+          invReq.getTaxTreatment(), bulkRequest.getVendorId(), itemRequests);
+      if (treatment.conflict() && !Boolean.TRUE.equals(invReq.getConfirmTaxTreatment())) {
+        throw new ValidationException(treatment.conflictMessage());
+      }
+      pendingInvoice.setTaxTreatment(treatment.treatment());
     }
 
     try {
@@ -434,55 +509,60 @@ public class InventoryService {
           inventoryMapper.toCreateInventoryRequest(
               itemRequest, bulkRequest.getVendorId(), registrationId);
       fullRequest.setVendorPurchaseInvoiceId(registrationId);
+      fullRequest.setCostPriceIncludesTax(
+          pendingInvoice.getTaxTreatment() == PurchaseTaxTreatment.INCLUSIVE);
       InventoryVerticalRequestNormalizer.normalizeCreate(fullRequest);
 
       InventoryReceiptResponse response = create(fullRequest, userId, shopId);
       createdItems.add(response);
 
-      VendorPurchaseInvoiceLine line = new VendorPurchaseInvoiceLine();
+      VendorPurchaseInvoiceLine line = inventoryMapper.toInvoiceLine(itemRequest);
       line.setLineIndex(invoiceLines.size());
-      line.setName(itemRequest.getName());
-      line.setBarcode(itemRequest.getBarcode());
-      line.setCount(itemRequest.getCount());
-      line.setCostPrice(itemRequest.getCostPrice());
-      line.setPriceToRetail(itemRequest.getPriceToRetail());
       line.setInventoryId(response.getId());
       invoiceLines.add(line);
     }
 
     pendingInvoice.setLines(invoiceLines);
+    purchaseTaxRecorder.record(pendingInvoice);
+    rememberVendorTaxTreatment(bulkRequest.getVendorId(), invReq);
     vendorPurchaseInvoiceRepository.save(pendingInvoice);
     if (metrics != null) {
-      metrics.record(
+      com.inventory.common.tx.MongoTx.afterCommit(() -> metrics.record(
           ProductMetricsConstants.VENDOR_PURCHASES,
           1,
           "module",
-          ProductMetricsConstants.MODULE);
+          ProductMetricsConstants.MODULE));
     }
     String returnedInvoiceId = pendingInvoice.getId();
 
     log.info("Bulk creation completed: {} created", createdItems.size());
 
     String creditEntryId = null;
-    var invOpt = vendorPurchaseInvoiceRepository.findById(returnedInvoiceId);
-    if (invOpt.isPresent()) {
-      VendorPurchaseInvoice persistedInvoice = invOpt.get();
-      creditEntryId = postCreditAndAccountingForVendorInvoice(persistedInvoice, shopId, userId);
+    // BASIC (estimate-only) stock-in never posts credit or accounting — REGULAR bulk create does.
+    if (!allBasic) {
+      var invOpt = vendorPurchaseInvoiceRepository.findById(returnedInvoiceId);
+      if (invOpt.isPresent()) {
+        VendorPurchaseInvoice persistedInvoice = invOpt.get();
+        creditEntryId = postCreditAndAccountingForVendorInvoice(persistedInvoice, shopId, userId);
+      }
     }
 
     if (metrics != null && !createdItems.isEmpty()) {
-      metrics.record(
-          ProductMetricsConstants.INVENTORY_OPERATION,
-          1,
-          "module",
-          ProductMetricsConstants.MODULE,
-          "operation",
-          "bulk_create");
-      metrics.record(
-          ProductMetricsConstants.INVENTORY_ITEMS_ADDED,
-          createdItems.size(),
-          "module",
-          ProductMetricsConstants.MODULE);
+      int added = createdItems.size();
+      com.inventory.common.tx.MongoTx.afterCommit(() -> {
+        metrics.record(
+            ProductMetricsConstants.INVENTORY_OPERATION,
+            1,
+            "module",
+            ProductMetricsConstants.MODULE,
+            "operation",
+            "bulk_create");
+        metrics.record(
+            ProductMetricsConstants.INVENTORY_ITEMS_ADDED,
+            added,
+            "module",
+            ProductMetricsConstants.MODULE);
+      });
     }
 
     BulkCreateInventoryResponse out =
@@ -508,7 +588,7 @@ public class InventoryService {
 
   private String postCreditChargeForVendorInvoice(
       VendorPurchaseInvoice inv, String shopId, String userId) {
-    if (creditService == null || inv == null) {
+    if (creditLedger == null || inv == null) {
       return null;
     }
     BigDecimal total = deriveInvoiceTotalForCredit(inv);
@@ -527,7 +607,8 @@ public class InventoryService {
 
     String vendorId = StringUtils.hasText(inv.getVendorId()) ? inv.getVendorId().trim() : null;
     if (!StringUtils.hasText(vendorId)) {
-      throw new ValidationException("Vendor id is required to track vendor credit");
+      // Estimate-only stock-in may have no vendor; skip payable tracking until a vendor is set.
+      return null;
     }
     String vendorName =
         vendorRepository
@@ -537,20 +618,22 @@ public class InventoryService {
             .map(String::trim)
             .orElse("Vendor " + vendorId);
 
-    com.inventory.credit.rest.dto.request.CreateCreditChargeRequest charge =
-        new com.inventory.credit.rest.dto.request.CreateCreditChargeRequest();
-    charge.setPartyType(com.inventory.credit.domain.model.CreditPartyType.VENDOR);
-    charge.setPartyId(vendorId);
-    charge.setPartyDisplayName(vendorName);
-    charge.setAmount(outstanding);
-    charge.setReferenceType("PURCHASE");
-    charge.setReferenceId(inv.getId());
-    charge.setSourceKey("PURCHASE:CREDIT:" + inv.getId());
-    charge.setNote(
-        "Vendor payable"
-            + (StringUtils.hasText(inv.getInvoiceNo()) ? " · Inv " + inv.getInvoiceNo().trim() : ""));
-    var entry = creditService.createCharge(shopId, userId, charge);
-    return entry != null ? entry.getId() : null;
+    com.inventory.credit.api.CreditCharge charge =
+        com.inventory.credit.api.CreditCharge.builder()
+            .partyType(com.inventory.credit.api.CreditPartyType.VENDOR)
+            .partyId(vendorId)
+            .partyDisplayName(vendorName)
+            .amount(outstanding)
+            .referenceType("PURCHASE")
+            .referenceId(inv.getId())
+            .sourceKey("PURCHASE:CREDIT:" + inv.getId())
+            .note(
+                "Vendor payable"
+                    + (StringUtils.hasText(inv.getInvoiceNo())
+                        ? " · Inv " + inv.getInvoiceNo().trim()
+                        : ""))
+            .build();
+    return creditLedger.recordCharge(shopId, userId, charge);
   }
 
   /**
@@ -572,6 +655,11 @@ public class InventoryService {
     if (accountingFacade == null || inv == null) {
       return;
     }
+    String vendorId = StringUtils.hasText(inv.getVendorId()) ? inv.getVendorId().trim() : null;
+    if (!StringUtils.hasText(vendorId)) {
+      // BASIC estimate lock may omit vendor; skip ledger posting until a vendor is attached.
+      return;
+    }
     BigDecimal goodsValue =
         nz(inv.getLineSubTotal()).subtract(nz(inv.getOverallDiscount())).max(BigDecimal.ZERO);
     BigDecimal taxTotal = nz(inv.getTaxTotal());
@@ -582,16 +670,13 @@ public class InventoryService {
     BigDecimal paidNow =
         resolveVendorPaidNow(
             invoiceTotal, normalizePaymentMethod(inv.getPaymentMethod()), inv.getPaidAmount());
-    String vendorId = StringUtils.hasText(inv.getVendorId()) ? inv.getVendorId().trim() : null;
     String vendorName =
-        vendorId != null
-            ? vendorRepository
-                .findById(vendorId)
-                .map(Vendor::getName)
-                .filter(StringUtils::hasText)
-                .map(String::trim)
-                .orElse("Vendor " + vendorId)
-            : null;
+        vendorRepository
+            .findById(vendorId)
+            .map(Vendor::getName)
+            .filter(StringUtils::hasText)
+            .map(String::trim)
+            .orElse("Vendor " + vendorId);
 
     java.time.LocalDate txnDate =
         inv.getInvoiceDate() != null
@@ -604,13 +689,21 @@ public class InventoryService {
     // each {@link VendorPurchaseInvoiceLine} points to an inventory item whose {@code pricing}
     // doc carries the actual cgst / sgst rates. We compute CGST and SGST amounts per line and
     // sum them, falling back to shop-level rates only when an inventory or pricing lookup is
-    // missing. IGST is intentionally always zero here — interstate tax will be wired in once
-    // the FE captures a place-of-supply / interstate flag on the invoice.
-    GstSplit gst = splitTaxByLines(shopId, inv, taxTotal);
+    // missing.
+    //
+    // A supplier in another state charges IGST instead, and the whole tax goes to that one head.
+    // The books have to agree with the return: GSTR-2 places this purchase by the supplier's own
+    // GSTIN, and posting it to the local heads would leave the ledger claiming credit under two
+    // heads the return does not.
+    boolean interstate = purchaseTaxRecorder.isInterstate(inv);
+    GstSplit gst =
+        interstate ? new GstSplit(BigDecimal.ZERO, BigDecimal.ZERO)
+            : splitTaxByLines(shopId, inv, taxTotal);
+    BigDecimal inputIgst = interstate ? taxTotal : BigDecimal.ZERO;
     String paymentMethod = normalizePaymentMethod(inv.getPaymentMethod());
     com.inventory.accounting.api.VendorPurchaseInvoicePostingRequest req =
         com.inventory.accounting.api.VendorPurchaseInvoicePostingRequest.builder()
-            .sourceId(inv.getId())
+            .sourceId(ledgerSourceId(inv))
             .invoiceNo(inv.getInvoiceNo())
             .txnDate(txnDate)
             .vendorId(vendorId)
@@ -618,6 +711,7 @@ public class InventoryService {
             .goodsValue(goodsValue)
             .inputCgst(gst.cgst())
             .inputSgst(gst.sgst())
+            .inputIgst(inputIgst)
             .shippingCharge(nz(inv.getShippingCharge()))
             .otherCharges(nz(inv.getOtherCharges()))
             .roundOff(nz(inv.getRoundOff()))
@@ -629,26 +723,44 @@ public class InventoryService {
   }
 
   /**
-   * Splits a combined {@code taxTotal} into CGST + SGST by walking each invoice line and reading
-   * the CGST / SGST percentages from that line's pricing document. This mirrors the way the
-   * cart/checkout flow originally computed the tax (per-line, per-item rate), so the journal
-   * entry uses the same source of truth instead of guessing from a shop-level fallback.
+   * Brings the ledger in line with an amended invoice header.
    *
-   * <p>Resolution order (in priority):
-   * <ol>
-   *   <li>Per-line: {@code lineValue × pricing.cgst / 100} and {@code × pricing.sgst / 100}.
-   *       Line value is taken from {@code count × costPrice} (PTR is a last-resort fallback
-   *       for legacy lines that never captured cost price).</li>
-   *   <li>Lines that don't resolve to a pricing doc fall back to the shop's configured
-   *       CGST / SGST.</li>
-   *   <li>If neither pricing nor shop rates exist, that line contributes nothing and the
-   *       residual tax is split using whatever per-line numbers we did manage to compute.</li>
-   * </ol>
+   * <p>The live entry is reversed, so the original figures stay on record, and the invoice is
+   * posted again with its corrected header under a new source id. An invoice that was never
+   * posted (no vendor, nothing owed) is left alone, as stock-in left it.
+   */
+  public void repostAccountingAfterAmend(
+      VendorPurchaseInvoice inv, String shopId, String userId, String reason) {
+    if (accountingFacade == null || inv == null || !StringUtils.hasText(inv.getVendorId())) {
+      return;
+    }
+    java.util.Optional<com.inventory.accounting.api.JournalEntryView> live =
+        accountingFacade.findBySource(
+            shopId,
+            com.inventory.accounting.api.JournalSource.VENDOR_PURCHASE_INVOICE,
+            ledgerSourceId(inv));
+    if (live.isEmpty()) {
+      return;
+    }
+    if (live.get().status() != com.inventory.accounting.api.JournalStatus.REVERSED) {
+      accountingFacade.reverse(shopId, userId, live.get().id(), "Invoice amended: " + reason);
+    }
+    inv.setLedgerSourceId(inv.getId() + ":amend:" + Instant.now().toEpochMilli());
+    postAccountingForVendorInvoice(inv, shopId, userId);
+  }
+
+  private static String ledgerSourceId(VendorPurchaseInvoice inv) {
+    return StringUtils.hasText(inv.getLedgerSourceId()) ? inv.getLedgerSourceId() : inv.getId();
+  }
+
+  /**
+   * Splits a combined {@code taxTotal} into CGST + SGST for the journal.
    *
-   * <p>The two halves are reconciled against {@code taxTotal} before returning: any rounding
-   * delta (typically < ₹1) is absorbed into the larger of the two halves so the books always
-   * balance. If we couldn't compute anything (no lines, no rates), the input tax is split using
-   * the shop's CGST/SGST percentages.
+   * <p>The split comes from {@link PurchaseTaxBasisResolver} — the same per-line basis GSTR-2
+   * reports from — so the ledger and the return read one answer. The stated {@code taxTotal} is
+   * the amount (it is what the vendor is owed, so the entry has to balance on it) and the basis
+   * gives the ratio. Lines with no rate contribute nothing; if none has a rate, the tax is split
+   * evenly (intra-state CGST and SGST are always equal halves).
    */
   private GstSplit splitTaxByLines(String shopId, VendorPurchaseInvoice inv, BigDecimal taxTotal) {
     BigDecimal total = nz(taxTotal);
@@ -656,82 +768,25 @@ public class InventoryService {
     if (total.signum() <= 0) {
       return new GstSplit(zero, zero);
     }
-    Shop shop =
-        StringUtils.hasText(shopId) ? shopRepository.findById(shopId).orElse(null) : null;
-    BigDecimal shopCgstPct = parsePercentage(shop != null ? shop.getCgst() : null);
-    BigDecimal shopSgstPct = parsePercentage(shop != null ? shop.getSgst() : null);
 
-    BigDecimal cgstSum = BigDecimal.ZERO;
-    BigDecimal sgstSum = BigDecimal.ZERO;
-    boolean anyLineContributed = false;
-
-    List<VendorPurchaseInvoiceLine> lines =
-        inv.getLines() != null ? inv.getLines() : java.util.Collections.emptyList();
-    for (VendorPurchaseInvoiceLine line : lines) {
-      BigDecimal cgstPct = shopCgstPct;
-      BigDecimal sgstPct = shopSgstPct;
-      String inventoryId = line.getInventoryId();
-      if (StringUtils.hasText(inventoryId)) {
-        com.inventory.pricing.domain.model.Pricing pricing =
-            inventoryRepository
-                .findById(inventoryId)
-                .map(Inventory::getPricingId)
-                .filter(StringUtils::hasText)
-                .flatMap(pricingRepository::findById)
-                .orElse(null);
-        if (pricing != null) {
-          BigDecimal pCgst = parsePercentage(pricing.getCgst());
-          BigDecimal pSgst = parsePercentage(pricing.getSgst());
-          if (pCgst.signum() > 0 || pSgst.signum() > 0) {
-            cgstPct = pCgst;
-            sgstPct = pSgst;
-          }
-        }
-      }
-      BigDecimal lineValue = lineGoodsValue(line);
-      if (lineValue.signum() <= 0) continue;
-      if (cgstPct.signum() <= 0 && sgstPct.signum() <= 0) continue;
-      BigDecimal cgstAmt =
-          lineValue.multiply(cgstPct).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
-      BigDecimal sgstAmt =
-          lineValue.multiply(sgstPct).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
-      cgstSum = cgstSum.add(cgstAmt);
-      sgstSum = sgstSum.add(sgstAmt);
-      anyLineContributed = true;
+    // IGST is not posted yet: the ledger has no place of supply for a purchase, so the basis is
+    // read as intra-state.
+    PurchaseTaxBasis basis =
+        PurchaseTaxBasisResolver.resolve(
+            inv, purchaseTaxRecorder.pricingByInventoryId(inv.getLines())::get,
+            inv.getTaxTreatment(), false);
+    java.util.Optional<PurchaseTaxBasis.IntraStateSplit> split = basis.splitStated(total);
+    if (split.isPresent()) {
+      return new GstSplit(split.get().centralTax(), split.get().stateTax());
     }
 
-    if (!anyLineContributed) {
-      // No usable line data — fall back to shop ratio split of the invoice's stated taxTotal.
-      return splitByRatio(total, shopCgstPct, shopSgstPct);
-    }
-
-    // Reconcile rounding drift back to taxTotal so the JE always ties out.
-    BigDecimal computed = cgstSum.add(sgstSum);
-    BigDecimal drift = total.subtract(computed).setScale(4, RoundingMode.HALF_UP);
-    if (drift.signum() != 0) {
-      // Push the rounding penny to whichever side is larger, defaulting to SGST when equal.
-      if (cgstSum.compareTo(sgstSum) > 0) {
-        cgstSum = cgstSum.add(drift);
-      } else {
-        sgstSum = sgstSum.add(drift);
-      }
-    }
-    return new GstSplit(
-        cgstSum.setScale(4, RoundingMode.HALF_UP),
-        sgstSum.setScale(4, RoundingMode.HALF_UP));
+    // No line carries a rate: intra-state GST is always half CGST, half SGST.
+    return splitByRatio(total, BigDecimal.ZERO, BigDecimal.ZERO);
   }
 
-  /** Per-line "goods value" used as the GST base. Prefers costPrice; falls back to PTR. */
-  private static BigDecimal lineGoodsValue(VendorPurchaseInvoiceLine line) {
-    BigDecimal qty =
-        line.getCount() != null ? BigDecimal.valueOf(line.getCount()) : BigDecimal.ZERO;
-    if (qty.signum() <= 0) return BigDecimal.ZERO;
-    BigDecimal price = nz(line.getCostPrice());
-    if (price.signum() <= 0) price = nz(line.getPriceToRetail());
-    return price.multiply(qty);
-  }
+  /** The pricing record behind a purchase line's lot, or null when either is missing. */
 
-  /** Plain ratio split — used only when no line-level rates are available. */
+  /** Ratio split; with no rates (both zero) an even split. */
   private static GstSplit splitByRatio(
       BigDecimal total, BigDecimal cgstPct, BigDecimal sgstPct) {
     BigDecimal zero = BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP);
@@ -749,36 +804,54 @@ public class InventoryService {
         half.setScale(4, RoundingMode.HALF_UP));
   }
 
-  /** Parses a shop's percentage field ({@code "9"}, {@code "9.00"}, {@code "9%"}). */
-  private static BigDecimal parsePercentage(String raw) {
-    if (raw == null) return BigDecimal.ZERO;
-    String t = raw.trim();
-    if (t.isEmpty()) return BigDecimal.ZERO;
-    if (t.endsWith("%")) t = t.substring(0, t.length() - 1).trim();
+  /**
+   * Remembers how a supplier bills, from the bill in front of the operator.
+   *
+   * <p>The question can only be answered with an invoice in hand -- whether the printed line
+   * amount already contains the tax is a fact about the paper, not something anyone knows while
+   * typing a supplier's phone number into a form. So it is asked where it is answerable, at stock
+   * in, and kept for next time.
+   *
+   * <p>The latest answer wins. A supplier that changes how it bills is telling us so through its
+   * bills, and an operator correcting the choice on today's invoice means the stored one was
+   * wrong; either way the newer answer came from someone looking at a real document. Only an
+   * explicit choice is recorded -- leaving the field on "as this vendor usually bills" says
+   * nothing new and overwrites nothing.
+   *
+   * <p>Never fatal. The stock is registered and the invoice is right regardless; failing to
+   * remember only means being asked again next time.
+   */
+  private void rememberVendorTaxTreatment(String vendorId, VendorPurchaseInvoiceRequest invReq) {
+    if (invReq == null || invReq.getTaxTreatment() == null || !StringUtils.hasText(vendorId)) {
+      return;
+    }
     try {
-      BigDecimal v = new BigDecimal(t);
-      return v.signum() < 0 ? BigDecimal.ZERO : v;
-    } catch (NumberFormatException ex) {
-      return BigDecimal.ZERO;
+      vendorRepository.findById(vendorId.trim()).ifPresent(vendor -> {
+        PurchaseTaxTreatment stated = invReq.getTaxTreatment();
+        if (stated == vendor.getDefaultTaxTreatment()) {
+          return;
+        }
+        PurchaseTaxTreatment previous = vendor.getDefaultTaxTreatment();
+        vendor.setDefaultTaxTreatment(stated);
+        vendor.setUpdatedAt(Instant.now());
+        vendorRepository.save(vendor);
+        log.info("Vendor {} now bills {} (was {}), learnt from invoice {}",
+            vendor.getName(), stated, previous == null ? "unrecorded" : previous,
+            invReq.getInvoiceNo());
+      });
+    } catch (RuntimeException e) {
+      log.warn("Could not record how vendor {} bills; it will be asked again next time",
+          vendorId, e);
     }
   }
 
-  /** Per-invoice CGST / SGST slice. IGST is wired in once the invoice carries a place-of-supply. */
+  /** Per-invoice CGST / SGST slice; zero on an interstate purchase, where the whole tax is IGST. */
   private record GstSplit(BigDecimal cgst, BigDecimal sgst) {}
 
   private static BigDecimal deriveInvoiceTotalForCredit(VendorPurchaseInvoice inv) {
-    BigDecimal invTotal = nz(inv.getInvoiceTotal());
-    if (invTotal.signum() > 0) {
-      return invTotal.setScale(4, RoundingMode.HALF_UP);
-    }
-    return nz(inv.getLineSubTotal())
-        .add(nz(inv.getTaxTotal()))
-        .add(nz(inv.getShippingCharge()))
-        .add(nz(inv.getOtherCharges()))
-        .add(nz(inv.getRoundOff()))
-        .subtract(nz(inv.getOverallDiscount()))
-        .max(BigDecimal.ZERO)
-        .setScale(4, RoundingMode.HALF_UP);
+    return VendorInvoiceTotals.invoiceTotal(
+        inv.getInvoiceTotal(), inv.getLineSubTotal(), inv.getTaxTotal(), inv.getShippingCharge(),
+        inv.getOtherCharges(), inv.getRoundOff(), inv.getOverallDiscount());
   }
 
   /**
@@ -835,11 +908,21 @@ public class InventoryService {
       inventory.setUnitConversions(resolveUnitConversionForCreate(
           request, normalizedBaseUnit));
       inventory.setPurchaseDate(request.getPurchaseDate() != null ? request.getPurchaseDate() : Instant.now());
-      inventory.setBillingMode(normalizeBillingMode(request.getBillingMode()));
+      BillingMode billingMode = normalizeBillingMode(request.getBillingMode());
+      inventory.setBillingMode(billingMode);
+      if (billingMode == BillingMode.BASIC) {
+        inventory.setSellRestriction(
+            com.inventory.product.domain.model.enums.InventorySellRestriction.ESTIMATE_ONLY);
+      } else if (inventory.getSellRestriction() == null) {
+        inventory.setSellRestriction(
+            com.inventory.product.domain.model.enums.InventorySellRestriction.ANY);
+      }
 
       // Resolve catalog identity: reuse selected product, fork on identity edit, else match/create.
       inventory.setProductId(
           productService.resolveForRegistration(request.getProductId(), inventory, shopId));
+      // Reads hydrate packaging from the product, so base counts must use the product's factor.
+      adoptProductPackaging(inventory, shopId);
 
       int billQty = request.getCount() != null ? request.getCount() : 0;
       boolean useNewFixedUnits = request.getSchemePayFor() != null || request.getSchemeFree() != null;
@@ -884,18 +967,20 @@ public class InventoryService {
 
       if (metrics != null) {
         int itemCount = request.getCount() != null ? request.getCount() : 1;
-        metrics.record(ProductMetricsConstants.INVENTORY_OPERATION, 1, "module", ProductMetricsConstants.MODULE, "operation", "create");
-        metrics.record(ProductMetricsConstants.INVENTORY_ITEMS_ADDED, itemCount, "module", ProductMetricsConstants.MODULE);
+        int added = itemCount;
+        com.inventory.common.tx.MongoTx.afterCommit(() -> {
+          metrics.record(ProductMetricsConstants.INVENTORY_OPERATION, 1, "module", ProductMetricsConstants.MODULE, "operation", "create");
+          metrics.record(ProductMetricsConstants.INVENTORY_ITEMS_ADDED, added, "module", ProductMetricsConstants.MODULE);
+        });
       }
 
-      CreateReminderForInventoryRequest reminderRequest =
-          inventoryMapper.toCreateReminderForInventoryRequest(request, shopId, inventory.getId());
-      reminderRequest.setExpiryDate(VerticalFieldsReader.expiryDateFrom(request));
+      InventoryReminderRequest reminderRequest = inventoryMapper.toInventoryReminderRequest(
+          request, shopId, inventory.getId(), VerticalFieldsReader.expiryDateFrom(request));
       reminderService.createReminderForInventoryCreate(reminderRequest);
       boolean reminderCreated =
-          reminderRequest.getExpiryDate() != null
-              || (reminderRequest.getCustomReminders() != null
-                  && !reminderRequest.getCustomReminders().isEmpty());
+          reminderRequest.expiryDate() != null
+              || (reminderRequest.customReminders() != null
+                  && !reminderRequest.customReminders().isEmpty());
       return inventoryMapper.toReceiptResponseWithReminder(inventory, reminderCreated);
 
     } catch (ValidationException e) {
@@ -958,6 +1043,16 @@ public class InventoryService {
   }
 
   public InventoryListResponse search(String shopId, Map<String, String> query) {
+    if (usePipelineEngine()) {
+      inventoryValidator.validateShopId(shopId);
+      com.inventory.product.search.SearchFieldCatalogService.ShopSearchContext ctx =
+          searchEngine.context(shopId);
+      com.inventory.product.rest.dto.request.SearchRequest request =
+          com.inventory.product.search.LegacySearchQueryTranslator.translate(query, ctx);
+      com.inventory.product.rest.dto.response.SearchResponse response =
+          searchEngine.search(shopId, request, this::toSummariesWithExtensions);
+      return inventoryMapper.toInventoryListResponse(response.data(), response.page());
+    }
     InventorySearchQueryParser.Parsed parsed = InventorySearchQueryParser.parse(query);
     return search(
         shopId,
@@ -968,6 +1063,17 @@ public class InventoryService {
         parsed.cursor(),
         parsed.includeZeroStock(),
         parsed.page());
+  }
+
+  /** Advanced search: {@code POST /inventory/search} (advanced-product-search R2.1). */
+  public com.inventory.product.rest.dto.response.SearchResponse searchAdvanced(
+      String shopId, com.inventory.product.rest.dto.request.SearchRequest request) {
+    inventoryValidator.validateShopId(shopId);
+    return searchEngine.search(shopId, request, this::toSummariesWithExtensions);
+  }
+
+  private boolean usePipelineEngine() {
+    return !"legacy".equalsIgnoreCase(searchEngineMode == null ? "" : searchEngineMode.trim());
   }
 
   public InventoryListResponse search(
@@ -1426,10 +1532,12 @@ public class InventoryService {
    * @param inventoryId the inventory ID (mandatory)
    * @param request the update request containing optional fields
    * @param shopId the shop ID for authorization
+   * @param userId the user making the change; checked for the grant to edit generated rates
    * @return updated inventory detail response
    */
   @Transactional
-  public InventoryDetailResponse update(String inventoryId, UpdateInventoryRequest request, String shopId) {
+  public InventoryDetailResponse update(String inventoryId, UpdateInventoryRequest request, String shopId,
+      String userId) {
     try {
       inventoryValidator.validateShopId(shopId);
       if (inventoryId == null || inventoryId.trim().isEmpty()) {
@@ -1437,7 +1545,6 @@ public class InventoryService {
       }
 
       log.debug("Updating inventory with ID: {} for shop: {}", inventoryId, shopId);
-      inventoryValidator.validateUpdateRequest(request);
 
       // Find inventory
       Inventory inventory = inventoryRepository.findById(inventoryId)
@@ -1448,7 +1555,13 @@ public class InventoryService {
         throw new ValidationException("Inventory does not belong to the authenticated shop");
       }
 
+      // A deal type sent without its deal is checked against the stored one first, so it can
+      // never replace the stored deal with an empty one.
+      SchemeUpdateUtils.dropOrRefuseTypeOnlyChanges(request, inventory);
+      inventoryValidator.validateUpdateRequest(request);
+
       inventoryVerticalValidationHandler.validateUpdate(shopId, inventory, request);
+      int previousPackFactor = LotPackaging.factor(inventory.getUnitConversions());
 
       // Product details - only update when provided
       if (request.getBarcode() != null) inventory.setBarcode(request.getBarcode());
@@ -1469,7 +1582,8 @@ public class InventoryService {
         inventory.setItemTypeDegree(request.getItemTypeDegree());
       }
       if (request.getDiscountApplicable() != null) inventory.setDiscountApplicable(request.getDiscountApplicable());
-      if (request.getPurchaseDate() != null) inventory.setPurchaseDate(request.getPurchaseDate());
+      // Set at stock-in only; an unchanged day may be resent, a new one is rejected.
+      inventoryValidator.validatePurchaseDateUnchanged(request.getPurchaseDate(), inventory.getPurchaseDate());
 
       if (request.getSchemeType() != null) {
         inventory.setSchemeType(request.getSchemeType());
@@ -1482,6 +1596,7 @@ public class InventoryService {
           inventory.setScheme(request.getScheme());
         }
       }
+      applyClearFields(inventory, request.getClearFields());
 
       if (request.getBaseUnit() != null) {
         String normalizedBaseUnit = normalizeUnitName(request.getBaseUnit());
@@ -1496,15 +1611,34 @@ public class InventoryService {
             normalizeUnitName(inventory.getBaseUnit())));
       }
 
+      boolean packagingRequested =
+          request.getBaseUnit() != null || request.getUnitConversions() != null;
+      int requestedPackFactor = LotPackaging.factor(inventory.getUnitConversions());
+      if (packagingRequested && requestedPackFactor != previousPackFactor) {
+        // Before product resolution, so a rejected edit never forks a product.
+        assertLotStockUntouched(inventory, shopId);
+      }
+
       // Identity edits are not persisted on the inventory doc; re-resolve the catalog product so an
       // identity change forks/links a new product while unchanged identity keeps the same one.
-      inventory.setProductId(
-          productService.resolveForRegistration(inventory.getProductId(), inventory, shopId));
+      boolean barcodeCleared =
+          request.getClearFields() != null && request.getClearFields().contains("barcode");
+      inventory.setProductId(productService.resolveForRegistration(
+          inventory.getProductId(), inventory, shopId, barcodeCleared));
+      adoptProductPackaging(inventory, shopId);
+      int newPackFactor = LotPackaging.factor(inventory.getUnitConversions());
+      if (newPackFactor != previousPackFactor) {
+        assertLotStockUntouched(inventory, shopId);
+        rebaseCountsFromDisplay(inventory, newPackFactor);
+      }
 
       // Update updatedAt timestamp
       inventory.setUpdatedAt(Instant.now());
 
       inventory = inventoryRepository.save(inventory);
+      // Saving just wrote the request's prices to the pricing record (InventoryPricingWriteAspect);
+      // re-read it so the response carries the stored prices, not those loaded before the update.
+      inventoryPricingReadHandler.enrich(inventory);
       inventoryVerticalExtensionHandler.persistAfterUpdate(shopId, inventory, request);
       log.info("Successfully updated inventory with ID: {}", inventoryId);
 
@@ -1521,9 +1655,52 @@ public class InventoryService {
     } catch (DataAccessException e) {
       log.error("Database error while updating inventory: {}", e.getMessage(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Error updating inventory");
+    } catch (BaseException e) {
+      // e.g. ACCESS_DENIED from a rate edit without the grant: keep its code, not a 500.
+      log.warn("Update inventory failed: {}", e.getMessage());
+      throw e;
     } catch (Exception e) {
       log.error("Unexpected error while updating inventory: {}", e.getMessage(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
+    }
+  }
+
+  /**
+   * Nulls the fields named in clearFields (validated by InventoryValidator). Identity fields then
+   * re-resolve the catalog product like any other identity edit; pricing fields are cleared in the
+   * pricing record by InventoryPricingWriteHandler and nulled here for the response.
+   */
+  private void applyClearFields(Inventory inventory, java.util.Set<String> clearFields) {
+    if (clearFields == null) {
+      return;
+    }
+    for (String field : clearFields) {
+      switch (field) {
+        case "barcode" -> inventory.setBarcode(null);
+        case "description" -> inventory.setDescription(null);
+        case "companyName" -> inventory.setCompanyName(null);
+        case "location" -> inventory.setLocation(null);
+        case "hsn" -> inventory.setHsn(null);
+        case "discountApplicable" -> inventory.setDiscountApplicable(null);
+        case "thresholdCount" -> inventory.setThresholdCount(null);
+        case PricingClearFields.SALE_ADDITIONAL_DISCOUNT -> inventory.setSaleAdditionalDiscount(null);
+        case PricingClearFields.PURCHASE_ADDITIONAL_DISCOUNT ->
+            inventory.setPurchaseAdditionalDiscount(null);
+        case PricingClearFields.SALE_SCHEME -> {
+          inventory.setSchemeType(null);
+          inventory.setScheme(null);
+          inventory.setSchemePayFor(null);
+          inventory.setSchemeFree(null);
+          inventory.setSchemePercentage(null);
+        }
+        case PricingClearFields.PURCHASE_SCHEME -> {
+          inventory.setPurchaseSchemeType(null);
+          inventory.setPurchaseSchemePayFor(null);
+          inventory.setPurchaseSchemeFree(null);
+          inventory.setPurchaseSchemePercentage(null);
+        }
+        default -> { /* refused by InventoryValidator */ }
+      }
     }
   }
 
@@ -1574,7 +1751,13 @@ public class InventoryService {
       return;
     }
     Map<String, Integer> reservedByLot =
-        quotationService.quotedBaseQuantitiesByLot(shopId, null);
+        quotationService.quotedBaseQuantitiesForLots(
+            shopId,
+            null,
+            summaries.stream()
+                .filter(s -> s != null && StringUtils.hasText(s.getId()))
+                .map(InventorySummaryDto::getId)
+                .toList());
     for (InventorySummaryDto summary : summaries) {
       if (summary == null || !StringUtils.hasText(summary.getId())) {
         continue;
@@ -1703,6 +1886,50 @@ public class InventoryService {
         .multiply(BigDecimal.valueOf(factor))
         .setScale(0, RoundingMode.HALF_UP)
         .intValue();
+  }
+
+  /**
+   * Make the lot's packaging match its catalog product, since every read hydrates packaging from
+   * the product. Identity matching includes the pack factor, so a mismatch is not expected.
+   */
+  private void adoptProductPackaging(Inventory inventory, String shopId) {
+    productService.findInShop(shopId, inventory.getProductId()).ifPresent(product -> {
+      if (LotPackaging.factor(product.getUnitConversions())
+          != LotPackaging.factor(inventory.getUnitConversions())) {
+        log.warn(
+            "Lot packaging {} differs from product {} packaging {} in shop {}; using the product's",
+            LotPackaging.describe(inventory.getBaseUnit(), inventory.getUnitConversions()),
+            product.getId(),
+            LotPackaging.describe(product.getBaseUnit(), product.getUnitConversions()),
+            shopId);
+      }
+      inventory.setBaseUnit(product.getBaseUnit());
+      inventory.setUnitConversions(product.getUnitConversions());
+    });
+  }
+
+  /**
+   * Sale, refund and return lines store base quantities, so a lot's base counts can only be
+   * re-derived while nothing references them.
+   */
+  private void assertLotStockUntouched(Inventory inventory, String shopId) {
+    int sold = inventory.getSoldBaseCount() != null ? inventory.getSoldBaseCount() : 0;
+    boolean moved = sold > 0
+        || !java.util.Objects.equals(inventory.getCurrentBaseCount(), inventory.getReceivedBaseCount());
+    int reserved = quotationService
+        .quotedBaseQuantitiesForLots(shopId, null, List.of(inventory.getId()))
+        .getOrDefault(inventory.getId(), 0);
+    if (moved || reserved > 0) {
+      throw new ValidationException(
+          "Packaging can't be changed on a lot that already has sales, returns or open quotations;"
+              + " register the stock as a new lot instead");
+    }
+  }
+
+  private void rebaseCountsFromDisplay(Inventory inventory, int packFactor) {
+    inventory.setReceivedBaseCount(LotPackaging.toBase(inventory.getReceivedCount(), packFactor));
+    inventory.setCurrentBaseCount(LotPackaging.toBase(inventory.getCurrentCount(), packFactor));
+    inventory.setSoldBaseCount(LotPackaging.toBase(inventory.getSoldCount(), packFactor));
   }
 
   private int toBaseQuantityFromDisplay(int displayQuantity, Inventory inventory) {

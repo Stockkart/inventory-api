@@ -1,6 +1,6 @@
 package com.inventory.accounting.service;
 
-import static com.inventory.accounting.domain.model.SystemAccountCode.*;
+import static com.inventory.accounting.api.SystemAccountCode.*;
 
 import com.inventory.accounting.domain.model.Account;
 import com.inventory.accounting.domain.model.AccountType;
@@ -36,7 +36,7 @@ public class ChartOfAccountsSeeder {
    * On {@link #seedShop(String)} we drop these for any shop that has no ledger activity against
    * them so legacy shops stop seeing dangling rows in the trial balance.
    */
-  private static final Set<String> RETIRED_CODES = Set.of(INPUT_IGST, OUTPUT_IGST);
+  private static final Set<String> RETIRED_CODES = Set.of();
 
   /** Templates for the canonical system accounts seeded on first call per shop. */
   private static final List<Template> TEMPLATES =
@@ -47,17 +47,24 @@ public class ChartOfAccountsSeeder {
           t(CARD_CLEARING, "Card / Gateway Clearing", AccountType.ASSET, NormalBalance.DEBIT, null),
           t(UPI_CLEARING, "UPI Clearing", AccountType.ASSET, NormalBalance.DEBIT, null),
           t(SUNDRY_DEBTORS, "Sundry Debtors", AccountType.ASSET, NormalBalance.DEBIT, null),
+          // HR: advances, salary payable and salary expense. Existing shops get them on their
+          // next posting or accounting read, because seeding adds every missing code (R11.6).
+          t(STAFF_ADVANCES, "Staff Advances", AccountType.ASSET, NormalBalance.DEBIT, null),
           t(INVENTORY, "Inventory (Stock-in-Trade)", AccountType.ASSET, NormalBalance.DEBIT, null),
           t(INPUT_CGST, "Input CGST", AccountType.ASSET, NormalBalance.DEBIT, null),
           t(INPUT_SGST, "Input SGST", AccountType.ASSET, NormalBalance.DEBIT, null),
-          // IGST (interstate) accounts are intentionally not seeded — interstate posting will be
-          // wired in once invoices capture a place-of-supply marker. The constants live in
-          // SystemAccountCode so we can re-introduce these rows without a migration.
+          // Interstate supplies are taxed under IGST alone, and a sale now records which it was,
+          // so these are seeded again. They were retired while nothing could post to them; a
+          // shop that trades across a state border needs somewhere for that tax to sit, or the
+          // ledger states a liability under heads the return does not declare.
+          t(INPUT_IGST, "Input IGST", AccountType.ASSET, NormalBalance.DEBIT, null),
           // Liabilities
           t(SUNDRY_CREDITORS, "Sundry Creditors", AccountType.LIABILITY, NormalBalance.CREDIT, null),
           t(OUTPUT_CGST, "Output CGST", AccountType.LIABILITY, NormalBalance.CREDIT, null),
           t(OUTPUT_SGST, "Output SGST", AccountType.LIABILITY, NormalBalance.CREDIT, null),
+          t(OUTPUT_IGST, "Output IGST", AccountType.LIABILITY, NormalBalance.CREDIT, null),
           t(ROUND_OFF_PAYABLE, "Round-off Payable", AccountType.LIABILITY, NormalBalance.CREDIT, null),
+          t(SALARY_PAYABLE, "Salary Payable", AccountType.LIABILITY, NormalBalance.CREDIT, null),
           // Equity
           t(OWNERS_CAPITAL, "Owner's Capital", AccountType.EQUITY, NormalBalance.CREDIT, null),
           t(RETAINED_EARNINGS, "Retained Earnings", AccountType.EQUITY, NormalBalance.CREDIT, null),
@@ -78,6 +85,7 @@ public class ChartOfAccountsSeeder {
               AccountType.EXPENSE,
               NormalBalance.DEBIT,
               null),
+          t(SALARY_EXPENSE, "Salaries and Wages", AccountType.EXPENSE, NormalBalance.DEBIT, null),
           t(OTHER_OPERATING_EXPENSES,
               "Other Operating Expenses",
               AccountType.EXPENSE,
@@ -86,13 +94,30 @@ public class ChartOfAccountsSeeder {
 
   /** Insert any missing system accounts for {@code shopId}. Returns the count actually inserted. */
   public int seedShop(String shopId) {
+    return seed(shopId).inserted();
+  }
+
+  /**
+   * Same as {@link #seedShop(String)}, returning the shop's chart of accounts as it stands
+   * afterwards (existing minus pruned, plus inserted), so a caller that needs the accounts does
+   * not read them again.
+   */
+  public List<Account> seedShopAndList(String shopId) {
+    return seed(shopId).accounts();
+  }
+
+  private SeedResult seed(String shopId) {
     if (shopId == null || shopId.isBlank()) {
       throw new IllegalArgumentException("shopId is required");
     }
     List<Account> currentAccounts = accountRepository.findByShopIdOrderByCodeAsc(shopId);
-    pruneRetiredAccounts(shopId, currentAccounts);
+    Set<String> prunedIds = pruneRetiredAccounts(shopId, currentAccounts);
+    List<Account> accounts = new ArrayList<>(currentAccounts.size() + TEMPLATES.size());
     Set<String> existing = new HashSet<>();
     for (Account a : currentAccounts) {
+      if (!prunedIds.contains(a.getId())) {
+        accounts.add(a);
+      }
       if (a.getCode() != null && !RETIRED_CODES.contains(a.getCode())) {
         existing.add(a.getCode());
       }
@@ -116,12 +141,16 @@ public class ChartOfAccountsSeeder {
       }
     }
     if (toInsert.isEmpty()) {
-      return 0;
+      return new SeedResult(0, accounts);
     }
-    accountRepository.saveAll(toInsert);
+    for (Account saved : accountRepository.saveAll(toInsert)) {
+      accounts.add(saved);
+    }
     log.info("Seeded {} chart-of-accounts entries for shop {}", toInsert.size(), shopId);
-    return toInsert.size();
+    return new SeedResult(toInsert.size(), accounts);
   }
+
+  private record SeedResult(int inserted, List<Account> accounts) {}
 
   /** Read-only view of which {@code code} values are part of the seeded canonical CoA. */
   public Set<String> canonicalCodes() {
@@ -139,8 +168,11 @@ public class ChartOfAccountsSeeder {
    * Deletes any retired-code account that has no ledger activity. Retains the account when there
    * are still ledger rows pointing at it so we never break referential integrity — the caller
    * (typically the admin "rebuild books" flow) should re-post entries to drop those rows first.
+   *
+   * @return ids of the accounts deleted
    */
-  private void pruneRetiredAccounts(String shopId, List<Account> currentAccounts) {
+  private Set<String> pruneRetiredAccounts(String shopId, List<Account> currentAccounts) {
+    Set<String> pruned = new HashSet<>();
     for (Account a : currentAccounts) {
       if (a.getCode() == null || !RETIRED_CODES.contains(a.getCode())) continue;
       boolean hasLedger =
@@ -155,8 +187,10 @@ public class ChartOfAccountsSeeder {
         continue;
       }
       accountRepository.delete(a);
+      pruned.add(a.getId());
       log.info("Pruned retired account {} ({}) for shop {}", a.getCode(), a.getName(), shopId);
     }
+    return pruned;
   }
 
   private static Template t(
