@@ -71,6 +71,7 @@ class AuthenticationInterceptorBoundaryTest {
       RbacModuleInterceptor.class,
       PlanExpiryInterceptor.class,
       EntitlementInterceptor.class,
+      AdminAuthenticationInterceptor.class,
       GlobalExceptionHandler.class,
       ApiErrorMapperImpl.class,
       AuthController.class,
@@ -106,6 +107,7 @@ class AuthenticationInterceptorBoundaryTest {
   // the approval audit row
   @MockBean private com.inventory.common.audit.AuditService auditService;
   @MockBean private com.inventory.plan.api.Entitlements entitlements;
+  @MockBean private com.inventory.user.api.AdminSessions adminSessions;
 
   private static UserAccount account(String userId, UserRole role, String shopId) {
     UserAccount a = new UserAccount();
