@@ -58,6 +58,7 @@ class AddOnOnlyFulfilmentTest {
   @Mock private EntitlementService entitlementService;
   @Mock private AddOnCatalogueService catalogue;
   @Mock private MongoTemplate mongoTemplate;
+  @Mock private com.inventory.plan.domain.repository.ShopAddOnRepository shopAddOnRepository;
 
   @InjectMocks private ShopAddOnService shopAddOnService;
   @InjectMocks private PlanGrantStep planGrantStep;
@@ -67,6 +68,8 @@ class AddOnOnlyFulfilmentTest {
   void wire() {
     ReflectionTestUtils.setField(addOnGrantStep, "shopAddOnService", shopAddOnService);
     addOnGrantStep.clock = Clock.fixed(NOW, ZoneOffset.UTC);
+    // the shop still has the paid plan the add-ons were priced against
+    lenient().when(entitlementService.paidTerm("shop-1")).thenReturn(Optional.of(new PaidTerm("plan-pro", TERM_END)));
   }
 
   @Test
@@ -103,8 +106,6 @@ class AddOnOnlyFulfilmentTest {
     assertThat(credits.getExpiresAt()).isNull();
     assertThat(credits.getRemainingCredits()).isEqualTo(500);
     verify(planTransactionRepository, never()).findFirstByPaymentOrderId(any());
-    // The term priced at checkout, not whatever the subscription says at fulfilment.
-    verify(entitlementService, never()).paidTerm(any());
   }
 
   @Test
@@ -137,6 +138,47 @@ class AddOnOnlyFulfilmentTest {
 
     order.setTermEndsAt(null);
     assertThatThrownBy(() -> addOnGrantStep.apply(order)).isInstanceOf(OrderNotFulfillableException.class);
+  }
+
+  @Test
+  void annualAddOnsPaidAfterThePlanWasRefundedParkTheOrder() {
+    when(catalogue.byCode(anyCollection())).thenReturn(Map.of(
+        "MARKETING_MODULE", addOn("MARKETING_MODULE", AddOnBillingType.ANNUAL, AddOnGrantType.FEATURE, 1),
+        "OCR_TOPUP_500", addOn("OCR_TOPUP_500", AddOnBillingType.ONE_TIME, AddOnGrantType.OCR_CREDITS, 500)));
+    when(entitlementService.paidTerm("shop-1")).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> addOnGrantStep.apply(addOnOnlyOrder()))
+        .isInstanceOf(OrderNotFulfillableException.class).hasMessageContaining("paid plan");
+    verify(mongoTemplate, never()).insert(any(ShopAddOn.class));
+  }
+
+  @Test
+  void aNonStackableAddOnTheShopGotFromAnotherOrderParksTheOrder() {
+    when(catalogue.byCode(anyCollection())).thenReturn(Map.of(
+        "MARKETING_MODULE", addOn("MARKETING_MODULE", AddOnBillingType.ANNUAL, AddOnGrantType.FEATURE, 1),
+        "OCR_TOPUP_500", addOn("OCR_TOPUP_500", AddOnBillingType.ONE_TIME, AddOnGrantType.OCR_CREDITS, 500)));
+    ShopAddOn other = ShopAddOn.builder().shopId("shop-1").addOnCode("MARKETING_MODULE")
+        .grantType(AddOnGrantType.FEATURE).sourceOrderId("order-other").expiresAt(TERM_END).build();
+    when(shopAddOnRepository.findByShopId("shop-1")).thenReturn(List.of(other));
+
+    assertThatThrownBy(() -> addOnGrantStep.apply(addOnOnlyOrder()))
+        .isInstanceOf(OrderNotFulfillableException.class).hasMessageContaining("MARKETING_MODULE");
+    verify(mongoTemplate, never()).insert(any(ShopAddOn.class));
+  }
+
+  @Test
+  void aRetryDoesNotCountTheOrdersOwnGrant() {
+    when(catalogue.byCode(anyCollection())).thenReturn(Map.of(
+        "MARKETING_MODULE", addOn("MARKETING_MODULE", AddOnBillingType.ANNUAL, AddOnGrantType.FEATURE, 1),
+        "OCR_TOPUP_500", addOn("OCR_TOPUP_500", AddOnBillingType.ONE_TIME, AddOnGrantType.OCR_CREDITS, 500)));
+    PlanPaymentOrder order = addOnOnlyOrder();
+    ShopAddOn own = ShopAddOn.builder().shopId("shop-1").addOnCode("MARKETING_MODULE")
+        .grantType(AddOnGrantType.FEATURE).sourceOrderId(order.getId()).expiresAt(TERM_END).build();
+    when(shopAddOnRepository.findByShopId("shop-1")).thenReturn(List.of(own));
+
+    addOnGrantStep.apply(order);
+
+    verify(mongoTemplate, times(2)).insert(any(ShopAddOn.class));
   }
 
   @Test

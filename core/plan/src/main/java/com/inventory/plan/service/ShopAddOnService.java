@@ -10,10 +10,12 @@ import com.inventory.plan.domain.model.ShopAddOnSource;
 import com.inventory.plan.domain.repository.ShopAddOnRepository;
 import com.inventory.plan.mapper.AddOnMapper;
 import com.inventory.plan.rest.dto.response.ShopAddOnResponse;
+import com.inventory.plan.utils.AddOnEligibility;
 import com.inventory.plan.utils.constants.PricingConstants;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Comparator;
+import java.util.Optional;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
@@ -101,6 +103,30 @@ public class ShopAddOnService {
    * Whether any add-on the order grants ends with a term (annual, not OCR credits or one-time), so
    * granting it needs a term end still in the future.
    */
+  /**
+   * For an add-on-only order: the first non-stackable add-on on it that the shop already holds from
+   * another order (bought twice in parallel, or granted by an admin since checkout), or empty.
+   */
+  public Optional<String> alreadyHeldOnce(PlanPaymentOrder order, Instant now) {
+    List<OrderLine> lines = grantedLines(order).stream()
+        .filter(line -> PricingConstants.ITEM_TYPE_ADDON.equals(line.getType()))
+        .toList();
+    if (lines.isEmpty()) {
+      return Optional.empty();
+    }
+    java.util.Set<String> held = new java.util.HashSet<>();
+    for (ShopAddOn addOn : live(order.getShopId(), now)) {
+      if (!order.getId().equals(addOn.getSourceOrderId()) && addOn.getAddOnCode() != null) {
+        held.add(addOn.getAddOnCode());
+      }
+    }
+    Map<String, AddOn> addOns = catalogue.byCode(lines.stream().map(OrderLine::getCode).toList());
+    return lines.stream().map(line -> addOns.get(line.getCode()))
+        .filter(addOn -> addOn != null && AddOnEligibility.isHeldOnce(addOn, held))
+        .map(AddOn::getCode)
+        .findFirst();
+  }
+
   public boolean needsTermEnd(PlanPaymentOrder order) {
     List<OrderLine> lines = grantedLines(order);
     if (lines.isEmpty()) {
