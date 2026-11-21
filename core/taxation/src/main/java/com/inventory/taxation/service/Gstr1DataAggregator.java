@@ -20,6 +20,7 @@ import com.inventory.taxation.domain.gstr1.Gstr1ReportContext;
 import com.inventory.common.util.GstStateCode;
 import com.inventory.user.domain.model.Customer;
 import com.inventory.user.domain.repository.CustomerRepository;
+import com.inventory.taxation.utils.GstPeriods;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -75,10 +76,9 @@ public class Gstr1DataAggregator {
       throw new IllegalArgumentException("Invalid period, use YYYY-MM: " + period);
     }
 
-    Instant rangeStart = LocalDate.of(year, month, 1).atStartOfDay(ZoneId.systemDefault()).toInstant();
+    Instant rangeStart = GstPeriods.monthStart(year, month);
     // Exclusive: the first instant of the next month is not part of this one.
-    Instant rangeEnd = LocalDate.of(year, month, 1).plusMonths(1)
-        .atStartOfDay(ZoneId.systemDefault()).toInstant();
+    Instant rangeEnd = GstPeriods.monthEnd(year, month);
 
     // Completed sales invoiced in the period (soldAt); updatedAt only for legacy sales without one.
     List<Purchase> purchases = purchaseRepository.findCompletedPurchasesInPeriod(
@@ -188,9 +188,9 @@ public class Gstr1DataAggregator {
       BigDecimal invValue = purchase.getGrandTotal() != null ? purchase.getGrandTotal() : BigDecimal.ZERO;
 
       LocalDate invDate = purchase.getSoldAt() != null
-          ? LocalDateTime.ofInstant(purchase.getSoldAt(), ZoneId.systemDefault()).toLocalDate()
+          ? GstPeriods.dateOf(purchase.getSoldAt())
           : null;
-      if (invDate == null) invDate = LocalDate.now();
+      if (invDate == null) invDate = LocalDate.now(GstPeriods.ZONE);
 
       String invNo = purchase.getInvoiceNo() != null ? purchase.getInvoiceNo() : ("INV-" + purchase.getId());
 
@@ -268,8 +268,8 @@ public class Gstr1DataAggregator {
 
       BigDecimal noteValue = refund.getRefundAmount() != null ? refund.getRefundAmount() : BigDecimal.ZERO;
       LocalDate noteDate = refund.getCreatedAt() != null
-          ? LocalDateTime.ofInstant(refund.getCreatedAt(), ZoneId.systemDefault()).toLocalDate()
-          : LocalDate.now();
+          ? GstPeriods.dateOf(refund.getCreatedAt())
+          : LocalDate.now(GstPeriods.ZONE);
       String noteNumber = StringUtils.hasText(refund.getCreditNoteNo())
           ? refund.getCreditNoteNo()
           : ("CN-" + refund.getId());
