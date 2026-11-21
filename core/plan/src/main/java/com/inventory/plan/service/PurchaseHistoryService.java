@@ -132,6 +132,7 @@ public class PurchaseHistoryService {
       }
     }
     applyRefund(r, order);
+    applyPaymentSplit(r);
     return r;
   }
 
@@ -142,7 +143,23 @@ public class PurchaseHistoryService {
     r.setCreatedAt(order.getPaidAt() != null ? order.getPaidAt() : order.getCreatedAt());
     r.setSortAt(r.getCreatedAt());
     applyRefund(r, order);
+    applyPaymentSplit(r);
     return r;
+  }
+
+  /**
+   * How the row was paid: {@code amount} is what the gateway charged and {@code walletCredit} what
+   * the wallet covered, so the full price is their sum. Rows with no amount (assigned) get none.
+   */
+  private static void applyPaymentSplit(PlanTransactionResponse r) {
+    if (r.getAmount() == null) {
+      return;
+    }
+    BigDecimal wallet = r.getWalletCredit() != null && r.getWalletCredit().signum() > 0
+        ? r.getWalletCredit() : BigDecimal.ZERO;
+    r.setWalletAmount(wallet);
+    r.setGatewayAmount(r.getAmount());
+    r.setTotalAmount(r.getAmount().add(wallet));
   }
 
   /** Money returned on a refunded order: to the payment method, and wallet credit given back. */

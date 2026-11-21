@@ -17,6 +17,7 @@ public class PlanTransactionResponse {
   private String shopId;
   private String planId;
   private String planName;
+  /** Paid through the payment gateway; see {@code totalAmount} for the full price. */
   private BigDecimal amount;
   private Integer durationMonths;
   private String paymentMethod;
@@ -35,6 +36,12 @@ public class PlanTransactionResponse {
   private BigDecimal subtotal;
   private BigDecimal discountTotal;
   private BigDecimal walletCredit;
+  /** Full price of the purchase before wallet credit: {@code walletAmount} + {@code gatewayAmount}. */
+  private BigDecimal totalAmount;
+  /** Part paid from the shop wallet; 0 when none. */
+  private BigDecimal walletAmount;
+  /** Part paid through the payment gateway (Razorpay); same as {@code amount}. */
+  private BigDecimal gatewayAmount;
   private Instant termStartsAt;
   private Instant termEndsAt;
   /** True when the term was derived from createdAt and the duration, not granted. */

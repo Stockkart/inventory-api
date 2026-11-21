@@ -274,7 +274,12 @@ plan transactions and one for its paid or refunded orders, joined in memory on `
 - `ASSIGNED`: set by an admin or the assign endpoint with no verified charge; amount hidden (null).
 
 Rows carry the line breakdown (`PurchaseLineResponse`), subtotal, discount, wallet credit and the paid
-amount, and refund figures:
+amount, the payment split, and refund figures:
+
+- `totalAmount` is the full price before wallet credit: `walletAmount` + `gatewayAmount`.
+- `walletAmount` is the part paid from the shop wallet (the order's `walletCredit`, 0 when none).
+- `gatewayAmount` is the part paid through Razorpay; it equals `amount` (kept for older clients),
+  so a wallet-paid order has `amount` 0. All three are null where `amount` is (`ASSIGNED`).
 
 - `refundedAt` is the order's `refundedAt`, else the transaction's.
 - `refundedToPaymentMethod` is the order's `refundedAmount` whenever it is above 0, including a

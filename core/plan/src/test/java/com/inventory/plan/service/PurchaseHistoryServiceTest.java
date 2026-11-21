@@ -310,4 +310,48 @@ class PurchaseHistoryServiceTest {
     assertThat(r.getItems()).hasSize(1);
     assertThat(r.getDiscountTotal()).isEqualByComparingTo("150.00");
   }
+
+  @Test
+  void walletPaidOrderShowsFullAmountFromWallet() {
+    PlanPaymentOrder o = order("o1", "p1", "FULFILLED", true, "0.00");
+    o.setWalletCredit(new BigDecimal("500.00"));
+    given(List.of(), List.of(o));
+
+    PlanTransactionResponse r = service.forShop(SHOP).get(0);
+
+    assertThat(r.getAmount()).isEqualByComparingTo("0.00");
+    assertThat(r.getTotalAmount()).isEqualByComparingTo("500.00");
+    assertThat(r.getWalletAmount()).isEqualByComparingTo("500.00");
+    assertThat(r.getGatewayAmount()).isEqualByComparingTo("0.00");
+  }
+
+  @Test
+  void splitPaymentShowsWalletAndGatewayParts() {
+    PlanTransaction t = tx("t1", "p1", T1, "o1");
+    t.setItems(List.of(line()));
+    t.setWalletCredit(new BigDecimal("300.00"));
+    t.setAmount(new BigDecimal("200.00"));
+    given(List.of(t), List.of(order("o1", "p1", "FULFILLED", false, "200.00")));
+
+    PlanTransactionResponse r = service.forShop(SHOP).get(0);
+
+    assertThat(r.getTotalAmount()).isEqualByComparingTo("500.00");
+    assertThat(r.getWalletAmount()).isEqualByComparingTo("300.00");
+    assertThat(r.getGatewayAmount()).isEqualByComparingTo("200.00");
+  }
+
+  @Test
+  void gatewayOnlyRowHasZeroWalletPartAndAssignedRowHasNone() {
+    given(List.of(tx("t1", "p1", T1, null)), List.of());
+    PlanTransactionResponse snapshotless = service.forShop(SHOP).get(0);
+    assertThat(snapshotless.getTotalAmount()).isNull();
+
+    PlanPaymentOrder o = order("o2", "p1", "PAID", false, "4999.00");
+    given(List.of(), List.of(o));
+    PlanTransactionResponse r = service.forShop(SHOP).get(0);
+
+    assertThat(r.getTotalAmount()).isEqualByComparingTo("4999.00");
+    assertThat(r.getWalletAmount()).isEqualByComparingTo("0");
+    assertThat(r.getGatewayAmount()).isEqualByComparingTo("4999.00");
+  }
 }

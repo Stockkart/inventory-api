@@ -56,6 +56,9 @@ public interface PlanTransactionMapper {
   @Mapping(target = "refundedToPaymentMethod", ignore = true)
   @Mapping(target = "walletCreditReturned", ignore = true)
   @Mapping(target = "sortAt", ignore = true)
+  @Mapping(target = "totalAmount", ignore = true)
+  @Mapping(target = "walletAmount", ignore = true)
+  @Mapping(target = "gatewayAmount", ignore = true)
   PlanTransactionResponse toRow(PlanTransaction tx);
 
   /** A paid order's own fields as a history row (no transaction behind it). */
@@ -66,6 +69,9 @@ public interface PlanTransactionMapper {
   @Mapping(target = "refundedToPaymentMethod", ignore = true)
   @Mapping(target = "walletCreditReturned", ignore = true)
   @Mapping(target = "sortAt", ignore = true)
+  @Mapping(target = "totalAmount", ignore = true)
+  @Mapping(target = "walletAmount", ignore = true)
+  @Mapping(target = "gatewayAmount", ignore = true)
   PlanTransactionResponse toRow(PlanPaymentOrder order);
 
   /** The transaction of an admin plan grant: no order, no payment, amount zero. */
