@@ -26,13 +26,16 @@ import org.springframework.data.mongodb.core.aggregation.ComparisonOperators;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
  * Takes a voucher slot when checkout creates the order, so a capped voucher can never be charged at
  * its discounted price and then found exhausted after payment (§27.3).
  */
+/** Runs before the wallet handler ({@code @Order(20)}): vouchers are priced before wallet credit. */
 @Component
+@Order(10)
 @Slf4j
 public class VoucherReservationHandler implements OrderReservationHandler {
 
