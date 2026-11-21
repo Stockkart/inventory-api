@@ -59,5 +59,10 @@ public interface ShopRepository extends MongoRepository<Shop, String> {
   boolean existsByInitialAdminEmail(String email);
 
   Optional<Shop> findByReferralCode(String referralCode);
+
+  /** Only the fields referral screens show, for a batch of shops. */
+  @org.springframework.data.mongodb.repository.Query(value = "{ '_id': { '$in': ?0 } }",
+      fields = "{ 'name': 1, 'referralCode': 1, 'contactEmail': 1, 'contactPhone': 1 }")
+  List<Shop> findReferralFieldsByShopIdIn(java.util.Collection<String> shopIds);
 }
 

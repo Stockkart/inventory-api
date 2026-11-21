@@ -15,6 +15,8 @@ import org.springframework.stereotype.Component;
 public class ReferralHoldReleaseJob {
 
   static final int BATCH = 200;
+  /** Pages per run at most, so one run cannot loop forever when every credit keeps failing. */
+  static final int MAX_PAGES = 50;
 
   @Autowired
   private ReferralRewardService rewardService;
@@ -30,7 +32,14 @@ public class ReferralHoldReleaseJob {
       return;
     }
     try {
-      int credited = rewardService.releaseDue(BATCH);
+      int credited = 0;
+      for (int page = 0; page < MAX_PAGES; page++) {
+        ReferralRewardService.ReleaseRun run = rewardService.releaseDuePage(BATCH);
+        credited += run.credited();
+        if (run.seen() < BATCH) {
+          break;
+        }
+      }
       if (credited > 0) {
         log.info("Credited {} referral reward(s)", credited);
       }

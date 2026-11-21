@@ -8,7 +8,9 @@ import com.inventory.plan.domain.model.ShopCreditSource;
 import com.inventory.plan.domain.repository.ReferralRewardRepository;
 import com.inventory.plan.mapper.ReferralRewardMapper;
 import com.inventory.plan.rest.dto.response.ReferralRewardsResponse;
+import com.inventory.common.tx.MongoTx;
 import com.inventory.plan.api.port.ShopPort;
+import com.inventory.plan.domain.model.ReferralReferrerCounter;
 import com.inventory.plan.service.wallet.WalletService;
 import com.inventory.plan.utils.constants.PricingConstants;
 import java.math.BigDecimal;
@@ -21,7 +23,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -71,6 +72,9 @@ public class ReferralRewardService {
   private ShopPort shopProvider;
 
   @Autowired
+  private MongoTx mongoTx;
+
+  @Autowired
   private ReferralRewardMapper rewardMapper;
 
   @Value("${referral.reward.percent:10}")
@@ -115,13 +119,18 @@ public class ReferralRewardService {
         .createdAt(now)
         .updatedAt(now)
         .build();
-    if (capReached(referrer.get(), now)) {
-      reward.setStatus(ReferralRewardStatus.VOID);
-      reward.setVoidReason(VOID_CAP_REACHED);
-      reward.setVoidedAt(now);
-    }
     try {
-      return Optional.of(rewardRepository.insert(reward));
+      return Optional.of(mongoTx.run(MongoTx.REFERRAL_REWARD, referrer.get(), () -> {
+        // written first, so two rewards for one referrer at once conflict instead of both passing the cap
+        bumpReferrerCounter(referrer.get(), now);
+        ReferralReward toSave = reward.toBuilder().build();
+        if (capReached(referrer.get(), now)) {
+          toSave.setStatus(ReferralRewardStatus.VOID);
+          toSave.setVoidReason(VOID_CAP_REACHED);
+          toSave.setVoidedAt(now);
+        }
+        return rewardRepository.insert(toSave);
+      }));
     } catch (DuplicateKeyException e) {
       return rewardRepository.findByOrderId(order.getId());
     }
@@ -145,6 +154,11 @@ public class ReferralRewardService {
     return configured.max(BigDecimal.ZERO).min(MAX_REWARD_PERCENT);
   }
 
+  private void bumpReferrerCounter(String referrerShopId, Instant now) {
+    mongoTemplate.upsert(new Query(Criteria.where("_id").is(referrerShopId)),
+        new Update().inc("rewardsRecorded", 1).set("updatedAt", now), ReferralReferrerCounter.class);
+  }
+
   private boolean capReached(String referrerShopId, Instant now) {
     long recent = rewardRepository.countByReferrerShopIdAndStatusInAndCreatedAtAfter(
         referrerShopId, COUNTS_TOWARDS_CAP, now.minus(Duration.ofDays(capPeriodDays)));
@@ -156,11 +170,23 @@ public class ReferralRewardService {
    * refund arriving meanwhile sees the claim instead of voiding money already on its way.
    */
   public int releaseDue(int batch) {
+    return releaseDuePage(batch).credited();
+  }
+
+  /** One page of {@link #releaseDue}: how many due rewards it found and how many it credited. */
+  public record ReleaseRun(int seen, int credited) {}
+
+  /**
+   * Credits up to {@code batch} rewards whose hold has ended, plus stale CREDITING claims. Each due
+   * reward leaves the releasable set when claimed, so calling this again picks up the next page.
+   */
+  public ReleaseRun releaseDuePage(int batch) {
     Instant now = clock.instant();
     int credited = 0;
-    for (ReferralReward due : rewardRepository.findByStatusInAndHoldUntilLessThanEqual(
-        RELEASABLE, now, PageRequest.of(0, batch))) {
-      Optional<ReferralReward> claimed = claim(due.getId(), now);
+    List<ReferralReward> due = rewardRepository.findByStatusInAndHoldUntilLessThanEqual(
+        RELEASABLE, now, PageRequest.of(0, batch));
+    for (ReferralReward reward : due) {
+      Optional<ReferralReward> claimed = claim(reward.getId(), now);
       if (claimed.isPresent() && finishCredit(claimed.get())) {
         credited++;
       }
@@ -169,7 +195,7 @@ public class ReferralRewardService {
         ReferralRewardStatus.CREDITING, now.minus(CREDITING_LEASE), PageRequest.of(0, batch))) {
       credited += finishCredit(stuck) ? 1 : 0;
     }
-    return credited;
+    return new ReleaseRun(due.size(), credited);
   }
 
   private Optional<ReferralReward> claim(String rewardId, Instant now) {
@@ -199,11 +225,14 @@ public class ReferralRewardService {
   public ReferralRewardsResponse listForReferrer(String shopId) {
     List<ReferralReward> rewards =
         rewardRepository.findByReferrerShopIdOrderByCreatedAtDesc(shopId, PageRequest.of(0, LIST_LIMIT));
-    Map<String, String> refereeNames = rewards.stream()
+    java.util.Set<String> refereeIds = rewards.stream()
         .map(ReferralReward::getRefereeShopId)
-        .distinct()
-        .collect(Collectors.toMap(Function.identity(),
-            id -> shopProvider.getReferralShop(id).map(ShopPort.ReferralShop::name).orElse("")));
+        .filter(java.util.Objects::nonNull)
+        .collect(Collectors.toSet());
+    Map<String, String> refereeNames = new java.util.HashMap<>();
+    refereeIds.forEach(id -> refereeNames.put(id, ""));
+    shopProvider.referralShops(refereeIds)
+        .forEach(shop -> refereeNames.put(shop.shopId(), shop.name() == null ? "" : shop.name()));
     return rewardMapper.toRewardsResponse(rewards, refereeNames);
   }
 
