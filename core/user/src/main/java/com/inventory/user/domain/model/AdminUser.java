@@ -32,6 +32,12 @@ public class AdminUser {
   private boolean mustChangePassword;
   private int failedLoginCount;
   private Instant lockedUntil;
+  /**
+   * SHA-256 of the one-time token an admin password reset emails to this account; null when no
+   * reset is pending. The token itself is never stored.
+   */
+  private String resetTokenHash;
+  private Instant resetTokenExpiresAt;
   /** Null for accounts created by the startup bootstrap. */
   private String createdByAdminId;
   private Instant createdAt;

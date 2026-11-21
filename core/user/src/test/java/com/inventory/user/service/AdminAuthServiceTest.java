@@ -20,7 +20,12 @@ import com.inventory.user.domain.repository.AdminUserRepository;
 import com.inventory.user.domain.repository.AdminUserWriter;
 import com.inventory.user.rest.dto.request.AdminChangePasswordRequest;
 import com.inventory.user.rest.dto.request.AdminLoginRequest;
+import com.inventory.user.rest.dto.request.AdminResetPasswordRequest;
 import com.inventory.user.rest.dto.response.AdminLoginResponse;
+import com.inventory.user.validation.AdminUserValidator;
+import com.inventory.common.audit.AuditActorType;
+import com.inventory.common.audit.AuditEntry;
+import com.inventory.common.audit.AuditService;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -44,6 +49,7 @@ class AdminAuthServiceTest {
   private static final PasswordEncoder ENCODER = new BCryptPasswordEncoder(4);
   private static final String PASSWORD = "correct-horse-1";
   private static final String HASH = ENCODER.encode(PASSWORD);
+  private static final String IP = "203.0.113.7";
 
   @Mock
   private AdminUserRepository adminUserRepository;
@@ -56,6 +62,15 @@ class AdminAuthServiceTest {
 
   @Spy
   private PasswordEncoder passwordEncoder = ENCODER;
+
+  @Mock
+  private AdminSignInLimiter signInLimiter;
+
+  @Mock
+  private AuditService auditService;
+
+  @Spy
+  private AdminUserValidator adminUserValidator = new AdminUserValidator();
 
   @InjectMocks
   private AdminAuthService service;
@@ -70,7 +85,7 @@ class AdminAuthServiceTest {
     when(adminUserRepository.findByEmail("ops@stockkart.in")).thenReturn(Optional.of(admin()));
     when(sessionRepository.save(any(AdminSession.class))).thenAnswer(i -> i.getArgument(0));
 
-    AdminLoginResponse response = service.login(new AdminLoginRequest(" Ops@StockKart.in ", PASSWORD));
+    AdminLoginResponse response = service.login(new AdminLoginRequest(" Ops@StockKart.in ", PASSWORD), IP);
 
     ArgumentCaptor<AdminSession> saved = ArgumentCaptor.forClass(AdminSession.class);
     verify(sessionRepository).save(saved.capture());
@@ -80,6 +95,11 @@ class AdminAuthServiceTest {
     assertThat(response.getExpiresAt()).isEqualTo(NOW.plus(Duration.ofHours(12)));
     assertThat(response.getAdmin().getEmail()).isEqualTo("ops@stockkart.in");
     verify(adminUserWriter).recordSuccessfulLogin("a1", NOW);
+    ArgumentCaptor<AuditEntry> audit = ArgumentCaptor.forClass(AuditEntry.class);
+    verify(auditService).record(audit.capture());
+    assertThat(audit.getValue().getAction()).isEqualTo("ADMIN_SIGNED_IN");
+    assertThat(audit.getValue().getActorType()).isEqualTo(AuditActorType.ADMIN);
+    assertThat(audit.getValue().getActorUserId()).isEqualTo("a1");
   }
 
   @Test
@@ -87,22 +107,48 @@ class AdminAuthServiceTest {
     when(adminUserRepository.findByEmail("nobody@x.io")).thenReturn(Optional.empty());
     when(adminUserRepository.findByEmail("ops@stockkart.in")).thenReturn(Optional.of(admin()));
 
-    assertThatThrownBy(() -> service.login(new AdminLoginRequest("nobody@x.io", PASSWORD)))
+    assertThatThrownBy(() -> service.login(new AdminLoginRequest("nobody@x.io", PASSWORD), IP))
         .isInstanceOf(AuthenticationException.class)
         .hasMessage(AdminAuthService.BAD_CREDENTIALS);
-    assertThatThrownBy(() -> service.login(new AdminLoginRequest("ops@stockkart.in", "wrong-password")))
+    assertThatThrownBy(() -> service.login(new AdminLoginRequest("ops@stockkart.in", "wrong-password"), IP))
         .isInstanceOf(AuthenticationException.class)
         .hasMessage(AdminAuthService.BAD_CREDENTIALS);
-    verify(adminUserWriter).recordFailedLogin("a1", NOW, 5, Duration.ofMinutes(15));
+    verify(adminUserWriter).recordFailedLogin("a1", NOW, 20, Duration.ofMinutes(15));
+    verify(signInLimiter).recordFailure(IP, "nobody@x.io");
+    verify(signInLimiter).recordFailure(IP, "ops@stockkart.in");
   }
 
   @Test
-  void attemptThatReachesTheLimitReportsTheLock() {
-    when(adminUserRepository.findByEmail("ops@stockkart.in")).thenReturn(Optional.of(admin()));
-    when(adminUserWriter.recordFailedLogin("a1", NOW, 5, Duration.ofMinutes(15))).thenReturn(true);
+  void anUnknownEmailStillCostsAPasswordCheck() {
+    when(adminUserRepository.findByEmail("nobody@x.io")).thenReturn(Optional.empty());
 
-    assertThatThrownBy(() -> service.login(new AdminLoginRequest("ops@stockkart.in", "wrong-password")))
-        .hasMessage(AdminAuthService.LOCKED);
+    assertThatThrownBy(() -> service.login(new AdminLoginRequest("nobody@x.io", PASSWORD), IP))
+        .isInstanceOf(AuthenticationException.class);
+
+    verify(passwordEncoder).matches(eq(PASSWORD), anyString());
+  }
+
+  @Test
+  void aLimitedAddressIsRefusedBeforeAnyLookup() {
+    org.mockito.Mockito.doThrow(new BaseException(ErrorCode.TOO_MANY_REQUESTS, "later"))
+        .when(signInLimiter).checkAllowed(IP, "ops@stockkart.in");
+
+    assertThatThrownBy(() -> service.login(new AdminLoginRequest("ops@stockkart.in", PASSWORD), IP))
+        .isInstanceOf(BaseException.class);
+    verify(adminUserRepository, never()).findByEmail(anyString());
+  }
+
+  @Test
+  void theAttemptThatLocksGivesTheSameMessageAndIsAudited() {
+    when(adminUserRepository.findByEmail("ops@stockkart.in")).thenReturn(Optional.of(admin()));
+    when(adminUserWriter.recordFailedLogin("a1", NOW, 20, Duration.ofMinutes(15))).thenReturn(true);
+
+    assertThatThrownBy(() -> service.login(new AdminLoginRequest("ops@stockkart.in", "wrong-password"), IP))
+        .hasMessage(AdminAuthService.BAD_CREDENTIALS);
+    ArgumentCaptor<AuditEntry> audit = ArgumentCaptor.forClass(AuditEntry.class);
+    verify(auditService).record(audit.capture());
+    assertThat(audit.getValue().getAction()).isEqualTo("ADMIN_LOCKED");
+    assertThat(audit.getValue().getTargetId()).isEqualTo("a1");
   }
 
   @Test
@@ -111,9 +157,9 @@ class AdminAuthServiceTest {
     locked.setLockedUntil(NOW.plusSeconds(60));
     when(adminUserRepository.findByEmail("ops@stockkart.in")).thenReturn(Optional.of(locked));
 
-    assertThatThrownBy(() -> service.login(new AdminLoginRequest("ops@stockkart.in", PASSWORD)))
-        .hasMessage(AdminAuthService.LOCKED);
-    verify(adminUserWriter, never()).recordFailedLogin(anyString(), any(), eq(5), any());
+    assertThatThrownBy(() -> service.login(new AdminLoginRequest("ops@stockkart.in", PASSWORD), IP))
+        .hasMessage(AdminAuthService.BAD_CREDENTIALS);
+    verify(adminUserWriter, never()).recordFailedLogin(anyString(), any(), eq(20), any());
     verify(sessionRepository, never()).save(any());
   }
 
@@ -124,7 +170,7 @@ class AdminAuthServiceTest {
     when(adminUserRepository.findByEmail("ops@stockkart.in")).thenReturn(Optional.of(unlocked));
     when(sessionRepository.save(any(AdminSession.class))).thenAnswer(i -> i.getArgument(0));
 
-    assertThat(service.login(new AdminLoginRequest("ops@stockkart.in", PASSWORD)).getToken()).isNotBlank();
+    assertThat(service.login(new AdminLoginRequest("ops@stockkart.in", PASSWORD), IP).getToken()).isNotBlank();
   }
 
   @Test
@@ -133,10 +179,9 @@ class AdminAuthServiceTest {
     disabled.setActive(false);
     when(adminUserRepository.findByEmail("ops@stockkart.in")).thenReturn(Optional.of(disabled));
 
-    assertThatThrownBy(() -> service.login(new AdminLoginRequest("ops@stockkart.in", PASSWORD)))
+    assertThatThrownBy(() -> service.login(new AdminLoginRequest("ops@stockkart.in", PASSWORD), IP))
         .isInstanceOf(AuthenticationException.class)
-        .extracting(e -> ((BaseException) e).getErrorCode())
-        .isEqualTo(ErrorCode.ACCOUNT_DISABLED);
+        .hasMessage(AdminAuthService.BAD_CREDENTIALS);
     verify(sessionRepository, never()).save(any());
   }
 
@@ -208,6 +253,44 @@ class AdminAuthServiceTest {
     assertThatThrownBy(() -> service.changePassword(auth, new AdminChangePasswordRequest(PASSWORD, PASSWORD)))
         .isInstanceOf(ValidationException.class).hasMessageContaining("different");
     verify(adminUserWriter, never()).setPassword(anyString(), anyString(), eq(false), any());
+  }
+
+  @Test
+  void aResetLinkSetsThePasswordOnceAndSignsEverySessionOut() {
+    AdminUser admin = admin();
+    admin.setResetTokenHash(AdminCredentials.hashToken("reset-tok"));
+    admin.setResetTokenExpiresAt(NOW.plusSeconds(600));
+    when(adminUserRepository.findByResetTokenHash(AdminCredentials.hashToken("reset-tok")))
+        .thenReturn(Optional.of(admin));
+    when(adminUserWriter.completePasswordReset(eq("a1"), eq(AdminCredentials.hashToken("reset-tok")), anyString(),
+        eq(NOW))).thenReturn(true);
+
+    service.completePasswordReset(new AdminResetPasswordRequest("reset-tok", "a-brand-new-password"), IP);
+
+    verify(sessionRepository).deleteByAdminId("a1");
+    ArgumentCaptor<AuditEntry> audit = ArgumentCaptor.forClass(AuditEntry.class);
+    verify(auditService).record(audit.capture());
+    assertThat(audit.getValue().getAction()).isEqualTo("ADMIN_PASSWORD_RESET_COMPLETED");
+    assertThat(audit.getValue().getActorUserId()).isEqualTo("a1");
+  }
+
+  @Test
+  void anExpiredOrSpentResetLinkIsRefused() {
+    AdminUser expired = admin();
+    expired.setResetTokenHash(AdminCredentials.hashToken("old"));
+    expired.setResetTokenExpiresAt(NOW.minusSeconds(1));
+    when(adminUserRepository.findByResetTokenHash(AdminCredentials.hashToken("old"))).thenReturn(Optional.of(expired));
+    AdminUser live = admin();
+    live.setResetTokenExpiresAt(NOW.plusSeconds(600));
+    when(adminUserRepository.findByResetTokenHash(AdminCredentials.hashToken("spent"))).thenReturn(Optional.of(live));
+    when(adminUserWriter.completePasswordReset(eq("a1"), eq(AdminCredentials.hashToken("spent")), anyString(),
+        eq(NOW))).thenReturn(false);
+
+    assertThatThrownBy(() -> service.completePasswordReset(
+        new AdminResetPasswordRequest("old", "a-brand-new-password"), IP)).isInstanceOf(ValidationException.class);
+    assertThatThrownBy(() -> service.completePasswordReset(
+        new AdminResetPasswordRequest("spent", "a-brand-new-password"), IP)).isInstanceOf(ValidationException.class);
+    verify(sessionRepository, never()).deleteByAdminId(anyString());
   }
 
   private static AdminUser admin() {

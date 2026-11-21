@@ -75,7 +75,7 @@ public class CorsConfig implements WebMvcConfigurer {
   public void addInterceptors(InterceptorRegistry registry) {
     registry.addInterceptor(adminAuthenticationInterceptor)
         .addPathPatterns(AdminAuthenticationInterceptor.ADMIN_PATH_PATTERNS)
-        .excludePathPatterns(AdminAuthenticationInterceptor.LOGIN_PATH);
+        .excludePathPatterns(AdminAuthenticationInterceptor.PUBLIC_PATHS);
 
     registry.addInterceptor(authenticationInterceptor)
         .addPathPatterns("/api/**", "/admin/**")

@@ -75,17 +75,27 @@ Optional (for AWS Textract):
 Optional (for the admin app):
 
 StockKart admins are separate from shop users: they live in `admin_users`, sign in at
-`POST /api/v1/admin/auth/login`, and their sessions work only on `/api/v1/admin/**` and
-`/api/v1/shops/admin/**`. Shop-user tokens get 401 on those paths, and admin tokens get 401
-everywhere else.
+`POST /api/v1/admin/auth/login`, and their sessions work only on `/api/v1/admin/**`. Shop-user
+tokens get 401 on those paths, and admin tokens get 401 everywhere else. Shop approval
+(`/api/v1/shops/admin/**`) is not an admin-session path: it needs a shop-app `SUPER_USER` sign-in.
+
+Admin sign-in refuses every failure with one message, and failed attempts are limited per container
+(`admin.sign-in.*` in `application.properties`): 5 per client address and account and 20 per client
+address in 15 minutes, 300 per minute overall (then 429); 20 failures on one account lock it for 15
+minutes. Sign-ins, failures, locks, sign-outs and password changes are written to `audit_entries`.
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `PLATFORM_ADMIN_EMAILS` | Comma-separated emails; each one without an admin account gets one on startup | `ops@stockkart.in` |
-| `PLATFORM_ADMIN_BOOTSTRAP_PASSWORD` | Starting password for those accounts (10–128 characters); changed on first sign-in. Without it no account is created | |
-| `ADMIN_CLIENT_URL` | Admin app origin; the only origin CORS allows on admin paths | `https://admin.stockkart.in` |
+| `PLATFORM_ADMIN_EMAILS` | Comma-separated emails; each one without an admin account gets one on startup, with its own one-time password written once to the startup log (WARN); it must be changed on first sign-in | `ops@stockkart.in` |
+| `ADMIN_CLIENT_URL` | Admin app origin; the only origin CORS allows on admin paths, and the base of password-reset links (`<url>/reset-password?token=…`) | `https://admin.stockkart.in` |
 
-Further admins are added from the admin app, which issues a one-time temporary password.
+Further admins are added from the admin app, which shows the new admin's one-time password once.
+
+| Endpoint | Notes |
+|---|---|
+| `POST /api/v1/admin/auth/login` | Public. `{ email, password }` → `{ token, expiresAt, admin }` |
+| `POST /api/v1/admin/auth/reset-password` | Public. `{ token, newPassword }` from the emailed reset link (single use, 30 minutes) → the admin; signs out every session |
+| `POST /api/v1/admin/admins/{id}/reset-password` | Another admin's account only; body `{ reason }`. Signs the account out, its old password stops working, and a reset link is emailed to the account's address. Returns the admin (no password). Needs `ADMIN_CLIENT_URL` |
 
 ### 2. Run with Docker Compose
 
