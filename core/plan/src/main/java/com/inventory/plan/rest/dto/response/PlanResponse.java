@@ -23,4 +23,6 @@ public class PlanResponse {
   private boolean unlimited;
   private String linkedId;
   private String bestFor;
+  /** Length of the free trial a new shop gets, in days ({@code plan.trial-days}). */
+  private Integer trialDays;
 }
