@@ -488,7 +488,11 @@ public abstract class PurchaseMapper {
         response::setCustomerPhone,
         response::setCustomerAddress,
         response::setCustomerGstin,
-        response::setCustomerDlNo,
+        customer -> {
+          response.setCustomerDlNo(customer.getDlNo());
+          response.setCustomerDlExpiry(customer.getDlExpiry());
+          response.setCustomerDlExpired(customer.dlExpiredToday());
+        },
         response::setCustomerPan);
   }
 
@@ -631,7 +635,7 @@ public abstract class PurchaseMapper {
       java.util.function.Consumer<String> setPhone,
       java.util.function.Consumer<String> setAddress,
       java.util.function.Consumer<String> setGstin,
-      java.util.function.Consumer<String> setDlNo,
+      java.util.function.Consumer<Customer> setLicence,
       java.util.function.Consumer<String> setPan) {
     String overlay = PurchaseCustomerRequests.sanitizedDisplayName(purchase.getCustomerName());
     if (purchase.getCustomerId() != null && !purchase.getCustomerId().trim().isEmpty()) {
@@ -650,8 +654,8 @@ public abstract class PurchaseMapper {
         if (setGstin != null) {
           setGstin.accept(customer.getGstin());
         }
-        if (setDlNo != null) {
-          setDlNo.accept(customer.getDlNo());
+        if (setLicence != null) {
+          setLicence.accept(customer);
         }
         if (setPan != null) {
           setPan.accept(customer.getPan());

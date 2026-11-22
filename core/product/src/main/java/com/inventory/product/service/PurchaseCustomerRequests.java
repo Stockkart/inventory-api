@@ -22,6 +22,7 @@ public final class PurchaseCustomerRequests {
     create.setEmail(request.getCustomerEmail());
     create.setGstin(request.getCustomerGstin());
     create.setDlNo(request.getCustomerDlNo());
+    create.setDlExpiry(request.getCustomerDlExpiry());
     create.setPan(request.getCustomerPan());
     create.setPartyType(parsePartyType(request.getCustomerPartyType()));
     return create;

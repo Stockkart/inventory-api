@@ -8,6 +8,7 @@ import com.inventory.user.domain.model.enums.CustomerPartyType;
 import com.inventory.user.rest.dto.request.CreateCustomerRequest;
 import com.inventory.user.rest.dto.request.UpdateCustomerRequest;
 import com.inventory.user.rest.dto.response.CustomerDto;
+import com.inventory.user.utils.DrugLicence;
 import com.inventory.user.utils.TextUtils;
 import org.mapstruct.AfterMapping;
 import org.mapstruct.Mapper;
@@ -23,6 +24,7 @@ public interface CustomerMapper {
 
   @Mapping(target = "customerId", source = "id")
   @Mapping(target = "panNo", ignore = true)
+  @Mapping(target = "dlExpired", ignore = true)
   CustomerDto toDto(Customer customer);
 
   @AfterMapping
@@ -37,6 +39,7 @@ public interface CustomerMapper {
     if (dto.getIsGeneral() == null) {
       dto.setIsGeneral(Boolean.FALSE);
     }
+    dto.setDlExpired(customer.dlExpiredToday());
   }
 
   default Customer toCustomer(CreateCustomerRequest request) {
@@ -51,6 +54,7 @@ public interface CustomerMapper {
     c.setEmail(TextUtils.trimToNull(request.getEmail()));
     c.setGstin(cleanGstin(request.getGstin()));
     c.setDlNo(TextUtils.trimToNull(request.getDlNo()));
+    c.setDlExpiry(DrugLicence.expiryToStore(c.getDlNo(), request.getDlExpiry()));
     c.setPan(TextUtils.trimToNull(request.getPan()));
     c.setPartyType(
         request.getPartyType() != null ? request.getPartyType() : CustomerPartyType.CONSUMER);
@@ -86,6 +90,10 @@ public interface CustomerMapper {
     if (request.getDlNo() != null) {
       customer.setDlNo(TextUtils.trimToNull(request.getDlNo()));
     }
+    if (request.getDlExpiry() != null) {
+      customer.setDlExpiry(request.getDlExpiry());
+    }
+    customer.setDlExpiry(DrugLicence.expiryToStore(customer.getDlNo(), customer.getDlExpiry()));
     if (request.getPan() != null) {
       customer.setPan(TextUtils.trimToNull(request.getPan()));
     }
@@ -118,8 +126,14 @@ public interface CustomerMapper {
     if (cleanGstin(request.getGstin()) != null) {
       customer.setGstin(cleanGstin(request.getGstin()));
     }
-    if (TextUtils.trimToNull(request.getDlNo()) != null) {
-      customer.setDlNo(TextUtils.trimToNull(request.getDlNo()));
+    String dlNo = TextUtils.trimToNull(request.getDlNo());
+    if (dlNo != null && !dlNo.equals(customer.getDlNo())) {
+      // a new number does not inherit the old one's expiry
+      customer.setDlNo(dlNo);
+      customer.setDlExpiry(request.getDlExpiry());
+    }
+    if (request.getDlExpiry() != null) {
+      customer.setDlExpiry(DrugLicence.expiryToStore(customer.getDlNo(), request.getDlExpiry()));
     }
     if (TextUtils.trimToNull(request.getPan()) != null) {
       customer.setPan(TextUtils.trimToNull(request.getPan()));

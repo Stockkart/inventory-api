@@ -1,5 +1,6 @@
 package com.inventory.product.rest.dto.request;
 
+import java.time.LocalDate;
 import lombok.Data;
 
 /** Create an empty estimate document (same customer fields as a quotation). */
@@ -14,6 +15,8 @@ public class CreateEstimateRequest {
   private String customerEmail;
   private String customerGstin;
   private String customerDlNo;
+  /** Last day the D.L. is valid; needed when this request gives the customer a new D.L. No. */
+  private LocalDate customerDlExpiry;
   private String customerPan;
   private String customerPartyType;
   private String customerUserId;

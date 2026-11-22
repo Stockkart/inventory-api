@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.common.gst.PostalAddress;
 import com.inventory.user.rest.dto.request.CreateVendorRequest;
+import java.time.LocalDate;
 import org.junit.jupiter.api.Test;
 
 class VendorValidatorTest {
@@ -58,5 +59,22 @@ class VendorValidatorTest {
     CreateVendorRequest r = base();
     r.setPostalAddress(PostalAddress.builder().stateCode("98").build());
     assertThrows(ValidationException.class, () -> validator.validateCreateRequest(r));
+  }
+
+  @Test
+  void aDlNumberNeedsItsExpiryDate() {
+    CreateVendorRequest r = base();
+    r.setGstinUin("27aapfu0939f1zv");
+    r.setDlNo("20B/123");
+    assertThrows(ValidationException.class, () -> validator.validateCreateRequest(r));
+    r.setDlExpiry(LocalDate.of(2028, 3, 31));
+    assertDoesNotThrow(() -> validator.validateCreateRequest(r));
+  }
+
+  @Test
+  void noDlNumberNeedsNoExpiryDate() {
+    CreateVendorRequest r = base();
+    r.setGstinUin("27aapfu0939f1zv");
+    assertDoesNotThrow(() -> validator.validateCreateRequest(r));
   }
 }

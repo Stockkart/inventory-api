@@ -7,6 +7,8 @@ import com.inventory.common.util.GstStateCode;
 import com.inventory.user.domain.model.enums.CustomerPartyType;
 import com.inventory.user.rest.dto.request.CreateCustomerRequest;
 import com.inventory.user.rest.dto.request.UpdateCustomerRequest;
+import com.inventory.user.utils.DrugLicence;
+import java.time.LocalDate;
 import java.util.Optional;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -79,6 +81,13 @@ public class CustomerValidator {
     String code = address.getStateCode().trim();
     if (GstStateCode.format(code).equals(code)) {
       throw new ValidationException("Address: '" + address.getStateCode() + "' is not a GST state code");
+    }
+  }
+
+  /** A D.L. No. needs its expiry date; without a D.L. No. the expiry is not asked for. */
+  public void validateDrugLicence(String dlNo, LocalDate dlExpiry) {
+    if (DrugLicence.missingExpiry(dlNo, dlExpiry)) {
+      throw new ValidationException(DrugLicence.EXPIRY_REQUIRED);
     }
   }
 

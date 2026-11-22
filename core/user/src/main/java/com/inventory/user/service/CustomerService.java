@@ -120,6 +120,7 @@ public class CustomerService {
 
     if (customer == null) {
       customer = customerMapper.toCustomer(request);
+      customerValidator.validateDrugLicence(customer.getDlNo(), customer.getDlExpiry());
       verifyGstin(customer);
       customer = customerRepository.save(customer);
       log.info("Created new customer with ID: {}", customer.getId());
@@ -251,7 +252,12 @@ public class CustomerService {
 
   private void updateExistingCustomerFromCreateRequest(CreateCustomerRequest request, Customer customer) {
     String before = customer.getGstin();
+    String dlNoBefore = customer.getDlNo();
     customerMapper.applyCreateRequest(request, customer);
+    // A D.L. set or changed here needs its expiry; an unchanged older one keeps billing.
+    if (!Objects.equals(dlNoBefore, customer.getDlNo()) || request.getDlExpiry() != null) {
+      customerValidator.validateDrugLicence(customer.getDlNo(), customer.getDlExpiry());
+    }
     if (!Objects.equals(before, customer.getGstin())) {
       verifyGstin(customer);
     }
@@ -381,6 +387,10 @@ public class CustomerService {
 
     String gstinBefore = customer.getGstin();
     customerMapper.applyUpdate(request, customer);
+    // Rows saved before the expiry was asked for keep working until someone edits their D.L.
+    if (request.getDlNo() != null || request.getDlExpiry() != null) {
+      customerValidator.validateDrugLicence(customer.getDlNo(), customer.getDlExpiry());
+    }
     if (!Objects.equals(gstinBefore, customer.getGstin())) {
       verifyGstin(customer);
     }
