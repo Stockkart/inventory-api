@@ -64,7 +64,7 @@ class ShopSubscriptionServiceTest {
     assertThat(saved.getPlanId()).isEqualTo("plan-1");
     assertThat(saved.getStatus()).isEqualTo(SubscriptionStatus.ACTIVE);
     assertThat(saved.getExpiresAt()).isEqualTo(FUTURE);
-    assertThat(saved.getSourceOrderId()).isEqualTo("order-1");
+    assertThat(saved.getPlanPaymentId()).isEqualTo("order-1");
     assertThat(saved.getCreatedAt()).isNotNull();
   }
 
@@ -102,7 +102,7 @@ class ShopSubscriptionServiceTest {
     assertThat(saved.getPlanId()).isEqualTo("plan-2");
     assertThat(saved.getStatus()).isEqualTo(SubscriptionStatus.ACTIVE);
     assertThat(saved.getExpiresAt()).isEqualTo(FUTURE);
-    assertThat(saved.getSourceOrderId()).isEqualTo("order-2");
+    assertThat(saved.getPlanPaymentId()).isEqualTo("order-2");
     assertThat(saved.getCreatedAt()).isEqualTo(createdAt);
   }
 
@@ -115,7 +115,7 @@ class ShopSubscriptionServiceTest {
     ShopSubscription saved = service.sync(new ShopInfo("shop-1", "plan-1", PAST), null);
 
     assertThat(saved.getStatus()).isEqualTo(SubscriptionStatus.EXPIRED);
-    assertThat(saved.getSourceOrderId()).isEqualTo("order-1");
+    assertThat(saved.getPlanPaymentId()).isEqualTo("order-1");
   }
 
   @Test
@@ -143,7 +143,7 @@ class ShopSubscriptionServiceTest {
         .planId(planId)
         .status(status)
         .expiresAt(expiresAt)
-        .sourceOrderId(orderId)
+        .planPaymentId(orderId)
         .createdAt(Instant.parse("2026-01-01T00:00:00Z"))
         .build();
   }
@@ -164,8 +164,8 @@ class ShopSubscriptionServiceTest {
     assertThat(filter.get("_id")).isEqualTo("shop-1");
     assertThat(filter.toString()).contains("$or").contains("$lte");
     org.bson.Document set = (org.bson.Document) update.getValue().getUpdateObject().get("$set");
-    assertThat(set).containsEntry("planId", "plan-1").containsEntry("sourceOrderId", "order-2");
-    assertThat(saved.getSourceOrderId()).isEqualTo("order-2");
+    assertThat(set).containsEntry("planId", "plan-1").containsEntry("planPaymentId", "order-2");
+    assertThat(saved.getPlanPaymentId()).isEqualTo("order-2");
     verify(repository, never()).save(any());
   }
 
