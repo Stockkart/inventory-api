@@ -63,6 +63,9 @@ public class PlanService {
   @Autowired
   private MetricsWrapper metrics;
 
+  @Autowired
+  private ShopSubscriptionService shopSubscriptionService;
+
   /**
    * List all plans (public - can be called before login for pricing page).
    */
@@ -99,6 +102,7 @@ public class PlanService {
     int durationMonths = request.getDurationMonths() != null ? request.getDurationMonths() : 1;
     Instant expiryDate = PlanUtils.plusMonths(Instant.now(), durationMonths);
     shopProvider.updatePlan(shopId, plan.getId(), expiryDate);
+    shopSubscriptionService.recordGrant(new ShopInfo(shopId, plan.getId(), expiryDate), request.getPaymentOrderId());
 
     PlanTransaction tx = planTransactionMapper.toTransaction(shopId, plan, request);
     planTransactionRepository.save(tx);
@@ -164,6 +168,14 @@ public class PlanService {
         suggestedPlan,
         limits,
         userLimitReached);
+  }
+
+  /**
+   * Entitlements are read from the subscription, so a change whose sync failed is not finished: the
+   * error propagates and the payment fulfilment step runs again. Reads never write it.
+   */
+  private void syncSubscription(ShopInfo shopInfo, String planPaymentId) {
+    shopSubscriptionService.sync(shopInfo, planPaymentId);
   }
 
   private ShopInfo getShopInfo(String shopId) {
