@@ -33,15 +33,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DuplicateKeyException;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -49,7 +43,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.function.Consumer;
 
 import org.springframework.beans.factory.annotation.Value;
 
@@ -92,9 +85,6 @@ public class ShopService {
   @Autowired
   @Lazy
   private Referrals referralAttributionService;
-
-  @Autowired
-  private org.springframework.data.mongodb.core.MongoTemplate mongoTemplate;
 
   @Transactional
   public ShopRegistrationResponse register(RegisterShopRequest request, String userId) {
@@ -334,29 +324,6 @@ public class ShopService {
     shop.setPlanExpiryDate(expiryDate);
     shopRepository.save(shop);
   }
-
-  /**
-   * Visit every shop's plan fields, one page at a time. Used by ShopProviderImpl adapter.
-   */
-  public void forEachShopPlanInfo(Consumer<ShopPlanInfo> action) {
-    String lastId = null;
-    List<Shop> shops;
-    do {
-      // keyset paging on _id with only the plan fields: no skip, no whole shop documents
-      Query query = new Query().with(Sort.by("_id")).limit(PLAN_INFO_PAGE);
-      if (lastId != null) {
-        query.addCriteria(Criteria.where("_id").gt(lastId));
-      }
-      query.fields().include("planId").include("planExpiryDate");
-      shops = mongoTemplate.find(query, Shop.class);
-      for (Shop shop : shops) {
-        action.accept(new ShopPlanInfo(shop.getShopId(), shop.getPlanId(), shop.getPlanExpiryDate()));
-        lastId = shop.getShopId();
-      }
-    } while (shops.size() == PLAN_INFO_PAGE);
-  }
-
-  static final int PLAN_INFO_PAGE = 500;
 
   /**
    * Get shop name. Used by ShopServiceAdapterImpl.
