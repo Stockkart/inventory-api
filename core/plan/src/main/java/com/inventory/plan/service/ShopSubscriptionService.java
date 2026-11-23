@@ -91,8 +91,7 @@ public class ShopSubscriptionService {
    * grants race, or a stale one arrives late, the later end date stays. A grant of another plan, or
    * without an end date, always applies. The check is a read (exact inside a {@code MongoTx}
    * transaction) and the write is conditional on the same rule, so a race outside one cannot slip
-   * through either. Use {@link #sync} for changes that may shorten the term (refund revocation,
-   * backfill from the shop's fields).
+   * through either. Use {@link #sync} for changes that may shorten the term (refund revocation).
    */
   public ShopSubscription recordGrant(ShopInfo shop, String sourceOrderId) {
     Instant now = Instant.now();
