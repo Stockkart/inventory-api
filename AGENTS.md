@@ -208,7 +208,6 @@ MongoDB: "table" means collection, "column" means field.
 | `PLAN_ENTITLEMENTS_ENFORCEMENT` | plan feature, seat and OCR-quota checks (`EntitlementGuard`): `OFF`, `LOG_ONLY` (default: allow, log what would be blocked, once per 10 min per shop and check) or `ENFORCE` (402 with `FEATURE_NOT_IN_PLAN` / `SEAT_LIMIT_REACHED` / `OCR_QUOTA_EXCEEDED`). Switching production to `ENFORCE`: date TBD by owner | both |
 | `PLAN_CATALOGUE_SEED_ENABLED`, `PLAN_CATALOGUE_DEACTIVATE_LEGACY` | insert the Starter/Professional/Enterprise catalogue from `plan-catalogue.json` (insert-only; changes the live pricing page) and hide pre-catalogue plans; both default off | both |
 | `PLAN_ADDONS_SEED_ENABLED` | insert the add-on catalogue from `addon-catalogue.json` (insert-only), default off | both |
-| `PLAN_SUBSCRIPTION_BACKFILL_ENABLED` | one-off `ShopSubscriptionBackfill`: a `shop_subscriptions` row for every shop from its plan fields, default off | both |
 | `PLATFORM_ADMIN_EMAILS` | comma-separated emails `AdminBootstrap` creates as platform admins on startup (each gets its own random first password, logged once, to be changed at first sign-in) | both |
 | `ADMIN_CLIENT_URL` | origin of the platform-admin app: CORS for `/api/v1/admin/**` and the base of admin password-reset links | both |
 | `PLAN_GST_RATE_PERCENT` | GST rate (percent, default 18) inside tax-inclusive plan prices; each plan order stores `taxableAmount` + `gstAmount` at it, and the plan MIS splits older orders at it | both |
