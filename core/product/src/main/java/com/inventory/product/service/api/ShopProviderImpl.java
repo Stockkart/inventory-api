@@ -45,10 +45,4 @@ public class ShopProviderImpl implements ShopPort {
   private static ReferralShop toReferralShop(ShopService.ShopReferralInfo info) {
     return new ReferralShop(info.shopId(), info.name(), info.referralCode(), info.contactEmail(), info.contactPhone());
   }
-
-  @Override
-  public void forEachShop(java.util.function.Consumer<ShopInfo> action) {
-    shopService.forEachShopPlanInfo(
-        info -> action.accept(new ShopInfo(info.shopId(), info.planId(), info.planExpiryDate())));
-  }
 }

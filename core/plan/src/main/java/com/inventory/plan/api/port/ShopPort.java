@@ -13,9 +13,6 @@ public interface ShopPort {
 
   void updatePlan(String shopId, String planId, Instant expiryDate);
 
-  /** Visits every shop, page by page. */
-  void forEachShop(java.util.function.Consumer<ShopInfo> action);
-
   /** The shop that owns a referral code; the code must already be normalised. */
   Optional<ReferralShop> findByReferralCode(String referralCode);
 
