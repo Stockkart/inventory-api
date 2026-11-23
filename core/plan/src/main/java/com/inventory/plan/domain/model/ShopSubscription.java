@@ -31,7 +31,7 @@ public class ShopSubscription {
   private SubscriptionStatus status;
   private Instant expiresAt;
   /** Payment order that last activated or extended this subscription. */
-  private String sourceOrderId;
+  private String planPaymentId;
   /** Plan features and limits as granted; null on older rows (entitlements then read the live plan). */
   private PlanTermsSnapshot terms;
   private Instant createdAt;
