@@ -59,13 +59,13 @@ public class ShopSubscriptionService {
   /**
    * Writes the subscription derived from the shop's plan fields. No write when nothing changed.
    */
-  public ShopSubscription sync(ShopInfo shop, String sourceOrderId) {
+  public ShopSubscription sync(ShopInfo shop, String planPaymentId) {
     Instant now = Instant.now();
     SubscriptionStatus status = deriveStatus(shop.planId(), shop.planExpiryDate(), now);
     Optional<ShopSubscription> existing = shopSubscriptionRepository.findById(shop.shopId());
 
     if (existing.isPresent() && matches(existing.get(), shop, status)
-        && (sourceOrderId == null || sourceOrderId.equals(existing.get().getSourceOrderId()))) {
+        && (planPaymentId == null || planPaymentId.equals(existing.get().getPlanPaymentId()))) {
       return existing.get();
     }
 
@@ -77,8 +77,8 @@ public class ShopSubscriptionService {
     subscription.setPlanId(StringUtils.hasText(shop.planId()) ? shop.planId() : null);
     subscription.setStatus(status);
     subscription.setExpiresAt(shop.planExpiryDate());
-    if (sourceOrderId != null) {
-      subscription.setSourceOrderId(sourceOrderId);
+    if (planPaymentId != null) {
+      subscription.setPlanPaymentId(planPaymentId);
     }
     subscription.setUpdatedAt(now);
     ShopSubscription saved = shopSubscriptionRepository.save(subscription);
@@ -93,7 +93,7 @@ public class ShopSubscriptionService {
    * transaction) and the write is conditional on the same rule, so a race outside one cannot slip
    * through either. Use {@link #sync} for changes that may shorten the term (refund revocation).
    */
-  public ShopSubscription recordGrant(ShopInfo shop, String sourceOrderId) {
+  public ShopSubscription recordGrant(ShopInfo shop, String planPaymentId) {
     Instant now = Instant.now();
     SubscriptionStatus status = deriveStatus(shop.planId(), shop.planExpiryDate(), now);
     Instant expiresAt = shop.planExpiryDate();
@@ -101,7 +101,7 @@ public class ShopSubscriptionService {
     Optional<ShopSubscription> current = shopSubscriptionRepository.findById(shop.shopId());
     if (current.isPresent() && endsLaterOnSamePlan(current.get(), planId, expiresAt)) {
       log.warn("Subscription of shop {} already ends after {}; order {} left it unchanged",
-          shop.shopId(), expiresAt, sourceOrderId);
+          shop.shopId(), expiresAt, planPaymentId);
       return current.get();
     }
     Criteria byShop = Criteria.where("_id").is(shop.shopId());
@@ -113,7 +113,7 @@ public class ShopSubscriptionService {
         .set("planId", planId)
         .set("status", status)
         .set("expiresAt", expiresAt)
-        .set("sourceOrderId", sourceOrderId)
+        .set("planPaymentId", planPaymentId)
         .set("terms", termsOf(shop.planId()))
         .set("updatedAt", now)
         .setOnInsert("createdAt", now);
@@ -125,7 +125,7 @@ public class ShopSubscriptionService {
     } catch (DuplicateKeyException e) {
       // the stored subscription already ends later: keep it
       log.warn("Subscription of shop {} already ends after {}; order {} left it unchanged",
-          shop.shopId(), expiresAt, sourceOrderId);
+          shop.shopId(), expiresAt, planPaymentId);
       return shopSubscriptionRepository.findById(shop.shopId()).orElse(null);
     }
   }

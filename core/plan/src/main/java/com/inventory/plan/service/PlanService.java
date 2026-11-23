@@ -335,8 +335,8 @@ public class PlanService {
    * Entitlements are read from the subscription, so a change whose sync failed is not finished: the
    * error propagates and the payment fulfilment step runs again. Reads never write it.
    */
-  private void syncSubscription(ShopInfo shopInfo, String sourceOrderId) {
-    shopSubscriptionService.sync(shopInfo, sourceOrderId);
+  private void syncSubscription(ShopInfo shopInfo, String planPaymentId) {
+    shopSubscriptionService.sync(shopInfo, planPaymentId);
   }
 
   private ShopInfo getShopInfo(String shopId) {
