@@ -23,7 +23,7 @@ import com.inventory.user.rest.dto.request.AdminLoginRequest;
 import com.inventory.user.rest.dto.request.AdminResetPasswordRequest;
 import com.inventory.user.rest.dto.response.AdminLoginResponse;
 import com.inventory.user.validation.AdminUserValidator;
-import com.inventory.common.audit.AuditActorType;
+import com.inventory.common.audit.AuditUserType;
 import com.inventory.common.audit.AuditEntry;
 import com.inventory.common.audit.AuditService;
 import java.time.Clock;
@@ -98,7 +98,7 @@ class AdminAuthServiceTest {
     ArgumentCaptor<AuditEntry> audit = ArgumentCaptor.forClass(AuditEntry.class);
     verify(auditService).record(audit.capture());
     assertThat(audit.getValue().getAction()).isEqualTo("ADMIN_SIGNED_IN");
-    assertThat(audit.getValue().getActorType()).isEqualTo(AuditActorType.ADMIN);
+    assertThat(audit.getValue().getActorType()).isEqualTo(AuditUserType.ADMIN);
     assertThat(audit.getValue().getActorUserId()).isEqualTo("a1");
   }
 

@@ -1,6 +1,6 @@
 package com.inventory.plan.service;
 
-import com.inventory.common.audit.AuditActorType;
+import com.inventory.common.audit.AuditUserType;
 import com.inventory.common.audit.AuditEntry;
 import com.inventory.common.audit.AuditService;
 import com.inventory.common.audit.AuditSource;
@@ -55,7 +55,7 @@ public class ShopPlanGrantService {
     after.put("expiresAt", result.expiresAtAfter().toString());
     auditService.record(AuditEntry.builder()
         .actorUserId(actorAdminId)
-        .actorType(AuditActorType.ADMIN)
+        .actorType(AuditUserType.ADMIN)
         .action(ACTION_GRANTED)
         .targetType("SHOP")
         .targetId(shopId)
