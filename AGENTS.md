@@ -207,12 +207,9 @@ MongoDB: "table" means collection, "column" means field.
 | `VOUCHER_LOOKUP_MAX_MISSES_PER_MINUTE` | unknown voucher codes a shop or user may try per minute on validate, quote and checkout before `429 TOO_MANY_REQUESTS` (`VoucherLookupRateLimiter`, per instance; default 10) | both |
 | `VOUCHER_TARGET_BACKFILL_ENABLED`, `VOUCHER_TARGET_BACKFILL_DRY_RUN` | one-off `VoucherTargetBackfill` (order 51): sets `target=ADD_ON` on vouchers stored before plan vouchers; off by default, dry run only counts | both |
 | `PLAN_ENTITLEMENTS_ENFORCEMENT` | plan feature, seat and OCR-quota checks (`EntitlementGuard`): `OFF`, `LOG_ONLY` (default: allow, log what would be blocked, once per 10 min per shop and check) or `ENFORCE` (402 with `FEATURE_NOT_IN_PLAN` / `SEAT_LIMIT_REACHED` / `OCR_QUOTA_EXCEEDED`). Switching production to `ENFORCE`: date TBD by owner | both |
-| `PLAN_CATALOGUE_SEED_ENABLED`, `PLAN_CATALOGUE_DEACTIVATE_LEGACY` | insert the Starter/Professional/Enterprise catalogue from `plan-catalogue.json` (insert-only; changes the live pricing page) and hide pre-catalogue plans; both default off | both |
-| `PLAN_ADDONS_SEED_ENABLED` | insert the add-on catalogue from `addon-catalogue.json` (insert-only), default off | both |
 | `PLATFORM_ADMIN_EMAILS` | comma-separated emails `AdminBootstrap` creates as platform admins on startup (each gets its own random first password, logged once, to be changed at first sign-in) | both |
 | `ADMIN_CLIENT_URL` | origin of the platform-admin app: CORS for `/api/v1/admin/**` and the base of admin password-reset links | both |
 | `PLAN_GST_RATE_PERCENT` | GST rate (percent, default 18) inside tax-inclusive plan prices; each plan order stores `taxableAmount` + `gstAmount` at it, and the plan MIS splits older orders at it | both |
-| `PLAN_BROCHURE_BACKFILL_ENABLED`, `PLAN_BROCHURE_BACKFILL_DRY_RUN` | one-off `PlanBrochureFieldsBackfill`: sets `roleLimit` / `attendanceUserLimit` from `plan-catalogue.json` on catalogue plans where the field was never set (default off; features are ticked in catalogue admin) | both |
 | `GSTIN_PROVIDER` | online GSTIN lookup provider; unset means offline check only | .env.example |
 | `GSTINAPI_KEY` | GSTIN lookup API key (secret, never commit) | .env.example |
 
