@@ -1639,7 +1639,13 @@ public class InventoryService {
       inventory = inventoryRepository.save(inventory);
       // An identity edit (e.g. a rename) moved the lot to another product: drop the old one when
       // no lot or estimate uses it any more, so it cannot print a second sticker for the code.
-      productService.retireIfUnused(previousProductId, inventory.getProductId(), shopId);
+      // The lot is already saved, so a failed clean-up only leaves the old product behind.
+      try {
+        productService.retireIfUnused(previousProductId, inventory.getProductId(), shopId);
+      } catch (RuntimeException e) {
+        log.warn("Could not retire product {} after editing lot {}: {}",
+            previousProductId, inventoryId, e.getMessage());
+      }
       // Saving just wrote the request's prices to the pricing record (InventoryPricingWriteAspect);
       // re-read it so the response carries the stored prices, not those loaded before the update.
       inventoryPricingReadHandler.enrich(inventory);
