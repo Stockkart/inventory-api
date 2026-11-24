@@ -205,7 +205,6 @@ MongoDB: "table" means collection, "column" means field.
 | `RAZORPAY_KEY_ID` | Razorpay key id | both |
 | `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` | Razorpay API and webhook secrets (secret, never commit) | both |
 | `VOUCHER_LOOKUP_MAX_MISSES_PER_MINUTE` | unknown voucher codes a shop or user may try per minute on validate, quote and checkout before `429 TOO_MANY_REQUESTS` (`VoucherLookupRateLimiter`, per instance; default 10) | both |
-| `VOUCHER_TARGET_BACKFILL_ENABLED`, `VOUCHER_TARGET_BACKFILL_DRY_RUN` | one-off `VoucherTargetBackfill` (order 51): sets `target=ADD_ON` on vouchers stored before plan vouchers; off by default, dry run only counts | both |
 | `PLAN_ENTITLEMENTS_ENFORCEMENT` | plan feature, seat and OCR-quota checks (`EntitlementGuard`): `OFF`, `LOG_ONLY` (default: allow, log what would be blocked, once per 10 min per shop and check) or `ENFORCE` (402 with `FEATURE_NOT_IN_PLAN` / `SEAT_LIMIT_REACHED` / `OCR_QUOTA_EXCEEDED`). Switching production to `ENFORCE`: date TBD by owner | both |
 | `PLATFORM_ADMIN_EMAILS` | comma-separated emails `AdminBootstrap` creates as platform admins on startup (each gets its own random first password, logged once, to be changed at first sign-in) | both |
 | `ADMIN_CLIENT_URL` | origin of the platform-admin app: CORS for `/api/v1/admin/**` and the base of admin password-reset links | both |

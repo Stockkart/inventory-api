@@ -23,8 +23,7 @@ public interface AddOnVoucherRepository extends MongoRepository<AddOnVoucher, St
 
   /**
    * Add-on vouchers, legacy rows without a target included ({@code $in} with null matches a missing
-   * field), as an index-friendly equality on {@code target_createdAt}. {@code VoucherTargetBackfill}
-   * sets the missing targets.
+   * field), as an index-friendly equality on {@code target_createdAt}. A missing target reads as ADD_ON.
    */
   @Query("{ 'target': { $in: [ 'ADD_ON', null ] } }")
   List<AddOnVoucher> findAddOnTargeted(Pageable pageable);
