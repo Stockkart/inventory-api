@@ -15,6 +15,7 @@ import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.ProductRepository;
 import com.inventory.product.domain.repository.StockEntryEstimateRepository;
 import com.inventory.product.validation.ProductValidator;
+import java.time.Instant;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -98,6 +99,42 @@ class ProductServiceRetireTest {
 
     verify(productRepository, never()).delete(any(Product.class));
     verifyNoInteractions(barcodeService);
+  }
+
+  @Test
+  void aProductCreatedForAFailedEditIsDiscardedWhenNothingUsesIt() {
+    Instant since = Instant.parse("2026-11-24T10:00:00Z");
+    Product created = product("new", "LEGGINGS ELASTANO N (S)");
+    created.setCreatedAt(since.plusMillis(5));
+    Product lotProduct = product("old", "LEGGING ELASTANO N (S)");
+    when(productRepository.findByIdAndShopId("new", SHOP)).thenReturn(Optional.of(created));
+    when(productRepository.findByIdAndShopId("old", SHOP)).thenReturn(Optional.of(lotProduct));
+
+    assertTrue(productService.discardIfCreatedSince("new", "old", since, SHOP));
+
+    InOrder order = inOrder(barcodeService, productRepository);
+    order.verify(barcodeService).movePoolToProduct(SHOP, "new", lotProduct);
+    order.verify(productRepository).delete(created);
+  }
+
+  @Test
+  void aProductThatExistedBeforeTheFailedEditIsNeverDiscarded() {
+    Instant since = Instant.parse("2026-11-24T10:00:00Z");
+    Product existing = product("matched", "LEGGINGS ELASTANO N (S)");
+    existing.setCreatedAt(since.minusSeconds(3600));
+    when(productRepository.findByIdAndShopId("matched", SHOP)).thenReturn(Optional.of(existing));
+
+    assertFalse(productService.discardIfCreatedSince("matched", "old", since, SHOP));
+
+    verify(productRepository, never()).delete(any(Product.class));
+    verifyNoInteractions(inventoryRepository, barcodeService);
+  }
+
+  @Test
+  void aFailedEditThatKeptTheLotsProductDiscardsNothing() {
+    assertFalse(productService.discardIfCreatedSince("old", "old", Instant.now(), SHOP));
+
+    verifyNoInteractions(productRepository, barcodeService);
   }
 
   private static Product product(String id, String name) {

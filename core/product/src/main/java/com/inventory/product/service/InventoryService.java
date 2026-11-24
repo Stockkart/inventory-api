@@ -1624,19 +1624,29 @@ public class InventoryService {
       boolean barcodeCleared =
           request.getClearFields() != null && request.getClearFields().contains("barcode");
       String previousProductId = inventory.getProductId();
-      inventory.setProductId(productService.resolveForRegistration(
-          inventory.getProductId(), inventory, shopId, barcodeCleared));
-      adoptProductPackaging(inventory, shopId);
-      int newPackFactor = LotPackaging.factor(inventory.getUnitConversions());
-      if (newPackFactor != previousPackFactor) {
-        assertLotStockUntouched(inventory, shopId);
-        rebaseCountsFromDisplay(inventory, newPackFactor);
+      Instant resolvingAt = Instant.now();
+      String resolvedProductId = productService.resolveForRegistration(
+          inventory.getProductId(), inventory, shopId, barcodeCleared);
+      inventory.setProductId(resolvedProductId);
+      try {
+        adoptProductPackaging(inventory, shopId);
+        int newPackFactor = LotPackaging.factor(inventory.getUnitConversions());
+        if (newPackFactor != previousPackFactor) {
+          assertLotStockUntouched(inventory, shopId);
+          rebaseCountsFromDisplay(inventory, newPackFactor);
+        }
+
+        // Update updatedAt timestamp
+        inventory.setUpdatedAt(Instant.now());
+
+        inventory = inventoryRepository.save(inventory);
+      } catch (RuntimeException e) {
+        // The lot was not saved, so it still points at its old product. A product created for
+        // this edit is left with no lot and the lot's barcode: delete it, then report the error.
+        discardProductCreatedFor(inventoryId, resolvedProductId, previousProductId, resolvingAt,
+            shopId);
+        throw e;
       }
-
-      // Update updatedAt timestamp
-      inventory.setUpdatedAt(Instant.now());
-
-      inventory = inventoryRepository.save(inventory);
       // An identity edit (e.g. a rename) moved the lot to another product: drop the old one when
       // no lot or estimate uses it any more, so it cannot print a second sticker for the code.
       // The lot is already saved, so a failed clean-up only leaves the old product behind.
@@ -1672,6 +1682,20 @@ public class InventoryService {
     } catch (Exception e) {
       log.error("Unexpected error while updating inventory: {}", e.getMessage(), e);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
+    }
+  }
+
+  /**
+   * Undoes the product a failed lot edit created ({@link ProductService#discardIfCreatedSince}).
+   * Best-effort: a failure here is logged so the edit's own error still reaches the caller.
+   */
+  private void discardProductCreatedFor(String inventoryId, String createdProductId,
+      String lotProductId, Instant since, String shopId) {
+    try {
+      productService.discardIfCreatedSince(createdProductId, lotProductId, since, shopId);
+    } catch (RuntimeException e) {
+      log.warn("Could not discard product {} after the edit of lot {} failed: {}",
+          createdProductId, inventoryId, e.getMessage());
     }
   }
 

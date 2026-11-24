@@ -277,6 +277,26 @@ public class ProductService {
   }
 
   /**
+   * Undoes {@code productId} when a lot edit resolved it but then failed before the lot was saved:
+   * the lot still points at {@code lotProductId}, so a product created for the edit (created at or
+   * after {@code since}) is deleted when nothing uses it, through {@link #retireIfUnused}. A product
+   * that existed before the edit is never touched, even with no lot.
+   *
+   * @return true when the product was deleted
+   */
+  public boolean discardIfCreatedSince(
+      String productId, String lotProductId, Instant since, String shopId) {
+    if (!StringUtils.hasText(productId) || productId.equals(lotProductId) || since == null) {
+      return false;
+    }
+    Product created = productRepository.findByIdAndShopId(productId, shopId).orElse(null);
+    if (created == null || created.getCreatedAt() == null || created.getCreatedAt().isBefore(since)) {
+      return false;
+    }
+    return retireIfUnused(productId, lotProductId, shopId);
+  }
+
+  /**
    * Set barcode on an existing product without forking. Used by pool attach and regenerate.
    */
   public Product updateBarcodeInPlace(String productId, String shopId, String barcode) {

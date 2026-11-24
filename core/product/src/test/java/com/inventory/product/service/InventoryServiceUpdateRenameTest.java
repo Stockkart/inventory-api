@@ -5,11 +5,15 @@ import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.inventory.common.constants.ErrorCode;
+import com.inventory.common.exception.BaseException;
 import com.inventory.pricing.api.LotPricing;
+import java.time.Instant;
 import com.inventory.pricing.api.InventoryPricing;
 import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.catalog.InventoryProductReadHandler;
@@ -124,5 +128,36 @@ class InventoryServiceUpdateRenameTest {
 
     org.junit.jupiter.api.Assertions.assertEquals(
         "p2", inventoryService.update("lot-1", request, "s1", "u1").getProductId());
+  }
+
+  @Test
+  void aFailedSaveDiscardsTheProductCreatedForTheEditAndReportsTheOriginalError() {
+    when(inventoryRepository.save(any(Inventory.class)))
+        .thenThrow(new BaseException(ErrorCode.ACCESS_DENIED, "You do not have permission to edit rates"));
+    UpdateInventoryRequest request = new UpdateInventoryRequest();
+    request.setName("LEGGINGS ELASTANO N (S)");
+    request.setPriceToRetail(new BigDecimal("80"));
+
+    BaseException thrown = org.junit.jupiter.api.Assertions.assertThrows(
+        BaseException.class, () -> inventoryService.update("lot-1", request, "s1", "u1"));
+
+    org.junit.jupiter.api.Assertions.assertEquals(ErrorCode.ACCESS_DENIED, thrown.getErrorCode());
+    verify(productService).discardIfCreatedSince(eq("p2"), eq("p1"), any(Instant.class), eq("s1"));
+    verify(productService, never()).retireIfUnused(anyString(), anyString(), anyString());
+  }
+
+  @Test
+  void aFailedDiscardStillReportsTheEditsOwnError() {
+    when(inventoryRepository.save(any(Inventory.class)))
+        .thenThrow(new BaseException(ErrorCode.ACCESS_DENIED, "You do not have permission to edit rates"));
+    when(productService.discardIfCreatedSince(anyString(), anyString(), any(), anyString()))
+        .thenThrow(new DataAccessResourceFailureException("mongo down"));
+    UpdateInventoryRequest request = new UpdateInventoryRequest();
+    request.setName("LEGGINGS ELASTANO N (S)");
+
+    BaseException thrown = org.junit.jupiter.api.Assertions.assertThrows(
+        BaseException.class, () -> inventoryService.update("lot-1", request, "s1", "u1"));
+
+    org.junit.jupiter.api.Assertions.assertEquals(ErrorCode.ACCESS_DENIED, thrown.getErrorCode());
   }
 }
