@@ -10,7 +10,9 @@ import java.util.Optional;
 @Repository
 public interface PlanRepository extends MongoRepository<Plan, String> {
 
-  List<Plan> findAllByOrderByPriceAsc();
-
   Optional<Plan> findByPlanName(String planName);
+
+  Optional<Plan> findByCode(String code);
+
+  List<Plan> findByCodeIsNull();
 }

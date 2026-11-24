@@ -1,10 +1,12 @@
 package com.inventory.plan.rest.dto.response;
 
+import com.inventory.common.entitlement.PlanFeature;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.util.Set;
 
 @Data
 @NoArgsConstructor
@@ -23,4 +25,15 @@ public class PlanResponse {
   private boolean unlimited;
   private String linkedId;
   private String bestFor;
+  private String code;
+  private Integer displayOrder;
+  private Integer ocrLimit;
+  private Set<PlanFeature> features;
+  private String badge;
+  /** False for legacy add-on rows sold at payment; the plan pickers show only selectable plans. */
+  private boolean selectable;
+  /** Monthly billing limit for display: "Unlimited" or lakh rupees such as "₹1.5L". */
+  private String billingLimitLabel;
+  /** Length of the free trial a new shop gets, in days ({@code plan.trial-days}). */
+  private Integer trialDays;
 }
