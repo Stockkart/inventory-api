@@ -69,7 +69,9 @@ public class ShopController {
                                                                    @RequestBody ShopApprovalRequest request,
                                                                    HttpServletRequest httpRequest) {
     UserRole callerRole = (UserRole) httpRequest.getAttribute("userRole");
-    return ResponseEntity.ok(ApiResponse.success(shopService.approve(shopId, request, callerRole)));
+    String actorUserId = (String) httpRequest.getAttribute("userId");
+    return ResponseEntity.ok(
+        ApiResponse.success(shopService.approve(shopId, request, callerRole, actorUserId)));
   }
 
   @GetMapping("/active-shop")
