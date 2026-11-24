@@ -75,10 +75,10 @@ class AuditServiceTest {
     AuditEntry bySystem = auditService.record(AuditEntry.builder()
         .action("PLATFORM_ROLE_GRANTED").source(AuditSource.SYSTEM).build());
     AuditEntry byAdmin = auditService.record(AuditEntry.builder()
-        .actorUserId("a1").actorType(AuditActorType.ADMIN).action("X").source(AuditSource.ADMIN_UI).build());
+        .actorUserId("a1").actorType(AuditUserType.ADMIN).action("X").source(AuditSource.ADMIN_UI).build());
 
-    assertThat(byUser.getActorType()).isEqualTo(AuditActorType.USER);
-    assertThat(bySystem.getActorType()).isEqualTo(AuditActorType.SYSTEM);
-    assertThat(byAdmin.getActorType()).isEqualTo(AuditActorType.ADMIN);
+    assertThat(byUser.getActorType()).isEqualTo(AuditUserType.USER);
+    assertThat(bySystem.getActorType()).isEqualTo(AuditUserType.SYSTEM);
+    assertThat(byAdmin.getActorType()).isEqualTo(AuditUserType.ADMIN);
   }
 }

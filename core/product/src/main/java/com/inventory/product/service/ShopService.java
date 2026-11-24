@@ -1,6 +1,6 @@
 package com.inventory.product.service;
 
-import com.inventory.common.audit.AuditActorType;
+import com.inventory.common.audit.AuditUserType;
 import com.inventory.common.audit.AuditEntry;
 import com.inventory.common.audit.AuditService;
 import com.inventory.common.audit.AuditSource;
@@ -218,7 +218,7 @@ public class ShopService {
 
       auditService.record(AuditEntry.builder()
           .actorUserId(actorUserId)
-          .actorType(AuditActorType.USER)
+          .actorType(AuditUserType.USER)
           .action(request.isApprove() ? "SHOP_APPROVED" : "SHOP_REJECTED")
           .targetType("SHOP")
           .targetId(shopId)

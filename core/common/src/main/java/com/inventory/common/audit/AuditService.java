@@ -46,7 +46,7 @@ public class AuditService {
       throw new IllegalArgumentException("ADMIN_UI audit entries need an actor");
     }
     if (entry.getActorType() == null) {
-      entry.setActorType(entry.getSource() == AuditSource.ADMIN_UI ? AuditActorType.USER : AuditActorType.SYSTEM);
+      entry.setActorType(entry.getSource() == AuditSource.ADMIN_UI ? AuditUserType.USER : AuditUserType.SYSTEM);
     }
     entry.setId(null);
     entry.setCreatedAt(Instant.now());
