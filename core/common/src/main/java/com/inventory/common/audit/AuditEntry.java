@@ -28,9 +28,9 @@ public class AuditEntry {
   private String actorUserId;
   /**
    * Kind of account behind {@link #actorUserId}. Null on entries written before this field existed;
-   * read null as {@link AuditActorType#USER}. {@link AuditService#record} fills it when left out.
+   * read null as {@link AuditUserType#USER}. {@link AuditService#record} fills it when left out.
    */
-  private AuditActorType actorType;
+  private AuditUserType actorType;
   private String action;
   private String targetType;
   private String targetId;
