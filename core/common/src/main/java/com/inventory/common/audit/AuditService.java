@@ -48,7 +48,7 @@ public class AuditService {
     if (entry.getActorType() == null) {
       // ADMIN_UI changes come from admin sessions (/api/v1/admin/**); shop approval, the one shop-user
       // path that writes ADMIN_UI entries, sets USER itself
-      entry.setActorType(entry.getSource() == AuditSource.ADMIN_UI ? AuditActorType.ADMIN : AuditActorType.SYSTEM);
+      entry.setActorType(entry.getSource() == AuditSource.ADMIN_UI ? AuditUserType.ADMIN : AuditUserType.SYSTEM);
     }
     entry.setId(null);
     entry.setCreatedAt(Instant.now());
