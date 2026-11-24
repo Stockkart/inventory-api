@@ -1,6 +1,6 @@
 package com.inventory.user.migration;
 
-import com.inventory.common.audit.AuditActorType;
+import com.inventory.common.audit.AuditUserType;
 import com.inventory.common.audit.AuditEntry;
 import com.inventory.common.audit.AuditService;
 import com.inventory.common.audit.AuditSource;
@@ -69,7 +69,7 @@ public class PlatformAdminBootstrap {
     UserAccount granted;
     while ((granted = mongoTemplate.findAndModify(ungranted, update, UserAccount.class)) != null) {
       auditService.record(AuditEntry.builder()
-          .actorType(AuditActorType.SYSTEM)
+          .actorType(AuditUserType.SYSTEM)
           .action(ACTION_ROLE_GRANTED)
           .targetType("USER")
           .targetId(granted.getUserId())
