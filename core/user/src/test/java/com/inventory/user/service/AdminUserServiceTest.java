@@ -13,7 +13,7 @@ import static org.mockito.Mockito.when;
 import com.inventory.common.audit.AuditEntry;
 import com.inventory.common.audit.AuditService;
 import com.inventory.common.audit.AuditSource;
-import com.inventory.common.audit.AuditActorType;
+import com.inventory.common.audit.AuditUserType;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.notifications.api.Messaging;
 import com.inventory.user.validation.AdminUserValidator;
@@ -100,7 +100,7 @@ class AdminUserServiceTest {
     assertThat(audit.getAction()).isEqualTo(AdminUserService.ACTION_CREATED);
     assertThat(audit.getActorUserId()).isEqualTo("a1");
     assertThat(audit.getSource()).isEqualTo(AuditSource.ADMIN_UI);
-    assertThat(audit.getActorType()).isEqualTo(AuditActorType.ADMIN);
+    assertThat(audit.getActorType()).isEqualTo(AuditUserType.ADMIN);
     assertThat(audit.toString()).doesNotContain(response.getTemporaryPassword())
         .doesNotContain(saved.getValue().getPasswordHash());
   }

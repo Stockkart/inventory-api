@@ -8,7 +8,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.inventory.common.audit.AuditActorType;
+import com.inventory.common.audit.AuditUserType;
 import com.inventory.common.audit.AuditEntry;
 import com.inventory.common.audit.AuditService;
 import com.inventory.common.exception.ResourceNotFoundException;
@@ -55,7 +55,7 @@ class ShopPlanGrantServiceTest {
     ArgumentCaptor<AuditEntry> audit = ArgumentCaptor.forClass(AuditEntry.class);
     verify(auditService).record(audit.capture());
     assertThat(audit.getValue().getActorUserId()).isEqualTo("admin-1");
-    assertThat(audit.getValue().getActorType()).isEqualTo(AuditActorType.ADMIN);
+    assertThat(audit.getValue().getActorType()).isEqualTo(AuditUserType.ADMIN);
     assertThat(audit.getValue().getAction()).isEqualTo("PLAN_GRANTED");
     assertThat(audit.getValue().getTargetId()).isEqualTo("s1");
     assertThat(audit.getValue().getReason()).isEqualTo("onboarding offer");

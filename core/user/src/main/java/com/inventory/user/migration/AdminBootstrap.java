@@ -1,6 +1,6 @@
 package com.inventory.user.migration;
 
-import com.inventory.common.audit.AuditActorType;
+import com.inventory.common.audit.AuditUserType;
 import com.inventory.common.audit.AuditEntry;
 import com.inventory.common.audit.AuditService;
 import com.inventory.common.audit.AuditSource;
@@ -92,7 +92,7 @@ public class AdminBootstrap {
         .targetId(saved.getId())
         .after(Map.of("email", email))
         .reason("platform.admin-emails")
-        .actorType(AuditActorType.SYSTEM)
+        .actorType(AuditUserType.SYSTEM)
         .source(AuditSource.SYSTEM)
         .build());
     // Printed once, here only: the account must replace it at first sign-in

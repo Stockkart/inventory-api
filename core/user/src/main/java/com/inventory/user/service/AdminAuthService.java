@@ -1,6 +1,6 @@
 package com.inventory.user.service;
 
-import com.inventory.common.audit.AuditActorType;
+import com.inventory.common.audit.AuditUserType;
 import com.inventory.common.audit.AuditEntry;
 import com.inventory.common.audit.AuditService;
 import com.inventory.common.audit.AuditSource;
@@ -205,7 +205,7 @@ public class AdminAuthService {
   private void auditAdmin(String action, String targetAdminId, String actorAdminId, Map<String, Object> after) {
     auditService.record(AuditEntry.builder()
         .actorUserId(actorAdminId)
-        .actorType(AuditActorType.ADMIN)
+        .actorType(AuditUserType.ADMIN)
         .action(action)
         .targetType(TARGET_TYPE)
         .targetId(targetAdminId)
@@ -217,7 +217,7 @@ public class AdminAuthService {
   /** Failed sign-ins: nobody is signed in, so the entry has no actor. */
   private void auditSystem(String action, String targetAdminId) {
     auditService.record(AuditEntry.builder()
-        .actorType(AuditActorType.SYSTEM)
+        .actorType(AuditUserType.SYSTEM)
         .action(action)
         .targetType(TARGET_TYPE)
         .targetId(targetAdminId)

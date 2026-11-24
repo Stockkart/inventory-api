@@ -1,6 +1,6 @@
 package com.inventory.user.service;
 
-import com.inventory.common.audit.AuditActorType;
+import com.inventory.common.audit.AuditUserType;
 import com.inventory.common.audit.AuditEntry;
 import com.inventory.common.audit.AuditService;
 import com.inventory.common.audit.AuditSource;
@@ -171,7 +171,7 @@ public class AdminUserService {
       Map<String, Object> after, String reason) {
     auditService.record(AuditEntry.builder()
         .actorUserId(actorAdminId)
-        .actorType(AuditActorType.ADMIN)
+        .actorType(AuditUserType.ADMIN)
         .action(action)
         .targetType(TARGET_TYPE)
         .targetId(targetId)
