@@ -251,6 +251,32 @@ public class BarcodeService {
     barcodePoolRepository.save(pool);
   }
 
+  /**
+   * Hands the pool rows of a product that is about to be deleted to its replacement. A row whose
+   * code the replacement carries is attached to it and takes its sticker text; any other row goes
+   * back to {@code UNUSED}, since no product holds that code any more.
+   */
+  public void movePoolToProduct(String shopId, String fromProductId, Product to) {
+    if (!StringUtils.hasText(fromProductId)) {
+      return;
+    }
+    List<BarcodePool> rows = barcodePoolRepository.findAllByShopIdAndProductId(shopId, fromProductId);
+    String toCode = to == null ? null : productValidator.normalizeBarcode(to.getBarcode());
+    Instant now = Instant.now();
+    for (BarcodePool pool : rows) {
+      if (toCode != null && toCode.equals(pool.getCode())) {
+        pool.setProductId(to.getId());
+        pool.setLabelName(to.getName());
+        pool.setLabelCompany(to.getCompanyName());
+      } else {
+        pool.setStatus(BarcodePoolStatus.UNUSED);
+        pool.setProductId(null);
+      }
+      pool.setUpdatedAt(now);
+      barcodePoolRepository.save(pool);
+    }
+  }
+
   @Transactional(readOnly = true)
   public BarcodeLabelsResponse labels(BarcodeLabelsRequest request, String shopId) {
     if (request == null) {

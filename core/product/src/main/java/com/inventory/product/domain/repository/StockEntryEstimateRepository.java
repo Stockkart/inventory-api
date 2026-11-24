@@ -24,4 +24,7 @@ public interface StockEntryEstimateRepository extends MongoRepository<StockEntry
       String shopId, StockEntryEstimateState state);
 
   long countByShopIdAndState(String shopId, StockEntryEstimateState state);
+
+  /** True when a line of any estimate of the shop, in any state, names this catalog product. */
+  boolean existsByShopIdAndLinesProductId(String shopId, String productId);
 }

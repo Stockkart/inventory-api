@@ -1623,6 +1623,7 @@ public class InventoryService {
       // identity change forks/links a new product while unchanged identity keeps the same one.
       boolean barcodeCleared =
           request.getClearFields() != null && request.getClearFields().contains("barcode");
+      String previousProductId = inventory.getProductId();
       inventory.setProductId(productService.resolveForRegistration(
           inventory.getProductId(), inventory, shopId, barcodeCleared));
       adoptProductPackaging(inventory, shopId);
@@ -1636,6 +1637,9 @@ public class InventoryService {
       inventory.setUpdatedAt(Instant.now());
 
       inventory = inventoryRepository.save(inventory);
+      // An identity edit (e.g. a rename) moved the lot to another product: drop the old one when
+      // no lot or estimate uses it any more, so it cannot print a second sticker for the code.
+      productService.retireIfUnused(previousProductId, inventory.getProductId(), shopId);
       // Saving just wrote the request's prices to the pricing record (InventoryPricingWriteAspect);
       // re-read it so the response carries the stored prices, not those loaded before the update.
       inventoryPricingReadHandler.enrich(inventory);
