@@ -24,6 +24,9 @@ public interface BarcodePoolRepository extends MongoRepository<BarcodePool, Stri
 
   Optional<BarcodePool> findByShopIdAndProductId(String shopId, String productId);
 
+  /** Every pool row attached to this product (a product's code can change, leaving older rows). */
+  List<BarcodePool> findAllByShopIdAndProductId(String shopId, String productId);
+
   @Query("{ 'shopId': ?0, '$or': [ " +
       "{ 'code': { '$regex': ?1, '$options': 'i' } }, " +
       "{ 'labelName': { '$regex': ?1, '$options': 'i' } }, " +

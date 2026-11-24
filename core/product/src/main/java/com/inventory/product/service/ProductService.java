@@ -5,7 +5,9 @@ import com.inventory.product.domain.model.Inventory;
 import com.inventory.product.domain.model.Product;
 import com.inventory.product.domain.model.UnitConversion;
 import com.inventory.product.domain.model.enums.ItemType;
+import com.inventory.product.domain.repository.InventoryRepository;
 import com.inventory.product.domain.repository.ProductRepository;
+import com.inventory.product.domain.repository.StockEntryEstimateRepository;
 import com.inventory.product.rest.dto.response.ProductSuggestionDto;
 import com.inventory.product.validation.ProductValidator;
 import lombok.extern.slf4j.Slf4j;
@@ -50,6 +52,12 @@ public class ProductService {
 
   @Autowired
   private ProductValidator productValidator;
+
+  @Autowired
+  private InventoryRepository inventoryRepository;
+
+  @Autowired
+  private StockEntryEstimateRepository stockEntryEstimateRepository;
 
   @Autowired
   @Lazy
@@ -236,6 +244,56 @@ public class ProductService {
       barcodeService.claimPoolForProduct(shopId, existing.getId(), existing.getBarcode());
     }
     return existing.getId();
+  }
+
+  /**
+   * Deletes {@code oldProductId} once a lot edit has moved its lot to {@code newProductId}, if
+   * nothing uses it any more: no lot (sold out ones included) and no stock-entry estimate line.
+   * Without this, renaming a lot leaves the old product behind with the same barcode, so the
+   * typeahead offers it and printing that code makes one sticker per product. A product another
+   * lot still uses is kept: it is that lot's product. Its pool rows move to the new product
+   * ({@link BarcodeService#movePoolToProduct}). Call it only after the lot is saved.
+   *
+   * @return true when the old product was deleted
+   */
+  public boolean retireIfUnused(String oldProductId, String newProductId, String shopId) {
+    if (!StringUtils.hasText(oldProductId) || oldProductId.equals(newProductId)) {
+      return false;
+    }
+    Product old = productRepository.findByIdAndShopId(oldProductId, shopId).orElse(null);
+    if (old == null
+        || inventoryRepository.existsByShopIdAndProductId(shopId, oldProductId)
+        || stockEntryEstimateRepository.existsByShopIdAndLinesProductId(shopId, oldProductId)) {
+      return false;
+    }
+    Product replacement = StringUtils.hasText(newProductId)
+        ? productRepository.findByIdAndShopId(newProductId, shopId).orElse(null)
+        : null;
+    barcodeService.movePoolToProduct(shopId, oldProductId, replacement);
+    productRepository.delete(old);
+    log.info("Deleted product {} in shop {}: its last lot moved to product {}",
+        oldProductId, shopId, newProductId);
+    return true;
+  }
+
+  /**
+   * Undoes {@code productId} when a lot edit resolved it but then failed before the lot was saved:
+   * the lot still points at {@code lotProductId}, so a product created for the edit (created at or
+   * after {@code since}) is deleted when nothing uses it, through {@link #retireIfUnused}. A product
+   * that existed before the edit is never touched, even with no lot.
+   *
+   * @return true when the product was deleted
+   */
+  public boolean discardIfCreatedSince(
+      String productId, String lotProductId, Instant since, String shopId) {
+    if (!StringUtils.hasText(productId) || productId.equals(lotProductId) || since == null) {
+      return false;
+    }
+    Product created = productRepository.findByIdAndShopId(productId, shopId).orElse(null);
+    if (created == null || created.getCreatedAt() == null || created.getCreatedAt().isBefore(since)) {
+      return false;
+    }
+    return retireIfUnused(productId, lotProductId, shopId);
   }
 
   /**

@@ -43,6 +43,9 @@ public interface InventoryRepository extends MongoRepository<Inventory, String> 
 
   long countByShopId(String shopId);
 
+  /** True when any lot of the shop, sold out or not, points at this catalog product. */
+  boolean existsByShopIdAndProductId(String shopId, String productId);
+
   long countByShopIdAndCurrentCountGreaterThan(String shopId, BigDecimal threshold);
 
   @Aggregation(pipeline = {
