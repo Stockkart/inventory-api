@@ -216,6 +216,23 @@ class OrderPricingServiceAddOnOnlyTest {
   }
 
   @Test
+  void planVoucherInAddOnOnlyCartRejected() {
+    onPaidPlan();
+    when(voucherService.requireUsable("PLAN-1K", "shop-1")).thenReturn(AddOnVoucher.builder().code("PLAN-1K")
+        .target(com.inventory.plan.domain.model.VoucherTarget.PLAN).planCode("PROFESSIONAL")
+        .type(VoucherType.FLAT_OFF).value(new BigDecimal("1000")).quantity(1).build());
+    when(planRepository.findByCode("PROFESSIONAL")).thenReturn(Optional.of(pro));
+    QuoteRequest request = addOnOnly(new QuoteRequest.AddOnLine("OCR_TOPUP_500", 1));
+    request.setVoucherCodes(List.of("PLAN-1K"));
+
+    assertThatThrownBy(() -> pricing.priceAddOnOnly("shop-1", request))
+        .isInstanceOfSatisfying(VoucherRejectedException.class, e -> {
+          assertThat(e.getReason()).isEqualTo(VoucherRejection.NOT_APPLICABLE_TO_CART);
+          assertThat(e.getMessage()).isEqualTo("Voucher PLAN-1K is for Professional; add the plan to use it.");
+        });
+  }
+
+  @Test
   void smsPacksAreComingSoonInAnAddOnOnlyCart() {
     onPaidPlan();
 

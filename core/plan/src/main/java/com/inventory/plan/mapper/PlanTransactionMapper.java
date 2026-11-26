@@ -1,14 +1,18 @@
 package com.inventory.plan.mapper;
 
+import com.inventory.plan.domain.model.OrderLine;
 import com.inventory.plan.domain.model.Plan;
 import com.inventory.plan.domain.model.PlanPaymentOrder;
 import com.inventory.plan.domain.model.PlanTransaction;
 import com.inventory.plan.rest.dto.response.PlanTransactionResponse;
+import com.inventory.plan.rest.dto.response.PurchaseLineResponse;
 import com.inventory.plan.utils.constants.PlanConstants;
 import org.mapstruct.Mapper;
+import org.mapstruct.Mapping;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 
 @Mapper(componentModel = "spring")
 public interface PlanTransactionMapper {
@@ -41,6 +45,35 @@ public interface PlanTransactionMapper {
     return tx;
   }
 
+  PurchaseLineResponse toLineResponse(OrderLine line);
+
+  List<PurchaseLineResponse> toLineResponses(List<OrderLine> lines);
+
+  /** The transaction's own fields as a history row; PurchaseHistoryService decides the rest. */
+  @Mapping(target = "kind", ignore = true)
+  @Mapping(target = "status", ignore = true)
+  @Mapping(target = "termEstimated", ignore = true)
+  @Mapping(target = "refundedToPaymentMethod", ignore = true)
+  @Mapping(target = "walletCreditReturned", ignore = true)
+  @Mapping(target = "sortAt", ignore = true)
+  @Mapping(target = "totalAmount", ignore = true)
+  @Mapping(target = "walletAmount", ignore = true)
+  @Mapping(target = "gatewayAmount", ignore = true)
+  PlanTransactionResponse toRow(PlanTransaction tx);
+
+  /** A paid order's own fields as a history row (no transaction behind it). */
+  @Mapping(target = "paymentOrderId", source = "id")
+  @Mapping(target = "kind", ignore = true)
+  @Mapping(target = "termStartsAt", ignore = true)
+  @Mapping(target = "termEstimated", ignore = true)
+  @Mapping(target = "refundedToPaymentMethod", ignore = true)
+  @Mapping(target = "walletCreditReturned", ignore = true)
+  @Mapping(target = "sortAt", ignore = true)
+  @Mapping(target = "totalAmount", ignore = true)
+  @Mapping(target = "walletAmount", ignore = true)
+  @Mapping(target = "gatewayAmount", ignore = true)
+  PlanTransactionResponse toRow(PlanPaymentOrder order);
+
   /** The transaction of an admin plan grant: no order, no payment, amount zero. */
   default PlanTransaction toAdminGrantTransaction(String shopId, Plan plan, int durationMonths,
       Instant termStartsAt, Instant termEndsAt, Instant now) {
@@ -58,5 +91,4 @@ public interface PlanTransactionMapper {
     return tx;
   }
 
-  PlanTransactionResponse toResponse(PlanTransaction tx);
 }

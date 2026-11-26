@@ -3,13 +3,15 @@ package com.inventory.plan.service.voucher;
 import com.inventory.plan.domain.model.AddOnVoucher;
 import com.inventory.plan.domain.model.OrderLine;
 import com.inventory.plan.domain.model.VoucherRejection;
+import com.inventory.plan.domain.model.Plan;
 import com.inventory.plan.domain.repository.AddOnVoucherRepository;
+import com.inventory.plan.domain.repository.PlanRepository;
 import com.inventory.plan.domain.repository.VoucherRedemptionRepository;
 import com.inventory.plan.exception.VoucherRejectedException;
 import com.inventory.plan.mapper.VoucherMapper;
 import com.inventory.plan.rest.dto.response.VoucherCheckResponse;
+import com.inventory.plan.utils.VoucherDiscountUtils;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Collection;
@@ -29,13 +31,15 @@ import org.springframework.util.StringUtils;
 @Service
 public class VoucherService {
 
-  private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
 
   @Autowired
   private AddOnVoucherRepository voucherRepository;
 
   @Autowired
   private VoucherRedemptionRepository redemptionRepository;
+
+  @Autowired
+  private PlanRepository planRepository;
 
   @Autowired
   private VoucherMapper voucherMapper;
@@ -120,7 +124,13 @@ public class VoucherService {
   /** Non-consuming check for the checkout form; unknown codes count against shop and user. */
   public VoucherCheckResponse check(String rawCode, String shopId, String userId) {
     try {
-      return voucherMapper.toCheckResponse(requireUsable(rawCode, shopId, userId), true, null);
+      AddOnVoucher voucher = requireUsable(rawCode, shopId, userId);
+      VoucherCheckResponse response = voucherMapper.toCheckResponse(voucher, true, null);
+      if (voucher.isPlanVoucher()) {
+        response.setPlanName(planRepository.findByCode(voucher.getPlanCode())
+            .map(Plan::getPlanName).orElse(voucher.getPlanCode()));
+      }
+      return response;
     } catch (VoucherRejectedException e) {
       return VoucherCheckResponse.builder().code(normalise(rawCode)).valid(false).reason(e.getReason()).build();
     }
@@ -128,14 +138,7 @@ public class VoucherService {
 
   /** Discount the voucher gives on {@code line}, never more than the line's gross amount. */
   public static BigDecimal discountFor(AddOnVoucher voucher, OrderLine line) {
-    BigDecimal gross = line.getUnitPrice().multiply(BigDecimal.valueOf(line.getQuantity()));
-    BigDecimal discount = switch (voucher.getType()) {
-      case FREE_ADDON -> line.getUnitPrice().multiply(BigDecimal.valueOf(
-          Math.min(line.getQuantity(), Math.max(1, voucher.getQuantity()))));
-      case PERCENT_OFF -> gross.multiply(voucher.getValue()).divide(HUNDRED, 2, RoundingMode.HALF_UP);
-      case FLAT_OFF -> voucher.getValue();
-    };
-    return discount.min(gross).max(BigDecimal.ZERO);
+    return VoucherDiscountUtils.discountFor(voucher, line);
   }
 
   private static VoucherRejectedException reject(String code, VoucherRejection reason, String message) {

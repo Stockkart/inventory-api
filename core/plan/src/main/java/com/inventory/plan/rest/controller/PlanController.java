@@ -19,6 +19,7 @@ import com.inventory.plan.service.AddOnCatalogueService;
 import com.inventory.plan.service.EntitlementGuard;
 import com.inventory.plan.service.ShopAddOnService;
 import com.inventory.plan.service.PlanService;
+import com.inventory.plan.service.PurchaseHistoryService;
 import com.inventory.plan.service.UsageService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -44,6 +45,9 @@ public class PlanController {
 
   @Autowired
   private PlanService planService;
+
+  @Autowired
+  private PurchaseHistoryService purchaseHistoryService;
 
   @Autowired
   private OrderPricingService orderPricingService;
@@ -118,7 +122,7 @@ public class PlanController {
   @GetMapping("/shop/transactions")
   public ResponseEntity<ApiResponse<List<PlanTransactionResponse>>> listPlanTransactions(HttpServletRequest httpRequest) {
     String shopId = getShopId(httpRequest);
-    return ResponseEntity.ok(ApiResponse.success(planService.listPlanTransactions(shopId)));
+    return ResponseEntity.ok(ApiResponse.success(purchaseHistoryService.forShop(shopId)));
   }
 
   @GetMapping("/shop/usage")

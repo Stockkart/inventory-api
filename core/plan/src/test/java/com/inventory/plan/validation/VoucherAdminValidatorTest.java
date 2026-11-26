@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.inventory.common.exception.ValidationException;
+import com.inventory.plan.domain.model.VoucherTarget;
 import com.inventory.plan.domain.model.VoucherType;
+import com.inventory.plan.rest.dto.request.PlanVoucherPreviewRequest;
 import com.inventory.plan.rest.dto.request.VoucherGenerateRequest;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -23,6 +25,29 @@ class VoucherAdminValidatorTest {
   }
 
   @Test
+  void planPreviewUsesTheSameRulesAsGenerate() {
+    assertThatCode(() -> validator.validatePlanPreview(preview(VoucherType.FLAT_OFF, "1000"))).doesNotThrowAnyException();
+    assertThatCode(() -> validator.validatePlanPreview(preview(VoucherType.PERCENT_OFF, "100"))).doesNotThrowAnyException();
+    assertPreviewInvalid(preview(VoucherType.FLAT_OFF, "0"));
+    assertPreviewInvalid(preview(VoucherType.FLAT_OFF, null));
+    assertPreviewInvalid(preview(VoucherType.PERCENT_OFF, "101"));
+    assertPreviewInvalid(preview(VoucherType.PERCENT_OFF, "0"));
+    assertPreviewInvalid(preview(VoucherType.FREE_ADDON, null));
+    assertPreviewInvalid(preview(null, "10"));
+    assertPreviewInvalid(PlanVoucherPreviewRequest.builder().type(VoucherType.FLAT_OFF).value(BigDecimal.TEN).build());
+    assertPreviewInvalid(null);
+  }
+
+  private static PlanVoucherPreviewRequest preview(VoucherType type, String value) {
+    return PlanVoucherPreviewRequest.builder().planCode("STARTER").type(type)
+        .value(value == null ? null : new BigDecimal(value)).build();
+  }
+
+  private void assertPreviewInvalid(PlanVoucherPreviewRequest request) {
+    assertThatThrownBy(() -> validator.validatePlanPreview(request)).isInstanceOf(ValidationException.class);
+  }
+
+  @Test
   void rejectsBadVouchers() {
     assertInvalid(base().code("MKT-1").count(2).build());
     assertInvalid(base().count(501).build());
@@ -35,6 +60,27 @@ class VoucherAdminValidatorTest {
     assertInvalid(base().maxRedemptions(0).build());
     assertInvalid(base().quantity(0).build());
     assertInvalid(base().validFrom(Instant.parse("2026-10-01T00:00:00Z")).validTo(Instant.parse("2026-09-01T00:00:00Z")).build());
+  }
+
+  @Test
+  void acceptsPlanVoucher() {
+    assertThatCode(() -> validator.validateGenerate(planBase().build())).doesNotThrowAnyException();
+    assertThatCode(() -> validator.validateGenerate(planBase().type(VoucherType.PERCENT_OFF).value(new BigDecimal("25")).build()))
+        .doesNotThrowAnyException();
+  }
+
+  @Test
+  void rejectsBadPlanVouchers() {
+    assertInvalid(planBase().planCode(null).build());
+    assertInvalid(planBase().addOnCode("MARKETING_MODULE").build());
+    assertInvalid(planBase().type(VoucherType.FREE_ADDON).value(null).build());
+    assertInvalid(planBase().quantity(1).build());
+    assertInvalid(planBase().quantity(0).build());
+  }
+
+  @Test
+  void rejectsAddOnVoucherWithPlanCode() {
+    assertInvalid(base().planCode("STARTER").build());
   }
 
   @Test
@@ -61,5 +107,13 @@ class VoucherAdminValidatorTest {
 
   private static VoucherGenerateRequest.VoucherGenerateRequestBuilder base() {
     return VoucherGenerateRequest.builder().addOnCode("MARKETING_MODULE").type(VoucherType.FREE_ADDON);
+  }
+
+  private static VoucherGenerateRequest.VoucherGenerateRequestBuilder planBase() {
+    return VoucherGenerateRequest.builder()
+        .target(VoucherTarget.PLAN)
+        .planCode("STARTER")
+        .type(VoucherType.FLAT_OFF)
+        .value(BigDecimal.valueOf(1000));
   }
 }

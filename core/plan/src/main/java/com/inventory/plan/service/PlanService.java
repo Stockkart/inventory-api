@@ -15,7 +15,6 @@ import com.inventory.plan.domain.repository.UsageRepository;
 import com.inventory.plan.mapper.PlanMapper;
 import com.inventory.plan.mapper.PlanTransactionMapper;
 import com.inventory.plan.rest.dto.response.PlanResponse;
-import com.inventory.plan.rest.dto.response.PlanTransactionResponse;
 import com.inventory.plan.rest.dto.response.ShopPlanStatusResponse;
 import com.inventory.plan.rest.dto.response.UsageResponse;
 import com.inventory.plan.api.port.ShopPort.ShopInfo;
@@ -267,17 +266,6 @@ public class PlanService {
 
   /** Plan and expiry of a shop before and after an admin grant. */
   public record GrantResult(String planIdBefore, Instant expiresAtBefore, String planIdAfter, Instant expiresAtAfter) {}
-
-  /**
-   * List plan payment transactions for a shop.
-   */
-  @Transactional(readOnly = true)
-  public List<PlanTransactionResponse> listPlanTransactions(String shopId) {
-    return planTransactionRepository.findByShopId(shopId, Sort.by(Sort.Direction.DESC, "createdAt"))
-        .stream()
-        .map(planTransactionMapper::toResponse)
-        .collect(Collectors.toList());
-  }
 
   /**
    * Get shop's plan status: plan, trial/expired, usage, suggested upsell plan.
