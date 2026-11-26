@@ -13,5 +13,9 @@ public enum PlanFeature {
   MARKETING,
   SALARY,
   BIOMETRIC_ATTENDANCE,
-  ADVANCED_ACCESS_CONTROL
+  ADVANCED_ACCESS_CONTROL,
+  /** Shop logo and digital signature on invoices. Shown on the pricing page; not gated yet. */
+  SHOP_BRANDING,
+  /** Priority support. A service promise shown on the pricing page; nothing to gate. */
+  PRIORITY_SUPPORT
 }

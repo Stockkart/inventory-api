@@ -105,6 +105,8 @@ public class PlanAdminService {
         .set("whatsappLimit", request.getWhatsappLimit())
         .set("userLimit", request.getUserLimit())
         .set("ocrLimit", request.getOcrLimit())
+        .set("roleLimit", request.getRoleLimit())
+        .set("attendanceUserLimit", request.getAttendanceUserLimit())
         .set("unlimited", request.isUnlimited())
         .set("entitlements", request.getFeatures() == null ? List.of() : new TreeSet<>(request.getFeatures()))
         .set("displayOrder", request.getDisplayOrder())
@@ -193,6 +195,8 @@ public class PlanAdminService {
     map.put("whatsappLimit", plan.getWhatsappLimit());
     map.put("userLimit", plan.getUserLimit());
     map.put("ocrLimit", plan.getOcrLimit());
+    map.put("roleLimit", plan.getRoleLimit());
+    map.put("attendanceUserLimit", plan.getAttendanceUserLimit());
     map.put("unlimited", plan.isUnlimited());
     map.put("features", plan.getFeatures() == null ? List.of()
         : plan.getFeatures().stream().map(Enum::name).sorted().toList());

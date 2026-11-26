@@ -29,6 +29,8 @@ public class PlanAdminRequest {
   private Integer whatsappLimit;
   private Integer userLimit;
   private Integer ocrLimit;
+  private Integer roleLimit;
+  private Integer attendanceUserLimit;
   private boolean unlimited;
   private Set<PlanFeature> features;
   private Integer displayOrder;

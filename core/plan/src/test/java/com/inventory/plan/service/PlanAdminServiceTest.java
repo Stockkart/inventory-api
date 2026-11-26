@@ -90,15 +90,23 @@ class PlanAdminServiceTest {
       return plan;
     });
 
-    AdminPlanResponse response = service.create(request(), "admin-1");
+    PlanAdminRequest request = request();
+    request.setRoleLimit(3);
+    request.setAttendanceUserLimit(4);
+
+    AdminPlanResponse response = service.create(request, "admin-1");
 
     assertThat(response.isActive()).isTrue();
+    assertThat(response.getRoleLimit()).isEqualTo(3);
+    assertThat(response.getAttendanceUserLimit()).isEqualTo(4);
     assertThat(response.getListPrice()).isEqualByComparingTo("10999");
     ArgumentCaptor<AuditEntry> audit = ArgumentCaptor.forClass(AuditEntry.class);
     verify(auditService).record(audit.capture());
     assertThat(audit.getValue().getAction()).isEqualTo("PLAN_CREATED");
     assertThat(audit.getValue().getTargetType()).isEqualTo("PLAN");
-    assertThat(audit.getValue().getAfter()).containsEntry("features", List.of("ACCOUNTING"));
+    assertThat(audit.getValue().getAfter()).containsEntry("features", List.of("ACCOUNTING"))
+        .containsEntry("roleLimit", 3)
+        .containsEntry("attendanceUserLimit", 4);
   }
 
   @Test
