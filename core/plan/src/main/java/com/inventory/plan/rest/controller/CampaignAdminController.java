@@ -7,6 +7,7 @@ import com.inventory.metrics.annotation.RecordStatusCodes;
 import com.inventory.plan.rest.dto.request.CampaignActiveRequest;
 import com.inventory.plan.rest.dto.request.CampaignRequest;
 import com.inventory.plan.rest.dto.response.AdminCampaignResponse;
+import com.inventory.plan.rest.dto.response.CampaignThemeResponse;
 import com.inventory.plan.service.CampaignAdminService;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
@@ -35,6 +36,12 @@ public class CampaignAdminController {
   @GetMapping
   public ResponseEntity<ApiResponse<List<AdminCampaignResponse>>> list() {
     return ResponseEntity.ok(ApiResponse.success(campaignAdminService.list()));
+  }
+
+  /** Themes for the campaign form. Rows are written directly in the database. */
+  @GetMapping("/themes")
+  public ResponseEntity<ApiResponse<List<CampaignThemeResponse>>> listThemes() {
+    return ResponseEntity.ok(ApiResponse.success(campaignAdminService.listThemes()));
   }
 
   @PostMapping

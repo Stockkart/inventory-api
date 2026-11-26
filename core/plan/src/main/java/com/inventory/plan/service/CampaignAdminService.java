@@ -5,15 +5,19 @@ import com.inventory.common.audit.AuditService;
 import com.inventory.common.audit.AuditSource;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.plan.domain.model.CampaignTheme;
 import com.inventory.plan.domain.model.SaleCampaign;
+import com.inventory.plan.domain.repository.CampaignThemeRepository;
 import com.inventory.plan.domain.repository.SaleCampaignRepository;
 import com.inventory.plan.mapper.CampaignMapper;
 import com.inventory.plan.rest.dto.request.CampaignActiveRequest;
 import com.inventory.plan.rest.dto.request.CampaignRequest;
 import com.inventory.plan.rest.dto.response.AdminCampaignResponse;
+import com.inventory.plan.rest.dto.response.CampaignThemeResponse;
 import com.inventory.plan.validation.CampaignValidator;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -42,6 +46,9 @@ public class CampaignAdminService {
   private SaleCampaignRepository saleCampaignRepository;
 
   @Autowired
+  private CampaignThemeRepository campaignThemeRepository;
+
+  @Autowired
   private MongoTemplate mongoTemplate;
 
   @Autowired
@@ -65,8 +72,18 @@ public class CampaignAdminService {
         .toList();
   }
 
+  /** Every theme in campaign_themes, by sortOrder then label, for the admin theme picker. */
+  public List<CampaignThemeResponse> listThemes() {
+    return campaignThemeRepository.findAll().stream()
+        .sorted(Comparator.comparing(CampaignTheme::getSortOrder, Comparator.nullsLast(Comparator.naturalOrder()))
+            .thenComparing(CampaignTheme::getLabel, Comparator.nullsLast(Comparator.naturalOrder())))
+        .map(campaignMapper::toThemeResponse)
+        .toList();
+  }
+
   public AdminCampaignResponse create(CampaignRequest request, String actorUserId) {
     campaignValidator.validateCreate(request);
+    requireActiveTheme(request.getTheme());
     if (saleCampaignRepository.findByCode(request.getCode()).isPresent()) {
       throw new ValidationException("A campaign with code " + request.getCode() + " already exists");
     }
@@ -87,6 +104,7 @@ public class CampaignAdminService {
 
   public AdminCampaignResponse update(String id, CampaignRequest request, String actorUserId) {
     campaignValidator.validateUpdate(id, request);
+    requireActiveTheme(request.getTheme());
     Instant now = clock.instant();
     Update update = new Update()
         .set("headline", request.getHeadline())
@@ -135,6 +153,15 @@ public class CampaignAdminService {
     return toResponse(after, now);
   }
 
+  /** The theme must be a row in campaign_themes that is not switched off. */
+  private void requireActiveTheme(String code) {
+    CampaignTheme theme = campaignThemeRepository.findByCode(code)
+        .orElseThrow(() -> new ValidationException("Unknown theme " + code));
+    if (Boolean.FALSE.equals(theme.getActive())) {
+      throw new ValidationException("Theme " + code + " is switched off");
+    }
+  }
+
   private SaleCampaign load(String id) {
     return saleCampaignRepository.findById(id)
         .orElseThrow(() -> new ResourceNotFoundException("Campaign", "id", id));
@@ -174,7 +201,7 @@ public class CampaignAdminService {
     map.put("upcomingHeadline", campaign.getUpcomingHeadline());
     map.put("ctaLabel", campaign.getCtaLabel());
     map.put("ctaPath", campaign.getCtaPath());
-    map.put("theme", campaign.getTheme() == null ? null : campaign.getTheme().name());
+    map.put("theme", campaign.getTheme());
     map.put("startsAt", campaign.getStartsAt());
     map.put("endsAt", campaign.getEndsAt());
     map.put("announceFrom", campaign.getAnnounceFrom());
