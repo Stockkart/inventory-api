@@ -1,5 +1,8 @@
 package com.inventory.user.service;
 
+import com.inventory.user.api.port.SeatLimitGuard;
+
+import com.inventory.common.exception.EntitlementException;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceExistsException;
@@ -48,6 +51,9 @@ public class InvitationService {
 
   @Autowired(required = false)
   private ShopServiceAdapter shopServiceAdapter;
+
+  @Autowired(required = false)
+  private SeatLimitGuard seatLimitGuard;
 
   @Autowired
   private InvitationMapper invitationMapper;
@@ -100,6 +106,10 @@ public class InvitationService {
             throw new ResourceExistsException("A pending invitation already exists for this user");
           });
 
+      if (seatLimitGuard != null) {
+        seatLimitGuard.requireSeat(shopId);
+      }
+
       log.info("Sending invitation from user {} to user {} for shop {}",
           inviterUserId, invitee.getUserId(), shopId);
 
@@ -125,7 +135,7 @@ public class InvitationService {
           "send");
       return invitationMapper.toSendResponse(invitation);
 
-    } catch (ValidationException | ResourceNotFoundException | ResourceExistsException e) {
+    } catch (ValidationException | ResourceNotFoundException | ResourceExistsException | EntitlementException e) {
       log.warn("Failed to send invitation: {}", e.getMessage());
       throw e;
     } catch (DataAccessException e) {
@@ -167,6 +177,10 @@ public class InvitationService {
       log.info("Accepting invitation {} for user {} to shop {}",
           invitationId, userId, invitation.getShopId());
 
+      if (seatLimitGuard != null) {
+        seatLimitGuard.requireSeat(invitation.getShopId());
+      }
+
       // Add membership (multi-shop: does not overwrite existing)
       membershipService.addMembership(userId, invitation.getShopId(), invitation.getRole(),
           UserShopMembershipService.RELATIONSHIP_INVITED);
@@ -199,7 +213,7 @@ public class InvitationService {
 
       return invitationMapper.toAcceptResponse(invitation, shopName, user);
 
-    } catch (ValidationException | ResourceNotFoundException | ResourceExistsException e) {
+    } catch (ValidationException | ResourceNotFoundException | ResourceExistsException | EntitlementException e) {
       log.warn("Failed to accept invitation: {}", e.getMessage());
       throw e;
     } catch (DataAccessException e) {

@@ -67,6 +67,8 @@ public class PlanService {
   @Autowired
   private MetricsWrapper metrics;
 
+  @Autowired
+  private ShopSubscriptionService shopSubscriptionService;
   /** Free-trial length for new shops; the same setting ShopService uses at registration. */
   @Value("${plan.trial-days:3}")
   int trialDays = 3;
@@ -108,6 +110,7 @@ public class PlanService {
     int durationMonths = request.getDurationMonths() != null ? request.getDurationMonths() : 1;
     Instant expiryDate = PlanUtils.plusMonths(Instant.now(), durationMonths);
     shopProvider.updatePlan(shopId, plan.getId(), expiryDate);
+    shopSubscriptionService.recordGrant(new ShopInfo(shopId, plan.getId(), expiryDate), request.getPaymentOrderId());
 
     PlanTransaction tx = planTransactionMapper.toTransaction(shopId, plan, request);
     planTransactionRepository.save(tx);
@@ -178,6 +181,14 @@ public class PlanService {
   private PlanResponse withTrialDays(PlanResponse response) {
     response.setTrialDays(trialDays);
     return response;
+  }
+
+  /**
+   * Entitlements are read from the subscription, so a change whose sync failed is not finished: the
+   * error propagates and the payment fulfilment step runs again. Reads never write it.
+   */
+  private void syncSubscription(ShopInfo shopInfo, String sourceOrderId) {
+    shopSubscriptionService.sync(shopInfo, sourceOrderId);
   }
 
   private ShopInfo getShopInfo(String shopId) {

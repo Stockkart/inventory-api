@@ -146,6 +146,9 @@ public class InventoryService {
   private InvoiceParser invoiceParserService;
 
   @Autowired
+  private com.inventory.ocr.api.port.OcrQuotaGuard ocrQuotaGuard;
+
+  @Autowired
   private ParsedInventoryMapper parsedInventoryMapper;
 
   @Autowired
@@ -263,14 +266,24 @@ public class InventoryService {
       imageValidator.validateInvoiceImageSize(i, bytes.length);
     }
 
+    boolean metered = StringUtils.hasText(shopId);
+    if (metered) {
+      ocrQuotaGuard.requireUnit(shopId);
+    }
+
     InvoicePricingLayout layout = resolveInvoicePricingLayout(shopId);
     log.info("Processing invoice parsing for {} image(s) shopId={} layout={}",
         imageBytesList.size(), shopId, layout);
     // at most a few uploads parse at once (images in memory; the OCR provider rate-limits); the
     // desktop upload waits briefly then gets "busy", the phone upload's background parse waits longer
+    ParsedInventoryListResponse parsed;
     try (HeavyRequestLimiter.Permit ignored = heavyRequestLimiter.acquire(HeavyKind.OCR)) {
-      return parseImages(imageBytesList, layout);
+      parsed = parseImages(imageBytesList, layout);
     }
+    if (metered) {
+      ocrQuotaGuard.recordUnit(shopId);
+    }
+    return parsed;
   }
 
   private ParsedInventoryListResponse parseImages(

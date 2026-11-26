@@ -71,6 +71,7 @@ class AuthenticationInterceptorBoundaryTest {
       RbacModuleInterceptor.class,
       PlanExpiryInterceptor.class,
       PlatformRoleInterceptor.class,
+      EntitlementInterceptor.class,
       GlobalExceptionHandler.class,
       ApiErrorMapperImpl.class,
       AuthController.class,
@@ -97,6 +98,8 @@ class AuthenticationInterceptorBoundaryTest {
   @MockBean private VerticalCatalogService verticalCatalogService;
   @MockBean private ShopRepository shopRepository;
   @MockBean private ShopMapper shopMapper;
+  // ShopService pages shops for the plan module through MongoTemplate
+  @MockBean private org.springframework.data.mongodb.core.MongoTemplate mongoTemplate;
   @MockBean private UserAccountRepository userAccountRepository;
   @MockBean private MetricsWrapper metrics;
   // ShopService seeds the chart of accounts through the accounting api on registration.
@@ -106,6 +109,7 @@ class AuthenticationInterceptorBoundaryTest {
   // PlatformRoleInterceptor (only /api/v1/admin/**) and the approval audit row
   @MockBean private com.inventory.user.api.PlatformAdmins platformAdmins;
   @MockBean private com.inventory.common.audit.AuditService auditService;
+  @MockBean private com.inventory.plan.api.Entitlements entitlements;
 
   private static UserAccount account(String userId, UserRole role, String shopId) {
     UserAccount a = new UserAccount();

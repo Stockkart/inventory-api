@@ -1,5 +1,7 @@
 package com.inventory.product.rest.controller;
 
+import com.inventory.common.entitlement.PlanFeature;
+import com.inventory.common.entitlement.RequiresEntitlement;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.common.exception.AuthenticationException;
@@ -32,6 +34,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RecordRequestRate(module = "product")
 @RecordStatusCodes(module = "product")
 @Slf4j
+@RequiresEntitlement(PlanFeature.BARCODE_GENERATOR)
 public class BarcodeController {
 
   @Autowired

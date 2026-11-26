@@ -1,6 +1,8 @@
 package com.inventory.accounting.rest.controller;
 
 
+import com.inventory.common.entitlement.PlanFeature;
+import com.inventory.common.entitlement.RequiresEntitlement;
 import com.inventory.metrics.annotation.Latency;
 import com.inventory.metrics.annotation.RecordRequestRate;
 import com.inventory.metrics.annotation.RecordStatusCodes;
@@ -64,6 +66,7 @@ import org.springframework.web.bind.annotation.RestController;
 @Latency(module = "accounting")
 @RecordRequestRate(module = "accounting")
 @RecordStatusCodes(module = "accounting")
+@RequiresEntitlement(PlanFeature.ACCOUNTING)
 public class AccountingController {
 
   private final AccountService accountService;
