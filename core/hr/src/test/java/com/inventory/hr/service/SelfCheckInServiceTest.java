@@ -493,4 +493,284 @@ class SelfCheckInServiceTest {
     assertEquals(1_112, com.inventory.hr.utils.GeoDistance.metres(SHOP_LAT, SHOP_LNG, FAR_LAT,
         SHOP_LNG), 2);
   }
+
+  // ---- HR-module R1.2: the biometric switch does not change My HR -----------------------------
+
+  @Test
+  void theBiometricSwitchDoesNotChangeASelfCheckInThatIsAccepted() {
+    locationCheck(OutsideAction.FLAG);
+    settings.getAttendanceCapture().setBiometricApp(true);
+
+    SelfCheckInResponse r = service.checkIn(SHOP, USER, at(FAR_LAT, SHOP_LNG, 10.0));
+
+    Punch p = insertedPunch();
+    assertEquals(PunchSource.SELF, p.getSource());
+    assertEquals(List.of(PunchFlag.OUTSIDE_SHOP), p.getFlags());
+    assertEquals(PunchDirection.OUT, r.getNextDirection());
+  }
+
+  @Test
+  void theBiometricSwitchDoesNotChangeASelfCheckInThatIsRefused() {
+    settings.getAttendanceCapture().setBiometricApp(true);
+    settings.getAttendanceCapture().setSelfCheckIn(false);
+
+    assertEquals(ErrorCode.HR_SELF_CHECKIN_OFF, refused(null));
+
+    settings.getAttendanceCapture().setSelfCheckIn(true);
+    when(hrAccessService.permissions(USER, SHOP)).thenReturn(EnumSet.noneOf(HrPermission.class));
+    assertEquals(ErrorCode.ACCESS_DENIED, refused(null));
+  }
+
+  @Test
+  void theSelfPathStillChecksThePermissionAndIgnoresThePairingFlag() {
+    HrSettings.AttendanceCapture capture = settings.getAttendanceCapture();
+    capture.setBiometricApp(false);
+    when(hrAccessService.permissions(USER, SHOP)).thenReturn(EnumSet.noneOf(HrPermission.class));
+
+    // pairingActive = true means nothing for SELF
+    BaseException e = service.refusal(PunchSource.SELF, SHOP, USER, true, settings, capture,
+        employee, HrDateUtils.today(), HrDateUtils.format(HrDateUtils.today()));
+
+    assertEquals(ErrorCode.ACCESS_DENIED, e.getErrorCode());
+    assertEquals(SelfCheckInService.REASON_NO_PERMISSION, e.getMessage());
+    verify(hrAccessService).permissions(USER, SHOP);
+  }
+
+  // ---- HR-module R1.4, R4.3: refusals for the Attendance app ----------------------------------
+
+  private BaseException appRefusal(boolean pairingActive) {
+    return service.refusal(PunchSource.BIOMETRIC_APP, SHOP, null, pairingActive, settings,
+        settings.getAttendanceCapture(), employee, HrDateUtils.today(),
+        HrDateUtils.format(HrDateUtils.today()));
+  }
+
+  @Test
+  void theAppIsRefusedFirstWhenTheBiometricSwitchIsOff() {
+    settings.getAttendanceCapture().setBiometricApp(false);
+    // everything else would also refuse: the switch still comes first
+    employee.setExitDate("2020-02-01");
+
+    BaseException e = appRefusal(false);
+
+    assertEquals(ErrorCode.HR_APP_OFF, e.getErrorCode());
+    assertEquals(ErrorCode.HR_APP_OFF.getMessage(), e.getMessage());
+    assertTrue(e.getMessage().endsWith("Ask your manager to mark your attendance."));
+    assertEquals("off", SelfCheckInService.result(e));
+    verify(hrAccessService, never()).permissions(anyString(), anyString());
+  }
+
+  @Test
+  void theAppIsRefusedSecondWhenThePairingIsNotActive() {
+    settings.getAttendanceCapture().setBiometricApp(true);
+    employee.setExitDate("2020-02-01");
+
+    BaseException e = appRefusal(false);
+
+    assertEquals(ErrorCode.HR_APP_NOT_PAIRED, e.getErrorCode());
+    assertEquals("This phone is no longer paired. Ask your manager.", e.getMessage());
+    assertEquals("not_paired", SelfCheckInService.result(e));
+  }
+
+  @Test
+  void theAppDoesNotNeedSelfCheckInOrTheSelfCheckInPermission() {
+    settings.getAttendanceCapture().setBiometricApp(true);
+    settings.getAttendanceCapture().setSelfCheckIn(false);
+    when(hrAccessService.permissions(any(), any())).thenReturn(EnumSet.noneOf(HrPermission.class));
+
+    assertNull(appRefusal(true));
+    verify(hrAccessService, never()).permissions(any(), any());
+  }
+
+  @Test
+  void theAppThenAppliesTheMyHrChecksInTheSameOrderWithTheSameMessages() {
+    settings.getAttendanceCapture().setBiometricApp(true);
+
+    employee.setExitDate(HrDateUtils.format(HrDateUtils.today().minusDays(1)));
+    BaseException notEmployed = appRefusal(true);
+    assertEquals(ErrorCode.HR_EMPLOYEE_NOT_EMPLOYED, notEmployed.getErrorCode());
+    assertEquals(SelfCheckInService.REASON_NOT_EMPLOYED, notEmployed.getMessage());
+    employee.setExitDate(null);
+
+    LeaveRequest leave = new LeaveRequest();
+    leave.setHalfDay(false);
+    when(attendanceService.approvedLeave(anyString(), anyCollection(), anyString(), anyString(),
+        anyLong())).thenReturn(List.of(leave));
+    when(periodLockService.lockedPeriods(anyString(), anyCollection()))
+        .thenReturn(Set.of("2025-04"));
+    BaseException onLeave = appRefusal(true);
+    assertEquals(ErrorCode.HR_DAY_HAS_LEAVE, onLeave.getErrorCode());
+    assertEquals(SelfCheckInService.REASON_ON_LEAVE, onLeave.getMessage());
+
+    // a holiday lifts the leave, so the lock is the next refusal
+    when(attendanceService.holidayDates(anyString(), anyString(), anyString(), anyLong()))
+        .thenReturn(Set.of(HrDateUtils.format(HrDateUtils.today())));
+    BaseException locked = appRefusal(true);
+    assertEquals(ErrorCode.HR_PERIOD_LOCKED, locked.getErrorCode());
+    assertEquals(SelfCheckInService.REASON_LOCKED, locked.getMessage());
+
+    when(periodLockService.lockedPeriods(anyString(), anyCollection())).thenReturn(Set.of());
+    assertNull(appRefusal(true));
+  }
+
+  @Test
+  void theAppChecksAreMadeForTheDayGivenNotForToday() {
+    settings.getAttendanceCapture().setBiometricApp(true);
+    java.time.LocalDate yesterday = HrDateUtils.today().minusDays(1);
+    employee.setJoinDate(HrDateUtils.format(HrDateUtils.today()));
+
+    // offline punch recorded yesterday, before the employee joined (R6.10)
+    BaseException e = service.refusal(PunchSource.BIOMETRIC_APP, SHOP, null, true, settings,
+        settings.getAttendanceCapture(), employee, yesterday, HrDateUtils.format(yesterday));
+
+    assertEquals(ErrorCode.HR_EMPLOYEE_NOT_EMPLOYED, e.getErrorCode());
+    verify(attendanceService, never()).approvedLeave(anyString(), anyCollection(), anyString(),
+        anyString(), anyLong());
+  }
+
+  // ---- HR-module R4.5, R4.6: the location rule on a phone-computed distance -------------------
+
+  private HrSettings.AttendanceCapture capture(OutsideAction action) {
+    locationCheck(action);
+    return settings.getAttendanceCapture();
+  }
+
+  private static ErrorCode refusedDistance(HrSettings.AttendanceCapture capture, Integer distance,
+      Integer accuracy, boolean mock) {
+    BaseException e = assertThrows(BaseException.class,
+        () -> SelfCheckInService.locationFromDistance(capture, distance, accuracy, mock));
+    return e.getErrorCode();
+  }
+
+  @Test
+  void aPhoneDistanceInsideTheRadiusIsAcceptedWithNoFlags() {
+    for (OutsideAction action : OutsideAction.values()) {
+      SelfCheckInService.Location l =
+          SelfCheckInService.locationFromDistance(capture(action), 33, 13, false);
+      assertEquals(33, l.distanceMetres());
+      assertEquals(13, l.accuracyMetres());
+      assertEquals(List.of(), l.flags());
+    }
+  }
+
+  @Test
+  void thePhoneDistanceBoundariesMatchTheMyHrRule() {
+    HrSettings.AttendanceCapture c = capture(OutsideAction.BLOCK);
+    // exactly on the radius and exactly 200 m accuracy are still inside and clear
+    SelfCheckInService.Location l = SelfCheckInService.locationFromDistance(c, 100, 200, false);
+    assertEquals(List.of(), l.flags());
+    assertEquals(ErrorCode.HR_OUTSIDE_SHOP, refusedDistance(c, 101, 200, false));
+    assertEquals(ErrorCode.HR_LOCATION_UNCLEAR, refusedDistance(c, 100, 201, false));
+  }
+
+  @Test
+  void blockRefusesAPhoneDistanceOutsideUnclearOrMissing() {
+    HrSettings.AttendanceCapture c = capture(OutsideAction.BLOCK);
+
+    assertEquals(ErrorCode.HR_OUTSIDE_SHOP, refusedDistance(c, 1_112, 10, false));
+    assertEquals(ErrorCode.HR_LOCATION_UNCLEAR, refusedDistance(c, 33, 250, false));
+    assertEquals(ErrorCode.HR_LOCATION_UNCLEAR, refusedDistance(c, 33, null, false));
+    assertEquals(ErrorCode.HR_OUTSIDE_SHOP, refusedDistance(c, null, 10, false));
+    // unclear is checked before outside, as for My HR
+    assertEquals(ErrorCode.HR_LOCATION_UNCLEAR, refusedDistance(c, 1_112, 250, false));
+  }
+
+  @Test
+  void flagKeepsAPhoneDistanceOutsideUnclearOrMissingWithTheExistingFlags() {
+    HrSettings.AttendanceCapture c = capture(OutsideAction.FLAG);
+
+    SelfCheckInService.Location outside =
+        SelfCheckInService.locationFromDistance(c, 1_112, 10, false);
+    assertEquals(List.of(PunchFlag.OUTSIDE_SHOP), outside.flags());
+    assertEquals(1_112, outside.distanceMetres());
+
+    SelfCheckInService.Location unclear =
+        SelfCheckInService.locationFromDistance(c, 33, 250, false);
+    assertEquals(List.of(PunchFlag.LOW_ACCURACY), unclear.flags());
+
+    SelfCheckInService.Location both =
+        SelfCheckInService.locationFromDistance(c, 1_112, 250, false);
+    assertEquals(List.of(PunchFlag.LOW_ACCURACY, PunchFlag.OUTSIDE_SHOP), both.flags());
+
+    SelfCheckInService.Location none =
+        SelfCheckInService.locationFromDistance(c, null, 10, false);
+    assertEquals(List.of(PunchFlag.NO_LOCATION), none.flags());
+    assertNull(none.distanceMetres());
+    assertNull(none.accuracyMetres());
+  }
+
+  @Test
+  void aMockLocationIsRefusedUnderBlockWhateverTheDistance() {
+    HrSettings.AttendanceCapture c = capture(OutsideAction.BLOCK);
+
+    assertEquals(ErrorCode.HR_FAKE_LOCATION, refusedDistance(c, 0, 5, true));
+    assertEquals(ErrorCode.HR_FAKE_LOCATION, refusedDistance(c, 1_112, 250, true));
+    assertEquals(ErrorCode.HR_FAKE_LOCATION, refusedDistance(c, null, null, true));
+    assertEquals("Fake location detected", ErrorCode.HR_FAKE_LOCATION.getMessage());
+    assertEquals("fake_location", SelfCheckInService.result(
+        new BaseException(ErrorCode.HR_FAKE_LOCATION, "x")));
+  }
+
+  @Test
+  void aMockLocationIsTheOnlyFlagAndDropsTheDistanceUnderFlag() {
+    HrSettings.AttendanceCapture c = capture(OutsideAction.FLAG);
+
+    for (Integer[] reading : new Integer[][] {{0, 5}, {1_112, 250}, {null, null}}) {
+      SelfCheckInService.Location l =
+          SelfCheckInService.locationFromDistance(c, reading[0], reading[1], true);
+      assertEquals(List.of(PunchFlag.FAKE_LOCATION), l.flags());
+      assertNull(l.distanceMetres());
+      assertNull(l.accuracyMetres());
+    }
+  }
+
+  @Test
+  void withTheLocationCheckOffThePhoneDistanceIsIgnoredEvenWhenMock() {
+    HrSettings.AttendanceCapture c = settings.getAttendanceCapture();
+    c.setLocationCheck(false);
+
+    SelfCheckInService.Location l =
+        SelfCheckInService.locationFromDistance(c, 5_000, 900, true);
+
+    assertNull(l.distanceMetres());
+    assertNull(l.accuracyMetres());
+    assertEquals(List.of(), l.flags());
+  }
+
+  @Test
+  void aNegativePhoneDistanceOrAccuracyIs400() {
+    HrSettings.AttendanceCapture c = capture(OutsideAction.FLAG);
+
+    assertThrows(ValidationException.class,
+        () -> SelfCheckInService.locationFromDistance(c, -1, 10, false));
+    assertThrows(ValidationException.class,
+        () -> SelfCheckInService.locationFromDistance(c, 10, -1, false));
+  }
+
+  @Test
+  void aPhoneDistanceAgreesWithTheMyHrRuleForTheSameReading() {
+    for (OutsideAction action : OutsideAction.values()) {
+      HrSettings.AttendanceCapture c = capture(action);
+      for (double[] reading : new double[][] {{NEAR_LAT, 12.4}, {FAR_LAT, 10.0},
+          {NEAR_LAT, 250.0}, {FAR_LAT, 500.0}}) {
+        SelfCheckInRequest request = at(reading[0], SHOP_LNG, reading[1]);
+        int distance = (int) Math.round(com.inventory.hr.utils.GeoDistance.metres(SHOP_LAT,
+            SHOP_LNG, reading[0], SHOP_LNG));
+        int accuracy = (int) Math.ceil(reading[1]);
+
+        Object expected;
+        try {
+          expected = SelfCheckInService.location(c, request);
+        } catch (BaseException e) {
+          expected = e.getErrorCode();
+        }
+        Object actual;
+        try {
+          actual = SelfCheckInService.locationFromDistance(c, distance, accuracy, false);
+        } catch (BaseException e) {
+          actual = e.getErrorCode();
+        }
+        assertEquals(expected, actual, action + " " + distance + "m ±" + accuracy);
+      }
+    }
+  }
 }

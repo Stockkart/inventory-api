@@ -7,6 +7,9 @@ import com.inventory.hr.rest.dto.request.SaveEmployeeRequest;
 import com.inventory.hr.rest.dto.response.EmployeeResponse;
 import com.inventory.hr.rest.dto.response.EmployeesPageResponse;
 import com.inventory.hr.rest.dto.response.LinkableLoginResponse;
+import com.inventory.hr.rest.dto.response.PairingCodeResponse;
+import com.inventory.hr.rest.dto.response.PairingStateResponse;
+import com.inventory.hr.service.EmployeePairingService;
 import com.inventory.hr.service.EmployeeService;
 import com.inventory.hr.utils.HrRequestUtils;
 import com.inventory.metrics.annotation.Latency;
@@ -35,17 +38,21 @@ public class EmployeeController {
 
   @Autowired private EmployeeService employeeService;
 
+  @Autowired private EmployeePairingService pairingService;
+
+  /** {@code paired=true|false} lists only employees with / without an active paired phone (R8.12). */
   @GetMapping("/employees")
   public ResponseEntity<ApiResponse<EmployeesPageResponse>> list(
       @RequestParam(required = false) String q,
       @RequestParam(required = false) String status,
       @RequestParam(required = false) String designation,
+      @RequestParam(required = false) String paired,
       @RequestParam(required = false, defaultValue = "0") Integer page,
       @RequestParam(required = false, defaultValue = "20") Integer size,
       HttpServletRequest request) {
     return ResponseEntity.ok(ApiResponse.success(employeeService.list(
         HrRequestUtils.requireUserId(request), HrRequestUtils.requireShopId(request),
-        q, status, designation, page, size)));
+        q, status, designation, paired, page, size)));
   }
 
   @GetMapping("/employees/designations")
@@ -92,10 +99,47 @@ public class EmployeeController {
         HrRequestUtils.requireUserId(request), HrRequestUtils.requireShopId(request), id, body)));
   }
 
+  /**
+   * "Request profile details" (worker-app R8.7): stamps {@code profileRequestedAt} and tells the
+   * linked worker account; ADD_EDIT_EMPLOYEES, checked in the service.
+   */
+  @PostMapping("/employees/{id}/request-profile")
+  public ResponseEntity<ApiResponse<EmployeeResponse>> requestProfile(
+      @PathVariable String id, HttpServletRequest request) {
+    return ResponseEntity.ok(ApiResponse.success(employeeService.requestProfile(
+        HrRequestUtils.requireUserId(request), HrRequestUtils.requireShopId(request), id)));
+  }
+
   @GetMapping("/linkable-logins")
   public ResponseEntity<ApiResponse<List<LinkableLoginResponse>>> linkableLogins(
       HttpServletRequest request) {
     return ResponseEntity.ok(ApiResponse.success(employeeService.linkableLogins(
         HrRequestUtils.requireUserId(request), HrRequestUtils.requireShopId(request))));
+  }
+
+  // ---- Attendance app pairing (R2, R3.1); ADD_EDIT_EMPLOYEES, checked in the service ----------
+
+  /** The Attendance app section of the employee's page (R2.1, R2.2). */
+  @GetMapping("/employees/{id}/pairing")
+  public ResponseEntity<ApiResponse<PairingStateResponse>> pairing(
+      @PathVariable String id, HttpServletRequest request) {
+    return ResponseEntity.ok(ApiResponse.success(pairingService.state(
+        HrRequestUtils.requireUserId(request), HrRequestUtils.requireShopId(request), id)));
+  }
+
+  /** "Pair a phone": a one-time code valid for 15 minutes; cancels the previous unused one. */
+  @PostMapping("/employees/{id}/pairing-codes")
+  public ResponseEntity<ApiResponse<PairingCodeResponse>> createPairingCode(
+      @PathVariable String id, HttpServletRequest request) {
+    return ResponseEntity.ok(ApiResponse.success(pairingService.createCode(
+        HrRequestUtils.requireUserId(request), HrRequestUtils.requireShopId(request), id)));
+  }
+
+  /** "Unpair phone": the phone's next punch is refused (R2.12, R3.1). */
+  @PostMapping("/employees/{id}/pairing/unpair")
+  public ResponseEntity<ApiResponse<PairingStateResponse>> unpair(
+      @PathVariable String id, HttpServletRequest request) {
+    return ResponseEntity.ok(ApiResponse.success(pairingService.unpair(
+        HrRequestUtils.requireUserId(request), HrRequestUtils.requireShopId(request), id)));
   }
 }

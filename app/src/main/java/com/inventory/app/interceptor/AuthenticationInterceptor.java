@@ -44,7 +44,14 @@ public class AuthenticationInterceptor implements HandlerInterceptor {
       "/api/v1/plans/webhook/payment-success",
       "/api/v1/plans/payment/config",
       "/api/v1/plans/payment/webhook/[a-zA-Z0-9_-]+",
-      "/api/v1/resources/key/[a-zA-Z0-9-]+"
+      "/api/v1/resources/key/[a-zA-Z0-9-]+",
+      // Attendance app device paths: no Bearer token (HR D7); authenticated by the signed envelope
+      // in com.inventory.hr.service.AttendanceAppAuthInterceptor. Patterns, not a prefix, so
+      // /api/v1/hr/attendance-app/health stays behind Bearer + VIEW_ATTENDANCE and the removed
+      // unsigned handshake (/pairings/claim|complete|abandon, worker-app D11) is an ordinary route.
+      // Keep in step with AttendanceAppAuthInterceptor.DEVICE_PATH_PATTERNS and CorsConfig.
+      "/api/v1/hr/attendance-app/pairings/me(/.*)?",
+      "/api/v1/hr/attendance-app/(me|punches|consent(/.*)?)"
   );
   @Autowired
   private TokenValidationService tokenValidationService;

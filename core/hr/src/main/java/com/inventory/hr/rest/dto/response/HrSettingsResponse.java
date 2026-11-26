@@ -30,8 +30,13 @@ public class HrSettingsResponse {
   private LeaveYearStartMonth leaveYearStartMonth;
   /** Day 1–28 the salary month starts on (default 1 = calendar month). */
   private Integer payCycleStartDay;
-  /** Self check-in and location check, defaults filled in. */
+  /** Self check-in, biometric app and location check, defaults filled in. */
   private AttendanceCaptureDto attendanceCapture;
+  /**
+   * Current (not exited) employees with an active paired Attendance app phone, as of this read
+   * (R1.9). Shown whatever the biometric app switch says.
+   */
+  private long pairedEmployeeCount;
   /** Send back on PUT for lost-update protection; null = never saved. */
   private Long revision;
   private Instant updatedAt;
@@ -40,6 +45,8 @@ public class HrSettingsResponse {
   @NoArgsConstructor
   public static class AttendanceCaptureDto {
     private boolean selfCheckIn;
+    /** Biometric app check-in; off by default for every shop (R1.1). */
+    private boolean biometricApp;
     private boolean locationCheck;
     /** null = shop location not set yet. */
     private Double shopLat;

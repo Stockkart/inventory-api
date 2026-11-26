@@ -108,6 +108,50 @@ class RbacModuleInterceptorTest {
     verifyNoInteractions(rbacService);
   }
 
+  /**
+   * Stockkart Team app (worker-app R2.1, DD3): a WORKER membership has hr = off, so the signed-in
+   * worker's own paths skip the module check like /hr/me; the handlers derive the employee from
+   * the token.
+   */
+  @ParameterizedTest
+  @ValueSource(strings = {
+      "/api/v1/hr/worker", "/api/v1/hr/worker/me", "/api/v1/hr/worker/shops",
+      "/api/v1/hr/worker/join-requests", "/api/v1/hr/worker/join-requests/abc/withdraw",
+      "/api/v1/hr/worker/pairings/complete", "/api/v1/hr/worker/pairings/claim",
+      "/api/v1/hr/worker/punches", "/api/v1/hr/worker/profile", "/api/v1/hr/worker/leave",
+      "/api/v1/hr/worker/notifications/n1/read", "/api/v1/hr/worker;x=1/me",
+      "/api/v1/hr/%77orker/me"})
+  void workerPathsSkipTheModuleCheck(String path) {
+    assertTrue(interceptor.preHandle(request(path), new MockHttpServletResponse(), null));
+    verifyNoInteractions(rbacService);
+  }
+
+  /** The manager inbox is a staff screen: hr module (then ADD_EDIT_EMPLOYEES in the handler). */
+  @ParameterizedTest
+  @ValueSource(strings = {
+      "/api/v1/hr/join-requests", "/api/v1/hr/join-requests/abc",
+      "/api/v1/hr/join-requests/abc/approve", "/api/v1/hr/join-requests/bulk/approve",
+      "/api/v1/hr/workers", "/api/v1/hr/workerX/me", "/api/v1/hr/employees/e1/request-profile"})
+  void theInboxAndLookAlikePathsStillNeedTheHrModule(String path) {
+    when(rbacService.requireModule("u1", "s1", RbacService.MODULE_HR))
+        .thenReturn(new ShopAccessResponse());
+
+    assertTrue(interceptor.preHandle(request(path), new MockHttpServletResponse(), null));
+
+    verify(rbacService).requireModule("u1", "s1", RbacService.MODULE_HR);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"/api/v1/hr/worker/../employees", "/api/v1/hr/worker/%2e%2e/employees",
+      "/api/v1/hr%2fworker/me"})
+  void dotSegmentsUnderWorkerAreRefusedToo(String path) {
+    BaseException e = assertThrows(BaseException.class,
+        () -> interceptor.preHandle(request(path), new MockHttpServletResponse(), null));
+
+    assertEquals(ErrorCode.ACCESS_DENIED, e.getErrorCode());
+    verifyNoInteractions(rbacService);
+  }
+
   @Test
   void preflightRequestsAreNotChecked() {
     MockHttpServletRequest request = request("/api/v1/hr/me/../employees");

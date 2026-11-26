@@ -2,6 +2,7 @@ package com.inventory.hr.validation;
 
 import com.inventory.common.exception.ValidationException;
 import com.inventory.hr.domain.model.enums.AttendanceStatus;
+import com.inventory.hr.domain.model.enums.ManualMarkReason;
 import com.inventory.hr.rest.dto.request.MarkUnmarkedPresentRequest;
 import com.inventory.hr.rest.dto.request.SaveAttendanceDaysRequest;
 import com.inventory.hr.utils.HrDateUtils;
@@ -26,6 +27,11 @@ public class AttendanceDayValidator {
   public static final int MAX_ROWS = 500;
   public static final int MAX_DATES = 31;
   public static final int MAX_NOTE_LENGTH = 200;
+  /** Free text of an {@link ManualMarkReason#OTHER} hand-mark reason (R7.3). */
+  public static final int MAX_REASON_LENGTH = 200;
+  /** R7.4: a hand-made mark of a paired employee was saved without a (complete) reason. */
+  public static final String REASON_REQUIRED =
+      "A reason is required when the employee uses the Attendance app";
   /** Request value that clears a stored mark. */
   public static final String UNMARKED = "UNMARKED";
 
@@ -57,7 +63,46 @@ public class AttendanceDayValidator {
         throw new ValidationException("A note may have at most " + MAX_NOTE_LENGTH
             + " characters");
       }
+      validateReasonText(row.getReasonText());
     }
+  }
+
+  /**
+   * R7.3: reason text longer than 200 characters (after trimming) cannot be saved, whether or
+   * not a reason is required. Whether a reason is <em>needed</em> is the service's call, since
+   * it depends on the shop switch and the employee's pairing.
+   */
+  static void validateReasonText(String reasonText) {
+    if (reasonText != null && reasonText.trim().length() > MAX_REASON_LENGTH) {
+      throw new ValidationException("A reason may have at most " + MAX_REASON_LENGTH
+          + " characters");
+    }
+  }
+
+  /**
+   * A usable reason (R7.3): a quick pick other than OTHER, or OTHER with 1–200 characters of text
+   * after trimming (whitespace-only counts as empty).
+   */
+  public static boolean isCompleteReason(ManualMarkReason reason, String reasonText) {
+    if (reason == null) {
+      return false;
+    }
+    if (reason != ManualMarkReason.OTHER) {
+      return true;
+    }
+    String text = reasonText != null ? reasonText.trim() : "";
+    return !text.isEmpty() && text.length() <= MAX_REASON_LENGTH;
+  }
+
+  /**
+   * The reason as HR history stores it: the quick pick's name, or {@code "OTHER: <text>"} with
+   * the trimmed text. Null when {@link #isCompleteReason} is false.
+   */
+  public static String reasonLabel(ManualMarkReason reason, String reasonText) {
+    if (!isCompleteReason(reason, reasonText)) {
+      return null;
+    }
+    return reason == ManualMarkReason.OTHER ? "OTHER: " + reasonText.trim() : reason.name();
   }
 
   /**
@@ -97,6 +142,7 @@ public class AttendanceDayValidator {
     if (dates.size() > MAX_DATES) {
       throw new ValidationException("Send at most " + MAX_DATES + " dates at a time");
     }
+    validateReasonText(request.getReasonText());
     // no same-calendar-month rule: a salary month (PayCycle) may span two calendar months, and
     // the lock check covers every salary month the dates touch
     if (request.getEmployeeIds() != null) {

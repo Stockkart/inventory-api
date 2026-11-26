@@ -249,7 +249,7 @@ public class LeaveService {
       // pending days do not count against the balance, so only the overlap is rechecked
       recheckAfterWrite(shopId, self, plan, saved, false, () -> deleteRequest(shopId, saved));
       notificationService.notifyApprovers(shopId, HrNotificationType.LEAVE_REQUESTED,
-          saved.getId(), self.getName() + " asked for leave: " + dates(saved));
+          self.getName() + " asked for leave: " + dates(saved), saved.getId());
       return toResponse(saved, self, plan.type().getName());
     });
   }

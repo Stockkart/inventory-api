@@ -10,11 +10,13 @@ import com.inventory.user.domain.model.UserAccount;
 import com.inventory.user.domain.repository.UserAccountRepository;
 import com.inventory.user.externalservice.GoogleTokenVerifier;
 import com.inventory.user.mapper.UserMapper;
+import com.inventory.user.rest.dto.request.AuthSource;
 import com.inventory.user.rest.dto.request.ChangePasswordRequest;
 import com.inventory.user.rest.dto.request.ForgotPasswordRequest;
 import com.inventory.user.rest.dto.request.LoginRequest;
 import com.inventory.user.rest.dto.request.ResetPasswordRequest;
 import com.inventory.user.rest.dto.request.SignupRequest;
+import com.inventory.user.api.port.WorkerAppAuthPort;
 import com.inventory.user.rest.dto.response.ChangePasswordResponse;
 import com.inventory.user.rest.dto.response.ForgotPasswordResponse;
 import com.inventory.user.rest.dto.response.LoginResponse;
@@ -73,11 +75,28 @@ public class AuthService {
   @Autowired(required = false)
   private AuthCache authCache;
 
+  /**
+   * HR's sign-up limit and worker counters (worker-app R14.1, R14.2); optional so a slice without
+   * HR still signs people up.
+   */
+  @Autowired(required = false)
+  private WorkerAppAuthPort workerAppAuth;
+
   @Value("${client.url:http://localhost:3000}")
   private String clientUrl;
 
+  /**
+   * What the Stockkart Team app shows when the e-mail is taken (worker-app R1.5). The web keeps
+   * its own two texts; this one is answered when the sign-up asks for the WORKER role or comes from
+   * the Stockkart Team app.
+   */
+  public static final String WORKER_DUPLICATE_EMAIL_MESSAGE =
+      "An account with this email already exists. Sign in instead.";
+
   @Transactional(readOnly = true)
   public LoginResponse login(LoginRequest request) {
+    // Read before validation so a refused request is still counted under its client (R1.8)
+    String source = sourceOf(request == null ? null : request.getSource());
     try {
       // Validate login request
       authValidator.validateLoginRequest(request);
@@ -102,11 +121,12 @@ public class AuthService {
         } else {
           throw new ValidationException("Invalid loginType. Must be 'google' or 'facebook'");
         }
-        // Find user by email
-        String providerName = loginType.substring(0, 1).toUpperCase() + loginType.substring(1);
+        // Find user by email. No account for a verified Google e-mail is its own code (worker-app
+        // DD20): the web shows the enum's text as before, the Stockkart Team app turns it into a
+        // sign-up with the same token instead of showing it.
         account = userAccountRepository.findByEmail(email)
-            .orElseThrow(() -> new AuthenticationException(ErrorCode.INVALID_CREDENTIALS,
-                "No account found for this " + providerName + " account. Please sign up first."));
+            .orElseThrow(() -> new AuthenticationException(ErrorCode.OAUTH_ACCOUNT_NOT_FOUND,
+                ErrorCode.OAUTH_ACCOUNT_NOT_FOUND.getMessage()));
 
       } else {
         // Email/password authentication
@@ -138,12 +158,14 @@ public class AuthService {
             account.getEmail(),
             EmailTemplate.LOGIN_NOTIFICATION,
             Map.of("userName", account.getName() != null ? account.getName() : "User",
-                "userEmail", account.getEmail())
+                "userEmail", account.getEmail(),
+                "source", source)
         );
       }
 
       // Create login response using mapper (tokens set automatically via @AfterMapping and saved to account)
       LoginResponse response = userMapper.toLoginResponse(account, request.getDeviceId());
+      tagToken(account, response.getAccessToken(), source);
 
       // Populate shop information if shopId exists and adapter is available
       if (account.getShopId() != null && !account.getShopId().trim().isEmpty() && shopServiceAdapter != null) {
@@ -156,26 +178,57 @@ public class AuthService {
       // Save account with new token
       userAccountRepository.save(account);
 
-      recordAuth("login", "success");
+      recordAuth("login", "success", source);
+      countAppLogin(source, true);
       return response;
 
     } catch (ValidationException | AuthenticationException e) {
       log.warn("Login failed: {}", e.getMessage());
-      recordAuth("login", "error");
+      recordAuth("login", "error", source);
+      countAppLogin(source, false);
       throw e;
     } catch (DataAccessException e) {
       log.error("Database error during login: {}", e.getMessage(), e);
-      recordAuth("login", "error");
+      recordAuth("login", "error", source);
+      countAppLogin(source, false);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Error during login");
     } catch (Exception e) {
       log.error("Unexpected error during login: {}", e.getMessage(), e);
-      recordAuth("login", "error");
+      recordAuth("login", "error", source);
+      countAppLogin(source, false);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
     }
   }
 
+  /** {@link #signup(SignupRequest, String)} with no client address: the shared "unknown" bucket. */
   @Transactional
   public SignupResponse signup(SignupRequest request) {
+    return signup(request, null);
+  }
+
+  /**
+   * Creates an account. A sign-up from the Stockkart Team app ({@code source = worker-app}) is
+   * first put through HR's per-IP limit (worker-app R14.1: 20 an hour per address); a refusal
+   * answers "Too many attempts, try again later", is counted as an error under its source, and
+   * reads or writes
+   * nothing. A WORKER account starts with no shop (R1.5) and is counted once on {@code
+   * worker_signups_total} (R14.2).
+   *
+   * @param clientIp the address the server saw ({@code HttpServletRequest#getRemoteAddr()}); a
+   *     proxy in front of the server should set {@code server.forward-headers-strategy} so this is
+   *     the phone's address, not the proxy's
+   */
+  @Transactional
+  public SignupResponse signup(SignupRequest request, String clientIp) {
+    // Read before validation so a refused request is still counted under its client (R1.8)
+    String source = sourceOf(request == null ? null : request.getSource());
+    if (AuthSource.WORKER_APP.equals(source) && workerAppAuth != null
+        && !workerAppAuth.admitSignup(clientIp)) {
+      log.warn("Stockkart Team app sign-up refused by the per-IP limit");
+      recordAuth("signup", "error", source);
+      throw new BaseException(ErrorCode.HR_TOO_MANY_ATTEMPTS,
+          ErrorCode.HR_TOO_MANY_ATTEMPTS_WORKER_MESSAGE);
+    }
     try {
       // Validate signup request
       authValidator.validateSignupRequest(request);
@@ -207,7 +260,9 @@ public class AuthService {
         if (userAccountRepository.findByEmail(email).isPresent()) {
           String providerName = signupType.substring(0, 1).toUpperCase() + signupType.substring(1);
           log.warn("{} signup attempt with existing email: {}", providerName, email);
-          throw new ValidationException("User with this email already exists. Please login instead.");
+          throw new ValidationException(isWorkerSignup(request, source)
+              ? WORKER_DUPLICATE_EMAIL_MESSAGE
+              : "User with this email already exists. Please login instead.");
         }
 
         // Create user account from OAuth data via mapper
@@ -221,16 +276,24 @@ public class AuthService {
         // Check if user already exists
         if (userAccountRepository.findByEmail(email).isPresent()) {
           log.warn("Signup attempt with existing email: {}", email);
-          throw new ValidationException("User with this email already exists");
+          throw new ValidationException(isWorkerSignup(request, source)
+              ? WORKER_DUPLICATE_EMAIL_MESSAGE
+              : "User with this email already exists");
         }
 
         // Map SignupRequest to UserAccount using mapper (with password encoder context)
         account = userMapper.toUserAccount(request, passwordEncoder);
       }
 
+      // A WORKER account starts with no shop, no membership and no employee (R1.5): the shop
+      // comes only from an approved join request (WorkerAccountService.claimShop).
+      if (account.getRole() != null && account.getRole().isWorkerRole()) {
+        account.setShopId(null);
+      }
+
       userAccountRepository.save(account);
 
-      log.info("User signed up successfully: {}", account.getUserId());
+      log.info("User signed up successfully: {} (source={})", account.getUserId(), source);
 
       // Send welcome email (async, non-blocking)
       if (messagingService != null) {
@@ -238,30 +301,35 @@ public class AuthService {
             account.getEmail(),
             EmailTemplate.WELCOME_SIGNUP,
             Map.of("userName", account.getName() != null ? account.getName() : "User",
-                "userEmail", account.getEmail())
+                "userEmail", account.getEmail(),
+                "source", source)
         );
       }
 
       // Create signup response using mapper (tokens set automatically via @AfterMapping and saved to account)
       SignupResponse response = userMapper.toSignupResponse(account, request.getDeviceId());
+      tagToken(account, response.getAccessToken(), source);
 
       // Save account with new token
       userAccountRepository.save(account);
 
-      recordAuth("signup", "success");
+      recordAuth("signup", "success", source);
+      if (account.getRole() != null && account.getRole().isWorkerRole()) {
+        countWorkerSignup();
+      }
       return response;
 
-    } catch (ValidationException e) {
+    } catch (ValidationException | AuthenticationException e) {
       log.warn("Signup failed: {}", e.getMessage());
-      recordAuth("signup", "error");
+      recordAuth("signup", "error", source);
       throw e;
     } catch (DataAccessException e) {
       log.error("Database error during signup: {}", e.getMessage(), e);
-      recordAuth("signup", "error");
+      recordAuth("signup", "error", source);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Error during signup");
     } catch (Exception e) {
       log.error("Unexpected error during signup: {}", e.getMessage(), e);
-      recordAuth("signup", "error");
+      recordAuth("signup", "error", source);
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
     }
   }
@@ -278,6 +346,7 @@ public class AuthService {
           .orElseThrow(() -> new ResourceNotFoundException("User", "userId", userId));
 
       // Remove the token using UserAccount method (using accessToken to find and remove)
+      String source = sourceOfToken(account, accessToken);
       String removedDeviceId = account.removeToken(null, accessToken);
 
       if (removedDeviceId == null) {
@@ -288,9 +357,10 @@ public class AuthService {
       // Save account with updated tokens
       userAccountRepository.save(account);
 
-      log.info("User logged out successfully: {}, deviceId: {}", account.getUserId(), removedDeviceId);
+      log.info("User logged out successfully: {}, deviceId: {}, source: {}", account.getUserId(),
+          removedDeviceId, source);
 
-      recordAuth("logout", "success");
+      recordAuth("logout", "success", source);
       return userMapper.toLogoutResponse(removedDeviceId);
 
     } catch (ValidationException | ResourceNotFoundException e) {
@@ -459,6 +529,15 @@ public class AuthService {
   }
 
   private void recordAuth(String operation, String outcome) {
+    recordAuth(operation, outcome, AuthSource.WEB);
+  }
+
+  /**
+   * {@code inventory_user_auth_total{module, operation, outcome, source}}. {@code source} is one of
+   * {@link AuthSource#WEB} and {@link AuthSource#WORKER_APP} (R1.8); the closed set keeps the tag
+   * bounded.
+   */
+  private void recordAuth(String operation, String outcome, String source) {
     metrics.record(
         UserMetricsConstants.AUTH_TOTAL,
         1,
@@ -467,7 +546,78 @@ public class AuthService {
         "operation",
         operation,
         "outcome",
-        outcome);
+        outcome,
+        "source",
+        source);
+  }
+
+  /**
+   * A worker-app sign-up (R1.5): the request asks for the WORKER role or names the Stockkart Team
+   * app as its source. Either alone is enough, so a worker build that forgot the source still gets
+   * the worker wording.
+   */
+  private static boolean isWorkerSignup(SignupRequest request, String source) {
+    return AuthSource.WORKER_APP.equals(source)
+        || (request.getRole() != null && request.getRole().isWorkerRole());
+  }
+
+  /** The metric tag for a request's {@code source}; an unknown value is counted as the web. */
+  private static String sourceOf(String raw) {
+    return AuthSource.tryNormalise(raw).orElse(AuthSource.WEB);
+  }
+
+  /**
+   * Remembers on the token just minted which client opened the session, so the sign-out is later
+   * counted under the same {@code source} (R1.8). The mapper adds the token to {@code account}
+   * before this runs; the account is saved by the caller.
+   */
+  private static void tagToken(UserAccount account, String accessToken, String source) {
+    if (account.getTokens() == null || accessToken == null) {
+      return;
+    }
+    account.getTokens().stream()
+        .filter(t -> accessToken.equals(t.getAccessToken()))
+        .findFirst()
+        .ifPresent(t -> t.setSource(source));
+  }
+
+  /** The {@code source} the session named when it was opened; a token without one is the web. */
+  private static String sourceOfToken(UserAccount account, String accessToken) {
+    if (account.getTokens() == null || accessToken == null) {
+      return AuthSource.WEB;
+    }
+    return account.getTokens().stream()
+        .filter(t -> accessToken.equals(t.getAccessToken()))
+        .findFirst()
+        .map(t -> sourceOf(t.getSource()))
+        .orElse(AuthSource.WEB);
+  }
+
+  /**
+   * {@code worker_app_logins_total{result}} for a sign-in from the Stockkart Team app (R14.2). The
+   * counter is HR's and is reached through the port; a failure to count never fails the sign-in.
+   */
+  private void countAppLogin(String source, boolean success) {
+    if (workerAppAuth == null || !AuthSource.WORKER_APP.equals(source)) {
+      return;
+    }
+    try {
+      workerAppAuth.appLogin(success);
+    } catch (RuntimeException e) {
+      log.warn("Could not count the Stockkart Team app login: {}", e.toString());
+    }
+  }
+
+  /** {@code worker_signups_total} once per WORKER account created (R14.2); never fails the call. */
+  private void countWorkerSignup() {
+    if (workerAppAuth == null) {
+      return;
+    }
+    try {
+      workerAppAuth.workerSignedUp();
+    } catch (RuntimeException e) {
+      log.warn("Could not count the worker sign-up: {}", e.toString());
+    }
   }
 }
 

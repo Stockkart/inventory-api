@@ -1,0 +1,15 @@
+{
+  "name": "inventory-api-perf",
+  "private": true,
+  "description": "Load-test tooling for inventory-api (k6 scripts, Node seeders, protocol self-checks). Not published, not part of the Maven build.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "check": "node check-protocol.mjs",
+    "seed": "node seed-attendance-app.mjs",
+    "seed:join-requests": "node seed-worker-join-requests.mjs",
+    "k6:check": "node --check attendance-app-punches.js && node --check worker-join-requests.js && node --check lib/attendance-protocol.js && node --check lib/server-latency.js && node --check seed-attendance-app.mjs && node --check seed-worker-join-requests.mjs"
+  }
+}

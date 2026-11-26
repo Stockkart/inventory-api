@@ -1,6 +1,9 @@
 package com.inventory.hr.domain.model.enums;
 
-/** USER rows go to one requester; APPROVERS rows to whoever holds APPROVE_LEAVE when reading. */
+/**
+ * USER rows go to one person; APPROVERS rows to whoever may decide that kind of request when
+ * reading.
+ */
 public enum NotificationAudience {
   USER,
   APPROVERS

@@ -8,8 +8,11 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -50,6 +53,9 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 /**
  * HTTP boundary through the real interceptor chain ({@link CorsConfig}: authentication → RBAC →
@@ -75,9 +81,36 @@ class AuthenticationInterceptorBoundaryTest {
       AuthController.class,
       ShopController.class,
       ShopService.class,
-      ShopValidator.class
+      ShopValidator.class,
+      AttendanceAppProbeController.class,
+      // worker-app R9.1: the real header check; it has no dependencies
+      com.inventory.hr.service.WorkerCredentialInterceptor.class
   })
   static class Slice {}
+
+  /**
+   * Stands in for {@code AttendanceAppController} and {@code AttendanceAppHealthController} (HR
+   * module) so the test can tell whether a request got through the chain {@link CorsConfig}
+   * registers, without wiring the HR services.
+   */
+  @RestController
+  static class AttendanceAppProbeController {
+    @PostMapping("/api/v1/hr/attendance-app/pairings/me/unpair")
+    String unpair() {
+      return "reached";
+    }
+
+    @GetMapping("/api/v1/hr/attendance-app/health")
+    String health() {
+      return "reached";
+    }
+
+    /** Stands in for {@code WorkerController} (HR module), on the Bearer chain. */
+    @GetMapping("/api/v1/hr/worker/me")
+    String workerMe() {
+      return "reached";
+    }
+  }
 
   @Autowired private MockMvc mvc;
 
@@ -102,6 +135,9 @@ class AuthenticationInterceptorBoundaryTest {
   @MockBean private AccountingFacade accountingFacade;
   // PlanExpiryInterceptor asks the plan api; an unexpired answer (the mock's false) lets requests through.
   @MockBean private PlanStatus planStatus;
+  // CorsConfig also registers the Attendance app envelope interceptor on the device paths; the
+  // mock answers true so a device request runs on to the probe controller
+  @MockBean private com.inventory.hr.service.AttendanceAppAuthInterceptor attendanceAppAuthInterceptor;
 
   private static UserAccount account(String userId, UserRole role, String shopId) {
     UserAccount a = new UserAccount();
@@ -113,7 +149,8 @@ class AuthenticationInterceptorBoundaryTest {
   }
 
   @BeforeEach
-  void setUp() {
+  void setUp() throws Exception {
+    when(attendanceAppAuthInterceptor.preHandle(any(), any(), any())).thenReturn(true);
     // any other token is unknown, revoked or expired
     doThrow(new AuthenticationException(ErrorCode.INVALID_CREDENTIALS, "Invalid or expired token"))
         .when(tokenValidationService).validateToken(anyString());
@@ -177,5 +214,76 @@ class AuthenticationInterceptorBoundaryTest {
         .andExpect(jsonPath("$.data.userLimit").value(5));
 
     verify(shopRepository).save(any(Shop.class));
+  }
+
+  /**
+   * HR task 5.1 / 5.10: the Attendance app's device paths are excluded from the Bearer, RBAC and
+   * plan-expiry interceptors and handed to the envelope interceptor, so a request with no
+   * Authorization header at all reaches the controller. ({@code /pairings/me/unpair} stands for the
+   * device sub-tree; the unsigned {@code /pairings/claim} is no longer a device path, worker-app D11.)
+   */
+  @Test
+  void anAttendanceAppDeviceRequestWithoutABearerReachesTheController() throws Exception {
+    mvc.perform(post("/api/v1/hr/attendance-app/pairings/me/unpair")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{}"))
+        .andExpect(status().isOk())
+        .andExpect(content().string("reached"));
+
+    verify(attendanceAppAuthInterceptor).preHandle(any(), any(), any());
+    verifyNoInteractions(tokenValidationService, rbacService, planStatus);
+  }
+
+  /** The manager's health read is not a device path: Bearer first, the envelope never. */
+  @Test
+  void theAttendanceAppHealthReadStillNeedsABearer() throws Exception {
+    mvc.perform(get("/api/v1/hr/attendance-app/health"))
+        .andExpect(status().isUnauthorized());
+    verify(attendanceAppAuthInterceptor, never()).preHandle(any(), any(), any());
+
+    mvc.perform(get("/api/v1/hr/attendance-app/health")
+            .header("Authorization", "Bearer owner-token"))
+        .andExpect(status().isOk())
+        .andExpect(content().string("reached"));
+    verify(attendanceAppAuthInterceptor, never()).preHandle(any(), any(), any());
+    verify(tokenValidationService).validateToken("owner-token");
+    verify(rbacService).requireModule(any(), any(), any());
+  }
+
+  /**
+   * Worker-app R9.1 (design DD3, Property 21): {@code CorsConfig} registers the worker credential
+   * interceptor on {@code /api/v1/hr/worker/**} ahead of the Bearer chain, so a worker request that
+   * also carries a device-envelope header is refused with {@code HR_TWO_CREDENTIALS} before the
+   * token is even looked at; the same request without the header goes through the chain as usual.
+   */
+  @Test
+  void aWorkerRequestCarryingAnEnvelopeHeaderIsRefusedBeforeTheToken() throws Exception {
+    mvc.perform(get("/api/v1/hr/worker/me")
+            .header("Authorization", "Bearer owner-token")
+            .header("X-Pairing-Id", "66f1a2b3c4d5e6f7a8b9c0d1"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error")
+            .value("A request may carry a login or a phone signature, not both."));
+    mvc.perform(get("/api/v1/hr/worker/me")
+            .header("Authorization", "Bearer owner-token")
+            .header("X-Request-Signature", "MEUCIQ"))
+        .andExpect(status().isBadRequest());
+    verifyNoInteractions(tokenValidationService, rbacService, planStatus);
+
+    mvc.perform(get("/api/v1/hr/worker/me").header("Authorization", "Bearer owner-token"))
+        .andExpect(status().isOk())
+        .andExpect(content().string("reached"));
+    verify(tokenValidationService).validateToken("owner-token");
+  }
+
+  /** The device-path envelope check never runs on the worker prefix, and the mirror check nowhere else. */
+  @Test
+  void theWorkerCredentialCheckIsRegisteredOnTheWorkerPrefixOnly() throws Exception {
+    mvc.perform(get("/api/v1/hr/attendance-app/health")
+            .header("Authorization", "Bearer owner-token")
+            .header("X-Pairing-Id", "66f1a2b3c4d5e6f7a8b9c0d1"))
+        .andExpect(status().isOk())
+        .andExpect(content().string("reached"));
+    verify(attendanceAppAuthInterceptor, never()).preHandle(any(), any(), any());
   }
 }

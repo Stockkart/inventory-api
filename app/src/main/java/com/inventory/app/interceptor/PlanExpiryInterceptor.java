@@ -28,7 +28,11 @@ public class PlanExpiryInterceptor implements HandlerInterceptor {
       "/api/v1/users/me/shops",
       "/api/v1/users/me/active-shop",
       "/api/v1/shops/active-shop",
-      "/api/v1/shops/me/capabilities"
+      "/api/v1/shops/me/capabilities",
+      // Stockkart Team app (worker-app design "Request paths"): a worker's Home, state, history and
+      // profile keep working while the shop's plan is expired, like HR decision 5 for payslips.
+      // The manager inbox (/api/v1/hr/join-requests/**) is not listed and follows the plan check.
+      "/api/v1/hr/worker/"
   );
 
   private static final List<Pattern> ALLOWED_PATTERNS = List.of(

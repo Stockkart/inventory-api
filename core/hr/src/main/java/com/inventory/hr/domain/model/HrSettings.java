@@ -62,8 +62,8 @@ public class HrSettings {
   private String updatedByUserId;
 
   /**
-   * Self check-in and its location check (R1, R3). The shop's own coordinates are stored; an
-   * employee's never are.
+   * Self check-in, the Attendance app and their location check (R1, R3). The shop's own
+   * coordinates are stored; an employee's never are.
    */
   @Data
   @NoArgsConstructor
@@ -71,6 +71,11 @@ public class HrSettings {
   public static class AttendanceCapture {
     /** null = false. */
     private Boolean selfCheckIn;
+    /**
+     * Biometric app check-in; null = false. Independent of {@code selfCheckIn}: flipping one never
+     * changes how the other accepts or refuses (R1.2).
+     */
+    private Boolean biometricApp;
     /** null = false. Needs {@code shopLat}/{@code shopLng}. */
     private Boolean locationCheck;
     /** Degrees, −90..90; null = not set. */

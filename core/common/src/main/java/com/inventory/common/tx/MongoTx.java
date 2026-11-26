@@ -61,8 +61,11 @@ public class MongoTx {
   public static final String VENDOR_RETURN = "vendor_return";
   public static final String CREDIT_CHARGE = "credit_charge";
   public static final String CREDIT_SETTLEMENT = "credit_settlement";
+  /** Approval of a worker's join or link request (worker-app design DD12): request, account, employee, membership. */
+  public static final String WORKER_JOIN_APPROVE = "worker_join_approve";
   public static final java.util.List<String> FLOWS = java.util.List.of(
-      BILL_COMPLETE, REFUND, VENDOR_INVOICE, VENDOR_RETURN, CREDIT_CHARGE, CREDIT_SETTLEMENT);
+      BILL_COMPLETE, REFUND, VENDOR_INVOICE, VENDOR_RETURN, CREDIT_CHARGE, CREDIT_SETTLEMENT,
+      WORKER_JOIN_APPROVE);
 
   private final boolean enabled;
   private final int maxAttempts;

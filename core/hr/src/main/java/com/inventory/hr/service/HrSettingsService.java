@@ -3,14 +3,17 @@ package com.inventory.hr.service;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ValidationException;
+import com.inventory.hr.domain.model.DevicePairing;
 import com.inventory.hr.domain.model.HrSettings;
 import com.inventory.hr.domain.model.enums.EmployeeStatus;
 import com.inventory.hr.domain.model.enums.HrAuditAction;
 import com.inventory.hr.domain.model.enums.HrPermission;
 import com.inventory.hr.domain.model.enums.LeaveYearStartMonth;
 import com.inventory.hr.domain.model.enums.OutsideAction;
+import com.inventory.hr.domain.model.enums.PairingStatus;
 import com.inventory.hr.domain.model.enums.PerDayBasis;
 import com.inventory.hr.domain.repository.AttendanceDayRepository;
+import com.inventory.hr.domain.repository.DevicePairingRepository;
 import com.inventory.hr.domain.repository.EmployeeRepository;
 import com.inventory.hr.domain.repository.HrSettingsRepository;
 import com.inventory.hr.mapper.HrSettingsMapper;
@@ -26,9 +29,11 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
@@ -61,6 +66,12 @@ public class HrSettingsService {
 
   @Autowired private AttendanceDayRepository attendanceDayRepository;
 
+  /**
+   * Read directly, not through {@code DevicePairingService}: that service already depends on this
+   * one for the switch, and the count needs only the repository.
+   */
+  @Autowired private DevicePairingRepository pairingRepository;
+
   @Autowired private HrSettingsValidator validator;
 
   @Autowired private HrSettingsMapper mapper;
@@ -75,14 +86,24 @@ public class HrSettingsService {
   public HrSettingsResponse get(String userId, String shopId) {
     guard.requireAny(userId, shopId);
     HrSettings stored = settingsRepository.findByShopId(shopId).orElse(null);
-    return toResponse(stored);
+    return toResponse(stored, shopId);
   }
 
-  /** Settings with defaults for the services that need them (attendance, payroll). No guard. */
+  /**
+   * Settings with defaults for the services that need them (attendance, payroll). No guard, no
+   * cache: every call reads the document, so a saved change to a switch (self check-in, biometric
+   * app) applies to the very next punch (R1.3).
+   */
   public HrSettings effectiveSettings(String shopId) {
     return withDefaults(settingsRepository.findByShopId(shopId).orElse(null), shopId);
   }
 
+  /**
+   * Permission: {@code MANAGE_SETTINGS} for every field, the biometric app switch included (R1.7);
+   * a refused request changes nothing. Every save is audited as one {@code SETTINGS_CHANGED} entry
+   * with the before/after snapshot, which carries the switch (R1.8). Turning the biometric app
+   * switch off touches nothing else: pairings and punches stay (R1.5).
+   */
   public HrSettingsResponse update(String userId, String shopId, UpdateHrSettingsRequest request) {
     guard.require(userId, shopId, HrPermission.MANAGE_SETTINGS);
     validator.validate(request);
@@ -164,7 +185,7 @@ public class HrSettingsService {
     }
     auditService.record(AuditEntry.of(shopId, userId, HrAuditAction.SETTINGS_CHANGED,
         "HR_SETTINGS", saved.getId(), before, snapshot(withDefaults(saved, shopId))));
-    return toResponse(saved);
+    return toResponse(saved, shopId);
   }
 
   /** Empty-state guide (R13.6). Three cheap indexed reads. */
@@ -212,15 +233,34 @@ public class HrSettingsService {
     return schedule;
   }
 
-  private HrSettingsResponse toResponse(HrSettings stored) {
-    HrSettings effective = withDefaults(stored, null);
+  private HrSettingsResponse toResponse(HrSettings stored, String shopId) {
+    HrSettings effective = withDefaults(stored, shopId);
     HrSettingsResponse response = mapper.toResponse(effective);
     response.setSaved(stored != null);
     String currentPeriod = PayCycle.currentPeriod(PayCycle.startDay(effective));
     response.setCurrentWeeklyOffDays(weeklyOffFor(effective, currentPeriod));
     response.setCurrentSalaryPeriod(currentPeriod);
     response.setAttendanceCapture(captureDto(effective.getAttendanceCapture()));
+    response.setPairedEmployeeCount(pairedEmployeeCount(shopId));
     return response;
+  }
+
+  /**
+   * Current (not exited) employees with an active paired phone (R1.9). One read of the shop's
+   * active pairings (employee ids), then one count of those employees that are still ACTIVE: an
+   * exit unpairs the phone only when the exit date arrives (R3.4), so an employee set to Exited
+   * with a later date may still hold an active pairing and must not be counted.
+   */
+  long pairedEmployeeCount(String shopId) {
+    Set<String> employeeIds = new LinkedHashSet<>();
+    for (DevicePairing p : pairingRepository.findByShopIdAndStatus(shopId, PairingStatus.ACTIVE)) {
+      employeeIds.add(p.getEmployeeId());
+    }
+    if (employeeIds.isEmpty()) {
+      return 0;
+    }
+    return employeeRepository.countByShopIdAndIdInAndStatus(shopId, employeeIds,
+        EmployeeStatus.ACTIVE);
   }
 
   /**
@@ -230,12 +270,15 @@ public class HrSettingsService {
   static HrSettings.AttendanceCapture applyAttendanceCapture(HrSettings.AttendanceCapture current,
       UpdateHrSettingsRequest.AttendanceCaptureChange change) {
     HrSettings.AttendanceCapture c = current != null
-        ? new HrSettings.AttendanceCapture(current.getSelfCheckIn(), current.getLocationCheck(),
-            current.getShopLat(), current.getShopLng(), current.getRadiusMetres(),
-            current.getOutsideAction())
+        ? new HrSettings.AttendanceCapture(current.getSelfCheckIn(), current.getBiometricApp(),
+            current.getLocationCheck(), current.getShopLat(), current.getShopLng(),
+            current.getRadiusMetres(), current.getOutsideAction())
         : new HrSettings.AttendanceCapture();
     if (change.getSelfCheckIn() != null) {
       c.setSelfCheckIn(change.getSelfCheckIn());
+    }
+    if (change.getBiometricApp() != null) {
+      c.setBiometricApp(change.getBiometricApp());
     }
     if (change.getLocationCheck() != null) {
       c.setLocationCheck(change.getLocationCheck());
@@ -255,10 +298,15 @@ public class HrSettingsService {
     return c;
   }
 
-  /** Capture settings with every null replaced by its default (all off, 100 m, BLOCK). */
+  /**
+   * Capture settings with every null replaced by its default (all three switches off, 100 m,
+   * BLOCK). The biometric app switch is off for every shop that has not saved it, new or existing
+   * at release (R1.1).
+   */
   static HrSettings.AttendanceCapture captureWithDefaults(HrSettings.AttendanceCapture stored) {
     HrSettings.AttendanceCapture c = new HrSettings.AttendanceCapture();
     c.setSelfCheckIn(stored != null && Boolean.TRUE.equals(stored.getSelfCheckIn()));
+    c.setBiometricApp(stored != null && Boolean.TRUE.equals(stored.getBiometricApp()));
     c.setLocationCheck(stored != null && Boolean.TRUE.equals(stored.getLocationCheck()));
     c.setShopLat(stored != null ? stored.getShopLat() : null);
     c.setShopLng(stored != null ? stored.getShopLng() : null);
@@ -273,6 +321,7 @@ public class HrSettingsService {
       HrSettings.AttendanceCapture c) {
     HrSettingsResponse.AttendanceCaptureDto dto = new HrSettingsResponse.AttendanceCaptureDto();
     dto.setSelfCheckIn(Boolean.TRUE.equals(c.getSelfCheckIn()));
+    dto.setBiometricApp(Boolean.TRUE.equals(c.getBiometricApp()));
     dto.setLocationCheck(Boolean.TRUE.equals(c.getLocationCheck()));
     dto.setShopLat(c.getShopLat());
     dto.setShopLng(c.getShopLng());
@@ -342,6 +391,8 @@ public class HrSettingsService {
     HrSettings.AttendanceCapture c = s.getAttendanceCapture();
     if (c != null) {
       m.put("selfCheckIn", c.getSelfCheckIn());
+      // the biometric app switch is audited like every other setting: old and new value (R1.8)
+      m.put("biometricApp", c.getBiometricApp());
       m.put("locationCheck", c.getLocationCheck());
       // whether the shop location is set, not where it is
       m.put("shopLocationSet", c.getShopLat() != null && c.getShopLng() != null);

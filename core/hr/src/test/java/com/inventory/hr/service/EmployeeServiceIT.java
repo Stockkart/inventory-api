@@ -105,6 +105,17 @@ class EmployeeServiceIT {
             com.inventory.hr.domain.repository.HrSettingsRepository.class));
     ReflectionTestUtils.setField(service, "periodLockService", periodLockService);
     ReflectionTestUtils.setField(service, "auditService", mock(HrAuditService.class));
+    // the real pairing reads and exit schedule against the same database (no pairings here)
+    DevicePairingService pairings = new DevicePairingService();
+    ReflectionTestUtils.setField(pairings, "pairingRepository",
+        new MongoRepositoryFactory(template).getRepository(
+            com.inventory.hr.domain.repository.DevicePairingRepository.class));
+    ReflectionTestUtils.setField(pairings, "employeeRepository", repository);
+    ReflectionTestUtils.setField(pairings, "mongoTemplate", template);
+    ReflectionTestUtils.setField(pairings, "auditService", mock(HrAuditService.class));
+    ReflectionTestUtils.setField(pairings, "metrics",
+        mock(com.inventory.metrics.MetricsWrapper.class));
+    ReflectionTestUtils.setField(service, "pairingService", pairings);
   }
 
   @AfterAll

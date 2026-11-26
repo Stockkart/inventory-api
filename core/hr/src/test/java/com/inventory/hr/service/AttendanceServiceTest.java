@@ -21,22 +21,28 @@ import static org.mockito.Mockito.when;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
+import com.inventory.common.exception.ValidationException;
 import com.inventory.hr.domain.model.AttendanceDay;
+import com.inventory.hr.domain.model.DevicePairing;
 import com.inventory.hr.domain.model.Employee;
 import com.inventory.hr.domain.model.Holiday;
+import com.inventory.hr.domain.model.HrSettings;
 import com.inventory.hr.domain.model.LeaveRequest;
 import com.inventory.hr.domain.model.enums.AttendanceSource;
 import com.inventory.hr.domain.model.enums.AttendanceStatus;
 import com.inventory.hr.domain.model.enums.DayStatus;
 import com.inventory.hr.domain.model.enums.HrAuditAction;
 import com.inventory.hr.domain.model.enums.HrPermission;
+import com.inventory.hr.domain.model.enums.ManualMarkReason;
 import com.inventory.hr.domain.model.enums.PunchFlag;
+import com.inventory.hr.domain.model.enums.PunchSource;
 import com.inventory.hr.rest.dto.request.MarkUnmarkedPresentRequest;
 import com.inventory.hr.rest.dto.request.SaveAttendanceDaysRequest;
 import com.inventory.hr.rest.dto.response.AttendanceRowResponse;
 import com.inventory.hr.rest.dto.response.DailyRegisterResponse;
 import com.inventory.hr.rest.dto.response.MonthRegisterResponse;
 import com.inventory.hr.service.HrAuditService.AuditEntry;
+import com.inventory.hr.service.PunchDayService.DaySummary;
 import com.inventory.hr.utils.HrDateUtils;
 import com.inventory.hr.validation.AttendanceDayValidator;
 import com.inventory.metrics.MetricsWrapper;
@@ -53,6 +59,9 @@ import org.bson.Document;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -83,6 +92,7 @@ class AttendanceServiceTest {
   @Mock private BulkOperations bulk;
   @Mock private HrUserNames userNames;
   @Mock private PunchDayService punchDays;
+  @Mock private DevicePairingService pairingService;
   @Spy private AttendanceDayValidator validator = new AttendanceDayValidator();
   @Spy private HrQueryRunner queryRunner = new HrQueryRunner();
   @InjectMocks private AttendanceService service;
@@ -134,6 +144,51 @@ class AttendanceServiceTest {
     l.setToDate(to);
     l.setHalfDay(half);
     return l;
+  }
+
+  /** Biometric app check-in on for the shop (R1.1 default is off). */
+  private HrSettings biometricAppOn() {
+    var settings = HrSettingsService.withDefaults(null, SHOP);
+    settings.getAttendanceCapture().setBiometricApp(true);
+    when(settingsService.effectiveSettings(SHOP)).thenReturn(settings);
+    return settings;
+  }
+
+  /**
+   * No weekly off at all, for tests that read the register on the real {@code today}: with the
+   * default Sunday week-off such a test would resolve the day to WEEK_OFF, not UNMARKED, when it
+   * happens to run on a Sunday (Asia/Kolkata).
+   */
+  private static void noWeekOff(HrSettings settings) {
+    settings.setWeeklyOffSchedule(new ArrayList<>(List.of(
+        new HrSettings.WeeklyOffEntry(HrSettingsService.SCHEDULE_START, List.of()))));
+  }
+
+  /** The given employees have an active paired phone. */
+  private void paired(String... employeeIds) {
+    Map<String, DevicePairing> pairings = new java.util.LinkedHashMap<>();
+    for (String id : employeeIds) {
+      DevicePairing p = new DevicePairing();
+      p.setId("pair-" + id);
+      p.setEmployeeId(id);
+      p.setPhoneModel("Redmi Note 11");
+      pairings.put(id, p);
+    }
+    when(pairingService.activePairingsByEmployee(eq(SHOP), anyCollection())).thenReturn(pairings);
+  }
+
+  private static SaveAttendanceDaysRequest.Row withReason(SaveAttendanceDaysRequest.Row r,
+      ManualMarkReason reason, String text) {
+    r.setReason(reason);
+    r.setReasonText(text);
+    return r;
+  }
+
+  @SuppressWarnings("unchecked")
+  private List<AuditEntry> recordedAudit() {
+    ArgumentCaptor<List<AuditEntry>> audit = ArgumentCaptor.forClass(List.class);
+    verify(auditService).recordAll(audit.capture());
+    return audit.getValue();
   }
 
   @Test
@@ -256,10 +311,11 @@ class AttendanceServiceTest {
     assertEquals("09:05", rows.get(0).getInTime());
   }
 
-  @Test
-  void clearingASelfCheckInDayDoesNotReDeriveIt() {
+  @ParameterizedTest
+  @EnumSource(value = AttendanceSource.class, names = {"SELF_CHECK_IN", "BIOMETRIC_APP"})
+  void clearingADerivedDayDoesNotReDeriveIt(AttendanceSource source) {
     AttendanceDay self = stored("e1", TUE, AttendanceStatus.PRESENT);
-    self.setSource(AttendanceSource.SELF_CHECK_IN);
+    self.setSource(source);
     when(mongoTemplate.find(any(Query.class), eq(AttendanceDay.class))).thenReturn(List.of(self));
     when(bulk.execute()).thenReturn(mock(BulkWriteResult.class));
 
@@ -278,10 +334,11 @@ class AttendanceServiceTest {
     verify(punchDays, never()).rederive(any(), any(), anyCollection(), any());
   }
 
-  @Test
-  void savingTheSameValuesOverASelfCheckInDayMakesItHandMade() {
+  @ParameterizedTest
+  @EnumSource(value = AttendanceSource.class, names = {"SELF_CHECK_IN", "BIOMETRIC_APP"})
+  void savingTheSameValuesOverADerivedDayMakesItHandMade(AttendanceSource source) {
     AttendanceDay self = stored("e1", TUE, AttendanceStatus.PRESENT);
-    self.setSource(AttendanceSource.SELF_CHECK_IN);
+    self.setSource(source);
     self.setPunchCount(2);
     when(mongoTemplate.find(any(Query.class), eq(AttendanceDay.class))).thenReturn(List.of(self));
     when(bulk.execute()).thenReturn(mock(BulkWriteResult.class));
@@ -306,10 +363,10 @@ class AttendanceServiceTest {
     self.setPunchCount(1);
     when(mongoTemplate.find(any(Query.class), eq(AttendanceDay.class))).thenReturn(List.of(self,
         stored("e2", yesterday, AttendanceStatus.ABSENT)));
-    when(punchDays.flagsByEmployeeDate(eq(SHOP), anyCollection(), eq(yesterday), eq(yesterday),
+    when(punchDays.summaryByEmployeeDate(eq(SHOP), anyCollection(), eq(yesterday),
         org.mockito.ArgumentMatchers.anyLong()))
         .thenReturn(Map.of(AttendanceService.key("e1", yesterday),
-            EnumSet.of(PunchFlag.OUTSIDE_SHOP)));
+            new DaySummary(EnumSet.of(PunchFlag.OUTSIDE_SHOP), PunchSource.SELF, 1)));
 
     DailyRegisterResponse r = service.daily(USER, SHOP, yesterday);
 
@@ -317,35 +374,45 @@ class AttendanceServiceTest {
     assertEquals(AttendanceSource.SELF_CHECK_IN, e1.getMarkSource());
     assertTrue(e1.isMissingCheckOut(), "one punch on a past day");
     assertEquals(List.of(PunchFlag.OUTSIDE_SHOP), e1.getFlags());
+    assertEquals(PunchSource.SELF, e1.getPunchSource());
     AttendanceRowResponse e2 = r.getRows().get(1);
     // a mark stored before sources existed reads as MANUAL
     assertEquals(AttendanceSource.MANUAL, e2.getMarkSource());
     assertFalse(e2.isMissingCheckOut());
     assertTrue(e2.getFlags().isEmpty());
+    assertNull(e2.getPunchSource());
+    // R7.1: switch off, so the pairings are not even read
+    verify(pairingService, never()).activePairingsByEmployee(any(), anyCollection());
+    assertFalse(e1.isMarkReasonRequired());
+    assertFalse(e1.isNoPunchYet());
   }
 
   @Test
-  void monthCellsCarryTheSelfCheckInSourceAndFlagsButNotManual() {
+  void monthCellsCarryTheDerivedSourceButNotManualAndReadNoPunches() {
     AttendanceDay self = stored("e1", "2025-04-08", AttendanceStatus.PRESENT);
     self.setSource(AttendanceSource.SELF_CHECK_IN);
     self.setPunchCount(1);
+    AttendanceDay app = stored("e1", "2025-04-10", AttendanceStatus.PRESENT);
+    app.setSource(AttendanceSource.BIOMETRIC_APP);
+    app.setPunchCount(1);
     when(mongoTemplate.find(any(Query.class), eq(AttendanceDay.class))).thenReturn(List.of(self,
-        stored("e1", "2025-04-09", AttendanceStatus.PRESENT)));
-    when(punchDays.flagsByEmployeeDate(eq(SHOP), anyCollection(), any(), any(),
-        org.mockito.ArgumentMatchers.anyLong()))
-        .thenReturn(Map.of(AttendanceService.key("e1", "2025-04-08"),
-            EnumSet.of(PunchFlag.LOW_ACCURACY)));
+        stored("e1", "2025-04-09", AttendanceStatus.PRESENT), app));
 
     MonthRegisterResponse m = service.month(USER, SHOP, "2025-04", "e1");
 
     MonthRegisterResponse.Cell tue = m.getRows().get(0).getCells().get(7);
     assertEquals(AttendanceSource.SELF_CHECK_IN, tue.getMarkSource());
     assertEquals(Boolean.TRUE, tue.getMissingCheckOut());
-    assertEquals(List.of(PunchFlag.LOW_ACCURACY), tue.getFlags());
     MonthRegisterResponse.Cell wed = m.getRows().get(0).getCells().get(8);
     assertNull(wed.getMarkSource());
     assertNull(wed.getMissingCheckOut());
-    assertNull(wed.getFlags());
+    // R8.1: the fingerprint icon comes from the stored day; the month register reads no punches
+    MonthRegisterResponse.Cell thu = m.getRows().get(0).getCells().get(9);
+    assertEquals(AttendanceSource.BIOMETRIC_APP, thu.getMarkSource());
+    assertEquals(Boolean.TRUE, thu.getMissingCheckOut());
+    assertNull(thu.getFlags());
+    verify(punchDays, never()).summaryByEmployeeDate(any(), anyCollection(), any(),
+        org.mockito.ArgumentMatchers.anyLong());
   }
 
   @Test
@@ -532,5 +599,343 @@ class AttendanceServiceTest {
     assertEquals(0, future.getUnmarked().signum());
     assertEquals(0, future.getLeave().compareTo(new java.math.BigDecimal("0.5")));
     assertEquals(0, past.getUnmarked().compareTo(new java.math.BigDecimal("0.5")));
+  }
+
+  // ---- R7: hand-made marks of paired employees need a reason ------------------------------------
+
+  @Test
+  void withTheSwitchOffAPairedEmployeeNeedsNoReasonAndPairingsAreNotRead() {
+    paired("e1");
+    when(bulk.execute()).thenReturn(mock(BulkWriteResult.class));
+
+    service.saveDays(USER, SHOP, save(row("e1", TUE, "PRESENT")));
+
+    verify(bulk).execute();
+    verify(pairingService, never()).activePairingsByEmployee(any(), anyCollection());
+  }
+
+  @Test
+  void withTheSwitchOnAnUnpairedEmployeeNeedsNoReason() {
+    biometricAppOn();
+    paired();
+    when(bulk.execute()).thenReturn(mock(BulkWriteResult.class));
+
+    List<AttendanceRowResponse> rows =
+        service.saveDays(USER, SHOP, save(row("e1", TUE, "PRESENT")));
+
+    verify(bulk).execute();
+    verify(pairingService, times(1)).activePairingsByEmployee(eq(SHOP), anyCollection());
+    assertFalse(rows.get(0).isMarkReasonRequired());
+  }
+
+  @Test
+  void aPairedEmployeesMarkWithoutAReasonIsRefusedAndNothingIsWritten() {
+    biometricAppOn();
+    paired("e2");
+
+    ValidationException e = assertThrows(ValidationException.class, () -> service.saveDays(USER,
+        SHOP, save(row("e1", TUE, "PRESENT"), row("e2", TUE, "PRESENT"))));
+
+    assertEquals("A reason is required when the employee uses the Attendance app",
+        e.getMessage());
+    verify(bulk, never()).upsert(any(Query.class), any(Update.class));
+    verify(bulk, never()).execute();
+    verify(auditService, never()).recordAll(anyList());
+  }
+
+  @Test
+  void clearingAPairedEmployeesMarkAlsoNeedsAReason() {
+    biometricAppOn();
+    paired("e1");
+    when(mongoTemplate.find(any(Query.class), eq(AttendanceDay.class)))
+        .thenReturn(List.of(stored("e1", TUE, AttendanceStatus.ABSENT)));
+
+    assertThrows(ValidationException.class,
+        () -> service.saveDays(USER, SHOP, save(row("e1", TUE, "UNMARKED"))));
+    verify(bulk, never()).execute();
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"", "   ", "\t\n"})
+  void otherWithEmptyOrWhitespaceOnlyTextIsNoReason(String text) {
+    biometricAppOn();
+    paired("e1");
+
+    assertThrows(ValidationException.class, () -> service.saveDays(USER, SHOP,
+        save(withReason(row("e1", TUE, "PRESENT"), ManualMarkReason.OTHER, text))));
+    verify(bulk, never()).execute();
+  }
+
+  @Test
+  void otherWithNoTextIsNoReason() {
+    biometricAppOn();
+    paired("e1");
+
+    assertThrows(ValidationException.class, () -> service.saveDays(USER, SHOP,
+        save(withReason(row("e1", TUE, "PRESENT"), ManualMarkReason.OTHER, null))));
+    verify(bulk, never()).execute();
+  }
+
+  @Test
+  void otherTextOver200CharactersCannotBeSaved() {
+    biometricAppOn();
+    paired("e1");
+
+    ValidationException e = assertThrows(ValidationException.class, () -> service.saveDays(USER,
+        SHOP, save(withReason(row("e1", TUE, "PRESENT"), ManualMarkReason.OTHER,
+            "x".repeat(201)))));
+
+    assertTrue(e.getMessage().contains("200"), e.getMessage());
+    verify(bulk, never()).execute();
+  }
+
+  @Test
+  void otherTextOfExactly200CharactersAfterTrimIsAccepted() {
+    biometricAppOn();
+    paired("e1");
+    when(bulk.execute()).thenReturn(mock(BulkWriteResult.class));
+
+    service.saveDays(USER, SHOP, save(withReason(row("e1", TUE, "PRESENT"),
+        ManualMarkReason.OTHER, "  " + "x".repeat(200) + "  ")));
+
+    verify(bulk).execute();
+    List<AuditEntry> entries = recordedAudit();
+    assertEquals(1, entries.size());
+    assertEquals("OTHER: " + "x".repeat(200), entries.get(0).reason());
+  }
+
+  @Test
+  void aQuickPickNeedsNoTextAndIsRecordedByName() {
+    biometricAppOn();
+    paired("e1");
+    when(bulk.execute()).thenReturn(mock(BulkWriteResult.class));
+
+    List<AttendanceRowResponse> rows = service.saveDays(USER, SHOP,
+        save(withReason(row("e1", TUE, "PRESENT"), ManualMarkReason.FORGOT_PHONE, null)));
+
+    verify(bulk).execute();
+    List<AuditEntry> entries = recordedAudit();
+    // R7.5: a first mark with a reason gets its own row, not the bulk summary
+    assertEquals(1, entries.size());
+    assertEquals(HrAuditAction.ATTENDANCE_SET, entries.get(0).action());
+    assertEquals("FORGOT_PHONE", entries.get(0).reason());
+    assertEquals("e1", entries.get(0).employeeId());
+    assertEquals(TUE, entries.get(0).date());
+    assertNull(entries.get(0).before());
+    assertEquals("PRESENT", entries.get(0).after().get("status"));
+    assertTrue(rows.get(0).isMarkReasonRequired());
+  }
+
+  @Test
+  void theReasonRowCarriesTheDerivedValuesItReplaced() {
+    biometricAppOn();
+    paired("e1");
+    AttendanceDay derived = stored("e1", TUE, AttendanceStatus.PRESENT);
+    derived.setSource(AttendanceSource.BIOMETRIC_APP);
+    derived.setInTime("09:05");
+    derived.setOutTime("18:10");
+    derived.setPunchCount(2);
+    when(mongoTemplate.find(any(Query.class), eq(AttendanceDay.class)))
+        .thenReturn(List.of(derived));
+    when(bulk.execute()).thenReturn(mock(BulkWriteResult.class));
+    SaveAttendanceDaysRequest.Row r = row("e1", TUE, "PRESENT");
+    r.setInTime("09:00");
+    r.setOutTime("18:00");
+
+    service.saveDays(USER, SHOP, save(withReason(r, ManualMarkReason.OTHER, " Sensor broken ")));
+
+    List<AuditEntry> entries = recordedAudit();
+    assertEquals(1, entries.size());
+    AuditEntry entry = entries.get(0);
+    assertEquals(HrAuditAction.ATTENDANCE_SET, entry.action());
+    assertEquals("OTHER: Sensor broken", entry.reason());
+    // R7.6: what the punches had derived, before the hand-made values replaced them
+    assertEquals("PRESENT", entry.before().get("status"));
+    assertEquals("09:05", entry.before().get("inTime"));
+    assertEquals("18:10", entry.before().get("outTime"));
+    assertEquals("BIOMETRIC_APP", entry.before().get("source"));
+    assertEquals("09:00", entry.after().get("inTime"));
+    assertEquals("MANUAL", entry.after().get("source"));
+  }
+
+  @Test
+  void clearingWithAReasonRecordsIt() {
+    biometricAppOn();
+    paired("e1");
+    when(mongoTemplate.find(any(Query.class), eq(AttendanceDay.class)))
+        .thenReturn(List.of(stored("e1", TUE, AttendanceStatus.ABSENT)));
+    when(bulk.execute()).thenReturn(mock(BulkWriteResult.class));
+
+    service.saveDays(USER, SHOP, save(withReason(row("e1", TUE, "UNMARKED"),
+        ManualMarkReason.NO_NETWORK, null)));
+
+    verify(bulk).remove(any(Query.class));
+    List<AuditEntry> entries = recordedAudit();
+    assertEquals(1, entries.size());
+    assertEquals("NO_NETWORK", entries.get(0).reason());
+    assertEquals("ABSENT", entries.get(0).before().get("status"));
+    assertNull(entries.get(0).after());
+  }
+
+  @Test
+  void rowsWithoutAReasonKeepTheExistingAuditShapeNextToRowsWithOne() {
+    biometricAppOn();
+    paired("e1");
+    when(bulk.execute()).thenReturn(mock(BulkWriteResult.class));
+
+    service.saveDays(USER, SHOP, save(
+        withReason(row("e1", TUE, "PRESENT"), ManualMarkReason.PHONE_NOT_WORKING, null),
+        row("e2", TUE, "PRESENT")));
+
+    List<AuditEntry> entries = recordedAudit();
+    assertEquals(2, entries.size());
+    assertEquals(HrAuditAction.ATTENDANCE_BULK_SET, entries.get(0).action());
+    assertEquals(1, entries.get(0).after().get("count"), "only the row without a reason");
+    assertEquals(HrAuditAction.ATTENDANCE_SET, entries.get(1).action());
+    assertEquals("PHONE_NOT_WORKING", entries.get(1).reason());
+  }
+
+  @Test
+  void markUnmarkedPresentRefusesTheWholeBatchWhenAPairedEmployeeHasNoReason() {
+    biometricAppOn();
+    paired("e2");
+
+    ValidationException e = assertThrows(ValidationException.class,
+        () -> service.markUnmarkedPresent(USER, SHOP,
+            new MarkUnmarkedPresentRequest(new ArrayList<>(List.of(TUE)), null)));
+
+    assertEquals("A reason is required when the employee uses the Attendance app",
+        e.getMessage());
+    verify(bulk, never()).execute();
+    verify(auditService, never()).recordAll(anyList());
+  }
+
+  @Test
+  void markUnmarkedPresentWithoutPairedEmployeesNeedsNoReason() {
+    biometricAppOn();
+    paired();
+    BulkWriteResult result = mock(BulkWriteResult.class);
+    when(result.getUpserts()).thenReturn(List.of(new BulkWriteUpsert(0, new BsonObjectId()),
+        new BulkWriteUpsert(1, new BsonObjectId())));
+    when(bulk.execute()).thenReturn(result);
+
+    int marked = service.markUnmarkedPresent(USER, SHOP,
+        new MarkUnmarkedPresentRequest(new ArrayList<>(List.of(TUE)), null)).getMarked();
+
+    assertEquals(2, marked);
+    List<AuditEntry> entries = recordedAudit();
+    assertEquals(1, entries.size());
+    assertEquals(HrAuditAction.ATTENDANCE_BULK_SET, entries.get(0).action());
+    assertEquals(2, entries.get(0).after().get("count"));
+  }
+
+  @Test
+  void markUnmarkedPresentWritesOneReasonRowPerPairedEmployeeDay() {
+    biometricAppOn();
+    paired("e1");
+    BulkWriteResult result = mock(BulkWriteResult.class);
+    // bulk order: e1/TUE (0), e1/WED (1), e2/TUE (2), e2/WED (3); e2/WED lost a race
+    when(result.getUpserts()).thenReturn(List.of(new BulkWriteUpsert(0, new BsonObjectId()),
+        new BulkWriteUpsert(1, new BsonObjectId()), new BulkWriteUpsert(2, new BsonObjectId())));
+    when(bulk.execute()).thenReturn(result);
+
+    int marked = service.markUnmarkedPresent(USER, SHOP, new MarkUnmarkedPresentRequest(
+        new ArrayList<>(List.of(TUE, WED)), null, ManualMarkReason.OTHER, " App crashed "))
+        .getMarked();
+
+    assertEquals(3, marked);
+    List<AuditEntry> entries = recordedAudit();
+    assertEquals(3, entries.size());
+    assertEquals(HrAuditAction.ATTENDANCE_BULK_SET, entries.get(0).action());
+    assertEquals(1, entries.get(0).after().get("count"), "e2/TUE only");
+    for (AuditEntry entry : entries.subList(1, 3)) {
+      assertEquals(HrAuditAction.ATTENDANCE_SET, entry.action());
+      assertEquals("e1", entry.employeeId());
+      assertEquals("OTHER: App crashed", entry.reason());
+      assertEquals("PRESENT", entry.after().get("status"));
+      assertEquals("BULK_PRESENT", entry.after().get("source"));
+      assertNull(entry.before());
+    }
+    assertEquals(Set.of(TUE, WED),
+        Set.of(entries.get(1).date(), entries.get(2).date()));
+  }
+
+  // ---- R7.7–R7.8, R7.2 on the registers ------------------------------------------------------
+
+  @Test
+  void noPunchYetShowsForTodayOnlyWhenPairedSwitchOnNoPunchAndNoMark() {
+    // no week-off: today may be a Sunday, and the hint is asserted against UNMARKED below
+    noWeekOff(biometricAppOn());
+    String today = HrDateUtils.format(HrDateUtils.today());
+    when(mongoTemplate.find(any(Query.class), eq(Employee.class))).thenReturn(List.of(
+        employee("e1", "EMP-001"), employee("e2", "EMP-002"), employee("e3", "EMP-003"),
+        employee("e4", "EMP-004")));
+    // e2 has a (duplicate-only) punch, e3 is not paired, e4 is marked by hand
+    when(punchDays.summaryByEmployeeDate(eq(SHOP), anyCollection(), eq(today),
+        org.mockito.ArgumentMatchers.anyLong()))
+        .thenReturn(Map.of(AttendanceService.key("e2", today),
+            new DaySummary(EnumSet.noneOf(PunchFlag.class), null, 1)));
+    when(mongoTemplate.find(any(Query.class), eq(AttendanceDay.class)))
+        .thenReturn(List.of(stored("e4", today, AttendanceStatus.PRESENT)));
+    paired("e1", "e2", "e4");
+
+    DailyRegisterResponse r = service.daily(USER, SHOP, today);
+
+    assertTrue(r.getRows().get(0).isNoPunchYet(), "e1: paired, nothing yet");
+    assertFalse(r.getRows().get(1).isNoPunchYet(), "e2: has a punch");
+    assertFalse(r.getRows().get(2).isNoPunchYet(), "e3: not paired");
+    assertFalse(r.getRows().get(3).isNoPunchYet(), "e4: marked by hand");
+    assertTrue(r.getRows().get(0).isMarkReasonRequired());
+    assertTrue(r.getRows().get(1).isMarkReasonRequired());
+    assertFalse(r.getRows().get(2).isMarkReasonRequired());
+    assertEquals(DayStatus.UNMARKED, r.getRows().get(0).getStatus(), "the hint is not a status");
+    verify(pairingService, times(1)).activePairingsByEmployee(eq(SHOP), anyCollection());
+  }
+
+  @Test
+  void noPunchYetNeverShowsForAPastDate() {
+    biometricAppOn();
+    paired("e1");
+    String yesterday = HrDateUtils.format(HrDateUtils.today().minusDays(1));
+
+    DailyRegisterResponse r = service.daily(USER, SHOP, yesterday);
+
+    assertFalse(r.getRows().get(0).isNoPunchYet());
+    assertTrue(r.getRows().get(0).isMarkReasonRequired());
+  }
+
+  @Test
+  void noPunchYetAndMarkReasonNeverShowWithTheSwitchOff() {
+    paired("e1");
+    String today = HrDateUtils.format(HrDateUtils.today());
+
+    DailyRegisterResponse r = service.daily(USER, SHOP, today);
+
+    assertFalse(r.getRows().get(0).isNoPunchYet());
+    assertFalse(r.getRows().get(0).isMarkReasonRequired());
+    verify(pairingService, never()).activePairingsByEmployee(any(), anyCollection());
+  }
+
+  @Test
+  void theMonthRegisterFlagsPairedEmployeesWithOnePairingsRead() {
+    biometricAppOn();
+    paired("e2");
+    when(periodLockService.lockedPeriods(eq(SHOP), anyCollection())).thenReturn(Set.of());
+
+    MonthRegisterResponse m = service.month(USER, SHOP, "2025-04", null);
+
+    assertFalse(m.getRows().get(0).isMarkReasonRequired());
+    assertTrue(m.getRows().get(1).isMarkReasonRequired());
+    verify(pairingService, times(1)).activePairingsByEmployee(eq(SHOP), anyCollection());
+  }
+
+  @Test
+  void theMonthRegisterReadsNoPairingsWithTheSwitchOff() {
+    paired("e2");
+
+    MonthRegisterResponse m = service.month(USER, SHOP, "2025-04", null);
+
+    assertFalse(m.getRows().get(1).isMarkReasonRequired());
+    verify(pairingService, never()).activePairingsByEmployee(any(), anyCollection());
   }
 }

@@ -29,7 +29,7 @@ public class Punch {
   @Id private String id;
   private String shopId;
   private String employeeId;
-  /** Server time of the punch (never the phone's). */
+  /** Server time of the punch (never the phone's, except an accepted offline app punch, R6.9). */
   private Instant at;
   /** yyyy-MM-dd of {@code at} in Asia/Kolkata. */
   private String localDate;
@@ -40,7 +40,28 @@ public class Punch {
   /** Accuracy the phone reported, whole metres; null when not given or not checked. */
   private Integer accuracyMetres;
   private List<PunchFlag> flags = new ArrayList<>();
-  /** Self check-in: {@code S:<employeeId>:<epochSecond>}. */
+  /**
+   * Self check-in: {@code S:<employeeId>:<epochSecond>}. Attendance app: {@code
+   * B:<employeeId>:<punchId>} (R5.10).
+   */
   private String dedupeKey;
+  /** Attendance app: the {@code hr_device_pairings} id that signed it; null for SELF. */
+  private String pairingId;
+  /**
+   * Attendance app: the phone model as recorded at pairing, copied here so it outlives the
+   * pairing's 90-day purge (R8.6, R3.11); null for SELF.
+   */
+  private String deviceModel;
+  /**
+   * Attendance app: the time the phone said the punch happened. Equals {@code at} for an offline
+   * punch (R6.9); differs from it for an online one, where {@code at} is the server's clock (R4.4).
+   * Null for SELF.
+   */
+  private Instant phoneTime;
+  /**
+   * Attendance app: SHA-256 hex of the signed canonical payload, so a resend of the same punch id
+   * with different content is refused instead of replayed (R5.11); null for SELF.
+   */
+  private String payloadSha256;
   private Instant createdAt;
 }

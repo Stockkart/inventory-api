@@ -75,7 +75,9 @@ public class HrSettingsValidator {
 
   /**
    * Checked on the merged values (the coordinates may be stored already): the location check
-   * needs the shop's location.
+   * needs the shop's location. {@code biometricApp} is deliberately not coupled to
+   * {@code selfCheckIn} or {@code locationCheck} (R1.2); the "turn on Location check" warning of
+   * R1.6 is shown by the frontend and never blocks saving.
    */
   public void validateAttendanceCapture(HrSettings.AttendanceCapture merged) {
     if (Boolean.TRUE.equals(merged.getLocationCheck())

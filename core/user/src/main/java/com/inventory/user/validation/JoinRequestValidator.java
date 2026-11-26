@@ -28,6 +28,10 @@ public class JoinRequestValidator {
     if (request.getRole() == null) {
       throw new ValidationException("Role is required");
     }
+    // WORKER is granted only through the Stockkart Team app's own join request (worker-app R2.4)
+    if (request.getRole().isWorkerRole()) {
+      throw new ValidationException(UserValidator.WORKER_ROLE_MESSAGE);
+    }
     if (!isValidRole(request.getRole())) {
       throw new ValidationException("Invalid role. Must be one of: ADMIN, MANAGER, CASHIER");
     }
@@ -74,7 +78,8 @@ public class JoinRequestValidator {
   }
 
   private boolean isValidRole(UserRole role) {
-    // OWNER cannot be requested via join request; SUPER_USER is not a shop role at all
+    // allow-list: OWNER cannot be requested via join request; SUPER_USER is not a shop role at
+    // all; WORKER is refused above with its own message
     return role == UserRole.ADMIN || role == UserRole.MANAGER || role == UserRole.CASHIER;
   }
 }

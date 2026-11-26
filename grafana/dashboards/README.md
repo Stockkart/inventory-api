@@ -61,6 +61,30 @@ Documents examined per search is not measured by the app (it used to re-run sear
 
 Suggested alerts: **p95 latency > 1 s for 10 min** and **more than 5 `outcome="timeout"` in 5 min** (both on `env="prod"`).
 
+### Attendance app panels (`module=hr`)
+
+Three panels at the bottom of `03-module.json` (ids 200–202) cover the HR Attendance app (spec `.kiro/specs/HR-module`, R10.7). They are the only panels that use the **`shop`** dropdown (`label_values(inventory_hr_app_punches_total{service="inventory-api", env="$env"}, shop)`, multi-select, default All); the other rows ignore it. Panels are plain (not repeated) and have data regardless of the `module` dropdown. Each panel's description links the metric rows in [`docs/metrics.md`](../../docs/metrics.md#hr).
+
+| Panel | PromQL | What to look for |
+|-------|--------|------------------|
+| Attendance app punches per result | A: `sum by (result) (rate(inventory_hr_app_punches_total{shop=~"$shop"}[5m]))` (stacked, left axis). B: `(sum by (shop) (rate(…{result="signature_failed"}[1h])) or sum by (shop) (rate(…[1h])) * 0) / sum by (shop) (rate(…[1h]))` — the R10.4 signature failure rate per shop over a rolling hour, dashed red on the right axis (`percentunit`), with a **threshold line at 1 %** | one `result` label per attempt (`accepted`, `flagged`, `duplicate`, `replayed`, `off`, `not_paired`, `not_employed`, `on_leave`, `locked`, `outside_shop`, `location_unclear`, `fake_location`, `offline_accepted`, `offline_too_late`, `offline_clock_wrong`, `signature_failed`, `rate_limited`, `invalid`, `error`). A dashed line above the 1 % threshold is the condition `AppPunchHealthService` alerts on (it additionally needs ≥ 20 attempts in the window, which the graph does not encode — read the attempt rate off query A) |
+| Attendance app offline backlog | A: `sum(increase(inventory_hr_app_offline_backlog_total{shop=~"$shop"}[1h]))` (all shops, thick line). B: `sum by (shop) (increase(…[1h]))` (one series per shop). Legend is a **table** sorted by Last with Last / Max / Mean per shop | accepted offline punches that arrived more than 1 h after their phone time; the legend table is the per-shop breakdown, so the shop holding punches right now is the top row |
+| Attendance app pairing failures per reason | `sum by (reason) (rate(inventory_hr_app_pairings_total{event="failed",shop=~"$shop"}[5m]))` | `code_expired`, `code_used`, `code_cancelled`, `code_wrong`, `app_off`, `employee_exited`, `abandoned`, `locked` |
+
+The `or … * 0` in query B of the first panel keeps a shop with zero signature failures on the graph at 0 % instead of dropping its series.
+
+Every expression also carries `service="inventory-api", env="$env"` like the rest of the file. Metric names and tag values are the constants in `HrMetricsConstants` (`APP_PUNCHES_TOTAL`, `APP_PAIRINGS_TOTAL`, `APP_OFFLINE_BACKLOG_TOTAL`); rows for them are in `docs/metrics.md`. `DashboardJsonTest` (`app/src/test/.../observability`) pins the panel set to the pre-existing ids plus exactly 200–202 and 203 (below), query A of each, the 1 % threshold override, the per-shop query and the doc links; pre-existing panels must stay byte-identical to `HEAD`.
+
+### Join requests panel (`module=hr`, Stockkart Team)
+
+One more panel (id 203, full width, below the three above) covers the Stockkart Team app's join and link requests (spec `.kiro/specs/worker-app`, R14.3). It uses the same **`shop`** dropdown and the same `service` / `env` matchers; nothing else in the file changed when it was added.
+
+| Panel | PromQL | What to look for |
+|-------|--------|------------------|
+| Join requests per event | `sum by (event, kind) (increase(inventory_hr_worker_join_requests_total{shop=~"$shop"}[1h]))` | one series per `kind` (`join`, `link`) and `event` (`created`, `approved_created`, `approved_linked`, `rejected`, `withdrawn`). Over any period `created = approved_created + approved_linked + rejected + withdrawn + still pending`, so `created` climbing well above the decision lines is an inbox nobody is clearing |
+
+The other worker counters (`inventory_hr_worker_signups_total`, `inventory_hr_worker_lookups_total{result}`, `inventory_hr_worker_app_logins_total{result}`) carry no `shop` tag (the account has no shop yet) and show up in the repeated **Business** row when the `module` dropdown is `hr`.
+
 ## Explore smoke queries
 
 After generating traffic (login, checkout, OCR, plan checkout, MIS, reminder, credit charge, journal, GSTR, cafe token):
@@ -95,6 +119,6 @@ histogram_quantile(0.95, sum by (le, method, uri) (increase(inventory_http_laten
 
 ## Cardinality
 
-Allowed tags: `service`, `env`, `module`, `endpoint`, `method`, `uri` (MVC path pattern only), `status` / `status_class`, `outcome`, `operation`, `provider`, `channel`, `vertical` (`grocery|cafe|sports|medical` only).
+Allowed tags: `service`, `env`, `module`, `endpoint`, `method`, `uri` (MVC path pattern only), `status` / `status_class`, `outcome`, `operation`, `provider`, `channel`, `vertical` (`grocery|cafe|sports|medical` only). The three HR Attendance app counters (`inventory_hr_app_*`) and the worker join-request counter (`inventory_hr_worker_join_requests_total`) additionally carry `shop` (the shop id), `result`, `event`, `reason` and `kind`, because R10.1–R10.3 and worker-app R14.2 ask for per-shop counts; no other metric may carry a shop id.
 
-Never tag `shopId`, `userId`, `requestId`, document ids, or emails.
+Never tag `userId`, `requestId`, document ids, or emails; never tag `shopId` outside the four counters above.

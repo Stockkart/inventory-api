@@ -494,6 +494,11 @@ public class RbacService {
     if (stored == null || stored.getModules() == null) {
       return defaults;
     }
+    if (role != null && role.isWorkerRole()) {
+      // A WORKER grants nothing on the staff side whatever an owner stored on the membership:
+      // the Stockkart Team app and My HR are the only things a WORKER reaches (worker-app R2.1).
+      return defaults;
+    }
     MemberModulePermissions overrides = stored.getModules();
     Map<String, Boolean> resolved = new LinkedHashMap<>(defaults);
     applyOverride(resolved, MODULE_ACCOUNTING, overrides.getAccounting());
@@ -531,15 +536,18 @@ public class RbacService {
     modules.put(MODULE_PRODUCT_SEARCH_EDIT, false);
     modules.put(MODULE_RATE_RULES_EDIT, false);
 
-    // HR is on for every shop role: what a member may do inside HR is decided by the shop's HR
-    // role grid (Cashier's default row is empty), so this switch alone grants nothing. Allow-listed
-    // so a non-shop role (SUPER_USER) still gets no module.
+    // HR is on for every shop staff role: what a member may do inside HR is decided by the shop's
+    // HR role grid (Cashier's default row is empty), so this switch alone grants nothing.
+    // Allow-listed so a non-staff role gets no module: SUPER_USER (not a shop role) and WORKER
+    // (worker-app R2.1: a worker reaches only /hr/me/** and /hr/worker/**, which skip the module
+    // check; every other /api/v1/hr/** route is refused because hr = false here).
     modules.put(MODULE_HR, fullStaff || cashier);
     return modules;
   }
 
   private ShopAccessResponse.TeamAccessDto resolveTeam(UserRole role) {
-    // Allow-list the shop staff roles so a non-shop role (SUPER_USER) gets no team access
+    // Allow-list the shop staff roles so a non-shop role (SUPER_USER) or a WORKER gets no team
+    // access; viewMyInvitations is the one flag every account keeps
     boolean staff = role == UserRole.OWNER || role == UserRole.ADMIN || role == UserRole.MANAGER;
     return ShopAccessResponse.TeamAccessDto.builder()
         .manageInvitations(staff)
@@ -551,6 +559,11 @@ public class RbacService {
 
   private List<String> resolveEditableFields(
       MembershipContext ctx, ProductSearchEditMode editMode, Map<String, Boolean> modules) {
+    if (ctx.role() != null && ctx.role().isWorkerRole()) {
+      // A WORKER edits no product field whatever the owner stored on the row and whatever the
+      // shop's policy: with no editable field, PERMISSION_BASED grants no edit either (R2.1).
+      return List.of();
+    }
     if (editMode == ProductSearchEditMode.FULL_EDIT) {
       if (!Boolean.TRUE.equals(modules.get(MODULE_PRODUCT_SEARCH_EDIT))) {
         return List.of();

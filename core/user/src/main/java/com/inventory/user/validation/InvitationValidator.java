@@ -39,6 +39,10 @@ public class InvitationValidator {
       if (role.isPlatformRole()) {
         throw new ValidationException("Invalid role. SUPER_USER cannot be granted through invitations");
       }
+      // WORKER comes only from the Stockkart Team app's join request, never from an invitation
+      if (role.isWorkerRole()) {
+        throw new ValidationException(UserValidator.WORKER_ROLE_MESSAGE);
+      }
       if (!isValidRole(role)) {
         throw new ValidationException("Invalid role. Must be one of: ADMIN, MANAGER, CASHIER");
       }
@@ -82,6 +86,7 @@ public class InvitationValidator {
   }
 
   private boolean isValidRole(UserRole role) {
+    // allow-list: OWNER is never invited, SUPER_USER is not a shop role, WORKER is refused above
     return role == UserRole.ADMIN || role == UserRole.MANAGER || role == UserRole.CASHIER;
   }
 }

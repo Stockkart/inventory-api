@@ -8,7 +8,7 @@ All metrics are counters recorded through `MetricsWrapper.record(name, amount, t
 every one carries a `module` tag whose value is the module column below. Metrics that add
 further tags list them.
 
-**65 metrics across 15 modules.**
+**72 metrics across 15 modules.**
 
 ## accounting
 
@@ -61,6 +61,13 @@ further tags list them.
 | `inventory_hr_documents_seconds_total` | `HrMetricsConstants.DOCUMENTS_SECONDS_TOTAL` | PayslipService, HrReportService (counter, amount = seconds spent building the file; ÷ `documents_total` = mean; same `operation` tag) |
 | `inventory_hr_account_conflicts_total` | `HrMetricsConstants.ACCOUNT_CONFLICTS_TOTAL` | HrAccountingPoster (counter, extra tag `code`: `1250`, `2400`, `5700`; the post is refused with 409 `HR_ACCOUNT_CONFLICT`) |
 | `inventory_hr_self_checkin_total` | `HrMetricsConstants.SELF_CHECKIN_TOTAL` | SelfCheckInService (counter, one per `POST /hr/me/check-in`, extra tag `result`: `accepted`, `flagged`, `duplicate`, `off`, `not_linked`, `no_permission`, `not_employed`, `on_leave`, `locked`, `outside_shop`, `location_unclear`, `invalid`, `error`) |
+| `inventory_hr_app_punches_total` | `HrMetricsConstants.APP_PUNCHES_TOTAL` | AppPunchService, AttendanceAppAuthInterceptor (counter, exactly one per Attendance app punch attempt, extra tags `shop` and `result`: `accepted`, `flagged`, `duplicate`, `replayed`, `off`, `not_paired`, `not_employed`, `on_leave`, `locked`, `outside_shop`, `location_unclear`, `fake_location`, `offline_accepted`, `offline_too_late`, `offline_clock_wrong`, `signature_failed`, `rate_limited`, `invalid`, `error`; the sum over `result` equals the attempts the shop sent) |
+| `inventory_hr_app_pairings_total` | `HrMetricsConstants.APP_PAIRINGS_TOTAL` | DevicePairingService (counter, one per pairing event, extra tags `shop`, `event`: `created`, `completed`, `replaced`, `unpaired`, `failed`, `attestation`, and `reason`: for `failed` one of `code_expired`, `code_used`, `code_cancelled`, `code_wrong`, `app_off`, `employee_exited`, `abandoned`, `locked`, `wrong_employee` (a signed-in worker redeemed another employee's code, worker-app R7.3); for `unpaired` the `UnpairReason` name; for `attestation` (an Android key attestation chain was sent with `complete`, task 16.4) `ok` or the first failed check from `HrMetricsConstants.AppPairingAttestation` (`chain_unparseable`, `chain_broken`, `untrusted_root`, `no_extension`, `extension_malformed`, `software_level`, `challenge_mismatch`, `not_sign`, `not_ec`, `not_p256`, `no_biometric`, `auth_timeout`, `key_mismatch`, `error`); otherwise `-`) |
+| `inventory_hr_app_offline_backlog_total` | `HrMetricsConstants.APP_OFFLINE_BACKLOG_TOTAL` | AppPunchService (counter, one per accepted offline punch that arrived more than 1 hour after its phone time, extra tag `shop`) |
+| `inventory_hr_worker_signups_total` | `HrMetricsConstants.WORKER_SIGNUPS_TOTAL` | HrWorkerCounters, called by AuthService through `WorkerAppAuthPort` → `WorkerAppAuthPortImpl` (counter, one per account created with `role = WORKER`, whatever the `source`; no `shop` tag because the account has no shop yet; worker-app R14.2) |
+| `inventory_hr_worker_join_requests_total` | `HrMetricsConstants.WORKER_JOIN_REQUESTS_TOTAL` | HrWorkerCounters, called by WorkerJoinService only (`create`, `withdraw`, `approve` after commit, `reject`; counter, exactly one per join request event, extra tags `shop` and `event`: `created`, `approved_created`, `approved_linked`, `rejected`, `withdrawn`; over any period `created` = `approved_created` + `approved_linked` + `rejected` + `withdrawn` + still pending, per `shop`. A rolled-back approval and a rate-limited create are not counted. Grafana `03-module.json` panel "Join requests per event" graphs `sum by (event) (increase(...[1h]))` with the `shop` dropdown) |
+| `inventory_hr_worker_lookups_total` | `HrMetricsConstants.WORKER_LOOKUPS_TOTAL` | HrWorkerCounters, called by WorkerJoinService (counter, one per answered `GET /hr/worker/shops?ownerEmail=`, extra tag `result`: `found`, `not_found`; a rate-limited call is refused before the lookup and not counted; no `shop` tag) |
+| `inventory_hr_worker_app_logins_total` | `HrMetricsConstants.WORKER_APP_LOGINS_TOTAL` | HrWorkerCounters, called by AuthService through `WorkerAppAuthPort` → `WorkerAppAuthPortImpl` (counter, one per `POST /auth/login` with `source = worker-app`, extra tag `result`: `success`, `error`; no `shop` tag) |
 
 ## notifications
 
@@ -141,7 +148,7 @@ further tags list them.
 
 | Metric | Constant | Emitted by |
 |---|---|---|
-| `inventory_user_auth_total` | `UserMetricsConstants.AUTH_TOTAL` | AuthService |
+| `inventory_user_auth_total` | `UserMetricsConstants.AUTH_TOTAL` | AuthService (counter, extra tags `operation`: `signup`, `login`, `logout`, `forgot`, `reset`; `outcome`: `success`, `error`; and `source`: `web`, `worker-app` — the request's `source` field, `web` when absent or unknown; a worker-app sign-up refused by the per-IP limit is counted as `signup`/`error`/`worker-app`. Stays in the user module: it is not one of the HR worker counters) |
 | `inventory_user_customers_total` | `UserMetricsConstants.CUSTOMERS_TOTAL` | CustomerService |
 | `inventory_user_invitations_total` | `UserMetricsConstants.INVITATIONS_TOTAL` | InvitationService |
 | `inventory_user_join_requests_total` | `UserMetricsConstants.JOIN_REQUESTS_TOTAL` | JoinRequestService |
@@ -161,6 +168,15 @@ Some call sites add a second tag beside `module`. The ones that matter for a das
 | `inventory_product_print_job_outcomes_total` | `operation`, `outcome` | the source as above; `printed`, `failed_printer`, `still_queued`, `bridge_unreachable`, `already_sent`, `bridge_rejected`, `unconfirmed` |
 | `inventory_product_print_bridge_checks_total` | `outcome` | `not_detected`, `outdated`, `connected` |
 | `inventory_pricing_rate_rule_skipped_total` | `reason` | `BELOW_COST` |
+| `inventory_hr_app_punches_total` | `shop`, `result` | the shop id; one result per attempt (list above). Grafana `03-module.json` graphs `sum by (result) (rate(...[5m]))` with the `shop` dropdown |
+| `inventory_hr_app_pairings_total` | `shop`, `event`, `reason` | the shop id; `created`, `completed`, `replaced`, `unpaired`, `failed`, `attestation`; `reason` is the R2.14 failure, the `UnpairReason`, or for `attestation` `ok` / the failed check (recorded only; a failed attestation does not refuse the pairing in this version) |
+| `inventory_hr_app_offline_backlog_total` | `shop` | the shop id |
+| `inventory_hr_worker_join_requests_total` | `shop`, `event` | the shop id; `created`, `approved_created`, `approved_linked`, `rejected`, `withdrawn`. Grafana `03-module.json` graphs `sum by (event) (increase(...[1h]))` with the `shop` dropdown |
+| `inventory_hr_worker_lookups_total` | `result` | `found`, `not_found` |
+| `inventory_hr_worker_app_logins_total` | `result` | `success`, `error` |
+| `inventory_user_auth_total` | `operation`, `outcome`, `source` | `signup`, `login`, `logout`, `forgot`, `reset`; `success`, `error`; `web`, `worker-app` |
+
+All four `inventory_hr_worker_*` counters are incremented in one class, `HrWorkerCounters` (`core/hr/service`), one method per event; `WorkerJoinService` and `WorkerAppAuthPortImpl` call it and hold no `MetricsWrapper` for these meters. `HrWorkerCountersTest` pins each method to exactly one meter and tag set.
 
 ## Adding a metric
 

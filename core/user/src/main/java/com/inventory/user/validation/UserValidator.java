@@ -11,6 +11,14 @@ import org.springframework.util.StringUtils;
 @Component
 public class UserValidator {
 
+  /**
+   * Refusal for every staff-side path that could set the WORKER role (add user, change role,
+   * invitation, staff join request). The role is granted only by {@code WorkerJoinService}
+   * approving a worker's join or link request (worker-app R2.4).
+   */
+  public static final String WORKER_ROLE_MESSAGE =
+      "WORKER is set only by approving a worker's join request";
+
   public void validateAddUserRequest(String shopId, AddUserRequest request) {
     if (!StringUtils.hasText(shopId)) {
       throw new ValidationException("Shop ID is required");
@@ -30,6 +38,9 @@ public class UserValidator {
     if (request.getRole().isPlatformRole()) {
       throw new ValidationException("Invalid role. SUPER_USER cannot be granted to a shop member");
     }
+    if (request.getRole().isWorkerRole()) {
+      throw new ValidationException(WORKER_ROLE_MESSAGE);
+    }
   }
 
   public void validateUpdateUserRequest(String shopId, String userId, UpdateUserRequest request) {
@@ -45,6 +56,10 @@ public class UserValidator {
     // SUPER_USER is a platform role for Stockkart staff; shop-member role changes cannot grant it
     if (request.getRole() != null && request.getRole().isPlatformRole()) {
       throw new ValidationException("Invalid role. SUPER_USER cannot be granted to a shop member");
+    }
+    // WORKER is set only by approving a worker's join request (worker-app R2.4)
+    if (request.getRole() != null && request.getRole().isWorkerRole()) {
+      throw new ValidationException(WORKER_ROLE_MESSAGE);
     }
   }
 
@@ -131,9 +146,13 @@ public class UserValidator {
 
   /**
    * Last line of defence for A3: every path that creates a shop membership (shop registration,
-   * invitation accept, join-request accept, legacy backfill) goes through
-   * {@code UserShopMembershipService.addMembership}, which calls this. A SUPER_USER account is
-   * internal Stockkart staff and never belongs to a shop, and SUPER_USER is never a shop role.
+   * invitation accept, join-request accept, worker join-request approval, legacy backfill) goes
+   * through {@code UserShopMembershipService.addMembership}, which calls this. A SUPER_USER
+   * account is internal Stockkart staff and never belongs to a shop, and SUPER_USER is never a
+   * shop role. WORKER is accepted here: the staff-side entry points refuse it earlier
+   * ({@link #validateAddUserRequest}, {@link #validateUpdateUserRequest}, the invitation and
+   * staff join-request validators), so the only caller that reaches this with WORKER is the
+   * worker join-request approval.
    */
   public void validateCanJoinShop(UserAccount account, UserRole role) {
     if (role != null && role.isPlatformRole()) {

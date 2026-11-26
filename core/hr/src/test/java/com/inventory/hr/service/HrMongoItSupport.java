@@ -37,24 +37,30 @@ import com.inventory.user.service.UserShopMembershipService;
 import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.templatemode.TemplateMode;
 import org.thymeleaf.templateresolver.ClassLoaderTemplateResolver;
+import com.inventory.hr.api.port.ShopNamePort;
 import com.inventory.hr.domain.model.enums.AttendanceStatus;
 import com.inventory.hr.domain.model.enums.EmployeeStatus;
 import com.inventory.hr.domain.model.enums.HrPermission;
 import com.inventory.hr.domain.model.enums.PayType;
 import com.inventory.hr.domain.repository.AdvanceRepository;
+import com.inventory.hr.domain.repository.AttendanceDayRepository;
+import com.inventory.hr.domain.repository.DevicePairingRepository;
 import com.inventory.hr.domain.repository.EmployeeRepository;
 import com.inventory.hr.domain.repository.HrAuditEventRepository;
 import com.inventory.hr.domain.repository.HrSettingsRepository;
 import com.inventory.hr.domain.repository.LeaveRequestRepository;
 import com.inventory.hr.domain.repository.LeaveTypeRepository;
+import com.inventory.hr.domain.repository.PairingCodeRepository;
 import com.inventory.hr.domain.repository.PayrollLineRepository;
 import com.inventory.hr.domain.repository.PayrollRunRepository;
 import com.inventory.hr.domain.repository.PunchRepository;
 import com.inventory.hr.mapper.HrPayrollMapper;
 import com.inventory.hr.mapper.HrPayrollMapperImpl;
+import com.inventory.hr.mapper.HrSettingsMapperImpl;
 import com.inventory.hr.migration.HrIndexMigration;
 import com.inventory.hr.validation.AdvanceValidator;
 import com.inventory.hr.validation.AttendanceDayValidator;
+import com.inventory.hr.validation.HrSettingsValidator;
 import com.inventory.hr.validation.LeaveRequestValidator;
 import com.inventory.hr.validation.PayrollAdjustmentValidator;
 import com.inventory.metrics.MetricsWrapper;
@@ -92,33 +98,35 @@ import org.springframework.test.util.ReflectionTestUtils;
  * created, as in production where automatic index creation is off). The permission guard allows
  * everything; the permission rules have their own tests.
  */
-final class HrMongoItSupport {
+public final class HrMongoItSupport {
 
   final MongoClient client;
-  final MongoTemplate template;
+  public final MongoTemplate template;
   final AttendanceService attendance;
-  final PunchDayService punchDays;
-  final SelfCheckInService selfCheckIn;
+  public final PunchDayService punchDays;
+  public final SelfCheckInService selfCheckIn;
   final LeaveService leave;
   final LeaveBalanceService balances;
   final HrNotificationService notifications;
-  final SelfServiceResolver selfService;
+  public final SelfServiceResolver selfService;
   final LeaveTypeService types;
   final AccountingFacadeImpl accounting;
   final HrAccountingPoster poster;
   final AdvanceService advances;
   final PayrollService payroll;
-  final MetricsWrapper metrics;
+  public final MetricsWrapper metrics;
   final SalaryPaymentService payments;
   final PayslipService payslips;
   final HrReportService reports;
   final HrSelfService selfServiceFacade;
-  final EmployeeService employees;
+  public final EmployeeService employees;
+  public final DevicePairingService pairings;
+  public final HrSettingsService settings;
   final MessagingService messaging;
   final OutboundMessageRepository outbox;
   final ShopServiceAdapter shops;
 
-  HrMongoItSupport(String dbSuffix) {
+  public HrMongoItSupport(String dbSuffix) {
     this(dbSuffix, null);
   }
 
@@ -153,9 +161,11 @@ final class HrMongoItSupport {
 
     HrQueryRunner runner = new HrQueryRunner();
     ReflectionTestUtils.setField(runner, "metrics", metrics);
-    HrSettingsService settings = new HrSettingsService();
+    settings = new HrSettingsService();
     ReflectionTestUtils.setField(settings, "settingsRepository",
         repos.getRepository(HrSettingsRepository.class));
+    ReflectionTestUtils.setField(settings, "pairingRepository",
+        repos.getRepository(DevicePairingRepository.class));
     PeriodLockService lock = new PeriodLockService();
     ReflectionTestUtils.setField(lock, "mongoTemplate", template);
     ReflectionTestUtils.setField(lock, "settingsRepository",
@@ -164,6 +174,30 @@ final class HrMongoItSupport {
     ReflectionTestUtils.setField(audit, "auditEventRepository",
         repos.getRepository(HrAuditEventRepository.class));
     ReflectionTestUtils.setField(audit, "metrics", metrics);
+    // the full settings service, so an IT can flip a switch the way PUT /hr/settings does
+    ReflectionTestUtils.setField(settings, "employeeRepository",
+        repos.getRepository(EmployeeRepository.class));
+    ReflectionTestUtils.setField(settings, "attendanceDayRepository",
+        repos.getRepository(AttendanceDayRepository.class));
+    ReflectionTestUtils.setField(settings, "validator", new HrSettingsValidator());
+    ReflectionTestUtils.setField(settings, "mapper", new HrSettingsMapperImpl());
+    ReflectionTestUtils.setField(settings, "guard", guard);
+    ReflectionTestUtils.setField(settings, "periodLockService", lock);
+    ReflectionTestUtils.setField(settings, "auditService", audit);
+    // the real pairing service: employees, attendance and settings read pairing state through it
+    pairings = new DevicePairingService();
+    ReflectionTestUtils.setField(pairings, "codeRepository",
+        repos.getRepository(PairingCodeRepository.class));
+    ReflectionTestUtils.setField(pairings, "pairingRepository",
+        repos.getRepository(DevicePairingRepository.class));
+    ReflectionTestUtils.setField(pairings, "employeeRepository",
+        repos.getRepository(EmployeeRepository.class));
+    ReflectionTestUtils.setField(pairings, "settingsService", settings);
+    ReflectionTestUtils.setField(pairings, "consentVersions", new ConsentVersions());
+    ReflectionTestUtils.setField(pairings, "auditService", audit);
+    ReflectionTestUtils.setField(pairings, "metrics", metrics);
+    ReflectionTestUtils.setField(pairings, "mongoTemplate", template);
+    ReflectionTestUtils.setField(pairings, "shopNamePort", (ShopNamePort) shopId -> "Test Shop");
     types = new LeaveTypeService();
     ReflectionTestUtils.setField(types, "leaveTypeRepository",
         repos.getRepository(LeaveTypeRepository.class));
@@ -180,6 +214,7 @@ final class HrMongoItSupport {
     ReflectionTestUtils.setField(attendance, "validator", new AttendanceDayValidator());
     ReflectionTestUtils.setField(attendance, "queryRunner", runner);
     ReflectionTestUtils.setField(attendance, "metrics", metrics);
+    ReflectionTestUtils.setField(attendance, "pairingService", pairings);
     // names are display-only; the user module is not wired here (empty map for every lookup)
     ReflectionTestUtils.setField(attendance, "userNames", mock(HrUserNames.class));
     punchDays = new PunchDayService();
@@ -362,6 +397,7 @@ final class HrMongoItSupport {
         mock(UserShopMembershipService.class));
     ReflectionTestUtils.setField(employees, "periodLockService", lock);
     ReflectionTestUtils.setField(employees, "auditService", audit);
+    ReflectionTestUtils.setField(employees, "pairingService", pairings);
   }
 
   /** Thymeleaf over {@code classpath:templates/*.html}, as the app's auto-configuration. */
@@ -487,7 +523,7 @@ final class HrMongoItSupport {
     }
   }
 
-  Employee employee(String shopId, String code, String name, String userId) {
+  public Employee employee(String shopId, String code, String name, String userId) {
     Employee e = new Employee();
     e.setShopId(shopId);
     e.setCode(code);
@@ -502,7 +538,7 @@ final class HrMongoItSupport {
    * An employee service behind the real {@link HrPermissionGuard}: the caller holds exactly
    * {@code perms}, is the owner or not, and {@code members} are the shop's active logins.
    */
-  EmployeeService employeesAs(java.util.Set<HrPermission> perms, boolean owner,
+  public EmployeeService employeesAs(java.util.Set<HrPermission> perms, boolean owner,
       List<com.inventory.user.rest.dto.response.ShopMemberSummaryDto> members) {
     HrAccessService access = mock(HrAccessService.class);
     when(access.permissions(anyString(), anyString())).thenReturn(perms);
@@ -513,7 +549,7 @@ final class HrMongoItSupport {
     when(membership.listActiveMembers(anyString())).thenReturn(members);
     EmployeeService service = new EmployeeService();
     for (String field : List.of("employeeRepository", "mongoTemplate", "employeeMapper",
-        "validator", "counterService", "periodLockService", "auditService")) {
+        "validator", "counterService", "periodLockService", "auditService", "pairingService")) {
       ReflectionTestUtils.setField(service, field, ReflectionTestUtils.getField(employees, field));
     }
     ReflectionTestUtils.setField(service, "guard", realGuard);
@@ -521,7 +557,7 @@ final class HrMongoItSupport {
     return service;
   }
 
-  void close() {
+  public void close() {
     template.getDb().drop();
     client.close();
   }

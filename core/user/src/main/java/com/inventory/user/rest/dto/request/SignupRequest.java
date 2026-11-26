@@ -19,4 +19,11 @@ public class SignupRequest {
   private String shopId;
   private UserRole role;
   private String deviceId; // Optional: if not provided, will be generated
+
+  /**
+   * Where the sign-up came from: {@link AuthSource#WEB} (default when absent) or {@link
+   * AuthSource#WORKER_APP}. Tags {@code inventory_user_auth_total{source}} and is handed to the
+   * welcome e-mail template (worker-app R1.8). {@code AuthValidator} normalises it.
+   */
+  private String source;
 }

@@ -35,7 +35,13 @@ public class RbacModuleInterceptor implements HandlerInterceptor {
           // HR self-service: every linked employee may see their own HR data whatever their role
           // or HR switch (R1.5). It still needs a bearer token and a shop; the handlers resolve
           // the employee from (shopId, caller userId) only, never from the path or body.
-          Pattern.compile("/api/v1/hr/me(/.*)?"));
+          Pattern.compile("/api/v1/hr/me(/.*)?"),
+          // Stockkart Team app (worker-app DD3, DD5, R2.1): a WORKER membership resolves to hr =
+          // off, so everything the signed-in worker does with their login lives under /hr/worker
+          // and is skipped here like /hr/me. The handlers derive the employee from the token only.
+          // The manager inbox, /api/v1/hr/join-requests/**, is deliberately NOT listed: it is a
+          // staff screen and needs the hr module plus ADD_EDIT_EMPLOYEES.
+          Pattern.compile("/api/v1/hr/worker(/.*)?"));
 
   private static final List<ModuleRule> MODULE_RULES =
       List.of(

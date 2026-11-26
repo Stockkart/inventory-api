@@ -50,6 +50,37 @@ class InterceptorPathMatchingTest {
         new MockHttpServletResponse(), null));
   }
 
+  /**
+   * Attendance app device paths carry no Bearer token; the signed envelope interceptor in the HR
+   * module authenticates them (AGENTS X3: listed here and excluded in CorsConfig).
+   */
+  @ParameterizedTest
+  @ValueSource(strings = {"/api/v1/hr/attendance-app/pairings/me/unpair",
+      "/api/v1/hr/attendance-app/me",
+      "/api/v1/hr/attendance-app/punches", "/api/v1/hr/attendance-app/consent",
+      "/api/v1/hr/attendance-app/consent/latest"})
+  void attendanceAppDevicePathsNeedNoBearerToken(String path) throws Exception {
+    assertTrue(authentication.preHandle(new MockHttpServletRequest("POST", path),
+        new MockHttpServletResponse(), null));
+    verifyNoInteractions(tokenValidationService);
+  }
+
+  /**
+   * Health, unknown paths and the removed unsigned handshake (worker-app D11: {@code
+   * /pairings/claim|complete|abandon}) are ordinary Bearer-chain routes.
+   */
+  @ParameterizedTest
+  @ValueSource(strings = {"/api/v1/hr/attendance-app/health", "/api/v1/hr/attendance-app",
+      "/api/v1/hr/attendance-app/punches/../health", "/api/v1/hr/attendance-app/mex",
+      "/api/v1/hr/attendance-app/pairings/../../employees",
+      "/api/v1/hr/attendance-app/pairings/claim", "/api/v1/hr/attendance-app/pairings/complete",
+      "/api/v1/hr/attendance-app/pairings/abandon", "/api/v1/hr/attendance-app/pairings"})
+  void attendanceAppHealthUnknownAndRemovedPathsStayOnTheBearerChain(String path) {
+    assertThrows(AuthenticationException.class,
+        () -> authentication.preHandle(new MockHttpServletRequest("GET", path),
+            new MockHttpServletResponse(), null));
+  }
+
   @Test
   void theAllowListOfPlanExpiryIgnoresDotSegments() {
     PlanExpiryInterceptor planExpiry = new PlanExpiryInterceptor();
@@ -81,7 +112,9 @@ class InterceptorPathMatchingTest {
 
   @ParameterizedTest
   @ValueSource(strings = {"/api/v1/hr/me", "/api/v1/hr/me/payslipsX", "/api/v1/hr/me/attendance",
-      "/api/v1/hr/me/payslips/../attendance", "/api/v1/hr/payroll-runs/r1/lines/l1/payslip"})
+      "/api/v1/hr/me/payslips/../attendance", "/api/v1/hr/payroll-runs/r1/lines/l1/payslip",
+      "/api/v1/hr/worker", "/api/v1/hr/workerX/me", "/api/v1/hr/worker/../employees",
+      "/api/v1/hr/join-requests", "/api/v1/hr/join-requests/abc/approve"})
   void otherHrPathsAreStillBlockedAfterThePlanExpired(String path) {
     MockHttpServletRequest request = new MockHttpServletRequest("GET", path);
     request.setAttribute("shopId", "s1");
@@ -89,6 +122,31 @@ class InterceptorPathMatchingTest {
     BaseException e = assertThrows(BaseException.class, () -> expiredPlanInterceptor()
         .preHandle(request, new MockHttpServletResponse(), null));
     assertEquals(ErrorCode.PLAN_EXPIRED, e.getErrorCode());
+  }
+
+  /**
+   * Stockkart Team app (worker-app design "Request paths"): a worker's Home, state, history and
+   * profile keep working while the shop's plan is expired; the manager inbox above does not.
+   */
+  @ParameterizedTest
+  @ValueSource(strings = {"/api/v1/hr/worker/me", "/api/v1/hr/worker/punches",
+      "/api/v1/hr/worker/profile", "/api/v1/hr/worker/notifications/n1/read",
+      "/api/v1/hr/worker/me;x=1"})
+  void workerPathsStayAvailableAfterThePlanExpired(String path) {
+    MockHttpServletRequest request = new MockHttpServletRequest("GET", path);
+    request.setAttribute("shopId", "s1");
+
+    assertTrue(expiredPlanInterceptor().preHandle(request, new MockHttpServletResponse(), null));
+  }
+
+  /** The device paths leave the Bearer chain; the worker and inbox paths do not. */
+  @ParameterizedTest
+  @ValueSource(strings = {"/api/v1/hr/worker/me", "/api/v1/hr/worker/pairings/claim",
+      "/api/v1/hr/join-requests", "/api/v1/hr/attendance-app/health"})
+  void workerAndInboxPathsStayOnTheBearerChain(String path) {
+    assertThrows(AuthenticationException.class,
+        () -> authentication.preHandle(new MockHttpServletRequest("GET", path),
+            new MockHttpServletResponse(), null));
   }
 
   /**
@@ -130,6 +188,66 @@ class InterceptorPathMatchingTest {
 
     assertTrue(interceptor.preHandle(request, new MockHttpServletResponse(), null));
     verifyNoInteractions(rbac);
+  }
+
+  /**
+   * Worker-app R9.1 (design DD3, Property 21): the worker credential interceptor, registered by
+   * {@code CorsConfig} on exactly {@code /api/v1/hr/worker/**}, refuses a request carrying either
+   * device-envelope header with {@code HR_TWO_CREDENTIALS} and touches nothing else; the timestamp
+   * and nonce alone are not a credential.
+   */
+  @ParameterizedTest
+  @ValueSource(strings = {"X-Pairing-Id", "X-Request-Signature"})
+  void aWorkerRequestWithAnEnvelopeHeaderIsRefusedAsTwoCredentials(String header) {
+    com.inventory.hr.service.WorkerCredentialInterceptor interceptor =
+        new com.inventory.hr.service.WorkerCredentialInterceptor();
+    MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/hr/worker/me");
+    request.addHeader("Authorization", "Bearer token");
+    request.addHeader(header, "something");
+
+    BaseException e = assertThrows(BaseException.class,
+        () -> interceptor.preHandle(request, new MockHttpServletResponse(), null));
+    assertEquals(ErrorCode.HR_TWO_CREDENTIALS, e.getErrorCode());
+    assertEquals("A request may carry a login or a phone signature, not both.", e.getMessage());
+  }
+
+  @Test
+  void aWorkerRequestWithoutEnvelopeHeadersPassesTheCredentialCheck() {
+    com.inventory.hr.service.WorkerCredentialInterceptor interceptor =
+        new com.inventory.hr.service.WorkerCredentialInterceptor();
+    MockHttpServletRequest plain = new MockHttpServletRequest("POST",
+        "/api/v1/hr/worker/pairings/claim");
+    plain.addHeader("Authorization", "Bearer token");
+    plain.addHeader("X-Request-Timestamp", "1700000000");
+    plain.addHeader("X-Request-Nonce", "0f8fad5b-d9cb-469f-a165-70867728950e");
+    assertTrue(interceptor.preHandle(plain, new MockHttpServletResponse(), null));
+
+    MockHttpServletRequest preflight = new MockHttpServletRequest("OPTIONS",
+        "/api/v1/hr/worker/me");
+    preflight.addHeader("X-Pairing-Id", "66f1a2b3c4d5e6f7a8b9c0d1");
+    assertTrue(interceptor.preHandle(preflight, new MockHttpServletResponse(), null));
+  }
+
+  /** The pattern {@code CorsConfig} registers it on covers the worker prefix and nothing beside it. */
+  @ParameterizedTest
+  @ValueSource(strings = {"/api/v1/hr/worker/me", "/api/v1/hr/worker/pairings/claim",
+      "/api/v1/hr/worker/notifications/n1/read"})
+  void theWorkerCredentialPatternMatchesTheWorkerPrefix(String path) {
+    org.springframework.web.util.pattern.PathPattern pattern =
+        org.springframework.web.util.pattern.PathPatternParser.defaultInstance.parse(
+            com.inventory.hr.service.WorkerCredentialInterceptor.PATH_PATTERN);
+    assertTrue(pattern.matches(org.springframework.http.server.PathContainer.parsePath(path)));
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"/api/v1/hr/workerX/me", "/api/v1/hr/me",
+      "/api/v1/hr/attendance-app/me", "/api/v1/hr/join-requests", "/api/v1/hr/worker-x"})
+  void theWorkerCredentialPatternLeavesOtherPathsAlone(String path) {
+    org.springframework.web.util.pattern.PathPattern pattern =
+        org.springframework.web.util.pattern.PathPatternParser.defaultInstance.parse(
+            com.inventory.hr.service.WorkerCredentialInterceptor.PATH_PATTERN);
+    assertEquals(false,
+        pattern.matches(org.springframework.http.server.PathContainer.parsePath(path)));
   }
 
   private static PlanExpiryInterceptor expiredPlanInterceptor() {

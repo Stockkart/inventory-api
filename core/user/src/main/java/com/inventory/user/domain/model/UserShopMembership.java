@@ -29,6 +29,11 @@ public class UserShopMembership {
   private String relationship; // OWNER or INVITED
   private boolean active;
   private Instant joinedAt;
+  /**
+   * When the membership stopped being active (a WORKER left or exited). Null = still active, or
+   * ended before this field existed.
+   */
+  private Instant endedAt;
   /** Owner-assigned module and field permissions (optional; role defaults apply when absent). */
   private MemberPermissions permissions;
 }

@@ -42,6 +42,12 @@ import org.springframework.util.StringUtils;
  * rule. Every refusal stores nothing. The time is the server's; the direction is IN when the
  * employee has no counted punch today, else OUT.
  *
+ * <p>The Attendance app (HR-module R4.3, R6.10) shares the refusal checks and the location rule
+ * through the package-visible {@link #refusal} and {@link #locationFromDistance}: for
+ * {@link PunchSource#BIOMETRIC_APP} the first three steps become "biometric app on → pairing
+ * active" (the pairing already proves identity, D7); the rest, and every message, is the same.
+ * Nothing about the My HR path changes with the biometric switch (R1.2).
+ *
  * <p>Privacy (R3.6): the request's coordinates are used only to work out the distance in this
  * method; they are not stored, logged, audited or put into any message. Punches are their own
  * record, so no audit row is written per punch.
@@ -145,28 +151,53 @@ public class SelfCheckInService {
       }
       return new Check(settings, capture, null, today, d, e);
     }
-    BaseException refusal = refusal(shopId, userId, settings, capture, employee, today, d);
+    BaseException refusal = refusal(PunchSource.SELF, shopId, userId, false, settings, capture,
+        employee, today, d);
     return new Check(settings, capture, employee, today, d, refusal);
   }
 
-  private BaseException refusal(String shopId, String userId, HrSettings settings,
-      HrSettings.AttendanceCapture capture, Employee employee, LocalDate today, String d) {
-    if (!Boolean.TRUE.equals(capture.getSelfCheckIn())) {
-      return off();
+  /**
+   * The first failed check before the location rule, or null when the punch may go ahead.
+   * Package-visible so {@code AppPunchService} applies exactly the My HR checks (R4.3).
+   *
+   * <p>For {@link PunchSource#SELF}: self check-in on → SELF_CHECK_IN permission → employed →
+   * leave → lock ({@code pairingActive} is ignored). For {@link PunchSource#BIOMETRIC_APP}:
+   * biometric app on → pairing active → employed → leave → lock ({@code userId} is ignored; the
+   * caller, who verified the pairing, says whether it is active).
+   *
+   * @param day the day the punch is for: today for an online punch, the day of the phone's time
+   *     for an offline one (R6.10)
+   * @param d {@code day} formatted
+   */
+  BaseException refusal(PunchSource source, String shopId, String userId, boolean pairingActive,
+      HrSettings settings, HrSettings.AttendanceCapture capture, Employee employee, LocalDate day,
+      String d) {
+    if (source == PunchSource.BIOMETRIC_APP) {
+      if (!Boolean.TRUE.equals(capture.getBiometricApp())) {
+        return new BaseException(ErrorCode.HR_APP_OFF, ErrorCode.HR_APP_OFF.getMessage());
+      }
+      if (!pairingActive) {
+        return new BaseException(ErrorCode.HR_APP_NOT_PAIRED,
+            ErrorCode.HR_APP_NOT_PAIRED.getMessage());
+      }
+    } else {
+      if (!Boolean.TRUE.equals(capture.getSelfCheckIn())) {
+        return off();
+      }
+      // HR switch off → no permissions at all, so this also covers R2.3 "member's HR switch off"
+      Set<HrPermission> permissions = hrAccessService.permissions(userId, shopId);
+      if (!permissions.contains(HrPermission.SELF_CHECK_IN)) {
+        return new BaseException(ErrorCode.ACCESS_DENIED, REASON_NO_PERMISSION);
+      }
     }
-    // HR switch off → no permissions at all, so this also covers R2.3 "member's HR switch off"
-    Set<HrPermission> permissions = hrAccessService.permissions(userId, shopId);
-    if (!permissions.contains(HrPermission.SELF_CHECK_IN)) {
-      return new BaseException(ErrorCode.ACCESS_DENIED, REASON_NO_PERMISSION);
-    }
-    if (!DayStatusResolver.isEmployed(today, employee)) {
+    if (!DayStatusResolver.isEmployed(day, employee)) {
       return new BaseException(ErrorCode.HR_EMPLOYEE_NOT_EMPLOYED, REASON_NOT_EMPLOYED);
     }
     List<LeaveRequest> leave = attendanceService.approvedLeave(shopId, List.of(employee.getId()),
         d, d, HrQueryRunner.SCREEN_MAX_TIME_MS);
     boolean fullDayLeave = leave.stream().anyMatch(l -> !Boolean.TRUE.equals(l.getHalfDay()));
     // leave covers working days only (R6.10): on a week-off or holiday it does not apply
-    if (fullDayLeave && !DayStatusResolver.isWeekOff(today, settings)
+    if (fullDayLeave && !DayStatusResolver.isWeekOff(day, settings)
         && !attendanceService.holidayDates(shopId, d, d, HrQueryRunner.SCREEN_MAX_TIME_MS)
             .contains(d)) {
       return new BaseException(ErrorCode.HR_DAY_HAS_LEAVE, REASON_ON_LEAVE);
@@ -236,6 +267,70 @@ public class SelfCheckInService {
         ? (int) Math.min(Integer.MAX_VALUE, Math.ceil(accuracy)) : null;
     return new Location((int) Math.min(Integer.MAX_VALUE, Math.round(metres)), accuracyMetres,
         List.copyOf(flags));
+  }
+
+  /**
+   * The location rule for an Attendance app punch (HR-module R4.5, R4.6). The phone has already
+   * worked out the distance from the shop and sends only that, so the same radius / 200 m / Block /
+   * Allow-and-flag rules as {@link #location} are applied to the numbers it sent. A mock (faked)
+   * reading replaces those rules: refused with {@code HR_FAKE_LOCATION} under Block, stored with
+   * the single flag {@code FAKE_LOCATION} and no distance under Allow-and-flag.
+   *
+   * @param distanceMetres phone-computed distance from the shop; null = the phone got no location
+   * @param accuracyMetres reported accuracy; null = unknown, treated as unclear (fail closed)
+   * @param mock the phone marked the reading as a mock location
+   */
+  static Location locationFromDistance(HrSettings.AttendanceCapture capture,
+      Integer distanceMetres, Integer accuracyMetres, boolean mock) {
+    if (!Boolean.TRUE.equals(capture.getLocationCheck())) {
+      // location check off: the phone's numbers are not used
+      return new Location(null, null, List.of());
+    }
+    if (capture.getShopLat() == null || capture.getShopLng() == null) {
+      // the phone cannot have measured a distance from an unset shop location; fail closed
+      throw new ValidationException("The shop location is not set. Ask the shop owner.");
+    }
+    boolean flag = capture.getOutsideAction() == OutsideAction.FLAG;
+    if (mock) {
+      if (!flag) {
+        throw new BaseException(ErrorCode.HR_FAKE_LOCATION,
+            ErrorCode.HR_FAKE_LOCATION.getMessage());
+      }
+      // the mock reading is not used as the punch's location
+      return new Location(null, null, List.of(PunchFlag.FAKE_LOCATION));
+    }
+    if (distanceMetres == null) {
+      // no location is treated like outside the shop, as for My HR
+      if (!flag) {
+        throw new BaseException(ErrorCode.HR_OUTSIDE_SHOP,
+            ErrorCode.HR_OUTSIDE_SHOP.getMessage());
+      }
+      return new Location(null, null, List.of(PunchFlag.NO_LOCATION));
+    }
+    if (distanceMetres < 0) {
+      throw new ValidationException("The distance sent is not valid");
+    }
+    if (accuracyMetres != null && accuracyMetres < 0) {
+      throw new ValidationException("The location accuracy sent is not valid");
+    }
+    List<PunchFlag> flags = new ArrayList<>();
+    if (accuracyMetres == null || accuracyMetres > MAX_ACCURACY_METRES) {
+      if (!flag) {
+        throw new BaseException(ErrorCode.HR_LOCATION_UNCLEAR,
+            ErrorCode.HR_LOCATION_UNCLEAR.getMessage());
+      }
+      flags.add(PunchFlag.LOW_ACCURACY);
+    }
+    int radius = capture.getRadiusMetres() != null ? capture.getRadiusMetres()
+        : HrSettingsService.DEFAULT_RADIUS_METRES;
+    if (distanceMetres > radius) {
+      if (!flag) {
+        throw new BaseException(ErrorCode.HR_OUTSIDE_SHOP,
+            ErrorCode.HR_OUTSIDE_SHOP.getMessage());
+      }
+      flags.add(PunchFlag.OUTSIDE_SHOP);
+    }
+    return new Location(distanceMetres, accuracyMetres, List.copyOf(flags));
   }
 
   // ---- punch ---------------------------------------------------------------------------------
@@ -335,14 +430,16 @@ public class SelfCheckInService {
       return "error";
     }
     return switch (code) {
-      case HR_SELF_CHECKIN_OFF -> "off";
+      case HR_SELF_CHECKIN_OFF, HR_APP_OFF -> "off";
       case HR_NOT_LINKED -> "not_linked";
       case ACCESS_DENIED -> "no_permission";
+      case HR_APP_NOT_PAIRED -> "not_paired";
       case HR_EMPLOYEE_NOT_EMPLOYED -> "not_employed";
       case HR_DAY_HAS_LEAVE -> "on_leave";
       case HR_PERIOD_LOCKED -> "locked";
       case HR_OUTSIDE_SHOP -> "outside_shop";
       case HR_LOCATION_UNCLEAR -> "location_unclear";
+      case HR_FAKE_LOCATION -> "fake_location";
       default -> "error";
     };
   }

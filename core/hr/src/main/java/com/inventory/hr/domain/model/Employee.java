@@ -44,6 +44,17 @@ public class Employee {
   private EmployeeStatus status;
   /** yyyy-MM-dd; null = not exited. Required when EXITED. */
   private String exitDate;
+  /**
+   * When the linked WORKER account's membership was ended for this exit (worker-app R5.2, design
+   * DD14); null = not yet ended, or no WORKER membership to end. Set once by {@code WorkerExitJob}
+   * or the exit save.
+   */
+  private Instant membershipEndedAt;
+  /**
+   * When a manager asked this worker for their profile details (worker-app R8.7); null = never
+   * asked. The only KYC-related field in this version (R8.9).
+   */
+  private Instant profileRequestedAt;
   /** HH:mm; null = use the shop's hours (R4.4). */
   private String workStart;
   /** HH:mm; null = use the shop's hours (R4.4). */

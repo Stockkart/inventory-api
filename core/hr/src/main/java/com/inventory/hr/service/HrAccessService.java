@@ -47,7 +47,12 @@ public class HrAccessService {
   static final Set<HrPermission> LEGACY_KNOWN =
       Collections.unmodifiableSet(EnumSet.complementOf(EnumSet.of(HrPermission.SELF_CHECK_IN)));
 
-  /** Roles that have a row in the grid; OWNER is never stored. */
+  /**
+   * Roles that have a row in the grid; OWNER is never stored. WORKER is deliberately not here:
+   * {@link #rowFor} fails closed for any role outside this list, so a WORKER membership has no HR
+   * permission whatever the shop's grid says (worker-app R2.3). Pinned by {@code
+   * HrAccessServiceTest}.
+   */
   public static final List<UserRole> GRID_ROLES =
       List.of(UserRole.ADMIN, UserRole.MANAGER, UserRole.CASHIER);
 
@@ -130,7 +135,7 @@ public class HrAccessService {
    */
   public static Set<HrPermission> rowFor(UserRole role, HrRolePermissions grid) {
     if (!GRID_ROLES.contains(role)) {
-      // OWNER role without the owner relationship, or a platform role: fail closed
+      // OWNER role without the owner relationship, a platform role, or WORKER: fail closed
       return EnumSet.noneOf(HrPermission.class);
     }
     if (grid != null && grid.getRoles() != null && grid.getRoles().get(role) != null) {
