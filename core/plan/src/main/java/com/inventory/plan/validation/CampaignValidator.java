@@ -59,7 +59,7 @@ public class CampaignValidator {
     if (StringUtils.hasText(request.getCtaPath()) && !CTA_PATH.matcher(request.getCtaPath()).matches()) {
       throw new ValidationException("CTA path must be an app path such as /plans");
     }
-    if (request.getTheme() == null) {
+    if (!StringUtils.hasText(request.getTheme())) {
       throw new ValidationException("Theme is required");
     }
     if (request.getStartsAt() == null || request.getEndsAt() == null) {
