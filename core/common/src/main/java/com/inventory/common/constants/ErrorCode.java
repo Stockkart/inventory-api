@@ -19,6 +19,7 @@ public enum ErrorCode {
   DUPLICATE_RESOURCE(1007, "Resource already exists", HttpStatus.CONFLICT),
   /** Overloaded for a moment (e.g. no free database connection within mongo.pool.max-wait-ms). */
   SERVICE_BUSY(1008, "The server is busy, please try again in a moment", HttpStatus.SERVICE_UNAVAILABLE),
+  TOO_MANY_REQUESTS(1009, "Too many requests, try again shortly", HttpStatus.TOO_MANY_REQUESTS),
 
   // Business errors (2000-2999)
   BUSINESS_VALIDATION_ERROR(2000, "Business validation error", HttpStatus.BAD_REQUEST),
@@ -48,6 +49,7 @@ public enum ErrorCode {
   FEATURE_NOT_IN_PLAN(6001, "Feature is not included in the current plan", HttpStatus.PAYMENT_REQUIRED),
   SEAT_LIMIT_REACHED(6002, "User seat limit reached for the current plan", HttpStatus.PAYMENT_REQUIRED),
   OCR_QUOTA_EXCEEDED(6003, "OCR quota exhausted for the current period", HttpStatus.PAYMENT_REQUIRED),
+  VOUCHER_REJECTED(6010, "Voucher cannot be applied", HttpStatus.BAD_REQUEST),
   /** A different plan was chosen while the current paid plan still has days left. */
   PLAN_CHANGE_NOT_ALLOWED(6020, "Your current plan is still active; you can renew it, or change plans after it ends",
       HttpStatus.CONFLICT),

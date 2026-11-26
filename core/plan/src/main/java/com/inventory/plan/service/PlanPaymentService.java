@@ -126,11 +126,14 @@ public class PlanPaymentService {
     planValidator.validateCreateCheckoutRequest(shopId, request, idempotencyKey);
     Plan plan = resolvePlan(request);
     planService.requirePlanChangeAllowed(shopId, plan);
-    PricedCart cart = orderPricingService.price(plan, request);
-    request.setDurationMonths(cart.durationMonths());
+    if (request.getDurationMonths() == null) {
+      request.setDurationMonths(PlanPaymentConstants.DEFAULT_CHECKOUT_DURATION_MONTHS);
+    }
     String requestHash = CheckoutRequestHash.of(shopId, planKey(plan), request);
     String key = idempotencyKey != null ? idempotencyKey.trim() : null;
 
+    // Replays are matched before pricing: the original order already holds its voucher slots, so
+    // re-checking them would reject the shop's own retry.
     if (key != null) {
       Optional<PlanPaymentOrder> existing = planPaymentOrderRepository.findByShopIdAndIdempotencyKey(shopId, key);
       if (existing.isPresent()) {
@@ -144,6 +147,7 @@ public class PlanPaymentService {
         return replay(open.get(), requestHash);
       }
     }
+    PricedCart cart = orderPricingService.price(plan, request, shopId);
 
     PaymentGatewayPort gateway = paymentGatewayResolver.resolve();
     PlanPaymentOrder order;
