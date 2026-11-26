@@ -30,20 +30,32 @@ public class AddOnCatalogueService {
   private AddOnMapper addOnMapper;
 
   /** The pricing and payment pages read the add-on list on every load; kept 60 s per instance. */
-  private final TimedValue<List<AddOnResponse>> active = new TimedValue<>(Duration.ofSeconds(60));
+  private final TimedValue<List<AddOn>> active = new TimedValue<>(Duration.ofSeconds(60));
 
   /** Add-ons on sale, in display order. */
   public List<AddOnResponse> listActive() {
+    return activeAddOns().stream().map(addOnMapper::toResponse).toList();
+  }
+
+  /** Catalogue rows on sale, in display order; kept 60 s per instance. Callers must not change them. */
+  public List<AddOn> activeAddOns() {
     return active.get(() -> addOnRepository.findAll().stream()
         .filter(AddOn::isActive)
         .sorted(DISPLAY_ORDER)
-        .map(addOnMapper::toResponse)
         .toList());
   }
 
   /** Forget the cached list; add-on admin writes call this. */
   public void evictActive() {
     active.evict();
+  }
+
+  /** The catalogue row as the apps see it, with whether it can be bought ({@code reason} empty = yes). */
+  public AddOnResponse toOption(AddOn addOn, java.util.Optional<String> reason) {
+    AddOnResponse response = addOnMapper.toResponse(addOn);
+    response.setEligible(reason.isEmpty());
+    response.setIneligibleReason(reason.orElse(null));
+    return response;
   }
 
   /** Catalogue rows for the given codes, hidden ones included, keyed by code. */

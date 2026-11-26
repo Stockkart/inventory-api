@@ -6,7 +6,10 @@ import com.inventory.plan.domain.model.Usage;
 import com.inventory.plan.rest.dto.request.CreatePlanCheckoutRequest;
 import com.inventory.plan.rest.dto.request.RecordUsageRequest;
 import com.inventory.plan.rest.dto.request.VerifyPlanPaymentRequest;
+import com.inventory.plan.utils.CartUtils;
 import com.inventory.plan.utils.constants.PlanPaymentConstants;
+import com.inventory.plan.utils.constants.PricingConstants;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -50,9 +53,9 @@ public class PlanValidator {
     if (!StringUtils.hasText(shopId)) {
       throw new ValidationException("Shop ID is required");
     }
-    if (request == null
-        || (!StringUtils.hasText(request.getPlanCode()) && !StringUtils.hasText(request.getPlanId()))) {
-      throw new ValidationException("Plan code or plan ID is required");
+    // No plan and at least one add-on or voucher is an add-on-only top-up, priced against the shop's current plan.
+    if (!CartUtils.hasPlan(request) && !CartUtils.isAddOnOnly(request)) {
+      throw new ValidationException(PricingConstants.MSG_EMPTY_CART);
     }
     if (idempotencyKey != null
         && (idempotencyKey.isBlank() || idempotencyKey.length() > PlanPaymentConstants.MAX_IDEMPOTENCY_KEY_LENGTH)) {
@@ -60,7 +63,9 @@ public class PlanValidator {
           + PlanPaymentConstants.MAX_IDEMPOTENCY_KEY_LENGTH + " characters");
     }
     // Checkout charges one annual price, so any other duration would grant time that wasn't paid for.
-    if (request.getDurationMonths() != null
+    // Add-on-only orders grant no plan time, so their duration is ignored.
+    if (CartUtils.hasPlan(request)
+        && request.getDurationMonths() != null
         && request.getDurationMonths() != PlanPaymentConstants.DEFAULT_CHECKOUT_DURATION_MONTHS) {
       throw new ValidationException("Plans are sold yearly; duration must be "
           + PlanPaymentConstants.DEFAULT_CHECKOUT_DURATION_MONTHS + " months");

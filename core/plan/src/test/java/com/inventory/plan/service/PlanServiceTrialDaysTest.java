@@ -38,6 +38,7 @@ class PlanServiceTrialDaysTest {
   @Mock private PlanValidator planValidator;
   @Mock private UsageService usageService;
   @Mock private EffectivePlanResolver effectivePlanResolver;
+  @Mock private EntitlementService entitlementService;
   @InjectMocks private PlanService planService;
 
   @Test
@@ -64,6 +65,20 @@ class PlanServiceTrialDaysTest {
     ShopPlanStatusResponse status = planService.getShopPlanStatus("s1");
 
     assertThat(status.getTrialDays()).isEqualTo(7);
+    assertThat(status.isCanBuyAddOnsAlone()).isFalse();
+  }
+
+  @Test
+  void aShopOnAnActivePaidPlanCanBuyAddOnsAlone() {
+    when(shopProvider.getShop("s1")).thenReturn(Optional.of(new ShopInfo("s1", "pro", Instant.now().plusSeconds(86400))));
+    when(planRepository.findById("pro")).thenReturn(Optional.of(new Plan()));
+    when(usageService.getOrCreateCurrentMonthUsage("s1")).thenReturn(new Usage());
+    when(entitlementService.paidTerm("s1")).thenReturn(Optional.of(
+        new com.inventory.plan.domain.model.PaidTerm("pro", Instant.now().plusSeconds(86400))));
+    when(planMapper.toShopPlanStatusResponse(anyString(), any(), any(), any(), anyBoolean(), anyBoolean(),
+        anyBoolean(), any(), any(), any(), anyBoolean())).thenReturn(new ShopPlanStatusResponse());
+
+    assertThat(planService.getShopPlanStatus("s1").isCanBuyAddOnsAlone()).isTrue();
   }
 
   @Test

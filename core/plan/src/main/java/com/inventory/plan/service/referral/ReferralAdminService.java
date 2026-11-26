@@ -102,7 +102,7 @@ public class ReferralAdminService {
   }
 
   /**
-   * PENDING_REVIEW → RESOLVED. If the referee already has a fulfilled plan order, its reward is
+   * PENDING_REVIEW → RESOLVED. If the referee already has a fulfilled plan order (not add-on-only), its reward is
    * recorded now, as it would have been had the attribution resolved at sign-up.
    */
   public AdminReferralAttributionResponse approveAttribution(String id, String referrerShopId, String reason,
@@ -127,8 +127,9 @@ public class ReferralAdminService {
         .set("resolvedByUserId", actorUserId));
     audit("REFERRAL_APPROVED", ATTRIBUTION, id, attributionSnapshot(attribution), attributionSnapshot(resolved),
         reason, actorUserId);
-    orderRepository.findFirstByShopIdAndStatusOrderByFulfilledAtAsc(resolved.getRefereeShopId(),
-            PlanPaymentConstants.STATUS_FULFILLED)
+    // The first plan order: an add-on-only order never earns a reward, so it must not hide a later plan order.
+    orderRepository.findFirstByShopIdAndStatusAndAddOnOnlyNotOrderByFulfilledAtAsc(resolved.getRefereeShopId(),
+            PlanPaymentConstants.STATUS_FULFILLED, true)
         .ifPresent(rewardService::recordForOrder);
     return toResponse(resolved);
   }

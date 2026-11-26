@@ -49,4 +49,19 @@ class DerivedQueryRangeTest {
     });
     assertThat(offenders).isEmpty();
   }
+
+  /**
+   * Approving a referral rewards the referee's first plan order; add-on-only orders are skipped with
+   * {@code $ne: true} so orders saved before addOnOnly existed (field missing) still match.
+   */
+  @Test
+  void firstPlanOrderSkipsAddOnOnlyOrdersWithNotEquals() {
+    PartTree tree = new PartTree("findFirstByShopIdAndStatusAndAddOnOnlyNotOrderByFulfilledAtAsc",
+        PlanPaymentOrder.class);
+    List<Part> parts = new ArrayList<>();
+    tree.forEach(or -> or.forEach(parts::add));
+
+    assertThat(parts).extracting(part -> part.getProperty().getSegment() + ":" + part.getType().name())
+        .containsExactly("shopId:SIMPLE_PROPERTY", "status:SIMPLE_PROPERTY", "addOnOnly:NEGATING_SIMPLE_PROPERTY");
+  }
 }

@@ -21,6 +21,8 @@ public class ShopPlanStatusResponse {
   private boolean trial;
   /** Length of the free trial a new shop gets, in days ({@code plan.trial-days}). */
   private Integer trialDays;
+  /** True when the shop may buy add-ons on their own now (an active paid plan, as add-on-only checkout requires). */
+  private boolean canBuyAddOnsAlone;
   /**
    * True only when this shop could still start a free trial (it never had a plan or a trial); the
    * plan cards show the trial badge only then.

@@ -319,6 +319,7 @@ public class PlanService {
         limits,
         userLimitReached);
     status.setTrialDays(trialDays);
+    status.setCanBuyAddOnsAlone(entitlementService.paidTerm(shopId).isPresent());
     status.setTrialAvailable(!StringUtils.hasText(shopInfo.planId()) && shopInfo.planExpiryDate() == null);
     status.setPlanOptions(PlanOptions.of(effectivePlanResolver.activeCatalogue(), plan, shopInfo.planExpiryDate(),
         Instant.now()));
