@@ -30,6 +30,8 @@ public class PlanResponse {
   private Integer ocrLimit;
   private Set<PlanFeature> features;
   private String badge;
+  /** Struck-through anchor shown beside arcPrice. Display only: never charged. Null on legacy plans. */
+  private BigDecimal listPrice;
   /** False for legacy add-on rows sold at payment; the plan pickers show only selectable plans. */
   private boolean selectable;
   /** Monthly billing limit for display: "Unlimited" or lakh rupees such as "₹1.5L". */

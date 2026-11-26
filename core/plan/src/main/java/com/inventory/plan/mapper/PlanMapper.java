@@ -12,14 +12,16 @@ import com.inventory.plan.validation.PlanValidator.LimitReachedResult;
 import com.inventory.plan.utils.PlanUtils;
 import org.mapstruct.AfterMapping;
 import org.mapstruct.Mapper;
+import org.mapstruct.Mapping;
 import org.mapstruct.MappingTarget;
 import org.mapstruct.ReportingPolicy;
 
 import java.time.Instant;
 
-@Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.IGNORE)
+@Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.IGNORE, imports = PlanUtils.class)
 public interface PlanMapper {
 
+  @Mapping(target = "listPrice", expression = "java(PlanUtils.listPrice(plan))")
   PlanResponse toResponse(Plan plan);
 
   /** Display decisions the apps used to make themselves. */
