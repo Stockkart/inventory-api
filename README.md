@@ -72,6 +72,32 @@ Optional (for AWS Textract):
 
 - `AWS_ACCESS_KEY`, `AWS_SECRET_ACCESS`, `AWS_REGION`
 
+Optional (for the admin app):
+
+StockKart admins are separate from shop users: they live in `admin_users`, sign in at
+`POST /api/v1/admin/auth/login`, and their sessions work only on `/api/v1/admin/**`. Shop-user
+tokens get 401 on those paths, and admin tokens get 401 everywhere else. Shop approval
+(`/api/v1/shops/admin/**`) is not an admin-session path: it needs a shop-app `SUPER_USER` sign-in.
+
+Admin sign-in refuses every failure with one message, and failed attempts are limited per container
+(`admin.sign-in.*` in `application.properties`): 5 per client address and account and 20 per client
+address in 15 minutes, 300 per minute overall (then 429); 20 failures on one account lock it for 15
+minutes. Sign-ins, failures, locks, sign-outs and password changes are written to `audit_entries`.
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `PLATFORM_ADMIN_EMAILS` | Comma-separated emails; each one without an admin account gets one on startup, with its own one-time password written once to the startup log (WARN); it must be changed on first sign-in | `ops@stockkart.in` |
+| `ADMIN_CLIENT_URL` | Admin app origin; the only origin CORS allows on admin paths, and the base of password-reset links (`<url>/reset-password?token=…`) | `https://admin.stockkart.in` |
+
+Further admins are added from the admin app, which shows the new admin's one-time password once.
+
+| Endpoint | Notes |
+|---|---|
+| `POST /api/v1/admin/auth/login` | Public. `{ email, password }` → `{ token, expiresAt, admin }` |
+| `POST /api/v1/admin/auth/reset-password` | Public. `{ token, newPassword }` from the emailed reset link (single use, 30 minutes) → the admin; signs out every session |
+| `POST /api/v1/admin/admins/{id}/reset-password` | Another admin's account only; body `{ reason }`. Signs the account out, its old password stops working, and a reset link is emailed to the account's address. Returns the admin (no password). Needs `ADMIN_CLIENT_URL` |
+| `POST /api/v1/admin/shops/{shopId}/plan-grants` | Admin plan grant without payment. Body `{ planCode, durationMonths (1–36), reason (required, ≤ 200) }`; the plan must be active. The same plan extends from the later of now and the current expiry; another plan is refused while the shop has paid days left. Records an `ADMIN_GRANT` plan transaction and a `PLAN_GRANTED` audit entry; returns the shop's plan status |
+
 ### 2. Run with Docker Compose
 
 Build and start the app (and image-preprocess if configured):
@@ -495,6 +521,38 @@ A plan purchase is a `plan_payment_orders` row moving CREATED → PAYMENT_PENDIN
 Plan prices are GST-inclusive. Each new order stores its split: `taxableAmount` + `gstAmount` == `amount`, at `gstRatePercent` (`plan.gst-rate-percent`, env `PLAN_GST_RATE_PERCENT`, default 18; `PlanGstUtils`, paise rounded HALF_UP). Orders created before this have no split; readers split `amount` at the configured rate.
 
 Granting a paid order runs in one MongoDB transaction (`MongoTx` flow `plan_grant`): the `plan_transactions` row (unique per order, index `paymentOrderId_unique`), the shop's plan fields and its `shop_subscriptions` row. Renewing the same plan starts the new term at the current expiry, so no paid day is lost. An unpaid order that ends gives back its holds only while it is still ended (`reservationsReleasedAt`), so a late payment and the release cannot both win. Indexes (`PaymentOrderStatusMigration`, on startup): `shop_idempotency_key_unique`, `status_expiresAt`, `status_claimedAt`, `provider_providerOrderId_unique`, `shop_status_paidAt`, `shop_status_fulfilledAt`, `shop_requestHash_status` on `plan_payment_orders`; `shop_createdAt` and `paymentOrderId_unique` on `plan_transactions` (if older duplicate rows exist the unique index is skipped and they are logged for an operator).
+
+### Plans, add-ons, referrals and platform admin (plan, user)
+
+Shop-facing paths take the shop from the request (never the path or body) and sit under the plan-expiry allow-list (`/api/v1/plans`, `/api/v1/referrals`); `/api/v1/plans`, `/api/v1/plans/{planId}`, `/api/v1/plans/payment/config`, `/api/v1/plans/payment/webhook/{provider}` and `/api/v1/campaigns/active` are public. Money, tax and derived flags come from the API; the apps only show them.
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/v1/plans`, `GET /api/v1/plans/{planId}` | Active catalogue. Each plan carries `trialDays` (from `plan.trial-days`), `selectable` (false for legacy add-on rows sold at payment) and `billingLimitLabel` ("Unlimited" or lakh rupees such as "₹1.5L"). |
+| `GET /api/v1/plans/addons` | Active add-on catalogue. |
+| `GET /api/v1/campaigns/active` | The running sale campaign, if any (public). |
+| `GET /api/v1/plans/shop/status` | The shop's plan, trial, usage and limits; `trialDays`, `trialAvailable` and `planOptions` (what each plan card offers: `CURRENT`, `UPGRADE` or `BUY`, and whether it is available now; see Plan checkout orders). Read-only (never writes the subscription). |
+| `GET /api/v1/plans/shop/entitlements` | Features, limits and enforcement mode; `seatLimitReached`, `ocrLimitReached` (included scans and purchased credits both used up). |
+| `GET /api/v1/plans/shop/addons`, `/shop/transactions`, `/shop/usage`, `/shop/wallet` | The shop's add-ons, plan transactions, month usage and referral wallet (RBAC module `paymentPlan` for transactions, usage, wallet). The shop wallet lists only rows that moved the available balance (a paid order's `ORDER_REDEMPTION` only spends what its checkout hold already took); the admin wallet shows every ledger row. |
+| `GET /api/v1/plans/vouchers/validate` | Check a voucher code for the shop; unknown codes are rate-limited (`429 TOO_MANY_REQUESTS`, code 1009). |
+| `GET /api/v1/referrals/me`, `/referrals/rewards`, `/referrals/validate` | The shop's referral summary and rewards (RBAC module `paymentPlan`), and a referral-code check for sign-up. |
+
+Platform-admin paths (`/api/v1/admin/**`) need an admin session (`POST /api/v1/admin/auth/login`), not a shop sign-in; none of the shop interceptors run there, and the actor of every change is recorded in `audit_entries` (`actorType` ADMIN). Shop approval (`/api/v1/shops/admin/**`) is not one of them: it needs a `SUPER_USER` shop sign-in (see Stockkart staff above).
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/v1/admin/auth/login`, `/logout`, `/change-password`, `GET /auth/me` | Admin sign-in. Failures get one generic 401; too many from one address or overall → `429 TOO_MANY_REQUESTS` (`admin.sign-in.*`). |
+| `POST /api/v1/admin/auth/reset-password` | Public: set a new password with the one-time token from a reset email (valid 30 min, single use; signs out every session). |
+| `GET/POST /api/v1/admin/admins`, `PATCH /admins/{id}/active`, `POST /admins/{id}/reset-password` | Admin accounts. A reset signs the target out, invalidates the old password and emails the target a reset link (`ADMIN_CLIENT_URL/reset-password?token=…`); the response never carries a credential. |
+| `GET/POST /api/v1/admin/plans`, `PUT /plans/{id}`, `PATCH /plans/{id}/active` | Plan catalogue. |
+| `GET/POST /api/v1/admin/addons`, `PUT /addons/{id}`, `PATCH /addons/{id}/active`, `GET/POST /addons/grants` | Add-on catalogue (billing type, stacking and grant quantity default from the grant type) and manual add-on grants. |
+| `POST /api/v1/admin/shops/{shopId}/plan-grants` | Grant a plan without payment: `{planCode, durationMonths (1..36), reason}`; the same plan extends from the current expiry, another plan only once the paid one has ended. Audited `PLAN_GRANTED`; returns the shop's plan status. |
+| `GET/POST /api/v1/admin/campaigns`, `PUT /campaigns/{id}`, `PATCH /campaigns/{id}/active` | Sale campaigns. |
+| `GET/POST /api/v1/admin/vouchers`, `PUT /vouchers/{id}`, `PATCH /vouchers/{id}/active`, `GET /vouchers/{id}/redemptions` | Vouchers; the list takes `page` (from 0) and `size` (1–500, default 100). |
+| `GET /api/v1/admin/referrals/attributions`, `/rewards`; `POST …/{id}/approve`, `/reject`, `/void`, `/clawback` | Referral review. |
+| `GET /api/v1/admin/wallets/{shopId}`, `POST /wallets/{shopId}/adjustments`, `POST /wallets/{shopId}/adjustments/preview` | Wallet balance and manual adjustments (at most ₹10,000 either way); the preview returns `currentBalance` and `resultingBalance` without writing. |
+| `POST /api/v1/admin/plan-orders/{id}/refund` | Refund a plan order. |
+| `GET /api/v1/admin/mis/plans` | Plan revenue MIS (taxable and GST separately). |
 
 ### Build commands
 

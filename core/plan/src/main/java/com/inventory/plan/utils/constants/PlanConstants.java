@@ -15,4 +15,6 @@ public final class PlanConstants {
 
   /** Default payment method when not specified. */
   public static final String DEFAULT_PAYMENT_METHOD = "CARD";
+  /** {@code paymentMethod} of a plan transaction an admin granted without payment. */
+  public static final String ADMIN_GRANT_PAYMENT_METHOD = "ADMIN_GRANT";
 }

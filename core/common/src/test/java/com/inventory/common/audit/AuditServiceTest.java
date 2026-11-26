@@ -70,13 +70,16 @@ class AuditServiceTest {
   void anEntryWithoutActorTypeGetsOneFromItsSource() {
     when(mongoTemplate.insert(any(AuditEntry.class))).thenAnswer(inv -> inv.getArgument(0));
 
+    AuditEntry byAdminSession = auditService.record(AuditEntry.builder()
+        .actorUserId("a1").action("PLAN_UPDATED").source(AuditSource.ADMIN_UI).build());
     AuditEntry byUser = auditService.record(AuditEntry.builder()
-        .actorUserId("u1").action("SHOP_APPROVED").source(AuditSource.ADMIN_UI).build());
+        .actorUserId("u1").actorType(AuditUserType.USER).action("SHOP_APPROVED").source(AuditSource.ADMIN_UI).build());
     AuditEntry bySystem = auditService.record(AuditEntry.builder()
         .action("PLATFORM_ROLE_GRANTED").source(AuditSource.SYSTEM).build());
     AuditEntry byAdmin = auditService.record(AuditEntry.builder()
         .actorUserId("a1").actorType(AuditUserType.ADMIN).action("X").source(AuditSource.ADMIN_UI).build());
 
+    assertThat(byAdminSession.getActorType()).isEqualTo(AuditUserType.ADMIN);
     assertThat(byUser.getActorType()).isEqualTo(AuditUserType.USER);
     assertThat(bySystem.getActorType()).isEqualTo(AuditUserType.SYSTEM);
     assertThat(byAdmin.getActorType()).isEqualTo(AuditUserType.ADMIN);
