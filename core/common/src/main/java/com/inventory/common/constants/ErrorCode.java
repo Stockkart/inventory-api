@@ -51,6 +51,7 @@ public enum ErrorCode {
   OCR_QUOTA_EXCEEDED(6003, "OCR quota exhausted for the current period", HttpStatus.PAYMENT_REQUIRED),
   VOUCHER_REJECTED(6010, "Voucher cannot be applied", HttpStatus.BAD_REQUEST),
   WALLET_BALANCE_CHANGED(6011, "Wallet balance changed; refresh the quote", HttpStatus.CONFLICT),
+  ORDER_NOT_REFUNDABLE(6012, "This order cannot be refunded in its current state", HttpStatus.CONFLICT),
   /** A different plan was chosen while the current paid plan still has days left. */
   PLAN_CHANGE_NOT_ALLOWED(6020, "Your current plan is still active; you can renew it, or change plans after it ends",
       HttpStatus.CONFLICT),

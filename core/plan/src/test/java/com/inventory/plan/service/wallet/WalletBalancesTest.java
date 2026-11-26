@@ -36,6 +36,13 @@ class WalletBalancesTest {
   }
 
   @Test
+  void clawbackTakesAvailableOnlyAndRecordsTheShortfall() {
+    assertThat(balances("500", "100", "0").clawback(amount("200"))).isEqualTo(balances("300", "100", "0"));
+    assertThat(balances("50", "100", "0").clawback(amount("200"))).isEqualTo(balances("0", "100", "150"));
+    assertThat(balances("0", "0", "20").clawback(amount("30"))).isEqualTo(balances("0", "0", "50"));
+  }
+
+  @Test
   void amountsAreKeptToPaise() {
     assertThat(balances("1.005", "0", "0").available()).isEqualByComparingTo("1.01");
   }
