@@ -57,6 +57,14 @@ public record WalletBalances(BigDecimal available, BigDecimal reserved, BigDecim
     return new WalletBalances(available.subtract(taken), reserved, outstanding.add(amount.subtract(taken)));
   }
 
+  /** Takes money out of what is available, only if enough is available. */
+  public Optional<WalletBalances> debit(BigDecimal amount) {
+    if (available.compareTo(amount) < 0) {
+      return Optional.empty();
+    }
+    return Optional.of(new WalletBalances(available.subtract(amount), reserved, outstanding));
+  }
+
   /** New money in; any outstanding clawback is paid off first. */
   public WalletBalances credit(BigDecimal amount) {
     return settleThenAdd(amount);
