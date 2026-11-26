@@ -27,4 +27,12 @@ public class OrderLine {
   private BigDecimal lineTotal;
   /** MANUAL, or VOUCHER when a voucher added the line. */
   private String itemSource;
+
+  // What an add-on line grants, copied from the catalogue when the order was priced, so a later
+  // catalogue edit cannot change what was paid for. Null on plan lines and on older orders (the
+  // grant then reads the catalogue as before).
+  private AddOnGrantType grantType;
+  private com.inventory.common.entitlement.PlanFeature grantsFeature;
+  private Integer grantsQuantity;
+  private AddOnBillingType billingType;
 }

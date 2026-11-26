@@ -3,7 +3,7 @@ package com.inventory.plan.service.api;
 import com.inventory.common.entitlement.PlanFeature;
 import com.inventory.plan.api.Entitlements;
 import com.inventory.plan.service.EntitlementGuard;
-import com.inventory.plan.service.UsageService;
+import com.inventory.plan.service.OcrMeteringService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -14,7 +14,7 @@ public class EntitlementsImpl implements Entitlements {
   private EntitlementGuard entitlementGuard;
 
   @Autowired
-  private UsageService usageService;
+  private OcrMeteringService ocrMeteringService;
 
   @Override
   public void requireFeature(String shopId, PlanFeature feature) {
@@ -28,6 +28,6 @@ public class EntitlementsImpl implements Entitlements {
 
   @Override
   public void recordOcrUnit(String shopId) {
-    usageService.recordOcrUsage(shopId);
+    ocrMeteringService.recordUnit(shopId);
   }
 }

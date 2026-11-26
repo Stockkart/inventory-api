@@ -1,14 +1,17 @@
 package com.inventory.plan.service;
 
+import com.inventory.common.entitlement.PlanFeature;
 import com.inventory.plan.api.port.ShopPort;
-
+import com.inventory.plan.domain.model.AddOnGrantType;
 import com.inventory.plan.domain.model.EntitlementSource;
 import com.inventory.plan.domain.model.Plan;
 import com.inventory.plan.domain.model.PlanTermsSnapshot;
 import com.inventory.plan.domain.model.ShopEntitlements;
+import com.inventory.plan.domain.model.ShopAddOn;
 import com.inventory.plan.domain.model.ShopSubscription;
 import com.inventory.plan.domain.model.SubscriptionStatus;
 import com.inventory.plan.domain.repository.PlanRepository;
+import com.inventory.plan.domain.repository.ShopAddOnRepository;
 import com.inventory.plan.domain.repository.ShopSubscriptionRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,8 +21,10 @@ import org.springframework.util.StringUtils;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.EnumSet;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -40,6 +45,9 @@ public class EntitlementService {
 
   @Autowired
   private PlanRepository planRepository;
+
+  @Autowired
+  private ShopAddOnRepository shopAddOnRepository;
 
   @Autowired
   private EffectivePlanResolver effectivePlanResolver;
@@ -73,6 +81,10 @@ public class EntitlementService {
   }
 
   ShopEntitlements compute(String shopId, Instant now) {
+    return withAddOns(fromSubscription(shopId, now), now);
+  }
+
+  private ShopEntitlements fromSubscription(String shopId, Instant now) {
     SubscriptionView subscription = currentSubscription(shopId, now);
     if (subscription.isPaidAndLive(now)) {
       PlanTermsSnapshot terms = subscription.terms();
@@ -80,7 +92,7 @@ public class EntitlementService {
         // what the shop paid for, even if the catalogue changed since
         return new ShopEntitlements(shopId, terms.getPlanId(), terms.getPlanCode(), EntitlementSource.PLAN,
             terms.getFeatures(), terms.isUnlimited() ? null : terms.getUserLimit(),
-            terms.isUnlimited() ? null : terms.getOcrLimit(), subscription.expiresAt());
+            terms.isUnlimited() ? null : terms.getOcrLimit(), subscription.expiresAt(), Set.of());
       }
       Optional<Plan> plan = planRepository.findById(subscription.planId());
       if (plan.isPresent()) {
@@ -91,7 +103,25 @@ public class EntitlementService {
     return effectivePlanResolver.findTrialPlan()
         .map(trial -> fromPlan(shopId, trial, EntitlementSource.TRIAL, subscription.expiresAt()))
         .orElseGet(() -> new ShopEntitlements(
-            shopId, null, null, EntitlementSource.TRIAL, Set.of(), null, null, subscription.expiresAt()));
+            shopId, null, null, EntitlementSource.TRIAL, Set.of(), null, null, subscription.expiresAt(), Set.of()));
+  }
+
+  private ShopEntitlements withAddOns(ShopEntitlements base, Instant now) {
+    Set<PlanFeature> features = EnumSet.noneOf(PlanFeature.class);
+    Set<String> codes = new TreeSet<>();
+    int seats = 0;
+    for (ShopAddOn addOn : shopAddOnRepository.findByShopId(base.shopId())) {
+      if (!addOn.isLive(now) || addOn.getGrantType() == AddOnGrantType.OCR_CREDITS) {
+        continue;
+      }
+      codes.add(addOn.getAddOnCode());
+      if (addOn.getGrantType() == AddOnGrantType.FEATURE && addOn.getGrantsFeature() != null) {
+        features.add(addOn.getGrantsFeature());
+      } else if (addOn.getGrantType() == AddOnGrantType.SEATS) {
+        seats += addOn.getGrantedQuantity();
+      }
+    }
+    return base.withAddOns(features, seats, codes);
   }
 
   private SubscriptionView currentSubscription(String shopId, Instant now) {
@@ -111,7 +141,7 @@ public class EntitlementService {
   private static ShopEntitlements fromPlan(String shopId, Plan plan, EntitlementSource source, Instant expiresAt) {
     if (plan.getCode() == null) {
       return new ShopEntitlements(shopId, plan.getId(), null, EntitlementSource.LEGACY_GRANDFATHERED,
-          Set.of(), null, null, expiresAt);
+          Set.of(), null, null, expiresAt, Set.of());
     }
     boolean unlimited = plan.isUnlimited();
     return new ShopEntitlements(
@@ -122,7 +152,8 @@ public class EntitlementService {
         plan.getFeatures(),
         unlimited ? null : plan.getUserLimit(),
         unlimited ? null : plan.getOcrLimit(),
-        expiresAt);
+        expiresAt,
+        Set.of());
   }
 
   private record SubscriptionView(String planId, SubscriptionStatus status, Instant expiresAt,

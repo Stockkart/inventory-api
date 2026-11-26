@@ -14,5 +14,7 @@ public final class PricingConstants {
   public static final BigDecimal LIST_PRICE_MARKUP = new BigDecimal("3000");
 
   public static final String ITEM_TYPE_PLAN = "PLAN";
+  public static final String ITEM_TYPE_ADDON = "ADDON";
+  public static final String ITEM_TYPE_OCR_TOPUP = "OCR_TOPUP";
   public static final String ITEM_SOURCE_MANUAL = "MANUAL";
 }

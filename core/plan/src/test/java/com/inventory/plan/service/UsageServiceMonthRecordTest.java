@@ -65,4 +65,20 @@ class UsageServiceMonthRecordTest {
     assertThat(((Document) update.getUpdateObject().get("$inc")).get("ocrUsed")).isEqualTo(1);
     assertThat((Document) update.getUpdateObject().get("$setOnInsert")).doesNotContainKey("ocrUsed");
   }
+
+  @Test
+  void anIncludedScanIsOneConditionalIncrementOnThisMonthWithTheLimitInTheFilter() {
+    when(usageRepository.findByShopIdAndMonth(eq("shop-1"), any())).thenReturn(Optional.of(new Usage()));
+    when(template.updateFirst(any(Query.class), any(Update.class), eq(Usage.class)))
+        .thenReturn(com.mongodb.client.result.UpdateResult.acknowledged(1, 1L, null));
+
+    assertThat(service.recordIncludedOcrUnit("shop-1", 100)).isTrue();
+
+    ArgumentCaptor<Query> q = ArgumentCaptor.forClass(Query.class);
+    verify(template).updateFirst(q.capture(), any(Update.class), eq(Usage.class));
+    Document filter = q.getValue().getQueryObject();
+    assertThat(filter.get("shopId")).isEqualTo("shop-1");
+    assertThat(filter.get("month")).isEqualTo(service.getCurrentMonthKey());
+    assertThat(filter.toString()).contains("$lt").contains("100");
+  }
 }
