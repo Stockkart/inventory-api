@@ -1,7 +1,6 @@
 package com.inventory.plan.rest.dto.response;
 
 import com.inventory.plan.domain.model.CampaignState;
-import com.inventory.plan.domain.model.CampaignTheme;
 import java.time.Instant;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -21,7 +20,7 @@ public class AdminCampaignResponse {
   private String upcomingHeadline;
   private String ctaLabel;
   private String ctaPath;
-  private CampaignTheme theme;
+  private String theme;
   private Instant startsAt;
   private Instant endsAt;
   private Instant announceFrom;

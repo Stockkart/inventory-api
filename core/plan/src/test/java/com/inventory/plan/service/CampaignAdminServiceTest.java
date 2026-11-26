@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -16,6 +17,7 @@ import com.inventory.common.exception.ValidationException;
 import com.inventory.plan.domain.model.CampaignState;
 import com.inventory.plan.domain.model.CampaignTheme;
 import com.inventory.plan.domain.model.SaleCampaign;
+import com.inventory.plan.domain.repository.CampaignThemeRepository;
 import com.inventory.plan.domain.repository.SaleCampaignRepository;
 import com.inventory.plan.mapper.CampaignMapper;
 import com.inventory.plan.mapper.CampaignMapperImpl;
@@ -26,6 +28,7 @@ import com.inventory.plan.validation.CampaignValidator;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -49,6 +52,8 @@ class CampaignAdminServiceTest {
   @Mock
   private SaleCampaignRepository saleCampaignRepository;
   @Mock
+  private CampaignThemeRepository campaignThemeRepository;
+  @Mock
   private MongoTemplate mongoTemplate;
   @Mock
   private AuditService auditService;
@@ -65,13 +70,15 @@ class CampaignAdminServiceTest {
   @BeforeEach
   void setUp() {
     service.clock = Clock.fixed(NOW, ZoneOffset.UTC);
+    lenient().when(campaignThemeRepository.findByCode("MONSOON"))
+        .thenReturn(Optional.of(CampaignTheme.builder().code("MONSOON").label("Monsoon").build()));
   }
 
   private static CampaignRequest.CampaignRequestBuilder request() {
     return CampaignRequest.builder()
         .code("MONSOON_2026")
         .headline("Monsoon sale")
-        .theme(CampaignTheme.MONSOON)
+        .theme("MONSOON")
         .startsAt(Instant.parse("2026-10-09T18:30:00Z"))
         .endsAt(Instant.parse("2026-10-19T18:30:00Z"))
         .dismissible(true);
@@ -79,7 +86,7 @@ class CampaignAdminServiceTest {
 
   private static SaleCampaign stored(Boolean active, String headline) {
     return SaleCampaign.builder()
-        .id("c1").code("MONSOON_2026").headline(headline).theme(CampaignTheme.MONSOON)
+        .id("c1").code("MONSOON_2026").headline(headline).theme("MONSOON")
         .startsAt(Instant.parse("2026-10-09T18:30:00Z"))
         .endsAt(Instant.parse("2026-10-19T18:30:00Z"))
         .active(active).build();
@@ -194,5 +201,39 @@ class CampaignAdminServiceTest {
 
     assertThatThrownBy(() -> service.setActive("nope", new CampaignActiveRequest(true, null), "admin1"))
         .isInstanceOf(ResourceNotFoundException.class);
+  }
+
+  @Test
+  void createRejectsAThemeThatIsNotInTheDatabase() {
+    when(campaignThemeRepository.findByCode("HOLI")).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> service.create(request().theme("HOLI").build(), "admin1"))
+        .isInstanceOf(ValidationException.class)
+        .hasMessageContaining("Unknown theme HOLI");
+    verify(mongoTemplate, never()).insert(any(SaleCampaign.class));
+  }
+
+  @Test
+  void updateRejectsASwitchedOffTheme() {
+    when(campaignThemeRepository.findByCode("HOLI"))
+        .thenReturn(Optional.of(CampaignTheme.builder().code("HOLI").active(false).build()));
+
+    assertThatThrownBy(() -> service.update("c1", request().theme("HOLI").build(), "admin1"))
+        .isInstanceOf(ValidationException.class)
+        .hasMessageContaining("switched off");
+    verify(auditService, never()).record(any());
+  }
+
+  @Test
+  void listThemesSortsBySortOrderThenLabelWithUnorderedLast() {
+    when(campaignThemeRepository.findAll()).thenReturn(List.of(
+        CampaignTheme.builder().code("HOLI").label("Holi").build(),
+        CampaignTheme.builder().code("SUMMER").label("Summer").sortOrder(2).active(false).build(),
+        CampaignTheme.builder().code("DIWALI").label("Diwali").sortOrder(1).build()));
+
+    var themes = service.listThemes();
+
+    assertThat(themes).extracting("code").containsExactly("DIWALI", "SUMMER", "HOLI");
+    assertThat(themes).extracting("active").containsExactly(true, false, true);
   }
 }
