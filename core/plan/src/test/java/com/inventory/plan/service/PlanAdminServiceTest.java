@@ -134,6 +134,7 @@ class PlanAdminServiceTest {
     Document set = (Document) update.getValue().getUpdateObject().get("$set");
     assertThat(set).doesNotContainKey("code");
     assertThat(set).containsKey("entitlements");
+    assertThat(set).containsKey("basePrice");
     verify(entitlementService).invalidateAll();
     verify(effectivePlanResolver).evictCatalogue();
     ArgumentCaptor<AuditEntry> audit = ArgumentCaptor.forClass(AuditEntry.class);
@@ -141,6 +142,7 @@ class PlanAdminServiceTest {
     assertThat(audit.getValue().getAction()).isEqualTo("PLAN_UPDATED");
     assertThat(audit.getValue().getBefore()).containsEntry("arcPrice", new BigDecimal("6999"));
     assertThat(audit.getValue().getAfter()).containsEntry("arcPrice", new BigDecimal("7999"));
+    assertThat(audit.getValue().getAfter()).containsKey("basePrice");
   }
 
   @Test
