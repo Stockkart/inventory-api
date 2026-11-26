@@ -61,8 +61,10 @@ public class MongoTx {
   public static final String VENDOR_RETURN = "vendor_return";
   public static final String CREDIT_CHARGE = "credit_charge";
   public static final String CREDIT_SETTLEMENT = "credit_settlement";
+  /** Granting the plan a paid order bought: transaction row, shop plan fields, subscription. */
+  public static final String PLAN_GRANT = "plan_grant";
   public static final java.util.List<String> FLOWS = java.util.List.of(
-      BILL_COMPLETE, REFUND, VENDOR_INVOICE, VENDOR_RETURN, CREDIT_CHARGE, CREDIT_SETTLEMENT);
+      BILL_COMPLETE, REFUND, VENDOR_INVOICE, VENDOR_RETURN, CREDIT_CHARGE, CREDIT_SETTLEMENT, PLAN_GRANT);
 
   private final boolean enabled;
   private final int maxAttempts;
