@@ -7,7 +7,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.inventory.plan.domain.model.CampaignState;
-import com.inventory.plan.domain.model.CampaignTheme;
 import com.inventory.plan.domain.model.SaleCampaign;
 import com.inventory.plan.domain.repository.SaleCampaignRepository;
 import com.inventory.plan.rest.dto.response.CampaignResponse;
@@ -41,7 +40,7 @@ class CampaignServiceTest {
         .code("MONSOON_2026")
         .headline("Monsoon sale is live")
         .upcomingHeadline("Monsoon sale is coming")
-        .theme(CampaignTheme.MONSOON)
+        .theme("MONSOON")
         .startsAt(ist(2026, 10, 10, 0, 0))
         .endsAt(ist(2026, 10, 20, 0, 0))
         .announceFrom(ist(2026, 10, 1, 0, 0))
