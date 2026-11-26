@@ -10,7 +10,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.inventory.plan.domain.model.CampaignState;
-import com.inventory.plan.domain.model.CampaignTheme;
 import com.inventory.plan.rest.dto.response.CampaignResponse;
 import com.inventory.plan.service.CampaignService;
 import java.time.Instant;
@@ -55,7 +54,7 @@ class CampaignControllerTest {
         .subtext("Annual plans from ₹4,999")
         .ctaLabel("See plans")
         .ctaPath("/plans")
-        .theme(CampaignTheme.MONSOON)
+        .theme("MONSOON")
         .startsAt(Instant.parse("2026-10-09T18:30:00Z"))
         .endsAt(Instant.parse("2026-10-19T18:30:00Z"))
         .dismissible(true)
