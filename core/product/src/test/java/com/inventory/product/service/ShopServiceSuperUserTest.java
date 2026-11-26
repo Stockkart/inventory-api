@@ -51,6 +51,7 @@ class ShopServiceSuperUserTest {
   @Mock private UserShopMembershipService membershipService;
   @Mock private VerticalCatalogService verticalCatalogService;
   @Mock private MetricsWrapper metrics;
+  @Mock private com.inventory.common.audit.AuditService auditService;
   @Spy private ShopValidator shopValidator = new ShopValidator();
   @InjectMocks private ShopService shopService;
 
@@ -65,7 +66,7 @@ class ShopServiceSuperUserTest {
   @EnumSource(value = UserRole.class, names = {"OWNER", "ADMIN", "MANAGER", "CASHIER"})
   void shopPeopleCannotApproveShops(UserRole role) {
     BaseException e = assertThrows(BaseException.class,
-        () -> shopService.approve("shop-1", approveWithLimit(5), role));
+        () -> shopService.approve("shop-1", approveWithLimit(5), role, "u1"));
 
     assertEquals(ErrorCode.ACCESS_DENIED, e.getErrorCode());
     verifyNoInteractions(shopRepository);
@@ -74,7 +75,7 @@ class ShopServiceSuperUserTest {
   @Test
   void aCallerWithNoRoleCannotApproveShops() {
     BaseException e = assertThrows(BaseException.class,
-        () -> shopService.approve("shop-1", approveWithLimit(5), null));
+        () -> shopService.approve("shop-1", approveWithLimit(5), null, "u1"));
 
     assertEquals(ErrorCode.ACCESS_DENIED, e.getErrorCode());
     verifyNoInteractions(shopRepository);
@@ -90,7 +91,7 @@ class ShopServiceSuperUserTest {
     when(shopRepository.save(any(Shop.class))).thenAnswer(i -> i.getArgument(0));
     when(shopMapper.toApprovalResponse(shop)).thenReturn(mapped);
 
-    ShopApprovalResponse response = shopService.approve("shop-1", approveWithLimit(5), UserRole.SUPER_USER);
+    ShopApprovalResponse response = shopService.approve("shop-1", approveWithLimit(5), UserRole.SUPER_USER, "u1");
 
     assertSame(mapped, response);
     assertEquals("ACTIVE", shop.getStatus());
