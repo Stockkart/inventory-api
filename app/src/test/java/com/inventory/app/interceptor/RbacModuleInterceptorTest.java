@@ -163,8 +163,8 @@ class RbacModuleInterceptorTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"/api/v1/referrals/me", "/api/v1/referrals/me;x=1"})
-  void theShopReferralSummaryNeedsThePaymentPlanModule(String path) {
+  @ValueSource(strings = {"/api/v1/referrals/me", "/api/v1/referrals/me;x=1", "/api/v1/referrals/rewards"})
+  void theShopReferralScreensNeedThePaymentPlanModule(String path) {
     when(rbacService.requireModule("u1", "s1", RbacService.MODULE_PAYMENT_PLAN))
         .thenReturn(new ShopAccessResponse());
 

@@ -37,6 +37,11 @@ public class ShopProviderImpl implements ShopPort {
     return shopService.getReferralShop(shopId).map(ShopProviderImpl::toReferralShop);
   }
 
+  @Override
+  public java.util.List<ReferralShop> referralShops(java.util.Collection<String> shopIds) {
+    return shopService.getReferralShops(shopIds).stream().map(ShopProviderImpl::toReferralShop).toList();
+  }
+
   private static ReferralShop toReferralShop(ShopService.ShopReferralInfo info) {
     return new ReferralShop(info.shopId(), info.name(), info.referralCode(), info.contactEmail(), info.contactPhone());
   }
