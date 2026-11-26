@@ -3,12 +3,7 @@ package com.inventory.hr.rest.controller;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -24,7 +19,6 @@ import com.inventory.common.dto.response.ApiErrorMapperImpl;
 import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.hr.domain.model.DevicePairing;
-import com.inventory.hr.domain.model.enums.DeviceOs;
 import com.inventory.hr.domain.model.enums.OutsideAction;
 import com.inventory.hr.domain.model.enums.PairingStatus;
 import com.inventory.hr.domain.model.enums.PunchDirection;
@@ -35,19 +29,13 @@ import com.inventory.hr.rest.dto.request.AppPunchRequest;
 import com.inventory.hr.rest.dto.response.AppLocationSettingsResponse;
 import com.inventory.hr.rest.dto.response.AppPunchResponse;
 import com.inventory.hr.rest.dto.response.AppStatusResponse;
-import com.inventory.hr.rest.dto.response.ClaimPairingResponse;
 import com.inventory.hr.rest.dto.response.ConsentResponse;
-import com.inventory.hr.rest.dto.response.PairingBootstrapResponse;
 import com.inventory.hr.rest.dto.response.PunchResponse;
 import com.inventory.hr.service.AppPunchService;
-import com.inventory.hr.service.AppRateLimiter;
 import com.inventory.hr.service.AppRequestContext;
 import com.inventory.hr.service.ConsentVersions;
 import com.inventory.hr.service.DevicePairingService;
-import com.inventory.metrics.MetricsWrapper;
-import java.time.Clock;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -63,11 +51,12 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 /**
- * The Attendance app endpoints through MVC: request shapes, the {@code ApiResponse} envelope, the
- * error envelope for a refusal, and the per-installation lockout (R2.5). The interceptor chain is
- * not part of a standalone MockMvc, so the unsigned calls carry no Bearer and no envelope, exactly
- * as the phone sends them, and the signed calls get the {@link AppRequestContext} the interceptor
- * would have stored set directly as a request attribute.
+ * The Attendance app endpoints through MVC: request shapes, the {@code ApiResponse} envelope and
+ * the error envelope for a refusal. The interceptor chain is not part of a standalone MockMvc, so
+ * the unsigned consent read carries no Bearer and no envelope, exactly as the phone sends it, and
+ * the signed calls get the {@link AppRequestContext} the interceptor would have stored set directly
+ * as a request attribute. The handshake (claim / complete / abandon, with the R2.5 lockout) lives on
+ * {@code WorkerController} only (worker-app DD4) and is covered by {@code WorkerControllerTest}.
  */
 @ExtendWith(MockitoExtension.class)
 class AttendanceAppControllerTest {
@@ -83,18 +72,14 @@ class AttendanceAppControllerTest {
 
   @Mock private DevicePairingService pairingService;
   @Mock private AppPunchService punchService;
-  @Mock private MetricsWrapper metrics;
 
-  private AppRateLimiter rateLimiter;
   private MockMvc mvc;
   private DevicePairing pairing;
 
   @BeforeEach
   void setUp() {
-    rateLimiter = new AppRateLimiter(metrics, Clock.fixed(NOW, ZoneOffset.UTC));
     AttendanceAppController controller = new AttendanceAppController();
     ReflectionTestUtils.setField(controller, "pairingService", pairingService);
-    ReflectionTestUtils.setField(controller, "rateLimiter", rateLimiter);
     ReflectionTestUtils.setField(controller, "punchService", punchService);
     ReflectionTestUtils.setField(controller, "consentVersions", new ConsentVersions());
     GlobalExceptionHandler handler = new GlobalExceptionHandler();
@@ -120,207 +105,6 @@ class AttendanceAppControllerTest {
         {"code":"%s","installationId":"%s","os":"ANDROID","osVersion":"14",
          "phoneModel":"Redmi Note 11","appVersion":"1.0.0"}
         """.formatted(code, INSTALL);
-  }
-
-  // ---- claim -----------------------------------------------------------------------------------
-
-  @Test
-  void claimReturnsNamesConsentAndToken() throws Exception {
-    ConsentVersions.ConsentVersion consent = new ConsentVersions().latest();
-    when(pairingService.claim("ab cd-efgh", INSTALL, DeviceOs.ANDROID, "14", "Redmi Note 11",
-        "1.0.0")).thenReturn(new ClaimPairingResponse(TOKEN, "Sri Stores", "Ravi Kumar", consent));
-
-    mvc.perform(post(BASE + "/claim").contentType(MediaType.APPLICATION_JSON)
-            .content(claimBody("ab cd-efgh")))
-        .andExpect(status().isOk())
-        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
-        .andExpect(jsonPath("$.success").value(true))
-        .andExpect(jsonPath("$.data.claimToken").value(TOKEN))
-        .andExpect(jsonPath("$.data.shopName").value("Sri Stores"))
-        .andExpect(jsonPath("$.data.employeeName").value("Ravi Kumar"))
-        .andExpect(jsonPath("$.data.consent.version").value(consent.version()))
-        .andExpect(jsonPath("$.data.consent.kind").value("RECONSENT_REQUIRED"))
-        .andExpect(jsonPath("$.data.consent.recorded").isArray())
-        .andExpect(jsonPath("$.data.consent.neverRecorded").isArray())
-        .andExpect(jsonPath("$.data.consent.visibility").isArray());
-  }
-
-  @Test
-  void aRefusalKeepsItsCodeStatusAndMessage() throws Exception {
-    when(pairingService.claim(anyString(), eq(INSTALL), any(), any(), any(), any()))
-        .thenThrow(new BaseException(ErrorCode.HR_PAIRING_CODE_EXPIRED,
-            ErrorCode.HR_PAIRING_CODE_EXPIRED.getMessage()));
-
-    mvc.perform(post(BASE + "/claim").contentType(MediaType.APPLICATION_JSON)
-            .content(claimBody("ABCDEFGH")))
-        .andExpect(status().isGone())
-        .andExpect(jsonPath("$.success").value(false))
-        .andExpect(jsonPath("$.error").value(ErrorCode.HR_PAIRING_CODE_EXPIRED.getMessage()))
-        .andExpect(jsonPath("$.data.message").value(ErrorCode.HR_PAIRING_CODE_EXPIRED.getMessage()))
-        .andExpect(jsonPath("$.data.status").value(410));
-  }
-
-  @Test
-  void fiveRefusedCodesLockTheInstallationAndTheSixthNeverReachesTheService()
-      throws Exception {
-    when(pairingService.claim(anyString(), eq(INSTALL), any(), any(), any(), any()))
-        .thenThrow(new BaseException(ErrorCode.HR_PAIRING_CODE_WRONG,
-            ErrorCode.HR_PAIRING_CODE_WRONG.getMessage()));
-
-    for (int i = 0; i < 5; i++) {
-      mvc.perform(post(BASE + "/claim").contentType(MediaType.APPLICATION_JSON)
-              .content(claimBody("WRONG" + i + "XX")))
-          .andExpect(status().isNotFound())
-          .andExpect(jsonPath("$.error").value(ErrorCode.HR_PAIRING_CODE_WRONG.getMessage()));
-    }
-    mvc.perform(post(BASE + "/claim").contentType(MediaType.APPLICATION_JSON)
-            .content(claimBody("ABCDEFGH")))
-        .andExpect(status().isTooManyRequests())
-        .andExpect(jsonPath("$.error").value("Too many wrong codes. Wait 15 minutes and try again."))
-        .andExpect(jsonPath("$.data.status").value(429));
-    verify(pairingService, times(5)).claim(anyString(), eq(INSTALL), any(), any(), any(), any());
-
-    // another installation is not affected
-    String other = "0f8fad5b-d9cb-469f-a165-70867728950e";
-    when(pairingService.claim(anyString(), eq(other), any(), any(), any(), any()))
-        .thenReturn(new ClaimPairingResponse(TOKEN, "Sri Stores", "Ravi Kumar",
-            new ConsentVersions().latest()));
-    mvc.perform(post(BASE + "/claim").contentType(MediaType.APPLICATION_JSON)
-            .content(claimBody("ABCDEFGH").replace(INSTALL, other)))
-        .andExpect(status().isOk());
-  }
-
-  @Test
-  void aCompleteRefusalCountsTowardsTheSameLock() throws Exception {
-    when(pairingService.claim(anyString(), eq(INSTALL), any(), any(), any(), any()))
-        .thenThrow(new BaseException(ErrorCode.HR_PAIRING_CODE_WRONG, "wrong"));
-    when(pairingService.complete(anyString(), eq(INSTALL), anyString(), anyString(), anyInt(),
-        isNull()))
-        .thenThrow(new BaseException(ErrorCode.HR_PAIRING_CODE_EXPIRED, "expired"));
-    for (int i = 0; i < 3; i++) {
-      mvc.perform(post(BASE + "/claim").contentType(MediaType.APPLICATION_JSON)
-          .content(claimBody("ABCDEFGH"))).andExpect(status().isNotFound());
-    }
-    for (int i = 0; i < 2; i++) {
-      mvc.perform(post(BASE + "/complete").contentType(MediaType.APPLICATION_JSON)
-          .content(completeBody())).andExpect(status().isGone());
-    }
-    mvc.perform(post(BASE + "/complete").contentType(MediaType.APPLICATION_JSON)
-            .content(completeBody()))
-        .andExpect(status().isTooManyRequests())
-        .andExpect(jsonPath("$.error").value("Too many wrong codes. Wait 15 minutes and try again."));
-    verify(pairingService, times(2)).complete(anyString(), eq(INSTALL), anyString(), anyString(),
-        anyInt(), isNull());
-  }
-
-  @Test
-  void claimRejectsAMalformedInstallationIdBeforeTheService() throws Exception {
-    mvc.perform(post(BASE + "/claim").contentType(MediaType.APPLICATION_JSON)
-            .content(claimBody("ABCDEFGH").replace(INSTALL, "not-a-uuid")))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.error").value("installationId must be a UUID"));
-    verifyNoInteractions(pairingService);
-  }
-
-  @Test
-  void claimRejectsAnOverlongPhoneModel() throws Exception {
-    String body = claimBody("ABCDEFGH").replace("Redmi Note 11", "x".repeat(81));
-    mvc.perform(post(BASE + "/claim").contentType(MediaType.APPLICATION_JSON).content(body))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.error").value("phoneModel must be at most 80 characters"));
-    verifyNoInteractions(pairingService);
-  }
-
-  @Test
-  void aMissingCodeIsA400NotACountedRefusal() throws Exception {
-    for (int i = 0; i < 6; i++) {
-      mvc.perform(post(BASE + "/claim").contentType(MediaType.APPLICATION_JSON)
-              .content(claimBody("")))
-          .andExpect(status().isBadRequest())
-          .andExpect(jsonPath("$.error").value("code is required"));
-    }
-    verifyNoInteractions(pairingService);
-  }
-
-  // ---- complete --------------------------------------------------------------------------------
-
-  private static String completeBody() {
-    return """
-        {"claimToken":"%s","installationId":"%s","punchPublicKey":"PUNCH-SPKI",
-         "devicePublicKey":"DEVICE-SPKI","consentVersion":1}
-        """.formatted(TOKEN, INSTALL);
-  }
-
-  @Test
-  void completeReturnsTheBootstrapTheAppStores() throws Exception {
-    when(pairingService.complete(TOKEN, INSTALL, "PUNCH-SPKI", "DEVICE-SPKI", 1, null))
-        .thenReturn(new PairingBootstrapResponse("pairing-1", "shop-1", "emp-1", "Ravi Kumar",
-            "Sri Stores", new AppLocationSettingsResponse(true, 12.97, 77.59, 150,
-                OutsideAction.FLAG), 1));
-
-    mvc.perform(post(BASE + "/complete").contentType(MediaType.APPLICATION_JSON)
-            .content(completeBody()))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.success").value(true))
-        .andExpect(jsonPath("$.data.pairingId").value("pairing-1"))
-        .andExpect(jsonPath("$.data.shopId").value("shop-1"))
-        .andExpect(jsonPath("$.data.employeeId").value("emp-1"))
-        .andExpect(jsonPath("$.data.employeeName").value("Ravi Kumar"))
-        .andExpect(jsonPath("$.data.shopName").value("Sri Stores"))
-        .andExpect(jsonPath("$.data.location.locationCheck").value(true))
-        .andExpect(jsonPath("$.data.location.shopLat").value(12.97))
-        .andExpect(jsonPath("$.data.location.radiusMetres").value(150))
-        .andExpect(jsonPath("$.data.location.outsideAction").value("FLAG"))
-        .andExpect(jsonPath("$.data.consentVersion").value(1));
-  }
-
-  @Test
-  void completeNeedsBothKeysAndTheConsentVersion() throws Exception {
-    mvc.perform(post(BASE + "/complete").contentType(MediaType.APPLICATION_JSON)
-            .content(completeBody().replace("\"devicePublicKey\":\"DEVICE-SPKI\",", "")))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.error").value("devicePublicKey is required"));
-    mvc.perform(post(BASE + "/complete").contentType(MediaType.APPLICATION_JSON)
-            .content(completeBody().replace(",\"consentVersion\":1", "")))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.error").value("consentVersion is required"));
-    mvc.perform(post(BASE + "/complete").contentType(MediaType.APPLICATION_JSON)
-            .content(completeBody().replace(TOKEN, "")))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.error").value("claimToken is required"));
-    verifyNoInteractions(pairingService);
-  }
-
-  // ---- abandon ---------------------------------------------------------------------------------
-
-  @Test
-  void abandonAnswersTrueAndInvalidatesTheCode() throws Exception {
-    mvc.perform(post(BASE + "/abandon").contentType(MediaType.APPLICATION_JSON)
-            .content("{\"claimToken\":\"" + TOKEN + "\"}"))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.success").value(true))
-        .andExpect(jsonPath("$.data.abandoned").value(true));
-    verify(pairingService).abandon(TOKEN);
-  }
-
-  @Test
-  void abandonWithoutATokenIsA400() throws Exception {
-    mvc.perform(post(BASE + "/abandon").contentType(MediaType.APPLICATION_JSON).content("{}"))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.error").value("claimToken is required"));
-    verify(pairingService, never()).abandon(any());
-  }
-
-  @Test
-  void abandonIsNotRateLimited() throws Exception {
-    // the lockout counts code attempts; "No, this isn't me" is not one
-    for (int i = 0; i < 7; i++) {
-      mvc.perform(post(BASE + "/abandon").contentType(MediaType.APPLICATION_JSON)
-              .content("{\"claimToken\":\"" + TOKEN + i + "\"}"))
-          .andExpect(status().isOk());
-    }
-    verify(pairingService, times(7)).abandon(anyString());
-    verifyNoInteractions(metrics);
   }
 
   // ---- consent/latest (unsigned) ---------------------------------------------------------------
@@ -560,5 +344,22 @@ class AttendanceAppControllerTest {
     mvc.perform(signed(post(BASE + "/me/unpair")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.unpaired").value(true));
+  }
+
+  // ---- removed routes (worker-app D11, DD4) ---------------------------------------------------
+
+  @Test
+  void theUnsignedHandshakeAndTheProofNoLongerExist() throws Exception {
+    MockHttpServletRequestBuilder[] gone = {
+        post(BASE + "/claim").contentType(MediaType.APPLICATION_JSON).content(claimBody("ABCDEFGH")),
+        post(BASE + "/complete").contentType(MediaType.APPLICATION_JSON).content("{}"),
+        post(BASE + "/abandon").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"claimToken\":\"" + TOKEN + "\"}"),
+        signed(post(BASE + "/me/proof")),
+    };
+    for (MockHttpServletRequestBuilder call : gone) {
+      mvc.perform(call).andExpect(status().isNotFound());
+    }
+    verifyNoInteractions(pairingService, punchService);
   }
 }

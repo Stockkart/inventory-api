@@ -49,6 +49,8 @@ public class EmployeeResponse {
    * list and detail; null on self-service views, where it is not computed.
    */
   private Boolean appPaired;
+  /** When a manager asked for the worker's profile details (worker-app R8.7); null = never. */
+  private Instant profileRequestedAt;
   private Long revision;
   private Instant createdAt;
   private Instant updatedAt;

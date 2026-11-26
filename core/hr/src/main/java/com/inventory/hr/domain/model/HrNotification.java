@@ -25,6 +25,8 @@ public class HrNotification {
   private String recipientUserId;
   private HrNotificationType type;
   private String leaveRequestId;
+  /** The {@code hr_join_requests} row this is about (worker-app R4.13); null for other types. */
+  private String joinRequestId;
   /** Name and dates only; never pay data. */
   private String text;
   /** null = nobody read it. */

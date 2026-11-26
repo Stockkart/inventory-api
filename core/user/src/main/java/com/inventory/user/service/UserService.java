@@ -47,6 +47,14 @@ public class UserService {
   @Autowired
   private UserShopMembershipService membershipService;
 
+  @Autowired
+  private WorkerAccountService workerAccountService;
+
+  /**
+   * Every active login of the shop. Staff rows as before; WORKER rows (worker-app R2.5) also carry
+   * {@code linkedEmployeeCode} so the Users page can group them under "Workers" with the code of
+   * the employee they are linked to.
+   */
   public UserListResponse listUsers(String shopId) {
     try {
       userValidator.validateShopId(shopId);
@@ -58,7 +66,11 @@ public class UserService {
       for (UserShopMembership m : membershipRepository.findByShopIdAndActiveTrue(shopId)) {
         UserAccount account = userAccountRepository.findById(m.getUserId()).orElse(null);
         if (account != null) {
-          users.add(userMapper.toUserDtoWithRole(account, m.getRole()));
+          UserDto row = userMapper.toUserDtoWithRole(account, m.getRole());
+          if (m.getRole() != null && m.getRole().isWorkerRole()) {
+            row.setLinkedEmployeeCode(workerAccountService.linkedEmployeeCode(shopId, m.getUserId()));
+          }
+          users.add(row);
         }
       }
 

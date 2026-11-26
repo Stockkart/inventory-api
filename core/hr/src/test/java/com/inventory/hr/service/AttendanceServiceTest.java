@@ -26,6 +26,7 @@ import com.inventory.hr.domain.model.AttendanceDay;
 import com.inventory.hr.domain.model.DevicePairing;
 import com.inventory.hr.domain.model.Employee;
 import com.inventory.hr.domain.model.Holiday;
+import com.inventory.hr.domain.model.HrSettings;
 import com.inventory.hr.domain.model.LeaveRequest;
 import com.inventory.hr.domain.model.enums.AttendanceSource;
 import com.inventory.hr.domain.model.enums.AttendanceStatus;
@@ -146,10 +147,21 @@ class AttendanceServiceTest {
   }
 
   /** Biometric app check-in on for the shop (R1.1 default is off). */
-  private void biometricAppOn() {
+  private HrSettings biometricAppOn() {
     var settings = HrSettingsService.withDefaults(null, SHOP);
     settings.getAttendanceCapture().setBiometricApp(true);
     when(settingsService.effectiveSettings(SHOP)).thenReturn(settings);
+    return settings;
+  }
+
+  /**
+   * No weekly off at all, for tests that read the register on the real {@code today}: with the
+   * default Sunday week-off such a test would resolve the day to WEEK_OFF, not UNMARKED, when it
+   * happens to run on a Sunday (Asia/Kolkata).
+   */
+  private static void noWeekOff(HrSettings settings) {
+    settings.setWeeklyOffSchedule(new ArrayList<>(List.of(
+        new HrSettings.WeeklyOffEntry(HrSettingsService.SCHEDULE_START, List.of()))));
   }
 
   /** The given employees have an active paired phone. */
@@ -852,7 +864,8 @@ class AttendanceServiceTest {
 
   @Test
   void noPunchYetShowsForTodayOnlyWhenPairedSwitchOnNoPunchAndNoMark() {
-    biometricAppOn();
+    // no week-off: today may be a Sunday, and the hint is asserted against UNMARKED below
+    noWeekOff(biometricAppOn());
     String today = HrDateUtils.format(HrDateUtils.today());
     when(mongoTemplate.find(any(Query.class), eq(Employee.class))).thenReturn(List.of(
         employee("e1", "EMP-001"), employee("e2", "EMP-002"), employee("e3", "EMP-003"),

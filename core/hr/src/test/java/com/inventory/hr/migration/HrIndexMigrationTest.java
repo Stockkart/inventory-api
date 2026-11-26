@@ -4,7 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -15,6 +17,7 @@ import com.inventory.hr.domain.model.DevicePairing;
 import com.inventory.hr.domain.model.Employee;
 import com.inventory.hr.domain.model.HrNotification;
 import com.inventory.hr.domain.model.PairingCode;
+import com.inventory.hr.domain.model.WorkerJoinRequest;
 import com.inventory.hr.migration.HrIndexMigration.IndexSpec;
 import java.util.List;
 import java.util.Set;
@@ -25,8 +28,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.index.IndexDefinition;
+import org.springframework.data.mongodb.core.index.IndexField;
+import org.springframework.data.mongodb.core.index.IndexInfo;
 import org.springframework.data.mongodb.core.index.IndexOperations;
 
 @ExtendWith(MockitoExtension.class)
@@ -49,9 +55,121 @@ class HrIndexMigrationTest {
         .map(s -> s.type().getSimpleName() + "." + s.name()).collect(Collectors.toSet());
 
     // 21 + hr_punches (2) + attendance app: hr_device_pairings (5), hr_pairing_codes (3),
-    // hr_app_nonces (2), hr_app_alerts (1)
-    assertEquals(34, specs.size());
+    // hr_app_nonces (2), hr_app_alerts (1) + Stockkart Team: hr_join_requests (4),
+    // hr_employees (3), hr_notifications (1). No hr_pairing_proofs and no link-request index (D11).
+    assertEquals(42, specs.size());
     assertEquals(specs.size(), keys.size());
+  }
+
+  // ---- Stockkart Team (task 3.5) ----------------------------------------------------------------
+
+  @Test
+  void joinRequestInboxAndOutcomeReadsHaveNewestFirstIndexes() {
+    IndexSpec inbox = spec("shop_status_requested", WorkerJoinRequest.class);
+    assertEquals(new Document("shopId", 1).append("status", 1).append("requestedAt", -1),
+        inbox.index().getIndexKeys());
+    assertNull(inbox.index().getIndexOptions().get("unique"));
+    assertNull(inbox.index().getIndexOptions().get("partialFilterExpression"));
+
+    assertEquals(new Document("userId", 1).append("decidedAt", -1),
+        spec("user_decided", WorkerJoinRequest.class).index().getIndexKeys());
+  }
+
+  @Test
+  void oneOpenJoinRequestPerAccountIsEnforcedByAPartialUniqueIndex() {
+    IndexSpec open = spec("user_open_unique", WorkerJoinRequest.class);
+    Document options = open.index().getIndexOptions();
+
+    assertEquals(new Document("userId", 1), open.index().getIndexKeys());
+    assertEquals(true, options.get("unique"));
+    assertEquals(new Document("status", new Document("$in", List.of("PENDING", "APPROVING"))),
+        options.get("partialFilterExpression"));
+  }
+
+  @Test
+  void decidedJoinRequestsExpireAtTheirOwnTimestamp() {
+    assertEquals(0L, ttlSeconds(spec("expires_ttl", WorkerJoinRequest.class)));
+    assertEquals(new Document("expiresAt", 1),
+        spec("expires_ttl", WorkerJoinRequest.class).index().getIndexKeys());
+  }
+
+  /** Worker-app D11: the legacy pairing indexes are not ensured and are dropped when present. */
+  @Test
+  void theLegacyPairingIndexesAreNoLongerEnsuredAndAreListedForDropping() {
+    assertTrue(HrIndexMigration.specs().stream().noneMatch(s ->
+        s.name().equals("pairing_link_pending") || s.type().getSimpleName().equals("PairingProof")));
+    assertEquals(List.of("token_hash_unique", "expires_ttl"),
+        HrIndexMigration.DROPPED.get("hr_pairing_proofs"));
+    assertEquals(List.of("pairing_link_pending"), HrIndexMigration.DROPPED.get("hr_join_requests"));
+    assertEquals(2, HrIndexMigration.DROPPED.size());
+  }
+
+  @Test
+  void dropRemovedTouchesOnlyCollectionsAndIndexesThatExist() {
+    when(mongoTemplate.collectionExists("hr_pairing_proofs")).thenReturn(false);
+    when(mongoTemplate.collectionExists("hr_join_requests")).thenReturn(true);
+    when(mongoTemplate.indexOps("hr_join_requests")).thenReturn(indexOps);
+    when(indexOps.getIndexInfo()).thenReturn(List.of(
+        new IndexInfo(List.of(IndexField.create("userId", Sort.Direction.ASC)), "user_open_unique",
+            true, false, null),
+        new IndexInfo(List.of(IndexField.create("pairingId", Sort.Direction.ASC)),
+            "pairing_link_pending", false, false, null)));
+
+    migration.dropRemoved();
+
+    verify(indexOps).dropIndex("pairing_link_pending");
+    verify(indexOps, never()).dropIndex("user_open_unique");
+    verify(mongoTemplate, never()).indexOps("hr_pairing_proofs");
+  }
+
+  @Test
+  void dropRemovedIsANoOpWhenNothingIsLeftAndSwallowsAFailure() {
+    when(mongoTemplate.collectionExists(anyString())).thenReturn(true);
+    when(mongoTemplate.indexOps(anyString())).thenReturn(indexOps);
+    when(indexOps.getIndexInfo()).thenReturn(List.of())
+        .thenThrow(new RuntimeException("listIndexes failed"));
+
+    migration.dropRemoved();
+    migration.dropRemoved();
+
+    verify(indexOps, never()).dropIndex(anyString());
+  }
+
+  @Test
+  void theExitJobScansOnlyLinkedEmployeesWhoseMembershipIsStillOpen() {
+    IndexSpec exit = spec("exit_membership_pending", Employee.class);
+    Document options = exit.index().getIndexOptions();
+
+    assertEquals(new Document("status", 1).append("exitDate", 1), exit.index().getIndexKeys());
+    assertNull(options.get("unique"));
+    Document filter = new Document("userId", new Document("$type", 2))
+        .append("membershipEndedAt", null);
+    assertEquals(filter, options.get("partialFilterExpression"));
+    // null must be in the filter as an explicit key, not dropped: that is the "not yet ended" part
+    assertTrue(((Document) options.get("partialFilterExpression")).containsKey("membershipEndedAt"));
+  }
+
+  @Test
+  void possibleMatchIndexesCoverOnlyEmployeesWithTheOptionalField() {
+    IndexSpec email = spec("shop_email", Employee.class);
+    assertEquals(new Document("shopId", 1).append("email", 1), email.index().getIndexKeys());
+    assertEquals(new Document("email", new Document("$exists", true)),
+        email.index().getIndexOptions().get("partialFilterExpression"));
+    assertNull(email.index().getIndexOptions().get("unique"));
+
+    IndexSpec phone = spec("shop_phone", Employee.class);
+    assertEquals(new Document("shopId", 1).append("phone", 1), phone.index().getIndexKeys());
+    assertEquals(new Document("phone", new Document("$exists", true)),
+        phone.index().getIndexOptions().get("partialFilterExpression"));
+    assertNull(phone.index().getIndexOptions().get("unique"));
+  }
+
+  @Test
+  void workerNotificationsAreReadPerAccountNewestFirst() {
+    IndexSpec byAccount = spec("recipient_created", HrNotification.class);
+    assertEquals(new Document("recipientUserId", 1).append("createdAt", -1),
+        byAccount.index().getIndexKeys());
+    assertNull(byAccount.index().getIndexOptions().get("expireAfterSeconds"));
   }
 
   @Test
@@ -150,6 +268,7 @@ class HrIndexMigrationTest {
 
   @Test
   void oneFailingIndexDoesNotStopTheOthers() {
+    when(mongoTemplate.collectionExists(anyString())).thenReturn(false);
     when(mongoTemplate.indexOps(any(Class.class))).thenReturn(indexOps);
     doThrow(new RuntimeException("conflict")).doReturn("ok")
         .when(indexOps).ensureIndex(any(IndexDefinition.class));

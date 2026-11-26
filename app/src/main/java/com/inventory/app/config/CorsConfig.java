@@ -4,6 +4,7 @@ import com.inventory.app.interceptor.AuthenticationInterceptor;
 import com.inventory.app.interceptor.PlanExpiryInterceptor;
 import com.inventory.app.interceptor.RbacModuleInterceptor;
 import com.inventory.hr.service.AttendanceAppAuthInterceptor;
+import com.inventory.hr.service.WorkerCredentialInterceptor;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,6 +47,9 @@ public class CorsConfig implements WebMvcConfigurer {
   @Autowired
   private AttendanceAppAuthInterceptor attendanceAppAuthInterceptor;
 
+  @Autowired
+  private WorkerCredentialInterceptor workerCredentialInterceptor;
+
   @Override
   public void addCorsMappings(CorsRegistry registry) {
     registry.addMapping("/api/**")
@@ -72,11 +76,19 @@ public class CorsConfig implements WebMvcConfigurer {
 
   @Override
   public void addInterceptors(InterceptorRegistry registry) {
-    // The Attendance app has no login (HR D7): its device-facing paths leave the Bearer chain and
-    // are authenticated by the signed request envelope below. Health (/attendance-app/health) is
-    // not a device path and stays on the Bearer chain; the device paths are listed one by one for
-    // that reason.
+    // The Attendance app's device-facing paths (HR D7) leave the Bearer chain and are authenticated
+    // by the signed request envelope below. Health (/attendance-app/health) is not a device path
+    // and stays on the Bearer chain; the device paths are listed one by one for that reason, and
+    // the envelope interceptor is registered on exactly that list, so any other path under the
+    // prefix (the removed unsigned handshake, worker-app D11) is an ordinary Bearer-chain route.
     String[] excluded = bearerChainExclusions();
+
+    // Stockkart Team app (worker-app R9.1, DD3): a login and a device signature never travel
+    // together. A /hr/worker request carrying an envelope header is refused here, before the token
+    // is read, so the rule holds whatever the token's state. Exactly this prefix; nothing else is
+    // touched.
+    registry.addInterceptor(workerCredentialInterceptor)
+        .addPathPatterns(WorkerCredentialInterceptor.PATH_PATTERN);
 
     registry.addInterceptor(authenticationInterceptor)
         .addPathPatterns("/api/**", "/admin/**")
@@ -91,8 +103,7 @@ public class CorsConfig implements WebMvcConfigurer {
         .excludePathPatterns(excluded);
 
     registry.addInterceptor(attendanceAppAuthInterceptor)
-        .addPathPatterns(AttendanceAppAuthInterceptor.PATH_PATTERN)
-        .excludePathPatterns(AttendanceAppAuthInterceptor.HEALTH_PATH);
+        .addPathPatterns(AttendanceAppAuthInterceptor.DEVICE_PATH_PATTERNS.toArray(String[]::new));
   }
 
   private static String[] bearerChainExclusions() {

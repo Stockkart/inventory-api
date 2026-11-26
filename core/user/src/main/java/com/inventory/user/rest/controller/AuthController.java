@@ -51,8 +51,10 @@ public class AuthController {
   }
 
   @PostMapping("/signup")
-  public ResponseEntity<ApiResponse<SignupResponse>> signup(@RequestBody SignupRequest request) {
-    return ResponseEntity.ok(ApiResponse.success(authService.signup(request)));
+  public ResponseEntity<ApiResponse<SignupResponse>> signup(@RequestBody SignupRequest request,
+      HttpServletRequest httpRequest) {
+    return ResponseEntity.ok(ApiResponse.success(
+        authService.signup(request, httpRequest.getRemoteAddr())));
   }
 
   @PostMapping("/change-password")

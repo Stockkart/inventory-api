@@ -1,0 +1,148 @@
+{
+  "generatedBy": "inventory-api core/common com.inventory.common.util.PhoneNumbersFixtureGeneratorTest (do not edit by hand)",
+  "rule": "drop every character that is not an ASCII digit 0-9; accept iff exactly 10 digits remain, or 12 starting with 91 (then drop the 91); answer the 10 digits, else null",
+  "localDigits": 10,
+  "countryCode": "91",
+  "cases": [
+    {
+      "name": "bare 10 digits",
+      "input": "9876543210",
+      "normalised": "9876543210"
+    },
+    {
+      "name": "10 digits with a space in the middle",
+      "input": "98765 43210",
+      "normalised": "9876543210"
+    },
+    {
+      "name": "10 digits with hyphens",
+      "input": "98765-43210",
+      "normalised": "9876543210"
+    },
+    {
+      "name": "10 digits surrounded by spaces",
+      "input": "  9876543210  ",
+      "normalised": "9876543210"
+    },
+    {
+      "name": "country code with plus",
+      "input": "+919876543210",
+      "normalised": "9876543210"
+    },
+    {
+      "name": "country code without plus",
+      "input": "919876543210",
+      "normalised": "9876543210"
+    },
+    {
+      "name": "plus, country code, space",
+      "input": "+91 98765 43210",
+      "normalised": "9876543210"
+    },
+    {
+      "name": "plus, country code, hyphens",
+      "input": "+91-98765-43210",
+      "normalised": "9876543210"
+    },
+    {
+      "name": "country code in brackets",
+      "input": "(91) 9876543210",
+      "normalised": "9876543210"
+    },
+    {
+      "name": "dots between groups",
+      "input": "98765.43210",
+      "normalised": "9876543210"
+    },
+    {
+      "name": "letters are dropped like formatting",
+      "input": "abc9876543210",
+      "normalised": "9876543210"
+    },
+    {
+      "name": "leading zero makes 11 digits",
+      "input": "09876543210",
+      "normalised": null
+    },
+    {
+      "name": "0 then country code (13 digits)",
+      "input": "0919876543210",
+      "normalised": null
+    },
+    {
+      "name": "nine digits",
+      "input": "987654321",
+      "normalised": null
+    },
+    {
+      "name": "eleven digits not starting with 91",
+      "input": "19876543210",
+      "normalised": null
+    },
+    {
+      "name": "twelve digits not starting with 91",
+      "input": "129876543210",
+      "normalised": null
+    },
+    {
+      "name": "thirteen digits",
+      "input": "9198765432101",
+      "normalised": null
+    },
+    {
+      "name": "empty",
+      "input": "",
+      "normalised": null
+    },
+    {
+      "name": "spaces only",
+      "input": "   ",
+      "normalised": null
+    },
+    {
+      "name": "plus only",
+      "input": "+",
+      "normalised": null
+    },
+    {
+      "name": "no digits",
+      "input": "+91-abc",
+      "normalised": null
+    },
+    {
+      "name": "devanagari digits are not ASCII digits",
+      "input": "९८७६५४३२१०",
+      "normalised": null
+    },
+    {
+      "name": "fullwidth digits are not ASCII digits",
+      "input": "９８７６５４３２１０",
+      "normalised": null
+    },
+    {
+      "name": "all zeros",
+      "input": "0000000000",
+      "normalised": "0000000000"
+    },
+    {
+      "name": "91 as the first two of ten",
+      "input": "9198765432",
+      "normalised": "9198765432"
+    },
+    {
+      "name": "country code twice",
+      "input": "91919876543210",
+      "normalised": null
+    },
+    {
+      "name": "plus 91 then nine digits",
+      "input": "+91 98765 4321",
+      "normalised": null
+    },
+    {
+      "name": "other country code",
+      "input": "+44 7911 123456",
+      "normalised": null
+    }
+  ]
+}

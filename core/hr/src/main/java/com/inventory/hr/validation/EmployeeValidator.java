@@ -1,6 +1,7 @@
 package com.inventory.hr.validation;
 
 import com.inventory.common.exception.ValidationException;
+import com.inventory.common.util.PhoneNumbers;
 import com.inventory.hr.domain.model.enums.HrPaymentMethod;
 import com.inventory.hr.rest.dto.request.AddSalaryRevisionRequest;
 import com.inventory.hr.rest.dto.request.SaveEmployeeRequest;
@@ -25,6 +26,8 @@ public class EmployeeValidator {
   static final Pattern EMAIL = Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
   static final Pattern CODE = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9\\-_/]{0,19}$");
   static final int MAX_NAME = 100;
+  /** Shortest name a worker may set for themselves, after trimming (worker-app R1.2, R8.2). */
+  static final int SELF_NAME_MIN = 2;
   static final int MAX_DESIGNATION = 50;
   static final BigDecimal MAX_AMOUNT = new BigDecimal("10000000");
 
@@ -87,6 +90,29 @@ public class EmployeeValidator {
     }
     validatePay(request.getPayType(), request.getAmount());
   }
+
+  /**
+   * A worker's own edit of name and phone (worker-app R8.2) under the sign-up rules of R1.2: the
+   * name is 2–100 characters after trimming Unicode whitespace ({@link String#strip}, as {@code
+   * AuthValidator.validateName} does on the account side) and the phone is an Indian mobile under
+   * {@link PhoneNumbers#normalise}, the same rule the account side applies, so the account and the
+   * employee can never disagree on what is valid or on what is stored (Property 1, Property 19).
+   *
+   * @return the trimmed name and the 10-digit phone to store
+   */
+  public SelfDetails validateSelfDetails(String name, String phone) {
+    String trimmed = name == null ? "" : name.strip();
+    if (trimmed.length() < SELF_NAME_MIN || trimmed.length() > MAX_NAME) {
+      throw new ValidationException("Name must be between " + SELF_NAME_MIN + " and " + MAX_NAME
+          + " characters");
+    }
+    String normalised = PhoneNumbers.normalise(phone)
+        .orElseThrow(() -> new ValidationException("Enter a 10-digit mobile number."));
+    return new SelfDetails(trimmed, normalised);
+  }
+
+  /** The values a self edit stores, already normalised. */
+  public record SelfDetails(String name, String phone) {}
 
   /** Exit date is required and may not be before the join date. */
   public void validateExit(String exitDate, String joinDate) {

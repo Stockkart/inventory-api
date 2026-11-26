@@ -13,10 +13,14 @@ pairing and history calls within 1 s at p95, **measured server-side**.
 | File | What it is |
 |------|------------|
 | `lib/attendance-protocol.js` | Pure JS copy of the wire protocol (`SKAT-PUNCH-1` payload, `SKAT-REQ-1` envelope, raw→DER ECDSA, UTF-8/Base64/hex); runs under k6 and Node |
+| `lib/server-latency.js` | Pure JS reader of the server-side histogram (`inventory_http_latency_bucket_total`): Prometheus text parsing, bucket delta, p95 interpolation, the verdict table; shared by both k6 scripts |
 | `check-protocol.mjs` | Node self-check of that library against the Java-generated fixture `core/hr/src/test/resources/attendance-protocol/fixtures/canonical.json` and OpenSSL's strict DER verifier |
 | `seed-attendance-app.mjs` | Node 20 seeder: owners, shops, employees, pairings with generated P-256 keys → `attendance-app-fixture.json` |
 | `attendance-app-punches.js` | The k6 script |
 | `attendance-app-fixture.json` | **Generated, test-only, git-ignored.** Pairing ids + PKCS#8 private keys + owner logins of the seeded accounts |
+| `seed-worker-join-requests.mjs` | Node 20 seeder for the worker-app inbox test: owners, shops, WORKER accounts and their pending join requests → `worker-join-requests-fixture.json` |
+| `worker-join-requests.js` | The k6 script for the Join requests inbox (see [Worker join requests](#worker-join-requests-worker-join-requestsjs)) |
+| `worker-join-requests-fixture.json` | **Generated, test-only, git-ignored.** Owner logins + pending request ids of the seeded accounts |
 
 ### Prerequisites
 
@@ -51,7 +55,7 @@ Per shop: `POST /auth/signup` (owner) → `POST /shops/register` → `PUT /hr/se
 `{attendanceCapture: {biometricApp: true}}`. Per worker: `POST /hr/employees` →
 `POST /hr/employees/{id}/pairing-codes` → `POST /hr/attendance-app/pairings/claim` → two WebCrypto
 P-256 key pairs → `POST /hr/attendance-app/pairings/complete`. That is the request sequence of the
-app's live contract test (`inventory-platform/apps/attendance/src/contract/liveBackend.contract.test.ts`).
+app's live contract test (`stockkart-team-app/src/contract/liveBackend.contract.test.ts`).
 It ends with one signed `GET /me` using the fixture's own keys, so a fixture that is written has
 already been accepted by the server once.
 
@@ -134,3 +138,107 @@ k6 exits non-zero when any threshold fails, including the server-side ones.
   is non-zero the fixture is too small.
 - Multi-instance deployments: the server-side histogram is per instance; scrape each instance or
   read the same meter from Grafana Cloud (`grafana/dashboards/README.md`, HTTP row) instead.
+
+## Worker join requests (`worker-join-requests.js`)
+
+Worker-app spec, R14.4 and R14.6 (`.kiro/specs/worker-app/requirements.md`, design "Performance"):
+with 200 pending join requests in a shop, the manager's `GET /hr/join-requests?status=PENDING`
+answers within 1 s at p95 and `POST /hr/join-requests/bulk/approve` with 50 ids within 5 s at p95,
+**measured server-side**; and the punch bound of the section above still holds after this release.
+
+### Prerequisites
+
+Those of the punch test, plus:
+
+- MongoDB **as a replica set** (the Atlas default; locally `mongod --replSet rs0` + `rs.initiate()`),
+  or `MONGO_TRANSACTIONS_ENABLED=false` in the backend's environment. Approval runs in a MongoDB
+  transaction (`MongoTx`, design DD12) and a standalone `mongod` refuses transactions.
+- A throwaway database. The seeder creates one WORKER **account** per pending request (the partial
+  unique index allows one open request per account, R3.5): 200 sign-ups per shop.
+
+### 1. Seed
+
+```bash
+BASE_URL=https://localhost:8443/api/v1 node perf/seed-worker-join-requests.mjs
+# knobs: SHOPS=3 REQUESTS_PER_SHOP=200 CONCURRENCY=8 OUT=perf/worker-join-requests-fixture.json FRESH=1
+```
+
+Per shop: `POST /auth/signup` (owner) → `POST /shops/register`. Per request: `POST /auth/signup`
+`{role: WORKER, phone}` → `POST /hr/worker/join-requests {shopId}` with the worker's own token, the
+calls the Stockkart Team app makes, so every `hr_join_requests` document is one `WorkerJoinService.create`
+wrote (`status PENDING`, frozen snapshot, `expiresAt` null); there is no other kind of request. The sign-ups leave
+`source` at its web default on purpose: the 20-an-hour per-IP sign-up limit (R14.1) applies to
+`source = worker-app` only, and the account is WORKER because the role says so.
+
+The seeder is idempotent on the pending count: it reads each shop's `pendingCount`, creates only
+the missing requests, then pages `GET /hr/join-requests?status=PENDING&size=200` and writes every
+pending id to the fixture. After a k6 run has approved the batches, run it again to refill; it reuses
+the shops in the fixture (`FRESH=1` makes new ones). Phones are unique within a run so that an
+approved worker's new employee never shows up as a "possible match" for a later request (R4.3,
+R4.6: bulk approve would skip it).
+
+### 2. Run
+
+```bash
+k6 run perf/worker-join-requests.js
+# knobs: FIXTURE=perf/worker-join-requests-fixture.json BASE_URL=… LIST_DURATION=2m LIST_RATE=10 APPROVE_VUS=1 MAX_BATCHES=… METRICS_URL=…
+# smoke: LIST_DURATION=20s LIST_RATE=2 MAX_BATCHES=2 k6 run perf/worker-join-requests.js
+```
+
+Scenarios, one after the other, because approving drains the inbox the list is measured on:
+
+| Scenario | Executor | What each iteration does |
+|----------|----------|--------------------------|
+| `inbox_list` | `constant-arrival-rate`, `LIST_RATE`/s for `LIST_DURATION` | owner `GET /hr/join-requests?status=PENDING&page=0&size=50` (Bearer + `X-Shop-Id`), shops round-robin; checks a full page of 50 and `pendingCount >= REQUESTS_PER_SHOP` |
+| `bulk_approve` | `shared-iterations`, `APPROVE_VUS` VUs, starts 35 s after `inbox_list` ends | owner `POST /hr/join-requests/bulk/approve {ids}` with one unused batch of exactly 50 ids; checks `approved == 50` and counts `bulk_outcomes{outcome: approved | skipped | failed}` |
+
+**No two approvals collide.** At init the fixture's pending ids are cut into batches of 50 per shop
+(a remainder under 50 is dropped) and ordered round-robin over the shops (batch 0 of shop A, batch 0
+of shop B, …, batch 1 of shop A, …). `bulk_approve` has exactly `batches.length` iterations, and
+iteration *i* sends `batches[i]` with *i* = `exec.scenario.iterationInTest`, which k6 numbers
+0..n-1 once across every VU of the scenario. Each batch therefore goes out once, from one VU, and
+no id is in two requests. The round-robin order also means `APPROVE_VUS > 1` puts concurrent
+requests on different shops; two bulk calls on the **same** shop at once would take turns on the
+shop's transaction lock (`MongoTx`, AGENTS P8) and the second would be timed waiting for the first.
+The default of 1 VU is the R14.4 statement (one manager pressing "Approve selected").
+
+Thresholds, client side: `http_req_duration{scenario:inbox_list}` p95 < 1000 ms,
+`http_req_duration{scenario:bulk_approve}` p95 < 5000 ms, `http_req_failed` < 1 %, checks > 99 % in
+both scenarios. Server side, authoritative, same mechanism as the punch test: `teardown()` prints
+the table and records `server_p95_ms{target:inbox_list}` < 1000 and
+`server_p95_ms{target:bulk_approve}` < 5000, read from the `uri` rows `GET /api/v1/hr/join-requests`
+and `POST /api/v1/hr/join-requests/bulk/approve`. The histogram has bounds at 1 s and 5 s, so
+"share <= target" is exact for both.
+
+### 3. Re-measure the punch path (R14.6)
+
+The Stockkart Team app adds two Bearer-token pieces to the HR module and neither is on the punch path:
+
+- `WorkerCredentialInterceptor` is registered in `app/.../config/CorsConfig.addInterceptors` on
+  `WorkerCredentialInterceptor.PATH_PATTERN` = `/api/v1/hr/worker/**` only.
+- The device paths, `AttendanceAppAuthInterceptor.DEVICE_PATH_PATTERNS` (`/api/v1/hr/attendance-app/punches`
+  among them), are excluded from `AuthenticationInterceptor`, `RbacModuleInterceptor` and
+  `PlanExpiryInterceptor` by `CorsConfig.bearerChainExclusions()`. `InterceptorPathMatchingTest`
+  (`attendanceAppDevicePathsNeedNoBearerToken`) pins that the Bearer interceptor never touches
+  `/api/v1/hr/attendance-app/punches`; the only extra work on that path is the
+  `Authorization`-present check inside `AttendanceAppAuthInterceptor` itself (`HR_TWO_CREDENTIALS`).
+
+So the re-measurement is the unchanged punch test, whose `punch` thresholds (`http_req_duration{scenario:punches}`
+p95 < 500 and `server_p95_ms{target:punch}` < 500) are the R14.6 assertion:
+
+```bash
+BASE_URL=https://localhost:8443/api/v1 node perf/seed-attendance-app.mjs
+k6 run perf/attendance-app-punches.js
+```
+
+Run it on the same build as the inbox test and attach both server-side tables to the release notes.
+
+### Static checks (no backend needed)
+
+```bash
+cd perf && npm run k6:check         # node --check on every script and library
+k6 inspect perf/worker-join-requests.js   # k6 parses the script and prints the resolved options
+```
+
+`k6 inspect` needs a fixture file to open; `FIXTURE=/path/to/any-fixture.json` points it at one
+(the seeder's output, or a hand-written `{"baseUrl": "...", "password": "x", "shops": [{"shopId": "s", "ownerEmail": "o", "pendingIds": [50 ids]}]}`).

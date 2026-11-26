@@ -4,25 +4,34 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.inventory.hr.domain.model.AppHealthAlert;
 import com.inventory.hr.domain.model.AppNonce;
 import com.inventory.hr.domain.model.AttendanceDay;
 import com.inventory.hr.domain.model.DevicePairing;
+import com.inventory.hr.domain.model.Employee;
+import com.inventory.hr.domain.model.HrNotification;
 import com.inventory.hr.domain.model.PairingCode;
 import com.inventory.hr.domain.model.Punch;
+import com.inventory.hr.domain.model.WorkerJoinRequest;
 import com.inventory.hr.domain.model.enums.AttendanceSource;
 import com.inventory.hr.domain.model.enums.AttendanceStatus;
+import com.inventory.hr.domain.model.enums.EmployeeStatus;
+import com.inventory.hr.domain.model.enums.HrNotificationType;
+import com.inventory.hr.domain.model.enums.NotificationAudience;
 import com.inventory.hr.domain.model.enums.PairingCodeStatus;
 import com.inventory.hr.domain.model.enums.PairingStatus;
 import com.inventory.hr.domain.model.enums.PunchDirection;
 import com.inventory.hr.domain.model.enums.PunchSource;
+import com.inventory.hr.domain.model.enums.WorkerJoinStatus;
 import com.inventory.hr.domain.repository.AppHealthAlertRepository;
 import com.inventory.hr.domain.repository.AppNonceRepository;
 import com.inventory.hr.domain.repository.DevicePairingRepository;
 import com.inventory.hr.domain.repository.PairingCodeRepository;
 import com.inventory.hr.domain.repository.PunchRepository;
+import com.inventory.hr.domain.repository.WorkerJoinRequestRepository;
 import com.mongodb.ConnectionString;
 import com.mongodb.MongoClientSettings;
 import com.mongodb.client.MongoClient;
@@ -44,9 +53,15 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.index.Index;
+import org.springframework.data.mongodb.core.index.PartialIndexFilter;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.data.mongodb.repository.support.MongoRepositoryFactory;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -55,7 +70,11 @@ import org.springframework.test.util.ReflectionTestUtils;
  * Attendance app index exists with its unique / partial / TTL options, a second run changes
  * nothing, and the queries the services actually issue — captured from the driver as the real
  * repositories send them and re-run under {@code explain("executionStats")} — walk an index
- * ({@code IXSCAN} / {@code IDHACK}) and never scan a collection ({@code COLLSCAN}).
+ * ({@code IXSCAN} / {@code IDHACK}) and never scan a collection ({@code COLLSCAN}). The worker
+ * tests at the end do the same for the Stockkart Team indexes (worker-app R14.5): join
+ * requests, the exit job's employee read and the account notification inbox, plus the
+ * database-enforced one-open-request rule of the partial unique index (R3.5), and check that the
+ * indexes of the removed legacy pairing flows (D11) are dropped when a database still has them.
  *
  * <p>Each explain is printed (stage tree, index, keys and documents examined) so the plans can
  * be reviewed from the surefire output before a release (R10.13).
@@ -97,6 +116,7 @@ class HrIndexMigrationIT {
     String db = uri.substring(uri.lastIndexOf('/') + 1).split("\\?")[0] + "_hridx";
     template = new MongoTemplate(client, db);
     template.getDb().drop();
+    seedLegacyIndexes();
 
     runMigration();
 
@@ -123,6 +143,25 @@ class HrIndexMigrationIT {
     HrIndexMigration migration = new HrIndexMigration();
     ReflectionTestUtils.setField(migration, "mongoTemplate", template);
     migration.run();
+  }
+
+  /**
+   * What an earlier worker-app build left behind (D11): the {@code hr_pairing_proofs} indexes and
+   * the link-request index on {@code hr_join_requests}, created exactly as that build created them,
+   * so the first {@link #runMigration} has something to drop and the assertions below prove it did.
+   */
+  private static void seedLegacyIndexes() {
+    template.indexOps("hr_pairing_proofs").ensureIndex(
+        new Index().on("tokenHash", Sort.Direction.ASC).unique().named("token_hash_unique"));
+    template.indexOps("hr_pairing_proofs").ensureIndex(
+        new Index().on("expiresAt", Sort.Direction.ASC).expire(0).named("expires_ttl"));
+    template.indexOps("hr_join_requests").ensureIndex(
+        new Index().on("pairingId", Sort.Direction.ASC).named("pairing_link_pending")
+            .partial(PartialIndexFilter.of(Criteria.where("kind").is("LINK")
+                .and("status").is("PENDING"))));
+    assertEquals(Set.of("_id_", "token_hash_unique", "expires_ttl"),
+        indexesByName("hr_pairing_proofs").keySet());
+    assertTrue(indexesByName("hr_join_requests").containsKey("pairing_link_pending"));
   }
 
   /** A handful of rows per collection, so every explain has something to find and to skip. */
@@ -326,7 +365,8 @@ class HrIndexMigrationIT {
   @Test
   void runningTheMigrationAgainChangesNoIndex() {
     List<String> collections = List.of("hr_device_pairings", "hr_pairing_codes", "hr_app_nonces",
-        "hr_app_alerts", "hr_punches", "hr_attendance_days");
+        "hr_app_alerts", "hr_punches", "hr_attendance_days", "hr_join_requests",
+        "hr_employees", "hr_notifications");
     Map<String, Map<String, Document>> before = new TreeMap<>();
     for (String c : collections) {
       before.put(c, indexesByName(c));
@@ -369,8 +409,9 @@ class HrIndexMigrationIT {
       Document executionStats) {
 
     boolean usesIndex() {
+      // COUNT_SCAN is a count answered from the index keys alone (no document is fetched)
       return stages.stream().anyMatch(s -> s.equals("IXSCAN") || s.equals("IDHACK")
-          || s.startsWith("EXPRESS_"));
+          || s.equals("COUNT_SCAN") || s.startsWith("EXPRESS_"));
     }
 
     boolean collectionScan() {
@@ -605,5 +646,250 @@ class HrIndexMigrationIT {
     Plan allOpen = explain("every open alert (known COLLSCAN)", "hr_app_alerts",
         () -> assertEquals(2, alerts.findByClearedAtIsNull().size()));
     assertEquals(2, allOpen.executionStats().get("nReturned"));
+  }
+
+  // ---- Stockkart Team (worker-app R3.5, R4.12, R5.2, R10.1, R11.3, R13.5, R14.5) ----------------
+
+  private static final String W1 = "worker-user-1";
+  private static final String W2 = "worker-user-2";
+  private static final String W3 = "worker-user-3";
+  private static WorkerJoinRequestRepository joinRequests;
+  private static boolean workerSeeded;
+
+  /** Join requests, linked employees and account notifications for the worker explains. */
+  private static void seedWorker() {
+    if (workerSeeded) {
+      return;
+    }
+    workerSeeded = true;
+    joinRequests = new MongoRepositoryFactory(template).getRepository(
+        WorkerJoinRequestRepository.class);
+
+    // W1 and W2: one open request each to SHOP; W3: decided ones
+    template.insert(joinRequest(W1, WorkerJoinStatus.PENDING, NOW.minus(2, ChronoUnit.HOURS),
+        null));
+    template.insert(joinRequest(W2, WorkerJoinStatus.PENDING, NOW.minus(1, ChronoUnit.HOURS),
+        null));
+    template.insert(joinRequest(W3, WorkerJoinStatus.REJECTED, NOW.minus(3, ChronoUnit.DAYS),
+        NOW.minus(2, ChronoUnit.DAYS)));
+    template.insert(joinRequest(W3, WorkerJoinStatus.WITHDRAWN, NOW.minus(10, ChronoUnit.DAYS),
+        NOW.minus(9, ChronoUnit.DAYS)));
+    WorkerJoinRequest other = joinRequest("someone-else", WorkerJoinStatus.PENDING,
+        NOW.minus(5, ChronoUnit.MINUTES), null);
+    other.setShopId("shop-2");
+    template.insert(other);
+
+    // employees: E1 linked and exited yesterday with the membership still open (the exit job's
+    // row), E2 linked and ACTIVE, E3 unlinked; e-mail and phone on two of them (possible match)
+    template.insert(employee(E1, W1, EmployeeStatus.EXITED, "2026-03-01", null,
+        "ravi@example.com", "9876500001"));
+    template.insert(employee(E2, W2, EmployeeStatus.ACTIVE, null, null, "asha@example.com",
+        "9876500002"));
+    template.insert(employee(E3, null, EmployeeStatus.EXITED, "2026-02-01", null, null, null));
+    template.insert(employee("emp-4", "worker-user-4", EmployeeStatus.EXITED, "2026-02-01",
+        NOW.minus(20, ChronoUnit.DAYS), null, null));
+
+    for (int i = 0; i < 4; i++) {
+      HrNotification n = new HrNotification();
+      n.setShopId(i < 2 ? null : SHOP);
+      n.setAudience(NotificationAudience.USER);
+      n.setRecipientUserId(W1);
+      n.setType(HrNotificationType.JOIN_REQUEST_RECEIVED);
+      n.setText("n" + i);
+      n.setReadByUserIds(i == 0 ? new ArrayList<>(List.of(W1)) : new ArrayList<>());
+      n.setCreatedAt(NOW.minus(i, ChronoUnit.MINUTES));
+      template.insert(n);
+    }
+  }
+
+  private static WorkerJoinRequest joinRequest(String userId, WorkerJoinStatus status,
+      Instant requestedAt, Instant decidedAt) {
+    WorkerJoinRequest r = new WorkerJoinRequest();
+    r.setShopId(SHOP);
+    r.setUserId(userId);
+    r.setStatus(status);
+    r.setRequestedAt(requestedAt);
+    r.setUpdatedAt(requestedAt);
+    r.setDecidedAt(decidedAt);
+    if (decidedAt != null) {
+      r.setDecidedByUserId("owner");
+      // in the future, so the TTL monitor cannot remove the row while the test runs
+      r.setExpiresAt(NOW.plus(90, ChronoUnit.DAYS));
+    }
+    return r;
+  }
+
+  private static Employee employee(String id, String userId, EmployeeStatus status,
+      String exitDate, Instant membershipEndedAt, String email, String phone) {
+    Employee e = new Employee();
+    e.setId(id);
+    e.setShopId(SHOP);
+    e.setCode("EMP-" + id);
+    e.setName("Employee " + id);
+    e.setUserId(userId);
+    e.setStatus(status);
+    e.setJoinDate("2025-01-01");
+    e.setExitDate(exitDate);
+    e.setMembershipEndedAt(membershipEndedAt);
+    e.setEmail(email);
+    e.setPhone(phone);
+    e.setCreatedAt(NOW);
+    return e;
+  }
+
+  @Test
+  void workerIndexesHaveTheirUniquePartialAndTtlOptions() {
+    Map<String, Document> join = indexesByName("hr_join_requests");
+    assertEquals(Set.of("_id_", "shop_status_requested", "user_open_unique", "user_decided",
+        "expires_ttl"), join.keySet(), "no link-request index: dropped by the migration (D11)");
+    plain(join, "shop_status_requested",
+        new Document("shopId", 1).append("status", 1).append("requestedAt", -1));
+    Document oneOpen = index(join, "user_open_unique", new Document("userId", 1));
+    assertEquals(true, oneOpen.get("unique"));
+    assertEquals(new Document("status", new Document("$in", List.of("PENDING", "APPROVING"))),
+        oneOpen.get("partialFilterExpression"));
+    plain(join, "user_decided", new Document("userId", 1).append("decidedAt", -1));
+    ttl(join, "expires_ttl", new Document("expiresAt", 1), 0);
+
+    // the legacy proof indexes seeded before the first run are gone; the collection is left alone
+    assertEquals(Set.of("_id_"), indexesByName("hr_pairing_proofs").keySet(),
+        "hr_pairing_proofs indexes dropped by the migration (D11)");
+
+    Map<String, Document> employees = indexesByName("hr_employees");
+    Document exitPending = index(employees, "exit_membership_pending",
+        new Document("status", 1).append("exitDate", 1));
+    assertNull(exitPending.get("unique"));
+    assertEquals(new Document("userId", new Document("$type", 2)).append("membershipEndedAt", null),
+        exitPending.get("partialFilterExpression"));
+    assertEquals(new Document("email", new Document("$exists", true)),
+        index(employees, "shop_email", new Document("shopId", 1).append("email", 1))
+            .get("partialFilterExpression"));
+    assertEquals(new Document("phone", new Document("$exists", true)),
+        index(employees, "shop_phone", new Document("shopId", 1).append("phone", 1))
+            .get("partialFilterExpression"));
+
+    plain(indexesByName("hr_notifications"), "recipient_created",
+        new Document("recipientUserId", 1).append("createdAt", -1));
+  }
+
+  /**
+   * The one-pending rule is the database's (R3.5, R14.5): a second open request of an account
+   * hits {@code user_open_unique} whatever its shop, and whether the open row is
+   * PENDING or APPROVING (DD12), while APPROVED, REJECTED and WITHDRAWN rows never take part in
+   * the index. The service turns this duplicate key into {@code HR_WORKER_REQUEST_PENDING}.
+   */
+  @Test
+  void theUniqueIndexAllowsOneOpenRequestPerAccountAndIgnoresDecidedRows() {
+    String user = "worker-user-unique";
+    try {
+      // decided rows of every kind first: none of them occupies the account's one open slot
+      template.insert(decided(user, WorkerJoinStatus.APPROVED));
+      template.insert(decided(user, WorkerJoinStatus.REJECTED));
+      template.insert(decided(user, WorkerJoinStatus.WITHDRAWN));
+      WorkerJoinRequest open = template.insert(joinRequest(user, WorkerJoinStatus.PENDING, NOW,
+          null));
+
+      // a second PENDING, even to another shop, is refused
+      WorkerJoinRequest second = joinRequest(user, WorkerJoinStatus.PENDING, NOW, null);
+      second.setShopId("shop-2");
+      DuplicateKeyException duplicate = assertThrows(DuplicateKeyException.class,
+          () -> template.insert(second));
+      assertTrue(duplicate.getMessage().contains("user_open_unique"), duplicate.getMessage());
+
+      // APPROVING counts as open too, as a new row or as the state the open row moves to
+      assertThrows(DuplicateKeyException.class, () -> template.insert(joinRequest(user,
+          WorkerJoinStatus.APPROVING, NOW, null)));
+      template.updateFirst(Query.query(Criteria.where("id").is(open.getId())),
+          Update.update("status", WorkerJoinStatus.APPROVING), WorkerJoinRequest.class);
+      assertThrows(DuplicateKeyException.class, () -> template.insert(joinRequest(user,
+          WorkerJoinStatus.PENDING, NOW, null)));
+
+      // the decision frees the slot: the next request of the account is accepted
+      template.updateFirst(Query.query(Criteria.where("id").is(open.getId())),
+          Update.update("status", WorkerJoinStatus.APPROVED).set("decidedAt", NOW)
+              .set("expiresAt", NOW.plus(90, ChronoUnit.DAYS)), WorkerJoinRequest.class);
+      WorkerJoinRequest next = template.insert(joinRequest(user, WorkerJoinStatus.PENDING, NOW,
+          null));
+      assertNotNull(next.getId());
+
+      assertEquals(5, template.count(Query.query(Criteria.where("userId").is(user)),
+          WorkerJoinRequest.class), "four decided rows and one open one");
+    } finally {
+      template.remove(Query.query(Criteria.where("userId").is(user)), WorkerJoinRequest.class);
+    }
+  }
+
+  private static WorkerJoinRequest decided(String userId, WorkerJoinStatus status) {
+    return joinRequest(userId, status, NOW.minus(2, ChronoUnit.DAYS), NOW.minus(1, ChronoUnit.DAYS));
+  }
+
+  @Test
+  void joinRequestReadsUseTheirIndexes() {
+    seedWorker();
+
+    // the inbox tab: (shopId, status) newest first, paged (R4.1–R4.2); the sort is an index walk
+    Plan inbox = explain("inbox list, newest first", "hr_join_requests",
+        () -> assertEquals(2, joinRequests.findByShopIdAndStatusOrderByRequestedAtDesc(SHOP,
+            WorkerJoinStatus.PENDING, PageRequest.of(0, 200)).getContent().size()));
+    inbox.assertIndexed(Set.of("shop_status_requested"));
+    assertFalse(inbox.stages().contains("SORT"), "the inbox sort must be an index walk: " + inbox);
+
+    // the "Join requests (N)" tab count (R4.1)
+    explain("pending count of a shop", "hr_join_requests",
+        () -> assertEquals(2, joinRequests.countByShopIdAndStatus(SHOP,
+            WorkerJoinStatus.PENDING)))
+        .assertIndexed(Set.of("shop_status_requested"));
+
+    // the one-pending-per-account check (R3.5): the same predicate as the partial unique filter
+    explain("open request of an account", "hr_join_requests",
+        () -> assertTrue(joinRequests.findFirstByUserIdAndStatusIn(W1,
+            List.of(WorkerJoinStatus.PENDING, WorkerJoinStatus.APPROVING)).isPresent()))
+        .assertIndexed(Set.of("user_open_unique", "user_decided"));
+
+    // the Join screen's last-outcome card (R4.12)
+    explain("last decision of an account", "hr_join_requests",
+        () -> assertEquals(WorkerJoinStatus.REJECTED,
+            joinRequests.findFirstByUserIdAndDecidedAtAfterOrderByDecidedAtDesc(W3,
+                NOW.minus(90, ChronoUnit.DAYS)).orElseThrow().getStatus()))
+        .assertIndexed(Set.of("user_decided"));
+
+    // the photo who-may-see rule: an account's requests in [PENDING, REJECTED] (R11.5)
+    Plan photoRule = explain("requests of an account by status (photo rule)", "hr_join_requests",
+        () -> assertEquals(1, joinRequests.findByUserIdAndStatusIn(W3,
+            List.of(WorkerJoinStatus.PENDING, WorkerJoinStatus.REJECTED)).size()));
+    assertFalse(photoRule.collectionScan(), photoRule.toString());
+  }
+
+  @Test
+  void employeeAndNotificationReadsUseTheirIndexes() {
+    seedWorker();
+
+    // WorkerExitJob.dueQuery: linked, exited, exit date reached, membership still open (R5.2);
+    // the predicates are spelled exactly as the partial index filter, or Mongo will not use it
+    explain("exit job: due memberships", "hr_employees",
+        () -> assertEquals(1, template.find(Query.query(Criteria.where("status").is("EXITED")
+            .and("exitDate").lte("2026-03-02").and("userId").type(2)
+            .and("membershipEndedAt").is(null)), Employee.class).size()))
+        .assertIndexed(Set.of("exit_membership_pending"));
+
+    // WorkerStateService / WorkerJoinService: the account's linked ACTIVE employee anywhere
+    Plan linked = explain("linked ACTIVE employee of an account", "hr_employees",
+        () -> assertEquals(1, template.find(Query.query(Criteria.where("userId").is(W2)
+            .and("status").is(EmployeeStatus.ACTIVE.name())), Employee.class).size()));
+    // Reviewed, not asserted: no index starts with userId, so this read walks hr_employees. The
+    // possible-match read (findMatchCandidates: shopId, status $in) uses shop_status_name.
+    System.out.println("[hr-explain] reviewed only: " + linked);
+    explain("match candidates of a shop", "hr_employees",
+        () -> assertEquals(4, template.find(Query.query(Criteria.where("shopId").is(SHOP)
+            .and("status").in(List.of("ACTIVE", "EXITED"))), Employee.class).size()))
+        .assertIndexed(Set.of("shop_status_name"));
+
+    // the worker's notifications across shops (R10.1): unread first, newest first
+    explain("unread notifications of an account", "hr_notifications",
+        () -> assertEquals(3, template.find(Query.query(Criteria.where("recipientUserId").is(W1)
+            .and("audience").is(NotificationAudience.USER).and("readByUserIds").ne(W1))
+            .with(Sort.by(Sort.Direction.DESC, "createdAt")).limit(20), HrNotification.class)
+            .size()))
+        .assertIndexed(Set.of("recipient_created", "shop_recipient_created"));
   }
 }

@@ -6,22 +6,78 @@ import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.gson.GsonFactory;
 import com.inventory.common.constants.ErrorCode;
 import com.inventory.common.exception.AuthenticationException;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.util.Map;
-
+/**
+ * Verifies Google ID tokens for sign-up and sign-in.
+ *
+ * <p>Signature, issuer and expiry are checked by Google's verifier. The audience ({@code aud}) is
+ * checked here against {@code google.oauth.client-ids}: the web OAuth client id and the Android
+ * client id of Stockkart Team (worker-app DD8). A token minted for any other client, or any
+ * token when the list is not configured, is refused with {@link ErrorCode#INVALID_CREDENTIALS}; the
+ * list is the only thing that makes a Google token "ours".
+ */
 @Service
 @Slf4j
 public class GoogleTokenVerifier {
 
-  private final GoogleIdTokenVerifier verifier;
+  /** Property holding the comma-separated OAuth client ids whose tokens are accepted. */
+  public static final String CLIENT_IDS_PROPERTY = "google.oauth.client-ids";
 
-  public GoogleTokenVerifier() {
-    // Initialize verifier without client ID check (for now)
-    // In production, you should verify the audience (client ID) as well
-    this.verifier = new GoogleIdTokenVerifier.Builder(new NetHttpTransport(), new GsonFactory())
-        .build();
+  private final GoogleIdTokenVerifier verifier;
+  private final Set<String> allowedClientIds;
+
+  @Autowired
+  public GoogleTokenVerifier(@Value("${" + CLIENT_IDS_PROPERTY + ":}") List<String> clientIds) {
+    this(clientIds, new GoogleIdTokenVerifier.Builder(new NetHttpTransport(), new GsonFactory()).build());
+  }
+
+  /** For tests: the audience rule over a verifier that does not call Google. */
+  GoogleTokenVerifier(Collection<String> clientIds, GoogleIdTokenVerifier verifier) {
+    this.verifier = verifier;
+    this.allowedClientIds = allowList(clientIds);
+    if (this.allowedClientIds.isEmpty()) {
+      log.warn(
+          "{} is empty: every Google ID token will be refused until the web and Android client ids"
+              + " are configured",
+          CLIENT_IDS_PROPERTY);
+    }
+  }
+
+  /** Trimmed, non-blank ids, in a set; {@code null} becomes empty. */
+  static Set<String> allowList(Collection<String> clientIds) {
+    if (clientIds == null) {
+      return Set.of();
+    }
+    return clientIds.stream()
+        .filter(id -> id != null && !id.isBlank())
+        .map(String::trim)
+        .collect(Collectors.toUnmodifiableSet());
+  }
+
+  /**
+   * The audience rule on its own (Property-test friendly): a token is for us iff at least one of
+   * its {@code aud} values is in the allow-list. An empty allow-list or an empty audience accepts
+   * nothing.
+   */
+  static boolean audienceAllowed(Set<String> allowList, Collection<String> audience) {
+    if (allowList == null || allowList.isEmpty() || audience == null) {
+      return false;
+    }
+    return audience.stream().anyMatch(allowList::contains);
+  }
+
+  /** The configured allow-list, read-only. */
+  public Set<String> allowedClientIds() {
+    return allowedClientIds;
   }
 
   /**
@@ -29,7 +85,7 @@ public class GoogleTokenVerifier {
    *
    * @param idTokenString The Google ID token string to verify
    * @return Map containing user information (email, name, etc.)
-   * @throws AuthenticationException if token verification fails
+   * @throws AuthenticationException if token verification fails or the token is for another client
    */
   public Map<String, Object> verifyToken(String idTokenString) {
     try {
@@ -45,6 +101,15 @@ public class GoogleTokenVerifier {
 
       // Get payload
       GoogleIdToken.Payload payload = idToken.getPayload();
+
+      if (!audienceAllowed(allowedClientIds, payload.getAudienceAsList())) {
+        log.warn(
+            "Google ID token refused: audience {} is not in {}",
+            payload.getAudienceAsList(),
+            CLIENT_IDS_PROPERTY);
+        throw new AuthenticationException(ErrorCode.INVALID_CREDENTIALS,
+            "Google ID token was not issued for this application");
+      }
 
       // Convert to Map for easier access
       java.util.HashMap<String, Object> claims = new java.util.HashMap<>();
@@ -65,6 +130,9 @@ public class GoogleTokenVerifier {
       }
       if (payload.getIssuer() != null) {
         claims.put("iss", payload.getIssuer());
+      }
+      if (payload.getAudience() != null) {
+        claims.put("aud", payload.getAudienceAsList());
       }
 
       log.debug("Google ID token verified successfully for email: {}", payload.getEmail());

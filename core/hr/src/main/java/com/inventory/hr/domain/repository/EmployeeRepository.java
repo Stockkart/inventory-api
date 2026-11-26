@@ -33,4 +33,21 @@ public interface EmployeeRepository extends MongoRepository<Employee, String> {
   /** Linked employees of the shop, ids and userIds only (login picker). */
   @Query(value = "{ 'shopId': ?0, 'userId': { $type: 'string' } }", fields = "{ 'userId': 1 }")
   List<Employee> findLinkedByShopId(String shopId);
+
+  /**
+   * Every employee, in any shop, linked to this login with the given status. The one read that
+   * crosses shops on purpose: a WORKER account may hold one ACTIVE employee anywhere (worker-app
+   * R5.1), so a join request or an approval first asks whether one already exists.
+   */
+  @Query("{ 'userId': { $eq: ?0, $type: 'string' }, 'status': ?1 }")
+  List<Employee> findByUserIdAndStatus(String userId, EmployeeStatus status);
+
+  /**
+   * The shop's ACTIVE and EXITED employees with only the fields the possible-match rule and the
+   * match panel need (worker-app R4.3): one read per inbox page, matched in memory against each
+   * request's snapshot so the phone comparison can use the shared normalisation rule.
+   */
+  @Query(value = "{ 'shopId': ?0, 'status': { $in: ?1 } }",
+      fields = "{ 'code': 1, 'name': 1, 'status': 1, 'userId': 1, 'email': 1, 'phone': 1 }")
+  List<Employee> findMatchCandidates(String shopId, Collection<EmployeeStatus> statuses);
 }

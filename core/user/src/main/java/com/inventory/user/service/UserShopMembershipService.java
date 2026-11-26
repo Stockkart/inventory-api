@@ -164,7 +164,9 @@ public class UserShopMembershipService {
   }
 
   /**
-   * Add a membership for a user to a shop. Used when registering a shop or accepting an invitation.
+   * Add a membership for a user to a shop. Used when registering a shop, accepting an invitation
+   * or a staff join request, and approving a worker's join request (role WORKER). The validator
+   * refuses platform roles only; the staff-side entry points refuse WORKER before reaching here.
    */
   public UserShopMembership addMembership(String userId, String shopId, UserRole role, String relationship) {
     // SUPER_USER accounts (Stockkart staff) and the SUPER_USER role never enter a shop (A3)
@@ -200,11 +202,19 @@ public class UserShopMembershipService {
   }
 
   /**
-   * Get the count of active users for a shop. Used by plan module for user limit checks.
+   * Active staff logins of a shop, for the plan's user-seat check. WORKER memberships are not
+   * seats (worker-app R2.5): a worker uses the Stockkart Team app and My HR only, and a shop may
+   * have many more workers than staff.
    */
   @Transactional(readOnly = true)
-  public int getUserCountForShop(String shopId) {
-    return membershipRepository.findByShopIdAndActiveTrue(shopId).size();
+  public int staffCountForShop(String shopId) {
+    int staff = 0;
+    for (UserShopMembership m : membershipRepository.findByShopIdAndActiveTrue(shopId)) {
+      if (m.getRole() == null || !m.getRole().isWorkerRole()) {
+        staff++;
+      }
+    }
+    return staff;
   }
 
   /**

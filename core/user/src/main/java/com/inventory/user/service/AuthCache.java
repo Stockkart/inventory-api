@@ -172,6 +172,9 @@ public class AuthCache {
   }
 
   private static UserToken copy(UserToken t) {
-    return new UserToken(t.getAccessToken(), t.getRefreshToken(), t.getDeviceId(), t.getCreatedAt(), t.getExpiresAt());
+    UserToken c = new UserToken(t.getAccessToken(), t.getRefreshToken(), t.getDeviceId(),
+        t.getCreatedAt(), t.getExpiresAt());
+    c.setSource(t.getSource());
+    return c;
   }
 }

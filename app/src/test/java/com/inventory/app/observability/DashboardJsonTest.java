@@ -23,6 +23,9 @@ import org.junit.jupiter.api.Test;
  * panels that were there before keep their ids and never mention the new variable. The task 16.5
  * polish (signature-failure threshold line, per-shop backlog table, metric-doc links) lives inside
  * those same three panels, so the panel set does not grow.
+ *
+ * <p>Stockkart Team (worker-app R14.3, task 7.2) adds exactly one more panel, "Join
+ * requests per event" (id 203), on the same {@code shop} variable; every other panel is unchanged.
  */
 class DashboardJsonTest {
 
@@ -31,6 +34,9 @@ class DashboardJsonTest {
       Set.of(1, 2, 3, 4, 5, 8, 99, 100, 101, 102, 104, 105, 106, 107, 6, 7);
 
   private static final Set<Integer> ATTENDANCE_APP_PANEL_IDS = Set.of(200, 201, 202);
+
+  /** The one panel the Stockkart Team app adds (worker-app R14.3). */
+  private static final int JOIN_REQUESTS_PANEL_ID = 203;
 
   private static JsonNode dashboard;
 
@@ -106,6 +112,34 @@ class DashboardJsonTest {
     }
   }
 
+  /**
+   * Worker-app R14.3 (task 7.2): exactly one panel "Join requests per event", one query summing
+   * the join-request counter by event over an hour (no {@code kind} tag since D11), on the existing
+   * shop variable and the service/env matchers every other panel carries, with the metrics-doc link.
+   */
+  @Test
+  void exactlyOneJoinRequestsPanelOnTheShopVariable() {
+    List<JsonNode> byTitle = allPanels().stream()
+        .filter(p -> "Join requests per event".equals(p.path("title").asText())).toList();
+    assertEquals(1, byTitle.size(), "one 'Join requests per event' panel");
+    JsonNode panel = byTitle.get(0);
+    assertEquals(JOIN_REQUESTS_PANEL_ID, panel.path("id").asInt());
+
+    assertPanel(panel, "Join requests per event", 1,
+        "sum by (event) (increase(inventory_hr_worker_join_requests_total{", "[1h]))");
+    String expr = panel.path("targets").get(0).path("expr").asText();
+    assertEquals(
+        "sum by (event) (increase(inventory_hr_worker_join_requests_total{"
+            + "service=\"inventory-api\", env=\"$env\", shop=~\"$shop\"}[1h]))",
+        expr);
+    assertEquals("{{event}}", panel.path("targets").get(0).path("legendFormat").asText());
+
+    String description = panel.path("description").asText();
+    assertTrue(description.contains(
+            "https://github.com/Stockkart/inventory-api/blob/main/docs/metrics.md#hr"),
+        "panel 203 must link the HR metric rows: " + description);
+  }
+
   @Test
   void theShopVariableExistsAndIsFedByThePunchCounter() {
     JsonNode shop = null;
@@ -127,7 +161,7 @@ class DashboardJsonTest {
     for (JsonNode p : allPanels()) {
       int id = p.path("id").asInt();
       ids.add(id);
-      if (ATTENDANCE_APP_PANEL_IDS.contains(id)) {
+      if (ATTENDANCE_APP_PANEL_IDS.contains(id) || id == JOIN_REQUESTS_PANEL_ID) {
         continue;
       }
       assertTrue(PRE_EXISTING_PANEL_IDS.contains(id), "unexpected panel id " + id);
@@ -136,7 +170,9 @@ class DashboardJsonTest {
     }
     Set<Integer> expected = new TreeSet<>(PRE_EXISTING_PANEL_IDS);
     expected.addAll(ATTENDANCE_APP_PANEL_IDS);
-    assertEquals(expected, ids, "panel set = the old panels plus exactly the three new ones");
+    expected.add(JOIN_REQUESTS_PANEL_ID);
+    assertEquals(expected, ids,
+        "panel set = the old panels, the three Attendance app panels and the join-requests panel");
   }
 
   /**

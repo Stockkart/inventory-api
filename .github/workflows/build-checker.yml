@@ -10,18 +10,6 @@ jobs:
   pr-check:
     runs-on: ubuntu-latest
 
-    # Throwaway MongoDB for the *IT tests (HR decision 4); published on the runner's loopback only
-    services:
-      mongo:
-        image: mongo:7
-        ports:
-          - 127.0.0.1:27017:27017
-        options: >-
-          --health-cmd "mongosh --quiet --eval 'db.runCommand({ping: 1})'"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 12
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -43,14 +31,37 @@ jobs:
       - name: Maven test (multi-module)
         run: mvn -pl app -am clean test
 
-      # *IT classes (and the Mongo-backed HR properties) are skipped by surefire's default
-      # pattern; they run only when stockkart.test.mongo.uri names a database
-      - name: Mongo integration tests (*IT)
+      # Throwaway MongoDB for the *IT tests (HR decision 4), published on the runner's loopback only.
+      # It is a one-node replica set, because MongoTxIT, the Worker*IT classes in app and the
+      # WorkerJoinService*Properties run real transactions and skip without one. A `services:`
+      # container cannot be given `--replSet` (no `command:` key), so it is started by hand.
+      - name: Start MongoDB (single-node replica set)
+        run: |
+          docker run -d --name mongo -p 127.0.0.1:27017:27017 --tmpfs /data/db mongo:7 --replSet rs0
+          for _ in $(seq 1 30); do
+            docker exec mongo mongosh --quiet --eval 'db.runCommand({ping: 1})' >/dev/null 2>&1 && break
+            sleep 2
+          done
+          docker exec mongo mongosh --quiet --eval 'rs.initiate({_id: "rs0", members: [{_id: 0, host: "127.0.0.1:27017"}]})'
+          for _ in $(seq 1 30); do
+            [ "$(docker exec mongo mongosh --quiet --eval 'db.hello().isWritablePrimary')" = "true" ] && exit 0
+            sleep 1
+          done
+          echo "mongo did not become primary" >&2
+          docker logs mongo >&2
+          exit 1
+
+      # *IT classes and the jqwik *Properties classes (common, user, hr, product) are skipped by
+      # surefire's default pattern, so they are named here. The Mongo-backed ones run only when
+      # stockkart.test.mongo.uri (plain) or stockkart.test.mongo.rs.uri (replica set, for
+      # transactions) names a database; the rest run whenever they are selected.
+      - name: Mongo integration tests (*IT) and property tests (*Properties)
         run: >-
           mvn -pl app -am test
-          -Dtest='*IT,com.inventory.hr.**.*Properties'
+          -Dtest='*IT,com.inventory.**.*Properties'
           -Dsurefire.failIfNoSpecifiedTests=false
           -Dstockkart.test.mongo.uri=mongodb://127.0.0.1:27017/stockkart_test
+          -Dstockkart.test.mongo.rs.uri='mongodb://127.0.0.1:27017/stockkart_test_rs?directConnection=true'
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

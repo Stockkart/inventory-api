@@ -35,6 +35,14 @@ public enum ErrorCode {
   INVALID_CREDENTIALS(4001, "Invalid credentials", HttpStatus.UNAUTHORIZED),
   USER_ALREADY_EXISTS(4002, "User already exists", HttpStatus.CONFLICT),
   ACCOUNT_DISABLED(4003, "Account is disabled", HttpStatus.UNAUTHORIZED), // 401 Unauthorized is more appropriate than 403 Forbidden for login attempts
+  /**
+   * {@code POST /auth/login} with a Google ID token whose e-mail has no account (worker-app DD20).
+   * The text is what the web has always shown; the Stockkart Team app matches it to open the phone
+   * step with the same token instead of showing it. A wrong password or a token for another client
+   * stays {@link #INVALID_CREDENTIALS}.
+   */
+  OAUTH_ACCOUNT_NOT_FOUND(4004, "No account found for this Google account. Please sign up first.",
+      HttpStatus.UNAUTHORIZED),
 
   // Order related errors (5000-5999)
   ORDER_NOT_FOUND(5000, "Order not found", HttpStatus.NOT_FOUND),
@@ -138,7 +146,47 @@ public enum ErrorCode {
       HttpStatus.UNPROCESSABLE_ENTITY),
   /** 5 refused codes from one installation in 15 minutes; %d = minutes to wait (R2.5). */
   HR_PAIRING_CODE_LOCKED(8034, "Too many wrong codes. Wait %d minutes and try again.",
-      HttpStatus.TOO_MANY_REQUESTS);
+      HttpStatus.TOO_MANY_REQUESTS),
+
+  // Stockkart Team (worker-app) 8035–8047. Shown word for word in the app or the inbox.
+  // 8042, 8043 and 8046 are unused: they belonged to the removed legacy pairing flows (D11); the
+  // gaps are kept so the other codes do not move.
+  /** A join request from an account that already has a shop or a linked ACTIVE employee (R3.7). */
+  HR_WORKER_HAS_SHOP(8035, "You are already part of a shop. Leave it first.", HttpStatus.CONFLICT),
+  /** A second join request while one is still Pending (R3.5). */
+  HR_WORKER_REQUEST_PENDING(8036, "You already have a request waiting.", HttpStatus.CONFLICT),
+  /** An approval that would give the account a second shop (R5.1). */
+  HR_WORKER_LOGIN_IN_OTHER_SHOP(8037, "This login is already part of another shop.",
+      HttpStatus.CONFLICT),
+  /** Approve or reject on a request that is no longer Pending (R4.10). */
+  HR_REQUEST_ALREADY_HANDLED(8038, "This request was already handled", HttpStatus.CONFLICT),
+  /** "Link to existing" on an employee linked to another login; %s = employee code (R4.5). */
+  HR_MATCH_LINKED_ELSEWHERE(8039, "%s is already linked to another login", HttpStatus.CONFLICT),
+  /** "Link to existing" on an EXITED employee; %s = employee code (R4.5). */
+  HR_MATCH_EXITED(8040, "%s has exited. Create a new employee instead.",
+      HttpStatus.UNPROCESSABLE_ENTITY),
+  /** A signed-in worker redeemed a code issued for another employee (R7.3, R7.4). */
+  HR_PAIRING_WRONG_EMPLOYEE(8041, "This code is for a different employee. Ask your manager.",
+      HttpStatus.FORBIDDEN),
+  /** A request carried both a Bearer token and a device-key envelope (R9.1). */
+  HR_TWO_CREDENTIALS(8044, "A request may carry a login or a phone signature, not both.",
+      HttpStatus.BAD_REQUEST),
+  /** A worker call that needs an active shop from an account that has none. */
+  HR_WORKER_NOT_ACTIVE(8045, "You are not part of a shop.", HttpStatus.CONFLICT),
+  /** A staff account with no linked employee used a worker-only call (R5.6). */
+  HR_WORKER_ONLY(8047,
+      "This app is for workers. Ask your manager to link your login to your employee record from "
+          + "the Employees page.",
+      HttpStatus.FORBIDDEN);
+
+  /**
+   * Message for {@link #HR_TOO_MANY_ATTEMPTS} on the worker paths (shop lookup, join request,
+   * sign-up; worker-app R3.8, R14.1). The punch and pairing paths keep the enum's own "wait a
+   * minute" text. Pass it as the exception message: {@code new BaseException(HR_TOO_MANY_ATTEMPTS,
+   * HR_TOO_MANY_ATTEMPTS_WORKER_MESSAGE)}.
+   */
+  public static final String HR_TOO_MANY_ATTEMPTS_WORKER_MESSAGE =
+      "Too many attempts, try again later";
 
   private final int code;
   private final String message;

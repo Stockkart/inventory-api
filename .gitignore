@@ -43,3 +43,4 @@ build/
 
 ### Load-test fixtures (private keys and owner logins of throwaway accounts, perf/README.md) ###
 perf/attendance-app-fixture.json
+perf/worker-join-requests-fixture.json

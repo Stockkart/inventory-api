@@ -6,6 +6,7 @@ import static com.inventory.hr.HrTestFixtures.all;
 import static com.inventory.hr.HrTestFixtures.employee;
 import static com.inventory.hr.HrTestFixtures.without;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -21,10 +22,13 @@ import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.hr.domain.model.DevicePairing;
 import com.inventory.hr.domain.model.Employee;
+import com.inventory.hr.domain.model.WorkerJoinRequest;
 import com.inventory.hr.domain.model.enums.EmployeeStatus;
 import com.inventory.hr.domain.model.enums.HrAuditAction;
+import com.inventory.hr.domain.model.enums.HrNotificationType;
 import com.inventory.hr.domain.model.enums.HrPermission;
 import com.inventory.hr.domain.model.enums.PayType;
+import com.inventory.hr.domain.model.enums.WorkerJoinStatus;
 import com.inventory.hr.domain.repository.EmployeeRepository;
 import com.inventory.hr.mapper.EmployeeMapper;
 import com.inventory.hr.mapper.EmployeeMapperImpl;
@@ -35,6 +39,7 @@ import com.inventory.hr.rest.dto.response.EmployeeResponse;
 import com.inventory.hr.rest.dto.response.EmployeesPageResponse;
 import com.inventory.hr.rest.dto.response.LinkableLoginResponse;
 import com.inventory.hr.service.HrAuditService.AuditEntry;
+import com.inventory.hr.utils.HrDateUtils;
 import com.inventory.hr.validation.EmployeeValidator;
 import com.inventory.user.rest.dto.response.LoginContactDto;
 import com.inventory.user.rest.dto.response.ShopMemberSummaryDto;
@@ -74,6 +79,8 @@ class EmployeeServiceTest {
   @Mock private PeriodLockService periodLockService;
   @Mock private HrAuditService auditService;
   @Mock private DevicePairingService pairingService;
+  @Mock private HrNotificationService notificationService;
+  @Mock private WorkerMembershipEnder membershipEnder;
   @InjectMocks private EmployeeService service;
 
   private void grant(java.util.Set<HrPermission> perms) {
@@ -744,5 +751,498 @@ class EmployeeServiceTest {
     verify(auditService, org.mockito.Mockito.times(2)).record(audits.capture());
     assertEquals(HrAuditAction.EMPLOYEE_LINK_CHANGED, audits.getAllValues().get(1).action());
     assertEquals("yes", audits.getAllValues().get(1).after().get("linked"));
+  }
+
+  // ---- Stockkart Team app: join-request approval (worker-app R4.5, R4.8, R4.9) ------------------
+
+  private static final String WORKER = "worker-1";
+  private static final String APPROVER = "manager-1";
+
+  private static WorkerJoinRequest joinRequest() {
+    WorkerJoinRequest r = new WorkerJoinRequest();
+    r.setId("jr-1");
+    r.setShopId(SHOP);
+    r.setUserId(WORKER);
+    r.setStatus(WorkerJoinStatus.PENDING);
+    r.setSnapshot(new WorkerJoinRequest.Snapshot(" Priya Sharma ", "9000000002",
+        "priya@example.com", true));
+    return r;
+  }
+
+  private void saveReturnsArgument() {
+    when(employeeRepository.save(any(Employee.class))).thenAnswer(i -> i.getArgument(0));
+  }
+
+  @Test
+  void createFromJoinRequestBuildsTheEmployeeFromTheSnapshotAndNothingElse() {
+    when(counterService.nextEmployeeCode(SHOP)).thenReturn("EMP-015");
+    insertReturnsArgument();
+
+    Employee saved = service.createFromJoinRequest(SHOP, APPROVER, joinRequest());
+
+    assertEquals("e-new", saved.getId());
+    assertEquals(SHOP, saved.getShopId());
+    assertEquals("EMP-015", saved.getCode());
+    assertEquals("Priya Sharma", saved.getName());
+    assertEquals("9000000002", saved.getPhone());
+    assertEquals("priya@example.com", saved.getEmail());
+    assertEquals(WORKER, saved.getUserId());
+    assertEquals(EmployeeStatus.ACTIVE, saved.getStatus());
+    assertEquals(HrDateUtils.format(HrDateUtils.today()), saved.getJoinDate());
+    assertEquals(APPROVER, saved.getCreatedByUserId());
+    assertEquals(APPROVER, saved.getUpdatedByUserId());
+    // every other field empty
+    assertNull(saved.getDesignation());
+    assertNull(saved.getWorkStart());
+    assertNull(saved.getWorkEnd());
+    assertNull(saved.getExitDate());
+    assertNull(saved.getPaymentMethod());
+    assertNull(saved.getBankAccountNumber());
+    assertNull(saved.getIfsc());
+    assertNull(saved.getUpiId());
+    assertNull(saved.getProfileRequestedAt());
+    assertNull(saved.getMembershipEndedAt());
+    assertTrue(saved.getSalaryRevisions().isEmpty());
+    // no permission check of its own: the caller holds ADD_EDIT_EMPLOYEES inside the transaction
+    verify(guard, never()).require(any(), any(), any(HrPermission[].class));
+    verify(guard, never()).requireOwner(any(), any());
+    verify(membershipService, never()).listActiveMembers(any());
+  }
+
+  /**
+   * R4.8 "all other fields empty", checked over the whole document rather than a hand-written
+   * list, so a field added to {@link Employee} later is caught here unless it is named below.
+   */
+  @Test
+  void createFromJoinRequestLeavesEveryFieldOutsideTheSnapshotEmpty() throws Exception {
+    when(counterService.nextEmployeeCode(SHOP)).thenReturn("EMP-015");
+    insertReturnsArgument();
+
+    Employee saved = service.createFromJoinRequest(SHOP, APPROVER, joinRequest());
+
+    Set<String> filled = Set.of("id", "shopId", "code", "name", "phone", "email", "userId",
+        "joinDate", "status", "createdAt", "createdByUserId", "updatedAt", "updatedByUserId");
+    for (java.lang.reflect.Field field : Employee.class.getDeclaredFields()) {
+      if (java.lang.reflect.Modifier.isStatic(field.getModifiers())
+          || filled.contains(field.getName())) {
+        continue;
+      }
+      field.setAccessible(true);
+      Object value = field.get(saved);
+      if (value instanceof Collection<?> c) {
+        assertTrue(c.isEmpty(), field.getName() + " is not empty: " + c);
+      } else {
+        assertNull(value, field.getName() + " is set: " + value);
+      }
+    }
+    for (String name : filled) {
+      java.lang.reflect.Field field = Employee.class.getDeclaredField(name);
+      field.setAccessible(true);
+      assertNotNull(field.get(saved), name + " should be set");
+    }
+  }
+
+  @Test
+  void createFromJoinRequestWritesOneChangeRowAndOneLinkRow() {
+    when(counterService.nextEmployeeCode(SHOP)).thenReturn("EMP-015");
+    insertReturnsArgument();
+
+    service.createFromJoinRequest(SHOP, APPROVER, joinRequest());
+
+    ArgumentCaptor<AuditEntry> audits = ArgumentCaptor.forClass(AuditEntry.class);
+    verify(auditService, org.mockito.Mockito.times(2)).record(audits.capture());
+    AuditEntry changed = audits.getAllValues().get(0);
+    assertEquals(HrAuditAction.EMPLOYEE_CHANGED, changed.action());
+    assertEquals(APPROVER, changed.actorUserId());
+    assertEquals("e-new", changed.employeeId());
+    assertNull(changed.before());
+    assertEquals("Priya Sharma", changed.after().get("name"));
+    AuditEntry link = audits.getAllValues().get(1);
+    assertEquals(HrAuditAction.EMPLOYEE_LINK_CHANGED, link.action());
+    assertEquals(APPROVER, link.actorUserId());
+    assertEquals("no", link.before().get("linked"));
+    assertEquals(WORKER, link.after().get("userId"));
+    // the snapshot's phone and e-mail never reach an audit row
+    assertTrue(audits.getAllValues().stream().noneMatch(a -> {
+      String text = a.before() + " " + a.after();
+      return text.contains("9000000002") || text.contains("priya@example.com");
+    }));
+  }
+
+  @Test
+  void createFromJoinRequestRespectsTheActiveEmployeeLimit() {
+    when(employeeRepository.countByShopIdAndStatus(SHOP, EmployeeStatus.ACTIVE)).thenReturn(1000L);
+
+    assertEquals(ErrorCode.HR_ACTIVE_EMPLOYEE_LIMIT, assertThrows(BaseException.class,
+        () -> service.createFromJoinRequest(SHOP, APPROVER, joinRequest())).getErrorCode());
+    verify(employeeRepository, never()).insert(any(Employee.class));
+    verify(auditService, never()).record(any(AuditEntry.class));
+  }
+
+  @Test
+  void linkFromJoinRequestSetsOnlyTheUserIdAndAuditsTheLink() {
+    saveReturnsArgument();
+    Employee match = employee("e-match");
+    match.setCode("EMP-014");
+    Employee before = employee("e-match");
+    before.setCode("EMP-014");
+
+    Employee saved = service.linkFromJoinRequest(SHOP, APPROVER, match, WORKER);
+
+    assertEquals(WORKER, saved.getUserId());
+    assertEquals(APPROVER, saved.getUpdatedByUserId());
+    // nothing but the link, the update stamp and the actor changed
+    before.setUserId(WORKER);
+    before.setUpdatedAt(saved.getUpdatedAt());
+    before.setUpdatedByUserId(APPROVER);
+    assertEquals(before, saved);
+    ArgumentCaptor<AuditEntry> audits = ArgumentCaptor.forClass(AuditEntry.class);
+    verify(auditService).record(audits.capture());
+    assertEquals(HrAuditAction.EMPLOYEE_LINK_CHANGED, audits.getValue().action());
+    assertEquals(APPROVER, audits.getValue().actorUserId());
+    assertEquals("no", audits.getValue().before().get("linked"));
+    assertEquals(WORKER, audits.getValue().after().get("userId"));
+    // not the manual-link rule: no VIEW_SALARIES or owner check, no membership check
+    verify(guard, never()).require(any(), any(), any(HrPermission[].class));
+    verify(guard, never()).requireOwner(any(), any());
+    verify(membershipService, never()).listActiveMembers(any());
+  }
+
+  @Test
+  void linkFromJoinRequestRefusesAnEmployeeLinkedToAnotherLogin() {
+    Employee match = employee("e-match");
+    match.setCode("EMP-014");
+    match.setUserId("someone-else");
+
+    BaseException e = assertThrows(BaseException.class,
+        () -> service.linkFromJoinRequest(SHOP, APPROVER, match, WORKER));
+
+    assertEquals(ErrorCode.HR_MATCH_LINKED_ELSEWHERE, e.getErrorCode());
+    assertEquals("EMP-014 is already linked to another login", e.getMessage());
+    assertEquals("someone-else", match.getUserId());
+    verify(employeeRepository, never()).save(any(Employee.class));
+    verify(auditService, never()).record(any(AuditEntry.class));
+  }
+
+  @Test
+  void linkFromJoinRequestRefusesAnExitedEmployee() {
+    Employee match = employee("e-match");
+    match.setCode("EMP-014");
+    match.setStatus(EmployeeStatus.EXITED);
+    match.setExitDate("2025-03-31");
+
+    BaseException e = assertThrows(BaseException.class,
+        () -> service.linkFromJoinRequest(SHOP, APPROVER, match, WORKER));
+
+    assertEquals(ErrorCode.HR_MATCH_EXITED, e.getErrorCode());
+    assertEquals("EMP-014 has exited. Create a new employee instead.", e.getMessage());
+    verify(employeeRepository, never()).save(any(Employee.class));
+  }
+
+  @Test
+  void linkFromJoinRequestToTheSameLoginAgainWritesNothing() {
+    Employee match = employee("e-match");
+    match.setUserId(WORKER);
+
+    Employee result = service.linkFromJoinRequest(SHOP, APPROVER, match, WORKER);
+
+    assertEquals(WORKER, result.getUserId());
+    verify(employeeRepository, never()).save(any(Employee.class));
+    verify(auditService, never()).record(any(AuditEntry.class));
+  }
+
+  @Test
+  void linkFromJoinRequestNeverTouchesAnotherShopsEmployee() {
+    Employee elsewhere = employee("e-elsewhere");
+    elsewhere.setShopId("shop-2");
+
+    assertThrows(ResourceNotFoundException.class,
+        () -> service.linkFromJoinRequest(SHOP, APPROVER, elsewhere, WORKER));
+    verify(employeeRepository, never()).save(any(Employee.class));
+  }
+
+  // ---- Stockkart Team app: the worker's own record (worker-app R5.2, R5.3, R8.2) ----------------
+
+  private Employee ownEmployee() {
+    Employee own = employee("e-own");
+    own.setUserId(WORKER);
+    when(employeeRepository.findByShopIdAndUserId(SHOP, WORKER)).thenReturn(Optional.of(own));
+    return own;
+  }
+
+  @Test
+  void exitBySelfExitsTodayAsSelfAndEndsTheMembershipWithinTheSave() {
+    Employee own = ownEmployee();
+    saveReturnsArgument();
+
+    Employee saved = service.exitBySelf(SHOP, WORKER);
+
+    String today = HrDateUtils.format(HrDateUtils.today());
+    assertEquals(EmployeeStatus.EXITED, saved.getStatus());
+    assertEquals(today, saved.getExitDate());
+    assertEquals(EmployeeService.SELF_ACTOR, saved.getUpdatedByUserId());
+    assertEquals(WORKER, saved.getUserId()); // the link stays so payslips remain reachable
+    ArgumentCaptor<AuditEntry> audit = ArgumentCaptor.forClass(AuditEntry.class);
+    verify(auditService).record(audit.capture());
+    assertEquals(HrAuditAction.EMPLOYEE_CHANGED, audit.getValue().action());
+    assertEquals(EmployeeService.SELF_ACTOR, audit.getValue().actorUserId());
+    assertEquals("ACTIVE", audit.getValue().before().get("status"));
+    assertEquals("EXITED", audit.getValue().after().get("status"));
+    assertEquals(today, audit.getValue().after().get("exitDate"));
+    // the save unpairs the phone (HR R3.4) and ends the WORKER membership (R5.2), in that order,
+    // after the employee is stored
+    org.mockito.InOrder order =
+        org.mockito.Mockito.inOrder(employeeRepository, pairingService, membershipEnder);
+    order.verify(employeeRepository).save(own);
+    order.verify(pairingService).scheduleExitUnpair(SHOP, "e-own", HrDateUtils.today());
+    order.verify(membershipEnder).onExit(own);
+    // no HR permission is needed to leave: the record is the caller's own
+    verify(guard, never()).require(any(), any(), any(HrPermission[].class));
+  }
+
+  @Test
+  void exitBySelfNeedsALinkedEmployeeInTheShop() {
+    when(employeeRepository.findByShopIdAndUserId(SHOP, WORKER)).thenReturn(Optional.empty());
+
+    assertEquals(ErrorCode.HR_NOT_LINKED, assertThrows(BaseException.class,
+        () -> service.exitBySelf(SHOP, WORKER)).getErrorCode());
+    verify(employeeRepository, never()).save(any(Employee.class));
+  }
+
+  @Test
+  void exitBySelfOnAnExitedEmployeeChangesNothing() {
+    Employee own = ownEmployee();
+    own.setStatus(EmployeeStatus.EXITED);
+    own.setExitDate("2025-03-31");
+
+    Employee result = service.exitBySelf(SHOP, WORKER);
+
+    assertEquals("2025-03-31", result.getExitDate());
+    verify(employeeRepository, never()).save(any(Employee.class));
+    verify(auditService, never()).record(any(AuditEntry.class));
+    verify(membershipEnder, never()).onExit(any());
+  }
+
+  @Test
+  void aManagersExitWithAFutureDateLeavesTheMembershipToTheJob() {
+    grant(all());
+    Employee stored = employee("e1");
+    stored.setUserId(WORKER);
+    when(employeeRepository.findByShopIdAndId(SHOP, "e1")).thenReturn(Optional.of(stored));
+    saveReturnsArgument();
+    ExitEmployeeRequest r = new ExitEmployeeRequest();
+    r.setExitDate(HrDateUtils.format(HrDateUtils.today().plusDays(3)));
+
+    service.exit(USER, SHOP, "e1", r);
+
+    verify(membershipEnder, never()).onExit(any());
+  }
+
+  @Test
+  void aManagersExitWithAPastDateEndsTheMembershipAtOnce() {
+    grant(all());
+    Employee stored = employee("e1");
+    stored.setUserId(WORKER);
+    when(employeeRepository.findByShopIdAndId(SHOP, "e1")).thenReturn(Optional.of(stored));
+    saveReturnsArgument();
+    ExitEmployeeRequest r = new ExitEmployeeRequest();
+    r.setExitDate("2024-06-30");
+
+    service.exit(USER, SHOP, "e1", r);
+
+    verify(membershipEnder).onExit(stored);
+  }
+
+  @Test
+  void anExitOfAnEmployeeWithoutALoginOrAlreadyEndedNeverCallsTheEnder() {
+    grant(all());
+    Employee unlinked = employee("e1");
+    when(employeeRepository.findByShopIdAndId(SHOP, "e1")).thenReturn(Optional.of(unlinked));
+    saveReturnsArgument();
+    ExitEmployeeRequest r = new ExitEmployeeRequest();
+    r.setExitDate("2024-06-30");
+    service.exit(USER, SHOP, "e1", r);
+
+    Employee ended = employee("e2");
+    ended.setUserId(WORKER);
+    ended.setMembershipEndedAt(java.time.Instant.EPOCH);
+    when(employeeRepository.findByShopIdAndId(SHOP, "e2")).thenReturn(Optional.of(ended));
+    service.exit(USER, SHOP, "e2", r);
+
+    verify(membershipEnder, never()).onExit(any());
+  }
+
+  @Test
+  void aMembershipEnderFailureDoesNotUndoTheExit() {
+    ownEmployee();
+    saveReturnsArgument();
+    org.mockito.Mockito.doThrow(new org.springframework.dao.DataAccessResourceFailureException(
+        "down")).when(membershipEnder).onExit(any());
+
+    Employee saved = service.exitBySelf(SHOP, WORKER);
+
+    assertEquals(EmployeeStatus.EXITED, saved.getStatus());
+    verify(auditService).record(any(AuditEntry.class));
+  }
+
+  @Test
+  void updateSelfDetailsChangesNameAndPhoneOnlyWithOneSelfAuditRow() {
+    Employee own = ownEmployee();
+    saveReturnsArgument();
+
+    Employee saved = service.updateSelfDetails(SHOP, WORKER, "  Ravi K  ", "+91 90000 00009")
+        .orElseThrow();
+
+    assertEquals("Ravi K", saved.getName());
+    assertEquals("9000000009", saved.getPhone());
+    assertEquals(EmployeeService.SELF_ACTOR, saved.getUpdatedByUserId());
+    // everything else as it was
+    assertEquals("EMP-001", saved.getCode());
+    assertEquals("ravi@example.com", saved.getEmail());
+    assertEquals("Helper", saved.getDesignation());
+    assertEquals("123456789012", saved.getBankAccountNumber());
+    assertEquals(1, saved.getSalaryRevisions().size());
+    assertEquals(WORKER, saved.getUserId());
+    ArgumentCaptor<AuditEntry> audit = ArgumentCaptor.forClass(AuditEntry.class);
+    verify(auditService).record(audit.capture());
+    assertEquals(HrAuditAction.EMPLOYEE_CHANGED, audit.getValue().action());
+    assertEquals(EmployeeService.SELF_ACTOR, audit.getValue().actorUserId());
+    assertEquals("Ravi Kumar", audit.getValue().before().get("name"));
+    assertEquals("Ravi K", audit.getValue().after().get("name"));
+    assertEquals(Boolean.TRUE, audit.getValue().after().get(EmployeeService.PHONE_CHANGED));
+    // the number itself stays out of the audit row
+    String text = audit.getValue().before() + " " + audit.getValue().after();
+    assertTrue(!text.contains("9000000009") && !text.contains("9876543210"));
+    verify(employeeRepository).save(own);
+    verify(guard, never()).require(any(), any(), any(HrPermission[].class));
+  }
+
+  @Test
+  void updateSelfDetailsWithAnUnchangedPhoneSetsNoPhoneFlag() {
+    ownEmployee();
+    saveReturnsArgument();
+
+    service.updateSelfDetails(SHOP, WORKER, "Ravi Kumar", "98765-43210");
+
+    ArgumentCaptor<AuditEntry> audit = ArgumentCaptor.forClass(AuditEntry.class);
+    verify(auditService).record(audit.capture());
+    assertNull(audit.getValue().after().get(EmployeeService.PHONE_CHANGED));
+  }
+
+  @Test
+  void updateSelfDetailsRefusesABadNameOrPhoneAndChangesNothing() {
+    ownEmployee();
+
+    assertThrows(ValidationException.class,
+        () -> service.updateSelfDetails(SHOP, WORKER, " R ", "9000000009"));
+    assertThrows(ValidationException.class,
+        () -> service.updateSelfDetails(SHOP, WORKER, "x".repeat(101), "9000000009"));
+    assertThrows(ValidationException.class,
+        () -> service.updateSelfDetails(SHOP, WORKER, "Ravi", "12345"));
+    assertThrows(ValidationException.class,
+        () -> service.updateSelfDetails(SHOP, WORKER, "Ravi", null));
+    verify(employeeRepository, never()).save(any(Employee.class));
+    verify(auditService, never()).record(any(AuditEntry.class));
+  }
+
+  @Test
+  void updateSelfDetailsWithoutAnEmployeeIsEmptyAndWritesNothing() {
+    when(employeeRepository.findByShopIdAndUserId(SHOP, WORKER)).thenReturn(Optional.empty());
+
+    assertTrue(service.updateSelfDetails(SHOP, WORKER, "Ravi", "9000000009").isEmpty());
+    verify(employeeRepository, never()).save(any(Employee.class));
+    verify(auditService, never()).record(any(AuditEntry.class));
+  }
+
+  // ---- Stockkart Team app: "Request profile details" (worker-app R8.7) --------------------------
+
+  @Test
+  void requestProfileStampsAuditsAndNotifiesTheLinkedAccount() {
+    grant(all());
+    Employee stored = employee("e1");
+    stored.setUserId(WORKER);
+    when(employeeRepository.findByShopIdAndId(SHOP, "e1")).thenReturn(Optional.of(stored));
+    saveReturnsArgument();
+    when(pairingService.shopName(SHOP)).thenReturn("Sri Ganesh Stores");
+    when(pairingService.activePairing(SHOP, "e1")).thenReturn(Optional.of(new DevicePairing()));
+
+    EmployeeResponse r = service.requestProfile(USER, SHOP, "e1");
+
+    assertNotNull(r.getProfileRequestedAt());
+    assertEquals(stored.getProfileRequestedAt(), r.getProfileRequestedAt());
+    assertEquals(Boolean.TRUE, r.getAppPaired());
+    verify(guard).require(USER, SHOP, HrPermission.ADD_EDIT_EMPLOYEES);
+    ArgumentCaptor<AuditEntry> audit = ArgumentCaptor.forClass(AuditEntry.class);
+    verify(auditService).record(audit.capture());
+    assertEquals(HrAuditAction.PROFILE_REQUESTED, audit.getValue().action());
+    assertEquals(USER, audit.getValue().actorUserId());
+    assertEquals("e1", audit.getValue().employeeId());
+    assertNull(audit.getValue().before().get("profileRequestedAt"));
+    assertEquals(stored.getProfileRequestedAt().toString(),
+        audit.getValue().after().get("profileRequestedAt"));
+    verify(notificationService).notifyUser(WORKER, HrNotificationType.PROFILE_REQUESTED,
+        "Sri Ganesh Stores asked for your profile details", null);
+  }
+
+  @Test
+  void askingAgainWhileARequestIsOutstandingMovesTheStampAndKeepsThePreviousOneInTheAudit() {
+    grant(all());
+    Employee stored = employee("e1");
+    stored.setUserId(WORKER);
+    java.time.Instant earlier = java.time.Instant.parse("2025-06-01T09:00:00Z");
+    stored.setProfileRequestedAt(earlier);
+    when(employeeRepository.findByShopIdAndId(SHOP, "e1")).thenReturn(Optional.of(stored));
+    saveReturnsArgument();
+    when(pairingService.shopName(SHOP)).thenReturn("Sri Ganesh Stores");
+
+    EmployeeResponse r = service.requestProfile(USER, SHOP, "e1");
+
+    // the stamp moves to now (the implementation's documented behaviour: asking again re-asks)
+    assertTrue(r.getProfileRequestedAt().isAfter(earlier));
+    assertEquals(stored.getProfileRequestedAt(), r.getProfileRequestedAt());
+    ArgumentCaptor<AuditEntry> audit = ArgumentCaptor.forClass(AuditEntry.class);
+    verify(auditService).record(audit.capture());
+    assertEquals(HrAuditAction.PROFILE_REQUESTED, audit.getValue().action());
+    assertEquals(earlier.toString(), audit.getValue().before().get("profileRequestedAt"));
+    assertEquals(stored.getProfileRequestedAt().toString(),
+        audit.getValue().after().get("profileRequestedAt"));
+    // and the worker is told again: one row per ask (R10.2)
+    verify(notificationService, org.mockito.Mockito.times(1)).notifyUser(eq(WORKER),
+        eq(HrNotificationType.PROFILE_REQUESTED), any(), eq(null));
+  }
+
+  @Test
+  void theDetailCarriesProfileRequestedAtAndNullWhenNeverAsked() {
+    grant(all());
+    Employee asked = employee("e1");
+    java.time.Instant at = java.time.Instant.parse("2025-06-01T09:00:00Z");
+    asked.setProfileRequestedAt(at);
+    when(employeeRepository.findByShopIdAndId(SHOP, "e1")).thenReturn(Optional.of(asked));
+    when(employeeRepository.findByShopIdAndId(SHOP, "e2")).thenReturn(Optional.of(employee("e2")));
+
+    assertEquals(at, service.get(USER, SHOP, "e1").getProfileRequestedAt());
+    assertNull(service.get(USER, SHOP, "e2").getProfileRequestedAt());
+  }
+
+  @Test
+  void requestProfileNeedsAddEditEmployees() {
+    org.mockito.Mockito.doThrow(new BaseException(ErrorCode.ACCESS_DENIED, "no"))
+        .when(guard).require(USER, SHOP, HrPermission.ADD_EDIT_EMPLOYEES);
+
+    assertEquals(ErrorCode.ACCESS_DENIED, assertThrows(BaseException.class,
+        () -> service.requestProfile(USER, SHOP, "e1")).getErrorCode());
+    verify(employeeRepository, never()).save(any(Employee.class));
+    verify(notificationService, never()).notifyUser(any(), any(), any(), any());
+  }
+
+  @Test
+  void requestProfileOnAnEmployeeWithoutALoginIsRefused() {
+    grant(all());
+    when(employeeRepository.findByShopIdAndId(SHOP, "e1")).thenReturn(Optional.of(employee("e1")));
+
+    assertThrows(ValidationException.class, () -> service.requestProfile(USER, SHOP, "e1"));
+    verify(employeeRepository, never()).save(any(Employee.class));
+    verify(auditService, never()).record(any(AuditEntry.class));
+    verify(notificationService, never()).notifyUser(any(), any(), any(), any());
   }
 }

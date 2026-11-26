@@ -5,8 +5,10 @@ import com.inventory.common.exception.BaseException;
 import com.inventory.common.exception.ResourceNotFoundException;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.hr.domain.model.Employee;
+import com.inventory.hr.domain.model.WorkerJoinRequest;
 import com.inventory.hr.domain.model.enums.EmployeeStatus;
 import com.inventory.hr.domain.model.enums.HrAuditAction;
+import com.inventory.hr.domain.model.enums.HrNotificationType;
 import com.inventory.hr.domain.model.enums.HrPaymentMethod;
 import com.inventory.hr.domain.model.enums.HrPermission;
 import com.inventory.hr.domain.repository.EmployeeRepository;
@@ -27,12 +29,14 @@ import com.inventory.user.rest.dto.response.LoginContactDto;
 import com.inventory.user.rest.dto.response.ShopMemberSummaryDto;
 import com.inventory.user.service.UserShopMembershipService;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
@@ -52,12 +56,26 @@ import org.springframework.util.StringUtils;
  * Employees (R4): list and search, create with an auto code, update, exit, salary revisions and
  * the optional login link. Every read and write is scoped by the request's {@code shopId}; path
  * ids are looked up with {@code findByShopIdAndId}, so another shop's id is a 404.
+ *
+ * <p>Stockkart Team app (worker-app R4, R5, R8): the approval of a join request creates or links an
+ * employee ({@link #createFromJoinRequest}, {@link #linkFromJoinRequest}); a signed-in worker
+ * edits their own name and phone ({@link #updateSelfDetails}) and leaves the shop ({@link
+ * #exitBySelf}) with {@code "self"} as the recorded actor; a manager asks a worker for their
+ * profile details ({@link #requestProfile}).
  */
 @Slf4j
 @Service
 public class EmployeeService {
 
   static final String ENTITY = "EMPLOYEE";
+  /**
+   * The actor recorded on a worker's own edit or exit (worker-app R5.3, R8.2): the row is theirs,
+   * so a user id would say nothing a reader does not already know, and "self" tells the manager at
+   * a glance that no colleague made the change.
+   */
+  public static final String SELF_ACTOR = "self";
+  /** Audit flag on a self edit: the phone changed (the number itself never reaches a row). */
+  static final String PHONE_CHANGED = "phoneChanged";
   static final int MAX_ACTIVE_EMPLOYEES = 1000;
   static final int DEFAULT_PAGE_SIZE = 20;
   static final int MAX_PAGE_SIZE = 100;
@@ -86,6 +104,15 @@ public class EmployeeService {
   @Autowired private HrAuditService auditService;
 
   @Autowired private DevicePairingService pairingService;
+
+  @Autowired private HrNotificationService notificationService;
+
+  /**
+   * Ends a WORKER membership when its employee exits (design DD14). Optional: {@code WorkerExitJob}
+   * supplies the real one; without it the exit save behaves as before the Stockkart Team app.
+   */
+  @Autowired(required = false) private WorkerMembershipEnder membershipEnder =
+      WorkerMembershipEnder.NONE;
 
   /** Search by name, code or phone ({@code q}), filter by status and designation, by name. */
   public EmployeesPageResponse list(String userId, String shopId, String q, String status,
@@ -313,6 +340,194 @@ public class EmployeeService {
     return employeeMapper.toDetail(saved, perms.contains(HrPermission.VIEW_SALARIES));
   }
 
+  // ---- Stockkart Team: join-request approval (worker-app R4.5, R4.8, R4.9; design DD12, DD13) ----
+
+  /**
+   * "Create new" on an approved join request: a new ACTIVE employee built from the request's
+   * <em>snapshot</em> (name, phone, email as they were at request time, R3.9), joined today
+   * (Asia/Kolkata), with the next auto code and linked to the requesting account. Every other
+   * field is empty: no designation, hours, pay or payment details; the manager fills them in
+   * later. Audited like {@link #create}: one {@code EMPLOYEE_CHANGED} row and one {@code
+   * EMPLOYEE_LINK_CHANGED} row, both with the approver as actor.
+   *
+   * <p>No permission check and no {@link #assertMayChangeLink} here, on purpose. The caller
+   * ({@code WorkerJoinService.approve}) has already required {@code ADD_EDIT_EMPLOYEES} and runs
+   * this inside the approval transaction. The VIEW_SALARIES rule on the manual link exists
+   * because a manager could point a record at some login that then reads its pay through My HR;
+   * here the worker themself asked to be linked to their own record and a manager approved, which
+   * is the case that rule guards against least (design DD13; open point 2 for the owner). The
+   * login need not be a member of the shop yet either: the caller adds the WORKER membership in
+   * the same transaction, after this returns.
+   *
+   * @return the inserted employee (the caller records its id on the request)
+   * @throws BaseException {@code HR_ACTIVE_EMPLOYEE_LIMIT} when the shop is full, {@code
+   *     HR_LOGIN_ALREADY_LINKED} when the account is already linked to an employee of this shop
+   */
+  public Employee createFromJoinRequest(String shopId, String approverId,
+      WorkerJoinRequest request) {
+    HrPermissionGuard.requireContext(approverId, shopId);
+    if (request == null || request.getSnapshot() == null || request.getUserId() == null) {
+      throw new ValidationException("A join request with a snapshot and an account is required");
+    }
+    if (employeeRepository.countByShopIdAndStatus(shopId, EmployeeStatus.ACTIVE)
+        >= MAX_ACTIVE_EMPLOYEES) {
+      throw new BaseException(ErrorCode.HR_ACTIVE_EMPLOYEE_LIMIT,
+          ErrorCode.HR_ACTIVE_EMPLOYEE_LIMIT.getMessage());
+    }
+    WorkerJoinRequest.Snapshot snapshot = request.getSnapshot();
+    Instant now = Instant.now();
+    Employee employee = new Employee();
+    employee.setShopId(shopId);
+    employee.setName(snapshot.getName() != null ? snapshot.getName().trim() : null);
+    employee.setPhone(trimToNull(snapshot.getPhone()));
+    employee.setEmail(trimToNull(snapshot.getEmail()));
+    employee.setUserId(request.getUserId());
+    employee.setJoinDate(HrDateUtils.format(HrDateUtils.today()));
+    employee.setStatus(EmployeeStatus.ACTIVE);
+    employee.setSalaryRevisions(new ArrayList<>());
+    employee.setCreatedAt(now);
+    employee.setCreatedByUserId(approverId);
+    employee.setUpdatedAt(now);
+    employee.setUpdatedByUserId(approverId);
+    Employee saved = insertWithCode(employee, null, shopId);
+    audit(shopId, approverId, saved, null, snapshot(saved));
+    auditLink(shopId, approverId, saved, null, request.getUserId());
+    return saved;
+  }
+
+  /**
+   * "Link to existing" on an approved join request: sets {@code userId} on the matched employee
+   * and nothing else (R4.9), with one {@code EMPLOYEE_LINK_CHANGED} row. Succeeds only when the
+   * employee is ACTIVE and unlinked, or already linked to this very account (then nothing is
+   * written). Same permission stance as {@link #createFromJoinRequest}: the caller holds {@code
+   * ADD_EDIT_EMPLOYEES}; {@link #assertMayChangeLink} is deliberately not applied.
+   *
+   * @param employee the possible match, read by the caller inside the transaction
+   * @throws BaseException {@code HR_MATCH_EXITED} when the employee is not ACTIVE, {@code
+   *     HR_MATCH_LINKED_ELSEWHERE} when it is linked to another login, {@code
+   *     HR_LOGIN_ALREADY_LINKED} when this account is already linked to another employee here
+   */
+  public Employee linkFromJoinRequest(String shopId, String approverId, Employee employee,
+      String userId) {
+    HrPermissionGuard.requireContext(approverId, shopId);
+    if (employee == null || !shopId.equals(employee.getShopId())) {
+      throw new ResourceNotFoundException("Employee", "id",
+          employee != null ? employee.getId() : null);
+    }
+    if (!StringUtils.hasText(userId)) {
+      throw new ValidationException("An account to link is required");
+    }
+    if (employee.getStatus() != EmployeeStatus.ACTIVE) {
+      throw new BaseException(ErrorCode.HR_MATCH_EXITED,
+          String.format(ErrorCode.HR_MATCH_EXITED.getMessage(), employee.getCode()));
+    }
+    String previous = employee.getUserId();
+    if (previous != null && !previous.equals(userId)) {
+      throw new BaseException(ErrorCode.HR_MATCH_LINKED_ELSEWHERE,
+          String.format(ErrorCode.HR_MATCH_LINKED_ELSEWHERE.getMessage(), employee.getCode()));
+    }
+    if (userId.equals(previous)) {
+      return employee;
+    }
+    employee.setUserId(userId);
+    Employee saved = save(employee, approverId, shopId);
+    auditLink(shopId, approverId, saved, null, userId);
+    return saved;
+  }
+
+  // ---- Stockkart Team app: the worker's own record (worker-app R5.3, R8.2, D12) -----------------
+
+  /**
+   * "Leave this shop": the caller's own employee becomes EXITED today (Asia/Kolkata), recorded as
+   * done by {@link #SELF_ACTOR}; the manager may change the date later like any exit. The save
+   * unpairs the phone (HR R3.4) and ends the WORKER membership through {@link
+   * WorkerMembershipEnder} (R5.2). {@code userId} stays on the row so payslips remain reachable.
+   * An employee already EXITED is returned unchanged.
+   *
+   * @throws BaseException {@code HR_NOT_LINKED} when the login has no employee in the shop
+   */
+  public Employee exitBySelf(String shopId, String userId) {
+    Employee employee = own(shopId, userId);
+    if (employee.getStatus() == EmployeeStatus.EXITED) {
+      return employee;
+    }
+    Map<String, Object> before = snapshot(employee);
+    employee.setStatus(EmployeeStatus.EXITED);
+    employee.setExitDate(HrDateUtils.format(HrDateUtils.today()));
+    Employee saved = save(employee, SELF_ACTOR, shopId);
+    audit(shopId, SELF_ACTOR, saved, before, snapshot(saved));
+    return saved;
+  }
+
+  /**
+   * "Edit details" from the Stockkart Team app: name and phone only, under the R1.2 rules, with
+   * {@link #SELF_ACTOR} as actor and one {@code EMPLOYEE_CHANGED} row whose {@code before}/{@code
+   * after} carry the old and new name; the phone is PII and never reaches an audit row, so a changed
+   * number is recorded as the flag {@code phoneChanged}. Nothing else on the row changes. The
+   * account side of the edit is the user module's; the caller does both.
+   *
+   * @return the saved employee, or empty when the login has no employee in the shop (the
+   *     account edit alone is then the whole change)
+   */
+  public Optional<Employee> updateSelfDetails(String shopId, String userId, String name,
+      String phone) {
+    EmployeeValidator.SelfDetails details = validator.validateSelfDetails(name, phone);
+    HrPermissionGuard.requireContext(userId, shopId);
+    Optional<Employee> found = employeeRepository.findByShopIdAndUserId(shopId, userId);
+    if (found.isEmpty()) {
+      return Optional.empty();
+    }
+    Employee employee = found.get();
+    Map<String, Object> before = snapshot(employee);
+    boolean phoneChanged = !Objects.equals(details.phone(), employee.getPhone());
+    employee.setName(details.name());
+    employee.setPhone(details.phone());
+    Employee saved = save(employee, SELF_ACTOR, shopId);
+    Map<String, Object> after = snapshot(saved);
+    if (phoneChanged) {
+      after.put(PHONE_CHANGED, true);
+    }
+    audit(shopId, SELF_ACTOR, saved, before, after);
+    return Optional.of(saved);
+  }
+
+  /**
+   * "Request profile details" (worker-app R8.7): stamps {@code profileRequestedAt}, writes a
+   * {@code PROFILE_REQUESTED} history row and a {@code PROFILE_REQUESTED} notification to the
+   * linked account. Asking again moves the stamp to now. Needs {@code ADD_EDIT_EMPLOYEES}.
+   *
+   * @throws ValidationException when the employee has no linked login: there is nobody to ask
+   */
+  public EmployeeResponse requestProfile(String approverId, String shopId, String employeeId) {
+    Set<HrPermission> perms = guard.require(approverId, shopId, HrPermission.ADD_EDIT_EMPLOYEES);
+    Employee employee = find(shopId, employeeId);
+    if (employee.getUserId() == null) {
+      throw new ValidationException("This employee has no linked login to ask");
+    }
+    Instant previous = employee.getProfileRequestedAt();
+    employee.setProfileRequestedAt(Instant.now());
+    Employee saved = save(employee, approverId, shopId);
+    Map<String, Object> before = new LinkedHashMap<>();
+    before.put("profileRequestedAt", previous != null ? previous.toString() : null);
+    Map<String, Object> after = new LinkedHashMap<>();
+    after.put("profileRequestedAt", saved.getProfileRequestedAt().toString());
+    auditService.record(new AuditEntry(shopId, approverId, HrAuditAction.PROFILE_REQUESTED,
+        ENTITY, saved.getId(), saved.getId(), null, null, before, after, null));
+    notificationService.notifyUser(saved.getUserId(), HrNotificationType.PROFILE_REQUESTED,
+        WorkerNotificationTexts.profileRequested(pairingService.shopName(shopId)), null);
+    EmployeeResponse r = employeeMapper.toDetail(saved, perms.contains(HrPermission.VIEW_SALARIES));
+    r.setAppPaired(pairingService.activePairing(shopId, saved.getId()).isPresent());
+    return r;
+  }
+
+  /** The caller's own employee in the shop; 404 {@code HR_NOT_LINKED} when there is none. */
+  private Employee own(String shopId, String userId) {
+    HrPermissionGuard.requireContext(userId, shopId);
+    return employeeRepository.findByShopIdAndUserId(shopId, userId)
+        .orElseThrow(() -> new BaseException(ErrorCode.HR_NOT_LINKED,
+            ErrorCode.HR_NOT_LINKED.getMessage()));
+  }
+
   /**
    * New pay from a month on (R4.12). Earlier months keep their amount because each period reads
    * the latest revision with {@code effectiveFrom <= period}; a revision for the same month
@@ -465,7 +680,32 @@ public class EmployeeService {
       throw new BaseException(ErrorCode.INTERNAL_SERVER_ERROR, "Error saving the employee");
     }
     syncExitUnpair(saved);
+    syncWorkerMembership(saved);
     return saved;
+  }
+
+  /**
+   * Ends the linked WORKER account's membership when the save leaves the employee EXITED with an
+   * exit date today or earlier (worker-app R5.2, design DD14): the worker is free to join another
+   * shop within the save instead of within the job's minute. A later exit date is left to {@code
+   * WorkerExitJob}, which also finishes any call here that failed. Like {@link #syncExitUnpair},
+   * a failure is logged and does not undo the save.
+   */
+  private void syncWorkerMembership(Employee saved) {
+    if (saved.getStatus() != EmployeeStatus.EXITED || saved.getUserId() == null
+        || saved.getMembershipEndedAt() != null) {
+      return;
+    }
+    LocalDate exit = HrDateUtils.parseDate(saved.getExitDate());
+    if (exit == null || exit.isAfter(HrDateUtils.today())) {
+      return;
+    }
+    try {
+      membershipEnder.onExit(saved);
+    } catch (RuntimeException e) {
+      log.error("Could not end the WORKER membership of employee {} (shop {}) after its exit: {}",
+          saved.getId(), saved.getShopId(), e.getMessage());
+    }
   }
 
   /**

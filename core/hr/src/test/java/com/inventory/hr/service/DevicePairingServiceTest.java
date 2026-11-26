@@ -212,8 +212,25 @@ class DevicePairingServiceTest {
   }
 
   private BaseException claimFails(String code) {
-    return assertThrows(BaseException.class,
-        () -> service.claim(code, INSTALL, DeviceOs.ANDROID, "13", "Redmi Note 11", "1.0.0"));
+    return assertThrows(BaseException.class, () -> claim(code));
+  }
+
+  // The HR-module handshake, as the only caller (WorkerPairingService, worker-app DD4) makes it:
+  // the caller is the code's own employee, so these exercise the HR-module rules alone.
+
+  private ClaimPairingResponse claim(String code) {
+    return service.claim(code, INSTALL, DeviceOs.ANDROID, "13", "Redmi Note 11", "1.0.0", employee);
+  }
+
+  private PairingBootstrapResponse complete(String token, String installationId, String punchKey,
+      String deviceKey, Integer consentVersion) {
+    return complete(token, installationId, punchKey, deviceKey, consentVersion, null);
+  }
+
+  private PairingBootstrapResponse complete(String token, String installationId, String punchKey,
+      String deviceKey, Integer consentVersion, List<String> attestationChain) {
+    return service.complete(token, installationId, punchKey, deviceKey, consentVersion,
+        attestationChain, employee);
   }
 
   private AuditEntry singleAudit(HrAuditAction action) {
@@ -289,7 +306,7 @@ class DevicePairingServiceTest {
     codeLookup("ABCDEFGH", doc);
 
     ClaimPairingResponse r =
-        service.claim("abcd-efgh", INSTALL, DeviceOs.ANDROID, "13", "Redmi Note 11", "1.0.0");
+        claim("abcd-efgh");
 
     assertEquals("Ravi Kumar", r.getEmployeeName());
     assertEquals("your shop", r.getShopName(), "no shop name known");
@@ -312,7 +329,7 @@ class DevicePairingServiceTest {
     codeLookup("ABCDEFGH", doc);
 
     ClaimPairingResponse r =
-        service.claim("ABCDEFGH", INSTALL, DeviceOs.ANDROID, "13", "Redmi Note 11", "1.0.0");
+        claim("ABCDEFGH");
 
     assertEquals("Kumar Stores", r.getShopName());
   }
@@ -376,7 +393,7 @@ class DevicePairingServiceTest {
     codeLookup("ABCDEFGH", doc);
 
     ClaimPairingResponse r =
-        service.claim("ABCDEFGH", INSTALL, DeviceOs.ANDROID, "13", "Redmi Note 11", "1.0.0");
+        claim("ABCDEFGH");
 
     assertNotEquals(DevicePairingService.sha256Hex("tok"), doc.getClaimTokenHash(),
         "a new token replaces the lost one");
@@ -418,7 +435,7 @@ class DevicePairingServiceTest {
 
     employee.setExitDate("2025-04-04");
     codeLookup("JKLMNPQR", unusedCode("JKLMNPQR"));
-    assertNotNull(service.claim("JKLMNPQR", INSTALL, DeviceOs.ANDROID, "13", "M", "1"));
+    assertNotNull(claim("JKLMNPQR"));
   }
 
   @Test
@@ -467,7 +484,7 @@ class DevicePairingServiceTest {
     claimed.setAttempts(11);
     tokenLookup("tok", claimed);
     BaseException e = assertThrows(BaseException.class,
-        () -> service.complete("tok", INSTALL, "k", "k", 1));
+        () -> complete("tok", INSTALL, "k", "k", 1));
     assertEquals(ErrorCode.HR_PAIRING_CODE_CANCELLED, e.getErrorCode());
     assertEquals(12, claimed.getAttempts());
   }
@@ -488,13 +505,13 @@ class DevicePairingServiceTest {
     PairingCode doc = unusedCode("ABCDEFGH");
     doc.setAttempts(9);
     codeLookup("ABCDEFGH", doc);
-    assertNotNull(service.claim("ABCDEFGH", INSTALL, DeviceOs.ANDROID, "13", "M", "1"));
+    assertNotNull(claim("ABCDEFGH"));
     assertEquals(10, doc.getAttempts());
 
     PairingCode fresh = unusedCode("JKLMNPQR");
     fresh.setAttempts(null);
     codeLookup("JKLMNPQR", fresh);
-    assertNotNull(service.claim("JKLMNPQR", INSTALL, DeviceOs.ANDROID, "13", "M", "1"));
+    assertNotNull(claim("JKLMNPQR"));
     assertEquals(1, fresh.getAttempts());
   }
 
@@ -508,7 +525,7 @@ class DevicePairingServiceTest {
     String punchKey = p256Spki();
     String deviceKey = p256Spki();
 
-    PairingBootstrapResponse r = service.complete("tok", INSTALL, punchKey, deviceKey, 1);
+    PairingBootstrapResponse r = complete("tok", INSTALL, punchKey, deviceKey, 1);
 
     assertEquals("pairing-1", r.getPairingId());
     assertEquals(SHOP, r.getShopId());
@@ -558,7 +575,7 @@ class DevicePairingServiceTest {
     DevicePairing old = activePairing("pairing-0", EMPLOYEE, "Galaxy M12");
     unpairAnswers(old, null);
 
-    service.complete("tok", INSTALL, p256Spki(), p256Spki(), 1);
+    complete("tok", INSTALL, p256Spki(), p256Spki(), 1);
 
     assertEquals(PairingStatus.UNPAIRED, old.getStatus());
     assertEquals(UnpairReason.REPLACED, old.getUnpairReason());
@@ -580,7 +597,7 @@ class DevicePairingServiceTest {
     other.setInstallationId(INSTALL);
     unpairAnswers(null, other);
 
-    service.complete("tok", INSTALL, p256Spki(), p256Spki(), 1);
+    complete("tok", INSTALL, p256Spki(), p256Spki(), 1);
 
     assertEquals(UnpairReason.PAIRED_TO_ANOTHER_EMPLOYEE, other.getUnpairReason());
     ArgumentCaptor<AuditEntry> captor = ArgumentCaptor.forClass(AuditEntry.class);
@@ -602,8 +619,8 @@ class DevicePairingServiceTest {
     tokenLookup("tok2", claimedCode("tok2"));
     unpairAnswers(null, null);
 
-    service.complete("tok", INSTALL, p256Spki(), p256Spki(), 1, null);
-    service.complete("tok2", INSTALL, p256Spki(), p256Spki(), 1, List.of());
+    complete("tok", INSTALL, p256Spki(), p256Spki(), 1, null);
+    complete("tok2", INSTALL, p256Spki(), p256Spki(), 1, List.of());
 
     ArgumentCaptor<DevicePairing> captor = ArgumentCaptor.forClass(DevicePairing.class);
     verify(pairingRepository, times(2)).insert(captor.capture());
@@ -629,7 +646,7 @@ class DevicePairingServiceTest {
         .challenge("tok".getBytes(StandardCharsets.UTF_8))
         .level(TestAttestationChains.LEVEL_STRONGBOX));
 
-    PairingBootstrapResponse r = service.complete("tok", INSTALL,
+    PairingBootstrapResponse r = complete("tok", INSTALL,
         TestAttestationChains.spki(punch.getPublic()), p256Spki(), 1, chain);
 
     assertEquals("pairing-1", r.getPairingId());
@@ -656,7 +673,7 @@ class DevicePairingServiceTest {
     List<String> chain = chains.chain(TestAttestationChains.p256().getPublic(),
         new TestAttestationChains.Options().challenge("tok".getBytes(StandardCharsets.UTF_8)));
 
-    PairingBootstrapResponse r = service.complete("tok", INSTALL,
+    PairingBootstrapResponse r = complete("tok", INSTALL,
         TestAttestationChains.spki(punch.getPublic()), p256Spki(), 1, chain);
 
     assertEquals("pairing-1", r.getPairingId(), "a failed attestation never refuses the pairing");
@@ -677,7 +694,7 @@ class DevicePairingServiceTest {
     tokenLookup("tok", claimedCode("tok"));
     unpairAnswers(null, null);
 
-    service.complete("tok", INSTALL, p256Spki(), p256Spki(), 1, List.of("not a certificate"));
+    complete("tok", INSTALL, p256Spki(), p256Spki(), 1, List.of("not a certificate"));
 
     DevicePairing p = insertedPairing();
     assertEquals(PairingStatus.ACTIVE, p.getStatus());
@@ -721,11 +738,11 @@ class DevicePairingServiceTest {
     String good = p256Spki();
 
     ValidationException punch = assertThrows(ValidationException.class,
-        () -> service.complete("tok", INSTALL, p384Spki(), good, 1));
+        () -> complete("tok", INSTALL, p384Spki(), good, 1));
     assertEquals(DevicePairingService.REASON_BAD_PUNCH_KEY, punch.getMessage());
 
     ValidationException device = assertThrows(ValidationException.class,
-        () -> service.complete("tok", INSTALL, good, "not base64!", 1));
+        () -> complete("tok", INSTALL, good, "not base64!", 1));
     assertEquals(DevicePairingService.REASON_BAD_DEVICE_KEY, device.getMessage());
     verify(pairingRepository, never()).insert(any(DevicePairing.class));
   }
@@ -735,7 +752,7 @@ class DevicePairingServiceTest {
     tokenLookup("tok", claimedCode("tok"));
     String key = p256Spki();
 
-    assertThrows(ValidationException.class, () -> service.complete("tok", INSTALL, key, key, 99));
+    assertThrows(ValidationException.class, () -> complete("tok", INSTALL, key, key, 99));
     verify(pairingRepository, never()).insert(any(DevicePairing.class));
   }
 
@@ -745,7 +762,7 @@ class DevicePairingServiceTest {
     String key = p256Spki();
 
     BaseException e = assertThrows(BaseException.class,
-        () -> service.complete("tok", INSTALL, key, key, 1));
+        () -> complete("tok", INSTALL, key, key, 1));
     assertEquals(ErrorCode.HR_PAIRING_CODE_EXPIRED, e.getErrorCode());
   }
 
@@ -756,7 +773,7 @@ class DevicePairingServiceTest {
     String key = p256Spki();
 
     BaseException e = assertThrows(BaseException.class,
-        () -> service.complete("tok", "other-install", key, key, 1));
+        () -> complete("tok", "other-install", key, key, 1));
     assertEquals(ErrorCode.HR_PAIRING_CODE_WRONG, e.getErrorCode());
     assertEquals(1, doc.getAttempts(), "counted on the code");
   }
@@ -769,7 +786,7 @@ class DevicePairingServiceTest {
     String key = p256Spki();
 
     BaseException e = assertThrows(BaseException.class,
-        () -> service.complete("tok", INSTALL, key, key, 1));
+        () -> complete("tok", INSTALL, key, key, 1));
     assertEquals(ErrorCode.HR_PAIRING_CODE_CANCELLED, e.getErrorCode());
   }
 
@@ -1123,6 +1140,178 @@ class DevicePairingServiceTest {
 
     assertTrue(scheduleUpdate().get("$unset", org.bson.Document.class)
         .containsKey("scheduledUnpairAt"));
+  }
+
+  // ---- who may redeem a code (worker-app R7.3–R7.5; the only handshake, DD4) -------------------
+
+  private static final String OTHER_EMPLOYEE = "emp-2";
+  private static final String WORKER_USER = "user-ravi";
+  private static final String OTHER_USER = "user-priya";
+
+  /** The caller's own linked ACTIVE employee, as {@code WorkerPairingService} resolves it. */
+  private static Employee linked(String id, String userId) {
+    Employee e = HrTestFixtures.employee(id);
+    e.setUserId(userId);
+    return e;
+  }
+
+  private BaseException claimFails(String code, Employee expected) {
+    return assertThrows(BaseException.class, () -> service.claim(code, INSTALL, DeviceOs.ANDROID,
+        "13", "Redmi Note 11", "1.0.0", expected));
+  }
+
+  @Test
+  void aHandshakeWithoutACallerIsAProgrammingErrorAndTouchesNoCode() {
+    PairingCode doc = unusedCode("ABCDEFGH");
+    lenient().when(codeRepository.findByCodeHash(PairingCodes.hash("ABCDEFGH")))
+        .thenReturn(Optional.of(doc));
+
+    assertThrows(IllegalArgumentException.class, () -> service.claim("ABCDEFGH", INSTALL,
+        DeviceOs.ANDROID, "13", "Redmi Note 11", "1.0.0", null));
+    assertThrows(IllegalArgumentException.class, () -> service.complete("tok", INSTALL, "k", "k",
+        1, null, null));
+
+    assertEquals(0, doc.getAttempts(), "nothing is counted: there is no unsigned handshake (D11)");
+    verify(codeRepository, never()).findByCodeHash(anyString());
+    verify(codeRepository, never()).findByClaimTokenHash(anyString());
+    verifyNoInteractions(metrics, auditService);
+  }
+
+  @Test
+  void bearerClaimWithTheCodeOfAnotherEmployeeIsRefusedCodeStaysValidAndIsAudited() {
+    PairingCode doc = unusedCode("ABCDEFGH");
+    codeLookup("ABCDEFGH", doc);
+    Employee caller = linked(OTHER_EMPLOYEE, OTHER_USER);
+
+    BaseException e = claimFails("ABCDEFGH", caller);
+
+    assertEquals(ErrorCode.HR_PAIRING_WRONG_EMPLOYEE, e.getErrorCode());
+    assertEquals("This code is for a different employee. Ask your manager.", e.getMessage());
+    assertEquals(PairingCodeStatus.UNUSED, doc.getStatus(), "the code stays valid");
+    assertNull(doc.getClaimTokenHash());
+    assertNull(doc.getClaimedByInstallationId());
+    assertEquals(1, doc.getAttempts(), "the refused attempt is counted on the code");
+    AuditEntry audit = singleAudit(HrAuditAction.PAIRING_CODE_REFUSED);
+    assertEquals(EMPLOYEE, audit.employeeId(), "on the code's employee");
+    assertEquals(OTHER_USER, audit.actorUserId());
+    assertEquals("PairingCode", audit.entityType());
+    assertEquals("code-1", audit.entityId());
+    assertEquals(OTHER_USER, audit.after().get("attemptedByUserId"));
+    assertEquals(OTHER_EMPLOYEE, audit.after().get("attemptedForEmployeeId"));
+    assertNoSecretsIn(audit, "ABCDEFGH");
+    verifyEvent("failed", "wrong_employee");
+  }
+
+  @Test
+  void aCodeRefusedForTheWrongWorkerStillPairsTheRightOne() {
+    PairingCode doc = unusedCode("ABCDEFGH");
+    codeLookup("ABCDEFGH", doc);
+    employee.setUserId(WORKER_USER);
+
+    claimFails("ABCDEFGH", linked(OTHER_EMPLOYEE, OTHER_USER));
+    ClaimPairingResponse r = service.claim("ABCDEFGH", INSTALL, DeviceOs.ANDROID, "13",
+        "Redmi Note 11", "1.0.0", linked(EMPLOYEE, WORKER_USER));
+
+    assertNotNull(r.getClaimToken());
+    assertEquals(PairingCodeStatus.CLAIMED, doc.getStatus());
+    assertEquals(2, doc.getAttempts());
+    assertEquals("Ravi Kumar", r.getEmployeeName());
+  }
+
+  @Test
+  void bearerClaimWithTheCallersOwnCodeSucceeds() {
+    PairingCode doc = unusedCode("ABCDEFGH");
+    codeLookup("ABCDEFGH", doc);
+    employee.setUserId(WORKER_USER);
+
+    ClaimPairingResponse r = service.claim("ABCDEFGH", INSTALL, DeviceOs.ANDROID, "13",
+        "Redmi Note 11", "1.0.0", linked(EMPLOYEE, WORKER_USER));
+
+    assertNotNull(r.getClaimToken());
+    assertEquals(PairingCodeStatus.CLAIMED, doc.getStatus());
+    verify(auditService, never()).record(any(AuditEntry.class));
+  }
+
+  @Test
+  void bearerClaimOfASameIdEmployeeInAnotherShopIsRefused() {
+    PairingCode doc = unusedCode("ABCDEFGH");
+    codeLookup("ABCDEFGH", doc);
+    Employee caller = linked(EMPLOYEE, WORKER_USER);
+    caller.setShopId("other-shop");
+
+    assertEquals(ErrorCode.HR_PAIRING_WRONG_EMPLOYEE, claimFails("ABCDEFGH", caller).getErrorCode());
+    assertEquals(PairingCodeStatus.UNUSED, doc.getStatus());
+  }
+
+  @Test
+  void aSelfCodeIsRedeemedOnlyByTheAccountTheEmployeeIsLinkedTo() {
+    PairingCode doc = unusedCode("ABCDEFGH");
+    doc.setCreatedBy(DevicePairingService.SELF);
+    codeLookup("ABCDEFGH", doc);
+    employee.setUserId(WORKER_USER);
+
+    // another account: its own employee differs → refused, code untouched
+    BaseException e = claimFails("ABCDEFGH", linked(OTHER_EMPLOYEE, OTHER_USER));
+    assertEquals(ErrorCode.HR_PAIRING_WRONG_EMPLOYEE, e.getErrorCode());
+    assertEquals(PairingCodeStatus.UNUSED, doc.getStatus());
+    // a stale caller document naming the employee but another account → refused too
+    e = claimFails("ABCDEFGH", linked(EMPLOYEE, OTHER_USER));
+    assertEquals(ErrorCode.HR_PAIRING_WRONG_EMPLOYEE, e.getErrorCode());
+    assertEquals(PairingCodeStatus.UNUSED, doc.getStatus());
+    verify(auditService, times(2)).record(any(AuditEntry.class));
+
+    // the owner of the code
+    ClaimPairingResponse r = service.claim("ABCDEFGH", INSTALL, DeviceOs.ANDROID, "13",
+        "Redmi Note 11", "1.0.0", linked(EMPLOYEE, WORKER_USER));
+    assertNotNull(r.getClaimToken());
+    assertEquals(PairingCodeStatus.CLAIMED, doc.getStatus());
+    assertEquals(3, doc.getAttempts());
+  }
+
+  @Test
+  void hrModuleRefusalsComeBeforeTheCallerRule() {
+    PairingCode doc = unusedCode("ABCDEFGH");
+    doc.setExpiresAt(NOW.minusSeconds(1));
+    codeLookup("ABCDEFGH", doc);
+
+    assertEquals(ErrorCode.HR_PAIRING_CODE_EXPIRED,
+        claimFails("ABCDEFGH", linked(OTHER_EMPLOYEE, OTHER_USER)).getErrorCode());
+    verify(auditService, never()).record(any(AuditEntry.class));
+  }
+
+  @Test
+  void bearerCompleteWithAnotherWorkersClaimedCodeIsRefusedBeforeAnythingIsWritten()
+      throws Exception {
+    PairingCode doc = claimedCode("tok");
+    tokenLookup("tok", doc);
+
+    BaseException e = assertThrows(BaseException.class, () -> service.complete("tok", INSTALL,
+        p256Spki(), p256Spki(), 1, null, linked(OTHER_EMPLOYEE, OTHER_USER)));
+
+    assertEquals(ErrorCode.HR_PAIRING_WRONG_EMPLOYEE, e.getErrorCode());
+    assertEquals(PairingCodeStatus.CLAIMED, doc.getStatus(), "left for the right phone");
+    assertEquals(1, doc.getAttempts());
+    verify(pairingRepository, never()).insert(any(DevicePairing.class));
+    verify(mongoTemplate, never()).findAndModify(any(Query.class), any(Update.class),
+        any(FindAndModifyOptions.class), eq(DevicePairing.class));
+    AuditEntry audit = singleAudit(HrAuditAction.PAIRING_CODE_REFUSED);
+    assertEquals(EMPLOYEE, audit.employeeId());
+    assertEquals(OTHER_USER, audit.actorUserId());
+  }
+
+  @Test
+  void bearerCompleteWithTheCallersOwnCodePairs() throws Exception {
+    PairingCode doc = claimedCode("tok");
+    tokenLookup("tok", doc);
+    unpairAnswers(null, null);
+    employee.setUserId(WORKER_USER);
+
+    PairingBootstrapResponse r = service.complete("tok", INSTALL, p256Spki(), p256Spki(), 1, null,
+        linked(EMPLOYEE, WORKER_USER));
+
+    assertEquals("pairing-1", r.getPairingId());
+    assertEquals(EMPLOYEE, r.getEmployeeId());
+    singleAudit(HrAuditAction.DEVICE_PAIRED);
   }
 
   // ---- privacy -------------------------------------------------------------------------------

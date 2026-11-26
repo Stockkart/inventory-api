@@ -82,7 +82,9 @@ class AuthenticationInterceptorBoundaryTest {
       ShopController.class,
       ShopService.class,
       ShopValidator.class,
-      AttendanceAppProbeController.class
+      AttendanceAppProbeController.class,
+      // worker-app R9.1: the real header check; it has no dependencies
+      com.inventory.hr.service.WorkerCredentialInterceptor.class
   })
   static class Slice {}
 
@@ -93,13 +95,19 @@ class AuthenticationInterceptorBoundaryTest {
    */
   @RestController
   static class AttendanceAppProbeController {
-    @PostMapping("/api/v1/hr/attendance-app/pairings/claim")
-    String claim() {
+    @PostMapping("/api/v1/hr/attendance-app/pairings/me/unpair")
+    String unpair() {
       return "reached";
     }
 
     @GetMapping("/api/v1/hr/attendance-app/health")
     String health() {
+      return "reached";
+    }
+
+    /** Stands in for {@code WorkerController} (HR module), on the Bearer chain. */
+    @GetMapping("/api/v1/hr/worker/me")
+    String workerMe() {
       return "reached";
     }
   }
@@ -211,11 +219,12 @@ class AuthenticationInterceptorBoundaryTest {
   /**
    * HR task 5.1 / 5.10: the Attendance app's device paths are excluded from the Bearer, RBAC and
    * plan-expiry interceptors and handed to the envelope interceptor, so a request with no
-   * Authorization header at all reaches the controller.
+   * Authorization header at all reaches the controller. ({@code /pairings/me/unpair} stands for the
+   * device sub-tree; the unsigned {@code /pairings/claim} is no longer a device path, worker-app D11.)
    */
   @Test
   void anAttendanceAppDeviceRequestWithoutABearerReachesTheController() throws Exception {
-    mvc.perform(post("/api/v1/hr/attendance-app/pairings/claim")
+    mvc.perform(post("/api/v1/hr/attendance-app/pairings/me/unpair")
             .contentType(MediaType.APPLICATION_JSON)
             .content("{}"))
         .andExpect(status().isOk())
@@ -239,5 +248,42 @@ class AuthenticationInterceptorBoundaryTest {
     verify(attendanceAppAuthInterceptor, never()).preHandle(any(), any(), any());
     verify(tokenValidationService).validateToken("owner-token");
     verify(rbacService).requireModule(any(), any(), any());
+  }
+
+  /**
+   * Worker-app R9.1 (design DD3, Property 21): {@code CorsConfig} registers the worker credential
+   * interceptor on {@code /api/v1/hr/worker/**} ahead of the Bearer chain, so a worker request that
+   * also carries a device-envelope header is refused with {@code HR_TWO_CREDENTIALS} before the
+   * token is even looked at; the same request without the header goes through the chain as usual.
+   */
+  @Test
+  void aWorkerRequestCarryingAnEnvelopeHeaderIsRefusedBeforeTheToken() throws Exception {
+    mvc.perform(get("/api/v1/hr/worker/me")
+            .header("Authorization", "Bearer owner-token")
+            .header("X-Pairing-Id", "66f1a2b3c4d5e6f7a8b9c0d1"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error")
+            .value("A request may carry a login or a phone signature, not both."));
+    mvc.perform(get("/api/v1/hr/worker/me")
+            .header("Authorization", "Bearer owner-token")
+            .header("X-Request-Signature", "MEUCIQ"))
+        .andExpect(status().isBadRequest());
+    verifyNoInteractions(tokenValidationService, rbacService, planStatus);
+
+    mvc.perform(get("/api/v1/hr/worker/me").header("Authorization", "Bearer owner-token"))
+        .andExpect(status().isOk())
+        .andExpect(content().string("reached"));
+    verify(tokenValidationService).validateToken("owner-token");
+  }
+
+  /** The device-path envelope check never runs on the worker prefix, and the mirror check nowhere else. */
+  @Test
+  void theWorkerCredentialCheckIsRegisteredOnTheWorkerPrefixOnly() throws Exception {
+    mvc.perform(get("/api/v1/hr/attendance-app/health")
+            .header("Authorization", "Bearer owner-token")
+            .header("X-Pairing-Id", "66f1a2b3c4d5e6f7a8b9c0d1"))
+        .andExpect(status().isOk())
+        .andExpect(content().string("reached"));
+    verify(attendanceAppAuthInterceptor, never()).preHandle(any(), any(), any());
   }
 }

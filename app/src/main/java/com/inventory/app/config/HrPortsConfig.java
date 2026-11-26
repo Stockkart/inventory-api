@@ -8,7 +8,8 @@ import org.springframework.context.annotation.Configuration;
 /**
  * Wires the ports hr declares in {@code com.inventory.hr.api.port} to the modules that own the
  * data. product owns shops and does not depend on hr, so the composition root connects the two
- * (module-boundaries.yml, B6 and B10).
+ * (module-boundaries.yml, B6 and B10). Accounts need no port here: hr depends on user and reaches
+ * them through {@code com.inventory.user.api.WorkerAccounts}.
  */
 @Configuration
 public class HrPortsConfig {

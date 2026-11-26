@@ -3,20 +3,16 @@ package com.inventory.hr.rest.controller;
 import com.inventory.common.dto.response.ApiResponse;
 import com.inventory.common.exception.ValidationException;
 import com.inventory.hr.domain.model.enums.UnpairReason;
-import com.inventory.hr.rest.dto.request.AbandonPairingRequest;
 import com.inventory.hr.rest.dto.request.AppPunchRequest;
 import com.inventory.hr.rest.dto.request.ClaimPairingRequest;
 import com.inventory.hr.rest.dto.request.CompletePairingRequest;
 import com.inventory.hr.rest.dto.request.ConsentRequest;
 import com.inventory.hr.rest.dto.response.AppPunchResponse;
 import com.inventory.hr.rest.dto.response.AppStatusResponse;
-import com.inventory.hr.rest.dto.response.ClaimPairingResponse;
 import com.inventory.hr.rest.dto.response.ConsentResponse;
-import com.inventory.hr.rest.dto.response.PairingBootstrapResponse;
 import com.inventory.hr.rest.dto.response.PunchResponse;
 import com.inventory.hr.rest.dto.response.UnpairResponse;
 import com.inventory.hr.service.AppPunchService;
-import com.inventory.hr.service.AppRateLimiter;
 import com.inventory.hr.service.AppRequestContext;
 import com.inventory.hr.service.ConsentVersions;
 import com.inventory.hr.service.DevicePairingService;
@@ -25,7 +21,6 @@ import com.inventory.metrics.annotation.RecordRequestRate;
 import com.inventory.metrics.annotation.RecordStatusCodes;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
-import java.util.Map;
 import java.util.regex.Pattern;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -39,26 +34,22 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * The Attendance app's own endpoints, {@code /api/v1/hr/attendance-app/**} (design "App
- * endpoints"). Workers have no StockKart login (D7), so this path is outside the Bearer chain:
- * {@code CorsConfig} excludes it from {@code AuthenticationInterceptor}, {@code
- * RbacModuleInterceptor} and {@code PlanExpiryInterceptor} (DD12) and registers {@code
- * AttendanceAppAuthInterceptor} on it instead.
+ * endpoints"). These are the device paths: outside the Bearer chain ({@code CorsConfig} excludes
+ * them from {@code AuthenticationInterceptor}, {@code RbacModuleInterceptor} and {@code
+ * PlanExpiryInterceptor}, DD12) and guarded by {@code AttendanceAppAuthInterceptor} instead.
  *
- * <p>Two kinds of call live here:
+ * <p>Every call but one is <b>signed</b>: {@code GET /me}, {@code POST /punches}, {@code GET
+ * /punches}, {@code POST /consent}, {@code POST /pairings/me/unpair}. For those the interceptor
+ * has verified the device-key envelope and stored an {@link AppRequestContext}; handlers read
+ * identity from {@link AppRequestContext#require} only, never from the body or the query string. A
+ * handler reached without the context (the interceptor did not run) answers {@code
+ * HR_APP_NOT_PAIRED}. The one unsigned call is {@code GET /consent/latest}: it carries no shop
+ * data, and the interceptor allow-lists exactly that path.
  *
- * <ol>
- *   <li><b>Unsigned pairing handshake</b>: {@code claim}, {@code complete}, {@code abandon}. The
- *       phone has no key yet, so the pairing code and the short-lived claim token are the only
- *       credentials; {@link AppRateLimiter} applies the per-installation lockout (R2.5). {@code GET
- *       /consent/latest} is unsigned too: it carries no shop data. The interceptor allow-lists
- *       exactly these paths.
- *   <li><b>Signed calls</b>: {@code GET /me}, {@code POST /punches}, {@code GET /punches}, {@code
- *       POST /consent}, {@code POST /pairings/me/unpair}. For those the interceptor has verified
- *       the device-key envelope and stored an {@link AppRequestContext}; handlers read identity
- *       from {@link AppRequestContext#require} only, never from the body or the query string. A
- *       handler reached without the context (the interceptor did not run) answers {@code
- *       HR_APP_NOT_PAIRED}.
- * </ol>
+ * <p>There is no pairing handshake here (worker-app D11, DD4): a pairing code is redeemed only on
+ * {@code /api/v1/hr/worker/pairings/claim|complete|abandon} with the Bearer token, by a signed-in
+ * worker for their own employee record ({@code WorkerController}). The request-shape checks those
+ * handlers share with the HR-module bodies live at the bottom of this class.
  *
  * <p>{@code GET /attendance-app/health} is a manager call on the Bearer chain and lives in {@link
  * AttendanceAppHealthController}.
@@ -82,56 +73,11 @@ public class AttendanceAppController {
 
   @Autowired private DevicePairingService pairingService;
 
-  @Autowired private AppRateLimiter rateLimiter;
-
   @Autowired private AppPunchService punchService;
 
   @Autowired private ConsentVersions consentVersions;
 
-  // ---- unsigned pairing handshake (allow-listed in AttendanceAppAuthInterceptor) ----------------
-
-  /**
-   * Step one (R2.6, R2.14): the code the worker scanned or typed. Answers the names to confirm,
-   * the consent text and a claim token. Refusals are the R2.14 codes; five of them from one
-   * installation in 15 minutes lock it for 15 minutes (R2.5, {@code HR_PAIRING_CODE_LOCKED}).
-   */
-  @PostMapping("/pairings/claim")
-  public ResponseEntity<ApiResponse<ClaimPairingResponse>> claim(
-      @RequestBody ClaimPairingRequest body) {
-    validate(body);
-    ClaimPairingResponse response = rateLimiter.guardCodeAttempt(body.getInstallationId(),
-        () -> pairingService.claim(body.getCode(), body.getInstallationId(), body.getOs(),
-            body.getOsVersion(), body.getPhoneModel(), body.getAppVersion()));
-    return ResponseEntity.ok(ApiResponse.success(response));
-  }
-
-  /**
-   * Step two, "I agree" (R2.9): registers the phone's public keys and activates the pairing. The
-   * answer is everything the app keeps about its pairing (R9.3). An optional {@code
-   * attestationChain} (Android key attestation of the punch key, task 16.4) is verified and recorded
-   * on the pairing; it never changes the answer in this version.
-   */
-  @PostMapping("/pairings/complete")
-  public ResponseEntity<ApiResponse<PairingBootstrapResponse>> complete(
-      @RequestBody CompletePairingRequest body) {
-    validate(body);
-    PairingBootstrapResponse response = rateLimiter.guardCodeAttempt(body.getInstallationId(),
-        () -> pairingService.complete(body.getClaimToken(), body.getInstallationId(),
-            body.getPunchPublicKey(), body.getDevicePublicKey(), body.getConsentVersion(),
-            body.getAttestationChain()));
-    return ResponseEntity.ok(ApiResponse.success(response));
-  }
-
-  /** "No, this isn't me" or "Don't agree" (R2.6, R2.8): the code can never pair. Idempotent. */
-  @PostMapping("/pairings/abandon")
-  public ResponseEntity<ApiResponse<Map<String, Boolean>>> abandon(
-      @RequestBody AbandonPairingRequest body) {
-    if (body == null || !StringUtils.hasText(body.getClaimToken())) {
-      throw new ValidationException("claimToken is required");
-    }
-    pairingService.abandon(body.getClaimToken());
-    return ResponseEntity.ok(ApiResponse.success(Map.of("abandoned", true)));
-  }
+  // ---- the one unsigned call (allow-listed in AttendanceAppAuthInterceptor) -------------------
 
   /**
    * The newest consent text (R9.12), for the one-page privacy note and for an app that wants the
@@ -211,9 +157,12 @@ public class AttendanceAppController {
   // ---- shape checks ----------------------------------------------------------------------------
   // Field shapes only (400); every business refusal is the service's and keeps its own code so the
   // app can show the message word for word. Business rules on the code itself (alphabet, length)
-  // are the service's too, because a malformed code is "code wrong" to the worker (R2.14).
+  // are the service's too, because a malformed code is "code wrong" to the worker (R2.14). The
+  // handshake bodies are checked here, next to the HR-module DTOs they belong to, and used by
+  // {@code WorkerController}, the only handshake (DD4).
 
-  private static void validate(ClaimPairingRequest body) {
+  /** The Bearer handshake's step-one body ({@code WorkerController}). */
+  static void validate(ClaimPairingRequest body) {
     if (body == null) {
       throw new ValidationException("A request body is required");
     }
@@ -229,7 +178,8 @@ public class AttendanceAppController {
     requireLength("appVersion", body.getAppVersion(), MAX_VERSION_LENGTH);
   }
 
-  private static void validate(CompletePairingRequest body) {
+  /** The Bearer handshake's step-two body ({@code WorkerController}). */
+  static void validate(CompletePairingRequest body) {
     if (body == null) {
       throw new ValidationException("A request body is required");
     }
@@ -263,7 +213,8 @@ public class AttendanceAppController {
     }
   }
 
-  private static void requireDateShape(String field, String value) {
+  /** Shared with {@code WorkerController}. */
+  static void requireDateShape(String field, String value) {
     if (StringUtils.hasText(value) && !DATE_SHAPE.matcher(value.trim()).matches()) {
       throw new ValidationException(field + " must be a date like 2025-04-07");
     }

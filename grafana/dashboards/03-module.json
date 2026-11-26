@@ -1565,6 +1565,74 @@
           "range": true
         }
       ]
+    },
+    {
+      "id": 203,
+      "type": "timeseries",
+      "title": "Join requests per event",
+      "description": "Stockkart Team join requests per hour (worker-app R14.2–R14.3), one series per event: created, approved_created, approved_linked, rejected, withdrawn. Over any period created = approved_created + approved_linked + rejected + withdrawn + still pending, so a created line that keeps climbing above the decisions is an inbox nobody is clearing. Metric rows: [docs/metrics.md → hr](https://github.com/Stockkart/inventory-api/blob/main/docs/metrics.md#hr).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 46
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (event) (increase(inventory_hr_worker_join_requests_total{service=\"inventory-api\", env=\"$env\", shop=~\"$shop\"}[1h]))",
+          "legendFormat": "{{event}}",
+          "refId": "A",
+          "range": true
+        }
+      ]
     }
   ],
   "refresh": "1m",

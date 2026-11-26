@@ -99,6 +99,17 @@ public class EmployeeController {
         HrRequestUtils.requireUserId(request), HrRequestUtils.requireShopId(request), id, body)));
   }
 
+  /**
+   * "Request profile details" (worker-app R8.7): stamps {@code profileRequestedAt} and tells the
+   * linked worker account; ADD_EDIT_EMPLOYEES, checked in the service.
+   */
+  @PostMapping("/employees/{id}/request-profile")
+  public ResponseEntity<ApiResponse<EmployeeResponse>> requestProfile(
+      @PathVariable String id, HttpServletRequest request) {
+    return ResponseEntity.ok(ApiResponse.success(employeeService.requestProfile(
+        HrRequestUtils.requireUserId(request), HrRequestUtils.requireShopId(request), id)));
+  }
+
   @GetMapping("/linkable-logins")
   public ResponseEntity<ApiResponse<List<LinkableLoginResponse>>> linkableLogins(
       HttpServletRequest request) {

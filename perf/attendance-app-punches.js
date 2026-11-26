@@ -27,6 +27,12 @@
  *     same thresholds and printed as a table. `http_server_requests_seconds` is disabled in this
  *     app (`management.observations.enable.[http.server.requests]=false`), hence the custom meter.
  *
+ * Worker-app R14.6 re-measures the punch p95 ≤ 500 ms with this same script after the Stockkart Team app's
+ * Bearer paths shipped: the device paths (`AttendanceAppAuthInterceptor.DEVICE_PATH_PATTERNS`) are
+ * excluded from the Bearer chain in `CorsConfig.bearerChainExclusions()`, and the worker-side
+ * `WorkerCredentialInterceptor` is registered on `/api/v1/hr/worker/**` only, so no Bearer code
+ * runs on `POST /hr/attendance-app/punches`. The `punch` thresholds below are that assertion.
+ *
  * Environment: BASE_URL (overrides the fixture's), FIXTURE (path), DURATION, PUNCH_RATE, ME_RATE,
  * HISTORY_RATE, PAIRING_RATE, METRICS_URL (default BASE_URL origin + /actuator/prometheus; `off`
  * skips the server-side read). Self-signed TLS: `k6 run --insecure-skip-tls-verify`.
@@ -50,6 +56,7 @@ import {
   ECDSA_P256,
   base64Encode,
 } from './lib/attendance-protocol.js';
+import { SERVER_METRIC, latencyReport, parseHistogram } from './lib/server-latency.js';
 
 // ---- init: fixture, URLs, options -----------------------------------------------------------------
 
@@ -75,7 +82,6 @@ const PAIRING_RATE = Number(__ENV.PAIRING_RATE || 30); // per minute
 const pairings = new SharedArray('pairings', () => fixture.pairings);
 const pairingPool = fixture.pairingPool || [];
 
-const SERVER_METRIC = 'inventory_http_latency_bucket_total';
 /** The server-side rows to read: Spring path pattern (the `uri` tag) and the R10 target. */
 const SERVER_TARGETS = [
   { target: 'punch', method: 'POST', uri: `${BASE_PATH}/hr/attendance-app/punches`, p95Ms: 500 },
@@ -458,46 +464,18 @@ export function teardown(data) {
   if (!data.baseline || !end) {
     fail(`could not read ${SERVER_METRIC} from ${METRICS_URL}; is /actuator/prometheus exposed?`);
   }
-  const lines = [
-    '',
-    `server-side latency from ${SERVER_METRIC} (delta over this run, filter-level timer)`,
-    pad('target', 18) + pad('method uri', 52) + pad('requests', 10) + pad('p95 ms', 10) + pad('share <= target', 17) + 'verdict',
-  ];
-  for (const t of SERVER_TARGETS) {
-    const key = rowKey(t.method, t.uri);
-    const delta = subtractBuckets(end[key], data.baseline[key]);
-    const total = delta ? delta['+Inf'] || 0 : 0;
-    if (total === 0) {
-      lines.push(pad(t.target, 18) + pad(`${t.method} ${t.uri}`, 52) + pad('0', 10) + 'no requests in this run');
-      continue;
-    }
-    const p95 = quantileMs(delta, 0.95);
-    const share = shareWithin(delta, t.p95Ms / 1000);
-    serverP95.add(p95.ms, { target: t.target });
-    serverShareWithinTarget.add(share, { target: t.target });
-    serverRequests.add(total, { target: t.target });
-    const verdict = share >= 0.95 ? `PASS (p95 <= ${t.p95Ms} ms)` : `FAIL (p95 > ${t.p95Ms} ms)`;
-    lines.push(
-      pad(t.target, 18) +
-        pad(`${t.method} ${t.uri}`, 52) +
-        pad(String(total), 10) +
-        pad(p95.text, 10) +
-        pad(`${(share * 100).toFixed(2)} %`, 17) +
-        verdict,
-    );
+  const report = latencyReport(SERVER_TARGETS, data.baseline, end);
+  for (const row of report.rows) {
+    serverP95.add(row.p95Ms, { target: row.target });
+    serverShareWithinTarget.add(row.share, { target: row.target });
+    serverRequests.add(row.total, { target: row.target });
   }
-  lines.push(
-    '',
-    'p95 is interpolated inside the bucket it falls in (Prometheus histogram_quantile style); the exact statement',
-    'behind the verdict is "share <= target >= 95 %", read straight from the le=0.5 / le=1 bucket.',
-  );
-  console.log(lines.join('\n'));
+  console.log(report.lines.join('\n'));
 }
 
 /**
  * Scrapes `SERVER_METRIC` and returns `{ "<method> <uri>": { "<le>": count } }`, summed over
- * `status` and `module`. Tolerates both Prometheus text flavours Micrometer has produced
- * (`{a="b",c="d",}` with the trailing comma, and without).
+ * `status` and `module` (`lib/server-latency.js` does the parsing).
  */
 function scrapeServerHistogram() {
   if (METRICS_URL === 'off') {
@@ -508,91 +486,5 @@ function scrapeServerHistogram() {
     console.error(`scrape of ${METRICS_URL} failed: ${res.status}`);
     return null;
   }
-  const out = {};
-  const prefix = `${SERVER_METRIC}{`;
-  for (const line of res.body.split('\n')) {
-    if (!line.startsWith(prefix)) {
-      continue;
-    }
-    // The last `}` closes the label block: `uri` values such as `/hr/employees/{id}/pairing-codes`
-    // contain braces of their own, and the sample value after the block never does.
-    const close = line.lastIndexOf('}');
-    const labels = parseLabels(line.slice(prefix.length, close));
-    const value = Number(line.slice(close + 1).trim().split(/\s+/)[0]);
-    if (!labels.le || !labels.uri || !labels.method || !Number.isFinite(value)) {
-      continue;
-    }
-    const key = rowKey(labels.method, labels.uri);
-    const row = out[key] || (out[key] = {});
-    row[labels.le] = (row[labels.le] || 0) + value;
-  }
-  return out;
-}
-
-function parseLabels(text) {
-  const labels = {};
-  const re = /([A-Za-z_][A-Za-z0-9_]*)="((?:[^"\\]|\\.)*)"/g;
-  let m;
-  while ((m = re.exec(text)) !== null) {
-    labels[m[1]] = m[2].replace(/\\"/g, '"').replace(/\\\\/g, '\\');
-  }
-  return labels;
-}
-
-function rowKey(method, uri) {
-  return `${method} ${uri}`;
-}
-
-function subtractBuckets(end, start) {
-  if (!end) {
-    return null;
-  }
-  const out = {};
-  for (const le of Object.keys(end)) {
-    out[le] = end[le] - ((start && start[le]) || 0);
-  }
-  return out;
-}
-
-/** Finite bucket bounds, ascending, each with the exact label Micrometer printed (`"0.5"`, `"1"`). */
-function finiteBounds(buckets) {
-  return Object.keys(buckets)
-    .filter((le) => le !== '+Inf')
-    .map((label) => ({ label, value: Number(label) }))
-    .filter((b) => Number.isFinite(b.value))
-    .sort((a, b) => a.value - b.value);
-}
-
-/** Share of requests at or under `seconds`, read from the cumulative bucket with that bound. */
-function shareWithin(buckets, seconds) {
-  const total = buckets['+Inf'] || 0;
-  const bound = finiteBounds(buckets).find((b) => Math.abs(b.value - seconds) < 1e-9);
-  if (bound === undefined || total === 0) {
-    return NaN;
-  }
-  return buckets[bound.label] / total;
-}
-
-/** Prometheus-style linear interpolation inside the first bucket whose cumulative count reaches the rank. */
-function quantileMs(buckets, q) {
-  const total = buckets['+Inf'] || 0;
-  const rank = q * total;
-  let lower = 0;
-  let below = 0;
-  for (const bound of finiteBounds(buckets)) {
-    const cumulative = buckets[bound.label] || 0;
-    if (cumulative >= rank) {
-      const inBucket = cumulative - below;
-      const seconds = inBucket > 0 ? lower + ((bound.value - lower) * (rank - below)) / inBucket : bound.value;
-      return { ms: Math.round(seconds * 1000), text: String(Math.round(seconds * 1000)) };
-    }
-    lower = bound.value;
-    below = cumulative;
-  }
-  return { ms: lower * 1000 + 1, text: `> ${lower * 1000}` };
-}
-
-function pad(text, width) {
-  const s = String(text);
-  return s.length >= width ? `${s} ` : s + ' '.repeat(width - s.length);
+  return parseHistogram(res.body, SERVER_METRIC);
 }

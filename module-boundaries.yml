@@ -36,7 +36,7 @@ modules:
     dependsOn: [metrics]
   user:
     dependsOn: [common, notifications, metrics]
-    collections: [users, user_shop_memberships, invitations, join_requests, shop_rbac_policies,
+    collections: [users, user_shop_memberships, user_photos, invitations, join_requests, shop_rbac_policies,
                   customers, shop_customers, vendors, shop_vendors]
   accounting:
     dependsOn: [common, metrics]
@@ -52,7 +52,8 @@ modules:
     collections: [hr_employees, hr_attendance_days, hr_leave_types, hr_leave_requests, hr_holidays,
                   hr_payroll_runs, hr_payroll_lines, hr_advances, hr_settings, hr_role_permissions,
                   hr_notifications, hr_audit_events, hr_counters, hr_punches,
-                  hr_device_pairings, hr_pairing_codes, hr_app_nonces, hr_app_alerts]
+                  hr_device_pairings, hr_pairing_codes, hr_app_nonces, hr_app_alerts,
+                  hr_join_requests]
   product:
     dependsOn: [common, metrics, user, credit, accounting, pricing, pluginengine, reminders,
                 documentservice, ocr, plan]

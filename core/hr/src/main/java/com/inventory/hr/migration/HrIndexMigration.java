@@ -17,10 +17,13 @@ import com.inventory.hr.domain.model.PairingCode;
 import com.inventory.hr.domain.model.PayrollLine;
 import com.inventory.hr.domain.model.PayrollRun;
 import com.inventory.hr.domain.model.Punch;
+import com.inventory.hr.domain.model.WorkerJoinRequest;
 import com.inventory.hr.domain.model.enums.PairingStatus;
+import com.inventory.hr.domain.model.enums.WorkerJoinStatus;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -29,16 +32,23 @@ import org.springframework.core.annotation.Order;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.index.Index;
+import org.springframework.data.mongodb.core.index.IndexInfo;
 import org.springframework.data.mongodb.core.index.PartialIndexFilter;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.stereotype.Component;
 
 /**
- * Idempotent: ensures every index of the {@code hr_*} collections (design "Data model"), including
- * collections whose services come in later tasks, so their first query is already indexed.
- * Automatic index creation is off and HR models carry no {@code @Indexed}, so nothing else creates
- * them. {@code hr_counters} needs none ({@code _id} only). Each index is ensured on its own, so one
- * failure (e.g. duplicates in old data) is logged and does not stop the rest.
+ * Idempotent: ensures every index of the {@code hr_*} collections (HR-module design "Data model"
+ * and worker-app design "Data Models"), including collections whose services come in later tasks,
+ * so their first query is already indexed. Automatic index creation is off and HR models carry no
+ * {@code @Indexed}, so nothing else creates them. {@code hr_counters} needs none ({@code _id}
+ * only). Each index is ensured on its own, so one failure (e.g. duplicates in old data) is logged
+ * and does not stop the rest.
+ *
+ * <p>It also drops what an earlier build of the Stockkart Team app created and D11 removed ({@link
+ * #DROPPED}): the {@code hr_pairing_proofs} indexes and the {@code hr_join_requests} link-request
+ * index. Each is dropped only when present, so a dev database that had them converges and a fresh
+ * one is untouched; the collection itself is left alone (dropping data is not this class's job).
  */
 @Component
 @Slf4j
@@ -50,11 +60,27 @@ public class HrIndexMigration {
   /** 15 minutes: longer than the ±10 min envelope timestamp window, so a replay is always caught. */
   static final long NONCE_TTL_SECONDS = Duration.ofMinutes(15).toSeconds();
 
+  /** The collection the removed pairing proofs lived in (worker-app D11, DD6 removed). */
+  static final String PAIRING_PROOFS_COLLECTION = "hr_pairing_proofs";
+
+  /** The {@code hr_join_requests} collection, where the removed link-request index lived. */
+  static final String JOIN_REQUESTS_COLLECTION = "hr_join_requests";
+
+  /**
+   * Indexes of the removed legacy pairing flows, by collection: dropped when present (worker-app
+   * D11). {@code hr_pairing_proofs}: {@code token_hash_unique}, {@code expires_ttl}; {@code
+   * hr_join_requests}: the partial {@code (pairingId)} index {@code pairing_link_pending}.
+   */
+  static final Map<String, List<String>> DROPPED = Map.of(
+      PAIRING_PROOFS_COLLECTION, List.of("token_hash_unique", "expires_ttl"),
+      JOIN_REQUESTS_COLLECTION, List.of("pairing_link_pending"));
+
   @Autowired private MongoTemplate mongoTemplate;
 
   @EventListener(ApplicationReadyEvent.class)
   @Order(11)
   public void run() {
+    dropRemoved();
     int ensured = 0;
     List<IndexSpec> specs = specs();
     for (IndexSpec spec : specs) {
@@ -67,6 +93,33 @@ public class HrIndexMigration {
       }
     }
     log.info("[hr-index] ensured {} of {} indexes", ensured, specs.size());
+  }
+
+  /**
+   * Drops every index in {@link #DROPPED} that exists. Idempotent: a missing collection or index is
+   * nothing to do, and a failure is logged and does not stop the rest, like {@link #run}.
+   */
+  void dropRemoved() {
+    for (Map.Entry<String, List<String>> e : DROPPED.entrySet()) {
+      String collection = e.getKey();
+      try {
+        if (!mongoTemplate.collectionExists(collection)) {
+          continue;
+        }
+        List<String> present = mongoTemplate.indexOps(collection).getIndexInfo().stream()
+            .map(IndexInfo::getName)
+            .toList();
+        for (String name : e.getValue()) {
+          if (present.contains(name)) {
+            mongoTemplate.indexOps(collection).dropIndex(name);
+            log.info("[hr-index] dropped removed index {} on {}", name, collection);
+          }
+        }
+      } catch (RuntimeException ex) {
+        log.error("[hr-index] failed to drop removed indexes on {}: {}", collection,
+            ex.getMessage(), ex);
+      }
+    }
   }
 
   /** Every HR index, in design-table order. Package-private for the migration test. */
@@ -128,12 +181,52 @@ public class HrIndexMigration {
     s.add(spec(AppNonce.class, "seen_ttl", asc("seenAt").expire(NONCE_TTL_SECONDS)));
     // Signature-failure alerts: dashboard reads the open ones per shop
     s.add(spec(AppHealthAlert.class, "shop_cleared", asc("shopId", "clearedAt")));
+    // Worker join requests (worker-app R3.5, R4.12, R11.3, R14.5). Inbox list and tab count
+    // read (shopId, status) newest first; requestedAt desc makes the sort an index walk.
+    s.add(spec(WorkerJoinRequest.class, "shop_status_requested",
+        asc("shopId", "status").on("requestedAt", Sort.Direction.DESC)));
+    // One open request per account, enforced by the database: only PENDING / APPROVING rows take
+    // part, so an account may hold any number of decided rows. A racing second insert gets a
+    // duplicate-key error, which the service turns into HR_WORKER_REQUEST_PENDING. ($in inside a
+    // partial filter needs MongoDB 6.0+; the compose file runs 7.)
+    s.add(spec(WorkerJoinRequest.class, "user_open_unique",
+        asc("userId").unique().partial(openRequestsOnly())));
+    // the Join screen's "last outcome" card: the account's most recent decision in 90 days
+    s.add(spec(WorkerJoinRequest.class, "user_decided",
+        asc("userId").on("decidedAt", Sort.Direction.DESC)));
+    // 90-day retention after the decision; expiresAt is null while PENDING, so open requests stay
+    s.add(spec(WorkerJoinRequest.class, "expires_ttl", asc("expiresAt").expire(0)));
+    // WorkerExitJob (DD14): linked employees whose exit has not yet ended their membership. The
+    // partial filter keeps the index to those rows; the job's query must repeat both predicates
+    // exactly ({userId: {$type: "string"}, membershipEndedAt: null}) — $exists or $ne: null on
+    // userId is not recognised as a subset and falls back to a collection scan.
+    s.add(spec(Employee.class, "exit_membership_pending",
+        asc("status", "exitDate").partial(PartialIndexFilter.of(
+            Criteria.where("userId").type(2).and("membershipEndedAt").is(null)))));
+    // Possible match for a join request (R4.3): a shop's employees by e-mail or phone. Both fields
+    // are optional. A sparse compound index would not skip anything (shopId is always set), so
+    // each is partial on the optional field existing; equality, $in and an anchored regex on the
+    // field all walk it.
+    s.add(spec(Employee.class, "shop_email",
+        asc("shopId", "email").partial(PartialIndexFilter.of(Criteria.where("email").exists(true)))));
+    s.add(spec(Employee.class, "shop_phone",
+        asc("shopId", "phone").partial(PartialIndexFilter.of(Criteria.where("phone").exists(true)))));
+    // Worker notifications without a shop context (R10.1): a worker with a pending request has no
+    // shop yet, so the inbox is read per account across shops, newest first
+    s.add(spec(HrNotification.class, "recipient_created",
+        asc("recipientUserId").on("createdAt", Sort.Direction.DESC)));
     return s;
   }
 
   /** {@code partialFilterExpression {status: "ACTIVE"}}: enums are stored as constant names. */
   private static PartialIndexFilter activeOnly() {
     return PartialIndexFilter.of(Criteria.where("status").is(PairingStatus.ACTIVE.name()));
+  }
+
+  /** {@code partialFilterExpression {status: {$in: ["PENDING", "APPROVING"]}}} (R3.5, DD12). */
+  private static PartialIndexFilter openRequestsOnly() {
+    return PartialIndexFilter.of(Criteria.where("status")
+        .in(WorkerJoinStatus.PENDING.name(), WorkerJoinStatus.APPROVING.name()));
   }
 
   private static Index asc(String... keys) {

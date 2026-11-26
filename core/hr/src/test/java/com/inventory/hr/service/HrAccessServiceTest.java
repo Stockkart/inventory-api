@@ -4,6 +4,7 @@ import static com.inventory.hr.HrTestFixtures.SHOP;
 import static com.inventory.hr.HrTestFixtures.USER;
 import static com.inventory.hr.HrTestFixtures.access;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -117,6 +118,27 @@ class HrAccessServiceTest {
     when(rolePermissionsRepository.findByShopId(SHOP)).thenReturn(Optional.empty());
 
     assertTrue(service.permissionsFor(access(false, "OWNER", true), SHOP).isEmpty());
+  }
+
+  /** worker-app R2.3: WORKER has no row in the grid and fails closed whatever the grid says. */
+  @Test
+  void workerIsNotAGridRoleAndGetsNoPermission() {
+    assertEquals(List.of(UserRole.ADMIN, UserRole.MANAGER, UserRole.CASHIER),
+        HrAccessService.GRID_ROLES, "GRID_ROLES must not grow to include WORKER");
+    assertFalse(HrAccessService.DEFAULT_ROWS.containsKey(UserRole.WORKER));
+
+    // a grid document hand-edited to carry a WORKER row still grants nothing
+    HrRolePermissions grid = new HrRolePermissions();
+    grid.setRoles(Map.of(UserRole.WORKER, List.of(HrPermission.values())));
+    assertTrue(HrAccessService.rowFor(UserRole.WORKER, grid).isEmpty());
+    assertTrue(HrAccessService.rowFor(UserRole.WORKER, null).isEmpty());
+    assertTrue(HrAccessService.resolve(false, true, UserRole.WORKER, grid).isEmpty());
+
+    // and through the service, with hr on or absent, without a grid read being needed to decide
+    when(rolePermissionsRepository.findByShopId(SHOP)).thenReturn(Optional.of(grid));
+    assertTrue(service.permissionsFor(access(false, "WORKER", true), SHOP).isEmpty());
+    assertTrue(service.permissionsFor(access(false, "WORKER", null), SHOP).isEmpty());
+    assertTrue(service.permissionsFor(access(false, "WORKER", false), SHOP).isEmpty());
   }
 
   @Test

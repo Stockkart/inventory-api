@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -51,6 +52,10 @@ import com.inventory.hr.service.AppPunchService;
 import com.inventory.hr.service.AppRateLimiter;
 import com.inventory.hr.service.AttendanceAppAuthInterceptor;
 import com.inventory.hr.service.AttendanceAppBodyCachingFilter;
+import com.inventory.hr.service.WorkerJoinService;
+import com.inventory.hr.service.WorkerPairingService;
+import com.inventory.hr.service.WorkerSelfService;
+import com.inventory.hr.service.WorkerStateService;
 import com.inventory.hr.service.ConsentVersions;
 import com.inventory.hr.service.DevicePairingService;
 import com.inventory.hr.service.EmployeePairingService;
@@ -65,9 +70,10 @@ import com.inventory.hr.utils.HrDateUtils;
 import com.inventory.hr.utils.PairingCodes;
 import com.inventory.hr.utils.constants.HrMetricsConstants;
 import com.inventory.hr.validation.AppPunchValidator;
+import com.inventory.hr.validation.JoinRequestInboxValidator;
+import com.inventory.user.api.WorkerAccounts;
+import com.inventory.user.api.WorkerAccounts.AccountView;
 import com.jayway.jsonpath.JsonPath;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -82,6 +88,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.EnumSet;
 import java.util.HashSet;
@@ -106,14 +113,15 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
-import org.springframework.web.servlet.HandlerInterceptor;
 
 /**
  * The Attendance app's HTTP surface end to end against a real MongoDB (R2–R6, R8.9; tasks 3.8
  * and 5.10, IT parts): the manager's pairing and health endpoints on the Bearer chain (request
  * attributes {@code userId}/{@code shopId} as {@code AuthenticationInterceptor} leaves them, a
- * real {@link HrPermissionGuard}), the phone's unsigned handshake through the real {@link
- * AppRateLimiter}, and every signed call ({@code /me}, {@code /punches}, {@code /consent}, {@code
+ * real {@link HrPermissionGuard}), the signed-in worker's handshake on {@code
+ * /api/v1/hr/worker/pairings/*} through the real {@link WorkerPairingService} and {@link
+ * AppRateLimiter} (the only handshake since worker-app D11 / DD4: every employee here is linked to
+ * a login and the request carries that login as the Bearer chain would), and every signed call ({@code /me}, {@code /punches}, {@code /consent}, {@code
  * /pairings/me/unpair}) through the real {@link AttendanceAppBodyCachingFilter}, {@link
  * AttendanceAppAuthInterceptor} and {@link AppPunchService} with real P-256 keys: the request
  * envelope signed by the device key, the punch payload by the punch key, exactly as the app does.
@@ -125,6 +133,8 @@ import org.springframework.web.servlet.HandlerInterceptor;
 class AttendanceAppControllerIT {
 
   private static final String ROOT = "/api/v1/hr/attendance-app";
+  /** The Bearer handshake lives here (worker-app DD4). */
+  private static final String WORKER_ROOT = "/api/v1/hr/worker";
   private static final String MANAGER = "66aa00000000000000000001";
   /** Holds VIEW_EMPLOYEES only: may look, may not pair. */
   private static final String VIEWER = "66aa00000000000000000002";
@@ -188,11 +198,30 @@ class AttendanceAppControllerIT {
     ReflectionTestUtils.setField(punches, "clock", clock);
     AttendanceAppController appController = new AttendanceAppController();
     ReflectionTestUtils.setField(appController, "pairingService", it.pairings);
-    ReflectionTestUtils.setField(appController, "rateLimiter", rateLimiter);
     ReflectionTestUtils.setField(appController, "punchService", punches);
     ReflectionTestUtils.setField(appController, "consentVersions", consents);
 
-    // the envelope check, as CorsConfig registers it: on /attendance-app/** except /health
+    // the handshake, on the Bearer chain: the real WorkerPairingService over the real pairing
+    // service and employee repository; the worker self-service (R5.6 rule) is a stub that lets
+    // every login through, since who may pair which code is DevicePairingService's rule
+    WorkerPairingService workerPairing = new WorkerPairingService();
+    ReflectionTestUtils.setField(workerPairing, "pairingService", it.pairings);
+    ReflectionTestUtils.setField(workerPairing, "employeeRepository",
+        repos.getRepository(EmployeeRepository.class));
+    ReflectionTestUtils.setField(workerPairing, "workerAccounts", mock(WorkerAccounts.class));
+    WorkerSelfService selfService = mock(WorkerSelfService.class);
+    when(selfService.requireWorkerAccess(anyString())).thenAnswer(i -> new AccountView(
+        i.getArgument(0), "Worker", i.getArgument(0) + "@example.com", "9876543210", "WORKER",
+        null, true));
+    WorkerController workerController = new WorkerController();
+    ReflectionTestUtils.setField(workerController, "pairingService", workerPairing);
+    ReflectionTestUtils.setField(workerController, "selfService", selfService);
+    ReflectionTestUtils.setField(workerController, "rateLimiter", rateLimiter);
+    ReflectionTestUtils.setField(workerController, "stateService", mock(WorkerStateService.class));
+    ReflectionTestUtils.setField(workerController, "joinService", mock(WorkerJoinService.class));
+    ReflectionTestUtils.setField(workerController, "validator", new JoinRequestInboxValidator());
+
+    // the envelope check, as CorsConfig registers it: on the device paths only
     AttendanceAppAuthInterceptor interceptor = new AttendanceAppAuthInterceptor();
     ReflectionTestUtils.setField(interceptor, "pairingRepository",
         repos.getRepository(DevicePairingRepository.class));
@@ -209,21 +238,12 @@ class AttendanceAppControllerIT {
 
     GlobalExceptionHandler handler = new GlobalExceptionHandler();
     ReflectionTestUtils.setField(handler, "apiErrorMapper", new ApiErrorMapperImpl());
-    // CorsConfig: addPathPatterns(PATH_PATTERN).excludePathPatterns(HEALTH_PATH); the standalone
-    // builder has no exclude overload, so the exclusion is applied by hand
-    HandlerInterceptor deviceChain = new HandlerInterceptor() {
-      @Override
-      public boolean preHandle(HttpServletRequest request, HttpServletResponse response,
-          Object target) {
-        return AttendanceAppAuthInterceptor.HEALTH_PATH.equals(request.getRequestURI())
-            || interceptor.preHandle(request, response, target);
-      }
-    };
-    mvc = MockMvcBuilders.standaloneSetup(appController, employeeController, healthController)
+    mvc = MockMvcBuilders.standaloneSetup(appController, employeeController, healthController,
+            workerController)
         .setControllerAdvice(handler)
         .addFilters(new AttendanceAppBodyCachingFilter())
-        .addMappedInterceptors(new String[] {AttendanceAppAuthInterceptor.PATH_PATTERN},
-            deviceChain)
+        .addMappedInterceptors(
+            AttendanceAppAuthInterceptor.DEVICE_PATH_PATTERNS.toArray(String[]::new), interceptor)
         .build();
   }
 
@@ -381,19 +401,22 @@ class AttendanceAppControllerIT {
         """.formatted(code, installationId, model);
   }
 
-  private static MockHttpServletRequestBuilder claim(String code, String installationId,
-      String model) {
-    return post(ROOT + "/pairings/claim").contentType(MediaType.APPLICATION_JSON)
-        .content(claimBody(code, installationId, model));
+  /** Step one on the Bearer path, as the employee's own login (worker-app R7.2–R7.3). */
+  private static MockHttpServletRequestBuilder claim(Employee e, String code,
+      String installationId, String model) {
+    return asWorker(post(WORKER_ROOT + "/pairings/claim").contentType(MediaType.APPLICATION_JSON)
+        .content(claimBody(code, installationId, model)), e);
   }
 
-  private static MockHttpServletRequestBuilder claim(String code, String installationId) {
-    return claim(code, installationId, "Redmi Note 11");
+  private static MockHttpServletRequestBuilder claim(Employee e, String code,
+      String installationId) {
+    return claim(e, code, installationId, "Redmi Note 11");
   }
 
-  /** Step one as the phone; returns the body (claim token and consent version). */
-  private static String claimOk(String code, Phone phone, String model) throws Exception {
-    return json(mvc.perform(claim(code, phone.installationId(), model))
+  /** Step one as the signed-in worker; returns the body (claim token and consent version). */
+  private static String claimOk(Employee e, String code, Phone phone, String model)
+      throws Exception {
+    return json(mvc.perform(claim(e, code, phone.installationId(), model))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.data.claimToken").isString())
@@ -402,22 +425,32 @@ class AttendanceAppControllerIT {
         .andReturn());
   }
 
-  private static MockHttpServletRequestBuilder complete(String token, Phone phone, int consent) {
-    return post(ROOT + "/pairings/complete").contentType(MediaType.APPLICATION_JSON).content("""
+  /** Step two on the Bearer path, as the employee's own login. */
+  private static MockHttpServletRequestBuilder complete(Employee e, String token, Phone phone,
+      int consent) {
+    return asWorker(post(WORKER_ROOT + "/pairings/complete")
+        .contentType(MediaType.APPLICATION_JSON).content("""
         {"claimToken":"%s","installationId":"%s","punchPublicKey":"%s",
          "devicePublicKey":"%s","consentVersion":%d}
         """.formatted(token, phone.installationId(), spki(phone.punchKey()),
-        spki(phone.deviceKey()), consent));
+        spki(phone.deviceKey()), consent)), e);
   }
 
-  /** The whole handshake for {@code phone}; returns the new pairing id. */
+  /** "No, this isn't me" on the Bearer path, as the employee's own login. */
+  private static MockHttpServletRequestBuilder abandon(Employee e, String token) {
+    return asWorker(post(WORKER_ROOT + "/pairings/abandon")
+        .contentType(MediaType.APPLICATION_JSON)
+        .content("{\"claimToken\":\"" + token + "\"}"), e);
+  }
+
+  /** The whole handshake for {@code phone} as {@code e}'s login; returns the new pairing id. */
   private static String pair(String shop, Employee e, Phone phone, String model)
       throws Exception {
     String code = createCode(shop, e);
-    String claimed = claimOk(code, phone, model);
+    String claimed = claimOk(e, code, phone, model);
     String token = JsonPath.read(claimed, "$.data.claimToken");
     int consent = JsonPath.read(claimed, "$.data.consent.version");
-    MvcResult r = mvc.perform(complete(token, phone, consent))
+    MvcResult r = mvc.perform(complete(e, token, phone, consent))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.data.pairingId").isString())
@@ -554,12 +587,27 @@ class AttendanceAppControllerIT {
     return it.template.insert(p);
   }
 
+  /**
+   * An ACTIVE employee linked to its own login (worker-app D11: every pairing is made by a signed-in
+   * worker for their own record). The login is derived from the shop and code, so each test has its
+   * own and the handshake helpers below can name the caller from the employee.
+   */
+  private static Employee worker(String shop, String code, String name) {
+    return it.employee(shop, code, name, "login-" + shop.substring(shop.length() - 2) + "-" + code);
+  }
+
+  /** What {@code AuthenticationInterceptor} leaves on a request of the employee's own login. */
+  private static MockHttpServletRequestBuilder asWorker(MockHttpServletRequestBuilder r,
+      Employee e) {
+    return r.requestAttr("userId", e.getUserId()).requestAttr("shopId", e.getShopId());
+  }
+
   // ---- happy path ------------------------------------------------------------------------------
 
   @Test
   void managerCodePhoneClaimAndCompleteMakeAnActivePairing() throws Exception {
     String shop = shop("01", true);
-    Employee asha = it.employee(shop, "EMP-001", "Asha", null);
+    Employee asha = worker(shop, "EMP-001", "Asha");
     Phone phone = Phone.create();
 
     // before: Not paired, no pending code
@@ -581,9 +629,9 @@ class AttendanceAppControllerIT {
         .andExpect(jsonPath("$.data.state").value("NOT_PAIRED"))
         .andExpect(jsonPath("$.data.pendingCode.expiresAt").exists());
 
-    // claim: unsigned, no Bearer; typing is forgiving (R2.3)
+    // claim: with Asha's login on the worker path (DD4); typing is forgiving (R2.3)
     String typed = code.substring(0, 4).toLowerCase() + " " + code.substring(4);
-    String claimed = claimOk(typed, phone, "Redmi Note 11");
+    String claimed = claimOk(asha, typed, phone, "Redmi Note 11");
     assertEquals("Asha", JsonPath.read(claimed, "$.data.employeeName"));
     String token = JsonPath.read(claimed, "$.data.claimToken");
     int consent = JsonPath.read(claimed, "$.data.consent.version");
@@ -591,9 +639,8 @@ class AttendanceAppControllerIT {
     assertFalse(rawJson("hr_pairing_codes", shop).contains(token), "token stored hashed only");
 
     // complete with real P-256 keys
-    MvcResult r = mvc.perform(complete(token, phone, consent))
+    MvcResult r = mvc.perform(complete(asha, token, phone, consent))
         .andExpect(status().isOk())
-        .andExpect(header().exists(AttendanceAppAuthInterceptor.HEADER_SERVER_TIME))
         .andExpect(jsonPath("$.data.employeeName").value("Asha"))
         .andExpect(jsonPath("$.data.location.locationCheck").value(false))
         .andReturn();
@@ -651,7 +698,7 @@ class AttendanceAppControllerIT {
   @Test
   void aViewerMayNotCreateACodeOrUnpair() throws Exception {
     String shop = shop("02", true);
-    Employee e = it.employee(shop, "EMP-001", "Bala", null);
+    Employee e = worker(shop, "EMP-001", "Bala");
     for (MockHttpServletRequestBuilder call : List.of(
         post("/api/v1/hr/employees/" + e.getId() + "/pairing-codes"),
         post("/api/v1/hr/employees/" + e.getId() + "/pairing/unpair"),
@@ -672,7 +719,7 @@ class AttendanceAppControllerIT {
   @Test
   void aSecondPhoneReplacesTheFirstAndTheFirstIsNoLongerPaired() throws Exception {
     String shop = shop("03", true);
-    Employee e = it.employee(shop, "EMP-001", "Chitra", null);
+    Employee e = worker(shop, "EMP-001", "Chitra");
     Phone old = Phone.create();
     Phone fresh = Phone.create();
     String first = pair(shop, e, old, "Redmi Note 11");
@@ -682,11 +729,11 @@ class AttendanceAppControllerIT {
     String code = createCode(shop, e);
     assertEquals(PairingStatus.ACTIVE, pairing(first).getStatus());
     mvc.perform(signedMe(first, old)).andExpect(status().isOk());
-    String claimed = claimOk(code, fresh, "Pixel 7a");
+    String claimed = claimOk(e, code, fresh, "Pixel 7a");
     assertEquals(PairingStatus.ACTIVE, pairing(first).getStatus());
     String freshToken = JsonPath.read(claimed, "$.data.claimToken");
     int consent = JsonPath.read(claimed, "$.data.consent.version");
-    String second = JsonPath.read(json(mvc.perform(complete(freshToken, fresh, consent))
+    String second = JsonPath.read(json(mvc.perform(complete(e, freshToken, fresh, consent))
         .andExpect(status().isOk()).andReturn()), "$.data.pairingId");
 
     DevicePairing replaced = pairing(first);
@@ -720,8 +767,8 @@ class AttendanceAppControllerIT {
   @Test
   void anInstallationPairedToAnotherEmployeeLeavesTheFirstOne() throws Exception {
     String shop = shop("04", true);
-    Employee dev = it.employee(shop, "EMP-001", "Dev", null);
-    Employee esha = it.employee(shop, "EMP-002", "Esha", null);
+    Employee dev = worker(shop, "EMP-001", "Dev");
+    Employee esha = worker(shop, "EMP-002", "Esha");
     Phone shared = Phone.create();
     String devs = pair(shop, dev, shared, "Galaxy A14");
     clock.advance(Duration.ofMinutes(1));
@@ -757,19 +804,19 @@ class AttendanceAppControllerIT {
   @Test
   void anExpiredCodeIsRefusedWithItsMessage() throws Exception {
     String shop = shop("05", true);
-    Employee e = it.employee(shop, "EMP-001", "Farah", null);
+    Employee e = worker(shop, "EMP-001", "Farah");
     String code = createCode(shop, e);
     clock.advance(Duration.ofMinutes(14).plusSeconds(59));
-    String token = JsonPath.read(claimOk(code, Phone.create(), "Redmi Note 11"),
+    String token = JsonPath.read(claimOk(e, code, Phone.create(), "Redmi Note 11"),
         "$.data.claimToken");
 
     clock.advance(Duration.ofSeconds(1));
-    expectRefusal(claim(code, installation()), ErrorCode.HR_PAIRING_CODE_EXPIRED);
+    expectRefusal(claim(e, code, installation()), ErrorCode.HR_PAIRING_CODE_EXPIRED);
     // the claim token of an expired code is spent too
     Phone phone = Phone.create();
-    expectRefusal(complete(token, phone, 1), ErrorCode.HR_PAIRING_CODE_EXPIRED);
+    expectRefusal(complete(e, token, phone, 1), ErrorCode.HR_PAIRING_CODE_EXPIRED);
     // a token that matches nothing reads as expired as well (used codes are deleted)
-    expectRefusal(complete("no-such-token", phone, 1), ErrorCode.HR_PAIRING_CODE_EXPIRED);
+    expectRefusal(complete(e, "no-such-token", phone, 1), ErrorCode.HR_PAIRING_CODE_EXPIRED);
     assertEquals(0, it.template.count(Query.query(Criteria.where("shopId").is(shop)),
         DevicePairing.class));
     // the manager's page no longer shows the code as pending
@@ -780,51 +827,51 @@ class AttendanceAppControllerIT {
   @Test
   void aCodeClaimedByAnotherPhoneReadsAsUsed() throws Exception {
     String shop = shop("06", true);
-    Employee e = it.employee(shop, "EMP-001", "Gita", null);
+    Employee e = worker(shop, "EMP-001", "Gita");
     String code = createCode(shop, e);
     Phone first = Phone.create();
-    String token = JsonPath.read(claimOk(code, first, "Redmi Note 11"), "$.data.claimToken");
+    String token = JsonPath.read(claimOk(e, code, first, "Redmi Note 11"), "$.data.claimToken");
 
-    expectRefusal(claim(code, installation()), ErrorCode.HR_PAIRING_CODE_USED);
+    expectRefusal(claim(e, code, installation()), ErrorCode.HR_PAIRING_CODE_USED);
     // the first phone may re-send its own code (a lost answer); it gets a fresh token and the
     // earlier one is dead
-    String token2 = JsonPath.read(claimOk(code, first, "Redmi Note 11"), "$.data.claimToken");
+    String token2 = JsonPath.read(claimOk(e, code, first, "Redmi Note 11"), "$.data.claimToken");
     assertFalse(token.equals(token2));
-    expectRefusal(complete(token, first, 1), ErrorCode.HR_PAIRING_CODE_EXPIRED);
+    expectRefusal(complete(e, token, first, 1), ErrorCode.HR_PAIRING_CODE_EXPIRED);
     // a stranger holding the live token but not the installation: wrong
-    expectRefusal(complete(token2, Phone.create(), 1), ErrorCode.HR_PAIRING_CODE_WRONG);
+    expectRefusal(complete(e, token2, Phone.create(), 1), ErrorCode.HR_PAIRING_CODE_WRONG);
   }
 
   @Test
   void aCancelledCodeIsRefusedWithItsMessage() throws Exception {
     String shop = shop("07", true);
-    Employee e = it.employee(shop, "EMP-001", "Hari", null);
+    Employee e = worker(shop, "EMP-001", "Hari");
     String older = createCode(shop, e);
     String newer = createCode(shop, e);
     assertEquals(PairingCodeStatus.CANCELLED, codes(shop).stream()
         .filter(c -> c.getCodeHash().equals(PairingCodes.hash(older))).findFirst().get()
         .getStatus());
 
-    expectRefusal(claim(older, installation()), ErrorCode.HR_PAIRING_CODE_CANCELLED);
-    claimOk(newer, Phone.create(), "Redmi Note 11");
+    expectRefusal(claim(e, older, installation()), ErrorCode.HR_PAIRING_CODE_CANCELLED);
+    claimOk(e, newer, Phone.create(), "Redmi Note 11");
   }
 
   @Test
   void aWrongCodeIsRefusedWithItsMessage() throws Exception {
     String shop = shop("08", true);
-    it.employee(shop, "EMP-001", "Isha", null);
-    expectRefusal(claim("ZZZZ2222", installation()), ErrorCode.HR_PAIRING_CODE_WRONG);
+    Employee e = worker(shop, "EMP-001", "Isha");
+    expectRefusal(claim(e, "ZZZZ2222", installation()), ErrorCode.HR_PAIRING_CODE_WRONG);
     // a malformed code (wrong length, letters outside the alphabet) is "wrong" to the worker too
-    expectRefusal(claim("ABC", installation()), ErrorCode.HR_PAIRING_CODE_WRONG);
-    expectRefusal(claim("ABCDEFG0", installation()), ErrorCode.HR_PAIRING_CODE_WRONG);
+    expectRefusal(claim(e, "ABC", installation()), ErrorCode.HR_PAIRING_CODE_WRONG);
+    expectRefusal(claim(e, "ABCDEFG0", installation()), ErrorCode.HR_PAIRING_CODE_WRONG);
   }
 
   @Test
   void aShopWithTheAppOffRefusesTheClaimWithItsMessage() throws Exception {
     String shop = shop("09", false);
-    Employee e = it.employee(shop, "EMP-001", "Jaya", null);
+    Employee e = worker(shop, "EMP-001", "Jaya");
     String code = createCode(shop, e);
-    expectRefusal(claim(code, installation()), ErrorCode.HR_APP_OFF);
+    expectRefusal(claim(e, code, installation()), ErrorCode.HR_APP_OFF);
     assertEquals(PairingCodeStatus.UNUSED, codes(shop).get(0).getStatus());
     assertEquals(1, codes(shop).get(0).getAttempts(), "the attempt is counted on the code");
   }
@@ -832,14 +879,23 @@ class AttendanceAppControllerIT {
   @Test
   void anExitedEmployeesCodeIsRefusedWithItsMessage() throws Exception {
     String shop = shop("0a", true);
-    Employee e = it.employee(shop, "EMP-001", "Kiran", null);
+    Employee e = worker(shop, "EMP-001", "Kiran");
     String code = createCode(shop, e);
     mvc.perform(asUser(post("/api/v1/hr/employees/" + e.getId() + "/exit"), MANAGER, shop)
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"exitDate\":\"" + HrDateUtils.format(HrDateUtils.today()) + "\"}"))
         .andExpect(status().isOk());
 
-    expectRefusal(claim(code, installation()), ErrorCode.HR_PAIRING_EMPLOYEE_EXITED);
+    // the exited worker's own login has no ACTIVE employee any more: turned away before any code
+    // is read (worker-app R7.3; nothing counted on the code)
+    expectRefusal(claim(e, code, installation()), ErrorCode.HR_WORKER_NOT_ACTIVE);
+    assertEquals(0, codes(shop).get(0).getAttempts() == null ? 0 : codes(shop).get(0).getAttempts());
+    // another worker trying the code meets the HR-module refusal first, in its R2.14 order, and
+    // no PAIRING_CODE_REFUSED row is written for it
+    Employee other = worker(shop, "EMP-002", "Lata");
+    expectRefusal(claim(other, code, installation()), ErrorCode.HR_PAIRING_EMPLOYEE_EXITED);
+    assertEquals(1, codes(shop).get(0).getAttempts(), "the attempt is counted on the code");
+    assertTrue(audits(shop, HrAuditAction.PAIRING_CODE_REFUSED).isEmpty());
     // and no new code for an exited employee
     expectRefusal(asUser(post("/api/v1/hr/employees/" + e.getId() + "/pairing-codes"), MANAGER,
         shop), ErrorCode.HR_PAIRING_EMPLOYEE_EXITED);
@@ -850,27 +906,24 @@ class AttendanceAppControllerIT {
   @Test
   void abandonInvalidatesTheCodeForEveryone() throws Exception {
     String shop = shop("0b", true);
-    Employee e = it.employee(shop, "EMP-001", "Lata", null);
+    Employee e = worker(shop, "EMP-001", "Lata");
     String code = createCode(shop, e);
     Phone phone = Phone.create();
-    String claimed = claimOk(code, phone, "Redmi Note 11");
+    String claimed = claimOk(e, code, phone, "Redmi Note 11");
     String token = JsonPath.read(claimed, "$.data.claimToken");
     int consent = JsonPath.read(claimed, "$.data.consent.version");
 
-    mvc.perform(post(ROOT + "/pairings/abandon").contentType(MediaType.APPLICATION_JSON)
-            .content("{\"claimToken\":\"" + token + "\"}"))
+    mvc.perform(abandon(e, token))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.abandoned").value(true));
     assertEquals(PairingCodeStatus.INVALIDATED, codes(shop).get(0).getStatus());
 
-    expectRefusal(complete(token, phone, consent), ErrorCode.HR_PAIRING_CODE_CANCELLED);
-    expectRefusal(claim(code, phone.installationId()), ErrorCode.HR_PAIRING_CODE_CANCELLED);
-    expectRefusal(claim(code, installation()), ErrorCode.HR_PAIRING_CODE_CANCELLED);
+    expectRefusal(complete(e, token, phone, consent), ErrorCode.HR_PAIRING_CODE_CANCELLED);
+    expectRefusal(claim(e, code, phone.installationId()), ErrorCode.HR_PAIRING_CODE_CANCELLED);
+    expectRefusal(claim(e, code, installation()), ErrorCode.HR_PAIRING_CODE_CANCELLED);
     // idempotent: abandoning again, or an unknown token, is fine
-    mvc.perform(post(ROOT + "/pairings/abandon").contentType(MediaType.APPLICATION_JSON)
-        .content("{\"claimToken\":\"" + token + "\"}")).andExpect(status().isOk());
-    mvc.perform(post(ROOT + "/pairings/abandon").contentType(MediaType.APPLICATION_JSON)
-        .content("{\"claimToken\":\"nobody\"}")).andExpect(status().isOk());
+    mvc.perform(abandon(e, token)).andExpect(status().isOk());
+    mvc.perform(abandon(e, "nobody")).andExpect(status().isOk());
     assertEquals(0, it.template.count(Query.query(Criteria.where("shopId").is(shop)),
         DevicePairing.class));
     // a fresh code still works for this employee
@@ -880,24 +933,24 @@ class AttendanceAppControllerIT {
   @Test
   void aClaimTokenIsSpentByTheCompleteThatUsedIt() throws Exception {
     String shop = shop("1c", true);
-    Employee e = it.employee(shop, "EMP-001", "Yamini", null);
+    Employee e = worker(shop, "EMP-001", "Yamini");
     Phone phone = Phone.create();
     String code = createCode(shop, e);
-    String claimed = claimOk(code, phone, "Redmi Note 11");
+    String claimed = claimOk(e, code, phone, "Redmi Note 11");
     String token = JsonPath.read(claimed, "$.data.claimToken");
     int consent = JsonPath.read(claimed, "$.data.consent.version");
-    String pairingId = JsonPath.read(json(mvc.perform(complete(token, phone, consent))
+    String pairingId = JsonPath.read(json(mvc.perform(complete(e, token, phone, consent))
         .andExpect(status().isOk()).andReturn()), "$.data.pairingId");
     assertTrue(codes(shop).isEmpty(), "the used code is deleted (R9.11)");
 
     // the same phone sending the same complete again (a lost answer): refused, nothing new
-    expectRefusal(complete(token, phone, consent), ErrorCode.HR_PAIRING_CODE_EXPIRED);
+    expectRefusal(complete(e, token, phone, consent), ErrorCode.HR_PAIRING_CODE_EXPIRED);
     // a stranger who captured the token and brings their own keys: refused too
     Phone stranger = new Phone(phone.installationId(), p256(), p256());
-    expectRefusal(complete(token, stranger, consent), ErrorCode.HR_PAIRING_CODE_EXPIRED);
-    expectRefusal(complete(token, Phone.create(), consent), ErrorCode.HR_PAIRING_CODE_EXPIRED);
+    expectRefusal(complete(e, token, stranger, consent), ErrorCode.HR_PAIRING_CODE_EXPIRED);
+    expectRefusal(complete(e, token, Phone.create(), consent), ErrorCode.HR_PAIRING_CODE_EXPIRED);
     // and the code itself works once (R2.5): it matches nothing now
-    expectRefusal(claim(code, installation()), ErrorCode.HR_PAIRING_CODE_WRONG);
+    expectRefusal(claim(e, code, installation()), ErrorCode.HR_PAIRING_CODE_WRONG);
 
     List<DevicePairing> pairings = it.template.find(
         Query.query(Criteria.where("shopId").is(shop)), DevicePairing.class);
@@ -917,25 +970,25 @@ class AttendanceAppControllerIT {
   @Test
   void theEleventhAttemptOnOneCodeInvalidatesIt() throws Exception {
     String shop = shop("0c", true);
-    Employee e = it.employee(shop, "EMP-001", "Mani", null);
+    Employee e = worker(shop, "EMP-001", "Mani");
     String code = createCode(shop, e);
     Phone owner = Phone.create();
-    String token = JsonPath.read(claimOk(code, owner, "Redmi Note 11"), "$.data.claimToken");
+    String token = JsonPath.read(claimOk(e, code, owner, "Redmi Note 11"), "$.data.claimToken");
 
     // nine more phones, each a different installation (so none is locked), read it as used
     for (int i = 2; i <= 10; i++) {
-      expectRefusal(claim(code, installation()), ErrorCode.HR_PAIRING_CODE_USED);
+      expectRefusal(claim(e, code, installation()), ErrorCode.HR_PAIRING_CODE_USED);
       assertEquals(i, codes(shop).get(0).getAttempts());
     }
     assertEquals(PairingCodeStatus.CLAIMED, codes(shop).get(0).getStatus());
 
-    expectRefusal(claim(code, installation()), ErrorCode.HR_TOO_MANY_ATTEMPTS);
+    expectRefusal(claim(e, code, installation()), ErrorCode.HR_TOO_MANY_ATTEMPTS);
     assertEquals(PairingCodeStatus.INVALIDATED, codes(shop).get(0).getStatus());
     assertEquals(11, codes(shop).get(0).getAttempts());
     // from now on the code is simply cancelled, to everyone: the phone that claimed it
     // legitimately can no longer complete, and a 12th guess is not "too many attempts"
-    expectRefusal(complete(token, owner, 1), ErrorCode.HR_PAIRING_CODE_CANCELLED);
-    expectRefusal(claim(code, installation()), ErrorCode.HR_PAIRING_CODE_CANCELLED);
+    expectRefusal(complete(e, token, owner, 1), ErrorCode.HR_PAIRING_CODE_CANCELLED);
+    expectRefusal(claim(e, code, installation()), ErrorCode.HR_PAIRING_CODE_CANCELLED);
     assertEquals(PairingCodeStatus.INVALIDATED, codes(shop).get(0).getStatus());
     assertEquals(0, it.template.count(Query.query(Criteria.where("shopId").is(shop)),
         DevicePairing.class));
@@ -944,34 +997,34 @@ class AttendanceAppControllerIT {
   @Test
   void fiveWrongCodesLockTheInstallationForFifteenMinutes() throws Exception {
     String shop = shop("0d", true);
-    Employee e = it.employee(shop, "EMP-001", "Nila", null);
+    Employee e = worker(shop, "EMP-001", "Nila");
     String code = createCode(shop, e);
     String locked = installation();
 
     for (int i = 0; i < 5; i++) {
       // well-formed codes that match no document: counted against the installation only
-      expectRefusal(claim("XXXX" + (i + 2) + "XXX", locked), ErrorCode.HR_PAIRING_CODE_WRONG);
+      expectRefusal(claim(e, "XXXX" + (i + 2) + "XXX", locked), ErrorCode.HR_PAIRING_CODE_WRONG);
     }
     // the 6th, even with the right code, is refused with the minutes left
-    mvc.perform(claim(code, locked))
+    mvc.perform(claim(e, code, locked))
         .andExpect(status().isTooManyRequests())
         .andExpect(jsonPath("$.error")
             .value("Too many wrong codes. Wait 15 minutes and try again."))
         .andExpect(jsonPath("$.data.status").value(429));
     assertEquals(0, codes(shop).get(0).getAttempts(), "a locked phone never reaches the code");
     // the right code from another phone is unaffected
-    claimOk(code, Phone.create(), "Redmi Note 11");
+    claimOk(e, code, Phone.create(), "Redmi Note 11");
 
     clock.advance(Duration.ofMinutes(14).plusSeconds(30));
-    mvc.perform(claim(code, locked))
+    mvc.perform(claim(e, code, locked))
         .andExpect(status().isTooManyRequests())
         .andExpect(jsonPath("$.error")
             .value("Too many wrong codes. Wait 1 minute and try again."));
     clock.advance(Duration.ofSeconds(30));
     // unlocked: the attempt reaches the service again (and the code is now another phone's)
     String later = createCode(shop, e);
-    claimOk(later, Phone.create(), "Redmi Note 11");
-    expectRefusal(claim(later, locked), ErrorCode.HR_PAIRING_CODE_USED);
+    claimOk(e, later, Phone.create(), "Redmi Note 11");
+    expectRefusal(claim(e, later, locked), ErrorCode.HR_PAIRING_CODE_USED);
   }
 
   // ---- unpair ----------------------------------------------------------------------------------
@@ -979,7 +1032,7 @@ class AttendanceAppControllerIT {
   @Test
   void managerUnpairEndsThePairingAndTheNextSignedCallIsRefused() throws Exception {
     String shop = shop("0e", true);
-    Employee e = it.employee(shop, "EMP-001", "Omar", null);
+    Employee e = worker(shop, "EMP-001", "Omar");
     Phone phone = Phone.create();
     String pairingId = pair(shop, e, phone, "Redmi Note 11");
     mvc.perform(signedMe(pairingId, phone)).andExpect(status().isOk());
@@ -1019,7 +1072,7 @@ class AttendanceAppControllerIT {
   @Test
   void anExitDateInTheFutureSchedulesTheUnpairAndTheJobDoesIt() throws Exception {
     String shop = shop("0f", true);
-    Employee e = it.employee(shop, "EMP-001", "Priya", null);
+    Employee e = worker(shop, "EMP-001", "Priya");
     Phone phone = Phone.create();
     String pairingId = pair(shop, e, phone, "Redmi Note 11");
     LocalDate tomorrow = HrDateUtils.today().plusDays(1);
@@ -1056,7 +1109,7 @@ class AttendanceAppControllerIT {
   @Test
   void anExitDateThatHasArrivedUnpairsAtOnce() throws Exception {
     String shop = shop("10", true);
-    Employee e = it.employee(shop, "EMP-001", "Qadir", null);
+    Employee e = worker(shop, "EMP-001", "Qadir");
     Phone phone = Phone.create();
     String pairingId = pair(shop, e, phone, "Redmi Note 11");
 
@@ -1079,7 +1132,7 @@ class AttendanceAppControllerIT {
   @Test
   void anOnlinePunchIsStoredWithServerTimeAndDerivesAnAppDay() throws Exception {
     String shop = shop("11", true);
-    Employee e = it.employee(shop, "EMP-001", "Rani", null);
+    Employee e = worker(shop, "EMP-001", "Rani");
     Phone phone = Phone.create();
     String pairingId = pair(shop, e, phone, "Redmi Note 11");
     clock.advance(Duration.ofMinutes(1));
@@ -1171,7 +1224,7 @@ class AttendanceAppControllerIT {
   @Test
   void replayingAnAcceptedPunchAnswersTheStoredResultAndStoresNothing() throws Exception {
     String shop = shop("12", true);
-    Employee e = it.employee(shop, "EMP-001", "Sita", null);
+    Employee e = worker(shop, "EMP-001", "Sita");
     Phone phone = Phone.create();
     String pairingId = pair(shop, e, phone, "Redmi Note 11");
     Instant t0 = clock.instant();
@@ -1212,7 +1265,7 @@ class AttendanceAppControllerIT {
   @Test
   void aBadEnvelopeOrPunchSignatureIsRefusedAndNothingIsStored() throws Exception {
     String shop = shop("13", true);
-    Employee e = it.employee(shop, "EMP-001", "Tara", null);
+    Employee e = worker(shop, "EMP-001", "Tara");
     Phone phone = Phone.create();
     Phone stranger = Phone.create();
     String pairingId = pair(shop, e, phone, "Redmi Note 11");
@@ -1279,7 +1332,7 @@ class AttendanceAppControllerIT {
   @Test
   void anOfflinePunchKeepsThePhoneTimeWithinTheWindows() throws Exception {
     String shop = shop("14", true);
-    Employee e = it.employee(shop, "EMP-001", "Uma", null);
+    Employee e = worker(shop, "EMP-001", "Uma");
     Phone phone = Phone.create();
     String pairingId = pair(shop, e, phone, "Redmi Note 11");
     Instant now = clock.instant();
@@ -1325,7 +1378,7 @@ class AttendanceAppControllerIT {
   @Test
   void withTheSwitchOffThePunchIsRefusedAndThePairingSurvives() throws Exception {
     String shop = shop("15", true);
-    Employee e = it.employee(shop, "EMP-001", "Vani", null);
+    Employee e = worker(shop, "EMP-001", "Vani");
     Phone phone = Phone.create();
     String pairingId = pair(shop, e, phone, "Redmi Note 11");
 
@@ -1360,7 +1413,7 @@ class AttendanceAppControllerIT {
   @Test
   void aMockLocationIsBlockedOrFlaggedByTheOutsideAction() throws Exception {
     String blocking = shop("16", locationChecked(OutsideAction.BLOCK));
-    Employee e = it.employee(blocking, "EMP-001", "Wafa", null);
+    Employee e = worker(blocking, "EMP-001", "Wafa");
     Phone phone = Phone.create();
     String pairingId = pair(blocking, e, phone, "Redmi Note 11");
 
@@ -1386,7 +1439,7 @@ class AttendanceAppControllerIT {
 
     // Allow-and-flag: stored with the one flag and no distance
     String flagging = shop("17", locationChecked(OutsideAction.FLAG));
-    Employee f = it.employee(flagging, "EMP-001", "Xavi", null);
+    Employee f = worker(flagging, "EMP-001", "Xavi");
     Phone second = Phone.create();
     String flaggedPairing = pair(flagging, f, second, "Pixel 7a");
     mvc.perform(signedPunch(flaggedPairing, second, Draft.online(flaggedPairing, flagging, f)
@@ -1405,7 +1458,7 @@ class AttendanceAppControllerIT {
   @Test
   void aHandMadeMarkSurvivesALaterAppPunch() throws Exception {
     String shop = shop("18", true);
-    Employee e = it.employee(shop, "EMP-001", "Yash", null);
+    Employee e = worker(shop, "EMP-001", "Yash");
     Phone phone = Phone.create();
     String pairingId = pair(shop, e, phone, "Redmi Note 11");
     String date = dayOf(clock.instant());
@@ -1439,8 +1492,8 @@ class AttendanceAppControllerIT {
   @Test
   void historyShowsTheCallersOwnPunchesNewestFirstWithinThirtyOneDays() throws Exception {
     String shop = shop("19", true);
-    Employee a = it.employee(shop, "EMP-001", "Zoya", null);
-    Employee b = it.employee(shop, "EMP-002", "Arun", null);
+    Employee a = worker(shop, "EMP-001", "Zoya");
+    Employee b = worker(shop, "EMP-002", "Arun");
     Phone phoneA = Phone.create();
     Phone phoneB = Phone.create();
     String pairingA = pair(shop, a, phoneA, "Redmi Note 11");
@@ -1502,10 +1555,70 @@ class AttendanceAppControllerIT {
         .andExpect(jsonPath("$.data[0].deviceModel").value("Redmi Note 11"));
   }
 
+  /**
+   * Worker-app D11, DD4: the unsigned handshake and the pairing proof are gone. The removed paths
+   * are no routes at all (404), and a request to them reads no code, counts nothing on any code,
+   * creates nothing and leaves the device interceptor's signature-failure count alone.
+   */
+  @Test
+  void theUnsignedHandshakeAndTheProofNoLongerExist() throws Exception {
+    String shop = shop("1d", true);
+    Employee e = worker(shop, "EMP-001", "Bina");
+    Phone phone = Phone.create();
+    String code = createCode(shop, e);
+    String pairingId;
+    long failedBefore = signatureFailures();
+
+    // the old device-path handshake, unsigned, exactly as the login-less app sent it
+    mvc.perform(post(ROOT + "/pairings/claim").contentType(MediaType.APPLICATION_JSON)
+            .content(claimBody(code, phone.installationId(), "Redmi Note 11")))
+        .andExpect(status().isNotFound());
+    mvc.perform(post(ROOT + "/pairings/complete").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"claimToken\":\"x\",\"installationId\":\"" + phone.installationId()
+                + "\",\"punchPublicKey\":\"k\",\"devicePublicKey\":\"k\",\"consentVersion\":1}"))
+        .andExpect(status().isNotFound());
+    mvc.perform(post(ROOT + "/pairings/abandon").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"claimToken\":\"x\"}"))
+        .andExpect(status().isNotFound());
+    assertEquals(PairingCodeStatus.UNUSED, codes(shop).get(0).getStatus(), "the code is untouched");
+    assertEquals(0, codes(shop).get(0).getAttempts(), "nothing counted on the code");
+    assertEquals(0, it.template.count(Query.query(Criteria.where("shopId").is(shop)),
+        DevicePairing.class), "no pairing");
+
+    // the same code still pairs on the only handshake there is
+    String claimed = claimOk(e, code, phone, "Redmi Note 11");
+    pairingId = JsonPath.read(json(mvc.perform(complete(e, JsonPath.read(claimed,
+            "$.data.claimToken"), phone, JsonPath.read(claimed, "$.data.consent.version")))
+        .andExpect(status().isOk()).andReturn()), "$.data.pairingId");
+    assertTrue(codes(shop).isEmpty(), "the used code is deleted");
+
+    // the proof: neither signed nor unsigned
+    mvc.perform(signedPost(pairingId, phone, "/pairings/me/proof", null))
+        .andExpect(status().isNotFound());
+    mvc.perform(post(ROOT + "/pairings/me/proof")).andExpect(status().isNotFound());
+    assertFalse(it.template.collectionExists("hr_pairing_proofs")
+        && it.template.getCollection("hr_pairing_proofs").countDocuments() > 0,
+        "no proof is ever written");
+    assertEquals(failedBefore, signatureFailures(),
+        "the removed routes are not device calls: no signature failure counted");
+    // the real phone is unaffected
+    mvc.perform(signedMe(pairingId, phone)).andExpect(status().isOk());
+  }
+
+  /** How often {@code inventory_hr_app_punches_total{result=signature_failed}} was incremented. */
+  private static long signatureFailures() {
+    return mockingDetails(it.metrics).getInvocations().stream()
+        .filter(i -> "increment".equals(i.getMethod().getName())
+            && HrMetricsConstants.APP_PUNCHES_TOTAL.equals(i.getArgument(0))
+            && Arrays.asList(i.getArguments())
+                .contains(HrMetricsConstants.AppPunchResult.SIGNATURE_FAILED))
+        .count();
+  }
+
   @Test
   void theWorkerRecordsConsentAndUnpairsAndTheNextCallIsRefused() throws Exception {
     String shop = shop("1a", true);
-    Employee e = it.employee(shop, "EMP-001", "Bina", null);
+    Employee e = worker(shop, "EMP-001", "Bina");
     Phone phone = Phone.create();
     String pairingId = pair(shop, e, phone, "Redmi Note 11");
     int latest = new ConsentVersions().latest().version();
@@ -1561,7 +1674,7 @@ class AttendanceAppControllerIT {
   @Test
   void theHealthReadStaysOnTheBearerChainAndNeedsViewAttendance() throws Exception {
     String shop = shop("1b", true);
-    Employee e = it.employee(shop, "EMP-001", "Chand", null);
+    Employee e = worker(shop, "EMP-001", "Chand");
     Phone phone = Phone.create();
     String pairingId = pair(shop, e, phone, "Redmi Note 11");
 

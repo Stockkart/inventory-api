@@ -38,7 +38,7 @@ public final class HrMetricsConstants {
    * Attendance app pairing events, one increment per event (R10.3); tags {@code shop}, {@code
    * event} = created | completed | replaced | unpaired | failed | attestation, and {@code reason}:
    * for failed one of the R2.14 reasons (code_expired | code_used | code_cancelled | code_wrong |
-   * app_off | employee_exited | abandoned | locked), for unpaired the {@code UnpairReason} name,
+   * app_off | employee_exited | abandoned | locked | wrong_employee), for unpaired the {@code UnpairReason} name,
    * for attestation {@code ok} or a {@code KeyAttestation.Reason} (task 16.4), else "-".
    */
   public static final String APP_PAIRINGS_TOTAL = "inventory_hr_app_pairings_total";
@@ -48,11 +48,52 @@ public final class HrMetricsConstants {
    */
   public static final String APP_OFFLINE_BACKLOG_TOTAL = "inventory_hr_app_offline_backlog_total";
 
+  // Stockkart Team (worker-app R14.2). All tagged module=hr; shop only where one is known.
+  /** A WORKER account was created from the app; no shop tag (the account has no shop yet). */
+  public static final String WORKER_SIGNUPS_TOTAL = "inventory_hr_worker_signups_total";
+  /**
+   * Worker join request events, one increment per event; tags {@code shop} and {@code event} =
+   * created | approved_created | approved_linked | rejected | withdrawn. Over any period: created =
+   * approved_created + approved_linked + rejected + withdrawn + still pending (Property 29).
+   */
+  public static final String WORKER_JOIN_REQUESTS_TOTAL = "inventory_hr_worker_join_requests_total";
+  /** Shop lookups by owner email; tag {@code result} = found | not_found. No shop tag. */
+  public static final String WORKER_LOOKUPS_TOTAL = "inventory_hr_worker_lookups_total";
+  /** Sign-ins with {@code source = worker-app}; tag {@code result} = success | error. No shop tag. */
+  public static final String WORKER_APP_LOGINS_TOTAL = "inventory_hr_worker_app_logins_total";
+
   /** Tag keys shared by the app counters. */
   public static final String TAG_SHOP = "shop";
   public static final String TAG_RESULT = "result";
   public static final String TAG_EVENT = "event";
   public static final String TAG_REASON = "reason";
+
+  /** {@code event} values of {@link #WORKER_JOIN_REQUESTS_TOTAL}. */
+  public static final class WorkerJoinEvent {
+    private WorkerJoinEvent() {}
+
+    public static final String CREATED = "created";
+    public static final String APPROVED_CREATED = "approved_created";
+    public static final String APPROVED_LINKED = "approved_linked";
+    public static final String REJECTED = "rejected";
+    public static final String WITHDRAWN = "withdrawn";
+  }
+
+  /** {@code result} values of {@link #WORKER_LOOKUPS_TOTAL}. */
+  public static final class WorkerLookupResult {
+    private WorkerLookupResult() {}
+
+    public static final String FOUND = "found";
+    public static final String NOT_FOUND = "not_found";
+  }
+
+  /** {@code result} values of {@link #WORKER_APP_LOGINS_TOTAL}. */
+  public static final class WorkerLoginResult {
+    private WorkerLoginResult() {}
+
+    public static final String SUCCESS = "success";
+    public static final String ERROR = "error";
+  }
 
   /** {@code result} values of {@link #APP_PUNCHES_TOTAL}. */
   public static final class AppPunchResult {
@@ -135,6 +176,8 @@ public final class HrMetricsConstants {
     public static final String ABANDONED = "abandoned";
     /** Installation lockout or the 11th attempt on one code. */
     public static final String LOCKED = "locked";
+    /** The code is for an employee other than the signed-in worker's (worker-app R7.3). */
+    public static final String WRONG_EMPLOYEE = "wrong_employee";
     /** {@code reason} value for events that have none. */
     public static final String NONE = "-";
   }

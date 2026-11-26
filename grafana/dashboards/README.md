@@ -73,7 +73,17 @@ Three panels at the bottom of `03-module.json` (ids 200–202) cover the HR Atte
 
 The `or … * 0` in query B of the first panel keeps a shop with zero signature failures on the graph at 0 % instead of dropping its series.
 
-Every expression also carries `service="inventory-api", env="$env"` like the rest of the file. Metric names and tag values are the constants in `HrMetricsConstants` (`APP_PUNCHES_TOTAL`, `APP_PAIRINGS_TOTAL`, `APP_OFFLINE_BACKLOG_TOTAL`); rows for them are in `docs/metrics.md`. `DashboardJsonTest` (`app/src/test/.../observability`) pins the panel set to the pre-existing ids plus exactly 200–202, query A of each, the 1 % threshold override, the per-shop query and the doc links; pre-existing panels must stay byte-identical to `HEAD`.
+Every expression also carries `service="inventory-api", env="$env"` like the rest of the file. Metric names and tag values are the constants in `HrMetricsConstants` (`APP_PUNCHES_TOTAL`, `APP_PAIRINGS_TOTAL`, `APP_OFFLINE_BACKLOG_TOTAL`); rows for them are in `docs/metrics.md`. `DashboardJsonTest` (`app/src/test/.../observability`) pins the panel set to the pre-existing ids plus exactly 200–202 and 203 (below), query A of each, the 1 % threshold override, the per-shop query and the doc links; pre-existing panels must stay byte-identical to `HEAD`.
+
+### Join requests panel (`module=hr`, Stockkart Team)
+
+One more panel (id 203, full width, below the three above) covers the Stockkart Team app's join and link requests (spec `.kiro/specs/worker-app`, R14.3). It uses the same **`shop`** dropdown and the same `service` / `env` matchers; nothing else in the file changed when it was added.
+
+| Panel | PromQL | What to look for |
+|-------|--------|------------------|
+| Join requests per event | `sum by (event, kind) (increase(inventory_hr_worker_join_requests_total{shop=~"$shop"}[1h]))` | one series per `kind` (`join`, `link`) and `event` (`created`, `approved_created`, `approved_linked`, `rejected`, `withdrawn`). Over any period `created = approved_created + approved_linked + rejected + withdrawn + still pending`, so `created` climbing well above the decision lines is an inbox nobody is clearing |
+
+The other worker counters (`inventory_hr_worker_signups_total`, `inventory_hr_worker_lookups_total{result}`, `inventory_hr_worker_app_logins_total{result}`) carry no `shop` tag (the account has no shop yet) and show up in the repeated **Business** row when the `module` dropdown is `hr`.
 
 ## Explore smoke queries
 
@@ -109,6 +119,6 @@ histogram_quantile(0.95, sum by (le, method, uri) (increase(inventory_http_laten
 
 ## Cardinality
 
-Allowed tags: `service`, `env`, `module`, `endpoint`, `method`, `uri` (MVC path pattern only), `status` / `status_class`, `outcome`, `operation`, `provider`, `channel`, `vertical` (`grocery|cafe|sports|medical` only). The three HR Attendance app counters (`inventory_hr_app_*`) additionally carry `shop` (the shop id), `result`, `event` and `reason`, because R10.1–R10.3 ask for per-shop counts; no other metric may carry a shop id.
+Allowed tags: `service`, `env`, `module`, `endpoint`, `method`, `uri` (MVC path pattern only), `status` / `status_class`, `outcome`, `operation`, `provider`, `channel`, `vertical` (`grocery|cafe|sports|medical` only). The three HR Attendance app counters (`inventory_hr_app_*`) and the worker join-request counter (`inventory_hr_worker_join_requests_total`) additionally carry `shop` (the shop id), `result`, `event`, `reason` and `kind`, because R10.1–R10.3 and worker-app R14.2 ask for per-shop counts; no other metric may carry a shop id.
 
-Never tag `userId`, `requestId`, document ids, or emails; never tag `shopId` outside the three counters above.
+Never tag `userId`, `requestId`, document ids, or emails; never tag `shopId` outside the four counters above.

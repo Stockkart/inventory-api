@@ -1,6 +1,8 @@
 package com.inventory.user.validation;
 
 import com.inventory.common.exception.ValidationException;
+import com.inventory.common.util.PhoneNumbers;
+import com.inventory.user.rest.dto.request.AuthSource;
 import com.inventory.user.rest.dto.request.ChangePasswordRequest;
 import com.inventory.user.rest.dto.request.ForgotPasswordRequest;
 import com.inventory.user.rest.dto.request.LoginRequest;
@@ -42,6 +44,7 @@ public class AuthValidator {
         throw new ValidationException("Password is required");
       }
     }
+    request.setSource(AuthSource.normalise(request.getSource()));
   }
 
   public void validateSignupRequest(SignupRequest request) {
@@ -61,6 +64,7 @@ public class AuthValidator {
           "shopId cannot be set at signup. Register a shop or join one after signing up");
     }
     request.setShopId(null);
+    request.setSource(AuthSource.normalise(request.getSource()));
 
     // Either idToken (OAuth) or email/password/name must be provided
     boolean hasIdToken = StringUtils.hasText(request.getIdToken());
@@ -68,6 +72,7 @@ public class AuthValidator {
     boolean hasPassword = StringUtils.hasText(request.getPassword());
     boolean hasName = StringUtils.hasText(request.getName());
     boolean hasSignupType = StringUtils.hasText(request.getSignupType());
+    boolean worker = request.getRole() != null && request.getRole().isWorkerRole();
 
     if (hasIdToken) {
       // OAuth signup (Google/Facebook) - idToken, signupType, and role are required
@@ -81,7 +86,11 @@ public class AuthValidator {
       if (request.getRole() == null) {
         throw new ValidationException("Role is required for OAuth signup");
       }
-      // Optional phone on OAuth — normalize when present
+      // Phone is optional on OAuth for staff, required for a worker (R1.4: an account is never
+      // created with an empty phone number); normalised whenever present
+      if (worker && !StringUtils.hasText(request.getPhone())) {
+        throw new ValidationException("Phone is required");
+      }
       if (StringUtils.hasText(request.getPhone())) {
         request.setPhone(normalizeIndianMobile(request.getPhone()));
       }
@@ -101,6 +110,9 @@ public class AuthValidator {
     if (!hasName) {
       throw new ValidationException("Name is required");
     }
+    if (worker) {
+      request.setName(validateName(request.getName()));
+    }
     if (request.getRole() == null) {
       throw new ValidationException("Role is required");
     }
@@ -110,16 +122,45 @@ public class AuthValidator {
     request.setPhone(normalizeIndianMobile(request.getPhone()));
   }
 
-  /** Accepts 10 digits or +91 / 91 prefix; stores canonical 10-digit form. */
-  static String normalizeIndianMobile(String raw) {
-    String digitsOnly = raw == null ? "" : raw.replaceAll("\\D", "");
-    if (digitsOnly.matches("\\d{10}")) {
-      return digitsOnly;
+  /** Shortest full name a worker may sign up with, after trimming (R1.2). */
+  public static final int NAME_MIN = 2;
+
+  /** Longest full name a worker may sign up with, after trimming (R1.2). */
+  public static final int NAME_MAX = 100;
+
+  /**
+   * A worker's full name: 2–100 characters after trimming (R1.2). Shared with the worker profile
+   * edit so the rule lives once (Property 1). Trimming removes Unicode whitespace ({@link
+   * String#strip}, the predicate {@code StringUtils.hasText} uses), so a name made only of
+   * ideographic or em spaces is refused here exactly as the "Name is required" check refuses it.
+   *
+   * @return the trimmed name
+   * @throws ValidationException when the trimmed name is shorter than 2 or longer than 100
+   */
+  public static String validateName(String raw) {
+    String name = raw == null ? "" : raw.strip();
+    if (name.length() < NAME_MIN || name.length() > NAME_MAX) {
+      throw new ValidationException("Name must be between 2 and 100 characters");
     }
-    if (digitsOnly.matches("91\\d{10}")) {
-      return digitsOnly.substring(2);
-    }
-    throw new ValidationException("Phone must be a valid Indian number (10 digits or +91 format)");
+    return name;
+  }
+
+  /** True when {@link #validateName} accepts {@code raw}. */
+  public static boolean isValidName(String raw) {
+    String name = raw == null ? "" : raw.strip();
+    return name.length() >= NAME_MIN && name.length() <= NAME_MAX;
+  }
+
+  /**
+   * Accepts 10 digits or +91 / 91 prefix; stores canonical 10-digit form. The rule itself is {@link
+   * PhoneNumbers#normalise} so HR's possible-match and the app use the same one.
+   */
+  public static String normalizeIndianMobile(String raw) {
+    return PhoneNumbers.normalise(raw)
+        .orElseThrow(
+            () ->
+                new ValidationException(
+                    "Phone must be a valid Indian number (10 digits or +91 format)"));
   }
 
   public void validateLogoutRequest(LogoutRequest request) {

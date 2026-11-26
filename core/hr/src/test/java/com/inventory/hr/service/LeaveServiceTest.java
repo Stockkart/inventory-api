@@ -200,7 +200,7 @@ class LeaveServiceTest {
     assertEquals(LeaveRequestStatus.PENDING, r.getStatus());
     assertEquals(0, r.getDays().compareTo(new BigDecimal("0.5")));
     verify(notificationService).notifyApprovers(eq(SHOP), eq(HrNotificationType.LEAVE_REQUESTED),
-        eq("new"), anyString());
+        anyString(), eq("new"));
     verify(mongoTemplate, never()).remove(any(Query.class), eq(AttendanceDay.class));
   }
 

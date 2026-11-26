@@ -180,11 +180,12 @@ public class UsageService implements UsageGate {
     }
   }
 
+  /** Staff seats in use: active memberships whose role is not WORKER (workers are not seats). */
   public int getUserCountForShop(String shopId) {
     if (userShopMembershipService == null) {
       return 0;
     }
-    return userShopMembershipService.getUserCountForShop(shopId);
+    return userShopMembershipService.staffCountForShop(shopId);
   }
 
   private ShopInfo getShopInfo(String shopId) {

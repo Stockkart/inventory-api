@@ -20,6 +20,7 @@ import com.inventory.common.exception.BaseException;
 import com.inventory.hr.HrTestFixtures;
 import com.inventory.hr.api.port.ShopNamePort;
 import com.inventory.hr.domain.model.DevicePairing;
+import com.inventory.hr.domain.model.Employee;
 import com.inventory.hr.domain.model.HrSettings;
 import com.inventory.hr.domain.model.PairingCode;
 import com.inventory.hr.domain.model.enums.DeviceOs;
@@ -723,6 +724,11 @@ class DevicePairingServiceProperties {
       return clock.instant();
     }
 
+    /** The employee a code names, as the employee repository above answers it. */
+    private static Employee employeeOf(String employeeId) {
+      return HrTestFixtures.employee(employeeId);
+    }
+
     /** Runs the step; true when the service accepted it. Feeds returned values to the model. */
     boolean apply(Step s, Model model) {
       String emp = EMPLOYEE_IDS.get(s.emp());
@@ -738,16 +744,23 @@ class DevicePairingServiceProperties {
           case CLAIM -> {
             ModelCode c = model.codeFor(s);
             String code = c != null ? c.code : "ZZZZZZZ2";
+            // the caller is the code's own employee: the HR-module rules alone are under test
+            // here; who may redeem which code is WorkerPairingServiceProperties' (Property 17)
             String token = service.claim(code, install, DeviceOs.ANDROID, "13",
-                "Phone " + s.install(), "1.0.0").getClaimToken();
+                "Phone " + s.install(), "1.0.0", employeeOf(emp)).getClaimToken();
             model.claimed(c, install, token);
           }
           case COMPLETE -> {
             String token = model.tokenOf.getOrDefault(install, "no-token");
             String punchKey = KEYS.get((s.emp() + s.install()) % KEYS.size());
             String deviceKey = KEYS.get((s.emp() + 2 * s.install() + 1) % KEYS.size());
-            String pairingId = service.complete(token, install, punchKey, deviceKey, 1)
-                .getPairingId();
+            // the caller is the claimed code's own employee (the phone that claimed it is that
+            // worker's), so again only the HR-module rules decide; a token nobody holds reads as
+            // expired whichever employee asks
+            ModelCode claimed = model.codeByToken(token);
+            String caller = claimed != null ? claimed.employeeId : emp;
+            String pairingId = service.complete(token, install, punchKey, deviceKey, 1, null,
+                employeeOf(caller)).getPairingId();
             model.paired(new ModelPairing(pairingId, install, punchKey, deviceKey, now()));
           }
           case ABANDON -> service.abandon(model.tokenOf.get(install));

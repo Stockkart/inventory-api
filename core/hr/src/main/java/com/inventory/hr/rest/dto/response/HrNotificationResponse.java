@@ -14,6 +14,8 @@ public class HrNotificationResponse {
   private String id;
   private HrNotificationType type;
   private String leaveRequestId;
+  /** The join or link request this is about (worker-app R4.13); null for other types. */
+  private String joinRequestId;
   private String text;
   private Instant createdAt;
   private boolean read;

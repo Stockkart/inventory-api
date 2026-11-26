@@ -42,7 +42,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Base64;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -53,9 +55,11 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.http.server.PathContainer;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.web.util.pattern.PathPatternParser;
 
 /**
  * Envelope verification (design "Canonical payloads"; R3.2, R5.7, R5.8, R9.8): a well-signed
@@ -276,17 +280,101 @@ class AttendanceAppAuthInterceptorTest {
     verifyNoInteractions(pairingRepository, nonceRepository);
   }
 
-  // --- allow-list and server time ---
+  // --- two credentials (worker-app R9.1) ---
+
+  /**
+   * A signed device request that also carries a Bearer token is refused as two credentials
+   * before the status, envelope or handler is looked at; even a perfectly signed one. One
+   * {@code signature_failed} on the shop, nothing else touched.
+   */
+  @ParameterizedTest
+  @ValueSource(strings = {"Bearer eyJhbGciOi.token.sig", "Basic dXNlcjpwYXNz", "x"})
+  void aSignedRequestWithAnAuthorizationHeaderIsRefusedAsTwoCredentials(String authorization)
+      throws Exception {
+    when(pairingRepository.findById(PAIRING)).thenReturn(Optional.of(pairing));
+    byte[] body = "{\"punchId\":\"x\"}".getBytes(StandardCharsets.UTF_8);
+    MockHttpServletRequest raw = request("POST", PUNCHES, null, body);
+    sign(raw, PUNCHES, null, body, NOW.getEpochSecond(), NONCE, deviceKey);
+    raw.addHeader(AttendanceAppAuthInterceptor.HEADER_AUTHORIZATION, authorization);
+    HttpServletRequest request = wrap(raw);
+    MockHttpServletResponse response = new MockHttpServletResponse();
+
+    BaseException e = assertThrows(BaseException.class,
+        () -> interceptor.preHandle(request, response, null));
+
+    assertEquals(ErrorCode.HR_TWO_CREDENTIALS, e.getErrorCode());
+    assertEquals("A request may carry a login or a phone signature, not both.", e.getMessage());
+    assertNull(request.getAttribute(AppRequestContext.ATTRIBUTE));
+    assertNull(request.getAttribute("shopId"));
+    assertNull(request.getAttribute("employeeId"));
+    assertNull(request.getAttribute("pairingId"));
+    assertEquals(Long.toString(NOW.getEpochSecond()),
+        response.getHeader(AttendanceAppAuthInterceptor.HEADER_SERVER_TIME));
+    verifyNoInteractions(nonceRepository);
+    verifySignatureFailed(SHOP);
+  }
 
   @ParameterizedTest
-  @ValueSource(strings = {
-      "/api/v1/hr/attendance-app/pairings/claim",
-      "/api/v1/hr/attendance-app/pairings/complete",
-      "/api/v1/hr/attendance-app/pairings/abandon",
-      "/api/v1/hr/attendance-app/consent/latest"})
-  void unsignedPairingPathsSkipVerificationButGetServerTime(String path) throws Exception {
-    MockHttpServletRequest raw = request("POST", path, null,
-        "{\"code\":\"ABCDEFGH\"}".getBytes(StandardCharsets.UTF_8));
+  @ValueSource(strings = {ME, PUNCHES,
+      AttendanceAppAuthInterceptor.PATH_PREFIX + "/consent",
+      AttendanceAppAuthInterceptor.PATH_PREFIX + "/pairings/me/unpair"})
+  void everySignedDevicePathRefusesAnAuthorizationHeader(String path) {
+    when(pairingRepository.findById(PAIRING)).thenReturn(Optional.of(pairing));
+    MockHttpServletRequest raw = request("POST", path, null, new byte[0]);
+    raw.addHeader(AttendanceAppAuthInterceptor.HEADER_PAIRING_ID, PAIRING);
+    raw.addHeader(AttendanceAppAuthInterceptor.HEADER_AUTHORIZATION, "Bearer t");
+
+    BaseException e = assertThrows(BaseException.class,
+        () -> interceptor.preHandle(wrap(raw), new MockHttpServletResponse(), null));
+
+    assertEquals(ErrorCode.HR_TWO_CREDENTIALS, e.getErrorCode());
+    verifyNoInteractions(nonceRepository);
+    verifySignatureFailed(SHOP);
+  }
+
+  /** Two credentials wins over "not paired": the mix is the bug to surface, whatever the pairing. */
+  @Test
+  void anAuthorizationHeaderWithoutAPairingIsStillTwoCredentials() {
+    MockHttpServletRequest raw = request("GET", ME, null, null);
+    raw.addHeader(AttendanceAppAuthInterceptor.HEADER_AUTHORIZATION, "Bearer t");
+
+    BaseException e = assertThrows(BaseException.class,
+        () -> interceptor.preHandle(wrap(raw), new MockHttpServletResponse(), null));
+
+    assertEquals(ErrorCode.HR_TWO_CREDENTIALS, e.getErrorCode());
+    verifyNoInteractions(pairingRepository, nonceRepository);
+    verifySignatureFailed("unknown");
+  }
+
+  /** A blank header is no credential: the request is judged on its envelope as before. */
+  @Test
+  void aBlankAuthorizationHeaderIsIgnored() throws Exception {
+    when(pairingRepository.findById(PAIRING)).thenReturn(Optional.of(pairing));
+    MockHttpServletRequest raw = request("GET", ME, null, null);
+    sign(raw, ME, null, null, NOW.getEpochSecond(), NONCE, deviceKey);
+    raw.addHeader(AttendanceAppAuthInterceptor.HEADER_AUTHORIZATION, "  ");
+
+    assertTrue(interceptor.preHandle(wrap(raw), new MockHttpServletResponse(), null));
+    verifyNoInteractions(metrics);
+  }
+
+  /** The unsigned consent read carries no signature, so a token there is not "two credentials". */
+  @Test
+  void theUnsignedConsentPathIsNotConcernedByTheAuthorizationRule() throws Exception {
+    MockHttpServletRequest raw = request("GET", "/api/v1/hr/attendance-app/consent/latest", null,
+        null);
+    raw.addHeader(AttendanceAppAuthInterceptor.HEADER_AUTHORIZATION, "Bearer t");
+
+    assertTrue(interceptor.preHandle(wrap(raw), new MockHttpServletResponse(), null));
+    verifyNoInteractions(pairingRepository, nonceRepository, metrics);
+  }
+
+  // --- allow-list and server time ---
+
+  @Test
+  void theUnsignedConsentPathSkipsVerificationButGetsServerTime() throws Exception {
+    MockHttpServletRequest raw = request("GET", "/api/v1/hr/attendance-app/consent/latest", null,
+        null);
     MockHttpServletResponse response = new MockHttpServletResponse();
 
     assertTrue(interceptor.preHandle(wrap(raw), response, null));
@@ -297,13 +385,21 @@ class AttendanceAppAuthInterceptorTest {
     verifyNoInteractions(pairingRepository, nonceRepository, metrics);
   }
 
+  /**
+   * Only the exact consent path is unsigned; a variant of it, and the removed handshake paths
+   * (worker-app D11: no longer allow-listed, were they ever to reach this interceptor), are verified
+   * like any device call.
+   */
   @ParameterizedTest
   @ValueSource(strings = {
-      "/api/v1/hr/attendance-app/pairings/claim;x=1",
-      "/api/v1/hr/attendance-app/pairings/%63laim",
-      "/api/v1/hr/attendance-app/pairings/claim/../me",
+      "/api/v1/hr/attendance-app/consent/latest;x=1",
+      "/api/v1/hr/attendance-app/consent/%6catest",
+      "/api/v1/hr/attendance-app/consent/latest/../me",
+      "/api/v1/hr/attendance-app/pairings/claim",
+      "/api/v1/hr/attendance-app/pairings/complete",
+      "/api/v1/hr/attendance-app/pairings/abandon",
       "/api/v1/hr/attendance-app/pairings/me/unpair"})
-  void variantsOfTheUnsignedPathsAreVerified(String path) {
+  void variantsOfTheUnsignedPathAndTheRemovedHandshakeAreVerified(String path) {
     MockHttpServletRequest raw = request("POST", path, null, new byte[0]);
 
     BaseException e = assertThrows(BaseException.class,
@@ -330,6 +426,22 @@ class AttendanceAppAuthInterceptorTest {
         .anyMatch(p -> p.equals(AttendanceAppAuthInterceptor.HEALTH_PATH)));
     assertFalse(AttendanceAppAuthInterceptor.UNSIGNED_PATHS
         .contains(AttendanceAppAuthInterceptor.HEALTH_PATH));
+  }
+
+  /** Worker-app D11, DD4: the device pairing sub-tree is {@code /pairings/me/**} and nothing else. */
+  @Test
+  void theRemovedHandshakeIsNeitherADevicePathNorUnsigned() {
+    assertEquals(Set.of(AttendanceAppAuthInterceptor.PATH_PREFIX + "/consent/latest"),
+        AttendanceAppAuthInterceptor.UNSIGNED_PATHS);
+    assertTrue(AttendanceAppAuthInterceptor.DEVICE_PATH_PATTERNS
+        .contains(AttendanceAppAuthInterceptor.PATH_PREFIX + "/pairings/me/**"));
+    PathPatternParser parser = new PathPatternParser();
+    for (String removed : List.of("/pairings/claim", "/pairings/complete", "/pairings/abandon")) {
+      String path = AttendanceAppAuthInterceptor.PATH_PREFIX + removed;
+      assertFalse(AttendanceAppAuthInterceptor.DEVICE_PATH_PATTERNS.stream()
+          .anyMatch(p -> parser.parse(p).matches(PathContainer.parsePath(path))),
+          path + " is an ordinary route now");
+    }
   }
 
   @Test

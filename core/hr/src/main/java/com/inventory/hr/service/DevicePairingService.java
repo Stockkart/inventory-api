@@ -84,6 +84,12 @@ import org.springframework.util.StringUtils;
  *
  * <p>Not here: the per-installation lockout of R2.5 (5 refused codes in 15 minutes) is applied by
  * {@code AppRateLimiter} around {@link #claim}.
+ *
+ * <p>One caller since Stockkart Team (worker-app R7.3–R7.5, D11, DD4): the signed-in app
+ * pairs through {@code WorkerPairingService}, which passes the caller's linked ACTIVE employee as
+ * {@code expectedEmployee}; the code must be for that employee, else {@code
+ * HR_PAIRING_WRONG_EMPLOYEE}. There is no handshake without a login. Punching never looks at the
+ * rule (R9.10).
  */
 @Slf4j
 @Service
@@ -209,12 +215,22 @@ public class DevicePairingService {
    * the code is good, gets the names to confirm, the consent text and a claim token.
    *
    * <p>Refusals, in order: expired, already used (or claimed by another phone), cancelled, wrong,
-   * biometric app off for the shop, employee exited. Each attempt that reaches a code document is
-   * counted on it; the 11th invalidates the code (R9.10). A code that matches no document is
-   * "wrong" and counts against the installation only (the caller's rate limiter).
+   * biometric app off for the shop, employee exited, then the caller's identity (worker-app
+   * R7.3–R7.5): the code's employee must be {@code expectedEmployee} (same shop, same id), and a
+   * self-pairing code ({@code createdBy = self}, made from My HR) must be redeemed by the account
+   * the employee is linked to ({@code expectedEmployee.getUserId()}, R7.4). Otherwise {@code
+   * HR_PAIRING_WRONG_EMPLOYEE}: the code stays valid for the right worker, the attempt is counted
+   * on it, and one {@code PAIRING_CODE_REFUSED} audit row is written on the code's employee with
+   * the caller's user id. Each attempt that reaches a code document is counted on it; the 11th
+   * invalidates the code (R9.10). A code that matches no document is "wrong" and counts against the
+   * installation only (the caller's rate limiter).
+   *
+   * @param expectedEmployee the caller's linked ACTIVE employee, whose {@code userId} is the
+   *     caller's account; required (the Bearer path is the only caller, DD4)
    */
   public ClaimPairingResponse claim(String code, String installationId, DeviceOs os,
-      String osVersion, String phoneModel, String appVersion) {
+      String osVersion, String phoneModel, String appVersion, Employee expectedEmployee) {
+    requireExpectedEmployee(expectedEmployee);
     String normalised = PairingCodes.normalise(code);
     if (!PairingCodes.isValid(normalised)) {
       throw failed(null, ErrorCode.HR_PAIRING_CODE_WRONG, AppPairingFailure.CODE_WRONG);
@@ -231,6 +247,7 @@ public class DevicePairingService {
     refuseIfNotClaimable(doc, installationId, now);
     Employee employee = requireEmployee(doc.getShopId(), doc.getEmployeeId());
     refuseIfShopOrEmployeeBlocks(doc, employee, now);
+    refuseIfWrongCaller(doc, employee, expectedEmployee);
 
     String token = newClaimToken();
     doc.setStatus(PairingCodeStatus.CLAIMED);
@@ -301,6 +318,45 @@ public class DevicePairingService {
     }
   }
 
+  /**
+   * Every handshake names its caller (worker-app D11, DD4): a {@code claim} or {@code complete}
+   * without one is a programming error, not a refusal, so it is not counted on any code.
+   */
+  private static void requireExpectedEmployee(Employee expectedEmployee) {
+    if (expectedEmployee == null) {
+      throw new IllegalArgumentException("expectedEmployee is required: a pairing code is redeemed "
+          + "only by a signed-in worker for their own employee record");
+    }
+  }
+
+  /**
+   * Who may redeem this code (worker-app R7.3–R7.5). {@code employee} is the code's employee as
+   * stored now; {@code expectedEmployee} is the caller's own. The code must name the caller's
+   * employee, and a self code must be redeemed by the account that employee is linked to. A
+   * mismatch is {@code HR_PAIRING_WRONG_EMPLOYEE}; the code is left as it is (the attempt was
+   * already counted by the caller) and one {@code PAIRING_CODE_REFUSED} audit row names the caller.
+   */
+  private void refuseIfWrongCaller(PairingCode doc, Employee employee, Employee expectedEmployee) {
+    boolean selfCode = SELF.equals(doc.getCreatedBy());
+    String callerUserId = expectedEmployee.getUserId();
+    boolean sameEmployee = doc.getEmployeeId().equals(expectedEmployee.getId())
+        && doc.getShopId().equals(expectedEmployee.getShopId());
+    boolean selfCodeByOwner = !selfCode
+        || (StringUtils.hasText(callerUserId) && callerUserId.equals(employee.getUserId()));
+    if (sameEmployee && selfCodeByOwner) {
+      return;
+    }
+    Map<String, Object> after = new LinkedHashMap<>();
+    after.put("attemptedByUserId", callerUserId);
+    after.put("attemptedForEmployeeId", expectedEmployee.getId());
+    after.put("selfCode", selfCode);
+    auditService.record(new AuditEntry(doc.getShopId(), callerUserId,
+        HrAuditAction.PAIRING_CODE_REFUSED, "PairingCode", doc.getId(), doc.getEmployeeId(),
+        null, null, null, after, AppPairingFailure.WRONG_EMPLOYEE));
+    throw failed(doc.getShopId(), ErrorCode.HR_PAIRING_WRONG_EMPLOYEE,
+        AppPairingFailure.WRONG_EMPLOYEE);
+  }
+
   // ---- complete / abandon --------------------------------------------------------------------
 
   /**
@@ -309,33 +365,35 @@ public class DevicePairingService {
    * reason {@code REPLACED}; the installation's previous active pairing (to another employee)
    * with reason {@code PAIRED_TO_ANOTHER_EMPLOYEE}. The code is marked used and deleted.
    *
+   * <p>The caller's identity (worker-app R7.3–R7.5) is checked exactly as in {@link #claim}: the
+   * claimed code must be the caller's employee's ({@code HR_PAIRING_WRONG_EMPLOYEE} otherwise, code
+   * left claimed, attempt counted, one {@code PAIRING_CODE_REFUSED} audit row). The check runs
+   * before any key is parsed or any pairing is displaced, so a refusal changes nothing but the
+   * attempt count.
+   *
+   * <p>When {@code attestationChain} is non-empty it is verified by {@link KeyAttestation} against
+   * the claim token as challenge and the punch key (task 16.4); the verdict is stored on the pairing
+   * ({@code attested}, {@code attestationSecurityLevel}, {@code attestationFailureReason}) and
+   * counted as {@code event=attestation}. A failed verdict does not refuse the pairing in this
+   * version. Null or empty: nothing is verified or recorded.
+   *
    * @param punchPublicKey Base64 DER SubjectPublicKeyInfo of the biometric-gated P-256 key
    * @param devicePublicKey Base64 DER SubjectPublicKeyInfo of the no-prompt P-256 key
    * @param consentVersion the version shown by {@link #claim}; recorded with the agreement time
-   */
-  public PairingBootstrapResponse complete(String claimToken, String installationId,
-      String punchPublicKey, String devicePublicKey, Integer consentVersion) {
-    return complete(claimToken, installationId, punchPublicKey, devicePublicKey, consentVersion,
-        null);
-  }
-
-  /**
-   * {@link #complete(String, String, String, String, Integer)} with the phone's Android key
-   * attestation chain for the punch key (task 16.4). When {@code attestationChain} is non-empty it
-   * is verified by {@link KeyAttestation} against the claim token as challenge and the punch key;
-   * the verdict is stored on the pairing ({@code attested}, {@code attestationSecurityLevel},
-   * {@code attestationFailureReason}) and counted as {@code event=attestation}. A failed verdict
-   * does not refuse the pairing in this version. Null or empty: nothing is verified or recorded,
-   * exactly as before.
-   *
    * @param attestationChain Base64 DER X.509 certificates, leaf first; null or empty when the phone
    *     sent none
+   * @param expectedEmployee the caller's linked ACTIVE employee; required (DD4)
    */
   public PairingBootstrapResponse complete(String claimToken, String installationId,
       String punchPublicKey, String devicePublicKey, Integer consentVersion,
-      List<String> attestationChain) {
+      List<String> attestationChain, Employee expectedEmployee) {
+    requireExpectedEmployee(expectedEmployee);
     PairingCode doc = requireClaimed(claimToken, installationId);
     Instant now = now();
+    String shopId = doc.getShopId();
+    String employeeId = doc.getEmployeeId();
+    Employee employee = requireEmployee(shopId, employeeId);
+    refuseIfWrongCaller(doc, employee, expectedEmployee);
     try {
       AppSignatures.parseP256PublicKey(punchPublicKey);
     } catch (IllegalArgumentException | NullPointerException e) {
@@ -353,9 +411,6 @@ public class DevicePairingService {
         ? keyAttestation.verify(attestationChain, KeyAttestation.challengeOf(claimToken),
             punchPublicKey)
         : null;
-    String shopId = doc.getShopId();
-    String employeeId = doc.getEmployeeId();
-    Employee employee = requireEmployee(shopId, employeeId);
     String actor = doc.getCreatedBy();
 
     // displace by conditional updates, so an unpair racing with this one lands exactly once

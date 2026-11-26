@@ -5,7 +5,7 @@
  *
  * Plain Node 20: global `fetch` and WebCrypto, no dependencies. Everything goes through the
  * backend's own HTTP API, the same request sequence as the app's live contract test
- * (`inventory-platform/apps/attendance/src/contract/liveBackend.contract.test.ts`):
+ * (`stockkart-team-app/src/contract/liveBackend.contract.test.ts`):
  *
  *   per shop:   POST /auth/signup (owner) → POST /shops/register → PUT /hr/settings
  *               {attendanceCapture: {biometricApp: true}}

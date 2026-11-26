@@ -30,11 +30,11 @@ import org.springframework.web.servlet.HandlerInterceptor;
 
 /**
  * Authenticates Attendance app requests by their signed request envelope (design "Canonical
- * payloads", R9.8). Registered in {@code CorsConfig} on exactly {@value #PATH_PATTERN}; those paths
- * are excluded from the Bearer, RBAC and plan-expiry interceptors, except {@value #HEALTH_PATH},
- * which stays on the Bearer chain.
+ * payloads", R9.8). Registered in {@code CorsConfig} on exactly {@link #DEVICE_PATH_PATTERNS}; the
+ * same paths are excluded from the Bearer, RBAC and plan-expiry interceptors. {@value #HEALTH_PATH}
+ * and every other path under {@value #PATH_PATTERN} stay on the Bearer chain.
  *
- * <p>Every request except the unsigned pairing calls ({@link #UNSIGNED_PATHS}) must carry:
+ * <p>Every request except the unsigned consent read ({@link #UNSIGNED_PATHS}) must carry:
  *
  * <ul>
  *   <li>{@code X-Pairing-Id}: the pairing id; the pairing must exist and be {@code ACTIVE},
@@ -47,9 +47,11 @@ import org.springframework.web.servlet.HandlerInterceptor;
  *       pairing's device key.
  * </ul>
  *
- * <p>Outcomes: an unknown or {@code UNPAIRED} pairing answers {@code HR_APP_NOT_PAIRED} (403, the
- * app wipes itself, R3.2–R3.3); any other failure answers {@code HR_APP_NOT_VERIFIED} (422, R5.8).
- * Both increment {@code inventory_hr_app_punches_total{result=signature_failed}} once, so the
+ * <p>Outcomes: a signed device request that also carries an {@code Authorization} header answers
+ * {@code HR_TWO_CREDENTIALS} (400, worker-app R9.1) whatever else it carries; an unknown or
+ * {@code UNPAIRED} pairing answers {@code HR_APP_NOT_PAIRED} (403, the app wipes itself,
+ * R3.2–R3.3); any other failure answers {@code HR_APP_NOT_VERIFIED} (422, R5.8). All three
+ * increment {@code inventory_hr_app_punches_total{result=signature_failed}} once, so the
  * signature-failure rate (R10.4) sees tampered or broken phones whichever path they call first.
  * The rate limiter is not touched here: it lives in the punch service, which an unpaired phone
  * never reaches, so a wiped phone is not punished (design "Server-side rules").
@@ -66,42 +68,44 @@ public class AttendanceAppAuthInterceptor implements HandlerInterceptor {
   /** Path prefix of every Attendance app endpoint. */
   public static final String PATH_PREFIX = "/api/v1/hr/attendance-app";
 
-  /** The pattern this interceptor is registered on. */
+  /** Every path under the app's prefix; the interceptor itself is registered on {@link #DEVICE_PATH_PATTERNS}. */
   public static final String PATH_PATTERN = PATH_PREFIX + "/**";
 
   /** Manager-facing health read: Bearer chain, {@code VIEW_ATTENDANCE}; not a device path. */
   public static final String HEALTH_PATH = PATH_PREFIX + "/health";
 
   /**
-   * The paths the phone calls. Excluded from the Bearer, RBAC and plan-expiry interceptors in
-   * {@code CorsConfig}. Listed one by one, rather than {@code /**}, so {@link #HEALTH_PATH} and
-   * any future manager path under the prefix stay on the Bearer chain.
+   * The paths the phone calls, and the only paths this interceptor is registered on. Excluded from
+   * the Bearer, RBAC and plan-expiry interceptors in {@code CorsConfig}. Listed one by one, rather
+   * than {@code /**}, so {@link #HEALTH_PATH} and any future manager path under the prefix stay on
+   * the Bearer chain. {@code /pairings/me/**} only: the unsigned pairing handshake ({@code
+   * /pairings/claim|complete|abandon}) was removed with the legacy flows (worker-app D11, DD4); a
+   * code is redeemed on {@code /api/v1/hr/worker/pairings/*} with the Bearer token, and {@code
+   * /attendance-app/pairings/claim} is now an ordinary unknown route.
    */
   public static final List<String> DEVICE_PATH_PATTERNS =
       List.of(
-          PATH_PREFIX + "/pairings/**",
+          PATH_PREFIX + "/pairings/me/**",
           PATH_PREFIX + "/me",
           PATH_PREFIX + "/punches",
           PATH_PREFIX + "/consent",
           PATH_PREFIX + "/consent/**");
 
   /**
-   * Device paths that carry no envelope: the phone has no keys yet when it claims, completes or
-   * abandons a code, and the latest consent text holds no shop data. Matched on the raw request
-   * URI by exact equality, so an encoded or {@code ;param} variant is verified, never skipped.
+   * The one device path that carries no envelope: the latest consent text holds no shop data.
+   * Matched on the raw request URI by exact equality, so an encoded or {@code ;param} variant is
+   * verified, never skipped.
    */
-  public static final Set<String> UNSIGNED_PATHS =
-      Set.of(
-          PATH_PREFIX + "/pairings/claim",
-          PATH_PREFIX + "/pairings/complete",
-          PATH_PREFIX + "/pairings/abandon",
-          PATH_PREFIX + "/consent/latest");
+  public static final Set<String> UNSIGNED_PATHS = Set.of(PATH_PREFIX + "/consent/latest");
 
   public static final String HEADER_PAIRING_ID = "X-Pairing-Id";
   public static final String HEADER_TIMESTAMP = "X-Request-Timestamp";
   public static final String HEADER_NONCE = "X-Request-Nonce";
   public static final String HEADER_SIGNATURE = "X-Request-Signature";
   public static final String HEADER_SERVER_TIME = "X-Server-Time";
+
+  /** The Bearer chain's header; its presence on a signed device path is refused (R9.1). */
+  public static final String HEADER_AUTHORIZATION = "Authorization";
 
   /** Same attribute names the Bearer chain uses, so {@code HrRequestUtils.requireShopId} works. */
   public static final String ATTR_PAIRING_ID = "pairingId";
@@ -145,6 +149,19 @@ public class AttendanceAppAuthInterceptor implements HandlerInterceptor {
     }
 
     DevicePairing pairing = loadPairing(request.getHeader(HEADER_PAIRING_ID));
+
+    // R9.1 (worker-app Property 21): a login and a device signature never travel together. A
+    // device call that also carries a Bearer token is refused before the pairing status, the
+    // envelope or any handler is looked at, and counted as signature_failed so an app build that
+    // mixes credentials shows on the HR health panel. The unsigned consent path above is not
+    // concerned: it carries no signature, so there is nothing to mix.
+    if (StringUtils.hasText(request.getHeader(HEADER_AUTHORIZATION))) {
+      countSignatureFailed(pairing == null ? null : pairing.getShopId());
+      log.warn("Attendance app request refused: it carried an Authorization header too");
+      throw new BaseException(
+          ErrorCode.HR_TWO_CREDENTIALS, ErrorCode.HR_TWO_CREDENTIALS.getMessage());
+    }
+
     if (pairing == null || pairing.getStatus() != PairingStatus.ACTIVE) {
       countSignatureFailed(pairing == null ? null : pairing.getShopId());
       log.info("Attendance app request refused: pairing unknown or not active");

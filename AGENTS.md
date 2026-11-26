@@ -14,7 +14,7 @@ Cross-repo topics live in the handbook: handbook ARCHITECTURE.md (planned), hand
 - S2. Spring Boot 3.3.0 is imported as a BOM, not used as parent; plugins therefore get no managed version. `app/pom.xml` and `core/pom.xml` declare `spring-boot-maven-plugin` and `maven-compiler-plugin` without a version, so Maven warns and resolves the newest release. Always give a new plugin an explicit version. Ref: `pom.xml`
 - S3. Persist with Spring Data MongoDB only. No SQL or JPA. Ref: `core/pom.xml`
 - S4. Use Lombok (BOM version) and MapStruct 1.5.5.Final for boilerplate and mapping. Ref: `core/pom.xml`
-- S5. Use jqwik 1.9.2 for property tests; it is declared in product only. Ref: `core/product/pom.xml`
+- S5. Use jqwik 1.9.2 for property tests; it is declared (test scope, explicit version) in common, user, hr, product and app. Ref: `core/product/pom.xml`
 - S6. Use Apache POI 5.2.5, openhtmltopdf 1.0.10 and Thymeleaf for documents, in documentservice only; ocr also uses POI to read Excel stock sheets (`ExcelStockParser`). Ref: `core/documentservice/pom.xml`
 - S7. Build with Maven 3.9+. There is no `mvnw` script; only the wrapper properties file exists. Ref: `app/.mvn/wrapper/maven-wrapper.properties`
 - S8. Test with JUnit 5, Mockito and AssertJ from `spring-boot-starter-test`. Surefire preloads the byte-buddy agent through `argLine`; keep it. Ref: `pom.xml`
@@ -24,7 +24,7 @@ Cross-repo topics live in the handbook: handbook ARCHITECTURE.md (planned), hand
 | Path | Holds |
 |---|---|
 | `app/` | Boot entry (`AppApplication`), interceptors, Mongo/CORS/security config, observability |
-| `core/<module>/` | 15 business modules (accounting, analytics, common, credit, documentservice, metrics, notifications, ocr, plan, pricing, product, reminders, resource, taxation, user) |
+| `core/<module>/` | 16 business modules (accounting, analytics, common, credit, documentservice, hr, metrics, notifications, ocr, plan, pricing, product, reminders, resource, taxation, user) |
 | `pluginengine/` | Vertical plugin SPI and `PluginRegistry` |
 | `plugins/<vertical>/` | medical, grocery, sports, cafe |
 | `docs/` | `deploying.md`, `metrics.md` |
@@ -153,7 +153,7 @@ MongoDB: "table" means collection, "column" means field.
 - P4. Create indexes in an idempotent `ensureIndex` runner. Automatic index creation is off (no `auto-index-creation` property), so `@Indexed`/`@CompoundIndex` on core models do nothing by themselves; plugin extension annotations are created by this runner. Ref: `core/product/src/main/java/com/inventory/product/migration/SearchIndexMigration.java`
 - P5. Add a field by adding it to the model. Existing documents read it as `null`; treat `null` as the old behaviour and Javadoc that default. Ref: `core/user/src/main/java/com/inventory/user/domain/model/Vendor.java`
 - P6. Backfill data with a `@Component` in `<module>/migration/`: an `@EventListener(ApplicationReadyEvent.class)` method with an unused `@Order(n)`, an idempotent query that touches only rows still needing the change, `enabled` (and optionally `dry-run`) via `@Value("${stockkart.<job>.enabled:…}")`, a passthrough `stockkart.<job>.enabled=${<JOB>_ENABLED:…}` in `app/src/main/resources/application.properties` (it sets the effective default), and the affected count logged before and after. Ref: `core/product/src/main/java/com/inventory/product/migration/SellRestrictionBackfillRunner.java`
-  - Orders in use: 5 (`ProductBarcodeIndexMigration`, `GridLayoutIndexMigration`), 6 (`SearchIndexMigration`), 7 (`LedgerIndexMigration`), 8 (`UserTokenIndexMigration`), 9 (`CreditAccountIndexMigration`), 10 (`VerticalSchemaSeeder`), 11 (`ShopPartyIndexMigration`).
+  - Orders in use: 5 (`ProductBarcodeIndexMigration`, `GridLayoutIndexMigration`), 6 (`SearchIndexMigration`), 7 (`LedgerIndexMigration`), 8 (`UserTokenIndexMigration`), 9 (`CreditAccountIndexMigration`), 10 (`VerticalSchemaSeeder`), 11 (`ShopPartyIndexMigration`, `HrIndexMigration`).
   - No `enabled` flag: `core/product/src/main/java/com/inventory/product/migration/VerticalSchemaSeeder.java`, `core/product/src/main/java/com/inventory/product/migration/ProductBarcodeIndexMigration.java`.
   - `enabled` but no passthrough: `core/product/src/main/java/com/inventory/product/migration/InvoiceSequenceBackfillRunner.java`, `core/user/src/main/java/com/inventory/user/migration/VendorPlaceMigration.java`, `core/product/src/main/java/com/inventory/product/migration/SearchIndexMigration.java`.
   - `dry-run` exists only in the 4 runners that also have the passthrough: SellRestriction, TxnId, Product and LotBaseCountRepair backfills.
@@ -161,7 +161,7 @@ MongoDB: "table" means collection, "column" means field.
   - Runner list (split by reading each listener method): `grep -rl ApplicationReadyEvent --include=*.java core/*/src/main/java/com/inventory/*/migration`.
   - Not a runner: the one-off manual script `scripts/migrate-lot-id-to-stock-in.mongodb.js`, and the operator script `scripts/super-user.mongodb.js`.
 - P7. Store money as `BigDecimal`; no domain model has a `double`/`float` money field (the only `Double` is `rollColumnGapMm` in `core/product/src/main/java/com/inventory/product/domain/model/LabelLayoutDocument.java`). Converters store it as Decimal128. Ref: `app/src/main/java/com/inventory/app/config/MongoConfig.java`
-- P8. `@Transactional` does nothing (no `TransactionManager` bean; keep it that way, or all ~200 annotations, read-only ones included, go live at once). For all-or-nothing writes across documents call `MongoTx.run(flow, shopId, () -> ...)` (`core/common/.../tx/MongoTx.java`): a real MongoDB transaction; a shop's flows take turns per container, and a write conflict runs the flow again. Inside it, change only the database and local objects; push SSE events, record metrics or send anything through `MongoTx.afterCommit`. Do not catch a database error to try something else inside it (any failed write aborts the transaction). Used by bill completion, refund, vendor invoice and return, credit charge and settlement. Ref: `core/product/src/main/java/com/inventory/product/service/CheckoutService.java`
+- P8. `@Transactional` does nothing (no `TransactionManager` bean; keep it that way, or all ~200 annotations, read-only ones included, go live at once). For all-or-nothing writes across documents call `MongoTx.run(flow, shopId, () -> ...)` (`core/common/.../tx/MongoTx.java`): a real MongoDB transaction; a shop's flows take turns per container, and a write conflict runs the flow again. Inside it, change only the database and local objects; push SSE events, record metrics or send anything through `MongoTx.afterCommit`. Do not catch a database error to try something else inside it (any failed write aborts the transaction). Used by bill completion, refund, vendor invoice and return, credit charge and settlement, and the worker join-request approval (`WorkerJoinService.approve`). Ref: `core/product/src/main/java/com/inventory/product/service/CheckoutService.java`
 - P9. Change vertical schemas by editing `core/product/src/main/resources/seeds/<vertical>-v1.json`. On restart `VerticalSchemaSeeder` overwrites only rows whose `createdBy` starts with `seed:`. Run `VerticalSchemaSeedFilesTest` after. Ref: `core/product/src/main/java/com/inventory/product/migration/VerticalSchemaSeeder.java`
 
 ## Configuration and environment variables
@@ -224,12 +224,13 @@ Optional overrides read by `application.properties` with a built-in default, in 
 - T2. Test services with `@ExtendWith(MockitoExtension.class)`, `@Mock` collaborators and `@InjectMocks`. Ref: `core/user/src/test/java/com/inventory/user/service/VendorServiceUpdateTaxTreatmentTest.java`
 - T3. Test validators by constructing them. Ref: `core/user/src/test/java/com/inventory/user/validation/VendorValidatorTest.java`
 - T4. Name tests `<ClassUnderTest>[Aspect]Test`, package-private, in the class's package (101 of 102 test classes are package-private). Name methods as camelCase sentences (`anExplicitChoiceReplacesTheDefault`; 29 test methods use underscores). Assert with JUnit `Assertions` (88 files; AssertJ in 14). Ref: `core/user/src/test/java/com/inventory/user/service/VendorServiceUpdateTaxTreatmentTest.java`
-- T5. Write property tests with jqwik `@Property`, in product only. Ref: `core/product/src/test/java/com/inventory/product/labels/LabelLayoutValidatorProperties.java`
-  - The 19 `*Properties` classes do not match surefire's default includes, so `mvn test` skips them; run Commands #3.
+- T5. Write property tests with jqwik `@Property` in a `*Properties` class, in the module of the class under test (common, user, hr and product have them). Ref: `core/product/src/test/java/com/inventory/product/labels/LabelLayoutValidatorProperties.java`
+  - The 53 `*Properties` classes do not match surefire's default includes, so `mvn test` skips them; run Commands #3. CI runs them all in the "Mongo integration tests (*IT) and property tests (*Properties)" step with `-Dtest='*IT,com.inventory.**.*Properties'` (K1). List: `grep -rl @Property --include='*Properties.java' .`.
+  - jqwik classes that need MongoDB skip themselves without `stockkart.test.mongo.uri` (`SalaryPaymentProperties`, `PunchDayServiceIT`) or `stockkart.test.mongo.rs.uri` (`WorkerJoinServiceAtomicityProperties` and `WorkerJoinServiceStatefulProperties` through `WorkerJoinMongoSupport.RequiresReplicaSet`, `CredentialDisjointnessIT`), so the pattern is safe to run without a database.
   - `@Property` methods in a `*Test` class do run under `mvn test`. The only one, `core/product/src/test/java/com/inventory/product/labels/LabelModelSmokeTest.java`, is reported by both the Jupiter and jqwik engines, so reported totals vary between runs.
 - T6. Name Mongo integration tests `*IT` and gate them with `@EnabledIfSystemProperty(named = "stockkart.test.mongo.uri", matches = ".+")`; `mvn test` does not run them. Ref: `core/product/src/test/java/com/inventory/product/search/InventorySearchEngineIT.java`
 - T7. Build fixtures in code: a `<Feature>TestFixtures` static-factory class and `InMemory<Thing>Repository` fakes in the test package. Ref: `core/product/src/test/java/com/inventory/product/search/SearchTestFixtures.java`
-  - The one `src/test/resources` is `core/hr/src/test/resources/attendance-protocol/fixtures/canonical.json`: a cross-repo fixture that `CanonicalFixtureGeneratorTest` writes and `inventory-platform/platform/attendance-protocol` asserts byte equality against; the copies in both repositories must stay identical (`cmp`).
+  - `src/test/resources` holds cross-repo fixtures only (2): `core/hr/src/test/resources/attendance-protocol/fixtures/canonical.json` (written by `CanonicalFixtureGeneratorTest`) and `core/common/src/test/resources/attendance-protocol/fixtures/phones.json` (written by `PhoneNumbersFixtureGeneratorTest`, the `PhoneNumbers.normalise` answers). `inventory-platform/platform/attendance-protocol/fixtures/` asserts equality against both; the copies in both repositories must stay identical (`cmp`).
 - T8. Guard seed edits with the seed-file test. Ref: `core/product/src/test/java/com/inventory/product/migration/VerticalSchemaSeedFilesTest.java`
 - T9. Before the first test in a module without tests, add `spring-boot-starter-test` with `<scope>test</scope>`. Ref: `core/pricing/pom.xml`
   - Without the dependency or tests (8): `core/accounting/pom.xml`, `core/analytics/pom.xml`, `core/credit/pom.xml`, `core/metrics/pom.xml`, `core/notifications/pom.xml`, `core/plan/pom.xml`, `core/reminders/pom.xml`, `core/resource/pom.xml`. `plugins/grocery/pom.xml` has the dependency but no `src/test`. List: `grep -L spring-boot-starter-test core/*/pom.xml plugins/*/pom.xml`.
@@ -242,8 +243,8 @@ Run from the repository root. Verified on 2026-10-17, commit `c00e7ef5`, Temurin
 |---|---|---|---|
 | 1 | `mvn -pl app -am clean test` | CI build and unit tests | PASS, 0 failures, 0 errors; 465 tests reported; about 85 s |
 | 2 | `mvn test` | all modules' unit tests | PASS, 0 failures, 0 errors; 465 tests reported |
-| 3 | `mvn -pl core/product -am test -Dtest='*Properties' -Dsurefire.failIfNoSpecifiedTests=false` | jqwik property tests | PASS, 0 failures, 0 errors; 49 tests reported |
-| 4 | `mvn -pl core/product -am test -Dtest='InventorySearch*IT' -Dsurefire.failIfNoSpecifiedTests=false -Dstockkart.test.mongo.uri=<mongodb uri of a throwaway DB>` | Mongo integration tests | PASS, 16 tests, 0 failures (MongoDB 7.0.14) |
+| 3 | `mvn -pl app -am test -Dtest='com.inventory.**.*Properties' -Dsurefire.failIfNoSpecifiedTests=false` | jqwik property tests in every module (the CI pattern minus `*IT`; add `-Dstockkart.test.mongo.uri=…` and `-Dstockkart.test.mongo.rs.uri=…` as in #4 to also run the Mongo-backed ones) | PASS, 0 failures, 0 errors; 172 tests reported (common 6, user 13, product 49, hr 104 of which 9 skipped without the replica-set URI); about 65 s (2026-11-22, Corretto 21, Maven 3.9.11, no MongoDB) |
+| 4 | `mvn -pl core/product -am test -Dtest='InventorySearch*IT' -Dsurefire.failIfNoSpecifiedTests=false -Dstockkart.test.mongo.uri=<mongodb uri of a throwaway DB>` | Mongo integration tests. `MongoTxIT`, the `Worker*IT` classes in app, `CredentialDisjointnessIT` and the two `WorkerJoinService*Properties` read `stockkart.test.mongo.rs.uri` instead and need a replica set (`mongo:7 --replSet rs0` + `rs.initiate`, see the Javadoc of `MongoTxIT`); CI starts one in build-checker.yml | PASS, 16 tests, 0 failures (MongoDB 7.0.14) |
 | 5 | `mvn clean install -DskipTests` | build all jars | PASS (builds the app jar) |
 | 6 | `mvn -pl core/product compile` | compile one module (after #5) | PASS |
 | 7 | `mvn -pl app spring-boot:run` (after #5) | run locally; reads `app/.env` | PASS: `GET /actuator/health` returns `{"status":"UP"}`; needs a reachable MongoDB and C3 |
@@ -254,7 +255,7 @@ Run from the repository root. Verified on 2026-10-17, commit `c00e7ef5`, Temurin
 Reported test totals vary by a few between runs (engine reporting, T5). There is no Java linter or formatter (no checkstyle, spotless or PMD).
 
 - K1. Run the CI command before pushing. Ref: `.github/workflows/build-checker.yml`
-- K2. When a change touches `*Properties` tests or Mongo queries, also run Commands #3 or #4. Ref: `core/product/pom.xml`
+- K2. When a change touches `*Properties` tests or Mongo queries, also run Commands #3 or #4. Ref: `.github/workflows/build-checker.yml`
 
 ## Do and Don't
 
