@@ -30,7 +30,8 @@ public class SaleCampaign {
   private String ctaLabel;
   /** App-relative path such as /plans. */
   private String ctaPath;
-  private CampaignTheme theme;
+  /** Code of a row in campaign_themes, such as DIWALI. */
+  private String theme;
   private Instant startsAt;
   private Instant endsAt;
   /** When the teaser becomes visible. Null = no teaser; the banner appears at startsAt. */

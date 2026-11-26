@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.inventory.common.exception.ValidationException;
-import com.inventory.plan.domain.model.CampaignTheme;
 import com.inventory.plan.rest.dto.request.CampaignActiveRequest;
 import com.inventory.plan.rest.dto.request.CampaignRequest;
 import java.time.Instant;
@@ -22,7 +21,7 @@ class CampaignValidatorTest {
         .headline("Monsoon sale")
         .ctaLabel("See plans")
         .ctaPath("/plans")
-        .theme(CampaignTheme.MONSOON)
+        .theme("MONSOON")
         .announceFrom(Instant.parse("2026-10-01T00:00:00Z"))
         .startsAt(Instant.parse("2026-10-10T00:00:00Z"))
         .endsAt(Instant.parse("2026-10-20T00:00:00Z"));
