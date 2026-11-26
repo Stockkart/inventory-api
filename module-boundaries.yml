@@ -46,7 +46,7 @@ modules:
     collections: [credit_accounts, credit_entries]
   plan:
     dependsOn: [common, user, metrics]
-    collections: [plans, plan_transactions, plan_payment_orders, usage, sale_campaigns]
+    collections: [plans, plan_transactions, plan_payment_orders, usage, sale_campaigns, campaign_themes]
   hr:
     dependsOn: [common, metrics, user, accounting, documentservice, notifications]
     collections: [hr_employees, hr_attendance_days, hr_leave_types, hr_leave_requests, hr_holidays,
