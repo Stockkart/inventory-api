@@ -26,4 +26,18 @@ public class ShopProviderImpl implements ShopPort {
   public void updatePlan(String shopId, String planId, java.time.Instant expiryDate) {
     shopService.updatePlan(shopId, planId, expiryDate);
   }
+
+  @Override
+  public Optional<ReferralShop> findByReferralCode(String referralCode) {
+    return shopService.findReferralShopByCode(referralCode).map(ShopProviderImpl::toReferralShop);
+  }
+
+  @Override
+  public Optional<ReferralShop> getReferralShop(String shopId) {
+    return shopService.getReferralShop(shopId).map(ShopProviderImpl::toReferralShop);
+  }
+
+  private static ReferralShop toReferralShop(ShopService.ShopReferralInfo info) {
+    return new ReferralShop(info.shopId(), info.name(), info.referralCode(), info.contactEmail(), info.contactPhone());
+  }
 }

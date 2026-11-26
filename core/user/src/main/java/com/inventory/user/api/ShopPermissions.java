@@ -8,4 +8,7 @@ public interface ShopPermissions {
 
   /** True when the user may edit the shop's rate rules and override or reset generated rates. */
   boolean canEditRates(String shopId, String userId);
+
+  /** True when the user owns the shop (an OWNER membership, or the legacy shop owner). */
+  boolean hasOwnerAccess(String shopId, String userId);
 }
