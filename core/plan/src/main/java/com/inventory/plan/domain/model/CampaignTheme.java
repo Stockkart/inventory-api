@@ -1,48 +1,34 @@
 package com.inventory.plan.domain.model;
 
-/** Named banner look. The backend picks the name; ui-kit owns what each one looks like. */
-public enum CampaignTheme {
-  DEFAULT,
+import java.time.Instant;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
 
-  // Seasons and weather
-  MONSOON,
-  SUMMER,
-  WINTER,
-  SPRING,
-  AUTUMN,
+/**
+ * A named banner look, managed in the database. Campaigns store its {@code code}; ui-kit owns what
+ * each code looks like and falls back to the default look for a code it does not know.
+ */
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+@Document(collection = "campaign_themes")
+public class CampaignTheme {
 
-  // Indian festivals and national days
-  DIWALI,
-  HOLI,
-  DUSSEHRA,
-  NAVRATRI,
-  CHHATH,
-  MAKAR_SANKRANTI,
-  RAKSHA_BANDHAN,
-  EID,
-  CHRISTMAS,
-  NEW_YEAR,
-  INDEPENDENCE_DAY,
-  REPUBLIC_DAY,
-  GANDHI_JAYANTI,
-
-  // Sales, commerce and lifestyle
-  FLASH_SALE,
-  CLEARANCE,
-  END_OF_SEASON,
-  PAYDAY,
-  WEEKEND_SPECIAL,
-  WEDDING_SEASON,
-  BACK_TO_SCHOOL,
-  VALENTINE,
-  MOTHERS_DAY,
-  FATHERS_DAY,
-  BLACK_FRIDAY,
-  CYBER_MONDAY,
-  ANNIVERSARY,
-  LOYALTY,
-  VIP,
-  REFERRAL,
-  LAUNCH,
-  NEW_ARRIVAL
+  @Id
+  private String id;
+  /** Stable key such as DIWALI. Unique. */
+  private String code;
+  /** Name shown in the admin app, such as "Diwali". */
+  private String label;
+  /** Lower comes first in the admin list. Null sorts last. */
+  private Integer sortOrder;
+  /** Inactive themes cannot be picked for new or edited campaigns. Null is treated as active. */
+  private Boolean active;
+  private Instant createdAt;
+  private Instant updatedAt;
 }
