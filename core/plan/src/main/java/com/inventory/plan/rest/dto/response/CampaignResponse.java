@@ -1,7 +1,6 @@
 package com.inventory.plan.rest.dto.response;
 
 import com.inventory.plan.domain.model.CampaignState;
-import com.inventory.plan.domain.model.CampaignTheme;
 import java.time.Instant;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -25,7 +24,8 @@ public class CampaignResponse {
   private String subtext;
   private String ctaLabel;
   private String ctaPath;
-  private CampaignTheme theme;
+  /** Theme code; the client maps it to a look and uses the default look for unknown codes. */
+  private String theme;
   private Instant startsAt;
   private Instant endsAt;
   private boolean dismissible;
