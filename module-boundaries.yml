@@ -48,7 +48,7 @@ modules:
   plan:
     dependsOn: [common, user, metrics]
     collections: [plans, plan_transactions, plan_payment_orders, usage, shop_subscriptions,
-                  sale_campaigns, add_ons, shop_add_ons, add_on_vouchers, voucher_redemptions,
+                  sale_campaigns, campaign_themes, add_ons, shop_add_ons, add_on_vouchers, voucher_redemptions,
                   referral_attributions, shop_credits, shop_credit_entries, referral_rewards,
                   referral_referrer_counters]
   hr:

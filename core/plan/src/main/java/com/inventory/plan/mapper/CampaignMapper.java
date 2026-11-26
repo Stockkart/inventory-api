@@ -1,8 +1,10 @@
 package com.inventory.plan.mapper;
 
+import com.inventory.plan.domain.model.CampaignTheme;
 import com.inventory.plan.domain.model.SaleCampaign;
 import com.inventory.plan.rest.dto.request.CampaignRequest;
 import com.inventory.plan.rest.dto.response.AdminCampaignResponse;
+import com.inventory.plan.rest.dto.response.CampaignThemeResponse;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.ReportingPolicy;
@@ -19,4 +21,7 @@ public interface CampaignMapper {
   @Mapping(target = "active", expression = "java(!Boolean.FALSE.equals(campaign.getActive()))")
   @Mapping(target = "state", ignore = true)
   AdminCampaignResponse toAdminResponse(SaleCampaign campaign);
+
+  @Mapping(target = "active", expression = "java(!Boolean.FALSE.equals(theme.getActive()))")
+  CampaignThemeResponse toThemeResponse(CampaignTheme theme);
 }
