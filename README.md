@@ -475,6 +475,10 @@ Employees, attendance, leave, salary advances, payroll, salary payments, payslip
 | `GET /api/v1/hr/me/payslips`, `GET /api/v1/hr/me/payslips/{lineId}/pdf` | linked employee (allowed while the plan is expired) | Own payslips of finalised months; another employee's line is 404 |
 | `GET /api/v1/hr/me/notifications?since=`, `POST /api/v1/hr/me/notifications/{id}/read`, `POST /api/v1/hr/me/notifications/read-all` | any shop member | HR inbox (polled every 60 s) |
 
+### Plan revenue MIS (plan)
+
+`GET /api/v1/admin/mis/plans?from=&to=` (admin session; days inclusive, Asia/Kolkata, at most 366). Amounts are GST-inclusive, and `revenue` also gives each split: `grossRevenue` = `grossTaxable` + `grossGst`, `refundedAmount` = `refundedTaxable` + `refundedGst`, `netRevenue` = `netTaxable` + `netGst` (an order's stored split, or for older orders its amount split at `plan.gst-rate-percent`). A refund counts what the gateway reported (`refundedAmount`); an admin refund or a lost chargeback with nothing counted is the whole order; any other refunded order with no counted amount counts 0 and is logged. OCR top-up credits are counted as priced on the order line. Wallet liability is summed in the database.
+
 ### Plan checkout orders (plan)
 
 A plan purchase is a `plan_payment_orders` row moving CREATED → PAYMENT_PENDING → PAID → FULFILLING → FULFILLED (or PAYMENT_FAILED / EXPIRED / CANCELLED unpaid, FULFILMENT_FAILED for an operator); every move is a conditional update. Responses carry the raw `status` and a `phase` the apps show instead of reading status names: `AWAITING_PAYMENT` (open the gateway), `PROCESSING` (payment received, confirming), `FULFILLED` (done), `FAILED` (no payment taken), `ENDED` (expired or cancelled).

@@ -1,9 +1,12 @@
 package com.inventory.user.rest.dto.response;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.inventory.user.domain.model.PlatformRole;
 import com.inventory.user.domain.model.UserRole;
 import lombok.Data;
 
 import java.time.Instant;
+import java.util.Set;
 
 @Data
 public class LoginResponse {
@@ -22,6 +25,9 @@ public class LoginResponse {
     String phone;
     Boolean active;
     Instant createdAt;
+    /** Omitted for ordinary users; lets the UI show platform admin pages. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    Set<PlatformRole> platformRoles;
   }
 
   @Data

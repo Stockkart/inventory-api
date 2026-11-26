@@ -1,12 +1,14 @@
 package com.inventory.user.rest.dto.response;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.inventory.user.domain.model.PlatformRole;
 import com.inventory.user.domain.model.UserRole;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.List;
+import java.util.Set;
 
 @Data
 @NoArgsConstructor
@@ -22,4 +24,6 @@ public class UserResponse {
   private Boolean active;
   private String createdAt;
   private List<UserShopDto> shops;  // All shops user has access to (multi-shop)
+  /** Omitted for ordinary users; lets the UI show platform admin pages. */
+  private Set<PlatformRole> platformRoles;
 }
